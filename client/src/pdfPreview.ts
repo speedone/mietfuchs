@@ -27,7 +27,16 @@ async function doRender(file: string): Promise<string[]> {
   const url = `/uploads/${encodeURIComponent(file)}`
   if (!/\.pdf$/i.test(file)) return [url] // Bilddateien direkt einbetten
   const pdfjs = await loadPdfjs()
-  const task = pdfjs.getDocument({ url })
+  const task = pdfjs.getDocument({
+    url,
+    // Dekoder/Ressourcen, die Vite nach /pdfjs/ kopiert (siehe vite.config.ts):
+    // ohne sie bleiben JBIG2-/JPEG2000-Scans (Behörden-Bescheide) fast leer.
+    wasmUrl: '/pdfjs/wasm/',
+    iccUrl: '/pdfjs/iccs/',
+    cMapUrl: '/pdfjs/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: '/pdfjs/standard_fonts/',
+  })
   const doc = await task.promise
   const pages: string[] = []
   try {

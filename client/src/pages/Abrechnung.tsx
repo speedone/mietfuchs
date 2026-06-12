@@ -41,6 +41,16 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
     [costItems, year],
   )
 
+  // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
+  // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
+  function fileLabel(f: string): string {
+    const linked = costItems.filter((c) => c.year === year && c.invoiceFile === f)
+    const vendor = linked.find((c) => c.vendor)?.vendor
+    const cats = [...new Set(linked.map((c) => c.category))].join(', ')
+    if (vendor && cats) return `${vendor} — ${cats}`
+    return vendor || cats || invoiceLabel(f)
+  }
+
   // Belegseiten vorab rendern, sobald der Andruck aktiviert ist — der Druckdialog
   // wartet nicht auf asynchrones Rendering.
   useEffect(() => {
@@ -73,8 +83,13 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
   useEffect(() => {
     if (!printId) return
     document.body.classList.add('print-one')
+    // Browser verwenden document.title als Dateinamen beim „Als PDF speichern"
+    const prevTitle = document.title
+    const st = data?.statements.find((s) => s.tenancyId === printId)
+    if (st) document.title = `Nebenkostenabrechnung ${year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
+      document.title = prevTitle
       setPrintId(null)
     }
     window.addEventListener('afterprint', done)
@@ -83,8 +98,9 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
       clearTimeout(t)
       window.removeEventListener('afterprint', done)
       document.body.classList.remove('print-one')
+      document.title = prevTitle
     }
-  }, [printId])
+  }, [printId, data, year])
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
 
@@ -361,16 +377,16 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
               {printAttachments && stFiles.length > 0 && (
                 <>
                   <div className="muted no-print">
-                    Anlage beim Druck: {stFiles.map(invoiceLabel).join(' · ')}
+                    Anlage beim Druck: {stFiles.map(fileLabel).join(' · ')}
                   </div>
                   <div className="print-only attachments">
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
                         <div className="attachment-caption">
-                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {invoiceLabel(f)}
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
-                          <img key={i} src={src} alt={`${invoiceLabel(f)} — Seite ${i + 1}`} />
+                          <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />
                         ))}
                       </div>
                     ))}
