@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, parseEuro } from '../api'
 
 type Props = { units: Unit[]; settings: Settings | null }
@@ -47,6 +47,19 @@ export default function Kosten({ units, settings }: Props) {
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
+
+  // Nach Kostenart gruppiert (in CATEGORIES-Reihenfolge) — mit Zwischensumme pro Kostenart,
+  // sobald mehrere Positionen vorhanden sind (z. B. Abgleich mit dem Müll-Bescheid).
+  const grouped = useMemo(() => {
+    const order = (c: string) => { const i = CATEGORIES.indexOf(c); return i === -1 ? CATEGORIES.length : i }
+    const groups: { category: string; items: CostItem[] }[] = []
+    for (const it of [...yearItems].sort((a, b) => order(a.category) - order(b.category))) {
+      const g = groups.find((x) => x.category === it.category)
+      if (g) g.items.push(it)
+      else groups.push({ category: it.category, items: [it] })
+    }
+    return groups
+  }, [yearItems])
 
   async function saveItem() {
     if (!form) return
@@ -102,14 +115,23 @@ export default function Kosten({ units, settings }: Props) {
       const ex = res.extraction
       setExtractMeta({ vendor: ex.vendor || file.name, file: res.file })
       setPositions(
-        (ex.positions || []).map((p) => ({
-          description: p.description,
-          category: CATEGORIES.includes(p.category) ? p.category : 'Sonstige Betriebskosten',
-          amount: p.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-          labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
-          key: defaultKeyFor(p.category),
-          checked: p.category !== 'Nicht umlagefähig',
-        })),
+        (ex.positions || []).map((p) => {
+          // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
+          // über die Beschreibung (z. B. wenn das Modell eine eigene Kategorie erfindet)
+          let category = matchCategory(p.category || '')
+          if (category === 'Sonstige Betriebskosten') {
+            const byDesc = matchCategory(p.description || '')
+            if (byDesc !== 'Sonstige Betriebskosten') category = byDesc
+          }
+          return {
+            description: p.description,
+            category,
+            amount: p.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+            labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+            key: defaultKeyFor(category),
+            checked: category !== 'Nicht umlagefähig',
+          }
+        }),
       )
     } catch (e) {
       setExtractError(String((e as Error).message))
@@ -195,7 +217,7 @@ export default function Kosten({ units, settings }: Props) {
             <table>
               <thead>
                 <tr>
-                  <th></th>
+                  <th><span className="sr-only">Übernehmen</span></th>
                   <th>Beschreibung</th>
                   <th>Kostenart</th>
                   <th>Umlageschlüssel</th>
@@ -247,11 +269,13 @@ export default function Kosten({ units, settings }: Props) {
                 <th>Beschreibung</th>
                 <th>Umlageschlüssel</th>
                 <th className="num">Betrag</th>
-                <th className="no-print"></th>
+                <th className="no-print"><span className="sr-only">Aktionen</span></th>
               </tr>
             </thead>
             <tbody>
-              {yearItems.map((i) => (
+              {grouped.map((g) => (
+              <Fragment key={g.category}>
+              {g.items.map((i) => (
                 <tr key={i.id}>
                   <td>
                     {i.category}
@@ -296,6 +320,15 @@ export default function Kosten({ units, settings }: Props) {
                     <button className="btn small ghost" onClick={() => deleteItem(i)}>Löschen</button>
                   </td>
                 </tr>
+              ))}
+              {g.items.length > 1 && (
+                <tr className="subtotal">
+                  <td colSpan={3}>Summe {g.category}</td>
+                  <td className="num">{fmtEuro(g.items.reduce((a, i) => a + i.amountCents, 0))}</td>
+                  <td className="no-print" />
+                </tr>
+              )}
+              </Fragment>
               ))}
             </tbody>
             <tfoot>

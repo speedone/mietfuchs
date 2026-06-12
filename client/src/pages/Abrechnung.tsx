@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { Settings, Settlement, Tenancy, Unit } from '../types'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 
 type Props = { settings: Settings | null; units: Unit[]; tenancies: Tenancy[]; reload: () => Promise<void> }
 
@@ -10,14 +11,53 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string } | null>(null)
+  const [costItems, setCostItems] = useState<CostItem[]>([])
+  const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false)
+
+  const printAdjust = settings?.printAdjustSuggestion !== false // Standard: an
+  const printAttachments = settings?.printAttachments === true // Standard: aus
 
   const load = useCallback(() => {
-    return api<Settlement>(`/api/settlement/${year}`)
-      .then((d) => { setData(d); setError('') })
+    return Promise.all([
+      api<Settlement>(`/api/settlement/${year}`),
+      api<CostItem[]>('/api/costItems'),
+    ])
+      .then(([d, c]) => { setData(d); setCostItems(c); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [year])
 
   useEffect(() => { void load() }, [load])
+
+  // Druckoptionen direkt in den Einstellungen merken
+  async function saveSetting(patch: Partial<Settings>) {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })
+    await reload()
+  }
+
+  // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
+  const invoiceFiles = useMemo(
+    () => [...new Set(costItems.filter((c) => c.year === year && c.invoiceFile).map((c) => c.invoiceFile!))],
+    [costItems, year],
+  )
+
+  // Belegseiten vorab rendern, sobald der Andruck aktiviert ist — der Druckdialog
+  // wartet nicht auf asynchrones Rendering.
+  useEffect(() => {
+    if (!printAttachments) return
+    const missing = invoiceFiles.filter((f) => !attachmentPages[f])
+    if (missing.length === 0) return
+    let alive = true
+    setAttachmentsLoading(true)
+    void (async () => {
+      for (const f of missing) {
+        const pages = await renderInvoicePages(f).catch(() => [])
+        if (!alive) return
+        setAttachmentPages((prev) => ({ ...prev, [f]: pages }))
+      }
+    })().finally(() => { if (alive) setAttachmentsLoading(false) })
+    return () => { alive = false }
+  }, [printAttachments, invoiceFiles, attachmentPages])
 
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
@@ -71,6 +111,27 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
               ))}
             </select>
           </label>
+          <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
+            <span>
+              <input
+                type="checkbox"
+                checked={printAdjust}
+                onChange={(e) => void saveSetting({ printAdjustSuggestion: e.target.checked })}
+              />{' '}
+              Neue Vorauszahlung vorschlagen (§560 BGB)
+            </span>
+          </label>
+          <label className="field checkline" title="Kopien der hochgeladenen Beleg-PDFs als Anlage hinter jeder Abrechnung mit ausdrucken">
+            <span>
+              <input
+                type="checkbox"
+                checked={printAttachments}
+                onChange={(e) => void saveSetting({ printAttachments: e.target.checked })}
+              />{' '}
+              Belegkopien als Anlage andrucken
+              {printAttachments && attachmentsLoading && <span className="muted"> (werden vorbereitet …)</span>}
+            </span>
+          </label>
         </div>
       </div>
 
@@ -108,7 +169,23 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
             <div className="card"><div className="empty">Keine Mietverhältnisse im Jahr {year} — bitte Stammdaten prüfen.</div></div>
           )}
 
-          {data.statements.map((st) => (
+          {data.statements.map((st) => {
+            // Belege, die in dieser Abrechnung tatsächlich vorkommen (für die Anlage)
+            const stFiles = printAttachments
+              ? [...new Set(st.rows
+                  .map((r) => costItems.find((c) => c.id === r.costItemId)?.invoiceFile)
+                  .filter((f): f is string => !!f))]
+              : []
+            const attachmentsReady = stFiles.every((f) => attachmentPages[f])
+            // Positionen nach Kostenart gruppieren — mit Zwischensumme, sobald eine
+            // Kostenart mehrere Positionen hat (erleichtert den Abgleich mit dem Bescheid).
+            const groups: { category: string; rows: SettlementRow[] }[] = []
+            for (const r of st.rows) {
+              const g = groups.find((x) => x.category === r.category)
+              if (g) g.rows.push(r)
+              else groups.push({ category: r.category, rows: [r] })
+            }
+            return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               <div className="muted" style={{ marginBottom: 8 }}>
                 {settings?.landlordName && <>{settings.landlordName} · </>}
@@ -122,7 +199,14 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({st.days} Tage)
                   </div>
                 </div>
-                <button className="btn secondary no-print" onClick={() => setPrintId(st.tenancyId)}>🖨 Drucken / PDF</button>
+                <button
+                  className="btn secondary no-print"
+                  disabled={printAttachments && !attachmentsReady}
+                  title={printAttachments && !attachmentsReady ? 'Belegkopien werden noch vorbereitet …' : undefined}
+                  onClick={() => setPrintId(st.tenancyId)}
+                >
+                  🖨 Drucken / PDF
+                </button>
               </div>
 
               {st.rows.length === 0 ? (
@@ -138,19 +222,31 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {st.rows.map((r, i) => (
-                      <tr key={i}>
-                        <td>
-                          {r.category}
-                          {r.description !== r.category && <div className="muted">{r.description}</div>}
-                        </td>
-                        <td className="num">{fmtEuro(r.totalCents)}</td>
-                        <td>
-                          {r.keyLabel}
-                          {r.basisText && <div className="muted">{r.basisText}</div>}
-                        </td>
-                        <td className="num">{fmtEuro(r.shareCents)}</td>
-                      </tr>
+                    {groups.map((g) => (
+                      <Fragment key={g.category}>
+                        {g.rows.map((r, i) => (
+                          <tr key={i}>
+                            <td>
+                              {r.category}
+                              {r.description !== r.category && <div className="muted">{r.description}</div>}
+                            </td>
+                            <td className="num">{fmtEuro(r.totalCents)}</td>
+                            <td>
+                              {r.keyLabel}
+                              {r.basisText && <div className="muted">{r.basisText}</div>}
+                            </td>
+                            <td className="num">{fmtEuro(r.shareCents)}</td>
+                          </tr>
+                        ))}
+                        {g.rows.length > 1 && (
+                          <tr className="subtotal">
+                            <td>Summe {g.category}</td>
+                            <td className="num">{fmtEuro(g.rows.reduce((a, r) => a + r.totalCents, 0))}</td>
+                            <td />
+                            <td className="num">{fmtEuro(g.rows.reduce((a, r) => a + r.shareCents, 0))}</td>
+                          </tr>
+                        )}
+                      </Fragment>
                     ))}
                   </tbody>
                   <tfoot>
@@ -223,7 +319,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                       </>
                     )}
                   </p>
-                  {st.suggestedMonthlyCents > 0 && (
+                  {printAdjust && st.suggestedMonthlyCents > 0 && (
                     <p>
                       Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß
                       §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
@@ -258,10 +354,32 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
               )}
               <p className="muted" style={{ marginTop: 14 }}>
                 Abrechnung nach dem Abflussprinzip (im Abrechnungsjahr gezahlte Rechnungen).
-                Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.
+                {printAttachments && stFiles.length > 0
+                  ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
+                  : ' Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.'}
               </p>
+              {printAttachments && stFiles.length > 0 && (
+                <>
+                  <div className="muted no-print">
+                    Anlage beim Druck: {stFiles.map(invoiceLabel).join(' · ')}
+                  </div>
+                  <div className="print-only attachments">
+                    {stFiles.map((f, idx) => (
+                      <div key={f} className="attachment">
+                        <div className="attachment-caption">
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {invoiceLabel(f)}
+                        </div>
+                        {(attachmentPages[f] ?? []).map((src, i) => (
+                          <img key={i} src={src} alt={`${invoiceLabel(f)} — Seite ${i + 1}`} />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
-          ))}
+            )
+          })}
 
           {data.landlord.rows.length > 0 && (
             <div className="card no-print">
