@@ -15,6 +15,24 @@ export default function Einstellungen({ settings, reload }: Props) {
   const [saved, setSaved] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; models?: string[]; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreMsg, setRestoreMsg] = useState('')
+
+  async function restore(file: File) {
+    if (!confirm(`Backup „${file.name}" wiederherstellen?\n\nAlle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.`)) return
+    setRestoring(true)
+    setRestoreMsg('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await api('/api/restore', { method: 'POST', body: fd })
+      setRestoreMsg('Backup wiederhergestellt — die Seite wird neu geladen …')
+      setTimeout(() => window.location.reload(), 1200)
+    } catch (e) {
+      setRestoreMsg(`Fehler: ${String((e as Error).message)}`)
+      setRestoring(false)
+    }
+  }
 
   async function save() {
     await api('/api/settings', {
@@ -105,9 +123,25 @@ export default function Einstellungen({ settings, reload }: Props) {
       <div className="card">
         <h2>Daten &amp; Sicherung</h2>
         <p className="muted">
-          Alle Daten liegen in <code>server/data/db.json</code>, hochgeladene Belege in{' '}
-          <code>server/data/uploads/</code>. Für ein Backup genügt es, den Ordner{' '}
-          <code>server/data</code> zu kopieren. Es werden keine Daten an externe Dienste übertragen.
+          Alle Daten (Stammdaten, Kosten, Zähler, Belege) bleiben lokal auf diesem Rechner.
+          Ein Backup enthält die komplette Datenbank samt aller hochgeladenen Belege als ZIP-Datei.
+        </p>
+        <div className="row">
+          <a className="btn secondary" href="/api/backup" download>⬇ Backup herunterladen (ZIP)</a>
+          <label className="btn secondary" style={{ cursor: 'pointer' }}>
+            {restoring && <span className="spinner" />}⬆ Backup wiederherstellen …
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }}
+            />
+          </label>
+        </div>
+        {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
+        <p className="muted" style={{ marginTop: 10 }}>
+          Beim Wiederherstellen werden die aktuellen Daten <strong>überschrieben</strong> (eine
+          Sicherheitskopie des vorherigen Stands bleibt als <code>db.json.vor-restore</code> erhalten).
         </p>
       </div>
     </>

@@ -14,6 +14,37 @@
   --amber: #92400e;
   --radius: 12px;
   --sidebar: #171c2c;
+  --input-bg: #ffffff;
+  --input-border: #cdd3e0;
+  --chip: #eef0f4;
+  --notice-border: #fde68a;
+  --error-border: #fecaca;
+  --ok-border: #bbf7d0;
+}
+
+/* ---------- Dark Mode (Umschalter in der Sidebar, Standard folgt dem System) ---------- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #11141d;
+  --card: #1a1f2e;
+  --text: #e3e7f2;
+  --muted: #8b93ab;
+  --line: #2a3044;
+  --accent: #6366f1;
+  --accent-soft: #262b4a;
+  --green: #4ade80;
+  --green-soft: #11271b;
+  --red: #f87171;
+  --red-soft: #2c1517;
+  --amber-soft: #292213;
+  --amber: #fbbf24;
+  --sidebar: #0c0f18;
+  --input-bg: #11141d;
+  --input-border: #3a4158;
+  --chip: #272d3f;
+  --notice-border: #57461a;
+  --error-border: #5c2326;
+  --ok-border: #1d4a2d;
 }
 
 * { box-sizing: border-box; }
@@ -61,6 +92,15 @@ body {
 .sidebar button:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
 .sidebar button.active { background: var(--accent); color: #fff; font-weight: 600; }
 .sidebar .foot { margin-top: auto; font-size: 12px; color: #5d6580; padding: 0 12px; }
+.sidebar .foot .theme-toggle {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  margin-bottom: 8px;
+  color: #7d86a5;
+  font-size: 12.5px;
+}
+.sidebar .foot .theme-toggle:hover { color: #fff; }
 
 /* ---------- Layout ---------- */
 main { flex: 1; padding: 32px 40px 80px; max-width: 1080px; }
@@ -84,9 +124,9 @@ label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; 
 input, select {
   font: inherit;
   padding: 8px 10px;
-  border: 1px solid #cdd3e0;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--input-bg);
   color: var(--text);
   min-width: 0;
 }
@@ -117,8 +157,8 @@ td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: to
 tr:last-child td { border-bottom: none; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tfoot td { font-weight: 700; border-top: 2px solid var(--line); }
-tr.subtotal td { font-weight: 600; background: var(--bg); border-bottom: 1px solid #cdd3e0; }
-tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(--accent); border-bottom: 1px solid #cdd3e0; padding-top: 11px; padding-bottom: 11px; }
+tr.subtotal td { font-weight: 600; background: var(--bg); border-bottom: 1px solid var(--input-border); }
+tr.group-head td { font-weight: 600; background: var(--accent-soft); color: var(--accent); border-bottom: 1px solid var(--input-border); padding-top: 11px; padding-bottom: 11px; }
 tr.group-head td a { color: inherit; font-weight: 400; margin-left: 8px; }
 .muted { color: var(--muted); font-size: 13px; }
 
@@ -129,11 +169,11 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 600; }
 .badge.green { background: var(--green-soft); color: var(--green); }
 .badge.red { background: var(--red-soft); color: var(--red); }
-.badge.gray { background: #eef0f4; color: var(--muted); }
+.badge.gray { background: var(--chip); color: var(--muted); }
 
-.notice { background: var(--amber-soft); color: var(--amber); border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
-.error { background: var(--red-soft); color: var(--red); border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
-.ok { background: var(--green-soft); color: var(--green); border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+.notice { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
+.error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+.ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: 14px; }
 
@@ -150,6 +190,23 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .dropzone strong { color: var(--text); }
 .dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
 .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+
+/* ---------- Übersicht: einfache Balken-Charts ---------- */
+.chart-table .bar {
+  height: 13px;
+  background: var(--accent);
+  border-radius: 4px;
+  min-width: 2px;
+  margin: 2px 0;
+}
+.chart-table .bar.prev { background: var(--line); }
+
+/* ---------- Mieterwechsel-Assistent ---------- */
+.wizard-step {
+  border-left: 3px solid var(--accent-soft);
+  padding: 6px 0 10px 14px;
+  margin-bottom: 12px;
+}
 
 /* Nur für Screenreader sichtbar (z. B. Kopfzellen reiner Aktionsspalten) */
 .sr-only {
@@ -172,10 +229,48 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Mobil (Handy: Zählerstand erfassen, Beleg fotografieren) ---------- */
+@media (max-width: 760px) {
+  #root { flex-direction: column; }
+  .sidebar {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 10px 12px;
+  }
+  .sidebar .logo { width: 100%; padding: 0 4px 8px; font-size: 15px; }
+  .sidebar .logo small { display: inline; margin-left: 8px; }
+  .sidebar button { padding: 7px 10px; font-size: 13px; gap: 6px; }
+  .sidebar .foot { display: none; }
+  main { padding: 18px 14px 60px; }
+  h1 { font-size: 20px; }
+  .card { padding: 14px; }
+}
+
 /* ---------- Druck ---------- */
 .print-only { display: none; }
 
 @media print {
+  /* Gedruckt wird immer hell — unabhängig vom gewählten Design */
+  :root, :root[data-theme='dark'] {
+    color-scheme: light;
+    --bg: #fff;
+    --card: #fff;
+    --text: #1a2233;
+    --muted: #68718a;
+    --line: #e4e7ee;
+    --accent: #4f46e5;
+    --accent-soft: #eef0ff;
+    --green: #15803d;
+    --green-soft: #ecfdf3;
+    --red: #b91c1c;
+    --red-soft: #fef2f2;
+    --input-bg: #fff;
+    --input-border: #cdd3e0;
+    --chip: #eef0f4;
+  }
   body { background: #fff; font-size: 13px; }
   .sidebar, .no-print { display: none !important; }
   main { padding: 0; max-width: none; }
