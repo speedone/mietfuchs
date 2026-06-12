@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Settings, Tenancy, Unit } from '../types'
+import type { Meter, Settings, Tenancy, Unit } from '../types'
+import { METER_TYPE_LABELS } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 
 type Props = {
@@ -27,6 +28,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   const [houseSaved, setHouseSaved] = useState(false)
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
+  const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -244,7 +246,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                       </div>
                     ))}
                   </td>
-                  <td className="num no-print">
+                  <td className="num no-print" style={{ whiteSpace: 'nowrap' }}>
+                    {!t.end && (
+                      <>
+                        <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
+                          Mieterwechsel
+                        </button>{' '}
+                      </>
+                    )}
                     <button
                       className="btn small secondary"
                       onClick={() =>
@@ -349,6 +358,231 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           </button>
         )}
       </div>
+
+      {wizardFor && (
+        <MieterwechselWizard
+          tenancy={wizardFor}
+          unit={units.find((u) => u.id === wizardFor.unitId)}
+          onClose={() => setWizardFor(null)}
+          onDone={async () => { setWizardFor(null); await reload() }}
+        />
+      )}
     </>
+  )
+}
+
+// ---------- Mieterwechsel-Assistent ----------
+// Geführter Ablauf: Auszugsdatum → Zwischenablesung der Zähler → neuer Mieter (oder Leerstand).
+// Alle Schritte werden erst beim Abschluss gemeinsam gespeichert — Abbrechen ändert nichts.
+
+function parseMeterValue(s: string): number | null {
+  if (!s.trim()) return null
+  const n = Number(s.trim().replace(/\./g, (m, i, str) => (str.includes(',') ? '' : m)).replace(',', '.'))
+  return Number.isFinite(n) ? n : null
+}
+
+function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
+  tenancy: Tenancy
+  unit: Unit | undefined
+  onClose: () => void
+  onDone: () => Promise<void>
+}) {
+  const [step, setStep] = useState(1)
+  const [meters, setMeters] = useState<Meter[]>([])
+  const [endDate, setEndDate] = useState('')
+  const [meterValues, setMeterValues] = useState<Record<string, string>>({})
+  const [vacancy, setVacancy] = useState(false)
+  const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', prepayment: '' })
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  // Zähler der Wohnung + Hauptzähler (Dokumentation) laden
+  useEffect(() => {
+    void api<Meter[]>('/api/meters')
+      .then((all) => setMeters(all.filter((m) => m.unitId === tenancy.unitId || m.unitId === null)))
+      .catch(() => setMeters([]))
+  }, [tenancy.unitId])
+
+  // Einzug des Nachmieters: standardmäßig der Tag nach dem Auszug
+  function defaultStart(end: string): string {
+    const d = new Date(`${end}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + 1)
+    return d.toISOString().slice(0, 10)
+  }
+
+  function goToStep2() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < tenancy.start) {
+      setError('Bitte ein gültiges Auszugsdatum nach dem Einzug angeben.')
+      return
+    }
+    setError('')
+    setNewTenant((n) => ({ ...n, start: n.start || defaultStart(endDate) }))
+    setStep(2)
+  }
+
+  function goToStep3() {
+    for (const m of meters) {
+      const v = meterValues[m.id]
+      if (v?.trim() && parseMeterValue(v) === null) {
+        setError(`Zählerstand für „${m.name}" ist keine gültige Zahl.`)
+        return
+      }
+    }
+    setError('')
+    setStep(3)
+  }
+
+  async function commit() {
+    let newTenancyBody: string | null = null
+    if (!vacancy) {
+      const persons = Number(newTenant.persons)
+      const prepayment = parseEuro(newTenant.prepayment)
+      if (!newTenant.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newTenant.start) || !Number.isInteger(persons) || persons < 1) {
+        setError('Bitte Name, Einzugsdatum und Personenzahl des neuen Mieters prüfen.')
+        return
+      }
+      if (newTenant.start <= endDate) {
+        setError('Der Einzug des neuen Mieters muss nach dem Auszug liegen.')
+        return
+      }
+      newTenancyBody = JSON.stringify({
+        unitId: tenancy.unitId,
+        tenantName: newTenant.name.trim(),
+        persons,
+        personHistory: [{ from: newTenant.start, persons }],
+        start: newTenant.start,
+        end: null,
+        prepayments: prepayment !== null ? [{ from: newTenant.start.slice(0, 7), monthlyCents: prepayment }] : [],
+        prepaymentOverrides: {},
+      })
+    }
+    setError('')
+    setBusy(true)
+    try {
+      // 1. Altes Mietverhältnis beenden
+      await api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: endDate }) })
+      // 2. Zwischenablesungen erfassen (nur ausgefüllte Zähler)
+      for (const m of meters) {
+        const v = parseMeterValue(meterValues[m.id] ?? '')
+        if (v === null) continue
+        await api('/api/readings', {
+          method: 'POST',
+          body: JSON.stringify({
+            meterId: m.id,
+            date: endDate,
+            value: v,
+            note: `Zwischenablesung Mieterwechsel ${tenancy.tenantName}`,
+          }),
+        })
+      }
+      // 3. Neues Mietverhältnis anlegen
+      if (newTenancyBody) await api('/api/tenancies', { method: 'POST', body: newTenancyBody })
+      await onDone()
+    } catch (e) {
+      setError(String((e as Error).message))
+      setBusy(false)
+    }
+  }
+
+  const unitMeters = meters.filter((m) => m.unitId !== null)
+  const readCount = meters.filter((m) => parseMeterValue(meterValues[m.id] ?? '') !== null).length
+
+  return (
+    <div className="card" style={{ borderColor: 'var(--accent)' }}>
+      <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
+      {error && <div className="error">{error}</div>}
+
+      <div className="wizard-step">
+        <strong>1. Auszug</strong>
+        <div className="row" style={{ marginTop: 8 }}>
+          <label className="field">
+            Auszugsdatum (letzter Miettag)
+            <input type="date" value={endDate} disabled={step > 1} onChange={(e) => setEndDate(e.target.value)} />
+          </label>
+          {step === 1 && <button className="btn" onClick={goToStep2}>Weiter</button>}
+        </div>
+      </div>
+
+      {step >= 2 && (
+        <div className="wizard-step">
+          <strong>2. Zwischenablesung der Zähler</strong>
+          {meters.length === 0 ? (
+            <p className="muted">
+              Keine Zähler erfasst — nichts abzulesen. (Wasser nach Personen braucht keine Ablesung.)
+            </p>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: '4px 0 8px' }}>
+                Stände zum {fmtDate(endDate)} erfassen — dann wird der Verbrauch exakt statt
+                tagesanteilig aufgeteilt. {unitMeters.length === 0 && 'Der Hauptzähler dient nur der Dokumentation.'}
+                {' '}Leere Felder werden übersprungen.
+              </p>
+              <div className="row">
+                {meters.map((m) => (
+                  <label className="field" key={m.id}>
+                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}, {m.unit})
+                    <input
+                      value={meterValues[m.id] ?? ''}
+                      disabled={step > 2}
+                      placeholder="Stand"
+                      style={{ width: 140 }}
+                      onChange={(e) => setMeterValues({ ...meterValues, [m.id]: e.target.value })}
+                    />
+                  </label>
+                ))}
+                {step === 2 && <button className="btn" onClick={goToStep3}>Weiter</button>}
+              </div>
+            </>
+          )}
+          {step === 2 && meters.length === 0 && <button className="btn" onClick={goToStep3}>Weiter</button>}
+        </div>
+      )}
+
+      {step >= 3 && (
+        <div className="wizard-step">
+          <strong>3. Neuer Mieter</strong>
+          <div className="row" style={{ marginTop: 8 }}>
+            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
+              <input type="checkbox" checked={vacancy} onChange={(e) => setVacancy(e.target.checked)} />
+              Wohnung bleibt vorerst leer (Leerstand)
+            </label>
+          </div>
+          {!vacancy && (
+            <div className="row">
+              <label className="field grow">
+                Mieter
+                <input value={newTenant.name} onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })} placeholder="z. B. Familie Müller" />
+              </label>
+              <label className="field">
+                Einzug
+                <input type="date" value={newTenant.start} onChange={(e) => setNewTenant({ ...newTenant, start: e.target.value })} />
+              </label>
+              <label className="field">
+                Personen
+                <input value={newTenant.persons} style={{ width: 80 }} onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
+              </label>
+              <label className="field">
+                Vorauszahlung €/Monat
+                <input value={newTenant.prepayment} style={{ width: 120 }} placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
+              </label>
+            </div>
+          )}
+          <div className="notice" style={{ marginTop: 10 }}>
+            Beim Abschluss passiert: Mietverhältnis „{tenancy.tenantName}" endet am {fmtDate(endDate)}
+            {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
+            {vacancy
+              ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
+              : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}" ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
+          </div>
+          <button className="btn" disabled={busy} onClick={() => void commit()}>
+            {busy && <span className="spinner" />}Mieterwechsel durchführen
+          </button>{' '}
+          <button className="btn ghost" disabled={busy} onClick={onClose}>Abbrechen</button>
+        </div>
+      )}
+      {step < 3 && (
+        <button className="btn ghost" onClick={onClose}>Abbrechen</button>
+      )}
+    </div>
   )
 }

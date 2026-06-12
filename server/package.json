@@ -9,8 +9,10 @@
     "test": "node --test"
   },
   "dependencies": {
+    "adm-zip": "^0.5.17",
     "express": "^4.21.0",
     "multer": "^2.0.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "pdf-to-img": "^6.2.0"
   }
 }

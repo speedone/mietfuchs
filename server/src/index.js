@@ -3,7 +3,8 @@ import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { getDb, save, newId, UPLOAD_DIR } from './store.js'
+import AdmZip from 'adm-zip'
+import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview } from './calc.js'
 import { extractFromFile, listOllamaModels } from './extract.js'
 
@@ -67,10 +68,54 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings']) {
 }
 
 // ---------- Abrechnung ----------
+// Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
 app.get('/api/settlement/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(computeSettlement(getDb(), year))
+  const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
+  if (closed) return res.json({ ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
+  res.json({ ...computeSettlement(getDb(), year), closed: null })
+})
+
+// Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
+// Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
+app.post('/api/settlement/:year/close', (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  const db = getDb()
+  if ((db.closedSettlements ?? []).some((c) => c.year === year)) {
+    return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
+  }
+  db.closedSettlements.push({
+    id: newId(),
+    year,
+    closedAt: new Date().toISOString(),
+    sentAt: req.body?.sentAt ?? null,
+    settlement: computeSettlement(db, year),
+  })
+  save()
+  res.status(201).json({ ok: true })
+})
+
+// Versanddatum nachtragen (für die §556-Frist)
+app.put('/api/settlement/:year/close', (req, res) => {
+  const year = Number(req.params.year)
+  const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
+  if (!closed) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
+  closed.sentAt = req.body?.sentAt ?? null
+  save()
+  res.json({ ok: true })
+})
+
+// Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
+app.delete('/api/settlement/:year/close', (req, res) => {
+  const year = Number(req.params.year)
+  const db = getDb()
+  const before = (db.closedSettlements ?? []).length
+  db.closedSettlements = (db.closedSettlements ?? []).filter((c) => c.year !== year)
+  if (db.closedSettlements.length === before) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
+  save()
+  res.json({ ok: true })
 })
 
 app.get('/api/consumption/:year', (req, res) => {
@@ -95,6 +140,71 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
   } catch (err) {
     res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
   }
+})
+
+// Belegarchiv: alle hochgeladenen Dateien mit Größe und Datum
+app.get('/api/uploads', (req, res) => {
+  const files = fs.readdirSync(UPLOAD_DIR).map((name) => {
+    const st = fs.statSync(path.join(UPLOAD_DIR, name))
+    return { file: name, size: st.size, mtime: st.mtime.toISOString() }
+  })
+  res.json(files)
+})
+
+// Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist
+app.delete('/api/uploads/:file', (req, res) => {
+  const name = path.basename(req.params.file) // verhindert Pfad-Ausbrüche
+  const full = path.join(UPLOAD_DIR, name)
+  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  if (getDb().costItems.some((c) => c.invoiceFile === name)) {
+    return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
+  }
+  fs.unlinkSync(full)
+  res.json({ ok: true })
+})
+
+// ---------- Backup & Wiederherstellen ----------
+app.get('/api/backup', (req, res) => {
+  save() // sicherstellen, dass der letzte Stand auf der Platte liegt
+  const zip = new AdmZip()
+  zip.addLocalFile(path.join(DATA_DIR, 'db.json'))
+  for (const name of fs.readdirSync(UPLOAD_DIR)) {
+    zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
+  }
+  const stamp = new Date().toISOString().slice(0, 10)
+  res.set('Content-Type', 'application/zip')
+  res.set('Content-Disposition', `attachment; filename="nebenkosten-backup-${stamp}.zip"`)
+  res.send(zip.toBuffer())
+})
+
+const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } })
+app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+  let zip
+  try {
+    zip = new AdmZip(req.file.buffer)
+  } catch {
+    return res.status(400).json({ error: 'Datei ist kein gültiges ZIP-Archiv.' })
+  }
+  const dbEntry = zip.getEntry('db.json')
+  if (!dbEntry) return res.status(400).json({ error: 'Im Archiv fehlt die db.json — ist das wirklich ein Backup dieses Tools?' })
+  try {
+    JSON.parse(zip.readAsText(dbEntry))
+  } catch {
+    return res.status(400).json({ error: 'Die db.json im Archiv ist beschädigt (kein gültiges JSON).' })
+  }
+  // Sicherheitskopie des aktuellen Stands, dann ersetzen
+  fs.copyFileSync(path.join(DATA_DIR, 'db.json'), path.join(DATA_DIR, 'db.json.vor-restore'))
+  fs.writeFileSync(path.join(DATA_DIR, 'db.json'), zip.readAsText(dbEntry), 'utf8')
+  for (const entry of zip.getEntries()) {
+    // Nur Dateien unterhalb von uploads/ übernehmen, Pfad-Ausbrüche abwehren
+    if (entry.isDirectory || !entry.entryName.startsWith('uploads/')) continue
+    const name = path.basename(entry.entryName)
+    if (!name) continue
+    fs.writeFileSync(path.join(UPLOAD_DIR, name), entry.getData())
+  }
+  reloadDb()
+  res.json({ ok: true })
 })
 
 app.get('/api/ollama/status', async (req, res) => {

@@ -118,6 +118,14 @@ export type Settlement = {
   landlord: { rows: SettlementRow[]; totalCents: number }
   totalCostsCents: number
   warnings: string[]
+  // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
+  closed: { closedAt: string; sentAt: string | null } | null
+}
+
+export type UploadInfo = {
+  file: string
+  size: number
+  mtime: string
 }
 
 export type Extraction = {

@@ -1,9 +1,24 @@
 // KI-Belegauswertung über eine lokale Ollama-Instanz.
-// PDFs werden als Text extrahiert und an das Sprachmodell gegeben,
-// Bilder (Handyfotos) als Base64 — letzteres erfordert ein Vision-fähiges Modell.
+// PDFs werden als Text extrahiert und an das Sprachmodell gegeben; gescannte PDFs
+// ohne Textebene werden seitenweise als Bild gerendert. Bilder (Handyfotos) gehen
+// als Base64 — beides erfordert ein Vision-fähiges Modell.
 
 import fs from 'node:fs'
 import pdfParse from 'pdf-parse/lib/pdf-parse.js'
+
+// Gescanntes PDF (keine Textebene): Seiten als PNG rendern, damit das Vision-Modell
+// sie wie ein Foto auswerten kann. Begrenzt auf die ersten Seiten — Rechnungen stehen
+// praktisch immer vorn, und jedes Bild kostet Auswertungszeit.
+async function pdfPagesAsImages(filePath, maxPages = 4) {
+  const { pdf } = await import('pdf-to-img')
+  const doc = await pdf(filePath, { scale: 2 })
+  const images = []
+  for await (const page of doc) {
+    images.push(page.toString('base64'))
+    if (images.length >= maxPages) break
+  }
+  return images
+}
 
 const SCHEMA = {
   type: 'object',
@@ -127,10 +142,22 @@ export async function extractFromFile(filePath, mimetype, settings) {
   const message = { role: 'user', content: PROMPT }
 
   if (mimetype === 'application/pdf') {
-    const parsed = await pdfParse(fs.readFileSync(filePath))
+    const parsed = await pdfParse(fs.readFileSync(filePath)).catch(() => ({ text: '' }))
     const text = (parsed.text || '').trim()
-    if (!text) throw new Error('PDF enthält keinen auslesbaren Text (vermutlich ein Scan). Bitte als Foto/Bild hochladen oder manuell erfassen.')
-    message.content += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, 20000)}`
+    if (text.length >= 80) {
+      message.content += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, 20000)}`
+    } else {
+      // Scan ohne (brauchbare) Textebene → Seiten rendern und ans Vision-Modell geben
+      let images
+      try {
+        images = await pdfPagesAsImages(filePath)
+      } catch (err) {
+        throw new Error(`PDF enthält keinen auslesbaren Text und konnte nicht als Bild gerendert werden (${String(err.message || err)}).`)
+      }
+      if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
+      message.images = images
+      message.content += '\n\nDie Rechnung ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).'
+    }
   } else if (mimetype.startsWith('image/')) {
     message.images = [fs.readFileSync(filePath).toString('base64')]
     message.content += '\n\nDie Rechnung ist als Bild angehängt.'

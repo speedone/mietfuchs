@@ -23,6 +23,8 @@ const DEFAULT_DB = {
   costItems: [],
   meters: [],
   readings: [],
+  // Abgeschlossene Abrechnungen: eingefrorener Berechnungsstand je Jahr
+  closedSettlements: [],
 }
 
 let db = null
@@ -67,4 +69,10 @@ export function save() {
 
 export function newId() {
   return crypto.randomBytes(8).toString('hex')
+}
+
+// Nach dem Wiederherstellen eines Backups die db.json neu von der Platte lesen
+export function reloadDb() {
+  db = null
+  return load()
 }

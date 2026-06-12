@@ -69,6 +69,23 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
     return () => { alive = false }
   }, [printAttachments, invoiceFiles, attachmentPages])
 
+  // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
+  async function closeSettlement() {
+    if (!confirm(`Abrechnung ${year} abschließen?\n\nDer aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.`)) return
+    await api(`/api/settlement/${year}/close`, { method: 'POST', body: JSON.stringify({}) })
+    await load()
+  }
+  async function reopenSettlement() {
+    if (!confirm(`Abrechnung ${year} wieder öffnen?\n\nDer eingefrorene Stand wird verworfen, es gilt wieder die laufende Berechnung. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.`)) return
+    await api(`/api/settlement/${year}/close`, { method: 'DELETE' })
+    await load()
+  }
+  async function saveSentAt(sentAt: string) {
+    await api(`/api/settlement/${year}/close`, { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })
+    await load()
+  }
+  const isClosed = !!data?.closed
+
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
     const ten = tenancies.find((t) => t.id === tenancyId)
@@ -151,14 +168,56 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
         </div>
       </div>
 
-      {data && data.totalCostsCents > 0 && (
-        <div className={daysLeft < 0 ? 'error no-print' : daysLeft < 90 ? 'notice no-print' : 'ok no-print'}>
-          {daysLeft >= 0 ? (
-            <>Abrechnungsfrist (§556 BGB): Die Abrechnung {year} muss dem Mieter bis zum <strong>31.12.{year + 1}</strong> zugehen — noch {daysLeft} Tage.</>
-          ) : (
-            <>Die Abrechnungsfrist für {year} ist am 31.12.{year + 1} abgelaufen — Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).</>
-          )}
+      {data && (
+        <div className="card no-print">
+          <div className="row" style={{ alignItems: 'center' }}>
+            {isClosed ? (
+              <>
+                <div className="grow">
+                  <span className="badge green">abgeschlossen</span>{' '}
+                  <span className="muted">
+                    am {fmtDate(data.closed!.closedAt.slice(0, 10))} eingefroren — Änderungen an Kosten/Stammdaten wirken sich nicht mehr aus.
+                  </span>
+                </div>
+                <label className="field" title="Datum, an dem die Abrechnung an die Mieter ging — maßgeblich für die §556-Frist">
+                  versendet am
+                  <input
+                    type="date"
+                    value={data.closed!.sentAt ?? ''}
+                    onChange={(e) => void saveSentAt(e.target.value)}
+                  />
+                </label>
+                <button className="btn ghost" onClick={() => void reopenSettlement()}>Wieder öffnen</button>
+              </>
+            ) : (
+              <>
+                <div className="grow">
+                  <span className="badge gray">Entwurf</span>{' '}
+                  <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
+                </div>
+                <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
+                  🔒 Abrechnung {year} abschließen
+                </button>
+              </>
+            )}
+          </div>
         </div>
+      )}
+
+      {data && data.totalCostsCents > 0 && (
+        data.closed?.sentAt ? (
+          <div className="ok no-print">
+            Abrechnung {year} am <strong>{fmtDate(data.closed.sentAt)}</strong> versendet — die Frist nach §556 BGB (31.12.{year + 1}) ist {data.closed.sentAt <= `${year + 1}-12-31` ? 'gewahrt' : 'überschritten'}.
+          </div>
+        ) : (
+          <div className={daysLeft < 0 ? 'error no-print' : daysLeft < 90 ? 'notice no-print' : 'ok no-print'}>
+            {daysLeft >= 0 ? (
+              <>Abrechnungsfrist (§556 BGB): Die Abrechnung {year} muss dem Mieter bis zum <strong>31.12.{year + 1}</strong> zugehen — noch {daysLeft} Tage.</>
+            ) : (
+              <>Die Abrechnungsfrist für {year} ist am 31.12.{year + 1} abgelaufen — Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).</>
+            )}
+          </div>
+        )
       )}
       {data?.warnings.map((w, i) => (
         <div key={i} className="notice no-print">{w}</div>
@@ -274,7 +333,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                       <td colSpan={3} style={{ fontWeight: 400 }}>
                         abzüglich geleisteter Vorauszahlungen
                         {st.prepaymentOverridden && <span className="muted"> (manuell angepasst)</span>}
-                        <span className="no-print">
+                        {!isClosed && <span className="no-print">
                           {' '}
                           {ppEdit?.tenancyId === st.tenancyId ? (
                             <>
@@ -301,7 +360,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                               )}
                             </>
                           )}
-                        </span>
+                        </span>}
                       </td>
                       <td className="num" style={{ fontWeight: 400 }}>− {fmtEuro(st.prepaymentCents)}</td>
                     </tr>
