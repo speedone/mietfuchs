@@ -48,17 +48,26 @@ export default function Kosten({ units, settings }: Props) {
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
-  // Nach Kostenart gruppiert (in CATEGORIES-Reihenfolge) — mit Zwischensumme pro Kostenart,
-  // sobald mehrere Positionen vorhanden sind (z. B. Abgleich mit dem Müll-Bescheid).
+  // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
+  // Zwischensumme = Belegsumme. So lassen sich die einzelnen Beträge und die Summe direkt
+  // mit der Rechnung abgleichen (z. B. Wasser, Abwasser, Kanal- und Niederschlagsbeitrag
+  // eines Versorgers). Manuell erfasste Positionen ohne Beleg stehen einzeln am Ende.
+  type CostGroup = { key: string; label: string; invoiceFile?: string; items: CostItem[] }
   const grouped = useMemo(() => {
-    const order = (c: string) => { const i = CATEGORIES.indexOf(c); return i === -1 ? CATEGORIES.length : i }
-    const groups: { category: string; items: CostItem[] }[] = []
-    for (const it of [...yearItems].sort((a, b) => order(a.category) - order(b.category))) {
-      const g = groups.find((x) => x.category === it.category)
-      if (g) g.items.push(it)
-      else groups.push({ category: it.category, items: [it] })
+    const withBeleg: CostGroup[] = []
+    const withoutBeleg: CostGroup[] = []
+    for (const it of yearItems) {
+      if (it.invoiceFile) {
+        const g = withBeleg.find((x) => x.invoiceFile === it.invoiceFile)
+        if (g) { g.items.push(it); if (!g.label && it.vendor) g.label = it.vendor }
+        else withBeleg.push({ key: `f:${it.invoiceFile}`, label: it.vendor || '', invoiceFile: it.invoiceFile, items: [it] })
+      } else {
+        withoutBeleg.push({ key: `i:${it.id}`, label: it.vendor || it.category, items: [it] })
+      }
     }
-    return groups
+    // Fallback-Beschriftung, falls kein Rechnungssteller hinterlegt ist
+    for (const g of withBeleg) if (!g.label) g.label = g.items.map((i) => i.category).find(Boolean) || 'Beleg'
+    return [...withBeleg, ...withoutBeleg]
   }, [yearItems])
 
   async function saveItem() {
@@ -274,7 +283,15 @@ export default function Kosten({ units, settings }: Props) {
             </thead>
             <tbody>
               {grouped.map((g) => (
-              <Fragment key={g.category}>
+              <Fragment key={g.key}>
+              {g.invoiceFile && (
+                <tr className="group-head">
+                  <td colSpan={5}>
+                    {g.label}
+                    <a href={`/uploads/${g.invoiceFile}`} target="_blank" rel="noreferrer">📎 Beleg</a>
+                  </td>
+                </tr>
+              )}
               {g.items.map((i) => (
                 <tr key={i.id}>
                   <td>
@@ -283,10 +300,7 @@ export default function Kosten({ units, settings }: Props) {
                   </td>
                   <td>
                     {i.description}
-                    {i.vendor && <div className="muted">{i.vendor}</div>}
-                    {i.invoiceFile && (
-                      <div><a href={`/uploads/${i.invoiceFile}`} target="_blank" rel="noreferrer" className="muted">📎 Beleg</a></div>
-                    )}
+                    {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                   </td>
                   <td>
                     {KEY_LABELS[i.key]}
@@ -321,9 +335,9 @@ export default function Kosten({ units, settings }: Props) {
                   </td>
                 </tr>
               ))}
-              {g.items.length > 1 && (
+              {g.invoiceFile && g.items.length > 1 && (
                 <tr className="subtotal">
-                  <td colSpan={3}>Summe {g.category}</td>
+                  <td colSpan={3}>Summe Beleg — {g.label}</td>
                   <td className="num">{fmtEuro(g.items.reduce((a, i) => a + i.amountCents, 0))}</td>
                   <td className="no-print" />
                 </tr>
