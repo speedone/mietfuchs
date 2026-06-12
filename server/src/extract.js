@@ -60,6 +60,68 @@ Wichtige Regeln:
   Schornsteinfeger als "Anteil nach §35a EStG"), gib sie als labor35aEur an, sonst null.
 - Datumsangaben als YYYY-MM-DD.`
 
+// Zweiter, fokussierter Durchgang nur für die Kategorisierung: ein kleiner Prompt mit
+// Definitionen je Kostenart ist deutlich treffsicherer als die Zuordnung „nebenbei" während
+// der Extraktion (dort muss das Modell gleichzeitig Positionen, Beträge und §35a erkennen).
+const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesitzabgabenbescheid)
+- "Wasser/Abwasser": Frisch-/Trinkwasser, Schmutzwasser, Abwasser, Kanalgebühren, Grund-/Zählergebühr Wasser
+- "Niederschlagswasser": Regenwasser, Oberflächenwasser, versiegelte Fläche
+- "Müllabfuhr": Restmüll, Biotonne, Papiertonne, Abfallgebühren, Sperrmüll, Containerleerung
+- "Straßenreinigung": Straßenreinigung, Winterdienst, kommunale Kehrgebühren
+- "Gebäudereinigung": Treppenhaus-/Hausreinigung
+- "Gartenpflege": Gartenarbeiten, Heckenschnitt, Baumpflege, Rasenmähen, Außenanlagen
+- "Beleuchtung/Allgemeinstrom": Allgemeinstrom, Haus-/Außenbeleuchtung
+- "Schornsteinfeger": Kehrgebühren, Feuerstättenschau, Immissionsmessung
+- "Sach- und Haftpflichtversicherung": Wohngebäude-/Gebäudeversicherung, Elementar, Haus- und Grundbesitzerhaftpflicht
+- "Hauswart": Hausmeister
+- "Aufzug": Aufzugswartung, TÜV Aufzug
+- "Kabel/Antenne": Kabelanschluss, Breitband
+- "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
+- "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
+
+async function classifyPositions(base, model, vendor, positions) {
+  const schema = {
+    type: 'object',
+    properties: {
+      categories: {
+        type: 'array',
+        items: { type: 'string', enum: CATEGORY_ENUM },
+        minItems: positions.length,
+        maxItems: positions.length,
+      },
+    },
+    required: ['categories'],
+  }
+  const prompt = `Du bist Experte für deutsche Betriebskostenabrechnungen (§2 BetrKV).
+Ordne jede der folgenden Rechnungspositionen GENAU EINER Betriebskostenart zu.
+
+Kostenarten und was dazugehört:
+${CATEGORY_GUIDE}
+
+Rechnungssteller: ${vendor || 'unbekannt'}
+Positionen:
+${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
+
+Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      stream: false,
+      format: schema,
+      options: { temperature: 0 },
+    }),
+    signal: AbortSignal.timeout(120000),
+  })
+  if (!res.ok) throw new Error(`Ollama ${res.status}`)
+  const data = await res.json()
+  const { categories } = JSON.parse(data.message?.content ?? '{}')
+  if (!Array.isArray(categories) || categories.length !== positions.length) return positions
+  return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
+}
+
 export async function extractFromFile(filePath, mimetype, settings) {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const message = { role: 'user', content: PROMPT }
@@ -93,7 +155,18 @@ export async function extractFromFile(filePath, mimetype, settings) {
     throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
   }
   const data = await res.json()
-  return JSON.parse(data.message?.content ?? '{}')
+  const result = JSON.parse(data.message?.content ?? '{}')
+
+  // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
+  // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
+  if (Array.isArray(result.positions) && result.positions.length > 0) {
+    try {
+      result.positions = await classifyPositions(base, settings.ollamaModel, result.vendor, result.positions)
+    } catch {
+      // bewusst ignoriert
+    }
+  }
+  return result
 }
 
 export async function listOllamaModels(settings) {

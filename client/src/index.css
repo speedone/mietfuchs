@@ -137,6 +137,20 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: 14px; }
 
+/* ---------- Beleg-Upload (Mehrfach-Dropzone) ---------- */
+.dropzone {
+  border: 2px dashed #cdd3e0;
+  border-radius: var(--radius);
+  padding: 26px 18px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone strong { color: var(--text); }
+.dropzone:hover { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+
 /* Nur für Screenreader sichtbar (z. B. Kopfzellen reiner Aktionsspalten) */
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
