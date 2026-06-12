@@ -1,0 +1,16 @@
+{
+  "name": "nebenkostenabrechnung",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
+  "scripts": {
+    "postinstall": "npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n server,client -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "test": "npm --prefix server test",
+    "build": "npm --prefix client run build",
+    "start": "npm --prefix server start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
