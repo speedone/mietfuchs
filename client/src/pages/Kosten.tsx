@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, parseEuro } from '../api'
@@ -20,6 +20,18 @@ type ItemForm = {
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
+// Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
+// (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
+type QueueEntry = {
+  id: number
+  fileName: string
+  status: 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'übernommen'
+  error?: string
+  vendor?: string
+  serverFile?: string
+  positions: ExtractPos[]
+}
+
 const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', amount: '', labor35a: '', key: 'area', directUnitId: '', meterType: 'kaltwasser' }
 
 export default function Kosten({ units, settings }: Props) {
@@ -29,12 +41,12 @@ export default function Kosten({ units, settings }: Props) {
   const [form, setForm] = useState<ItemForm | null>(null)
   const [error, setError] = useState('')
 
-  // KI-Auswertung
-  const [file, setFile] = useState<File | null>(null)
-  const [extracting, setExtracting] = useState(false)
-  const [extractError, setExtractError] = useState('')
-  const [extractMeta, setExtractMeta] = useState<{ vendor: string; file: string } | null>(null)
-  const [positions, setPositions] = useState<ExtractPos[]>([])
+  // KI-Auswertung: Warteschlange für einen oder mehrere Belege
+  const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [dragOver, setDragOver] = useState(false)
+  const filesRef = useRef(new Map<number, File>())
+  const nextIdRef = useRef(1)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const load = () => api<CostItem[]>('/api/costItems').then(setItems)
   useEffect(() => {
@@ -44,6 +56,20 @@ export default function Kosten({ units, settings }: Props) {
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
+
+  // Bereits hochgeladene Belege (für die nachträgliche Zuordnung zu einer Position)
+  const knownFiles = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const it of items) if (it.invoiceFile && !m.has(it.invoiceFile)) m.set(it.invoiceFile, it.vendor || it.category)
+    return [...m.entries()]
+  }, [items])
+
+  async function uploadBeleg(f: File) {
+    const fd = new FormData()
+    fd.append('file', f)
+    const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
+    setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
+  }
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
@@ -97,7 +123,7 @@ export default function Kosten({ units, settings }: Props) {
       key: form.key,
       directUnitId: form.key === 'direct' ? form.directUnitId : undefined,
       meterType: form.key === 'meter' ? form.meterType : undefined,
-      invoiceFile: form.invoiceFile,
+      invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
     })
     if (form.id) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
     else await api('/api/costItems', { method: 'POST', body })
@@ -111,20 +137,34 @@ export default function Kosten({ units, settings }: Props) {
     await load()
   }
 
-  async function runExtraction() {
-    if (!file) return
-    setExtracting(true)
-    setExtractError('')
-    setPositions([])
-    setExtractMeta(null)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await api<{ file: string; extraction: Extraction }>('/api/extract', { method: 'POST', body: fd })
-      const ex = res.extraction
-      setExtractMeta({ vendor: ex.vendor || file.name, file: res.file })
-      setPositions(
-        (ex.positions || []).map((p) => {
+  function addFiles(files: Iterable<File>) {
+    const entries: QueueEntry[] = []
+    for (const f of files) {
+      if (!/^(application\/pdf|image\/)/.test(f.type)) continue
+      const id = nextIdRef.current++
+      filesRef.current.set(id, f)
+      entries.push({ id, fileName: f.name, status: 'wartend', positions: [] })
+    }
+    if (entries.length) setQueue((q) => [...q, ...entries])
+  }
+
+  function patchEntry(id: number, patch: Partial<QueueEntry>) {
+    setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+  }
+
+  // Sequenzielle Abarbeitung: sobald nichts läuft, den nächsten wartenden Beleg starten
+  useEffect(() => {
+    if (queue.some((x) => x.status === 'läuft')) return
+    const next = queue.find((x) => x.status === 'wartend')
+    if (!next) return
+    patchEntry(next.id, { status: 'läuft' })
+    void (async () => {
+      try {
+        const fd = new FormData()
+        fd.append('file', filesRef.current.get(next.id)!)
+        const res = await api<{ file: string; extraction: Extraction }>('/api/extract', { method: 'POST', body: fd })
+        const ex = res.extraction
+        const positions = (ex.positions || []).map((p) => {
           // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
           // über die Beschreibung (z. B. wenn das Modell eine eigene Kategorie erfindet)
           let category = matchCategory(p.category || '')
@@ -140,17 +180,18 @@ export default function Kosten({ units, settings }: Props) {
             key: defaultKeyFor(category),
             checked: category !== 'Nicht umlagefähig',
           }
-        }),
-      )
-    } catch (e) {
-      setExtractError(String((e as Error).message))
-    } finally {
-      setExtracting(false)
-    }
-  }
+        })
+        patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions })
+      } catch (e) {
+        patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
+      } finally {
+        filesRef.current.delete(next.id)
+      }
+    })()
+  }, [queue])
 
-  async function adoptPositions() {
-    const chosen = positions.filter((p) => p.checked)
+  async function adoptPositions(entry: QueueEntry) {
+    const chosen = entry.positions.filter((p) => p.checked)
     for (const p of chosen) {
       const amount = parseEuro(p.amount)
       if (amount === null) continue
@@ -161,22 +202,22 @@ export default function Kosten({ units, settings }: Props) {
           year,
           category: p.category,
           description: p.description,
-          vendor: extractMeta?.vendor,
+          vendor: entry.vendor,
           amountCents: amount,
           labor35aCents: labor35a || undefined,
           key: p.key,
-          invoiceFile: extractMeta?.file,
+          invoiceFile: entry.serverFile,
         }),
       })
     }
-    setPositions([])
-    setExtractMeta(null)
-    setFile(null)
+    patchEntry(entry.id, { status: 'übernommen' })
     await load()
   }
 
-  function updatePos(idx: number, patch: Partial<ExtractPos>) {
-    setPositions(positions.map((p, i) => (i === idx ? { ...p, ...patch } : p)))
+  function updatePos(entryId: number, idx: number, patch: Partial<ExtractPos>) {
+    setQueue((q) =>
+      q.map((x) => (x.id === entryId ? { ...x, positions: x.positions.map((p, i) => (i === idx ? { ...p, ...patch } : p)) } : x)),
+    )
   }
 
   return (
@@ -209,62 +250,87 @@ export default function Kosten({ units, settings }: Props) {
           PDF oder Foto der Rechnung hochladen — das lokale Modell ({settings?.ollamaModel || 'Ollama'})
           schlägt Kostenpositionen vor, du prüfst und übernimmst sie. Es verlässt nichts deinen Rechner.
         </p>
-        <div className="row">
-          <input type="file" accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          <button className="btn" onClick={runExtraction} disabled={!file || extracting}>
-            {extracting && <span className="spinner" />}
-            {extracting ? 'Modell arbeitet … (kann 1–2 Min. dauern)' : 'Auswerten'}
-          </button>
+        <div
+          className={`dropzone ${dragOver ? 'over' : ''}`}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+        >
+          <strong>Belege hierher ziehen</strong> oder klicken zum Auswählen — auch mehrere auf einmal.
+          <div className="muted">Sie werden nacheinander verarbeitet (PDF oder Foto).</div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+          />
         </div>
-        {extractError && <div className="error">{extractError}</div>}
-        {positions.length > 0 && (
-          <>
-            <div className="ok">
-              Rechnung von <strong>{extractMeta?.vendor}</strong> erkannt — {positions.length} Position(en).
-              Bitte prüfen, anpassen und übernehmen.
+
+        {queue.map((entry) => (
+          <div key={entry.id} style={{ marginTop: 14 }}>
+            <div className="row" style={{ alignItems: 'center' }}>
+              <strong>{entry.fileName}</strong>
+              {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
+              {entry.status === 'läuft' && <span className="badge gray"><span className="spinner" />Modell arbeitet … (kann 1–2 Min. dauern)</span>}
+              {entry.status === 'fertig' && <span className="badge green">{entry.positions.length} Position(en) erkannt — bitte prüfen</span>}
+              {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
+              {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+              <div className="grow" />
+              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'übernommen') && (
+                <button className="btn small ghost" onClick={() => { filesRef.current.delete(entry.id); setQueue((q) => q.filter((x) => x.id !== entry.id)) }}>
+                  {entry.status === 'fertig' ? 'Verwerfen' : 'Entfernen'}
+                </button>
+              )}
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th><span className="sr-only">Übernehmen</span></th>
-                  <th>Beschreibung</th>
-                  <th>Kostenart</th>
-                  <th>Umlageschlüssel</th>
-                  <th className="num">Betrag €</th>
-                  <th className="num">§35a Lohn €</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((p, i) => (
-                  <tr key={i}>
-                    <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(i, { checked: e.target.checked })} /></td>
-                    <td><input value={p.description} onChange={(e) => updatePos(i, { description: e.target.value })} style={{ width: '100%' }} /></td>
-                    <td>
-                      <select value={p.category} onChange={(e) => updatePos(i, { category: e.target.value, key: defaultKeyFor(e.target.value) })}>
-                        {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <select value={p.key} onChange={(e) => updatePos(i, { key: e.target.value as CostKey })}>
-                        {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
-                          <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="num"><input value={p.amount} onChange={(e) => updatePos(i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
-                    <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="row" style={{ marginTop: 12 }}>
-              <button className="btn" onClick={adoptPositions} disabled={positions.every((p) => !p.checked)}>
-                Ausgewählte Positionen für {year} übernehmen
-              </button>
-              <button className="btn ghost" onClick={() => { setPositions([]); setExtractMeta(null) }}>Verwerfen</button>
-            </div>
-          </>
-        )}
+            {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
+            {entry.status === 'fertig' && (
+              <>
+                <table style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr>
+                      <th><span className="sr-only">Übernehmen</span></th>
+                      <th>Beschreibung</th>
+                      <th>Kostenart</th>
+                      <th>Umlageschlüssel</th>
+                      <th className="num">Betrag €</th>
+                      <th className="num">§35a Lohn €</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {entry.positions.map((p, i) => (
+                      <tr key={i}>
+                        <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                        <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
+                        <td>
+                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, key: defaultKeyFor(e.target.value) })}>
+                            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
+                            {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
+                              <option key={k} value={k}>{KEY_LABELS[k]}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
+                        <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="row" style={{ marginTop: 10 }}>
+                  <button className="btn" onClick={() => void adoptPositions(entry)} disabled={entry.positions.every((p) => !p.checked)}>
+                    Ausgewählte Positionen für {year} übernehmen
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
       </div>
 
       <div className="card">
@@ -406,6 +472,37 @@ export default function Kosten({ units, settings }: Props) {
                 </select>
               </label>
             )}
+            <div style={{ width: '100%' }}>
+              <div className="field" style={{ marginBottom: 4 }}>Beleg (Rechnungskopie)</div>
+              {form.invoiceFile ? (
+                <div className="row" style={{ alignItems: 'center' }}>
+                  <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
+                    📎 {form.invoiceFile.replace(/^\d+_/, '')}
+                  </a>
+                  <button className="btn small ghost" onClick={() => setForm({ ...form, invoiceFile: undefined })}>
+                    Zuordnung entfernen
+                  </button>
+                </div>
+              ) : (
+                <div className="row">
+                  <label className="field">
+                    neu hochladen
+                    <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadBeleg(f) }} />
+                  </label>
+                  {knownFiles.length > 0 && (
+                    <label className="field">
+                      oder vorhandenen Beleg zuordnen
+                      <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
+                        <option value="">— wählen —</option>
+                        {knownFiles.map(([f, label]) => (
+                          <option key={f} value={f}>{label} — {f.replace(/^\d+_/, '')}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
             <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
             <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
           </div>
