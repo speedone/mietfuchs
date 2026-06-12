@@ -38,6 +38,8 @@ const SCHEMA = {
   required: ['vendor', 'positions', 'totalGrossEur'],
 }
 
+const CATEGORY_ENUM = SCHEMA.properties.positions.items.properties.category.enum
+
 const PROMPT = `Du bist ein Assistent für die Nebenkostenabrechnung eines privaten Vermieters in Deutschland.
 Analysiere die folgende Rechnung und extrahiere die Daten als JSON.
 
@@ -45,7 +47,13 @@ Wichtige Regeln:
 - Teile die Rechnung in sinnvolle Kostenpositionen auf. Beispiel Wasserrechnung: Grundgebühr,
   Frischwasser, Schmutzwasser und ggf. Niederschlagswasser als getrennte Positionen.
   Beispiel Grundbesitzabgaben: Grundsteuer, Müll und Straßenreinigung getrennt ausweisen.
-- Ordne jeder Position die passende Betriebskostenart (BetrKV) zu.
+- Ordne jeder Position als "category" GENAU EINE der folgenden Betriebskostenarten zu
+  (exakt diese Schreibweise verwenden, keine eigenen Kategorien erfinden):
+  ${CATEGORY_ENUM.map((c) => `"${c}"`).join(', ')}.
+  Beispiele: Abfall-/Müllgebühren aller Art → "Müllabfuhr"; Frisch-, Schmutz- und Abwasser
+  sowie Kanalgebühren → "Wasser/Abwasser"; Regen-/Oberflächenwasser → "Niederschlagswasser";
+  Gebäude-, Wohngebäude- oder Haftpflichtversicherung → "Sach- und Haftpflichtversicherung".
+  Nur wenn wirklich nichts passt → "Sonstige Betriebskosten".
 - Kosten für Instandhaltung, Reparaturen oder Verwaltung sind "Nicht umlagefähig".
 - Beträge brutto in Euro mit Dezimalpunkt.
 - Weist die Rechnung Arbeits-/Lohnkosten gesondert aus (häufig bei Handwerkern, Gartenpflege,

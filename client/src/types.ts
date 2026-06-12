@@ -79,6 +79,8 @@ export type Settings = {
   paymentDeadlineDays: number
   ollamaUrl: string
   ollamaModel: string
+  printAdjustSuggestion?: boolean // §560-Vorschlag zur Vorauszahlungsanpassung andrucken (Standard: ja)
+  printAttachments?: boolean // Belegkopien als Anlage mit andrucken (Standard: nein)
 }
 
 export type SettlementRow = {
@@ -151,6 +153,28 @@ export const KEY_LABELS: Record<CostKey, string> = {
   units: 'nach Wohneinheiten',
   direct: 'Direktzuordnung',
   meter: 'nach Verbrauch (Zähler)',
+}
+
+// Ordnet eine frei formulierte Kategorie (z. B. aus der KI-Auswertung) der
+// nächstliegenden Betriebskostenart zu, statt hart auf „Sonstige" zu fallen.
+export function matchCategory(raw: string): string {
+  if (CATEGORIES.includes(raw)) return raw
+  const s = raw.toLowerCase()
+  if (/müll|abfall|restabfall|biotonne|wertstoff/.test(s)) return 'Müllabfuhr'
+  if (/niederschlag|regenwasser|oberflächenwasser/.test(s)) return 'Niederschlagswasser'
+  if (/wasser|abwasser|kanal/.test(s)) return 'Wasser/Abwasser'
+  if (/grundsteuer|grundbesitz/.test(s)) return 'Grundsteuer'
+  if (/versicherung|haftpflicht/.test(s)) return 'Sach- und Haftpflichtversicherung'
+  if (/straßenreinigung|strassenreinigung|winterdienst/.test(s)) return 'Straßenreinigung'
+  if (/schornstein|kamin|feuerstätte/.test(s)) return 'Schornsteinfeger'
+  if (/garten|außenanlage|grünpflege/.test(s)) return 'Gartenpflege'
+  if (/strom|beleuchtung/.test(s)) return 'Beleuchtung/Allgemeinstrom'
+  if (/gebäudereinigung|hausreinigung|treppenhausreinigung/.test(s)) return 'Gebäudereinigung'
+  if (/hauswart|hausmeister/.test(s)) return 'Hauswart'
+  if (/aufzug|lift/.test(s)) return 'Aufzug'
+  if (/kabel|antenne|breitband/.test(s)) return 'Kabel/Antenne'
+  if (/instandhalt|reparatur|verwaltung|nicht umlage/.test(s)) return 'Nicht umlagefähig'
+  return 'Sonstige Betriebskosten'
 }
 
 // Sinnvolle Vorbelegung des Umlageschlüssels je Kostenart
