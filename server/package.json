@@ -1,0 +1,16 @@
+{
+  "name": "nka-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "multer": "^2.0.0",
+    "pdf-parse": "^1.1.1"
+  }
+}
