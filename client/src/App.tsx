@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
+import { UIProvider } from './components/feedback'
+import FoxLogo from './components/Logo'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
 import Schnellerfassung from './pages/Schnellerfassung'
@@ -102,8 +104,11 @@ function Shell() {
     <>
       <nav className="sidebar">
         <div className="logo">
-          Nebenkosten
-          <small>{settings?.houseName || 'Abrechnungs-Tool'}</small>
+          <FoxLogo size={30} />
+          <div className="logo-text">
+            Mietfuchs
+            <small>{settings?.houseName || 'Nebenkosten im Griff'}</small>
+          </div>
         </div>
 
         <label className="year-switcher no-print">
@@ -157,7 +162,9 @@ function Shell() {
 export default function App() {
   return (
     <YearProvider>
-      <Shell />
+      <UIProvider>
+        <Shell />
+      </UIProvider>
     </YearProvider>
   )
 }

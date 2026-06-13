@@ -20,6 +20,10 @@
   --notice-border: #fde68a;
   --error-border: #fecaca;
   --ok-border: #bbf7d0;
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16, 24, 40, 0.05);
+  --shadow-pop: 0 12px 32px rgba(16, 24, 40, 0.16), 0 4px 12px rgba(16, 24, 40, 0.1);
+  --overlay: rgba(17, 20, 29, 0.38);
 }
 
 /* ---------- Dark Mode (Umschalter in der Sidebar, Standard folgt dem System) ---------- */
@@ -45,6 +49,10 @@
   --notice-border: #57461a;
   --error-border: #5c2326;
   --ok-border: #1d4a2d;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 14px 38px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --overlay: rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -72,13 +80,18 @@ body {
   gap: 4px;
 }
 .sidebar .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   color: #fff;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 18px;
   padding: 0 12px 18px;
   letter-spacing: 0.2px;
 }
-.sidebar .logo small { display: block; font-weight: 400; color: #7d86a5; font-size: 12px; }
+.sidebar .logo svg { flex-shrink: 0; }
+.sidebar .logo .logo-text { display: flex; flex-direction: column; line-height: 1.15; }
+.sidebar .logo small { font-weight: 400; color: #7d86a5; font-size: 12px; letter-spacing: 0; }
 .sidebar button {
   all: unset;
   cursor: pointer;
@@ -120,6 +133,7 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppe
   border-radius: var(--radius);
   padding: 20px 22px;
   margin-bottom: 20px;
+  box-shadow: var(--shadow-1);
 }
 
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
@@ -127,7 +141,7 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppe
 
 /* ---------- Formulare ---------- */
 label.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
-input, select {
+input, select, textarea {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid var(--input-border);
@@ -135,8 +149,14 @@ input, select {
   background: var(--input-bg);
   color: var(--text);
   min-width: 0;
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
-input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent); }
 
 button.btn {
@@ -155,6 +175,8 @@ button.btn.secondary { background: var(--accent-soft); color: var(--accent); }
 button.btn.ghost { background: transparent; color: var(--muted); padding: 9px 10px; }
 button.btn.ghost:hover { color: var(--red); }
 button.btn.small { padding: 5px 10px; font-size: 13px; }
+button.btn.danger { background: var(--red); color: #fff; }
+button.btn.danger:hover { filter: brightness(1.08); }
 
 /* ---------- Tabellen ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -320,6 +342,180 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .tenant-card:hover { border-color: var(--accent); }
 .tenant-card.muted-card, .tenant-card.muted-card:hover { cursor: default; border-color: var(--line); }
 .tenant-bal { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- Seitenkopf (Titel + Primäraktion) ---------- */
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.page-head-text { min-width: 0; }
+.page-head-text h1 { margin-bottom: 4px; }
+.page-head-text .sub { margin: 0; }
+.page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+
+/* ---------- Editier-Drawer (von rechts) ---------- */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  animation: drawer-fade 0.16s ease;
+}
+.drawer {
+  background: var(--card);
+  max-width: 94vw;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-pop);
+  animation: drawer-slide 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.drawer-title { font-size: 17px; font-weight: 700; }
+.drawer-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.drawer-x {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+.drawer-x:hover { background: var(--bg); color: var(--text); }
+.drawer-body { flex: 1; overflow-y: auto; padding: 20px 22px; }
+/* Im schmalen Drawer stapeln sich Formularfelder zu einer Spalte. */
+.drawer-body .row > label.field,
+.drawer-body .row > .field { flex: 1 1 100%; }
+.drawer-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+.drawer-foot .spacer { flex: 1; }
+.drawer-hint { color: var(--muted); font-size: 12px; }
+
+/* Wiederholbarer Staffel-Block im Drawer (Personen / Kaltmiete / Vorauszahlung) */
+.field-group {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  width: 100%;
+}
+.field-group > .field-group-label {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+/* Eine Staffel-Zeile: „gültig ab" + Betrag + Entfernen, bleibt 2-spaltig auch im Drawer. */
+.staffel-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+.staffel-row > label.field { flex: none; }
+.staffel-row > .icon-btn { margin-bottom: 4px; }
+.field-group .field-add { margin-top: 2px; }
+
+/* ---------- Toasts ---------- */
+.toast-wrap {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 10px;
+  padding: 10px 16px 10px 13px;
+  font-size: 13.5px;
+  box-shadow: var(--shadow-2);
+  animation: toast-in 0.2s ease;
+  max-width: 360px;
+}
+.toast .toast-ic { font-size: 14px; }
+.toast.ok { border-left-color: var(--green); }
+.toast.ok .toast-ic { color: var(--green); }
+.toast.error { border-left-color: var(--red); }
+.toast.error .toast-ic { color: var(--red); }
+.toast.info { border-left-color: var(--accent); }
+.toast.info .toast-ic { color: var(--accent); }
+
+/* ---------- Bestätigungsdialog ---------- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: drawer-fade 0.14s ease;
+}
+.dialog {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 22px 24px;
+  width: 440px;
+  max-width: 100%;
+  box-shadow: var(--shadow-pop);
+  animation: dialog-pop 0.16s ease;
+}
+.dialog h2 { font-size: 17px; margin-bottom: 8px; }
+.dialog-msg { color: var(--muted); font-size: 14px; line-height: 1.55; white-space: pre-line; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+/* ---------- Tabellen: Hover & Aktionsspalte ---------- */
+tbody tr.clickable-row { cursor: pointer; }
+tbody tr.clickable-row:hover > td { background: var(--accent-soft); }
+td.actions { white-space: nowrap; text-align: right; }
+.icon-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.icon-btn.danger:hover { background: var(--red-soft); color: var(--red); }
+
+@keyframes drawer-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes drawer-slide { from { transform: translateX(24px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes dialog-pop { from { transform: scale(0.97); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop { animation: none; }
+}
 
 /* ---------- Druck ---------- */
 .print-only { display: none; }

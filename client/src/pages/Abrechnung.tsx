@@ -3,11 +3,15 @@ import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } fro
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { settings: Settings | null; units: Unit[]; tenancies: Tenancy[]; reload: () => Promise<void> }
 
 export default function Abrechnung({ settings, tenancies, reload }: Props) {
   const { year, setYear } = useYear()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [data, setData] = useState<Settlement | null>(null)
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
@@ -72,14 +76,27 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
 
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
-    if (!confirm(`Abrechnung ${year} abschließen?\n\nDer aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.`)) return
+    const ok = await confirm({
+      title: `Abrechnung ${year} abschließen?`,
+      message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
+      confirmLabel: 'Abschließen',
+    })
+    if (!ok) return
     await api(`/api/settlement/${year}/close`, { method: 'POST', body: JSON.stringify({}) })
     await load()
+    toast(`Abrechnung ${year} abgeschlossen.`)
   }
   async function reopenSettlement() {
-    if (!confirm(`Abrechnung ${year} wieder öffnen?\n\nDer eingefrorene Stand wird verworfen, es gilt wieder die laufende Berechnung. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.`)) return
+    const ok = await confirm({
+      title: `Abrechnung ${year} wieder öffnen?`,
+      message: 'Der eingefrorene Stand wird verworfen, es gilt wieder die laufende Berechnung. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
+      confirmLabel: 'Wieder öffnen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/settlement/${year}/close`, { method: 'DELETE' })
     await load()
+    toast(`Abrechnung ${year} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
     await api(`/api/settlement/${year}/close`, { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })
@@ -96,6 +113,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
     await api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })
     setPpEdit(null)
     await Promise.all([load(), reload()])
+    toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')
   }
 
   useEffect(() => {
@@ -130,8 +148,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
   return (
     <>
       <div className="no-print">
-        <h1>Abrechnung</h1>
-        <p className="sub">Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken".</p>
+        <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken".'} />
       </div>
       {error && <div className="error">{error}</div>}
 

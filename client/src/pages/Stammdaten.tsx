@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import type { DepositStatus, Meter, Settings, Tenancy, Unit } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import Drawer from '../components/Drawer'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 type Props = {
   units: Unit[]
@@ -37,8 +40,9 @@ const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', participates: true, rooms: 
 const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
 
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [house, setHouse] = useState({ houseName: '', address: '' })
-  const [houseSaved, setHouseSaved] = useState(false)
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
@@ -51,8 +55,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   async function saveHouse() {
     await api('/api/settings', { method: 'PUT', body: JSON.stringify(house) })
     await reload()
-    setHouseSaved(true)
-    setTimeout(() => setHouseSaved(false), 2500)
+    toast('Hausdaten gespeichert.')
   }
 
   async function saveUnit() {
@@ -77,16 +80,25 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       floor: unitForm.floor.trim() || null,
       notes: unitForm.notes.trim() || null,
     })
-    if (unitForm.id) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
+    const editing = !!unitForm.id
+    if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
     else await api('/api/units', { method: 'POST', body })
     setUnitForm(null)
     await reload()
+    toast(editing ? `„${unitForm.name.trim()}" übernommen.` : `Wohnung „${unitForm.name.trim()}" angelegt.`)
   }
 
   async function deleteUnit(u: Unit) {
-    if (!confirm(`Wohnung „${u.name}" und zugehörige Mietverhältnisse wirklich löschen?`)) return
+    const ok = await confirm({
+      title: `Wohnung „${u.name}" löschen?`,
+      message: 'Die Wohnung und alle zugehörigen Mietverhältnisse werden gelöscht. Das lässt sich nicht rückgängig machen.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/units/${u.id}`, { method: 'DELETE' })
     await reload()
+    toast(`Wohnung „${u.name}" gelöscht.`)
   }
 
   async function saveTenancy() {
@@ -165,25 +177,33 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
     })
-    if (tenForm.id) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
+    const editing = !!tenForm.id
+    if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
     else await api('/api/tenancies', { method: 'POST', body })
+    const name = tenForm.tenantName.trim()
     setTenForm(null)
     await reload()
+    toast(editing ? `„${name}" übernommen.` : `Mietverhältnis „${name}" angelegt.`)
   }
 
   async function deleteTenancy(t: Tenancy) {
-    if (!confirm(`Mietverhältnis „${t.tenantName}" wirklich löschen?`)) return
+    const ok = await confirm({
+      title: `Mietverhältnis „${t.tenantName}" löschen?`,
+      message: 'Das Mietverhältnis und zugehörige Zahlungen werden gelöscht.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
     await reload()
+    toast(`Mietverhältnis „${t.tenantName}" gelöscht.`)
   }
 
   const participating = units.filter((u) => u.participates)
 
   return (
     <>
-      <h1>Stammdaten</h1>
-      <p className="sub">Haus, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung.</p>
-      {error && <div className="error">{error}</div>}
+      <PageHeader title="Stammdaten" subtitle="Haus, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
 
       <div className="card">
         <h2>Haus</h2>
@@ -198,7 +218,6 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           </label>
           <button className="btn" onClick={saveHouse}>Speichern</button>
         </div>
-        {houseSaved && <div className="ok">Gespeichert.</div>}
       </div>
 
       <div className="card">
@@ -233,47 +252,16 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                       <span className="badge gray">Eigennutzung — nicht beteiligt</span>
                     )}
                   </td>
-                  <td className="num no-print">
-                    <button className="btn small secondary" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), participates: u.participates, rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>Bearbeiten</button>{' '}
-                    <button className="btn small ghost" onClick={() => deleteUnit(u)}>Löschen</button>
+                  <td className="actions no-print">
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), participates: u.participates, rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>✎</button>
+                    <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {unitForm ? (
-          <div className="row" style={{ marginTop: 16 }}>
-            <label className="field grow">
-              Name
-              <input value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} placeholder="z. B. OG links" />
-            </label>
-            <label className="field">
-              Wohnfläche (m²)
-              <input value={unitForm.areaM2} onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} style={{ width: 110 }} placeholder="z. B. 85,5" />
-            </label>
-            <label className="field">
-              Zimmer
-              <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} style={{ width: 80 }} placeholder="z. B. 3" />
-            </label>
-            <label className="field">
-              Etage
-              <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} style={{ width: 110 }} placeholder="z. B. 1. OG" />
-            </label>
-            <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
-              <input type="checkbox" checked={unitForm.participates} onChange={(e) => setUnitForm({ ...unitForm, participates: e.target.checked })} />
-              an Kostenverteilung beteiligt
-            </label>
-            <label className="field grow" style={{ width: '100%' }}>
-              Notiz (optional)
-              <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
-            </label>
-            <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            <button className="btn ghost" onClick={() => setUnitForm(null)}>Abbrechen</button>
-          </div>
-        ) : (
-          <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => setUnitForm({ ...EMPTY_UNIT })}>+ Wohnung hinzufügen</button>
-        )}
+        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
         {units.length > 0 && participating.length === 0 && (
           <div className="notice" style={{ marginTop: 14 }}>Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
         )}
@@ -348,17 +336,19 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                       </div>
                     ))}
                   </td>
-                  <td className="num no-print" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="actions no-print" style={{ whiteSpace: 'nowrap' }}>
                     {!t.end && (
-                      <>
-                        <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
-                          Mieterwechsel
-                        </button>{' '}
-                      </>
+                      <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
+                        Mieterwechsel
+                      </button>
                     )}
+                    {' '}
                     <button
-                      className="btn small secondary"
-                      onClick={() =>
+                      className="icon-btn"
+                      title="Bearbeiten"
+                      aria-label="Mietverhältnis bearbeiten"
+                      onClick={() => {
+                        setError('')
                         setTenForm({
                           id: t.id,
                           unitId: t.unitId,
@@ -386,24 +376,51 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                           depositStatus: t.depositStatus ?? 'offen',
                           notes: t.notes ?? '',
                         })
-                      }
+                      }}
                     >
-                      Bearbeiten
-                    </button>{' '}
-                    <button className="btn small ghost" onClick={() => deleteTenancy(t)}>Löschen</button>
+                      ✎
+                    </button>
+                    <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {tenForm ? (
-          <div className="row" style={{ marginTop: 16 }}>
+        <button
+          className="btn secondary"
+          style={{ marginTop: 14 }}
+          onClick={() => { setError(''); setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
+          disabled={units.length === 0}
+        >
+          + Mietverhältnis hinzufügen
+        </button>
+      </div>
+
+      {tenForm && (
+        <Drawer
+          open
+          title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
+          subtitle={tenForm.id ? tenForm.tenantName : undefined}
+          onClose={() => setTenForm(null)}
+          onSubmit={saveTenancy}
+          width={480}
+          footer={
+            <>
+              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setTenForm(null)}>Abbrechen</button>
+              <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
+            </>
+          }
+        >
+          {error && <div className="error">{error}</div>}
+          <div className="row">
             <label className="field grow">
               Mieter
               <input value={tenForm.tenantName} onChange={(e) => setTenForm({ ...tenForm, tenantName: e.target.value })} placeholder="z. B. Familie Müller" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Wohnung
               <select value={tenForm.unitId} onChange={(e) => setTenForm({ ...tenForm, unitId: e.target.value })}>
                 <option value="">— wählen —</option>
@@ -412,71 +429,75 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="field grow">
               Einzug
               <input type="date" value={tenForm.start} onChange={(e) => setTenForm({ ...tenForm, start: e.target.value })} />
             </label>
-            <label className="field">
+            <label className="field grow">
               Auszug (leer = laufend)
               <input type="date" value={tenForm.end} onChange={(e) => setTenForm({ ...tenForm, end: e.target.value })} />
             </label>
-            <div style={{ width: '100%' }}>
-              <div className="field" style={{ marginBottom: 4 }}>Personenzahl (Staffel — bei Geburt/Auszug einzelner Personen neue Zeile hinzufügen)</div>
+
+            <div className="field-group">
+              <div className="field-group-label">Personenzahl — Staffel</div>
               {tenForm.personHistory.map((p, i) => (
-                <div className="row" key={i} style={{ marginBottom: 6 }}>
+                <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
                     <input type="date" value={p.from} onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Personen
-                    <input value={p.persons} style={{ width: 80 }} onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
+                    <input value={p.persons} onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
                   </label>
-                  {tenForm.personHistory.length > 1 && (
-                    <button className="btn small ghost" onClick={() => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) })}>entfernen</button>
-                  )}
+                  {tenForm.personHistory.length > 1
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) })}>🗑</button>
+                    : <span />}
                 </div>
               ))}
-              <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, personHistory: [...tenForm.personHistory, { from: '', persons: '' }] })}>+ Änderung ab Datum …</button>
+              <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, personHistory: [...tenForm.personHistory, { from: '', persons: '' }] })}>+ Änderung ab Datum …</button>
             </div>
-            <div style={{ width: '100%' }}>
-              <div className="field" style={{ marginBottom: 4 }}>Kaltmiete pro Monat (Staffel — leer lassen, wenn nur die NK abgerechnet werden)</div>
+
+            <div className="field-group">
+              <div className="field-group-label">Kaltmiete je Monat — Staffel (leer = nur NK)</div>
               {tenForm.baseRents.map((p, i) => (
-                <div className="row" key={i} style={{ marginBottom: 6 }}>
+                <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
                     <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
-                    <input value={p.amount} style={{ width: 120 }} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                    <input value={p.amount} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </label>
-                  {tenForm.baseRents.length > 1 && (
-                    <button className="btn small ghost" onClick={() => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) })}>entfernen</button>
-                  )}
+                  {tenForm.baseRents.length > 1
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) })}>🗑</button>
+                    : <span />}
                 </div>
               ))}
-              <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
+              <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
             </div>
-            <div style={{ width: '100%' }}>
-              <div className="field" style={{ marginBottom: 4 }}>Vorauszahlung pro Monat (Staffel — bei Erhöhung neue Zeile hinzufügen)</div>
+
+            <div className="field-group">
+              <div className="field-group-label">Vorauszahlung je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
-                <div className="row" key={i} style={{ marginBottom: 6 }}>
+                <div className="staffel-row" key={i}>
                   <label className="field">
                     gültig ab
                     <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
                   </label>
                   <label className="field">
                     Betrag €/Monat
-                    <input value={p.amount} style={{ width: 120 }} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                    <input value={p.amount} placeholder="z. B. 150,00" onChange={(e) => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
                   </label>
-                  {tenForm.prepayments.length > 1 && (
-                    <button className="btn small ghost" onClick={() => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) })}>entfernen</button>
-                  )}
+                  {tenForm.prepayments.length > 1
+                    ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, prepayments: tenForm.prepayments.filter((_, k) => k !== i) })}>🗑</button>
+                    : <span />}
                 </div>
               ))}
-              <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
+              <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
             </div>
+
             <details className="extra-details" style={{ width: '100%' }}>
               <summary>Weitere Angaben — Kontakt, Kaution, Vertrag (optional)</summary>
               <div className="row" style={{ marginTop: 10 }}>
@@ -484,7 +505,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   E-Mail
                   <input type="email" value={tenForm.email} onChange={(e) => setTenForm({ ...tenForm, email: e.target.value })} placeholder="mieter@example.de" />
                 </label>
-                <label className="field">
+                <label className="field grow">
                   Telefon
                   <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
                 </label>
@@ -492,23 +513,19 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   Abweichende Anschrift (Schriftverkehr)
                   <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
                 </label>
-              </div>
-              <div className="row">
                 <label className="field grow">
                   Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)
                   <input value={tenForm.iban} onChange={(e) => setTenForm({ ...tenForm, iban: e.target.value })} placeholder="DE.." />
                 </label>
-                <label className="field">
+                <label className="field grow">
                   Vertragsdatum
                   <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
                 </label>
-              </div>
-              <div className="row">
-                <label className="field">
+                <label className="field grow">
                   Kaution €
-                  <input value={tenForm.deposit} style={{ width: 120 }} placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
+                  <input value={tenForm.deposit} placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
                 </label>
-                <label className="field">
+                <label className="field grow">
                   Kautionsstatus
                   <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim()} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
                     {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
@@ -522,20 +539,55 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 </label>
               </div>
             </details>
-            <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            <button className="btn ghost" onClick={() => setTenForm(null)}>Abbrechen</button>
           </div>
-        ) : (
-          <button
-            className="btn secondary"
-            style={{ marginTop: 14 }}
-            onClick={() => setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA })}
-            disabled={units.length === 0}
-          >
-            + Mietverhältnis hinzufügen
-          </button>
-        )}
-      </div>
+        </Drawer>
+      )}
+
+      {unitForm && (
+        <Drawer
+          open
+          title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
+          subtitle={unitForm.id ? unitForm.name : undefined}
+          onClose={() => setUnitForm(null)}
+          onSubmit={saveUnit}
+          footer={
+            <>
+              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setUnitForm(null)}>Abbrechen</button>
+              <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
+            </>
+          }
+        >
+          {error && <div className="error">{error}</div>}
+          <div className="row">
+            <label className="field grow">
+              Name
+              <input value={unitForm.name} onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })} placeholder="z. B. OG links" />
+            </label>
+            <label className="field grow">
+              Wohnfläche (m²)
+              <input value={unitForm.areaM2} onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} placeholder="z. B. 85,5" />
+            </label>
+            <label className="field grow">
+              Zimmer
+              <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} placeholder="z. B. 3" />
+            </label>
+            <label className="field grow">
+              Etage
+              <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
+            </label>
+            <label className="field grow checkline" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={unitForm.participates} onChange={(e) => setUnitForm({ ...unitForm, participates: e.target.checked })} />
+              <span>an Kostenverteilung beteiligt</span>
+            </label>
+            <label className="field grow">
+              Notiz (optional)
+              <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
+            </label>
+          </div>
+        </Drawer>
+      )}
 
       {wizardFor && (
         <MieterwechselWizard

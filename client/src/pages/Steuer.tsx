@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxReport } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
+import PageHeader from '../components/PageHeader'
 
 type Props = { settings: Settings | null }
 
@@ -41,8 +42,7 @@ export default function Steuer({ settings }: Props) {
   return (
     <>
       <div className="no-print">
-        <h1>Steuer · Anlage V</h1>
-        <p className="sub">Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken".</p>
+        <PageHeader title="Steuer · Anlage V" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken".'} />
       </div>
       {error && <div className="error">{error}</div>}
 

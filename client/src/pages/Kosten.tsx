@@ -3,6 +3,9 @@ import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } 
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
+import Drawer from '../components/Drawer'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[]; settings: Settings | null }
 
@@ -37,6 +40,8 @@ const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', 
 
 export default function Kosten({ units, settings }: Props) {
   const { year, setYear } = useYear()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [form, setForm] = useState<ItemForm | null>(null)
@@ -126,16 +131,26 @@ export default function Kosten({ units, settings }: Props) {
       meterType: form.key === 'meter' ? form.meterType : undefined,
       invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
     })
-    if (form.id) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
+    const editing = !!form.id
+    if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
     else await api('/api/costItems', { method: 'POST', body })
+    const desc = form.description.trim()
     setForm(null)
     await load()
+    toast(editing ? `„${desc}" übernommen.` : `„${desc}" hinzugefügt.`)
   }
 
   async function deleteItem(i: CostItem) {
-    if (!confirm(`Kostenposition „${i.description}" löschen?`)) return
+    const ok = await confirm({
+      title: `Kostenposition löschen?`,
+      message: `„${i.description}" (${fmtEuro(i.amountCents)}) wird gelöscht.`,
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
     await load()
+    toast(`„${i.description}" gelöscht.`)
   }
 
   function addFiles(files: Iterable<File>) {
@@ -223,9 +238,12 @@ export default function Kosten({ units, settings }: Props) {
 
   return (
     <>
-      <h1>Kosten &amp; Belege</h1>
-      <p className="sub">Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung.</p>
-      {error && <div className="error">{error}</div>}
+      <PageHeader
+        title="Kosten & Belege"
+        subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
+        actions={<button className="btn" onClick={() => { setError(''); setForm({ ...EMPTY }) }}>+ Kostenposition</button>}
+      />
+      {error && !form && <div className="error">{error}</div>}
 
       <div className="card no-print">
         <div className="row">
@@ -378,10 +396,13 @@ export default function Kosten({ units, settings }: Props) {
                     {fmtEuro(i.amountCents)}
                     {!!i.labor35aCents && <div className="muted">§35a: {fmtEuro(i.labor35aCents)}</div>}
                   </td>
-                  <td className="num no-print">
+                  <td className="actions no-print">
                     <button
-                      className="btn small secondary"
-                      onClick={() =>
+                      className="icon-btn"
+                      title="Bearbeiten"
+                      aria-label="Kostenposition bearbeiten"
+                      onClick={() => {
+                        setError('')
                         setForm({
                           id: i.id,
                           category: i.category,
@@ -394,11 +415,11 @@ export default function Kosten({ units, settings }: Props) {
                           meterType: i.meterType ?? 'kaltwasser',
                           invoiceFile: i.invoiceFile,
                         })
-                      }
+                      }}
                     >
-                      Bearbeiten
-                    </button>{' '}
-                    <button className="btn small ghost" onClick={() => deleteItem(i)}>Löschen</button>
+                      ✎
+                    </button>
+                    <button className="icon-btn danger" title="Löschen" aria-label="Kostenposition löschen" onClick={() => deleteItem(i)}>🗑</button>
                   </td>
                 </tr>
               ))}
@@ -422,9 +443,30 @@ export default function Kosten({ units, settings }: Props) {
           </table>
         )}
 
-        {form ? (
-          <div className="row" style={{ marginTop: 16 }}>
-            <label className="field">
+        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm({ ...EMPTY }) }}>
+          + Kostenposition manuell erfassen
+        </button>
+      </div>
+
+      {form && (
+        <Drawer
+          open
+          title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
+          subtitle={form.id ? form.description : undefined}
+          onClose={() => setForm(null)}
+          onSubmit={saveItem}
+          footer={
+            <>
+              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
+              <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
+            </>
+          }
+        >
+          {error && <div className="error">{error}</div>}
+          <div className="row">
+            <label className="field grow">
               Kostenart
               <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, key: form.id ? form.key : defaultKeyFor(e.target.value) })}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
@@ -434,19 +476,19 @@ export default function Kosten({ units, settings }: Props) {
               Beschreibung
               <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="z. B. Grundsteuer 2025" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Rechnungssteller
-              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="optional" style={{ width: 140 }} />
+              <input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} placeholder="optional" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Betrag €
-              <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 110 }} placeholder="z. B. 480,00" />
+              <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
             </label>
-            <label className="field" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
+            <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               davon §35a Lohn €
-              <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} style={{ width: 110 }} placeholder="optional" />
+              <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Umlageschlüssel
               <select value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value as CostKey })}>
                 {(Object.keys(KEY_LABELS) as CostKey[])
@@ -457,7 +499,7 @@ export default function Kosten({ units, settings }: Props) {
               </select>
             </label>
             {form.key === 'meter' && (
-              <label className="field">
+              <label className="field grow">
                 Zählertyp
                 <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType })}>
                   {unitMeterTypes.map((t) => <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>)}
@@ -465,7 +507,7 @@ export default function Kosten({ units, settings }: Props) {
               </label>
             )}
             {form.key === 'direct' && (
-              <label className="field">
+              <label className="field grow">
                 Wohnung
                 <select value={form.directUnitId} onChange={(e) => setForm({ ...form, directUnitId: e.target.value })}>
                   <option value="">— wählen —</option>
@@ -473,8 +515,8 @@ export default function Kosten({ units, settings }: Props) {
                 </select>
               </label>
             )}
-            <div style={{ width: '100%' }}>
-              <div className="field" style={{ marginBottom: 4 }}>Beleg (Rechnungskopie)</div>
+            <div className="field-group">
+              <div className="field-group-label">Beleg (Rechnungskopie)</div>
               {form.invoiceFile ? (
                 <div className="row" style={{ alignItems: 'center' }}>
                   <a href={`/uploads/${form.invoiceFile}`} target="_blank" rel="noreferrer">
@@ -485,13 +527,13 @@ export default function Kosten({ units, settings }: Props) {
                   </button>
                 </div>
               ) : (
-                <div className="row">
-                  <label className="field">
+                <>
+                  <label className="field grow">
                     neu hochladen
                     <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadBeleg(f) }} />
                   </label>
                   {knownFiles.length > 0 && (
-                    <label className="field">
+                    <label className="field grow" style={{ marginTop: 8 }}>
                       oder vorhandenen Beleg zuordnen
                       <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, invoiceFile: e.target.value }) }}>
                         <option value="">— wählen —</option>
@@ -501,18 +543,12 @@ export default function Kosten({ units, settings }: Props) {
                       </select>
                     </label>
                   )}
-                </div>
+                </>
               )}
             </div>
-            <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
-            <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
           </div>
-        ) : (
-          <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => setForm({ ...EMPTY })}>
-            + Kostenposition manuell erfassen
-          </button>
-        )}
-      </div>
+        </Drawer>
+      )}
     </>
   )
 }
