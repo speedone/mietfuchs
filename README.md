@@ -1,7 +1,27 @@
-# Mietfuchs
+# 🦊 Mietfuchs
 
-Lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter. Alle Daten bleiben auf dem
-eigenen Rechner — keine Cloud, kein Konto, keine externen Dienste.
+**Die Nebenkostenabrechnung für private Vermieter — komplett auf dem eigenen Rechner.
+Keine Cloud, kein Konto, keine Abogebühren.**
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Node ≥ 20](https://img.shields.io/badge/Node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white)
+![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
+![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+
+Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Belege erfassen
+(optional per lokaler KI-Auswertung), Zählerstände pflegen — und am Jahresende eine fertige,
+centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Steuer-Übersicht
+für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
+
+### Highlights
+
+- 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst; Backup = Ordner kopieren
+- 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder direkt
+- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB)
+- 💶 **Mietkonto** — Soll/Ist je Monat, offene Rückstände auf einen Blick
+- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen, Werbungskosten und Überschuss aufs Jahr
+- 🤖 **Optionale KI-Belegauswertung** gegen eine lokale [Ollama](https://ollama.com)-Instanz
+- 🐳 **In Minuten startklar** — `npm run dev` oder `docker compose up`
 
 ## Screenshots
 
