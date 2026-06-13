@@ -44,11 +44,13 @@ Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — 
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
 
 **API** ([server/src/index.js](server/src/index.js)): generische CRUD-Routen werden in einer
-Schleife für die Collections `units, tenancies, costItems, meters, readings` erzeugt. Löschen
-einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze. Daneben Spezialrouten:
-`/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/upload`,
-`/api/extract`, `/api/ollama/status`, `/api/uploads` (Belegarchiv: Liste + Löschen
-unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
+Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
+Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze (auch `payments`
+beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
+`/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
+`/api/upload`, `/api/extract`, `/api/ollama/status`, `/api/uploads` (Belegarchiv: Liste +
+Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung.
@@ -72,6 +74,13 @@ die ganze fachliche Komplexität:
   Verbrauch erzeugt eine Warnung.
 - Nur Wohnungen mit `participates: true` nehmen an der Verteilung teil (die selbstbewohnte
   Wohnung ist `false`).
+- **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
+  monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
+  Monate verteilt (Status bezahlt/teilweise/offen).
+- **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (aus `rentLedger`, Soll + Ist) und
+  Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
+  vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
+  Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
 
 Der Server kennt **keine Domänentypen als Code** — die maßgebliche Typdefinition des gesamten
 Datenmodells steht in [client/src/types.ts](client/src/types.ts) (Unit, Tenancy, Meter,
@@ -88,8 +97,10 @@ manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`match
 types.ts müssen zusammenpassen.
 
 **Client** ([client/src/](client/src/)): React ohne Router — `App.tsx` schaltet per State
-zwischen sieben Seiten (`pages/`: Uebersicht, Stammdaten, Kosten, Zaehler, Belege, Abrechnung,
-Einstellungen). Dark Mode über `data-theme` auf `<html>` + CSS-Variablen (Umschalter in der
+zwischen den Seiten (`pages/`: Cockpit, Schnellerfassung, Zaehler, Kosten, Mietkonto,
+Abrechnung, Uebersicht/Kostenvergleich, Steuer, Stammdaten, Belege, Einstellungen), gruppiert
+nach Arbeitsphase in der Sidebar (das Abrechnungsjahr liegt zentral im `YearProvider`,
+[client/src/year.tsx](client/src/year.tsx)). Dark Mode über `data-theme` auf `<html>` + CSS-Variablen (Umschalter in der
 Sidebar, Druck ist immer hell); PWA-Manifest und Icons liegen in `client/public/` (Icons
 erzeugt `server/scripts/make-icons.mjs`).
 Zentraler Fetch-Wrapper `api()` und Geld-/Datums-Helfer (`parseEuro`, `fmtEuro`, `fmtDate`) in

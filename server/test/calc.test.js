@@ -9,6 +9,7 @@ import {
   daysInYear,
   personDaysInPeriod,
   rentLedger,
+  taxReport,
 } from '../src/calc.js'
 
 // Szenario wie beim Nutzer: 3 Wohnungen, EG selbstbewohnt (nicht beteiligt),
@@ -310,4 +311,50 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
   assert.equal(r.months[6].sollCents, 50000) // Juli
   assert.equal(r.sollYearCents, 300000) // 6 × 500 €
   assert.equal(r.openMonths, 6) // Juli–Dez unbezahlt
+})
+
+test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', () => {
+  const db = {
+    settings: {},
+    units: [
+      { id: 'u1', name: 'EG (Eigennutzung)', areaM2: 100, participates: false },
+      { id: 'u2', name: 'OG', areaM2: 100, participates: true },
+    ],
+    tenancies: [
+      {
+        id: 't1', unitId: 'u2', tenantName: 'A', start: '2025-01-01', end: null,
+        personHistory: [{ from: '2025-01-01', persons: 2 }],
+        baseRents: [{ from: '2025-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+      },
+    ],
+    payments: [
+      // nur 11 von 12 Monaten gezahlt → Soll 1.200.000, Ist 1.100.000
+      { id: 'p1', tenancyId: 't1', date: '2025-01-05', amountCents: 1100000 },
+    ],
+    costItems: [
+      { id: 'c1', year: 2025, category: 'Grundsteuer', description: 'GS', amountCents: 50000, key: 'units' },
+      { id: 'c2', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' },
+      { id: 'c3', year: 2025, category: 'Gartenpflege', description: 'Garten', amountCents: 20000, key: 'units', labor35aCents: 12000 },
+      { id: 'c4', year: 2024, category: 'Grundsteuer', description: 'Vorjahr', amountCents: 99999, key: 'units' },
+    ],
+  }
+  const r = taxReport(db, 2025)
+  assert.equal(r.income.baseRentSollCents, 960000) // 12 × 800 €
+  assert.equal(r.income.prepaymentSollCents, 240000) // 12 × 200 €
+  assert.equal(r.income.sollCents, 1200000)
+  assert.equal(r.income.paidCents, 1100000)
+  // Werbungskosten: nur 2025, gruppiert
+  assert.equal(r.expenses.totalCents, 100000) // 500 + 300 + 200 €
+  assert.equal(r.expenses.labor35aCents, 12000)
+  const grundsteuer = r.expenses.groups.find((g) => g.group === 'Grundsteuer & öffentliche Abgaben')
+  assert.equal(grundsteuer.amountCents, 50000)
+  const laufend = r.expenses.groups.find((g) => g.group === 'Laufende Betriebskosten')
+  assert.equal(laufend.amountCents, 50000) // Müll + Garten
+  // Überschuss
+  assert.equal(r.surplusSollCents, 1100000) // 1.200.000 − 100.000
+  assert.equal(r.surplusPaidCents, 1000000) // 1.100.000 − 100.000
+  // gemischte Nutzung: halbe Fläche vermietet
+  assert.equal(r.selfOccupiedExists, true)
+  assert.equal(r.rentedAreaShare, 0.5)
 })

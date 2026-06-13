@@ -3,6 +3,10 @@ export type Unit = {
   name: string
   areaM2: number
   participates: boolean
+  // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
+  rooms?: number // Zimmerzahl
+  floor?: string // Etage, z. B. „EG", „1. OG"
+  notes?: string // freie Notiz zur Wohnung
 }
 
 export type PrepaymentEntry = {
@@ -33,6 +37,24 @@ export type Tenancy = {
   prepayments: PrepaymentEntry[]
   prepaymentOverrides: Record<string, number> // Jahr → tatsächlich gezahlter Betrag
   baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
+  // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) — Kontakt, Kaution, Vertrag
+  email?: string
+  phone?: string
+  correspondenceAddress?: string // abweichende Anschrift für Schriftverkehr (z. B. nach Auszug)
+  iban?: string // Mieter-IBAN (für Lastschrift/Guthaben-Rückzahlung)
+  contractDate?: string // 'YYYY-MM-DD' — Datum des Mietvertrags
+  depositCents?: number // vereinbarte Kaution
+  depositStatus?: DepositStatus // Stand der Kaution
+  notes?: string // freie Notiz zum Mietverhältnis
+}
+
+export type DepositStatus = 'offen' | 'erhalten' | 'teilweise' | 'zurückgezahlt'
+
+export const DEPOSIT_STATUS_LABELS: Record<DepositStatus, string> = {
+  offen: 'offen',
+  erhalten: 'erhalten',
+  teilweise: 'teilweise erhalten',
+  'zurückgezahlt': 'zurückgezahlt',
 }
 
 // Eine gebuchte Mietzahlung (Geldeingang). Pro Mietverhältnis, datiert.
@@ -173,6 +195,35 @@ export type Settlement = {
   warnings: string[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
+}
+
+// ---------- Steuer-Export (Anlage V) ----------
+
+export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number }
+export type TaxExpenseGroup = {
+  group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten")
+  amountCents: number
+  labor35aCents: number
+  categories: TaxExpenseCategory[]
+}
+
+export type TaxReport = {
+  year: number
+  income: {
+    baseRentSollCents: number // Kaltmiete (netto), vereinbart
+    prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
+    sollCents: number // Summe Soll (brutto)
+    paidCents: number // tatsächlich eingegangen (Zuflussprinzip)
+  }
+  expenses: {
+    groups: TaxExpenseGroup[]
+    totalCents: number
+    labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
+  }
+  rentedAreaShare: number // vermietete Fläche / Gesamtfläche (0..1)
+  selfOccupiedExists: boolean // gibt es nicht vermietete (selbstgenutzte) Einheiten?
+  surplusSollCents: number // Einkünfte auf Soll-Basis = Einnahmen(Soll) − Werbungskosten
+  surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
 }
 
 export type UploadInfo = {

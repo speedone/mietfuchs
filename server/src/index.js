@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
-import { computeSettlement, consumptionOverview, rentLedger } from './calc.js'
+import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -134,6 +134,13 @@ app.get('/api/rentledger/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   res.json(rentLedger(getDb(), year))
+})
+
+// Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
+app.get('/api/taxreport/:year', (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  res.json(taxReport(getDb(), year))
 })
 
 // ---------- Belege & KI-Auswertung ----------

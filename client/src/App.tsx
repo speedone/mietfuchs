@@ -11,11 +11,12 @@ import Mietkonto from './pages/Mietkonto'
 import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
+import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 
 type Tab =
   | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
-  | 'abrechnung' | 'uebersicht'
+  | 'abrechnung' | 'uebersicht' | 'steuer'
   | 'stammdaten' | 'belege' | 'einstellungen'
 
 // Navigation nach Arbeitsphase gruppiert statt als flache Tab-Liste: erst der Überblick,
@@ -37,6 +38,7 @@ const NAV: { section?: string; items: NavItem[] }[] = [
     items: [
       { id: 'abrechnung', label: 'Abrechnung', icon: '📄' },
       { id: 'uebersicht', label: 'Kostenvergleich', icon: '📊' },
+      { id: 'steuer', label: 'Steuer (Anlage V)', icon: '🧮' },
     ],
   },
   {
@@ -143,6 +145,7 @@ function Shell() {
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} />
         )}
+        {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} />
         )}

@@ -242,6 +242,97 @@ export function rentLedger(db, year) {
   }
 }
 
+// ---------- Steuer-Export (Anlage V) ----------
+
+// Betriebskostenarten den Anlage-V-nahen Positionsgruppen zuordnen. Bewusst beschreibende
+// Gruppen statt fester Zeilennummern (die sich jährlich ändern können). Unbekannte Kategorien
+// fallen auf „Sonstige Werbungskosten".
+const ANLAGE_V_GROUP = {
+  Grundsteuer: 'Grundsteuer & öffentliche Abgaben',
+  'Wasser/Abwasser': 'Laufende Betriebskosten',
+  Niederschlagswasser: 'Laufende Betriebskosten',
+  Müllabfuhr: 'Laufende Betriebskosten',
+  Straßenreinigung: 'Laufende Betriebskosten',
+  Gebäudereinigung: 'Laufende Betriebskosten',
+  Gartenpflege: 'Laufende Betriebskosten',
+  'Beleuchtung/Allgemeinstrom': 'Laufende Betriebskosten',
+  Schornsteinfeger: 'Laufende Betriebskosten',
+  Hauswart: 'Laufende Betriebskosten',
+  Aufzug: 'Laufende Betriebskosten',
+  'Kabel/Antenne': 'Laufende Betriebskosten',
+  'Sach- und Haftpflichtversicherung': 'Versicherungen',
+  'Sonstige Betriebskosten': 'Sonstige Werbungskosten',
+  'Nicht umlagefähig': 'Verwaltung & Instandhaltung',
+}
+// Anzeigereihenfolge der Gruppen in der Auswertung
+const ANLAGE_V_GROUP_ORDER = [
+  'Grundsteuer & öffentliche Abgaben',
+  'Laufende Betriebskosten',
+  'Versicherungen',
+  'Verwaltung & Instandhaltung',
+  'Sonstige Werbungskosten',
+]
+
+// Jahres-Steuerübersicht (Hilfe für die Anlage V): Einnahmen aus dem Mietkonto,
+// Werbungskosten aus den Kostenpositionen nach Anlage-V-Gruppen, §35a-Lohnanteile sowie
+// der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
+// Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
+// werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
+export function taxReport(db, year) {
+  const ledger = rentLedger(db, year)
+  const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
+  const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
+  const sollCents = ledger.totals.sollYearCents
+  const paidCents = ledger.totals.paidYearCents
+
+  // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren
+  const items = (db.costItems ?? []).filter((c) => c.year === year)
+  const byGroup = new Map()
+  for (const item of items) {
+    const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
+    if (!byGroup.has(group)) byGroup.set(group, new Map())
+    const cats = byGroup.get(group)
+    const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0 }
+    prev.amountCents += item.amountCents
+    prev.labor35aCents += item.labor35aCents ?? 0
+    cats.set(item.category, prev)
+  }
+  const groups = [...byGroup.entries()]
+    .map(([group, cats]) => {
+      const categories = [...cats.values()].sort((a, b) => b.amountCents - a.amountCents)
+      return {
+        group,
+        amountCents: categories.reduce((a, c) => a + c.amountCents, 0),
+        labor35aCents: categories.reduce((a, c) => a + c.labor35aCents, 0),
+        categories,
+      }
+    })
+    .sort((a, b) => {
+      const ia = ANLAGE_V_GROUP_ORDER.indexOf(a.group)
+      const ib = ANLAGE_V_GROUP_ORDER.indexOf(b.group)
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
+    })
+  const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
+  const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
+
+  // Flächenanteil der vermieteten (beteiligten) Einheiten — Hinweis bei gemischter Nutzung
+  const allUnits = db.units ?? []
+  const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
+  const rentedArea = allUnits.filter((u) => u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
+  const rentedAreaShare = totalArea > 0 ? rentedArea / totalArea : 1
+  const selfOccupiedExists = allUnits.some((u) => !u.participates)
+
+  return {
+    year,
+    income: { baseRentSollCents, prepaymentSollCents, sollCents, paidCents },
+    expenses: { groups, totalCents, labor35aCents },
+    rentedAreaShare,
+    selfOccupiedExists,
+    surplusSollCents: sollCents - totalCents,
+    surplusPaidCents: paidCents - totalCents,
+  }
+}
+
 // ---------- Hilfen ----------
 
 // Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder)

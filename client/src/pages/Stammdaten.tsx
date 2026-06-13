@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Meter, Settings, Tenancy, Unit } from '../types'
-import { METER_TYPE_LABELS } from '../types'
+import type { DepositStatus, Meter, Settings, Tenancy, Unit } from '../types'
+import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
   reload: () => Promise<void>
 }
 
-type UnitForm = { id?: string; name: string; areaM2: string; participates: boolean }
+type UnitForm = { id?: string; name: string; areaM2: string; participates: boolean; rooms: string; floor: string; notes: string }
 type TenancyForm = {
   id?: string
   unitId: string
@@ -20,9 +20,21 @@ type TenancyForm = {
   end: string
   baseRents: { from: string; amount: string }[]
   prepayments: { from: string; amount: string }[]
+  // erweiterte Stammdaten (optional)
+  email: string
+  phone: string
+  correspondenceAddress: string
+  iban: string
+  contractDate: string
+  deposit: string
+  depositStatus: DepositStatus
+  notes: string
 }
 
-const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', participates: true }
+const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', participates: true, rooms: '', floor: '', notes: '' }
+
+// Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
+const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
 
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
   const [house, setHouse] = useState({ houseName: '', address: '' })
@@ -50,8 +62,21 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       setError('Bitte Name und gültige Wohnfläche angeben.')
       return
     }
+    const rooms = unitForm.rooms.trim() ? Number(unitForm.rooms.replace(',', '.')) : null
+    if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {
+      setError('Zimmerzahl bitte als Zahl angeben (oder leer lassen).')
+      return
+    }
     setError('')
-    const body = JSON.stringify({ name: unitForm.name.trim(), areaM2: area, participates: unitForm.participates })
+    // null statt undefined, damit geleerte Felder über die generische PUT-Route auch zurückgesetzt werden
+    const body = JSON.stringify({
+      name: unitForm.name.trim(),
+      areaM2: area,
+      participates: unitForm.participates,
+      rooms,
+      floor: unitForm.floor.trim() || null,
+      notes: unitForm.notes.trim() || null,
+    })
     if (unitForm.id) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
     else await api('/api/units', { method: 'POST', body })
     setUnitForm(null)
@@ -108,7 +133,20 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       }
       prepayments.push({ from, monthlyCents: cents })
     }
+    let depositCents: number | null = null
+    if (tenForm.deposit.trim()) {
+      depositCents = parseEuro(tenForm.deposit)
+      if (depositCents === null) {
+        setError('Kaution bitte als Betrag angeben (oder leer lassen).')
+        return
+      }
+    }
+    if (tenForm.contractDate && !/^\d{4}-\d{2}-\d{2}$/.test(tenForm.contractDate)) {
+      setError('Vertragsdatum bitte als gültiges Datum angeben.')
+      return
+    }
     setError('')
+    // null statt undefined, damit geleerte Felder über die generische PUT-Route zurückgesetzt werden
     const body = JSON.stringify({
       unitId: tenForm.unitId,
       tenantName: tenForm.tenantName.trim(),
@@ -118,6 +156,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       end: tenForm.end || null,
       baseRents,
       prepayments,
+      email: tenForm.email.trim() || null,
+      phone: tenForm.phone.trim() || null,
+      correspondenceAddress: tenForm.correspondenceAddress.trim() || null,
+      iban: tenForm.iban.trim() || null,
+      contractDate: tenForm.contractDate || null,
+      depositCents,
+      depositStatus: depositCents !== null ? tenForm.depositStatus : null,
+      notes: tenForm.notes.trim() || null,
     })
     if (tenForm.id) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
     else await api('/api/tenancies', { method: 'POST', body })
@@ -171,7 +217,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             <tbody>
               {units.map((u) => (
                 <tr key={u.id}>
-                  <td>{u.name}</td>
+                  <td>
+                    {u.name}
+                    {(u.rooms != null || u.floor || u.notes) && (
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {[u.floor, u.rooms != null ? `${u.rooms.toLocaleString('de-DE')} Zi.` : null, u.notes].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </td>
                   <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
                   <td>
                     {u.participates ? (
@@ -181,7 +234,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                     )}
                   </td>
                   <td className="num no-print">
-                    <button className="btn small secondary" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), participates: u.participates })}>Bearbeiten</button>{' '}
+                    <button className="btn small secondary" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), participates: u.participates, rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>Bearbeiten</button>{' '}
                     <button className="btn small ghost" onClick={() => deleteUnit(u)}>Löschen</button>
                   </td>
                 </tr>
@@ -199,9 +252,21 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               Wohnfläche (m²)
               <input value={unitForm.areaM2} onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} style={{ width: 110 }} placeholder="z. B. 85,5" />
             </label>
+            <label className="field">
+              Zimmer
+              <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} style={{ width: 80 }} placeholder="z. B. 3" />
+            </label>
+            <label className="field">
+              Etage
+              <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} style={{ width: 110 }} placeholder="z. B. 1. OG" />
+            </label>
             <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
               <input type="checkbox" checked={unitForm.participates} onChange={(e) => setUnitForm({ ...unitForm, participates: e.target.checked })} />
               an Kostenverteilung beteiligt
+            </label>
+            <label className="field grow" style={{ width: '100%' }}>
+              Notiz (optional)
+              <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </label>
             <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             <button className="btn ghost" onClick={() => setUnitForm(null)}>Abbrechen</button>
@@ -239,7 +304,20 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             <tbody>
               {tenancies.map((t) => (
                 <tr key={t.id}>
-                  <td>{t.tenantName}</td>
+                  <td>
+                    {t.tenantName}
+                    {(t.email || t.phone) && (
+                      <div className="muted" style={{ fontSize: 12 }}>{[t.email, t.phone].filter(Boolean).join(' · ')}</div>
+                    )}
+                    {t.depositCents != null && (
+                      <div style={{ fontSize: 12, marginTop: 2 }}>
+                        <span className="muted">Kaution {fmtEuro(t.depositCents)}</span>{' '}
+                        <span className={`badge ${t.depositStatus === 'erhalten' ? 'green' : t.depositStatus === 'offen' ? 'gray' : 'gray'}`}>
+                          {DEPOSIT_STATUS_LABELS[t.depositStatus ?? 'offen']}
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td>{units.find((u) => u.id === t.unitId)?.name ?? '—'}</td>
                   <td className="num">
                     {(t.personHistory ?? []).map((p, i) => (
@@ -299,6 +377,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                             from: p.from,
                             amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
                           })),
+                          email: t.email ?? '',
+                          phone: t.phone ?? '',
+                          correspondenceAddress: t.correspondenceAddress ?? '',
+                          iban: t.iban ?? '',
+                          contractDate: t.contractDate ?? '',
+                          deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+                          depositStatus: t.depositStatus ?? 'offen',
+                          notes: t.notes ?? '',
                         })
                       }
                     >
@@ -391,6 +477,51 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               ))}
               <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
             </div>
+            <details className="extra-details" style={{ width: '100%' }}>
+              <summary>Weitere Angaben — Kontakt, Kaution, Vertrag (optional)</summary>
+              <div className="row" style={{ marginTop: 10 }}>
+                <label className="field grow">
+                  E-Mail
+                  <input type="email" value={tenForm.email} onChange={(e) => setTenForm({ ...tenForm, email: e.target.value })} placeholder="mieter@example.de" />
+                </label>
+                <label className="field">
+                  Telefon
+                  <input value={tenForm.phone} onChange={(e) => setTenForm({ ...tenForm, phone: e.target.value })} placeholder="0123 456789" />
+                </label>
+                <label className="field grow">
+                  Abweichende Anschrift (Schriftverkehr)
+                  <input value={tenForm.correspondenceAddress} onChange={(e) => setTenForm({ ...tenForm, correspondenceAddress: e.target.value })} placeholder="z. B. neue Adresse nach Auszug" />
+                </label>
+              </div>
+              <div className="row">
+                <label className="field grow">
+                  Mieter-IBAN (für Lastschrift / Guthaben-Rückzahlung)
+                  <input value={tenForm.iban} onChange={(e) => setTenForm({ ...tenForm, iban: e.target.value })} placeholder="DE.." />
+                </label>
+                <label className="field">
+                  Vertragsdatum
+                  <input type="date" value={tenForm.contractDate} onChange={(e) => setTenForm({ ...tenForm, contractDate: e.target.value })} />
+                </label>
+              </div>
+              <div className="row">
+                <label className="field">
+                  Kaution €
+                  <input value={tenForm.deposit} style={{ width: 120 }} placeholder="z. B. 2.400,00" onChange={(e) => setTenForm({ ...tenForm, deposit: e.target.value })} />
+                </label>
+                <label className="field">
+                  Kautionsstatus
+                  <select value={tenForm.depositStatus} disabled={!tenForm.deposit.trim()} onChange={(e) => setTenForm({ ...tenForm, depositStatus: e.target.value as DepositStatus })}>
+                    {(Object.keys(DEPOSIT_STATUS_LABELS) as DepositStatus[]).map((s) => (
+                      <option key={s} value={s}>{DEPOSIT_STATUS_LABELS[s]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field grow">
+                  Notiz
+                  <input value={tenForm.notes} onChange={(e) => setTenForm({ ...tenForm, notes: e.target.value })} placeholder="freie Notiz zum Mietverhältnis" />
+                </label>
+              </div>
+            </details>
             <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             <button className="btn ghost" onClick={() => setTenForm(null)}>Abbrechen</button>
           </div>
@@ -398,7 +529,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           <button
             className="btn secondary"
             style={{ marginTop: 14 }}
-            onClick={() => setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }] })}
+            onClick={() => setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA })}
             disabled={units.length === 0}
           >
             + Mietverhältnis hinzufügen
