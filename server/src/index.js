@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview } from './calc.js'
-import { extractFromFile, listOllamaModels } from './extract.js'
+import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -137,6 +137,26 @@ app.post('/api/extract', upload.single('file'), async (req, res) => {
   try {
     const result = await extractFromFile(req.file.path, req.file.mimetype, getDb().settings)
     res.json({ file: req.file.filename, extraction: result })
+  } catch (err) {
+    res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
+  }
+})
+
+// Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
+// ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
+// Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
+app.post('/api/intake', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+  try {
+    const settings = getDb().settings
+    const docType = await classifyDocType(req.file.path, req.file.mimetype, settings)
+    if (docType === 'zaehlerstand') {
+      const reading = await extractMeterReading(req.file.path, req.file.mimetype, settings)
+      res.json({ file: req.file.filename, kind: 'zaehler', reading })
+    } else {
+      const extraction = await extractFromFile(req.file.path, req.file.mimetype, settings)
+      res.json({ file: req.file.filename, kind: 'rechnung', extraction })
+    }
   } catch (err) {
     res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
   }
