@@ -137,6 +137,19 @@ export type Extraction = {
   positions?: { description: string; category: string; amountEur: number; labor35aEur?: number | null }[]
 }
 
+// KI-Auswertung eines Zählerfotos (universeller Eingang)
+export type MeterReadingExtraction = {
+  meterNumber?: string | null
+  value?: number | null
+  dateOnImage?: string | null
+}
+
+// Antwort von /api/intake: erkennt automatisch Rechnung vs. Zählerfoto
+export type IntakeResult = { file: string } & (
+  | { kind: 'rechnung'; extraction: Extraction }
+  | { kind: 'zaehler'; reading: MeterReadingExtraction }
+)
+
 export const CATEGORIES = [
   'Grundsteuer',
   'Wasser/Abwasser',

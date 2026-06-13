@@ -175,6 +175,21 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 .ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 
+/* ---------- Schuhkarton: Ampel-Triage ---------- */
+.warn { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+
+.ampel { display: inline-block; width: 11px; height: 11px; border-radius: 99px; vertical-align: middle; }
+.ampel.gruen { background: var(--green); }
+.ampel.gelb { background: var(--amber); }
+.ampel.rot { background: var(--red); }
+
+.chip { display: inline-block; padding: 2px 9px; margin: 0 6px 6px 0; border-radius: 99px; font-size: 12px; font-weight: 500; }
+.chip.gruen { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); }
+.chip.gelb { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); }
+.chip.rot { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); }
+
+.sticky-bar { position: sticky; top: 10px; z-index: 5; display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 16px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 10px; }
+
 .empty { color: var(--muted); text-align: center; padding: 28px; font-size: 14px; }
 
 /* ---------- Beleg-Upload (Mehrfach-Dropzone) ---------- */

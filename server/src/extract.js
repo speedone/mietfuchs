@@ -196,6 +196,91 @@ export async function extractFromFile(filePath, mimetype, settings) {
   return result
 }
 
+// ---------- Universeller Eingang (Schuhkarton): Dokumenttyp + Zählerstand ----------
+
+const DOCTYPE_SCHEMA = {
+  type: 'object',
+  properties: { docType: { type: 'string', enum: ['rechnung', 'zaehlerstand'] } },
+  required: ['docType'],
+}
+
+const DOCTYPE_PROMPT = `Entscheide, was auf diesem Bild zu sehen ist, für eine Nebenkostenabrechnung:
+- "rechnung": eine Rechnung, ein Gebührenbescheid oder ein ähnliches Kostendokument (Text, Tabellen, Beträge).
+- "zaehlerstand": das Foto eines Verbrauchszählers (Wasser, Strom, Wärme) mit Zählwerk oder Display.
+Antworte nur mit der Kategorie.`
+
+// Bilder können Rechnungsfoto ODER Zählerfoto sein → klassifizieren. PDFs/Bescheide sind praktisch
+// immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
+export async function classifyDocType(filePath, mimetype, settings) {
+  if (!mimetype.startsWith('image/')) return 'rechnung'
+  const base = settings.ollamaUrl.replace(/\/+$/, '')
+  const image = fs.readFileSync(filePath).toString('base64')
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: settings.ollamaModel,
+      messages: [{ role: 'user', content: DOCTYPE_PROMPT, images: [image] }],
+      stream: false,
+      format: DOCTYPE_SCHEMA,
+      options: { temperature: 0 },
+    }),
+    signal: AbortSignal.timeout(120000),
+  })
+  if (!res.ok) throw new Error(`Ollama ${res.status}`)
+  const data = await res.json()
+  const { docType } = JSON.parse(data.message?.content ?? '{}')
+  return docType === 'zaehlerstand' ? 'zaehlerstand' : 'rechnung'
+}
+
+const METER_SCHEMA = {
+  type: 'object',
+  properties: {
+    meterNumber: { type: ['string', 'null'], description: 'Aufgedruckte Zählernummer / Gerätenummer, falls lesbar' },
+    value: { type: ['number', 'null'], description: 'Abgelesener Zählerstand als Zahl (schwarze Vorkommastellen)' },
+    dateOnImage: { type: ['string', 'null'], description: 'Auf dem Foto sichtbares Datum als YYYY-MM-DD, falls vorhanden' },
+  },
+  required: ['value'],
+}
+
+const METER_PROMPT = `Du siehst das Foto eines Verbrauchszählers (Wasser, Strom oder Wärme) für eine Nebenkostenabrechnung.
+Lies ab und gib JSON zurück:
+- "meterNumber": die aufgedruckte Zählernummer / Gerätenummer, falls erkennbar, sonst null.
+- "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
+- "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
+
+export async function extractMeterReading(filePath, mimetype, settings) {
+  const base = settings.ollamaUrl.replace(/\/+$/, '')
+  const message = { role: 'user', content: METER_PROMPT }
+  if (mimetype === 'application/pdf') {
+    const images = await pdfPagesAsImages(filePath, 1)
+    if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
+    message.images = images
+  } else if (mimetype.startsWith('image/')) {
+    message.images = [fs.readFileSync(filePath).toString('base64')]
+  } else {
+    throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
+  }
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: settings.ollamaModel,
+      messages: [message],
+      stream: false,
+      format: METER_SCHEMA,
+      options: { temperature: 0 },
+    }),
+    signal: AbortSignal.timeout(300000),
+  })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
+  }
+  const data = await res.json()
+  return JSON.parse(data.message?.content ?? '{}')
+}
+
 export async function listOllamaModels(settings) {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(5000) })

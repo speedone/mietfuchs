@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import Uebersicht from './pages/Uebersicht'
+import Schuhkarton from './pages/Schuhkarton'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
 import Zaehler from './pages/Zaehler'
@@ -9,9 +10,10 @@ import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Einstellungen from './pages/Einstellungen'
 
-type Tab = 'uebersicht' | 'stammdaten' | 'kosten' | 'zaehler' | 'belege' | 'abrechnung' | 'einstellungen'
+type Tab = 'schuhkarton' | 'uebersicht' | 'stammdaten' | 'kosten' | 'zaehler' | 'belege' | 'abrechnung' | 'einstellungen'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'schuhkarton', label: 'Schuhkarton', icon: '📥' },
   { id: 'uebersicht', label: 'Übersicht', icon: '📊' },
   { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
   { id: 'kosten', label: 'Kosten & Belege', icon: '🧾' },
@@ -46,7 +48,7 @@ function useTheme() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('uebersicht')
+  const [tab, setTab] = useState<Tab>('schuhkarton')
   const [units, setUnits] = useState<Unit[]>([])
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -87,6 +89,7 @@ export default function App() {
         </div>
       </nav>
       <main>
+        {tab === 'schuhkarton' && <Schuhkarton units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} />
