@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
+import { useYear } from '../year'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
@@ -9,7 +10,7 @@ const AUFFAELLIG_PROZENT = 25
 type Props = { onNavigate: (tab: string) => void }
 
 export default function Uebersicht({ onNavigate }: Props) {
-  const [year, setYear] = useState(new Date().getFullYear() - 1)
+  const { year, setYear } = useYear()
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [error, setError] = useState('')

@@ -2,11 +2,12 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
+import { useYear } from '../year'
 
 type Props = { settings: Settings | null; units: Unit[]; tenancies: Tenancy[]; reload: () => Promise<void> }
 
 export default function Abrechnung({ settings, tenancies, reload }: Props) {
-  const [year, setYear] = useState(new Date().getFullYear() - 1)
+  const { year, setYear } = useYear()
   const [data, setData] = useState<Settlement | null>(null)
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)

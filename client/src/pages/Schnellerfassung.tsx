@@ -3,6 +3,7 @@ import type { CostItem, CostKey, IntakeResult, Meter, Reading, Settings, Unit } 
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
 import { autoMatchMeter, belegSummeCheck, scorePosition, scoreReading, type Ampel } from '../triage'
+import { useYear } from '../year'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
@@ -67,8 +68,8 @@ function yearFrom(periodStart?: string | null, invoiceDate?: string): number | n
   return Number.isInteger(y) && y > 1990 && y < 2100 ? y : null
 }
 
-export default function Schuhkarton({ units, settings, onNavigate }: Props) {
-  const [year, setYear] = useState(new Date().getFullYear() - 1)
+export default function Schnellerfassung({ units, settings, onNavigate }: Props) {
+  const { year, setYear } = useYear()
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
@@ -343,7 +344,7 @@ export default function Schuhkarton({ units, settings, onNavigate }: Props) {
 
   return (
     <>
-      <h1>📥 Schuhkarton</h1>
+      <h1>📥 Schnellerfassung</h1>
       <p className="sub">
         Wirf alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
         prüft es und sortiert nach Ampel. Grün übernimmst du mit einem Klick. Alles bleibt lokal

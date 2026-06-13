@@ -175,7 +175,7 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 .ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 
-/* ---------- Schuhkarton: Ampel-Triage ---------- */
+/* ---------- Schnellerfassung: Ampel-Triage ---------- */
 .warn { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 
 .ampel { display: inline-block; width: 11px; height: 11px; border-radius: 99px; vertical-align: middle; }
@@ -259,10 +259,49 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   .sidebar .logo small { display: inline; margin-left: 8px; }
   .sidebar button { padding: 7px 10px; font-size: 13px; gap: 6px; }
   .sidebar .foot { display: none; }
+  .sidebar .nav-group { flex-direction: row; flex-wrap: wrap; gap: 2px; }
+  .sidebar .nav-section { display: none; }
+  .sidebar .year-switcher { flex-direction: row; align-items: center; gap: 8px; padding: 4px; }
+  .sidebar .year-switcher span { display: none; }
+  .sidebar .year-switcher select { padding: 5px 8px; font-size: 13px; }
   main { padding: 18px 14px 60px; }
   h1 { font-size: 20px; }
   .card { padding: 14px; }
 }
+
+/* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ---------- */
+.sidebar .year-switcher { display: flex; flex-direction: column; gap: 4px; padding: 0 12px 14px; }
+.sidebar .year-switcher span { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; color: #7d86a5; }
+.sidebar .year-switcher select {
+  font: inherit; font-size: 15px; font-weight: 600; padding: 7px 10px; border-radius: 8px;
+  background: #262b4a; color: #fff; border: 1px solid #343b5c; cursor: pointer;
+}
+.sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
+.sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
+
+/* ---------- Cockpit: Fortschritt, Checkliste, Mieterkarten ---------- */
+.progress { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.3s ease; }
+
+.checklist { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.check-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.check-row:last-child { border-bottom: none; }
+.check-row .ampel { margin-top: 4px; flex-shrink: 0; }
+.check-row.gelb { background: var(--amber-soft); }
+.check-row.rot { background: var(--red-soft); }
+.check-row.clickable { cursor: pointer; }
+.check-row.clickable:hover { background: var(--accent-soft); }
+.check-title { font-weight: 600; }
+.check-cta { color: var(--accent); font-size: 13px; font-weight: 600; white-space: nowrap; align-self: center; }
+
+.tenant-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.tenant-card {
+  all: unset; cursor: pointer; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px;
+}
+.tenant-card:hover { border-color: var(--accent); }
+.tenant-card.muted-card, .tenant-card.muted-card:hover { cursor: default; border-color: var(--line); }
+.tenant-bal { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* ---------- Druck ---------- */
 .print-only { display: none; }

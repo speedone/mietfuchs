@@ -1,4 +1,4 @@
-// Ampel-Triage für den Schuhkarton-Eingang: bewertet jede erkannte Rechnungsposition bzw.
+// Ampel-Triage für die Schnellerfassung: bewertet jede erkannte Rechnungsposition bzw.
 // jeden Zählerstand deterministisch als grün (sicher), gelb (prüfen) oder rot (fehlt was).
 // Bewusst reine Logik ohne React/Netzwerk — damit testbar und vom Modell unabhängig.
 import type { CostItem, Meter, Reading } from './types'

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, parseEuro } from '../api'
+import { useYear } from '../year'
 
 type Props = { units: Unit[]; settings: Settings | null }
 
@@ -35,7 +36,7 @@ type QueueEntry = {
 const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', amount: '', labor35a: '', key: 'area', directUnitId: '', meterType: 'kaltwasser' }
 
 export default function Kosten({ units, settings }: Props) {
-  const [year, setYear] = useState(new Date().getFullYear() - 1)
+  const { year, setYear } = useYear()
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [form, setForm] = useState<ItemForm | null>(null)
