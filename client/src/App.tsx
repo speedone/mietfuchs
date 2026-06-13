@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
+import { YearProvider, useYear, YEAR_OPTIONS } from './year'
+import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
-import Schuhkarton from './pages/Schuhkarton'
+import Schnellerfassung from './pages/Schnellerfassung'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
 import Zaehler from './pages/Zaehler'
@@ -10,17 +12,39 @@ import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Einstellungen from './pages/Einstellungen'
 
-type Tab = 'schuhkarton' | 'uebersicht' | 'stammdaten' | 'kosten' | 'zaehler' | 'belege' | 'abrechnung' | 'einstellungen'
+type Tab =
+  | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten'
+  | 'abrechnung' | 'uebersicht'
+  | 'stammdaten' | 'belege' | 'einstellungen'
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'schuhkarton', label: 'Schuhkarton', icon: '📥' },
-  { id: 'uebersicht', label: 'Übersicht', icon: '📊' },
-  { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
-  { id: 'kosten', label: 'Kosten & Belege', icon: '🧾' },
-  { id: 'zaehler', label: 'Zähler', icon: '🔢' },
-  { id: 'belege', label: 'Belegarchiv', icon: '📁' },
-  { id: 'abrechnung', label: 'Abrechnung', icon: '📄' },
-  { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
+// Navigation nach Arbeitsphase gruppiert statt als flache Tab-Liste: erst der Überblick,
+// dann „Sammeln" (übers Jahr laufend), „Abrechnen" (Jahresende) und „Einrichten" (selten).
+type NavItem = { id: Tab; label: string; icon: string }
+const NAV: { section?: string; items: NavItem[] }[] = [
+  { items: [{ id: 'cockpit', label: 'Cockpit', icon: '◎' }] },
+  {
+    section: 'Sammeln · laufend',
+    items: [
+      { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥' },
+      { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢' },
+      { id: 'kosten', label: 'Kosten', icon: '🧾' },
+    ],
+  },
+  {
+    section: 'Abrechnen · Jahresende',
+    items: [
+      { id: 'abrechnung', label: 'Abrechnung', icon: '📄' },
+      { id: 'uebersicht', label: 'Kostenvergleich', icon: '📊' },
+    ],
+  },
+  {
+    section: 'Einrichten · selten',
+    items: [
+      { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
+      { id: 'belege', label: 'Belegarchiv', icon: '📁' },
+      { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
+    ],
+  },
 ]
 
 // ---------- Dark Mode ----------
@@ -47,12 +71,13 @@ function useTheme() {
   return { choice, cycle }
 }
 
-export default function App() {
-  const [tab, setTab] = useState<Tab>('schuhkarton')
+function Shell() {
+  const [tab, setTab] = useState<Tab>('cockpit')
   const [units, setUnits] = useState<Unit[]>([])
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
+  const { year, setYear } = useYear()
 
   const reload = useCallback(async () => {
     const [u, t, s] = await Promise.all([
@@ -76,11 +101,25 @@ export default function App() {
           Nebenkosten
           <small>{settings?.houseName || 'Abrechnungs-Tool'}</small>
         </div>
-        {TABS.map((t) => (
-          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
-            <span>{t.icon}</span> {t.label}
-          </button>
+
+        <label className="year-switcher no-print">
+          <span>Abrechnungsjahr</span>
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </label>
+
+        {NAV.map((group, gi) => (
+          <div key={gi} className="nav-group">
+            {group.section && <div className="nav-section">{group.section}</div>}
+            {group.items.map((it) => (
+              <button key={it.id} className={tab === it.id ? 'active' : ''} onClick={() => setTab(it.id)}>
+                <span>{it.icon}</span> {it.label}
+              </button>
+            ))}
+          </div>
         ))}
+
         <div className="foot">
           <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)">
             🌗 Design: {THEME_LABELS[choice]}
@@ -89,7 +128,8 @@ export default function App() {
         </div>
       </nav>
       <main>
-        {tab === 'schuhkarton' && <Schuhkarton units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === 'cockpit' && <Cockpit units={units} onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} />
@@ -105,5 +145,13 @@ export default function App() {
         )}
       </main>
     </>
+  )
+}
+
+export default function App() {
+  return (
+    <YearProvider>
+      <Shell />
+    </YearProvider>
   )
 }

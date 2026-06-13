@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { api, fmtDate } from '../api'
+import { useYear } from '../year'
 
 type Props = { units: Unit[] }
 
@@ -18,7 +19,7 @@ function parseNum(s: string): number | null {
 }
 
 export default function Zaehler({ units }: Props) {
-  const [year, setYear] = useState(new Date().getFullYear() - 1)
+  const { year, setYear } = useYear()
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
