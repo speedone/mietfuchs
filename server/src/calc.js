@@ -151,6 +151,97 @@ export function computePrepaymentCents(tenancy, year) {
   return { cents, overridden: false }
 }
 
+// ---------- Mietkonto / Zahlungs-Tracking ----------
+
+// Staffelbetrag, der am Monatsersten gilt (für Kaltmiete oder Vorauszahlung).
+// `schedule`: Array aus { from: 'YYYY-MM', monthlyCents }. firstMonth: 'YYYY-MM'.
+function rateAtMonth(schedule, firstMonth) {
+  let rate = 0
+  for (const e of schedule.slice().sort((a, b) => a.from.localeCompare(b.from))) {
+    if (e.from <= firstMonth) rate = e.monthlyCents
+  }
+  return rate
+}
+
+// Monats-Mietkonto eines Jahres: pro Mietverhältnis Soll (Bruttomiete = Kaltmiete +
+// Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
+// Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
+// Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
+export function rentLedger(db, year) {
+  const yFrom = `${year}-01-01`
+  const yTo = `${year}-12-31`
+  const unitById = new Map(db.units.map((u) => [u.id, u]))
+  const payments = db.payments ?? []
+
+  const rows = (db.tenancies ?? [])
+    .filter((t) => overlapDays(t.start, t.end, year) > 0)
+    .map((t) => {
+      const baseSchedule = Array.isArray(t.baseRents) ? t.baseRents : []
+      const ppSchedule = Array.isArray(t.prepayments) ? t.prepayments : []
+
+      const months = []
+      for (let m = 1; m <= 12; m++) {
+        const mm = `${year}-${String(m).padStart(2, '0')}`
+        const firstDay = `${mm}-01`
+        const active = t.start <= firstDay && !(t.end && t.end < firstDay)
+        const baseRentCents = active ? rateAtMonth(baseSchedule, mm) : 0
+        const prepaymentCents = active ? rateAtMonth(ppSchedule, mm) : 0
+        months.push({
+          month: m,
+          baseRentCents,
+          prepaymentCents,
+          sollCents: baseRentCents + prepaymentCents,
+          paidCents: 0,
+          status: 'open',
+        })
+      }
+
+      // Zahlungseingänge des Jahres der Reihe nach auf die Monate verteilen
+      const paidYearCents = payments
+        .filter((p) => p.tenancyId === t.id && p.date >= yFrom && p.date <= yTo)
+        .reduce((a, p) => a + p.amountCents, 0)
+      let remaining = paidYearCents
+      for (const mo of months) {
+        if (mo.sollCents <= 0) {
+          // kein Soll → als gedeckt behandeln, kein Geld verbrauchen
+          mo.status = 'paid'
+          continue
+        }
+        const applied = Math.max(0, Math.min(remaining, mo.sollCents))
+        mo.paidCents = applied
+        remaining -= applied
+        mo.status = applied >= mo.sollCents ? 'paid' : applied > 0 ? 'partial' : 'open'
+      }
+
+      const sollYearCents = months.reduce((a, mo) => a + mo.sollCents, 0)
+      const baseRentYearCents = months.reduce((a, mo) => a + mo.baseRentCents, 0)
+      const prepaymentYearCents = months.reduce((a, mo) => a + mo.prepaymentCents, 0)
+      return {
+        tenancyId: t.id,
+        tenantName: t.tenantName,
+        unitName: unitById.get(t.unitId)?.name ?? '—',
+        months,
+        sollYearCents,
+        baseRentYearCents,
+        prepaymentYearCents,
+        paidYearCents,
+        balanceCents: paidYearCents - sollYearCents,
+        openMonths: months.filter((mo) => mo.status !== 'paid').length,
+      }
+    })
+    .sort((a, b) => a.unitName.localeCompare(b.unitName) || a.tenantName.localeCompare(b.tenantName))
+
+  return {
+    year,
+    rows,
+    totals: {
+      sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
+      paidYearCents: rows.reduce((a, r) => a + r.paidYearCents, 0),
+      openCents: rows.reduce((a, r) => a + (r.balanceCents < 0 ? -r.balanceCents : 0), 0),
+    },
+  }
+}
+
 // ---------- Hilfen ----------
 
 // Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder)

@@ -183,6 +183,18 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .ampel.gelb { background: var(--amber); }
 .ampel.rot { background: var(--red); }
 
+/* ---------- Mietkonto: Monatsraster ---------- */
+.rent-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; margin: 6px 0 4px; }
+.rent-month { border: 1px solid var(--line); border-radius: 8px; padding: 6px 4px; text-align: center; font-size: 12px; cursor: default; }
+.rent-month .m { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+.rent-month .a { font-size: 11px; margin-top: 2px; }
+.rent-month.paid { background: var(--green-soft); border-color: var(--green-soft); color: var(--green); }
+.rent-month.partial { background: var(--amber-soft); border-color: var(--amber-soft); color: var(--amber); cursor: pointer; }
+.rent-month.open { background: var(--red-soft); border-color: var(--red-soft); color: var(--red); cursor: pointer; }
+.rent-month.none { color: var(--muted); opacity: 0.5; }
+.rent-month.partial:hover, .rent-month.open:hover { outline: 2px solid var(--accent); }
+@media (max-width: 720px) { .rent-grid { grid-template-columns: repeat(6, 1fr); } }
+
 .chip { display: inline-block; padding: 2px 9px; margin: 0 6px 6px 0; border-radius: 99px; font-size: 12px; font-weight: 500; }
 .chip.gruen { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); }
 .chip.gelb { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); }

@@ -23,6 +23,8 @@ const DEFAULT_DB = {
   costItems: [],
   meters: [],
   readings: [],
+  // Gebuchte Mietzahlungen (Geldeingänge) fürs Mietkonto
+  payments: [],
   // Abgeschlossene Abrechnungen: eingefrorener Berechnungsstand je Jahr
   closedSettlements: [],
 }
@@ -52,6 +54,8 @@ function load() {
     if (!Array.isArray(t.personHistory)) {
       t.personHistory = [{ from: t.start, persons: t.persons ?? 1 }]
     }
+    // Kaltmiete-Staffel kam später dazu — Altbestand hat sie noch nicht
+    if (!Array.isArray(t.baseRents)) t.baseRents = []
   }
   return db
 }

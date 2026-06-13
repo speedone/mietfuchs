@@ -8,6 +8,7 @@ import {
   overlapDays,
   daysInYear,
   personDaysInPeriod,
+  rentLedger,
 } from '../src/calc.js'
 
 // Szenario wie beim Nutzer: 3 Wohnungen, EG selbstbewohnt (nicht beteiligt),
@@ -250,4 +251,63 @@ test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () 
   const a = s.statements.find((x) => x.tenancyId === 't2')
   // 1450,25 € / 12 = 120,85 € → 121 €
   assert.equal(a.suggestedMonthlyCents, 12100)
+})
+
+test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', () => {
+  const db = {
+    settings: {},
+    units: [{ id: 'u1', name: 'OG links', areaM2: 90, participates: true }],
+    tenancies: [
+      {
+        id: 't1', unitId: 'u1', tenantName: 'Familie A', start: '2025-01-01', end: null,
+        personHistory: [{ from: '2025-01-01', persons: 2 }],
+        baseRents: [{ from: '2025-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+      },
+    ],
+    payments: [
+      // 3,5 Monatsmieten = 350.000 ct → Jan–Mär voll, Apr teilweise
+      { id: 'p1', tenancyId: 't1', date: '2025-01-05', amountCents: 100000 },
+      { id: 'p2', tenancyId: 't1', date: '2025-02-05', amountCents: 100000 },
+      { id: 'p3', tenancyId: 't1', date: '2025-03-05', amountCents: 100000 },
+      { id: 'p4', tenancyId: 't1', date: '2025-04-05', amountCents: 50000 },
+    ],
+  }
+  const l = rentLedger(db, 2025)
+  const r = l.rows[0]
+  assert.equal(r.months[0].sollCents, 100000) // 800 + 200 €
+  assert.equal(r.sollYearCents, 1200000) // 12 × 1000 €
+  assert.equal(r.baseRentYearCents, 960000)
+  assert.equal(r.prepaymentYearCents, 240000)
+  assert.equal(r.paidYearCents, 350000)
+  assert.equal(r.months[0].status, 'paid')
+  assert.equal(r.months[2].status, 'paid')
+  assert.equal(r.months[3].status, 'partial')
+  assert.equal(r.months[3].paidCents, 50000)
+  assert.equal(r.months[4].status, 'open')
+  assert.equal(r.balanceCents, -850000) // 3.500 − 12.000 €
+  assert.equal(l.totals.openCents, 850000)
+})
+
+test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () => {
+  const db = {
+    settings: {},
+    units: [{ id: 'u1', name: 'OG', areaM2: 90, participates: true }],
+    tenancies: [
+      {
+        id: 't1', unitId: 'u1', tenantName: 'B', start: '2025-07-01', end: null,
+        personHistory: [{ from: '2025-07-01', persons: 1 }],
+        baseRents: [{ from: '2025-07', monthlyCents: 50000 }],
+        prepayments: [],
+      },
+    ],
+    payments: [],
+  }
+  const l = rentLedger(db, 2025)
+  const r = l.rows[0]
+  assert.equal(r.months[0].sollCents, 0) // Januar vor Einzug
+  assert.equal(r.months[0].status, 'paid') // kein Soll → gedeckt
+  assert.equal(r.months[6].sollCents, 50000) // Juli
+  assert.equal(r.sollYearCents, 300000) // 6 × 500 €
+  assert.equal(r.openMonths, 6) // Juli–Dez unbezahlt
 })

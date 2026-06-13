@@ -7,13 +7,14 @@ import Uebersicht from './pages/Uebersicht'
 import Schnellerfassung from './pages/Schnellerfassung'
 import Stammdaten from './pages/Stammdaten'
 import Kosten from './pages/Kosten'
+import Mietkonto from './pages/Mietkonto'
 import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
 import Einstellungen from './pages/Einstellungen'
 
 type Tab =
-  | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten'
+  | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
   | 'abrechnung' | 'uebersicht'
   | 'stammdaten' | 'belege' | 'einstellungen'
 
@@ -28,6 +29,7 @@ const NAV: { section?: string; items: NavItem[] }[] = [
       { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥' },
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢' },
       { id: 'kosten', label: 'Kosten', icon: '🧾' },
+      { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
     ],
   },
   {
@@ -135,6 +137,7 @@ function Shell() {
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} />
         )}
         {tab === 'kosten' && <Kosten units={units} settings={settings} />}
+        {tab === 'mietkonto' && <Mietkonto />}
         {tab === 'zaehler' && <Zaehler units={units} />}
         {tab === 'belege' && <Belege />}
         {tab === 'abrechnung' && (

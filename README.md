@@ -29,6 +29,10 @@ Tests der Berechnungs-Engine: `npm test`
    Vorauszahlungen, Saldo, Zahlungsaufforderung (IBAN/Frist aus den Einstellungen),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
+5. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
+   Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
+   Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
+   teilweise / offen*, dazu Brutto/Netto-Aufschlüsselung und offene Rückstände je Mieter.
 
 ### Umlageschlüssel
 
@@ -67,3 +71,23 @@ Backup = diesen Ordner kopieren.
 npm run build      # baut das Frontend nach client/dist
 npm start          # Server liefert App + API auf http://localhost:3001
 ```
+
+## Mit Docker
+
+Ein einziges Image baut das Frontend und liefert App + API auf Port 3001. Die Daten
+(`db.json` + Belege) liegen in einem benannten Volume und überleben Updates des Containers.
+
+```bash
+docker build -t nebenkosten .
+docker run -d -p 3001:3001 -v nka-data:/app/server/data --name nebenkosten nebenkosten
+# App: http://localhost:3001
+```
+
+Die optionale KI-Belegauswertung erwartet eine Ollama-Instanz. Läuft sie auf dem Host,
+in den Einstellungen `http://host.docker.internal:11434` eintragen (statt `localhost`).
+
+## Lizenz & Haftung
+
+[MIT-Lizenz](LICENSE). Das Tool unterstützt bei der Erstellung der Abrechnung, ist aber
+**keine Rechts- oder Steuerberatung**; die fachliche und rechtliche Prüfung der Ergebnisse
+bleibt beim Vermieter. Nutzung auf eigene Verantwortung.
