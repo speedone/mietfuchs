@@ -10,6 +10,13 @@ export type PrepaymentEntry = {
   monthlyCents: number
 }
 
+// Kaltmiete-Staffel — gleiche „ab Monat gilt Betrag"-Mechanik wie die Vorauszahlung.
+// Bruttomiete = Kaltmiete + NK-Vorauszahlung des jeweiligen Monats.
+export type RentEntry = {
+  from: string // 'YYYY-MM'
+  monthlyCents: number
+}
+
 export type PersonEntry = {
   from: string // 'YYYY-MM-DD' — ab diesem Tag gilt die Personenzahl
   persons: number
@@ -25,6 +32,52 @@ export type Tenancy = {
   end: string | null
   prepayments: PrepaymentEntry[]
   prepaymentOverrides: Record<string, number> // Jahr → tatsächlich gezahlter Betrag
+  baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
+}
+
+// Eine gebuchte Mietzahlung (Geldeingang). Pro Mietverhältnis, datiert.
+export type Payment = {
+  id: string
+  tenancyId: string
+  date: string // 'YYYY-MM-DD'
+  amountCents: number
+  note?: string
+}
+
+// ---------- Mietkonto / Zahlungs-Tracking ----------
+
+export type RentMonthStatus = 'paid' | 'partial' | 'open'
+
+export type RentMonth = {
+  month: number // 1..12
+  baseRentCents: number
+  prepaymentCents: number
+  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung
+  paidCents: number // dem Monat zugeordneter Zahlungseingang
+  status: RentMonthStatus
+}
+
+export type RentLedgerRow = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  months: RentMonth[]
+  sollYearCents: number // Brutto-Soll des Jahres
+  baseRentYearCents: number // davon Kaltmiete (Netto)
+  prepaymentYearCents: number // davon NK-Vorauszahlung
+  paidYearCents: number
+  balanceCents: number // paid − soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
+  openMonths: number
+}
+
+export type RentLedger = {
+  year: number
+  rows: RentLedgerRow[]
+  totals: {
+    sollYearCents: number
+    paidYearCents: number
+    openCents: number // Summe der offenen Rückstände (nur negative Salden)
+  }
 }
 
 export type MeterType = 'kaltwasser' | 'strom' | 'waerme' | 'sonstig'

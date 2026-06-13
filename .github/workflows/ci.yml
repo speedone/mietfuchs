@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      # npm install (nicht ci): postinstall installiert Server + Client mit.
+      - run: npm install
+      # Tests der Berechnungs-Engine (node:test)
+      - run: npm test
+      # Typecheck (tsc --noEmit) + Vite-Build
+      - run: npm run build

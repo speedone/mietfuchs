@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
-import { computeSettlement, consumptionOverview } from './calc.js'
+import { computeSettlement, consumptionOverview, rentLedger } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -32,7 +32,7 @@ app.put('/api/settings', (req, res) => {
 })
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
-for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings']) {
+for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']) {
   app.get(`/api/${coll}`, (req, res) => res.json(getDb()[coll]))
   app.post(`/api/${coll}`, (req, res) => {
     const item = { ...req.body, id: newId() }
@@ -53,10 +53,15 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings']) {
     db[coll] = db[coll].filter((x) => x.id !== req.params.id)
     if (coll === 'units') {
       // Abhängige Daten einer gelöschten Wohnung mit entfernen
+      const tenancyIds = db.tenancies.filter((t) => t.unitId === req.params.id).map((t) => t.id)
       db.tenancies = db.tenancies.filter((t) => t.unitId !== req.params.id)
+      db.payments = (db.payments ?? []).filter((p) => !tenancyIds.includes(p.tenancyId))
       const meterIds = db.meters.filter((m) => m.unitId === req.params.id).map((m) => m.id)
       db.meters = db.meters.filter((m) => m.unitId !== req.params.id)
       db.readings = db.readings.filter((r) => !meterIds.includes(r.meterId))
+    }
+    if (coll === 'tenancies') {
+      db.payments = (db.payments ?? []).filter((p) => p.tenancyId !== req.params.id)
     }
     if (coll === 'meters') {
       db.readings = db.readings.filter((r) => r.meterId !== req.params.id)
@@ -122,6 +127,13 @@ app.get('/api/consumption/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   res.json(consumptionOverview(getDb(), year))
+})
+
+// Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
+app.get('/api/rentledger/:year', (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  res.json(rentLedger(getDb(), year))
 })
 
 // ---------- Belege & KI-Auswertung ----------

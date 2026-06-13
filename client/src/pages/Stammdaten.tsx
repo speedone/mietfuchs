@@ -18,6 +18,7 @@ type TenancyForm = {
   personHistory: { from: string; persons: string }[]
   start: string
   end: string
+  baseRents: { from: string; amount: string }[]
   prepayments: { from: string; amount: string }[]
 }
 
@@ -84,6 +85,18 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       return
     }
     personHistory.sort((a, b) => a.from.localeCompare(b.from))
+    const baseRents: { from: string; monthlyCents: number }[] = []
+    for (const row of tenForm.baseRents) {
+      if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
+      const cents = parseEuro(row.amount)
+      const from = row.from || tenForm.start.slice(0, 7)
+      if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
+        setError('Bitte Kaltmiete-Staffel prüfen (Monat und Betrag).')
+        return
+      }
+      baseRents.push({ from, monthlyCents: cents })
+    }
+    baseRents.sort((a, b) => a.from.localeCompare(b.from))
     const prepayments: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.prepayments) {
       if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
@@ -103,6 +116,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       personHistory,
       start: tenForm.start,
       end: tenForm.end || null,
+      baseRents,
       prepayments,
     })
     if (tenForm.id) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
@@ -217,6 +231,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 <th>Wohnung</th>
                 <th className="num">Personen</th>
                 <th>Zeitraum</th>
+                <th className="num">Kaltmiete/Monat</th>
                 <th className="num">Vorauszahlung/Monat</th>
                 <th className="no-print"></th>
               </tr>
@@ -236,6 +251,15 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   </td>
                   <td>
                     {fmtDate(t.start)} – {t.end ? fmtDate(t.end) : 'laufend'}
+                  </td>
+                  <td className="num">
+                    {(t.baseRents?.length ?? 0) === 0 && '—'}
+                    {(t.baseRents ?? []).map((p, i) => (
+                      <div key={i}>
+                        {(t.baseRents?.length ?? 0) > 1 && <span className="muted">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}: </span>}
+                        {fmtEuro(p.monthlyCents)}
+                      </div>
+                    ))}
                   </td>
                   <td className="num">
                     {t.prepayments.length === 0 && '—'}
@@ -267,6 +291,10 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                           })),
                           start: t.start,
                           end: t.end ?? '',
+                          baseRents: (t.baseRents ?? []).map((p) => ({
+                            from: p.from,
+                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+                          })),
                           prepayments: t.prepayments.map((p) => ({
                             from: p.from,
                             amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
@@ -326,6 +354,25 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, personHistory: [...tenForm.personHistory, { from: '', persons: '' }] })}>+ Änderung ab Datum …</button>
             </div>
             <div style={{ width: '100%' }}>
+              <div className="field" style={{ marginBottom: 4 }}>Kaltmiete pro Monat (Staffel — leer lassen, wenn nur die NK abgerechnet werden)</div>
+              {tenForm.baseRents.map((p, i) => (
+                <div className="row" key={i} style={{ marginBottom: 6 }}>
+                  <label className="field">
+                    gültig ab
+                    <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                  </label>
+                  <label className="field">
+                    Betrag €/Monat
+                    <input value={p.amount} style={{ width: 120 }} placeholder="z. B. 800,00" onChange={(e) => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                  </label>
+                  {tenForm.baseRents.length > 1 && (
+                    <button className="btn small ghost" onClick={() => setTenForm({ ...tenForm, baseRents: tenForm.baseRents.filter((_, k) => k !== i) })}>entfernen</button>
+                  )}
+                </div>
+              ))}
+              <button className="btn small secondary" onClick={() => setTenForm({ ...tenForm, baseRents: [...tenForm.baseRents, { from: '', amount: '' }] })}>+ Mieterhöhung ab Monat …</button>
+            </div>
+            <div style={{ width: '100%' }}>
               <div className="field" style={{ marginBottom: 4 }}>Vorauszahlung pro Monat (Staffel — bei Erhöhung neue Zeile hinzufügen)</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="row" key={i} style={{ marginBottom: 6 }}>
@@ -351,7 +398,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           <button
             className="btn secondary"
             style={{ marginTop: 14 }}
-            onClick={() => setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', prepayments: [{ from: '', amount: '' }] })}
+            onClick={() => setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }] })}
             disabled={units.length === 0}
           >
             + Mietverhältnis hinzufügen
@@ -392,7 +439,7 @@ function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
   const [endDate, setEndDate] = useState('')
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
   const [vacancy, setVacancy] = useState(false)
-  const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', prepayment: '' })
+  const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', baseRent: '', prepayment: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -437,6 +484,7 @@ function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
     if (!vacancy) {
       const persons = Number(newTenant.persons)
       const prepayment = parseEuro(newTenant.prepayment)
+      const baseRent = parseEuro(newTenant.baseRent)
       if (!newTenant.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newTenant.start) || !Number.isInteger(persons) || persons < 1) {
         setError('Bitte Name, Einzugsdatum und Personenzahl des neuen Mieters prüfen.')
         return
@@ -452,6 +500,7 @@ function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
         personHistory: [{ from: newTenant.start, persons }],
         start: newTenant.start,
         end: null,
+        baseRents: baseRent !== null ? [{ from: newTenant.start.slice(0, 7), monthlyCents: baseRent }] : [],
         prepayments: prepayment !== null ? [{ from: newTenant.start.slice(0, 7), monthlyCents: prepayment }] : [],
         prepaymentOverrides: {},
       })
@@ -560,6 +609,10 @@ function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
               <label className="field">
                 Personen
                 <input value={newTenant.persons} style={{ width: 80 }} onChange={(e) => setNewTenant({ ...newTenant, persons: e.target.value })} />
+              </label>
+              <label className="field">
+                Kaltmiete €/Monat
+                <input value={newTenant.baseRent} style={{ width: 120 }} placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
               </label>
               <label className="field">
                 Vorauszahlung €/Monat
