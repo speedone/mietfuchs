@@ -3,6 +3,9 @@ import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { api, fmtDate } from '../api'
 import { useYear } from '../year'
+import Drawer from '../components/Drawer'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[] }
 
@@ -20,6 +23,8 @@ function parseNum(s: string): number | null {
 
 export default function Zaehler({ units }: Props) {
   const { year, setYear } = useYear()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
@@ -57,16 +62,26 @@ export default function Zaehler({ units }: Props) {
       meterNumber: meterForm.meterNumber.trim() || undefined,
       unit: meterForm.unit.trim() || 'm³',
     })
-    if (meterForm.id) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
+    const editing = !!meterForm.id
+    if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
     else await api('/api/meters', { method: 'POST', body })
+    const name = meterForm.name.trim()
     setMeterForm(null)
     await load()
+    toast(editing ? `„${name}" übernommen.` : `Zähler „${name}" angelegt.`)
   }
 
   async function deleteMeter(m: Meter) {
-    if (!confirm(`Zähler „${m.name}" samt allen Ablesungen löschen?`)) return
+    const ok = await confirm({
+      title: `Zähler „${m.name}" löschen?`,
+      message: 'Der Zähler und alle zugehörigen Ablesungen werden gelöscht.',
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/meters/${m.id}`, { method: 'DELETE' })
     await load()
+    toast(`Zähler „${m.name}" gelöscht.`)
   }
 
   async function saveReading(meterId: string) {
@@ -90,24 +105,31 @@ export default function Zaehler({ units }: Props) {
     })
     setReadingForm({ ...EMPTY_READING })
     await load()
+    toast('Ablesung gespeichert.')
   }
 
   async function deleteReading(r: Reading) {
-    if (!confirm(`Ablesung vom ${fmtDate(r.date)} löschen?`)) return
+    const ok = await confirm({
+      title: 'Ablesung löschen?',
+      message: `Ablesung vom ${fmtDate(r.date)} wird gelöscht.`,
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/readings/${r.id}`, { method: 'DELETE' })
     await load()
+    toast('Ablesung gelöscht.')
   }
 
   const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
 
   return (
     <>
-      <h1>Zähler</h1>
-      <p className="sub">
-        Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel.
-        Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch".
-      </p>
-      {error && <div className="error">{error}</div>}
+      <PageHeader
+        title="Zähler"
+        subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch".'}
+      />
+      {error && !meterForm && <div className="error">{error}</div>}
 
       <div className="card">
         <div className="row" style={{ marginBottom: 14 }}>
@@ -166,20 +188,41 @@ export default function Zaehler({ units }: Props) {
           </table>
         )}
 
-        {meterForm ? (
-          <div className="row" style={{ marginTop: 16 }}>
+        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setMeterForm({ name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: 'm³' }) }}>
+          + Zähler hinzufügen
+        </button>
+      </div>
+
+      {meterForm && (
+        <Drawer
+          open
+          title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
+          subtitle={meterForm.id ? meterForm.name : undefined}
+          onClose={() => setMeterForm(null)}
+          onSubmit={saveMeter}
+          footer={
+            <>
+              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setMeterForm(null)}>Abbrechen</button>
+              <button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>
+            </>
+          }
+        >
+          {error && <div className="error">{error}</div>}
+          <div className="row">
             <label className="field grow">
               Name
               <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder="z. B. Hauptwasserzähler" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Zuordnung
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 <option value="">Haus (Hauptzähler)</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </label>
-            <label className="field">
+            <label className="field grow">
               Sparte
               <select value={meterForm.type} onChange={(e) => setMeterForm({ ...meterForm, type: e.target.value as MeterType })}>
                 {(Object.keys(METER_TYPE_LABELS) as MeterType[]).map((t) => (
@@ -187,23 +230,17 @@ export default function Zaehler({ units }: Props) {
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="field grow">
               Zählernummer
-              <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} style={{ width: 130 }} placeholder="optional" />
+              <input value={meterForm.meterNumber} onChange={(e) => setMeterForm({ ...meterForm, meterNumber: e.target.value })} placeholder="optional" />
             </label>
-            <label className="field">
+            <label className="field grow">
               Einheit
-              <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} style={{ width: 70 }} />
+              <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
             </label>
-            <button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>
-            <button className="btn ghost" onClick={() => setMeterForm(null)}>Abbrechen</button>
           </div>
-        ) : (
-          <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => setMeterForm({ name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: 'm³' })}>
-            + Zähler hinzufügen
-          </button>
-        )}
-      </div>
+        </Drawer>
+      )}
     </>
   )
 }
@@ -238,10 +275,11 @@ function FragmentRow(props: {
             ? `${cons.consumption.toLocaleString('de-DE')} ${m.unit}`
             : <span className="muted">zu wenig Ablesungen</span>}
         </td>
-        <td className="num no-print" style={{ whiteSpace: 'nowrap' }}>
-          <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>{' '}
-          <button className="btn small secondary" onClick={onEdit}>Bearbeiten</button>{' '}
-          <button className="btn small ghost" onClick={onDelete}>Löschen</button>
+        <td className="actions no-print" style={{ whiteSpace: 'nowrap' }}>
+          <button className="btn small secondary" onClick={onToggle}>{open ? 'Schließen' : `Ablesungen (${readings.length})`}</button>
+          {' '}
+          <button className="icon-btn" title="Bearbeiten" aria-label="Zähler bearbeiten" onClick={onEdit}>✎</button>
+          <button className="icon-btn danger" title="Löschen" aria-label="Zähler löschen" onClick={onDelete}>🗑</button>
         </td>
       </tr>
       {open && (
@@ -268,7 +306,7 @@ function FragmentRow(props: {
                       <td className="muted">
                         {r.replacement && <span className="badge gray">Zählerwechsel</span>} {r.note}
                       </td>
-                      <td className="num"><button className="btn small ghost" onClick={() => onDeleteReading(r)}>Löschen</button></td>
+                      <td className="actions"><button className="icon-btn danger" title="Löschen" aria-label="Ablesung löschen" onClick={() => onDeleteReading(r)}>🗑</button></td>
                     </tr>
                   ))}
                 </tbody>

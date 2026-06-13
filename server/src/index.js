@@ -265,4 +265,4 @@ if (fs.existsSync(clientDist)) {
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
-app.listen(PORT, () => console.log(`NKA-Server läuft auf http://localhost:${PORT}`))
+app.listen(PORT, () => console.log(`Mietfuchs-Server läuft auf http://localhost:${PORT}`))

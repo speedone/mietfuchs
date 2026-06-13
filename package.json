@@ -1,8 +1,8 @@
 {
-  "name": "nebenkostenabrechnung",
+  "name": "mietfuchs",
   "version": "0.1.0",
   "private": true,
-  "description": "Lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
+  "description": "Mietfuchs — lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
   "scripts": {
     "postinstall": "npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n server,client -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",

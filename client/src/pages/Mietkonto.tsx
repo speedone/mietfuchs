@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
+import Drawer from '../components/Drawer'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
@@ -9,6 +12,8 @@ type PaymentForm = { tenancyId: string; date: string; amount: string; note: stri
 
 export default function Mietkonto() {
   const { year, setYear } = useYear()
+  const toast = useToast()
+  const confirm = useConfirm()
   const [ledger, setLedger] = useState<RentLedger | null>(null)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
@@ -41,12 +46,20 @@ export default function Mietkonto() {
     })
     setForm(null)
     await load()
+    toast(`Zahlung über ${fmtEuro(cents)} erfasst.`)
   }
 
   async function deletePayment(p: Payment) {
-    if (!confirm(`Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wirklich löschen?`)) return
+    const ok = await confirm({
+      title: 'Zahlung löschen?',
+      message: `Zahlung vom ${fmtDate(p.date)} über ${fmtEuro(p.amountCents)} wird gelöscht.`,
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     await api(`/api/payments/${p.id}`, { method: 'DELETE' })
     await load()
+    toast('Zahlung gelöscht.')
   }
 
   // Klick auf einen offenen/teilweisen Monat: Zahlung mit dem offenen Restbetrag vorbelegen
@@ -73,9 +86,20 @@ export default function Mietkonto() {
 
   return (
     <>
-      <h1>Mietkonto</h1>
-      <p className="sub">Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge — pro Mietverhältnis.</p>
-      {error && <div className="error">{error}</div>}
+      <PageHeader
+        title="Mietkonto"
+        subtitle="Welche Monate sind bezahlt? Soll (Bruttomiete) gegen tatsächliche Eingänge — pro Mietverhältnis."
+        actions={
+          <button
+            className="btn"
+            onClick={() => { setError(''); setForm({ tenancyId: ledger?.rows[0]?.tenancyId ?? '', date: new Date().toISOString().slice(0, 10), amount: '', note: '' }) }}
+            disabled={(ledger?.rows.length ?? 0) === 0}
+          >
+            + Zahlung erfassen
+          </button>
+        }
+      />
+      {error && !form && <div className="error">{error}</div>}
 
       <div className="card">
         <div className="row">
@@ -87,14 +111,6 @@ export default function Mietkonto() {
               ))}
             </select>
           </label>
-          <div className="field grow" />
-          <button
-            className="btn"
-            onClick={() => setForm({ tenancyId: ledger?.rows[0]?.tenancyId ?? '', date: new Date().toISOString().slice(0, 10), amount: '', note: '' })}
-            disabled={(ledger?.rows.length ?? 0) === 0}
-          >
-            + Zahlung erfassen
-          </button>
         </div>
       </div>
 
@@ -118,8 +134,21 @@ export default function Mietkonto() {
       )}
 
       {form && (
-        <div className="card" style={{ borderColor: 'var(--accent)' }}>
-          <h2>Zahlung erfassen</h2>
+        <Drawer
+          open
+          title="Zahlung erfassen"
+          onClose={() => setForm(null)}
+          onSubmit={savePayment}
+          footer={
+            <>
+              <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
+              <button className="btn" onClick={savePayment}>Speichern</button>
+            </>
+          }
+        >
+          {error && <div className="error">{error}</div>}
           <div className="row">
             <label className="field grow">
               Mietverhältnis
@@ -130,22 +159,20 @@ export default function Mietkonto() {
                 ))}
               </select>
             </label>
-            <label className="field">
+            <label className="field grow">
               Datum
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
             </label>
-            <label className="field">
+            <label className="field grow">
               Betrag €
-              <input value={form.amount} style={{ width: 120 }} placeholder="z. B. 1.000,00" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+              <input value={form.amount} placeholder="z. B. 1.000,00" onChange={(e) => setForm({ ...form, amount: e.target.value })} />
             </label>
             <label className="field grow">
               Notiz (optional)
               <input value={form.note} placeholder="z. B. Überweisung, Nachzahlung" onChange={(e) => setForm({ ...form, note: e.target.value })} />
             </label>
-            <button className="btn" onClick={savePayment}>Speichern</button>
-            <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
           </div>
-        </div>
+        </Drawer>
       )}
 
       {ledger?.rows.length === 0 && (
@@ -247,8 +274,8 @@ export default function Mietkonto() {
                   <td>{tenancyName(p.tenancyId)}</td>
                   <td className="muted">{p.note ?? ''}</td>
                   <td className="num">{fmtEuro(p.amountCents)}</td>
-                  <td className="num no-print">
-                    <button className="btn small ghost" onClick={() => deletePayment(p)}>Löschen</button>
+                  <td className="actions no-print">
+                    <button className="icon-btn danger" title="Löschen" aria-label="Zahlung löschen" onClick={() => deletePayment(p)}>🗑</button>
                   </td>
                 </tr>
               ))}

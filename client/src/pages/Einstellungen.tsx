@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import type { Settings } from '../types'
 import { api } from '../api'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { settings: Settings; reload: () => Promise<void> }
 
 export default function Einstellungen({ settings, reload }: Props) {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [form, setForm] = useState({
     ollamaUrl: settings.ollamaUrl,
     ollamaModel: settings.ollamaModel,
@@ -12,14 +16,19 @@ export default function Einstellungen({ settings, reload }: Props) {
     iban: settings.iban ?? '',
     paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
   })
-  const [saved, setSaved] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; models?: string[]; error?: string } | null>(null)
   const [testing, setTesting] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
 
   async function restore(file: File) {
-    if (!confirm(`Backup „${file.name}" wiederherstellen?\n\nAlle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.`)) return
+    const ok = await confirm({
+      title: `Backup „${file.name}" wiederherstellen?`,
+      message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.',
+      confirmLabel: 'Wiederherstellen',
+      danger: true,
+    })
+    if (!ok) return
     setRestoring(true)
     setRestoreMsg('')
     try {
@@ -43,8 +52,7 @@ export default function Einstellungen({ settings, reload }: Props) {
       }),
     })
     await reload()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
+    toast('Einstellungen gespeichert.')
   }
 
   async function test() {
@@ -60,8 +68,7 @@ export default function Einstellungen({ settings, reload }: Props) {
 
   return (
     <>
-      <h1>Einstellungen</h1>
-      <p className="sub">Vermieterdaten für das Anschreiben und KI-Belegauswertung über Ollama.</p>
+      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben und KI-Belegauswertung über Ollama." />
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>
@@ -81,7 +88,6 @@ export default function Einstellungen({ settings, reload }: Props) {
           </label>
           <button className="btn" onClick={save}>Speichern</button>
         </div>
-        {saved && <div className="ok">Gespeichert.</div>}
       </div>
 
       <div className="card">
@@ -100,7 +106,6 @@ export default function Einstellungen({ settings, reload }: Props) {
             {testing && <span className="spinner" />}Verbindung testen
           </button>
         </div>
-        {saved && <div className="ok">Gespeichert.</div>}
         {status?.ok && (
           <div className="ok">
             Ollama erreichbar. Installierte Modelle: {status.models?.join(', ') || 'keine'}

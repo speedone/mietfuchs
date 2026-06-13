@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear } from '../year'
+import PageHeader from '../components/PageHeader'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
@@ -73,8 +74,7 @@ export default function Uebersicht({ onNavigate }: Props) {
 
   return (
     <>
-      <h1>Übersicht</h1>
-      <p className="sub">Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung.</p>
+      <PageHeader title="Übersicht" subtitle="Kosten im Blick: Jahresvergleich, Auffälligkeiten und der Stand der Abrechnung." />
       {error && <div className="error">{error}</div>}
 
       <div className="card">

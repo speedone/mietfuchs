@@ -27,7 +27,7 @@ COPY --from=build /app/client/dist ./client/dist
 
 EXPOSE 3001
 # Persistente Daten (db.json + uploads/) als Volume — beim Start anhängen:
-#   docker run -p 3001:3001 -v nka-data:/app/server/data <image>
+#   docker run -p 3001:3001 -v mietfuchs-data:/app/server/data <image>
 VOLUME ["/app/server/data"]
 
 CMD ["node", "server/src/index.js"]

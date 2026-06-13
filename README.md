@@ -1,4 +1,4 @@
-# Nebenkostenabrechnung
+# Mietfuchs
 
 Lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter. Alle Daten bleiben auf dem
 eigenen Rechner — keine Cloud, kein Konto, keine externen Dienste.
@@ -80,13 +80,24 @@ npm start          # Server liefert App + API auf http://localhost:3001
 
 ## Mit Docker
 
-Ein einziges Image baut das Frontend und liefert App + API auf Port 3001. Die Daten
-(`db.json` + Belege) liegen in einem benannten Volume und überleben Updates des Containers.
+Voraussetzung: [Docker](https://docs.docker.com/get-docker/) installiert (Docker Desktop unter
+Windows/macOS, Docker Engine unter Linux). Ein einziges Image baut das Frontend und liefert
+App + API auf Port 3001; die Daten (`db.json` + Belege) liegen im benannten Volume
+`mietfuchs-data` und überleben Updates des Containers.
+
+Am einfachsten mit **Docker Compose** (Konfiguration in [`docker-compose.yml`](docker-compose.yml)):
 
 ```bash
-docker build -t nebenkosten .
-docker run -d -p 3001:3001 -v nka-data:/app/server/data --name nebenkosten nebenkosten
+docker compose up -d        # Image bauen + Container starten (im Hintergrund)
 # App: http://localhost:3001
+docker compose down         # stoppen — das Volume mit den Daten bleibt erhalten
+```
+
+Ohne Compose geht es auch direkt:
+
+```bash
+docker build -t mietfuchs .
+docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs mietfuchs
 ```
 
 Die optionale KI-Belegauswertung erwartet eine Ollama-Instanz. Läuft sie auf dem Host,

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, UploadInfo } from '../types'
 import { api, fmtEuro } from '../api'
 import { invoiceLabel } from '../pdfPreview'
+import PageHeader from '../components/PageHeader'
+import { useToast, useConfirm } from '../components/feedback'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -12,6 +14,8 @@ const fmtDateTime = (iso: string) => {
 }
 
 export default function Belege() {
+  const toast = useToast()
+  const confirm = useConfirm()
   const [uploads, setUploads] = useState<UploadInfo[]>([])
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [error, setError] = useState('')
@@ -25,10 +29,17 @@ export default function Belege() {
   useEffect(() => { void load() }, [load])
 
   async function deleteFile(f: UploadInfo) {
-    if (!confirm(`Beleg „${invoiceLabel(f.file)}" endgültig löschen?`)) return
+    const ok = await confirm({
+      title: 'Beleg endgültig löschen?',
+      message: `„${invoiceLabel(f.file)}" wird unwiderruflich von der Festplatte entfernt.`,
+      confirmLabel: 'Löschen',
+      danger: true,
+    })
+    if (!ok) return
     try {
       await api(`/api/uploads/${encodeURIComponent(f.file)}`, { method: 'DELETE' })
       await load()
+      toast('Beleg gelöscht.')
     } catch (e) {
       setError(String((e as Error).message))
     }
@@ -79,11 +90,10 @@ export default function Belege() {
 
   return (
     <>
-      <h1>Belegarchiv</h1>
-      <p className="sub">
-        Alle hochgeladenen Belege mit ihrem Zuordnungsstatus. Nicht zugeordnete Dateien
-        (z. B. aus abgebrochenen Auswertungen) können hier aufgeräumt werden.
-      </p>
+      <PageHeader
+        title="Belegarchiv"
+        subtitle="Alle hochgeladenen Belege mit ihrem Zuordnungsstatus. Nicht zugeordnete Dateien (z. B. aus abgebrochenen Auswertungen) können hier aufgeräumt werden."
+      />
       {error && <div className="error">{error}</div>}
 
       {orphans.length > 0 && (
@@ -134,9 +144,9 @@ export default function Belege() {
                         </>
                       )}
                     </td>
-                    <td className="num">
+                    <td className="actions">
                       {linked.length === 0 && (
-                        <button className="btn small ghost" onClick={() => void deleteFile(f)}>Löschen</button>
+                        <button className="icon-btn danger" title="Löschen" aria-label="Beleg löschen" onClick={() => void deleteFile(f)}>🗑</button>
                       )}
                     </td>
                   </tr>

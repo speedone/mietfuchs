@@ -1,0 +1,20 @@
+# Mietfuchs per Docker Compose: baut das Image und liefert App + API auf Port 3001.
+# Start:  docker compose up -d      Stopp:  docker compose down   (Daten bleiben erhalten)
+services:
+  mietfuchs:
+    build: .
+    image: mietfuchs
+    container_name: mietfuchs
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persistente Daten (db.json + hochgeladene Belege) — überleben Container-Updates.
+      - mietfuchs-data:/app/server/data
+    restart: unless-stopped
+    # Macht den Host unter „host.docker.internal" erreichbar (für eine Ollama-Instanz auf dem
+    # Host) — unter Docker Desktop ohnehin vorhanden, unter Linux per host-gateway nachgerüstet.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  mietfuchs-data:
