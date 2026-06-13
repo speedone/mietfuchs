@@ -3,6 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "description": "Mietfuchs — lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
+  "author": "Martin Geörger",
+  "license": "MIT",
+  "homepage": "https://github.com/speedone/mietfuchs#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/speedone/mietfuchs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/speedone/mietfuchs/issues"
+  },
+  "keywords": [
+    "nebenkostenabrechnung",
+    "betriebskosten",
+    "vermieter",
+    "immobilien",
+    "anlage-v"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "postinstall": "npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n server,client -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",

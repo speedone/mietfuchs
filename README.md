@@ -3,6 +3,27 @@
 Lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter. Alle Daten bleiben auf dem
 eigenen Rechner — keine Cloud, kein Konto, keine externen Dienste.
 
+## Screenshots
+
+> Alle Abbildungen zeigen frei erfundene Beispieldaten („Beispielhaus Musterstraße 7, 12345
+> Musterstadt") — keine echten Personen, Adressen oder Kontodaten.
+
+![Cockpit — der Stand der Abrechnung auf einen Blick](docs/screenshots/cockpit.png)
+
+| Abrechnung je Mieter | Mietkonto (Soll/Ist je Monat) |
+| --- | --- |
+| [![Abrechnung](docs/screenshots/abrechnung.png)](docs/screenshots/abrechnung.png) | [![Mietkonto](docs/screenshots/mietkonto.png)](docs/screenshots/mietkonto.png) |
+
+| Kosten & Belege | Kostenvergleich |
+| --- | --- |
+| [![Kosten & Belege](docs/screenshots/kosten.png)](docs/screenshots/kosten.png) | [![Kostenvergleich](docs/screenshots/kostenvergleich.png)](docs/screenshots/kostenvergleich.png) |
+
+| Steuer-Übersicht (Anlage V) | Zähler & Stände |
+| --- | --- |
+| [![Steuer / Anlage V](docs/screenshots/steuer.png)](docs/screenshots/steuer.png) | [![Zähler](docs/screenshots/zaehler.png)](docs/screenshots/zaehler.png) |
+
+<sub>Weitere Ansicht: [Stammdaten](docs/screenshots/stammdaten.png).</sub>
+
 ## Start
 
 ```powershell
