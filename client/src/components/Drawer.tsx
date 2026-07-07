@@ -20,22 +20,35 @@ type Props = {
 export default function Drawer({ open, title, subtitle, onClose, footer, children, onSubmit, width = 460 }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
 
+  // Callbacks über Refs stabil halten, damit die Effects nicht bei jedem Render (Tastendruck)
+  // neu laufen — sonst würde der Fokus ständig aufs erste Feld zurückspringen.
+  const onCloseRef = useRef(onClose)
+  const onSubmitRef = useRef(onSubmit)
+  onCloseRef.current = onClose
+  onSubmitRef.current = onSubmit
+
+  // Fokus aufs erste Feld + Scroll-Sperre — nur beim Öffnen, nicht bei jedem Render.
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSubmit?.() }
-    }
-    document.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const t = setTimeout(() => bodyRef.current?.querySelector<HTMLElement>('input, select, textarea')?.focus(), 60)
     return () => {
-      document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
       clearTimeout(t)
     }
-  }, [open, onClose, onSubmit])
+  }, [open])
+
+  // Tastatur-Kürzel (Esc/Strg+S) — greifen über die Refs immer auf die aktuellen Callbacks zu.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCloseRef.current()
+      else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onSubmitRef.current?.() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   if (!open) return null
   return (
