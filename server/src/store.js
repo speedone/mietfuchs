@@ -4,7 +4,13 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-export const DATA_DIR = path.join(__dirname, '..', 'data')
+// In der gepackten Binary (Bun --compile) liegt der Code in einem virtuellen,
+// schreibgeschützten Dateisystem — die Daten müssen daneben, in den echten Ordner
+// neben die ausführbare Datei. Im Dev-/npm-Betrieb bleibt es bei server/data.
+const PACKAGED = !!globalThis.Bun
+export const DATA_DIR = PACKAGED
+  ? path.join(path.dirname(process.execPath), 'data')
+  : path.join(__dirname, '..', 'data')
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
