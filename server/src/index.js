@@ -297,7 +297,10 @@ function openBrowser(url) {
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
 const server = app.listen(PORT, () => {
-  const url = `http://localhost:${PORT}`
+  // Bewusst 127.0.0.1 statt localhost: Unter Windows löst "localhost" zuerst auf IPv6
+  // (::1) auf. Der Server lauscht auf IPv4 (0.0.0.0), und auf ::1 kann ein anderer
+  // Dienst sitzen (z. B. WSLs wslrelay), der dann 404 liefert. 127.0.0.1 erzwingt IPv4.
+  const url = `http://127.0.0.1:${PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
   if (PACKAGED) {
     console.log('Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
