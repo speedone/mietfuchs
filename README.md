@@ -4,6 +4,7 @@
 Keine Cloud, kein Konto, keine Abogebühren.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Download](https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github)](https://github.com/speedone/mietfuchs/releases/latest)
 ![Node ≥ 20](https://img.shields.io/badge/Node-%E2%89%A5%2020-339933?logo=node.js&logoColor=white)
 ![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
 ![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
@@ -44,7 +45,37 @@ für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
 
 <sub>Weitere Ansicht: [Stammdaten](docs/screenshots/stammdaten.png).</sub>
 
-## Start
+## Herunterladen & starten (ohne Installation)
+
+Der einfachste Weg — **keine Installation, kein Node nötig**. Auf der
+[**Releases-Seite**](https://github.com/speedone/mietfuchs/releases/latest) die passende Datei
+für dein System laden:
+
+| System | Datei |
+| --- | --- |
+| Windows | `mietfuchs-win.exe` |
+| macOS (Apple Silicon, M1–M4) | `mietfuchs-macos-apple-silicon` |
+| macOS (Intel) | `mietfuchs-macos-intel` |
+| Linux | `mietfuchs-linux` |
+
+Datei per **Doppelklick** starten — es öffnet sich automatisch dein Browser mit Mietfuchs.
+Das Programmfenster (die schwarze Konsole) offen lassen, solange du arbeitest; zum Beenden
+einfach schließen.
+
+Beim ersten Start meldet sich das Betriebssystem, weil die Datei nicht kostenpflichtig
+signiert ist:
+
+- **Windows** — „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
+  *Trotzdem ausführen*.
+- **macOS** — Rechtsklick auf die Datei → *Öffnen* → im Dialog nochmals *Öffnen*.
+- **Linux** — einmalig ausführbar machen: `chmod +x mietfuchs-linux`, dann starten.
+
+Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`db.json` + Belege).
+Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung-optional)
+braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) — ohne das
+funktioniert die Abrechnung trotzdem vollständig.
+
+## Aus dem Quellcode starten (für Entwickler)
 
 ```powershell
 npm install        # einmalig: installiert Server + Client
@@ -52,6 +83,9 @@ npm run dev        # startet Server (Port 3001) und Oberfläche (http://localhos
 ```
 
 Tests der Berechnungs-Engine: `npm test`
+
+Eigenständige Binaries selbst bauen (benötigt [Bun](https://bun.com)): `npm run package` →
+legt die Dateien für alle Plattformen in `dist-bin/` ab.
 
 ## Funktionsweise
 
@@ -109,8 +143,9 @@ Vorschläge — übernommen wird erst nach manueller Prüfung.
 
 ## Daten & Backup
 
-Alles liegt in `server/data/` (`db.json` + hochgeladene Belege in `uploads/`).
-Backup = diesen Ordner kopieren.
+Alles liegt in einem `data/`-Ordner (`db.json` + hochgeladene Belege in `uploads/`).
+Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
+Quellcode unter `server/data/`. Backup = diesen Ordner kopieren.
 
 ## Produktivbetrieb ohne Dev-Server
 
