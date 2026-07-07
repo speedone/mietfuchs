@@ -18,8 +18,12 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001',
+      // 127.0.0.1 statt localhost: Auf Windows löst "localhost" zuerst zu IPv6 (::1)
+      // auf — dort kann eine WSL-Portweiterleitung (wslrelay) Port 3001 belegen und
+      // liefert dann 404 für alle /api-Routen. Die explizite IPv4-Adresse trifft
+      // zuverlässig den lokalen Express-Server.
+      '/api': 'http://127.0.0.1:3001',
+      '/uploads': 'http://127.0.0.1:3001',
     },
   },
 })
