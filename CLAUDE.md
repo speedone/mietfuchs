@@ -19,7 +19,21 @@ npm run dev        # concurrently: Server (Port 3001) + Vite (Port 5173)
 npm test           # Tests der Berechnungs-Engine (delegiert an server)
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
+npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 ```
+
+**Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
+kompiliert Server + eingebettetes Frontend per **Bun `--compile`** zu je einer Datei pro
+Plattform (Windows/macOS-Intel/macOS-ARM/Linux) in `dist-bin/`. `node scripts/package-binaries.mjs win`
+baut nur ein Ziel. Bun wird gewählt, weil der Server ESM ist und `pdfjs-dist` top-level await
+nutzt — beides kann pkg/SEA nicht bündeln. Das Frontend wird beim Build über
+[scripts/embed-client.mjs](scripts/embed-client.mjs) aus `client/dist` in das generierte
+(gitignorierte) Modul `server/src/embedded-client.js` eingebettet (Bun-Importattribut
+`with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
+Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
+ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
+Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
+`v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release.
 
 Einzelnen Test ausführen (node:test, kein Framework):
 

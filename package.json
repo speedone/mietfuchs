@@ -28,7 +28,8 @@
     "dev": "concurrently -n server,client -c blue,green \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
     "test": "npm --prefix server test",
     "build": "npm --prefix client run build",
-    "start": "npm --prefix server start"
+    "start": "npm --prefix server start",
+    "package": "node scripts/package-binaries.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -1,0 +1,55 @@
+name: Release-Binaries
+
+# Baut die eigenständigen Mietfuchs-Binaries (Windows/macOS/Linux) und hängt sie
+# ans GitHub-Release. Läuft automatisch bei einem Tag wie v0.1.2 und lässt sich
+# zusätzlich von Hand starten.
+#
+# Bun kann alle Ziele von einem einzigen Linux-Runner aus cross-kompilieren —
+# deshalb kein Build-Matrix nötig.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Runner bewusst anpinnen (nicht ubuntu-latest) — reproduzierbare Release-Builds.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node für npm install (Server-/Client-Deps) und den vite-Build des Frontends.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Bun für das Kompilieren der Binaries.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Root + server + client installieren (postinstall zieht die Unterpakete mit).
+      - name: Abhängigkeiten installieren
+        run: npm install
+
+      # Frontend bauen, Embed-Modul erzeugen und alle Ziel-Binaries kompilieren.
+      - name: Binaries bauen
+        run: npm run package
+
+      - name: Binaries hochladen (Artefakt)
+        uses: actions/upload-artifact@v7
+        with:
+          name: mietfuchs-binaries
+          path: dist-bin/*
+
+      # Nur bei einem echten Tag-Push: Dateien ans Release hängen.
+      - name: Ans Release anhängen
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist-bin/*
+          fail_on_unmatched_files: true

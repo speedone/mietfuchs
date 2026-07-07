@@ -2,6 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
@@ -255,14 +256,60 @@ app.get('/api/ollama/status', async (req, res) => {
   }
 })
 
-// ---------- Frontend (Produktions-Build), falls vorhanden ----------
-const clientDist = path.join(__dirname, '..', '..', 'client', 'dist')
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist))
-  app.get(/^(?!\/api|\/uploads).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+// ---------- Frontend (Produktions-Build) ----------
+// Gepackte Binary (Bun --compile): das Frontend ist ins Binary eingebettet und wird
+// aus dem generierten Modul embedded-client.js ausgeliefert (siehe scripts/embed-client.mjs).
+// Im npm-/Dev-Betrieb kommt es wie gehabt von der Platte aus client/dist.
+const PACKAGED = !!globalThis.Bun
+if (PACKAGED) {
+  const { embeddedFiles, mimeFor } = await import('./embedded-client.js')
+  const sendEmbedded = (res, urlPath) => {
+    const embedded = embeddedFiles[urlPath]
+    if (!embedded) return false
+    res.type(mimeFor(urlPath)).send(fs.readFileSync(embedded))
+    return true
+  }
+  app.get(/^(?!\/api|\/uploads).*/, (req, res) => {
+    // exakter Treffer, sonst SPA-Fallback auf index.html
+    if (sendEmbedded(res, req.path === '/' ? '/index.html' : req.path)) return
+    sendEmbedded(res, '/index.html') || res.status(404).send('Nicht gefunden')
+  })
+} else {
+  const clientDist = path.join(__dirname, '..', '..', 'client', 'dist')
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist))
+    app.get(/^(?!\/api|\/uploads).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+  }
+}
+
+// Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
+function openBrowser(url) {
+  try {
+    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref()
+    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
+    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+  } catch {
+    /* egal — Nutzer kann die URL notfalls von Hand öffnen */
+  }
 }
 
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
-app.listen(PORT, () => console.log(`Mietfuchs-Server läuft auf http://localhost:${PORT}`))
+const server = app.listen(PORT, () => {
+  const url = `http://localhost:${PORT}`
+  console.log(`Mietfuchs-Server läuft auf ${url}`)
+  if (PACKAGED) {
+    console.log('Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
+    openBrowser(url)
+  }
+})
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} ist bereits belegt. Läuft Mietfuchs vielleicht schon? Sonst mit NKA_PORT einen anderen Port setzen.`)
+  } else {
+    console.error(err)
+  }
+  if (PACKAGED) setTimeout(() => process.exit(1), 10000) // Fenster kurz offen lassen, damit man die Meldung liest
+  else process.exit(1)
+})
