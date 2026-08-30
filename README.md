@@ -54,11 +54,12 @@ für dein System laden:
 | System | Datei |
 | --- | --- |
 | Windows | `mietfuchs-win.exe` |
-| macOS (Apple Silicon, M1–M4) | `mietfuchs-macos-apple-silicon` |
-| macOS (Intel) | `mietfuchs-macos-intel` |
-| Linux | `mietfuchs-linux` |
+| macOS (Apple Silicon, M1–M4) | `mietfuchs-macos-apple-silicon.zip` |
+| macOS (Intel) | `mietfuchs-macos-intel.zip` |
+| Linux | `mietfuchs-linux.tar.gz` |
 
-Datei per **Doppelklick** starten — es öffnet sich automatisch dein Browser mit Mietfuchs.
+Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
+**Doppelklick** starten — es öffnet sich automatisch dein Browser mit Mietfuchs.
 Das Programmfenster (die schwarze Konsole) offen lassen, solange du arbeitest; zum Beenden
 einfach schließen.
 
@@ -67,8 +68,13 @@ signiert ist:
 
 - **Windows** — „Der Computer wurde durch Windows geschützt" → *Weitere Informationen* →
   *Trotzdem ausführen*.
-- **macOS** — Rechtsklick auf die Datei → *Öffnen* → im Dialog nochmals *Öffnen*.
-- **Linux** — einmalig ausführbar machen: `chmod +x mietfuchs-linux`, dann starten.
+- **macOS** — der erste Start wird blockiert: Dialog schließen, dann in
+  *Systemeinstellungen → Datenschutz & Sicherheit* unten bei der Mietfuchs-Meldung auf
+  *Dennoch öffnen* klicken und den Start wiederholen. Bis macOS 14 geht stattdessen
+  Rechtsklick auf die Datei → *Öffnen* → im Dialog nochmals *Öffnen*. Wer das Terminal mag,
+  nimmt den Einzeiler `xattr -d com.apple.quarantine mietfuchs-macos-*`.
+- **Linux** — im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
+  (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
 Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`db.json` + Belege).
 Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung-optional)

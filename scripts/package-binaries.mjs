@@ -1,6 +1,7 @@
 // Baut Mietfuchs zu eigenständigen Binaries (Windows/macOS/Linux) über Bun --compile.
 // Ablauf: Frontend bauen → Embed-Modul aus client/dist erzeugen → für jedes Ziel
-// ein Binary kompilieren. Bun führt ESM + top-level await nativ aus und bettet die
+// ein Binary kompilieren und für macOS/Linux als Archiv verpacken.
+// Bun führt ESM + top-level await nativ aus und bettet die
 // per `with { type: "file" }` referenzierten Frontend-Dateien mit ein.
 //
 // Nutzung:
@@ -21,12 +22,15 @@ const run = (cmd, args, opts = {}) =>
 // Direkte .exe-Aufrufe (node) dürfen das NICHT (shell:true zerlegt Pfade mit Leerzeichen).
 const runShell = (cmd, args, opts = {}) => run(cmd, args, { shell: isWin, ...opts })
 
-// Ausgabename + Bun-Target je Plattform
+// Ausgabename + Bun-Target je Plattform. `archive` bestimmt die Release-Verpackung:
+// Rohe Binaries verlieren beim HTTP-Download ihr Ausführungs-Bit (HTTP kennt keine
+// Dateirechte) — Zip/Tarball konservieren es. Zip für macOS (entpackt der Finder per
+// Doppelklick), tar.gz für Linux; die Windows-.exe braucht kein Exec-Bit und bleibt roh.
 const TARGETS = {
   win: { target: 'bun-windows-x64', out: 'mietfuchs-win.exe' },
-  'macos-x64': { target: 'bun-darwin-x64', out: 'mietfuchs-macos-intel' },
-  'macos-arm64': { target: 'bun-darwin-arm64', out: 'mietfuchs-macos-apple-silicon' },
-  linux: { target: 'bun-linux-x64', out: 'mietfuchs-linux' },
+  'macos-x64': { target: 'bun-darwin-x64', out: 'mietfuchs-macos-intel', archive: 'zip' },
+  'macos-arm64': { target: 'bun-darwin-arm64', out: 'mietfuchs-macos-apple-silicon', archive: 'zip' },
+  linux: { target: 'bun-linux-x64', out: 'mietfuchs-linux', archive: 'tar' },
 }
 const only = process.argv[2]
 if (only && !TARGETS[only]) {
@@ -44,7 +48,24 @@ run(process.execPath, ['scripts/embed-client.mjs'])
 const outDir = path.join(root, 'dist-bin')
 fs.mkdirSync(outDir, { recursive: true })
 
-for (const [name, { target, out }] of Object.entries(selected)) {
+// Binary in dist-bin/ archivieren (Zip bzw. tar.gz, jeweils ohne Pfadanteile).
+// Fehlt das Tool (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen —
+// das rohe Binary liegt trotzdem in dist-bin. Der Release-Runner (Linux) hat beide Tools.
+const archive = (kind, out) => {
+  const file = path.join(outDir, out)
+  try {
+    if (kind === 'zip') {
+      fs.rmSync(`${file}.zip`, { force: true }) // zip aktualisiert sonst ein Alt-Archiv
+      run('zip', ['-j', `${file}.zip`, file])
+    } else {
+      run('tar', ['-czf', `${file}.tar.gz`, '-C', outDir, out])
+    }
+  } catch {
+    console.warn(`   ! ${kind} nicht verfügbar — ${out} bleibt unverpackt`)
+  }
+}
+
+for (const [name, { target, out, archive: kind }] of Object.entries(selected)) {
   console.log(`\n→ Bun --compile: ${name} (${target}) …`)
   runShell(bun, [
     'build',
@@ -54,6 +75,7 @@ for (const [name, { target, out }] of Object.entries(selected)) {
     '--outfile',
     path.join(outDir, out),
   ])
+  if (kind) archive(kind, out)
 }
 
 console.log(`\n✓ Fertig. Binaries liegen in ${outDir}:`)
