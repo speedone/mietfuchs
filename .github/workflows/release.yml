@@ -40,17 +40,25 @@ jobs:
       - name: Binaries bauen
         run: npm run package
 
+      # Nur Archive + .exe verteilen, nicht die rohen macOS/Linux-Binaries: bei einem
+      # rohen Download geht das Ausführungs-Bit verloren (#1) — die Archive konservieren es.
       - name: Binaries hochladen (Artefakt)
         uses: actions/upload-artifact@v7
         with:
           name: mietfuchs-binaries
-          path: dist-bin/*
+          path: |
+            dist-bin/*.zip
+            dist-bin/*.tar.gz
+            dist-bin/*.exe
 
       # Nur bei einem echten Tag-Push: Dateien ans Release hängen.
       - name: Ans Release anhängen
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: dist-bin/*
+          files: |
+            dist-bin/*.zip
+            dist-bin/*.tar.gz
+            dist-bin/*.exe
           fail_on_unmatched_files: true
           generate_release_notes: true

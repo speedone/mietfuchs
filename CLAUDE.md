@@ -33,7 +33,9 @@ nutzt — beides kann pkg/SEA nicht bündeln. Das Frontend wird beim Build über
 Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
 ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
-`v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release.
+`v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,
+Linux als tar.gz (konserviert das Ausführungs-Bit, das rohe Downloads verlieren würden), die
+Windows-`.exe` roh.
 
 Einzelnen Test ausführen (node:test, kein Framework):
 
