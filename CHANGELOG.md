@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Linux-Programmdatei startet auch ohne grafische Oberfläche.** Fehlte `xdg-open` — auf
+  einem Server, in einem Container oder bei Anmeldung per SSH —, beendete sich die
+  Programmdatei direkt nach dem Start, obwohl der Server schon lief. Jetzt erscheint ein
+  Hinweis, die Adresse von Hand im Browser zu öffnen, und Mietfuchs läuft weiter. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#8](https://github.com/speedone/mietfuchs/pull/8).
+  ([#7](https://github.com/speedone/mietfuchs/issues/7))
+
 ## [0.3.0] – 2026-09-18
 
 ### Hinzugefügt

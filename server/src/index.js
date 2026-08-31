@@ -291,12 +291,25 @@ if (PACKAGED) {
 
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
 function openBrowser(url) {
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '""', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]]
   try {
-    if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '""', url], { detached: true, stdio: 'ignore' }).unref()
-    else if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
-    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+    // Fehlt das Programm, wirft spawn nicht, sondern meldet 'error' asynchron auf dem
+    // Kindprozess — der try/catch greift dann nicht mehr. Ohne Zuhörer wird daraus ein
+    // unbehandelter Fehler, der den Server beendet, obwohl er schon lauscht. Auf einem
+    // Linux-Server ohne xdg-open (headless, Container, SSH) war die Binary damit nicht
+    // startbar.
+    child.on('error', () => {
+      console.log(`Kein Browser gestartet (${cmd} nicht verfügbar) — bitte ${url} von Hand öffnen.`)
+    })
+    child.unref()
   } catch {
-    /* egal — Nutzer kann die URL notfalls von Hand öffnen */
+    /* egal — die URL steht in der Meldung darüber */
   }
 }
 
