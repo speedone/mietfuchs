@@ -197,4 +197,9 @@ Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert.
   Preview-Tools kollidieren sonst mit Vite).
 - Zielbild ist das kleine Mehrfamilienhaus in Eigenverwaltung: wenige Wohnungen, davon
   gegebenenfalls eine selbstgenutzte, kalte Betriebskosten. Heizung/Warmwasser nach HeizkostenV
-  deckt das Tool bewusst nicht ab — Energie rechnen die Mieter direkt mit ihrem Versorger ab.
+  deckt das Tool derzeit nicht ab — Energie rechnen die Mieter direkt mit ihrem Versorger ab.
+- **Maßstab für Erweiterungen** (siehe [CONTRIBUTING.md](CONTRIBUTING.md)): Mietfuchs muss für
+  Vermieter ohne technische Vorkenntnisse nutzbar und einfach einzurichten bleiben. Die Technik
+  darunter darf wachsen (Datenbank, Serverbetrieb), solange Skripte, Installer und
+  Voreinstellungen die Einrichtung übernehmen. Architekturentscheidungen also nicht pauschal
+  ausschließen, sondern daran messen, was beim Nutzer ankommt.
