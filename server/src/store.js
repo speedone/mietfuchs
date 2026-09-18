@@ -45,7 +45,11 @@ function load() {
   } else {
     db = structuredClone(DEFAULT_DB)
   }
-  // Migrationen älterer Datenformate
+  // Migrationen älterer Datenformate.
+  // Wohnungen: `selfUsed`/`selfPersons` (Eigennutzung in der Verteilbasis) kamen später dazu.
+  // Bewusst ohne Rück-Migration — ein automatisch gesetztes Kennzeichen würde die Verteilung
+  // bereits abgerechneter Jahre verändern. Die Umstellung passiert in den Stammdaten; das
+  // Cockpit weist auf nicht beteiligte Wohnungen mit Wohnfläche hin.
   for (const t of db.tenancies) {
     // fester Monatsbetrag → Vorauszahlungs-Staffel
     if (!Array.isArray(t.prepayments)) {

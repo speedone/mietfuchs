@@ -197,8 +197,21 @@ export default function Steuer({ settings }: Props) {
                 <strong>Gemischt genutztes Gebäude.</strong> Es gibt selbstgenutzte (nicht vermietete)
                 Einheiten — der vermietete Flächenanteil beträgt <strong>{sharePct.toLocaleString('de-DE')} %</strong>.
                 Werbungskosten, die das gesamte Gebäude betreffen, sind nur anteilig (nach Fläche) abziehbar;
-                der auf die selbstgenutzte Wohnung entfallende Teil ist privat. Bitte den abziehbaren Anteil
-                mit dem Steuerberater abstimmen — diese Übersicht nimmt die Aufteilung nicht automatisch vor.
+                der auf die selbstgenutzte Wohnung entfallende Teil ist privat.
+                {data.selfUsedShareCents > 0 ? (
+                  <>
+                    {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
+                    auf selbstgenutzte Wohnungen — dieser Teil ist in den oben ausgewiesenen Werbungskosten
+                    noch enthalten.
+                  </>
+                ) : (
+                  <>
+                    {' '}Damit dieser Teil bezifferbar wird, die selbstgenutzte Wohnung in den Stammdaten auf
+                    <em> Eigennutzung</em> stellen.
+                  </>
+                )}{' '}
+                Bitte den abziehbaren Anteil mit dem Steuerberater abstimmen — diese Übersicht nimmt die
+                Aufteilung nicht automatisch vor.
               </div>
             )}
 

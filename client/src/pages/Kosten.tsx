@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory, usageOf } from '../types'
 import { api, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
@@ -18,7 +18,10 @@ type ItemForm = {
   labor35a: string
   key: CostKey
   directUnitId: string
-  meterType: MeterType
+  // leer = noch nicht gewählt; ein Vorbelegen wäre gefährlich, weil das Feld sonst
+  // einen Zählertyp speichern kann, der in der Auswahl gar nicht angeboten wird
+  meterType: MeterType | ''
+  customShares: Record<string, string> // Wohnungs-ID → Prozent-Eingabe
   invoiceFile?: string
 }
 
@@ -36,7 +39,7 @@ type QueueEntry = {
   positions: ExtractPos[]
 }
 
-const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', amount: '', labor35a: '', key: 'area', directUnitId: '', meterType: 'kaltwasser' }
+const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', amount: '', labor35a: '', key: 'area', directUnitId: '', meterType: '', customShares: {} }
 
 export default function Kosten({ units, settings }: Props) {
   const { year, setYear } = useYear()
@@ -62,6 +65,21 @@ export default function Kosten({ units, settings }: Props) {
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
+  // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
+  const basisUnits = useMemo(() => units.filter((u) => usageOf(u) !== 'ausgenommen'), [units])
+
+  // Live-Summe der vereinbarten Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
+  const customSharesSumText = useMemo(() => {
+    if (!form) return ''
+    const fmt = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+    const sum = basisUnits.reduce((a, u) => {
+      const hundredths = parseEuro(form.customShares[u.id]?.trim() || '0') ?? 0
+      return a + Math.max(0, hundredths) / 100
+    }, 0)
+    if (sum > 100.0001) return `${fmt(sum)} % — mehr als 100 % sind nicht möglich`
+    const rest = 100 - sum
+    return rest > 0.0001 ? `${fmt(sum)} % — die restlichen ${fmt(rest)} % trägt der Vermieter` : `${fmt(sum)} %`
+  }, [form, basisUnits])
 
   // Bereits hochgeladene Belege (für die nachträgliche Zuordnung zu einer Position)
   const knownFiles = useMemo(() => {
@@ -118,6 +136,34 @@ export default function Kosten({ units, settings }: Props) {
       setError('Bei Direktzuordnung bitte eine Wohnung wählen.')
       return
     }
+    if (form.key === 'meter' && !form.meterType) {
+      setError('Bei Verbrauchsumlage bitte einen Zählertyp wählen.')
+      return
+    }
+    let customShares: Record<string, number> | undefined
+    if (form.key === 'custom') {
+      customShares = {}
+      for (const u of basisUnits) {
+        const raw = form.customShares[u.id]?.trim()
+        if (!raw) continue
+        // Prozent in deutscher oder technischer Schreibweise; parseEuro liefert Hundertstel
+        const hundredths = parseEuro(raw)
+        if (hundredths === null || hundredths < 0) {
+          setError(`Anteil für „${u.name}" bitte als Prozentzahl angeben (z. B. 33,33).`)
+          return
+        }
+        if (hundredths > 0) customShares[u.id] = hundredths / 100
+      }
+      const sum = Object.values(customShares).reduce((a, p) => a + p, 0)
+      if (sum <= 0) {
+        setError('Bitte mindestens einen Anteil größer 0 % angeben.')
+        return
+      }
+      if (sum > 100.0001) {
+        setError(`Die Anteile ergeben ${sum.toLocaleString('de-DE', { maximumFractionDigits: 2 })} % — mehr als 100 % sind nicht möglich.`)
+        return
+      }
+    }
     setError('')
     const body = JSON.stringify({
       year,
@@ -129,6 +175,7 @@ export default function Kosten({ units, settings }: Props) {
       key: form.key,
       directUnitId: form.key === 'direct' ? form.directUnitId : undefined,
       meterType: form.key === 'meter' ? form.meterType : undefined,
+      customShares: customShares ?? null, // null löscht Anteile beim Schlüsselwechsel
       invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
     })
     const editing = !!form.id
@@ -390,7 +437,14 @@ export default function Kosten({ units, settings }: Props) {
                   <td>
                     {KEY_LABELS[i.key]}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
-                    {i.key === 'meter' && <div className="muted">{METER_TYPE_LABELS[i.meterType ?? 'kaltwasser']}</div>}
+                    {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
+                    {i.key === 'custom' && (
+                      <div className="muted">
+                        {Object.entries(i.customShares ?? {})
+                          .map(([unitId, pct]) => `${units.find((u) => u.id === unitId)?.name ?? '?'}: ${pct.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %`)
+                          .join(' · ') || '— keine Anteile'}
+                      </div>
+                    )}
                   </td>
                   <td className="num">
                     {fmtEuro(i.amountCents)}
@@ -412,7 +466,13 @@ export default function Kosten({ units, settings }: Props) {
                           labor35a: i.labor35aCents ? (i.labor35aCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
                           key: i.key,
                           directUnitId: i.directUnitId ?? '',
-                          meterType: i.meterType ?? 'kaltwasser',
+                          meterType: i.meterType ?? '',
+                          customShares: Object.fromEntries(
+                            Object.entries(i.customShares ?? {}).map(([unitId, pct]) => [
+                              unitId,
+                              pct.toLocaleString('de-DE', { maximumFractionDigits: 2 }),
+                            ]),
+                          ),
                           invoiceFile: i.invoiceFile,
                         })
                       }}
@@ -501,10 +561,39 @@ export default function Kosten({ units, settings }: Props) {
             {form.key === 'meter' && (
               <label className="field grow">
                 Zählertyp
-                <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType })}>
-                  {unitMeterTypes.map((t) => <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>)}
+                {/* Die Auswahl enthält zusätzlich den gespeicherten Typ — sonst zeigte das Feld
+                    beim Bearbeiten einen anderen Wert an, als gespeichert ist. */}
+                <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType | '' })}>
+                  <option value="">— wählen —</option>
+                  {[...new Set([...unitMeterTypes, ...(form.meterType ? [form.meterType] : [])])].map((t) => (
+                    <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
+                  ))}
                 </select>
               </label>
+            )}
+            {form.key === 'custom' && (
+              <div className="field-group">
+                <div className="field-group-label">Vereinbarte Anteile</div>
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§556a Abs. 1 BGB).
+                  Was unter 100 % fehlt, trägt der Vermieter.
+                </div>
+                <div className="row">
+                  {basisUnits.map((u) => (
+                    <label key={u.id} className="field grow">
+                      {u.name}
+                      {usageOf(u) === 'eigen' && <span className="badge gray" style={{ marginLeft: 6 }}>Eigennutzung</span>}
+                      <input
+                        value={form.customShares[u.id] ?? ''}
+                        onChange={(e) => setForm({ ...form, customShares: { ...form.customShares, [u.id]: e.target.value } })}
+                        placeholder="z. B. 40"
+                        inputMode="decimal"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="muted" style={{ marginTop: 6 }}>Summe: {customSharesSumText}</div>
+              </div>
             )}
             {form.key === 'direct' && (
               <label className="field grow">
