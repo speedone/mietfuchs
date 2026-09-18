@@ -36,6 +36,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Downloads für macOS und Linux lassen sich wieder direkt starten.** Die Programmdateien
+  kommen jetzt als `.zip` (macOS) bzw. `.tar.gz` (Linux) statt als rohe Datei: HTTP überträgt
+  keine Dateirechte, rohe Downloads verloren deshalb das Ausführungsrecht. Die Archive
+  erhalten es, ein `chmod +x` entfällt. Die README beschreibt außerdem den seit macOS 15
+  gültigen Weg, eine nicht signierte Programmdatei freizugeben. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#2](https://github.com/speedone/mietfuchs/pull/2).
 - **Zählertyp wurde falsch gespeichert.** Das Feld war mit „Kaltwasser" vorbelegt, die Auswahl
   bot aber nur Typen an, für die Wohnungszähler existieren. Ohne Kaltwasserzähler zeigte das
   Feld deshalb den ersten angebotenen Typ an, gespeichert wurde trotzdem „Kaltwasser": die
