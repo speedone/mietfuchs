@@ -7,6 +7,7 @@ export const KEY_LABELS = {
   units: 'Wohneinheiten',
   direct: 'Direktzuordnung',
   meter: 'Verbrauch (Zähler)',
+  custom: 'Vereinbarte Anteile',
 }
 
 const MS_DAY = 86400000
@@ -321,6 +322,10 @@ export function taxReport(db, year) {
   const rentedArea = allUnits.filter((u) => u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
   const rentedAreaShare = totalArea > 0 ? rentedArea / totalArea : 1
   const selfOccupiedExists = allUnits.some((u) => !u.participates)
+  // Auf selbstgenutzte Wohnungen entfallender Teil der Kosten, aus der Verteilung des Jahres
+  // übernommen: privat veranlasst und damit nicht als Werbungskosten abziehbar. Die
+  // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
+  const selfUsedShareCents = computeSettlement(db, year).selfUsedShareCents
 
   return {
     year,
@@ -328,6 +333,7 @@ export function taxReport(db, year) {
     expenses: { groups, totalCents, labor35aCents },
     rentedAreaShare,
     selfOccupiedExists,
+    selfUsedShareCents,
     surplusSollCents: sollCents - totalCents,
     surplusPaidCents: paidCents - totalCents,
   }
@@ -359,15 +365,25 @@ export function computeSettlement(db, year) {
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const unitById = new Map(db.units.map((u) => [u.id, u]))
-  const partUnits = db.units.filter((u) => u.participates)
-  const basisArea = partUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
+  // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
+  // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
+  // Mieter umgelegt werden, der auf die selbstgenutzte Wohnung entfallende Teil bleibt beim
+  // Vermieter (Eigenanteil) — wie bei Leerstand. Wohnungen ohne beide Kennzeichen gehören
+  // nicht zur Abrechnungseinheit und bleiben ganz außen vor.
+  const selfUnits = db.units.filter((u) => u.selfUsed)
+  const basisUnits = db.units.filter((u) => u.participates || u.selfUsed)
+  const basisArea = basisUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
+  const selfArea = selfUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
 
   // Mietverhältnisse mit Überlappung im Jahr
   const tenancies = db.tenancies
     .map((t) => ({ ...t, days: overlapDays(t.start, t.end, year), unit: unitById.get(t.unitId) }))
     .filter((t) => t.days > 0 && t.unit)
   const partTenancies = tenancies.filter((t) => t.unit.participates)
-  const basisPersonDays = partTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0)
+  // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
+  const selfPersonDays = selfUnits.reduce((a, u) => a + (u.selfPersons || 0) * diy, 0)
+  const basisPersonDays =
+    partTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0) + selfPersonDays
 
   // Verbrauch je Zählertyp vorbereiten (nur Wohnungszähler bilden die Verteilbasis)
   const allMeters = db.meters ?? []
@@ -384,7 +400,11 @@ export function computeSettlement(db, year) {
       basis += c
       perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
     }
-    consumptionByType[type] = { meters, basis, perUnit }
+    // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
+    // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
+    // Wohnungen fällt damit ohnehin dem Vermieter zu.
+    const selfConsumption = selfUnits.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
+    consumptionByType[type] = { meters, basis, perUnit, selfConsumption }
   }
 
   const statements = new Map()
@@ -416,12 +436,25 @@ export function computeSettlement(db, year) {
   const warnings = []
   const items = db.costItems.filter((c) => c.year === year)
   let totalCostsCents = 0
+  let selfUsedShareCents = 0
+
+  // Ohne hinterlegte Personenzahl kann der Personenschlüssel die selbstgenutzte Wohnung
+  // nicht berücksichtigen — sonst verteilt er unbemerkt allein auf die Mieter.
+  const selfNoPersons = selfUnits.filter((u) => !(u.selfPersons > 0))
+  if (selfNoPersons.length > 0 && items.some((c) => c.key === 'persons' && c.category !== 'Nicht umlagefähig')) {
+    warnings.push(
+      `Für die selbstgenutzte(n) Wohnung(en) ${selfNoPersons.map((u) => u.name).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter.`,
+    )
+  }
 
   for (const item of items) {
     totalCostsCents += item.amountCents
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets = [] // { t, raw, basisText }
+    // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) — für
+    // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
+    let selfRaw = 0
     if (item.category === 'Nicht umlagefähig') {
       // keine Verteilung
     } else if (item.key === 'area' && basisArea > 0) {
@@ -429,22 +462,42 @@ export function computeSettlement(db, year) {
         const raw = item.amountCents * ((t.unit.areaM2 || 0) / basisArea) * (t.days / diy)
         targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2)} von ${fmtNum(basisArea)} m²${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
       }
-    } else if (item.key === 'units' && partUnits.length > 0) {
+      selfRaw = item.amountCents * (selfArea / basisArea)
+    } else if (item.key === 'units' && basisUnits.length > 0) {
       for (const t of partTenancies) {
-        const raw = (item.amountCents / partUnits.length) * (t.days / diy)
-        targets.push({ t, raw, basisText: `1 von ${partUnits.length} Einheiten${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+        const raw = (item.amountCents / basisUnits.length) * (t.days / diy)
+        targets.push({ t, raw, basisText: `1 von ${basisUnits.length} Einheiten${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
       }
+      selfRaw = (item.amountCents / basisUnits.length) * selfUnits.length
     } else if (item.key === 'persons' && basisPersonDays > 0) {
       for (const t of partTenancies) {
         const pd = personDaysInPeriod(t, yFrom, yTo)
         const raw = item.amountCents * (pd / basisPersonDays)
         targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(basisPersonDays)} Personentagen` })
       }
+      selfRaw = item.amountCents * (selfPersonDays / basisPersonDays)
+    } else if (item.key === 'custom') {
+      // Vereinbarter Schlüssel (§556a Abs. 1 Satz 1 BGB): feste Prozentanteile je Wohnung.
+      // Die Anteile gelten absolut — summieren sie unter 100 %, bleibt der Rest beim
+      // Vermieter. Bei Mieterwechsel wird der Anteil tagesanteilig geteilt.
+      const pctOf = (unitId) => Number(item.customShares?.[unitId]) || 0
+      if (basisUnits.every((u) => pctOf(u.id) <= 0)) {
+        warnings.push(`„${item.description}": keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter.`)
+      } else {
+        for (const t of partTenancies) {
+          const pct = pctOf(t.unitId)
+          if (pct <= 0) continue
+          const raw = item.amountCents * (pct / 100) * (t.days / diy)
+          targets.push({ t, raw, basisText: `${fmtNum(pct)} % vereinbart${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+        }
+        selfRaw = selfUnits.reduce((a, u) => a + item.amountCents * (pctOf(u.id) / 100), 0)
+      }
     } else if (item.key === 'meter') {
       const data = consumptionByType[item.meterType]
       if (!data || data.basis <= 0) {
         warnings.push(`„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`)
       } else {
+        selfRaw = item.amountCents * (data.selfConsumption / data.basis)
         for (const t of partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
           let c = 0
@@ -463,7 +516,9 @@ export function computeSettlement(db, year) {
         const raw = item.amountCents * (t.days / diy)
         targets.push({ t, raw, basisText: `Direktzuordnung ${t.unit.name}${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
       }
+      if (selfUnits.some((u) => u.id === item.directUnitId)) selfRaw = item.amountCents
     }
+    selfUsedShareCents += Math.round(selfRaw)
 
     // Exakte Cent-Verteilung: wenn die Rohanteile die Gesamtsumme (nahezu) voll ausschöpfen,
     // wird centgenau auf die Mieter verteilt; ansonsten trägt der Vermieter die Differenz
@@ -518,6 +573,9 @@ export function computeSettlement(db, year) {
       rows: landlordRows,
       totalCents: landlordRows.reduce((a, r) => a + r.shareCents, 0),
     },
+    // Im Vermieteranteil enthaltener Teil, der auf selbstgenutzte Wohnungen entfällt
+    // (der Rest sind Leerstand, nicht umlagefähige Positionen und Rundungsdifferenzen).
+    selfUsedShareCents,
     totalCostsCents,
     warnings,
   }

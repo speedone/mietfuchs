@@ -12,8 +12,9 @@ import {
   taxReport,
 } from '../src/calc.js'
 
-// Szenario wie beim Nutzer: 3 Wohnungen, EG selbstbewohnt (nicht beteiligt),
-// zwei vermietete Wohnungen tragen alle Kosten.
+// Beispielhaus für die Tests: 3 Wohnungen, davon eine selbstgenutzt und zwei vermietet.
+// Die selbstgenutzte Wohnung ist hier ohne Eigennutzungs-Kennzeichen angelegt (Altbestand) —
+// die Tests unten decken beide Varianten ab.
 function makeDb() {
   return {
     settings: {},
@@ -313,6 +314,147 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
   assert.equal(r.openMonths, 6) // Juli–Dez unbezahlt
 })
 
+// ---------- Eigennutzung in der Verteilbasis ----------
+// `selfUsed: true` heißt: die Wohnung zählt in die Verteilbasis (Fläche/Einheiten/Personen),
+// hat aber kein Mietverhältnis — ihr Anteil landet deshalb im Vermieteranteil (Eigenanteil).
+
+test('Eigennutzung: Flächenschlüssel nimmt die eigene Wohnung in die Basis, der Anteil bleibt beim Vermieter', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  // 2.300 € auf 230 m² (80 + 90 + 60) = 10 €/m²
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 90000)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 60000)
+  assert.equal(s.landlord.totalCents, 80000) // 80 m² Eigenanteil
+})
+
+test('Eigennutzung: Einheitenschlüssel teilt durch drei, ein Drittel trägt der Vermieter', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 300000, key: 'units' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 100000)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 100000)
+  assert.equal(s.landlord.totalCents, 100000)
+})
+
+test('Eigennutzung: Personenschlüssel zählt die eigenen Personen mit', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.units[0].selfPersons = 3
+  // Personentage-Basis: (4 + 3 Mieter + 3 eigene) × 365
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 40000)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 30000)
+  assert.equal(s.landlord.totalCents, 30000)
+})
+
+test('Eigennutzung ohne Personenzahl: Warnung beim Personenschlüssel', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true // selfPersons fehlt
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.warnings.length, 1)
+  assert.match(s.warnings[0], /Personenzahl/)
+  // ohne Personenzahl bleibt die Verteilung wie zuvor (nur Mieter)
+  assert.equal(s.landlord.totalCents, 0)
+})
+
+test('Eigennutzung und Leerstand werden im Vermieteranteil getrennt ausgewiesen', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.tenancies[1].end = '2025-03-31' // die zweite vermietete Wohnung steht ab April leer
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.selfUsedShareCents, 80000) // 80 von 230 m², ganzjährig
+  assert.ok(s.landlord.totalCents > s.selfUsedShareCents) // zusätzlich der Leerstand
+})
+
+test('Ohne Eigennutzungs-Kennzeichen bleibt die Verteilung wie bisher (Bestandsdaten)', () => {
+  const db = makeDb() // units[0]: participates false, selfUsed nicht gesetzt
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  // Basis bleiben die 150 m² der vermieteten Wohnungen
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 138000)
+  assert.equal(s.landlord.totalCents, 0)
+})
+
+test('Zählerschlüssel: Verbrauch einer nicht beteiligten Wohnung bleibt in der Basis', () => {
+  // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge — er zählt
+  // deshalb unabhängig vom Beteiligungs-Kennzeichen in die Basis (Anteil → Vermieter).
+  const db = makeDb()
+  db.meters = [
+    { id: 'm1', unitId: 'u1', type: 'kaltwasser', name: 'WZ EG' },
+    { id: 'm2', unitId: 'u2', type: 'kaltwasser', name: 'WZ OG links' },
+  ]
+  db.readings = [
+    { id: 'r1', meterId: 'm1', date: '2024-12-31', value: 0 },
+    { id: 'r2', meterId: 'm1', date: '2025-12-31', value: 40 },
+    { id: 'r3', meterId: 'm2', date: '2024-12-31', value: 0 },
+    { id: 'r4', meterId: 'm2', date: '2025-12-31', value: 60 },
+  ]
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 60000)
+  assert.equal(s.landlord.totalCents, 40000)
+})
+
+// ---------- Vereinbarter Prozentschlüssel ----------
+
+test('Prozentschlüssel: vereinbarte Anteile, der Rest trägt der Vermieter', () => {
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Hausmeister',
+    amountCents: 100000, key: 'custom', customShares: { u2: 60, u3: 30 },
+  })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 60000)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 30000)
+  assert.equal(s.landlord.totalCents, 10000) // vereinbarter Eigenanteil
+})
+
+test('Prozentschlüssel: 100 % werden centgenau verteilt', () => {
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Krumme Summe',
+    amountCents: 100001, key: 'custom', customShares: { u2: 33.33, u3: 66.67 },
+  })
+  const s = computeSettlement(db, 2025)
+  const a = s.statements.find((x) => x.tenancyId === 't2')
+  const b = s.statements.find((x) => x.tenancyId === 't3')
+  assert.equal(a.totalShareCents + b.totalShareCents, 100001)
+  assert.equal(s.landlord.totalCents, 0)
+})
+
+test('Prozentschlüssel: Teiljahr wird tagesanteilig gekürzt', () => {
+  const db = makeDb()
+  db.tenancies[1].end = '2025-03-31' // Familie B zieht Ende März aus
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Wartung',
+    amountCents: 100000, key: 'custom', customShares: { u2: 50, u3: 50 },
+  })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 50000)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, Math.round(50000 * (90 / 365)))
+  assert.equal(
+    s.statements.reduce((a, x) => a + x.totalShareCents, 0) + s.landlord.totalCents,
+    100000,
+  )
+})
+
+test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Ohne Anteile',
+    amountCents: 50000, key: 'custom',
+  })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 50000)
+  assert.equal(s.warnings.length, 1)
+})
+
 test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', () => {
   const db = {
     settings: {},
@@ -357,4 +499,15 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   // gemischte Nutzung: halbe Fläche vermietet
   assert.equal(r.selfOccupiedExists, true)
   assert.equal(r.rentedAreaShare, 0.5)
+})
+
+test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewiesen', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.payments = []
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
+  const r = taxReport(db, 2025)
+  // 80 von 230 m² entfallen auf die eigene Wohnung — dieser Teil ist privat, nicht abziehbar
+  assert.equal(r.selfUsedShareCents, 80000)
+  assert.equal(r.expenses.totalCents, 230000) // die Werbungskosten selbst bleiben unangetastet
 })
