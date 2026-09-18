@@ -4,8 +4,11 @@ name: Docker-Image
 # damit Mietfuchs sich ohne Clone des Repos starten lässt (`docker pull`).
 # Läuft bei einem Tag wie v0.3.0, bei Pushes auf main (Tag `main`) und von Hand.
 #
-# Hinweis: Das Package ist beim allerersten Push privat. Einmalig in den
-# Repo-/Package-Einstellungen auf „public" stellen, sonst verlangt `docker pull` ein Login.
+# Sichtbarkeit: Das Package übernimmt die des öffentlichen Repos — seit dem ersten Push
+# (v0.3.0) ist es ohne Login abrufbar, ein manueller Freigabeschritt war nicht nötig.
+# Prüfen lässt sich das anonym über
+#   curl "https://ghcr.io/token?scope=repository:speedone/mietfuchs:pull"
+# (liefert ein Token, mit dem /v2/speedone/mietfuchs/manifests/latest antwortet).
 on:
   push:
     branches: [main]
