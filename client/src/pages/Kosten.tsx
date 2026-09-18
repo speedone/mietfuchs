@@ -494,8 +494,12 @@ export default function Kosten({ units, settings }: Props) {
                 <div className="row">
                   {basisUnits.map((u) => (
                     <label key={u.id} className="field grow">
-                      {u.name}
-                      {usageOf(u) === 'eigen' && <span className="badge gray" style={{ marginLeft: 6 }}>Eigennutzung</span>}
+                      {/* Name und Kennzeichen in einer Zeile — .field ist eine Flex-Spalte,
+                          ein direktes Kind würde sich sonst über die ganze Breite ziehen. */}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {u.name}
+                        {usageOf(u) === 'eigen' && <span className="badge gray">Eigennutzung</span>}
+                      </span>
                       <input
                         value={form.customShares[u.id] ?? ''}
                         onChange={(e) => setForm({ ...form, customShares: { ...form.customShares, [u.id]: e.target.value } })}

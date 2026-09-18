@@ -517,6 +517,20 @@ test('Prozentschlüssel mit gelöschter Wohnung: Warnung, verfallener Anteil bei
   assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 50000)
   assert.equal(s.landlord.totalCents, 50000)
   assert.equal(s.warnings.length, 1)
+  assert.match(s.warnings[0], /gelöschte Wohnung/)
+})
+
+test('Prozentschlüssel: Anteil einer nicht beteiligten Wohnung wird beim Namen genannt', () => {
+  // Die Wohnung existiert, gehört aber nicht zur Abrechnungseinheit — die Warnung darf sie
+  // nicht als gelöscht bezeichnen, sonst sucht man an der falschen Stelle.
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Vereinbart',
+    amountCents: 100000, key: 'custom', customShares: { u1: 30, u2: 70 },
+  })
+  const s = computeSettlement(db, 2025)
+  assert.match(s.warnings[0], /EG \(Eigennutzung\)/)
+  assert.doesNotMatch(s.warnings[0], /gelöscht/)
 })
 
 test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
