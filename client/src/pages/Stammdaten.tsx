@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
+import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -13,7 +14,6 @@ type Props = {
   reload: () => Promise<void>
 }
 
-type UnitForm = { id?: string; name: string; areaM2: string; usage: UnitUsage; selfPersons: string; rooms: string; floor: string; notes: string }
 type TenancyForm = {
   id?: string
   unitId: string
@@ -34,7 +34,7 @@ type TenancyForm = {
   notes: string
 }
 
-const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', usage: 'vermietet', selfPersons: '', rooms: '', floor: '', notes: '' }
+const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
 // Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
@@ -60,33 +60,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
   async function saveUnit() {
     if (!unitForm) return
-    const area = Number(unitForm.areaM2.replace(',', '.'))
-    if (!unitForm.name.trim() || !Number.isFinite(area) || area <= 0) {
-      setError('Bitte Name und gültige Wohnfläche angeben.')
-      return
-    }
-    const rooms = unitForm.rooms.trim() ? Number(unitForm.rooms.replace(',', '.')) : null
-    if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {
-      setError('Zimmerzahl bitte als Zahl angeben (oder leer lassen).')
-      return
-    }
-    const selfPersons = unitForm.selfPersons.trim() ? Number(unitForm.selfPersons.replace(',', '.')) : null
-    if (unitForm.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
-      setError('Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).')
+    const gebaut = buildUnitBody(unitForm)
+    if ('error' in gebaut) {
+      setError(gebaut.error)
       return
     }
     setError('')
-    // null statt undefined, damit geleerte Felder über die generische PUT-Route auch zurückgesetzt werden
-    const body = JSON.stringify({
-      name: unitForm.name.trim(),
-      areaM2: area,
-      participates: unitForm.usage === 'vermietet',
-      selfUsed: unitForm.usage === 'eigen',
-      selfPersons: unitForm.usage === 'eigen' ? selfPersons : null,
-      rooms,
-      floor: unitForm.floor.trim() || null,
-      notes: unitForm.notes.trim() || null,
-    })
+    const body = JSON.stringify(gebaut.body)
     const editing = !!unitForm.id
     if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
     else await api('/api/units', { method: 'POST', body })
@@ -264,7 +244,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), usage: usageOf(u), selfPersons: u.selfPersons != null ? String(u.selfPersons) : '', rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>✎</button>
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm(unitToForm(u))}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>

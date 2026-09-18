@@ -29,6 +29,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Fertiges Docker-Image.** Das Image wird für `linux/amd64` und `linux/arm64` nach
   `ghcr.io/speedone/mietfuchs` veröffentlicht. Damit lässt sich Mietfuchs per `docker run`
   oder mit einer eigenständigen Compose-Datei starten, ohne das Repository zu klonen.
+- **`NKA_DATA_DIR`** verlegt den Datenordner auf einen beliebigen Pfad. Gedacht für Tests
+  gegen einen Wegwerf-Ordner und für Installationen, deren Daten woanders liegen sollen.
 
 ### Behoben
 

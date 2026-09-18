@@ -1,6 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory, usageOf } from '../types'
+import {
+  EMPTY_ITEM_FORM,
+  basisUnitsOf,
+  buildCostItemBody,
+  costKeyOptions,
+  customSharesSumText,
+  itemToForm,
+  meterTypeOptions,
+  type ItemForm,
+} from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
@@ -8,22 +18,6 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[]; settings: Settings | null }
-
-type ItemForm = {
-  id?: string
-  category: string
-  description: string
-  vendor: string
-  amount: string
-  labor35a: string
-  key: CostKey
-  directUnitId: string
-  // leer = noch nicht gewählt; ein Vorbelegen wäre gefährlich, weil das Feld sonst
-  // einen Zählertyp speichern kann, der in der Auswahl gar nicht angeboten wird
-  meterType: MeterType | ''
-  customShares: Record<string, string> // Wohnungs-ID → Prozent-Eingabe
-  invoiceFile?: string
-}
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
@@ -39,7 +33,7 @@ type QueueEntry = {
   positions: ExtractPos[]
 }
 
-const EMPTY: ItemForm = { category: CATEGORIES[0], description: '', vendor: '', amount: '', labor35a: '', key: 'area', directUnitId: '', meterType: '', customShares: {} }
+const EMPTY = EMPTY_ITEM_FORM
 
 export default function Kosten({ units, settings }: Props) {
   const { year, setYear } = useYear()
@@ -66,20 +60,9 @@ export default function Kosten({ units, settings }: Props) {
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
   // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
-  const basisUnits = useMemo(() => units.filter((u) => usageOf(u) !== 'ausgenommen'), [units])
-
-  // Live-Summe der vereinbarten Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
-  const customSharesSumText = useMemo(() => {
-    if (!form) return ''
-    const fmt = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
-    const sum = basisUnits.reduce((a, u) => {
-      const hundredths = parseEuro(form.customShares[u.id]?.trim() || '0') ?? 0
-      return a + Math.max(0, hundredths) / 100
-    }, 0)
-    if (sum > 100.0001) return `${fmt(sum)} % — mehr als 100 % sind nicht möglich`
-    const rest = 100 - sum
-    return rest > 0.0001 ? `${fmt(sum)} % — die restlichen ${fmt(rest)} % trägt der Vermieter` : `${fmt(sum)} %`
-  }, [form, basisUnits])
+  const basisUnits = useMemo(() => basisUnitsOf(units), [units])
+  // Live-Summe der Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
+  const sumText = form ? customSharesSumText(form, units) : ''
 
   // Bereits hochgeladene Belege (für die nachträgliche Zuordnung zu einer Position)
   const knownFiles = useMemo(() => {
@@ -122,64 +105,13 @@ export default function Kosten({ units, settings }: Props) {
 
   async function saveItem() {
     if (!form) return
-    const amount = parseEuro(form.amount)
-    const labor35a = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
-    if (!form.description.trim() || amount === null || amount <= 0) {
-      setError('Bitte Beschreibung und gültigen Betrag angeben.')
+    const gebaut = buildCostItemBody(form, units, year)
+    if ('error' in gebaut) {
+      setError(gebaut.error)
       return
-    }
-    if (labor35a === null || labor35a > amount) {
-      setError('Der §35a-Lohnanteil muss eine gültige Zahl ≤ Gesamtbetrag sein.')
-      return
-    }
-    if (form.key === 'direct' && !form.directUnitId) {
-      setError('Bei Direktzuordnung bitte eine Wohnung wählen.')
-      return
-    }
-    if (form.key === 'meter' && !form.meterType) {
-      setError('Bei Verbrauchsumlage bitte einen Zählertyp wählen.')
-      return
-    }
-    let customShares: Record<string, number> | undefined
-    if (form.key === 'custom') {
-      customShares = {}
-      for (const u of basisUnits) {
-        const raw = form.customShares[u.id]?.trim()
-        if (!raw) continue
-        // Prozent in deutscher oder technischer Schreibweise; parseEuro liefert Hundertstel
-        const hundredths = parseEuro(raw)
-        if (hundredths === null || hundredths < 0) {
-          setError(`Anteil für „${u.name}" bitte als Prozentzahl angeben (z. B. 33,33).`)
-          return
-        }
-        if (hundredths > 0) customShares[u.id] = hundredths / 100
-      }
-      const sum = Object.values(customShares).reduce((a, p) => a + p, 0)
-      if (sum <= 0) {
-        setError('Bitte mindestens einen Anteil größer 0 % angeben.')
-        return
-      }
-      if (sum > 100.0001) {
-        setError(`Die Anteile ergeben ${sum.toLocaleString('de-DE', { maximumFractionDigits: 2 })} % — mehr als 100 % sind nicht möglich.`)
-        return
-      }
     }
     setError('')
-    const body = JSON.stringify({
-      year,
-      category: form.category,
-      description: form.description.trim(),
-      vendor: form.vendor.trim() || undefined,
-      amountCents: amount,
-      labor35aCents: labor35a || undefined,
-      key: form.key,
-      // null statt undefined: die generische PUT-Route übernimmt nur vorhandene Felder, sonst
-      // blieben beim Schlüsselwechsel alte Zuordnungen in der Datei stehen.
-      directUnitId: form.key === 'direct' ? form.directUnitId : null,
-      meterType: form.key === 'meter' ? form.meterType : null,
-      customShares: customShares ?? null,
-      invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
-    })
+    const body = JSON.stringify(gebaut.body)
     const editing = !!form.id
     if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
     else await api('/api/costItems', { method: 'POST', body })
@@ -459,24 +391,7 @@ export default function Kosten({ units, settings }: Props) {
                       aria-label="Kostenposition bearbeiten"
                       onClick={() => {
                         setError('')
-                        setForm({
-                          id: i.id,
-                          category: i.category,
-                          description: i.description,
-                          vendor: i.vendor ?? '',
-                          amount: (i.amountCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-                          labor35a: i.labor35aCents ? (i.labor35aCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
-                          key: i.key,
-                          directUnitId: i.directUnitId ?? '',
-                          meterType: i.meterType ?? '',
-                          customShares: Object.fromEntries(
-                            Object.entries(i.customShares ?? {}).map(([unitId, pct]) => [
-                              unitId,
-                              pct.toLocaleString('de-DE', { maximumFractionDigits: 2 }),
-                            ]),
-                          ),
-                          invoiceFile: i.invoiceFile,
-                        })
+                        setForm(itemToForm(i))
                       }}
                     >
                       ✎
@@ -552,25 +467,18 @@ export default function Kosten({ units, settings }: Props) {
             </label>
             <label className="field grow">
               Umlageschlüssel
-              {/* Der Verbrauchsschlüssel wird nur angeboten, wenn es Wohnungszähler gibt — der
-                  gespeicherte Schlüssel muss aber immer in der Liste stehen, sonst zeigt das
-                  Feld beim Bearbeiten einen anderen Wert an, als gespeichert ist. */}
               <select value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value as CostKey })}>
-                {(Object.keys(KEY_LABELS) as CostKey[])
-                  .filter((k) => k !== 'meter' || unitMeterTypes.length > 0 || form.key === 'meter')
-                  .map((k) => (
-                    <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                  ))}
+                {costKeyOptions(unitMeterTypes, form.key).map((k) => (
+                  <option key={k} value={k}>{KEY_LABELS[k]}</option>
+                ))}
               </select>
             </label>
             {form.key === 'meter' && (
               <label className="field grow">
                 Zählertyp
-                {/* Die Auswahl enthält zusätzlich den gespeicherten Typ — sonst zeigte das Feld
-                    beim Bearbeiten einen anderen Wert an, als gespeichert ist. */}
                 <select value={form.meterType} onChange={(e) => setForm({ ...form, meterType: e.target.value as MeterType | '' })}>
                   <option value="">— wählen —</option>
-                  {[...new Set([...unitMeterTypes, ...(form.meterType ? [form.meterType] : [])])].map((t) => (
+                  {meterTypeOptions(unitMeterTypes, form.meterType).map((t) => (
                     <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
                   ))}
                 </select>
@@ -597,7 +505,7 @@ export default function Kosten({ units, settings }: Props) {
                     </label>
                   ))}
                 </div>
-                <div className="muted" style={{ marginTop: 6 }}>Summe: {customSharesSumText}</div>
+                <div className="muted" style={{ marginTop: 6 }}>Summe: {sumText}</div>
               </div>
             )}
             {form.key === 'direct' && (
