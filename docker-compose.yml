@@ -1,5 +1,10 @@
-# Mietfuchs per Docker Compose: baut das Image und liefert App + API auf Port 3001.
+# Mietfuchs per Docker Compose: baut das Image aus diesem Repo und liefert App + API
+# auf Port 3001.
 # Start:  docker compose up -d      Stopp:  docker compose down   (Daten bleiben erhalten)
+#
+# Ohne Clone des Repos geht es auch mit dem fertigen Image aus der GitHub Container
+# Registry — siehe Abschnitt „Mit Docker" in der README. Dann `build` weglassen und
+# `image: ghcr.io/speedone/mietfuchs:latest` setzen.
 services:
   mietfuchs:
     build: .
