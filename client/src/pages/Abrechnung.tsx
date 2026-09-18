@@ -491,7 +491,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                     <tr key={i}>
                       <td>{r.category}<div className="muted">{r.description}</div></td>
                       <td className="num">{fmtEuro(r.totalCents)}</td>
-                      <td className="muted">{r.category === 'Nicht umlagefähig' ? 'nicht umlagefähig' : 'Leerstand / Rundung / keine Verteilbasis'}</td>
+                      <td className="muted">{r.category === 'Nicht umlagefähig' ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
                       <td className="num">{fmtEuro(r.shareCents)}</td>
                     </tr>
                   ))}
@@ -501,6 +501,12 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                     <td colSpan={3}>Summe Vermieteranteil</td>
                     <td className="num">{fmtEuro(data.landlord.totalCents)}</td>
                   </tr>
+                  {data.selfUsedShareCents > 0 && (
+                    <tr>
+                      <td colSpan={3} className="muted">davon Eigenanteil selbstgenutzter Wohnungen (steuerlich privat)</td>
+                      <td className="num muted">{fmtEuro(data.selfUsedShareCents)}</td>
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>

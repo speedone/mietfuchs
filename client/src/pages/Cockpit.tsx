@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settlement, Unit } from '../types'
+import { usageOf } from '../types'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 
@@ -124,7 +125,20 @@ export default function Cockpit({ units, onNavigate }: Props) {
       }
     }
 
-    // 4. Plausibilität zum Vorjahr
+    // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
+    // Kosten für das ganze Haus dürfen nur anteilig auf die Mieter umgelegt werden — eine
+    // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung" in die Basis.
+    const ausgenommen = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
+    if (ausgenommen.length > 0) {
+      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
+        detail: `Nicht beteiligt und damit ganz außen vor: ${ausgenommen.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
+    } else if (units.some((u) => usageOf(u) === 'eigen')) {
+      const eigen = units.filter((u) => usageOf(u) === 'eigen')
+      list.push({ title: 'Verteilbasis', level: 'gruen',
+        detail: `Eigennutzung in der Basis: ${eigen.map((u) => u.name).join(', ')} — der Eigenanteil bleibt beim Vermieter.` })
+    }
+
+    // 5. Plausibilität zum Vorjahr
     if (yearItems.length === 0) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: 'Noch keine Kosten zum Vergleichen.' })
     } else if (!auffaellig.hasPrev) {
@@ -139,13 +153,13 @@ export default function Cockpit({ units, onNavigate }: Props) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${year - 1}.` })
     }
 
-    // 5. Hinweise der Berechnung (z. B. negativer Verbrauch)
+    // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
       list.push({ title: 'Hinweise der Berechnung', level: 'gelb', tab: 'abrechnung', cta: 'Abrechnung ansehen',
         detail: settlement.warnings.join(' · ') })
     }
 
-    // 6. Abschluss & Versand
+    // 7. Abschluss & Versand
     const closed = settlement.closed
     if (closed?.sentAt) {
       const ok = closed.sentAt <= `${year + 1}-12-31`
@@ -163,7 +177,7 @@ export default function Cockpit({ units, onNavigate }: Props) {
     }
 
     return list
-  }, [settlement, participating, yearItems, belegSum, belegFiles, meters, consumption, auffaellig, daysLeft, year])
+  }, [settlement, participating, units, yearItems, belegSum, belegFiles, meters, consumption, auffaellig, daysLeft, year])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

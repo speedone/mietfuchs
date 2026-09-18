@@ -1,8 +1,30 @@
+// Beteiligung einer Wohnung an der Kostenverteilung:
+//   'vermietet'  → participates: true — Anteil trägt der Mieter
+//   'eigen'      → selfUsed: true — zählt in die Verteilbasis, Anteil trägt der Vermieter
+//   'ausgenommen'→ beides false — gehört nicht zur Abrechnungseinheit, bleibt außen vor
+export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
+
+export const UNIT_USAGE_LABELS: Record<UnitUsage, string> = {
+  vermietet: 'vermietet — Anteil trägt der Mieter',
+  eigen: 'Eigennutzung — Anteil trägt der Vermieter',
+  ausgenommen: 'nicht beteiligt — bleibt außen vor',
+}
+
+export function usageOf(u: Pick<Unit, 'participates' | 'selfUsed'>): UnitUsage {
+  if (u.participates) return 'vermietet'
+  return u.selfUsed ? 'eigen' : 'ausgenommen'
+}
+
 export type Unit = {
   id: string
   name: string
   areaM2: number
   participates: boolean
+  // Selbstgenutzt: kein Mietverhältnis, aber Teil der Verteilbasis — der Anteil fällt dem
+  // Vermieter zu (Eigenanteil). Kosten für das ganze Haus dürfen nur anteilig auf die
+  // Mieter umgelegt werden; siehe UnitUsage.
+  selfUsed?: boolean
+  selfPersons?: number // Personen im eigenen Haushalt — nur für den Personenschlüssel
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
   floor?: string // Etage, z. B. „EG", „1. OG"
@@ -130,7 +152,7 @@ export const METER_TYPE_LABELS: Record<MeterType, string> = {
   sonstig: 'Sonstig',
 }
 
-export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter'
+export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom'
 
 export type CostItem = {
   id: string
@@ -142,6 +164,9 @@ export type CostItem = {
   key: CostKey
   directUnitId?: string
   meterType?: MeterType
+  // Vereinbarter Schlüssel: Wohnungs-ID → Prozentanteil. Die Anteile gelten absolut;
+  // summieren sie unter 100 %, bleibt der Rest beim Vermieter.
+  customShares?: Record<string, number>
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
 }
@@ -191,6 +216,8 @@ export type Settlement = {
   daysInYear: number
   statements: Statement[]
   landlord: { rows: SettlementRow[]; totalCents: number }
+  // im Vermieteranteil enthaltener Eigenanteil selbstgenutzter Wohnungen
+  selfUsedShareCents: number
   totalCostsCents: number
   warnings: string[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
@@ -222,6 +249,7 @@ export type TaxReport = {
   }
   rentedAreaShare: number // vermietete Fläche / Gesamtfläche (0..1)
   selfOccupiedExists: boolean // gibt es nicht vermietete (selbstgenutzte) Einheiten?
+  selfUsedShareCents: number // auf selbstgenutzte Wohnungen entfallender Kostenanteil (privat)
   surplusSollCents: number // Einkünfte auf Soll-Basis = Einnahmen(Soll) − Werbungskosten
   surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
 }
@@ -278,6 +306,7 @@ export const KEY_LABELS: Record<CostKey, string> = {
   units: 'nach Wohneinheiten',
   direct: 'Direktzuordnung',
   meter: 'nach Verbrauch (Zähler)',
+  custom: 'nach vereinbarten Anteilen (%)',
 }
 
 // Ordnet eine frei formulierte Kategorie (z. B. aus der KI-Auswertung) der

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { DepositStatus, Meter, Settings, Tenancy, Unit } from '../types'
-import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS } from '../types'
+import type { DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -13,7 +13,7 @@ type Props = {
   reload: () => Promise<void>
 }
 
-type UnitForm = { id?: string; name: string; areaM2: string; participates: boolean; rooms: string; floor: string; notes: string }
+type UnitForm = { id?: string; name: string; areaM2: string; usage: UnitUsage; selfPersons: string; rooms: string; floor: string; notes: string }
 type TenancyForm = {
   id?: string
   unitId: string
@@ -34,7 +34,7 @@ type TenancyForm = {
   notes: string
 }
 
-const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', participates: true, rooms: '', floor: '', notes: '' }
+const EMPTY_UNIT: UnitForm = { name: '', areaM2: '', usage: 'vermietet', selfPersons: '', rooms: '', floor: '', notes: '' }
 
 // Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
@@ -70,12 +70,19 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       setError('Zimmerzahl bitte als Zahl angeben (oder leer lassen).')
       return
     }
+    const selfPersons = unitForm.selfPersons.trim() ? Number(unitForm.selfPersons.replace(',', '.')) : null
+    if (unitForm.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
+      setError('Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).')
+      return
+    }
     setError('')
     // null statt undefined, damit geleerte Felder über die generische PUT-Route auch zurückgesetzt werden
     const body = JSON.stringify({
       name: unitForm.name.trim(),
       areaM2: area,
-      participates: unitForm.participates,
+      participates: unitForm.usage === 'vermietet',
+      selfUsed: unitForm.usage === 'eigen',
+      selfPersons: unitForm.usage === 'eigen' ? selfPersons : null,
       rooms,
       floor: unitForm.floor.trim() || null,
       notes: unitForm.notes.trim() || null,
@@ -246,14 +253,18 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   </td>
                   <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
                   <td>
-                    {u.participates ? (
-                      <span className="badge green">beteiligt</span>
-                    ) : (
-                      <span className="badge gray">Eigennutzung — nicht beteiligt</span>
+                    {usageOf(u) === 'vermietet' && <span className="badge green">beteiligt</span>}
+                    {usageOf(u) === 'eigen' && (
+                      <span className="badge gray" title="In der Verteilbasis, Anteil trägt der Vermieter">
+                        Eigennutzung — Eigenanteil
+                      </span>
+                    )}
+                    {usageOf(u) === 'ausgenommen' && (
+                      <span className="badge gray" title="Bleibt vollständig außen vor">nicht beteiligt</span>
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), participates: u.participates, rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>✎</button>
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm({ id: u.id, name: u.name, areaM2: String(u.areaM2).replace('.', ','), usage: usageOf(u), selfPersons: u.selfPersons != null ? String(u.selfPersons) : '', rooms: u.rooms != null ? String(u.rooms).replace('.', ',') : '', floor: u.floor ?? '', notes: u.notes ?? '' })}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
@@ -577,10 +588,25 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
             </label>
-            <label className="field grow checkline" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={unitForm.participates} onChange={(e) => setUnitForm({ ...unitForm, participates: e.target.checked })} />
-              <span>an Kostenverteilung beteiligt</span>
+            <label className="field grow">
+              Nutzung
+              <select value={unitForm.usage} onChange={(e) => setUnitForm({ ...unitForm, usage: e.target.value as UnitUsage })}>
+                {(Object.keys(UNIT_USAGE_LABELS) as UnitUsage[]).map((k) => (
+                  <option key={k} value={k}>{UNIT_USAGE_LABELS[k]}</option>
+                ))}
+              </select>
+              <small className="muted">
+                {unitForm.usage === 'vermietet' && 'Die Wohnung nimmt an der Verteilung teil, ihren Anteil trägt der Mieter.'}
+                {unitForm.usage === 'eigen' && 'Zählt in die Verteilbasis, hat aber keinen Mieter — der Anteil erscheint im Vermieteranteil. Richtig für selbst bewohnte Wohnungen, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.'}
+                {unitForm.usage === 'ausgenommen' && 'Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur Abrechnungseinheit gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.'}
+              </small>
             </label>
+            {unitForm.usage === 'eigen' && (
+              <label className="field grow" title="Nur für den Personenschlüssel — ohne Angabe bleibt die eigene Wohnung dort unberücksichtigt">
+                Personen im eigenen Haushalt
+                <input value={unitForm.selfPersons} onChange={(e) => setUnitForm({ ...unitForm, selfPersons: e.target.value })} placeholder="z. B. 2" />
+              </label>
+            )}
             <label className="field grow">
               Notiz (optional)
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
