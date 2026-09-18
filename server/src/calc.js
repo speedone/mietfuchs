@@ -500,13 +500,14 @@ export function computeSettlement(db, year) {
       // Vermieter. Bei Mieterwechsel wird der Anteil tagesanteilig geteilt.
       const pctOf = (unitId) => Number(item.customShares?.[unitId]) || 0
       const pctSum = basisUnits.reduce((a, u) => a + Math.max(0, pctOf(u.id)), 0)
-      // Anteile für Wohnungen, die es nicht mehr gibt, verfallen — sonst würde der Betrag
-      // unbemerkt kleiner verteilt, als vereinbart ist.
-      const unknownIds = Object.keys(item.customShares ?? {}).filter(
-        (id) => pctOf(id) > 0 && !basisUnits.some((u) => u.id === id),
-      )
-      if (unknownIds.length > 0) {
-        warnings.push(`„${item.description}": ${unknownIds.length} vereinbarte(r) Anteil(e) verweist auf eine Wohnung, die es nicht mehr gibt — dieser Teil geht an den Vermieter.`)
+      // Anteile für Wohnungen außerhalb der Abrechnungseinheit verfallen — gelöscht oder
+      // auf „nicht beteiligt" gestellt. Sonst würde der Betrag unbemerkt kleiner verteilt,
+      // als vereinbart ist.
+      const verfallen = Object.keys(item.customShares ?? {})
+        .filter((id) => pctOf(id) > 0 && !basisUnits.some((u) => u.id === id))
+        .map((id) => unitById.get(id)?.name ?? 'gelöschte Wohnung')
+      if (verfallen.length > 0) {
+        warnings.push(`„${item.description}": der vereinbarte Anteil für ${verfallen.join(', ')} entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`)
       }
       if (pctSum <= 0) {
         warnings.push(`„${item.description}": keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter.`)

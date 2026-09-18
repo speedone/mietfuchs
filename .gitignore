@@ -4,3 +4,6 @@ server/data/
 server/src/embedded-client.js
 dist-bin/
 *.log
+
+# Artefakte der Browser-Automatisierung (Screenshots, Snapshots)
+.playwright-mcp/
