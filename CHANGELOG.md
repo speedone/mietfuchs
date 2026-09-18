@@ -70,8 +70,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gesetzt, weil das die Verteilung bereits abgerechneter Jahre verändern würde. Selbstgenutzte
   Wohnungen sind in den Stammdaten einmalig auf *Eigennutzung* zu stellen; das Cockpit weist
   darauf hin. Abgeschlossene (eingefrorene) Abrechnungen bleiben in jedem Fall unberührt.
-- Das Docker-Package ist beim ersten Push privat und muss in den Repository-Einstellungen
-  einmalig auf öffentlich gestellt werden.
+- Kostenpositionen, die vor diesem Update mit Verbrauchsumlage gespeichert wurden, können noch
+  den falschen Zählertyp „Kaltwasser" tragen. Die Auswahl zeigt den gespeicherten Typ jetzt
+  korrekt an — betroffene Positionen einmal öffnen, den richtigen Typ wählen und speichern.
 
 ## [0.2.1] – 2026-07-07
 
