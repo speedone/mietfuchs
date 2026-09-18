@@ -49,8 +49,10 @@ const outDir = path.join(root, 'dist-bin')
 fs.mkdirSync(outDir, { recursive: true })
 
 // Binary in dist-bin/ archivieren (Zip bzw. tar.gz, jeweils ohne Pfadanteile).
-// Fehlt das Tool (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen —
+// Fehlt das Tool selbst (zip gibt es z. B. auf Windows-Entwicklerrechnern nicht), nur warnen —
 // das rohe Binary liegt trotzdem in dist-bin. Der Release-Runner (Linux) hat beide Tools.
+// Scheitert das vorhandene Tool dagegen (kein Platz, defektes Ziel), muss der Build abbrechen:
+// ein stillschweigend fehlendes Archiv fiele sonst erst beim Release-Upload auf.
 const archive = (kind, out) => {
   const file = path.join(outDir, out)
   try {
@@ -60,8 +62,9 @@ const archive = (kind, out) => {
     } else {
       run('tar', ['-czf', `${file}.tar.gz`, '-C', outDir, out])
     }
-  } catch {
-    console.warn(`   ! ${kind} nicht verfügbar — ${out} bleibt unverpackt`)
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err
+    console.warn(`   ! ${kind} nicht gefunden — ${out} bleibt unverpackt`)
   }
 }
 
@@ -78,5 +81,6 @@ for (const [name, { target, out, archive: kind }] of Object.entries(selected)) {
   if (kind) archive(kind, out)
 }
 
-console.log(`\n✓ Fertig. Binaries liegen in ${outDir}:`)
+// Listet Binaries und Archive — ans Release gehen nur die Archive und die .exe (siehe release.yml).
+console.log(`\n✓ Fertig. Ergebnisse liegen in ${outDir}:`)
 for (const f of fs.readdirSync(outDir)) console.log('   •', f)

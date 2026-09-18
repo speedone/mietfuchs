@@ -32,6 +32,11 @@ nutzt — beides kann pkg/SEA nicht bündeln. Das Frontend wird beim Build über
 `with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
 Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
 ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
+**Docker-Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) baut das
+[Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
+und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
+läuft die App ohne Clone des Repos.
+
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,
 Linux als tar.gz (konserviert das Ausführungs-Bit, das rohe Downloads verlieren würden), die
@@ -78,7 +83,9 @@ die ganze fachliche Komplexität:
   Rohanteile die Summe nahezu voll aus, wird centgenau auf Mieter verteilt; sonst trägt der
   **Vermieter** die Differenz (Leerstand, Eigenanteil, Rundungsrest, „Nicht umlagefähig").
 - **Umlageschlüssel** (`item.key`): `area` (Wohnfläche), `persons` (personentagesgenau),
-  `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung).
+  `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung),
+  `custom` (vereinbarte Prozentanteile je Wohnung in `item.customShares`, absolut gerechnet —
+  was unter 100 % fehlt, trägt der Vermieter).
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung
   (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Tatsächlich
   gezahlte Vorauszahlungen pro Jahr können via `prepaymentOverrides` überschrieben werden
@@ -88,8 +95,17 @@ die ganze fachliche Komplexität:
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
   (`consumptionInPeriod`). Zählerwechsel über `replacement: true` + `oldEndValue`. Negativer
   Verbrauch erzeugt eine Warnung.
-- Nur Wohnungen mit `participates: true` nehmen an der Verteilung teil (die selbstbewohnte
-  Wohnung ist `false`).
+- **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in types.ts): `participates:
+  true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
+  Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den
+  Vermieteranteil · beides `false` = außerhalb der Abrechnungseinheit, bleibt ganz außen vor.
+  Grund für die Basis-Zugehörigkeit: Kosten einer Rechnung über das ganze Haus dürfen nur
+  anteilig auf die Mieter umgelegt werden. Beim `meter`-Schlüssel bilden **alle**
+  Wohnungszähler die Basis, unabhängig vom Kennzeichen — ein Zählerstand belegt Verbrauch
+  innerhalb der abgerechneten Menge. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
+  entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht
+  abziehbar); `load()` migriert bewusst **nicht** automatisch, weil ein gesetztes Kennzeichen
+  die Verteilung bereits abgerechneter Jahre verändern würde.
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
   Monate verteilt (Status bezahlt/teilweise/offen).
@@ -134,5 +150,6 @@ Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert.
   prüfen.
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).
-- Fachliche Rahmenbedingungen des Nutzers: 3 Wohnungen, eine selbstbewohnt (nicht beteiligt),
-  nur kalte Betriebskosten, Mieter zahlen Energie direkt.
+- Zielbild ist das kleine Mehrfamilienhaus in Eigenverwaltung: wenige Wohnungen, davon
+  gegebenenfalls eine selbstgenutzte, kalte Betriebskosten. Heizung/Warmwasser nach HeizkostenV
+  deckt das Tool bewusst nicht ab — Energie rechnen die Mieter direkt mit ihrem Versorger ab.
