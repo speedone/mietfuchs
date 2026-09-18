@@ -17,10 +17,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   umgelegt werden — der auf eine selbstgenutzte Wohnung entfallende Teil bleibt beim Vermieter,
   genauso wie der Anteil leerstehender Wohnungen. Für den Personenschlüssel lässt sich die
   Personenzahl des eigenen Haushalts hinterlegen.
+  ([#3](https://github.com/speedone/mietfuchs/issues/3))
 - **Umlageschlüssel „nach vereinbarten Anteilen (%)".** Feste Prozentanteile je Wohnung, wie
   sie im Mietvertrag vereinbart sein können (§556a Abs. 1 BGB). Die Anteile gelten absolut:
   Was unter 100 % fehlt, trägt der Vermieter — so lässt sich ein vereinbarter Eigenanteil
   abbilden. Bei einem Mieterwechsel wird der Anteil tagesanteilig geteilt.
+  ([#5](https://github.com/speedone/mietfuchs/issues/5))
 - **Eigenanteil als Betrag.** Abrechnung und Steuerübersicht weisen aus, welcher Teil des
   Vermieteranteils auf selbstgenutzte Wohnungen entfällt. Für die Anlage V ist dieser Teil
   privat veranlasst und damit nicht als Werbungskosten abziehbar; die Aufteilung nimmt die
@@ -31,6 +33,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Fertiges Docker-Image.** Das Image wird für `linux/amd64` und `linux/arm64` nach
   `ghcr.io/speedone/mietfuchs` veröffentlicht. Damit lässt sich Mietfuchs per `docker run`
   oder mit einer eigenständigen Compose-Datei starten, ohne das Repository zu klonen.
+  ([#4](https://github.com/speedone/mietfuchs/issues/4))
 - **`NKA_DATA_DIR`** verlegt den Datenordner auf einen beliebigen Pfad. Gedacht für Tests
   gegen einen Wegwerf-Ordner und für Installationen, deren Daten woanders liegen sollen.
 
@@ -43,16 +46,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gültigen Weg, eine nicht signierte Programmdatei freizugeben. Beitrag von
   [@thorstenhornung1](https://github.com/thorstenhornung1) in
   [#2](https://github.com/speedone/mietfuchs/pull/2).
+  ([#1](https://github.com/speedone/mietfuchs/issues/1))
 - **Zählertyp wurde falsch gespeichert.** Das Feld war mit „Kaltwasser" vorbelegt, die Auswahl
   bot aber nur Typen an, für die Wohnungszähler existieren. Ohne Kaltwasserzähler zeigte das
   Feld deshalb den ersten angebotenen Typ an, gespeichert wurde trotzdem „Kaltwasser": die
   Kostenposition fand keinen passenden Verbrauch und landete vollständig im Vermieteranteil.
   Das Feld verlangt nun eine ausdrückliche Auswahl.
+  ([#6](https://github.com/speedone/mietfuchs/issues/6))
 - **Verteilbasis bei nicht vermieteten Wohnungen.** Wohnungen ohne Beteiligung fielen
   vollständig aus der Basis von Wohnfläche, Wohneinheiten und Personenzahl — die Mieter trugen
   dadurch den gesamten Rechnungsbetrag. Die neue Nutzungsart *selbstgenutzt* behebt das, sobald
   sie gesetzt ist (siehe *Hinweise zur Aktualisierung*). Beim Verbrauchsschlüssel war das schon
   vorher richtig, weil ein eigener Zähler die Basis mitbildet.
+  ([#3](https://github.com/speedone/mietfuchs/issues/3))
 - **Direktzuordnung auf eine nicht beteiligte Wohnung ließ einen Betrag verschwinden.** Bestand
   für die Wohnung im Abrechnungsjahr noch ein Mietverhältnis, wurde deren Anteil als verteilt
   gebucht, obwohl ihn niemand erhielt: Mieteranteile plus Vermieteranteil ergaben dann weniger
