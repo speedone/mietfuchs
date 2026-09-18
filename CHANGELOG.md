@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.3.0] – 2026-09-18
+
 ### Hinzugefügt
 
 - **Nutzungsart je Wohnung.** Eine Wohnung ist jetzt entweder *vermietet*, *selbstgenutzt*
@@ -102,7 +104,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.2.1...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/speedone/mietfuchs/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/speedone/mietfuchs/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/speedone/mietfuchs/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/speedone/mietfuchs/compare/v0.1.0...v0.1.1
