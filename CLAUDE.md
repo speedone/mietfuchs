@@ -77,6 +77,22 @@ Es gibt **keinen Linter**; `npm run build` ist der einzige Typecheck-Pfad (`tsc 
 Nennenswerte Änderungen gehören ins [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog, deutsch);
 der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 
+**Issues & Releases** — Ziel ist, dass man vom Issue zum Code und vom Release zum Issue kommt:
+
+- Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
+  Commit-Nachricht. Das erzeugt die Verknüpfung im Issue-Verlauf. **Nicht** `Fixes`/`Closes #N`:
+  diese Schlüsselwörter schließen das Issue schon beim Merge nach `main`, also bevor Nutzer den
+  Fix bekommen.
+- Der Changelog-Eintrag nennt das Issue als Link, `([#N](https://github.com/speedone/mietfuchs/issues/N))`
+  — in Repo-Dateien verlinkt GitHub ein nacktes `#N` nicht. In Release-Notes genügt `(#N)`.
+  Nummern nur dort, wo das Issue den Punkt tatsächlich verlangt hat.
+- Geschlossen wird **beim Release**: kurzer Kommentar mit Link auf das Release, in der Sprache
+  des Melders, dazu nötige Schritte für bestehende Daten. Danach das Issue als *completed*
+  schließen.
+- Release-Notes aus dem Changelog-Abschnitt erzeugen, dabei die harten Zeilenumbrüche der
+  Listenpunkte zusammenziehen — GitHub stellt jeden Umbruch in Release-Texten als echten dar.
+  Die automatisch erzeugte Nennung neuer Beitragender übernehmen.
+
 ## Architektur
 
 Zwei getrennte npm-Pakete: `server/` (Express, ESM, kein TypeScript) und `client/` (React 19 +
