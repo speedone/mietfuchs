@@ -84,7 +84,9 @@ export default function Cockpit({ units, onNavigate }: Props) {
     const list: Check[] = []
 
     // 1. Mietverhältnisse & Flächen
-    const noArea = participating.filter((u) => !u.areaM2)
+    // Auch die selbstgenutzte Wohnung braucht eine Fläche — ohne sie fällt ihr Eigenanteil
+    // beim Flächenschlüssel stillschweigend weg.
+    const noArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
     if (settlement.statements.length === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
         detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
@@ -128,8 +130,11 @@ export default function Cockpit({ units, onNavigate }: Props) {
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
     // Kosten für das ganze Haus dürfen nur anteilig auf die Mieter umgelegt werden — eine
     // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung" in die Basis.
+    // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
+    // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
+    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons')
     const ausgenommen = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
-    if (ausgenommen.length > 0) {
+    if (ausgenommen.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
         detail: `Nicht beteiligt und damit ganz außen vor: ${ausgenommen.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
@@ -310,7 +315,7 @@ export default function Cockpit({ units, onNavigate }: Props) {
                   <div key={u.id} className="tenant-card muted-card">
                     <div className="muted">{u.name}</div>
                     <div className="tenant-bal" style={{ color: 'var(--muted)' }}>—</div>
-                    <div className="muted">selbst bewohnt</div>
+                    <div className="muted">{usageOf(u) === 'eigen' ? 'selbst bewohnt' : 'nicht beteiligt'}</div>
                   </div>
                 ))}
               </div>

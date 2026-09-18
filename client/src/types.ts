@@ -162,11 +162,12 @@ export type CostItem = {
   vendor?: string
   amountCents: number
   key: CostKey
-  directUnitId?: string
-  meterType?: MeterType
+  // null = beim Schlüsselwechsel bewusst zurückgesetzt (siehe saveItem in Kosten.tsx)
+  directUnitId?: string | null
+  meterType?: MeterType | null
   // Vereinbarter Schlüssel: Wohnungs-ID → Prozentanteil. Die Anteile gelten absolut;
   // summieren sie unter 100 %, bleibt der Rest beim Vermieter.
-  customShares?: Record<string, number>
+  customShares?: Record<string, number> | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
 }

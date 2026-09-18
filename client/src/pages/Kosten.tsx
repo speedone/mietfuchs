@@ -173,9 +173,11 @@ export default function Kosten({ units, settings }: Props) {
       amountCents: amount,
       labor35aCents: labor35a || undefined,
       key: form.key,
-      directUnitId: form.key === 'direct' ? form.directUnitId : undefined,
-      meterType: form.key === 'meter' ? form.meterType : undefined,
-      customShares: customShares ?? null, // null löscht Anteile beim Schlüsselwechsel
+      // null statt undefined: die generische PUT-Route übernimmt nur vorhandene Felder, sonst
+      // blieben beim Schlüsselwechsel alte Zuordnungen in der Datei stehen.
+      directUnitId: form.key === 'direct' ? form.directUnitId : null,
+      meterType: form.key === 'meter' ? form.meterType : null,
+      customShares: customShares ?? null,
       invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
     })
     const editing = !!form.id
@@ -550,9 +552,12 @@ export default function Kosten({ units, settings }: Props) {
             </label>
             <label className="field grow">
               Umlageschlüssel
+              {/* Der Verbrauchsschlüssel wird nur angeboten, wenn es Wohnungszähler gibt — der
+                  gespeicherte Schlüssel muss aber immer in der Liste stehen, sonst zeigt das
+                  Feld beim Bearbeiten einen anderen Wert an, als gespeichert ist. */}
               <select value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value as CostKey })}>
                 {(Object.keys(KEY_LABELS) as CostKey[])
-                  .filter((k) => k !== 'meter' || unitMeterTypes.length > 0)
+                  .filter((k) => k !== 'meter' || unitMeterTypes.length > 0 || form.key === 'meter')
                   .map((k) => (
                     <option key={k} value={k}>{KEY_LABELS[k]}</option>
                   ))}
