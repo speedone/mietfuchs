@@ -16,7 +16,9 @@ Server und Client mit):
 ```powershell
 npm install        # installiert Root + server + client
 npm run dev        # concurrently: Server (Port 3001) + Vite (Port 5173)
-npm test           # Tests der Berechnungs-Engine (delegiert an server)
+npm test           # alle Tests: Server (node:test) + Client (vitest)
+npm run test:server # nur Engine- und API-Tests
+npm run test:client # nur Formularlogik- und Komponententests
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
@@ -42,18 +44,35 @@ Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml
 Linux als tar.gz (konserviert das Ausführungs-Bit, das rohe Downloads verlieren würden), die
 Windows-`.exe` roh.
 
-Einzelnen Test ausführen (node:test, kein Framework):
+Einzelnen Test ausführen:
 
 ```powershell
 npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
+npm --prefix client test -- costForm
 ```
 
-Es gibt **keinen Linter** und keine Client-Tests. `npm run build` ist der einzige
-Typecheck-Pfad (`tsc --noEmit`). Neben den Beispielfällen prüfen drei Tests in
-[server/test/calc.test.js](server/test/calc.test.js) Invarianten über zufällig erzeugte
-Datenbestände (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil =
-Gesamtkosten, keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Beim Erweitern der
-Verteilung dort mitdenken — Einzelfall-Tests übersehen genau die schiefen Konstellationen.
+Es gibt **keinen Linter**; `npm run build` ist der einzige Typecheck-Pfad (`tsc --noEmit`).
+
+**Tests, drei Ebenen** — beim Erweitern der Verteilung oder der Formulare jeweils mitdenken:
+
+1. [server/test/calc.test.js](server/test/calc.test.js) — Engine (node:test, kein Framework).
+   Neben Beispielfällen prüfen drei Tests Invarianten über zufällig erzeugte Datenbestände
+   (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil = Gesamtkosten,
+   keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Einzelfall-Tests übersehen genau
+   die schiefen Konstellationen — ein Geldverlust bei der Direktzuordnung fiel erst hier auf.
+2. [server/test/api.test.js](server/test/api.test.js) — Integration: startet den Server als
+   eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
+   Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`.
+3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
+   [client/src/costForm.ts](client/src/costForm.ts) und
+   [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
+   Seiten sollen darüber nur noch rendern. Dazu ein jsdom-Komponententest
+   ([Kosten.test.tsx](client/src/pages/Kosten.test.tsx), fordert die Umgebung per
+   `@vitest-environment jsdom` selbst an) für die eine Eigenschaft, die reine Logik nicht
+   sieht: **der angezeigte Wert eines Auswahlfelds muss dem gespeicherten entsprechen.** Steht
+   der State-Wert nicht in der Optionsliste, zeigt der Browser den ersten Eintrag, ohne ein
+   `change`-Ereignis zu senden — gespeichert wird dann etwas anderes als das Sichtbare. Neue
+   Selects deshalb über `meterTypeOptions`/`costKeyOptions` speisen.
 
 Nennenswerte Änderungen gehören ins [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog, deutsch);
 der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
@@ -66,7 +85,8 @@ Vite + TypeScript). Im Dev proxyt Vite `/api` und `/uploads` an `localhost:3001`
 das statische `client/dist` selbst aus ([server/src/index.js](server/src/index.js)).
 
 **Persistenz**: eine einzige JSON-Datei `server/data/db.json`, atomar geschrieben (Temp +
-rename) über [server/src/store.js](server/src/store.js). Belege liegen in `server/data/uploads/`.
+rename) über [server/src/store.js](server/src/store.js). `NKA_DATA_DIR` verlegt den Ordner
+(Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`.
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
 älterer `db.json` passieren imperativ in `load()` in store.js (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.

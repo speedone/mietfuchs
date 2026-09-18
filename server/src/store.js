@@ -7,10 +7,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // In der gepackten Binary (Bun --compile) liegt der Code in einem virtuellen,
 // schreibgeschützten Dateisystem — die Daten müssen daneben, in den echten Ordner
 // neben die ausführbare Datei. Im Dev-/npm-Betrieb bleibt es bei server/data.
+// `NKA_DATA_DIR` verlegt den Datenordner (absoluter Pfad). Gedacht für Tests gegen einen
+// Wegwerf-Ordner und für Betriebsfälle, in denen die Daten woanders liegen sollen.
 const PACKAGED = !!globalThis.Bun
-export const DATA_DIR = PACKAGED
-  ? path.join(path.dirname(process.execPath), 'data')
-  : path.join(__dirname, '..', 'data')
+export const DATA_DIR = process.env.NKA_DATA_DIR
+  ? path.resolve(process.env.NKA_DATA_DIR)
+  : PACKAGED
+    ? path.join(path.dirname(process.execPath), 'data')
+    : path.join(__dirname, '..', 'data')
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 

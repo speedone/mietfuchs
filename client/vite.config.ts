@@ -1,3 +1,6 @@
+/// <reference types="vitest/config" />
+// Nur eine Typ-Referenz (zur Laufzeit entfernt) — so bleibt `test` unten typgeprüft, ohne
+// dass der Produktionsbuild vitest auflösen müsste.
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
@@ -16,6 +19,14 @@ export default defineConfig({
       ],
     }),
   ],
+  // Tests: reine Formularlogik (*.test.ts) und Komponententests (*.test.tsx) mit jsdom.
+  // Absichtlich schmal gehalten — geprüft wird, was über gespeicherte Beträge entscheidet.
+  test: {
+    // Standard ist node — jsdom kostet Startzeit und wird nur von den Komponententests
+    // gebraucht, die es per `@vitest-environment jsdom` selbst anfordern.
+    environment: 'node',
+    include: ['src/**/*.test.{ts,tsx}'],
+  },
   server: {
     proxy: {
       // 127.0.0.1 statt localhost: Auf Windows löst "localhost" zuerst zu IPv6 (::1)
