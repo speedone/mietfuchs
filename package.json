@@ -3,7 +3,7 @@
   "version": "0.2.1",
   "private": true,
   "description": "Mietfuchs — lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
-  "author": "Martin Geörger",
+  "author": "speedone",
   "license": "MIT",
   "homepage": "https://github.com/speedone/mietfuchs#readme",
   "repository": {
