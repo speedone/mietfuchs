@@ -401,6 +401,56 @@ test('Zählerschlüssel: Verbrauch einer nicht beteiligten Wohnung bleibt in der
   assert.equal(s.landlord.totalCents, 40000)
 })
 
+test('Direktzuordnung an eine nicht vermietete Wohnung bleibt vollständig beim Vermieter', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  // Die Wohnung war bis Ende März vermietet und wird danach selbst genutzt
+  db.tenancies.push({ id: 't1', unitId: 'u1', tenantName: 'Vormieter', persons: 2, start: '2020-01-01', end: '2025-03-31', prepayments: [] })
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Direkt', amountCents: 100000, key: 'direct', directUnitId: 'u1' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 0) // die Wohnung ist nicht beteiligt
+  assert.equal(s.landlord.totalCents, 100000) // kein Cent darf unterwegs verschwinden
+  assert.equal(s.selfUsedShareCents, 100000)
+})
+
+test('Direktzuordnung auf eine gelöschte Wohnung: Warnung, Betrag beim Vermieter', () => {
+  const db = makeDb()
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Verwaist', amountCents: 40000, key: 'direct', directUnitId: 'weg' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 40000)
+  assert.equal(s.warnings.length, 1)
+})
+
+test('Eine Wohnung, die vermietet und als Eigennutzung markiert ist, gilt als vermietet', () => {
+  const db = makeDb()
+  db.units[1].selfUsed = true // widersprüchliche Kennzeichen
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 150000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 90000)
+  assert.equal(s.selfUsedShareCents, 0) // kein Eigenanteil an einer vermieteten Wohnung
+})
+
+test('Negative Personenzahl der eigenen Wohnung zählt wie „nicht hinterlegt"', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.units[0].selfPersons = -5 // aus einem von Hand bearbeiteten Datenbestand
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 100000)
+  assert.equal(s.landlord.totalCents, 0) // keine negative Verteilbasis, kein negativer Anteil
+  assert.equal(s.warnings.length, 1)
+})
+
+test('Eigennutzung ohne Wohnfläche: Warnung beim Flächenschlüssel', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.units[0].areaM2 = 0 // Wohnfläche noch nicht erfasst
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.warnings.length, 1)
+  assert.match(s.warnings[0], /Wohnfläche/)
+})
+
 // ---------- Vereinbarter Prozentschlüssel ----------
 
 test('Prozentschlüssel: vereinbarte Anteile, der Rest trägt der Vermieter', () => {
@@ -442,6 +492,31 @@ test('Prozentschlüssel: Teiljahr wird tagesanteilig gekürzt', () => {
     s.statements.reduce((a, x) => a + x.totalShareCents, 0) + s.landlord.totalCents,
     100000,
   )
+})
+
+test('Prozentschlüssel über 100 %: Warnung, keine Verteilung', () => {
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Zu viel',
+    amountCents: 100000, key: 'custom', customShares: { u2: 60, u3: 60 },
+  })
+  const s = computeSettlement(db, 2025)
+  // Niemals mehr verteilen als die Rechnung hergibt — sonst wären auch die §35a-Anteile zu hoch
+  assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 0)
+  assert.equal(s.landlord.totalCents, 100000)
+  assert.match(s.warnings[0], /100/)
+})
+
+test('Prozentschlüssel mit gelöschter Wohnung: Warnung, verfallener Anteil beim Vermieter', () => {
+  const db = makeDb()
+  db.costItems.push({
+    id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Verwaist',
+    amountCents: 100000, key: 'custom', customShares: { u2: 50, weg: 30 },
+  })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 50000)
+  assert.equal(s.landlord.totalCents, 50000)
+  assert.equal(s.warnings.length, 1)
 })
 
 test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
@@ -501,6 +576,20 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   assert.equal(r.rentedAreaShare, 0.5)
 })
 
+test('Steuer (Anlage V): abgeschlossene Abrechnung liefert den eingefrorenen Eigenanteil', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.payments = []
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
+  db.closedSettlements = [
+    { id: 'x', year: 2025, closedAt: '2026-01-05', sentAt: null, settlement: computeSettlement(db, 2025) },
+  ]
+  // Nachträgliche Änderung an den Kosten: der eingefrorene Stand bleibt maßgeblich,
+  // sonst widersprächen Steuerübersicht und versendete Abrechnung einander.
+  db.costItems[0].amountCents = 460000
+  assert.equal(taxReport(db, 2025).selfUsedShareCents, 80000)
+})
+
 test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewiesen', () => {
   const db = makeDb()
   db.units[0].selfUsed = true
@@ -510,4 +599,118 @@ test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewi
   // 80 von 230 m² entfallen auf die eigene Wohnung — dieser Teil ist privat, nicht abziehbar
   assert.equal(r.selfUsedShareCents, 80000)
   assert.equal(r.expenses.totalCents, 230000) // die Werbungskosten selbst bleiben unangetastet
+})
+
+// ---------- Invarianten über zufällige Datenbestände ----------
+// Eine Abrechnung ist ein Rechtsdokument: Mieteranteile plus Vermieteranteil müssen die
+// Gesamtkosten centgenau ergeben, und der ausgewiesene Eigenanteil darf nie größer sein als
+// der Vermieteranteil, in dem er steckt. Statt einzelne Fälle zu raten, prüft dieser Test
+// viele zufällige Konstellationen — mit festem Startwert, damit Fehlschläge reproduzierbar
+// bleiben.
+function makeRng(seed) {
+  let s = seed
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+}
+
+function randomDb(rnd) {
+  const pick = (arr) => arr[Math.floor(rnd() * arr.length)]
+  const unitCount = 1 + Math.floor(rnd() * 4)
+  const units = []
+  for (let i = 0; i < unitCount; i++) {
+    const usage = pick(['vermietet', 'vermietet', 'eigen', 'ausgenommen'])
+    units.push({
+      id: `u${i}`,
+      name: `W${i}`,
+      areaM2: rnd() < 0.15 ? 0 : Math.round(rnd() * 120),
+      participates: usage === 'vermietet',
+      selfUsed: usage === 'eigen',
+      selfPersons: usage === 'eigen' ? Math.floor(rnd() * 4) : undefined,
+    })
+  }
+  const tenancies = []
+  for (const u of units) {
+    // auch nicht vermietete Wohnungen können ein beendetes Mietverhältnis haben
+    if (rnd() < 0.2) continue
+    const start = rnd() < 0.3 ? `2025-${String(1 + Math.floor(rnd() * 9)).padStart(2, '0')}-01` : '2020-01-01'
+    const end = rnd() < 0.3 ? `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-28` : null
+    tenancies.push({
+      id: `t${tenancies.length}`, unitId: u.id, tenantName: `M${tenancies.length}`,
+      start, end, persons: 1 + Math.floor(rnd() * 4),
+      personHistory: [{ from: start, persons: 1 + Math.floor(rnd() * 4) }],
+      prepayments: [], baseRents: [], prepaymentOverrides: {},
+    })
+  }
+  const meters = []
+  const readings = []
+  for (const u of units) {
+    if (rnd() < 0.5) continue
+    const id = `m${meters.length}`
+    meters.push({ id, unitId: u.id, type: pick(['kaltwasser', 'sonstig']), name: id, unit: 'm³' })
+    readings.push({ id: `${id}a`, meterId: id, date: '2024-12-31', value: 0 })
+    readings.push({ id: `${id}b`, meterId: id, date: '2025-12-31', value: Math.round(rnd() * 100) })
+  }
+  const costItems = []
+  const itemCount = 1 + Math.floor(rnd() * 5)
+  for (let i = 0; i < itemCount; i++) {
+    const key = pick(['area', 'persons', 'units', 'meter', 'direct', 'custom'])
+    const item = {
+      id: `c${i}`, year: 2025,
+      category: pick(['Grundsteuer', 'Wasser/Abwasser', 'Gartenpflege', 'Nicht umlagefähig']),
+      description: `P${i}`,
+      amountCents: 1 + Math.floor(rnd() * 500000),
+      key,
+    }
+    if (key === 'meter') item.meterType = pick(['kaltwasser', 'sonstig', undefined])
+    if (key === 'direct') item.directUnitId = pick([...units.map((u) => u.id), 'weg'])
+    if (key === 'custom') {
+      item.customShares = {}
+      for (const u of units) if (rnd() < 0.6) item.customShares[u.id] = Math.round(rnd() * 6000) / 100
+    }
+    if (rnd() < 0.3) item.labor35aCents = Math.floor(rnd() * item.amountCents)
+    costItems.push(item)
+  }
+  return { settings: {}, payments: [], units, tenancies, meters, readings, costItems }
+}
+
+test('Invariante: Mieteranteile + Vermieteranteil ergeben immer die Gesamtkosten', () => {
+  const rnd = makeRng(20260918)
+  for (let i = 0; i < 500; i++) {
+    const db = randomDb(rnd)
+    const s = computeSettlement(db, 2025)
+    const mieter = s.statements.reduce((a, x) => a + x.totalShareCents, 0)
+    assert.equal(
+      mieter + s.landlord.totalCents,
+      s.totalCostsCents,
+      `Fall ${i}: ${mieter} + ${s.landlord.totalCents} ≠ ${s.totalCostsCents}\n${JSON.stringify(db)}`,
+    )
+  }
+})
+
+test('Invariante: kein Mieter trägt einen negativen Anteil', () => {
+  const rnd = makeRng(4711)
+  for (let i = 0; i < 500; i++) {
+    const db = randomDb(rnd)
+    for (const st of computeSettlement(db, 2025).statements) {
+      for (const row of st.rows) {
+        assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}\n${JSON.stringify(db)}`)
+        assert.ok(row.labor35aCents <= row.shareCents + 1, `Fall ${i}: §35a-Anteil über dem Kostenanteil`)
+      }
+    }
+  }
+})
+
+test('Invariante: der Eigenanteil steckt im Vermieteranteil', () => {
+  const rnd = makeRng(1234567)
+  for (let i = 0; i < 500; i++) {
+    const db = randomDb(rnd)
+    const s = computeSettlement(db, 2025)
+    assert.ok(
+      s.selfUsedShareCents <= s.landlord.totalCents,
+      `Fall ${i}: Eigenanteil ${s.selfUsedShareCents} > Vermieteranteil ${s.landlord.totalCents}\n${JSON.stringify(db)}`,
+    )
+    assert.ok(s.selfUsedShareCents >= 0, `Fall ${i}: negativer Eigenanteil`)
+  }
 })

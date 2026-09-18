@@ -46,6 +46,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
+          # latest=auto ist der Standard, aber ausdrücklich gesetzt — sonst könnte ein
+          # Versionssprung der Action den dokumentierten Tag-Satz still verändern.
+          flavor: latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

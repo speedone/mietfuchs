@@ -60,6 +60,11 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'pa
       const meterIds = db.meters.filter((m) => m.unitId === req.params.id).map((m) => m.id)
       db.meters = db.meters.filter((m) => m.unitId !== req.params.id)
       db.readings = db.readings.filter((r) => !meterIds.includes(r.meterId))
+      // Vereinbarte Prozentanteile auf die gelöschte Wohnung entfernen, damit keine
+      // verwaisten Verweise in den Kostenpositionen zurückbleiben.
+      for (const c of db.costItems) {
+        if (c.customShares && req.params.id in c.customShares) delete c.customShares[req.params.id]
+      }
     }
     if (coll === 'tenancies') {
       db.payments = (db.payments ?? []).filter((p) => p.tenancyId !== req.params.id)
@@ -79,7 +84,9 @@ app.get('/api/settlement/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
-  if (closed) return res.json({ ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
+  // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
+  // vorbelegen, damit die Antwort immer der Form in types.ts entspricht.
+  if (closed) return res.json({ selfUsedShareCents: 0, ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
   res.json({ ...computeSettlement(getDb(), year), closed: null })
 })
 

@@ -37,11 +37,25 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Feld deshalb den ersten angebotenen Typ an, gespeichert wurde trotzdem „Kaltwasser": die
   Kostenposition fand keinen passenden Verbrauch und landete vollständig im Vermieteranteil.
   Das Feld verlangt nun eine ausdrückliche Auswahl.
-- **Verteilbasis bei nicht vermieteten Wohnungen.** Wohnungen ohne Beteiligung fielen bisher
+- **Verteilbasis bei nicht vermieteten Wohnungen.** Wohnungen ohne Beteiligung fielen
   vollständig aus der Basis von Wohnfläche, Wohneinheiten und Personenzahl — die Mieter trugen
-  dadurch den gesamten Rechnungsbetrag. Mit der neuen Nutzungsart *selbstgenutzt* wird der
-  Eigenanteil korrekt ausgewiesen. Beim Verbrauchsschlüssel war das schon vorher richtig, weil
-  ein eigener Zähler die Basis mitbildet.
+  dadurch den gesamten Rechnungsbetrag. Die neue Nutzungsart *selbstgenutzt* behebt das, sobald
+  sie gesetzt ist (siehe *Hinweise zur Aktualisierung*). Beim Verbrauchsschlüssel war das schon
+  vorher richtig, weil ein eigener Zähler die Basis mitbildet.
+- **Direktzuordnung auf eine nicht beteiligte Wohnung ließ einen Betrag verschwinden.** Bestand
+  für die Wohnung im Abrechnungsjahr noch ein Mietverhältnis, wurde deren Anteil als verteilt
+  gebucht, obwohl ihn niemand erhielt: Mieteranteile plus Vermieteranteil ergaben dann weniger
+  als die Gesamtkosten. Der Betrag läuft jetzt in den Vermieteranteil.
+- **Robustheit der Verteilung gegenüber unplausiblen Daten.** Prozentanteile über 100 % werden
+  nicht mehr verteilt (sie hätten auch den §35a-Anteil über den Rechnungsbetrag getrieben),
+  eine negative Personenzahl der eigenen Wohnung kann die Verteilbasis nicht mehr verkleinern,
+  und widersprüchliche Kennzeichen an einer Wohnung (vermietet *und* selbstgenutzt) gelten als
+  vermietet. Verweise auf gelöschte Wohnungen — bei Direktzuordnung wie bei Prozentanteilen —
+  und fehlende Angaben an der selbstgenutzten Wohnung (Fläche, Personenzahl) erzeugen jetzt
+  eine Warnung in der Abrechnung, statt stillschweigend die Mieter zu belasten.
+- **Steuerübersicht folgt abgeschlossenen Abrechnungen.** Der ausgewiesene Eigenanteil stammt
+  bei einer eingefrorenen Abrechnung aus deren Snapshot, damit Übersicht und versendete
+  Abrechnung nicht auseinanderlaufen.
 - **Packaging bricht bei echten Archivfehlern ab.** Bisher wurde jeder Fehler beim Verpacken
   als „Werkzeug nicht verfügbar" abgetan; ein fehlgeschlagenes Archiv fiel erst beim
   Release-Upload auf.

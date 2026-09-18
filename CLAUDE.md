@@ -49,7 +49,14 @@ npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
 ```
 
 Es gibt **keinen Linter** und keine Client-Tests. `npm run build` ist der einzige
-Typecheck-Pfad (`tsc --noEmit`).
+Typecheck-Pfad (`tsc --noEmit`). Neben den Beispielfällen prüfen drei Tests in
+[server/test/calc.test.js](server/test/calc.test.js) Invarianten über zufällig erzeugte
+Datenbestände (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil =
+Gesamtkosten, keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Beim Erweitern der
+Verteilung dort mitdenken — Einzelfall-Tests übersehen genau die schiefen Konstellationen.
+
+Nennenswerte Änderungen gehören ins [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog, deutsch);
+der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 
 ## Architektur
 
@@ -74,7 +81,9 @@ beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
 Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
-/api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung.
+/api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; ebenso nimmt
+`taxReport` den Eigenanteil aus dem Snapshot, damit Steuerübersicht und versendete Abrechnung
+nicht auseinanderlaufen.
 
 **Berechnungs-Engine** ([server/src/calc.js](server/src/calc.js)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
