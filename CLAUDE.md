@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Mietfuchs** — lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter (Deutschland).
 Alles läuft auf dem eigenen Rechner — keine Cloud, kein Konto. Sprache von UI, Kommentaren und
-Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten.
+Domänenbegriffen ist durchgängig **Deutsch**; bitte beibehalten. Bezeichner im Code sind dagegen
+**englisch** (siehe Konventionen).
 
 ## Commands
 
@@ -243,6 +244,11 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 
 ## Konventionen & Fallstricke
 
+- **Sprache im Code.** Bezeichner sind englisch: Variablen, Funktionen, Typen, Datei- und
+  Ordnernamen, Umgebungsvariablen und API-Routen, auch für Fachliches (`computeSettlement`,
+  `rentLedger`, `buildCostItemBody`). Deutsch bleiben Kommentare, Oberflächentexte,
+  Fehlermeldungen, Testnamen, Commit-Nachrichten und gespeicherte Fachwerte (`'vermietet'`,
+  `'kaltwasser'`, die Kostenarten). Seitenkomponenten heißen wie die Seite (`Kosten.tsx`).
 - **Geld immer in Cent als Integer.** Eingabe-Parsing (deutsche + technische Schreibweise) über
   `parseEuro`; Ausgabe über `fmtEuro`.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.js die

@@ -37,8 +37,13 @@ bitte in Schritte teilen, die sich einzeln prüfen und zusammenführen lassen.
    `Fixes #N`: Issues werden erst geschlossen, wenn die Änderung in einem Release erscheint.
 3. `npm test` und `npm run build` müssen grün sein; die CI prüft beides.
 4. Ein Eintrag im [CHANGELOG.md](CHANGELOG.md) unter „Unveröffentlicht".
-5. Oberfläche und Fachbegriffe auf Deutsch, Geldbeträge in Cent als Ganzzahl. Architektur und
-   weitere Konventionen stehen in [CLAUDE.md](CLAUDE.md).
+5. Sprache: Bezeichner im Code sind englisch, also Variablen, Funktionen, Typen, Datei- und
+   Ordnernamen, Umgebungsvariablen und API-Routen, auch für Fachliches (`computeSettlement`).
+   Deutsch sind Kommentare, Oberflächentexte, Fehlermeldungen, Testnamen, Commit-Nachrichten
+   und gespeicherte Fachwerte wie `'vermietet'` oder die Kostenarten. Seitenkomponenten heißen
+   wie die Seite in der Oberfläche (`Kosten.tsx`).
+6. Geldbeträge in Cent als Ganzzahl. Architektur und weitere Konventionen stehen in
+   [CLAUDE.md](CLAUDE.md).
 
 Beitragende werden im Changelog und in den Release-Notes genannt.
 
