@@ -54,9 +54,16 @@ für dein System laden:
 | System | Datei |
 | --- | --- |
 | Windows | `mietfuchs-win.exe` |
+| Windows auf ARM (z. B. Snapdragon) | `mietfuchs-win-arm64.exe` |
 | macOS (Apple Silicon, M1–M4) | `mietfuchs-macos-apple-silicon.zip` |
 | macOS (Intel) | `mietfuchs-macos-intel.zip` |
 | Linux | `mietfuchs-linux.tar.gz` |
+| Linux auf ARM (z. B. Raspberry Pi 4/5 mit 64-Bit-System) | `mietfuchs-linux-arm64.tar.gz` |
+
+Voraussetzungen: Windows 10 (1809) oder neuer, macOS 13 oder neuer, Linux mit glibc 2.17 oder
+neuer. Das sind praktisch alle gängigen Distributionen; vor jedem Release startet jede Datei
+testweise auf ihrem System und Linux zusätzlich auf Debian, Ubuntu, Fedora, AlmaLinux, Rocky,
+openSUSE, Arch und CentOS 7. Für Alpine und andere musl-Systeme gibt es das Docker-Image.
 
 Archiv entpacken (unter macOS genügt ein Doppelklick), dann die Programmdatei per
 **Doppelklick** starten — es öffnet sich automatisch dein Browser mit Mietfuchs.

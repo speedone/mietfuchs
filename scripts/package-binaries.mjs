@@ -6,7 +6,7 @@
 //
 // Nutzung:
 //   node scripts/package-binaries.mjs            # alle Ziele
-//   node scripts/package-binaries.mjs win        # nur ein Ziel (win|macos-x64|macos-arm64|linux)
+//   node scripts/package-binaries.mjs win        # nur ein Ziel (Namen siehe TARGETS)
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -26,11 +26,15 @@ const runShell = (cmd, args, opts = {}) => run(cmd, args, { shell: isWin, ...opt
 // Rohe Binaries verlieren beim HTTP-Download ihr Ausführungs-Bit (HTTP kennt keine
 // Dateirechte) — Zip/Tarball konservieren es. Zip für macOS (entpackt der Finder per
 // Doppelklick), tar.gz für Linux; die Windows-.exe braucht kein Exec-Bit und bleibt roh.
+// Die Namen der x64-Dateien bleiben unverändert: Der Update-Hinweis älterer Versionen sucht
+// seine Datei darunter (server/src/update.js). ARM-Dateien bekommen den Zusatz „-arm64“.
 const TARGETS = {
   win: { target: 'bun-windows-x64', out: 'mietfuchs-win.exe' },
+  'win-arm64': { target: 'bun-windows-arm64', out: 'mietfuchs-win-arm64.exe' },
   'macos-x64': { target: 'bun-darwin-x64', out: 'mietfuchs-macos-intel', archive: 'zip' },
   'macos-arm64': { target: 'bun-darwin-arm64', out: 'mietfuchs-macos-apple-silicon', archive: 'zip' },
   linux: { target: 'bun-linux-x64', out: 'mietfuchs-linux', archive: 'tar' },
+  'linux-arm64': { target: 'bun-linux-arm64', out: 'mietfuchs-linux-arm64', archive: 'tar' },
 }
 const only = process.argv[2]
 if (only && !TARGETS[only]) {

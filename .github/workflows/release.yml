@@ -1,22 +1,32 @@
 name: Release-Binaries
 
-# Baut die eigenständigen Mietfuchs-Binaries (Windows/macOS/Linux) und hängt sie
-# ans GitHub-Release. Läuft automatisch bei einem Tag wie v0.1.2 und lässt sich
-# zusätzlich von Hand starten.
+# Baut die eigenständigen Mietfuchs-Programmdateien, prüft jede auf einem echten Rechner ihres
+# Systems und hängt sie erst dann ans GitHub-Release (#22). Läuft bei einem Tag wie v0.1.2, bei
+# PRs, die Server, Oberfläche oder Build ändern, und von Hand.
 #
-# Bun kann alle Ziele von einem einzigen Linux-Runner aus cross-kompilieren —
-# deshalb kein Build-Matrix nötig.
+# Bun kompiliert alle Ziele von einem einzigen Linux-Runner aus. Ob eine Datei auf ihrem
+# System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
+# (gescannte PDFs, #21) fiel sonst erst bei Nutzern auf.
 on:
   push:
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - server/**
+      - client/**
+      - scripts/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/release.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
+    name: Programmdateien bauen
     # Runner bewusst anpinnen (nicht ubuntu-latest) — reproduzierbare Release-Builds.
     runs-on: ubuntu-24.04
     steps:
@@ -28,7 +38,8 @@ jobs:
         with:
           node-version: 24
 
-      # Bun für das Kompilieren der Binaries.
+      # Bun für das Kompilieren. Bewusst die neueste Version: Bringt sie einen Fehler mit,
+      # fällt er in den Prüfungen unten auf, bevor ein Release entsteht.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -51,11 +62,156 @@ jobs:
             dist-bin/*.zip
             dist-bin/*.tar.gz
             dist-bin/*.exe
+          if-no-files-found: error
 
-      # Nur bei einem echten Tag-Push: Dateien ans Release hängen.
-      - name: Ans Release anhängen
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
+  # Jede Programmdatei auf einem Rechner ihres Systems starten und von außen prüfen
+  # (scripts/smoke-test.mjs: Oberfläche, pdf.js-Dateien, KI-Auswertung, Belege, Abrechnung,
+  # Backup). Geprüft werden die Archive, die auch Nutzer herunterladen.
+  pruefen:
+    name: Prüfen auf ${{ matrix.name }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux x64, runner: ubuntu-24.04, datei: mietfuchs-linux.tar.gz, programm: mietfuchs-linux }
+          - { name: Linux ARM64, runner: ubuntu-24.04-arm, datei: mietfuchs-linux-arm64.tar.gz, programm: mietfuchs-linux-arm64 }
+          - { name: Windows x64, runner: windows-2025, datei: mietfuchs-win.exe, programm: mietfuchs-win.exe }
+          - { name: Windows ARM64, runner: windows-11-arm, datei: mietfuchs-win-arm64.exe, programm: mietfuchs-win-arm64.exe }
+          - { name: macOS Apple Silicon, runner: macos-15, datei: mietfuchs-macos-apple-silicon.zip, programm: mietfuchs-macos-apple-silicon }
+          - { name: macOS Intel, runner: macos-15-intel, datei: mietfuchs-macos-intel.zip, programm: mietfuchs-macos-intel }
+    env:
+      NKA_PORT: '3001'
+      # Kein Test darf das echte GitHub nach Updates fragen
+      NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-binaries
+          path: bin
+
+      - name: Entpacken wie ein Nutzer
+        if: runner.os != 'Windows'
+        shell: bash
+        working-directory: bin
+        run: |
+          case "${{ matrix.datei }}" in
+            *.zip) unzip -o "${{ matrix.datei }}" ;;
+            *.tar.gz) tar -xzf "${{ matrix.datei }}" ;;
+          esac
+          ls -l
+
+      # Bun signiert die macOS-Programmdateien ad hoc. Ist die Signatur kaputt (so geschehen mit
+      # Bun 1.3.12 bis 1.4.0), beendet macOS das Programm sofort beim Start.
+      - name: Signatur prüfen (macOS)
+        if: runner.os == 'macOS'
+        working-directory: bin
+        run: |
+          codesign --verify --verbose=2 "${{ matrix.programm }}"
+          file "${{ matrix.programm }}"
+
+      - name: Starten und prüfen (Linux, macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export NKA_DATA_DIR="$RUNNER_TEMP/daten"
+          "./bin/${{ matrix.programm }}" > server.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null; echo "--- Ausgabe der Programmdatei"; cat server.log' EXIT
+          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary
+
+      - name: Starten und prüfen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:NKA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'daten'
+          $p = Start-Process -FilePath "bin\${{ matrix.programm }}" -PassThru -RedirectStandardOutput server.log -RedirectStandardError server.err
+          try {
+            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary
+            if ($LASTEXITCODE -ne 0) { throw "Prüfung auf ${{ matrix.name }} fehlgeschlagen" }
+          } finally {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            Write-Host '--- Ausgabe der Programmdatei'
+            Get-Content server.log, server.err -ErrorAction SilentlyContinue
+          }
+
+  # Die Linux-Programmdatei braucht nur glibc 2.17 oder neuer. Derselbe Test läuft deshalb in
+  # Containern gängiger Distributionen, von CentOS 7 (genau glibc 2.17) bis zu den neuesten.
+  distributionen:
+    name: Prüfen auf ${{ matrix.image }} (${{ matrix.arch }})
+    needs: build
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+        image:
+          - centos:7
+          - debian:11
+          - debian:12
+          - debian:13
+          - ubuntu:20.04
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - ubuntu:26.04
+          - fedora:latest
+          - almalinux:8
+          - almalinux:10
+          - rockylinux:9
+          - opensuse/leap:15.6
+          - opensuse/tumbleweed
+          - archlinux:latest
+        include:
+          - { arch: arm64, image: centos:7 }
+          - { arch: arm64, image: debian:12 }
+          - { arch: arm64, image: ubuntu:20.04 }
+          - { arch: arm64, image: ubuntu:26.04 }
+          - { arch: arm64, image: fedora:latest }
+          - { arch: arm64, image: almalinux:10 }
+          - { arch: arm64, image: opensuse/tumbleweed }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-binaries
+          path: bin
+      - name: Im Container starten und prüfen
+        shell: bash
+        run: |
+          datei=mietfuchs-linux${{ matrix.arch == 'arm64' && '-arm64' || '' }}
+          tar -xzf "bin/$datei.tar.gz" -C bin
+          # --network host: Die Programmdatei erreicht das nachgebaute Ollama des Prüfskripts
+          # unter 127.0.0.1, und das Skript erreicht die Programmdatei ebenso.
+          docker run -d --name pruefling --network host -v "$PWD/bin:/app:ro" \
+            -e NKA_DATA_DIR=/tmp/daten -e NKA_PORT=3001 -e CI=true \
+            -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
+            "${{ matrix.image }}" "/app/$datei"
+          trap 'echo "--- Ausgabe der Programmdatei"; docker logs pruefling; docker rm -f pruefling > /dev/null' EXIT
+          docker exec pruefling sh -c 'ldd --version 2>&1 | head -1' || true
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
+
+  # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind.
+  veroeffentlichen:
+    name: Ans Release anhängen
+    needs: [pruefen, distributionen]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-binaries
+          path: dist-bin
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist-bin/*.zip
