@@ -20,13 +20,39 @@ async function startServer() {
   return startServerIn(dataDir)
 }
 
+// Liest die Adresse aus der Startmeldung „Mietfuchs-Server läuft auf …“. Wirft, wenn der Prozess
+// vorher endet oder die Meldung ausbleibt. Die Ausgabe wird danach weiter gelesen, sonst liefe
+// der Puffer der Pipe voll und der Server bliebe beim nächsten console.log hängen.
+function readStartUrl(child, timeoutMs = 20000) {
+  return new Promise((resolve, reject) => {
+    let output = ''
+    let found = false
+    const timer = setTimeout(() => reject(new Error(`Server ist nicht gestartet: ${output}`)), timeoutMs)
+    child.stdout.on('data', (chunk) => {
+      if (found) return
+      output += chunk
+      const match = output.match(/läuft auf (http:\/\/\S+)/)
+      if (!match) return
+      found = true
+      clearTimeout(timer)
+      resolve(match[1])
+    })
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      reject(new Error(`Server hat sich beendet (Code ${code}): ${output}`))
+    })
+  })
+}
+
 // `env` ergänzt oder überschreibt Umgebungsvariablen. NKA_UPDATE_URL zeigt standardmäßig ins
 // Leere (Port 9 nimmt keine Verbindung an): Kein Test darf versehentlich das echte GitHub fragen.
 // Die KI-Variablen aus der Shell des Entwicklers gelten nicht: Leere Werte zählen als nicht
 // gesetzt, und eine leere Kandidatenliste schaltet die Suche nach Ollama ab.
+//
+// Den Port vergibt das System (NKA_PORT=0). Ein selbst gewählter Zufallsport lag im Bereich,
+// aus dem Linux auch den nachgebauten Diensten der Tests Ports gibt, und traf gelegentlich einen
+// belegten.
 async function startServerIn(dataDir, env = {}) {
-  const port = 34000 + Math.floor(Math.random() * 8000)
-  const base = `http://127.0.0.1:${port}`
   const child = spawn(process.execPath, ['src/index.js'], {
     cwd: serverRoot,
     env: {
@@ -39,11 +65,22 @@ async function startServerIn(dataDir, env = {}) {
       NKA_AI_TIMEOUT: '',
       NKA_RUNTIME: '',
       ...env,
-      NKA_PORT: String(port),
+      NKA_PORT: '0',
       NKA_DATA_DIR: dataDir,
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'ignore'],
   })
+  const stop = () => {
+    child.kill()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+  let base
+  try {
+    base = await readStartUrl(child)
+  } catch (err) {
+    stop() // sonst hielte der verwaiste Prozess den Testlauf für immer offen
+    throw err
+  }
   const api = async (urlPath, init) => {
     const res = await fetch(`${base}${urlPath}`, {
       ...init,
@@ -52,21 +89,10 @@ async function startServerIn(dataDir, env = {}) {
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${urlPath} → ${res.status}`)
     return res.json()
   }
-  const deadline = Date.now() + 20000
-  for (;;) {
-    try {
-      await api('/api/settings')
-      break
-    } catch {
-      if (Date.now() > deadline) throw new Error('Server ist nicht gestartet')
-      await new Promise((r) => setTimeout(r, 100))
-    }
-  }
   // Sicherung: der Server muss wirklich im Wegwerf-Ordner arbeiten, sonst nichts weiter tun.
-  assert.ok(fs.existsSync(path.join(dataDir, 'uploads')), 'NKA_DATA_DIR wird nicht beachtet')
-  const stop = () => {
-    child.kill()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+  if (!fs.existsSync(path.join(dataDir, 'uploads'))) {
+    stop()
+    assert.fail('NKA_DATA_DIR wird nicht beachtet')
   }
   return { api, base, dataDir, stop }
 }
@@ -1097,6 +1123,24 @@ test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor et
     assert.equal((await s.api('/api/uploads')).length, 0)
   } finally {
     s.stop()
+  }
+})
+
+// Mit NKA_PORT=0 vergibt das System einen freien Port. Die Tests starten den Server so und
+// lesen den Port aus der Startmeldung (siehe startServerIn).
+test('Start: mit NKA_PORT=0 nennt die Startmeldung den tatsächlich vergebenen Port', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
+  const child = spawn(process.execPath, ['src/index.js'], {
+    cwd: serverRoot,
+    env: { ...process.env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
+  })
+  try {
+    const url = await readStartUrl(child)
+    assert.notEqual(new URL(url).port, '0', url)
+    assert.equal((await fetch(`${url}/healthz`)).status, 200)
+  } finally {
+    child.kill()
+    fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
 
