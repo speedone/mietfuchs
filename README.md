@@ -88,6 +88,29 @@ Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegaus
 braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
 einem KI-Dienst — ohne beides funktioniert die Abrechnung trotzdem vollständig.
 
+### Linux: Installationspaket mit Startmenü-Eintrag
+
+Wer Mietfuchs lieber wie jedes andere Programm installiert, nimmt statt des Archivs das Paket
+seiner Distribution. Es legt Mietfuchs nach `/usr/bin` und trägt ihn ins Startmenü ein, mit
+Symbol und der Kategorie „Büro“.
+
+| Distribution | Datei | Installieren |
+| --- | --- | --- |
+| Debian, Ubuntu, Mint | `mietfuchs_*_amd64.deb` | `sudo apt install ./mietfuchs_*_amd64.deb` |
+| Fedora, openSUSE, RHEL, AlmaLinux, Rocky | `mietfuchs-*.x86_64.rpm` | `sudo dnf install ./mietfuchs-*.x86_64.rpm` |
+| Arch, Manjaro, EndeavourOS | `mietfuchs-*-x86_64.pkg.tar.zst` | `sudo pacman -U mietfuchs-*-x86_64.pkg.tar.zst` |
+
+Für ARM-Rechner (Raspberry Pi 4/5 mit 64-Bit-System) heißen die Dateien `arm64` statt `amd64`
+und `aarch64` statt `x86_64`.
+
+Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
+Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die
+Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei.
+
+Ein Update holt sich das Paket nicht von selbst: Neue Fassung von der Releases-Seite laden und
+denselben Befehl noch einmal ausführen, er ersetzt die installierte Fassung. Der Update-Hinweis
+in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfung erlaubst.
+
 ## Aus dem Quellcode starten (für Entwickler)
 
 ```powershell
@@ -324,7 +347,10 @@ secrets:
 
 Alles liegt in einem `data/`-Ordner (`db.json` + hochgeladene Belege in `uploads/`).
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
-Quellcode unter `server/data/`. Backup = diesen Ordner kopieren.
+Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
+`~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
+Windows in `%LOCALAPPDATA%\Mietfuchs`), weil das Programm dann an einem Ort liegt, an dem es
+nicht schreiben darf. Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
 
 ## Produktivbetrieb ohne Dev-Server
 

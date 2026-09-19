@@ -13,6 +13,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abbrechen ist möglich, ein späterer Versuch setzt dort an, wo der letzte aufgehört hat. Vorher
   fragt Mietfuchs nach, denn Modelle sind mehrere Gigabyte groß. Der Befehl fürs Terminal steht
   weiterhin daneben. ([#33](https://github.com/speedone/mietfuchs/issues/33))
+- **Installationspakete für Linux.** Neben dem Archiv gibt es Mietfuchs jetzt als `.deb`
+  (Debian, Ubuntu, Mint), `.rpm` (Fedora, openSUSE, RHEL und Verwandte) und als Paket für Arch
+  Linux, je für x64 und ARM64. Installiert wird mit dem gewohnten Befehl der Distribution;
+  danach steht Mietfuchs mit Symbol im Startmenü. Die Daten liegen dann in
+  `~/.local/share/mietfuchs`, weil ein Programm in `/usr/bin` nicht neben sich schreiben darf.
+  Wer das Archiv nutzt, behält seinen Ordner `data/` neben der Programmdatei.
+  ([#25](https://github.com/speedone/mietfuchs/issues/25))
 - **Empfehlungen, welches Modell taugt.** Die Einstellungen zeigen einige Modelle mit Größe,
   Bildverständnis und den Messwerten des KI-Prüflaufs. Mit eingeschalteter Update-Prüfung holt
   Mietfuchs höchstens einmal am Tag die aktuelle Liste aus dem Repo, sonst gilt die

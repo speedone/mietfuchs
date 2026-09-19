@@ -30,6 +30,7 @@
     "build": "npm --prefix client run build",
     "start": "npm --prefix server start",
     "package": "node scripts/package-binaries.mjs",
+    "package:linux": "node scripts/package-linux.mjs",
     "test:server": "npm --prefix server test",
     "test:client": "npm --prefix client test"
   },

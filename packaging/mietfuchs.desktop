@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Mietfuchs
+GenericName=Nebenkostenabrechnung
+Comment=Nebenkostenabrechnung für private Vermieter, lokal auf diesem Rechner
+Comment[en]=Utility cost statements for private landlords, running on this computer
+Exec=mietfuchs
+Icon=mietfuchs
+# Mietfuchs ist ein Server mit Oberfläche im Browser: Der Start öffnet den Browser, das Fenster
+# bleibt offen, solange das Programm läuft, und sein Schließen beendet es. Ohne Fenster gäbe es
+# keinen sichtbaren Weg zum Beenden und keine Meldung, wenn der Port schon belegt ist.
+Terminal=true
+Categories=Office;Finance;
+Keywords=Nebenkosten;Betriebskosten;Abrechnung;Vermieter;Miete;Mietkonto;
+StartupNotify=false

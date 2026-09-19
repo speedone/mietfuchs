@@ -23,6 +23,7 @@ npm run test:client # nur Formularlogik- und Komponententests
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
+npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
 ```
 
 **Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
@@ -36,6 +37,22 @@ bewusst ohne aus (siehe KI-Belegauswertung). Das Frontend wird beim Build über
 `with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
 Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
 ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
+Wo die Daten liegen, entscheidet `chooseDataDir` in [server/src/store.js](server/src/store.js).
+
+**Linux-Pakete** (#25): [scripts/package-linux.mjs](scripts/package-linux.mjs) (`npm run
+package:linux`) baut aus denselben Linux-Programmdateien `.deb`, `.rpm` und das Arch-Paket, je
+für x64 und ARM64. Gebaut wird mit **nFPM** nach [packaging/nfpm.yaml](packaging/nfpm.yaml),
+das alle Formate aus einer Vorschrift erzeugt; nFPM kommt von der Platte oder aus seinem
+Container, mehr als Docker braucht der Rechner nicht. Das Paket legt die Programmdatei nach
+`/usr/bin`, dazu [packaging/mietfuchs.desktop](packaging/mietfuchs.desktop) (Startmenü,
+`Terminal=true`, weil das Fenster der sichtbare Weg zum Beenden ist) und das Symbol als SVG und
+PNG. Dort installiert, kann der Server nicht neben sich schreiben, deshalb liegen die Daten
+dann in `~/.local/share/mietfuchs` (XDG; entsprechend unter Windows und macOS). Die Regel dafür
+steht in `chooseDataDir`: ein Systemort (`/usr`, `/opt`, Programme) führt immer in den
+Benutzerordner, auch mit Schreibrecht, sonst würde ein Start als Administrator die Daten dorthin
+legen, wo der normale Benutzer sie nicht wiederfindet. Vor dem Release wird jedes Format in
+einem Container seiner Distribution installiert, als gewöhnlicher Benutzer gestartet und mit
+[scripts/smoke-test.mjs](scripts/smoke-test.mjs) geprüft.
 **Docker-Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) baut das
 [Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
 und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
