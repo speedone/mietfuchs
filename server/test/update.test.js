@@ -283,6 +283,64 @@ test('Ein Fehler vergisst nicht, was schon bekannt war', async () => {
   assert.equal(typeof s.error, 'string')
 })
 
+test('Gleichzeitige Aufrufe teilen sich eine Anfrage', async () => {
+  // z. B. mehrere offene Tabs oder ein Klick direkt nach dem Einschalten
+  antwort = liefere(releaseMit('v0.5.0'))
+  anfragen.length = 0
+  const p = pruefer()
+  const [a, b] = await Promise.all([p.check({ consent: 'on' }), p.check({ consent: 'on' })])
+  assert.equal(anfragen.length, 1)
+  assert.equal(a.latest, '0.5.0')
+  assert.equal(b.latest, '0.5.0')
+  await Promise.all([p.check({ consent: 'on', force: true }), p.check({ consent: 'on', force: true })])
+  assert.equal(anfragen.length, 1) // noch innerhalb der Mindestpause, siehe nächster Test
+})
+
+test('„Jetzt prüfen" fragt höchstens einmal pro Minute', async () => {
+  antwort = liefere(releaseMit('v0.5.0'))
+  anfragen.length = 0
+  let jetzt = Date.UTC(2026, 8, 19, 8, 0)
+  const p = pruefer({ now: () => jetzt })
+  await p.check({ consent: 'on' })
+  jetzt += 30 * 1000
+  const s = await p.check({ consent: 'on', force: true })
+  assert.equal(anfragen.length, 1)
+  assert.equal(s.latest, '0.5.0') // das letzte Ergebnis
+  jetzt += 31 * 1000
+  await p.check({ consent: 'on', force: true })
+  assert.equal(anfragen.length, 2)
+})
+
+test('Rate-Limit: eine unsinnig lange Wartezeit gilt höchstens einen Tag', async () => {
+  let jetzt = Date.UTC(2026, 8, 19, 8, 0)
+  antwort = liefere({ message: 'Too Many Requests' }, 429, { 'retry-after': String(365 * 24 * 3600) })
+  anfragen.length = 0
+  const p = pruefer({ now: () => jetzt })
+  await p.check({ consent: 'on' })
+  jetzt += 24 * STUNDE + 1000
+  await p.check({ consent: 'on', force: true })
+  assert.equal(anfragen.length, 2)
+})
+
+test('Links werden nur übernommen, wenn sie ins Mietfuchs-Repo auf GitHub zeigen', async () => {
+  // Die Adresse der Abfrage lässt sich per NKA_UPDATE_URL umstellen. Was von dort kommt,
+  // landet als Link in der Oberfläche und darf nirgendwo anders hinführen.
+  antwort = liefere(releaseMit('v0.5.0', { html_url: 'javascript:alert(1)' }))
+  let s = await pruefer().check({ consent: 'on' })
+  assert.equal(s.releaseUrl, null)
+  assert.equal(s.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/mietfuchs-win.exe')
+
+  const fremd = releaseMit('v0.5.0')
+  fremd.assets = fremd.assets.map((a) => ({ ...a, browser_download_url: `https://example.com/${a.name}` }))
+  antwort = liefere(fremd)
+  s = await pruefer().check({ consent: 'on' })
+  assert.equal(s.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')
+
+  antwort = liefere(releaseMit('v0.5.0', { html_url: undefined }))
+  s = await pruefer({ mode: 'docker' }).check({ consent: 'on' })
+  assert.equal(s.releaseUrl, null) // fehlt der Link, bleibt es bei null
+})
+
 test('Keine Antwort: die Abfrage gibt nach der Wartezeit auf', async () => {
   antwort = () => {} // antwortet nie
   const start = Date.now()
