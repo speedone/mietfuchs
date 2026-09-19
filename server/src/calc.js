@@ -603,6 +603,29 @@ export function computeSettlement(db, year) {
     } else {
       shares = targets.map((x) => Math.round(x.raw))
     }
+    // §35a-Lohnanteil. Die Mieter bekommen zusammen den Lohnanteil, der auf ihre gebuchten
+    // Kostenanteile entfällt — kaufmännisch auf den Cent gerundet und nie mehr als der
+    // Lohnanteil der Rechnung. Diese Summe wird mit demselben Restverfahren und Tie-Break
+    // verteilt wie die Kosten. Je Zeile zu runden könnte mehr bescheinigen, als die Rechnung
+    // enthält (3 × 66,67 € = 200,01 € bei 200,00 € Lohnanteil). Tragen die Mieter die Position
+    // ganz, stimmt die Summe centgenau; bei Leerstand und Eigennutzung bleibt der
+    // entsprechende Teil beim Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser
+    // Berechnung, keine Vorgabe des §35a EStG.
+    const labor = item.labor35aCents ?? 0
+    const laborOf = new Map()
+    if (labor !== 0 && (labor < 0 || labor > item.amountCents)) {
+      warnings.push(`„${item.description}": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`)
+    } else if (labor > 0) {
+      const booked = targets.map((_, i) => i).filter((i) => statements.has(targets[i].t.id))
+      const bookedCents = booked.reduce((a, i) => a + shares[i], 0)
+      const tenantLabor = Math.min(labor, Math.round((labor * bookedCents) / item.amountCents))
+      const parts = largestRemainder(
+        tenantLabor,
+        booked.map((i) => (labor * shares[i]) / item.amountCents),
+        booked.map((i) => String(targets[i].t.id)),
+      )
+      booked.forEach((i, k) => laborOf.set(i, parts[k]))
+    }
     let distributed = 0
     targets.forEach((x, i) => {
       const st = statements.get(x.t.id)
@@ -611,9 +634,7 @@ export function computeSettlement(db, year) {
       // in den Vermieteranteil laufen.
       if (!st) return
       distributed += shares[i]
-      const labor35a = item.labor35aCents && item.amountCents > 0
-        ? Math.round(item.labor35aCents * (shares[i] / item.amountCents))
-        : 0
+      const labor35a = laborOf.get(i) ?? 0
       st.rows.push({
         costItemId: item.id,
         category: item.category,

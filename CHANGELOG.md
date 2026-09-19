@@ -18,6 +18,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Wohnfläche ganz fehlt. Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1) in
   [#10](https://github.com/speedone/mietfuchs/pull/10).
   ([#7](https://github.com/speedone/mietfuchs/issues/7))
+- **§35a-Bescheinigung übersteigt nie den Lohnanteil der Rechnung.** Der Lohnanteil wurde je
+  Abrechnungszeile einzeln gerundet. Zusammen konnten die Mieter dadurch mehr bescheinigt
+  bekommen, als die Rechnung enthält, etwa 3 × 66,67 € = 200,01 € bei 200,00 € Lohnanteil.
+  Jetzt bekommen die Mieter zusammen den auf ihre Kostenanteile entfallenden Lohnanteil,
+  kaufmännisch gerundet und höchstens den der Rechnung. Diese Summe wird wie die Kosten
+  centgenau verteilt. Tragen die Mieter die Position vollständig, stimmt die Summe genau.
+  Ein negativer oder zu hoher Lohnanteil wird nicht bescheinigt, sondern gemeldet, und das
+  Formular lehnt einen negativen Lohnanteil jetzt ab. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#11](https://github.com/speedone/mietfuchs/pull/11).
+  ([#7](https://github.com/speedone/mietfuchs/issues/7))
+
+### Hinweise zur Aktualisierung
+
+- In noch nicht abgeschlossenen Jahren kann sich der §35a-Betrag eines Mieters um 1 ct ändern.
+  Die Kosten selbst und abgeschlossene Abrechnungen bleiben unverändert.
 
 ## [0.3.1] – 2026-09-19
 
