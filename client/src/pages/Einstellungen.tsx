@@ -4,7 +4,7 @@ import { api } from '../api'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
-import { OllamaSettings } from '../components/OllamaSettings'
+import { AiSettings } from '../components/AiSettings'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -55,7 +55,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
   return (
     <>
-      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung über Ollama und Updates." />
+      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung und Updates." />
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>
@@ -77,7 +77,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         </div>
       </div>
 
-      <OllamaSettings settings={settings} reload={reload} />
+      <AiSettings settings={settings} reload={reload} />
 
       <UpdateSettings settings={settings} update={update} reload={reload} />
 

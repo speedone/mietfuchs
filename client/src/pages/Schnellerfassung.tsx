@@ -3,6 +3,7 @@ import type { CostItem, CostKey, IntakeResult, Meter, Reading, Settings, Unit } 
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
+import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { useYear } from '../year'
@@ -75,6 +76,8 @@ function yearFrom(periodStart?: string | null, invoiceDate?: string): number | n
 }
 
 export default function Schnellerfassung({ units, settings, onNavigate }: Props) {
+  // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
+  const ai = aiSummary(settings)
   const { year, setYear } = useYear()
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
@@ -365,8 +368,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       <h1>📥 Schnellerfassung</h1>
       <p className="sub">
         Wirf alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
-        prüft es und sortiert nach Ampel. Grün übernimmst du mit einem Klick. Alles bleibt lokal
-        ({settings?.ollamaModel || 'Ollama'}).
+        prüft es und sortiert nach Ampel. Grün übernimmst du mit einem Klick.{' '}
+        {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
       </p>
       {error && <div className="error">{error}</div>}
 
