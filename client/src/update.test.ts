@@ -47,31 +47,43 @@ describe('Hinweis in der Seitenleiste', () => {
 })
 
 describe('Anleitung je Betriebsart', () => {
-  test('Programmdatei: direkter Download der passenden Datei', () => {
+  const download = (datei: string) => `https://github.com/speedone/mietfuchs/releases/download/v0.5.0/${datei}`
+
+  test('Programmdatei: Download der passenden Datei, das System ergibt sich aus der Datei', () => {
+    // Die Anleitung unterscheidet sich: .exe ersetzen, Zip oder tar.gz erst entpacken.
     expect(updateGuide(status())).toEqual({
-      kind: 'download',
-      href: 'https://github.com/speedone/mietfuchs/releases/download/v0.5.0/mietfuchs-win.exe',
+      kind: 'download', href: download('mietfuchs-win.exe'), system: 'windows', newTab: false,
+    })
+    expect(updateGuide(status({ downloadUrl: download('mietfuchs-macos-apple-silicon.zip') }))).toMatchObject({ system: 'macos' })
+    expect(updateGuide(status({ downloadUrl: download('mietfuchs-macos-intel.zip') }))).toMatchObject({ system: 'macos' })
+    expect(updateGuide(status({ downloadUrl: download('mietfuchs-linux.tar.gz') }))).toMatchObject({ system: 'linux' })
+  })
+
+  test('Programmdatei ohne passende Datei: Release-Seite in neuem Tab', () => {
+    // Die Release-Seite ist kein Download. Im selben Tab verließe man Mietfuchs.
+    const seite = 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0'
+    expect(updateGuide(status({ downloadUrl: seite }))).toEqual({ kind: 'download', href: seite, system: null, newTab: true })
+    expect(updateGuide(status({ downloadUrl: null }))).toEqual({ kind: 'download', href: seite, system: null, newTab: true })
+  })
+
+  test('Programmdatei ganz ohne Link: allgemeine Release-Seite', () => {
+    expect(updateGuide(status({ downloadUrl: null, releaseUrl: null }))).toEqual({
+      kind: 'download', href: 'https://github.com/speedone/mietfuchs/releases/latest', system: null, newTab: true,
     })
   })
 
-  test('Programmdatei ohne passende Datei: Download über die Release-Seite', () => {
-    expect(updateGuide(status({ downloadUrl: null }))).toEqual({
-      kind: 'download',
-      href: 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0',
-    })
-  })
-
-  test('Docker: Befehl zum Aktualisieren des Containers', () => {
+  test('Docker: Befehle zum Aktualisieren des Containers, einzeln statt mit &&', () => {
+    // && kennt die Windows PowerShell 5.1 nicht. Einzelne Zeilen gehen in jeder Shell.
     expect(updateGuide(status({ mode: 'docker', downloadUrl: null }))).toEqual({
       kind: 'command',
-      command: 'docker compose pull && docker compose up -d',
+      lines: ['docker compose pull', 'docker compose up -d'],
     })
   })
 
-  test('npm: Befehl zum Aktualisieren des Quellcodes', () => {
+  test('npm: Befehle zum Aktualisieren des Quellcodes', () => {
     expect(updateGuide(status({ mode: 'npm', downloadUrl: null }))).toEqual({
       kind: 'command',
-      command: 'git pull && npm install && npm run build',
+      lines: ['git pull', 'npm install', 'npm run build'],
     })
   })
 })
