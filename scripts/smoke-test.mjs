@@ -54,9 +54,10 @@ function starteOllama() {
     req.on('data', (d) => { body += d })
     req.on('end', () => {
       const send = (obj) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
-      if (req.url === '/api/tags') return send({ models: [{ name: 'smoke:latest' }] })
+      if (req.url === '/api/tags') return send({ models: [{ name: 'smoke:latest', size: 1000 }] })
+      if (req.url === '/api/show') return send({ capabilities: ['completion', 'vision'] })
       const j = body ? JSON.parse(body) : {}
-      anfragen.push(j)
+      anfragen.push(j) // nur Chat-Anfragen
       const props = j.format?.properties ?? {}
       if (props.categories) return send({ message: { content: JSON.stringify({ categories: Array(props.categories.minItems ?? 1).fill('Müllabfuhr') }) } })
       if (props.docType) return send({ message: { content: JSON.stringify({ docType: 'rechnung' }) } })
@@ -118,7 +119,7 @@ async function kiAuswertung() {
   try {
     await holen('/api/settings', json('PUT', { ollamaUrl: `http://${OLLAMA_HOST}:${ollama.port}`, ollamaModel: 'smoke:latest' }))
     const status = await holen('/api/ollama/status')
-    pruefe(status.body.ok === true, 'Verbindung zum nachgebauten Ollama', status.body)
+    pruefe(status.body.ok === true && status.body.models?.[0]?.vision === true, 'Verbindung zum nachgebauten Ollama, Modell mit Bildverständnis', status.body)
 
     const pdf = new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' })
     const langerText = 'Abfallgebührenbescheid 2025, Restmüll 120 Liter, 4-wöchentlich, Jahresgebühr 42,50 EUR. '.repeat(2)
