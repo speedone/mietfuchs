@@ -19,6 +19,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   mitgelieferte. Empfehlungen belegen nur vor, jedes andere Modell lässt sich weiterhin
   eintragen. ([#33](https://github.com/speedone/mietfuchs/issues/33))
 
+### Behoben
+
+- **Rechnungen mit Nettopositionen werden richtig übernommen.** Weisen Handwerker oder
+  Schornsteinfeger die Positionen ohne Umsatzsteuer aus und nennen sie erst in der Summe,
+  rechnet Mietfuchs die Positionen jetzt selbst auf den Rechnungsbetrag hoch, statt die
+  Nettobeträge zu übernehmen. Ein Hinweis nennt das, damit man es prüfen kann.
+  ([#34](https://github.com/speedone/mietfuchs/issues/34))
+- **Der Arbeitskostenanteil nach §35a geht nicht mehr verloren**, wenn die Rechnung ihn nur als
+  einen Betrag nennt („Im Rechnungsbetrag sind Arbeitskosten von 90,56 € enthalten“). Mietfuchs
+  verteilt ihn nach Beträgen auf die Positionen und weist darauf hin.
+  ([#34](https://github.com/speedone/mietfuchs/issues/34))
+
 ## [0.6.0] – 2026-09-19
 
 ### Hinzugefügt
