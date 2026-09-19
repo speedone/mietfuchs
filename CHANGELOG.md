@@ -15,6 +15,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   [@thorstenhornung1](https://github.com/thorstenhornung1) in
   [#8](https://github.com/speedone/mietfuchs/pull/8).
   ([#7](https://github.com/speedone/mietfuchs/issues/7))
+- **Rundungscent hängt nicht mehr von der Reihenfolge der Daten ab.** Haben mehrere
+  Mietverhältnisse exakt gleiche Anteile, etwa bei drei gleich großen Wohnungen, bleibt beim
+  Verteilen ein Cent übrig. Wer ihn trägt, entschied bisher die Reihenfolge der
+  Mietverhältnisse in der Datendatei. Jetzt entscheidet die interne Kennung des
+  Mietverhältnisses, sodass dieselben Daten immer dieselbe Abrechnung ergeben. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#9](https://github.com/speedone/mietfuchs/pull/9).
+  ([#7](https://github.com/speedone/mietfuchs/issues/7))
+
+### Hinweise zur Aktualisierung
+
+- In noch nicht abgeschlossenen Jahren kann der Rundungscent bei gleichen Anteilen einem
+  anderen Mieter zufallen als vorher. Abgeschlossene Abrechnungen bleiben unverändert.
 
 ## [0.3.0] – 2026-09-18
 
