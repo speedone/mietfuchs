@@ -47,10 +47,10 @@ services:
       retries: 30
 
   # Lädt das Modell einmalig (bei späteren Starts prüft es nur, ob es aktuell ist) und
-  # beendet sich dann. Den Fortschritt zeigt: docker compose logs -f ollama-modell
-  ollama-modell:
+  # beendet sich dann. Den Fortschritt zeigt: docker compose logs -f ollama-pull
+  ollama-pull:
     image: ollama/ollama:latest
-    container_name: mietfuchs-ollama-modell
+    container_name: mietfuchs-ollama-pull
     profiles: [ki]
     depends_on:
       ollama:

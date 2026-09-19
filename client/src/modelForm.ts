@@ -4,60 +4,60 @@
 import type { AiModel } from './types'
 
 // Wert des Eintrags, der von der Auswahl auf freie Eingabe umschaltet
-export const ANDERES_MODELL = '__anderes__'
+export const OTHER_MODEL = '__other__'
 
 export type ModelOption = { value: string; label: string }
 
 // Ollama ergänzt einen Namen ohne Größenangabe um „:latest“
-const vollerName = (name: string) => {
-  const n = name.trim()
-  return n.includes(':') ? n : `${n}:latest`
+const fullName = (name: string) => {
+  const trimmed = name.trim()
+  return trimmed.includes(':') ? trimmed : `${trimmed}:latest`
 }
 
-const finde = (models: AiModel[], name: string) => models.find((m) => m.name === vollerName(name))
+const findModel = (models: AiModel[], name: string) => models.find((m) => m.name === fullName(name))
 
-export function fmtGroesse(bytes: number | null): string {
+export function fmtSize(bytes: number | null): string {
   if (bytes == null) return ''
   if (bytes >= 1e9) return `${(bytes / 1e9).toLocaleString('de-DE', { maximumFractionDigits: 1 })} GB`
   return `${Math.round(bytes / 1e6)} MB`
 }
 
-function beschriftung(m: AiModel): string {
-  const teile = [m.remote ? 'Cloud-Dienst' : fmtGroesse(m.sizeBytes)]
-  if (m.vision === true) teile.push('versteht Bilder')
-  if (m.vision === false) teile.push('nur Text')
-  const zusatz = teile.filter(Boolean).join(', ')
-  return zusatz ? `${m.name} (${zusatz})` : m.name
+function optionLabel(m: AiModel): string {
+  const parts = [m.remote ? 'Cloud-Dienst' : fmtSize(m.sizeBytes)]
+  if (m.vision === true) parts.push('versteht Bilder')
+  if (m.vision === false) parts.push('nur Text')
+  const detail = parts.filter(Boolean).join(', ')
+  return detail ? `${m.name} (${detail})` : m.name
 }
 
 // Optionen für das Auswahlfeld. Der gespeicherte Wert steht immer darin, auch wenn das Modell
 // fehlt, damit das Feld zeigt, was tatsächlich gilt.
-export function modelOptions(models: AiModel[], aktuell: string): ModelOption[] {
-  const gewaehlt = aktuell.trim() ? finde(models, aktuell) : undefined
-  const optionen: ModelOption[] = models.map((m) => ({
-    value: m === gewaehlt ? aktuell : m.name,
-    label: beschriftung(m),
+export function modelOptions(models: AiModel[], current: string): ModelOption[] {
+  const selected = current.trim() ? findModel(models, current) : undefined
+  const options: ModelOption[] = models.map((m) => ({
+    value: m === selected ? current : m.name,
+    label: optionLabel(m),
   }))
-  if (!aktuell.trim()) optionen.unshift({ value: aktuell, label: 'Bitte ein Modell wählen' })
-  else if (!gewaehlt) optionen.unshift({ value: aktuell, label: `${aktuell.trim()} (nicht installiert)` })
-  optionen.push({ value: ANDERES_MODELL, label: 'Anderes Modell eintragen …' })
-  return optionen
+  if (!current.trim()) options.unshift({ value: current, label: 'Bitte ein Modell wählen' })
+  else if (!selected) options.unshift({ value: current, label: `${current.trim()} (nicht installiert)` })
+  options.push({ value: OTHER_MODEL, label: 'Anderes Modell eintragen …' })
+  return options
 }
 
-export type ModelHinweis = 'fehlt' | 'ohneBilder' | 'cloud' | null
+export type ModelHint = 'missing' | 'noVision' | 'cloud' | null
 
-export function modelHinweis(models: AiModel[], aktuell: string): ModelHinweis {
-  if (!aktuell.trim()) return null
-  const m = finde(models, aktuell)
-  if (!m) return 'fehlt'
+export function modelHint(models: AiModel[], current: string): ModelHint {
+  if (!current.trim()) return null
+  const m = findModel(models, current)
+  if (!m) return 'missing'
   if (m.remote) return 'cloud'
-  if (m.vision === false) return 'ohneBilder'
+  if (m.vision === false) return 'noVision'
   return null
 }
 
 // Nur Ollama: wie man ein fehlendes Modell lädt. Im Compose-Profil „ki" läuft Ollama als
 // Dienst `ollama` im Container, dort geht der Befehl über docker compose.
-export function ladeAnleitung(name: string, ollamaUrl: string): { text: string; befehl: string } {
+export function pullInstructions(name: string, ollamaUrl: string): { text: string; command: string } {
   let host = ''
   try {
     host = new URL(ollamaUrl).hostname
@@ -66,6 +66,6 @@ export function ladeAnleitung(name: string, ollamaUrl: string): { text: string; 
   }
   const pull = `ollama pull ${name.trim()}`
   return host === 'ollama'
-    ? { text: 'Im Ordner mit der docker-compose.yml ausführen:', befehl: `docker compose exec ollama ${pull}` }
-    : { text: 'Zum Laden im Terminal ausführen:', befehl: pull }
+    ? { text: 'Im Ordner mit der docker-compose.yml ausführen:', command: `docker compose exec ollama ${pull}` }
+    : { text: 'Zum Laden im Terminal ausführen:', command: pull }
 }
