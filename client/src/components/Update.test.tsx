@@ -176,6 +176,19 @@ test('Einstellungen: macOS und Linux müssen erst entpacken', async () => {
   antwort = status({ downloadUrl: download('mietfuchs-linux.tar.gz') })
   render(<Karte s={settings({ updateCheck: 'on' })} />)
   await waitFor(() => expect(screen.getByText('tar -xzf mietfuchs-linux.tar.gz')).toBeTruthy())
+  expect(screen.getByText('./mietfuchs-linux')).toBeTruthy()
+})
+
+test('Einstellungen: die Anleitung nennt die Datei für ARM, nicht die für x64 (#22)', async () => {
+  antwort = status({ downloadUrl: download('mietfuchs-linux-arm64.tar.gz') })
+  render(<Karte s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText('tar -xzf mietfuchs-linux-arm64.tar.gz')).toBeTruthy())
+  expect(screen.getByText('./mietfuchs-linux-arm64')).toBeTruthy()
+  cleanup()
+
+  antwort = status({ downloadUrl: download('mietfuchs-win-arm64.exe') })
+  render(<Karte s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText('mietfuchs-win-arm64.exe')).toBeTruthy())
 })
 
 test('Einstellungen: ohne passende Datei öffnet die Release-Seite in neuem Tab', async () => {

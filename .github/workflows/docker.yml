@@ -22,6 +22,7 @@ on:
       - .dockerignore
       - '**/package.json'
       - '**/package-lock.json'
+      - scripts/smoke-test.mjs
       - .github/workflows/docker.yml
   workflow_dispatch:
 
@@ -71,6 +72,56 @@ jobs:
           labels: |
             org.opencontainers.image.title=Mietfuchs
             org.opencontainers.image.description=Lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter
+
+      # Vor dem Veröffentlichen: das Image für beide Plattformen laden, starten und von außen
+      # prüfen (scripts/smoke-test.mjs, #22). arm64 läuft dabei über QEMU, also langsamer.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Zum Prüfen bauen (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: mietfuchs:pruefung-amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Zum Prüfen bauen (arm64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: mietfuchs:pruefung-arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image prüfen
+        run: |
+          for arch in amd64 arm64; do
+            echo "::group::Image für $arch"
+            # --network host: Der Container erreicht das nachgebaute Ollama des Prüfskripts
+            # unter 127.0.0.1, und das Skript erreicht den Container ebenso.
+            docker run -d --name "pruefung-$arch" --platform "linux/$arch" --network host \
+              -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test "mietfuchs:pruefung-$arch"
+            ergebnis=0
+            node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode docker --timeout 180 || ergebnis=$?
+            # Der HEALTHCHECK aus dem Dockerfile muss den Container als gesund melden
+            for i in $(seq 1 60); do
+              status=$(docker inspect -f '{{.State.Health.Status}}' "pruefung-$arch")
+              [ "$status" = healthy ] && break
+              sleep 3
+            done
+            echo "HEALTHCHECK: $status"
+            [ "$status" = healthy ] || ergebnis=1
+            echo "--- Ausgabe des Containers"; docker logs "pruefung-$arch"
+            docker rm -f "pruefung-$arch" > /dev/null
+            echo "::endgroup::"
+            [ "$ergebnis" = 0 ] || exit "$ergebnis"
+          done
 
       - name: Bauen und pushen
         uses: docker/build-push-action@v7

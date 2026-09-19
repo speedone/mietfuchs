@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Programmdateien für Linux und Windows auf ARM**, etwa für einen Raspberry Pi 4 oder 5 mit
+  64-Bit-System oder Windows-Laptops mit Snapdragon-Prozessor. Der Update-Hinweis kennt die
+  neuen Dateien. ([#22](https://github.com/speedone/mietfuchs/issues/22))
+- **Jede Programmdatei wird vor dem Release auf ihrem System gestartet und geprüft**, auf
+  Windows, macOS und Linux jeweils mit Intel/AMD und ARM. Die Linux-Dateien laufen dabei
+  zusätzlich auf 15 Distributionen, das Docker-Image auf beiden Plattformen. Ins Release
+  kommt nur, was alle Prüfungen besteht. ([#22](https://github.com/speedone/mietfuchs/issues/22))
+
 ### Behoben
 
 - **Gescannte PDFs werden auch in der Programmdatei ausgewertet.** Bei PDFs ohne Textebene
