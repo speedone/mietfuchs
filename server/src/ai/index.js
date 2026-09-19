@@ -23,17 +23,22 @@
 // Welcher Anbieter einen Beleg auswertet, steht in `settings.ai` (siehe ai/settings.js): Fotos
 // und Scans gehen an den eigenen Bilder-Anbieter, falls einer eingerichtet ist, sonst alles an
 // den Standard.
+//
+// Bevor Belege das Haus verlassen, muss der Nutzer das einmal bestätigt haben (consentProblem in
+// ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
 import { ollamaProvider } from './ollama.js'
-import { slotFor } from './settings.js'
+import { slotFor, consentProblem, isExternalUrl } from './settings.js'
 import { getKey } from '../secrets.js'
 
 // Alles, was ein Anbieter-Modul braucht: Platz, Art, Vorlage, Adresse, Modell, Bildverständnis,
-// Schlüssel und die Einstellungen für Fortgeschrittene, die den Transport betreffen
+// Schlüssel, die Bestätigung für diesen Platz und die Einstellungen für Fortgeschrittene, die
+// den Transport betreffen
 export function providerConfig(ai, { images = false } = {}) {
   const slot = slotFor(ai, { images })
   return {
     ...slot,
     apiKey: getKey(slot.slot) || null,
+    consent: ai.consent?.[slot.slot] ?? null,
     numCtx: ai.numCtx,
     maxOutputTokens: ai.maxOutputTokens,
     jsonMode: ai.jsonMode,
@@ -41,8 +46,21 @@ export function providerConfig(ai, { images = false } = {}) {
   }
 }
 
-export function aiProvider(ai, { images = false } = {}) {
-  const config = providerConfig(ai, { images })
+function providerFor(config) {
   if (config.provider === 'ollama') return ollamaProvider(config)
   throw new Error('Dieser KI-Anbieter wird noch nicht unterstützt.')
+}
+
+export function aiProvider(ai, { images = false } = {}) {
+  const config = providerConfig(ai, { images })
+  const provider = providerFor(config)
+  return {
+    async json(request) {
+      // Ob ein lokales Ollama das Modell an die Cloud weiterreicht, weiß nur Ollama selbst
+      const remoteModel = !isExternalUrl(config.url) && provider.isRemoteModel ? await provider.isRemoteModel(request.signal) : false
+      const problem = consentProblem(config, { remoteModel })
+      if (problem) throw new Error(problem)
+      return provider.json(request)
+    },
+  }
 }

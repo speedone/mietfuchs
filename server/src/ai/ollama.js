@@ -131,9 +131,20 @@ const seconds = (ns) => (ns == null ? null : Math.round(ns / 1e8) / 10)
 
 // Fähigkeiten laut /api/show, etwa ['completion', 'vision']. Ältere Versionen kennen das Feld
 // nicht, dann null. `remote`: Ollama reicht Anfragen an dieses Modell an einen Cloud-Dienst weiter.
+// Eine Minute gemerkt: Vor jeder Auswertung fragt Mietfuchs, ob das Modell in der Cloud läuft,
+// bei Bildern auch, ob es sie versteht. Ein gerade neu geladenes Modell soll trotzdem bald
+// richtig erkannt werden.
+const CAPABILITIES_TTL_MS = 60000
+const capabilityCache = new Map()
+
 async function getCapabilities(config, model, signal) {
+  const key = `${baseUrl(config)}|${model}`
+  const cached = capabilityCache.get(key)
+  if (cached && Date.now() - cached.at < CAPABILITIES_TTL_MS) return cached.value
   const info = await request(config, '/api/show', { body: { model }, timeoutMs: 10000, signal })
-  return { capabilities: Array.isArray(info.capabilities) ? info.capabilities : null, remote: Boolean(info.remote_host) }
+  const value = { capabilities: Array.isArray(info.capabilities) ? info.capabilities : null, remote: Boolean(info.remote_host) }
+  capabilityCache.set(key, { at: Date.now(), value })
+  return value
 }
 
 // Modelle, die `think: false` abgelehnt haben (je Adresse und Modell, solange der Server läuft).
@@ -146,6 +157,11 @@ export function ollamaProvider(config) {
   const { model } = config
   const thinkKey = `${baseUrl(config)}|${model}`
   return {
+    // Reicht Ollama das Modell an einen Cloud-Dienst weiter (Modelle wie „…:cloud“)?
+    async isRemoteModel(signal) {
+      return (await getCapabilities(config, model, signal)).remote
+    },
+
     async json({ prompt, images = [], schema, timeoutMs, signal, onProgress }) {
       onProgress?.({ phase: 'waiting' })
       const message = { role: 'user', content: prompt }
