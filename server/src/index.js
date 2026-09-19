@@ -20,7 +20,7 @@ app.use(express.json())
 // Belege landen im Belegarchiv auf der Platte. Seitenbilder, die der Browser aus einem
 // gescannten PDF rendert (Feld `pages`), braucht nur die KI-Auswertung: Sie bleiben im
 // Arbeitsspeicher und tauchen nie im Belegarchiv auf.
-const aufPlatte = multer.diskStorage({
+const diskStore = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
     // NFC: macOS liefert „ü“ gern zerlegt als „u“ plus Trema, das der Filter sonst zerschnitte
@@ -28,13 +28,13 @@ const aufPlatte = multer.diskStorage({
     cb(null, `${Date.now()}_${safe}`)
   },
 })
-const imSpeicher = multer.memoryStorage()
-const speicherFuer = (file) => (file.fieldname === 'pages' ? imSpeicher : aufPlatte)
+const memoryStore = multer.memoryStorage()
+const storageFor = (file) => (file.fieldname === 'pages' ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 const upload = multer({
   storage: {
-    _handleFile: (req, file, cb) => speicherFuer(file)._handleFile(req, file, cb),
-    _removeFile: (req, file, cb) => speicherFuer(file)._removeFile(req, file, cb),
+    _handleFile: (req, file, cb) => storageFor(file)._handleFile(req, file, cb),
+    _removeFile: (req, file, cb) => storageFor(file)._removeFile(req, file, cb),
   },
   limits: { fileSize: UPLOAD_MAX_BYTES },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
@@ -44,20 +44,20 @@ const upload = multer({
 
 // Beleg plus Material für die KI-Auswertung: höchstens vier Seitenbilder (so viele rendert
 // der Browser) und die Textebene im Feld `pdfText`.
-const MAX_SEITEN = 4
+const MAX_PAGES = 4
 // Echte Seitenbilder sind deutlich unter 1 MB. Die Grenze hält den Arbeitsspeicher klein, denn
 // Seitenbilder werden dort gehalten und für Ollama noch einmal als Base64 kopiert.
-const SEITE_MAX_BYTES = 5 * 1024 * 1024
-const seitenPruefen = (req, res, next) => {
-  if (!(req.files?.pages ?? []).some((p) => p.size > SEITE_MAX_BYTES)) return next()
+const PAGE_MAX_BYTES = 5 * 1024 * 1024
+const checkPageSizes = (req, res, next) => {
+  if (!(req.files?.pages ?? []).some((p) => p.size > PAGE_MAX_BYTES)) return next()
   // Der Beleg liegt da schon auf der Platte: wieder entfernen, sonst bliebe ein Rest im Archiv
-  const beleg = req.files?.file?.[0]
-  if (beleg) fs.rmSync(beleg.path, { force: true })
+  const file = req.files?.file?.[0]
+  if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
-const belegMitSeiten = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_SEITEN }]), seitenPruefen]
-const belegAus = (req) => req.files?.file?.[0] ?? null
-const auswertungAus = (req) => ({
+const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes]
+const uploadedFile = (req) => req.files?.file?.[0] ?? null
+const aiInput = (req) => ({
   pdfText: typeof req.body?.pdfText === 'string' ? req.body.pdfText : '',
   pages: (req.files?.pages ?? [])
     .filter((p) => p.mimetype.startsWith('image/'))
@@ -258,7 +258,7 @@ function aiResponse(req, res) {
     if (settled) return
     settle()
     controller.abort()
-    const upload = belegAus(req)
+    const upload = uploadedFile(req)
     if (upload) fs.rmSync(upload.path, { force: true })
     // Die Verbindung beenden; hat der Browser sie schon geschlossen, schadet das nicht
     if (!res.writableEnded) res.end()
@@ -319,40 +319,40 @@ app.post('/api/ai/cancel/:id', (req, res) => {
 // mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs. `stats`
 // enthält die Kennzahlen des Modells je Schritt (Token, Sekunden), die Oberfläche braucht sie
 // nicht, der KI-Prüflauf wertet sie aus.
-app.post('/api/extract', belegMitSeiten, async (req, res) => {
-  const beleg = belegAus(req)
-  if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
+app.post('/api/extract', fileWithPages, async (req, res) => {
+  const file = uploadedFile(req)
+  if (!file) return res.status(400).json({ error: 'Keine Datei' })
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   try {
-    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), { ...auswertungAus(req), signal, stats, onProgress })
-    answer.done({ file: beleg.filename, extraction: result, stats })
+    const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    answer.done({ file: file.filename, extraction: result, stats })
   } catch (err) {
-    answer.fail({ file: beleg.filename, error: String(err.message || err), stats })
+    answer.fail({ file: file.filename, error: String(err.message || err), stats })
   }
 })
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
 // Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
-app.post('/api/intake', belegMitSeiten, async (req, res) => {
-  const beleg = belegAus(req)
-  if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
+app.post('/api/intake', fileWithPages, async (req, res) => {
+  const file = uploadedFile(req)
+  if (!file) return res.status(400).json({ error: 'Keine Datei' })
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   try {
     const settings = effectiveSettings()
-    const material = { ...auswertungAus(req), signal, stats, onProgress }
-    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings, { signal, stats, onProgress })
+    const material = { ...aiInput(req), signal, stats, onProgress }
+    const docType = await classifyDocType(file.path, file.mimetype, settings, { signal, stats, onProgress })
     if (docType === 'zaehlerstand') {
-      const reading = await extractMeterReading(beleg.path, beleg.mimetype, settings, material)
-      answer.done({ file: beleg.filename, kind: 'zaehler', reading, stats })
+      const reading = await extractMeterReading(file.path, file.mimetype, settings, material)
+      answer.done({ file: file.filename, kind: 'zaehler', reading, stats })
     } else {
-      const extraction = await extractFromFile(beleg.path, beleg.mimetype, settings, material)
-      answer.done({ file: beleg.filename, kind: 'rechnung', extraction, stats })
+      const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
+      answer.done({ file: file.filename, kind: 'rechnung', extraction, stats })
     }
   } catch (err) {
-    answer.fail({ file: beleg.filename, error: String(err.message || err), stats })
+    answer.fail({ file: file.filename, error: String(err.message || err), stats })
   }
 })
 
@@ -395,64 +395,64 @@ const RESTORE_MAX_BYTES = 500 * 1024 * 1024
 // Ausgepackt darf ein Backup höchstens so groß werden. Gegen „ZIP-Bomben“, die wenige Kilobyte
 // groß sind und ausgepackt den Arbeitsspeicher füllen. NKA_RESTORE_MAX_BYTES setzt die Grenze
 // für Tests herab.
-const RESTORE_ENTPACKT_MAX = Number(process.env.NKA_RESTORE_MAX_BYTES) || 1024 * 1024 * 1024
+const RESTORE_UNPACKED_MAX_BYTES = Number(process.env.NKA_RESTORE_MAX_BYTES) || 1024 * 1024 * 1024
 const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: RESTORE_MAX_BYTES } })
 
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
-function backupLesen(puffer) {
+function readBackup(buffer) {
   let zip
   try {
-    zip = new AdmZip(puffer)
+    zip = new AdmZip(buffer)
     zip.getEntries() // adm-zip 0.6 liest das Verzeichnis erst hier
   } catch {
     throw new Error('Datei ist kein gültiges ZIP-Archiv.')
   }
-  const eintraege = zip.getEntries()
-  const dbEintrag = eintraege.find((e) => e.entryName === 'db.json')
-  if (!dbEintrag) throw new Error('Im Archiv fehlt die db.json. Ist das wirklich ein Mietfuchs-Backup?')
+  const entries = zip.getEntries()
+  const dbEntry = entries.find((e) => e.entryName === 'db.json')
+  if (!dbEntry) throw new Error('Im Archiv fehlt die db.json. Ist das wirklich ein Mietfuchs-Backup?')
 
-  const belege = []
-  let summe = dbEintrag.header.size
-  for (const e of eintraege) {
+  const files = []
+  let totalSize = dbEntry.header.size
+  for (const e of entries) {
     const name = e.entryName
     if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
     if (e.isDirectory && name === 'uploads/') continue
     // Ein Backup enthält Belege nur direkt in uploads/. Alles andere ist verdächtig.
-    const datei = name.slice('uploads/'.length)
-    if (e.isDirectory || !datei || datei === '.' || datei === '..' || /[\\/]/.test(datei)) {
+    const fileName = name.slice('uploads/'.length)
+    if (e.isDirectory || !fileName || fileName === '.' || fileName === '..' || /[\\/]/.test(fileName)) {
       throw new Error(`Das Archiv enthält einen ungültigen Eintrag („${name}“) und wird nicht übernommen.`)
     }
-    summe += e.header.size
-    belege.push({ datei, e })
+    totalSize += e.header.size
+    files.push({ fileName, e })
   }
-  if (summe > RESTORE_ENTPACKT_MAX) {
-    throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_ENTPACKT_MAX / 1024 / 1024)} MB).`)
+  if (totalSize > RESTORE_UNPACKED_MAX_BYTES) {
+    throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_UNPACKED_MAX_BYTES / 1024 / 1024)} MB).`)
   }
 
   let dbText
   try {
-    dbText = zip.readAsText(dbEintrag)
+    dbText = zip.readAsText(dbEntry)
     JSON.parse(dbText)
   } catch {
     throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
   }
   // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
-  return { dbText, belege: belege.map(({ datei, e }) => ({ datei, inhalt: e.getData() })) }
+  return { dbText, files: files.map(({ fileName, e }) => ({ fileName, content: e.getData() })) }
 }
 
 app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
   let backup
   try {
-    backup = backupLesen(req.file.buffer)
+    backup = readBackup(req.file.buffer)
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
   // Sicherheitskopie des aktuellen Stands, dann ersetzen
   fs.copyFileSync(path.join(DATA_DIR, 'db.json'), path.join(DATA_DIR, 'db.json.vor-restore'))
   fs.writeFileSync(path.join(DATA_DIR, 'db.json'), backup.dbText, 'utf8')
-  for (const { datei, inhalt } of backup.belege) fs.writeFileSync(path.join(UPLOAD_DIR, datei), inhalt)
+  for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
   reloadDb()
   res.json({ ok: true })
 })
@@ -508,21 +508,21 @@ app.post('/api/update/check', async (req, res) => {
 // kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
 // Betrieb, nicht für die Oberfläche.
 app.get('/healthz', (req, res) => {
-  const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
-  res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
+  const report = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
+  res.status(report.status === 'ok' ? 200 : 503).json(report)
 })
 
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
 app.use('/api', (err, req, res, next) => {
   if (res.headersSent) return next(err)
   if (err instanceof multer.MulterError) {
-    const grenze = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
-    const meldung =
-      err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${grenze / 1024 / 1024} MB.`
-        : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_SEITEN} Seitenbilder je Beleg.`
+    const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
+    const message =
+      err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${limit / 1024 / 1024} MB.`
+        : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_PAGES} Seitenbilder je Beleg.`
           : err.code === 'LIMIT_FIELD_VALUE' ? 'Ein Textfeld ist zu lang.'
             : `Hochladen fehlgeschlagen: ${err.message}`
-    return res.status(400).json({ error: meldung })
+    return res.status(400).json({ error: message })
   }
   // Zum Beispiel ein abgebrochener Upload („Unexpected end of form“), den busboy selbst meldet
   const status = Number(err.status ?? err.statusCode) || 500
