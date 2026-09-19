@@ -27,6 +27,7 @@ const LIMITS = {
   numCtx: [2048, 1048576],
   maxOutputTokens: [256, 262144],
   modelLength: 200,
+  urlLength: 500,
   extraInstructions: 2000,
 }
 
@@ -43,6 +44,15 @@ export function isHttpUrl(value) {
   }
 }
 
+const THIS_MACHINE = ['localhost', '127.0.0.1', '::1']
+const onThisMachine = (url) => {
+  try {
+    return THIS_MACHINE.includes(new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''))
+  } catch {
+    return true
+  }
+}
+
 // ---------- Prüfen ----------
 
 function validateSlot(raw, slot) {
@@ -51,7 +61,7 @@ function validateSlot(raw, slot) {
   const { provider, preset, url, model = '', vision = null } = raw
   if (!PROVIDERS.includes(provider)) throw fail(`${label}: unbekannte Anbieterart „${provider}“.`)
   if (presetById(preset)?.provider !== provider) throw fail(`${label}: Die Vorlage „${preset}“ passt nicht zu diesem Anbieter.`)
-  if (typeof url !== 'string' || !isHttpUrl(url)) throw fail(`${label}: Die Adresse muss mit http:// oder https:// beginnen.`)
+  if (typeof url !== 'string' || !isHttpUrl(url) || url.length > LIMITS.urlLength) throw fail(`${label}: Die Adresse muss mit http:// oder https:// beginnen und darf höchstens ${LIMITS.urlLength} Zeichen haben.`)
   if (typeof model !== 'string' || model.length > LIMITS.modelLength) throw fail(`${label}: Der Modellname ist zu lang.`)
   if (vision !== null && typeof vision !== 'boolean') throw fail(`${label}: Die Angabe zum Bildverständnis ist ungültig.`)
   return { provider, preset, url: url.trim(), model: model.trim(), vision }
@@ -105,10 +115,13 @@ export function migrateAi(settings) {
       return fallback
     }
   }
+  const legacyUrl = isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL
   const legacyText = {
     provider: 'ollama',
-    preset: 'ollama-local',
-    url: isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL,
+    // Zeigt die Adresse woandershin, passt die Vorlage für ein entferntes Ollama: Nur sie kennt
+    // ein Feld für den Schlüssel, etwa für ein Ollama hinter einem Proxy.
+    preset: onThisMachine(legacyUrl) ? 'ollama-local' : 'ollama-remote',
+    url: legacyUrl,
     model: typeof settings.ollamaModel === 'string' ? settings.ollamaModel : '',
     vision: null,
   }
@@ -127,6 +140,14 @@ export function migrateAi(settings) {
     reasoningEffort: field('reasoningEffort', null, (v) => typeof v === 'string' && /^[a-z]{1,20}$/.test(v)),
     extraInstructions: field('extraInstructions', '', (v) => typeof v === 'string'),
     consent: isObject(stored.consent) ? stored.consent : {},
+  }
+  // Eine Version von vor #18 ändert beim Speichern nur ollamaUrl und ollamaModel und reicht `ai`
+  // unverändert durch. Weichen die Felder beim Laden ab, stammt die jüngere Änderung von dort,
+  // denn diese Version hält sie immer deckungsgleich (mirrorLegacy). So geht nach einem
+  // Downgrade und einem erneuten Update nichts verloren.
+  if (isObject(stored.text) && settings.ai.text.provider === 'ollama') {
+    if (isHttpUrl(settings.ollamaUrl) && settings.ollamaUrl !== settings.ai.text.url) settings.ai.text.url = settings.ollamaUrl
+    if (typeof settings.ollamaModel === 'string' && settings.ollamaModel !== settings.ai.text.model) settings.ai.text.model = settings.ollamaModel
   }
   mirrorLegacy(settings)
   return settings
