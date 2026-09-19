@@ -300,6 +300,18 @@ Bilder-Anbieters gibt es bewusst nur in der Oberfläche, die Umgebung legt nur d
 Compose-Profil `ki` startet Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst
 `ollama-pull`.
 
+**Modelle laden und Empfehlungen** (#33): [server/src/ai/recommendations.js](server/src/ai/recommendations.js)
+hält die Empfehlungsliste. Jede Version bringt eine Kopie mit (`BUILT_IN`, muss mit
+[ki-modelle.json](ki-modelle.json) übereinstimmen, ein Test vergleicht beide). Nachgeladen wird
+die Datei aus dem Repo nur mit derselben Zustimmung wie beim Update-Hinweis
+(`settings.updateCheck === 'on'`), höchstens einmal am Tag, und streng geprüft; unbekannte
+Felder fallen weg, eine kaputte Datei ändert nichts. `NKA_MODELS_URL` lenkt die Abfrage auf
+einen nachgebauten Server. `GET /api/ai/recommendations` liefert `{ models, updated, source }`.
+`POST /api/ai/pull` lädt ein Modell über Ollamas `/api/pull` und antwortet als derselbe Strom
+wie die Auswertung (Fortschritt, Lebenszeichen, Abbruch über die Kennung). Nur für ein Ollama
+auf diesem Rechner oder im Heimnetz: Dienste im Internet bringen ihre Modelle mit. Vor dem
+Download fragt die Oberfläche nach, denn Mietfuchs ist im Heimnetz ohne Anmeldung erreichbar.
+
 **KI-Prüflauf** ([.github/workflows/ai-eval.yml](.github/workflows/ai-eval.yml),
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
 ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), je als PDF mit

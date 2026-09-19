@@ -55,6 +55,7 @@ const json = (method, body) => ({ method, headers: { 'content-type': 'applicatio
 // `closedEarly` zählt Chat-Anfragen, die Mietfuchs vor der Antwort abgebrochen hat.
 function startFakeOllama() {
   const requests = []
+  const pulled = [] // Anfragen zum Laden eines Modells (#33)
   const control = { delaySeconds: 0, closedEarly: 0 }
   const server = http.createServer((req, res) => {
     res.on('close', () => { if (!res.writableFinished) control.closedEarly++ })
@@ -64,6 +65,14 @@ function startFakeOllama() {
       const send = (obj) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
       if (req.url === '/api/tags') return send({ models: [{ name: 'smoke:latest', size: 1000 }] })
       if (req.url === '/api/show') return send({ capabilities: ['completion', 'vision'] })
+      // Ein Modell laden (#33): zeilenweise Fortschritt, zuletzt „success“
+      if (req.url === '/api/pull') {
+        pulled.push(body ? JSON.parse(body) : {})
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+        res.write(`${JSON.stringify({ status: 'pulling manifest' })}\n`)
+        res.write(`${JSON.stringify({ status: 'pulling 1a2b', total: 3_600_000_000, completed: 1_800_000_000 })}\n`)
+        return res.end(`${JSON.stringify({ status: 'success' })}\n`)
+      }
       const j = body ? JSON.parse(body) : {}
       requests.push(j) // nur Chat-Anfragen
       const props = j.format?.properties ?? {}
@@ -85,7 +94,7 @@ function startFakeOllama() {
   // Nur lokal erreichbar: Container laufen in der CI mit --network host und sehen 127.0.0.1 ebenso
   return new Promise((resolve) =>
     server.listen(0, '127.0.0.1', () =>
-      resolve({ port: server.address().port, requests, control, stop: () => server.close() }),
+      resolve({ port: server.address().port, requests, pulled, control, stop: () => server.close() }),
     ),
   )
 }
@@ -236,6 +245,7 @@ async function aiExtraction() {
       const end = stream.lines.at(-1)
       assert(end?.type === 'result' && stream.totalMs >= SLOW_AI_SECONDS * 1000, `langsames Modell: Ergebnis nach ${Math.round(stream.totalMs / 1000)} Sekunden, kein Abbruch nach 300`, end)
     }
+    await modelPull(ollama)
     await cancelChecks(ollama, longText)
   } finally {
     ollama.stop()
@@ -323,6 +333,23 @@ async function openAiExtraction() {
     await request('/api/settings', json('PUT', { ai: before }))
     service.stop()
   }
+}
+
+// Empfehlungen und das Laden eines Modells (#33)
+async function modelPull(ollama) {
+  const empfehlungen = await request('/api/ai/recommendations')
+  assert(empfehlungen.body.source === 'mitgeliefert' && empfehlungen.body.models?.length > 0,
+    'Empfehlungen ohne Zustimmung aus der mitgelieferten Liste', empfehlungen.body)
+
+  const res = await fetch(`${BASE}/api/ai/pull`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
+    body: JSON.stringify({ model: 'smoke:latest' }),
+  })
+  const lines = (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  assert(res.status === 200 && lines.at(-1)?.type === 'result', 'Modell laden meldet Erfolg', lines.slice(-2))
+  assert(lines.some((l) => l.type === 'progress' && l.total > 0), 'Fortschritt mit Größe kommt an', lines.filter((l) => l.type === 'progress').slice(0, 2))
+  assert(ollama.pulled.some((p) => p.model === 'smoke:latest'), 'Ollama hat den Auftrag bekommen', ollama.pulled)
 }
 
 async function uploadsAndSettlement() {

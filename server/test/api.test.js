@@ -344,6 +344,8 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
   const requests = []
   const open = new Set()
   const state = { closedEarly: 0 }
+  // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden
+  const control = { pullHangs: false }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
   const server = http.createServer((req, res) => {
     let body = ''
@@ -361,6 +363,19 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       if (echoKey) return send(400, { error: `Proxy lehnt ab: ${req.headers.authorization}` })
       if (req.url === '/api/tags') {
         return send(200, { models: models.map(({ capabilities, ...m }) => ({ size: 1000, ...m })) })
+      }
+      // Wie Ollama beim Laden eines Modells: zeilenweise JSON mit Schritt und Fortschritt.
+      // `pullHangs` bleibt nach der ersten Zeile still, für den Abbruch.
+      if (req.url === '/api/pull') {
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+        open.add(res)
+        res.on('close', () => { open.delete(res); if (!res.writableFinished) state.closedEarly++ })
+        const line = (obj) => res.write(`${JSON.stringify(obj)}\n`)
+        line({ status: 'pulling manifest' })
+        if (control.pullHangs) return
+        line({ status: 'pulling 4b2c1f', digest: '4b2c1f', total: 3_600_000_000, completed: 1_800_000_000 })
+        line({ status: 'success' })
+        return res.end()
       }
       if (req.url === '/api/show') {
         const m = findModel(json.model)
@@ -417,6 +432,7 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     requests,
+    control,
     get closedEarly() { return state.closedEarly },
     stop: () => {
       for (const res of open) res.destroy()
@@ -1984,4 +2000,106 @@ test('KI-Einstellungen: eine ältere Version darf Adresse und Modell noch über 
   } finally {
     s.stop()
   }
+})
+
+// ---------- Modell aus Mietfuchs laden (#33) ----------
+
+// Wie der Browser: Fortschritt als Strom (Accept: application/x-ndjson)
+async function pullAsStream(s, { model = 'neu:4b', requestId, slot } = {}) {
+  const res = await fetch(`${s.base}/api/ai/pull`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
+    body: JSON.stringify({ model, requestId, slot }),
+  })
+  const text = await res.text()
+  return { status: res.status, type: res.headers.get('content-type') ?? '', lines: text.split('\n').filter(Boolean).map((l) => JSON.parse(l)) }
+}
+
+test('Modell laden: der Fortschritt kommt als Strom, am Ende meldet Mietfuchs Erfolg', async () => {
+  await withOllama(async (s, ollama) => {
+    const r = await pullAsStream(s)
+    assert.equal(r.status, 200)
+    assert.ok(r.type.includes('application/x-ndjson'), r.type)
+    const progress = r.lines.filter((l) => l.type === 'progress')
+    assert.ok(progress.length >= 2, JSON.stringify(r.lines).slice(0, 300))
+    assert.ok(progress.some((p) => p.total > 0 && p.completed >= 0), JSON.stringify(progress))
+    assert.equal(r.lines.at(-1).type, 'result')
+    assert.deepEqual(ollama.requests.filter((a) => a.url === '/api/pull').map((a) => a.body.model), ['neu:4b'])
+  })
+})
+
+test('Modell laden: Abbrechen per Kennung stoppt den Download', async () => {
+  await withOllama(async (s, ollama) => {
+    ollama.control.pullHangs = true
+    const requestId = crypto.randomUUID().replaceAll('-', '')
+    const pending = pullAsStream(s, { requestId }).catch(() => null)
+    assert.ok(await until(() => ollama.requests.some((a) => a.url === '/api/pull'), 5000), 'Download läuft')
+    const cancel = await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })
+    assert.equal(cancel.status, 200)
+    assert.ok(await until(() => ollama.closedEarly > 0, 5000), 'Ollama bekommt den Abbruch mit')
+    await pending
+  })
+})
+
+test('Modell laden: nur mit einem Ollama auf diesem Rechner oder im Heimnetz', async () => {
+  await withOllama(async (s) => {
+    // Ollama Cloud und andere Dienste bringen ihre Modelle mit
+    await putAi(s, { text: { provider: 'ollama', preset: 'ollama-cloud', url: 'https://ollama.com', model: 'x:cloud', vision: null } })
+    let r = await pullAsStream(s)
+    assert.equal(r.status, 400)
+    assert.match(r.lines[0]?.error ?? '', /Dienst im Internet/)
+    await putAi(s, { text: { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true } })
+    r = await pullAsStream(s)
+    assert.equal(r.status, 400)
+  })
+})
+
+test('Modell laden: ein unsinniger Modellname wird abgelehnt', async () => {
+  await withOllama(async (s, ollama) => {
+    const r = await pullAsStream(s, { model: 'kein modell!' })
+    assert.equal(r.status, 400)
+    assert.match(r.lines[0]?.error ?? '', /Modellname/)
+    assert.equal(ollama.requests.filter((a) => a.url === '/api/pull').length, 0)
+  })
+})
+
+// ---------- Empfehlungen ----------
+
+test('Empfehlungen: ohne Zustimmung die mitgelieferte Liste, mit Zustimmung die aus dem Netz', async () => {
+  const http = await import('node:http')
+  const liste = { format: 1, updated: '2026-10-05', models: [{ name: 'frisch:4b', provider: 'ollama', sizeGb: 2.1, vision: true, note: 'aus dem Netz' }] }
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(liste))
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  try {
+    await withEnv({ NKA_MODELS_URL: `http://127.0.0.1:${server.address().port}/ki-modelle.json` }, async (s) => {
+      const ohne = await s.api('/api/ai/recommendations')
+      assert.equal(ohne.source, 'mitgeliefert')
+      assert.ok(ohne.models.some((m) => m.name === 'qwen3.5:4b'), JSON.stringify(ohne.models.map((m) => m.name)))
+
+      // Dieselbe Zustimmung wie beim Update-Hinweis
+      const settings = await s.api('/api/settings')
+      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, updateCheck: 'on' }) })
+      const mit = await s.api('/api/ai/recommendations')
+      assert.equal(mit.source, 'netz')
+      assert.deepEqual(mit.models.map((m) => m.name), ['frisch:4b'])
+      assert.equal(mit.updated, '2026-10-05')
+    })
+  } finally {
+    server.close()
+  }
+})
+
+test('Modell laden: geht auch für den eigenen Anbieter für Fotos und Scans', async () => {
+  await withOllama(async (s, ollama) => {
+    await putAi(s, { images: ollamaSlot(ollama.url, 'bild') })
+    const r = await pullAsStream(s, { model: 'bild:4b', slot: 'images' })
+    assert.equal(r.status, 200)
+    assert.deepEqual(ollama.requests.filter((a) => a.url === '/api/pull').map((a) => a.body.model), ['bild:4b'])
+    // Ohne eingerichteten Platz gibt es nichts zu laden
+    await putAi(s, { images: null })
+    assert.equal((await pullAsStream(s, { slot: 'images' })).status, 400)
+  })
 })

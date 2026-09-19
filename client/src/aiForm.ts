@@ -3,8 +3,9 @@
 // ändert, in welchem Zustand der Schlüssel ist, ob Belege erst nach einer Bestätigung an einen
 // Dienst gehen und welcher Hinweis auf den Seiten mit KI-Auswertung steht. Was als extern gilt,
 // entscheidet allein der Server (`aiExternal` in den Einstellungen). Geprüft in aiForm.test.ts.
-import type { AiConsent, AiKeyInfo, AiModel, AiPreset, AiSettings, AiSlot, AiSlotName, Settings } from './types'
+import type { AiConsent, AiKeyInfo, AiModel, AiPreset, AiRecommendation, AiSettings, AiSlot, AiSlotName, Settings } from './types'
 import { findModel } from './modelForm'
+import type { PullProgress } from './aiRequest'
 
 export const SLOT_LABELS: Record<AiSlotName, string> = { text: 'Standard-Anbieter', images: 'Anbieter für Fotos und Scans' }
 
@@ -154,3 +155,35 @@ export const JSON_MODE_OPTIONS: Option[] = [
   { value: 'object', label: 'JSON-Objekt, Schema im Prompt' },
   { value: 'prompt', label: 'Nur Prompt' },
 ]
+
+// ---------- Empfehlungen und Laden eines Modells (#33) ----------
+
+export type Recommendation = AiRecommendation & { installed: boolean }
+
+// Empfehlungen, die zum Anbieter dieses Platzes passen. Ein Eintrag mit `preset` gilt für alle
+// Dienste derselben Art, denn viele Dienste bieten dieselben Modelle an. Das gewählte Modell
+// steht nicht noch einmal als Vorschlag da.
+export function recommendationsFor(recommendations: AiRecommendation[], slot: AiSlot, installed: AiModel[]): Recommendation[] {
+  return recommendations
+    .filter((r) => r.provider === slot.provider && r.name !== slot.model.trim())
+    .map((r) => ({ ...r, installed: Boolean(findModel(installed, r.name, slot.provider)) }))
+}
+
+const GB = 1_000_000_000
+const gb = (bytes: number) => (bytes / GB).toLocaleString('de-DE', { maximumFractionDigits: 1 })
+
+// Was Ollama beim Laden meldet, in Worten. Die Schritte heißen bei Ollama englisch und sagen
+// einem Vermieter wenig; die Größe steht dabei, sobald Ollama sie kennt.
+export function pullText(progress: PullProgress | null): string {
+  if (!progress) return 'Download wird vorbereitet …'
+  const phase = progress.phase ?? ''
+  if (phase === 'success') return 'Fertig.'
+  if (phase.startsWith('verifying')) return 'Wird geprüft …'
+  if (phase.startsWith('writing') || phase.startsWith('removing')) return 'Wird gespeichert …'
+  if (phase.startsWith('pulling manifest')) return 'Verzeichnis wird geladen …'
+  const { completed, total } = progress
+  if (typeof completed === 'number' && typeof total === 'number' && total > 0) {
+    return `Lädt … ${gb(completed)} von ${gb(total)} GB (${Math.round((completed / total) * 100)} %)`
+  }
+  return 'Lädt …'
+}
