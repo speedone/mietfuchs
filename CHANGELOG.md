@@ -43,6 +43,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   eine Lücke, über die ein präpariertes PDF Code ausführen kann. Sie setzt Formular-Skripte
   voraus, die Mietfuchs nicht einschaltet, betroffen war Mietfuchs also nicht. Mit dem Wegfall
   ist die Meldung trotzdem erledigt.
+- **Ein Backup wird vollständig geprüft, bevor die Wiederherstellung etwas ersetzt.** Ein
+  präpariertes Archiv konnte bisher die Daten ersetzen und danach abbrechen, sodass ein halb
+  wiederhergestellter Stand übrig blieb. Jetzt werden verdächtige Einträge abgelehnt, und
+  ausgepackt darf ein Backup höchstens 1 GB groß werden.
+  ([#23](https://github.com/speedone/mietfuchs/issues/23))
+- **Alle Abhängigkeiten sind auf dem neuesten Stand**, darunter Express 5, Vite 8 und
+  TypeScript 7. Damit sind die von `npm audit` gemeldeten Lücken geschlossen, etwa in `multer`
+  (Überlastung durch präparierte Uploads) und `adm-zip` (übermäßiger Speicherverbrauch beim
+  Wiederherstellen). Dependabot hält sie künftig aktuell.
+  ([#23](https://github.com/speedone/mietfuchs/issues/23))
 
 ## [0.5.0] – 2026-09-19
 

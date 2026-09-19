@@ -44,9 +44,12 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
 Mindestversion 22.12 aus `engines` (erst ab dort lädt Node JSON-Module ohne Warnung, siehe
 [server/src/version.js](server/src/version.js)). Beim Anheben alle Stellen mitziehen: `engines` (plus
-`package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Die Actions hält
-Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich, ein
-gebündelter PR).
+`package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Actions und npm-Pakete
+hält Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich: Actions
+in einem PR, kleine npm-Updates gebündelt je Ordner, Hauptversionen einzeln). Sicherheitswarnungen
+und automatische Sicherheits-PRs sind im Repo eingeschaltet. Bei Hauptversionen die
+Changelogs gegen unsere Nutzung prüfen; Express 5 etwa ruft den `listen`-Callback auch bei
+Startfehlern auf, und `res.sendFile` braucht `root`, wenn der Installationspfad Punkt-Ordner hat.
 
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,
