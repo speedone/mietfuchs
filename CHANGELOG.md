@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.6.0] – 2026-09-19
+
 ### Hinzugefügt
 
 - **KI-Dienste neben Ollama.** In den Einstellungen lässt sich statt Ollama auf dem eigenen
