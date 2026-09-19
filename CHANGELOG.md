@@ -6,6 +6,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Fehlende Verteilbasis wird gemeldet.** Fehlte bei einer Wohnung der Abrechnungseinheit die
+  Wohnfläche oder bei einem Mietverhältnis die Personenzahl, verteilte der Schlüssel deren
+  Anteil kommentarlos auf die übrigen Wohnungen: Die anderen Mieter zahlten mit. Fehlte die
+  Angabe überall, ging der Betrag ebenso kommentarlos an den Vermieter, und dasselbe galt für
+  eine Direktzuordnung auf eine Wohnung außerhalb der Abrechnungseinheit. Die Abrechnung meldet
+  diese Fälle jetzt und nennt die betroffene Wohnung. Leerstand und Eigennutzung bleiben ohne
+  Meldung. Außerdem bricht die Berechnung nicht mehr ab, wenn bei einer Wohnung die Angabe der
+  Wohnfläche ganz fehlt. Beitrag von [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#10](https://github.com/speedone/mietfuchs/pull/10).
+  ([#7](https://github.com/speedone/mietfuchs/issues/7))
+
 ## [0.3.1] – 2026-09-19
 
 ### Behoben

@@ -561,6 +561,133 @@ test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
   assert.equal(s.warnings.length, 1)
 })
 
+// Fehlende Verteilbasis. Fehlt der Basiswert einer Wohnung (Fläche, Personen), verteilt der
+// Schlüssel deren Anteil still auf die übrigen Wohnungen — die anderen Mieter zahlen mit.
+// Fehlt er überall, geht der Betrag an den Vermieter. Beides soll gemeldet werden, und zwar
+// nur dann, wenn sich etwas beheben lässt: Leerstand und Eigennutzung sind reguläre Fälle.
+// Das Formular erzwingt Fläche > 0 und mindestens eine Person; fehlende Werte stammen aus
+// Altbeständen oder von Hand bearbeiteten Daten.
+
+test('Flächenschlüssel ohne jede Wohnfläche: eine Meldung je Position, Betrag beim Vermieter', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  for (const u of db.units) delete u.areaM2
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
+  // Nicht umlagefähige Kosten landen ohnehin beim Vermieter — dort ist das keine Meldung wert
+  db.costItems.push({ id: 'c2', year: 2025, category: 'Nicht umlagefähig', description: 'Dachreparatur', amountCents: 50000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 140000)
+  // Keine zusätzliche Meldung zur Eigennutzung („verteilt nur auf die Mieter") — verteilt wird nichts
+  assert.deepEqual(s.warnings, ['„Grundsteuer": für keine Wohnung ist eine Wohnfläche hinterlegt — Betrag geht an den Vermieter.'])
+})
+
+test('Personenschlüssel ohne jede Personenzahl: eine Meldung je Position, Betrag beim Vermieter', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true // ohne selfPersons
+  for (const t of db.tenancies) t.persons = 0
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 30000)
+  assert.deepEqual(s.warnings, ['„Müll": für die vermieteten Wohnungen sind keine Personen hinterlegt — Betrag geht an den Vermieter.'])
+})
+
+test('Einheitenschlüssel ohne Wohnung in der Abrechnungseinheit: Meldung, Betrag beim Vermieter', () => {
+  const db = makeDb()
+  for (const u of db.units) u.participates = false
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 24000, key: 'units' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 24000)
+  assert.deepEqual(s.warnings, ['„Hauswart": keine Wohnung gehört zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
+})
+
+test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im Jahr', () => {
+  const db = makeDb()
+  db.units[2].areaM2 = 0 // OG rechts
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
+  db.costItems.push({ id: 'c2', year: 2025, category: 'Versicherung', description: 'Gebäudeversicherung', amountCents: 60000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  // So rechnet es heute: OG links trägt alles — genau das muss auffallen
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 150000)
+  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+})
+
+test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt die vermieteten Wohnungen', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true // EG, 80 m²
+  db.units[1].areaM2 = 0
+  db.units[2].areaM2 = 0
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 90000)
+  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG links, OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+})
+
+test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren Anteil mit', () => {
+  const db = makeDb()
+  db.units.push({ id: 'u4', name: 'DG', participates: true }) // ohne areaM2, ohne Mietverhältnis
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 0)
+  assert.deepEqual(s.warnings, ['Für die Wohnung(en) DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+})
+
+test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, sondern eine Meldung', () => {
+  const db = makeDb()
+  delete db.units[2].areaM2
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't3').totalShareCents, 0)
+  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+})
+
+test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
+  const db = makeDb()
+  db.tenancies[1].persons = 0 // Familie B, OG rechts
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 30000)
+  assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
+})
+
+test('Direktzuordnung auf eine ganzjährig leerstehende Wohnung: regulärer Fall, keine Meldung', () => {
+  const db = makeDb()
+  db.units.push({ id: 'u4', name: 'DG', areaM2: 50, participates: true })
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder DG', amountCents: 8000, key: 'direct', directUnitId: 'u4' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 8000)
+  assert.deepEqual(s.warnings, [])
+})
+
+test('Direktzuordnung auf eine Wohnung außerhalb der Abrechnungseinheit: Meldung, Betrag beim Vermieter', () => {
+  const db = makeDb() // u1 ist weder vermietet noch als Eigennutzung gekennzeichnet
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder EG', amountCents: 8000, key: 'direct', directUnitId: 'u1' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 8000)
+  assert.deepEqual(s.warnings, ['„Rauchmelder EG": die direkt zugeordnete Wohnung EG (Eigennutzung) gehört nicht zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
+})
+
+test('Direktzuordnung auf die selbstgenutzte Wohnung: Eigenanteil, keine Meldung', () => {
+  const db = makeDb()
+  db.units[0].selfUsed = true
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder EG', amountCents: 8000, key: 'direct', directUnitId: 'u1' })
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 8000)
+  assert.equal(s.selfUsedShareCents, 8000)
+  assert.deepEqual(s.warnings, [])
+})
+
+test('Leerstand im ganzen Haus ist keine fehlende Verteilbasis: keine Meldung', () => {
+  const db = makeDb()
+  db.tenancies = []
+  // Ohne Mietverhältnis gibt es auch keine Personentage — das ist Leerstand, kein Datenmangel
+  for (const key of ['area', 'units', 'persons']) {
+    db.costItems.push({ id: key, year: 2025, category: 'Grundsteuer', description: key, amountCents: 90000, key })
+  }
+  const s = computeSettlement(db, 2025)
+  assert.equal(s.landlord.totalCents, 270000)
+  assert.deepEqual(s.warnings, [])
+})
+
 test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', () => {
   const db = {
     settings: {},
