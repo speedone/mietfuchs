@@ -12,10 +12,11 @@ import { aiProvider } from './ai/index.js'
 const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
 // Zeitlimits je Schritt in Sekunden. Auf einem Rechner ohne Grafikkarte braucht ein Modell für
-// einen mehrseitigen Scan mehrere Minuten, für den kurzen zweiten Durchgang (Kategorien) oder
-// die Frage, was auf einem Foto zu sehen ist, deutlich weniger. NKA_AI_TIMEOUT setzt ein
-// gemeinsames Limit für alle Schritte.
-const TIMEOUT_SECONDS = { extraction: 600, classification: 180, docType: 180, meterReading: 600 }
+// einen mehrseitigen Scan mehrere Minuten. Die Frage, was auf einem Foto zu sehen ist, ist in
+// der Schnellerfassung der erste Schritt: Er enthält das Laden des Modells und das Einlesen des
+// Bildes und bekommt deshalb ebenso viel Zeit. Nur der zweite Durchgang (Kategorien) ist reiner
+// Text und kurz. NKA_AI_TIMEOUT setzt ein gemeinsames Limit für alle Schritte.
+const TIMEOUT_SECONDS = { extraction: 600, classification: 180, docType: 600, meterReading: 600 }
 function timeoutMs(step) {
   const custom = Number(process.env.NKA_AI_TIMEOUT)
   return (Number.isFinite(custom) && custom > 0 ? custom : TIMEOUT_SECONDS[step]) * 1000
@@ -181,8 +182,9 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
       result.positions = await classifyPositions(settings, result.vendor, result.positions, { signal, stats, onProgress })
-    } catch {
-      // bewusst ignoriert
+    } catch (err) {
+      // Andere Fehler bewusst ignoriert; ein Abbruch soll die Auswertung aber beenden
+      if (err?.name === 'AbortError') throw err
     }
   }
   return result
