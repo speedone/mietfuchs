@@ -1,5 +1,5 @@
 # --- Build-Stufe: Frontend bauen ---
-FROM node:22-slim AS build
+FROM node:24-slim AS build
 WORKDIR /app
 
 # Erst nur die Manifeste kopieren, damit npm-Layer gecacht werden.
@@ -14,7 +14,7 @@ COPY . .
 RUN npm run build
 
 # --- Laufzeit-Stufe: schlankes Image, nur was der Server braucht ---
-FROM node:22-slim AS runtime
+FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / server/src/index.js)

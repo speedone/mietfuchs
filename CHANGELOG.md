@@ -6,6 +6,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Docker-Image läuft mit Node 24.** Das ist die aktuelle LTS-Version von Node mit
+  Sicherheitsupdates bis April 2028. Bisher lief das Image mit Node 22.
+  ([#15](https://github.com/speedone/mietfuchs/issues/15))
+
+### Hinweise zur Aktualisierung
+
+- Wer Mietfuchs aus dem Quellcode mit `npm start` betreibt, braucht jetzt mindestens Node 22.
+  Node 20 bekommt seit April 2026 keine Sicherheitsupdates mehr und wird nicht mehr getestet.
+  Programmdateien und Docker-Image bringen ihre Laufzeit selbst mit, dort ist nichts zu tun.
+
 ## [0.4.0] – 2026-09-19
 
 ### Hinzugefügt

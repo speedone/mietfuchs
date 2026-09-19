@@ -7,13 +7,23 @@ on:
 
 jobs:
   test-build:
+    name: Tests und Build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    # 22 ist die Mindestversion (engines in package.json), 24 die von Docker-Image und
+    # Release-Build. Beide müssen grün sein.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
+          # postinstall installiert server/ und client/ aus eigenen Lockfiles. Ohne diese
+          # Angabe hinge der Cache nur am Lockfile im Root.
+          cache-dependency-path: '**/package-lock.json'
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
       # Tests der Berechnungs-Engine (node:test)

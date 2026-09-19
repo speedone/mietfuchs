@@ -20,12 +20,13 @@ jobs:
     # Runner bewusst anpinnen (nicht ubuntu-latest) — reproduzierbare Release-Builds.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Node für npm install (Server-/Client-Deps) und den vite-Build des Frontends.
-      - uses: actions/setup-node@v4
+      # Die Programmdateien selbst laufen mit Bun, nicht mit Node.
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       # Bun für das Kompilieren der Binaries.
       - uses: oven-sh/setup-bun@v2
