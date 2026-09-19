@@ -11,6 +11,7 @@ import { extractFromFile, classifyDocType, extractMeterReading } from './extract
 import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields } from './ai/settings.js'
+import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -494,16 +495,17 @@ const OLLAMA_CANDIDATES =
 // `models` bleibt eine Liste von Namen: Ein Tab von vor dem Update erwartet genau das und
 // bliebe sonst weiß. Die Einzelheiten stehen in `modelDetails`.
 app.get('/api/ollama/status', async (req, res) => {
-  const settings = effectiveSettings()
+  const config = providerConfig(effectiveSettings().ai)
+  if (config.provider !== 'ollama') return res.json({ ok: false, error: 'Als KI-Anbieter ist nicht Ollama eingestellt.' })
   try {
-    const models = await listOllamaModels(settings)
+    const models = await listOllamaModels(config)
     res.json({ ok: true, models: models.map((m) => m.name), modelDetails: models })
   } catch (err) {
     const status = { ok: false, error: String(err.message || err) }
     // Nur suchen, wenn Ollama gar nicht erreichbar war, und nicht, wenn der Betreiber die
     // Adresse festgelegt hat
     if (err.unreachable && !fixedByEnv().includes('ai.text.url')) {
-      const configured = settings.ollamaUrl.replace(/\/+$/, '')
+      const configured = config.url.replace(/\/+$/, '')
       const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
       if (found) status.found = found
     }

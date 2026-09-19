@@ -1,5 +1,5 @@
-// KI-Belegauswertung: Prompts, Schemas und Ablauf. Mit welchem Anbieter das Modell läuft
-// (bisher Ollama), entscheidet ai/index.js, hier geht es nur um das Fachliche.
+// KI-Belegauswertung: Prompts, Schemas und Ablauf. Mit welchem Anbieter das Modell läuft,
+// entscheidet ai/index.js anhand von `settings.ai`, hier geht es nur um das Fachliche.
 // PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 // (client/src/pdfIntake.ts) und schickt die Textebene mit, bei Scans ohne Textebene die
 // gerenderten Seiten als Bilder. So braucht der Server kein natives Modul, und das verhält
@@ -17,22 +17,26 @@ const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFile
 // Fortschritt und lässt abbrechen, deshalb darf das Auslesen bis zu 20 Minuten dauern. Die
 // Frage, was auf einem Foto zu sehen ist, ist in der Schnellerfassung der erste Schritt: Er
 // enthält das Laden des Modells und ein Bild. Nur der zweite Durchgang (Kategorien) ist reiner
-// Text und kurz. NKA_AI_TIMEOUT setzt ein gemeinsames Limit für alle Schritte.
+// Text und kurz. Das Zeitlimit unter „Erweitert“ (oder NKA_AI_TIMEOUT) gilt für alle Schritte.
 const TIMEOUT_SECONDS = { extraction: 1200, classification: 180, docType: 600, meterReading: 600 }
-function timeoutMs(step) {
-  const custom = Number(process.env.NKA_AI_TIMEOUT)
-  return (Number.isFinite(custom) && custom > 0 ? custom : TIMEOUT_SECONDS[step]) * 1000
-}
+const timeoutMs = (step, ai) => (ai.timeoutSeconds ?? TIMEOUT_SECONDS[step]) * 1000
+
+// „Zusätzliche Hinweise an das Modell“ aus den Einstellungen, etwa zu Eigenheiten der eigenen
+// Belege. Sie stehen am Ende, damit sie die allgemeinen Regeln im Einzelfall ergänzen.
+const withInstructions = (prompt, ai) =>
+  ai.extraInstructions ? `${prompt}\n\nZusätzliche Hinweise des Nutzers:\n${ai.extraInstructions}` : prompt
 
 // Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
 // Route, `signal` bricht ab, wenn der Browser nicht mehr wartet, `onProgress` meldet den
-// Fortschritt mit dem Namen des Schritts weiter.
+// Fortschritt mit dem Namen des Schritts weiter. Mit Bildern wählt ai/index.js den Anbieter für
+// Fotos und Scans, falls einer eingerichtet ist.
 async function ask(settings, step, { prompt, images = [], schema }, { signal, stats, onProgress } = {}) {
-  const answer = await aiProvider(settings).json({
-    prompt,
+  const { ai } = settings
+  const answer = await aiProvider(ai, { images: images.length > 0 }).json({
+    prompt: withInstructions(prompt, ai),
     images,
     schema,
-    timeoutMs: timeoutMs(step),
+    timeoutMs: timeoutMs(step, ai),
     signal,
     onProgress: onProgress && ((event) => onProgress({ step, ...event })),
   })
