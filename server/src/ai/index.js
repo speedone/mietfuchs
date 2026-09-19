@@ -20,11 +20,29 @@
 // Anfrage beim Anbieter und json() wirft einen Fehler mit dem Namen 'AbortError'. Alle anderen
 // Fehler tragen eine Meldung, die die Oberfläche so anzeigen kann.
 //
-// Bisher gibt es Ollama. Ein weiterer Anbieter, etwa ein OpenAI-kompatibler Dienst (#18),
-// kommt als eigenes Modul mit derselben Schnittstelle dazu und wird hier anhand der
-// Einstellungen gewählt.
+// Welcher Anbieter einen Beleg auswertet, steht in `settings.ai` (siehe ai/settings.js): Fotos
+// und Scans gehen an den eigenen Bilder-Anbieter, falls einer eingerichtet ist, sonst alles an
+// den Standard.
 import { ollamaProvider } from './ollama.js'
+import { slotFor } from './settings.js'
+import { getKey } from '../secrets.js'
 
-export function aiProvider(settings) {
-  return ollamaProvider(settings)
+// Alles, was ein Anbieter-Modul braucht: Platz, Art, Vorlage, Adresse, Modell, Bildverständnis,
+// Schlüssel und die Einstellungen für Fortgeschrittene, die den Transport betreffen
+export function providerConfig(ai, { images = false } = {}) {
+  const slot = slotFor(ai, { images })
+  return {
+    ...slot,
+    apiKey: getKey(slot.slot) || null,
+    numCtx: ai.numCtx,
+    maxOutputTokens: ai.maxOutputTokens,
+    jsonMode: ai.jsonMode,
+    reasoningEffort: ai.reasoningEffort,
+  }
+}
+
+export function aiProvider(ai, { images = false } = {}) {
+  const config = providerConfig(ai, { images })
+  if (config.provider === 'ollama') return ollamaProvider(config)
+  throw new Error('Dieser KI-Anbieter wird noch nicht unterstützt.')
 }

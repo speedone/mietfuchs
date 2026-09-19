@@ -68,6 +68,7 @@ async function startServerIn(dataDir, env = {}) {
       NKA_AI_MODEL: '',
       NKA_AI_API_KEY: '',
       NKA_AI_API_KEY_FILE: '',
+      NKA_AI_MAX_TOKENS: '',
       NKA_RUNTIME: '',
       ...env,
       NKA_PORT: '0',
@@ -334,9 +335,11 @@ const LONG_TEXT =
 //
 // `chat` schaltet Störungen der Auswertung: 'hang' schickt nie etwas, 'hangAfterFirstChunk'
 // verstummt nach dem ersten Stück, 'length' endet am Kontextende mit halbem JSON, 'error'
-// schickt mitten im Strom eine Fehlerzeile. `closedEarly` zählt Chat-Anfragen, deren
-// Verbindung Mietfuchs vor dem Ende getrennt hat.
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal' } = {}) {
+// schickt mitten im Strom eine Fehlerzeile, 'rejectThinkOff' lehnt `think: false` ab wie
+// manche Modelle bei Ollama Cloud. Mit `key` verlangt der Dienst diesen Bearer-Schlüssel und
+// antwortet sonst mit 401. `closedEarly` zählt Chat-Anfragen, deren Verbindung Mietfuchs vor
+// dem Ende getrennt hat.
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null } = {}) {
   const http = await import('node:http')
   const requests = []
   const open = new Set()
@@ -347,13 +350,14 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
     req.on('data', (d) => { body += d })
     req.on('end', () => {
       const json = body ? JSON.parse(body) : {}
-      requests.push({ url: req.url, body: json })
+      requests.push({ url: req.url, body: json, headers: req.headers })
       const send = (status, data) => {
         res.writeHead(status, { 'content-type': 'application/json' })
         res.end(JSON.stringify(data))
       }
       const notFound = () => send(404, { error: `model '${json.model}' not found` })
       if (req.url === '/api/version') return send(200, { version: '0.34.2' })
+      if (key && req.headers.authorization !== `Bearer ${key}`) return send(401, { error: 'unauthorized' })
       if (req.url === '/api/tags') {
         return send(200, { models: models.map(({ capabilities, ...m }) => ({ size: 1000, ...m })) })
       }
@@ -362,6 +366,9 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
       if (!findModel(json.model)) return notFound()
+      if (chat === 'rejectThinkOff' && json.think === false) {
+        return send(400, { error: `think value "false" is not supported for "${json.model}"` })
+      }
       // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
       const content = JSON.stringify(
         json.format?.properties?.categories
@@ -724,17 +731,17 @@ test('Ollama: jede Anfrage setzt festen Kontext, Temperatur 0 und schaltet das N
   })
 })
 
-test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße, ungültige Werte zählen nicht', async () => {
-  for (const [value, expected] of [['8192', 8192], ['viel', 16384], ['0', 16384]]) {
-    const ollama = await fakeOllama()
-    try {
-      await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: value }, async (s) => {
-        await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
-        assert.equal(chatOptions(ollama)[0].num_ctx, expected, `NKA_OLLAMA_NUM_CTX=${value}`)
-      })
-    } finally {
-      ollama.stop()
-    }
+// Ungültige Werte verhindern den Start (siehe „fehlerhafte Schlüssel-Variablen“ weiter unten)
+test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße', async () => {
+  const ollama = await fakeOllama()
+  try {
+    await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: '8192' }, async (s) => {
+      await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+      assert.equal(chatOptions(ollama)[0].num_ctx, 8192)
+      assert.ok((await s.api('/api/settings')).fixedByEnv.includes('ai.numCtx'))
+    })
+  } finally {
+    ollama.stop()
   }
 })
 
@@ -797,7 +804,7 @@ test('Ollama: eine am Kontextende abgeschnittene Antwort ergibt eine klare Meldu
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
     assert.match(r.body.error, /abgeschnitten/)
-    assert.match(r.body.error, /NKA_OLLAMA_NUM_CTX/)
+    assert.match(r.body.error, /Kontext von 16384 Token.*unter „Erweitert“/)
   }, { chat: 'length' })
 })
 
@@ -1292,6 +1299,9 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
     [{ NKA_AI_API_KEY: 'mit leerzeichen 123456' }, /ungültiges Format/],
     [{ NKA_AI_PROVIDER: 'chatgpt' }, /NKA_AI_PROVIDER „chatgpt“ ist unbekannt/],
     [{ NKA_AI_URL: 'api.openai.com/v1' }, /NKA_AI_URL muss eine Adresse/],
+    [{ NKA_OLLAMA_NUM_CTX: 'viel' }, /NKA_OLLAMA_NUM_CTX muss eine ganze Zahl/],
+    [{ NKA_OLLAMA_NUM_CTX: '0' }, /NKA_OLLAMA_NUM_CTX muss eine ganze Zahl/],
+    [{ NKA_AI_TIMEOUT: '10min' }, /NKA_AI_TIMEOUT muss eine ganze Zahl/],
   ]
   try {
     for (const [env, message] of cases) {
@@ -1423,4 +1433,98 @@ test('KI-Einstellungen: NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL gelten und 
     assert.equal(stored.ai.text.provider, 'ollama') // Werte aus der Umgebung landen nicht in der db.json
     assert.equal(stored.ai.text.url, 'http://localhost:11434')
   })
+})
+
+// ---------- Anbieterwahl je Beleg (#18) ----------
+
+// Speichert KI-Einstellungen über die Route, wie es die Oberfläche tut
+async function putAi(s, change) {
+  const settings = await s.api('/api/settings')
+  return s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, ai: { ...settings.ai, ...change } }) })
+}
+
+const ollamaSlot = (url, model = 'test') => ({ provider: 'ollama', preset: 'ollama-remote', url, model, vision: null })
+const photoForm = () => {
+  const fd = new FormData()
+  fd.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'rechnung.jpg')
+  return fd
+}
+
+test('Anbieterwahl: Fotos gehen an den eigenen Bilder-Anbieter, Text an den Standard', async () => {
+  const images = await fakeOllama({ models: [{ name: 'bild:latest', capabilities: ['completion', 'vision'] }] })
+  try {
+    await withOllama(async (s, text) => {
+      await putAi(s, { images: ollamaSlot(images.url, 'bild') })
+      const withImage = (ollama) => chatRequests(ollama).filter((c) => c.body.messages[0].images)
+      assert.equal((await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })).status, 200)
+      assert.equal(withImage(images).length, 1)
+      assert.equal(chatRequests(images)[0].body.model, 'bild')
+      // Der zweite Durchgang ordnet nur Positionstexte Kostenarten zu, ohne Bild: Das darf der
+      // Standard-Anbieter
+      assert.equal(withImage(text).length, 0)
+      // Ein PDF mit Textebene geht ganz an den Standard
+      const imageRequests = chatRequests(images).length
+      assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+      assert.ok(chatRequests(text).length > 0)
+      assert.equal(chatRequests(images).length, imageRequests)
+    })
+  } finally {
+    images.stop()
+  }
+})
+
+test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuzeigen', async () => {
+  const KEY = 'ollama-schluessel-1234567890'
+  const ollama = await fakeOllama({ key: KEY })
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  try {
+    await putAi(s, { text: ollamaSlot(ollama.url) })
+    // Ohne Schlüssel: verständliche Meldung statt 401
+    const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(without.status, 502)
+    assert.match(without.body.error, /Schlüssel/)
+    await putKey(s, { slot: 'text', key: KEY })
+    const before = chatRequests(ollama).length
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200)
+    assert.ok(chatRequests(ollama).slice(before).every((c) => c.headers.authorization === `Bearer ${KEY}`))
+    assert.ok(!JSON.stringify(r.body).includes(KEY))
+    // Auch die Modellliste der Einstellungen fragt mit Schlüssel
+    const status = await s.api('/api/ollama/status')
+    assert.equal(status.ok, true)
+  } finally {
+    s.stop()
+    ollama.stop()
+  }
+})
+
+test('Anbieterwahl: zusätzliche Hinweise an das Modell stehen im Prompt', async () => {
+  await withOllama(async (s, ollama) => {
+    await putAi(s, { extraInstructions: 'Beträge immer brutto übernehmen.' })
+    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.ok(chatRequests(ollama).every((c) => c.body.messages[0].content.includes('Beträge immer brutto übernehmen.')))
+  })
+})
+
+test('Anbieterwahl: Kontext aus den Einstellungen geht an Ollama', async () => {
+  await withOllama(async (s, ollama) => {
+    await putAi(s, { numCtx: 8192 })
+    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.ok(chatOptions(ollama).every((o) => o.num_ctx === 8192))
+  })
+})
+
+// Manche Modelle bei Ollama Cloud erlauben nicht, das Nachdenken abzuschalten
+test('Anbieterwahl: lehnt das Modell think: false ab, geht es ohne weiter', async () => {
+  await withOllama(async (s, ollama) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200)
+    const thinks = chatRequests(ollama).map((c) => c.body.think)
+    assert.equal(thinks[0], false)
+    assert.equal(thinks[1], undefined) // Wiederholung ohne das Feld
+    // Beim nächsten Beleg fragt Mietfuchs gleich ohne
+    const before = chatRequests(ollama).length
+    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.ok(chatRequests(ollama).slice(before).every((c) => c.body.think === undefined))
+  }, { chat: 'rejectThinkOff' })
 })
