@@ -573,6 +573,38 @@ test('Ollama: die Auswertung nutzt Adresse und Modell aus der Umgebung', async (
   }
 })
 
+// ---------- Ollama: Kontext und Nachdenken (#17) ----------
+// Ohne Angabe nimmt Ollama auf den meisten Rechnern 4096 Token Kontext und kürzt längere
+// Anfragen stillschweigend. Neuere Modelle denken außerdem standardmäßig erst lange nach,
+// was auf dem Prozessor Minuten kostet. Beides legt Mietfuchs deshalb selbst fest.
+
+const chatOptionen = (ollama) => chatAnfragen(ollama).map((a) => ({ think: a.body.think, ...a.body.options }))
+
+test('Ollama: jede Anfrage setzt festen Kontext, Temperatur 0 und schaltet das Nachdenken ab', async () => {
+  await mitOllama(async (s, ollama) => {
+    await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    await hochladen(s, '/api/extract', { seiten: [seite(1)] })
+    const optionen = chatOptionen(ollama)
+    assert.ok(optionen.length >= 3) // Auswertung und Kategorien-Durchgang
+    // Gleiche Werte in allen Anfragen, sonst lädt Ollama das Modell jedes Mal neu
+    for (const o of optionen) assert.deepEqual(o, { think: false, temperature: 0, num_ctx: 16384 })
+  })
+})
+
+test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße, ungültige Werte zählen nicht', async () => {
+  for (const [wert, erwartet] of [['8192', 8192], ['viel', 16384], ['0', 16384]]) {
+    const ollama = await fakeOllama()
+    try {
+      await mitUmgebung({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: wert }, async (s) => {
+        await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+        assert.equal(chatOptionen(ollama)[0].num_ctx, erwartet, `NKA_OLLAMA_NUM_CTX=${wert}`)
+      })
+    } finally {
+      ollama.stop()
+    }
+  }
+})
+
 // ---------- Ollama: Modellauswahl und verständliche Fehler (#17) ----------
 
 const NICHT_ERREICHBAR = 'http://127.0.0.1:9' // Port 9 nimmt keine Verbindung an
