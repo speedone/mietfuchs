@@ -8,7 +8,7 @@ import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
-import { listOllamaModels, findOllama } from './ki/ollama.js'
+import { listOllamaModels, findOllama } from './ai/ollama.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -68,31 +68,31 @@ const auswertungAus = (req) => ({
 // Adresse und Modell für Ollama kann der Betreiber per Umgebungsvariable festlegen, etwa im
 // Container. Dann gelten sie vor den gespeicherten Werten, und `fixedByEnv` sagt der
 // Oberfläche, welche Felder sie nur anzeigen soll. In die db.json gelangen sie nicht.
-const OLLAMA_UMGEBUNG = { ollamaUrl: 'NKA_OLLAMA_URL', ollamaModel: 'NKA_OLLAMA_MODEL' }
+const ENV_SETTINGS = { ollamaUrl: 'NKA_OLLAMA_URL', ollamaModel: 'NKA_OLLAMA_MODEL' }
 
-function festeEinstellungen() {
-  const fest = {}
-  for (const [schluessel, variable] of Object.entries(OLLAMA_UMGEBUNG)) {
-    const wert = process.env[variable]?.trim()
-    if (wert) fest[schluessel] = wert
+function settingsFromEnv() {
+  const fixed = {}
+  for (const [key, variable] of Object.entries(ENV_SETTINGS)) {
+    const value = process.env[variable]?.trim()
+    if (value) fixed[key] = value
   }
-  return fest
+  return fixed
 }
 
 // Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung
-function einstellungen() {
-  return { ...getDb().settings, ...festeEinstellungen() }
+function effectiveSettings() {
+  return { ...getDb().settings, ...settingsFromEnv() }
 }
 
-const einstellungenFuerOberflaeche = () => ({ ...einstellungen(), fixedByEnv: Object.keys(festeEinstellungen()) })
+const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: Object.keys(settingsFromEnv()) })
 
-app.get('/api/settings', (req, res) => res.json(einstellungenFuerOberflaeche()))
+app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
-  const { fixedByEnv, ...neu } = req.body ?? {}
-  for (const schluessel of Object.keys(festeEinstellungen())) delete neu[schluessel]
-  Object.assign(getDb().settings, neu)
+  const { fixedByEnv, ...changes } = req.body ?? {}
+  for (const key of Object.keys(settingsFromEnv())) delete changes[key]
+  Object.assign(getDb().settings, changes)
   save()
-  res.json(einstellungenFuerOberflaeche())
+  res.json(settingsForClient())
 })
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
@@ -228,7 +228,7 @@ app.post('/api/extract', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
   try {
-    const result = await extractFromFile(beleg.path, beleg.mimetype, einstellungen(), auswertungAus(req))
+    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), auswertungAus(req))
     res.json({ file: beleg.filename, extraction: result })
   } catch (err) {
     res.status(502).json({ file: beleg.filename, error: String(err.message || err) })
@@ -242,7 +242,7 @@ app.post('/api/intake', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
   try {
-    const settings = einstellungen()
+    const settings = effectiveSettings()
     const auswertung = auswertungAus(req)
     const docType = await classifyDocType(beleg.path, beleg.mimetype, settings)
     if (docType === 'zaehlerstand') {
@@ -360,26 +360,26 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
 
 // Übliche Adressen, falls die eingestellte nicht antwortet (siehe findOllama). Die Tests
 // setzen NKA_OLLAMA_CANDIDATES, um die Suche gegen einen eigenen Server zu prüfen.
-const OLLAMA_KANDIDATEN = process.env.NKA_OLLAMA_CANDIDATES?.split(',').map((u) => u.trim()).filter(Boolean) ?? [
+const OLLAMA_CANDIDATES = process.env.NKA_OLLAMA_CANDIDATES?.split(',').map((u) => u.trim()).filter(Boolean) ?? [
   'http://localhost:11434',
   'http://host.docker.internal:11434',
   'http://ollama:11434',
 ]
 
 app.get('/api/ollama/status', async (req, res) => {
-  const settings = einstellungen()
+  const settings = effectiveSettings()
   try {
     const models = await listOllamaModels(settings)
     res.json({ ok: true, models })
   } catch (err) {
-    const antwort = { ok: false, error: String(err.message || err) }
+    const status = { ok: false, error: String(err.message || err) }
     // Eine vom Betreiber festgelegte Adresse steht nicht zur Wahl
-    if (!festeEinstellungen().ollamaUrl) {
-      const eingestellt = settings.ollamaUrl.replace(/\/+$/, '')
-      const found = await findOllama(OLLAMA_KANDIDATEN.filter((u) => u !== eingestellt))
-      if (found) antwort.found = found
+    if (!settingsFromEnv().ollamaUrl) {
+      const configured = settings.ollamaUrl.replace(/\/+$/, '')
+      const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
+      if (found) status.found = found
     }
-    res.json(antwort)
+    res.json(status)
   }
 })
 

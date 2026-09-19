@@ -1,22 +1,22 @@
 import { describe, expect, test } from 'vitest'
 import type { AiModel } from './types'
-import { ANDERES_MODELL, fmtGroesse, ladeAnleitung, modelHinweis, modelOptions } from './modelForm'
+import { OTHER_MODEL, fmtSize, pullInstructions, modelHint, modelOptions } from './modelForm'
 
-const bild: AiModel = { name: 'bild:4b', sizeBytes: 3_400_000_000, vision: true, remote: false }
-const text: AiModel = { name: 'text:8b', sizeBytes: 5_000_000_000, vision: false, remote: false }
-const cloud: AiModel = { name: 'gross:120b-cloud', sizeBytes: 384, vision: false, remote: true }
-const alt: AiModel = { name: 'alt:latest', sizeBytes: 270_000_000, vision: null, remote: false }
-const MODELLE = [bild, text, cloud, alt]
+const withVision: AiModel = { name: 'bild:4b', sizeBytes: 3_400_000_000, vision: true, remote: false }
+const textOnly: AiModel = { name: 'text:8b', sizeBytes: 5_000_000_000, vision: false, remote: false }
+const cloudModel: AiModel = { name: 'gross:120b-cloud', sizeBytes: 384, vision: false, remote: true }
+const legacy: AiModel = { name: 'alt:latest', sizeBytes: 270_000_000, vision: null, remote: false }
+const MODELS = [withVision, textOnly, cloudModel, legacy]
 
-const werte = (models: AiModel[], aktuell: string) => modelOptions(models, aktuell).map((o) => o.value)
+const values = (models: AiModel[], current: string) => modelOptions(models, current).map((o) => o.value)
 
 describe('Modellauswahl', () => {
   test('bietet die installierten Modelle an, dazu die freie Eingabe', () => {
-    expect(werte(MODELLE, 'bild:4b')).toEqual(['bild:4b', 'text:8b', 'gross:120b-cloud', 'alt:latest', ANDERES_MODELL])
+    expect(values(MODELS, 'bild:4b')).toEqual(['bild:4b', 'text:8b', 'gross:120b-cloud', 'alt:latest', OTHER_MODEL])
   })
 
   test('die Beschriftung nennt Größe, Bildverständnis und Cloud-Dienste', () => {
-    const labels = modelOptions(MODELLE, 'bild:4b').map((o) => o.label)
+    const labels = modelOptions(MODELS, 'bild:4b').map((o) => o.label)
     expect(labels).toEqual([
       'bild:4b (3,4 GB, versteht Bilder)',
       'text:8b (5 GB, nur Text)',
@@ -29,60 +29,60 @@ describe('Modellauswahl', () => {
   // Der angezeigte Wert muss dem gespeicherten entsprechen: Steht er nicht in der Liste,
   // zeigt der Browser den ersten Eintrag, gespeichert bliebe aber etwas anderes.
   test('ein nicht installiertes Modell steht als eigener Eintrag vorn', () => {
-    const optionen = modelOptions(MODELLE, 'fehlt:4b')
-    expect(optionen[0]).toEqual({ value: 'fehlt:4b', label: 'fehlt:4b (nicht installiert)' })
-    expect(optionen.map((o) => o.value)).toContain('bild:4b')
+    const options = modelOptions(MODELS, 'fehlt:4b')
+    expect(options[0]).toEqual({ value: 'fehlt:4b', label: 'fehlt:4b (nicht installiert)' })
+    expect(options.map((o) => o.value)).toContain('bild:4b')
   })
 
   test('ein Name ohne Größenangabe meint wie bei Ollama die Fassung „latest“', () => {
-    const optionen = modelOptions(MODELLE, 'alt')
-    expect(optionen.map((o) => o.value)).toEqual(['bild:4b', 'text:8b', 'gross:120b-cloud', 'alt', ANDERES_MODELL])
-    expect(optionen[3].label).toBe('alt:latest (270 MB)')
+    const options = modelOptions(MODELS, 'alt')
+    expect(options.map((o) => o.value)).toEqual(['bild:4b', 'text:8b', 'gross:120b-cloud', 'alt', OTHER_MODEL])
+    expect(options[3].label).toBe('alt:latest (270 MB)')
   })
 
   test('ohne gewähltes Modell steht ein leerer Eintrag vorn', () => {
-    expect(modelOptions([bild], '')[0]).toEqual({ value: '', label: 'Bitte ein Modell wählen' })
+    expect(modelOptions([withVision], '')[0]).toEqual({ value: '', label: 'Bitte ein Modell wählen' })
   })
 
   test('Leerzeichen um den Namen zählen nicht', () => {
-    expect(werte([bild], ' bild:4b ')[0]).toBe(' bild:4b ')
-    expect(modelOptions([bild], ' bild:4b ')[0].label).toBe('bild:4b (3,4 GB, versteht Bilder)')
+    expect(values([withVision], ' bild:4b ')[0]).toBe(' bild:4b ')
+    expect(modelOptions([withVision], ' bild:4b ')[0].label).toBe('bild:4b (3,4 GB, versteht Bilder)')
   })
 })
 
 describe('Hinweis zum gewählten Modell', () => {
-  test('nicht installiert', () => expect(modelHinweis(MODELLE, 'fehlt:4b')).toBe('fehlt'))
-  test('ohne Bildverständnis', () => expect(modelHinweis(MODELLE, 'text:8b')).toBe('ohneBilder'))
-  test('Cloud-Dienst geht vor fehlendem Bildverständnis', () => expect(modelHinweis(MODELLE, 'gross:120b-cloud')).toBe('cloud'))
-  test('versteht Bilder: kein Hinweis', () => expect(modelHinweis(MODELLE, 'bild:4b')).toBeNull())
-  test('Fähigkeiten unbekannt: kein Hinweis', () => expect(modelHinweis(MODELLE, 'alt')).toBeNull())
-  test('leer: kein Hinweis', () => expect(modelHinweis(MODELLE, '  ')).toBeNull())
+  test('nicht installiert', () => expect(modelHint(MODELS, 'fehlt:4b')).toBe('missing'))
+  test('ohne Bildverständnis', () => expect(modelHint(MODELS, 'text:8b')).toBe('noVision'))
+  test('Cloud-Dienst geht vor fehlendem Bildverständnis', () => expect(modelHint(MODELS, 'gross:120b-cloud')).toBe('cloud'))
+  test('versteht Bilder: kein Hinweis', () => expect(modelHint(MODELS, 'bild:4b')).toBeNull())
+  test('Fähigkeiten unbekannt: kein Hinweis', () => expect(modelHint(MODELS, 'alt')).toBeNull())
+  test('leer: kein Hinweis', () => expect(modelHint(MODELS, '  ')).toBeNull())
 })
 
 describe('Anleitung zum Laden eines Modells', () => {
   test('Ollama auf dem Rechner: Befehl im Terminal', () => {
-    expect(ladeAnleitung(' qwen3.5:4b ', 'http://localhost:11434')).toEqual({
+    expect(pullInstructions(' qwen3.5:4b ', 'http://localhost:11434')).toEqual({
       text: 'Zum Laden im Terminal ausführen:',
-      befehl: 'ollama pull qwen3.5:4b',
+      command: 'ollama pull qwen3.5:4b',
     })
   })
 
   // Im Compose-Profil läuft Ollama im Container, ein „ollama" auf dem Rechner gibt es dann nicht
   test('Ollama aus dem Compose-Profil: Befehl über docker compose', () => {
-    expect(ladeAnleitung('qwen3.5:4b', 'http://ollama:11434/')).toEqual({
+    expect(pullInstructions('qwen3.5:4b', 'http://ollama:11434/')).toEqual({
       text: 'Im Ordner mit der docker-compose.yml ausführen:',
-      befehl: 'docker compose exec ollama ollama pull qwen3.5:4b',
+      command: 'docker compose exec ollama ollama pull qwen3.5:4b',
     })
   })
 
   test('eine unlesbare Adresse gilt als Ollama auf dem Rechner', () => {
-    expect(ladeAnleitung('a:1b', 'kein url').befehl).toBe('ollama pull a:1b')
+    expect(pullInstructions('a:1b', 'kein url').command).toBe('ollama pull a:1b')
   })
 })
 
 test('Größenangabe', () => {
-  expect(fmtGroesse(3_400_000_000)).toBe('3,4 GB')
-  expect(fmtGroesse(20_000_000_000)).toBe('20 GB')
-  expect(fmtGroesse(270_000_000)).toBe('270 MB')
-  expect(fmtGroesse(null)).toBe('')
+  expect(fmtSize(3_400_000_000)).toBe('3,4 GB')
+  expect(fmtSize(20_000_000_000)).toBe('20 GB')
+  expect(fmtSize(270_000_000)).toBe('270 MB')
+  expect(fmtSize(null)).toBe('')
 })

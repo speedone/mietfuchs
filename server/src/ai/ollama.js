@@ -1,29 +1,29 @@
 // Anbindung an Ollama (https://github.com/ollama/ollama/blob/main/docs/api.md). Setzt die
-// Schnittstelle aus ki/index.js um und liefert dazu, was es nur bei Ollama gibt: die
+// Schnittstelle aus ai/index.js um und liefert dazu, was es nur bei Ollama gibt: die
 // installierten Modelle mit ihren Fähigkeiten und die Suche nach Ollama unter den üblichen
 // Adressen.
 
-const basisVon = (settings) => settings.ollamaUrl.replace(/\/+$/, '')
+const baseUrl = (settings) => settings.ollamaUrl.replace(/\/+$/, '')
 
 // Ohne Angabe nimmt Ollama bei weniger als 24 GB Grafikspeicher 4096 Token Kontext und kürzt
 // längere Anfragen stillschweigend. Eine Rechnung mit 20.000 Zeichen Text braucht grob 7.000
 // Token, vier Seitenbilder bei Qwen-Modellen etwa 10.000. Der Wert ist fest, denn ein anderer
 // Wert als bei der vorigen Anfrage lässt Ollama das Modell neu laden. NKA_OLLAMA_NUM_CTX
 // ändert ihn, etwa für Rechner mit wenig Arbeitsspeicher.
-const KONTEXT_STANDARD = 16384
-function kontext() {
-  const wert = Number(process.env.NKA_OLLAMA_NUM_CTX)
-  return Number.isInteger(wert) && wert > 0 ? wert : KONTEXT_STANDARD
+const DEFAULT_NUM_CTX = 16384
+function numCtx() {
+  const value = Number(process.env.NKA_OLLAMA_NUM_CTX)
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_NUM_CTX
 }
 
 // Gemeinsamer Weg für alle Anfragen. Übersetzt die häufigen Fehler in Meldungen, mit denen
 // man in der Oberfläche etwas anfangen kann: Ollama läuft nicht oder unter einer anderen
 // Adresse, das Modell ist nicht geladen, die Antwort dauert zu lange.
-async function anfrage(settings, pfad, { body, timeoutMs }) {
-  const base = basisVon(settings)
+async function request(settings, path, { body, timeoutMs }) {
+  const base = baseUrl(settings)
   let res
   try {
-    res = await fetch(`${base}${pfad}`, {
+    res = await fetch(`${base}${path}`, {
       method: body ? 'POST' : 'GET',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
@@ -47,25 +47,25 @@ async function anfrage(settings, pfad, { body, timeoutMs }) {
 
 // Fähigkeiten laut /api/show, etwa ['completion', 'vision']. Ältere Versionen kennen das Feld
 // nicht, dann null. `remote`: Ollama reicht Anfragen an dieses Modell an einen Cloud-Dienst weiter.
-async function faehigkeiten(settings, model) {
-  const info = await anfrage(settings, '/api/show', { body: { model }, timeoutMs: 10000 })
+async function getCapabilities(settings, model) {
+  const info = await request(settings, '/api/show', { body: { model }, timeoutMs: 10000 })
   return { capabilities: Array.isArray(info.capabilities) ? info.capabilities : null, remote: Boolean(info.remote_host) }
 }
 
-export function ollamaAnbieter(settings) {
+export function ollamaProvider(settings) {
   const model = settings.ollamaModel
   return {
-    async json({ prompt, bilder = [], schema, timeoutMs }) {
+    async json({ prompt, images = [], schema, timeoutMs }) {
       const message = { role: 'user', content: prompt }
-      if (bilder.length > 0) {
+      if (images.length > 0) {
         // Kennt Ollama die Fähigkeiten nicht (ältere Version), wird es versucht
-        const { capabilities } = await faehigkeiten(settings, model)
+        const { capabilities } = await getCapabilities(settings, model)
         if (capabilities && !capabilities.includes('vision')) {
           throw new Error(`Das Modell „${model}“ versteht keine Bilder. Für Fotos und gescannte PDFs in den Einstellungen ein Modell mit Bildverständnis wählen.`)
         }
-        message.images = bilder.map((b) => b.data) // Ollama nimmt reines Base64 ohne Typangabe
+        message.images = images.map((image) => image.data) // Ollama nimmt reines Base64 ohne Typangabe
       }
-      const data = await anfrage(settings, '/api/chat', {
+      const data = await request(settings, '/api/chat', {
         body: {
           model,
           messages: [message],
@@ -75,7 +75,7 @@ export function ollamaAnbieter(settings) {
           // bringt das wenig und kostet auf dem Prozessor Minuten. Modelle ohne diese
           // Fähigkeit übergehen den Schalter.
           think: false,
-          options: { temperature: 0, num_ctx: kontext() },
+          options: { temperature: 0, num_ctx: numCtx() },
         },
         timeoutMs,
       })
@@ -88,10 +88,10 @@ export function ollamaAnbieter(settings) {
 // unbekannt) und Cloud-Kennzeichen. Reine Embedding-Modelle können keine Rechnung lesen und
 // fehlen deshalb.
 export async function listOllamaModels(settings) {
-  const { models = [] } = await anfrage(settings, '/api/tags', { timeoutMs: 5000 })
-  const liste = await Promise.all(
+  const { models = [] } = await request(settings, '/api/tags', { timeoutMs: 5000 })
+  const list = await Promise.all(
     models.map(async (m) => {
-      const info = await faehigkeiten(settings, m.name).catch(() => ({ capabilities: null, remote: false }))
+      const info = await getCapabilities(settings, m.name).catch(() => ({ capabilities: null, remote: false }))
       if (info.capabilities && !info.capabilities.includes('completion')) return null
       return {
         name: m.name,
@@ -101,15 +101,15 @@ export async function listOllamaModels(settings) {
       }
     }),
   )
-  return liste.filter(Boolean)
+  return list.filter(Boolean)
 }
 
 // Sucht Ollama unter den üblichen Adressen, wenn die eingestellte nicht antwortet: auf diesem
 // Rechner, vom Docker-Container aus auf dem Host und als Dienst `ollama` im Compose-Profil.
 // Die erste Adresse der Liste, die wie Ollama antwortet, gewinnt.
-export async function findOllama(kandidaten) {
-  const antworten = await Promise.all(
-    kandidaten.map(async (url) => {
+export async function findOllama(candidates) {
+  const answers = await Promise.all(
+    candidates.map(async (url) => {
       try {
         const res = await fetch(`${url}/api/version`, { signal: AbortSignal.timeout(1500) })
         return res.ok && typeof (await res.json()).version === 'string'
@@ -118,5 +118,5 @@ export async function findOllama(kandidaten) {
       }
     }),
   )
-  return kandidaten.find((_, i) => antworten[i]) ?? null
+  return candidates.find((_, i) => answers[i]) ?? null
 }
