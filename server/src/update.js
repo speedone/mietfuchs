@@ -1,7 +1,7 @@
 // Update-Hinweis: fragt das neueste Release bei GitHub ab und vergleicht es mit der eigenen
-// Version. Nur mit ausdrücklicher Zustimmung (settings.updateCheck === 'on') — ohne sie geht
-// keine Anfrage hinaus, und das Versprechen „kein externer Dienst" gilt unverändert. Aus
-// Mietfuchs werden dabei keine Daten übertragen; der Versionsvergleich passiert lokal.
+// Version. Das passiert nur mit ausdrücklicher Zustimmung (settings.updateCheck === 'on').
+// Ohne sie geht keine Anfrage hinaus, und das Versprechen „kein externer Dienst" gilt
+// unverändert. Aus Mietfuchs werden dabei keine Daten übertragen, verglichen wird lokal.
 //
 // Ein Selbst-Update gibt es nicht. Ob und welcher Updater später dazukommt, ist offen; die
 // Möglichkeiten mit Vor- und Nachteilen stehen in Issue #14.
@@ -12,6 +12,11 @@ const EINE_MINUTE = 60 * 1000
 const EINE_STUNDE = 60 * EINE_MINUTE
 const EIN_TAG = 24 * EINE_STUNDE
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/
+
+// Links aus der Antwort landen in der Oberfläche. Übernommen wird nur, was ins Mietfuchs-Repo
+// auf GitHub zeigt, auch wenn NKA_UPDATE_URL die Abfrage anderswohin lenkt.
+const REPO_URL = 'https://github.com/speedone/mietfuchs/'
+const vertraut = (link) => (typeof link === 'string' && link.startsWith(REPO_URL) ? link : null)
 
 const ZU_VIELE_ANFRAGEN =
   'GitHub hat zu viele Anfragen von diesem Internetanschluss gezählt. Mietfuchs fragt später noch einmal.'
@@ -46,17 +51,19 @@ export function assetFor(assets, platform, arch) {
 
 // Rate-Limit nach GitHub-Vorgabe: `retry-after` hat Vorrang, sonst gilt `x-ratelimit-reset`
 // (Sekunden seit 1970), ohne Angabe mindestens eine Minute. Wer trotzdem weiterfragt, riskiert
-// eine Sperre. Liefert den Zeitpunkt, ab dem wieder gefragt werden darf, oder null.
+// eine Sperre. Liefert den Zeitpunkt, ab dem wieder gefragt werden darf, oder null. Länger als
+// einen Tag wird nie gewartet, sonst legte eine unsinnige Angabe den Hinweis dauerhaft still.
 function rateLimitBis(res, jetzt) {
   if (res.status !== 403 && res.status !== 429) return null
+  let bis = null
   const retryAfter = Number(res.headers.get('retry-after'))
-  if (retryAfter > 0) return jetzt + retryAfter * 1000
-  if (res.headers.get('x-ratelimit-remaining') === '0') {
+  if (retryAfter > 0) bis = jetzt + retryAfter * 1000
+  else if (res.headers.get('x-ratelimit-remaining') === '0') {
     const reset = Number(res.headers.get('x-ratelimit-reset')) * 1000
-    return Math.max(reset || 0, jetzt + EINE_MINUTE)
-  }
+    bis = Math.max(reset || 0, jetzt + EINE_MINUTE)
+  } else if (res.status === 429) bis = jetzt + EINE_MINUTE
   // 403 ohne diese Angaben ist ein gewöhnlicher Fehler, 429 immer ein Rate-Limit
-  return res.status === 429 ? jetzt + EINE_MINUTE : null
+  return bis === null ? null : Math.min(bis, jetzt + EIN_TAG)
 }
 
 // Fehler in eine Meldung für die Einstellungen übersetzen. Im Hinweis selbst erscheinen sie nie.
@@ -67,7 +74,7 @@ function beschreibe(err) {
   return err?.message || 'Die Abfrage ist fehlgeschlagen.'
 }
 
-// `mode`: 'binary' (Programmdatei), 'docker' oder 'npm' — bestimmt, ob es einen direkten
+// `mode` ist 'binary' (Programmdatei), 'docker' oder 'npm' und bestimmt, ob es einen direkten
 // Download gibt. `now` und `timeoutMs` lassen sich für Tests einstellen.
 export function createUpdateChecker({
   url = UPDATE_URL,
@@ -80,10 +87,12 @@ export function createUpdateChecker({
   errorPauseMs = EINE_STUNDE,
   timeoutMs = 5000,
 }) {
-  let gemerkt = null // { at, result } — die letzte erfolgreiche Abfrage, gilt einen Tag
+  let gemerkt = null // { at, result }: die letzte erfolgreiche Abfrage, gilt einen Tag
   // Nach einem Fehler: bis `bis` keine automatische Abfrage, bis `gesperrtBis` (Rate-Limit)
   // auch nicht auf Knopfdruck. Sonst fragte jeder Seitenaufruf sofort wieder.
   let pause = null // { bis, gesperrtBis, result }
+  let laufend = null // die gerade offene Anfrage, gleichzeitige Aufrufe warten auf sie
+  let zuletztGefragt = null // Zeitpunkt der letzten Anfrage, für den Mindestabstand
 
   const leer = (enabled) => ({
     enabled,
@@ -113,22 +122,20 @@ export function createUpdateChecker({
       throw new Error(`GitHub antwortet mit Status ${res.status}.`)
     }
     const release = await res.json()
-    // /releases/latest liefert keine Vorabversionen — falls doch, zählen sie nicht
+    // /releases/latest liefert keine Vorabversionen. Falls doch, zählen sie nicht.
     if (release.draft || release.prerelease) return
     const version = parseVersion(release.tag_name)
     if (!version) throw new Error(`Unbekanntes Versionsformat „${release.tag_name}".`)
     result.latest = version.join('.')
     result.available = isNewer(result.latest, currentVersion)
-    result.releaseUrl = release.html_url
+    result.releaseUrl = vertraut(release.html_url)
     if (mode === 'binary') {
-      result.downloadUrl = assetFor(release.assets, platform, arch)?.browser_download_url ?? release.html_url
+      result.downloadUrl = vertraut(assetFor(release.assets, platform, arch)?.browser_download_url) ?? result.releaseUrl
     }
   }
 
-  async function check({ consent, force = false } = {}) {
-    if (consent !== 'on') return leer(false)
-    if (pause && (now() < pause.gesperrtBis || (!force && now() < pause.bis))) return pause.result
-    if (!force && gemerkt && now() - gemerkt.at < ttlMs) return gemerkt.result
+  async function frage() {
+    zuletztGefragt = now()
     const result = { ...leer(true), checkedAt: new Date(now()).toISOString() }
     try {
       await frageGitHub(result)
@@ -142,6 +149,18 @@ export function createUpdateChecker({
       pause = { bis: Math.max(now() + errorPauseMs, gesperrtBis), gesperrtBis, result: fehler }
       return fehler
     }
+  }
+
+  async function check({ consent, force = false } = {}) {
+    if (consent !== 'on') return leer(false)
+    if (laufend) return laufend
+    if (pause && (now() < pause.gesperrtBis || (!force && now() < pause.bis))) return pause.result
+    if (!force && gemerkt && now() - gemerkt.at < ttlMs) return gemerkt.result
+    // Auch „Jetzt prüfen" fragt höchstens einmal pro Minute, wiederholtes Klicken bleibt lokal.
+    const zuletzt = pause?.result ?? gemerkt?.result
+    if (force && zuletzt && now() - zuletztGefragt < EINE_MINUTE) return zuletzt
+    laufend = frage().finally(() => { laufend = null })
+    return laufend
   }
 
   return { check }
