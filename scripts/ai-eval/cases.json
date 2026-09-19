@@ -1,0 +1,87 @@
+{
+  "format": 1,
+  "about": "Sollwerte der erfundenen Beispielbelege für den KI-Prüflauf (scripts/ai-eval.mjs). Beträge brutto in Euro. positions: null heißt, die einzelnen Positionen werden nicht bewertet, weil der Beleg sie nur netto ausweist.",
+  "cases": [
+    {
+      "name": "water",
+      "label": "Wasser und Abwasser (2 Seiten)",
+      "file": "invoices/water.html",
+      "pages": 2,
+      "photo": false,
+      "expected": {
+        "vendor": "Stadtwerke Musterstadt",
+        "total": 956.63,
+        "positions": [
+          { "amount": 109.14, "category": "Wasser/Abwasser" },
+          { "amount": 326.67, "category": "Wasser/Abwasser" },
+          { "amount": 406.12, "category": "Wasser/Abwasser" },
+          { "amount": 114.70, "category": "Niederschlagswasser" }
+        ]
+      }
+    },
+    {
+      "name": "waste",
+      "label": "Abfallgebühren (1 Seite)",
+      "file": "invoices/waste.html",
+      "pages": 1,
+      "photo": true,
+      "expected": {
+        "vendor": "Beispielhausen",
+        "total": 320.60,
+        "positions": [
+          { "amount": 84.00, "category": "Müllabfuhr" },
+          { "amount": 161.20, "category": "Müllabfuhr" },
+          { "amount": 75.40, "category": "Müllabfuhr" }
+        ]
+      }
+    },
+    {
+      "name": "property-tax",
+      "label": "Grundbesitzabgaben (1 Seite)",
+      "file": "invoices/property-tax.html",
+      "pages": 1,
+      "photo": true,
+      "expected": {
+        "vendor": "Musterstadt",
+        "total": 569.20,
+        "positions": [
+          { "amount": 486.32, "category": "Grundsteuer" },
+          { "amount": 64.75, "category": "Straßenreinigung" },
+          { "amount": 18.13, "category": "Straßenreinigung" }
+        ]
+      }
+    },
+    {
+      "name": "chimney",
+      "label": "Schornsteinfeger mit § 35a (1 Seite)",
+      "file": "invoices/chimney.html",
+      "pages": 1,
+      "photo": true,
+      "expected": {
+        "vendor": "Schornsteinfeger",
+        "total": 101.86,
+        "positions": null,
+        "allCategory": "Schornsteinfeger",
+        "labor35a": 90.56
+      }
+    },
+    {
+      "name": "facility",
+      "label": "Hausservice mit AGB (3 Seiten)",
+      "file": "invoices/facility.html",
+      "pages": 3,
+      "photo": false,
+      "expected": {
+        "vendor": "Hausservice Muster",
+        "total": 3004.75,
+        "positions": [
+          { "amount": 1213.80, "category": "Gebäudereinigung" },
+          { "amount": 761.60, "category": "Gartenpflege" },
+          { "amount": 856.80, "category": "Hauswart" },
+          { "amount": 172.55, "category": "Nicht umlagefähig" }
+        ],
+        "labor35a": 2826.25
+      }
+    }
+  ]
+}
