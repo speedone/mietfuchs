@@ -35,7 +35,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Lange KI-Auswertungen brechen nicht mehr nach fünf Minuten ab.** Auf einem Rechner ohne
   Grafikkarte kann ein gescannter Beleg länger dauern. Dann endete die Auswertung nach fünf
   Minuten mit „Ollama nicht erreichbar“, in Firefox auch schon im Browser. Jetzt gilt nur das
-  eigene Zeitlimit von zehn Minuten. ([#17](https://github.com/speedone/mietfuchs/issues/17))
+  eigene Zeitlimit von 20 Minuten. ([#17](https://github.com/speedone/mietfuchs/issues/17))
 - **Ollama las lange Belege nur teilweise.** Ohne Angabe nimmt Ollama auf den meisten Rechnern
   4.096 Token Kontext und kürzt längere Anfragen, ohne es zu melden. Mietfuchs setzt jetzt
   16.384. Neuere Modelle denken außerdem nicht mehr erst minutenlang nach, bevor sie antworten.
@@ -44,7 +44,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fehlt oder die Antwort am Kontextende abgeschnitten wurde. Ein Modell ohne Bildverständnis
   bekommt keine Fotos und Scans mehr, statt sich eine Rechnung auszudenken.
   ([#17](https://github.com/speedone/mietfuchs/issues/17))
-
+- **Das voreingestellte KI-Modell gab es nicht.** Mietfuchs schlug `qwen3.6-35b` vor, das es in
+  der Ollama-Bibliothek nie gab. Neu voreingestellt ist `qwen3.5:4b`, ausgewählt mit einem
+  Prüflauf an Beispielbelegen auf einem Rechner ohne Grafikkarte. Wer den alten Namen noch
+  eingestellt hat, wird automatisch umgestellt.
+  ([#17](https://github.com/speedone/mietfuchs/issues/17))
 - **Die macOS-Programmdateien tragen eine gültige Signatur.** Die Datei für Intel-Macs war
   ungültig signiert. macOS 26 startet sie trotzdem, neuere Versionen beenden solche Programme
   aber sofort. Die macOS-Dateien werden jetzt auf einem Mac neu signiert und geprüft.
