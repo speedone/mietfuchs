@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { AiModel } from './types'
-import { ANDERES_MODELL, fmtGroesse, modelHinweis, modelOptions, pullBefehl } from './modelForm'
+import { ANDERES_MODELL, fmtGroesse, ladeAnleitung, modelHinweis, modelOptions } from './modelForm'
 
 const bild: AiModel = { name: 'bild:4b', sizeBytes: 3_400_000_000, vision: true, remote: false }
 const text: AiModel = { name: 'text:8b', sizeBytes: 5_000_000_000, vision: false, remote: false }
@@ -59,8 +59,25 @@ describe('Hinweis zum gewählten Modell', () => {
   test('leer: kein Hinweis', () => expect(modelHinweis(MODELLE, '  ')).toBeNull())
 })
 
-test('Befehl zum Laden', () => {
-  expect(pullBefehl(' qwen3.5:4b ')).toBe('ollama pull qwen3.5:4b')
+describe('Anleitung zum Laden eines Modells', () => {
+  test('Ollama auf dem Rechner: Befehl im Terminal', () => {
+    expect(ladeAnleitung(' qwen3.5:4b ', 'http://localhost:11434')).toEqual({
+      text: 'Zum Laden im Terminal ausführen:',
+      befehl: 'ollama pull qwen3.5:4b',
+    })
+  })
+
+  // Im Compose-Profil läuft Ollama im Container, ein „ollama" auf dem Rechner gibt es dann nicht
+  test('Ollama aus dem Compose-Profil: Befehl über docker compose', () => {
+    expect(ladeAnleitung('qwen3.5:4b', 'http://ollama:11434/')).toEqual({
+      text: 'Im Ordner mit der docker-compose.yml ausführen:',
+      befehl: 'docker compose exec ollama ollama pull qwen3.5:4b',
+    })
+  })
+
+  test('eine unlesbare Adresse gilt als Ollama auf dem Rechner', () => {
+    expect(ladeAnleitung('a:1b', 'kein url').befehl).toBe('ollama pull a:1b')
+  })
 })
 
 test('Größenangabe', () => {
