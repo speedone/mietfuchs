@@ -8,6 +8,7 @@ import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
+import { healthReport } from './health.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -261,6 +262,26 @@ app.get('/api/ollama/status', async (req, res) => {
   } catch (err) {
     res.json({ ok: false, error: String(err.message || err) })
   }
+})
+
+// ---------- Betriebszustand ----------
+// Für Healthchecks von Docker & Co.: 200 nur, wenn der Datenbestand lesbar und der
+// Belegordner beschreibbar ist, sonst 503. Muss VOR dem Frontend-Catch-All stehen, der jeden
+// Pfad außer /api und /uploads mit der index.html beantwortet — sonst meldete auch ein
+// kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
+// Betrieb, nicht für die Oberfläche.
+const APP_VERSION = (() => {
+  // In der gepackten Binary gibt es keine package.json im Dateisystem
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version
+  } catch {
+    return 'unbekannt'
+  }
+})()
+
+app.get('/healthz', (req, res) => {
+  const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
+  res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
 })
 
 // ---------- Frontend (Produktions-Build) ----------

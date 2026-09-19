@@ -30,4 +30,10 @@ EXPOSE 3001
 #   docker run -p 3001:3001 -v mietfuchs-data:/app/server/data <image>
 VOLUME ["/app/server/data"]
 
+# Zustand statt bloßer Prozess-Lebendigkeit: /healthz meldet 503, wenn die db.json unlesbar
+# oder der Datenordner nicht beschreibbar ist (z. B. schreibgeschützt eingehängt). Hängt der
+# Prozess, schlägt die Anfrage fehl. Im Image gibt es kein curl; Node bringt fetch selbst mit.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.NKA_PORT||3001)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "server/src/index.js"]
