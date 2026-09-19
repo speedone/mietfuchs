@@ -1850,3 +1850,55 @@ test('OpenAI-kompatibel: wiederholt der Dienst den Schlüssel in einer Meldung, 
     assert.ok(!r.body.error.includes(KEY))
   }, { key: KEY, rules: { echoKey: true } })
 })
+
+// ---------- Vorlagen und Status für die Einstellungen (#18) ----------
+
+test('Vorlagen: /api/ai/presets liefert alle Vorlagen mit Links und Eigenheiten', async () => {
+  const presets = await srv.api('/api/ai/presets')
+  const ids = presets.map((p) => p.id)
+  assert.deepEqual(ids, ['ollama-local', 'ollama-remote', 'ollama-cloud', 'openai', 'ionos', 'mistral', 'lmstudio', 'openai-compatible'])
+  const openai = presets.find((p) => p.id === 'openai')
+  assert.equal(openai.keyUrl, 'https://platform.openai.com/api-keys')
+  assert.equal(openai.key, 'required')
+  assert.match(presets.find((p) => p.id === 'mistral').notice, /Training/)
+})
+
+test('Status: Modellliste eines OpenAI-kompatiblen Dienstes, sortiert, Bildverständnis wo gemeldet', async () => {
+  await withOpenAi(async (s) => {
+    const status = await s.api('/api/ai/status?slot=text')
+    assert.equal(status.ok, true)
+    assert.deepEqual(status.models, [
+      { name: 'modell-a', sizeBytes: null, vision: true, remote: false },
+      { name: 'modell-b', sizeBytes: null, vision: null, remote: false },
+    ])
+  })
+})
+
+test('Status: ein abgelehnter Schlüssel ergibt eine verständliche Meldung', async () => {
+  await withOpenAi(async (s) => {
+    const status = await s.api('/api/ai/status?slot=text')
+    assert.equal(status.ok, false)
+    assert.match(status.error, /verlangt einen Schlüssel/)
+  }, { rules: { key: 'sk-test-1234567890abcdef' } })
+})
+
+test('Status: für Ollama wie bisher, für Bilder nur mit eigenem Anbieter', async () => {
+  await withOllama(async (s) => {
+    const status = await s.api('/api/ai/status?slot=text')
+    assert.equal(status.ok, true)
+    assert.equal(status.models[0].name, 'test:latest')
+    const images = await s.api('/api/ai/status?slot=images')
+    assert.equal(images.ok, false)
+    assert.match(images.error, /Kein eigener Anbieter für Fotos und Scans/)
+  })
+})
+
+test('Einstellungen: aiExternal sagt je Platz, ob die Adresse aus dem Haus zeigt', async () => {
+  await withEnv({}, async (s) => {
+    assert.deepEqual((await s.api('/api/settings')).aiExternal, { text: false, images: false })
+    const saved = await putAi(s, { images: { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true } })
+    assert.deepEqual(saved.aiExternal, { text: false, images: true })
+    // aiExternal gehört nicht in die db.json
+    assert.equal(storedSettings(s).aiExternal, undefined)
+  })
+})

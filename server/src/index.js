@@ -9,8 +9,10 @@ import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
 import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
+import { listOpenAiModels } from './ai/openai.js'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
-import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields } from './ai/settings.js'
+import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.js'
+import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
@@ -92,13 +94,19 @@ function fixedByEnv() {
   return [...legacy, ...paths]
 }
 
-// `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.js), nie welcher
-const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: fixedByEnv(), aiKeys: keyInfo() })
+// `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.js), nie welcher.
+// `aiExternal` sagt je Platz, ob die Adresse aus dem Haus zeigt und die Belege deshalb erst nach
+// einer Bestätigung dorthin gehen. So entscheidet allein der Server, was als extern gilt.
+function settingsForClient() {
+  const settings = effectiveSettings()
+  const aiExternal = { text: isExternalUrl(settings.ai.text.url), images: settings.ai.images ? isExternalUrl(settings.ai.images.url) : false }
+  return { ...settings, fixedByEnv: fixedByEnv(), aiKeys: keyInfo(), aiExternal }
+}
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
   const body = req.body ?? {}
-  const { fixedByEnv, aiKeys, ai, ollamaUrl, ollamaModel, ...changes } = body
+  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, ...changes } = body
   const settings = getDb().settings
   // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
   try {
@@ -518,25 +526,38 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
 const OLLAMA_CANDIDATES =
   process.env.NKA_OLLAMA_CANDIDATES?.split(',').map((u) => u.trim()).filter(Boolean) ?? defaultCandidates(RUNTIME)
 
-// `models` bleibt eine Liste von Namen: Ein Tab von vor dem Update erwartet genau das und
-// bliebe sonst weiß. Die Einzelheiten stehen in `modelDetails`.
-app.get('/api/ollama/status', async (req, res) => {
-  const config = providerConfig(effectiveSettings().ai)
-  if (config.provider !== 'ollama') return res.json({ ok: false, error: 'Als KI-Anbieter ist nicht Ollama eingestellt.' })
+// Modelle des Anbieters eines Platzes für die Auswahl in den Einstellungen. Ist ein lokales
+// Ollama gar nicht erreichbar, sucht der Server es unter den üblichen Adressen, außer der
+// Betreiber hat die Adresse festgelegt. Die Liste abzufragen schickt keine Belege, deshalb
+// braucht sie auch bei externen Diensten keine Bestätigung.
+async function aiStatus(slot) {
+  const ai = effectiveSettings().ai
+  if (slot === 'images' && !ai.images) return { ok: false, error: 'Kein eigener Anbieter für Fotos und Scans eingerichtet.' }
+  const config = providerConfig(ai, { images: slot === 'images' })
   try {
-    const models = await listOllamaModels(config)
-    res.json({ ok: true, models: models.map((m) => m.name), modelDetails: models })
+    const models = config.provider === 'openai' ? await listOpenAiModels(config) : await listOllamaModels(config)
+    return { ok: true, models }
   } catch (err) {
     const status = { ok: false, error: String(err.message || err) }
-    // Nur suchen, wenn Ollama gar nicht erreichbar war, und nicht, wenn der Betreiber die
-    // Adresse festgelegt hat
-    if (err.unreachable && !fixedByEnv().includes('ai.text.url')) {
+    const addressFixed = slot === 'text' && fixedByEnv().includes('ai.text.url')
+    if (config.provider === 'ollama' && err.unreachable && !addressFixed && !isExternalUrl(config.url)) {
       const configured = config.url.replace(/\/+$/, '')
       const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
       if (found) status.found = found
     }
-    res.json(status)
+    return status
   }
+}
+
+app.get('/api/ai/presets', (req, res) => res.json(PRESETS.map((p) => presetById(p.id))))
+app.get('/api/ai/status', async (req, res) => res.json(await aiStatus(req.query.slot === 'images' ? 'images' : 'text')))
+
+// Für Tabs von vor dem Update: `models` als Liste von Namen, sonst bliebe die Seite weiß. Die
+// Einzelheiten stehen in `modelDetails`.
+app.get('/api/ollama/status', async (req, res) => {
+  if (effectiveSettings().ai.text.provider !== 'ollama') return res.json({ ok: false, error: 'Als KI-Anbieter ist nicht Ollama eingestellt.' })
+  const { models, ...status } = await aiStatus('text')
+  res.json(models ? { ...status, models: models.map((m) => m.name), modelDetails: models } : status)
 })
 
 // ---------- Update-Hinweis ----------
