@@ -238,6 +238,19 @@ export type AiPreset = {
   notice: string | null
 }
 
+// Eine Empfehlung aus /api/ai/recommendations (server/src/ai/recommendations.js). Sie belegt nur
+// vor: Jedes andere Modell lässt sich weiterhin eintragen.
+export type AiRecommendation = {
+  name: string
+  provider: AiProviderKind
+  preset?: string // nur für einen bestimmten Dienst gedacht
+  sizeGb?: number
+  vision: boolean
+  note: string
+  scores?: { text?: number; scan?: number; photo?: number } // Treffer im KI-Prüflauf, in Prozent
+}
+export type AiRecommendations = { models: AiRecommendation[]; updated: string | null; source: 'mitgeliefert' | 'netz' }
+
 // Ein Modell zur Auswahl (aus /api/ai/status, listOllamaModels und listOpenAiModels im Server).
 // Fehlt eine Angabe beim Anbieter, ist sie null.
 export type AiModel = {

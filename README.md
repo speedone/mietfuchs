@@ -165,13 +165,16 @@ Zwei Wege stehen zur Wahl:
 
 1. **Ollama installieren** von [ollama.com/download](https://ollama.com/download) (Windows,
    macOS, Linux). Danach läuft Ollama im Hintergrund.
-2. **Ein Modell laden**, im Terminal `ollama pull qwen3.5:4b` (voreingestellt). Welches Modell
-   passt, steht unten. Der Download ist 3,4 GB groß.
-3. **In Mietfuchs prüfen:** *Einstellungen*, Karte „KI-Belegauswertung“. Voreingestellt ist
+2. **In Mietfuchs einrichten:** *Einstellungen*, Karte „KI-Belegauswertung“. Voreingestellt ist
    „Ollama auf diesem Rechner“. Mietfuchs findet Ollama unter `http://localhost:11434` selbst
    und listet die installierten Modelle auf, jeweils mit Größe und ob sie Bilder verstehen.
-   Modell wählen und speichern. Antwortet Ollama unter einer anderen üblichen Adresse, schlägt
-   Mietfuchs sie zur Übernahme vor.
+   Antwortet Ollama unter einer anderen üblichen Adresse, schlägt Mietfuchs sie zur Übernahme
+   vor.
+3. **Ein Modell laden:** Unter „Empfehlungen“ stehen einige Modelle mit Größe und den
+   Messwerten des Prüflaufs. Ein Klick auf „Laden“ holt das Modell über Ollama, mit Fortschritt
+   und Abbrechen; ein abgebrochener Download geht später dort weiter, wo er aufgehört hat.
+   Lieber im Terminal? Dann `ollama pull qwen3.5:4b` (voreingestellt, 3,4 GB). Den passenden
+   Befehl zeigt Mietfuchs auch an.
 4. **Ausprobieren:** unter *Kosten* oder in der *Schnellerfassung* einen Beleg in die Fläche
    ziehen.
 
@@ -222,7 +225,10 @@ Browser zurück und filtert ihn aus Fehlermeldungen.
 
 ### Welches Modell?
 
-Voreingestellt ist `qwen3.5:4b` auf dem eigenen Rechner. Die Übersicht zeigt, wie gut einige
+Voreingestellt ist `qwen3.5:4b` auf dem eigenen Rechner. Dieselben Empfehlungen stehen in den
+Einstellungen; mit eingeschalteter Update-Prüfung holt Mietfuchs höchstens einmal am Tag die
+aktuelle Liste aus dem Repo ([ki-modelle.json](ki-modelle.json)), sonst gilt die mitgelieferte.
+Die Übersicht zeigt, wie gut einige
 Modelle frei erfundene Beispielbelege gelesen haben und wie lange sie im Schnitt brauchten.
 Gemessen hat das der [KI-Prüflauf](.github/workflows/ai-eval.yml) auf einem Rechner ohne
 Grafikkarte mit 4 Prozessorkernen und 16 GB Arbeitsspeicher, Stand September 2026. Ein üblicher

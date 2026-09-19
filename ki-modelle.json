@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "updated": "2026-09-19",
+  "models": [
+    {
+      "name": "qwen3.5:4b",
+      "provider": "ollama",
+      "sizeGb": 3.6,
+      "vision": true,
+      "note": "Voreingestellt. Guter Kompromiss ohne Grafikkarte: liest PDFs mit Textebene fast fehlerfrei, einseitige Scans meist richtig.",
+      "scores": { "text": 93, "scan": 75, "photo": 56 }
+    },
+    {
+      "name": "gemma4:12b",
+      "provider": "ollama",
+      "sizeGb": 9.2,
+      "vision": true,
+      "note": "Deutlich besser bei Fotos und Scans, braucht aber rund 9 GB Arbeitsspeicher und mehr Zeit.",
+      "scores": { "text": 95, "scan": 83, "photo": 92 }
+    },
+    {
+      "name": "minicpm-v4.5:8b",
+      "provider": "ollama",
+      "sizeGb": 7.8,
+      "vision": true,
+      "note": "Mittelgroß. Liest Text gut, bei Fotos und Scans schwächer als gemma4:12b.",
+      "scores": { "text": 86, "scan": 64, "photo": 61 }
+    },
+    {
+      "name": "gpt-5.4-nano",
+      "provider": "openai",
+      "preset": "openai",
+      "vision": true,
+      "note": "Bei OpenAI. Ein Beleg dauert Sekunden und kostet rund 0,1 Cent. Die Belege verlassen dabei das Haus.",
+      "scores": { "text": 95, "scan": 86, "photo": 79 }
+    }
+  ]
+}

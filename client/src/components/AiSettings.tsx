@@ -5,15 +5,16 @@
 //
 // Vorlagen belegen nur vor: Adresse, Modell und Schlüssel bleiben frei änderbar, und „Eigener
 // OpenAI-kompatibler Dienst“ nimmt jede Adresse.
-import { useCallback, useEffect, useState } from 'react'
-import type { AiPreset, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AiPreset, AiRecommendations, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
 import { api, fmtDate } from '../api'
+import { pullModel, type PullProgress } from '../aiRequest'
 import { OTHER_MODEL, modelHint, modelOptions, pullInstructions } from '../modelForm'
 import {
   JSON_MODE_OPTIONS, SLOT_LABELS, VISION_OPTIONS, aiFormFrom, consentState, isFixed, keyState, parseOptionalInt,
-  presetGroups, switchPreset, visionFromValue, visionValue,
+  presetGroups, pullText, recommendationsFor, switchPreset, visionFromValue, visionValue,
 } from '../aiForm'
-import { useToast } from './feedback'
+import { useToast, useConfirm } from './feedback'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
 const errorText = (e: unknown) => String((e as Error)?.message ?? e)
@@ -37,6 +38,7 @@ type Props = { settings: Settings; reload: () => Promise<void> }
 
 export function AiSettings({ settings, reload }: Props) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [presets, setPresets] = useState<AiPreset[]>([])
   const [form, setForm] = useState<AiSettingsValues>(() => aiFormFrom(settings))
   // Zahlenfelder und Denkaufwand als Text, damit ein leeres Feld „Standard“ heißen kann
@@ -49,10 +51,17 @@ export function AiSettings({ settings, reload }: Props) {
   const [status, setStatus] = useState<Partial<Record<AiSlotName, { of: string; value: AiStatus }>>>({})
   const [checking, setChecking] = useState<Partial<Record<AiSlotName, boolean>>>({})
   const [saving, setSaving] = useState(false)
+  const [recommendations, setRecommendations] = useState<AiRecommendations | null>(null)
+  // Läuft gerade ein Download? Dann Fortschritt zeigen und Abbrechen anbieten (#33)
+  const [pull, setPull] = useState<{ slot: AiSlotName; model: string; progress: PullProgress | null } | null>(null)
+  const pullAbort = useRef<AbortController | null>(null)
 
   useEffect(() => {
     void api<AiPreset[]>('/api/ai/presets').then(setPresets).catch(() => setPresets([]))
+    void api<AiRecommendations>('/api/ai/recommendations').then(setRecommendations).catch(() => setRecommendations(null))
   }, [])
+  // Wer die Seite verlässt, wartet nicht mehr auf den Download
+  useEffect(() => () => pullAbort.current?.abort(), [])
 
   // Die Modellliste gehört zu einer Adresse: Nach einer Änderung im Formular passt sie nicht
   // mehr, dann gibt es statt der Auswahl ein freies Feld.
@@ -136,6 +145,37 @@ export function AiSettings({ settings, reload }: Props) {
     await loadStatus(name, slot)
   }
 
+  // Ein Modell laden. Modelle sind mehrere Gigabyte groß, deshalb erst nachfragen. Bricht der
+  // Download ab, setzt ein neuer Versuch dort an, wo er aufgehört hat.
+  async function startPull(name: AiSlotName, model: string, sizeGb?: number) {
+    const ok = await confirm({
+      title: `„${model}“ laden?`,
+      message: sizeGb
+        ? `Der Download ist rund ${sizeGb.toLocaleString('de-DE')} GB groß und läuft über Ollama. Solange er läuft, kannst du weiterarbeiten.`
+        : 'Die Größe ist unbekannt, Modelle sind meist mehrere Gigabyte groß. Der Download läuft über Ollama.',
+      confirmLabel: 'Laden',
+    })
+    if (!ok) return
+    const controller = new AbortController()
+    pullAbort.current = controller
+    setPull({ slot: name, model, progress: null })
+    try {
+      await pullModel(model, {
+        slot: name,
+        signal: controller.signal,
+        onProgress: (progress) => setPull((p) => (p ? { ...p, progress } : p)),
+      })
+      toast(`„${model}“ ist geladen.`)
+      const slot = name === 'text' ? form.text : form.images
+      if (slot) await loadStatus(name, slot)
+    } catch (e) {
+      if (!controller.signal.aborted) toast(`Laden ging nicht: ${errorText(e)}`, 'error')
+    } finally {
+      pullAbort.current = null
+      setPull(null)
+    }
+  }
+
   async function withReload(action: () => Promise<unknown>, done: string) {
     try {
       await action()
@@ -169,6 +209,11 @@ export function AiSettings({ settings, reload }: Props) {
           status={status[name]?.of === slotKey(name === 'text' ? form.text : form.images!) ? status[name]?.value ?? null : null}
           checking={Boolean(checking[name])}
           onChange={(slot) => setForm(name === 'text' ? { ...form, text: slot } : { ...form, images: slot })}
+          recommendations={recommendations}
+          suggestions={recommendationsFor(recommendations?.models ?? [], name === 'text' ? form.text : form.images!, status[name]?.value.models ?? [])}
+          pull={pull?.slot === name ? pull : null}
+          onPull={(model, sizeGb) => void startPull(name, model, sizeGb)}
+          onCancelPull={() => pullAbort.current?.abort()}
           onTest={() => void test(name)}
           onAdopt={(url) => void adoptAddress(name, url)}
           onKey={(key) => void withReload(() => api('/api/ai/key', { method: 'PUT', body: JSON.stringify({ slot: name, key }) }), 'Schlüssel gespeichert.')}
@@ -280,8 +325,13 @@ type SlotProps = {
   presets: AiPreset[]
   status: AiStatus | null
   checking: boolean
+  recommendations: AiRecommendations | null
+  suggestions: ReturnType<typeof recommendationsFor>
+  pull: { model: string; progress: PullProgress | null } | null
   onChange: (slot: AiSlot) => void
   onTest: () => void
+  onPull: (model: string, sizeGb?: number) => void
+  onCancelPull: () => void
   onAdopt: (url: string) => void
   onKey: (key: string) => void
   onDeleteKey: () => void
@@ -291,6 +341,7 @@ type SlotProps = {
 
 function SlotEditor(props: SlotProps) {
   const { name, slot, settings, presets, status, checking, onChange, onTest, onAdopt } = props
+  const { recommendations, suggestions, pull, onPull, onCancelPull } = props
   const [freeModel, setFreeModel] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [replacingKey, setReplacingKey] = useState(false)
@@ -437,9 +488,56 @@ function SlotEditor(props: SlotProps) {
         </div>
       )}
 
+      {suggestions.length > 0 && (
+        <details className="extra-details" open={!slot.model.trim()}>
+          <summary>Empfehlungen{recommendations?.updated ? ` (Stand ${fmtDate(recommendations.updated)})` : ''}</summary>
+          <ul className="recommendations">
+            {suggestions.map((r) => (
+              <li key={r.name}>
+                <div>
+                  <strong>{r.name}</strong>
+                  {r.sizeGb ? ` · ${r.sizeGb.toLocaleString('de-DE')} GB` : ''}
+                  {r.installed ? ' · installiert' : ''}
+                  {r.scores?.text != null && ` · ${r.scores.text} % bei PDFs mit Textebene`}
+                  {r.scores?.photo != null && `, ${r.scores.photo} % bei Fotos`}
+                </div>
+                <div className="muted">{r.note}</div>
+                <div className="row">
+                  <button className="btn secondary small" onClick={() => onChange({ ...slot, model: r.name, vision: slot.provider === 'openai' ? r.vision : slot.vision })}>
+                    Übernehmen
+                  </button>
+                  {localOllama && !r.installed && (
+                    <button className="btn secondary small" onClick={() => onPull(r.name, r.sizeGb)} disabled={Boolean(pull)}>
+                      Laden …
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {pull && (
+        <div className="ok">
+          <div className="row" style={{ alignItems: 'center' }}>
+            <span className="spinner" />
+            <span>„{pull.model}“: {pullText(pull.progress)}</span>
+            <button className="btn secondary small" onClick={onCancelPull}>Abbrechen</button>
+          </div>
+        </div>
+      )}
+
       {hint === 'missing' && slot.model.trim() && (
         localOllama
-          ? <PullHint model={slot.model.trim()} url={slot.url} />
+          ? (
+            <PullHint
+              model={slot.model.trim()}
+              url={slot.url}
+              busy={Boolean(pull)}
+              onPull={() => onPull(slot.model.trim(), suggestions.find((r) => r.name === slot.model.trim())?.sizeGb)}
+            />
+          )
           : <p className="notice">„{slot.model.trim()}“ steht nicht in der Liste des Dienstes. Stimmt der Name?</p>
       )}
       {hint === 'noVision' && (
@@ -474,7 +572,9 @@ function SlotEditor(props: SlotProps) {
 }
 
 // Nur für ein Ollama auf diesem Rechner oder im Heimnetz: wie man ein fehlendes Modell lädt
-function PullHint({ model, url }: { model: string; url: string }) {
+// Mietfuchs kann das Modell selbst laden (#33). Der Befehl fürs Terminal bleibt daneben stehen,
+// denn wer lieber dort arbeitet, soll das weiter können.
+function PullHint({ model, url, onPull, busy }: { model: string; url: string; onPull: () => void; busy: boolean }) {
   const toast = useToast()
   const { text, command } = pullInstructions(model, url)
   const copy = async () => {
@@ -487,7 +587,11 @@ function PullHint({ model, url }: { model: string; url: string }) {
   }
   return (
     <>
-      <p>„{model}“ ist nicht installiert. {text}</p>
+      <p>„{model}“ ist nicht installiert.</p>
+      <div className="row">
+        <button className="btn secondary" onClick={onPull} disabled={busy}>Modell laden</button>
+        <span className="muted">oder {text.replace(/^Zum Laden im/, 'im').replace(/:$/, ':')}</span>
+      </div>
       <div className="command-box">
         <pre><code>{command}</code></pre>
         <button className="btn secondary small" onClick={() => void copy()}>Befehl kopieren</button>

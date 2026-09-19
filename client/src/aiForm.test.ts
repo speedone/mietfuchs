@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import type { AiModel, AiPreset, AiSettings, AiSlot, Settings } from './types'
+import type { AiModel, AiPreset, AiRecommendation, AiSettings, AiSlot, Settings } from './types'
 import {
-  aiFormFrom, aiSummary, consentState, externalNotice, keyState, parseOptionalInt, presetGroups, switchPreset, visionFromValue, visionValue,
+  aiFormFrom, aiSummary, consentState, externalNotice, keyState, pullText, recommendationsFor, parseOptionalInt, presetGroups, switchPreset, visionFromValue, visionValue,
 } from './aiForm'
 
 const preset = (p: Partial<AiPreset> & Pick<AiPreset, 'id' | 'provider' | 'label'>): AiPreset => ({
@@ -147,5 +147,45 @@ describe('Zusammenfassung für die Seiten mit KI-Auswertung', () => {
       where: 'über api.openai.com',
       notice: 'Die KI-Auswertung schickt Belege an api.openai.com.',
     })
+  })
+})
+
+// ---------- Empfehlungen und Laden (#33) ----------
+
+const RECOMMENDED: AiRecommendation[] = [
+  { name: 'qwen3.5:4b', provider: 'ollama', sizeGb: 3.6, vision: true, note: 'Voreingestellt.', scores: { text: 93, scan: 75, photo: 56 } },
+  { name: 'gemma4:12b', provider: 'ollama', sizeGb: 9.2, vision: true, note: 'Besser bei Fotos.' },
+  { name: 'gpt-5.4-nano', provider: 'openai', preset: 'openai', vision: true, note: 'Bei OpenAI, sehr schnell.' },
+]
+const INSTALLED: AiModel[] = [{ name: 'qwen3.5:4b', sizeBytes: 3_600_000_000, vision: true, remote: false }]
+
+describe('Empfehlungen', () => {
+  test('passen zum Anbieter des Platzes und sagen, was schon da ist', () => {
+    // Der Platz nutzt ein anderes Modell, beide Empfehlungen sind also Vorschläge
+    const forOllama = recommendationsFor(RECOMMENDED, { ...LOCAL, model: 'anderes:4b' }, INSTALLED)
+    expect(forOllama.map((r) => [r.name, r.installed])).toEqual([['qwen3.5:4b', true], ['gemma4:12b', false]])
+    const forOpenAi = recommendationsFor(RECOMMENDED, { ...OPENAI, model: 'gpt-4.1-mini' }, [])
+    expect(forOpenAi.map((r) => r.name)).toEqual(['gpt-5.4-nano'])
+  })
+
+  test('ein Dienst ohne eigene Empfehlung bekommt die seiner Art', () => {
+    const mistral = { ...OPENAI, preset: 'mistral', url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' }
+    expect(recommendationsFor(RECOMMENDED, mistral, []).map((r) => r.name)).toEqual(['gpt-5.4-nano'])
+  })
+
+  test('das gewählte Modell steht nicht mehr als Vorschlag da', () => {
+    expect(recommendationsFor(RECOMMENDED, { ...LOCAL, model: 'gemma4:12b' }, INSTALLED).map((r) => r.name)).toEqual(['qwen3.5:4b'])
+  })
+})
+
+describe('Fortschritt beim Laden', () => {
+  test('nennt den Schritt und, wo bekannt, die Größe', () => {
+    expect(pullText(null)).toBe('Download wird vorbereitet …')
+    expect(pullText({ step: 'pull', phase: 'pulling manifest' })).toBe('Verzeichnis wird geladen …')
+    expect(pullText({ step: 'pull', phase: 'pulling 4b2c1f', completed: 1_800_000_000, total: 3_600_000_000 }))
+      .toBe('Lädt … 1,8 von 3,6 GB (50 %)')
+    expect(pullText({ step: 'pull', phase: 'verifying sha256 digest' })).toBe('Wird geprüft …')
+    expect(pullText({ step: 'pull', phase: 'writing manifest' })).toBe('Wird gespeichert …')
+    expect(pullText({ step: 'pull', phase: 'success' })).toBe('Fertig.')
   })
 })

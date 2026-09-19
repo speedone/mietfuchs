@@ -44,6 +44,7 @@ const settings = (patch: Partial<Settings> = {}): Settings => ({
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 let statusBySlot: Record<string, AiStatus>
 let current: Settings
+let pullResponse: Response | null
 
 beforeEach(() => {
   sent = []
@@ -52,6 +53,8 @@ beforeEach(() => {
     const method = init?.method ?? 'GET'
     let body: unknown = { ok: true }
     if (url === '/api/ai/presets') body = PRESETS
+    else if (url === '/api/ai/recommendations') body = RECOMMENDATIONS
+    else if (url === '/api/ai/pull') { sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) }); return pullResponse ?? new Response('{}', { headers: { 'content-type': 'application/json' } }) }
     else if (url.startsWith('/api/ai/status')) body = statusBySlot[new URL(url, 'http://x').searchParams.get('slot') ?? 'text']
     else {
       const payload = JSON.parse(String(init?.body ?? '{}'))
@@ -225,4 +228,59 @@ test('Umgebung: festgelegte Felder sind gesperrt und nennen die Variable', async
   expect(within(group).getByText(/NKA_AI_URL oder NKA_OLLAMA_URL/)).toBeTruthy()
   expect((screen.getByLabelText(/Zeitlimit/) as HTMLInputElement).disabled).toBe(true)
   expect(screen.getByText(/NKA_AI_TIMEOUT/)).toBeTruthy()
+})
+
+// ---------- Empfehlungen und Laden (#33) ----------
+
+const RECOMMENDATIONS = {
+  updated: '2026-09-19',
+  source: 'mitgeliefert' as const,
+  models: [
+    { name: 'qwen3.5:4b', provider: 'ollama' as const, sizeGb: 3.6, vision: true, note: 'Voreingestellt.', scores: { text: 93 } },
+    { name: 'gemma4:12b', provider: 'ollama' as const, sizeGb: 9.2, vision: true, note: 'Besser bei Fotos.' },
+  ],
+}
+
+test('Empfehlungen: Vorschläge mit Größe und Hinweis, „Übernehmen“ setzt das Modell', async () => {
+  show(settings({ ai: ai({ text: { ...LOCAL, model: 'text:8b' } }) }))
+  const group = await standard()
+  expect(await within(group).findByText(/Besser bei Fotos/)).toBeTruthy()
+  expect(within(group).getByText(/9,2 GB/)).toBeTruthy()
+  // Schon installiert: qwen3.5:4b steht nicht in der Modellliste des nachgebauten Servers
+  fireEvent.click(within(group).getAllByRole('button', { name: 'Übernehmen' })[1])
+  fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+  await waitFor(() => expect(saved()?.text.model).toBe('gemma4:12b'))
+})
+
+test('Modell laden: fragt nach der Größe, zeigt den Fortschritt und meldet Erfolg', async () => {
+  const stream = [
+    { type: 'progress', step: 'pull', phase: 'pulling manifest' },
+    { type: 'progress', step: 'pull', phase: 'pulling 4b2c', completed: 4_600_000_000, total: 9_200_000_000 },
+    { type: 'result', data: { model: 'gemma4:12b' } },
+  ]
+  pullResponse = new Response(stream.map((l) => JSON.stringify(l)).join('\n'), { headers: { 'content-type': 'application/x-ndjson' } })
+  show(settings({ ai: ai({ text: { ...LOCAL, model: 'text:8b' } }) }))
+  const group = await standard()
+  // Die Empfehlungen sind zugeklappt, solange ein Modell gewählt ist
+  fireEvent.click(await within(group).findByText(/^Empfehlungen/))
+  // Der zweite Vorschlag ist gemma4:12b
+  fireEvent.click(within(group).getAllByRole('button', { name: 'Laden …' })[1])
+  // Erst die Nachfrage mit der Größe
+  expect(await screen.findByText(/rund 9,2 GB groß/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Laden' }))
+  await waitFor(() => expect(sent.some((r) => r.url === '/api/ai/pull')).toBe(true))
+  expect(sent.find((r) => r.url === '/api/ai/pull')?.body).toMatchObject({ model: 'gemma4:12b', slot: 'text' })
+  expect(await screen.findByText(/ist geladen/)).toBeTruthy()
+})
+
+test('Modell laden: ohne Bestätigung passiert nichts', async () => {
+  show(settings({ ai: ai({ text: { ...LOCAL, model: 'text:8b' } }) }))
+  const group = await standard()
+  // Die Empfehlungen sind zugeklappt, solange ein Modell gewählt ist
+  fireEvent.click(await within(group).findByText(/^Empfehlungen/))
+  // Der zweite Vorschlag ist gemma4:12b
+  fireEvent.click(within(group).getAllByRole('button', { name: 'Laden …' })[1])
+  fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByText(/rund 9,2 GB groß/)).toBe(null))
+  expect(sent.some((r) => r.url === '/api/ai/pull')).toBe(false)
 })
