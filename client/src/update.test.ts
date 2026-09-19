@@ -33,21 +33,21 @@ describe('Hinweis in der Seitenleiste', () => {
   })
 
   test('bleibt aus ohne neuere Version, ohne Zustimmung oder ohne Antwort vom Server', () => {
-    const an = settings({ updateCheck: 'on' })
-    expect(hintVisible(status({ available: false }), an)).toBe(false)
-    expect(hintVisible(status({ enabled: false }), an)).toBe(false)
-    expect(hintVisible(null, an)).toBe(false)
+    const consented = settings({ updateCheck: 'on' })
+    expect(hintVisible(status({ available: false }), consented)).toBe(false)
+    expect(hintVisible(status({ enabled: false }), consented)).toBe(false)
+    expect(hintVisible(null, consented)).toBe(false)
   })
 
   test('„Später" blendet nur diese Version aus, die nächste erscheint wieder', () => {
-    const spaeter = settings({ updateCheck: 'on', updateDismissed: '0.5.0' })
-    expect(hintVisible(status(), spaeter)).toBe(false)
-    expect(hintVisible(status({ latest: '0.6.0' }), spaeter)).toBe(true)
+    const dismissed = settings({ updateCheck: 'on', updateDismissed: '0.5.0' })
+    expect(hintVisible(status(), dismissed)).toBe(false)
+    expect(hintVisible(status({ latest: '0.6.0' }), dismissed)).toBe(true)
   })
 })
 
 describe('Anleitung je Betriebsart', () => {
-  const download = (datei: string) => `https://github.com/speedone/mietfuchs/releases/download/v0.5.0/${datei}`
+  const download = (fileName: string) => `https://github.com/speedone/mietfuchs/releases/download/v0.5.0/${fileName}`
 
   test('Programmdatei: Download der passenden Datei, das System ergibt sich aus der Datei', () => {
     // Die Anleitung unterscheidet sich: .exe ersetzen, Zip oder tar.gz erst entpacken.
@@ -61,9 +61,9 @@ describe('Anleitung je Betriebsart', () => {
 
   test('Programmdatei ohne passende Datei: Release-Seite in neuem Tab', () => {
     // Die Release-Seite ist kein Download. Im selben Tab verließe man Mietfuchs.
-    const seite = 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0'
-    expect(updateGuide(status({ downloadUrl: seite }))).toEqual({ kind: 'download', href: seite, system: null, newTab: true })
-    expect(updateGuide(status({ downloadUrl: null }))).toEqual({ kind: 'download', href: seite, system: null, newTab: true })
+    const releasePage = 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0'
+    expect(updateGuide(status({ downloadUrl: releasePage }))).toEqual({ kind: 'download', href: releasePage, system: null, newTab: true })
+    expect(updateGuide(status({ downloadUrl: null }))).toEqual({ kind: 'download', href: releasePage, system: null, newTab: true })
   })
 
   test('Programmdatei ganz ohne Link: allgemeine Release-Seite', () => {

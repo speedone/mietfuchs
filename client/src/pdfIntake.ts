@@ -19,21 +19,21 @@ export type OpenedPdf = {
 export type PdfReader = { open(file: File): Promise<OpenedPdf> }
 
 // Fehler, deren Text schon für Menschen formuliert ist
-const eigenerFehler = (message: string) => Object.assign(new Error(message), { name: 'SeiteAlsBild' })
+const readableError = (message: string) => Object.assign(new Error(message), { name: 'SeiteAlsBild' })
 
-const alsJpeg = (canvas: HTMLCanvasElement) =>
-  new Promise<Blob>((ok, fehler) =>
-    canvas.toBlob((b) => (b ? ok(b) : fehler(eigenerFehler('Eine Seite ließ sich nicht als Bild speichern.'))), 'image/jpeg', 0.85),
+const toJpeg = (canvas: HTMLCanvasElement) =>
+  new Promise<Blob>((ok, fail) =>
+    canvas.toBlob((b) => (b ? ok(b) : fail(readableError('Eine Seite ließ sich nicht als Bild speichern.'))), 'image/jpeg', 0.85),
   )
 
 // Textstücke einer Seite zu Fließtext: Zeilenenden bleiben, sonst ein Leerzeichen zwischen den
 // Stücken, damit Spalten wie „Betrag“ und „12,50“ nicht zusammenkleben. pdf.js liefert daneben
 // Markierungen ohne Text, die entfallen.
-type TextStueck = { str: string; hasEOL?: boolean }
-const istText = (i: unknown): i is TextStueck => typeof i === 'object' && i !== null && typeof (i as TextStueck).str === 'string'
+type TextPiece = { str: string; hasEOL?: boolean }
+const isTextPiece = (i: unknown): i is TextPiece => typeof i === 'object' && i !== null && typeof (i as TextPiece).str === 'string'
 
-export function seitenText(items: ReadonlyArray<unknown>): string {
-  return items.map((i) => (istText(i) ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join('') + '\n'
+export function pageText(items: ReadonlyArray<unknown>): string {
+  return items.map((i) => (isTextPiece(i) ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join('') + '\n'
 }
 
 export const pdfReader: PdfReader = {
@@ -44,15 +44,15 @@ export const pdfReader: PdfReader = {
         let text = ''
         for (let n = 1; n <= doc.numPages && text.length < PDF_TEXT_MAX; n++) {
           const page = await doc.getPage(n)
-          text += seitenText((await page.getTextContent()).items)
+          text += pageText((await page.getTextContent()).items)
           page.cleanup()
         }
         return text
       },
       async pages(max) {
-        const seiten: Blob[] = []
-        for (let n = 1; n <= Math.min(doc.numPages, max); n++) seiten.push(await alsJpeg(await renderPage(doc, n)))
-        return seiten
+        const pages: Blob[] = []
+        for (let n = 1; n <= Math.min(doc.numPages, max); n++) pages.push(await toJpeg(await renderPage(doc, n)))
+        return pages
       },
       close,
     }
@@ -60,7 +60,7 @@ export const pdfReader: PdfReader = {
 }
 
 // pdf.js meldet auf Englisch und technisch. In der Warteschlange soll stehen, was los ist.
-function meldungFuer(err: unknown): string {
+function messageFor(err: unknown): string {
   const { name, message } = err as Error
   if (name === 'PasswordException') return 'Das PDF ist mit einem Passwort geschützt. Bitte eine Fassung ohne Passwort hochladen.'
   if (name === 'InvalidPDFException') return 'Die Datei ist kein gültiges PDF oder beschädigt.'
@@ -74,20 +74,20 @@ export async function buildUpload(file: File, reader: PdfReader = pdfReader): Pr
   if (file.type !== 'application/pdf') return fd
 
   let text = ''
-  let seiten: Blob[] = []
+  let pages: Blob[] = []
   let doc: OpenedPdf | undefined
   try {
     doc = await reader.open(file)
     text = (await doc.text()).trim().slice(0, PDF_TEXT_MAX)
-    if (text.length < PDF_TEXT_MIN) seiten = (await doc.pages(MAX_PAGES)).slice(0, MAX_PAGES)
+    if (text.length < PDF_TEXT_MIN) pages = (await doc.pages(MAX_PAGES)).slice(0, MAX_PAGES)
   } catch (err) {
-    throw new Error(meldungFuer(err))
+    throw new Error(messageFor(err))
   } finally {
     doc?.close()
   }
-  if (text.length < PDF_TEXT_MIN && seiten.length === 0) throw new Error('Das PDF enthält keine Seiten.')
+  if (text.length < PDF_TEXT_MIN && pages.length === 0) throw new Error('Das PDF enthält keine Seiten.')
 
   if (text) fd.append('pdfText', text)
-  seiten.forEach((s, i) => fd.append('pages', s, `seite-${i + 1}.jpg`))
+  pages.forEach((s, i) => fd.append('pages', s, `seite-${i + 1}.jpg`))
   return fd
 }

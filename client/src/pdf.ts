@@ -8,10 +8,10 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 type Pdfjs = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
-let geladen: Promise<Pdfjs> | null = null
+let pdfjsPromise: Promise<Pdfjs> | null = null
 
 function loadPdfjs(): Promise<Pdfjs> {
-  geladen ??= import('pdfjs-dist/legacy/build/pdf.mjs').then(
+  pdfjsPromise ??= import('pdfjs-dist/legacy/build/pdf.mjs').then(
     (pdfjs) => {
       pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/legacy/build/pdf.worker.min.mjs', import.meta.url).toString()
       return pdfjs
@@ -19,11 +19,11 @@ function loadPdfjs(): Promise<Pdfjs> {
     (err) => {
       // Nicht dauerhaft merken: Nach einem Update fehlt einem alten Tab der Teil unter dem
       // alten Namen. Der nächste Versuch soll es erneut probieren können.
-      geladen = null
+      pdfjsPromise = null
       throw err
     },
   )
-  return geladen
+  return pdfjsPromise
 }
 
 export type PdfSource = { url: string } | { data: ArrayBuffer }
@@ -52,13 +52,13 @@ export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProx
 // übergroßen Seiten (etwa ein Scan, dessen Seitengröße der Pixelzahl entspricht) wird kleiner
 // gerendert. Sonst wüchse das Canvas über die Grenzen mancher Browser (iOS Safari um 16 MP),
 // und das Vision-Modell bekäme unnötig große Bilder.
-export const MAX_KANTE = 2500
+export const MAX_EDGE = 2500
 
 export async function renderPage(doc: PDFDocumentProxy, n: number, scale = 2): Promise<HTMLCanvasElement> {
   const page = await doc.getPage(n)
   try {
-    const basis = page.getViewport({ scale: 1 })
-    const viewport = page.getViewport({ scale: Math.min(scale, MAX_KANTE / Math.max(basis.width, basis.height)) })
+    const base = page.getViewport({ scale: 1 })
+    const viewport = page.getViewport({ scale: Math.min(scale, MAX_EDGE / Math.max(base.width, base.height)) })
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(viewport.width)
     canvas.height = Math.ceil(viewport.height)
