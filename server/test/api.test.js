@@ -62,6 +62,15 @@ before(async () => {
 
 after(() => srv?.stop())
 
+test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
+  // Antwortete hier die index.html, stünde die Route hinter dem Frontend-Catch-All — dann
+  // meldete ein kaputter Container HTTP 200.
+  const bericht = await srv.api('/healthz')
+  assert.equal(bericht.status, 'ok')
+  assert.equal(bericht.checks.data.ok, true)
+  assert.equal(bericht.checks.uploads.ok, true)
+})
+
 test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () => {
   const unit = await srv.api('/api/units', {
     method: 'POST',

@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Zustandsprüfung unter `/healthz`** für den Betrieb im Container. Die Adresse meldet
+  „ok“, wenn die Daten lesbar sind und der Datenordner beschreibbar ist. Sonst antwortet
+  sie mit HTTP 503, etwa bei einer beschädigten `db.json` oder einem schreibgeschützt
+  eingehängten Datenordner. Das Docker-Image nutzt sie als `HEALTHCHECK`: `docker ps` zeigt
+  dann *healthy* oder *unhealthy* an, auch wenn der Prozess hängt. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#12](https://github.com/speedone/mietfuchs/pull/12).
+
 ### Behoben
 
 - **Fehlende Verteilbasis wird gemeldet.** Fehlte bei einer Wohnung der Abrechnungseinheit die
