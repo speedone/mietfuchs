@@ -15,6 +15,10 @@
 // Mehrere Ergebnisse zu einer Tabelle zusammenfassen:
 //   node scripts/ai-eval.mjs --summarize ordner-mit-ergebnissen/
 //
+// `--page-edge 1200` rendert die Seitenbilder des Scans kleiner (#35): Jedes Bild kostet Zeit,
+// und wie viel Auflösung ein Modell wirklich braucht, zeigt erst der Vergleich. Das Foto bleibt
+// bei seiner Größe, denn es kommt aus der Kamera und wird von Mietfuchs nicht umgerechnet.
+//
 // Braucht Chrome oder Chromium (--chrome oder CHROME, sonst gesucht) und das installierte Client-
 // Paket (pdfjs-dist). Die Tabelle landet in $GITHUB_STEP_SUMMARY, lokal auf der Konsole.
 
@@ -35,7 +39,8 @@ const evalDir = path.join(root, 'scripts', 'ai-eval')
 // Wie der Browser: Seiten mit Faktor 2 bezogen auf 72 dpi, höchstens vier (client/src/pdf.ts)
 const MAX_PAGES = 4
 const PAGE_CSS_PX = { width: 794, height: 1123 } // A4 bei 96 dpi
-const DEVICE_SCALE = 1.5 // 794 × 1,5 ≈ 1191 px, wie pdf.js mit Faktor 2 auf 595 pt
+const PHOTO_SCALE = 1.5 // das Foto bleibt fest, nur die Seitenbilder des Scans ändern sich
+const PAGE_EDGE = 1684 // lange Kante in Bildpunkten, entspricht pdf.js mit Faktor 2 auf A4
 const TEXT_MAX = 20000
 const VARIANT_LABELS = { text: 'Text', scan: 'Scan', photo: 'Foto' }
 
@@ -70,7 +75,7 @@ function chrome(binary, profileDir, args, url) {
 }
 
 // Legt je Beleg das PDF, die Seitenbilder (Scan) und das Foto an und liefert die Pfade
-function render(binary, workDir, testCase) {
+function render(binary, workDir, testCase, pageEdge) {
   const html = path.join(evalDir, testCase.file)
   const url = (query = '') => `${pathToFileURL(html).href}${query}`
   const profile = path.join(workDir, 'chrome-profil')
@@ -78,14 +83,15 @@ function render(binary, workDir, testCase) {
   fs.mkdirSync(out, { recursive: true })
   const pdf = path.join(out, `${testCase.name}.pdf`)
   chrome(binary, profile, ['--no-pdf-header-footer', '--print-to-pdf-no-header', `--print-to-pdf=${pdf}`], url())
-  const screenshot = (file, query) => {
+  const screenshot = (file, query, scale) => {
     const target = path.join(out, file)
-    chrome(binary, profile, [`--window-size=${PAGE_CSS_PX.width},${PAGE_CSS_PX.height}`, `--force-device-scale-factor=${DEVICE_SCALE}`, `--screenshot=${target}`], url(query))
+    chrome(binary, profile, [`--window-size=${PAGE_CSS_PX.width},${PAGE_CSS_PX.height}`, `--force-device-scale-factor=${scale}`, `--screenshot=${target}`], url(query))
     return target
   }
   const pages = []
-  for (let n = 1; n <= Math.min(testCase.pages, MAX_PAGES); n++) pages.push(screenshot(`seite-${n}.png`, `?page=${n}&scan`))
-  const photo = testCase.photo ? screenshot('foto.png', '?page=1&photo') : null
+  const pageScale = Math.round((pageEdge / PAGE_CSS_PX.height) * 1000) / 1000
+  for (let n = 1; n <= Math.min(testCase.pages, MAX_PAGES); n++) pages.push(screenshot(`seite-${n}.png`, `?page=${n}&scan`, pageScale))
+  const photo = testCase.photo ? screenshot('foto.png', '?page=1&photo', PHOTO_SCALE) : null
   return { pdf, pages, photo }
 }
 
@@ -173,9 +179,9 @@ function modelTable(result) {
     return `| ${r.label} | ${VARIANT_LABELS[r.variant]} | ${r.error ? '0 %' : pct(r.score.points)} | ${secs(r.seconds)} | ${stat?.promptTokens ?? '–'} | ${detail} |`
   })
   return [
-    `### ${result.model}`,
+    `### ${result.model}${result.pageEdge && result.pageEdge !== PAGE_EDGE ? ` (Seitenbilder ${result.pageEdge} px)` : ''}`,
     '',
-    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}, Ollama ${result.ollamaVersion ?? 'unbekannt'}. Fotos laufen wie in der Schnellerfassung über /api/intake.`,
+    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}, Ollama ${result.ollamaVersion ?? 'unbekannt'}. Seitenbilder des Scans: ${result.pageEdge ?? PAGE_EDGE} px an der langen Kante. Fotos laufen wie in der Schnellerfassung über /api/intake.`,
     '',
     '| Beleg | Fassung | Treffer | Dauer | Eingabe-Token | Anmerkung |',
     '|---|---|---|---|---|---|',
@@ -189,16 +195,24 @@ function summaryTable(results) {
     const runs = result.runs.filter((r) => r.variant === variant)
     return { points: mean(runs.map((r) => (r.error ? 0 : r.score.points))), seconds: mean(runs.map((r) => r.seconds)) }
   }
+  const edgeOf = (r) => r.pageEdge ?? PAGE_EDGE
+  // Nur wenn ein Lauf verschiedene Bildgrößen vergleicht, bekommt die Tabelle dafür eine Spalte
+  const edges = [...new Set(results.map(edgeOf))]
+  const compare = edges.length > 1
   const rows = results
-    .sort((a, b) => (a.memoryBytes ?? 0) - (b.memoryBytes ?? 0))
+    // Kleine Modelle zuerst, je Modell die Bildgrößen von groß nach klein
+    .sort((a, b) => (a.memoryBytes ?? 0) - (b.memoryBytes ?? 0) || a.model.localeCompare(b.model) || edgeOf(b) - edgeOf(a))
     .map((r) => {
       const cells = ['text', 'scan', 'photo'].map((v) => {
         const x = byVariant(r, v)
         return x.points == null ? '–' : `${pct(x.points)}, Ø ${secs(x.seconds)}`
       })
-      return `| ${r.model} | ${gb(r.memoryBytes)} | ${cells.join(' | ')} |`
+      return `| ${r.model} | ${gb(r.memoryBytes)} |${compare ? ` ${edgeOf(r)} px |` : ''} ${cells.join(' | ')} |`
     })
-  return ['## KI-Prüflauf: Übersicht', '', '| Modell | Speicher | Text | Scan | Foto |', '|---|---|---|---|---|', ...rows, ''].join('\n')
+  const lines = ['## KI-Prüflauf: Übersicht', '']
+  if (!compare) lines.push(`Seitenbilder des Scans: ${edges[0]} px an der langen Kante.`, '')
+  lines.push(`| Modell | Speicher |${compare ? ' Seitenbild |' : ''} Text | Scan | Foto |`, `|---|---|${compare ? '---|' : ''}---|---|---|`, ...rows, '')
+  return lines.join('\n')
 }
 
 function report(markdown) {
@@ -233,15 +247,17 @@ async function evaluate() {
   const model = opt('model', 'unbekannt')
   const only = opt('only')?.split(',')
   const variants = (opt('variants') ?? 'text,scan,photo').split(',')
+  const pageEdge = Number(opt('page-edge', PAGE_EDGE))
+  if (!Number.isFinite(pageEdge) || pageEdge < 200 || pageEdge > 4000) throw new Error(`--page-edge braucht 200 bis 4000 Bildpunkte, nicht „${opt('page-edge')}“`)
   const { cases } = JSON.parse(fs.readFileSync(path.join(evalDir, 'cases.json'), 'utf8'))
   const selected = cases.filter((c) => !only || only.includes(c.name))
   const binary = findChrome()
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-ki-pruefung-'))
-  console.log(`KI-Prüflauf mit ${model} gegen ${baseUrl} (Chrome: ${binary})`)
+  console.log(`KI-Prüflauf mit ${model} gegen ${baseUrl} (Chrome: ${binary}, Seitenbilder ${pageEdge} px)`)
 
   const prepared = []
   for (const testCase of selected) {
-    const files = render(binary, workDir, testCase)
+    const files = render(binary, workDir, testCase, pageEdge)
     prepared.push({ testCase, files, text: await pdfText(files.pdf) })
   }
 
@@ -272,7 +288,7 @@ async function evaluate() {
     }
   }
 
-  const result = { format: 1, model, date: new Date().toISOString(), warmupSeconds: warmup.seconds, ...(await ollamaInfo(ollamaUrl, model)), runs }
+  const result = { format: 1, model, pageEdge, date: new Date().toISOString(), warmupSeconds: warmup.seconds, ...(await ollamaInfo(ollamaUrl, model)), runs }
   const out = opt('out')
   if (out) fs.writeFileSync(out, JSON.stringify(result, null, 2))
   report(modelTable(result))
