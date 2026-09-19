@@ -6,11 +6,31 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Hinweis auf neue Versionen.** Beim ersten Start fragt Mietfuchs einmal, ob es bei neuen
+  Versionen Bescheid geben soll. Nur mit Zustimmung sieht es beim Öffnen bei GitHub nach.
+  GitHub sieht dabei nur die IP-Adresse und die installierte Versionsnummer. Gibt es eine neue
+  Version, erscheint oben in der Seitenleiste ein Hinweis: bei der Programmdatei mit einem
+  Download-Link auf die passende Datei, bei Docker und bei einer Installation aus dem Quellcode
+  mit dem nötigen Befehl in den Einstellungen. „Später“ blendet den Hinweis bis zur nächsten
+  Version aus. In den Einstellungen lässt sich die Prüfung jederzeit ein- und ausschalten oder
+  von Hand anstoßen. Ein automatisches Update gibt es bewusst nicht.
+  ([#14](https://github.com/speedone/mietfuchs/issues/14))
+
 ### Geändert
 
 - **Docker-Image läuft mit Node 24.** Das ist die aktuelle LTS-Version von Node mit
   Sicherheitsupdates bis April 2028. Bisher lief das Image mit Node 22.
   ([#15](https://github.com/speedone/mietfuchs/issues/15))
+
+### Behoben
+
+- **Backup-Knöpfe in den Einstellungen sehen wie Knöpfe aus.** „Backup herunterladen“ erschien
+  als einfacher Link und „Backup wiederherstellen“ wie normaler Text, obwohl beide anklickbar
+  sind.
+- **Die Zustandsprüfung `/healthz` nennt in der Programmdatei die richtige Version** statt
+  „unbekannt“.
 
 ### Hinweise zur Aktualisierung
 

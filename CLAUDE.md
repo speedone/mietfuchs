@@ -69,7 +69,8 @@ Es gibt **keinen Linter**; `npm run build` ist der einzige Typecheck-Pfad (`tsc 
    die schiefen Konstellationen — ein Geldverlust bei der Direktzuordnung fiel erst hier auf.
 2. [server/test/api.test.js](server/test/api.test.js) — Integration: startet den Server als
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
-   Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`.
+   Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`. `NKA_UPDATE_URL`
+   zeigt dort standardmäßig auf einen geschlossenen Port, damit kein Test GitHub erreicht.
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
    [client/src/costForm.ts](client/src/costForm.ts) und
    [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
@@ -120,7 +121,8 @@ Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze
 beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
 `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
-`/api/upload`, `/api/extract`, `/api/ollama/status`, `/api/uploads` (Belegarchiv: Liste +
+`/api/upload`, `/api/extract`, `/api/ollama/status`, `/api/update` und `POST /api/update/check`
+(Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
 Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
@@ -179,6 +181,20 @@ ans Vision-Modell gegeben. Bilder → Base64 (braucht Vision-Modell). Erzwingt
 strukturiertes JSON über `format: SCHEMA`. Die KI macht nur Vorschläge — Übernahme erst nach
 manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`matchCategory` in
 types.ts müssen zusammenpassen.
+
+**Update-Hinweis** ([server/src/update.js](server/src/update.js)): Nur mit Zustimmung
+(`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server
+`releases/latest` bei GitHub ab, höchstens einmal am Tag je laufender Instanz. Ohne Zustimmung
+geht keine Anfrage hinaus, `/api/update` liefert dann nur die installierte Version. Nach einem
+Fehler wartet er eine Stunde, bei einem Rate-Limit bis `retry-after` bzw. `x-ratelimit-reset`,
+dann auch für „Jetzt prüfen". Ein Selbst-Update gibt es nicht: Die Programmdatei bekommt einen
+Download-Link auf die passende Datei, Docker und npm einen Befehl. Die Entscheidungslogik der
+Oberfläche liegt in [client/src/update.ts](client/src/update.ts). Ob später ein Updater
+dazukommt, ist offen (Issue #14). Die eigene Version liest
+[server/src/version.js](server/src/version.js) per JSON-Import aus `server/package.json`, den
+Bun beim Kompilieren einbettet. Die Betriebsart ergibt sich aus `globalThis.Bun`
+(Programmdatei) bzw. `NKA_RUNTIME=docker` (setzt das Dockerfile), sonst `npm`.
+`NKA_UPDATE_URL` lenkt die Abfrage auf einen nachgebauten Server.
 
 **Client** ([client/src/](client/src/)): React ohne Router — `App.tsx` schaltet per State
 zwischen den Seiten (`pages/`: Cockpit, Schnellerfassung, Zaehler, Kosten, Mietkonto,

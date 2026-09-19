@@ -16,7 +16,7 @@ für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
 
 ### Highlights
 
-- 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst; Backup = Ordner kopieren
+- 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
 - 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder direkt
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB)
 - 💶 **Mietkonto** — Soll/Ist je Monat, offene Rückstände auf einen Blick
@@ -192,8 +192,11 @@ volumes:
   mietfuchs-data:
 ```
 
-Aktualisieren: `docker compose pull && docker compose up -d`. Statt `latest` lässt sich auch
-eine feste Version festhalten, z. B. `ghcr.io/speedone/mietfuchs:0.3.0`.
+Aktualisieren: `docker compose pull && docker compose up -d`. Mit `docker run` gestartet:
+`docker pull ghcr.io/speedone/mietfuchs:latest`, dann `docker rm -f mietfuchs` und den
+`docker run`-Befehl von oben erneut ausführen. Die Daten im Volume bleiben dabei erhalten.
+Statt `latest` lässt sich auch eine feste Version festhalten, z. B.
+`ghcr.io/speedone/mietfuchs:0.3.0`.
 
 ### Selbst bauen (aus dem Clone)
 
@@ -204,6 +207,8 @@ docker compose up -d        # Image bauen + Container starten (im Hintergrund)
 # App: http://localhost:3001
 docker compose down         # stoppen — das Volume mit den Daten bleibt erhalten
 ```
+
+Aktualisieren: `git pull && docker compose up -d --build`.
 
 Ohne Compose geht es auch direkt:
 
