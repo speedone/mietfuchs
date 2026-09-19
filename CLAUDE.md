@@ -186,9 +186,12 @@ types.ts müssen zusammenpassen.
 (`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server
 `releases/latest` bei GitHub ab, höchstens einmal am Tag je laufender Instanz. Ohne Zustimmung
 geht keine Anfrage hinaus, `/api/update` liefert dann nur die installierte Version. Nach einem
-Fehler wartet er eine Stunde, bei einem Rate-Limit bis `retry-after` bzw. `x-ratelimit-reset`,
-dann auch für „Jetzt prüfen". Ein Selbst-Update gibt es nicht: Die Programmdatei bekommt einen
-Download-Link auf die passende Datei, Docker und npm einen Befehl. Die Entscheidungslogik der
+Fehler wartet er eine Stunde, bei einem Rate-Limit bis `retry-after` bzw. `x-ratelimit-reset`
+(höchstens einen Tag), dann auch für „Jetzt prüfen". „Jetzt prüfen" fragt ohnehin höchstens
+einmal pro Minute, gleichzeitige Aufrufe teilen sich eine Anfrage, und Links aus der Antwort
+werden nur übernommen, wenn sie ins eigene Repo zeigen. Ein Selbst-Update gibt es nicht: Der
+Hinweis führt zu einer Anleitung, bei der Programmdatei mit dem Download der passenden Datei
+und Schritten je System, bei Docker und npm mit Befehlen. Die Entscheidungslogik der
 Oberfläche liegt in [client/src/update.ts](client/src/update.ts). Ob später ein Updater
 dazukommt, ist offen (Issue #14). Die eigene Version liest
 [server/src/version.js](server/src/version.js) per JSON-Import aus `server/package.json`, den
