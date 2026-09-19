@@ -139,7 +139,8 @@ das statische `client/dist` selbst aus ([server/src/index.js](server/src/index.j
 
 **Persistenz**: eine einzige JSON-Datei `server/data/db.json`, atomar geschrieben (Temp +
 rename) über [server/src/store.js](server/src/store.js). `NKA_DATA_DIR` verlegt den Ordner
-(Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`.
+(Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel externer
+KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.js; nicht im Backup).
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
 älterer `db.json` passieren imperativ in `load()` in store.js (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
@@ -151,8 +152,9 @@ beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
 `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
-unten), `/api/ollama/status` (installierte Modelle mit Fähigkeiten, bei fehlender Verbindung
-eine gefundene Adresse), `/api/update` und `POST /api/update/check`
+unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
+`/api/ai/consent` sowie `/api/ollama/status` für ältere Tabs (alles siehe
+KI-Belegauswertung), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
 Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
@@ -205,20 +207,41 @@ Reading, CostItem, Settings, Settlement …). Server und Client müssen hier kon
 Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
 hat eigene Labels für die Eingabe-Oberfläche).
 
-**KI-Belegauswertung**: optional, bisher gegen **Ollama**. Die KI macht nur Vorschläge,
-übernommen wird erst nach manueller Prüfung. Aufgeteilt in:
+**KI-Belegauswertung**: optional, gegen **Ollama** oder einen **OpenAI-kompatiblen Dienst**
+(#18). Die KI macht nur Vorschläge, übernommen wird erst nach manueller Prüfung. Aufgeteilt in:
 - [server/src/extract.js](server/src/extract.js): das Fachliche, also Prompts, JSON-Schemas,
   Ablauf (Auswertung, zweiter Durchgang nur für Kostenarten, Belegart, Zählerstand) und
-  Zeitlimits je Schritt (`NKA_AI_TIMEOUT` setzt eines für alle). Die Kategorie-Enums dort und
-  `CATEGORIES`/`matchCategory` in types.ts müssen zusammenpassen.
+  Zeitlimits je Schritt. Die Kategorie-Enums dort und `CATEGORIES`/`matchCategory` in types.ts
+  müssen zusammenpassen.
+- [server/src/ai/settings.js](server/src/ai/settings.js): das Datenmodell `settings.ai` mit den
+  Plätzen `text` (Standard) und `images` (eigener Anbieter für Fotos und Scans), den
+  Einstellungen für Fortgeschrittene, der Migration aus `ollamaUrl`/`ollamaModel`, den
+  Umgebungsvariablen und der Regel, was als extern gilt (`isExternalUrl`, `consentProblem`).
+- [server/src/ai/presets.js](server/src/ai/presets.js): die Vorlagen (Ollama lokal, entfernt,
+  Cloud, OpenAI, IONOS, Mistral, LM Studio, eigener Dienst) mit Adresse, Bedarf an einem
+  Schlüssel, Feldname für die Antwortlänge, Temperatur, `json_object` und Links. Sie belegen
+  nur vor, geändert werden darf alles.
 - [server/src/ai/index.js](server/src/ai/index.js): die Schnittstelle der Anbieter,
-  `json({ prompt, images, schema, timeoutMs, signal, onProgress }) → { data, stats }`. Ein
-  weiterer Anbieter (OpenAI-kompatibel, #18) kommt als eigenes Modul daneben.
+  `json({ prompt, images, schema, timeoutMs, signal, onProgress }) → { data, stats }`, dazu die
+  Wahl des Platzes je Beleg (Bilder → `images`, falls eingerichtet) und die Durchsetzung der
+  Bestätigung vor jeder Anfrage.
+- [server/src/ai/openai.js](server/src/ai/openai.js): Chat-Completions-Schnittstelle als
+  SSE-Strom. Schickt immer eine Antwortlänge (IONOS nimmt sonst 16 Token), Temperatur 0 außer
+  bei OpenAI, und JSON in Stufen: striktes Schema, Schema ohne `strict`, `json_object` mit
+  Schema im Prompt (nicht bei LM Studio), nur Prompt. Lehnt ein Dienst etwas ab, probiert das
+  Modul die nächste Möglichkeit und merkt sie sich je Adresse und Modell. Fehlerformate von
+  OpenAI, Mistral, IONOS und Ollama werden gleich gelesen, ein Schlüssel erscheint nie in einer
+  Meldung.
+- [server/src/secrets.js](server/src/secrets.js): API-Schlüssel je Platz in `data/secrets.json`
+  (unter Unix 0600), nie in `GET /api/settings` und nicht im Backup. `NKA_AI_API_KEY` oder
+  `NKA_AI_API_KEY_FILE` (Docker-Secret) haben Vorrang.
 - [server/src/ai/ollama.js](server/src/ai/ollama.js): Transport und Eigenheiten von Ollama.
   Streamt `/api/chat`, setzt `think: false` und einen festen Kontext (`num_ctx` 16384, sonst
   kürzt Ollama bei unter 24 GB Grafikspeicher auf 4096 Token; ein wechselnder Wert lädt das
-  Modell neu). Prüft vor Bildern über `/api/show`, ob das Modell Bilder versteht, und übersetzt
-  Fehler in Meldungen für die Oberfläche (nicht erreichbar, nicht installiert, Zeitlimit,
+  Modell neu). Lehnt ein Modell `think: false` ab, wie manche bei Ollama Cloud, geht die
+  Anfrage einmal ohne das Feld. Prüft über `/api/show`, ob das Modell Bilder versteht und ob
+  Ollama es an einen Cloud-Dienst weiterreicht (eine Minute gemerkt), und übersetzt Fehler in
+  Meldungen für die Oberfläche (nicht erreichbar, nicht installiert, Schlüssel, Zeitlimit,
   abgeschnittene Antwort). Dazu Modellliste und Suche nach Ollama unter üblichen Adressen.
 - [server/src/ai/http.js](server/src/ai/http.js): Verbindung ohne die 300-Sekunden-Grenze von
   `fetch` (Node und Bun brechen ab, wenn so lange keine Antwort-Header kommen, Ollama schickt
@@ -245,17 +268,33 @@ Express an (unter Bun 1.4.2 schon), und ein Proxy kann die Verbindung zum Server
 Der Smoke-Test prüft die Kennung auf jeder Programmdatei und berichtet zusätzlich, ob das bloße
 Schließen ankommt. Im Client liest
 [client/src/aiRequest.ts](client/src/aiRequest.ts) den Strom und kümmert sich um den Abbruch,
-die Ollama-Karte der Einstellungen ist [OllamaSettings.tsx](client/src/components/OllamaSettings.tsx)
-mit der Logik in [client/src/modelForm.ts](client/src/modelForm.ts). `/api/ollama/status`
-liefert in `models` nur Namen (für Tabs von vor dem Update), die Einzelheiten in `modelDetails`.
-Die Adresssuche fragt je nach Betriebsart nur Sinnvolles (Docker: Host und Compose-Dienst,
-sonst dieser Rechner) und nur, wenn die eingestellte Adresse gar nicht erreichbar war.
+die Karte der Einstellungen ist [AiSettings.tsx](client/src/components/AiSettings.tsx) mit der
+Logik in [client/src/aiForm.ts](client/src/aiForm.ts) und
+[client/src/modelForm.ts](client/src/modelForm.ts).
 
-Umgebungsvariablen: `NKA_OLLAMA_URL` und `NKA_OLLAMA_MODEL` legen Adresse und Modell fest (die
-Einstellungen zeigen sie gesperrt, `fixedByEnv`, in die db.json gelangen sie nicht),
-`NKA_OLLAMA_NUM_CTX` den Kontext, `NKA_AI_TIMEOUT` das Zeitlimit. `NKA_OLLAMA_CANDIDATES`
-ersetzt die Adressen der Suche und ist für Tests gedacht. Das Compose-Profil `ki` startet
-Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst `ollama-pull`.
+**Bestätigung externer Dienste**: Zeigt die Adresse eines Platzes aus dem Haus, oder reicht ein
+lokales Ollama das Modell an einen Cloud-Dienst weiter, schickt der Server erst nach einer
+Bestätigung Belege dorthin (`POST`/`DELETE /api/ai/consent`, gespeichert in `ai.consent`). Als
+lokal gelten dieser Rechner, private und Link-local-Adressen, Namen ohne Punkt sowie `.local`,
+`.lan`, `.home.arpa`, `.internal`, `.intern` und `fritz.box`. Was extern ist, entscheidet allein
+der Server; die Oberfläche bekommt es als `aiExternal` in den Einstellungen und zeigt es auch
+auf Kosten und Schnellerfassung an.
+
+Routen: `/api/ai/presets` (Vorlagen), `/api/ai/status?slot=text|images` (Modelle des Anbieters,
+bei Ollama mit Adresssuche), `PUT /api/ai/key` und `DELETE /api/ai/key/:slot`,
+`POST /api/ai/consent` und `DELETE /api/ai/consent/:slot`. `/api/ollama/status` bleibt für Tabs
+von vor dem Update und liefert in `models` nur Namen, die Einzelheiten in `modelDetails`. Die
+Adresssuche fragt je nach Betriebsart nur Sinnvolles (Docker: Host und Compose-Dienst, sonst
+dieser Rechner) und nur, wenn die eingestellte Adresse gar nicht erreichbar war.
+
+Umgebungsvariablen (die Einstellungen zeigen betroffene Felder gesperrt, `fixedByEnv`, in die
+db.json gelangen die Werte nicht): `NKA_AI_PROVIDER`, `NKA_AI_URL`, `NKA_AI_MODEL`,
+`NKA_AI_API_KEY` bzw. `NKA_AI_API_KEY_FILE`, `NKA_AI_TIMEOUT`, `NKA_AI_MAX_TOKENS`; dazu
+`NKA_OLLAMA_URL`, `NKA_OLLAMA_MODEL` und `NKA_OLLAMA_NUM_CTX`, die weiter gelten, solange
+Ollama der Anbieter ist. Ein ungültiger Wert verhindert den Start mit klarer Meldung.
+`NKA_OLLAMA_CANDIDATES` ersetzt die Adressen der Suche und ist für Tests gedacht. Das
+Compose-Profil `ki` startet Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst
+`ollama-pull`.
 
 **KI-Prüflauf** ([.github/workflows/ai-eval.yml](.github/workflows/ai-eval.yml),
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
