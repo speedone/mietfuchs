@@ -159,6 +159,25 @@ test('Löschen einer Wohnung entfernt ihren vereinbarten Prozentanteil', async (
   await srv.api(`/api/units/${a.id}`, { method: 'DELETE' })
 })
 
+test('Standardmodell: eine neue Installation nutzt qwen3.5:4b', async () => {
+  assert.equal((await srv.api('/api/settings')).ollamaModel, 'qwen3.5:4b')
+})
+
+test('Standardmodell: das frühere, nie vorhandene qwen3.6-35b wird umgestellt, andere Modelle bleiben', async () => {
+  // „qwen3.6-35b“ gab es in der Ollama-Bibliothek nie (gemeint war qwen3.6:35b), wer es nicht
+  // geändert hat, konnte also gar nicht auswerten. Eine eigene Wahl bleibt unangetastet.
+  for (const [stored, expected] of [['qwen3.6-35b', 'qwen3.5:4b'], ['gemma4:12b', 'gemma4:12b']]) {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-alt-'))
+    fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ settings: { ollamaModel: stored } }))
+    const s = await startServerIn(dataDir)
+    try {
+      assert.equal((await s.api('/api/settings')).ollamaModel, expected, stored)
+    } finally {
+      s.stop()
+    }
+  }
+})
+
 test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0', async () => {
   // Altbestand nachbauen: ein Snapshot, der das Feld noch nicht kennt. Die Route muss die
   // in types.ts zugesagte Form trotzdem einhalten, sonst rechnet das Frontend mit undefined.
