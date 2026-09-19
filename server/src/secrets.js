@@ -21,21 +21,35 @@ const MAX_KEY_LENGTH = 4096
 const KEY_ENV = 'NKA_AI_API_KEY'
 const KEY_FILE_ENV = 'NKA_AI_API_KEY_FILE'
 
-const validFormat = (key) => key.length <= MAX_KEY_LENGTH && !/\s/.test(key)
+// Nur druckbares ASCII: Ein aus einer Webseite kopierter Schlüssel kann unsichtbare Zeichen
+// enthalten, die node:http im Header ablehnt. Die Meldung „nicht erreichbar“ schickte den Nutzer
+// dann an die falsche Stelle.
+const validFormat = (key) => key.length <= MAX_KEY_LENGTH && /^[\x21-\x7e]+$/.test(key)
 
 let cache = null
+let unreadable = false
 
 function read() {
   if (cache) return cache
   try {
     cache = JSON.parse(fs.readFileSync(FILE, 'utf8'))
-  } catch {
-    cache = {} // noch keine Datei oder unlesbar: dann gibt es eben keine Schlüssel
+    unreadable = false
+  } catch (err) {
+    // Gibt es die Datei nicht, gibt es eben keine Schlüssel. War sie nur vorübergehend nicht
+    // lesbar (etwa durch einen Virenscanner), darf ein späteres Speichern den anderen Platz
+    // nicht überschreiben: Dann merkt sich `unreadable` das, und `write` verweigert.
+    unreadable = err.code !== 'ENOENT'
+    cache = {}
+    if (unreadable) cache = null
+    return {}
   }
   return cache
 }
 
 function write(data) {
+  if (unreadable) {
+    throw Object.assign(new Error('Die Datei mit den Schlüsseln lässt sich gerade nicht lesen. Bitte später erneut versuchen.'), { status: 503 })
+  }
   const tmp = `${FILE}.tmp`
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 })
   fs.renameSync(tmp, FILE)

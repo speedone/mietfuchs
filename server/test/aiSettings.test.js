@@ -11,12 +11,19 @@ const legacy = (extra = {}) => ({ houseName: 'Haus', ollamaUrl: 'http://ki.inter
 
 test('Migration: bestehende Ollama-Einstellungen werden zum Standard-Anbieter', () => {
   const settings = migrateAi(legacy())
-  assert.deepEqual(settings.ai.text, { provider: 'ollama', preset: 'ollama-local', url: 'http://ki.intern:11434', model: 'gemma4:12b', vision: null })
+  // ki.intern ist nicht dieser Rechner, deshalb die Vorlage für ein entferntes Ollama
+  assert.deepEqual(settings.ai.text, { provider: 'ollama', preset: 'ollama-remote', url: 'http://ki.intern:11434', model: 'gemma4:12b', vision: null })
   assert.equal(settings.ai.images, null)
   assert.deepEqual(settings.ai.consent, {})
   // Die alten Felder bleiben, eine ältere Version liest sie nach einem Downgrade weiter
   assert.equal(settings.ollamaUrl, 'http://ki.intern:11434')
   assert.equal(settings.ollamaModel, 'gemma4:12b')
+})
+
+test('Migration: ein Ollama im Heimnetz bekommt die Vorlage für ein entferntes', () => {
+  // Nur diese Vorlage kennt ein Feld für den Schlüssel, etwa hinter einem Proxy
+  assert.equal(migrateAi(legacy({ ollamaUrl: 'http://nas:11434' })).ai.text.preset, 'ollama-remote')
+  assert.equal(migrateAi({ ollamaUrl: 'http://localhost:11434', ollamaModel: 'x' }).ai.text.preset, 'ollama-local')
 })
 
 test('Migration: fehlende Felder einer vorhandenen KI-Einstellung werden ergänzt, gesetzte bleiben', () => {
@@ -85,7 +92,7 @@ test('Umgebung: legt sie einen anderen Anbieter fest, gilt dessen allgemeine Vor
   // Schickt die Oberfläche das so zurück, bleiben gespeicherter Anbieter und Vorlage zusammen
   applyAiChanges(settings, { ai: effective }, env)
   assert.equal(settings.ai.text.provider, 'ollama')
-  assert.equal(settings.ai.text.preset, 'ollama-local')
+  assert.equal(settings.ai.text.preset, 'ollama-remote')
   assert.equal(migrateAi(structuredClone(settings)).ai.text.url, 'http://ki.intern:11434')
 })
 

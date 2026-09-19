@@ -288,7 +288,7 @@ ist dann gesperrt, und in die `db.json` gelangen sie nicht:
 | `NKA_AI_URL` | Adresse des Dienstes. |
 | `NKA_AI_MODEL` | Modell. |
 | `NKA_AI_API_KEY` | Schlüssel des Dienstes. |
-| `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel, etwa eines Docker-Secrets unter `/run/secrets/`. Nicht zusammen mit `NKA_AI_API_KEY`. |
+| `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel, etwa eines Docker-Secrets unter `/run/secrets/`. Nicht zusammen mit `NKA_AI_API_KEY`. Gilt für den Standard-Anbieter; den Schlüssel für einen eigenen Bilder-Anbieter trägt man in der Oberfläche ein. |
 | `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden, Standard 1200 für das Auslesen. |
 | `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token, Standard 16384 (nur OpenAI-kompatible Dienste). |
 | `NKA_OLLAMA_URL` | Adresse von Ollama, gilt weiter, solange Ollama der Anbieter ist. |

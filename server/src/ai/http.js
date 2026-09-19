@@ -35,6 +35,10 @@ function viaNodeHttp(url, { method, headers, body, signal }) {
   })
 }
 
+// Ein API-Schlüssel darf nie in einer Meldung landen, auch nicht, wenn der Dienst oder ein
+// Proxy ihn in seiner Fehlermeldung wiederholt.
+export const maskSecret = (secret, text) => (secret ? String(text).split(secret).join('…') : String(text))
+
 export async function readText(body) {
   const decoder = new TextDecoder()
   let text = ''

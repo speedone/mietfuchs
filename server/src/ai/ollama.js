@@ -6,7 +6,7 @@
 // Die Funktionen bekommen die Konfiguration aus providerConfig (ai/index.js): `url`, `model`,
 // `apiKey` (für Ollama hinter einem Proxy oder Ollama Cloud, sonst null) und `numCtx`.
 
-import { openRequest, readLines, readText } from './http.js'
+import { openRequest, readLines, readText, maskSecret } from './http.js'
 
 const baseUrl = (config) => config.url.replace(/\/+$/, '')
 
@@ -81,7 +81,8 @@ async function request(config, path, { body, timeoutMs, signal, consume = readJs
   context.connected = true
   try {
     if (!res.ok) {
-      const detail = errorDetail(await readText(res.body).catch(() => ''))
+      // Ein Proxy vor Ollama kann die abgelehnte Anfrage samt Kopfzeilen zurückgeben
+      const detail = maskSecret(config.apiKey, errorDetail(await readText(res.body).catch(() => '')))
       const fail = (message) => Object.assign(new OllamaError(message), { status: res.status, detail })
       if (res.status === 401 || res.status === 403) {
         throw fail(config.apiKey
@@ -103,7 +104,7 @@ async function request(config, path, { body, timeoutMs, signal, consume = readJs
 
 // Liest die gestreamte Chat-Antwort: zeilenweise JSON, die letzte Zeile mit `done: true`
 // trägt den Grund des Endes und die Kennzahlen. `onProgress` erfährt die bisherige Länge.
-async function readChatStream(res, onProgress, contextTokens) {
+async function readChatStream(res, onProgress, contextTokens, apiKey) {
   let content = ''
   let final = null
   for await (const line of readLines(res.body)) {
@@ -111,9 +112,9 @@ async function readChatStream(res, onProgress, contextTokens) {
     try {
       part = JSON.parse(line)
     } catch {
-      throw new OllamaError(`Ollama lieferte eine unlesbare Antwort: ${line.slice(0, 200)}`)
+      throw new OllamaError(`Ollama lieferte eine unlesbare Antwort: ${maskSecret(apiKey, line).slice(0, 200)}`)
     }
-    if (part.error) throw new OllamaError(`Ollama meldet einen Fehler: ${part.error}`)
+    if (part.error) throw new OllamaError(`Ollama meldet einen Fehler: ${maskSecret(apiKey, part.error).slice(0, 300)}`)
     const piece = part.message?.content ?? ''
     content += piece
     if (piece) onProgress?.({ phase: 'writing', chars: content.length })
@@ -188,7 +189,7 @@ export function ollamaProvider(config) {
         },
         timeoutMs,
         signal,
-        consume: (res) => readChatStream(res, onProgress, contextTokens),
+        consume: (res) => readChatStream(res, onProgress, contextTokens, config.apiKey),
       })
       let answer
       try {

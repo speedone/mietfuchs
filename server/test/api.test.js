@@ -339,7 +339,7 @@ const LONG_TEXT =
 // manche Modelle bei Ollama Cloud. Mit `key` verlangt der Dienst diesen Bearer-Schlüssel und
 // antwortet sonst mit 401. `closedEarly` zählt Chat-Anfragen, deren Verbindung Mietfuchs vor
 // dem Ende getrennt hat.
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null } = {}) {
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false } = {}) {
   const http = await import('node:http')
   const requests = []
   const open = new Set()
@@ -358,6 +358,7 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       const notFound = () => send(404, { error: `model '${json.model}' not found` })
       if (req.url === '/api/version') return send(200, { version: '0.34.2' })
       if (key && req.headers.authorization !== `Bearer ${key}`) return send(401, { error: 'unauthorized' })
+      if (echoKey) return send(400, { error: `Proxy lehnt ab: ${req.headers.authorization}` })
       if (req.url === '/api/tags') {
         return send(200, { models: models.map(({ capabilities, ...m }) => ({ size: 1000, ...m })) })
       }
@@ -1387,7 +1388,8 @@ test('KI-Einstellungen: eine db.json von vor #18 bekommt beim Start den Standard
   const s = await startServerIn(dataDir)
   try {
     const { ai } = await s.api('/api/settings')
-    assert.deepEqual(ai.text, { provider: 'ollama', preset: 'ollama-local', url: 'http://nas:11434', model: 'gemma4:12b', vision: null })
+    // nas ist nicht dieser Rechner, deshalb die Vorlage für ein entferntes Ollama
+    assert.deepEqual(ai.text, { provider: 'ollama', preset: 'ollama-remote', url: 'http://nas:11434', model: 'gemma4:12b', vision: null })
     assert.equal(ai.images, null)
   } finally {
     s.stop()
@@ -1501,7 +1503,8 @@ test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuz
 test('Anbieterwahl: zusätzliche Hinweise an das Modell stehen im Prompt', async () => {
   await withOllama(async (s, ollama) => {
     await putAi(s, { extraInstructions: 'Beträge immer brutto übernehmen.' })
-    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    assert.ok(chatRequests(ollama).length > 0, 'keine Anfrage an Ollama')
     assert.ok(chatRequests(ollama).every((c) => c.body.messages[0].content.includes('Beträge immer brutto übernehmen.')))
   })
 })
@@ -1509,7 +1512,8 @@ test('Anbieterwahl: zusätzliche Hinweise an das Modell stehen im Prompt', async
 test('Anbieterwahl: Kontext aus den Einstellungen geht an Ollama', async () => {
   await withOllama(async (s, ollama) => {
     await putAi(s, { numCtx: 8192 })
-    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    assert.ok(chatOptions(ollama).length > 0, 'keine Anfrage an Ollama')
     assert.ok(chatOptions(ollama).every((o) => o.num_ctx === 8192))
   })
 })
@@ -1597,6 +1601,7 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
 //   fenced             packt das JSON in einen Codeblock
 //   hang               antwortet nie
 //   echoKey            wiederholt den geschickten Schlüssel in einer Fehlermeldung
+//   echoKeyInStream    wiederholt ihn in einem Fehler mitten im Strom (Status 200)
 async function fakeOpenAi(rules = {}) {
   const http = await import('node:http')
   const requests = []
@@ -1639,6 +1644,13 @@ async function fakeOpenAi(rules = {}) {
       open.add(res)
       res.on('close', () => open.delete(res))
       if (rules.hang) return
+      if (rules.echoKeyInStream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write(`data: ${JSON.stringify({ error: { message: `Ungültige Anmeldung mit ${req.headers.authorization}` } })}
+
+`)
+        return res.end()
+      }
       // Den zweiten Durchgang (nur Kategorien) erkennt man an Schema oder Prompt
       const answer = JSON.stringify(
         raw.includes('categories')
@@ -1720,7 +1732,8 @@ test('OpenAI-kompatibel: Vorlage OpenAI schickt max_completion_tokens und keine 
 
 test('OpenAI-kompatibel: die Antwortlänge aus den Einstellungen gilt', async () => {
   await withOpenAi(async (s, service) => {
-    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    assert.ok(service.completions().length > 0, 'keine Anfrage an den Dienst')
     assert.ok(service.completions().every((c) => c.body.max_tokens === 4096))
   }, { ai: { maxOutputTokens: 4096 } })
 })
@@ -1901,4 +1914,74 @@ test('Einstellungen: aiExternal sagt je Platz, ob die Adresse aus dem Haus zeigt
     // aiExternal gehört nicht in die db.json
     assert.equal(storedSettings(s).aiExternal, undefined)
   })
+})
+
+// ---------- Befunde aus der Codeprüfung ----------
+
+test('Schlüssel: auch ein Fehler mitten im Strom zeigt ihn nicht', async () => {
+  const KEY = 'sk-test-geheim-1234567890'
+  await withOpenAi(async (s) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /meldet einen Fehler: Ungültige Anmeldung mit Bearer …/)
+    assert.ok(!r.body.error.includes(KEY))
+  }, { key: KEY, rules: { echoKeyInStream: true } })
+})
+
+test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
+  const KEY = 'ollama-proxy-schluessel-1234'
+  const ollama = await fakeOllama({ echoKey: true })
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  try {
+    await putAi(s, { text: ollamaSlot(ollama.url) })
+    await putKey(s, { slot: 'text', key: KEY })
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /Proxy lehnt ab: Bearer …/)
+    assert.ok(!r.body.error.includes(KEY))
+  } finally {
+    s.stop()
+    ollama.stop()
+  }
+})
+
+// Der eigene Anbieter für Fotos und Scans ist gerade der Fall, für den die Trennung gedacht ist
+test('Bestätigung: der Bilder-Anbieter braucht eine eigene, die des Standards zählt nicht', async () => {
+  await withOllama(async (s) => {
+    await putAi(s, { images: ollamaSlot(EXTERNAL, 'bild') })
+    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    const photo = new FormData()
+    photo.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'rechnung.jpg')
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photo })
+    assert.equal(res.status, 502)
+    const error = (await res.json()).error
+    assert.match(error, /192\.0\.2\.1:11434/)
+    assert.match(error, /Anbieter für Fotos und Scans/)
+    // Text geht weiter an den Standard, der lokal läuft
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    const confirmed = await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'images' }) })
+    assert.equal(confirmed.ai.consent.images.url, EXTERNAL)
+    assert.equal(confirmed.aiExternal.images, true)
+  })
+})
+
+test('KI-Einstellungen: eine ältere Version darf Adresse und Modell noch über die alten Felder ändern', async () => {
+  // Nach einem Downgrade schreibt die ältere Version nur ollamaUrl und ollamaModel. Weichen sie
+  // beim nächsten Start von ai.text ab, gilt die jüngere Änderung.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: {
+      ollamaUrl: 'http://neu:11434',
+      ollamaModel: 'neues:4b',
+      ai: { text: { provider: 'ollama', preset: 'ollama-local', url: 'http://alt:11434', model: 'altes:4b', vision: null }, images: null, consent: {} },
+    },
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const { ai } = await s.api('/api/settings')
+    assert.equal(ai.text.url, 'http://neu:11434')
+    assert.equal(ai.text.model, 'neues:4b')
+  } finally {
+    s.stop()
+  }
 })

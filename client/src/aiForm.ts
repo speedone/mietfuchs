@@ -104,7 +104,11 @@ export function aiSummary(settings: Settings | null): { model: string; where: st
   const slot = settings?.ai?.text
   return {
     model: slot?.model || settings?.ollamaModel || 'ohne Modell',
-    where: settings?.aiExternal?.text && slot ? `über ${hostOf(slot.url)}` : 'lokal auf diesem Rechner',
+    where: settings?.aiExternal?.text && slot
+      ? `über ${hostOf(slot.url)}`
+      : settings?.aiExternal?.images
+        ? 'teils über einen Dienst'
+        : 'lokal auf diesem Rechner',
     notice: settings ? externalNotice(settings) : null,
   }
 }

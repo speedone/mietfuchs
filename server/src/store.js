@@ -61,6 +61,7 @@ function load() {
   // Der frühere Standard existierte nie, wer ihn nicht geändert hat, konnte gar nicht auswerten.
   // Eine eigene Wahl bleibt unangetastet.
   if (db.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) db.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
+  if (db.settings.ai?.text?.model === INVALID_OLD_DEFAULT_MODEL) db.settings.ai.text.model = DEFAULT_OLLAMA_MODEL
   // KI-Anbieter (#18): `settings.ai` entsteht aus ollamaUrl und ollamaModel, fehlende Felder
   // werden ergänzt (siehe ai/settings.js)
   migrateAi(db.settings)

@@ -291,7 +291,11 @@ Umgebungsvariablen (die Einstellungen zeigen betroffene Felder gesperrt, `fixedB
 db.json gelangen die Werte nicht): `NKA_AI_PROVIDER`, `NKA_AI_URL`, `NKA_AI_MODEL`,
 `NKA_AI_API_KEY` bzw. `NKA_AI_API_KEY_FILE`, `NKA_AI_TIMEOUT`, `NKA_AI_MAX_TOKENS`; dazu
 `NKA_OLLAMA_URL`, `NKA_OLLAMA_MODEL` und `NKA_OLLAMA_NUM_CTX`, die weiter gelten, solange
-Ollama der Anbieter ist. Ein ungültiger Wert verhindert den Start mit klarer Meldung.
+Ollama der Anbieter ist. Ein ungültiger Wert verhindert den Start mit klarer Meldung. Einzige
+Ausnahme vom Grundsatz, dass Werte aus der Umgebung nicht in die db.json gelangen: Die
+Bestätigung merkt sich die Adresse, für die sie gilt, auch wenn diese aus der Umgebung stammt.
+Sonst ließe sich später nicht prüfen, wofür sie erteilt wurde. Den Schlüssel des
+Bilder-Anbieters gibt es bewusst nur in der Oberfläche, die Umgebung legt nur den Standard fest.
 `NKA_OLLAMA_CANDIDATES` ersetzt die Adressen der Suche und ist für Tests gedacht. Das
 Compose-Profil `ki` startet Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst
 `ollama-pull`.
