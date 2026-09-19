@@ -63,6 +63,11 @@ async function startServerIn(dataDir, env = {}) {
       NKA_OLLAMA_NUM_CTX: '',
       NKA_OLLAMA_CANDIDATES: '',
       NKA_AI_TIMEOUT: '',
+      NKA_AI_PROVIDER: '',
+      NKA_AI_URL: '',
+      NKA_AI_MODEL: '',
+      NKA_AI_API_KEY: '',
+      NKA_AI_API_KEY_FILE: '',
       NKA_RUNTIME: '',
       ...env,
       NKA_PORT: '0',
@@ -1173,4 +1178,182 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
     blocker.close()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
+})
+
+// ---------- API-Schlüssel externer KI-Dienste (#18) ----------
+// Schlüssel liegen in einer eigenen Datei neben der db.json. Sie gehen nie an den Browser und
+// nicht ins Backup-ZIP, das schnell in einer Cloud oder auf einem USB-Stick landet.
+
+const SECRET = 'sk-test-geheim-1234567890abcd'
+const putKey = (s, body) => fetch(`${s.base}/api/ai/key`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('Schlüssel: wird gespeichert, erscheint aber nirgends im Klartext', async () => {
+  await withEnv({}, async (s) => {
+    const res = await putKey(s, { slot: 'text', key: `  ${SECRET}  ` })
+    assert.equal(res.status, 200)
+    assert.deepEqual((await res.json()).text, { set: true, hint: '…abcd', fromEnv: null })
+    const settings = await s.api('/api/settings')
+    assert.deepEqual(settings.aiKeys.text, { set: true, hint: '…abcd', fromEnv: null })
+    assert.deepEqual(settings.aiKeys.images, { set: false, hint: '', fromEnv: null })
+    assert.ok(!JSON.stringify(settings).includes(SECRET), 'Schlüssel in /api/settings')
+    // Speichert die Oberfläche die Einstellungen samt `aiKeys` zurück, landet nichts davon in der db.json
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) })
+    const db = fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')
+    assert.ok(!db.includes(SECRET), 'Schlüssel in der db.json')
+    assert.ok(!db.includes('aiKeys'), 'aiKeys in der db.json')
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'secrets.json'), 'utf8')).text, SECRET)
+  })
+})
+
+test('Schlüssel: nicht im Backup, und eine Wiederherstellung lässt ihn stehen', async () => {
+  await withEnv({}, async (s) => {
+    await putKey(s, { slot: 'text', key: SECRET })
+    const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    const entries = new AdmZip(zip).getEntries()
+    assert.ok(!entries.some((e) => e.entryName.includes('secrets')), 'secrets.json im Backup')
+    assert.ok(!entries.some((e) => e.getData().includes(SECRET)), 'Schlüssel in einem Eintrag des Backups')
+    assert.equal((await restore(s, zip)).status, 200)
+    assert.equal((await s.api('/api/settings')).aiKeys.text.set, true)
+  })
+})
+
+// Wer den Datenordner von Hand zippt, hat die secrets.json mit im Archiv. Sie wird nicht
+// übernommen, die Schlüssel dieses Rechners bleiben.
+test('Schlüssel: eine secrets.json im Backup wird nicht übernommen', async () => {
+  await withEnv({}, async (s) => {
+    await putKey(s, { slot: 'text', key: SECRET })
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    zip.addFile('secrets.json', Buffer.from(JSON.stringify({ text: 'fremder-schluessel-0000', images: 'fremd-1111' })))
+    assert.equal((await restore(s, zip.toBuffer())).status, 200)
+    const { aiKeys } = await s.api('/api/settings')
+    assert.equal(aiKeys.text.hint, '…abcd')
+    assert.equal(aiKeys.images.set, false)
+    assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'secrets.json'), 'utf8')).text, SECRET)
+  })
+})
+
+test('Schlüssel: löschen', async () => {
+  await withEnv({}, async (s) => {
+    await putKey(s, { slot: 'images', key: SECRET })
+    const res = await fetch(`${s.base}/api/ai/key/images`, { method: 'DELETE' })
+    assert.equal(res.status, 200)
+    assert.equal((await s.api('/api/settings')).aiKeys.images.set, false)
+  })
+})
+
+test('Schlüssel: NKA_AI_API_KEY hat Vorrang und lässt sich nicht überschreiben', async () => {
+  await withEnv({ NKA_AI_API_KEY: SECRET }, async (s) => {
+    assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY' })
+    const res = await putKey(s, { slot: 'text', key: 'anderer-schluessel-9999' })
+    assert.equal(res.status, 409)
+    assert.match((await res.json()).error, /NKA_AI_API_KEY/)
+    assert.ok(!fs.existsSync(path.join(s.dataDir, 'secrets.json')))
+  })
+})
+
+// Docker- und Compose-Secrets liegen als Datei unter /run/secrets/. Die Endung _FILE folgt der
+// Konvention offizieller Images wie postgres und mysql.
+test('Schlüssel: NKA_AI_API_KEY_FILE liest ihn aus einer Datei, etwa einem Docker-Secret', async () => {
+  const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-secret-'))
+  const secretFile = path.join(secretDir, 'ki_schluessel')
+  fs.writeFileSync(secretFile, `${SECRET}\n`) // Zeilenumbruch am Ende wie bei `echo … > datei`
+  try {
+    await withEnv({ NKA_AI_API_KEY_FILE: secretFile }, async (s) => {
+      assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY_FILE' })
+      const res = await putKey(s, { slot: 'text', key: 'anderer-schluessel-9999' })
+      assert.equal(res.status, 409)
+      assert.match((await res.json()).error, /NKA_AI_API_KEY_FILE/)
+      assert.ok(!fs.existsSync(path.join(s.dataDir, 'secrets.json')))
+    })
+  } finally {
+    fs.rmSync(secretDir, { recursive: true, force: true })
+  }
+})
+
+// Mit einer falschen Angabe liefe Mietfuchs sonst still ohne Schlüssel, und der Fehler zeigte
+// sich erst bei der ersten Auswertung als „Schlüssel ungültig“
+test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Meldung', async () => {
+  const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-secret-'))
+  const file = (name, content) => {
+    const p = path.join(secretDir, name)
+    fs.writeFileSync(p, content)
+    return p
+  }
+  const cases = [
+    [{ NKA_AI_API_KEY: SECRET, NKA_AI_API_KEY_FILE: file('beide', SECRET) }, /beide gesetzt/],
+    [{ NKA_AI_API_KEY_FILE: path.join(secretDir, 'fehlt') }, /fehlt, die Datei lässt sich aber nicht lesen \(ENOENT\)/],
+    [{ NKA_AI_API_KEY_FILE: file('leer', '\n') }, /ist leer/],
+    [{ NKA_AI_API_KEY_FILE: file('zwei-zeilen', 'erste-zeile-123456\nzweite-zeile-123456\n') }, /ungültiges Format/],
+    [{ NKA_AI_API_KEY: 'mit leerzeichen 123456' }, /ungültiges Format/],
+  ]
+  try {
+    for (const [env, message] of cases) {
+      const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-start-'))
+      const child = spawn(process.execPath, ['src/index.js'], {
+        cwd: serverRoot,
+        env: { ...process.env, NKA_AI_API_KEY: '', NKA_AI_API_KEY_FILE: '', ...env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
+      })
+      let output = ''
+      child.stdout.on('data', (d) => { output += d })
+      child.stderr.on('data', (d) => { output += d })
+      const code = await Promise.race([
+        new Promise((r) => child.on('exit', r)),
+        new Promise((r) => setTimeout(() => { child.kill(); r('läuft nach 15 s noch') }, 15000)),
+      ])
+      fs.rmSync(dataDir, { recursive: true, force: true })
+      assert.notEqual(code, 'läuft nach 15 s noch', `${JSON.stringify(Object.keys(env))}: ${output}`)
+      assert.notEqual(code, 0)
+      assert.match(output, message)
+      assert.doesNotMatch(output, /läuft auf/)
+      assert.ok(!output.includes(SECRET), 'Schlüssel in der Ausgabe')
+    }
+  } finally {
+    fs.rmSync(secretDir, { recursive: true, force: true })
+  }
+})
+
+test('Schlüssel: ungültige Eingaben werden abgelehnt', async () => {
+  await withEnv({}, async (s) => {
+    for (const body of [{ slot: 'fremd', key: SECRET }, { slot: 'text', key: '' }, { slot: 'text', key: 'mit\nzeilenumbruch' }, { slot: 'text', key: 'x'.repeat(5000) }, { slot: 'text' }]) {
+      const res = await putKey(s, body)
+      assert.equal(res.status, 400, JSON.stringify(body).slice(0, 60))
+    }
+  })
+})
+
+test('Schlüssel: löschen geht nicht bei Umgebungsvariable oder unbekanntem Platz', async () => {
+  await withEnv({ NKA_AI_API_KEY: SECRET }, async (s) => {
+    assert.equal((await fetch(`${s.base}/api/ai/key/text`, { method: 'DELETE' })).status, 409)
+    assert.equal((await fetch(`${s.base}/api/ai/key/fremd`, { method: 'DELETE' })).status, 400)
+    assert.equal((await s.api('/api/settings')).aiKeys.text.set, true)
+  })
+})
+
+// Bei einem kurzen Schlüssel verrieten die letzten vier Zeichen fast alles
+test('Schlüssel: kurze Schlüssel werden nicht angedeutet', async () => {
+  await withEnv({}, async (s) => {
+    await putKey(s, { slot: 'text', key: 'kurz-1234' })
+    assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '', fromEnv: null })
+  })
+})
+
+test('Schlüssel: eine von Hand verdorbene secrets.json stört den Start nicht', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ text: 12345, images: { a: 1 } }))
+  const s = await startServerIn(dataDir)
+  try {
+    const { aiKeys } = await s.api('/api/settings')
+    assert.equal(aiKeys.text.set, false)
+    assert.equal(aiKeys.images.set, false)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Schlüssel: die Datei ist nur für den eigenen Benutzer lesbar', async (t) => {
+  if (process.platform === 'win32') return t.skip('Unix-Rechte gibt es unter Windows nicht')
+  await withEnv({}, async (s) => {
+    await putKey(s, { slot: 'text', key: SECRET })
+    assert.equal(fs.statSync(path.join(s.dataDir, 'secrets.json')).mode & 0o777, 0o600)
+  })
 })
