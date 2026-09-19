@@ -100,7 +100,7 @@ async function pdfText(pdfPath) {
     let text = ''
     for (let n = 1; n <= doc.numPages && text.length < TEXT_MAX; n++) {
       const page = await doc.getPage(n)
-      // wie seitenText() in client/src/pdfIntake.ts
+      // wie pageText() in client/src/pdfIntake.ts
       text += (await page.getTextContent()).items.map((i) => ('str' in i ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join('') + '\n'
     }
     return text
