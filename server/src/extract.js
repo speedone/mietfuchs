@@ -12,11 +12,13 @@ import { aiProvider } from './ai/index.js'
 const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
 // Zeitlimits je Schritt in Sekunden. Auf einem Rechner ohne Grafikkarte braucht ein Modell für
-// einen mehrseitigen Scan mehrere Minuten. Die Frage, was auf einem Foto zu sehen ist, ist in
-// der Schnellerfassung der erste Schritt: Er enthält das Laden des Modells und das Einlesen des
-// Bildes und bekommt deshalb ebenso viel Zeit. Nur der zweite Durchgang (Kategorien) ist reiner
+// einen mehrseitigen Scan lange: Im KI-Prüflauf (4 Kerne, keine Grafikkarte) las qwen3.5:4b zwei
+// Seiten in rund acht Minuten, drei Seiten schaffte es nicht in zehn. Die Oberfläche zeigt den
+// Fortschritt und lässt abbrechen, deshalb darf das Auslesen bis zu 20 Minuten dauern. Die
+// Frage, was auf einem Foto zu sehen ist, ist in der Schnellerfassung der erste Schritt: Er
+// enthält das Laden des Modells und ein Bild. Nur der zweite Durchgang (Kategorien) ist reiner
 // Text und kurz. NKA_AI_TIMEOUT setzt ein gemeinsames Limit für alle Schritte.
-const TIMEOUT_SECONDS = { extraction: 600, classification: 180, docType: 600, meterReading: 600 }
+const TIMEOUT_SECONDS = { extraction: 1200, classification: 180, docType: 600, meterReading: 600 }
 function timeoutMs(step) {
   const custom = Number(process.env.NKA_AI_TIMEOUT)
   return (Number.isFinite(custom) && custom > 0 ? custom : TIMEOUT_SECONDS[step]) * 1000

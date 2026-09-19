@@ -84,7 +84,7 @@ signiert ist:
   (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
 Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`db.json` + Belege).
-Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung-optional)
+Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung-mit-ollama)
 braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) — ohne das
 funktioniert die Abrechnung trotzdem vollständig.
 
@@ -147,14 +147,90 @@ Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren)
 Die Abrechnung folgt dem **Abflussprinzip**: Eine Kostenposition gehört zu dem Jahr, dem sie
 beim Erfassen zugeordnet wird (in der Regel das Zahlungsjahr).
 
-### KI-Belegauswertung (optional)
+## KI-Belegauswertung mit Ollama
 
-Unter *Einstellungen* eine lokale [Ollama](https://ollama.com)-Instanz konfigurieren
-(Standard: `http://localhost:11434`, Modell `qwen3.6-35b`). PDFs mit Textebene funktionieren
-mit jedem Sprachmodell; fotografierte Belege benötigen ein Vision-Modell. Die KI macht nur
-Vorschläge — übernommen wird erst nach manueller Prüfung. Gescannte PDFs ohne Textebene
-brauchen ebenfalls ein Vision-Modell: Der Browser schickt dann die ersten vier Seiten als
-Bilder mit.
+Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen, das auf deinem
+eigenen Rechner läuft ([Ollama](https://ollama.com)). Das Modell schlägt Positionen, Beträge
+und Kostenarten vor, übernommen wird erst, was du geprüft hast. Die Belege verlassen dabei
+deinen Rechner nicht. Ohne KI funktioniert Mietfuchs vollständig.
+
+### Einrichten
+
+1. **Ollama installieren** von [ollama.com/download](https://ollama.com/download) (Windows,
+   macOS, Linux). Danach läuft Ollama im Hintergrund.
+2. **Ein Modell laden**, im Terminal `ollama pull qwen3.5:4b` (voreingestellt). Welches Modell
+   passt, steht unten. Der Download ist 3,4 GB groß.
+3. **In Mietfuchs prüfen:** *Einstellungen*, Karte „KI-Belegauswertung mit Ollama“. Mietfuchs
+   findet Ollama unter `http://localhost:11434` selbst und listet die installierten Modelle
+   auf, jeweils mit Größe und ob es Bilder versteht. Modell wählen und speichern. Antwortet
+   Ollama unter einer anderen üblichen Adresse, schlägt Mietfuchs sie zur Übernahme vor.
+4. **Ausprobieren:** unter *Kosten* oder in der *Schnellerfassung* einen Beleg in die Fläche
+   ziehen.
+
+PDFs mit Textebene liest jedes Sprachmodell. Gescannte PDFs und Fotos brauchen ein Modell,
+das Bilder versteht. Bei Scans schickt der Browser die ersten vier Seiten als Bilder mit. Ein
+Modell ohne Bildverständnis bekommt keine Bilder, Mietfuchs meldet das stattdessen.
+
+### Welches Modell?
+
+Voreingestellt ist `qwen3.5:4b`. Die Übersicht zeigt, wie gut einige Modelle frei erfundene
+Beispielbelege gelesen haben und wie lange sie im Schnitt brauchten. Gemessen hat das der
+[KI-Prüflauf](.github/workflows/ai-eval.yml) auf einem Rechner ohne Grafikkarte mit 4
+Prozessorkernen und 16 GB Arbeitsspeicher, Stand September 2026. Ein üblicher Laptop ist meist
+etwas schneller.
+
+| Modell | Arbeitsspeicher | PDF mit Textebene | Scan | Handyfoto |
+| --- | --- | --- | --- | --- |
+| `qwen3.5:4b` (voreingestellt) | 3,6 GB | 93 %, 2 Min. | 75 %, 6 Min. | 56 %, 4,5 Min. |
+| `gemma4:12b` | 9,2 GB | 95 %, 5,5 Min. | 83 %, 6,5 Min. | 92 %, 5 Min. |
+| `minicpm-v4.5:8b` | 7,8 GB | 86 %, 2 Min. | 64 %, 6,5 Min. | 61 %, 5 Min. |
+
+Die Prozentzahl ist der Anteil richtig gelesener Angaben: Summe, Aussteller, Beträge,
+Kostenarten und §35a-Anteil. Wer vor allem Fotos und Scans auswertet und genug
+Arbeitsspeicher hat, nimmt `gemma4:12b`. Kleinere Modelle lasen die Belege in der Messung
+deutlich schlechter. Mit Grafikkarte kommen auch größere Modelle in Frage, etwa
+`qwen3.6:35b` (23 GB). Ein anderes Modell wählst du in den Einstellungen, auch eines, das
+nicht in dieser Liste steht.
+
+### Wie lange dauert das?
+
+Auf einem Rechner ohne Grafikkarte rechnet das Modell auf dem Prozessor. Ein PDF mit Textebene
+braucht dann meist unter einer Minute, ein gescannter Beleg einige Minuten. Mit Grafikkarte
+oder auf einem Mac mit Apple-Chip geht es deutlich schneller. Während der Auswertung zeigt
+Mietfuchs, was das Modell gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das
+Modell.
+
+### Ollama und Docker
+
+Läuft Ollama auf dem Rechner, auf dem auch Docker läuft, ist es aus dem Container unter
+`http://host.docker.internal:11434` erreichbar. Mietfuchs schlägt diese Adresse in den
+Einstellungen selbst vor.
+
+Mit der [`docker-compose.yml`](docker-compose.yml) aus dem Repo läuft Ollama auch als eigener
+Container mit:
+
+```bash
+docker compose --profile ki up -d        # startet Mietfuchs und Ollama, lädt das Modell einmalig
+docker compose logs -f ollama-pull       # Fortschritt des Downloads
+```
+
+Danach in den Einstellungen die gefundene Adresse `http://ollama:11434` übernehmen. Ein
+weiteres Modell lädt `docker compose exec ollama ollama pull NAME`, den passenden Befehl zeigt
+Mietfuchs auch selbst an. Der Container rechnet auf dem Prozessor. Für eine NVIDIA-Grafikkarte
+beschreibt die [Ollama-Dokumentation zu Docker](https://github.com/ollama/ollama/blob/main/docs/docker.mdx),
+was nötig ist. Docker Desktop auf dem Mac hat keinen Zugriff auf die Grafik des Apple-Chips,
+dort ist die Ollama-App die bessere Wahl.
+
+### Für Fortgeschrittene
+
+Umgebungsvariablen, etwa in einer `.env`-Datei neben der `docker-compose.yml`:
+
+| Variable | Wirkung |
+| --- | --- |
+| `NKA_OLLAMA_URL` | Adresse von Ollama fest vorgeben. Das Feld in den Einstellungen ist dann gesperrt. |
+| `NKA_OLLAMA_MODEL` | Modell fest vorgeben, ebenfalls gesperrt. Im Compose-Profil lädt `ollama-pull` dieses Modell. |
+| `NKA_OLLAMA_NUM_CTX` | Kontextgröße in Token, Standard 16384. Kleiner spart Arbeitsspeicher, zu klein schneidet lange Belege ab. |
+| `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden, Standard 1200 für das Auslesen. |
 
 ## Daten & Backup
 
@@ -226,8 +302,8 @@ docker build -t mietfuchs .
 docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs mietfuchs
 ```
 
-Die optionale KI-Belegauswertung erwartet eine Ollama-Instanz. Läuft sie auf dem Host,
-in den Einstellungen `http://host.docker.internal:11434` eintragen (statt `localhost`).
+Für die optionale KI-Belegauswertung siehe [KI-Belegauswertung mit Ollama](#ki-belegauswertung-mit-ollama),
+dort auch das Compose-Profil `ki`, das Ollama als eigenen Container mitstartet.
 
 ## Lizenz & Haftung
 

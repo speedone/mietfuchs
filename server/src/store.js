@@ -18,6 +18,14 @@ export const DATA_DIR = process.env.NKA_DATA_DIR
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
+// Standardmodell für die KI-Belegauswertung, gewählt mit dem KI-Prüflauf (#17): Auf Rechnern
+// ohne Grafikkarte liest es PDFs mit Textebene fast fehlerfrei, einseitige Scans meist richtig,
+// und es braucht rund 3,6 GB Arbeitsspeicher. Das Compose-Profil „ki“ lädt dasselbe Modell,
+// ein Test gleicht beides ab.
+export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:4b'
+// Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
+const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
+
 const DEFAULT_DB = {
   settings: {
     houseName: '',
@@ -26,7 +34,7 @@ const DEFAULT_DB = {
     iban: '',
     paymentDeadlineDays: 30,
     ollamaUrl: 'http://localhost:11434',
-    ollamaModel: 'qwen3.6-35b',
+    ollamaModel: DEFAULT_OLLAMA_MODEL,
   },
   units: [],
   tenancies: [],
@@ -49,6 +57,9 @@ function load() {
   } else {
     db = structuredClone(DEFAULT_DB)
   }
+  // Der frühere Standard existierte nie, wer ihn nicht geändert hat, konnte gar nicht auswerten.
+  // Eine eigene Wahl bleibt unangetastet.
+  if (db.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) db.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
   // Migrationen älterer Datenformate.
   // Wohnungen: `selfUsed`/`selfPersons` (Eigennutzung in der Verteilbasis) kamen später dazu.
   // Bewusst ohne Rück-Migration — ein automatisch gesetztes Kennzeichen würde die Verteilung
