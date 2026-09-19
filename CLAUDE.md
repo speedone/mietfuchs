@@ -37,7 +37,14 @@ ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird au
 **Docker-Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) baut das
 [Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
 und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
-läuft die App ohne Clone des Repos.
+läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
+ändern, baut er nur zur Probe (ohne Login und Push).
+
+**Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
+Mindestversion 22 aus `engines`. Beim Anheben alle Stellen mitziehen: `engines` (plus
+`package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Die Actions hält
+Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich, ein
+gebündelter PR).
 
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,

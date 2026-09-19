@@ -2,7 +2,9 @@ name: Docker-Image
 
 # Baut das Container-Image und veröffentlicht es in der GitHub Container Registry,
 # damit Mietfuchs sich ohne Clone des Repos starten lässt (`docker pull`).
-# Läuft bei einem Tag wie v0.3.0, bei Pushes auf main (Tag `main`) und von Hand.
+# Läuft bei einem Tag wie v0.3.0, bei Pushes auf main (Tag `main`) und von Hand. Bei PRs, die
+# das Image betreffen, wird nur zur Probe gebaut, ohne Anmeldung und ohne Veröffentlichung.
+# So fällt ein kaputter Build vor dem Merge auf und nicht erst auf main.
 #
 # Sichtbarkeit: Das Package übernimmt die des öffentlichen Repos — seit dem ersten Push
 # (v0.3.0) ist es ohne Login abrufbar, ein manueller Freigabeschritt war nicht nötig.
@@ -14,6 +16,13 @@ on:
     branches: [main]
     tags:
       - 'v*'
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - '**/package.json'
+      - '**/package-lock.json'
+      - .github/workflows/docker.yml
   workflow_dispatch:
 
 permissions:
@@ -25,13 +34,14 @@ jobs:
     # Runner bewusst anpinnen (wie im Release-Workflow) — reproduzierbare Builds.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # QEMU für den arm64-Build (Apple Silicon, Raspberry Pi, ARM-NAS) auf einem x64-Runner.
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -46,7 +56,7 @@ jobs:
       # Tags: vX.Y.Z → X.Y.Z + X.Y + latest, main → main
       - name: Tags und Labels ableiten
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.image.outputs.name }}
           # latest=auto ist der Standard, aber ausdrücklich gesetzt — sonst könnte ein
@@ -61,11 +71,11 @@ jobs:
             org.opencontainers.image.description=Lokales Web-Tool für die Nebenkostenabrechnung privater Vermieter
 
       - name: Bauen und pushen
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
