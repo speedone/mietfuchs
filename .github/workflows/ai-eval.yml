@@ -1,0 +1,120 @@
+name: KI-Prüflauf
+
+# Vergleicht Ollama-Modelle an erfundenen Beispielbelegen (scripts/ai-eval/, #17): Trefferquote,
+# Dauer und Speicherbedarf je Modell, für PDFs mit Textebene, Scans und Handyfotos. Läuft auf
+# GitHub-Runnern ohne Grafikkarte, also etwa so langsam wie ein Laptop ohne Grafikkarte. Die
+# Modelle lädt GitHub, niemand muss sie für einen Vergleich selbst herunterladen.
+#
+# Start von Hand (Actions → KI-Prüflauf) mit eigener Modellliste oder an einem PR über das
+# Label „ki-pruefung“. Ein Label startet genau einen Lauf mit der Standardliste unten.
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Ollama-Modelle, durch Komma getrennt (leer = Standardliste)
+        required: false
+        default: ''
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+env:
+  # Kandidaten für Rechner ohne Grafikkarte, von klein bis mittel
+  DEFAULT_MODELS: qwen3.5:2b,qwen3.5:4b,qwen3.5:9b,gemma4:e2b-it-qat,gemma4:12b,minicpm-v4.5:8b,minicpm-v4.6:1b
+
+jobs:
+  models:
+    name: Modelle festlegen
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ki-pruefung'
+    runs-on: ubuntu-24.04
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - id: list
+        env:
+          MODELS: ${{ inputs.models || env.DEFAULT_MODELS }}
+        run: |
+          list=$(node -e 'console.log(JSON.stringify(process.env.MODELS.split(",").map((m) => m.trim()).filter(Boolean)))')
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "Modelle: $list"
+
+  evaluate:
+    name: ${{ matrix.model }}
+    needs: models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJSON(needs.models.outputs.list) }}
+    env:
+      MODEL: ${{ matrix.model }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Ollama-Image und Modelle brauchen zusammen bis zu 15 GB
+      - name: Platz schaffen
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      # Der Client liefert pdf.js, mit dem das Skript die Textebene wie im Browser liest
+      - run: npm install
+
+      - name: Ollama starten
+        run: |
+          docker run -d --name ollama -p 127.0.0.1:11434:11434 ollama/ollama:latest
+          for _ in $(seq 1 60); do curl -sf http://127.0.0.1:11434/api/version && break; sleep 2; done
+          echo
+
+      - name: Modell laden
+        run: |
+          start=$(date +%s)
+          curl -sS --fail-with-body http://127.0.0.1:11434/api/pull -d "{\"model\": \"$MODEL\", \"stream\": false}"
+          echo
+          echo "Geladen in $(( $(date +%s) - start )) s"
+          curl -s http://127.0.0.1:11434/api/tags
+
+      - name: Belege auswerten
+        env:
+          NKA_OLLAMA_URL: http://127.0.0.1:11434
+          NKA_OLLAMA_MODEL: ${{ matrix.model }}
+          NKA_PORT: '3001'
+          NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
+        run: |
+          export NKA_DATA_DIR="$RUNNER_TEMP/daten"
+          node server/src/index.js > server.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; tail -50 server.log; echo "--- Ollama"; docker logs --tail 50 ollama' EXIT
+          for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:3001/healthz && break; sleep 1; done
+          node scripts/ai-eval.mjs --url http://127.0.0.1:3001 --ollama http://127.0.0.1:11434 --model "$MODEL" --out ergebnis.json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ki-pruefung-${{ strategy.job-index }}
+          path: ergebnis.json
+          if-no-files-found: ignore
+
+  summary:
+    name: Zusammenfassung
+    needs: evaluate
+    if: always() && needs.evaluate.result != 'skipped'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ki-pruefung-*
+          path: ergebnisse
+      - run: node scripts/ai-eval.mjs --summarize ergebnisse
