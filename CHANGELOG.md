@@ -11,11 +11,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Hinweis auf neue Versionen.** Beim ersten Start fragt Mietfuchs einmal, ob es bei neuen
   Versionen Bescheid geben soll. Nur mit Zustimmung sieht es beim Öffnen bei GitHub nach.
   GitHub sieht dabei nur die IP-Adresse und die installierte Versionsnummer. Gibt es eine neue
-  Version, erscheint oben in der Seitenleiste ein Hinweis: bei der Programmdatei mit einem
-  Download-Link auf die passende Datei, bei Docker und bei einer Installation aus dem Quellcode
-  mit dem nötigen Befehl in den Einstellungen. „Später“ blendet den Hinweis bis zur nächsten
-  Version aus. In den Einstellungen lässt sich die Prüfung jederzeit ein- und ausschalten oder
-  von Hand anstoßen. Ein automatisches Update gibt es bewusst nicht.
+  Version, erscheint oben in der Seitenleiste ein Hinweis. Er führt zu einer Anleitung in den
+  Einstellungen: bei der Programmdatei mit dem Download der passenden Datei und den Schritten
+  für das eigene System, bei Docker und bei einer Installation aus dem Quellcode mit den
+  nötigen Befehlen. „Später“ blendet den Hinweis bis zur nächsten Version aus. In den
+  Einstellungen lässt sich die Prüfung jederzeit ein- und ausschalten oder von Hand anstoßen.
+  Ein automatisches Update gibt es bewusst nicht.
   ([#14](https://github.com/speedone/mietfuchs/issues/14))
 
 ### Geändert
