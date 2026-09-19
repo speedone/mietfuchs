@@ -74,8 +74,8 @@ async function request(settings, path, { body, timeoutMs, signal, consume = read
 }
 
 // Liest die gestreamte Chat-Antwort: zeilenweise JSON, die letzte Zeile mit `done: true`
-// trägt den Grund des Endes und die Kennzahlen.
-async function readChatStream(res) {
+// trägt den Grund des Endes und die Kennzahlen. `onProgress` erfährt die bisherige Länge.
+async function readChatStream(res, onProgress) {
   let content = ''
   let final = null
   for await (const line of readLines(res.body)) {
@@ -86,7 +86,9 @@ async function readChatStream(res) {
       throw new OllamaError(`Ollama lieferte eine unlesbare Antwort: ${line.slice(0, 200)}`)
     }
     if (part.error) throw new OllamaError(`Ollama meldet einen Fehler: ${part.error}`)
-    content += part.message?.content ?? ''
+    const piece = part.message?.content ?? ''
+    content += piece
+    if (piece) onProgress?.({ phase: 'writing', chars: content.length })
     if (part.done) final = part
   }
   if (!final) throw new OllamaError('Die Antwort von Ollama brach vorzeitig ab.')
@@ -109,7 +111,8 @@ async function getCapabilities(settings, model, signal) {
 export function ollamaProvider(settings) {
   const model = settings.ollamaModel
   return {
-    async json({ prompt, images = [], schema, timeoutMs, signal }) {
+    async json({ prompt, images = [], schema, timeoutMs, signal, onProgress }) {
+      onProgress?.({ phase: 'waiting' })
       const message = { role: 'user', content: prompt }
       if (images.length > 0) {
         // Kennt Ollama die Fähigkeiten nicht (ältere Version), wird es versucht
@@ -133,7 +136,7 @@ export function ollamaProvider(settings) {
         },
         timeoutMs,
         signal,
-        consume: readChatStream,
+        consume: (res) => readChatStream(res, onProgress),
       })
       let data
       try {
