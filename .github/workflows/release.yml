@@ -52,7 +52,12 @@ jobs:
       - name: Binaries bauen
         run: npm run package
 
-      # Nur Archive + .exe verteilen, nicht die rohen macOS/Linux-Binaries: bei einem
+      # Aus denselben Linux-Programmdateien die Installationspakete bauen (#25). nFPM kommt aus
+      # seinem Container, der Runner braucht dafür nichts weiter als Docker.
+      - name: Linux-Pakete bauen
+        run: npm run package:linux
+
+      # Nur Archive, Pakete + .exe verteilen, nicht die rohen macOS/Linux-Binaries: bei einem
       # rohen Download geht das Ausführungs-Bit verloren (#1) — die Archive konservieren es.
       - name: Binaries hochladen (Artefakt)
         uses: actions/upload-artifact@v7
@@ -62,6 +67,9 @@ jobs:
             dist-bin/*.zip
             dist-bin/*.tar.gz
             dist-bin/*.exe
+            dist-bin/*.deb
+            dist-bin/*.rpm
+            dist-bin/*.pkg.tar.zst
           if-no-files-found: error
 
   # Bun signiert macOS-Programmdateien beim Cross-Kompilieren unter Linux selbst (ad hoc). Diese
@@ -97,6 +105,9 @@ jobs:
             dist-bin/*.zip
             dist-bin/*.tar.gz
             dist-bin/*.exe
+            dist-bin/*.deb
+            dist-bin/*.rpm
+            dist-bin/*.pkg.tar.zst
           if-no-files-found: error
 
   # Jede Programmdatei auf einem Rechner ihres Systems starten und von außen prüfen
@@ -239,10 +250,63 @@ jobs:
           docker exec pruefling sh -c 'ldd --version 2>&1 | head -1' || true
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
 
+  # Die Installationspakete (#25) werden installiert wie bei einem Nutzer, danach startet
+  # Mietfuchs als ganz normaler Benutzer. In /usr/bin darf der nicht schreiben, seine Daten
+  # gehören deshalb nach ~/.local/share/mietfuchs (server/src/store.js). Geprüft wird mit
+  # demselben Skript wie jede Programmdatei, und zwar auf je einer Distribution pro Format.
+  pakete:
+    name: Paket auf ${{ matrix.name }}
+    needs: signieren
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'Debian 12 (deb)', image: 'debian:12', arch: x64, muster: '*_amd64.deb', install: 'dpkg -i' }
+          - { name: 'Ubuntu 24.04 (deb)', image: 'ubuntu:24.04', arch: x64, muster: '*_amd64.deb', install: 'dpkg -i', startmenue: 'ja' }
+          - { name: 'Fedora (rpm)', image: 'fedora:latest', arch: x64, muster: '*.x86_64.rpm', install: 'rpm -i' }
+          - { name: 'openSUSE Leap 15.6 (rpm)', image: 'opensuse/leap:15.6', arch: x64, muster: '*.x86_64.rpm', install: 'rpm -i' }
+          - { name: 'Arch Linux', image: 'archlinux:latest', arch: x64, muster: '*-x86_64.pkg.tar.zst', install: 'pacman -U --noconfirm' }
+          - { name: 'Debian 12 (deb, ARM64)', image: 'debian:12', arch: arm64, muster: '*_arm64.deb', install: 'dpkg -i' }
+          - { name: 'AlmaLinux 10 (rpm, ARM64)', image: 'almalinux:10', arch: arm64, muster: '*.aarch64.rpm', install: 'rpm -i' }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-binaries
+          path: pakete
+
+      - name: Installieren, als Benutzer starten und prüfen
+        shell: bash
+        run: |
+          # --network host: Die Programmdatei erreicht das nachgebaute Ollama des Prüfskripts
+          # unter 127.0.0.1, und das Skript erreicht Mietfuchs ebenso.
+          docker run -d --name pruefling --network host -v "$PWD/pakete:/pkg:ro" \
+            "${{ matrix.image }}" sleep 1800
+          trap 'echo "--- Ausgabe von Mietfuchs"; docker exec pruefling cat /tmp/server.log 2>/dev/null; docker rm -f pruefling > /dev/null' EXIT
+          docker exec pruefling sh -c '${{ matrix.install }} /pkg/${{ matrix.muster }}'
+          docker exec pruefling useradd --create-home pruefer
+          # Login-Shell: Ohne sie bliebe HOME auf /root, und der Datenordner läge falsch.
+          docker exec -d pruefling su - pruefer -c \
+            'CI=true NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test mietfuchs > /tmp/server.log 2>&1'
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
+          echo '--- Datenordner des Benutzers'
+          docker exec pruefling ls -l /home/pruefer/.local/share/mietfuchs/db.json
+          # Einmal genügt: Der Startmenü-Eintrag ist in jedem Paket derselbe, und nur Debian
+          # und Verwandte bringen das Prüfprogramm dafür mit.
+          if [ '${{ matrix.startmenue }}' = 'ja' ]; then
+            docker exec pruefling sh -c 'apt-get -qq update && apt-get -qq install -y desktop-file-utils'
+            docker exec pruefling desktop-file-validate /usr/share/applications/mietfuchs.desktop
+            docker exec pruefling sh -c 'ls /usr/share/icons/hicolor/*/apps/mietfuchs.*'
+          fi
+
   # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen]
+    needs: [pruefen, distributionen, pakete]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
@@ -258,5 +322,8 @@ jobs:
             dist-bin/*.zip
             dist-bin/*.tar.gz
             dist-bin/*.exe
+            dist-bin/*.deb
+            dist-bin/*.rpm
+            dist-bin/*.pkg.tar.zst
           fail_on_unmatched_files: true
           generate_release_notes: true

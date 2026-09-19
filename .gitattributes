@@ -1,0 +1,3 @@
+# Der Startmenü-Eintrag der Linux-Pakete muss Zeilenenden im Unix-Format behalten. Gebaut wird
+# er auch auf Windows-Rechnern (npm run package:linux), und mit CRLF gilt er als ungültig.
+*.desktop text eol=lf
