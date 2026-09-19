@@ -289,9 +289,12 @@ jobs:
           trap 'echo "--- Ausgabe von Mietfuchs"; docker exec pruefling cat /tmp/server.log 2>/dev/null; docker rm -f pruefling > /dev/null' EXIT
           docker exec pruefling sh -c '${{ matrix.install }} /pkg/${{ matrix.muster }}'
           docker exec pruefling useradd --create-home pruefer
-          # Login-Shell: Ohne sie bliebe HOME auf /root, und der Datenordner läge falsch.
-          docker exec -d pruefling su - pruefer -c \
-            'CI=true NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test mietfuchs > /tmp/server.log 2>&1'
+          # Den Benutzer wechselt Docker selbst: `su` bringen nicht alle Abbilder mit (AlmaLinux
+          # 10 etwa nicht). HOME muss dabei ausdrücklich mit, sonst läge der Datenordner falsch.
+          docker exec -d --user pruefer \
+            -e HOME=/home/pruefer -e CI=true -e NKA_PORT=3001 \
+            -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
+            pruefling sh -c 'mietfuchs > /tmp/server.log 2>&1'
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
           echo '--- Datenordner des Benutzers'
           docker exec pruefling ls -l /home/pruefer/.local/share/mietfuchs/db.json
