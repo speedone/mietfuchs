@@ -4,81 +4,81 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { OllamaStatus, Settings } from '../types'
 import { api } from '../api'
-import { ANDERES_MODELL, ladeAnleitung, modelHinweis, modelOptions } from '../modelForm'
+import { OTHER_MODEL, modelHint, modelOptions, pullInstructions } from '../modelForm'
 import { useToast } from './feedback'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung-mit-ollama'
-const meldung = (e: unknown) => String((e as Error)?.message ?? e)
+const errorText = (e: unknown) => String((e as Error)?.message ?? e)
 
 type Props = { settings: Settings; reload: () => Promise<void> }
 
 export function OllamaSettings({ settings, reload }: Props) {
   const toast = useToast()
-  const fest = settings.fixedByEnv ?? []
-  const urlFest = fest.includes('ollamaUrl')
-  const modellFest = fest.includes('ollamaModel')
+  const fixed = settings.fixedByEnv ?? []
+  const urlFixed = fixed.includes('ollamaUrl')
+  const modelFixed = fixed.includes('ollamaModel')
   const [form, setForm] = useState({ ollamaUrl: settings.ollamaUrl, ollamaModel: settings.ollamaModel })
   const [status, setStatus] = useState<OllamaStatus | null>(null)
-  const [prueft, setPrueft] = useState(true)
+  const [checking, setChecking] = useState(true)
   // Beim Öffnen der Seite ist eine fehlende Verbindung nur ein Hinweis (die KI ist optional),
   // nach „Verbindung testen" eine Fehlermeldung
-  const [manuell, setManuell] = useState(false)
-  const [freieEingabe, setFreieEingabe] = useState(false)
+  const [manualCheck, setManualCheck] = useState(false)
+  const [freeInput, setFreeInput] = useState(false)
 
-  const statusHolen = useCallback(async () => {
-    setPrueft(true)
+  const loadStatus = useCallback(async () => {
+    setChecking(true)
     try {
       setStatus(await api<OllamaStatus>('/api/ollama/status'))
     } catch (e) {
-      setStatus({ ok: false, error: meldung(e) })
+      setStatus({ ok: false, error: errorText(e) })
     } finally {
-      setPrueft(false)
+      setChecking(false)
     }
   }, [])
-  useEffect(() => { void statusHolen() }, [statusHolen])
+  useEffect(() => { void loadStatus() }, [loadStatus])
 
-  async function speichern(werte = form) {
-    await api('/api/settings', { method: 'PUT', body: JSON.stringify(werte) })
+  async function persist(values = form) {
+    await api('/api/settings', { method: 'PUT', body: JSON.stringify(values) })
     await reload()
   }
 
   async function save() {
     try {
-      await speichern()
+      await persist()
       toast('Einstellungen gespeichert.')
     } catch (e) {
-      toast(`Speichern ging nicht: ${meldung(e)}`, 'error')
+      toast(`Speichern ging nicht: ${errorText(e)}`, 'error')
     }
   }
 
-  async function testen() {
-    setManuell(true)
+  async function testConnection() {
+    setManualCheck(true)
     try {
-      if (!urlFest || !modellFest) await speichern()
+      if (!urlFixed || !modelFixed) await persist()
     } catch (e) {
-      toast(`Speichern ging nicht: ${meldung(e)}`, 'error')
+      toast(`Speichern ging nicht: ${errorText(e)}`, 'error')
       return
     }
-    await statusHolen()
+    await loadStatus()
   }
 
-  async function adresseVerwenden(url: string) {
-    const neu = { ...form, ollamaUrl: url }
-    setForm(neu)
+  async function adoptAddress(url: string) {
+    const next = { ...form, ollamaUrl: url }
+    setForm(next)
     try {
-      await speichern(neu)
+      await persist(next)
     } catch (e) {
-      toast(`Speichern ging nicht: ${meldung(e)}`, 'error')
+      toast(`Speichern ging nicht: ${errorText(e)}`, 'error')
       return
     }
     toast('Adresse übernommen.')
-    await statusHolen()
+    await loadStatus()
   }
 
-  const modelle = status?.ok ? status.models ?? [] : []
-  const auswahl = status?.ok && !freieEingabe && !modellFest
-  const hinweis = status?.ok ? modelHinweis(modelle, form.ollamaModel) : null
-  const name = form.ollamaModel.trim()
+  const models = status?.ok ? status.models ?? [] : []
+  const showSelect = status?.ok && !freeInput && !modelFixed
+  const hint = status?.ok ? modelHint(models, form.ollamaModel) : null
+  const modelName = form.ollamaModel.trim()
 
   return (
     <div className="card">
@@ -92,62 +92,62 @@ export function OllamaSettings({ settings, reload }: Props) {
           Server-Adresse
           <input
             value={form.ollamaUrl}
-            disabled={urlFest}
+            disabled={urlFixed}
             onChange={(e) => setForm({ ...form, ollamaUrl: e.target.value })}
             placeholder="http://localhost:11434"
           />
         </label>
         <label className="field grow">
           Modell
-          {auswahl ? (
+          {showSelect ? (
             <select
               value={form.ollamaModel}
               onChange={(e) => {
-                if (e.target.value === ANDERES_MODELL) {
-                  setFreieEingabe(true)
+                if (e.target.value === OTHER_MODEL) {
+                  setFreeInput(true)
                   setForm({ ...form, ollamaModel: '' })
                 } else {
                   setForm({ ...form, ollamaModel: e.target.value })
                 }
               }}
             >
-              {modelOptions(modelle, form.ollamaModel).map((o) => (
+              {modelOptions(models, form.ollamaModel).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           ) : (
             <input
               value={form.ollamaModel}
-              disabled={modellFest}
-              autoFocus={freieEingabe}
+              disabled={modelFixed}
+              autoFocus={freeInput}
               onChange={(e) => setForm({ ...form, ollamaModel: e.target.value })}
               placeholder="Name wie bei „ollama list“"
             />
           )}
         </label>
-        {!(urlFest && modellFest) && <button className="btn" onClick={() => void save()}>Speichern</button>}
-        <button className="btn secondary" onClick={() => void testen()} disabled={prueft}>
-          {prueft && <span className="spinner" />}Verbindung testen
+        {!(urlFixed && modelFixed) && <button className="btn" onClick={() => void save()}>Speichern</button>}
+        <button className="btn secondary" onClick={() => void testConnection()} disabled={checking}>
+          {checking && <span className="spinner" />}Verbindung testen
         </button>
       </div>
-      {urlFest && <p className="muted">Die Adresse ist über die Umgebungsvariable <code>NKA_OLLAMA_URL</code> festgelegt.</p>}
-      {modellFest && <p className="muted">Das Modell ist über die Umgebungsvariable <code>NKA_OLLAMA_MODEL</code> festgelegt.</p>}
+      {urlFixed && <p className="muted">Die Adresse ist über die Umgebungsvariable <code>NKA_OLLAMA_URL</code> festgelegt.</p>}
+      {modelFixed && <p className="muted">Das Modell ist über die Umgebungsvariable <code>NKA_OLLAMA_MODEL</code> festgelegt.</p>}
 
-      {prueft && <p className="muted">Verbindung wird geprüft …</p>}
-      {!prueft && status?.ok && (
+      {checking && <p className="muted">Verbindung wird geprüft …</p>}
+      {!checking && status?.ok && (
         <div className="ok">
-          {modelle.length === 0
+          {models.length === 0
             ? 'Ollama ist erreichbar, aber es ist noch kein Modell installiert.'
-            : `Ollama ist erreichbar, ${modelle.length === 1 ? 'ein Modell' : `${modelle.length} Modelle`} installiert.`}
+            : `Ollama ist erreichbar, ${models.length === 1 ? 'ein Modell' : `${models.length} Modelle`} installiert.`}
         </div>
       )}
-      {!prueft && status && !status.ok && (
-        <div className={manuell ? 'error' : 'notice'}>
+      {!checking && status && !status.ok && (
+        <div className={manualCheck ? 'error' : 'notice'}>
           {status.error}
           {status.found && (
             <div className="row" style={{ marginTop: 8, alignItems: 'center' }}>
               <span>Unter {status.found} antwortet Ollama.</span>
-              <button className="btn secondary small" onClick={() => void adresseVerwenden(status.found!)}>
+              <button className="btn secondary small" onClick={() => void adoptAddress(status.found!)}>
                 Diese Adresse verwenden
               </button>
             </div>
@@ -155,15 +155,15 @@ export function OllamaSettings({ settings, reload }: Props) {
         </div>
       )}
 
-      {hinweis === 'fehlt' && name && <Laden name={name} ollamaUrl={settings.ollamaUrl} />}
-      {hinweis === 'ohneBilder' && (
+      {hint === 'missing' && modelName && <PullHint model={modelName} ollamaUrl={settings.ollamaUrl} />}
+      {hint === 'noVision' && (
         <div className="notice">
-          „{name}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.
+          „{modelName}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.
         </div>
       )}
-      {hinweis === 'cloud' && (
+      {hint === 'cloud' && (
         <div className="notice">
-          „{name}“ läuft nicht auf diesem Rechner. Ollama schickt die Belege dafür an einen Cloud-Dienst.
+          „{modelName}“ läuft nicht auf diesem Rechner. Ollama schickt die Belege dafür an einen Cloud-Dienst.
         </div>
       )}
 
@@ -178,12 +178,12 @@ export function OllamaSettings({ settings, reload }: Props) {
 }
 
 // Die Anleitung richtet sich nach der gespeicherten Adresse, denn nur dort hat Ollama geantwortet
-function Laden({ name, ollamaUrl }: { name: string; ollamaUrl: string }) {
+function PullHint({ model, ollamaUrl }: { model: string; ollamaUrl: string }) {
   const toast = useToast()
-  const { text, befehl } = ladeAnleitung(name, ollamaUrl)
-  const kopieren = async () => {
+  const { text, command } = pullInstructions(model, ollamaUrl)
+  const copy = async () => {
     try {
-      await navigator.clipboard.writeText(befehl)
+      await navigator.clipboard.writeText(command)
       toast('Befehl kopiert.')
     } catch {
       toast('Kopieren ging nicht. Bitte den Befehl von Hand markieren.', 'error')
@@ -191,10 +191,10 @@ function Laden({ name, ollamaUrl }: { name: string; ollamaUrl: string }) {
   }
   return (
     <>
-      <p>„{name}“ ist nicht installiert. {text}</p>
+      <p>„{model}“ ist nicht installiert. {text}</p>
       <div className="command-box">
-        <pre><code>{befehl}</code></pre>
-        <button className="btn secondary small" onClick={() => void kopieren()}>Befehl kopieren</button>
+        <pre><code>{command}</code></pre>
+        <button className="btn secondary small" onClick={() => void copy()}>Befehl kopieren</button>
       </div>
     </>
   )

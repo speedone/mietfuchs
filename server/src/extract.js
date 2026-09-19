@@ -1,5 +1,5 @@
 // KI-Belegauswertung: Prompts, Schemas und Ablauf. Mit welchem Anbieter das Modell läuft
-// (bisher Ollama), entscheidet ki/index.js, hier geht es nur um das Fachliche.
+// (bisher Ollama), entscheidet ai/index.js, hier geht es nur um das Fachliche.
 // PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 // (client/src/pdfIntake.ts) und schickt die Textebene mit, bei Scans ohne Textebene die
 // gerenderten Seiten als Bilder. So braucht der Server kein natives Modul, und das verhält
@@ -7,9 +7,9 @@
 // { mimeType, data } an den Anbieter und erfordern ein Modell, das Bilder versteht.
 
 import fs from 'node:fs'
-import { kiAnbieter } from './ki/index.js'
+import { aiProvider } from './ai/index.js'
 
-const fotoAus = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
+const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
 // Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
 // Scan mit Stempel oder Kopfzeile, dann sind die Seitenbilder aussagekräftiger.
@@ -119,7 +119,7 @@ Positionen:
 ${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
 
 Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
-  const { categories } = await kiAnbieter(settings).json({ prompt, schema, timeoutMs: 120000 })
+  const { categories } = await aiProvider(settings).json({ prompt, schema, timeoutMs: 120000 })
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
   return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
 }
@@ -127,7 +127,7 @@ Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
 export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [] } = {}) {
   let prompt = PROMPT
-  let bilder = []
+  let images = []
 
   if (mimetype === 'application/pdf') {
     const text = String(pdfText ?? '').trim()
@@ -135,19 +135,19 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
       prompt += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, TEXT_MAX)}`
     } else if (pages.length > 0) {
       // Scan ohne (brauchbare) Textebene: die Seitenbilder gehen an das Vision-Modell
-      bilder = pages.slice(0, SEITEN_MAX)
+      images = pages.slice(0, SEITEN_MAX)
       prompt += '\n\nDie Rechnung ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).'
     } else {
       throw new Error(OHNE_INHALT)
     }
   } else if (mimetype.startsWith('image/')) {
-    bilder = [fotoAus(filePath, mimetype)]
+    images = [photoOf(filePath, mimetype)]
     prompt += '\n\nDie Rechnung ist als Bild angehängt.'
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  const result = await kiAnbieter(settings).json({ prompt, bilder, schema: SCHEMA, timeoutMs: 300000 })
+  const result = await aiProvider(settings).json({ prompt, images, schema: SCHEMA, timeoutMs: 300000 })
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
@@ -178,9 +178,9 @@ Antworte nur mit der Kategorie.`
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
 export async function classifyDocType(filePath, mimetype, settings) {
   if (!mimetype.startsWith('image/')) return 'rechnung'
-  const { docType } = await kiAnbieter(settings).json({
+  const { docType } = await aiProvider(settings).json({
     prompt: DOCTYPE_PROMPT,
-    bilder: [fotoAus(filePath, mimetype)],
+    images: [photoOf(filePath, mimetype)],
     schema: DOCTYPE_SCHEMA,
     timeoutMs: 120000,
   })
@@ -204,14 +204,14 @@ Lies ab und gib JSON zurück:
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
 export async function extractMeterReading(filePath, mimetype, settings, { pages = [] } = {}) {
-  let bilder
+  let images
   if (mimetype === 'application/pdf') {
     if (pages.length === 0) throw new Error(OHNE_INHALT)
-    bilder = pages.slice(0, 1)
+    images = pages.slice(0, 1)
   } else if (mimetype.startsWith('image/')) {
-    bilder = [fotoAus(filePath, mimetype)]
+    images = [photoOf(filePath, mimetype)]
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  return kiAnbieter(settings).json({ prompt: METER_PROMPT, bilder, schema: METER_SCHEMA, timeoutMs: 300000 })
+  return aiProvider(settings).json({ prompt: METER_PROMPT, images, schema: METER_SCHEMA, timeoutMs: 300000 })
 }
