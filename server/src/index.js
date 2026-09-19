@@ -9,6 +9,7 @@ import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
 import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
+import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -84,16 +85,31 @@ function effectiveSettings() {
   return { ...getDb().settings, ...settingsFromEnv() }
 }
 
-const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: Object.keys(settingsFromEnv()) })
+// `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.js), nie welcher
+const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: Object.keys(settingsFromEnv()), aiKeys: keyInfo() })
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
-  const { fixedByEnv, ...changes } = req.body ?? {}
+  const { fixedByEnv, aiKeys, ...changes } = req.body ?? {}
   for (const key of Object.keys(settingsFromEnv())) delete changes[key]
   Object.assign(getDb().settings, changes)
   save()
   res.json(settingsForClient())
 })
+
+// API-Schlüssel haben eigene Routen statt PUT /api/settings: Ein Schlüssel geht nur zum Server,
+// nie zurück, und nur, wenn jemand ihn neu eingibt. Ein unverändertes Formular überschreibt so
+// nichts.
+const keyRoute = (change) => (req, res) => {
+  try {
+    change(req)
+  } catch (err) {
+    return res.status(err.status ?? 500).json({ error: err.message })
+  }
+  res.json(keyInfo())
+}
+app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
+app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']) {
@@ -584,6 +600,15 @@ function openBrowser(url) {
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
+
+// Eine falsch gesetzte Schlüssel-Variable (siehe secrets.js) fiele sonst erst bei der ersten
+// Auswertung als „Schlüssel ungültig“ auf
+const keyProblem = checkKeyEnvironment()
+if (keyProblem) {
+  console.error(keyProblem)
+  process.exit(1)
+}
+
 const server = app.listen(PORT, (err) => {
   // Express 5 ruft diesen Callback auch bei einem Fehler auf (etwa belegter Port). Den meldet
   // der error-Handler unten; hier darf dann weder „läuft“ stehen noch der Browser aufgehen.
