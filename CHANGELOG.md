@@ -6,6 +6,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Gescannte PDFs werden auch in der Programmdatei ausgewertet.** Bei PDFs ohne Textebene
+  brach die KI-Auswertung in der Programmdatei mit „DOMMatrix is not defined“ ab. Im
+  Docker-Image und beim Start aus dem Quellcode lief sie. Jetzt liest der Browser das PDF vor
+  dem Hochladen: Er schickt die Textebene mit und bei Scans die ersten vier Seiten als Bilder.
+  Das verhält sich in allen Betriebsarten gleich.
+  ([#21](https://github.com/speedone/mietfuchs/issues/21))
+- **Umlaute in Dateinamen bleiben erhalten.** Aus „Gebührenbescheid.pdf“ wurde beim Hochladen
+  „Geb__hrenbescheid.pdf“. Bereits hochgeladene Belege behalten ihren Namen.
+- **Fehler beim Hochladen erscheinen als verständliche Meldung**, etwa bei einer Datei über
+  25 MB, statt als technische Fehlerseite.
+
+### Sicherheit
+
+- **Der Server öffnet keine PDFs mehr.** Damit entfällt die serverseitige pdf.js-Version, für
+  die eine Lücke gemeldet ist, über die ein präpariertes PDF Code ausführen konnte.
+
 ## [0.5.0] – 2026-09-19
 
 ### Hinzugefügt
