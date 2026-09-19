@@ -10,42 +10,62 @@ export const PDF_TEXT_MAX = 20000
 // Rechnungen stehen praktisch immer vorn, und jedes Bild kostet Auswertungszeit.
 export const MAX_PAGES = 4
 
-export type PdfReader = {
-  text(file: File): Promise<string>
-  pages(file: File, max: number): Promise<Blob[]>
+// Ein geöffnetes PDF. Es wird nur einmal geöffnet, auch wenn Text und Seiten gebraucht werden.
+export type OpenedPdf = {
+  text(): Promise<string>
+  pages(max: number): Promise<Blob[]>
+  close(): void
 }
+export type PdfReader = { open(file: File): Promise<OpenedPdf> }
+
+// Fehler, deren Text schon für Menschen formuliert ist
+const eigenerFehler = (message: string) => Object.assign(new Error(message), { name: 'SeiteAlsBild' })
 
 const alsJpeg = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((ok, fehler) =>
-    canvas.toBlob((b) => (b ? ok(b) : fehler(new Error('Eine Seite ließ sich nicht als Bild speichern.'))), 'image/jpeg', 0.85),
+    canvas.toBlob((b) => (b ? ok(b) : fehler(eigenerFehler('Eine Seite ließ sich nicht als Bild speichern.'))), 'image/jpeg', 0.85),
   )
 
+// Textstücke einer Seite zu Fließtext: Zeilenenden bleiben, sonst ein Leerzeichen zwischen den
+// Stücken, damit Spalten wie „Betrag“ und „12,50“ nicht zusammenkleben. pdf.js liefert daneben
+// Markierungen ohne Text, die entfallen.
+type TextStueck = { str: string; hasEOL?: boolean }
+const istText = (i: unknown): i is TextStueck => typeof i === 'object' && i !== null && typeof (i as TextStueck).str === 'string'
+
+export function seitenText(items: ReadonlyArray<unknown>): string {
+  return items.map((i) => (istText(i) ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join('') + '\n'
+}
+
 export const pdfReader: PdfReader = {
-  async text(file) {
+  async open(file) {
     const { doc, close } = await openPdf({ data: await file.arrayBuffer() })
-    try {
-      let text = ''
-      for (let n = 1; n <= doc.numPages && text.length < PDF_TEXT_MAX; n++) {
-        const page = await doc.getPage(n)
-        const inhalt = await page.getTextContent()
-        text += inhalt.items.map((i) => ('str' in i ? i.str + (i.hasEOL ? '\n' : ' ') : '')).join('') + '\n'
-        page.cleanup()
-      }
-      return text
-    } finally {
-      close()
+    return {
+      async text() {
+        let text = ''
+        for (let n = 1; n <= doc.numPages && text.length < PDF_TEXT_MAX; n++) {
+          const page = await doc.getPage(n)
+          text += seitenText((await page.getTextContent()).items)
+          page.cleanup()
+        }
+        return text
+      },
+      async pages(max) {
+        const seiten: Blob[] = []
+        for (let n = 1; n <= Math.min(doc.numPages, max); n++) seiten.push(await alsJpeg(await renderPage(doc, n)))
+        return seiten
+      },
+      close,
     }
   },
-  async pages(file, max) {
-    const { doc, close } = await openPdf({ data: await file.arrayBuffer() })
-    try {
-      const seiten: Blob[] = []
-      for (let n = 1; n <= Math.min(doc.numPages, max); n++) seiten.push(await alsJpeg(await renderPage(doc, n)))
-      return seiten
-    } finally {
-      close()
-    }
-  },
+}
+
+// pdf.js meldet auf Englisch und technisch. In der Warteschlange soll stehen, was los ist.
+function meldungFuer(err: unknown): string {
+  const { name, message } = err as Error
+  if (name === 'PasswordException') return 'Das PDF ist mit einem Passwort geschützt. Bitte eine Fassung ohne Passwort hochladen.'
+  if (name === 'InvalidPDFException') return 'Die Datei ist kein gültiges PDF oder beschädigt.'
+  if (name === 'SeiteAlsBild') return message
+  return `Das PDF ließ sich nicht lesen (${message ?? String(err)}).`
 }
 
 export async function buildUpload(file: File, reader: PdfReader = pdfReader): Promise<FormData> {
@@ -55,11 +75,15 @@ export async function buildUpload(file: File, reader: PdfReader = pdfReader): Pr
 
   let text = ''
   let seiten: Blob[] = []
+  let doc: OpenedPdf | undefined
   try {
-    text = (await reader.text(file)).trim().slice(0, PDF_TEXT_MAX)
-    if (text.length < PDF_TEXT_MIN) seiten = (await reader.pages(file, MAX_PAGES)).slice(0, MAX_PAGES)
+    doc = await reader.open(file)
+    text = (await doc.text()).trim().slice(0, PDF_TEXT_MAX)
+    if (text.length < PDF_TEXT_MIN) seiten = (await doc.pages(MAX_PAGES)).slice(0, MAX_PAGES)
   } catch (err) {
-    throw new Error(`Das PDF ließ sich nicht öffnen: ${(err as Error).message}`)
+    throw new Error(meldungFuer(err))
+  } finally {
+    doc?.close()
   }
   if (text.length < PDF_TEXT_MIN && seiten.length === 0) throw new Error('Das PDF enthält keine Seiten.')
 

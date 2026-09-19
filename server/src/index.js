@@ -22,18 +22,20 @@ app.use(express.json())
 const aufPlatte = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
-    const safe = file.originalname.replace(/[^\w.\-äöüÄÖÜß]/g, '_')
+    // NFC: macOS liefert „ü“ gern zerlegt als „u“ plus Trema, das der Filter sonst zerschnitte
+    const safe = file.originalname.normalize('NFC').replace(/[^\w.\-äöüÄÖÜß]/g, '_')
     cb(null, `${Date.now()}_${safe}`)
   },
 })
 const imSpeicher = multer.memoryStorage()
 const speicherFuer = (file) => (file.fieldname === 'pages' ? imSpeicher : aufPlatte)
+const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 const upload = multer({
   storage: {
     _handleFile: (req, file, cb) => speicherFuer(file)._handleFile(req, file, cb),
     _removeFile: (req, file, cb) => speicherFuer(file)._removeFile(req, file, cb),
   },
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: UPLOAD_MAX_BYTES },
   // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
   // „M__ll.pdf“, weil jedes Byte des Umlauts einzeln ersetzt wurde.
   defParamCharset: 'utf8',
@@ -42,7 +44,17 @@ const upload = multer({
 // Beleg plus Material für die KI-Auswertung: höchstens vier Seitenbilder (so viele rendert
 // der Browser) und die Textebene im Feld `pdfText`.
 const MAX_SEITEN = 4
-const belegMitSeiten = upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_SEITEN }])
+// Echte Seitenbilder sind deutlich unter 1 MB. Die Grenze hält den Arbeitsspeicher klein, denn
+// Seitenbilder werden dort gehalten und für Ollama noch einmal als Base64 kopiert.
+const SEITE_MAX_BYTES = 5 * 1024 * 1024
+const seitenPruefen = (req, res, next) => {
+  if (!(req.files?.pages ?? []).some((p) => p.size > SEITE_MAX_BYTES)) return next()
+  // Der Beleg liegt da schon auf der Platte: wieder entfernen, sonst bliebe ein Rest im Archiv
+  const beleg = req.files?.file?.[0]
+  if (beleg) fs.rmSync(beleg.path, { force: true })
+  res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
+}
+const belegMitSeiten = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_SEITEN }]), seitenPruefen]
 const belegAus = (req) => req.files?.file?.[0] ?? null
 const auswertungAus = (req) => ({
   pdfText: typeof req.body?.pdfText === 'string' ? req.body.pdfText : '',
@@ -256,7 +268,8 @@ app.get('/api/backup', (req, res) => {
   res.send(zip.toBuffer())
 })
 
-const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } })
+const RESTORE_MAX_BYTES = 500 * 1024 * 1024
+const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: RESTORE_MAX_BYTES } })
 app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
   let zip
@@ -325,14 +338,21 @@ app.get('/healthz', (req, res) => {
   res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
 })
 
-// Fehler beim Hochladen als lesbare Meldung statt als HTML-Fehlerseite von Express
-app.use((err, req, res, next) => {
-  if (!(err instanceof multer.MulterError)) return next(err)
-  const meldung =
-    err.code === 'LIMIT_FILE_SIZE' ? 'Die Datei ist größer als 25 MB.'
-      : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_SEITEN} Seitenbilder je Beleg.`
-        : `Hochladen fehlgeschlagen: ${err.message}`
-  res.status(400).json({ error: meldung })
+// Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
+app.use('/api', (err, req, res, next) => {
+  if (res.headersSent) return next(err)
+  if (err instanceof multer.MulterError) {
+    const grenze = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
+    const meldung =
+      err.code === 'LIMIT_FILE_SIZE' ? `Die Datei ist größer als ${grenze / 1024 / 1024} MB.`
+        : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_SEITEN} Seitenbilder je Beleg.`
+          : err.code === 'LIMIT_FIELD_VALUE' ? 'Ein Textfeld ist zu lang.'
+            : `Hochladen fehlgeschlagen: ${err.message}`
+    return res.status(400).json({ error: meldung })
+  }
+  // Zum Beispiel ein abgebrochener Upload („Unexpected end of form“), den busboy selbst meldet
+  const status = Number(err.status ?? err.statusCode) || 500
+  res.status(status >= 400 && status < 600 ? status : 500).json({ error: `Die Anfrage ist fehlgeschlagen: ${err.message}` })
 })
 
 // ---------- Frontend (Produktions-Build) ----------

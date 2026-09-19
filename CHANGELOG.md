@@ -17,12 +17,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Umlaute in Dateinamen bleiben erhalten.** Aus „Gebührenbescheid.pdf“ wurde beim Hochladen
   „Geb__hrenbescheid.pdf“. Bereits hochgeladene Belege behalten ihren Namen.
 - **Fehler beim Hochladen erscheinen als verständliche Meldung**, etwa bei einer Datei über
-  25 MB, statt als technische Fehlerseite.
+  25 MB, statt als technische Fehlerseite. Passwortgeschützte oder beschädigte PDFs werden
+  ebenfalls klar benannt.
+- **Belegkopien im Druck und die Auswertung von PDFs laufen auch in etwas älteren Browsern.**
+  pdf.js wird jetzt in der Fassung für ältere Browser geladen (laut pdf.js ab Chrome 125,
+  Safari 18 und Firefox ESR). Die bisherige Fassung setzte die allerneuesten Browser voraus.
 
 ### Sicherheit
 
-- **Der Server öffnet keine PDFs mehr.** Damit entfällt die serverseitige pdf.js-Version, für
-  die eine Lücke gemeldet ist, über die ein präpariertes PDF Code ausführen konnte.
+- **Der Server enthält kein pdf.js mehr.** `npm audit` meldete für die dort genutzte Version
+  eine Lücke, über die ein präpariertes PDF Code ausführen kann. Sie setzt Formular-Skripte
+  voraus, die Mietfuchs nicht einschaltet, betroffen war Mietfuchs also nicht. Mit dem Wegfall
+  ist die Meldung trotzdem erledigt.
 
 ## [0.5.0] – 2026-09-19
 

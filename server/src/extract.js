@@ -13,8 +13,9 @@ const TEXT_MIN = 80
 const TEXT_MAX = 20000
 const SEITEN_MAX = 4
 
+// Kommt vor, wenn ein Tab von vor einem Update noch offen ist und PDFs nicht selbst liest
 const OHNE_INHALT =
-  'Das PDF hat keine lesbare Textebene, und es kamen keine Seitenbilder mit. Bitte den Beleg über die Mietfuchs-Oberfläche hochladen.'
+  'Das PDF hat keine lesbare Textebene, und es kamen keine Seitenbilder mit. Bitte die Mietfuchs-Oberfläche neu laden und den Beleg dort erneut hochladen.'
 
 const SCHEMA = {
   type: 'object',

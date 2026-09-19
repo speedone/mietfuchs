@@ -216,7 +216,11 @@ Zentraler Fetch-Wrapper `api()` und Geld-/Datums-Helfer (`parseEuro`, `fmtEuro`,
 [client/src/api.ts](client/src/api.ts). Druck/PDF läuft über die Browser-Druckfunktion;
 hochgeladene Belege werden für den Druck per **pdf.js** auf Canvas gerendert
 ([client/src/pdfPreview.ts](client/src/pdfPreview.ts)) — die zugehörigen pdf.js-WASM/Font-
-Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert.
+Assets werden im Build via `vite-plugin-static-copy` nach `dist/pdfjs/` kopiert. pdf.js wird
+für Druck und Upload über [client/src/pdf.ts](client/src/pdf.ts) geladen, bewusst in der
+legacy-Fassung (`pdfjs-dist/legacy/build`): Die moderne setzt die allerneuesten Browser voraus.
+Ein Test mit echtem pdf.js ([pdfIntake.pdfjs.test.ts](client/src/pdfIntake.pdfjs.test.ts))
+schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 
 ## Konventionen & Fallstricke
 
