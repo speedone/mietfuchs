@@ -537,11 +537,11 @@ export function computeSettlement(db, year) {
       // Anteile für Wohnungen außerhalb der Abrechnungseinheit verfallen — gelöscht oder
       // auf „nicht beteiligt" gestellt. Sonst würde der Betrag unbemerkt kleiner verteilt,
       // als vereinbart ist.
-      const verfallen = Object.keys(item.customShares ?? {})
+      const forfeited = Object.keys(item.customShares ?? {})
         .filter((id) => pctOf(id) > 0 && !basisUnits.some((u) => u.id === id))
         .map((id) => unitById.get(id)?.name ?? 'gelöschte Wohnung')
-      if (verfallen.length > 0) {
-        warnings.push(`„${item.description}": der vereinbarte Anteil für ${verfallen.join(', ')} entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`)
+      if (forfeited.length > 0) {
+        warnings.push(`„${item.description}": der vereinbarte Anteil für ${forfeited.join(', ')} entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`)
       }
       if (pctSum <= 0) {
         warnings.push(`„${item.description}": keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter.`)

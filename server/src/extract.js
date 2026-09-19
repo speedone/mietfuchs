@@ -44,10 +44,10 @@ async function ask(settings, step, { prompt, images = [], schema }, { signal, st
 // Scan mit Stempel oder Kopfzeile, dann sind die Seitenbilder aussagekräftiger.
 const TEXT_MIN = 80
 const TEXT_MAX = 20000
-const SEITEN_MAX = 4
+const PAGES_MAX = 4
 
 // Kommt vor, wenn ein Tab von vor einem Update noch offen ist und PDFs nicht selbst liest
-const OHNE_INHALT =
+const NO_CONTENT =
   'Das PDF hat keine lesbare Textebene, und es kamen keine Seitenbilder mit. Bitte die Mietfuchs-Oberfläche neu laden und den Beleg dort erneut hochladen.'
 
 const SCHEMA = {
@@ -165,10 +165,10 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
       prompt += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, TEXT_MAX)}`
     } else if (pages.length > 0) {
       // Scan ohne (brauchbare) Textebene: die Seitenbilder gehen an das Vision-Modell
-      images = pages.slice(0, SEITEN_MAX)
+      images = pages.slice(0, PAGES_MAX)
       prompt += '\n\nDie Rechnung ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).'
     } else {
-      throw new Error(OHNE_INHALT)
+      throw new Error(NO_CONTENT)
     }
   } else if (mimetype.startsWith('image/')) {
     images = [photoOf(filePath, mimetype)]
@@ -237,7 +237,7 @@ Lies ab und gib JSON zurück:
 export async function extractMeterReading(filePath, mimetype, settings, { pages = [], signal, stats, onProgress } = {}) {
   let images
   if (mimetype === 'application/pdf') {
-    if (pages.length === 0) throw new Error(OHNE_INHALT)
+    if (pages.length === 0) throw new Error(NO_CONTENT)
     images = pages.slice(0, 1)
   } else if (mimetype.startsWith('image/')) {
     images = [photoOf(filePath, mimetype)]
