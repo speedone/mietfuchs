@@ -20,7 +20,7 @@ export type UpdateGuide =
   | { kind: 'download'; href: string; system: System; newTab: boolean }
   | { kind: 'command'; lines: string[] }
 
-function systemAus(link: string): System {
+function systemOf(link: string): System {
   if (link.endsWith('.exe')) return 'windows'
   if (link.endsWith('.zip')) return 'macos'
   if (link.endsWith('.tar.gz')) return 'linux'
@@ -33,7 +33,7 @@ function systemAus(link: string): System {
 export function updateGuide(st: UpdateStatus): UpdateGuide {
   if (st.mode === 'binary') {
     const href = st.downloadUrl ?? st.releaseUrl ?? RELEASES_URL
-    const system = systemAus(href)
+    const system = systemOf(href)
     return { kind: 'download', href, system, newTab: system === null }
   }
   if (st.mode === 'docker') return { kind: 'command', lines: ['docker compose pull', 'docker compose up -d'] }

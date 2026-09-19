@@ -18,22 +18,22 @@ const UNITS: Unit[] = [
 // Nur ein Zähler, und zwar „sonstig" — die Konstellation aus der Fehlermeldung.
 const METERS: Meter[] = [{ id: 'm1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
 
-let gesendet: { url: string; method: string; body: Record<string, unknown> }[]
+let sent: { url: string; method: string; body: Record<string, unknown> }[]
 
 beforeEach(() => {
-  gesendet = []
+  sent = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
-      gesendet.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
+      sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
-    const daten: Record<string, unknown> = {
+    const responses: Record<string, unknown> = {
       '/api/costItems': [],
       '/api/meters': METERS,
       '/api/uploads': [],
     }
-    return new Response(JSON.stringify(daten[url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(responses[url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
   })
 })
 
@@ -42,7 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const oeffneFormular = async () => {
+const openForm = async () => {
   render(
     <YearProvider>
       <Kosten units={UNITS} settings={null} />
@@ -58,29 +58,29 @@ const oeffneFormular = async () => {
 const select = (label: RegExp) => screen.getByLabelText(label) as HTMLSelectElement
 
 test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', async () => {
-  await oeffneFormular()
+  await openForm()
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
 
-  const typ = await waitFor(() => select(/Zählertyp/i))
+  const typeSelect = await waitFor(() => select(/Zählertyp/i))
   // Das Feld darf nichts vorbelegen, was in der Liste nicht steht: sichtbar ist „— wählen —".
-  expect(typ.value).toBe('')
-  expect([...typ.options].map((o) => o.value)).toEqual(['', 'sonstig'])
+  expect(typeSelect.value).toBe('')
+  expect([...typeSelect.options].map((o) => o.value)).toEqual(['', 'sonstig'])
 
   // Ohne Auswahl wird nicht gespeichert, sondern nach dem Zählertyp gefragt.
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(screen.getByText(/bitte einen Zählertyp wählen/i)).toBeTruthy())
-  expect(gesendet).toHaveLength(0)
+  expect(sent).toHaveLength(0)
 
   // Nach der Auswahl wird genau der angezeigte Typ gespeichert.
-  fireEvent.change(typ, { target: { value: 'sonstig' } })
-  expect(typ.value).toBe('sonstig')
+  fireEvent.change(typeSelect, { target: { value: 'sonstig' } })
+  expect(typeSelect.value).toBe('sonstig')
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
-  await waitFor(() => expect(gesendet).toHaveLength(1))
-  expect(gesendet[0].body).toMatchObject({ key: 'meter', meterType: 'sonstig' })
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'meter', meterType: 'sonstig' })
 })
 
 test('Vereinbarte Anteile: Eingabe, Hinweis auf den Vermieter-Rest und Speichern', async () => {
-  await oeffneFormular()
+  await openForm()
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'custom' } })
 
   // Die selbstgenutzte Wohnung darf einen Anteil tragen, ausgenommene gäbe es hier nicht.
@@ -89,8 +89,8 @@ test('Vereinbarte Anteile: Eingabe, Hinweis auf den Vermieter-Rest und Speichern
   await waitFor(() => expect(screen.getByText(/die restlichen 20 % trägt der Vermieter/i)).toBeTruthy())
 
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
-  await waitFor(() => expect(gesendet).toHaveLength(1))
-  expect(gesendet[0].body).toMatchObject({ key: 'custom', customShares: { u2: 40, u3: 40 } })
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'custom', customShares: { u2: 40, u3: 40 } })
 })
 
 test('Umlageschlüssel-Auswahl zeigt den gespeicherten Schlüssel auch ohne Wohnungszähler', async () => {
@@ -98,9 +98,9 @@ test('Umlageschlüssel-Auswahl zeigt den gespeicherten Schlüssel auch ohne Wohn
   // bestehende Position steht aber auf „meter" — dann muss der Eintrag in der Liste bleiben.
   METERS.length = 0
   try {
-    await oeffneFormular()
-    const schluessel = select(/Umlageschlüssel/i)
-    expect([...schluessel.options].map((o) => o.value)).not.toContain('meter')
+    await openForm()
+    const keySelect = select(/Umlageschlüssel/i)
+    expect([...keySelect.options].map((o) => o.value)).not.toContain('meter')
   } finally {
     METERS.push({ id: 'm1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' })
   }

@@ -23,23 +23,23 @@ const form = (patch: Partial<ItemForm> = {}): ItemForm => ({
 // Optionsliste steht — der State bleibt dabei unverändert. Gespeichert wird dann etwas
 // anderes als das, was der Nutzer sieht. Diese Invariante schließt das für beide Selects aus.
 describe('Auswahllisten enthalten immer den gewählten Wert', () => {
-  const ALLE_TYPEN: (MeterType | '')[] = ['', 'kaltwasser', 'strom', 'waerme', 'sonstig']
-  const VORHANDEN: MeterType[][] = [[], ['sonstig'], ['kaltwasser'], ['strom', 'waerme'], ['kaltwasser', 'sonstig']]
+  const ALL_TYPES: (MeterType | '')[] = ['', 'kaltwasser', 'strom', 'waerme', 'sonstig']
+  const AVAILABLE: MeterType[][] = [[], ['sonstig'], ['kaltwasser'], ['strom', 'waerme'], ['kaltwasser', 'sonstig']]
 
   test('Zählertyp: jeder Formularwert steht in der angebotenen Liste', () => {
-    for (const vorhanden of VORHANDEN) {
-      for (const gewaehlt of ALLE_TYPEN) {
+    for (const available of AVAILABLE) {
+      for (const chosen of ALL_TYPES) {
         // '' entspricht der Option „— wählen —", die das Formular immer anbietet
-        const optionen: (MeterType | '')[] = ['', ...meterTypeOptions(vorhanden, gewaehlt)]
-        expect(optionen, `vorhanden=${vorhanden} gewählt=${gewaehlt}`).toContain(gewaehlt)
+        const options: (MeterType | '')[] = ['', ...meterTypeOptions(available, chosen)]
+        expect(options, `vorhanden=${available} gewählt=${chosen}`).toContain(chosen)
       }
     }
   })
 
   test('Umlageschlüssel: jeder Formularwert steht in der angebotenen Liste', () => {
-    for (const vorhanden of VORHANDEN) {
-      for (const gewaehlt of Object.keys(KEY_LABELS) as CostKey[]) {
-        expect(costKeyOptions(vorhanden, gewaehlt), `vorhanden=${vorhanden} gewählt=${gewaehlt}`).toContain(gewaehlt)
+    for (const available of AVAILABLE) {
+      for (const chosen of Object.keys(KEY_LABELS) as CostKey[]) {
+        expect(costKeyOptions(available, chosen), `vorhanden=${available} gewählt=${chosen}`).toContain(chosen)
       }
     }
   })
