@@ -4,6 +4,8 @@ import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
 import { UIProvider } from './components/feedback'
 import FoxLogo from './components/Logo'
+import { UpdateHint, useUpdateStatus } from './components/Update'
+import { hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
 import Schnellerfassung from './pages/Schnellerfassung'
@@ -84,6 +86,7 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
+  const update = useUpdateStatus(settings)
 
   const reload = useCallback(async () => {
     const [u, t, s] = await Promise.all([
@@ -111,6 +114,12 @@ function Shell() {
           </div>
         </div>
 
+        {/* Oben statt im Fuß: Der Fuß liegt auf kleinen Bildschirmen und langen Seiten
+            außer Sicht. */}
+        {update.status && hintVisible(update.status, settings) && (
+          <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
+        )}
+
         <label className="year-switcher no-print">
           <span>Abrechnungsjahr</span>
           <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
@@ -137,7 +146,9 @@ function Shell() {
         </div>
       </nav>
       <main>
-        {tab === 'cockpit' && <Cockpit units={units} onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === 'cockpit' && (
+          <Cockpit units={units} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
+        )}
         {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
@@ -152,7 +163,7 @@ function Shell() {
         )}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'einstellungen' && settings && (
-          <Einstellungen settings={settings} reload={reload} />
+          <Einstellungen settings={settings} reload={reload} update={update} />
         )}
       </main>
     </>

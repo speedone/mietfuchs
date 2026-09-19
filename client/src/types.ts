@@ -182,6 +182,22 @@ export type Settings = {
   ollamaModel: string
   printAdjustSuggestion?: boolean // §560-Vorschlag zur Vorauszahlungsanpassung andrucken (Standard: ja)
   printAttachments?: boolean // Belegkopien als Anlage mit andrucken (Standard: nein)
+  // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
+  updateCheck?: 'on' | 'off'
+  updateDismissed?: string // Version, deren Hinweis mit „Später" ausgeblendet wurde
+}
+
+// Antwort von /api/update (server/src/update.js)
+export type UpdateStatus = {
+  enabled: boolean // nur mit Zustimmung
+  current: string
+  mode: 'binary' | 'docker' | 'npm'
+  latest: string | null
+  available: boolean
+  releaseUrl: string | null
+  downloadUrl: string | null // nur bei der Programmdatei
+  checkedAt: string | null
+  error: string | null
 }
 
 export type SettlementRow = {

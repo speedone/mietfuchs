@@ -3,10 +3,11 @@ import type { Settings } from '../types'
 import { api } from '../api'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
+import { UpdateSettings, type UpdateState } from '../components/Update'
 
-type Props = { settings: Settings; reload: () => Promise<void> }
+type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
-export default function Einstellungen({ settings, reload }: Props) {
+export default function Einstellungen({ settings, reload, update }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const [form, setForm] = useState({
@@ -68,7 +69,7 @@ export default function Einstellungen({ settings, reload }: Props) {
 
   return (
     <>
-      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben und KI-Belegauswertung über Ollama." />
+      <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung über Ollama und Updates." />
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>
@@ -124,6 +125,8 @@ export default function Einstellungen({ settings, reload }: Props) {
           Belege wird ein Vision-fähiges Modell benötigt (z. B. ein qwen-VL-Modell).
         </p>
       </div>
+
+      <UpdateSettings settings={settings} update={update} reload={reload} />
 
       <div className="card">
         <h2>Daten &amp; Sicherung</h2>
