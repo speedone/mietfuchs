@@ -10,6 +10,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import AdmZip from 'adm-zip'
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -489,4 +490,138 @@ test('KI-Auswertung: der Schuhkarton (/api/intake) nimmt die Seitenbilder ebenso
     assert.equal(r.body.kind, 'rechnung')
     assert.deepEqual(ersteNachricht(ollama).images, [base64(1)])
   })
+})
+
+// ---------- Backup und Wiederherstellung (#23) ----------
+// Ein Backup ist ein ZIP mit db.json und uploads/. Beim Zurückspielen darf ein fremdes oder
+// kaputtes Archiv nie einen halb ersetzten Datenstand hinterlassen.
+
+async function zurueckspielen(s, zipBuffer) {
+  const fd = new FormData()
+  fd.append('file', new Blob([zipBuffer], { type: 'application/zip' }), 'backup.zip')
+  const res = await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })
+  const typ = res.headers.get('content-type') ?? ''
+  return { status: res.status, typ, body: typ.includes('json') ? await res.json() : await res.text() }
+}
+
+async function mitBestand(fn) {
+  const s = await startServer()
+  try {
+    const unit = await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const fd = new FormData()
+    fd.append('file', new Blob([Buffer.from('%PDF-Beleg')], { type: 'application/pdf' }), 'Gebührenbescheid Müll.pdf')
+    const { file } = await (await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })).json()
+    await fn(s, { unit, file })
+  } finally {
+    s.stop()
+  }
+}
+
+// Ein Archiv mit gültiger db.json und frei wählbaren weiteren Einträgen
+function archiv(eintraege = {}, db = { units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} }) {
+  const zip = new AdmZip()
+  if (db !== null) zip.addFile('db.json', Buffer.from(typeof db === 'string' ? db : JSON.stringify(db)))
+  for (const [name, inhalt] of Object.entries(eintraege)) zip.addFile(name, Buffer.from(inhalt))
+  return zip.toBuffer()
+}
+
+test('Backup: herunterladen und zurückspielen bringt Daten und Belege zurück', async () => {
+  await mitBestand(async (s, { unit, file }) => {
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    assert.equal(backup.subarray(0, 2).toString(), 'PK')
+    await fetch(`${s.base}/api/units/${unit.id}`, { method: 'DELETE' })
+    fs.rmSync(path.join(s.dataDir, 'uploads', file))
+    const r = await zurueckspielen(s, backup)
+    assert.equal(r.status, 200)
+    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual((await s.api('/api/uploads')).map((u) => u.file), [file]) // Umlaute überleben das ZIP
+  })
+})
+
+test('Backup: ein Archiv ohne db.json oder mit kaputter db.json ändert nichts', async () => {
+  await mitBestand(async (s, { unit }) => {
+    for (const zip of [archiv({ 'uploads/a.pdf': 'x' }, null), archiv({}, '{ kaputt')]) {
+      const r = await zurueckspielen(s, zip)
+      assert.equal(r.status, 400)
+      assert.match(r.typ, /json/)
+    }
+    const r = await zurueckspielen(s, Buffer.from('kein ZIP'))
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /kein gültiges ZIP/)
+    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+  })
+})
+
+// Setzt einen Eintragsnamen roh ins Archiv, wie ein präpariertes ZIP ihn enthielte. adm-zip
+// bereinigt Namen schon beim Erzeugen, deshalb erst mit gleich langem Platzhalter bauen und die
+// Bytes danach ersetzen (der Name steckt in lokalem Kopf und zentralem Verzeichnis).
+function archivMitRohemNamen(name) {
+  const platzhalter = `uploads/${'X'.repeat(name.length - 'uploads/'.length)}`
+  const roh = archiv({ [platzhalter]: 'boese' }).toString('latin1')
+  assert.equal(roh.split(platzhalter).length - 1, 2, 'Platzhalter steht zweimal im Archiv')
+  return Buffer.from(roh.replaceAll(platzhalter, name), 'latin1')
+}
+
+test('Backup: ein Eintrag, der aus dem Belegordner ausbrechen will, wird abgelehnt, ohne halb zu ersetzen', async () => {
+  await mitBestand(async (s, { unit }) => {
+    for (const name of ['uploads/..', 'uploads/../../boese.txt', 'uploads/.', 'uploads/unter/ordner.pdf']) {
+      const r = await zurueckspielen(s, archivMitRohemNamen(name))
+      assert.equal(r.status, 400, `${name}: ${JSON.stringify(r.body)}`)
+      assert.match(r.typ, /json/)
+      // Nichts ersetzt: die Wohnung ist noch da, obwohl die db.json im Archiv leer ist
+      assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+    }
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'boese.txt')), false)
+    assert.equal(fs.existsSync(path.join(s.dataDir, '..', 'boese.txt')), false)
+  })
+})
+
+test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor etwas ersetzt wird', async () => {
+  // Gegen „ZIP-Bomben“: wenige Kilobyte, die ausgepackt riesig werden. Die Grenze ist hier für
+  // den Test auf 100 kB gesetzt, im Betrieb liegt sie bei 1 GB.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-restore-'))
+  const s = await startServerIn(dataDir, { NKA_RESTORE_MAX_BYTES: String(100 * 1024) })
+  try {
+    const unit = await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const bombe = archiv({ 'uploads/gross.pdf': Buffer.alloc(200 * 1024) })
+    assert.ok(bombe.length < 10 * 1024, 'das Archiv selbst ist klein')
+    const r = await zurueckspielen(s, bombe)
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /zu groß/)
+    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+    assert.equal((await s.api('/api/uploads')).length, 0)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu laufen', async () => {
+  // Express 5 ruft den listen-Callback auch bei einem Fehler auf. Ohne Prüfung meldete Mietfuchs
+  // dann „läuft auf …“ und öffnete in der Programmdatei sogar den Browser.
+  const net = await import('node:net')
+  const belegt = net.createServer()
+  // Ohne Host wie Mietfuchs selbst, sonst lauschten beide auf verschiedenen Adressfamilien
+  await new Promise((r) => belegt.listen(0, r))
+  const port = belegt.address().port
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
+  try {
+    const child = spawn(process.execPath, ['src/index.js'], {
+      cwd: serverRoot,
+      env: { ...process.env, NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/' },
+    })
+    let ausgabe = ''
+    child.stdout.on('data', (d) => { ausgabe += d })
+    child.stderr.on('data', (d) => { ausgabe += d })
+    const code = await Promise.race([
+      new Promise((r) => child.on('exit', r)),
+      new Promise((r) => setTimeout(() => { child.kill(); r('läuft nach 15 s noch') }, 15000)),
+    ])
+    assert.notEqual(code, 'läuft nach 15 s noch', ausgabe)
+    assert.notEqual(code, 0)
+    assert.match(ausgabe, /bereits belegt/)
+    assert.doesNotMatch(ausgabe, /läuft auf/)
+  } finally {
+    belegt.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
 })
