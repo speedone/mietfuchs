@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settlement, Unit } from '../types'
+import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
 import { usageOf } from '../types'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
+import { consentPending } from '../update'
+import { UpdateConsent } from '../components/Update'
 
 type Props = {
   units: Unit[]
+  settings: Settings | null
+  reload: () => Promise<void>
   onNavigate: (tab: string) => void
 }
 
@@ -27,7 +31,7 @@ type Check = {
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const AUFFAELLIG_PROZENT = 25
 
-export default function Cockpit({ units, onNavigate }: Props) {
+export default function Cockpit({ units, settings, reload, onNavigate }: Props) {
   const { year } = useYear()
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
@@ -224,6 +228,8 @@ export default function Cockpit({ units, onNavigate }: Props) {
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      {consentPending(settings) && <UpdateConsent onAnswered={reload} />}
 
       {fresh ? (
         <div className="card">

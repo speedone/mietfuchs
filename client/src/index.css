@@ -159,7 +159,8 @@ input:focus, select:focus, textarea:focus {
 }
 input[type='checkbox'] { width: 17px; height: 17px; accent-color: var(--accent); }
 
-button.btn {
+/* Auch Links (Downloads) und Labels (Datei-Auswahl) können wie ein Knopf aussehen. */
+:is(button, a, label).btn {
   font: inherit;
   font-weight: 600;
   border: none;
@@ -169,12 +170,13 @@ button.btn {
   background: var(--accent);
   color: #fff;
 }
-button.btn:hover { filter: brightness(1.1); }
+:is(a, label).btn { display: inline-block; text-decoration: none; }
+:is(button, a, label).btn:hover { filter: brightness(1.1); }
 button.btn:disabled { opacity: 0.5; cursor: default; }
-button.btn.secondary { background: var(--accent-soft); color: var(--accent); }
+:is(button, a, label).btn.secondary { background: var(--accent-soft); color: var(--accent); }
 button.btn.ghost { background: transparent; color: var(--muted); padding: 9px 10px; }
 button.btn.ghost:hover { color: var(--red); }
-button.btn.small { padding: 5px 10px; font-size: 13px; }
+:is(button, a, label).btn.small { padding: 5px 10px; font-size: 13px; }
 button.btn.danger { background: var(--red); color: #fff; }
 button.btn.danger:hover { filter: brightness(1.08); }
 
@@ -299,6 +301,8 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   .sidebar .logo small { display: inline; margin-left: 8px; }
   .sidebar button { padding: 7px 10px; font-size: 13px; gap: 6px; }
   .sidebar .foot { display: none; }
+  /* Aktualisiert wird am Rechner, auf dem Mietfuchs läuft, nicht am Handy. */
+  .sidebar .update-hint { display: none; }
   .sidebar .nav-group { flex-direction: row; flex-wrap: wrap; gap: 2px; }
   .sidebar .nav-section { display: none; }
   .sidebar .year-switcher { flex-direction: row; align-items: center; gap: 8px; padding: 4px; }
@@ -509,12 +513,75 @@ td.actions { white-space: nowrap; text-align: right; }
 .icon-btn:hover { background: var(--accent-soft); color: var(--accent); }
 .icon-btn.danger:hover { background: var(--red-soft); color: var(--red); }
 
+/* ---------- Update-Hinweis (Seitenleiste, Cockpit, Einstellungen) ---------- */
+/* Orange wie der Fuchs im Logo: Es hebt sich vom Indigo der Navigation ab, ohne nach
+   Warnung auszusehen. Die Seitenleiste ist in beiden Designs dunkel, daher feste Farben. */
+.sidebar .update-hint {
+  margin: 0 0 16px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(239, 111, 46, 0.1);
+  border: 1px solid rgba(239, 111, 46, 0.4);
+  animation: update-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.update-hint-head { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 13.5px; font-weight: 600; }
+.update-hint-head svg { flex-shrink: 0; }
+.sidebar .update-hint p { margin: 2px 0 10px 26px; color: #9aa2bd; font-size: 12px; }
+/* Dunkle Schrift auf Orange: Weiß erreicht dort nicht genug Kontrast. */
+.sidebar .update-hint .update-go {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: #ef6f2e;
+  color: #1b1004;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.sidebar .update-hint .update-go:hover { background: #f5854a; color: #1b1004; }
+.update-hint-links { display: flex; justify-content: space-between; margin-top: 8px; }
+.sidebar .update-hint-links a,
+.sidebar .update-hint-links button { padding: 2px 0; color: #9aa2bd; font-size: 12px; text-decoration: none; cursor: pointer; }
+.sidebar .update-hint-links a:hover,
+.sidebar .update-hint-links button:hover { background: none; color: #fff; text-decoration: underline; }
+.sidebar .update-hint :focus-visible { outline: 2px solid #ef6f2e; outline-offset: 2px; }
+
+.update-consent { display: flex; gap: 16px; align-items: flex-start; border-color: rgba(239, 111, 46, 0.45); }
+.update-consent svg { flex-shrink: 0; margin-top: 2px; }
+.update-consent h2 { margin-bottom: 6px; }
+.update-consent p { margin: 0 0 14px; max-width: 64ch; }
+.update-consent p.muted { margin: 10px 0 0; }
+
+.update-toggle { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin-bottom: 4px; }
+.update-state { margin: 12px 0; }
+.update-guide { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.update-guide p { margin: 0 0 10px; }
+.update-guide p.muted { margin: 10px 0 0; }
+.update-guide a:not(.btn) { color: var(--accent); }
+.update-command { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.update-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--chip);
+  font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+@keyframes update-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes drawer-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes drawer-slide { from { transform: translateX(24px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes dialog-pop { from { transform: scale(0.97); opacity: 0.5; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop { animation: none; }
+  .drawer, .drawer-backdrop, .toast, .dialog, .dialog-backdrop, .sidebar .update-hint { animation: none; }
 }
 
 /* ---------- Druck ---------- */
