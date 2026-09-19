@@ -15,8 +15,35 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Windows, macOS und Linux jeweils mit Intel/AMD und ARM. Die Linux-Dateien laufen dabei
   zusätzlich auf 15 Distributionen, das Docker-Image auf beiden Plattformen. Ins Release
   kommt nur, was alle Prüfungen besteht. ([#22](https://github.com/speedone/mietfuchs/issues/22))
+- **Ollama lässt sich leichter einrichten.** Die Einstellungen zeigen die installierten Modelle
+  zur Auswahl, mit Größe und ob ein Modell Bilder versteht. Fehlt das gewählte Modell, steht der
+  Befehl zum Laden mit Kopier-Knopf daneben. Antwortet Ollama unter einer anderen üblichen
+  Adresse, etwa vom Docker-Container aus, schlägt Mietfuchs sie zur Übernahme vor.
+  ([#17](https://github.com/speedone/mietfuchs/issues/17))
+- **Ollama im Docker-Container:** `docker compose --profile ki up -d` startet Ollama mit und
+  lädt das Modell einmalig. ([#17](https://github.com/speedone/mietfuchs/issues/17))
+- **Umgebungsvariablen für die KI-Auswertung:** `NKA_OLLAMA_URL` und `NKA_OLLAMA_MODEL` legen
+  Adresse und Modell fest, die Einstellungen zeigen sie dann gesperrt. `NKA_OLLAMA_NUM_CTX`
+  ändert die Kontextgröße, `NKA_AI_TIMEOUT` das Zeitlimit.
+  ([#17](https://github.com/speedone/mietfuchs/issues/17))
+- **Fortschritt und Abbrechen bei der KI-Auswertung.** Kosten und Schnellerfassung zeigen, was
+  das Modell gerade tut und wie lange es schon läuft. „Abbrechen“ und das Verlassen der Seite
+  stoppen auch das Modell. ([#17](https://github.com/speedone/mietfuchs/issues/17))
 
 ### Behoben
+
+- **Lange KI-Auswertungen brechen nicht mehr nach fünf Minuten ab.** Auf einem Rechner ohne
+  Grafikkarte kann ein gescannter Beleg länger dauern. Dann endete die Auswertung nach fünf
+  Minuten mit „Ollama nicht erreichbar“, in Firefox auch schon im Browser. Jetzt gilt nur das
+  eigene Zeitlimit von zehn Minuten. ([#17](https://github.com/speedone/mietfuchs/issues/17))
+- **Ollama las lange Belege nur teilweise.** Ohne Angabe nimmt Ollama auf den meisten Rechnern
+  4.096 Token Kontext und kürzt längere Anfragen, ohne es zu melden. Mietfuchs setzt jetzt
+  16.384. Neuere Modelle denken außerdem nicht mehr erst minutenlang nach, bevor sie antworten.
+  ([#17](https://github.com/speedone/mietfuchs/issues/17))
+- **Verständliche Meldungen bei der KI-Auswertung**, etwa wenn Ollama nicht läuft, das Modell
+  fehlt oder die Antwort am Kontextende abgeschnitten wurde. Ein Modell ohne Bildverständnis
+  bekommt keine Fotos und Scans mehr, statt sich eine Rechnung auszudenken.
+  ([#17](https://github.com/speedone/mietfuchs/issues/17))
 
 - **Die macOS-Programmdateien tragen eine gültige Signatur.** Die Datei für Intel-Macs war
   ungültig signiert. macOS 26 startet sie trotzdem, neuere Versionen beenden solche Programme

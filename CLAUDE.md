@@ -66,8 +66,11 @@ Start aus dem Quellcode. Alle nutzen [scripts/smoke-test.mjs](scripts/smoke-test
 prüft eine laufende Instanz von außen (Oberfläche mit allen Skriptteilen und pdf.js-Dateien,
 KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup und
 Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
-`node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Ist `CI` gesetzt, öffnet
-die Programmdatei keinen Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
+`node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
+schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
+(siehe KI-Belegauswertung). So läuft es in der CI gegen Node und beim Prüfen der
+Programmdateien je Betriebssystem einmal. Ist `CI` gesetzt, öffnet die Programmdatei keinen
+Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
 fällt in diesen Tests auf. Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
 `codesign --sign -` neu signiert: Buns eigene Ad-hoc-Signatur beim Cross-Kompilieren unter
 Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neuere macOS-Versionen
@@ -109,6 +112,10 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 
 **Issues & Releases** — Ziel ist, dass man vom Issue zum Code und vom Release zum Issue kommt:
 
+- `main` ist per Ruleset geschützt: nur über PRs, lineare Historie (Rebase oder Squash), und die
+  CI-Jobs „Tests und Build (Node 22.12)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
+  Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
+  mitziehen, sonst wartet jeder PR auf einen Check, den es nicht mehr gibt.
 - Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
   Commit-Nachricht. Das erzeugt die Verknüpfung im Issue-Verlauf. **Nicht** `Fixes`/`Closes #N`:
   diese Schlüsselwörter schließen das Issue schon beim Merge nach `main`, also bevor Nutzer den
@@ -143,7 +150,9 @@ Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze
 beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
 `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
-`/api/upload`, `/api/extract`, `/api/ollama/status`, `/api/update` und `POST /api/update/check`
+`/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
+unten), `/api/ollama/status` (installierte Modelle mit Fähigkeiten, bei fehlender Verbindung
+eine gefundene Adresse), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
 Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
@@ -196,17 +205,54 @@ Reading, CostItem, Settings, Settlement …). Server und Client müssen hier kon
 Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
 hat eigene Labels für die Eingabe-Oberfläche).
 
-**KI-Belegauswertung** ([server/src/extract.js](server/src/extract.js)): optional, gegen eine
-lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDFs öffnet der Server nicht selbst:
-Der Browser liest sie vor dem Hochladen mit pdf.js ([client/src/pdfIntake.ts](client/src/pdfIntake.ts))
-und schickt die Textebene im Feld `pdfText` mit, bei Scans ohne brauchbare Textebene (unter
-80 Zeichen) bis zu vier Seiten als JPEG im Feld `pages`. Die Seitenbilder bleiben im
-Arbeitsspeicher (gemischter multer-Speicher in index.js) und landen nicht im Belegarchiv. So
-braucht der Server kein natives Modul: `pdf-to-img` scheiterte in der Bun-Programmdatei, weil
-pdf.js dort `@napi-rs/canvas` nicht findet (#21). Bilder → Base64 (braucht Vision-Modell). Erzwingt
-strukturiertes JSON über `format: SCHEMA`. Die KI macht nur Vorschläge — Übernahme erst nach
-manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`matchCategory` in
-types.ts müssen zusammenpassen.
+**KI-Belegauswertung**: optional, bisher gegen **Ollama**. Die KI macht nur Vorschläge,
+übernommen wird erst nach manueller Prüfung. Aufgeteilt in:
+- [server/src/extract.js](server/src/extract.js): das Fachliche, also Prompts, JSON-Schemas,
+  Ablauf (Auswertung, zweiter Durchgang nur für Kostenarten, Belegart, Zählerstand) und
+  Zeitlimits je Schritt (`NKA_AI_TIMEOUT` setzt eines für alle). Die Kategorie-Enums dort und
+  `CATEGORIES`/`matchCategory` in types.ts müssen zusammenpassen.
+- [server/src/ai/index.js](server/src/ai/index.js): die Schnittstelle der Anbieter,
+  `json({ prompt, images, schema, timeoutMs, signal, onProgress }) → { data, stats }`. Ein
+  weiterer Anbieter (OpenAI-kompatibel, #18) kommt als eigenes Modul daneben.
+- [server/src/ai/ollama.js](server/src/ai/ollama.js): Transport und Eigenheiten von Ollama.
+  Streamt `/api/chat`, setzt `think: false` und einen festen Kontext (`num_ctx` 16384, sonst
+  kürzt Ollama bei unter 24 GB Grafikspeicher auf 4096 Token; ein wechselnder Wert lädt das
+  Modell neu). Prüft vor Bildern über `/api/show`, ob das Modell Bilder versteht, und übersetzt
+  Fehler in Meldungen für die Oberfläche (nicht erreichbar, nicht installiert, Zeitlimit,
+  abgeschnittene Antwort). Dazu Modellliste und Suche nach Ollama unter üblichen Adressen.
+- [server/src/ai/http.js](server/src/ai/http.js): Verbindung ohne die 300-Sekunden-Grenze von
+  `fetch` (Node und Bun brechen ab, wenn so lange keine Antwort-Header kommen, Ollama schickt
+  sie erst mit dem ersten Token). Unter Node über `node:http(s)`, unter Bun über `fetch` mit
+  `timeout: false`. Für KI-Anfragen deshalb nicht `fetch` direkt nehmen.
+
+PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
+([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
+`pdfText` mit, bei Scans ohne brauchbare Textebene (unter 80 Zeichen) bis zu vier Seiten als
+JPEG im Feld `pages`. Die Seitenbilder bleiben im Arbeitsspeicher (gemischter multer-Speicher
+in index.js) und landen nicht im Belegarchiv. So braucht der Server kein natives Modul:
+`pdf-to-img` scheiterte in der Bun-Programmdatei, weil pdf.js dort `@napi-rs/canvas` nicht
+findet (#21). Intern laufen Bilder als `{ mimeType, data }`.
+
+`/api/extract` und `/api/intake` antworten mit `Accept: application/x-ndjson` als Strom: Header
+sofort, dann Zeilen mit `progress`, `heartbeat` (alle zehn Sekunden) und zuletzt `result` oder
+`error`. Grund: Firefox wartet höchstens 300 Sekunden auf Header. Ohne diesen Accept-Wert gibt
+es die JSON-Antwort wie früher. Schließt der Browser vorher, bricht der Server die Anfrage an
+den Anbieter ab und löscht den gerade hochgeladenen Beleg wieder. Im Client liest
+[client/src/aiRequest.ts](client/src/aiRequest.ts) den Strom, die Ollama-Karte der Einstellungen
+ist [OllamaSettings.tsx](client/src/components/OllamaSettings.tsx) mit der Logik in
+[client/src/modelForm.ts](client/src/modelForm.ts).
+
+Umgebungsvariablen: `NKA_OLLAMA_URL` und `NKA_OLLAMA_MODEL` legen Adresse und Modell fest (die
+Einstellungen zeigen sie gesperrt, `fixedByEnv`, in die db.json gelangen sie nicht),
+`NKA_OLLAMA_NUM_CTX` den Kontext, `NKA_AI_TIMEOUT` das Zeitlimit. `NKA_OLLAMA_CANDIDATES`
+ersetzt die Adressen der Suche und ist für Tests gedacht. Das Compose-Profil `ki` startet
+Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst `ollama-pull`.
+
+**KI-Prüflauf** ([.github/workflows/ai-eval.yml](.github/workflows/ai-eval.yml),
+[scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
+ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), je als PDF mit
+Textebene, Scan und Foto. Start von Hand oder per Label `ki-pruefung` an einem PR. Neue
+Beispielbelege nur erfunden, nie echte Rechnungen.
 
 **Update-Hinweis** ([server/src/update.js](server/src/update.js)): Nur mit Zustimmung
 (`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server
