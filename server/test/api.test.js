@@ -1578,3 +1578,275 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
   }, { models: [{ name: 'gpt-oss:120b-cloud', capabilities: ['completion'], remote_host: 'https://ollama.com:443' }], model: 'gpt-oss:120b-cloud' })
 })
+
+// ---------- OpenAI-kompatible Dienste (#18) ----------
+// Der nachgebaute Dienst antwortet wie die Chat-Completions-Schnittstelle: GET /v1/models und
+// POST /v1/chat/completions als SSE-Strom. `rules` schaltet Eigenheiten echter Dienste ein, wie
+// sie deren Dokumentation beschreibt:
+//   rejectTemperature  lehnt temperature ab (neuere OpenAI-Modelle)
+//   onlyMaxTokens      lehnt max_completion_tokens ab (Mistral, LM Studio)
+//   rejectJsonSchema   kennt response_format json_schema nicht
+//   rejectJsonObject   kennt response_format json_object nicht (LM Studio)
+//   key                verlangt diesen Bearer-Schlüssel
+//   errorFormat        'ionos' meldet Fehler als { messages: [{ errorCode, message }] }
+//   busyOnce           antwortet einmal mit 429 und Retry-After
+//   quota              meldet aufgebrauchtes Guthaben (429 insufficient_quota)
+//   finish             Grund des Endes, etwa 'length'
+//   whole              antwortet trotz stream: true am Stück als JSON
+//   reasoning          schickt vor der Antwort Denktext
+//   fenced             packt das JSON in einen Codeblock
+//   hang               antwortet nie
+//   echoKey            wiederholt den geschickten Schlüssel in einer Fehlermeldung
+async function fakeOpenAi(rules = {}) {
+  const http = await import('node:http')
+  const requests = []
+  const open = new Set()
+  let busy = rules.busyOnce ? 1 : 0
+  const server = http.createServer((req, res) => {
+    let raw = ''
+    req.on('data', (d) => { raw += d })
+    req.on('end', () => {
+      const body = raw ? JSON.parse(raw) : {}
+      requests.push({ url: req.url, method: req.method, body, raw, headers: req.headers })
+      const send = (status, data, headers = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers })
+        res.end(JSON.stringify(data))
+      }
+      const reject = (status, message, param, code = 'unsupported_parameter') =>
+        rules.errorFormat === 'ionos'
+          ? send(status, { httpStatus: status, messages: [{ errorCode: code, message }] })
+          : send(status, { error: { message, type: 'invalid_request_error', param, code } })
+      if (rules.key && req.headers.authorization !== `Bearer ${rules.key}`) return reject(401, 'Incorrect API key provided', null, 'invalid_api_key')
+      if (rules.echoKey) return reject(400, `Invalid request for credentials ${req.headers.authorization}`, null, 'invalid_request')
+      if (req.method === 'GET' && req.url === '/v1/models') {
+        return send(200, { object: 'list', data: [{ id: 'modell-b', object: 'model' }, { id: 'modell-a', object: 'model', capabilities: { vision: true } }] })
+      }
+      if (req.url !== '/v1/chat/completions') return send(404, { error: { message: 'Not found' } })
+      if (busy > 0) {
+        busy -= 1
+        return send(429, { error: { message: 'Rate limit reached for requests', code: 'rate_limit_exceeded' } }, { 'retry-after': '1' })
+      }
+      if (rules.quota) return send(429, { error: { message: 'You exceeded your current quota', code: 'insufficient_quota' } })
+      if (rules.rejectTemperature && body.temperature !== undefined) {
+        return reject(400, "Unsupported value: 'temperature' does not support 0 with this model. Only the default (1) value is supported.", 'temperature', 'unsupported_value')
+      }
+      if (rules.onlyMaxTokens && body.max_completion_tokens !== undefined) return reject(400, 'Unrecognized request argument supplied: max_completion_tokens', 'max_completion_tokens')
+      if (rules.rejectJsonSchema && body.response_format?.type === 'json_schema') {
+        return reject(400, "Invalid parameter: 'response_format' of type 'json_schema' is not supported with this model.", 'response_format')
+      }
+      if (rules.rejectJsonObject && body.response_format?.type === 'json_object') return send(400, { error: "'response_format.type' must be 'json_schema'" })
+      if (body.model !== 'modell-a') return reject(404, `The model '${body.model}' does not exist or you do not have access to it.`, 'model', 'model_not_found')
+      open.add(res)
+      res.on('close', () => open.delete(res))
+      if (rules.hang) return
+      // Den zweiten Durchgang (nur Kategorien) erkennt man an Schema oder Prompt
+      const answer = JSON.stringify(
+        raw.includes('categories')
+          ? { categories: ['Wasser/Abwasser'] }
+          : { vendor: 'Stadtwerke Musterstadt', positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }], totalGrossEur: 12.5 },
+      )
+      const fence = '```'
+      const content = rules.fenced ? `${fence}json\n${answer}\n${fence}` : answer
+      const usage = { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 }
+      if (rules.whole) return send(200, { choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }], usage })
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const event = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`)
+      if (rules.reasoning) event({ choices: [{ index: 0, delta: { reasoning_content: 'Ich rechne die Summe nach.' } }] })
+      const half = Math.ceil(content.length / 2)
+      event({ choices: [{ index: 0, delta: { role: 'assistant', content: content.slice(0, half) }, finish_reason: null }] })
+      event({ choices: [{ index: 0, delta: { content: content.slice(half) }, finish_reason: null }] })
+      event({ choices: [{ index: 0, delta: {}, finish_reason: rules.finish ?? 'stop' }] })
+      if (body.stream_options?.include_usage) event({ choices: [], usage })
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  return {
+    url: `http://127.0.0.1:${server.address().port}/v1`,
+    requests,
+    completions: () => requests.filter((r) => r.url === '/v1/chat/completions'),
+    stop: () => {
+      for (const res of open) res.destroy()
+      server.close()
+    },
+  }
+}
+
+async function withOpenAi(fn, { rules = {}, preset = 'openai-compatible', model = 'modell-a', vision = null, key = null, ai = {}, env = {} } = {}) {
+  const service = await fakeOpenAi(rules)
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
+  try {
+    if (key) await putKey(s, { slot: 'text', key })
+    await putAi(s, { text: { provider: 'openai', preset, url: service.url, model, vision }, ...ai })
+    await fn(s, service)
+  } finally {
+    s.stop()
+    service.stop()
+  }
+}
+
+test('OpenAI-kompatibel: Auswertung als Strom mit striktem Schema, Antwortlänge und Kennzahlen', async () => {
+  await withOpenAi(async (s, service) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
+    assert.equal(r.body.extraction.positions[0].category, 'Wasser/Abwasser')
+    const [first] = service.completions()
+    assert.equal(first.body.stream, true)
+    assert.deepEqual(first.body.stream_options, { include_usage: true })
+    assert.equal(first.body.max_tokens, 16384) // Eigener Dienst: das verbreitete Feld
+    assert.equal(first.body.temperature, 0)
+    assert.equal(first.body.response_format.type, 'json_schema')
+    assert.equal(first.body.response_format.json_schema.strict, true)
+    assert.equal(first.body.response_format.json_schema.schema.additionalProperties, false)
+    assert.equal(first.headers.accept, 'text/event-stream')
+    assert.equal(first.headers['content-length'], String(Buffer.byteLength(first.raw)))
+    assert.equal(first.headers['transfer-encoding'], undefined)
+    const extraction = r.body.stats.find((x) => x.step === 'extraction')
+    assert.equal(extraction.promptTokens, 900)
+    assert.equal(extraction.outputTokens, 40)
+  })
+})
+
+test('OpenAI-kompatibel: Vorlage OpenAI schickt max_completion_tokens und keine Temperatur', async () => {
+  await withOpenAi(async (s, service) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    const [first] = service.completions()
+    assert.equal(first.body.max_completion_tokens, 16384)
+    assert.equal(first.body.max_tokens, undefined)
+    assert.equal(first.body.temperature, undefined)
+  }, { preset: 'openai' })
+})
+
+test('OpenAI-kompatibel: die Antwortlänge aus den Einstellungen gilt', async () => {
+  await withOpenAi(async (s, service) => {
+    await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.ok(service.completions().every((c) => c.body.max_tokens === 4096))
+  }, { ai: { maxOutputTokens: 4096 } })
+})
+
+test('OpenAI-kompatibel: Fotos gehen als data-URL, außer das Modell versteht laut Einstellung keine Bilder', async () => {
+  await withOpenAi(async (s, service) => {
+    assert.equal((await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })).status, 200)
+    const [first] = service.completions()
+    assert.equal(first.body.messages[0].content[0].type, 'text')
+    assert.deepEqual(first.body.messages[0].content[1], { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from('JPEG-Foto').toString('base64')}` } })
+  })
+  await withOpenAi(async (s, service) => {
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })
+    assert.equal(res.status, 502)
+    assert.match((await res.json()).error, /versteht das Modell „modell-a“ keine Bilder/)
+    assert.equal(service.completions().length, 0)
+  }, { vision: false })
+})
+
+test('OpenAI-kompatibel: eine abgelehnte Temperatur fällt weg, auch bei den nächsten Anfragen', async () => {
+  await withOpenAi(async (s, service) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    const temps = service.completions().map((c) => c.body.temperature)
+    assert.deepEqual(temps.slice(0, 2), [0, undefined])
+    assert.ok(temps.slice(2).every((t) => t === undefined), JSON.stringify(temps))
+  }, { rules: { rejectTemperature: true } })
+})
+
+test('OpenAI-kompatibel: lehnt der Dienst max_completion_tokens ab, geht es mit max_tokens', async () => {
+  await withOpenAi(async (s, service) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    const [first, second] = service.completions()
+    assert.equal(first.body.max_completion_tokens, 16384)
+    assert.equal(second.body.max_tokens, 16384)
+    assert.equal(second.body.max_completion_tokens, undefined)
+  }, { preset: 'ionos', rules: { onlyMaxTokens: true } })
+})
+
+test('OpenAI-kompatibel: ohne json_schema geht es mit json_object und dem Schema im Prompt', async () => {
+  await withOpenAi(async (s, service) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    const formats = service.completions().map((c) => c.body.response_format?.type ?? 'keins')
+    assert.deepEqual(formats.slice(0, 3), ['json_schema', 'json_schema', 'json_object'])
+    assert.match(service.completions()[2].body.messages[0].content, /JSON-Schema/)
+  }, { rules: { rejectJsonSchema: true } })
+})
+
+test('OpenAI-kompatibel: LM Studio überspringt json_object, zuletzt zählt der Prompt allein', async () => {
+  await withOpenAi(async (s, service) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt') // aus dem Codeblock gelöst
+    const formats = service.completions().map((c) => c.body.response_format?.type ?? 'keins')
+    assert.deepEqual(formats.slice(0, 3), ['json_schema', 'json_schema', 'keins'])
+    assert.ok(!formats.includes('json_object'))
+  }, { preset: 'lmstudio', rules: { rejectJsonSchema: true, rejectJsonObject: true, fenced: true } })
+})
+
+test('OpenAI-kompatibel: Schlüssel als Bearer, verständliche Meldungen ohne den Schlüssel', async () => {
+  const KEY = 'sk-test-richtig-1234567890'
+  await withOpenAi(async (s, service) => {
+    const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(without.body.error, /verlangt einen Schlüssel/)
+    await putKey(s, { slot: 'text', key: 'sk-test-falsch-0987654321' })
+    const wrong = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(wrong.body.error, /lehnt den Schlüssel ab/)
+    assert.ok(!wrong.body.error.includes('sk-test-falsch'))
+    await putKey(s, { slot: 'text', key: KEY })
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    assert.equal(service.completions().at(-1).headers.authorization, `Bearer ${KEY}`)
+  }, { rules: { key: KEY } })
+})
+
+test('OpenAI-kompatibel: IONOS-Fehlerformat und Hinweis auf abgelaufene Token', async () => {
+  await withOpenAi(async (s) => {
+    await putKey(s, { slot: 'text', key: 'eyJ-abgelaufen-1234567890' })
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.match(r.body.error, /IONOS AI Model Hub lehnt den Schlüssel ab\. IONOS-Token laufen/)
+  }, { preset: 'ionos', rules: { key: 'eyJ-gueltig-1234567890', errorFormat: 'ionos' } })
+})
+
+test('OpenAI-kompatibel: bei 429 mit Retry-After wird gewartet und wiederholt', async () => {
+  await withOpenAi(async (s, service) => {
+    const started = Date.now()
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+    assert.ok(Date.now() - started >= 900, 'Retry-After: 1 abgewartet')
+    assert.ok(service.completions().length >= 2)
+  }, { rules: { busyOnce: true } })
+})
+
+test('OpenAI-kompatibel: aufgebrauchtes Guthaben wird nicht wiederholt', async () => {
+  await withOpenAi(async (s, service) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /Guthaben oder Budget/)
+    assert.equal(service.completions().length, 1)
+  }, { rules: { quota: true } })
+})
+
+test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit', async () => {
+  await withOpenAi(async (s) => {
+    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /Höchstlänge von 16384 Token.*„Erweitert“/)
+  }, { rules: { finish: 'length' } })
+  await withOpenAi(async (s) => {
+    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /kennt das Modell „gibt-es-nicht“ nicht/)
+  }, { model: 'gibt-es-nicht' })
+  await withOpenAi(async (s) => {
+    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+  }, { rules: { hang: true }, env: { NKA_AI_TIMEOUT: '2' } })
+})
+
+test('OpenAI-kompatibel: auch am Stück und mit Denktext davor kommt das Ergebnis an', async () => {
+  await withOpenAi(async (s) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+  }, { rules: { whole: true } })
+  await withOpenAi(async (s) => {
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+  }, { rules: { reasoning: true } })
+})
+
+test('OpenAI-kompatibel: wiederholt der Dienst den Schlüssel in einer Meldung, wird er ausgeblendet', async () => {
+  const KEY = 'sk-test-geheim-1234567890'
+  await withOpenAi(async (s) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /lehnt die Anfrage ab: Invalid request for credentials Bearer …/)
+    assert.ok(!r.body.error.includes(KEY))
+  }, { key: KEY, rules: { echoKey: true } })
+})

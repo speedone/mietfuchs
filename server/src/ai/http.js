@@ -11,16 +11,16 @@
 import http from 'node:http'
 import https from 'node:https'
 
-// Liefert Status und den Rumpf als asynchron iterierbare Folge von Bytes. Wirft, wenn keine
-// Verbindung zustande kommt oder `signal` abbricht; bricht `signal` später ab, wirft das
-// Lesen des Rumpfs.
+// Liefert Status, Header (Namen klein geschrieben) und den Rumpf als asynchron iterierbare
+// Folge von Bytes. Wirft, wenn keine Verbindung zustande kommt oder `signal` abbricht; bricht
+// `signal` später ab, wirft das Lesen des Rumpfs.
 export function openRequest(url, { method = 'GET', headers = {}, body, signal } = {}) {
   return globalThis.Bun ? viaFetch(url, { method, headers, body, signal }) : viaNodeHttp(url, { method, headers, body, signal })
 }
 
 async function viaFetch(url, { method, headers, body, signal }) {
   const res = await fetch(url, { method, headers, body, signal, timeout: false })
-  return { status: res.status, ok: res.ok, body: res.body ?? (async function* () {})() }
+  return { status: res.status, ok: res.ok, headers: Object.fromEntries(res.headers), body: res.body ?? (async function* () {})() }
 }
 
 function viaNodeHttp(url, { method, headers, body, signal }) {
@@ -28,7 +28,7 @@ function viaNodeHttp(url, { method, headers, body, signal }) {
     const target = new URL(url)
     const client = target.protocol === 'https:' ? https : http
     const req = client.request(target, { method, headers, signal }, (res) => {
-      resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, body: res })
+      resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, headers: res.headers, body: res })
     })
     req.on('error', reject)
     req.end(body)
