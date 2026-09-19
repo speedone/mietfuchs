@@ -6,7 +6,8 @@
 // Aus jedem Beleg entstehen mit Chrome bis zu drei Fassungen, so wie sie in Mietfuchs ankommen:
 //   text   PDF mit Textebene; den Text liest pdf.js wie im Browser (client/src/pdfIntake.ts)
 //   scan   dasselbe PDF ohne Textebene, dazu die Seiten als Bilder (höchstens vier)
-//   photo  die erste Seite als schiefes, unscharfes Handyfoto (nur einseitige Belege)
+//   photo  die erste Seite als schiefes, unscharfes Handyfoto (nur einseitige Belege), über
+//          /api/intake wie in der Schnellerfassung, also mit Erkennung der Belegart
 //
 // Aufruf gegen eine laufende Instanz, deren Modell geprüft werden soll:
 //   node scripts/ai-eval.mjs --url http://127.0.0.1:3001 --ollama http://127.0.0.1:11434 \
@@ -111,18 +112,19 @@ async function pdfText(pdfPath) {
 // ---------- Auswertung über Mietfuchs ----------
 
 // Wie der Browser: als Strom (Accept: application/x-ndjson), damit auch Läufe über fünf Minuten
-// ankommen. Liefert Ergebnis oder Fehler, die Kennzahlen und die Dauer.
-async function extract(baseUrl, { file, mimeType, fileName, text, pages = [] }) {
+// ankommen. Fotos gehen wie in der Schnellerfassung an /api/intake, das zuerst die Belegart
+// erkennt. Liefert Ergebnis oder Fehler, die erkannte Belegart, die Kennzahlen und die Dauer.
+async function extract(baseUrl, { route = '/api/extract', file, mimeType, fileName, text, pages = [] }) {
   const fd = new FormData()
   fd.append('file', new Blob([fs.readFileSync(file)], { type: mimeType }), fileName)
   if (text !== undefined) fd.append('pdfText', text)
   for (const [i, page] of pages.entries()) fd.append('pages', new Blob([fs.readFileSync(page)], { type: 'image/png' }), `seite-${i + 1}.png`)
   const start = Date.now()
-  const res = await fetch(`${baseUrl}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } })
+  const res = await fetch(`${baseUrl}${route}`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } })
   const lines = (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
   const seconds = Math.round((Date.now() - start) / 100) / 10
   const last = lines.at(-1) ?? {}
-  if (last.type === 'result') return { extraction: last.data.extraction, stats: last.data.stats ?? [], seconds }
+  if (last.type === 'result') return { extraction: last.data.extraction, kind: last.data.kind ?? null, stats: last.data.stats ?? [], seconds }
   return { error: last.error ?? `unerwartete Antwort (HTTP ${res.status})`, stats: last.stats ?? [], seconds }
 }
 
@@ -173,7 +175,7 @@ function modelTable(result) {
   return [
     `### ${result.model}`,
     '',
-    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}`,
+    `Speicher im Betrieb: ${gb(result.memoryBytes)}, Download: ${gb(result.sizeBytes)}, erstes Laden: ${secs(result.warmupSeconds)}, Ollama ${result.ollamaVersion ?? 'unbekannt'}. Fotos laufen wie in der Schnellerfassung über /api/intake.`,
     '',
     '| Beleg | Fassung | Treffer | Dauer | Eingabe-Token | Anmerkung |',
     '|---|---|---|---|---|---|',
@@ -206,18 +208,22 @@ function report(markdown) {
 
 // ---------- Ablauf ----------
 
+// Version, Downloadgröße und Speicher im Betrieb laut Ollama; was fehlt, bleibt null
 async function ollamaInfo(ollamaUrl, model) {
   if (!ollamaUrl) return {}
-  try {
-    const tags = await (await fetch(`${ollamaUrl}/api/tags`)).json()
-    const ps = await (await fetch(`${ollamaUrl}/api/ps`)).json()
-    const wanted = model.includes(':') ? model : `${model}:latest`
-    return {
-      sizeBytes: tags.models?.find((m) => m.name === wanted)?.size ?? null,
-      memoryBytes: ps.models?.find((m) => m.name === wanted)?.size ?? null,
+  const get = async (path) => {
+    try {
+      return await (await fetch(`${ollamaUrl}${path}`)).json()
+    } catch {
+      return {}
     }
-  } catch {
-    return {}
+  }
+  const [{ version }, tags, ps] = await Promise.all([get('/api/version'), get('/api/tags'), get('/api/ps')])
+  const wanted = model.includes(':') ? model : `${model}:latest`
+  return {
+    ollamaVersion: version ?? null,
+    sizeBytes: tags.models?.find((m) => m.name === wanted)?.size ?? null,
+    memoryBytes: ps.models?.find((m) => m.name === wanted)?.size ?? null,
   }
 }
 
@@ -249,7 +255,7 @@ async function evaluate() {
     const inputs = {
       text: { file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}.pdf`, text },
       scan: { file: files.pdf, mimeType: 'application/pdf', fileName: `${testCase.name}-scan.pdf`, text: '', pages: files.pages },
-      photo: files.photo && { file: files.photo, mimeType: 'image/png', fileName: `${testCase.name}-foto.png` },
+      photo: files.photo && { route: '/api/intake', file: files.photo, mimeType: 'image/png', fileName: `${testCase.name}-foto.png` },
     }
     for (const variant of variants) {
       if (!inputs[variant]) continue
@@ -257,7 +263,8 @@ async function evaluate() {
       const run = { case: testCase.name, label: testCase.label, variant, seconds: answer.seconds, stats: answer.stats }
       if (answer.error) run.error = answer.error
       else {
-        run.score = score(testCase.expected, answer.extraction)
+        // Die Schnellerfassung muss das Foto zuerst als Rechnung erkennen
+        run.score = answer.kind === 'zaehler' ? { points: 0, passed: 0, total: 1, failed: ['als Zählerfoto erkannt'] } : score(testCase.expected, answer.extraction)
         run.extraction = answer.extraction
       }
       runs.push(run)
