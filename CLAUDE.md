@@ -41,7 +41,8 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 ändern, baut er nur zur Probe (ohne Login und Push).
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
-Mindestversion 22 aus `engines`. Beim Anheben alle Stellen mitziehen: `engines` (plus
+Mindestversion 22.12 aus `engines` (erst ab dort lädt Node JSON-Module ohne Warnung, siehe
+[server/src/version.js](server/src/version.js)). Beim Anheben alle Stellen mitziehen: `engines` (plus
 `package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Die Actions hält
 Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich, ein
 gebündelter PR).

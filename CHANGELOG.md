@@ -35,9 +35,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinweise zur Aktualisierung
 
-- Wer Mietfuchs aus dem Quellcode mit `npm start` betreibt, braucht jetzt mindestens Node 22.
-  Node 20 bekommt seit April 2026 keine Sicherheitsupdates mehr und wird nicht mehr getestet.
-  Programmdateien und Docker-Image bringen ihre Laufzeit selbst mit, dort ist nichts zu tun.
+- Wer Mietfuchs aus dem Quellcode mit `npm start` betreibt, braucht jetzt mindestens
+  Node 22.12. Node 20 bekommt seit April 2026 keine Sicherheitsupdates mehr und wird nicht mehr
+  getestet. Programmdateien und Docker-Image bringen ihre Laufzeit selbst mit, dort ist nichts
+  zu tun.
 
 ## [0.4.0] – 2026-09-19
 

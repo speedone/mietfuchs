@@ -5,7 +5,7 @@ Keine Cloud, kein Konto, keine Abogebühren.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Download](https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github)](https://github.com/speedone/mietfuchs/releases/latest)
-![Node ≥ 22](https://img.shields.io/badge/Node-%E2%89%A5%2022-339933?logo=node.js&logoColor=white)
+![Node ≥ 22.12](https://img.shields.io/badge/Node-%E2%89%A5%2022.12-339933?logo=node.js&logoColor=white)
 ![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
 ![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 
