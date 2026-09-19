@@ -11,6 +11,24 @@ import { aiProvider } from './ai/index.js'
 
 const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
+// Zeitlimits je Schritt in Sekunden. Auf einem Rechner ohne Grafikkarte braucht ein Modell für
+// einen mehrseitigen Scan mehrere Minuten, für den kurzen zweiten Durchgang (Kategorien) oder
+// die Frage, was auf einem Foto zu sehen ist, deutlich weniger. NKA_AI_TIMEOUT setzt ein
+// gemeinsames Limit für alle Schritte.
+const TIMEOUT_SECONDS = { extraction: 600, classification: 180, docType: 180, meterReading: 600 }
+function timeoutMs(step) {
+  const custom = Number(process.env.NKA_AI_TIMEOUT)
+  return (Number.isFinite(custom) && custom > 0 ? custom : TIMEOUT_SECONDS[step]) * 1000
+}
+
+// Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
+// Route, `signal` bricht ab, wenn der Browser nicht mehr wartet.
+async function ask(settings, step, { prompt, images = [], schema }, { signal, stats } = {}) {
+  const answer = await aiProvider(settings).json({ prompt, images, schema, timeoutMs: timeoutMs(step), signal })
+  stats?.push({ step, ...answer.stats })
+  return answer.data
+}
+
 // Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
 // Scan mit Stempel oder Kopfzeile, dann sind die Seitenbilder aussagekräftiger.
 const TEXT_MIN = 80
@@ -95,7 +113,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
 
-async function classifyPositions(settings, vendor, positions) {
+async function classifyPositions(settings, vendor, positions, options) {
   const schema = {
     type: 'object',
     properties: {
@@ -119,13 +137,14 @@ Positionen:
 ${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
 
 Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
-  const { categories } = await aiProvider(settings).json({ prompt, schema, timeoutMs: 120000 })
+  const { categories } = await ask(settings, 'classification', { prompt, schema }, options)
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
   return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
 }
 
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
-export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [] } = {}) {
+// `signal` und `stats` gehen an ask().
+export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [], signal, stats } = {}) {
   let prompt = PROMPT
   let images = []
 
@@ -147,13 +166,13 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  const result = await aiProvider(settings).json({ prompt, images, schema: SCHEMA, timeoutMs: 300000 })
+  const result = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats })
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
-      result.positions = await classifyPositions(settings, result.vendor, result.positions)
+      result.positions = await classifyPositions(settings, result.vendor, result.positions, { signal, stats })
     } catch {
       // bewusst ignoriert
     }
@@ -176,14 +195,14 @@ Antworte nur mit der Kategorie.`
 
 // Bilder können Rechnungsfoto ODER Zählerfoto sein → klassifizieren. PDFs/Bescheide sind praktisch
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
-export async function classifyDocType(filePath, mimetype, settings) {
+export async function classifyDocType(filePath, mimetype, settings, options) {
   if (!mimetype.startsWith('image/')) return 'rechnung'
-  const { docType } = await aiProvider(settings).json({
-    prompt: DOCTYPE_PROMPT,
-    images: [photoOf(filePath, mimetype)],
-    schema: DOCTYPE_SCHEMA,
-    timeoutMs: 120000,
-  })
+  const { docType } = await ask(
+    settings,
+    'docType',
+    { prompt: DOCTYPE_PROMPT, images: [photoOf(filePath, mimetype)], schema: DOCTYPE_SCHEMA },
+    options,
+  )
   return docType === 'zaehlerstand' ? 'zaehlerstand' : 'rechnung'
 }
 
@@ -203,7 +222,7 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
-export async function extractMeterReading(filePath, mimetype, settings, { pages = [] } = {}) {
+export async function extractMeterReading(filePath, mimetype, settings, { pages = [], signal, stats } = {}) {
   let images
   if (mimetype === 'application/pdf') {
     if (pages.length === 0) throw new Error(OHNE_INHALT)
@@ -213,5 +232,5 @@ export async function extractMeterReading(filePath, mimetype, settings, { pages 
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  return aiProvider(settings).json({ prompt: METER_PROMPT, images, schema: METER_SCHEMA, timeoutMs: 300000 })
+  return ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats })
 }
