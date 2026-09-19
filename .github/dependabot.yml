@@ -1,0 +1,13 @@
+# Hält die GitHub Actions der Workflows aktuell: einmal im Monat, alle Updates gebündelt in
+# einem PR. Die CI prüft ihn wie jeden anderen, und wenn sie grün ist, reicht ein Merge.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
