@@ -12,6 +12,7 @@ import {
   type ItemForm,
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
+import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -157,8 +158,8 @@ export default function Kosten({ units, settings }: Props) {
     patchEntry(next.id, { status: 'läuft' })
     void (async () => {
       try {
-        const fd = new FormData()
-        fd.append('file', filesRef.current.get(next.id)!)
+        // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
+        const fd = await buildUpload(filesRef.current.get(next.id)!)
         const res = await api<{ file: string; extraction: Extraction }>('/api/extract', { method: 'POST', body: fd })
         const ex = res.extraction
         const positions = (ex.positions || []).map((p) => {
