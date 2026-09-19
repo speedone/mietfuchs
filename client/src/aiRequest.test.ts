@@ -141,6 +141,9 @@ describe('Fortschritt in Worten', () => {
   test('Modell liest', () => expect(progressText({ step: 'extraction', phase: 'waiting' })).toBe('Modell liest den Beleg …'))
   test('Modell schreibt, mit Zeichenzahl', () =>
     expect(progressText({ step: 'extraction', phase: 'writing', chars: 1234 })).toBe('Modell schreibt die Auswertung (1.234 Zeichen) …'))
+  // Reasoning-Modelle bei OpenAI-kompatiblen Diensten denken vor der Antwort nach
+  test('Modell denkt nach, mit Zeichenzahl', () =>
+    expect(progressText({ step: 'extraction', phase: 'thinking', chars: 2048 })).toBe('Modell denkt nach (2.048 Zeichen) …'))
   test('Kostenarten', () => expect(progressText({ step: 'classification', phase: 'waiting' })).toBe('Kostenarten werden zugeordnet …'))
   test('Belegart', () => expect(progressText({ step: 'docType', phase: 'writing', chars: 5 })).toBe('Belegart wird erkannt …'))
   test('Zählerstand', () => expect(progressText({ step: 'meterReading', phase: 'waiting' })).toBe('Zählerstand wird gelesen …'))

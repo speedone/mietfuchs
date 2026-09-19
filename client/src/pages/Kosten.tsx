@@ -13,6 +13,7 @@ import {
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
+import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
@@ -42,6 +43,8 @@ type QueueEntry = {
 const EMPTY = EMPTY_ITEM_FORM
 
 export default function Kosten({ units, settings }: Props) {
+  // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
+  const ai = aiSummary(settings)
   const { year, setYear } = useYear()
   const toast = useToast()
   const confirm = useConfirm()
@@ -263,10 +266,10 @@ export default function Kosten({ units, settings }: Props) {
       </div>
 
       <div className="card no-print">
-        <h2>🤖 Beleg per KI auswerten <span className="badge gray">lokal über Ollama</span></h2>
+        <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
         <p className="muted">
-          PDF oder Foto der Rechnung hochladen — das lokale Modell ({settings?.ollamaModel || 'Ollama'})
-          schlägt Kostenpositionen vor, du prüfst und übernimmst sie. Es verlässt nichts deinen Rechner.
+          PDF oder Foto der Rechnung hochladen — das Modell ({ai.model}) schlägt Kostenpositionen
+          vor, du prüfst und übernimmst sie. {ai.notice ?? 'Es verlässt nichts deinen Rechner.'}
         </p>
         <div
           className={`dropzone ${dragOver ? 'over' : ''}`}

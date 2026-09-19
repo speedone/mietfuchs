@@ -5,7 +5,8 @@
 // Modell arbeitet. Geprüft in client/src/aiRequest.test.ts.
 
 export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading'
-export type AiProgress = { step: AiStep; phase: 'waiting' | 'writing'; chars?: number }
+// 'thinking': ein Reasoning-Modell denkt vor der Antwort nach (nur OpenAI-kompatible Dienste)
+export type AiProgress = { step: AiStep; phase: 'waiting' | 'thinking' | 'writing'; chars?: number }
 
 type StreamMessage =
   | ({ type: 'progress' } & AiProgress)
@@ -100,9 +101,9 @@ export function progressText(progress: AiProgress | null): string {
     case 'meterReading':
       return 'Zählerstand wird gelesen …'
     case 'extraction':
-      return progress.phase === 'writing' && progress.chars
-        ? `Modell schreibt die Auswertung (${progress.chars.toLocaleString('de-DE')} Zeichen) …`
-        : 'Modell liest den Beleg …'
+      if (progress.phase === 'writing' && progress.chars) return `Modell schreibt die Auswertung (${progress.chars.toLocaleString('de-DE')} Zeichen) …`
+      if (progress.phase === 'thinking' && progress.chars) return `Modell denkt nach (${progress.chars.toLocaleString('de-DE')} Zeichen) …`
+      return 'Modell liest den Beleg …'
   }
 }
 

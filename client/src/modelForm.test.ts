@@ -86,3 +86,28 @@ test('Größenangabe', () => {
   expect(fmtSize(270_000_000)).toBe('270 MB')
   expect(fmtSize(null)).toBe('')
 })
+
+// OpenAI-kompatible Dienste nennen Modelle ohne Größenangabe; „:latest“ ergänzt nur Ollama
+describe('OpenAI-kompatible Dienste', () => {
+  const SERVICE: AiModel[] = [
+    { name: 'gpt-5.4-nano', sizeBytes: null, vision: null, remote: true },
+    { name: 'mistral-small-latest', sizeBytes: null, vision: true, remote: true },
+  ]
+
+  test('ein Name ohne Doppelpunkt ist vollständig, nichts fehlt', () => {
+    const options = modelOptions(SERVICE, 'gpt-5.4-nano', 'openai')
+    expect(options.find((o) => o.value === 'gpt-5.4-nano')?.label).toBe('gpt-5.4-nano')
+    expect(options.some((o) => o.label.includes('nicht'))).toBe(false)
+    expect(modelHint(SERVICE, 'gpt-5.4-nano', 'openai')).toBe(null)
+  })
+
+  test('Bildverständnis steht dabei, wo der Dienst es meldet, ein Cloud-Hinweis nicht', () => {
+    expect(modelOptions(SERVICE, '', 'openai').find((o) => o.value === 'mistral-small-latest')?.label).toBe('mistral-small-latest (versteht Bilder)')
+  })
+
+  test('ein Modell, das der Dienst nicht führt, bleibt sichtbar', () => {
+    const options = modelOptions(SERVICE, 'eigenes-modell', 'openai')
+    expect(options[0]).toEqual({ value: 'eigenes-modell', label: 'eigenes-modell (nicht in der Liste des Dienstes)' })
+    expect(modelHint(SERVICE, 'eigenes-modell', 'openai')).toBe('missing')
+  })
+})

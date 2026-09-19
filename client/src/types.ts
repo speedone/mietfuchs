@@ -185,19 +185,74 @@ export type Settings = {
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später" ausgeblendet wurde
-  // Per Umgebungsvariable festgelegt (NKA_OLLAMA_URL, NKA_OLLAMA_MODEL): nur anzeigen,
-  // der Server übernimmt beim Speichern keine Änderung daran
-  fixedByEnv?: Array<'ollamaUrl' | 'ollamaModel'>
+  // KI-Belegauswertung (#18), siehe server/src/ai/settings.js. ollamaUrl und ollamaModel oben
+  // spiegeln Adresse und Modell, solange Ollama der Standard-Anbieter ist.
+  ai?: AiSettings
+  // Per Umgebungsvariable festgelegt: Pfade wie 'ai.text.url' oder 'ai.timeoutSeconds', dazu
+  // für ältere Tabs 'ollamaUrl' und 'ollamaModel'. Nur anzeigen, der Server übernimmt beim
+  // Speichern keine Änderung daran.
+  fixedByEnv?: string[]
+  // Nur vom Server, nie gespeichert: ob je Platz ein API-Schlüssel gesetzt ist und ob die
+  // Adresse aus dem Haus zeigt
+  aiKeys?: Record<AiSlotName, AiKeyInfo>
+  aiExternal?: Record<AiSlotName, boolean>
 }
 
-// Ein Modell zur Auswahl (bei Ollama aus /api/ollama/status, listOllamaModels in
-// server/src/ai/ollama.js). Fehlt eine Angabe beim Anbieter, ist sie null.
+// ---------- KI-Anbieter (#18) ----------
+
+export type AiSlotName = 'text' | 'images'
+export type AiProviderKind = 'ollama' | 'openai' // 'openai' für alle OpenAI-kompatiblen Dienste
+export type AiSlot = {
+  provider: AiProviderKind
+  preset: string // Kennung einer Vorlage aus /api/ai/presets
+  url: string
+  model: string
+  vision: boolean | null // null: unbekannt (Ollama meldet es selbst), sonst Angabe des Nutzers
+}
+export type AiJsonMode = 'auto' | 'schema' | 'object' | 'prompt'
+export type AiConsent = { url: string; model: string; date: string }
+export type AiSettings = {
+  text: AiSlot
+  images: AiSlot | null // eigener Anbieter für Fotos und Scans
+  // Für Fortgeschrittene, null = Standard
+  timeoutSeconds: number | null
+  numCtx: number | null // nur Ollama
+  maxOutputTokens: number | null // nur OpenAI-kompatible Dienste
+  jsonMode: AiJsonMode
+  reasoningEffort: string | null
+  extraInstructions: string
+  consent: Partial<Record<AiSlotName, AiConsent>> // ändert nur POST/DELETE /api/ai/consent
+}
+export type AiKeyInfo = { set: boolean; hint: string; fromEnv: string | null }
+export type AiPreset = {
+  id: string
+  provider: AiProviderKind
+  label: string
+  url: string // leer: der Nutzer trägt die Adresse selbst ein
+  key: 'none' | 'optional' | 'required'
+  tokenField: string
+  temperature: boolean
+  jsonObject: boolean
+  keyUrl: string | null
+  privacyUrl: string | null
+  notice: string | null
+}
+
+// Ein Modell zur Auswahl (aus /api/ai/status, listOllamaModels und listOpenAiModels im Server).
+// Fehlt eine Angabe beim Anbieter, ist sie null.
 export type AiModel = {
   name: string
   sizeBytes: number | null
   vision: boolean | null // null: unbekannt, etwa bei älteren Ollama-Versionen
   remote: boolean // läuft bei einem Cloud-Dienst, nicht auf diesem Rechner
 }
+export type AiStatus = {
+  ok: boolean
+  models?: AiModel[]
+  error?: string
+  found?: string // Adresse, unter der ein lokales Ollama stattdessen antwortet
+}
+// Antwort von /api/ollama/status, bleibt für Tabs von vor #18
 export type OllamaStatus = {
   ok: boolean
   models?: string[] // nur die Namen, für Tabs von vor dem Update

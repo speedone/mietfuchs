@@ -557,6 +557,12 @@ td.actions { white-space: nowrap; text-align: right; }
 .update-consent p { margin: 0 0 14px; max-width: 64ch; }
 .update-consent p.muted { margin: 10px 0 0; }
 
+/* KI-Einstellungen (#18): je Anbieter-Platz ein eigener Block */
+.ai-slot { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 6px; margin: 0 0 14px; }
+.ai-slot > legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.ai-slot .row { margin-bottom: 10px; }
+.ai-toggle { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin: 10px 0 4px; }
+
 .update-toggle { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin-bottom: 4px; }
 .update-state { margin: 12px 0; }
 .update-guide { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
