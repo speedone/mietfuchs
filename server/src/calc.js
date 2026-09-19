@@ -458,16 +458,37 @@ export function computeSettlement(db, year) {
   // Schlüssel stillschweigend auf — dann verteilt er allein auf die Mieter. Deshalb warnen,
   // sobald ein betroffener Schlüssel im Jahr überhaupt vorkommt.
   const usesKey = (key) => items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig')
+  // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter — das meldet die
+  // Position selbst. Die Meldungen je Wohnung wären dann widersprüchlich („verteilt nur auf
+  // die Mieter", obwohl nichts verteilt wird) und entfallen. Ohne Mietverhältnis im Jahr
+  // fehlen Personentage regulär (Leerstand) — das ist kein Datenmangel.
+  const areaBasisMissing = !(basisArea > 0)
+  const personsBasisMissing = !(basisPersonDays > 0) && partTenancies.length > 0
   const selfNoPersons = selfUnits.filter((u) => selfPersonsOf(u) === 0)
-  if (selfNoPersons.length > 0 && usesKey('persons')) {
+  if (selfNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
     warnings.push(
       `Für die selbstgenutzte(n) Wohnung(en) ${selfNoPersons.map((u) => u.name).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter.`,
     )
   }
   const selfNoArea = selfUnits.filter((u) => !(u.areaM2 > 0))
-  if (selfNoArea.length > 0 && usesKey('area')) {
+  if (selfNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
     warnings.push(
       `Für die selbstgenutzte(n) Wohnung(en) ${selfNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter.`,
+    )
+  }
+  // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Fehlt ihr
+  // Basiswert, verteilt der Schlüssel ihren Anteil still auf die anderen — bei einer
+  // vermieteten Wohnung zahlen dann die übrigen Mieter mit. Für Mieter der teuerste Fall.
+  const partNoArea = db.units.filter((u) => u.participates && !(u.areaM2 > 0))
+  if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
+    warnings.push(
+      `Für die Wohnung(en) ${partNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
+    )
+  }
+  const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0))
+  if (partNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
+    warnings.push(
+      `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
     )
   }
 
@@ -479,12 +500,19 @@ export function computeSettlement(db, year) {
     // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) — für
     // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
     let selfRaw = 0
+    const noBasis = (reason) => warnings.push(`„${item.description}": ${reason} — Betrag geht an den Vermieter.`)
     if (item.category === 'Nicht umlagefähig') {
       // keine Verteilung
+    } else if (item.key === 'area' && areaBasisMissing) {
+      noBasis('für keine Wohnung ist eine Wohnfläche hinterlegt')
+    } else if (item.key === 'units' && basisUnits.length === 0) {
+      noBasis('keine Wohnung gehört zur Abrechnungseinheit')
+    } else if (item.key === 'persons' && personsBasisMissing) {
+      noBasis('für die vermieteten Wohnungen sind keine Personen hinterlegt')
     } else if (item.key === 'area' && basisArea > 0) {
       for (const t of partTenancies) {
         const raw = item.amountCents * ((t.unit.areaM2 || 0) / basisArea) * (t.days / diy)
-        targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2)} von ${fmtNum(basisArea)} m²${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+        targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(basisArea)} m²${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
       }
       selfRaw = item.amountCents * (selfArea / basisArea)
     } else if (item.key === 'units' && basisUnits.length > 0) {
@@ -552,6 +580,10 @@ export function computeSettlement(db, year) {
       const target = unitById.get(item.directUnitId)
       if (!target) {
         warnings.push(`„${item.description}": die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter.`)
+      } else if (!target.participates && !target.selfUsed) {
+        // Leerstand und Eigennutzung sind reguläre Fälle; eine Wohnung außerhalb der
+        // Abrechnungseinheit ist dagegen ein Datenfehler.
+        noBasis(`die direkt zugeordnete Wohnung ${target.name} gehört nicht zur Abrechnungseinheit`)
       }
       for (const t of tenancies.filter((t) => t.unitId === item.directUnitId)) {
         const raw = item.amountCents * (t.days / diy)
@@ -571,6 +603,29 @@ export function computeSettlement(db, year) {
     } else {
       shares = targets.map((x) => Math.round(x.raw))
     }
+    // §35a-Lohnanteil. Die Mieter bekommen zusammen den Lohnanteil, der auf ihre gebuchten
+    // Kostenanteile entfällt — kaufmännisch auf den Cent gerundet und nie mehr als der
+    // Lohnanteil der Rechnung. Diese Summe wird mit demselben Restverfahren und Tie-Break
+    // verteilt wie die Kosten. Je Zeile zu runden könnte mehr bescheinigen, als die Rechnung
+    // enthält (3 × 66,67 € = 200,01 € bei 200,00 € Lohnanteil). Tragen die Mieter die Position
+    // ganz, stimmt die Summe centgenau; bei Leerstand und Eigennutzung bleibt der
+    // entsprechende Teil beim Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser
+    // Berechnung, keine Vorgabe des §35a EStG.
+    const labor = item.labor35aCents ?? 0
+    const laborOf = new Map()
+    if (labor !== 0 && (labor < 0 || labor > item.amountCents)) {
+      warnings.push(`„${item.description}": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`)
+    } else if (labor > 0) {
+      const booked = targets.map((_, i) => i).filter((i) => statements.has(targets[i].t.id))
+      const bookedCents = booked.reduce((a, i) => a + shares[i], 0)
+      const tenantLabor = Math.min(labor, Math.round((labor * bookedCents) / item.amountCents))
+      const parts = largestRemainder(
+        tenantLabor,
+        booked.map((i) => (labor * shares[i]) / item.amountCents),
+        booked.map((i) => String(targets[i].t.id)),
+      )
+      booked.forEach((i, k) => laborOf.set(i, parts[k]))
+    }
     let distributed = 0
     targets.forEach((x, i) => {
       const st = statements.get(x.t.id)
@@ -579,9 +634,7 @@ export function computeSettlement(db, year) {
       // in den Vermieteranteil laufen.
       if (!st) return
       distributed += shares[i]
-      const labor35a = item.labor35aCents && item.amountCents > 0
-        ? Math.round(item.labor35aCents * (shares[i] / item.amountCents))
-        : 0
+      const labor35a = laborOf.get(i) ?? 0
       st.rows.push({
         costItemId: item.id,
         category: item.category,

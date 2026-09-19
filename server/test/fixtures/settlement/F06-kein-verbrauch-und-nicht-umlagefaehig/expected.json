@@ -1,0 +1,69 @@
+{
+  "year": 2025,
+  "settlement": {
+    "year": 2025,
+    "daysInYear": 365,
+    "totalCostsCents": 80000,
+    "statements": [
+      {
+        "tenancyId": "t1",
+        "unitId": "u1",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 2,
+        "personDays": 730,
+        "totalShareCents": 0,
+        "total35aCents": 0,
+        "prepaymentCents": 0,
+        "prepaymentOverridden": false,
+        "balanceCents": 0,
+        "suggestedMonthlyCents": 0,
+        "rows": []
+      },
+      {
+        "tenancyId": "t2",
+        "unitId": "u2",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 2,
+        "personDays": 730,
+        "totalShareCents": 0,
+        "total35aCents": 0,
+        "prepaymentCents": 0,
+        "prepaymentOverridden": false,
+        "balanceCents": 0,
+        "suggestedMonthlyCents": 0,
+        "rows": []
+      }
+    ],
+    "landlord": {
+      "totalCents": 80000,
+      "rows": [
+        {
+          "costItemId": "c1",
+          "totalCents": 50000,
+          "shareCents": 50000
+        },
+        {
+          "costItemId": "c2",
+          "totalCents": 30000,
+          "shareCents": 30000
+        }
+      ]
+    },
+    "selfUsedShareCents": 0,
+    "warnings": [
+      "„Heizkosten Zentralheizung\": kein Verbrauch für Zählertyp „waerme\" erfasst — Betrag geht an den Vermieter."
+    ]
+  },
+  "consumption": [
+    {
+      "meterId": "m1",
+      "consumption": 40,
+      "readingCount": 2,
+      "warnings": []
+    }
+  ]
+}

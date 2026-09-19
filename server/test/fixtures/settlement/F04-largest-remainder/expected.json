@@ -1,0 +1,89 @@
+{
+  "year": 2025,
+  "settlement": {
+    "year": 2025,
+    "daysInYear": 365,
+    "totalCostsCents": 10000,
+    "statements": [
+      {
+        "tenancyId": "t1",
+        "unitId": "u1",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 1,
+        "personDays": 365,
+        "totalShareCents": 3334,
+        "total35aCents": 0,
+        "prepaymentCents": 12000,
+        "prepaymentOverridden": false,
+        "balanceCents": 8666,
+        "suggestedMonthlyCents": 300,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "units",
+            "totalCents": 10000,
+            "shareCents": 3334,
+            "labor35aCents": 0
+          }
+        ]
+      },
+      {
+        "tenancyId": "t2",
+        "unitId": "u2",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 1,
+        "personDays": 365,
+        "totalShareCents": 3333,
+        "total35aCents": 0,
+        "prepaymentCents": 12000,
+        "prepaymentOverridden": false,
+        "balanceCents": 8667,
+        "suggestedMonthlyCents": 300,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "units",
+            "totalCents": 10000,
+            "shareCents": 3333,
+            "labor35aCents": 0
+          }
+        ]
+      },
+      {
+        "tenancyId": "t3",
+        "unitId": "u3",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 1,
+        "personDays": 365,
+        "totalShareCents": 3333,
+        "total35aCents": 0,
+        "prepaymentCents": 12000,
+        "prepaymentOverridden": false,
+        "balanceCents": 8667,
+        "suggestedMonthlyCents": 300,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "units",
+            "totalCents": 10000,
+            "shareCents": 3333,
+            "labor35aCents": 0
+          }
+        ]
+      }
+    ],
+    "landlord": {
+      "totalCents": 0,
+      "rows": []
+    },
+    "selfUsedShareCents": 0,
+    "warnings": []
+  },
+  "consumption": []
+}

@@ -7,3 +7,6 @@ dist-bin/
 
 # Artefakte der Browser-Automatisierung (Screenshots, Snapshots)
 .playwright-mcp/
+
+# Ist-Ergebnisse des Prüfkatalogs (GOLDEN=diff npm --prefix server test)
+expected.actual.json
