@@ -371,6 +371,11 @@ export type Extraction = {
   periodEnd?: string | null
   totalGrossEur?: number
   positions?: { description: string; category: string; amountEur: number; labor35aEur?: number | null }[]
+  // Vom Server gerechnet (#34, server/src/invoiceAmounts.js): 'netto' heißt, die Positionen
+  // standen ohne Umsatzsteuer da und wurden auf den Rechnungsbetrag hochgerechnet
+  amountsAdjusted?: 'netto'
+  // Der Lohnanteil nach §35a stand nur als ein Betrag da und wurde auf die Positionen verteilt
+  laborFromTotal?: boolean
 }
 
 // KI-Auswertung eines Zählerfotos (universeller Eingang)

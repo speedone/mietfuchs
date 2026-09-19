@@ -352,7 +352,7 @@ export function taxReport(db, year) {
 // der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
 // Verglichen wird Zeichen für Zeichen statt mit localeCompare, damit das Ergebnis nicht von
 // der Locale der Laufzeit abhängt.
-function largestRemainder(totalCents, raws, keys) {
+export function largestRemainder(totalCents, raws, keys) {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
   let rest = totalCents - floors.reduce((a, b) => a + b, 0)
