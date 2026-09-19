@@ -12,10 +12,12 @@ import {
   type ItemForm,
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
+import { aiRequest, type AiProgress } from '../aiRequest'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
+import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[]; settings: Settings | null }
@@ -27,11 +29,14 @@ type ExtractPos = { description: string; category: string; amount: string; labor
 type QueueEntry = {
   id: number
   fileName: string
-  status: 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'übernommen'
+  status: 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'abgebrochen' | 'übernommen'
   error?: string
   vendor?: string
   serverFile?: string
   positions: ExtractPos[]
+  // während der Auswertung: was das Modell gerade tut und seit wann
+  progress?: AiProgress | null
+  startedAt?: number
 }
 
 const EMPTY = EMPTY_ITEM_FORM
@@ -51,12 +56,16 @@ export default function Kosten({ units, settings }: Props) {
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
+  const abortRef = useRef(new Map<number, AbortController>())
 
   const load = () => api<CostItem[]>('/api/costItems').then(setItems)
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     api<Meter[]>('/api/meters').then(setMeters).catch(() => {})
   }, [])
+  // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
+  useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
@@ -155,12 +164,17 @@ export default function Kosten({ units, settings }: Props) {
     if (queue.some((x) => x.status === 'läuft')) return
     const next = queue.find((x) => x.status === 'wartend')
     if (!next) return
-    patchEntry(next.id, { status: 'läuft' })
+    const controller = new AbortController()
+    abortRef.current.set(next.id, controller)
+    patchEntry(next.id, { status: 'läuft', startedAt: Date.now(), progress: null })
     void (async () => {
       try {
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
         const fd = await buildUpload(filesRef.current.get(next.id)!)
-        const res = await api<{ file: string; extraction: Extraction }>('/api/extract', { method: 'POST', body: fd })
+        const res = await aiRequest<{ file: string; extraction: Extraction }>('/api/extract', fd, {
+          signal: controller.signal,
+          onProgress: (progress) => patchEntry(next.id, { progress }),
+        })
         const ex = res.extraction
         const positions = (ex.positions || []).map((p) => {
           // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
@@ -181,9 +195,12 @@ export default function Kosten({ units, settings }: Props) {
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions })
       } catch (e) {
-        patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
+        // Selbst abgebrochen ist kein Fehler
+        if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
+        else patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
       } finally {
         filesRef.current.delete(next.id)
+        abortRef.current.delete(next.id)
       }
     })()
   }, [queue])
@@ -275,12 +292,19 @@ export default function Kosten({ units, settings }: Props) {
             <div className="row" style={{ alignItems: 'center' }}>
               <strong>{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
-              {entry.status === 'läuft' && <span className="badge gray"><span className="spinner" />Modell arbeitet … (kann 1–2 Min. dauern)</span>}
+              {entry.status === 'läuft' && (
+                <AiProgressBadge
+                  progress={entry.progress ?? null}
+                  startedAt={entry.startedAt ?? Date.now()}
+                  onCancel={() => abortRef.current.get(entry.id)?.abort()}
+                />
+              )}
               {entry.status === 'fertig' && <span className="badge green">{entry.positions.length} Position(en) erkannt — bitte prüfen</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+              {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               <div className="grow" />
-              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'übernommen') && (
+              {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
                 <button className="btn small ghost" onClick={() => { filesRef.current.delete(entry.id); setQueue((q) => q.filter((x) => x.id !== entry.id)) }}>
                   {entry.status === 'fertig' ? 'Verwerfen' : 'Entfernen'}
                 </button>
