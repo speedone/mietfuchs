@@ -1,7 +1,9 @@
-# Hält die GitHub Actions der Workflows aktuell: einmal im Monat, alle Updates gebündelt in
-# einem PR. Die CI prüft ihn wie jeden anderen, und wenn sie grün ist, reicht ein Merge.
+# Hält Abhängigkeiten aktuell, einmal im Monat. Die CI prüft jeden PR wie jeden anderen,
+# Programmdateien und Docker-Image laufen dabei durch die Artefakt-Tests (#22). Wenn alles grün
+# ist, reicht ein Merge.
 version: 2
 updates:
+  # GitHub Actions der Workflows: alle Updates gebündelt in einem PR
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -11,3 +13,21 @@ updates:
         patterns: ['*']
     commit-message:
       prefix: ci
+
+  # npm-Pakete in allen drei Ordnern (#23). Kleine Updates kommen gebündelt, Hauptversionen
+  # einzeln, weil sie oft Anpassungen brauchen und sich so gezielt prüfen lassen.
+  # Sicherheitsupdates kommen unabhängig davon sofort.
+  - package-ecosystem: npm
+    directories:
+      - /
+      - /server
+      - /client
+    schedule:
+      interval: monthly
+    groups:
+      kleine-updates:
+        patterns: ['*']
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
