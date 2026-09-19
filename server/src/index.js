@@ -9,6 +9,8 @@ import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels } from './extract.js'
 import { healthReport } from './health.js'
+import { createUpdateChecker, UPDATE_URL } from './update.js'
+import { APP_VERSION, RUNTIME } from './version.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -264,21 +266,31 @@ app.get('/api/ollama/status', async (req, res) => {
   }
 })
 
+// ---------- Update-Hinweis ----------
+// Fragt GitHub nur, wenn der Nutzer zugestimmt hat (settings.updateCheck === 'on'), und
+// höchstens einmal am Tag; „Jetzt prüfen" fragt sofort, außer GitHub hat um eine Pause
+// gebeten (Rate-Limit). NKA_UPDATE_URL ersetzt die Adresse, damit Tests gegen einen
+// nachgebauten Server laufen statt gegen das echte GitHub.
+const updateChecker = createUpdateChecker({
+  url: process.env.NKA_UPDATE_URL || UPDATE_URL,
+  currentVersion: APP_VERSION,
+  mode: RUNTIME,
+})
+
+app.get('/api/update', async (req, res) => {
+  res.json(await updateChecker.check({ consent: getDb().settings.updateCheck }))
+})
+
+app.post('/api/update/check', async (req, res) => {
+  res.json(await updateChecker.check({ consent: getDb().settings.updateCheck, force: true }))
+})
+
 // ---------- Betriebszustand ----------
 // Für Healthchecks von Docker & Co.: 200 nur, wenn der Datenbestand lesbar und der
 // Belegordner beschreibbar ist, sonst 503. Muss VOR dem Frontend-Catch-All stehen, der jeden
 // Pfad außer /api und /uploads mit der index.html beantwortet — sonst meldete auch ein
 // kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
 // Betrieb, nicht für die Oberfläche.
-const APP_VERSION = (() => {
-  // In der gepackten Binary gibt es keine package.json im Dateisystem
-  try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version
-  } catch {
-    return 'unbekannt'
-  }
-})()
-
 app.get('/healthz', (req, res) => {
   const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
   res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
