@@ -1,0 +1,88 @@
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { aiRequest, fmtElapsed, progressText, type AiProgress } from './aiRequest'
+
+// Antwort als Strom aus Byte-Stücken. Die Stücke schneiden Zeilen absichtlich mittendurch, so
+// wie ein echter Netzwerkstrom sie liefert.
+function streamResponse(text: string, pieceSize = 7) {
+  const bytes = new TextEncoder().encode(text)
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let i = 0; i < bytes.length; i += pieceSize) controller.enqueue(bytes.slice(i, i + pieceSize))
+      controller.close()
+    },
+  })
+  return new Response(body, { status: 200, headers: { 'content-type': 'application/x-ndjson; charset=utf-8' } })
+}
+const ndjson = (...lines: unknown[]) => lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
+
+let requests: { url: string; init?: RequestInit }[]
+function serve(response: () => Response) {
+  requests = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    requests.push({ url, init })
+    return response()
+  })
+}
+
+afterEach(() => vi.unstubAllGlobals())
+
+describe('aiRequest', () => {
+  test('fordert den Strom an, meldet den Fortschritt und liefert das Ergebnis', async () => {
+    serve(() => streamResponse(ndjson(
+      { type: 'progress', step: 'extraction', phase: 'waiting' },
+      { type: 'heartbeat' },
+      { type: 'progress', step: 'extraction', phase: 'writing', chars: 120 },
+      { type: 'result', data: { file: 'a.pdf', extraction: { vendor: 'Stadtwerke' } } },
+    )))
+    const progress: AiProgress[] = []
+    const result = await aiRequest<{ file: string }>('/api/extract', new FormData(), { onProgress: (p) => progress.push(p) })
+    expect(result).toEqual({ file: 'a.pdf', extraction: { vendor: 'Stadtwerke' } })
+    expect(progress.map((p) => `${p.step}:${p.phase}`)).toEqual(['extraction:waiting', 'extraction:writing'])
+    expect(new Headers(requests[0].init?.headers).get('accept')).toBe('application/x-ndjson')
+    expect(requests[0].init?.method).toBe('POST')
+  })
+
+  test('ein Fehler im Strom wird zur Fehlermeldung', async () => {
+    serve(() => streamResponse(ndjson({ type: 'error', error: 'Ollama ist nicht erreichbar.', file: 'a.pdf' })))
+    await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow('Ollama ist nicht erreichbar.')
+  })
+
+  test('endet der Strom ohne Ergebnis, gibt es eine klare Meldung', async () => {
+    serve(() => streamResponse(ndjson({ type: 'progress', step: 'extraction', phase: 'waiting' })))
+    await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow(/brach ab/)
+  })
+
+  // Ein Server ohne Strom (ältere Version) oder ein Fehler vor dem Start, etwa bei zu großer Datei
+  test('eine gewöhnliche JSON-Antwort wird wie bisher gelesen', async () => {
+    serve(() => new Response(JSON.stringify({ file: 'a.pdf' }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    expect(await aiRequest('/api/extract', new FormData())).toEqual({ file: 'a.pdf' })
+  })
+
+  test('ein gewöhnlicher Fehler vor dem Start nennt die Meldung des Servers', async () => {
+    serve(() => new Response(JSON.stringify({ error: 'Die Datei ist größer als 25 MB.' }), { status: 400, headers: { 'content-type': 'application/json' } }))
+    await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow('Die Datei ist größer als 25 MB.')
+  })
+
+  test('reicht den Abbruch an fetch weiter', async () => {
+    serve(() => streamResponse(ndjson({ type: 'result', data: {} })))
+    const controller = new AbortController()
+    await aiRequest('/api/extract', new FormData(), { signal: controller.signal })
+    expect(requests[0].init?.signal).toBe(controller.signal)
+  })
+})
+
+describe('Fortschritt in Worten', () => {
+  test('vor der ersten Meldung', () => expect(progressText(null)).toBe('Beleg wird übertragen …'))
+  test('Modell liest', () => expect(progressText({ step: 'extraction', phase: 'waiting' })).toBe('Modell liest den Beleg …'))
+  test('Modell schreibt, mit Zeichenzahl', () =>
+    expect(progressText({ step: 'extraction', phase: 'writing', chars: 1234 })).toBe('Modell schreibt die Auswertung (1.234 Zeichen) …'))
+  test('Kostenarten', () => expect(progressText({ step: 'classification', phase: 'waiting' })).toBe('Kostenarten werden zugeordnet …'))
+  test('Belegart', () => expect(progressText({ step: 'docType', phase: 'writing', chars: 5 })).toBe('Belegart wird erkannt …'))
+  test('Zählerstand', () => expect(progressText({ step: 'meterReading', phase: 'waiting' })).toBe('Zählerstand wird gelesen …'))
+})
+
+test('verstrichene Zeit', () => {
+  expect(fmtElapsed(0)).toBe('0:00')
+  expect(fmtElapsed(65_400)).toBe('1:05')
+  expect(fmtElapsed(12 * 60_000 + 3_000)).toBe('12:03')
+})

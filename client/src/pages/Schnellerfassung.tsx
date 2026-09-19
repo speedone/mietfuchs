@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
+import { aiRequest, type AiProgress } from '../aiRequest'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, belegSummeCheck, scorePosition, scoreReading, type Ampel } from '../triage'
 import { useYear } from '../year'
+import { AiProgressBadge } from '../components/AiProgress'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
@@ -30,7 +32,7 @@ type ReadingCandidate = {
   checked: boolean
 }
 
-type Status = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'übernommen'
+type Status = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'abgebrochen' | 'übernommen'
 
 // Ein Eintrag der Warteschlange. Vor der Auswertung ist `kind` noch unbekannt; danach trägt der
 // Eintrag entweder Rechnungspositionen oder einen Zählerstand-Kandidaten.
@@ -49,6 +51,9 @@ type QueueEntry = {
   positions?: RechnungPos[]
   // Zähler
   reading?: ReadingCandidate
+  // während der Auswertung: was das Modell gerade tut und seit wann
+  progress?: AiProgress | null
+  startedAt?: number
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
@@ -81,6 +86,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
+  const abortRef = useRef(new Map<number, AbortController>())
 
   const loadData = () =>
     Promise.all([
@@ -91,6 +98,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   useEffect(() => {
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
   }, [])
+  // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
+  useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
   function patchEntry(id: number, patch: Partial<QueueEntry>) {
     setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...patch } : x)))
@@ -112,14 +121,19 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     if (queue.some((x) => x.status === 'läuft')) return
     const next = queue.find((x) => x.status === 'wartend')
     if (!next) return
-    patchEntry(next.id, { status: 'läuft' })
+    const controller = new AbortController()
+    abortRef.current.set(next.id, controller)
+    patchEntry(next.id, { status: 'läuft', startedAt: Date.now(), progress: null })
     void (async () => {
       const file = filesRef.current.get(next.id)!
       try {
         const exifDate = await readExifDate(file)
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
         const fd = await buildUpload(file)
-        const res = await api<IntakeResult>('/api/intake', { method: 'POST', body: fd })
+        const res = await aiRequest<IntakeResult>('/api/intake', fd, {
+          signal: controller.signal,
+          onProgress: (progress) => patchEntry(next.id, { progress }),
+        })
 
         if (res.kind === 'zaehler') {
           const r = res.reading
@@ -178,9 +192,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           })
         }
       } catch (e) {
-        patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
+        // Selbst abgebrochen ist kein Fehler
+        if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
+        else patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
       } finally {
         filesRef.current.delete(next.id)
+        abortRef.current.delete(next.id)
       }
     })()
   }, [queue, meters, readings])
@@ -407,11 +424,18 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             <div className="row" style={{ alignItems: 'center' }}>
               <strong>{entry.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.vendor || entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
-              {entry.status === 'läuft' && <span className="badge gray"><span className="spinner" />Modell arbeitet …</span>}
+              {entry.status === 'läuft' && (
+                <AiProgressBadge
+                  progress={entry.progress ?? null}
+                  startedAt={entry.startedAt ?? Date.now()}
+                  onCancel={() => abortRef.current.get(entry.id)?.abort()}
+                />
+              )}
               {entry.status === 'fertig' && entry.kind === 'rechnung' && <span className="badge green">{entry.positions?.length || 0} Position(en)</span>}
               {entry.status === 'fertig' && entry.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
+              {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               {entry.detectedYear != null && entry.detectedYear !== year && (
                 <span className="badge gray">Jahr {entry.detectedYear}</span>
               )}
