@@ -2,7 +2,7 @@
 // und Wahl des Anbieters je Beleg. Reine Funktionen, deshalb ohne Serverstart.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl } from '../src/ai/settings.js'
+import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl, consentProblem } from '../src/ai/settings.js'
 import { PRESETS, presetById } from '../src/ai/presets.js'
 
 const legacy = (extra = {}) => ({ houseName: 'Haus', ollamaUrl: 'http://ki.intern:11434', ollamaModel: 'gemma4:12b', ...extra })
@@ -261,4 +261,28 @@ test('Extern: öffentliche Adressen und Namen gelten als extern', () => {
   ]) {
     assert.equal(isExternalUrl(url), true, url)
   }
+})
+
+// ---------- Bestätigung externer Dienste ----------
+
+const external = { slot: 'text', provider: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', consent: null }
+
+test('Bestätigung: eine externe Adresse braucht sie, und zwar für genau diese Adresse', () => {
+  assert.match(consentProblem(external, { remoteModel: false }), /api\.openai\.com.*bestätig/s)
+  const confirmed = { ...external, consent: { url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', date: '2026-09-19' } }
+  assert.equal(consentProblem(confirmed, { remoteModel: false }), null)
+  // Ein anderes Modell beim selben Dienst braucht keine neue Bestätigung
+  assert.equal(consentProblem({ ...confirmed, model: 'gpt-4.1-mini' }, { remoteModel: false }), null)
+  // Eine andere Adresse schon
+  assert.match(consentProblem({ ...confirmed, url: 'https://api.mistral.ai/v1' }, { remoteModel: false }), /api\.mistral\.ai/)
+})
+
+test('Bestätigung: lokal braucht es keine, außer Ollama reicht das Modell an die Cloud weiter', () => {
+  const local = { slot: 'text', provider: 'ollama', url: 'http://localhost:11434', model: 'gpt-oss:120b-cloud', consent: null }
+  assert.equal(consentProblem(local, { remoteModel: false }), null)
+  assert.match(consentProblem(local, { remoteModel: true }), /gpt-oss:120b-cloud.*Cloud/s)
+  const confirmed = { ...local, consent: { url: 'http://localhost:11434', model: 'gpt-oss:120b-cloud', date: '2026-09-19' } }
+  assert.equal(consentProblem(confirmed, { remoteModel: true }), null)
+  // Bei Cloud-Modellen gilt sie nur für das bestätigte Modell
+  assert.match(consentProblem({ ...confirmed, model: 'deepseek-v4.1:cloud' }, { remoteModel: true }), /deepseek/)
 })

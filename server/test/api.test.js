@@ -1528,3 +1528,53 @@ test('Anbieterwahl: lehnt das Modell think: false ab, geht es ohne weiter', asyn
     assert.ok(chatRequests(ollama).slice(before).every((c) => c.body.think === undefined))
   }, { chat: 'rejectThinkOff' })
 })
+
+// ---------- Bestätigung externer Dienste (#18) ----------
+// 192.0.2.1 liegt im Dokumentationsnetz (RFC 5737): nicht privat, also extern, und nie
+// erreichbar. So braucht der Test kein Internet.
+
+const EXTERNAL = 'http://192.0.2.1:11434'
+
+test('Bestätigung: ohne sie gehen keine Belege an einen externen Dienst', async () => {
+  await withEnv({ NKA_AI_TIMEOUT: '2' }, async (s) => {
+    await putAi(s, { text: ollamaSlot(EXTERNAL) })
+    const started = Date.now()
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /192\.0\.2\.1:11434.*bestätigt/s)
+    assert.ok(Date.now() - started < 1500, 'ohne Bestätigung darf keine Verbindung versucht werden')
+    // Nach der Bestätigung versucht Mietfuchs es, der Dienst ist nur eben nicht erreichbar
+    const confirmed = await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    assert.equal(confirmed.ai.consent.text.url, EXTERNAL)
+    assert.match(confirmed.ai.consent.text.date, /^\d{4}-\d{2}-\d{2}$/)
+    const again = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.doesNotMatch(again.body.error, /bestätigt/)
+    // Eine neue Adresse braucht eine neue Bestätigung
+    await putAi(s, { text: ollamaSlot('http://192.0.2.2:11434') })
+    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /192\.0\.2\.2:11434.*bestätigt/s)
+  })
+})
+
+test('Bestätigung: lässt sich widerrufen und gilt je Platz', async () => {
+  await withEnv({}, async (s) => {
+    await putAi(s, { text: ollamaSlot(EXTERNAL) })
+    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    const revoked = await s.api('/api/ai/consent/text', { method: 'DELETE' })
+    assert.equal(revoked.ai.consent.text, undefined)
+    // Ohne eigenen Bilder-Anbieter gibt es für Bilder nichts zu bestätigen
+    const res = await fetch(`${s.base}/api/ai/consent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: 'images' }) })
+    assert.equal(res.status, 400)
+    assert.equal((await fetch(`${s.base}/api/ai/consent/fremd`, { method: 'DELETE' })).status, 400)
+  })
+})
+
+test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', async () => {
+  await withOllama(async (s, ollama) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /gpt-oss:120b-cloud.*Cloud/s)
+    assert.equal(chatRequests(ollama).length, 0)
+    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
+  }, { models: [{ name: 'gpt-oss:120b-cloud', capabilities: ['completion'], remote_host: 'https://ollama.com:443' }], model: 'gpt-oss:120b-cloud' })
+})

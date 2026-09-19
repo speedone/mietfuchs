@@ -125,6 +125,32 @@ const keyRoute = (change) => (req, res) => {
 app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
 app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
 
+// Bestätigung, dass Belege an einen externen Dienst gehen dürfen (siehe consentProblem in
+// ai/settings.js). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
+// auch wenn sie aus der Umgebung kommen.
+app.post('/api/ai/consent', (req, res) => {
+  const slot = req.body?.slot
+  const effective = effectiveSettings().ai
+  if (!['text', 'images'].includes(slot) || !effective[slot]) {
+    return res.status(400).json({ error: 'Für diesen Platz ist kein KI-Anbieter eingerichtet.' })
+  }
+  const { url, model } = effective[slot]
+  const settings = getDb().settings
+  settings.ai.consent = { ...settings.ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
+  save()
+  res.json(settingsForClient())
+})
+
+app.delete('/api/ai/consent/:slot', (req, res) => {
+  const { slot } = req.params
+  if (!['text', 'images'].includes(slot)) return res.status(400).json({ error: 'Unbekannter Platz.' })
+  const settings = getDb().settings
+  const { [slot]: _revoked, ...rest } = settings.ai.consent
+  settings.ai.consent = rest
+  save()
+  res.json(settingsForClient())
+})
+
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']) {
   app.get(`/api/${coll}`, (req, res) => res.json(getDb()[coll]))
