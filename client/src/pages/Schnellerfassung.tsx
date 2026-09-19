@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
+import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, belegSummeCheck, scorePosition, scoreReading, type Ampel } from '../triage'
 import { useYear } from '../year'
 
@@ -116,8 +117,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       const file = filesRef.current.get(next.id)!
       try {
         const exifDate = await readExifDate(file)
-        const fd = new FormData()
-        fd.append('file', file)
+        // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
+        const fd = await buildUpload(file)
         const res = await api<IntakeResult>('/api/intake', { method: 'POST', body: fd })
 
         if (res.kind === 'zaehler') {
