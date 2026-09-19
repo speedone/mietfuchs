@@ -100,8 +100,8 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
   if (!form.description.trim() || amount === null || amount <= 0) {
     return { error: 'Bitte Beschreibung und gültigen Betrag angeben.' }
   }
-  if (labor35a === null || labor35a > amount) {
-    return { error: 'Der §35a-Lohnanteil muss eine gültige Zahl ≤ Gesamtbetrag sein.' }
+  if (labor35a === null || labor35a < 0 || labor35a > amount) {
+    return { error: 'Der §35a-Lohnanteil muss eine gültige Zahl zwischen 0 und dem Gesamtbetrag sein.' }
   }
   if (form.key === 'direct' && !form.directUnitId) {
     return { error: 'Bei Direktzuordnung bitte eine Wohnung wählen.' }

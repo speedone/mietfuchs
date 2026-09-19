@@ -76,6 +76,11 @@ describe('Validierung', () => {
     expect(buildCostItemBody(form({ labor35a: '150,00' }), UNITS, 2025)).toHaveProperty('error')
     expect(buildCostItemBody(form({ labor35a: '40,00' }), UNITS, 2025)).toHaveProperty('body')
   })
+
+  test('§35a-Lohnanteil darf nicht negativ sein', () => {
+    expect(buildCostItemBody(form({ labor35a: '-10,00' }), UNITS, 2025)).toHaveProperty('error')
+    expect(buildCostItemBody(form({ labor35a: '0' }), UNITS, 2025)).toHaveProperty('body')
+  })
 })
 
 describe('Vereinbarte Prozentanteile', () => {
