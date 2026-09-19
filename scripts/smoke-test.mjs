@@ -242,6 +242,89 @@ async function aiExtraction() {
   }
 }
 
+// ---------- Nachgebauter OpenAI-kompatibler Dienst (#18) ----------
+// Antwortet wie die Chat-Completions-Schnittstelle: /v1/models und /v1/chat/completions als
+// SSE-Strom, und ohne gültigen Bearer-Schlüssel mit 401.
+function startFakeOpenAi(key) {
+  const requests = []
+  const server = http.createServer((req, res) => {
+    let raw = ''
+    req.on('data', (d) => { raw += d })
+    req.on('end', () => {
+      const body = raw ? JSON.parse(raw) : {}
+      requests.push({ url: req.url, body, headers: req.headers })
+      const send = (status, data) => {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(data))
+      }
+      if (req.headers.authorization !== `Bearer ${key}`) return send(401, { error: { message: 'Incorrect API key provided' } })
+      if (req.url === '/v1/models') return send(200, { object: 'list', data: [{ id: 'smoke-modell', object: 'model' }] })
+      if (req.url !== '/v1/chat/completions') return send(404, { error: { message: 'Not found' } })
+      // Den zweiten Durchgang (nur Kostenarten) erkennt man am Schema
+      const answer = JSON.stringify(
+        raw.includes('categories')
+          ? { categories: ['Müllabfuhr'] }
+          : { vendor: 'Prüfdienst', positions: [{ description: 'Restmüll 120 Liter', category: 'Müllabfuhr', amountEur: 42.5 }], totalGrossEur: 42.5 },
+      )
+      const event = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`)
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      event({ choices: [{ index: 0, delta: { role: 'assistant', content: answer }, finish_reason: null }] })
+      event({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+      if (body.stream_options?.include_usage) event({ choices: [], usage: { prompt_tokens: 700, completion_tokens: 30 } })
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  return new Promise((resolve) =>
+    server.listen(0, '127.0.0.1', () => resolve({ port: server.address().port, requests, stop: () => server.close() })),
+  )
+}
+
+// Der zweite Anbieter aus #18: Schlüssel, Modellliste und Auswertung über einen
+// OpenAI-kompatiblen Dienst. Danach gilt wieder Ollama.
+async function openAiExtraction() {
+  const key = 'sk-smoke-1234567890'
+  const service = await startFakeOpenAi(key)
+  const before = (await request('/api/settings')).body.ai
+  try {
+    const url = `http://${OLLAMA_HOST}:${service.port}/v1`
+    const slot = { provider: 'openai', preset: 'openai-compatible', url, model: 'smoke-modell', vision: null }
+    let r = await request('/api/settings', json('PUT', { ai: { ...before, text: slot } }))
+    assert(r.status === 200 && r.body.ai?.text?.url === url, 'OpenAI-kompatibler Dienst lässt sich einstellen', r.body?.ai?.text)
+
+    const withoutKey = await request('/api/ai/status?slot=text')
+    assert(withoutKey.body.ok === false && /Schlüssel/.test(withoutKey.body.error ?? ''), 'ohne Schlüssel eine klare Meldung', withoutKey.body)
+
+    r = await request('/api/ai/key', json('PUT', { slot: 'text', key }))
+    assert(r.status === 200 && r.body.text?.set === true && !JSON.stringify(r.body).includes(key), 'Schlüssel gespeichert, aber nie zurückgeliefert', r.body)
+    const settings = await request('/api/settings')
+    assert(!JSON.stringify(settings.body).includes(key), 'Schlüssel steht auch nicht in den Einstellungen')
+
+    const status = await request('/api/ai/status?slot=text')
+    assert(status.body.ok === true && status.body.models?.[0]?.name === 'smoke-modell', 'Modellliste des Dienstes', status.body)
+
+    const fd = new FormData()
+    fd.append('file', new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' }), 'openai.pdf')
+    fd.append('pdfText', 'Abfallgebührenbescheid 2025, Restmüll 120 Liter, Jahresgebühr 42,50 EUR. '.repeat(2))
+    r = await request('/api/extract', { method: 'POST', body: fd })
+    assert(r.status === 200 && r.body.extraction?.vendor === 'Prüfdienst', 'Auswertung über den OpenAI-kompatiblen Dienst', r.body)
+
+    const call = service.requests.find((x) => x.url === '/v1/chat/completions')
+    const shape = {
+      auth: call.headers.authorization === `Bearer ${key}`,
+      contentLength: Boolean(call.headers['content-length']),
+      chunked: call.headers['transfer-encoding'] === 'chunked',
+      format: call.body.response_format?.type,
+      tokens: call.body.max_tokens,
+    }
+    assert(shape.auth && shape.contentLength && !shape.chunked && shape.format === 'json_schema' && shape.tokens > 0,
+      'Anfrage mit Bearer, Content-Length, JSON-Schema und Grenze für die Antwortlänge', shape)
+  } finally {
+    await request('/api/ai/key/text', { method: 'DELETE' })
+    await request('/api/settings', json('PUT', { ai: before }))
+    service.stop()
+  }
+}
+
 async function uploadsAndSettlement() {
   const content = Buffer.from('%PDF-1.4\n%Beleg\n')
   const fd = new FormData()
@@ -296,6 +379,7 @@ async function main() {
   assert(update.body.enabled === false, 'ohne Zustimmung keine Update-Prüfung', update.body)
   await userInterface()
   await aiExtraction()
+  await openAiExtraction()
   const unit = await uploadsAndSettlement()
   await backupAndRestore(unit)
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
