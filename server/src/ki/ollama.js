@@ -5,6 +5,17 @@
 
 const basisVon = (settings) => settings.ollamaUrl.replace(/\/+$/, '')
 
+// Ohne Angabe nimmt Ollama bei weniger als 24 GB Grafikspeicher 4096 Token Kontext und kürzt
+// längere Anfragen stillschweigend. Eine Rechnung mit 20.000 Zeichen Text braucht grob 7.000
+// Token, vier Seitenbilder bei Qwen-Modellen etwa 10.000. Der Wert ist fest, denn ein anderer
+// Wert als bei der vorigen Anfrage lässt Ollama das Modell neu laden. NKA_OLLAMA_NUM_CTX
+// ändert ihn, etwa für Rechner mit wenig Arbeitsspeicher.
+const KONTEXT_STANDARD = 16384
+function kontext() {
+  const wert = Number(process.env.NKA_OLLAMA_NUM_CTX)
+  return Number.isInteger(wert) && wert > 0 ? wert : KONTEXT_STANDARD
+}
+
 // Gemeinsamer Weg für alle Anfragen. Übersetzt die häufigen Fehler in Meldungen, mit denen
 // man in der Oberfläche etwas anfangen kann: Ollama läuft nicht oder unter einer anderen
 // Adresse, das Modell ist nicht geladen, die Antwort dauert zu lange.
@@ -55,7 +66,17 @@ export function ollamaAnbieter(settings) {
         message.images = bilder.map((b) => b.data) // Ollama nimmt reines Base64 ohne Typangabe
       }
       const data = await anfrage(settings, '/api/chat', {
-        body: { model, messages: [message], stream: false, format: schema, options: { temperature: 0 } },
+        body: {
+          model,
+          messages: [message],
+          stream: false,
+          format: schema,
+          // Neuere Modelle denken sonst erst ausführlich nach. Für das Auslesen einer Rechnung
+          // bringt das wenig und kostet auf dem Prozessor Minuten. Modelle ohne diese
+          // Fähigkeit übergehen den Schalter.
+          think: false,
+          options: { temperature: 0, num_ctx: kontext() },
+        },
         timeoutMs,
       })
       return JSON.parse(data.message?.content ?? '{}')
