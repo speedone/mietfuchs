@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { migrateAi } from './ai/settings.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // In der gepackten Binary (Bun --compile) liegt der Code in einem virtuellen,
@@ -60,6 +61,9 @@ function load() {
   // Der frühere Standard existierte nie, wer ihn nicht geändert hat, konnte gar nicht auswerten.
   // Eine eigene Wahl bleibt unangetastet.
   if (db.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) db.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
+  // KI-Anbieter (#18): `settings.ai` entsteht aus ollamaUrl und ollamaModel, fehlende Felder
+  // werden ergänzt (siehe ai/settings.js)
+  migrateAi(db.settings)
   // Migrationen älterer Datenformate.
   // Wohnungen: `selfUsed`/`selfPersons` (Eigennutzung in der Verteilbasis) kamen später dazu.
   // Bewusst ohne Rück-Migration — ein automatisch gesetztes Kennzeichen würde die Verteilung

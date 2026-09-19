@@ -637,7 +637,10 @@ test('Ollama: NKA_OLLAMA_URL und NKA_OLLAMA_MODEL gelten und sind als fest marki
     const settings = await s.api('/api/settings')
     assert.equal(settings.ollamaUrl, 'http://ki.intern:11434')
     assert.equal(settings.ollamaModel, 'env-modell:4b')
-    assert.deepEqual(settings.fixedByEnv, ['ollamaUrl', 'ollamaModel'])
+    // Die alten Namen für Tabs von vor dem Update, dazu die Pfade der KI-Einstellungen
+    assert.deepEqual(settings.fixedByEnv, ['ollamaUrl', 'ollamaModel', 'ai.text.url', 'ai.text.model'])
+    assert.equal(settings.ai.text.url, 'http://ki.intern:11434')
+    assert.equal(settings.ai.text.model, 'env-modell:4b')
   })
 })
 
@@ -648,10 +651,12 @@ test('Ollama: Speichern lässt fest vorgegebene Werte unberührt, alles andere w
       body: JSON.stringify({ ollamaUrl: 'http://anders:11434', ollamaModel: 'eigenes:2b', landlordName: 'Vermieterin', fixedByEnv: [] }),
     })
     assert.equal(response.ollamaUrl, 'http://ki.intern:11434')
-    assert.deepEqual(response.fixedByEnv, ['ollamaUrl'])
+    assert.deepEqual(response.fixedByEnv, ['ollamaUrl', 'ai.text.url'])
     const stored = storedSettings(s)
     assert.equal(stored.ollamaUrl, 'http://localhost:11434') // Standard bleibt, Env landet nicht in der db.json
+    assert.equal(stored.ai.text.url, 'http://localhost:11434')
     assert.equal(stored.ollamaModel, 'eigenes:2b')
+    assert.equal(stored.ai.text.model, 'eigenes:2b')
     assert.equal(stored.landlordName, 'Vermieterin')
     assert.equal(stored.fixedByEnv, undefined)
   })
@@ -1285,6 +1290,8 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
     [{ NKA_AI_API_KEY_FILE: file('leer', '\n') }, /ist leer/],
     [{ NKA_AI_API_KEY_FILE: file('zwei-zeilen', 'erste-zeile-123456\nzweite-zeile-123456\n') }, /ungültiges Format/],
     [{ NKA_AI_API_KEY: 'mit leerzeichen 123456' }, /ungültiges Format/],
+    [{ NKA_AI_PROVIDER: 'chatgpt' }, /NKA_AI_PROVIDER „chatgpt“ ist unbekannt/],
+    [{ NKA_AI_URL: 'api.openai.com/v1' }, /NKA_AI_URL muss eine Adresse/],
   ]
   try {
     for (const [env, message] of cases) {
@@ -1355,5 +1362,65 @@ test('Schlüssel: die Datei ist nur für den eigenen Benutzer lesbar', async (t)
   await withEnv({}, async (s) => {
     await putKey(s, { slot: 'text', key: SECRET })
     assert.equal(fs.statSync(path.join(s.dataDir, 'secrets.json')).mode & 0o777, 0o600)
+  })
+})
+
+// ---------- KI-Einstellungen (#18) ----------
+// Das Datenmodell selbst prüft aiSettings.test.js ohne Server. Hier geht es um das
+// Zusammenspiel mit db.json, Umgebung und der Route.
+
+const OPENAI_SLOT = { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true }
+
+test('KI-Einstellungen: eine db.json von vor #18 bekommt beim Start den Standard-Anbieter', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ settings: { ollamaUrl: 'http://nas:11434', ollamaModel: 'gemma4:12b' } }))
+  const s = await startServerIn(dataDir)
+  try {
+    const { ai } = await s.api('/api/settings')
+    assert.deepEqual(ai.text, { provider: 'ollama', preset: 'ollama-local', url: 'http://nas:11434', model: 'gemma4:12b', vision: null })
+    assert.equal(ai.images, null)
+  } finally {
+    s.stop()
+  }
+})
+
+test('KI-Einstellungen: Wechsel zu OpenAI wird gespeichert, die Ollama-Felder bleiben für ein Downgrade', async () => {
+  await withEnv({}, async (s) => {
+    const before = await s.api('/api/settings')
+    const saved = await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...before, ai: { ...before.ai, text: OPENAI_SLOT } }) })
+    assert.deepEqual(saved.ai.text, OPENAI_SLOT)
+    const stored = storedSettings(s)
+    assert.deepEqual(stored.ai.text, OPENAI_SLOT)
+    assert.equal(stored.ollamaUrl, 'http://localhost:11434')
+    assert.equal(stored.aiKeys, undefined)
+  })
+})
+
+test('KI-Einstellungen: eine ungültige Angabe ergibt 400, und nichts wird gespeichert', async () => {
+  await withEnv({}, async (s) => {
+    const before = await s.api('/api/settings')
+    const res = await fetch(`${s.base}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...before, landlordName: 'Neu', ai: { ...before.ai, text: { ...OPENAI_SLOT, url: 'api.openai.com' } } }),
+    })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /Adresse muss mit http/)
+    assert.equal((await s.api('/api/settings')).landlordName, '')
+  })
+})
+
+test('KI-Einstellungen: NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL gelten und sind als fest markiert', async () => {
+  await withEnv({ NKA_AI_PROVIDER: 'openai', NKA_AI_URL: 'https://api.mistral.ai/v1', NKA_AI_MODEL: 'mistral-small-latest', NKA_OLLAMA_URL: 'http://ollama:11434' }, async (s) => {
+    const settings = await s.api('/api/settings')
+    assert.equal(settings.ai.text.provider, 'openai')
+    assert.equal(settings.ai.text.url, 'https://api.mistral.ai/v1')
+    assert.equal(settings.ai.text.model, 'mistral-small-latest')
+    // NKA_OLLAMA_URL gilt nicht, solange ein anderer Anbieter festgelegt ist
+    assert.deepEqual(settings.fixedByEnv, ['ai.text.provider', 'ai.text.url', 'ai.text.model'])
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, landlordName: 'X' }) })
+    const stored = storedSettings(s)
+    assert.equal(stored.ai.text.provider, 'ollama') // Werte aus der Umgebung landen nicht in der db.json
+    assert.equal(stored.ai.text.url, 'http://localhost:11434')
   })
 })
