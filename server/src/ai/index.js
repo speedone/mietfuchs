@@ -27,6 +27,7 @@
 // Bevor Belege das Haus verlassen, muss der Nutzer das einmal bestätigt haben (consentProblem in
 // ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
 import { ollamaProvider } from './ollama.js'
+import { openaiProvider } from './openai.js'
 import { slotFor, consentProblem, isExternalUrl } from './settings.js'
 import { getKey } from '../secrets.js'
 
@@ -46,10 +47,7 @@ export function providerConfig(ai, { images = false } = {}) {
   }
 }
 
-function providerFor(config) {
-  if (config.provider === 'ollama') return ollamaProvider(config)
-  throw new Error('Dieser KI-Anbieter wird noch nicht unterstützt.')
-}
+const providerFor = (config) => (config.provider === 'openai' ? openaiProvider(config) : ollamaProvider(config))
 
 export function aiProvider(ai, { images = false } = {}) {
   const config = providerConfig(ai, { images })
