@@ -55,5 +55,17 @@ export function modelHinweis(models: AiModel[], aktuell: string): ModelHinweis {
   return null
 }
 
-// Nur Ollama: Befehl zum Laden eines fehlenden Modells
-export const pullBefehl = (name: string) => `ollama pull ${name.trim()}`
+// Nur Ollama: wie man ein fehlendes Modell lädt. Im Compose-Profil „ki" läuft Ollama als
+// Dienst `ollama` im Container, dort geht der Befehl über docker compose.
+export function ladeAnleitung(name: string, ollamaUrl: string): { text: string; befehl: string } {
+  let host = ''
+  try {
+    host = new URL(ollamaUrl).hostname
+  } catch {
+    // keine gültige Adresse: wie Ollama auf dem Rechner behandeln
+  }
+  const pull = `ollama pull ${name.trim()}`
+  return host === 'ollama'
+    ? { text: 'Im Ordner mit der docker-compose.yml ausführen:', befehl: `docker compose exec ollama ${pull}` }
+    : { text: 'Zum Laden im Terminal ausführen:', befehl: pull }
+}

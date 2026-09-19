@@ -2,6 +2,10 @@
 # auf Port 3001.
 # Start:  docker compose up -d      Stopp:  docker compose down   (Daten bleiben erhalten)
 #
+# Mit KI-Belegauswertung im Container (optional, lädt beim ersten Start einmalig das Modell):
+#   docker compose --profile ki up -d
+# Danach in Mietfuchs unter Einstellungen die gefundene Adresse http://ollama:11434 übernehmen.
+#
 # Ohne Clone des Repos geht es auch mit dem fertigen Image aus der GitHub Container
 # Registry — siehe Abschnitt „Mit Docker" in der README. Dann `build` weglassen und
 # `image: ghcr.io/speedone/mietfuchs:latest` setzen.
@@ -15,11 +19,47 @@ services:
     volumes:
       # Persistente Daten (db.json + hochgeladene Belege) — überleben Container-Updates.
       - mietfuchs-data:/app/server/data
+    environment:
+      # Optional, etwa in einer .env-Datei neben dieser Datei: Adresse und Modell für die
+      # KI-Belegauswertung fest vorgeben. Leer bleiben beide in den Einstellungen wählbar.
+      NKA_OLLAMA_URL: ${NKA_OLLAMA_URL:-}
+      NKA_OLLAMA_MODEL: ${NKA_OLLAMA_MODEL:-}
     restart: unless-stopped
     # Macht den Host unter „host.docker.internal" erreichbar (für eine Ollama-Instanz auf dem
     # Host) — unter Docker Desktop ohnehin vorhanden, unter Linux per host-gateway nachgerüstet.
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Profil „ki": Ollama läuft als eigener Container und ist für Mietfuchs unter
+  # http://ollama:11434 erreichbar, von außen nicht. Gerechnet wird auf dem Prozessor. Für eine
+  # NVIDIA-Grafikkarte siehe den Abschnitt zur KI-Belegauswertung in der README.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mietfuchs-ollama
+    profiles: [ki]
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # Lädt das Modell einmalig (bei späteren Starts prüft es nur, ob es aktuell ist) und
+  # beendet sich dann. Den Fortschritt zeigt: docker compose logs -f ollama-modell
+  ollama-modell:
+    image: ollama/ollama:latest
+    container_name: mietfuchs-ollama-modell
+    profiles: [ki]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command: ["pull", "${NKA_OLLAMA_MODEL:-qwen3.5:4b}"]
+    restart: "no"
+
 volumes:
   mietfuchs-data:
+  ollama-models:

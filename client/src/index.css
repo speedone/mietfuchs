@@ -152,6 +152,7 @@ input, select, textarea {
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+input:disabled, select:disabled, textarea:disabled { background: var(--chip); color: var(--muted); border-color: var(--input-border); cursor: not-allowed; }
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
