@@ -269,32 +269,67 @@ app.get('/api/backup', (req, res) => {
 })
 
 const RESTORE_MAX_BYTES = 500 * 1024 * 1024
+// Ausgepackt darf ein Backup höchstens so groß werden. Gegen „ZIP-Bomben“, die wenige Kilobyte
+// groß sind und ausgepackt den Arbeitsspeicher füllen. NKA_RESTORE_MAX_BYTES setzt die Grenze
+// für Tests herab.
+const RESTORE_ENTPACKT_MAX = Number(process.env.NKA_RESTORE_MAX_BYTES) || 1024 * 1024 * 1024
 const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: RESTORE_MAX_BYTES } })
-app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+
+// Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
+// mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
+function backupLesen(puffer) {
   let zip
   try {
-    zip = new AdmZip(req.file.buffer)
+    zip = new AdmZip(puffer)
+    zip.getEntries() // adm-zip 0.6 liest das Verzeichnis erst hier
   } catch {
-    return res.status(400).json({ error: 'Datei ist kein gültiges ZIP-Archiv.' })
+    throw new Error('Datei ist kein gültiges ZIP-Archiv.')
   }
-  const dbEntry = zip.getEntry('db.json')
-  if (!dbEntry) return res.status(400).json({ error: 'Im Archiv fehlt die db.json — ist das wirklich ein Backup dieses Tools?' })
+  const eintraege = zip.getEntries()
+  const dbEintrag = eintraege.find((e) => e.entryName === 'db.json')
+  if (!dbEintrag) throw new Error('Im Archiv fehlt die db.json. Ist das wirklich ein Mietfuchs-Backup?')
+
+  const belege = []
+  let summe = dbEintrag.header.size
+  for (const e of eintraege) {
+    const name = e.entryName
+    if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
+    if (e.isDirectory && name === 'uploads/') continue
+    // Ein Backup enthält Belege nur direkt in uploads/. Alles andere ist verdächtig.
+    const datei = name.slice('uploads/'.length)
+    if (e.isDirectory || !datei || datei === '.' || datei === '..' || /[\\/]/.test(datei)) {
+      throw new Error(`Das Archiv enthält einen ungültigen Eintrag („${name}“) und wird nicht übernommen.`)
+    }
+    summe += e.header.size
+    belege.push({ datei, e })
+  }
+  if (summe > RESTORE_ENTPACKT_MAX) {
+    throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_ENTPACKT_MAX / 1024 / 1024)} MB).`)
+  }
+
+  let dbText
   try {
-    JSON.parse(zip.readAsText(dbEntry))
+    dbText = zip.readAsText(dbEintrag)
+    JSON.parse(dbText)
   } catch {
-    return res.status(400).json({ error: 'Die db.json im Archiv ist beschädigt (kein gültiges JSON).' })
+    throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
+  }
+  // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
+  return { dbText, belege: belege.map(({ datei, e }) => ({ datei, inhalt: e.getData() })) }
+}
+
+app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+  let backup
+  try {
+    backup = backupLesen(req.file.buffer)
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
   }
   // Sicherheitskopie des aktuellen Stands, dann ersetzen
   fs.copyFileSync(path.join(DATA_DIR, 'db.json'), path.join(DATA_DIR, 'db.json.vor-restore'))
-  fs.writeFileSync(path.join(DATA_DIR, 'db.json'), zip.readAsText(dbEntry), 'utf8')
-  for (const entry of zip.getEntries()) {
-    // Nur Dateien unterhalb von uploads/ übernehmen, Pfad-Ausbrüche abwehren
-    if (entry.isDirectory || !entry.entryName.startsWith('uploads/')) continue
-    const name = path.basename(entry.entryName)
-    if (!name) continue
-    fs.writeFileSync(path.join(UPLOAD_DIR, name), entry.getData())
-  }
+  fs.writeFileSync(path.join(DATA_DIR, 'db.json'), backup.dbText, 'utf8')
+  for (const { datei, inhalt } of backup.belege) fs.writeFileSync(path.join(UPLOAD_DIR, datei), inhalt)
   reloadDb()
   res.json({ ok: true })
 })
@@ -377,7 +412,9 @@ if (PACKAGED) {
   const clientDist = path.join(__dirname, '..', '..', 'client', 'dist')
   if (fs.existsSync(clientDist)) {
     app.use(express.static(clientDist))
-    app.get(/^(?!\/api|\/uploads).*/, (req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+    // Mit `root` statt absolutem Pfad: Express 5 lehnt sonst Pfade ab, in denen irgendein Ordner
+    // mit einem Punkt beginnt (etwa eine Installation unter ~/.apps/mietfuchs).
+    app.get(/^(?!\/api|\/uploads).*/, (req, res) => res.sendFile('index.html', { root: clientDist }))
   }
 }
 
@@ -408,7 +445,10 @@ function openBrowser(url) {
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, (err) => {
+  // Express 5 ruft diesen Callback auch bei einem Fehler auf (etwa belegter Port). Den meldet
+  // der error-Handler unten; hier darf dann weder „läuft“ stehen noch der Browser aufgehen.
+  if (err) return
   // Bewusst 127.0.0.1 statt localhost: Unter Windows löst "localhost" zuerst auf IPv6
   // (::1) auf. Der Server lauscht auf IPv4 (0.0.0.0), und auf ::1 kann ein anderer
   // Dienst sitzen (z. B. WSLs wslrelay), der dann 404 liefert. 127.0.0.1 erzwingt IPv4.
