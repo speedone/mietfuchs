@@ -1,0 +1,57 @@
+{
+  "settings": {},
+  "units": [
+    { "id": "u1", "name": "Wohnung 1", "areaM2": 50, "participates": true },
+    { "id": "u2", "name": "Wohnung 2", "areaM2": 50, "participates": true },
+    { "id": "u3", "name": "Wohnung 3", "areaM2": 50, "participates": true }
+  ],
+  "tenancies": [
+    {
+      "id": "t1",
+      "unitId": "u1",
+      "tenantName": "Mieter 1",
+      "start": "2020-01-01",
+      "end": null,
+      "personHistory": [{ "from": "2020-01-01", "persons": 1 }],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 1000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    },
+    {
+      "id": "t2",
+      "unitId": "u2",
+      "tenantName": "Mieter 2",
+      "start": "2020-01-01",
+      "end": null,
+      "personHistory": [{ "from": "2020-01-01", "persons": 1 }],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 1000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    },
+    {
+      "id": "t3",
+      "unitId": "u3",
+      "tenantName": "Mieter 3",
+      "start": "2020-01-01",
+      "end": null,
+      "personHistory": [{ "from": "2020-01-01", "persons": 1 }],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 1000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    }
+  ],
+  "costItems": [
+    {
+      "id": "c1",
+      "year": 2025,
+      "category": "Sonstige",
+      "description": "Betrag mit unteilbarem Rest",
+      "amountCents": 10000,
+      "key": "units"
+    }
+  ],
+  "meters": [],
+  "readings": [],
+  "payments": [],
+  "closedSettlements": []
+}
