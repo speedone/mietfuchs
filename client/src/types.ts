@@ -191,7 +191,7 @@ export type Settings = {
 }
 
 // Ein Modell zur Auswahl (bei Ollama aus /api/ollama/status, listOllamaModels in
-// server/src/ki/ollama.js). Fehlt eine Angabe beim Anbieter, ist sie null.
+// server/src/ai/ollama.js). Fehlt eine Angabe beim Anbieter, ist sie null.
 export type AiModel = {
   name: string
   sizeBytes: number | null
@@ -200,7 +200,8 @@ export type AiModel = {
 }
 export type OllamaStatus = {
   ok: boolean
-  models?: AiModel[]
+  models?: string[] // nur die Namen, für Tabs von vor dem Update
+  modelDetails?: AiModel[]
   error?: string
   found?: string // Adresse, unter der Ollama stattdessen antwortet
 }

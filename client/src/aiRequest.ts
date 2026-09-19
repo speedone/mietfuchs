@@ -40,15 +40,44 @@ async function* lines(body: ReadableStream<Uint8Array>): AsyncGenerator<string> 
   }
 }
 
+// Kennung einer Auswertung. Bewusst über getRandomValues: crypto.randomUUID gibt es nur in
+// sicheren Kontexten, also nicht, wenn Mietfuchs im Heimnetz über http://192.168.… läuft.
+function newRequestId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+// Unter Bun (Programmdatei) bemerkt der Server nicht, dass der Browser die Verbindung schließt.
+// Jede Auswertung trägt deshalb eine Kennung, und abgebrochen wird ausdrücklich: beim Abbrechen
+// per fetch mit keepalive, beim Schließen des Tabs per sendBeacon (fetch käme dort zu spät).
 export async function aiRequest<T>(
   path: string,
   body: FormData,
   { onProgress, signal }: { onProgress?: (progress: AiProgress) => void; signal?: AbortSignal } = {},
 ): Promise<T> {
-  const res = await fetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal })
+  const requestId = newRequestId()
+  body.set('requestId', requestId)
+  const cancelUrl = `/api/ai/cancel/${requestId}`
+  const onAbort = () => { void fetch(cancelUrl, { method: 'POST', keepalive: true }).catch(() => {}) }
+  const onPageHide = () => { navigator.sendBeacon?.(cancelUrl) }
+  signal?.addEventListener('abort', onAbort, { once: true })
+  if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide)
+  try {
+    return await readAnswer<T>(await fetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal }), onProgress)
+  } finally {
+    signal?.removeEventListener('abort', onAbort)
+    if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide)
+  }
+}
+
+async function readAnswer<T>(res: Response, onProgress?: (progress: AiProgress) => void): Promise<T> {
   if (!(res.headers.get('content-type') ?? '').includes(NDJSON) || !res.body) {
     // Server ohne Strom (ältere Version) oder ein Fehler vor dem Start, etwa bei zu großer Datei
-    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    let data: { error?: string }
+    try {
+      data = (await res.json()) as { error?: string }
+    } catch {
+      throw new Error(`Mietfuchs lieferte eine unerwartete Antwort (${res.status} ${res.statusText}).`)
+    }
     if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
     return data as T
   }

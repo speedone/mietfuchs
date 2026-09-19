@@ -52,10 +52,12 @@ const json = (method, body) => ({ method, headers: { 'content-type': 'applicatio
 
 // ---------- Nachgebautes Ollama ----------
 // `delaySeconds` lässt /api/chat so lange schweigen, wie ein langsamer Rechner zum Einlesen braucht
+// `closedEarly` zählt Chat-Anfragen, die Mietfuchs vor der Antwort abgebrochen hat.
 function starteOllama() {
   const anfragen = []
-  const control = { delaySeconds: 0 }
+  const control = { delaySeconds: 0, closedEarly: 0 }
   const server = http.createServer((req, res) => {
+    res.on('close', () => { if (!res.writableFinished) control.closedEarly++ })
     let body = ''
     req.on('data', (d) => { body += d })
     req.on('end', () => {
@@ -73,6 +75,7 @@ function starteOllama() {
       // Wie Ollama: zeilenweise JSON, die letzte Zeile mit done und Grund. Die Header kommen wie
       // bei Ollama erst mit dem ersten Stück der Antwort.
       setTimeout(() => {
+        if (res.destroyed) return
         res.writeHead(200, { 'content-type': 'application/x-ndjson' })
         res.write(`${JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(answer) }, done: false })}\n`)
         res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 100, eval_count: 20 })}\n`)
@@ -87,17 +90,60 @@ function starteOllama() {
   )
 }
 
+const until = async (condition, ms) => {
+  const end = Date.now() + ms
+  while (!condition()) {
+    if (Date.now() > end) return false
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  return true
+}
+
 // Wie der Browser: Auswertung als Strom (Accept: application/x-ndjson). Liefert, wann die Header
 // kamen, alle Zeilen und die Gesamtdauer.
-async function extractAsStream(langerText) {
+async function extractAsStream(langerText, { fileName = 'strom.pdf', requestId, signal } = {}) {
   const fd = new FormData()
-  fd.append('file', new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' }), 'strom.pdf')
+  fd.append('file', new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' }), fileName)
   fd.append('pdfText', langerText)
+  if (requestId) fd.append('requestId', requestId)
   const start = Date.now()
-  const res = await fetch(`${BASE}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } })
+  const res = await fetch(`${BASE}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
   const headersAfterMs = Date.now() - start
   const lines = (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
   return { status: res.status, type: res.headers.get('content-type') ?? '', headersAfterMs, lines, totalMs: Date.now() - start }
+}
+
+// Abbrechen wie im Browser: über die Kennung der Auswertung (POST /api/ai/cancel/<id>). Unter
+// Bun meldet Express nicht, dass die Verbindung geschlossen wurde, deshalb ist die Kennung der
+// verlässliche Weg. Zum Vergleich schließt der Test danach nur die Verbindung und berichtet, ob
+// der Server das bemerkt; unter Node ja, unter Bun bisher nicht. Das ist kein Fehler, weil der
+// Browser immer auch die Kennung schickt.
+async function cancelChecks(ollama, langerText) {
+  ollama.control.delaySeconds = 60
+  try {
+    let asked = ollama.anfragen.length
+    let closed = ollama.control.closedEarly
+    const requestId = crypto.randomUUID().replaceAll('-', '')
+    const pending = extractAsStream(langerText, { fileName: 'abbruch.pdf', requestId }).catch(() => null)
+    pruefe(await until(() => ollama.anfragen.length > asked, 10000), 'Abbrechen: Auswertung läuft')
+    const cancel = await holen(`/api/ai/cancel/${requestId}`, { method: 'POST' })
+    pruefe(cancel.status === 200 && (await until(() => ollama.control.closedEarly > closed, 10000)), 'Abbrechen per Kennung stoppt die Anfrage an Ollama', cancel.body)
+    const uploads = (await holen('/api/uploads')).body.map((u) => u.file)
+    pruefe(!uploads.some((f) => f.endsWith('abbruch.pdf')), 'Abbrechen entfernt den gerade hochgeladenen Beleg', uploads)
+    await pending
+
+    asked = ollama.anfragen.length
+    closed = ollama.control.closedEarly
+    const controller = new AbortController()
+    const dropped = extractAsStream(langerText, { fileName: 'verbindung.pdf', signal: controller.signal }).catch(() => null)
+    await until(() => ollama.anfragen.length > asked, 10000)
+    controller.abort()
+    await dropped
+    const noticed = await until(() => ollama.control.closedEarly > closed, 5000)
+    console.log(`  ℹ Nur Verbindung geschlossen: ${noticed ? 'Server bricht ab' : 'Server bemerkt es nicht, Abbruch läuft über die Kennung'}`)
+  } finally {
+    ollama.control.delaySeconds = 0
+  }
 }
 
 // ---------- Ablauf ----------
@@ -151,7 +197,7 @@ async function kiAuswertung() {
   try {
     await holen('/api/settings', json('PUT', { ollamaUrl: `http://${OLLAMA_HOST}:${ollama.port}`, ollamaModel: 'smoke:latest' }))
     const status = await holen('/api/ollama/status')
-    pruefe(status.body.ok === true && status.body.models?.[0]?.vision === true, 'Verbindung zum nachgebauten Ollama, Modell mit Bildverständnis', status.body)
+    pruefe(status.body.ok === true && status.body.modelDetails?.[0]?.vision === true, 'Verbindung zum nachgebauten Ollama, Modell mit Bildverständnis', status.body)
 
     const pdf = new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' })
     const langerText = 'Abfallgebührenbescheid 2025, Restmüll 120 Liter, 4-wöchentlich, Jahresgebühr 42,50 EUR. '.repeat(2)
@@ -190,6 +236,7 @@ async function kiAuswertung() {
       const end = stream.lines.at(-1)
       pruefe(end?.type === 'result' && stream.totalMs >= SLOW_AI_SECONDS * 1000, `langsames Modell: Ergebnis nach ${Math.round(stream.totalMs / 1000)} Sekunden, kein Abbruch nach 300`, end)
     }
+    await cancelChecks(ollama, langerText)
   } finally {
     ollama.stop()
   }

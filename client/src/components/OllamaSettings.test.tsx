@@ -25,7 +25,7 @@ let statusQueue: OllamaStatus[] // eine Antwort je Abfrage, die letzte gilt dana
 
 beforeEach(() => {
   sent = []
-  statusQueue = [{ ok: true, models: MODELS }]
+  statusQueue = [{ ok: true, models: MODELS.map((m) => m.name), modelDetails: MODELS }]
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     let body: unknown = { ok: true }
@@ -97,7 +97,7 @@ test('Modell: „Anderes Modell eintragen“ schaltet auf freie Eingabe', async 
 test('Nicht erreichbar: freie Eingabe, Meldung und Vorschlag einer gefundenen Adresse', async () => {
   statusQueue = [
     { ok: false, error: 'Ollama ist unter http://localhost:11434 nicht erreichbar.', found: 'http://ollama:11434' },
-    { ok: true, models: MODELS },
+    { ok: true, models: MODELS.map((m) => m.name), modelDetails: MODELS },
   ]
   show(settings())
   await screen.findByText(/nicht erreichbar/)

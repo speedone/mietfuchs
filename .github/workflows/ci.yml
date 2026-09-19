@@ -44,7 +44,7 @@ jobs:
   # Eine KI-Auswertung auf dem Prozessor kann länger als fünf Minuten dauern. fetch unter Node und
   # Firefox brechen nach 300 Sekunden ohne Antwort-Header ab (#17). Das nachgebaute Ollama schweigt
   # hier 320 Sekunden; die Auswertung muss trotzdem ankommen. Läuft parallel zu den Tests.
-  lange-ki-antwort:
+  slow-ai-answer:
     name: Lange KI-Antwort (Node)
     runs-on: ubuntu-latest
     steps:

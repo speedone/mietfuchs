@@ -22,6 +22,8 @@ async function startServer() {
 
 // `env` ergänzt oder überschreibt Umgebungsvariablen. NKA_UPDATE_URL zeigt standardmäßig ins
 // Leere (Port 9 nimmt keine Verbindung an): Kein Test darf versehentlich das echte GitHub fragen.
+// Die KI-Variablen aus der Shell des Entwicklers gelten nicht: Leere Werte zählen als nicht
+// gesetzt, und eine leere Kandidatenliste schaltet die Suche nach Ollama ab.
 async function startServerIn(dataDir, env = {}) {
   const port = 34000 + Math.floor(Math.random() * 8000)
   const base = `http://127.0.0.1:${port}`
@@ -30,6 +32,12 @@ async function startServerIn(dataDir, env = {}) {
     env: {
       ...process.env,
       NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test',
+      NKA_OLLAMA_URL: '',
+      NKA_OLLAMA_MODEL: '',
+      NKA_OLLAMA_NUM_CTX: '',
+      NKA_OLLAMA_CANDIDATES: '',
+      NKA_AI_TIMEOUT: '',
+      NKA_RUNTIME: '',
       ...env,
       NKA_PORT: String(port),
       NKA_DATA_DIR: dataDir,
@@ -591,12 +599,34 @@ test('Ollama: Speichern lässt fest vorgegebene Werte unberührt, alles andere w
     })
     assert.equal(response.ollamaUrl, 'http://ki.intern:11434')
     assert.deepEqual(response.fixedByEnv, ['ollamaUrl'])
-    const gespeichert = storedSettings(s)
-    assert.equal(gespeichert.ollamaUrl, 'http://localhost:11434') // Standard bleibt, Env landet nicht in der db.json
-    assert.equal(gespeichert.ollamaModel, 'eigenes:2b')
-    assert.equal(gespeichert.landlordName, 'Vermieterin')
-    assert.equal(gespeichert.fixedByEnv, undefined)
+    const stored = storedSettings(s)
+    assert.equal(stored.ollamaUrl, 'http://localhost:11434') // Standard bleibt, Env landet nicht in der db.json
+    assert.equal(stored.ollamaModel, 'eigenes:2b')
+    assert.equal(stored.landlordName, 'Vermieterin')
+    assert.equal(stored.fixedByEnv, undefined)
   })
+})
+
+test('Ollama: Variablen aus der Shell des Entwicklers erreichen die Test-Server nicht', async () => {
+  // Wer NKA_OLLAMA_URL für sein eigenes Ollama gesetzt hat, soll keine Testbelege dorthin schicken
+  const saved = { url: process.env.NKA_OLLAMA_URL, candidates: process.env.NKA_OLLAMA_CANDIDATES }
+  process.env.NKA_OLLAMA_URL = 'http://aus-der-shell.invalid:11434'
+  process.env.NKA_OLLAMA_CANDIDATES = 'http://aus-der-shell.invalid:11434'
+  try {
+    const s = await startServer()
+    try {
+      const settings = await s.api('/api/settings')
+      assert.deepEqual(settings.fixedByEnv, [])
+      assert.equal(settings.ollamaUrl, 'http://localhost:11434')
+    } finally {
+      s.stop()
+    }
+  } finally {
+    for (const [key, name] of [['url', 'NKA_OLLAMA_URL'], ['candidates', 'NKA_OLLAMA_CANDIDATES']]) {
+      if (saved[key] === undefined) delete process.env[name]
+      else process.env[name] = saved[key]
+    }
+  }
 })
 
 test('Ollama: leere Umgebungsvariablen zählen als nicht gesetzt', async () => {
@@ -632,20 +662,20 @@ test('Ollama: jede Anfrage setzt festen Kontext, Temperatur 0 und schaltet das N
   await mitOllama(async (s, ollama) => {
     await hochladen(s, '/api/extract', { text: LANGER_TEXT })
     await hochladen(s, '/api/extract', { seiten: [seite(1)] })
-    const optionen = chatOptions(ollama)
-    assert.ok(optionen.length >= 3) // Auswertung und Kategorien-Durchgang
+    const options = chatOptions(ollama)
+    assert.ok(options.length >= 3) // Auswertung und Kategorien-Durchgang
     // Gleiche Werte in allen Anfragen, sonst lädt Ollama das Modell jedes Mal neu
-    for (const o of optionen) assert.deepEqual(o, { think: false, temperature: 0, num_ctx: 16384 })
+    for (const o of options) assert.deepEqual(o, { think: false, temperature: 0, num_ctx: 16384 })
   })
 })
 
 test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße, ungültige Werte zählen nicht', async () => {
-  for (const [wert, erwartet] of [['8192', 8192], ['viel', 16384], ['0', 16384]]) {
+  for (const [value, expected] of [['8192', 8192], ['viel', 16384], ['0', 16384]]) {
     const ollama = await fakeOllama()
     try {
-      await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: wert }, async (s) => {
+      await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: value }, async (s) => {
         await hochladen(s, '/api/extract', { text: LANGER_TEXT })
-        assert.equal(chatOptions(ollama)[0].num_ctx, erwartet, `NKA_OLLAMA_NUM_CTX=${wert}`)
+        assert.equal(chatOptions(ollama)[0].num_ctx, expected, `NKA_OLLAMA_NUM_CTX=${value}`)
       })
     } finally {
       ollama.stop()
@@ -740,6 +770,35 @@ test('Ollama: bricht der Browser ab, bricht Mietfuchs die Anfrage an Ollama ab',
   }, { chat: 'hang' })
 })
 
+// Unter Bun (Programmdatei) meldet Express nicht, dass der Browser die Verbindung geschlossen hat.
+// Deshalb gibt der Browser jeder Auswertung eine Kennung mit und bricht über sie ab.
+test('Abbrechen per Kennung: stoppt Ollama und entfernt den Beleg, auch bei offener Verbindung', async () => {
+  await mitOllama(async (s, ollama) => {
+    const requestId = '0123456789abcdef0123456789abcdef'
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
+    fd.append('pdfText', LANGER_TEXT)
+    fd.append('requestId', requestId)
+    const pending = fetch(`${s.base}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } }).then((r) => r.text())
+    assert.ok(await until(() => chatAnfragen(ollama).length > 0), 'Ollama wurde nicht gefragt')
+    const cancel = await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })
+    assert.equal(cancel.status, 200)
+    assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
+    assert.deepEqual(await s.api('/api/uploads'), [])
+    await pending // der Strom endet, statt offen zu hängen
+    // Danach ist die Kennung verbraucht
+    assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 404)
+  }, { chat: 'hang' })
+})
+
+test('Abbrechen per Kennung: unbekannte oder ungültige Kennungen ergeben 404', async () => {
+  for (const id of ['ffffffffffffffffffffffffffffffff', 'kurz', '../../etc']) {
+    const res = await fetch(`${srv.base}/api/ai/cancel/${encodeURIComponent(id)}`, { method: 'POST' })
+    assert.equal(res.status, 404, id)
+    assert.match((await res.json()).error, /Keine laufende Auswertung/)
+  }
+})
+
 // ---------- KI-Auswertung als Strom zum Browser (#17) ----------
 // Firefox wartet höchstens 300 Sekunden auf die Antwort-Header (network.http.response.timeout).
 // Fordert der Browser mit Accept: application/x-ndjson an, schickt Mietfuchs die Header sofort,
@@ -818,12 +877,14 @@ test('Ollama: die Modellliste nennt Größe, Bildverständnis und Cloud-Modelle,
   await mitOllama(async (s) => {
     const status = await s.api('/api/ollama/status')
     assert.equal(status.ok, true)
-    assert.deepEqual(status.models, [
+    assert.deepEqual(status.modelDetails, [
       { name: 'bild:4b', sizeBytes: 3400000000, vision: true, remote: false },
       { name: 'text:8b', sizeBytes: 5000000000, vision: false, remote: false },
       { name: 'gross:120b-cloud', sizeBytes: 384, vision: false, remote: true },
       { name: 'alt:7b', sizeBytes: 4100000000, vision: null, remote: false },
     ])
+    // Tabs von vor dem Update lesen `models` als Liste von Namen
+    assert.deepEqual(status.models, ['bild:4b', 'text:8b', 'gross:120b-cloud', 'alt:7b'])
   }, { models, model: 'bild:4b' })
 })
 
@@ -873,6 +934,27 @@ test('Ollama: kennt die Ollama-Version keine Fähigkeiten, gehen Bilder trotzdem
     assert.equal(r.status, 200)
     assert.deepEqual(ersteNachricht(ollama).images, [base64(1)])
   }, { models: [{ name: 'alt:7b' }], model: 'alt:7b' })
+})
+
+test('Ollama: antwortet Ollama mit einem Fehler, sucht der Status keine andere Adresse', async () => {
+  // Derselbe Server unter anderem Namen wäre kein hilfreicher Vorschlag
+  const http = await import('node:http')
+  const broken = http.createServer((req, res) => { res.writeHead(500); res.end('kaputt') })
+  await new Promise((r) => broken.listen(0, '127.0.0.1', r))
+  const ollama = await fakeOllama()
+  try {
+    await withEnv({ NKA_OLLAMA_CANDIDATES: ollama.url }, async (s) => {
+      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: `http://127.0.0.1:${broken.address().port}` }) })
+      const status = await s.api('/api/ollama/status')
+      assert.equal(status.ok, false)
+      assert.match(status.error, /Ollama antwortet mit 500/)
+      assert.equal(status.found, undefined)
+      assert.equal(ollama.anfragen.length, 0, 'die Suche hat trotzdem gefragt')
+    })
+  } finally {
+    ollama.stop()
+    broken.close()
+  }
 })
 
 test('Ollama: ist die Adresse nicht erreichbar, schlägt der Status eine gefundene vor', async () => {
