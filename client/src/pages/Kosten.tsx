@@ -81,7 +81,7 @@ export default function Kosten({ units, settings }: Props) {
     return [...m.entries()]
   }, [items])
 
-  async function uploadBeleg(f: File) {
+  async function uploadInvoice(f: File) {
     const fd = new FormData()
     fd.append('file', f)
     const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
@@ -97,31 +97,31 @@ export default function Kosten({ units, settings }: Props) {
   // eines Versorgers). Manuell erfasste Positionen ohne Beleg stehen einzeln am Ende.
   type CostGroup = { key: string; label: string; invoiceFile?: string; items: CostItem[] }
   const grouped = useMemo(() => {
-    const withBeleg: CostGroup[] = []
-    const withoutBeleg: CostGroup[] = []
+    const withInvoice: CostGroup[] = []
+    const withoutInvoice: CostGroup[] = []
     for (const it of yearItems) {
       if (it.invoiceFile) {
-        const g = withBeleg.find((x) => x.invoiceFile === it.invoiceFile)
+        const g = withInvoice.find((x) => x.invoiceFile === it.invoiceFile)
         if (g) { g.items.push(it); if (!g.label && it.vendor) g.label = it.vendor }
-        else withBeleg.push({ key: `f:${it.invoiceFile}`, label: it.vendor || '', invoiceFile: it.invoiceFile, items: [it] })
+        else withInvoice.push({ key: `f:${it.invoiceFile}`, label: it.vendor || '', invoiceFile: it.invoiceFile, items: [it] })
       } else {
-        withoutBeleg.push({ key: `i:${it.id}`, label: it.vendor || it.category, items: [it] })
+        withoutInvoice.push({ key: `i:${it.id}`, label: it.vendor || it.category, items: [it] })
       }
     }
     // Fallback-Beschriftung, falls kein Rechnungssteller hinterlegt ist
-    for (const g of withBeleg) if (!g.label) g.label = g.items.map((i) => i.category).find(Boolean) || 'Beleg'
-    return [...withBeleg, ...withoutBeleg]
+    for (const g of withInvoice) if (!g.label) g.label = g.items.map((i) => i.category).find(Boolean) || 'Beleg'
+    return [...withInvoice, ...withoutInvoice]
   }, [yearItems])
 
   async function saveItem() {
     if (!form) return
-    const gebaut = buildCostItemBody(form, units, year)
-    if ('error' in gebaut) {
-      setError(gebaut.error)
+    const built = buildCostItemBody(form, units, year)
+    if ('error' in built) {
+      setError(built.error)
       return
     }
     setError('')
-    const body = JSON.stringify(gebaut.body)
+    const body = JSON.stringify(built.body)
     const editing = !!form.id
     if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
     else await api('/api/costItems', { method: 'POST', body })
@@ -561,7 +561,7 @@ export default function Kosten({ units, settings }: Props) {
                 <>
                   <label className="field grow">
                     neu hochladen
-                    <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadBeleg(f) }} />
+                    <input type="file" accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadInvoice(f) }} />
                   </label>
                   {knownFiles.length > 0 && (
                     <label className="field grow" style={{ marginTop: 8 }}>

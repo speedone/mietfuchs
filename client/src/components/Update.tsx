@@ -12,10 +12,10 @@ import FoxLogo from './Logo'
 
 const README = 'https://github.com/speedone/mietfuchs#herunterladen--starten-ohne-installation'
 
-const speichern = (patch: Partial<Settings>) =>
+const saveSettings = (patch: Partial<Settings>) =>
   api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })
 
-const meldung = (e: unknown) => String((e as Error)?.message ?? e)
+const messageOf = (e: unknown) => String((e as Error)?.message ?? e)
 
 export type UpdateState = {
   status: UpdateStatus | null
@@ -30,24 +30,24 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
   const [checking, setChecking] = useState(false)
   // Jede Anfrage bekommt eine Nummer. Übernommen wird nur die Antwort der zuletzt gestellten,
   // sonst könnte ein langsames GET das Ergebnis von „Jetzt prüfen" überschreiben.
-  const zaehler = useRef(0)
-  const geladen = settings !== null
+  const requestCounter = useRef(0)
+  const loaded = settings !== null
   const consent = settings?.updateCheck
 
   useEffect(() => {
-    if (!geladen) return
-    const nr = ++zaehler.current
+    if (!loaded) return
+    const seq = ++requestCounter.current
     api<UpdateStatus>('/api/update')
-      .then((s) => { if (nr === zaehler.current) setStatus(s) })
+      .then((s) => { if (seq === requestCounter.current) setStatus(s) })
       .catch(() => {}) // ohne Antwort bleibt der Hinweis einfach aus
-  }, [geladen, consent])
+  }, [loaded, consent])
 
   const checkNow = useCallback(async () => {
-    const nr = ++zaehler.current
+    const seq = ++requestCounter.current
     setChecking(true)
     try {
       const s = await api<UpdateStatus>('/api/update/check', { method: 'POST' })
-      if (nr === zaehler.current) setStatus(s)
+      if (seq === requestCounter.current) setStatus(s)
     } finally {
       setChecking(false)
     }
@@ -61,13 +61,13 @@ export function useUpdateStatus(settings: Settings | null): UpdateState {
 export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  const antworten = async (updateCheck: 'on' | 'off') => {
+  const answer = async (updateCheck: 'on' | 'off') => {
     setBusy(true)
     try {
-      await speichern({ updateCheck })
+      await saveSettings({ updateCheck })
       await onAnswered()
     } catch (e) {
-      toast(`Die Antwort ließ sich nicht speichern: ${meldung(e)}`, 'error')
+      toast(`Die Antwort ließ sich nicht speichern: ${messageOf(e)}`, 'error')
     } finally {
       setBusy(false)
     }
@@ -83,8 +83,8 @@ export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
           Daten bleiben auf diesem Rechner.
         </p>
         <div className="row">
-          <button className="btn" disabled={busy} onClick={() => void antworten('on')}>Ja, Bescheid geben</button>
-          <button className="btn secondary" disabled={busy} onClick={() => void antworten('off')}>Nein, danke</button>
+          <button className="btn" disabled={busy} onClick={() => void answer('on')}>Ja, Bescheid geben</button>
+          <button className="btn secondary" disabled={busy} onClick={() => void answer('off')}>Nein, danke</button>
         </div>
         <p className="muted">Du kannst das jederzeit in den Einstellungen ändern.</p>
       </div>
@@ -104,12 +104,12 @@ type HintProps = {
 // Download-Ordner startet, sieht einen leeren Datenordner und hält seine Daten für verloren.
 export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
   const toast = useToast()
-  const spaeter = async () => {
+  const dismiss = async () => {
     try {
-      await speichern({ updateDismissed: status.latest ?? undefined })
+      await saveSettings({ updateDismissed: status.latest ?? undefined })
       await onDismissed()
     } catch (e) {
-      toast(`Ausblenden ging nicht: ${meldung(e)}`, 'error')
+      toast(`Ausblenden ging nicht: ${messageOf(e)}`, 'error')
     }
   }
   return (
@@ -124,7 +124,7 @@ export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
         {status.releaseUrl && (
           <a href={status.releaseUrl} target="_blank" rel="noreferrer">Was ist neu?</a>
         )}
-        <button onClick={() => void spaeter()}>Später</button>
+        <button onClick={() => void dismiss()}>Später</button>
       </div>
     </div>
   )
@@ -132,7 +132,7 @@ export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
 
 // ---------- Karte in den Einstellungen ----------
 
-const zeitpunkt = (iso: string) =>
+const fmtDateTime = (iso: string) =>
   new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
 
 type SettingsProps = {
@@ -145,30 +145,30 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
   const toast = useToast()
   const { status, checking, checkNow } = update
   // Das Häkchen springt sofort um und nicht erst nach der Antwort des Servers
-  const [an, setAn] = useState(settings.updateCheck === 'on')
-  const [speichert, setSpeichert] = useState(false)
-  useEffect(() => setAn(settings.updateCheck === 'on'), [settings.updateCheck])
+  const [enabled, setEnabled] = useState(settings.updateCheck === 'on')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => setEnabled(settings.updateCheck === 'on'), [settings.updateCheck])
 
-  const umschalten = async (checked: boolean) => {
-    setAn(checked)
-    setSpeichert(true)
+  const toggle = async (checked: boolean) => {
+    setEnabled(checked)
+    setSaving(true)
     try {
-      await speichern({ updateCheck: checked ? 'on' : 'off' })
+      await saveSettings({ updateCheck: checked ? 'on' : 'off' })
       await reload()
       toast(checked ? 'Mietfuchs schaut ab jetzt nach neuen Versionen.' : 'Mietfuchs fragt nicht mehr nach neuen Versionen.')
     } catch {
-      setAn(!checked)
+      setEnabled(!checked)
       toast('Die Einstellung ließ sich nicht speichern.', 'error')
     } finally {
-      setSpeichert(false)
+      setSaving(false)
     }
   }
 
-  const pruefen = async () => {
+  const check = async () => {
     try {
       await checkNow()
     } catch (e) {
-      toast(`Prüfen ging nicht: ${meldung(e)}`, 'error')
+      toast(`Prüfen ging nicht: ${messageOf(e)}`, 'error')
     }
   }
 
@@ -178,7 +178,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
     <div className="card">
       <h2>Updates</h2>
       <label className="update-toggle">
-        <input type="checkbox" checked={an} onChange={(e) => void umschalten(e.target.checked)} />
+        <input type="checkbox" checked={enabled} onChange={(e) => void toggle(e.target.checked)} />
         Beim Öffnen nach neuen Versionen schauen
       </label>
       <p className="muted">
@@ -190,7 +190,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
 
       <div className="row">
         {/* Gesperrt, solange das Häkchen gespeichert wird: Sonst fragte der Server noch ohne Zustimmung. */}
-        <button className="btn secondary" disabled={!an || checking || speichert} onClick={() => void pruefen()}>
+        <button className="btn secondary" disabled={!enabled || checking || saving} onClick={() => void check()}>
           {checking && <span className="spinner" />}Jetzt prüfen
         </button>
       </div>
@@ -199,7 +199,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         <div className="update-guide">
           {guide.kind === 'download'
             ? <Download guide={guide} status={status} />
-            : <Befehle lines={guide.lines} status={status} />}
+            : <Commands lines={guide.lines} status={status} />}
           <p className="muted">Vorher ein Backup herunterzuladen (weiter unten) schadet nie.</p>
         </div>
       )}
@@ -210,26 +210,26 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
 // Anleitung für die Programmdatei, je System. Der wichtigste Satz ist überall derselbe: Die
 // neue Datei gehört in den Ordner der alten, denn dort liegt der Ordner data mit den Daten.
 function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'download' }>; status: UpdateStatus }) {
-  const datei = guide.href.split('/').pop() ?? ''
-  const knopf = guide.newTab ? (
+  const fileName = guide.href.split('/').pop() ?? ''
+  const downloadButton = guide.newTab ? (
     <a className="btn" href={guide.href} target="_blank" rel="noreferrer">Zur Release-Seite</a>
   ) : (
     <a className="btn" href={guide.href}>Version {status.latest} herunterladen</a>
   )
-  const beenden = <li>Mietfuchs beenden, also das Programmfenster schließen.</li>
+  const quitStep = <li>Mietfuchs beenden, also das Programmfenster schließen.</li>
 
   return (
     <>
       <div className="row update-download">
-        {knopf}
+        {downloadButton}
         {status.releaseUrl && !guide.newTab && (
           <a className="btn secondary" href={status.releaseUrl} target="_blank" rel="noreferrer">Was ist neu?</a>
         )}
       </div>
       {guide.system === 'windows' && (
         <ol className="update-steps">
-          <li>Die neue <code>{datei}</code> mit dem Knopf oben herunterladen.</li>
-          {beenden}
+          <li>Die neue <code>{fileName}</code> mit dem Knopf oben herunterladen.</li>
+          {quitStep}
           <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit deinen Daten.</li>
           <li>Mietfuchs wie gewohnt starten. Meldet sich Windows wie beim ersten Mal, hilft <em>Weitere Informationen</em> und dann <em>Trotzdem ausführen</em>.</li>
         </ol>
@@ -237,7 +237,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
       {guide.system === 'macos' && (
         <ol className="update-steps">
           <li>Die Zip-Datei mit dem Knopf oben herunterladen und mit einem Doppelklick entpacken.</li>
-          {beenden}
+          {quitStep}
           <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit deinen Daten.</li>
           <li>Mietfuchs starten. Beim ersten Start blockiert macOS die neue Datei wie bei der Erstinstallation. Wie du sie freigibst, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
         </ol>
@@ -245,9 +245,9 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
       {guide.system === 'linux' && (
         <ol className="update-steps">
           <li>Das Archiv mit dem Knopf oben herunterladen.</li>
-          {beenden}
-          <li>Das Archiv im selben Ordner wie bisher ablegen und dort entpacken. Das ersetzt die alte Programmdatei, der Ordner <code>data</code> bleibt. <code>tar -xzf {datei}</code></li>
-          <li>Mietfuchs wie gewohnt starten, etwa mit <code>./{datei.replace(/\.tar\.gz$/, '')}</code>.</li>
+          {quitStep}
+          <li>Das Archiv im selben Ordner wie bisher ablegen und dort entpacken. Das ersetzt die alte Programmdatei, der Ordner <code>data</code> bleibt. <code>tar -xzf {fileName}</code></li>
+          <li>Mietfuchs wie gewohnt starten, etwa mit <code>./{fileName.replace(/\.tar\.gz$/, '')}</code>.</li>
         </ol>
       )}
       {guide.system === null && (
@@ -261,10 +261,10 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
   )
 }
 
-function Befehle({ lines, status }: { lines: string[]; status: UpdateStatus }) {
+function Commands({ lines, status }: { lines: string[]; status: UpdateStatus }) {
   const toast = useToast()
   const text = lines.join('\n')
-  const kopieren = async () => {
+  const copy = async () => {
     try {
       await navigator.clipboard.writeText(text)
       toast('Befehle kopiert.')
@@ -281,7 +281,7 @@ function Befehle({ lines, status }: { lines: string[]; status: UpdateStatus }) {
       </p>
       <div className="command-box">
         <pre>{lines.map((l) => <code key={l}>{l}</code>)}</pre>
-        <button className="btn secondary small" onClick={() => void kopieren()}>Befehle kopieren</button>
+        <button className="btn secondary small" onClick={() => void copy()}>Befehle kopieren</button>
       </div>
       {status.mode === 'docker' && (
         <p className="muted">
@@ -302,12 +302,12 @@ function Befehle({ lines, status }: { lines: string[]; status: UpdateStatus }) {
 
 function statusText(s: UpdateStatus): string {
   if (!s.enabled) return `Installiert ist Version ${s.current}.`
-  const wann = s.checkedAt ? ` Zuletzt geprüft: ${zeitpunkt(s.checkedAt)}.` : ''
+  const lastChecked = s.checkedAt ? ` Zuletzt geprüft: ${fmtDateTime(s.checkedAt)}.` : ''
   if (s.error) {
-    const bekannt = s.available ? ` Zuletzt bekannt: Version ${s.latest} ist erschienen.` : ''
-    return `Installiert ist Version ${s.current}. Die letzte Prüfung ist fehlgeschlagen: ${s.error}${bekannt}`
+    const lastKnown = s.available ? ` Zuletzt bekannt: Version ${s.latest} ist erschienen.` : ''
+    return `Installiert ist Version ${s.current}. Die letzte Prüfung ist fehlgeschlagen: ${s.error}${lastKnown}`
   }
-  if (s.available) return `Version ${s.latest} ist erschienen, installiert ist ${s.current}.${wann}`
-  if (s.latest) return `Du nutzt die aktuelle Version ${s.current}.${wann}`
+  if (s.available) return `Version ${s.latest} ist erschienen, installiert ist ${s.current}.${lastChecked}`
+  if (s.latest) return `Du nutzt die aktuelle Version ${s.current}.${lastChecked}`
   return `Installiert ist Version ${s.current}.`
 }

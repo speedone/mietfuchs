@@ -4,14 +4,14 @@ import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { buildUpload } from '../pdfIntake'
-import { autoMatchMeter, belegSummeCheck, scorePosition, scoreReading, type Ampel } from '../triage'
+import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { useYear } from '../year'
 import { AiProgressBadge } from '../components/AiProgress'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
 // Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann)
-type RechnungPos = {
+type InvoicePosition = {
   description: string
   category: string
   amount: string
@@ -48,7 +48,7 @@ type QueueEntry = {
   vendor?: string
   detectedYear?: number | null
   totalGrossCents?: number | null
-  positions?: RechnungPos[]
+  positions?: InvoicePosition[]
   // Zähler
   reading?: ReadingCandidate
   // während der Auswertung: was das Modell gerade tut und seit wann
@@ -159,7 +159,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
         } else {
           const ex = res.extraction
-          const positions: RechnungPos[] = (ex.positions || []).map((p) => {
+          const positions: InvoicePosition[] = (ex.positions || []).map((p) => {
             // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls über die
             // Beschreibung. matchedByDesc merkt sich, ob die Kategorie nur so zustande kam (→ gelb).
             let category = matchCategory(p.category || '')
@@ -202,7 +202,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     })()
   }, [queue, meters, readings])
 
-  function updatePos(entryId: number, idx: number, patch: Partial<RechnungPos>) {
+  function updatePos(entryId: number, idx: number, patch: Partial<InvoicePosition>) {
     setQueue((q) =>
       q.map((x) => (x.id === entryId ? { ...x, positions: x.positions!.map((p, i) => (i === idx ? { ...p, ...patch } : p)) } : x)),
     )
@@ -224,8 +224,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     return m
   }, [existingItems, year])
 
-  type PosScore = { level: Ampel; reasons: string[] }
-  type EntryScore = { posScores: PosScore[]; belegWarn: string | null; readingScore: ReturnType<typeof scoreReading> | null }
+  type PosScore = { level: TrafficLight; reasons: string[] }
+  type EntryScore = { posScores: PosScore[]; sumWarning: string | null; readingScore: ReturnType<typeof scoreReading> | null }
   const scored = useMemo(() => {
     const map = new Map<number, EntryScore>()
     for (const entry of queue) {
@@ -251,7 +251,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             priorYearDeviationPct: devPct,
           })
         })
-        map.set(entry.id, { posScores, belegWarn: belegSummeCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
+        map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
       } else if (entry.kind === 'zaehler' && entry.reading) {
         const r = entry.reading
         const rs = scoreReading({
@@ -261,7 +261,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           matchedMeterId: r.matchedMeterId || null,
           readings,
         })
-        map.set(entry.id, { posScores: [], belegWarn: null, readingScore: rs })
+        map.set(entry.id, { posScores: [], sumWarning: null, readingScore: rs })
       }
     }
     return map
@@ -278,10 +278,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     }
     return t
   }, [queue, scored])
-  const totalErkannt = tally.gruen + tally.gelb + tally.rot
+  const totalRecognized = tally.gruen + tally.gelb + tally.rot
 
   // ---------- Übernehmen ----------
-  async function postPosition(entry: QueueEntry, p: RechnungPos) {
+  async function postPosition(entry: QueueEntry, p: InvoicePosition) {
     const amount = parseEuro(p.amount)
     if (amount == null || amount <= 0) return false
     const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
@@ -358,7 +358,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   }
 
   const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
-  const hasUebernommen = queue.some((x) => x.status === 'übernommen')
+  const hasAdopted = queue.some((x) => x.status === 'übernommen')
 
   return (
     <>
@@ -381,9 +381,9 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             </select>
           </label>
           <div className="grow" />
-          {totalErkannt > 0 && (
+          {totalRecognized > 0 && (
             <div className="muted" style={{ textAlign: 'right' }}>
-              {totalErkannt} erkannt — <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
+              {totalRecognized} erkannt — <span className="ampel gruen" /> {tally.gruen} · <span className="ampel gelb" /> {tally.gelb} · <span className="ampel rot" /> {tally.rot}
             </div>
           )}
         </div>
@@ -450,7 +450,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             {/* ---------- Rechnung ---------- */}
             {entry.status === 'fertig' && entry.kind === 'rechnung' && entry.positions && (
               <>
-                {es?.belegWarn && <div className="warn" style={{ marginTop: 8 }}>⚠ {es.belegWarn}</div>}
+                {es?.sumWarning && <div className="warn" style={{ marginTop: 8 }}>⚠ {es.sumWarning}</div>}
                 <table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>
@@ -570,7 +570,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         )
       })}
 
-      {hasUebernommen && (
+      {hasAdopted && (
         <div className="card no-print">
           <div className="row" style={{ alignItems: 'center' }}>
             <span>✓ Übernommen. Weiter geht's auf der Abrechnung oder bei den Kosten.</span>

@@ -3,16 +3,16 @@
 // Bewusst reine Logik ohne React/Netzwerk — damit testbar und vom Modell unabhängig.
 import type { CostItem, Meter, Reading } from './types'
 
-export type Ampel = 'gruen' | 'gelb' | 'rot'
+export type TrafficLight = 'gruen' | 'gelb' | 'rot'
 
-const RANK: Record<Ampel, number> = { gruen: 0, gelb: 1, rot: 2 }
+const RANK: Record<TrafficLight, number> = { gruen: 0, gelb: 1, rot: 2 }
 
 // kleiner Sammler: hebt das Niveau nur an, nie ab, und merkt sich die Begründungen
 function scorer() {
-  let level: Ampel = 'gruen'
+  let level: TrafficLight = 'gruen'
   const reasons: string[] = []
   return {
-    bump(l: Ampel, reason: string) {
+    bump(l: TrafficLight, reason: string) {
       reasons.push(reason)
       if (RANK[l] > RANK[level]) level = l
     },
@@ -36,7 +36,7 @@ export type PositionCtx = {
   priorYearDeviationPct?: number | null // Abweichung der Kategorie-Summe ggü. Vorjahr in %
 }
 
-export function scorePosition(ctx: PositionCtx): { level: Ampel; reasons: string[] } {
+export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons: string[] } {
   const s = scorer()
 
   if (ctx.amountCents <= 0) s.bump('rot', 'Betrag fehlt oder ist 0')
@@ -85,7 +85,7 @@ export type ReadingCtx = {
 }
 
 export type ScoredReading = {
-  level: Ampel
+  level: TrafficLight
   reasons: string[]
   replacementGuess: boolean
   suggestedOldEndValue: number | null
@@ -131,7 +131,7 @@ export function scoreReading(ctx: ReadingCtx): ScoredReading {
 // Weicht die Summe der erkannten Positionen von der Rechnungs-Gesamtsumme ab, ist meist eine
 // Position übersehen oder doppelt. Toleranz: 2 % bzw. 50 ct (Rundung). Gibt einen Hinweistext
 // oder null zurück.
-export function belegSummeCheck(positionsSumCents: number, totalGrossCents: number | null): string | null {
+export function invoiceSumCheck(positionsSumCents: number, totalGrossCents: number | null): string | null {
   if (totalGrossCents == null || totalGrossCents <= 0) return null
   const diff = Math.abs(positionsSumCents - totalGrossCents)
   if (diff > Math.max(50, totalGrossCents * 0.02)) {

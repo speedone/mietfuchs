@@ -60,13 +60,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
   async function saveUnit() {
     if (!unitForm) return
-    const gebaut = buildUnitBody(unitForm)
-    if ('error' in gebaut) {
-      setError(gebaut.error)
+    const built = buildUnitBody(unitForm)
+    if ('error' in built) {
+      setError(built.error)
       return
     }
     setError('')
-    const body = JSON.stringify(gebaut.body)
+    const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
     if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
     else await api('/api/units', { method: 'POST', body })
@@ -596,7 +596,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       )}
 
       {wizardFor && (
-        <MieterwechselWizard
+        <TenantChangeWizard
           tenancy={wizardFor}
           unit={units.find((u) => u.id === wizardFor.unitId)}
           onClose={() => setWizardFor(null)}
@@ -617,7 +617,7 @@ function parseMeterValue(s: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function MieterwechselWizard({ tenancy, unit, onClose, onDone }: {
+function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   tenancy: Tenancy
   unit: Unit | undefined
   onClose: () => void

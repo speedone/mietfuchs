@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
-const AUFFAELLIG_PROZENT = 25
+const NOTABLE_CHANGE_PCT = 25
 
 type Props = { onNavigate: (tab: string) => void }
 
@@ -46,11 +46,11 @@ export default function Uebersicht({ onNavigate }: Props) {
   const hasPrev = prev.size > 0
 
   // Auffällige Abweichungen zum Vorjahr (nur wenn es Vorjahresdaten gibt)
-  const auffaellig = categories.filter((c) => {
+  const notable = categories.filter((c) => {
     const p = prev.get(c) ?? 0
     const k = cur.get(c) ?? 0
     if (p === 0 || k === 0) return false
-    return Math.abs(k - p) / p * 100 >= AUFFAELLIG_PROZENT
+    return Math.abs(k - p) / p * 100 >= NOTABLE_CHANGE_PCT
   })
 
   // Jahresüberblick über alle erfassten Jahre
@@ -99,10 +99,10 @@ export default function Uebersicht({ onNavigate }: Props) {
         </div>
       </div>
 
-      {auffaellig.length > 0 && (
+      {notable.length > 0 && (
         <div className="notice">
           <strong>Auffällige Abweichung zum Vorjahr:</strong>{' '}
-          {auffaellig.map((c) => `${c} (${pctText(c)})`).join(', ')} — Belege prüfen, Mieter fragen
+          {notable.map((c) => `${c} (${pctText(c)})`).join(', ')} — Belege prüfen, Mieter fragen
           bei großen Sprüngen erfahrungsgemäß nach.
         </div>
       )}
@@ -154,7 +154,7 @@ export default function Uebersicht({ onNavigate }: Props) {
               {categories.map((c) => {
                 const p = prev.get(c) ?? 0
                 const k = cur.get(c) ?? 0
-                const warn = auffaellig.includes(c)
+                const warn = notable.includes(c)
                 return (
                   <tr key={c}>
                     <td>{c}</td>

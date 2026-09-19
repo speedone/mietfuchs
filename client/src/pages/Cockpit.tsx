@@ -29,7 +29,7 @@ type Check = {
 }
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
-const AUFFAELLIG_PROZENT = 25
+const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, settings, reload, onNavigate }: Props) {
   const { year } = useYear()
@@ -54,12 +54,12 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
   // ---------- Kennzahlen des Jahres ----------
   const yearItems = useMemo(() => costItems.filter((c) => c.year === year), [costItems, year])
-  const belegSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
-  const belegFiles = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
+  const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
+  const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
 
   // Vorjahresvergleich je Kostenart (wie in der Übersicht)
-  const auffaellig = useMemo(() => {
+  const notable = useMemo(() => {
     const sumByCat = (y: number) => {
       const m = new Map<string, number>()
       for (const c of costItems) if (c.year === y) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
@@ -73,7 +73,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       const p = prev.get(cat) ?? 0
       if (p === 0 || k === 0) continue
       const pct = ((k - p) / p) * 100
-      if (Math.abs(pct) >= AUFFAELLIG_PROZENT) list.push({ cat, pct })
+      if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
     return { hasPrev: true, list }
   }, [costItems, year])
@@ -108,7 +108,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
         detail: `Für ${year} sind noch keine Kosten erfasst.` })
     } else {
       list.push({ title: 'Belege erfasst', level: 'gruen',
-        detail: `${yearItems.length} Position(en) · Summe ${fmtEuro(belegSum)}${belegFiles ? ` · ${belegFiles} Belegdatei(en)` : ''}` })
+        detail: `${yearItems.length} Position(en) · Summe ${fmtEuro(itemsSum)}${invoiceFileCount ? ` · ${invoiceFileCount} Belegdatei(en)` : ''}` })
     }
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
@@ -137,23 +137,23 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
     // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
     const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons')
-    const ausgenommen = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
-    if (ausgenommen.length > 0 && basisKeys) {
+    const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
+    if (excluded.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
-        detail: `Nicht beteiligt und damit ganz außen vor: ${ausgenommen.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
+        detail: `Nicht beteiligt und damit ganz außen vor: ${excluded.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
-      const eigen = units.filter((u) => usageOf(u) === 'eigen')
+      const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
       list.push({ title: 'Verteilbasis', level: 'gruen',
-        detail: `Eigennutzung in der Basis: ${eigen.map((u) => u.name).join(', ')} — der Eigenanteil bleibt beim Vermieter.` })
+        detail: `Eigennutzung in der Basis: ${selfUsedUnits.map((u) => u.name).join(', ')} — der Eigenanteil bleibt beim Vermieter.` })
     }
 
     // 5. Plausibilität zum Vorjahr
     if (yearItems.length === 0) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: 'Noch keine Kosten zum Vergleichen.' })
-    } else if (!auffaellig.hasPrev) {
+    } else if (!notable.hasPrev) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${year - 1}) zum Vergleichen erfasst.` })
-    } else if (auffaellig.list.length > 0) {
-      const txt = auffaellig.list
+    } else if (notable.list.length > 0) {
+      const txt = notable.list
         .map((a) => `${a.cat} (${a.pct > 0 ? '+' : ''}${Math.round(a.pct)} %)`)
         .join(', ')
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: 'uebersicht', cta: 'Vergleich ansehen',
@@ -178,22 +178,22 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       list.push({ title: 'Abgeschlossen & versendet', level: 'gelb', tab: 'abrechnung', cta: 'Versanddatum eintragen',
         detail: 'Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen.' })
     } else {
-      const fristTxt = daysLeft >= 0
+      const deadlineText = daysLeft >= 0
         ? `Noch ${daysLeft} Tage bis zur Frist (31.12.${year + 1}).`
         : `Frist am 31.12.${year + 1} abgelaufen.`
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Zur Abrechnung',
-        detail: `Noch im Entwurf. ${fristTxt}` })
+        detail: `Noch im Entwurf. ${deadlineText}` })
     }
 
     return list
-  }, [settlement, participating, units, yearItems, belegSum, belegFiles, meters, consumption, auffaellig, daysLeft, year])
+  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, notable, daysLeft, year])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
   const pct = relevant.length ? Math.round((greenCount / relevant.length) * 100) : 0
   // Nächster Schritt: erst rote, dann gelbe offene Punkte
   const next = checks.find((c) => c.level === 'rot' && c.tab) ?? checks.find((c) => c.level === 'gelb' && c.tab)
-  const offen = relevant.length - greenCount
+  const openCount = relevant.length - greenCount
 
   const statusBadge = settlement?.closed?.sentAt
     ? <span className="badge green">versendet</span>
@@ -211,9 +211,9 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
           <h1 style={{ marginBottom: 2 }}>Abrechnung {year}</h1>
           <p className="sub" style={{ margin: 0 }}>
             {settlement
-              ? offen === 0
+              ? openCount === 0
                 ? 'Alles bereit — die Abrechnung ist vollständig.'
-                : `Noch ${offen} ${offen === 1 ? 'Punkt' : 'Punkte'} offen, dann ist die Abrechnung versandfertig.`
+                : `Noch ${openCount} ${openCount === 1 ? 'Punkt' : 'Punkte'} offen, dann ist die Abrechnung versandfertig.`
               : 'Lade Abrechnungsstand …'}
           </p>
         </div>
@@ -306,14 +306,14 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
               <h2>Voraussichtliches Ergebnis je Mieter</h2>
               <div className="tenant-cards">
                 {settlement.statements.map((st) => {
-                  const guthaben = st.balanceCents >= 0
+                  const isCredit = st.balanceCents >= 0
                   return (
                     <button key={st.tenancyId} className="tenant-card" onClick={() => onNavigate('abrechnung')}>
                       <div className="muted">{st.unitName} · {st.tenantName}</div>
-                      <div className="tenant-bal" style={{ color: guthaben ? 'var(--green)' : 'var(--red)' }}>
+                      <div className="tenant-bal" style={{ color: isCredit ? 'var(--green)' : 'var(--red)' }}>
                         {fmtEuro(Math.abs(st.balanceCents))}
                       </div>
-                      <div className="muted">{guthaben ? 'Guthaben' : 'Nachzahlung'}</div>
+                      <div className="muted">{isCredit ? 'Guthaben' : 'Nachzahlung'}</div>
                     </button>
                   )
                 })}

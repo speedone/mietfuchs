@@ -29,19 +29,19 @@ describe('Nutzungsart schreibt beide Kennzeichen', () => {
 })
 
 describe('Rundlauf mit dem Datenmodell', () => {
-  const faelle: [string, Partial<Unit>][] = [
+  const cases: [string, Partial<Unit>][] = [
     ['vermietet', { participates: true }],
     ['eigen', { participates: false, selfUsed: true, selfPersons: 2 }],
     ['ausgenommen', { participates: false }],
   ]
 
   test('Wohnung → Formular → Rumpf erhält die Nutzungsart', () => {
-    for (const [erwartet, extra] of faelle) {
+    for (const [expected, extra] of cases) {
       const u: Unit = { id: 'u1', name: 'W', areaM2: 80, participates: false, ...extra }
       const f = unitToForm(u)
-      expect(f.usage).toBe(erwartet)
+      expect(f.usage).toBe(expected)
       const b = body(f)
-      expect(usageOf({ participates: b.participates as boolean, selfUsed: b.selfUsed as boolean })).toBe(erwartet)
+      expect(usageOf({ participates: b.participates as boolean, selfUsed: b.selfUsed as boolean })).toBe(expected)
     }
   })
 
