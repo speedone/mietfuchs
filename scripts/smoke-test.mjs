@@ -86,6 +86,9 @@ async function oberflaeche() {
   const index = await holen('/')
   const html = index.body.toString('utf8')
   pruefe(index.status === 200 && html.includes('<div id="root">'), 'Oberfläche wird ausgeliefert', html.slice(0, 200))
+  // Ein Lesezeichen oder Neuladen auf einer Unterseite muss ebenfalls die Oberfläche liefern
+  const tief = await holen('/abrechnung/2025')
+  pruefe(tief.status === 200 && tief.body.toString('utf8').includes('<div id="root">'), 'Direktaufruf einer Unterseite liefert die Oberfläche', tief.status)
   // Alle Skripte der Seite und die daraus nachgeladenen Teile. Vite verweist innerhalb von
   // assets/ relativ („./pdf-….js“), den Worker aber mit vollem Pfad.
   const gesehen = new Set()
