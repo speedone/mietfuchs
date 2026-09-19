@@ -10,6 +10,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '.
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
 import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
+import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields } from './ai/settings.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -66,33 +67,45 @@ const aiInput = (req) => ({
 })
 
 // ---------- Einstellungen ----------
-// Adresse und Modell für Ollama kann der Betreiber per Umgebungsvariable festlegen, etwa im
-// Container. Dann gelten sie vor den gespeicherten Werten, und `fixedByEnv` sagt der
-// Oberfläche, welche Felder sie nur anzeigen soll. In die db.json gelangen sie nicht.
-const ENV_SETTINGS = { ollamaUrl: 'NKA_OLLAMA_URL', ollamaModel: 'NKA_OLLAMA_MODEL' }
+// Den KI-Anbieter kann der Betreiber per Umgebungsvariable festlegen, etwa im Container (siehe
+// aiFromEnv in ai/settings.js). Dann gelten die Werte vor den gespeicherten, und `fixedByEnv`
+// sagt der Oberfläche, welche Felder sie nur anzeigen soll. In die db.json gelangen sie nicht.
+const AI_ENV = aiFromEnv()
 
-function settingsFromEnv() {
-  const fixed = {}
-  for (const [key, variable] of Object.entries(ENV_SETTINGS)) {
-    const value = process.env[variable]?.trim()
-    if (value) fixed[key] = value
-  }
-  return fixed
+// Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung. ollamaUrl und
+// ollamaModel zeigen dabei, was für Ollama gilt, für Tabs von vor dem Update.
+function effectiveSettings() {
+  const settings = getDb().settings
+  const ai = effectiveAi(settings.ai, AI_ENV)
+  const legacy = ai.text.provider === 'ollama' ? { ollamaUrl: ai.text.url, ollamaModel: ai.text.model } : {}
+  return { ...settings, ...legacy, ai }
 }
 
-// Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung
-function effectiveSettings() {
-  return { ...getDb().settings, ...settingsFromEnv() }
+// Pfade wie 'ai.text.url', dazu die alten Namen, die ein Tab von vor dem Update kennt
+function fixedByEnv() {
+  const settings = getDb().settings
+  const paths = fixedFields(settings.ai, AI_ENV)
+  const legacy = effectiveAi(settings.ai, AI_ENV).text.provider === 'ollama'
+    ? [['ai.text.url', 'ollamaUrl'], ['ai.text.model', 'ollamaModel']].filter(([p]) => paths.includes(p)).map(([, name]) => name)
+    : []
+  return [...legacy, ...paths]
 }
 
 // `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.js), nie welcher
-const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: Object.keys(settingsFromEnv()), aiKeys: keyInfo() })
+const settingsForClient = () => ({ ...effectiveSettings(), fixedByEnv: fixedByEnv(), aiKeys: keyInfo() })
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
-  const { fixedByEnv, aiKeys, ...changes } = req.body ?? {}
-  for (const key of Object.keys(settingsFromEnv())) delete changes[key]
-  Object.assign(getDb().settings, changes)
+  const body = req.body ?? {}
+  const { fixedByEnv, aiKeys, ai, ollamaUrl, ollamaModel, ...changes } = body
+  const settings = getDb().settings
+  // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
+  try {
+    applyAiChanges(settings, body, AI_ENV)
+  } catch (err) {
+    return res.status(err.status ?? 500).json({ error: err.message })
+  }
+  Object.assign(settings, changes)
   save()
   res.json(settingsForClient())
 })
@@ -489,7 +502,7 @@ app.get('/api/ollama/status', async (req, res) => {
     const status = { ok: false, error: String(err.message || err) }
     // Nur suchen, wenn Ollama gar nicht erreichbar war, und nicht, wenn der Betreiber die
     // Adresse festgelegt hat
-    if (err.unreachable && !settingsFromEnv().ollamaUrl) {
+    if (err.unreachable && !fixedByEnv().includes('ai.text.url')) {
       const configured = settings.ollamaUrl.replace(/\/+$/, '')
       const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
       if (found) status.found = found
@@ -601,11 +614,11 @@ function openBrowser(url) {
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
 
-// Eine falsch gesetzte Schlüssel-Variable (siehe secrets.js) fiele sonst erst bei der ersten
-// Auswertung als „Schlüssel ungültig“ auf
-const keyProblem = checkKeyEnvironment()
-if (keyProblem) {
-  console.error(keyProblem)
+// Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.js und
+// secrets.js) fiele sonst erst bei der ersten Auswertung auf
+const startProblem = AI_ENV.error ?? checkKeyEnvironment()
+if (startProblem) {
+  console.error(startProblem)
   process.exit(1)
 }
 
