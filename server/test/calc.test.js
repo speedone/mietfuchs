@@ -263,6 +263,75 @@ test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
   assert.equal(a.total35aCents, 15000) // halber Lohnanteil
 })
 
+// §35a-Lohnanteil mit Restverfahren. Die Mieter bekommen zusammen den Lohnanteil, der auf ihre
+// gebuchten Kostenanteile entfällt — kaufmännisch auf den Cent gerundet, nie mehr als der
+// Lohnanteil der Rechnung. Diese Summe wird wie die Kosten nach dem größten Rest verteilt,
+// Gleichstand entscheidet die ID des Mietverhältnisses.
+//
+// Handrechnung zum folgenden Test (Gartenpflege, Flächenschlüssel):
+//    1. Rechnungsbetrag                          30.000 ct
+//    2. Lohnanteil                               10.000 ct
+//    3. Kostenanteil je Mietverhältnis           30.000 × 70/220 = 9.545,45 → 9.545 ct (t1 und t2)
+//                                                (EG mit 80 m² ist selbstgenutzt, sein Teil bleibt
+//                                                beim Vermieter: 30.000 − 2 × 9.545 = 10.910 ct)
+//    4. Summe der Mieterkosten                   19.090 ct
+//    5. Mieter-Lohn gesamt, exakt                10.000 × 19.090/30.000 = 6.363,33 ct
+//    6. … kaufmännisch gerundet                  6.363 ct (≤ 10.000 ct Lohnanteil)
+//    7. exakter Anteil je Mietverhältnis         10.000 × 9.545/30.000 = 3.181,67 ct (t1 und t2)
+//    8. ganze Cent vor der Restverteilung        3.181 + 3.181 = 6.362 ct → 1 Rest-Cent
+//    9. Reihenfolge der Reste                    beide 0,67 → Gleichstand, ID entscheidet: t1 vor t2
+//   10. §35a je Mietverhältnis                   t1 = 3.182 ct, t2 = 3.181 ct, Summe 6.363 ct
+// Bisher wurde je Zeile gerundet: 3.182 + 3.182 = 6.364 ct — ein Cent mehr als der Mieteranteil.
+test('§35a: Mieter-Lohnanteil kaufmännisch gerundet, Rest-Cent nach Restverfahren (Handrechnung)', () => {
+  const make = (order) => ({
+    settings: {},
+    units: [
+      { id: 'u0', name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 },
+      { id: 'u1', name: 'OG links', areaM2: 70, participates: true },
+      { id: 'u2', name: 'OG rechts', areaM2: 70, participates: true },
+    ],
+    tenancies: order.map((n) => ({ id: `t${n}`, unitId: `u${n}`, tenantName: `Mieter ${n}`, persons: 2, start: '2020-01-01', end: null })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 30000, key: 'area', labor35aCents: 10000 }],
+  })
+  for (const order of [[1, 2], [2, 1]]) {
+    const s = computeSettlement(make(order), 2025)
+    const st = (id) => s.statements.find((x) => x.tenancyId === id)
+    assert.equal(st('t1').totalShareCents, 9545)
+    assert.equal(st('t2').totalShareCents, 9545)
+    assert.equal(st('t1').total35aCents, 3182, `Reihenfolge ${order.join(', ')}`)
+    assert.equal(st('t2').total35aCents, 3181, `Reihenfolge ${order.join(', ')}`)
+  }
+})
+
+test('§35a: tragen die Mieter die Rechnung ganz, ergibt ihr Lohnanteil genau den der Rechnung', () => {
+  // 300 € mit 200 € Lohnanteil auf drei gleiche Wohnungen: je 66,67 € einzeln gerundet wären 200,01 €
+  const db = {
+    settings: {},
+    units: [1, 2, 3].map((n) => ({ id: `u${n}`, name: `W${n}`, areaM2: 60, participates: true })),
+    tenancies: [1, 2, 3].map((n) => ({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1, start: '2020-01-01', end: null })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'area', labor35aCents: 20000 }],
+  }
+  const s = computeSettlement(db, 2025)
+  assert.deepEqual(s.statements.map((x) => [x.tenancyId, x.total35aCents]), [['t1', 6667], ['t2', 6667], ['t3', 6666]])
+})
+
+test('§35a: ungültiger Lohnanteil (negativ oder über dem Rechnungsbetrag) wird nicht bescheinigt, sondern gemeldet', () => {
+  for (const labor of [-3000, 70000]) {
+    const db = makeDb()
+    db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Garten', amountCents: 60000, key: 'units', labor35aCents: labor })
+    const s = computeSettlement(db, 2025)
+    assert.deepEqual(s.statements.map((x) => x.total35aCents), [0, 0], `Lohnanteil ${labor}`)
+    assert.equal(s.statements.find((x) => x.tenancyId === 't2').totalShareCents, 30000) // Kosten bleiben unberührt
+    assert.deepEqual(s.warnings, ['„Garten": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.'])
+  }
+})
+
+test('§35a: eine Position ohne Lohnanteil löst keine §35a-Meldung aus, auch mit negativem Betrag', () => {
+  const db = makeDb()
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Gutschrift', amountCents: -5000, key: 'units' })
+  assert.deepEqual(computeSettlement(db, 2025).warnings, [])
+})
+
 test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 290050, key: 'units' })
@@ -727,9 +796,38 @@ test('Invariante: kein Mieter trägt einen negativen Anteil', () => {
     for (const st of computeSettlement(db, 2025).statements) {
       for (const row of st.rows) {
         assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}\n${JSON.stringify(db)}`)
-        assert.ok(row.labor35aCents <= row.shareCents + 1, `Fall ${i}: §35a-Anteil über dem Kostenanteil`)
+        assert.ok(row.labor35aCents >= 0 && row.labor35aCents <= row.shareCents, `Fall ${i}: §35a-Anteil ${row.labor35aCents} außerhalb von 0…${row.shareCents}`)
       }
     }
+  }
+})
+
+test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge, Kosten unberührt', () => {
+  const rnd = makeRng(3552025)
+  for (let i = 0; i < 500; i++) {
+    const db = randomDb(rnd)
+    const s = computeSettlement(db, 2025)
+    for (const item of db.costItems.filter((c) => c.year === 2025 && c.labor35aCents > 0)) {
+      const rows = s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === item.id))
+      const kosten = rows.reduce((a, r) => a + r.shareCents, 0)
+      const lohn = rows.reduce((a, r) => a + r.labor35aCents, 0)
+      const soll = Math.min(item.labor35aCents, Math.round((item.labor35aCents * kosten) / item.amountCents))
+      assert.ok(lohn <= item.labor35aCents, `Fall ${i}: mehr bescheinigt (${lohn}) als die Rechnung enthält (${item.labor35aCents})`)
+      assert.equal(lohn, soll, `Fall ${i}: Summe ${lohn} ≠ gerundeter Mieteranteil ${soll}\n${JSON.stringify(db)}`)
+      if (kosten === item.amountCents) assert.equal(lohn, item.labor35aCents, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
+    }
+    // Reihenfolge ohne Einfluss
+    const rev = structuredClone(db)
+    rev.units.reverse()
+    rev.tenancies.reverse()
+    rev.costItems.reverse()
+    const byTenancy = (r) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.total35aCents, st.totalShareCents]).sort())
+    assert.equal(byTenancy(computeSettlement(rev, 2025)), byTenancy(s), `Fall ${i}: Ergebnis hängt von der Reihenfolge ab`)
+    // Die Kostenverteilung selbst hängt nicht am Lohnanteil
+    const ohne = structuredClone(db)
+    for (const c of ohne.costItems) delete c.labor35aCents
+    const shares = (r) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.rows.map((x) => x.shareCents)]))
+    assert.equal(shares(computeSettlement(ohne, 2025)), shares(s), `Fall ${i}: Lohnanteil verändert die Kostenverteilung`)
   }
 })
 
