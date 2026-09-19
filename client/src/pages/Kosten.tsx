@@ -34,6 +34,9 @@ type QueueEntry = {
   error?: string
   vendor?: string
   serverFile?: string
+  // Was der Server gerechnet hat (#34)
+  amountsAdjusted?: Extraction['amountsAdjusted']
+  laborFromTotal?: boolean
   positions: ExtractPos[]
   // während der Auswertung: was das Modell gerade tut und seit wann
   progress?: AiProgress | null
@@ -196,7 +199,7 @@ export default function Kosten({ units, settings }: Props) {
             checked: category !== 'Nicht umlagefähig',
           }
         })
-        patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions })
+        patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
         if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
@@ -316,6 +319,20 @@ export default function Kosten({ units, settings }: Props) {
             {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
             {entry.status === 'fertig' && (
               <>
+                {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
+                {entry.amountsAdjusted === 'netto' && (
+                  <div className="notice" style={{ marginTop: 8 }}>
+                    Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den
+                    Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
+                  </div>
+                )}
+                {entry.laborFromTotal && (
+                  <div className="notice" style={{ marginTop: 8 }}>
+                    Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs
+                    hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören
+                    streng genommen nicht dazu.
+                  </div>
+                )}
                 <table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>

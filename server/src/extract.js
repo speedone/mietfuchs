@@ -8,6 +8,7 @@
 
 import fs from 'node:fs'
 import { aiProvider } from './ai/index.js'
+import { normalizeAmounts } from './invoiceAmounts.js'
 
 const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
@@ -83,6 +84,9 @@ const SCHEMA = {
       },
     },
     totalGrossEur: { type: 'number', description: 'Gesamtbetrag brutto in Euro' },
+    positionsAreNet: { type: ['boolean', 'null'], description: 'true, wenn die Positionsbeträge OHNE Umsatzsteuer ausgewiesen sind und die Steuer erst in der Summe steht' },
+    vatRatePercent: { type: ['number', 'null'], description: 'Umsatzsteuersatz in Prozent, falls die Rechnung ihn nennt (z. B. 19)' },
+    labor35aTotalEur: { type: ['number', 'null'], description: 'Arbeits-/Lohnkosten nach §35a EStG als EIN Betrag für die ganze Rechnung, falls nur so ausgewiesen' },
   },
   required: ['vendor', 'positions', 'totalGrossEur'],
 }
@@ -104,9 +108,15 @@ Wichtige Regeln:
   Gebäude-, Wohngebäude- oder Haftpflichtversicherung → "Sach- und Haftpflichtversicherung".
   Nur wenn wirklich nichts passt → "Sonstige Betriebskosten".
 - Kosten für Instandhaltung, Reparaturen oder Verwaltung sind "Nicht umlagefähig".
-- Beträge brutto in Euro mit Dezimalpunkt.
+- Beträge in Euro mit Dezimalpunkt, so wie sie auf der Rechnung stehen. Rechne nichts um.
+- Stehen die Positionsbeträge ohne Umsatzsteuer da und taucht die Steuer erst in der Summe auf
+  (häufig bei Handwerkern und Schornsteinfegern), setze positionsAreNet auf true und
+  vatRatePercent auf den genannten Satz. Die Positionen bleiben dann netto, wie gedruckt.
 - Weist die Rechnung Arbeits-/Lohnkosten gesondert aus (häufig bei Handwerkern, Gartenpflege,
   Schornsteinfeger als "Anteil nach §35a EStG"), gib sie als labor35aEur an, sonst null.
+- Nennt die Rechnung die Arbeitskosten nur als einen Betrag für das Ganze ("Im Rechnungsbetrag
+  sind Arbeitskosten in Höhe von 90,56 EUR enthalten"), gib diesen als labor35aTotalEur an und
+  lass labor35aEur je Position null. Erfinde keine Aufteilung.
 - Datumsangaben als YYYY-MM-DD.`
 
 // Zweiter, fokussierter Durchgang nur für die Kategorisierung: ein kleiner Prompt mit
@@ -181,7 +191,8 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  const result = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
+  // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34)
+  const result = normalizeAmounts(await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress }))
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.

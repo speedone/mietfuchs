@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
+import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
 import { api, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
@@ -50,6 +50,9 @@ type QueueEntry = {
   detectedYear?: number | null
   totalGrossCents?: number | null
   positions?: InvoicePosition[]
+  // Was der Server gerechnet hat (#34), als Hinweis für die Prüfung
+  amountsAdjusted?: Extraction['amountsAdjusted']
+  laborFromTotal?: boolean
   // Zähler
   reading?: ReadingCandidate
   // während der Auswertung: was das Modell gerade tut und seit wann
@@ -191,6 +194,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             vendor: ex.vendor || next.fileName,
             detectedYear: yearFrom(ex.periodStart, ex.invoiceDate),
             totalGrossCents: ex.totalGrossEur != null ? Math.round(ex.totalGrossEur * 100) : null,
+            amountsAdjusted: ex.amountsAdjusted,
+            laborFromTotal: ex.laborFromTotal,
             positions,
           })
         }
@@ -454,6 +459,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             {entry.status === 'fertig' && entry.kind === 'rechnung' && entry.positions && (
               <>
                 {es?.sumWarning && <div className="warn" style={{ marginTop: 8 }}>⚠ {es.sumWarning}</div>}
+                {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
+                {entry.amountsAdjusted === 'netto' && (
+                  <div className="notice" style={{ marginTop: 8 }}>
+                    Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den
+                    Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
+                  </div>
+                )}
+                {entry.laborFromTotal && (
+                  <div className="notice" style={{ marginTop: 8 }}>
+                    Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs
+                    hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören
+                    streng genommen nicht dazu.
+                  </div>
+                )}
                 <table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>

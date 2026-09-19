@@ -382,6 +382,25 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
       if (!findModel(json.model)) return notFound()
+      // Eine Rechnung mit Nettopositionen und dem Lohnanteil als Gesamtbetrag (#34)
+      if (chat === 'netto' && !json.format?.properties?.categories) {
+        const netto = {
+          vendor: 'Schornsteinfegerei Muster',
+          totalGrossEur: 101.86,
+          positionsAreNet: true,
+          vatRatePercent: 19,
+          labor35aTotalEur: 90.56,
+          positions: [
+            { description: 'Feuerstättenschau', category: 'Schornsteinfeger', amountEur: 28.7 },
+            { description: 'Kehren der Abgasleitung', category: 'Schornsteinfeger', amountEur: 24.8 },
+            { description: 'Abgaswegeüberprüfung', category: 'Schornsteinfeger', amountEur: 22.6 },
+            { description: 'Fahrtkostenpauschale', category: 'Schornsteinfeger', amountEur: 9.5 },
+          ],
+        }
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+        res.write(`${JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(netto) }, done: false })}\n`)
+        return res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 10, eval_count: 5 })}\n`)
+      }
       if (chat === 'rejectThinkOff' && json.think === false) {
         return send(400, { error: `think value "false" is not supported for "${json.model}"` })
       }
@@ -2102,4 +2121,22 @@ test('Modell laden: geht auch für den eigenen Anbieter für Fotos und Scans', a
     await putAi(s, { images: null })
     assert.equal((await pullAsStream(s, { slot: 'images' })).status, 400)
   })
+})
+
+// ---------- Nettopositionen und §35a-Gesamtbetrag (#34) ----------
+
+test('Auswertung: Nettopositionen werden brutto, der Lohnanteil aus dem Gesamtbetrag verteilt', async () => {
+  await withOllama(async (s) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const { extraction } = r.body
+    const cents = (eur) => Math.round(eur * 100)
+    assert.equal(extraction.positions.reduce((a, p) => a + cents(p.amountEur), 0), cents(101.86))
+    assert.equal(extraction.positions.reduce((a, p) => a + cents(p.labor35aEur), 0), cents(90.56))
+    assert.equal(extraction.amountsAdjusted, 'netto')
+    assert.equal(extraction.laborFromTotal, true)
+    // Die Hilfsfelder des Modells gehen nicht an den Browser
+    assert.equal('positionsAreNet' in extraction, false)
+    assert.equal('labor35aTotalEur' in extraction, false)
+  }, { chat: 'netto' })
 })
