@@ -3,8 +3,8 @@
 // Ohne sie geht keine Anfrage hinaus, und das Versprechen „kein externer Dienst" gilt
 // unverändert. Aus Mietfuchs werden dabei keine Daten übertragen, verglichen wird lokal.
 //
-// Ein Selbst-Update gibt es nicht. Ob und welcher Updater später dazukommt, ist offen; die
-// Möglichkeiten mit Vor- und Nachteilen stehen in Issue #14.
+// Ein Selbst-Update gibt es nicht. Ob und welcher Updater später dazukommt, ist offen. Die
+// Möglichkeiten mit Vor- und Nachteilen stehen in Issue #20.
 
 export const UPDATE_URL = 'https://api.github.com/repos/speedone/mietfuchs/releases/latest'
 
