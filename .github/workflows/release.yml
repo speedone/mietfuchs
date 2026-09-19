@@ -57,6 +57,41 @@ jobs:
       - name: Binaries hochladen (Artefakt)
         uses: actions/upload-artifact@v7
         with:
+          name: mietfuchs-ungesigniert
+          path: |
+            dist-bin/*.zip
+            dist-bin/*.tar.gz
+            dist-bin/*.exe
+          if-no-files-found: error
+
+  # Bun signiert macOS-Programmdateien beim Cross-Kompilieren unter Linux selbst (ad hoc). Diese
+  # Signatur war schon mehrfach fehlerhaft, zuletzt bei der Intel-Datei trotz Bun 1.4.2
+  # („invalid signature“, siehe oven-sh/bun#32159). Neuere macOS-Versionen beenden solche
+  # Programme sofort. Deshalb auf einem echten Mac neu ad hoc signieren und prüfen.
+  signieren:
+    name: macOS-Dateien signieren
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: mietfuchs-ungesigniert
+          path: dist-bin
+      - name: Neu signieren und neu verpacken
+        working-directory: dist-bin
+        run: |
+          for archiv in mietfuchs-macos-*.zip; do
+            programm="${archiv%.zip}"
+            unzip -o "$archiv"
+            codesign --force --sign - "$programm"
+            codesign --verify --strict --verbose=2 "$programm"
+            rm "$archiv"
+            zip -j "$archiv" "$programm"   # zip -j erhält das Ausführungs-Bit
+            rm "$programm"
+          done
+          ls -l
+      - uses: actions/upload-artifact@v7
+        with:
           name: mietfuchs-binaries
           path: |
             dist-bin/*.zip
@@ -69,7 +104,7 @@ jobs:
   # Backup). Geprüft werden die Archive, die auch Nutzer herunterladen.
   pruefen:
     name: Prüfen auf ${{ matrix.name }}
-    needs: build
+    needs: signieren
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -106,13 +141,13 @@ jobs:
           esac
           ls -l
 
-      # Bun signiert die macOS-Programmdateien ad hoc. Ist die Signatur kaputt (so geschehen mit
-      # Bun 1.3.12 bis 1.4.0), beendet macOS das Programm sofort beim Start.
+      # Die Signatur aus dem Schritt „signieren“ muss nach dem Ein- und Auspacken gültig sein.
+      # Ist sie kaputt, beendet macOS das Programm sofort beim Start.
       - name: Signatur prüfen (macOS)
         if: runner.os == 'macOS'
         working-directory: bin
         run: |
-          codesign --verify --verbose=2 "${{ matrix.programm }}"
+          codesign --verify --strict --verbose=2 "${{ matrix.programm }}"
           file "${{ matrix.programm }}"
 
       - name: Starten und prüfen (Linux, macOS)
@@ -144,7 +179,7 @@ jobs:
   # Containern gängiger Distributionen, von CentOS 7 (genau glibc 2.17) bis zu den neuesten.
   distributionen:
     name: Prüfen auf ${{ matrix.image }} (${{ matrix.arch }})
-    needs: build
+    needs: signieren
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
