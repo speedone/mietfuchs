@@ -271,10 +271,18 @@ const LANGER_TEXT =
 
 // Antwortet wie Ollama 0.34: /api/tags listet die Modelle, /api/show nennt ihre Fähigkeiten,
 // und ein unbekanntes Modell ergibt 404. Ohne `capabilities` verhält es sich wie eine ältere
-// Ollama-Version, die das Feld noch nicht kennt.
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }] } = {}) {
+// Ollama-Version, die das Feld noch nicht kennt. /api/chat streamt standardmäßig zeilenweise
+// JSON (NDJSON), die letzte Zeile trägt `done: true`, den Grund und die Kennzahlen.
+//
+// `chat` schaltet Störungen der Auswertung: 'hang' schickt nie etwas, 'hangAfterFirstChunk'
+// verstummt nach dem ersten Stück, 'length' endet am Kontextende mit halbem JSON, 'error'
+// schickt mitten im Strom eine Fehlerzeile. `closedEarly` zählt Chat-Anfragen, deren
+// Verbindung Mietfuchs vor dem Ende getrennt hat.
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal' } = {}) {
   const http = await import('node:http')
   const anfragen = []
+  const open = new Set()
+  const state = { closedEarly: 0 }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
   const server = http.createServer((req, res) => {
     let body = ''
@@ -297,23 +305,63 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       }
       if (!findModel(json.model)) return notFound()
       // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
-      const content = json.format?.properties?.categories
-        ? { categories: ['Wasser/Abwasser'] }
-        : {
-            vendor: 'Stadtwerke Musterstadt',
-            positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }],
-            totalGrossEur: 12.5,
-          }
-      send(200, { message: { content: JSON.stringify(content) } })
+      const content = JSON.stringify(
+        json.format?.properties?.categories
+          ? { categories: ['Wasser/Abwasser'] }
+          : {
+              vendor: 'Stadtwerke Musterstadt',
+              positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }],
+              totalGrossEur: 12.5,
+            },
+      )
+      const final = {
+        message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop',
+        total_duration: 3_000_000_000, load_duration: 500_000_000,
+        prompt_eval_count: 812, prompt_eval_duration: 1_500_000_000, eval_count: 64, eval_duration: 1_000_000_000,
+      }
+      if (json.stream === false) return send(200, { ...final, message: { role: 'assistant', content } })
+
+      open.add(res)
+      res.on('close', () => {
+        open.delete(res)
+        if (!res.writableFinished) state.closedEarly++
+      })
+      if (chat === 'hang') return
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+      const line = (obj) => res.write(`${JSON.stringify(obj)}\n`)
+      const piece = (text) => ({ message: { role: 'assistant', content: text }, done: false })
+      const third = Math.ceil(content.length / 3)
+      line(piece(content.slice(0, third)))
+      if (chat === 'hangAfterFirstChunk') return
+      if (chat === 'error') {
+        line({ error: 'model runner has unexpectedly stopped' })
+        return res.end()
+      }
+      if (chat === 'length') {
+        line({ ...final, done_reason: 'length' })
+        return res.end()
+      }
+      line(piece(content.slice(third, 2 * third)))
+      line(piece(content.slice(2 * third)))
+      line(final)
+      res.end()
     })
   })
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
-  return { url: `http://127.0.0.1:${server.address().port}`, anfragen, stop: () => server.close() }
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    anfragen,
+    get closedEarly() { return state.closedEarly },
+    stop: () => {
+      for (const res of open) res.destroy()
+      server.close()
+    },
+  }
 }
 
-async function mitOllama(fn, { models, model = 'test' } = {}) {
-  const ollama = await fakeOllama({ models })
-  const s = await startServer()
+async function mitOllama(fn, { models, model = 'test', chat, env = {} } = {}) {
+  const ollama = await fakeOllama({ models, chat })
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
     await fn(s, ollama)
@@ -603,6 +651,93 @@ test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße, ungültige Werte z�
       ollama.stop()
     }
   }
+})
+
+// ---------- Ollama: Streaming, Zeitlimit und Abbruch (#17) ----------
+// Ohne Streaming schickt Ollama die Antwort-Header erst mit der fertigen Antwort, und fetch
+// bricht unter Node wie unter Bun nach 300 Sekunden ohne Header ab. Mietfuchs streamt deshalb
+// und spricht Ollama ohne diese Grenze an. Es gilt nur das eigene Zeitlimit, und das soll als
+// solches gemeldet werden, nicht als „nicht erreichbar“.
+
+const until = async (condition, ms = 5000) => {
+  const end = Date.now() + ms
+  while (!condition()) {
+    if (Date.now() > end) return false
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return true
+}
+
+test('Ollama: die Antwort kommt als Strom und wird zusammengesetzt', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(r.status, 200)
+    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
+    assert.equal(r.body.extraction.positions[0].category, 'Wasser/Abwasser')
+    assert.ok(chatAnfragen(ollama).every((a) => a.body.stream === true))
+  })
+})
+
+test('Ollama: die Antwort nennt Kennzahlen je Schritt', async () => {
+  await mitOllama(async (s) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    const expected = { promptTokens: 812, outputTokens: 64, seconds: 3, loadSeconds: 0.5 }
+    assert.deepEqual(r.body.stats, [
+      { step: 'extraction', ...expected },
+      { step: 'classification', ...expected },
+    ])
+  })
+})
+
+test('Ollama: das Zeitlimit greift vor der ersten Antwort und heißt auch so (NKA_AI_TIMEOUT)', async () => {
+  await mitOllama(async (s) => {
+    const start = Date.now()
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.ok(Date.now() - start < 15000, 'das Zeitlimit wurde nicht eingehalten')
+  }, { chat: 'hang', env: { NKA_AI_TIMEOUT: '2' } })
+})
+
+test('Ollama: verstummt Ollama mitten im Strom, greift ebenfalls das Zeitlimit', async () => {
+  await mitOllama(async (s) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+  }, { chat: 'hangAfterFirstChunk', env: { NKA_AI_TIMEOUT: '2' } })
+})
+
+test('Ollama: eine am Kontextende abgeschnittene Antwort ergibt eine klare Meldung', async () => {
+  await mitOllama(async (s) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /abgeschnitten/)
+    assert.match(r.body.error, /NKA_OLLAMA_NUM_CTX/)
+  }, { chat: 'length' })
+})
+
+test('Ollama: ein Fehler mitten im Strom kommt lesbar an', async () => {
+  await mitOllama(async (s) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /Ollama meldet einen Fehler: model runner has unexpectedly stopped/)
+  }, { chat: 'error' })
+})
+
+test('Ollama: bricht der Browser ab, bricht Mietfuchs die Anfrage an Ollama ab', async () => {
+  await mitOllama(async (s, ollama) => {
+    const controller = new AbortController()
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
+    fd.append('pdfText', LANGER_TEXT)
+    const upload = fetch(`${s.base}/api/extract`, { method: 'POST', body: fd, signal: controller.signal }).catch((e) => e)
+    assert.ok(await until(() => chatAnfragen(ollama).length > 0), 'Ollama wurde nicht gefragt')
+    controller.abort()
+    assert.equal((await upload).name, 'AbortError')
+    assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
+    // Auf den abgebrochenen Beleg verweist nichts, er soll nicht im Archiv liegen bleiben
+    assert.deepEqual(await s.api('/api/uploads'), [])
+  }, { chat: 'hang' })
 })
 
 // ---------- Ollama: Modellauswahl und verständliche Fehler (#17) ----------
