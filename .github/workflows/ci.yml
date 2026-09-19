@@ -31,3 +31,12 @@ jobs:
       - run: npm test
       # Typecheck (tsc --noEmit) + Vite-Build
       - run: npm run build
+      # Derselbe Test von außen wie für Programmdateien und Docker-Image (#22), hier gegen den
+      # Start aus dem Quellcode. So läuft das Prüfskript bei jedem PR mit.
+      - name: Von außen prüfen (Start aus dem Quellcode)
+        run: |
+          NKA_DATA_DIR="$RUNNER_TEMP/daten" NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
+            node server/src/index.js > server.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm

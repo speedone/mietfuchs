@@ -55,6 +55,16 @@ test('assetFor: wählt die Datei für das eigene Betriebssystem und die Architek
   assert.equal(assetFor(assets, 'linux', 'x64').name, 'mietfuchs-linux.tar.gz')
 })
 
+test('assetFor: ARM-Programmdateien für Linux und Windows (#22), die bisherigen Namen bleiben', () => {
+  // Ältere Versionen suchen ihre Datei unter dem bisherigen Namen, der darf sich nie ändern.
+  const namen = ['mietfuchs-win.exe', 'mietfuchs-win-arm64.exe', 'mietfuchs-linux.tar.gz', 'mietfuchs-linux-arm64.tar.gz']
+  const assets = namen.map((name) => ({ name, browser_download_url: `https://github.com/speedone/mietfuchs/releases/download/v0.6.0/${name}` }))
+  assert.equal(assetFor(assets, 'linux', 'arm64').name, 'mietfuchs-linux-arm64.tar.gz')
+  assert.equal(assetFor(assets, 'win32', 'arm64').name, 'mietfuchs-win-arm64.exe')
+  assert.equal(assetFor(assets, 'linux', 'x64').name, 'mietfuchs-linux.tar.gz')
+  assert.equal(assetFor(assets, 'win32', 'x64').name, 'mietfuchs-win.exe')
+})
+
 test('assetFor: für Systeme ohne eigene Datei gibt es keine', () => {
   assert.equal(assetFor(echteAntwort.assets, 'linux', 'arm64'), null)
   assert.equal(assetFor(echteAntwort.assets, 'freebsd', 'x64'), null)

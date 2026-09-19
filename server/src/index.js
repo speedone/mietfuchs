@@ -416,7 +416,9 @@ const server = app.listen(PORT, () => {
   console.log(`Mietfuchs-Server läuft auf ${url}`)
   if (PACKAGED) {
     console.log('Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
-    openBrowser(url)
+    // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
+    // auf dem Runner nützt dort niemandem.
+    if (!process.env.CI) openBrowser(url)
   }
 })
 server.on('error', (err) => {

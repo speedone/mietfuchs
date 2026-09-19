@@ -36,12 +36,15 @@ export function isNewer(candidate, current) {
   return false
 }
 
-// Release-Dateien je Betriebssystem und Architektur, wie scripts/package-binaries.mjs sie baut
+// Release-Dateien je Betriebssystem und Architektur, wie scripts/package-binaries.mjs sie baut.
+// Die bisherigen Namen dürfen sich nie ändern: Ältere Versionen suchen ihre Datei darunter.
 const DATEIEN = {
   'win32-x64': 'mietfuchs-win.exe',
+  'win32-arm64': 'mietfuchs-win-arm64.exe',
   'darwin-arm64': 'mietfuchs-macos-apple-silicon.zip',
   'darwin-x64': 'mietfuchs-macos-intel.zip',
   'linux-x64': 'mietfuchs-linux.tar.gz',
+  'linux-arm64': 'mietfuchs-linux-arm64.tar.gz',
 }
 
 export function assetFor(assets, platform, arch) {

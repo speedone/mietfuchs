@@ -246,8 +246,8 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Das Archiv mit dem Knopf oben herunterladen.</li>
           {beenden}
-          <li>Das Archiv im selben Ordner wie bisher ablegen und dort entpacken. Das ersetzt die alte Programmdatei, der Ordner <code>data</code> bleibt. <code>tar -xzf mietfuchs-linux.tar.gz</code></li>
-          <li>Mietfuchs wie gewohnt starten, etwa mit <code>./mietfuchs-linux</code>.</li>
+          <li>Das Archiv im selben Ordner wie bisher ablegen und dort entpacken. Das ersetzt die alte Programmdatei, der Ordner <code>data</code> bleibt. <code>tar -xzf {datei}</code></li>
+          <li>Mietfuchs wie gewohnt starten, etwa mit <code>./{datei.replace(/\.tar\.gz$/, '')}</code>.</li>
         </ol>
       )}
       {guide.system === null && (

@@ -51,7 +51,20 @@ gebündelter PR).
 Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml) baut bei einem
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,
 Linux als tar.gz (konserviert das Ausführungs-Bit, das rohe Downloads verlieren würden), die
-Windows-`.exe` roh.
+Windows-`.exe` roh. Ziele: Windows, Linux und macOS jeweils für x64 und ARM64. Die Namen der
+x64-Dateien bleiben fest, der Update-Hinweis älterer Versionen sucht sie darunter.
+
+**Artefakt-Tests** (#22): Vor dem Anhängen startet jede Programmdatei auf einem GitHub-Runner
+ihres Systems (Linux, Windows und macOS jeweils x64 und ARM64), die Linux-Dateien zusätzlich in
+Containern von 15 Distributionen (CentOS 7 mit glibc 2.17 bis Ubuntu 26.04). Das Docker-Image
+wird für amd64 und arm64 ebenso geprüft, bevor es veröffentlicht wird, und die CI prüft den
+Start aus dem Quellcode. Alle nutzen [scripts/smoke-test.mjs](scripts/smoke-test.mjs): Es
+prüft eine laufende Instanz von außen (Oberfläche mit allen Skriptteilen und pdf.js-Dateien,
+KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup und
+Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
+`node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Ist `CI` gesetzt, öffnet
+die Programmdatei keinen Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
+fällt in diesen Tests auf.
 
 Einzelnen Test ausführen:
 
