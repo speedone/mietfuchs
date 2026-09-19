@@ -239,9 +239,11 @@ sofort, dann Zeilen mit `progress`, `heartbeat` (alle zehn Sekunden) und zuletzt
 es die JSON-Antwort wie früher. Bricht der Browser ab, stoppt der Server die Anfrage an den
 Anbieter und löscht den gerade hochgeladenen Beleg wieder. Den Abbruch erfährt er über
 `POST /api/ai/cancel/<requestId>` (die Kennung schickt der Browser im Formularfeld `requestId`
-mit, beim Schließen des Tabs per `sendBeacon`); unter Node zusätzlich über das Schließen der
-Verbindung. Unter Bun meldet Express das nicht, deshalb ist die Kennung der verlässliche Weg,
-und der Smoke-Test prüft ihn auf jeder Programmdatei. Im Client liest
+mit, beim Schließen des Tabs per `sendBeacon`) und zusätzlich über das Schließen der
+Verbindung. Die Kennung ist der verlässliche Weg, denn unter Bun 1.3 kam das Schließen nicht bei
+Express an (unter Bun 1.4.2 schon), und ein Proxy kann die Verbindung zum Server offen halten.
+Der Smoke-Test prüft die Kennung auf jeder Programmdatei und berichtet zusätzlich, ob das bloße
+Schließen ankommt. Im Client liest
 [client/src/aiRequest.ts](client/src/aiRequest.ts) den Strom und kümmert sich um den Abbruch,
 die Ollama-Karte der Einstellungen ist [OllamaSettings.tsx](client/src/components/OllamaSettings.tsx)
 mit der Logik in [client/src/modelForm.ts](client/src/modelForm.ts). `/api/ollama/status`

@@ -233,9 +233,10 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // Bricht der Browser ab (Knopf „Abbrechen“, Seite verlassen), soll das Modell nicht umsonst
 // weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade
 // hochgeladene Beleg, auf den noch nichts verweist, verschwindet wieder aus dem Archiv. Den
-// Abbruch erfährt der Server auf zwei Wegen: Unter Node meldet Express das Schließen der
-// Verbindung. Unter Bun (Programmdatei) geschieht das nicht, deshalb schickt der Browser jeder
-// Auswertung eine Kennung (`requestId`) mit und ruft beim Abbrechen POST /api/ai/cancel/<id> auf.
+// Abbruch erfährt der Server auf zwei Wegen: Express meldet das Schließen der Verbindung, und
+// der Browser schickt jeder Auswertung eine Kennung (`requestId`) mit, mit der er beim Abbrechen
+// POST /api/ai/cancel/<id> aufruft. Die Kennung wirkt unabhängig von der Laufzeit (unter Bun 1.3
+// kam das Schließen nicht an) und von Proxys, die die Verbindung zum Server offen halten.
 const HEARTBEAT_MS = 10000
 const PROGRESS_EVERY_MS = 500
 const REQUEST_ID = /^[a-f0-9-]{16,64}$/i

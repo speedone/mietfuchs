@@ -113,11 +113,11 @@ async function extractAsStream(langerText, { fileName = 'strom.pdf', requestId, 
   return { status: res.status, type: res.headers.get('content-type') ?? '', headersAfterMs, lines, totalMs: Date.now() - start }
 }
 
-// Abbrechen wie im Browser: über die Kennung der Auswertung (POST /api/ai/cancel/<id>). Unter
-// Bun meldet Express nicht, dass die Verbindung geschlossen wurde, deshalb ist die Kennung der
-// verlässliche Weg. Zum Vergleich schließt der Test danach nur die Verbindung und berichtet, ob
-// der Server das bemerkt; unter Node ja, unter Bun bisher nicht. Das ist kein Fehler, weil der
-// Browser immer auch die Kennung schickt.
+// Abbrechen wie im Browser: über die Kennung der Auswertung (POST /api/ai/cancel/<id>). Sie ist
+// der verlässliche Weg, weil nicht jede Laufzeit das Schließen der Verbindung an Express meldet
+// (Bun 1.3 tat es nicht, Bun 1.4.2 schon). Zum Vergleich schließt der Test danach nur die
+// Verbindung und berichtet, ob der Server das bemerkt. Bemerkt er es nicht, ist das kein Fehler,
+// weil der Browser immer auch die Kennung schickt.
 async function cancelChecks(ollama, langerText) {
   ollama.control.delaySeconds = 60
   try {

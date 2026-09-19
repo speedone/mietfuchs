@@ -789,7 +789,7 @@ test('Ollama: bricht der Browser ab, bricht Mietfuchs die Anfrage an Ollama ab',
   }, { chat: 'hang' })
 })
 
-// Unter Bun (Programmdatei) meldet Express nicht, dass der Browser die Verbindung geschlossen hat.
+// Dass der Browser die Verbindung schließt, kommt nicht überall bei Express an (Bun 1.3, Proxys).
 // Deshalb gibt der Browser jeder Auswertung eine Kennung mit und bricht über sie ab.
 test('Abbrechen per Kennung: stoppt Ollama und entfernt den Beleg, auch bei offener Verbindung', async () => {
   await mitOllama(async (s, ollama) => {

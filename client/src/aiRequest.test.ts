@@ -78,7 +78,7 @@ describe('aiRequest', () => {
   })
 })
 
-// Unter Bun (Programmdatei) bemerkt der Server nicht, dass der Browser die Verbindung schließt.
+// Dass der Browser die Verbindung schließt, kommt nicht überall beim Server an (Bun 1.3, Proxys).
 // Jede Auswertung trägt deshalb eine Kennung, über die der Browser ausdrücklich abbricht.
 describe('Abbrechen über die Kennung', () => {
   // wie fetch: hängt, bis das Signal abbricht

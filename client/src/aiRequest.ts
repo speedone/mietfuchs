@@ -46,7 +46,7 @@ function newRequestId(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-// Unter Bun (Programmdatei) bemerkt der Server nicht, dass der Browser die Verbindung schließt.
+// Dass der Browser die Verbindung schließt, kommt nicht überall beim Server an (Bun 1.3, Proxys).
 // Jede Auswertung trägt deshalb eine Kennung, und abgebrochen wird ausdrücklich: beim Abbrechen
 // per fetch mit keepalive, beim Schließen des Tabs per sendBeacon (fetch käme dort zu spät).
 export async function aiRequest<T>(
