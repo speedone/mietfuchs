@@ -300,3 +300,25 @@ export function isExternalUrl(url) {
   if (!host.includes('.') || LOCAL_NAMES.includes(host)) return false
   return !LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix))
 }
+
+// ---------- Bestätigung externer Dienste ----------
+
+// Verlassen die Belege das Haus, schickt Mietfuchs sie erst nach einer einmaligen Bestätigung
+// in den Einstellungen (POST /api/ai/consent). Das gilt für eine Adresse außerhalb dieses
+// Rechners und des Heimnetzes und für ein Modell, das ein lokales Ollama an einen Cloud-Dienst
+// weiterreicht. Die Bestätigung gilt für genau diese Adresse, beim weitergereichten Modell auch
+// nur für dieses Modell. Liefert die Meldung, wenn sie fehlt, sonst null. `config` stammt aus
+// providerConfig (ai/index.js), `remoteModel` meldet der Anbieter.
+export function consentProblem(config, { remoteModel }) {
+  const { url, model, consent } = config
+  const where = config.slot === 'images' ? 'beim Anbieter für Fotos und Scans' : 'beim KI-Anbieter'
+  if (isExternalUrl(url)) {
+    if (consent?.url === url) return null
+    const host = new URL(url).host
+    return `Die Belege gingen an ${host}, also an einen Dienst außerhalb dieses Rechners und des Heimnetzes. Das muss einmal in den Einstellungen ${where} bestätigt werden.`
+  }
+  if (remoteModel && !(consent?.url === url && consent?.model === model)) {
+    return `Das Modell „${model}“ läuft nicht auf diesem Rechner, Ollama reicht die Belege an einen Cloud-Dienst weiter. Das muss einmal in den Einstellungen ${where} bestätigt werden.`
+  }
+  return null
+}
