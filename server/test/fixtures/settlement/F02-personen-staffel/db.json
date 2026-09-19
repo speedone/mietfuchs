@@ -1,0 +1,48 @@
+{
+  "settings": {},
+  "units": [
+    { "id": "u1", "name": "Wohnung 1", "areaM2": 80, "participates": true },
+    { "id": "u2", "name": "Wohnung 2", "areaM2": 80, "participates": true }
+  ],
+  "tenancies": [
+    {
+      "id": "t1",
+      "unitId": "u1",
+      "tenantName": "Familie Zuwachs",
+      "start": "2020-01-01",
+      "end": null,
+      "personHistory": [
+        { "from": "2020-01-01", "persons": 2 },
+        { "from": "2025-07-01", "persons": 3 }
+      ],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 5000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    },
+    {
+      "id": "t2",
+      "unitId": "u2",
+      "tenantName": "Paar Konstant",
+      "start": "2020-01-01",
+      "end": null,
+      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 3000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    }
+  ],
+  "costItems": [
+    {
+      "id": "c1",
+      "year": 2025,
+      "category": "Wasser/Abwasser",
+      "description": "Wasser und Abwasser 2025",
+      "amountCents": 100000,
+      "key": "persons"
+    }
+  ],
+  "meters": [],
+  "readings": [],
+  "payments": [],
+  "closedSettlements": []
+}

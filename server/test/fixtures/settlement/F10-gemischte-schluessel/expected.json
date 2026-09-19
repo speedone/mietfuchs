@@ -1,0 +1,99 @@
+{
+  "year": 2025,
+  "settlement": {
+    "year": 2025,
+    "daysInYear": 365,
+    "totalCostsCents": 275001,
+    "statements": [
+      {
+        "tenancyId": "t2",
+        "unitId": "u2",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 4,
+        "personDays": 1460,
+        "totalShareCents": 141143,
+        "total35aCents": 0,
+        "prepaymentCents": 180000,
+        "prepaymentOverridden": false,
+        "balanceCents": 38857,
+        "suggestedMonthlyCents": 11800,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "area",
+            "totalCents": 90000,
+            "shareCents": 54000,
+            "labor35aCents": 0
+          },
+          {
+            "costItemId": "c2",
+            "key": "persons",
+            "totalCents": 100001,
+            "shareCents": 57143,
+            "labor35aCents": 0
+          },
+          {
+            "costItemId": "c3",
+            "key": "units",
+            "totalCents": 60000,
+            "shareCents": 30000,
+            "labor35aCents": 0
+          }
+        ]
+      },
+      {
+        "tenancyId": "t3",
+        "unitId": "u3",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "days": 365,
+        "persons": 3,
+        "personDays": 1095,
+        "totalShareCents": 108858,
+        "total35aCents": 0,
+        "prepaymentCents": 120000,
+        "prepaymentOverridden": false,
+        "balanceCents": 11142,
+        "suggestedMonthlyCents": 9100,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "area",
+            "totalCents": 90000,
+            "shareCents": 36000,
+            "labor35aCents": 0
+          },
+          {
+            "costItemId": "c2",
+            "key": "persons",
+            "totalCents": 100001,
+            "shareCents": 42858,
+            "labor35aCents": 0
+          },
+          {
+            "costItemId": "c3",
+            "key": "units",
+            "totalCents": 60000,
+            "shareCents": 30000,
+            "labor35aCents": 0
+          }
+        ]
+      }
+    ],
+    "landlord": {
+      "totalCents": 25000,
+      "rows": [
+        {
+          "costItemId": "c4",
+          "totalCents": 25000,
+          "shareCents": 25000
+        }
+      ]
+    },
+    "selfUsedShareCents": 0,
+    "warnings": []
+  },
+  "consumption": []
+}
