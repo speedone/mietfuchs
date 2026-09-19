@@ -791,10 +791,10 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   // Werbungskosten: nur 2025, gruppiert
   assert.equal(r.expenses.totalCents, 100000) // 500 + 300 + 200 €
   assert.equal(r.expenses.labor35aCents, 12000)
-  const grundsteuer = r.expenses.groups.find((g) => g.group === 'Grundsteuer & öffentliche Abgaben')
-  assert.equal(grundsteuer.amountCents, 50000)
-  const laufend = r.expenses.groups.find((g) => g.group === 'Laufende Betriebskosten')
-  assert.equal(laufend.amountCents, 50000) // Müll + Garten
+  const propertyTax = r.expenses.groups.find((g) => g.group === 'Grundsteuer & öffentliche Abgaben')
+  assert.equal(propertyTax.amountCents, 50000)
+  const operating = r.expenses.groups.find((g) => g.group === 'Laufende Betriebskosten')
+  assert.equal(operating.amountCents, 50000) // Müll + Garten
   // Überschuss
   assert.equal(r.surplusSollCents, 1100000) // 1.200.000 − 100.000
   assert.equal(r.surplusPaidCents, 1000000) // 1.100.000 − 100.000
@@ -907,11 +907,11 @@ test('Invariante: Mieteranteile + Vermieteranteil ergeben immer die Gesamtkosten
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
     const s = computeSettlement(db, 2025)
-    const mieter = s.statements.reduce((a, x) => a + x.totalShareCents, 0)
+    const tenantsCents = s.statements.reduce((a, x) => a + x.totalShareCents, 0)
     assert.equal(
-      mieter + s.landlord.totalCents,
+      tenantsCents + s.landlord.totalCents,
       s.totalCostsCents,
-      `Fall ${i}: ${mieter} + ${s.landlord.totalCents} ≠ ${s.totalCostsCents}\n${JSON.stringify(db)}`,
+      `Fall ${i}: ${tenantsCents} + ${s.landlord.totalCents} ≠ ${s.totalCostsCents}\n${JSON.stringify(db)}`,
     )
   }
 })
@@ -936,12 +936,12 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
     const s = computeSettlement(db, 2025)
     for (const item of db.costItems.filter((c) => c.year === 2025 && c.labor35aCents > 0)) {
       const rows = s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === item.id))
-      const kosten = rows.reduce((a, r) => a + r.shareCents, 0)
-      const lohn = rows.reduce((a, r) => a + r.labor35aCents, 0)
-      const soll = Math.min(item.labor35aCents, Math.round((item.labor35aCents * kosten) / item.amountCents))
-      assert.ok(lohn <= item.labor35aCents, `Fall ${i}: mehr bescheinigt (${lohn}) als die Rechnung enthält (${item.labor35aCents})`)
-      assert.equal(lohn, soll, `Fall ${i}: Summe ${lohn} ≠ gerundeter Mieteranteil ${soll}\n${JSON.stringify(db)}`)
-      if (kosten === item.amountCents) assert.equal(lohn, item.labor35aCents, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
+      const costCents = rows.reduce((a, r) => a + r.shareCents, 0)
+      const laborCents = rows.reduce((a, r) => a + r.labor35aCents, 0)
+      const expectedLabor = Math.min(item.labor35aCents, Math.round((item.labor35aCents * costCents) / item.amountCents))
+      assert.ok(laborCents <= item.labor35aCents, `Fall ${i}: mehr bescheinigt (${laborCents}) als die Rechnung enthält (${item.labor35aCents})`)
+      assert.equal(laborCents, expectedLabor, `Fall ${i}: Summe ${laborCents} ≠ gerundeter Mieteranteil ${expectedLabor}\n${JSON.stringify(db)}`)
+      if (costCents === item.amountCents) assert.equal(laborCents, item.labor35aCents, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
     }
     // Reihenfolge ohne Einfluss
     const rev = structuredClone(db)
@@ -951,10 +951,10 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
     const byTenancy = (r) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.total35aCents, st.totalShareCents]).sort())
     assert.equal(byTenancy(computeSettlement(rev, 2025)), byTenancy(s), `Fall ${i}: Ergebnis hängt von der Reihenfolge ab`)
     // Die Kostenverteilung selbst hängt nicht am Lohnanteil
-    const ohne = structuredClone(db)
-    for (const c of ohne.costItems) delete c.labor35aCents
+    const withoutLabor = structuredClone(db)
+    for (const c of withoutLabor.costItems) delete c.labor35aCents
     const shares = (r) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.rows.map((x) => x.shareCents)]))
-    assert.equal(shares(computeSettlement(ohne, 2025)), shares(s), `Fall ${i}: Lohnanteil verändert die Kostenverteilung`)
+    assert.equal(shares(computeSettlement(withoutLabor, 2025)), shares(s), `Fall ${i}: Lohnanteil verändert die Kostenverteilung`)
   }
 })
 
