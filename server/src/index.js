@@ -222,20 +222,69 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   res.json({ file: req.file.filename })
 })
 
-// Eine KI-Auswertung kann auf dem Prozessor minutenlang laufen. Schließt der Browser die
-// Verbindung vorher (Seite verlassen, Abbrechen), soll das Modell nicht umsonst weiterrechnen:
-// Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade hochgeladene Beleg,
-// auf den noch nichts verweist, verschwindet wieder aus dem Archiv.
-function aiRequestContext(req, res) {
+// Antwort der KI-Routen. Eine Auswertung kann auf dem Prozessor minutenlang laufen, und Firefox
+// wartet höchstens 300 Sekunden auf Antwort-Header (network.http.response.timeout). Fordert der
+// Browser mit Accept: application/x-ndjson an, gehen die Header deshalb sofort hinaus. Danach
+// folgt je Zeile ein JSON-Objekt: { type: 'progress', step, phase, chars? } beim Fortschritt,
+// { type: 'heartbeat' } alle zehn Sekunden, zuletzt { type: 'result', data } oder
+// { type: 'error', error, file }. Ohne diesen Accept-Wert bleibt es bei einer JSON-Antwort,
+// etwa für Tabs von vor einem Update.
+//
+// Schließt der Browser die Verbindung vorher (Seite verlassen, Abbrechen), soll das Modell nicht
+// umsonst weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade
+// hochgeladene Beleg, auf den noch nichts verweist, verschwindet wieder aus dem Archiv.
+const HEARTBEAT_MS = 10000
+const PROGRESS_EVERY_MS = 500
+
+function aiResponse(req, res) {
   const controller = new AbortController()
-  const stats = []
+  const streaming = (req.get('accept') ?? '').includes('application/x-ndjson')
+  const writeLine = (obj) => res.write(`${JSON.stringify(obj)}\n`)
+  let heartbeat
+  if (streaming) {
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no', // Reverse-Proxys sollen den Strom nicht puffern
+    })
+    heartbeat = setInterval(() => writeLine({ type: 'heartbeat' }), HEARTBEAT_MS)
+  }
   res.on('close', () => {
+    clearInterval(heartbeat)
     if (res.writableFinished) return
     controller.abort()
     const beleg = belegAus(req)
     if (beleg) fs.rmSync(beleg.path, { force: true })
   })
-  return { signal: controller.signal, stats }
+  let lastKey = ''
+  let lastAt = 0
+  return {
+    signal: controller.signal,
+    stats: [],
+    // Neue Phasen sofort melden, das Mitzählen beim Schreiben höchstens zweimal pro Sekunde
+    onProgress(event) {
+      if (!streaming) return
+      const key = `${event.step}:${event.phase}`
+      const now = Date.now()
+      if (key === lastKey && now - lastAt < PROGRESS_EVERY_MS) return
+      lastKey = key
+      lastAt = now
+      writeLine({ type: 'progress', ...event })
+    },
+    done(data) {
+      clearInterval(heartbeat)
+      if (!streaming) return res.json(data)
+      writeLine({ type: 'result', data })
+      res.end()
+    },
+    fail(data) {
+      clearInterval(heartbeat)
+      if (controller.signal.aborted) return // der Browser wartet nicht mehr
+      if (!streaming) return res.status(502).json(data)
+      writeLine({ type: 'error', ...data })
+      res.end()
+    },
+  }
 }
 
 // PDFs liest der Browser vor dem Hochladen (client/src/pdfIntake.ts): Er schickt die Textebene
@@ -245,13 +294,13 @@ function aiRequestContext(req, res) {
 app.post('/api/extract', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
-  const { signal, stats } = aiRequestContext(req, res)
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
   try {
-    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), { ...auswertungAus(req), signal, stats })
-    res.json({ file: beleg.filename, extraction: result, stats })
+    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), { ...auswertungAus(req), signal, stats, onProgress })
+    answer.done({ file: beleg.filename, extraction: result, stats })
   } catch (err) {
-    if (signal.aborted) return
-    res.status(502).json({ file: beleg.filename, error: String(err.message || err), stats })
+    answer.fail({ file: beleg.filename, error: String(err.message || err), stats })
   }
 })
 
@@ -261,21 +310,21 @@ app.post('/api/extract', belegMitSeiten, async (req, res) => {
 app.post('/api/intake', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
-  const { signal, stats } = aiRequestContext(req, res)
+  const answer = aiResponse(req, res)
+  const { signal, stats, onProgress } = answer
   try {
     const settings = effectiveSettings()
-    const material = { ...auswertungAus(req), signal, stats }
-    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings, { signal, stats })
+    const material = { ...auswertungAus(req), signal, stats, onProgress }
+    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings, { signal, stats, onProgress })
     if (docType === 'zaehlerstand') {
       const reading = await extractMeterReading(beleg.path, beleg.mimetype, settings, material)
-      res.json({ file: beleg.filename, kind: 'zaehler', reading, stats })
+      answer.done({ file: beleg.filename, kind: 'zaehler', reading, stats })
     } else {
       const extraction = await extractFromFile(beleg.path, beleg.mimetype, settings, material)
-      res.json({ file: beleg.filename, kind: 'rechnung', extraction, stats })
+      answer.done({ file: beleg.filename, kind: 'rechnung', extraction, stats })
     }
   } catch (err) {
-    if (signal.aborted) return
-    res.status(502).json({ file: beleg.filename, error: String(err.message || err), stats })
+    answer.fail({ file: beleg.filename, error: String(err.message || err), stats })
   }
 })
 
