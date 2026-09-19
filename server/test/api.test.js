@@ -616,7 +616,7 @@ test('Ollama: ein nicht installiertes Modell nennt den Befehl zum Laden', async 
   await mitOllama(async (s) => {
     const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /„fehlt:4b" ist in Ollama nicht installiert/)
+    assert.match(r.body.error, /„fehlt:4b“ ist in Ollama nicht installiert/)
     assert.match(r.body.error, /ollama pull fehlt:4b/)
   }, { modell: 'fehlt:4b' })
 })
@@ -625,7 +625,7 @@ test('Ollama: ein Modell ohne Bildverständnis bekommt keine Bilder, sondern ein
   await mitOllama(async (s, ollama) => {
     const scan = await hochladen(s, '/api/extract', { seiten: [seite(1)] })
     assert.equal(scan.status, 502)
-    assert.match(scan.body.error, /„text:8b" versteht keine Bilder/)
+    assert.match(scan.body.error, /„text:8b“ versteht keine Bilder/)
     const foto = new FormData()
     foto.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'zaehler.jpg')
     const schuhkarton = await fetch(`${s.base}/api/intake`, { method: 'POST', body: foto })

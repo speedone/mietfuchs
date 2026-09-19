@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
-import { extractFromFile, classifyDocType, extractMeterReading, listOllamaModels, findOllama } from './extract.js'
+import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
+import { listOllamaModels, findOllama } from './ki/ollama.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -60,7 +61,7 @@ const auswertungAus = (req) => ({
   pdfText: typeof req.body?.pdfText === 'string' ? req.body.pdfText : '',
   pages: (req.files?.pages ?? [])
     .filter((p) => p.mimetype.startsWith('image/'))
-    .map((p) => p.buffer.toString('base64')),
+    .map((p) => ({ mimeType: p.mimetype, data: p.buffer.toString('base64') })),
 })
 
 // ---------- Einstellungen ----------

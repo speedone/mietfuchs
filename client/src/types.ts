@@ -185,6 +185,24 @@ export type Settings = {
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später" ausgeblendet wurde
+  // Per Umgebungsvariable festgelegt (NKA_OLLAMA_URL, NKA_OLLAMA_MODEL): nur anzeigen,
+  // der Server übernimmt beim Speichern keine Änderung daran
+  fixedByEnv?: Array<'ollamaUrl' | 'ollamaModel'>
+}
+
+// Ein Modell zur Auswahl (bei Ollama aus /api/ollama/status, listOllamaModels in
+// server/src/ki/ollama.js). Fehlt eine Angabe beim Anbieter, ist sie null.
+export type AiModel = {
+  name: string
+  sizeBytes: number | null
+  vision: boolean | null // null: unbekannt, etwa bei älteren Ollama-Versionen
+  remote: boolean // läuft bei einem Cloud-Dienst, nicht auf diesem Rechner
+}
+export type OllamaStatus = {
+  ok: boolean
+  models?: AiModel[]
+  error?: string
+  found?: string // Adresse, unter der Ollama stattdessen antwortet
 }
 
 // Antwort von /api/update (server/src/update.js)

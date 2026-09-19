@@ -279,7 +279,7 @@ function Befehle({ lines, status }: { lines: string[]; status: UpdateStatus }) {
           ? 'Im Ordner mit der docker-compose.yml nacheinander ausführen:'
           : 'Im Mietfuchs-Ordner nacheinander ausführen und Mietfuchs danach neu starten:'}
       </p>
-      <div className="update-command">
+      <div className="command-box">
         <pre>{lines.map((l) => <code key={l}>{l}</code>)}</pre>
         <button className="btn secondary small" onClick={() => void kopieren()}>Befehle kopieren</button>
       </div>
