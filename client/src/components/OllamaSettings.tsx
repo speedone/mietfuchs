@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { OllamaStatus, Settings } from '../types'
 import { api } from '../api'
-import { ANDERES_MODELL, modelHinweis, modelOptions, pullBefehl } from '../modelForm'
+import { ANDERES_MODELL, ladeAnleitung, modelHinweis, modelOptions } from '../modelForm'
 import { useToast } from './feedback'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung-mit-ollama'
@@ -155,7 +155,7 @@ export function OllamaSettings({ settings, reload }: Props) {
         </div>
       )}
 
-      {hinweis === 'fehlt' && name && <Befehl text={pullBefehl(name)} vorher={`„${name}“ ist nicht installiert. Zum Laden im Terminal ausführen:`} />}
+      {hinweis === 'fehlt' && name && <Laden name={name} ollamaUrl={settings.ollamaUrl} />}
       {hinweis === 'ohneBilder' && (
         <div className="notice">
           „{name}“ versteht keine Bilder. PDFs mit Textebene wertet es aus, Fotos und gescannte PDFs nicht.
@@ -177,11 +177,13 @@ export function OllamaSettings({ settings, reload }: Props) {
   )
 }
 
-function Befehl({ text, vorher }: { text: string; vorher: string }) {
+// Die Anleitung richtet sich nach der gespeicherten Adresse, denn nur dort hat Ollama geantwortet
+function Laden({ name, ollamaUrl }: { name: string; ollamaUrl: string }) {
   const toast = useToast()
+  const { text, befehl } = ladeAnleitung(name, ollamaUrl)
   const kopieren = async () => {
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(befehl)
       toast('Befehl kopiert.')
     } catch {
       toast('Kopieren ging nicht. Bitte den Befehl von Hand markieren.', 'error')
@@ -189,9 +191,9 @@ function Befehl({ text, vorher }: { text: string; vorher: string }) {
   }
   return (
     <>
-      <p>{vorher}</p>
+      <p>„{name}“ ist nicht installiert. {text}</p>
       <div className="command-box">
-        <pre><code>{text}</code></pre>
+        <pre><code>{befehl}</code></pre>
         <button className="btn secondary small" onClick={() => void kopieren()}>Befehl kopieren</button>
       </div>
     </>
