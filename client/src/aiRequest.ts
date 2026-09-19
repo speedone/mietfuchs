@@ -8,8 +8,12 @@ export type AiStep = 'extraction' | 'classification' | 'docType' | 'meterReading
 // 'thinking': ein Reasoning-Modell denkt vor der Antwort nach (nur OpenAI-kompatible Dienste)
 export type AiProgress = { step: AiStep; phase: 'waiting' | 'thinking' | 'writing'; chars?: number }
 
+// Fortschritt beim Laden eines Modells (#33). `phase` ist der Schritt, den Ollama meldet.
+export type PullProgress = { step: 'pull'; phase: string; completed?: number | null; total?: number | null }
+type StreamProgress = AiProgress | PullProgress
+
 type StreamMessage =
-  | ({ type: 'progress' } & AiProgress)
+  | ({ type: 'progress' } & StreamProgress)
   | { type: 'heartbeat' }
   | { type: 'result'; data: unknown }
   | { type: 'error'; error: string }
@@ -57,20 +61,47 @@ export async function aiRequest<T>(
 ): Promise<T> {
   const requestId = newRequestId()
   body.set('requestId', requestId)
+  return withCancel(requestId, signal, async () =>
+    readAnswer<T>(await fetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal }), (p) => onProgress?.(p as AiProgress)))
+}
+
+// Ein Modell über den Server laden (#33). Derselbe Strom wie bei der Auswertung, nur mit
+// JSON-Rumpf. Abbrechen geht genauso über die Kennung; Ollama setzt beim nächsten Versuch dort
+// fort, wo es aufgehört hat.
+export async function pullModel(
+  model: string,
+  { slot = 'text', onProgress, signal }: { slot?: 'text' | 'images'; onProgress?: (progress: PullProgress) => void; signal?: AbortSignal } = {},
+): Promise<{ model: string }> {
+  const requestId = newRequestId()
+  return withCancel(requestId, signal, async () =>
+    readAnswer<{ model: string }>(
+      await fetch('/api/ai/pull', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Accept: NDJSON },
+        body: JSON.stringify({ model, slot, requestId }),
+        signal,
+      }),
+      (p) => onProgress?.(p as PullProgress),
+    ))
+}
+
+// Abbruch ausdrücklich melden: beim Abbrechen per fetch mit keepalive, beim Schließen des Tabs
+// per sendBeacon (fetch käme dort zu spät).
+async function withCancel<T>(requestId: string, signal: AbortSignal | undefined, run: () => Promise<T>): Promise<T> {
   const cancelUrl = `/api/ai/cancel/${requestId}`
   const onAbort = () => { void fetch(cancelUrl, { method: 'POST', keepalive: true }).catch(() => {}) }
   const onPageHide = () => { navigator.sendBeacon?.(cancelUrl) }
   signal?.addEventListener('abort', onAbort, { once: true })
   if (typeof window !== 'undefined') window.addEventListener('pagehide', onPageHide)
   try {
-    return await readAnswer<T>(await fetch(path, { method: 'POST', body, headers: { Accept: NDJSON }, signal }), onProgress)
+    return await run()
   } finally {
     signal?.removeEventListener('abort', onAbort)
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', onPageHide)
   }
 }
 
-async function readAnswer<T>(res: Response, onProgress?: (progress: AiProgress) => void): Promise<T> {
+async function readAnswer<T>(res: Response, onProgress?: (progress: StreamProgress) => void): Promise<T> {
   if (!(res.headers.get('content-type') ?? '').includes(NDJSON) || !res.body) {
     // Server ohne Strom (ältere Version) oder ein Fehler vor dem Start, etwa bei zu großer Datei
     let data: { error?: string }
@@ -84,7 +115,10 @@ async function readAnswer<T>(res: Response, onProgress?: (progress: AiProgress) 
   }
   for await (const line of lines(res.body)) {
     const message = JSON.parse(line) as StreamMessage
-    if (message.type === 'progress') onProgress?.({ step: message.step, phase: message.phase, chars: message.chars })
+    if (message.type === 'progress') {
+      const { type: _type, ...progress } = message
+      onProgress?.(progress as StreamProgress)
+    }
     else if (message.type === 'result') return message.data as T
     else if (message.type === 'error') throw new Error(message.error)
   }

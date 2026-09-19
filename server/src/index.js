@@ -8,7 +8,8 @@ import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
-import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
+import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.js'
+import { createRecommendations } from './ai/recommendations.js'
 import { listOpenAiModels } from './ai/openai.js'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.js'
@@ -551,6 +552,40 @@ async function aiStatus(slot) {
 
 app.get('/api/ai/presets', (req, res) => res.json(PRESETS.map((p) => presetById(p.id))))
 app.get('/api/ai/status', async (req, res) => res.json(await aiStatus(req.query.slot === 'images' ? 'images' : 'text')))
+
+// Empfehlungen, welches Modell taugt (#33). Nachgeladen wird nur mit derselben Zustimmung wie
+// beim Update-Hinweis, sonst gilt die mitgelieferte Liste (siehe ai/recommendations.js).
+const recommendations = createRecommendations()
+app.get('/api/ai/recommendations', async (req, res) => {
+  res.json(await recommendations.get({ consented: getDb().settings.updateCheck === 'on' }))
+})
+
+// Ein Modell über Ollama laden. Nur für ein Ollama auf diesem Rechner oder im Heimnetz: Dienste
+// im Internet bringen ihre Modelle mit. Die Antwort ist derselbe Strom wie bei der Auswertung,
+// mit Fortschritt, Lebenszeichen und Abbruch über POST /api/ai/cancel/<requestId>.
+const MODEL_NAME = /^[\w.:/-]{1,100}$/
+
+app.post('/api/ai/pull', async (req, res) => {
+  const slot = req.body?.slot === 'images' ? 'images' : 'text'
+  const ai = effectiveSettings().ai
+  if (slot === 'images' && !ai.images) return res.status(400).json({ error: 'Für diesen Platz ist kein KI-Anbieter eingerichtet.' })
+  const config = providerConfig(ai, { images: slot === 'images' })
+  if (config.provider !== 'ollama' || config.preset === 'ollama-cloud' || isExternalUrl(config.url)) {
+    return res.status(400).json({ error: 'Modelle lädt nur ein Ollama auf diesem Rechner oder im Heimnetz. Ein Dienst im Internet bringt seine Modelle mit.' })
+  }
+  const model = typeof req.body?.model === 'string' ? req.body.model.trim() : ''
+  if (!MODEL_NAME.test(model)) return res.status(400).json({ error: 'Der Modellname enthält unerlaubte Zeichen.' })
+  const answer = aiResponse(req, res)
+  try {
+    await pullOllamaModel(config, model, {
+      signal: answer.signal,
+      onProgress: (event) => answer.onProgress({ step: 'pull', phase: event.status, completed: event.completed, total: event.total }),
+    })
+    answer.done({ model })
+  } catch (err) {
+    answer.fail({ model, error: String(err.message || err) })
+  }
+})
 
 // Für Tabs von vor dem Update: `models` als Liste von Namen, sonst bliebe die Seite weiß. Die
 // Einzelheiten stehen in `modelDetails`.

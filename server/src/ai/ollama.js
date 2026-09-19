@@ -217,6 +217,36 @@ export function ollamaProvider(config) {
   }
 }
 
+// Ein Modell laden (#33). Ollama streamt den Fortschritt: erst das Verzeichnis, dann je Schicht
+// `total` und `completed` in Bytes, zuletzt `success`. Ein Abbruch ist harmlos, Ollama setzt
+// beim nächsten Versuch dort fort, wo es aufgehört hat. Das Zeitlimit ist großzügig: Mehrere
+// Gigabyte brauchen über eine langsame Leitung Stunden.
+const PULL_TIMEOUT_MS = 6 * 60 * 60 * 1000
+
+export async function pullOllamaModel(config, model, { signal, onProgress } = {}) {
+  return request(config, '/api/pull', {
+    body: { model, stream: true },
+    timeoutMs: PULL_TIMEOUT_MS,
+    signal,
+    consume: async (res) => {
+      let last = null
+      for await (const line of readLines(res.body)) {
+        let part
+        try {
+          part = JSON.parse(line)
+        } catch {
+          throw new OllamaError(`Ollama lieferte eine unlesbare Antwort: ${maskSecret(config.apiKey, line).slice(0, 200)}`)
+        }
+        if (part.error) throw new OllamaError(`Ollama meldet einen Fehler: ${maskSecret(config.apiKey, part.error).slice(0, 300)}`)
+        last = part
+        onProgress?.({ status: String(part.status ?? ''), completed: part.completed ?? null, total: part.total ?? null })
+      }
+      if (last?.status !== 'success') throw new OllamaError('Der Download wurde nicht abgeschlossen. Ein neuer Versuch setzt dort an, wo er aufgehört hat.')
+      return { model }
+    },
+  })
+}
+
 // Installierte Modelle für die Auswahl in den Einstellungen, mit Größe, Bildverständnis (null:
 // unbekannt) und Cloud-Kennzeichen. Reine Embedding-Modelle können keine Rechnung lesen und
 // fehlen deshalb.

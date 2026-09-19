@@ -6,6 +6,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Hinzugefügt
+
+- **Modelle lassen sich aus Mietfuchs laden.** In den Einstellungen steht neben einem fehlenden
+  Modell ein Knopf „Modell laden“: Mietfuchs holt es über Ollama und zeigt den Fortschritt.
+  Abbrechen ist möglich, ein späterer Versuch setzt dort an, wo der letzte aufgehört hat. Vorher
+  fragt Mietfuchs nach, denn Modelle sind mehrere Gigabyte groß. Der Befehl fürs Terminal steht
+  weiterhin daneben. ([#33](https://github.com/speedone/mietfuchs/issues/33))
+- **Empfehlungen, welches Modell taugt.** Die Einstellungen zeigen einige Modelle mit Größe,
+  Bildverständnis und den Messwerten des KI-Prüflaufs. Mit eingeschalteter Update-Prüfung holt
+  Mietfuchs höchstens einmal am Tag die aktuelle Liste aus dem Repo, sonst gilt die
+  mitgelieferte. Empfehlungen belegen nur vor, jedes andere Modell lässt sich weiterhin
+  eintragen. ([#33](https://github.com/speedone/mietfuchs/issues/33))
+
 ## [0.6.0] – 2026-09-19
 
 ### Hinzugefügt
