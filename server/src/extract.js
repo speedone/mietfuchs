@@ -52,6 +52,62 @@ const SCHEMA = {
 
 const CATEGORY_ENUM = SCHEMA.properties.positions.items.properties.category.enum
 
+const basisVon = (settings) => settings.ollamaUrl.replace(/\/+$/, '')
+
+// Gemeinsamer Weg für alle Anfragen an Ollama. Übersetzt die häufigen Fehler in Meldungen,
+// mit denen man in der Oberfläche etwas anfangen kann: Ollama läuft nicht oder unter einer
+// anderen Adresse, das Modell ist nicht geladen, die Antwort dauert zu lange.
+async function ollama(settings, pfad, { body, timeoutMs }) {
+  const base = basisVon(settings)
+  let res
+  try {
+    res = await fetch(`${base}${pfad}`, {
+      method: body ? 'POST' : 'GET',
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch (err) {
+    if (err?.name === 'TimeoutError') {
+      throw new Error(`Ollama hat nicht innerhalb von ${Math.round(timeoutMs / 1000)} Sekunden geantwortet. Ohne Grafikkarte ist ein großes Modell oft zu langsam, dann hilft ein kleineres.`)
+    }
+    throw new Error(`Ollama ist unter ${base} nicht erreichbar. Läuft Ollama? Die Adresse steht in den Einstellungen.`)
+  }
+  if (res.status === 404 && body?.model) {
+    throw new Error(`Das Modell „${body.model}" ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${body.model}" laden.`)
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Ollama antwortet mit ${res.status}: ${text.slice(0, 300)}`)
+  }
+  return res.json()
+}
+
+// Ein Chat-Aufruf mit erzwungenem JSON-Schema; liefert das geparste Ergebnis
+async function chatJson(settings, message, format, timeoutMs) {
+  const data = await ollama(settings, '/api/chat', {
+    body: { model: settings.ollamaModel, messages: [message], stream: false, format, options: { temperature: 0 } },
+    timeoutMs,
+  })
+  return JSON.parse(data.message?.content ?? '{}')
+}
+
+// Fähigkeiten laut Ollama, etwa ['completion', 'vision']. Ältere Versionen kennen das Feld
+// nicht, dann null.
+async function faehigkeiten(settings, model) {
+  const info = await ollama(settings, '/api/show', { body: { model }, timeoutMs: 10000 })
+  return { capabilities: Array.isArray(info.capabilities) ? info.capabilities : null, remote: Boolean(info.remote_host) }
+}
+
+// Vor dem Senden von Bildern: Ein Modell ohne Bildverständnis würde sie übergehen und sich
+// eine Rechnung ausdenken. Kennt Ollama die Fähigkeiten nicht, wird es versucht.
+async function bilderPruefen(settings) {
+  const { capabilities } = await faehigkeiten(settings, settings.ollamaModel)
+  if (capabilities && !capabilities.includes('vision')) {
+    throw new Error(`Das Modell „${settings.ollamaModel}" versteht keine Bilder. Für Fotos und gescannte PDFs in den Einstellungen ein Modell mit Bildverständnis wählen.`)
+  }
+}
+
 const PROMPT = `Du bist ein Assistent für die Nebenkostenabrechnung eines privaten Vermieters in Deutschland.
 Analysiere die folgende Rechnung und extrahiere die Daten als JSON.
 
@@ -91,7 +147,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
 
-async function classifyPositions(base, model, vendor, positions) {
+async function classifyPositions(settings, vendor, positions) {
   const schema = {
     type: 'object',
     properties: {
@@ -115,28 +171,13 @@ Positionen:
 ${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
 
 Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      stream: false,
-      format: schema,
-      options: { temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(120000),
-  })
-  if (!res.ok) throw new Error(`Ollama ${res.status}`)
-  const data = await res.json()
-  const { categories } = JSON.parse(data.message?.content ?? '{}')
+  const { categories } = await chatJson(settings, { role: 'user', content: prompt }, schema, 120000)
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
   return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
 }
 
 // `pdfText` und `pages` (Base64) liefert der Browser für PDFs, siehe Kopf der Datei.
 export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [] } = {}) {
-  const base = settings.ollamaUrl.replace(/\/+$/, '')
   const message = { role: 'user', content: PROMPT }
 
   if (mimetype === 'application/pdf') {
@@ -157,30 +198,14 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: settings.ollamaModel,
-      messages: [message],
-      stream: false,
-      format: SCHEMA,
-      options: { temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(300000),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
-  }
-  const data = await res.json()
-  const result = JSON.parse(data.message?.content ?? '{}')
+  if (message.images) await bilderPruefen(settings)
+  const result = await chatJson(settings, message, SCHEMA, 300000)
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
-      result.positions = await classifyPositions(base, settings.ollamaModel, result.vendor, result.positions)
+      result.positions = await classifyPositions(settings, result.vendor, result.positions)
     } catch {
       // bewusst ignoriert
     }
@@ -205,23 +230,9 @@ Antworte nur mit der Kategorie.`
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
 export async function classifyDocType(filePath, mimetype, settings) {
   if (!mimetype.startsWith('image/')) return 'rechnung'
-  const base = settings.ollamaUrl.replace(/\/+$/, '')
+  await bilderPruefen(settings)
   const image = fs.readFileSync(filePath).toString('base64')
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: settings.ollamaModel,
-      messages: [{ role: 'user', content: DOCTYPE_PROMPT, images: [image] }],
-      stream: false,
-      format: DOCTYPE_SCHEMA,
-      options: { temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(120000),
-  })
-  if (!res.ok) throw new Error(`Ollama ${res.status}`)
-  const data = await res.json()
-  const { docType } = JSON.parse(data.message?.content ?? '{}')
+  const { docType } = await chatJson(settings, { role: 'user', content: DOCTYPE_PROMPT, images: [image] }, DOCTYPE_SCHEMA, 120000)
   return docType === 'zaehlerstand' ? 'zaehlerstand' : 'rechnung'
 }
 
@@ -242,7 +253,6 @@ Lies ab und gib JSON zurück:
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
 export async function extractMeterReading(filePath, mimetype, settings, { pages = [] } = {}) {
-  const base = settings.ollamaUrl.replace(/\/+$/, '')
   const message = { role: 'user', content: METER_PROMPT }
   if (mimetype === 'application/pdf') {
     if (pages.length === 0) throw new Error(OHNE_INHALT)
@@ -252,30 +262,44 @@ export async function extractMeterReading(filePath, mimetype, settings, { pages 
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: settings.ollamaModel,
-      messages: [message],
-      stream: false,
-      format: METER_SCHEMA,
-      options: { temperature: 0 },
-    }),
-    signal: AbortSignal.timeout(300000),
-  })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Ollama antwortet mit ${res.status}: ${body.slice(0, 300)}`)
-  }
-  const data = await res.json()
-  return JSON.parse(data.message?.content ?? '{}')
+  await bilderPruefen(settings)
+  return chatJson(settings, message, METER_SCHEMA, 300000)
 }
 
+// Installierte Modelle für die Auswahl in den Einstellungen. `vision` sagt, ob das Modell
+// Bilder versteht (null: Ollama kennt die Fähigkeiten nicht). `remote` kennzeichnet Modelle,
+// die Ollama an einen Cloud-Dienst weiterreicht, die Belege verlassen dann den Rechner.
+// Reine Embedding-Modelle können keine Rechnung lesen und fehlen deshalb.
 export async function listOllamaModels(settings) {
-  const base = settings.ollamaUrl.replace(/\/+$/, '')
-  const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(5000) })
-  if (!res.ok) throw new Error(`Ollama antwortet mit ${res.status}`)
-  const data = await res.json()
-  return (data.models || []).map((m) => m.name)
+  const { models = [] } = await ollama(settings, '/api/tags', { timeoutMs: 5000 })
+  const liste = await Promise.all(
+    models.map(async (m) => {
+      const info = await faehigkeiten(settings, m.name).catch(() => ({ capabilities: null, remote: false }))
+      if (info.capabilities && !info.capabilities.includes('completion')) return null
+      return {
+        name: m.name,
+        sizeBytes: m.size ?? null,
+        vision: info.capabilities ? info.capabilities.includes('vision') : null,
+        remote: info.remote || Boolean(m.remote_host),
+      }
+    }),
+  )
+  return liste.filter(Boolean)
+}
+
+// Sucht Ollama unter den üblichen Adressen, wenn die eingestellte nicht antwortet: auf diesem
+// Rechner, vom Docker-Container aus auf dem Host und als Dienst `ollama` im Compose-Profil.
+// Die erste Adresse der Liste, die wie Ollama antwortet, gewinnt.
+export async function findOllama(kandidaten) {
+  const antworten = await Promise.all(
+    kandidaten.map(async (url) => {
+      try {
+        const res = await fetch(`${url}/api/version`, { signal: AbortSignal.timeout(1500) })
+        return res.ok && typeof (await res.json()).version === 'string'
+      } catch {
+        return false
+      }
+    }),
+  )
+  return kandidaten.find((_, i) => antworten[i]) ?? null
 }
