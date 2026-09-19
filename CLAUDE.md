@@ -48,11 +48,18 @@ Container, mehr als Docker braucht der Rechner nicht. Das Paket legt die Program
 `Terminal=true`, weil das Fenster der sichtbare Weg zum Beenden ist) und das Symbol als SVG und
 PNG. Dort installiert, kann der Server nicht neben sich schreiben, deshalb liegen die Daten
 dann in `~/.local/share/mietfuchs` (XDG; entsprechend unter Windows und macOS). Die Regel dafür
-steht in `chooseDataDir`: ein Systemort (`/usr`, `/opt`, Programme) führt immer in den
+steht in `systemLocation` ([server/src/paths.js](server/src/paths.js), gemeinsame Quelle für
+Datenordner und Betriebsart): ein Systemort (`/usr`, `/opt`, `Program Files`) führt immer in den
 Benutzerordner, auch mit Schreibrecht, sonst würde ein Start als Administrator die Daten dorthin
-legen, wo der normale Benutzer sie nicht wiederfindet. Vor dem Release wird jedes Format in
-einem Container seiner Distribution installiert, als gewöhnlicher Benutzer gestartet und mit
-[scripts/smoke-test.mjs](scripts/smoke-test.mjs) geprüft.
+legen, wo der normale Benutzer sie nicht wiederfindet. Der Heimatordner wird erst gesucht, wenn
+er gebraucht wird: `os.homedir()` wirft ohne `HOME` und ohne Eintrag in der Benutzerdatenbank
+(Container mit `--user`), und das darf den Start nicht verhindern. Dieselbe Regel ergibt die
+Betriebsart `package` ([server/src/version.js](server/src/version.js)): Der Update-Hinweis
+erklärt dann das Neuinstallieren des Pakets statt des Austauschens der Datei. Beim Start nennt
+der Server den Datenordner in der zweiten Zeile. Vor dem Release wird jedes Format in einem
+Container seiner Distribution installiert, als gewöhnlicher Benutzer gestartet und mit
+[scripts/smoke-test.mjs](scripts/smoke-test.mjs) geprüft (`--mode package`).
+
 **Docker-Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) baut das
 [Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
 und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
@@ -349,7 +356,8 @@ Oberfläche liegt in [client/src/update.ts](client/src/update.ts). Ob später ei
 dazukommt, ist offen (Issue #20). Die eigene Version liest
 [server/src/version.js](server/src/version.js) per JSON-Import aus `server/package.json`, den
 Bun beim Kompilieren einbettet. Die Betriebsart ergibt sich aus `globalThis.Bun`
-(Programmdatei) bzw. `NKA_RUNTIME=docker` (setzt das Dockerfile), sonst `npm`.
+(Programmdatei, an einem Systemort `package`, siehe Linux-Pakete) bzw. `NKA_RUNTIME=docker`
+(setzt das Dockerfile), sonst `npm`.
 `NKA_UPDATE_URL` lenkt die Abfrage auf einen nachgebauten Server.
 
 **Client** ([client/src/](client/src/)): React ohne Router — `App.tsx` schaltet per State

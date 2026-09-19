@@ -72,6 +72,18 @@ describe('Anleitung je Betriebsart', () => {
     })
   })
 
+  test('Aus einem Paket installiert: Release-Seite statt einer einzelnen Datei', () => {
+    // Welche der drei Paketdateien passt, weiß nur die Distribution des Nutzers. Ein Download
+    // der Programmdatei führte hier in die Irre: Sie gehört nach /usr/bin, nicht daneben.
+    const releasePage = 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0'
+    expect(updateGuide(status({ mode: 'package', downloadUrl: null }))).toEqual({
+      kind: 'download', href: releasePage, system: 'package', newTab: true,
+    })
+    expect(updateGuide(status({ mode: 'package', downloadUrl: null, releaseUrl: null }))).toMatchObject({
+      href: 'https://github.com/speedone/mietfuchs/releases/latest', system: 'package',
+    })
+  })
+
   test('Docker: Befehle zum Aktualisieren des Containers, einzeln statt mit &&', () => {
     // && kennt die Windows PowerShell 5.1 nicht. Einzelne Zeilen gehen in jeder Shell.
     expect(updateGuide(status({ mode: 'docker', downloadUrl: null }))).toEqual({
