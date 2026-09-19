@@ -346,14 +346,20 @@ export function taxReport(db, year) {
 
 // ---------- Hilfen ----------
 
-// Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder)
-function largestRemainder(totalCents, raws) {
+// Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder).
+// `keys` enthält je Rohanteil eine stabile Kennung (die ID des Mietverhältnisses). Sie
+// entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt — sonst hinge das an
+// der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
+// Verglichen wird Zeichen für Zeichen statt mit localeCompare, damit das Ergebnis nicht von
+// der Locale der Laufzeit abhängt.
+function largestRemainder(totalCents, raws, keys) {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
   let rest = totalCents - floors.reduce((a, b) => a + b, 0)
+  const byKey = (i, j) => (keys[i] < keys[j] ? -1 : keys[i] > keys[j] ? 1 : 0)
   const order = raws
     .map((r, i) => [r - Math.floor(r), i])
-    .sort((a, b) => b[0] - a[0])
+    .sort((a, b) => b[0] - a[0] || byKey(a[1], b[1]))
   for (let k = 0; rest > 0; k++, rest--) floors[order[k % order.length][1]]++
   for (let k = 0; rest < 0; k++, rest++) floors[order[order.length - 1 - (k % order.length)][1]]--
   return floors
@@ -561,7 +567,7 @@ export function computeSettlement(db, year) {
     const rawSum = targets.reduce((a, x) => a + x.raw, 0)
     let shares
     if (targets.length > 0 && Math.abs(item.amountCents - rawSum) < 0.5) {
-      shares = largestRemainder(item.amountCents, targets.map((x) => x.raw))
+      shares = largestRemainder(item.amountCents, targets.map((x) => x.raw), targets.map((x) => String(x.t.id)))
     } else {
       shares = targets.map((x) => Math.round(x.raw))
     }

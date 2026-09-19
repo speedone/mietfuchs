@@ -62,6 +62,23 @@ test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', () => {
   assert.ok(Math.abs(a.totalShareCents - 57143) <= 1)
 })
 
+test('Restcent bei gleichen Anteilen: entscheidet die Kennung des Mietverhältnisses, nicht die Reihenfolge', () => {
+  // 100,00 € auf drei gleich große Wohnungen: 33,33 € je Wohnung, ein Cent bleibt übrig.
+  // Wer ihn trägt, ist fachlich beliebig — aber dieselben Daten müssen immer dieselbe
+  // Abrechnung ergeben, egal in welcher Reihenfolge sie in der Datei stehen.
+  const make = (order) => ({
+    settings: {},
+    units: order.map((n) => ({ id: `u${n}`, name: `Wohnung ${n}`, areaM2: 70, participates: true })),
+    tenancies: order.map((n) => ({ id: `t${n}`, unitId: `u${n}`, tenantName: `Mieter ${n}`, persons: 2, start: '2020-01-01', end: null })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area' }],
+  })
+  for (const order of [[1, 2, 3], [3, 2, 1], [2, 3, 1]]) {
+    const s = computeSettlement(make(order), 2025)
+    const share = (id) => s.statements.find((x) => x.tenancyId === id).totalShareCents
+    assert.deepEqual([share('t1'), share('t2'), share('t3')], [3334, 3333, 3333], `Reihenfolge ${order.join(', ')}`)
+  }
+})
+
 test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', () => {
   const db = makeDb()
   // Familie B zieht Ende März aus, Wohnung steht danach leer
