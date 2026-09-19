@@ -8,6 +8,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Hinzugefügt
 
+- **KI-Dienste neben Ollama.** In den Einstellungen lässt sich statt Ollama auf dem eigenen
+  Rechner auch ein Dienst im Internet einstellen: OpenAI, IONOS AI Model Hub, Mistral, Ollama
+  Cloud, LM Studio oder jeder andere OpenAI-kompatible Dienst. Vorlagen belegen die Adresse
+  vor, ändern lässt sich alles. Ein Beleg dauert dort Sekunden statt Minuten und kostet
+  Bruchteile eines Cents. ([#18](https://github.com/speedone/mietfuchs/issues/18))
+- **Belege gehen erst nach einer Bestätigung aus dem Haus.** Zeigt die Adresse ins Internet,
+  oder reicht Ollama das Modell an einen Cloud-Dienst weiter, fragt Mietfuchs einmal nach,
+  mit Link zu den Bedingungen des Anbieters. Die Bestätigung gilt für genau diese Adresse und
+  lässt sich widerrufen. Kosten und Schnellerfassung zeigen, wohin die Belege gehen.
+  ([#18](https://github.com/speedone/mietfuchs/issues/18))
+- **API-Schlüssel liegen getrennt von der Datenbank** in `data/secrets.json`, unter Linux und
+  macOS nur für den eigenen Benutzer lesbar. Sie sind nicht im Backup und gehen nie an den
+  Browser zurück. Im Container legen `NKA_AI_API_KEY` oder `NKA_AI_API_KEY_FILE` (Docker-Secret)
+  den Schlüssel fest. ([#18](https://github.com/speedone/mietfuchs/issues/18))
+- **Erweiterte Einstellungen für die KI:** ein eigener Anbieter für Fotos und Scans, Zeitlimit,
+  Kontextgröße, Länge der Antwort, Stufe der strukturierten Ausgabe, Denkaufwand und
+  zusätzliche Hinweise an das Modell. Dazu die Variablen `NKA_AI_PROVIDER`, `NKA_AI_URL`,
+  `NKA_AI_MODEL` und `NKA_AI_MAX_TOKENS`. ([#18](https://github.com/speedone/mietfuchs/issues/18))
 - **Programmdateien für Linux und Windows auf ARM**, etwa für einen Raspberry Pi 4 oder 5 mit
   64-Bit-System oder Windows-Laptops mit Snapdragon-Prozessor. Der Update-Hinweis kennt die
   neuen Dateien. ([#22](https://github.com/speedone/mietfuchs/issues/22))

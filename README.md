@@ -21,7 +21,7 @@ für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB)
 - 💶 **Mietkonto** — Soll/Ist je Monat, offene Rückstände auf einen Blick
 - 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen, Werbungskosten und Überschuss aufs Jahr
-- 🤖 **Optionale KI-Belegauswertung** gegen eine lokale [Ollama](https://ollama.com)-Instanz
+- 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
 - 🐳 **In Minuten startklar** — `npm run dev` oder `docker compose up`
 
 ## Screenshots
@@ -84,9 +84,9 @@ signiert ist:
   (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
 Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`db.json` + Belege).
-Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung-mit-ollama)
-braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) — ohne das
-funktioniert die Abrechnung trotzdem vollständig.
+Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung)
+braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
+einem KI-Dienst — ohne beides funktioniert die Abrechnung trotzdem vollständig.
 
 ## Aus dem Quellcode starten (für Entwickler)
 
@@ -147,23 +147,31 @@ Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren)
 Die Abrechnung folgt dem **Abflussprinzip**: Eine Kostenposition gehört zu dem Jahr, dem sie
 beim Erfassen zugeordnet wird (in der Regel das Zahlungsjahr).
 
-## KI-Belegauswertung mit Ollama
+## KI-Belegauswertung
 
-Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen, das auf deinem
-eigenen Rechner läuft ([Ollama](https://ollama.com)). Das Modell schlägt Positionen, Beträge
-und Kostenarten vor, übernommen wird erst, was du geprüft hast. Die Belege verlassen dabei
-deinen Rechner nicht. Ohne KI funktioniert Mietfuchs vollständig.
+Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen. Das Modell
+schlägt Positionen, Beträge und Kostenarten vor, übernommen wird erst, was du geprüft hast.
+Ohne KI funktioniert Mietfuchs vollständig.
 
-### Einrichten
+Zwei Wege stehen zur Wahl:
+
+- **Auf dem eigenen Rechner** mit [Ollama](https://ollama.com) oder LM Studio. Die Belege
+  verlassen den Rechner nicht. Ohne Grafikkarte dauert eine Auswertung Minuten.
+- **Über einen Dienst im Internet** wie OpenAI, IONOS oder Mistral. Das dauert Sekunden statt
+  Minuten und kostet Bruchteile eines Cents je Beleg, dafür verlassen die Belege das Haus.
+  Mietfuchs schickt erst dorthin, wenn du das in den Einstellungen einmal bestätigt hast.
+
+### Einrichten mit Ollama
 
 1. **Ollama installieren** von [ollama.com/download](https://ollama.com/download) (Windows,
    macOS, Linux). Danach läuft Ollama im Hintergrund.
 2. **Ein Modell laden**, im Terminal `ollama pull qwen3.5:4b` (voreingestellt). Welches Modell
    passt, steht unten. Der Download ist 3,4 GB groß.
-3. **In Mietfuchs prüfen:** *Einstellungen*, Karte „KI-Belegauswertung mit Ollama“. Mietfuchs
-   findet Ollama unter `http://localhost:11434` selbst und listet die installierten Modelle
-   auf, jeweils mit Größe und ob es Bilder versteht. Modell wählen und speichern. Antwortet
-   Ollama unter einer anderen üblichen Adresse, schlägt Mietfuchs sie zur Übernahme vor.
+3. **In Mietfuchs prüfen:** *Einstellungen*, Karte „KI-Belegauswertung“. Voreingestellt ist
+   „Ollama auf diesem Rechner“. Mietfuchs findet Ollama unter `http://localhost:11434` selbst
+   und listet die installierten Modelle auf, jeweils mit Größe und ob sie Bilder verstehen.
+   Modell wählen und speichern. Antwortet Ollama unter einer anderen üblichen Adresse, schlägt
+   Mietfuchs sie zur Übernahme vor.
 4. **Ausprobieren:** unter *Kosten* oder in der *Schnellerfassung* einen Beleg in die Fläche
    ziehen.
 
@@ -171,19 +179,61 @@ PDFs mit Textebene liest jedes Sprachmodell. Gescannte PDFs und Fotos brauchen e
 das Bilder versteht. Bei Scans schickt der Browser die ersten vier Seiten als Bilder mit. Ein
 Modell ohne Bildverständnis bekommt keine Bilder, Mietfuchs meldet das stattdessen.
 
+### Einen Dienst im Internet nutzen
+
+In den Einstellungen bei „Anbieter“ eine Vorlage wählen. Sie belegt nur die Adresse vor,
+ändern lässt sich alles:
+
+| Vorlage | Läuft wo | Schlüssel nötig |
+| --- | --- | --- |
+| Ollama auf diesem Rechner (Standard) | hier | nein |
+| Ollama auf einem anderen Rechner | im Heimnetz oder bei dir im Internet | je nach Aufbau |
+| LM Studio | hier | nein |
+| Ollama Cloud | USA und andere | ja |
+| OpenAI | USA (EU nur nach Freischaltung) | ja |
+| IONOS AI Model Hub | Deutschland | ja |
+| Mistral | EU | ja |
+| Eigener OpenAI-kompatibler Dienst | wie du es einrichtest | je nach Dienst |
+
+Dann den Schlüssel eintragen („Schlüssel bekommen …“ führt zur passenden Seite des Anbieters),
+ein Modell wählen und speichern. Zeigt die Adresse aus dem Haus, erscheint zuletzt die Frage
+nach der Bestätigung. Erst danach schickt Mietfuchs Belege dorthin.
+
+**Datenschutz.** In Belegen stehen personenbezogene Daten, etwa Namen und Adressen von
+Mietern. Wer sie einem Dienst gibt, braucht dafür in der Regel einen Vertrag zur
+Auftragsverarbeitung mit dem Anbieter. Die folgenden Angaben stammen aus der Dokumentation der
+Anbieter, Stand September 2026, und können sich ändern:
+
+| Anbieter | Verarbeitung | Training mit den Daten | Aufbewahrung | Vertrag |
+| --- | --- | --- | --- | --- |
+| [OpenAI](https://openai.com/policies/data-processing-addendum/) | USA, EU nach Freischaltung | nein | bis 30 Tage zur Missbrauchsprüfung | online |
+| [IONOS](https://docs.ionos.com/cloud/ai/ai-model-hub/governance-and-compliance/data-handling) | nur Deutschland | nein | keine Protokolle | gilt ohne Unterschrift |
+| [Mistral](https://legal.mistral.ai/terms/data-processing-addendum/) | EU | im kostenlosen Tarif ja, abschaltbar | 30 Tage | online |
+| [Ollama Cloud](https://ollama.com/privacy) | vorwiegend USA | nein | keine Protokolle | keiner veröffentlicht |
+
+**Kosten.** Gemessen mit `gpt-5.4-nano` bei OpenAI an den erfundenen Belegen des Prüflaufs:
+13 Auswertungen als Text, Scan und Foto kosteten zusammen etwa 1,6 Cent, also gut 0,1 Cent je
+Beleg. Größere Modelle kosten ein Vielfaches, bleiben aber für ein Mietshaus im Cent-Bereich.
+
+**Schlüssel.** Sie liegen in `data/secrets.json` neben der Datenbank, unter Linux und macOS nur
+für den eigenen Benutzer lesbar, und sind **nicht im Backup**. Nach einer Wiederherstellung auf
+einem anderen Rechner trägt man sie dort neu ein. Mietfuchs gibt einen Schlüssel nie an den
+Browser zurück und filtert ihn aus Fehlermeldungen.
+
 ### Welches Modell?
 
-Voreingestellt ist `qwen3.5:4b`. Die Übersicht zeigt, wie gut einige Modelle frei erfundene
-Beispielbelege gelesen haben und wie lange sie im Schnitt brauchten. Gemessen hat das der
-[KI-Prüflauf](.github/workflows/ai-eval.yml) auf einem Rechner ohne Grafikkarte mit 4
-Prozessorkernen und 16 GB Arbeitsspeicher, Stand September 2026. Ein üblicher Laptop ist meist
-etwas schneller.
+Voreingestellt ist `qwen3.5:4b` auf dem eigenen Rechner. Die Übersicht zeigt, wie gut einige
+Modelle frei erfundene Beispielbelege gelesen haben und wie lange sie im Schnitt brauchten.
+Gemessen hat das der [KI-Prüflauf](.github/workflows/ai-eval.yml) auf einem Rechner ohne
+Grafikkarte mit 4 Prozessorkernen und 16 GB Arbeitsspeicher, Stand September 2026. Ein üblicher
+Laptop ist meist etwas schneller.
 
 | Modell | Arbeitsspeicher | PDF mit Textebene | Scan | Handyfoto |
 | --- | --- | --- | --- | --- |
 | `qwen3.5:4b` (voreingestellt) | 3,6 GB | 93 %, 2 Min. | 75 %, 6 Min. | 56 %, 4,5 Min. |
 | `gemma4:12b` | 9,2 GB | 95 %, 5,5 Min. | 83 %, 6,5 Min. | 92 %, 5 Min. |
 | `minicpm-v4.5:8b` | 7,8 GB | 86 %, 2 Min. | 64 %, 6,5 Min. | 61 %, 5 Min. |
+| `gpt-5.4-nano` (OpenAI, Dienst) | – | 95 %, 4 Sek. | 86 %, 5 Sek. | 79 %, 13 Sek. |
 
 Die Prozentzahl ist der Anteil richtig gelesener Angaben: Summe, Aussteller, Beträge,
 Kostenarten und §35a-Anteil. Wer vor allem Fotos und Scans auswertet und genug
@@ -196,9 +246,9 @@ nicht in dieser Liste steht.
 
 Auf einem Rechner ohne Grafikkarte rechnet das Modell auf dem Prozessor. Ein PDF mit Textebene
 braucht dann meist unter einer Minute, ein gescannter Beleg einige Minuten. Mit Grafikkarte
-oder auf einem Mac mit Apple-Chip geht es deutlich schneller. Während der Auswertung zeigt
-Mietfuchs, was das Modell gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das
-Modell.
+oder auf einem Mac mit Apple-Chip geht es deutlich schneller, bei einem Dienst im Internet
+dauert ein Beleg wenige Sekunden. Während der Auswertung zeigt Mietfuchs, was das Modell
+gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das Modell.
 
 ### Ollama und Docker
 
@@ -223,14 +273,46 @@ dort ist die Ollama-App die bessere Wahl.
 
 ### Für Fortgeschrittene
 
-Umgebungsvariablen, etwa in einer `.env`-Datei neben der `docker-compose.yml`:
+Unter *Einstellungen* klappt „Erweitert“ weitere Möglichkeiten auf: ein **eigener Anbieter für
+Fotos und Scans** (so liest etwa ein Dienst im Internet die Bilder, während Belege mit
+Textebene auf dem eigenen Rechner bleiben), Zeitlimit, Kontextgröße, Länge der Antwort, die
+Stufe der strukturierten Ausgabe, der Denkaufwand und zusätzliche Hinweise an das Modell.
+
+Dasselbe lässt sich über Umgebungsvariablen festlegen, etwa in einer `.env`-Datei neben der
+`docker-compose.yml`. Gesetzte Werte gelten vor den gespeicherten, das Feld in den Einstellungen
+ist dann gesperrt, und in die `db.json` gelangen sie nicht:
 
 | Variable | Wirkung |
 | --- | --- |
-| `NKA_OLLAMA_URL` | Adresse von Ollama fest vorgeben. Das Feld in den Einstellungen ist dann gesperrt. |
-| `NKA_OLLAMA_MODEL` | Modell fest vorgeben, ebenfalls gesperrt. Im Compose-Profil lädt `ollama-pull` dieses Modell. |
-| `NKA_OLLAMA_NUM_CTX` | Kontextgröße in Token, Standard 16384. Kleiner spart Arbeitsspeicher, zu klein schneidet lange Belege ab. |
+| `NKA_AI_PROVIDER` | Art der Schnittstelle: `ollama` oder `openai` (alle OpenAI-kompatiblen Dienste). |
+| `NKA_AI_URL` | Adresse des Dienstes. |
+| `NKA_AI_MODEL` | Modell. |
+| `NKA_AI_API_KEY` | Schlüssel des Dienstes. |
+| `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel, etwa eines Docker-Secrets unter `/run/secrets/`. Nicht zusammen mit `NKA_AI_API_KEY`. |
 | `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden, Standard 1200 für das Auslesen. |
+| `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token, Standard 16384 (nur OpenAI-kompatible Dienste). |
+| `NKA_OLLAMA_URL` | Adresse von Ollama, gilt weiter, solange Ollama der Anbieter ist. |
+| `NKA_OLLAMA_MODEL` | Modell für Ollama. Im Compose-Profil lädt `ollama-pull` dieses Modell. |
+| `NKA_OLLAMA_NUM_CTX` | Kontextgröße in Token, Standard 16384. Kleiner spart Arbeitsspeicher, zu klein schneidet lange Belege ab. |
+
+Ein falscher Wert verhindert den Start und wird beim Start genannt, statt später als
+unverständlicher Fehler bei der ersten Auswertung aufzutauchen.
+
+Mit Docker-Secrets sieht das so aus:
+
+```yaml
+services:
+  mietfuchs:
+    environment:
+      NKA_AI_PROVIDER: openai
+      NKA_AI_URL: https://openai.inference.de-txl.ionos.com/v1
+      NKA_AI_MODEL: Qwen/Qwen3.5-9B
+      NKA_AI_API_KEY_FILE: /run/secrets/ki_schluessel
+    secrets: [ki_schluessel]
+secrets:
+  ki_schluessel:
+    file: ./ki-schluessel.txt
+```
 
 ## Daten & Backup
 
@@ -302,7 +384,7 @@ docker build -t mietfuchs .
 docker run -d -p 3001:3001 -v mietfuchs-data:/app/server/data --name mietfuchs mietfuchs
 ```
 
-Für die optionale KI-Belegauswertung siehe [KI-Belegauswertung mit Ollama](#ki-belegauswertung-mit-ollama),
+Für die optionale KI-Belegauswertung siehe [KI-Belegauswertung](#ki-belegauswertung),
 dort auch das Compose-Profil `ki`, das Ollama als eigenen Container mitstartet.
 
 ## Lizenz & Haftung
