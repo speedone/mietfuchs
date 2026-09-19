@@ -1,0 +1,42 @@
+{
+  "settings": {},
+  "units": [{ "id": "u1", "name": "Wohnung 1", "areaM2": 100, "participates": true }],
+  "tenancies": [
+    {
+      "id": "ta",
+      "unitId": "u1",
+      "tenantName": "Vormieter",
+      "start": "2020-01-01",
+      "end": "2025-06-30",
+      "personHistory": [{ "from": "2020-01-01", "persons": 2 }],
+      "prepayments": [{ "from": "2020-01", "monthlyCents": 10000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    },
+    {
+      "id": "tb",
+      "unitId": "u1",
+      "tenantName": "Nachmieter",
+      "start": "2025-07-01",
+      "end": null,
+      "personHistory": [{ "from": "2025-07-01", "persons": 2 }],
+      "prepayments": [{ "from": "2025-07", "monthlyCents": 12000 }],
+      "prepaymentOverrides": {},
+      "baseRents": []
+    }
+  ],
+  "costItems": [
+    {
+      "id": "c1",
+      "year": 2025,
+      "category": "Grundsteuer",
+      "description": "Grundsteuer 2025",
+      "amountCents": 120000,
+      "key": "area"
+    }
+  ],
+  "meters": [],
+  "readings": [],
+  "payments": [],
+  "closedSettlements": []
+}
