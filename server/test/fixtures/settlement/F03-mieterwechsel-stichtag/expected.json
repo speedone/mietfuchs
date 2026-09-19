@@ -1,0 +1,65 @@
+{
+  "year": 2025,
+  "settlement": {
+    "year": 2025,
+    "daysInYear": 365,
+    "totalCostsCents": 120000,
+    "statements": [
+      {
+        "tenancyId": "ta",
+        "unitId": "u1",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-06-30",
+        "days": 181,
+        "persons": 2,
+        "personDays": 362,
+        "totalShareCents": 59507,
+        "total35aCents": 0,
+        "prepaymentCents": 60000,
+        "prepaymentOverridden": false,
+        "balanceCents": 493,
+        "suggestedMonthlyCents": 5000,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "area",
+            "totalCents": 120000,
+            "shareCents": 59507,
+            "labor35aCents": 0
+          }
+        ]
+      },
+      {
+        "tenancyId": "tb",
+        "unitId": "u1",
+        "periodStart": "2025-07-01",
+        "periodEnd": "2025-12-31",
+        "days": 184,
+        "persons": 2,
+        "personDays": 368,
+        "totalShareCents": 60493,
+        "total35aCents": 0,
+        "prepaymentCents": 72000,
+        "prepaymentOverridden": false,
+        "balanceCents": 11507,
+        "suggestedMonthlyCents": 5000,
+        "rows": [
+          {
+            "costItemId": "c1",
+            "key": "area",
+            "totalCents": 120000,
+            "shareCents": 60493,
+            "labor35aCents": 0
+          }
+        ]
+      }
+    ],
+    "landlord": {
+      "totalCents": 0,
+      "rows": []
+    },
+    "selfUsedShareCents": 0,
+    "warnings": []
+  },
+  "consumption": []
+}
