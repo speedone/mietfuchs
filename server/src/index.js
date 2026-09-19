@@ -16,15 +16,39 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(express.json())
 
+// Belege landen im Belegarchiv auf der Platte. Seitenbilder, die der Browser aus einem
+// gescannten PDF rendert (Feld `pages`), braucht nur die KI-Auswertung: Sie bleiben im
+// Arbeitsspeicher und tauchen nie im Belegarchiv auf.
+const aufPlatte = multer.diskStorage({
+  destination: UPLOAD_DIR,
+  filename: (req, file, cb) => {
+    const safe = file.originalname.replace(/[^\w.\-äöüÄÖÜß]/g, '_')
+    cb(null, `${Date.now()}_${safe}`)
+  },
+})
+const imSpeicher = multer.memoryStorage()
+const speicherFuer = (file) => (file.fieldname === 'pages' ? imSpeicher : aufPlatte)
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (req, file, cb) => {
-      const safe = file.originalname.replace(/[^\w.\-äöüÄÖÜß]/g, '_')
-      cb(null, `${Date.now()}_${safe}`)
-    },
-  }),
+  storage: {
+    _handleFile: (req, file, cb) => speicherFuer(file)._handleFile(req, file, cb),
+    _removeFile: (req, file, cb) => speicherFuer(file)._removeFile(req, file, cb),
+  },
   limits: { fileSize: 25 * 1024 * 1024 },
+  // Browser schicken Dateinamen als UTF-8. Mit dem Standard latin1 zerfiel „Müll.pdf“ zu
+  // „M__ll.pdf“, weil jedes Byte des Umlauts einzeln ersetzt wurde.
+  defParamCharset: 'utf8',
+})
+
+// Beleg plus Material für die KI-Auswertung: höchstens vier Seitenbilder (so viele rendert
+// der Browser) und die Textebene im Feld `pdfText`.
+const MAX_SEITEN = 4
+const belegMitSeiten = upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_SEITEN }])
+const belegAus = (req) => req.files?.file?.[0] ?? null
+const auswertungAus = (req) => ({
+  pdfText: typeof req.body?.pdfText === 'string' ? req.body.pdfText : '',
+  pages: (req.files?.pages ?? [])
+    .filter((p) => p.mimetype.startsWith('image/'))
+    .map((p) => p.buffer.toString('base64')),
 })
 
 // ---------- Einstellungen ----------
@@ -162,33 +186,38 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   res.json({ file: req.file.filename })
 })
 
-app.post('/api/extract', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+// PDFs liest der Browser vor dem Hochladen (client/src/pdfIntake.ts): Er schickt die Textebene
+// mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs.
+app.post('/api/extract', belegMitSeiten, async (req, res) => {
+  const beleg = belegAus(req)
+  if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
   try {
-    const result = await extractFromFile(req.file.path, req.file.mimetype, getDb().settings)
-    res.json({ file: req.file.filename, extraction: result })
+    const result = await extractFromFile(beleg.path, beleg.mimetype, getDb().settings, auswertungAus(req))
+    res.json({ file: beleg.filename, extraction: result })
   } catch (err) {
-    res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
+    res.status(502).json({ file: beleg.filename, error: String(err.message || err) })
   }
 })
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
 // Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
-app.post('/api/intake', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+app.post('/api/intake', belegMitSeiten, async (req, res) => {
+  const beleg = belegAus(req)
+  if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
   try {
     const settings = getDb().settings
-    const docType = await classifyDocType(req.file.path, req.file.mimetype, settings)
+    const auswertung = auswertungAus(req)
+    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings)
     if (docType === 'zaehlerstand') {
-      const reading = await extractMeterReading(req.file.path, req.file.mimetype, settings)
-      res.json({ file: req.file.filename, kind: 'zaehler', reading })
+      const reading = await extractMeterReading(beleg.path, beleg.mimetype, settings, auswertung)
+      res.json({ file: beleg.filename, kind: 'zaehler', reading })
     } else {
-      const extraction = await extractFromFile(req.file.path, req.file.mimetype, settings)
-      res.json({ file: req.file.filename, kind: 'rechnung', extraction })
+      const extraction = await extractFromFile(beleg.path, beleg.mimetype, settings, auswertung)
+      res.json({ file: beleg.filename, kind: 'rechnung', extraction })
     }
   } catch (err) {
-    res.status(502).json({ file: req.file.filename, error: String(err.message || err) })
+    res.status(502).json({ file: beleg.filename, error: String(err.message || err) })
   }
 })
 
@@ -294,6 +323,16 @@ app.post('/api/update/check', async (req, res) => {
 app.get('/healthz', (req, res) => {
   const bericht = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
   res.status(bericht.status === 'ok' ? 200 : 503).json(bericht)
+})
+
+// Fehler beim Hochladen als lesbare Meldung statt als HTML-Fehlerseite von Express
+app.use((err, req, res, next) => {
+  if (!(err instanceof multer.MulterError)) return next(err)
+  const meldung =
+    err.code === 'LIMIT_FILE_SIZE' ? 'Die Datei ist größer als 25 MB.'
+      : err.code === 'LIMIT_UNEXPECTED_FILE' && err.field === 'pages' ? `Höchstens ${MAX_SEITEN} Seitenbilder je Beleg.`
+        : `Hochladen fehlgeschlagen: ${err.message}`
+  res.status(400).json({ error: meldung })
 })
 
 // ---------- Frontend (Produktions-Build) ----------

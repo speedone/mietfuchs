@@ -1,24 +1,20 @@
 // KI-Belegauswertung über eine lokale Ollama-Instanz.
-// PDFs werden als Text extrahiert und an das Sprachmodell gegeben; gescannte PDFs
-// ohne Textebene werden seitenweise als Bild gerendert. Bilder (Handyfotos) gehen
-// als Base64 — beides erfordert ein Vision-fähiges Modell.
+// PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
+// (client/src/pdfIntake.ts) und schickt die Textebene mit, bei Scans ohne Textebene die
+// gerenderten Seiten als Bilder. So braucht der Server kein natives Modul, und das verhält
+// sich in der Programmdatei genauso wie im Docker-Image. Bilder (Handyfotos) gehen als
+// Base64 an das Modell, Seitenbilder ebenso. Beides erfordert ein Vision-fähiges Modell.
 
 import fs from 'node:fs'
-import pdfParse from 'pdf-parse/lib/pdf-parse.js'
 
-// Gescanntes PDF (keine Textebene): Seiten als PNG rendern, damit das Vision-Modell
-// sie wie ein Foto auswerten kann. Begrenzt auf die ersten Seiten — Rechnungen stehen
-// praktisch immer vorn, und jedes Bild kostet Auswertungszeit.
-async function pdfPagesAsImages(filePath, maxPages = 4) {
-  const { pdf } = await import('pdf-to-img')
-  const doc = await pdf(filePath, { scale: 2 })
-  const images = []
-  for await (const page of doc) {
-    images.push(page.toString('base64'))
-    if (images.length >= maxPages) break
-  }
-  return images
-}
+// Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
+// Scan mit Stempel oder Kopfzeile, dann sind die Seitenbilder aussagekräftiger.
+const TEXT_MIN = 80
+const TEXT_MAX = 20000
+const SEITEN_MAX = 4
+
+const OHNE_INHALT =
+  'Das PDF hat keine lesbare Textebene, und es kamen keine Seitenbilder mit. Bitte den Beleg über die Mietfuchs-Oberfläche hochladen.'
 
 const SCHEMA = {
   type: 'object',
@@ -137,26 +133,21 @@ Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
   return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
 }
 
-export async function extractFromFile(filePath, mimetype, settings) {
+// `pdfText` und `pages` (Base64) liefert der Browser für PDFs, siehe Kopf der Datei.
+export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [] } = {}) {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const message = { role: 'user', content: PROMPT }
 
   if (mimetype === 'application/pdf') {
-    const parsed = await pdfParse(fs.readFileSync(filePath)).catch(() => ({ text: '' }))
-    const text = (parsed.text || '').trim()
-    if (text.length >= 80) {
-      message.content += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, 20000)}`
-    } else {
-      // Scan ohne (brauchbare) Textebene → Seiten rendern und ans Vision-Modell geben
-      let images
-      try {
-        images = await pdfPagesAsImages(filePath)
-      } catch (err) {
-        throw new Error(`PDF enthält keinen auslesbaren Text und konnte nicht als Bild gerendert werden (${String(err.message || err)}).`)
-      }
-      if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
-      message.images = images
+    const text = String(pdfText ?? '').trim()
+    if (text.length >= TEXT_MIN) {
+      message.content += `\n\n--- RECHNUNGSTEXT ---\n${text.slice(0, TEXT_MAX)}`
+    } else if (pages.length > 0) {
+      // Scan ohne (brauchbare) Textebene: die Seitenbilder gehen an das Vision-Modell
+      message.images = pages.slice(0, SEITEN_MAX)
       message.content += '\n\nDie Rechnung ist als Bild(er) angehängt (gescanntes PDF, ggf. mehrseitig).'
+    } else {
+      throw new Error(OHNE_INHALT)
     }
   } else if (mimetype.startsWith('image/')) {
     message.images = [fs.readFileSync(filePath).toString('base64')]
@@ -249,13 +240,12 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
-export async function extractMeterReading(filePath, mimetype, settings) {
+export async function extractMeterReading(filePath, mimetype, settings, { pages = [] } = {}) {
   const base = settings.ollamaUrl.replace(/\/+$/, '')
   const message = { role: 'user', content: METER_PROMPT }
   if (mimetype === 'application/pdf') {
-    const images = await pdfPagesAsImages(filePath, 1)
-    if (images.length === 0) throw new Error('PDF enthält keine Seiten.')
-    message.images = images
+    if (pages.length === 0) throw new Error(OHNE_INHALT)
+    message.images = pages.slice(0, 1)
   } else if (mimetype.startsWith('image/')) {
     message.images = [fs.readFileSync(filePath).toString('base64')]
   } else {
