@@ -5,13 +5,19 @@ name: KI-Prüflauf
 # GitHub-Runnern ohne Grafikkarte, also etwa so langsam wie ein Laptop ohne Grafikkarte. Die
 # Modelle lädt GitHub, niemand muss sie für einen Vergleich selbst herunterladen.
 #
-# Start von Hand (Actions → KI-Prüflauf) mit eigener Modellliste oder an einem PR über das
-# Label „ki-pruefung“. Ein Label startet genau einen Lauf mit der Standardliste unten.
+# Start von Hand (Actions, KI-Prüflauf) mit eigener Modellliste oder an einem PR über das
+# Label „ki-pruefung“. Ein Label startet genau einen Lauf mit den Standardwerten unten.
+# Von Hand lässt sich zusätzlich die Größe der Seitenbilder eines Scans vergleichen (#35):
+# Mehrere Werte ergeben je Modell einen Lauf pro Größe.
 on:
   workflow_dispatch:
     inputs:
       models:
         description: Ollama-Modelle, durch Komma getrennt (leer = Standardliste)
+        required: false
+        default: ''
+      pageEdges:
+        description: Lange Kante der Seitenbilder in Bildpunkten, durch Komma getrennt (leer = Standard)
         required: false
         default: ''
   pull_request:
@@ -23,6 +29,9 @@ permissions:
 env:
   # Kandidaten für Rechner ohne Grafikkarte, von klein bis mittel
   DEFAULT_MODELS: qwen3.5:2b,qwen3.5:4b,qwen3.5:9b,gemma4:e2b-it-qat,gemma4:12b,minicpm-v4.5:8b,minicpm-v4.6:1b
+  # Seitenbilder eines Scans, lange Kante. 1684 entspricht pdf.js mit Faktor 2 auf A4, also dem,
+  # was der Browser heute schickt. Mehrere Werte vergleichen Trefferquote und Dauer (#35).
+  DEFAULT_PAGE_EDGES: '1684'
 
 jobs:
   models:
@@ -31,17 +40,22 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       list: ${{ steps.list.outputs.list }}
+      edges: ${{ steps.list.outputs.edges }}
     steps:
       - id: list
         env:
           MODELS: ${{ inputs.models || env.DEFAULT_MODELS }}
+          PAGE_EDGES: ${{ inputs.pageEdges || env.DEFAULT_PAGE_EDGES }}
         run: |
-          list=$(node -e 'console.log(JSON.stringify(process.env.MODELS.split(",").map((m) => m.trim()).filter(Boolean)))')
+          split='(v) => JSON.stringify(v.split(",").map((m) => m.trim()).filter(Boolean))'
+          list=$(node -e "console.log(($split)(process.env.MODELS))")
+          edges=$(node -e "console.log(($split)(process.env.PAGE_EDGES))")
           echo "list=$list" >> "$GITHUB_OUTPUT"
-          echo "Modelle: $list"
+          echo "edges=$edges" >> "$GITHUB_OUTPUT"
+          echo "Modelle: $list, Seitenbilder: $edges"
 
   evaluate:
-    name: ${{ matrix.model }}
+    name: ${{ matrix.model }}, Seitenbild ${{ matrix.edge }} px
     needs: models
     runs-on: ubuntu-24.04
     timeout-minutes: 300
@@ -49,8 +63,10 @@ jobs:
       fail-fast: false
       matrix:
         model: ${{ fromJSON(needs.models.outputs.list) }}
+        edge: ${{ fromJSON(needs.models.outputs.edges) }}
     env:
       MODEL: ${{ matrix.model }}
+      PAGE_EDGE: ${{ matrix.edge }}
     steps:
       - uses: actions/checkout@v7
 
@@ -94,7 +110,8 @@ jobs:
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; tail -50 server.log; echo "--- Ollama"; docker logs --tail 50 ollama' EXIT
           for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:3001/healthz && break; sleep 1; done
-          node scripts/ai-eval.mjs --url http://127.0.0.1:3001 --ollama http://127.0.0.1:11434 --model "$MODEL" --out ergebnis.json
+          node scripts/ai-eval.mjs --url http://127.0.0.1:3001 --ollama http://127.0.0.1:11434 --model "$MODEL" \
+            --page-edge "$PAGE_EDGE" --out ergebnis.json
 
       - uses: actions/upload-artifact@v7
         if: always()
