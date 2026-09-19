@@ -97,7 +97,8 @@ Symbol und der Kategorie „Büro“.
 | Distribution | Datei | Installieren |
 | --- | --- | --- |
 | Debian, Ubuntu, Mint | `mietfuchs_*_amd64.deb` | `sudo apt install ./mietfuchs_*_amd64.deb` |
-| Fedora, openSUSE, RHEL, AlmaLinux, Rocky | `mietfuchs-*.x86_64.rpm` | `sudo dnf install ./mietfuchs-*.x86_64.rpm` |
+| Fedora, RHEL, AlmaLinux, Rocky | `mietfuchs-*.x86_64.rpm` | `sudo dnf install ./mietfuchs-*.x86_64.rpm` |
+| openSUSE | `mietfuchs-*.x86_64.rpm` | `sudo zypper install ./mietfuchs-*.x86_64.rpm` |
 | Arch, Manjaro, EndeavourOS | `mietfuchs-*-x86_64.pkg.tar.zst` | `sudo pacman -U mietfuchs-*-x86_64.pkg.tar.zst` |
 
 Für ARM-Rechner (Raspberry Pi 4/5 mit 64-Bit-System) heißen die Dateien `arm64` statt `amd64`
@@ -105,7 +106,15 @@ und `aarch64` statt `x86_64`.
 
 Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
 Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die
-Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei.
+Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei. Beim Umstieg
+vom Archiv auf das Paket den alten Ordner also einmal mitnehmen:
+
+```bash
+mkdir -p ~/.local/share/mietfuchs && cp -r data/. ~/.local/share/mietfuchs/
+```
+
+Wo die Daten liegen, sagt Mietfuchs beim Start selbst: Die zweite Zeile im Programmfenster
+nennt den Ordner.
 
 Ein Update holt sich das Paket nicht von selbst: Neue Fassung von der Releases-Seite laden und
 denselben Befehl noch einmal ausführen, er ersetzt die installierte Fassung. Der Update-Hinweis

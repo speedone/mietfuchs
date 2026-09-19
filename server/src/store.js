@@ -4,46 +4,41 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { migrateAi } from './ai/settings.js'
+import { systemLocation, writable } from './paths.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PACKAGED = !!globalThis.Bun
 
-// Ordner, in dem das System Daten von Programmen erwartet, die nicht dem Benutzer gehören
-function userDataHome(env, home, platform) {
-  if (platform === 'win32') return path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Mietfuchs')
-  if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Mietfuchs')
-  // Linux und Verwandte nach der XDG-Spezifikation
-  return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'mietfuchs')
-}
-
-// Liegt die Programmdatei an einem Ort, der dem System gehört? Dort haben Daten nichts
-// verloren, selbst wenn gerade jemand mit Administratorrechten startet: Beim nächsten Start
-// als normaler Benutzer wären sie sonst weg.
-function systemLocation(execPath, platform) {
-  // Bewusst nach der genannten Plattform trennen, nicht nach der des laufenden Rechners:
-  // Sonst hinge das Ergebnis daran, wo geprüft wird.
-  if (platform === 'win32') {
-    const dir = path.win32.dirname(execPath).toLowerCase().replaceAll('\\', '/')
-    return ['/program files', '/program files (x86)', '/windows'].some((p) => dir.includes(p))
-  }
-  const dir = `${path.posix.dirname(execPath)}/`
-  return ['/usr/', '/opt/', '/bin/', '/sbin/', '/Applications/'].some((p) => dir.startsWith(p))
-}
-
-// Lässt sich in dem Ordner schreiben? Gibt es ihn noch nicht, zählt der übergeordnete.
-function writable(dir) {
-  let probe = dir
-  while (!fs.existsSync(probe)) {
-    const up = path.dirname(probe)
-    if (up === probe) return false
-    probe = up
-  }
+// Heimatordner, erst wenn er gebraucht wird: `os.homedir()` wirft, wenn HOME fehlt und der
+// laufende Benutzer keinen Eintrag in der Benutzerdatenbank hat (Container mit `--user`).
+// Das darf den Start nicht verhindern, solange die Daten ohnehin woanders liegen.
+function homeDir() {
   try {
-    fs.accessSync(probe, fs.constants.W_OK)
-    return true
+    return os.homedir() || ''
   } catch {
-    return false
+    return '' // kein Eintrag für diesen Benutzer
   }
+}
+
+// Ordner, in dem das System Daten von Programmen erwartet, die nicht dem Benutzer gehören.
+// Die Variablen des Systems gelten nur mit absolutem Pfad, so schreibt es die XDG-Spezifikation
+// vor; ein relativer Wert hinge am Arbeitsverzeichnis, und das steht beim Start aus dem
+// Startmenü nicht fest.
+function userDataHome(env, platform, home = homeDir) {
+  const fromEnv = (name) => (env[name] && path.isAbsolute(env[name]) ? env[name] : null)
+  const inHome = (...parts) => {
+    const dir = home()
+    if (!dir) {
+      throw new Error(
+        'Der Heimatordner lässt sich nicht bestimmen (HOME ist nicht gesetzt). ' +
+          'Bitte NKA_DATA_DIR auf einen Ordner setzen, in dem Mietfuchs schreiben darf.',
+      )
+    }
+    return path.join(dir, ...parts)
+  }
+  if (platform === 'win32') return path.join(fromEnv('LOCALAPPDATA') || inHome('AppData', 'Local'), 'Mietfuchs')
+  if (platform === 'darwin') return inHome('Library', 'Application Support', 'Mietfuchs')
+  return path.join(fromEnv('XDG_DATA_HOME') || inHome('.local', 'share'), 'mietfuchs')
 }
 
 // Wo die Daten liegen. Im Dev-/npm-Betrieb server/data. In der gepackten Programmdatei liegt
@@ -58,15 +53,15 @@ export function chooseDataDir({
   execPath = process.execPath,
   packaged = PACKAGED,
   moduleDir = __dirname,
-  home = os.homedir(),
+  home = homeDir,
   platform = process.platform,
   canWrite = writable,
 } = {}) {
   if (env.NKA_DATA_DIR) return path.resolve(env.NKA_DATA_DIR)
   if (!packaged) return path.join(moduleDir, '..', 'data')
-  if (systemLocation(execPath, platform)) return userDataHome(env, home, platform)
+  if (systemLocation(execPath, platform)) return userDataHome(env, platform, home)
   const beside = path.join(path.dirname(execPath), 'data')
-  return canWrite(beside) ? beside : userDataHome(env, home, platform)
+  return canWrite(beside) ? beside : userDataHome(env, platform, home)
 }
 
 export const DATA_DIR = chooseDataDir()

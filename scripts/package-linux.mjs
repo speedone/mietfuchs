@@ -18,8 +18,18 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(root, 'dist-bin')
 // Ordner, aus dem nFPM die Programmdatei nimmt. Der Name darin ist fest, damit die Vorschrift
 // ohne Platzhalter im Dateipfad auskommt.
-const stageDir = path.join(outDir, 'paket')
-const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version
+const stageDir = path.join(outDir, 'stage')
+
+// Die Paketversion kommt aus der Root-package.json, die Programmdatei meldet die aus
+// server/package.json. Laufen beide auseinander, trüge ein Paket die falsche Nummer: `rpm -i`
+// bricht mit „already installed“ ab, und der Nutzer käme nicht an die neue Fassung.
+const versionOf = (dir) => JSON.parse(fs.readFileSync(path.join(root, dir, 'package.json'), 'utf8')).version
+const version = versionOf('.')
+const serverVersion = versionOf('server')
+if (version !== serverVersion) {
+  console.error(`Die Versionen weichen ab: package.json ${version}, server/package.json ${serverVersion}. Beide müssen gleich sein.`)
+  process.exit(1)
+}
 
 // Prozessor in der Schreibweise von nFPM (wie Go sie nutzt), dazu die gebaute Programmdatei
 const TARGETS = {
@@ -58,21 +68,25 @@ function nfpmRunner() {
 const run = nfpmRunner()
 fs.mkdirSync(stageDir, { recursive: true })
 
-for (const [name, { arch, binary }] of Object.entries(selected)) {
-  const built = path.join(outDir, binary)
-  if (!fs.existsSync(built)) {
-    console.error(`${binary} fehlt in dist-bin. Erst "npm run package" ausführen (oder "node scripts/package-binaries.mjs ${name}").`)
-    process.exit(1)
+try {
+  for (const [name, { arch, binary }] of Object.entries(selected)) {
+    const built = path.join(outDir, binary)
+    if (!fs.existsSync(built)) {
+      console.error(`${binary} fehlt in dist-bin. Erst "npm run package" ausführen (oder "node scripts/package-binaries.mjs ${name}").`)
+      process.exit(1)
+    }
+    const staged = path.join(stageDir, 'mietfuchs')
+    fs.copyFileSync(built, staged)
+    fs.chmodSync(staged, 0o755)
+    for (const format of FORMATS) {
+      console.log(`\n→ ${format} für ${arch} …`)
+      run({ PKG_ARCH: arch, PKG_VERSION: version }, ['package', '--config', 'packaging/nfpm.yaml', '--packager', format, '--target', 'dist-bin'])
+    }
   }
-  const staged = path.join(stageDir, 'mietfuchs')
-  fs.copyFileSync(built, staged)
-  fs.chmodSync(staged, 0o755)
-  for (const format of FORMATS) {
-    console.log(`\n→ ${format} für ${arch} …`)
-    run({ PKG_ARCH: arch, PKG_VERSION: version }, ['package', '--config', 'packaging/nfpm.yaml', '--packager', format, '--target', 'dist-bin'])
-  }
+} finally {
+  // Auch nach einem Fehler weg: Sonst bliebe eine Kopie der Programmdatei von gut 100 MB liegen.
+  fs.rmSync(stageDir, { recursive: true, force: true })
 }
 
-fs.rmSync(stageDir, { recursive: true, force: true })
 console.log(`\n✓ Fertig. Pakete in ${outDir}:`)
 for (const f of fs.readdirSync(outDir).filter((f) => /\.(deb|rpm|pkg\.tar\.zst)$/.test(f))) console.log('   •', f)

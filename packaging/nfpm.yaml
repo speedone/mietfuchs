@@ -1,7 +1,7 @@
 # Bauvorschrift für die Linux-Installationspakete (#25): .deb, .rpm und das Paket für Arch
 # Linux entstehen mit nFPM aus derselben Programmdatei, die auch als Archiv im Release liegt.
 # Gebaut wird über scripts/package-linux.mjs; dort werden PKG_ARCH und PKG_VERSION gesetzt und
-# die passende Programmdatei nach dist-bin/paket/mietfuchs gelegt.
+# die passende Programmdatei nach dist-bin/stage/mietfuchs gelegt.
 #
 # Das Paket legt nur vier Dateien ab: das Programm, den Startmenü-Eintrag und zwei Symbole.
 # Einen Dienst richtet es bewusst nicht ein. Mietfuchs läuft, wenn jemand ihn startet, und
@@ -23,7 +23,7 @@ description: |
   die Anlage V. Alles läuft auf diesem Rechner, ohne Konto und ohne Cloud.
 
 contents:
-  - src: dist-bin/paket/mietfuchs
+  - src: dist-bin/stage/mietfuchs
     dst: /usr/bin/mietfuchs
     file_info:
       mode: 0755

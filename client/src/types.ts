@@ -278,7 +278,7 @@ export type OllamaStatus = {
 export type UpdateStatus = {
   enabled: boolean // nur mit Zustimmung
   current: string
-  mode: 'binary' | 'docker' | 'npm'
+  mode: 'binary' | 'package' | 'docker' | 'npm' // 'package': aus einem Linux-Paket installiert
   latest: string | null
   available: boolean
   releaseUrl: string | null
