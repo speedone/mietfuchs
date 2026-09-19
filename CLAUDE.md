@@ -64,7 +64,10 @@ KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup 
 Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
 `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Ist `CI` gesetzt, öffnet
 die Programmdatei keinen Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
-fällt in diesen Tests auf.
+fällt in diesen Tests auf. Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
+`codesign --sign -` neu signiert: Buns eigene Ad-hoc-Signatur beim Cross-Kompilieren unter
+Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neuere macOS-Versionen
+beenden solche Programme beim Start.
 
 Einzelnen Test ausführen:
 

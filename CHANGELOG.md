@@ -18,6 +18,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Die macOS-Programmdateien tragen eine gültige Signatur.** Die Datei für Intel-Macs war
+  ungültig signiert. macOS 26 startet sie trotzdem, neuere Versionen beenden solche Programme
+  aber sofort. Die macOS-Dateien werden jetzt auf einem Mac neu signiert und geprüft.
+  ([#22](https://github.com/speedone/mietfuchs/issues/22))
 - **Gescannte PDFs werden auch in der Programmdatei ausgewertet.** Bei PDFs ohne Textebene
   brach die KI-Auswertung in der Programmdatei mit „DOMMatrix is not defined“ ab. Im
   Docker-Image und beim Start aus dem Quellcode lief sie. Jetzt liest der Browser das PDF vor
