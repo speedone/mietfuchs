@@ -4,6 +4,7 @@ import { api } from '../api'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
+import { OllamaSettings } from '../components/OllamaSettings'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -11,14 +12,10 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const [form, setForm] = useState({
-    ollamaUrl: settings.ollamaUrl,
-    ollamaModel: settings.ollamaModel,
     landlordName: settings.landlordName ?? '',
     iban: settings.iban ?? '',
     paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
   })
-  const [status, setStatus] = useState<{ ok: boolean; models?: string[]; error?: string } | null>(null)
-  const [testing, setTesting] = useState(false)
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
 
@@ -56,17 +53,6 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     toast('Einstellungen gespeichert.')
   }
 
-  async function test() {
-    setTesting(true)
-    setStatus(null)
-    try {
-      await save()
-      setStatus(await api<{ ok: boolean; models?: string[]; error?: string }>('/api/ollama/status'))
-    } finally {
-      setTesting(false)
-    }
-  }
-
   return (
     <>
       <PageHeader title="Einstellungen" subtitle="Vermieterdaten für das Anschreiben, KI-Belegauswertung über Ollama und Updates." />
@@ -91,40 +77,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         </div>
       </div>
 
-      <div className="card">
-        <h2>Ollama</h2>
-        <div className="row">
-          <label className="field grow">
-            Server-URL
-            <input value={form.ollamaUrl} onChange={(e) => setForm({ ...form, ollamaUrl: e.target.value })} placeholder="http://localhost:11434" />
-          </label>
-          <label className="field grow">
-            Modell
-            <input value={form.ollamaModel} onChange={(e) => setForm({ ...form, ollamaModel: e.target.value })} placeholder="z. B. qwen3.6-35b" />
-          </label>
-          <button className="btn" onClick={save}>Speichern</button>
-          <button className="btn secondary" onClick={test} disabled={testing}>
-            {testing && <span className="spinner" />}Verbindung testen
-          </button>
-        </div>
-        {status?.ok && (
-          <div className="ok">
-            Ollama erreichbar. Installierte Modelle: {status.models?.join(', ') || 'keine'}
-            {status.models && !status.models.some((m) => m.startsWith(form.ollamaModel)) && (
-              <> — <strong>Achtung:</strong> „{form.ollamaModel}" ist nicht darunter. Mit <code>ollama pull {form.ollamaModel}</code> laden.</>
-            )}
-          </div>
-        )}
-        {status && !status.ok && (
-          <div className="error">
-            Ollama nicht erreichbar: {status.error}. Läuft die Ollama-App? (Standard-Port 11434)
-          </div>
-        )}
-        <p className="muted">
-          Für PDF-Rechnungen mit Textebene reicht ein reines Sprachmodell. Für fotografierte
-          Belege wird ein Vision-fähiges Modell benötigt (z. B. ein qwen-VL-Modell).
-        </p>
-      </div>
+      <OllamaSettings settings={settings} reload={reload} />
 
       <UpdateSettings settings={settings} update={update} reload={reload} />
 
