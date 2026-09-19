@@ -59,9 +59,15 @@ function starteOllama() {
       const j = body ? JSON.parse(body) : {}
       anfragen.push(j) // nur Chat-Anfragen
       const props = j.format?.properties ?? {}
-      if (props.categories) return send({ message: { content: JSON.stringify({ categories: Array(props.categories.minItems ?? 1).fill('Müllabfuhr') }) } })
-      if (props.docType) return send({ message: { content: JSON.stringify({ docType: 'rechnung' }) } })
-      send({ message: { content: JSON.stringify({ vendor: 'Prüflieferant', positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 42.5 }], totalGrossEur: 42.5 }) } })
+      const answer = props.categories
+        ? { categories: Array(props.categories.minItems ?? 1).fill('Müllabfuhr') }
+        : props.docType
+          ? { docType: 'rechnung' }
+          : { vendor: 'Prüflieferant', positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 42.5 }], totalGrossEur: 42.5 }
+      // Wie Ollama: zeilenweise JSON, die letzte Zeile mit done und Grund
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+      res.write(`${JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(answer) }, done: false })}\n`)
+      res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 100, eval_count: 20 })}\n`)
     })
   })
   // Nur lokal erreichbar: Container laufen in der CI mit --network host und sehen 127.0.0.1 ebenso

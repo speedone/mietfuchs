@@ -222,16 +222,36 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   res.json({ file: req.file.filename })
 })
 
+// Eine KI-Auswertung kann auf dem Prozessor minutenlang laufen. Schließt der Browser die
+// Verbindung vorher (Seite verlassen, Abbrechen), soll das Modell nicht umsonst weiterrechnen:
+// Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade hochgeladene Beleg,
+// auf den noch nichts verweist, verschwindet wieder aus dem Archiv.
+function aiRequestContext(req, res) {
+  const controller = new AbortController()
+  const stats = []
+  res.on('close', () => {
+    if (res.writableFinished) return
+    controller.abort()
+    const beleg = belegAus(req)
+    if (beleg) fs.rmSync(beleg.path, { force: true })
+  })
+  return { signal: controller.signal, stats }
+}
+
 // PDFs liest der Browser vor dem Hochladen (client/src/pdfIntake.ts): Er schickt die Textebene
-// mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs.
+// mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs. `stats`
+// enthält die Kennzahlen des Modells je Schritt (Token, Sekunden), die Oberfläche braucht sie
+// nicht, der KI-Prüflauf wertet sie aus.
 app.post('/api/extract', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
+  const { signal, stats } = aiRequestContext(req, res)
   try {
-    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), auswertungAus(req))
-    res.json({ file: beleg.filename, extraction: result })
+    const result = await extractFromFile(beleg.path, beleg.mimetype, effectiveSettings(), { ...auswertungAus(req), signal, stats })
+    res.json({ file: beleg.filename, extraction: result, stats })
   } catch (err) {
-    res.status(502).json({ file: beleg.filename, error: String(err.message || err) })
+    if (signal.aborted) return
+    res.status(502).json({ file: beleg.filename, error: String(err.message || err), stats })
   }
 })
 
@@ -241,19 +261,21 @@ app.post('/api/extract', belegMitSeiten, async (req, res) => {
 app.post('/api/intake', belegMitSeiten, async (req, res) => {
   const beleg = belegAus(req)
   if (!beleg) return res.status(400).json({ error: 'Keine Datei' })
+  const { signal, stats } = aiRequestContext(req, res)
   try {
     const settings = effectiveSettings()
-    const auswertung = auswertungAus(req)
-    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings)
+    const material = { ...auswertungAus(req), signal, stats }
+    const docType = await classifyDocType(beleg.path, beleg.mimetype, settings, { signal, stats })
     if (docType === 'zaehlerstand') {
-      const reading = await extractMeterReading(beleg.path, beleg.mimetype, settings, auswertung)
-      res.json({ file: beleg.filename, kind: 'zaehler', reading })
+      const reading = await extractMeterReading(beleg.path, beleg.mimetype, settings, material)
+      res.json({ file: beleg.filename, kind: 'zaehler', reading, stats })
     } else {
-      const extraction = await extractFromFile(beleg.path, beleg.mimetype, settings, auswertung)
-      res.json({ file: beleg.filename, kind: 'rechnung', extraction })
+      const extraction = await extractFromFile(beleg.path, beleg.mimetype, settings, material)
+      res.json({ file: beleg.filename, kind: 'rechnung', extraction, stats })
     }
   } catch (err) {
-    res.status(502).json({ file: beleg.filename, error: String(err.message || err) })
+    if (signal.aborted) return
+    res.status(502).json({ file: beleg.filename, error: String(err.message || err), stats })
   }
 })
 
