@@ -374,6 +374,43 @@ test('KI-Auswertung: mehr als vier Seitenbilder lehnt der Server ab, ohne Reste 
   })
 })
 
+test('KI-Auswertung: der Schuhkarton nimmt auch die Textebene', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/intake', { text: LANGER_TEXT })
+    assert.equal(r.status, 200)
+    assert.ok(ersteNachricht(ollama).content.includes(LANGER_TEXT))
+  })
+})
+
+test('KI-Auswertung: nur Bilder zählen als Seitenbilder', async () => {
+  await mitOllama(async (s, ollama) => {
+    const keinBild = new Blob([Buffer.from('<script>')], { type: 'text/html' })
+    const r = await hochladen(s, '/api/extract', { seiten: [seite(1), keinBild] })
+    assert.equal(r.status, 200)
+    assert.deepEqual(ersteNachricht(ollama).images, [base64(1)])
+  })
+})
+
+test('KI-Auswertung: ein Seitenbild über 5 MB wird abgelehnt, ohne Reste im Archiv', async () => {
+  await mitOllama(async (s, ollama) => {
+    const riesig = new Blob([Buffer.alloc(5 * 1024 * 1024 + 1)], { type: 'image/jpeg' })
+    const r = await hochladen(s, '/api/extract', { seiten: [riesig] })
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /Seitenbild ist größer als 5 MB/)
+    assert.equal(chatAnfragen(ollama).length, 0)
+    assert.equal((await s.api('/api/uploads')).length, 0)
+  })
+})
+
+test('KI-Auswertung: ein überlanger Text ergibt eine lesbare Meldung', async () => {
+  await mitOllama(async (s) => {
+    const r = await hochladen(s, '/api/extract', { text: 'x'.repeat(1024 * 1024 + 1) })
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /Textfeld ist zu lang/)
+    assert.equal((await s.api('/api/uploads')).length, 0)
+  })
+})
+
 test('KI-Auswertung: ein Foto geht wie bisher als Bild an Ollama', async () => {
   await mitOllama(async (s, ollama) => {
     const foto = Buffer.from('JPEG-Foto')
@@ -398,6 +435,34 @@ test('Beleg anhängen: /api/upload legt die Datei ins Belegarchiv, sie ist abruf
     const abruf = await fetch(`${s.base}/uploads/${encodeURIComponent(file)}`)
     assert.equal(abruf.status, 200)
     assert.deepEqual(Buffer.from(await abruf.arrayBuffer()), PDF)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Beleg anhängen: Umlaute in zerlegter Unicode-Form (macOS) werden zusammengesetzt', async () => {
+  const s = await startServer()
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'Müll.pdf') // „ü“ als u + Trema
+    const { file } = await (await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })).json()
+    assert.match(file, /^\d+_Müll\.pdf$/)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Hochladen: ein abgebrochener Upload ergibt JSON statt einer HTML-Fehlerseite', async () => {
+  const s = await startServer()
+  try {
+    const res = await fetch(`${s.base}/api/upload`, {
+      method: 'POST',
+      headers: { 'content-type': 'multipart/form-data; boundary=grenze' },
+      body: '--grenze\r\nContent-Disposition: form-data; name="file"; filename="a.pdf"\r\nContent-Type: application/pdf\r\n\r\n%PDF-abgebrochen',
+    })
+    assert.ok(res.status >= 400)
+    assert.match(res.headers.get('content-type') ?? '', /json/)
+    assert.equal(typeof (await res.json()).error, 'string')
   } finally {
     s.stop()
   }

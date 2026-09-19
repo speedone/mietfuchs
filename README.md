@@ -145,7 +145,9 @@ beim Erfassen zugeordnet wird (in der Regel das Zahlungsjahr).
 Unter *Einstellungen* eine lokale [Ollama](https://ollama.com)-Instanz konfigurieren
 (Standard: `http://localhost:11434`, Modell `qwen3.6-35b`). PDFs mit Textebene funktionieren
 mit jedem Sprachmodell; fotografierte Belege benötigen ein Vision-Modell. Die KI macht nur
-Vorschläge — übernommen wird erst nach manueller Prüfung.
+Vorschläge — übernommen wird erst nach manueller Prüfung. Gescannte PDFs ohne Textebene
+brauchen ebenfalls ein Vision-Modell: Der Browser schickt dann die ersten vier Seiten als
+Bilder mit.
 
 ## Daten & Backup
 
