@@ -57,8 +57,10 @@ test('Healthcheck: unlesbare db.json ist ein Fehler', () => {
 })
 
 test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {
-  // Als root greifen Dateirechte nicht — dann lässt sich das nicht prüfen
+  // Als root greifen Dateirechte nicht — dann lässt sich das nicht prüfen. Unter Windows
+  // ebenso wenig: chmod setzt dort keine Schreibsperre, der Schreibversuch gelingt trotzdem.
   if (process.getuid?.() === 0) return t.skip('läuft als root')
+  if (process.platform === 'win32') return t.skip('chmod sperrt unter Windows keinen Ordner')
   const dir = datenordner({ db: '{}' })
   fs.chmodSync(path.join(dir, 'uploads'), 0o500)
   try {
