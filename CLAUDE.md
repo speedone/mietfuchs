@@ -27,8 +27,9 @@ npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 **Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
 kompiliert Server + eingebettetes Frontend per **Bun `--compile`** zu je einer Datei pro
 Plattform (Windows/macOS-Intel/macOS-ARM/Linux) in `dist-bin/`. `node scripts/package-binaries.mjs win`
-baut nur ein Ziel. Bun wird gewählt, weil der Server ESM ist und `pdfjs-dist` top-level await
-nutzt — beides kann pkg/SEA nicht bündeln. Das Frontend wird beim Build über
+baut nur ein Ziel. Bun wird gewählt, weil der Server ESM ist, was pkg/SEA nicht bündeln
+kann. Native Module lassen sich so nicht für alle Ziele einbetten, der Server kommt deshalb
+bewusst ohne aus (siehe KI-Belegauswertung). Das Frontend wird beim Build über
 [scripts/embed-client.mjs](scripts/embed-client.mjs) aus `client/dist` in das generierte
 (gitignorierte) Modul `server/src/embedded-client.js` eingebettet (Bun-Importattribut
 `with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
@@ -176,9 +177,13 @@ Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settl
 hat eigene Labels für die Eingabe-Oberfläche).
 
 **KI-Belegauswertung** ([server/src/extract.js](server/src/extract.js)): optional, gegen eine
-lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDF → Textebene via `pdf-parse`;
-Scans ohne (brauchbare) Textebene werden per `pdf-to-img` seitenweise als PNG gerendert und
-ans Vision-Modell gegeben. Bilder → Base64 (braucht Vision-Modell). Erzwingt
+lokale **Ollama**-Instanz (URL/Modell aus den Settings). PDFs öffnet der Server nicht selbst:
+Der Browser liest sie vor dem Hochladen mit pdf.js ([client/src/pdfIntake.ts](client/src/pdfIntake.ts))
+und schickt die Textebene im Feld `pdfText` mit, bei Scans ohne brauchbare Textebene (unter
+80 Zeichen) bis zu vier Seiten als JPEG im Feld `pages`. Die Seitenbilder bleiben im
+Arbeitsspeicher (gemischter multer-Speicher in index.js) und landen nicht im Belegarchiv. So
+braucht der Server kein natives Modul: `pdf-to-img` scheiterte in der Bun-Programmdatei, weil
+pdf.js dort `@napi-rs/canvas` nicht findet (#21). Bilder → Base64 (braucht Vision-Modell). Erzwingt
 strukturiertes JSON über `format: SCHEMA`. Die KI macht nur Vorschläge — Übernahme erst nach
 manueller Prüfung. Die Kategorie-Enums in extract.js und in `CATEGORIES`/`matchCategory` in
 types.ts müssen zusammenpassen.
