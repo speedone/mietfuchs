@@ -740,6 +740,69 @@ test('Ollama: bricht der Browser ab, bricht Mietfuchs die Anfrage an Ollama ab',
   }, { chat: 'hang' })
 })
 
+// ---------- KI-Auswertung als Strom zum Browser (#17) ----------
+// Firefox wartet höchstens 300 Sekunden auf die Antwort-Header (network.http.response.timeout).
+// Fordert der Browser mit Accept: application/x-ndjson an, schickt Mietfuchs die Header sofort,
+// danach Fortschritt, Lebenszeichen und zuletzt Ergebnis oder Fehler, je eine JSON-Zeile.
+
+async function uploadStreaming(s, route, { text, signal } = {}) {
+  const fd = new FormData()
+  fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
+  if (text !== undefined) fd.append('pdfText', text)
+  const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
+  return res
+}
+const linesOf = async (res) => (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
+
+test('Strom: Fortschritt je Schritt und am Ende das Ergebnis wie bisher', async () => {
+  await mitOllama(async (s) => {
+    const res = await uploadStreaming(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(res.status, 200)
+    assert.match(res.headers.get('content-type'), /application\/x-ndjson/)
+    const lines = await linesOf(res)
+    const result = lines.at(-1)
+    assert.equal(result.type, 'result')
+    assert.equal(result.data.extraction.vendor, 'Stadtwerke Musterstadt')
+    assert.match(result.data.file, /rechnung\.pdf$/)
+    const progress = lines.filter((l) => l.type === 'progress').map((l) => `${l.step}:${l.phase}`)
+    assert.ok(progress.includes('extraction:waiting'), progress.join(' '))
+    assert.ok(progress.includes('extraction:writing'), progress.join(' '))
+    assert.ok(progress.includes('classification:waiting'), progress.join(' '))
+    const writing = lines.find((l) => l.phase === 'writing')
+    assert.ok(writing.chars > 0)
+  })
+})
+
+test('Strom: ein Fehler kommt als letzte Zeile, samt Beleg', async () => {
+  await mitOllama(async (s) => {
+    const res = await uploadStreaming(s, '/api/extract', { text: LANGER_TEXT })
+    assert.equal(res.status, 200)
+    const last = (await linesOf(res)).at(-1)
+    assert.equal(last.type, 'error')
+    assert.match(last.error, /nicht installiert/)
+    assert.match(last.file, /rechnung\.pdf$/)
+  }, { model: 'fehlt:4b' })
+})
+
+test('Strom: die Header kommen sofort, auch wenn das Modell noch schweigt, danach Lebenszeichen', async () => {
+  await mitOllama(async (s) => {
+    const start = Date.now()
+    const res = await uploadStreaming(s, '/api/extract', { text: LANGER_TEXT })
+    assert.ok(Date.now() - start < 3000, 'die Header kamen erst mit der Antwort')
+    const lines = await linesOf(res)
+    assert.ok(lines.some((l) => l.type === 'heartbeat'), 'kein Lebenszeichen während des Wartens')
+    assert.match(lines.at(-1).error, /nicht innerhalb von 12 Sekunden/)
+  }, { chat: 'hang', env: { NKA_AI_TIMEOUT: '12' } })
+})
+
+test('Strom: der Schuhkarton (/api/intake) streamt ebenso', async () => {
+  await mitOllama(async (s) => {
+    const lines = await linesOf(await uploadStreaming(s, '/api/intake', { text: LANGER_TEXT }))
+    assert.equal(lines.at(-1).type, 'result')
+    assert.equal(lines.at(-1).data.kind, 'rechnung')
+  })
+})
+
 // ---------- Ollama: Modellauswahl und verständliche Fehler (#17) ----------
 
 const UNREACHABLE = 'http://127.0.0.1:9' // Port 9 nimmt keine Verbindung an

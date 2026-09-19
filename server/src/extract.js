@@ -22,9 +22,17 @@ function timeoutMs(step) {
 }
 
 // Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
-// Route, `signal` bricht ab, wenn der Browser nicht mehr wartet.
-async function ask(settings, step, { prompt, images = [], schema }, { signal, stats } = {}) {
-  const answer = await aiProvider(settings).json({ prompt, images, schema, timeoutMs: timeoutMs(step), signal })
+// Route, `signal` bricht ab, wenn der Browser nicht mehr wartet, `onProgress` meldet den
+// Fortschritt mit dem Namen des Schritts weiter.
+async function ask(settings, step, { prompt, images = [], schema }, { signal, stats, onProgress } = {}) {
+  const answer = await aiProvider(settings).json({
+    prompt,
+    images,
+    schema,
+    timeoutMs: timeoutMs(step),
+    signal,
+    onProgress: onProgress && ((event) => onProgress({ step, ...event })),
+  })
   stats?.push({ step, ...answer.stats })
   return answer.data
 }
@@ -143,8 +151,8 @@ Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
 }
 
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
-// `signal` und `stats` gehen an ask().
-export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [], signal, stats } = {}) {
+// `signal`, `stats` und `onProgress` gehen an ask().
+export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [], signal, stats, onProgress } = {}) {
   let prompt = PROMPT
   let images = []
 
@@ -166,13 +174,13 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  const result = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats })
+  const result = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
-      result.positions = await classifyPositions(settings, result.vendor, result.positions, { signal, stats })
+      result.positions = await classifyPositions(settings, result.vendor, result.positions, { signal, stats, onProgress })
     } catch {
       // bewusst ignoriert
     }
@@ -222,7 +230,7 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
-export async function extractMeterReading(filePath, mimetype, settings, { pages = [], signal, stats } = {}) {
+export async function extractMeterReading(filePath, mimetype, settings, { pages = [], signal, stats, onProgress } = {}) {
   let images
   if (mimetype === 'application/pdf') {
     if (pages.length === 0) throw new Error(OHNE_INHALT)
@@ -232,5 +240,5 @@ export async function extractMeterReading(filePath, mimetype, settings, { pages 
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  return ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats })
+  return ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
 }
