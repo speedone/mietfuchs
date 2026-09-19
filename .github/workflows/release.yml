@@ -102,6 +102,12 @@ jobs:
   # Jede Programmdatei auf einem Rechner ihres Systems starten und von außen prüfen
   # (scripts/smoke-test.mjs: Oberfläche, pdf.js-Dateien, KI-Auswertung, Belege, Abrechnung,
   # Backup). Geprüft werden die Archive, die auch Nutzer herunterladen.
+  #
+  # `langsam` lässt das nachgebaute Ollama länger als fünf Minuten schweigen: Bun bricht fetch
+  # sonst nach 300 Sekunden ohne Antwort-Header ab, Mietfuchs schaltet das mit einer Bun-eigenen
+  # Option ab (#17). Weil Bun mit `latest` baut, prüft das je Betriebssystem ein Lauf. Die
+  # Zeitgeber hängen an der Ereignisschleife des Systems (epoll, kqueue, libuv), nicht an der
+  # Architektur, deshalb reicht x64 bzw. Apple Silicon.
   pruefen:
     name: Prüfen auf ${{ matrix.name }}
     needs: signieren
@@ -110,11 +116,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Linux x64, runner: ubuntu-24.04, datei: mietfuchs-linux.tar.gz, programm: mietfuchs-linux }
+          - { name: Linux x64, runner: ubuntu-24.04, datei: mietfuchs-linux.tar.gz, programm: mietfuchs-linux, langsam: --slow-ai 320 }
           - { name: Linux ARM64, runner: ubuntu-24.04-arm, datei: mietfuchs-linux-arm64.tar.gz, programm: mietfuchs-linux-arm64 }
-          - { name: Windows x64, runner: windows-2025, datei: mietfuchs-win.exe, programm: mietfuchs-win.exe }
+          - { name: Windows x64, runner: windows-2025, datei: mietfuchs-win.exe, programm: mietfuchs-win.exe, langsam: --slow-ai 320 }
           - { name: Windows ARM64, runner: windows-11-arm, datei: mietfuchs-win-arm64.exe, programm: mietfuchs-win-arm64.exe }
-          - { name: macOS Apple Silicon, runner: macos-15, datei: mietfuchs-macos-apple-silicon.zip, programm: mietfuchs-macos-apple-silicon }
+          - { name: macOS Apple Silicon, runner: macos-15, datei: mietfuchs-macos-apple-silicon.zip, programm: mietfuchs-macos-apple-silicon, langsam: --slow-ai 320 }
           - { name: macOS Intel, runner: macos-15-intel, datei: mietfuchs-macos-intel.zip, programm: mietfuchs-macos-intel }
     env:
       NKA_PORT: '3001'
@@ -158,7 +164,7 @@ jobs:
           "./bin/${{ matrix.programm }}" > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe der Programmdatei"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary
+          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ matrix.langsam }}
 
       - name: Starten und prüfen (Windows)
         if: runner.os == 'Windows'
@@ -167,7 +173,7 @@ jobs:
           $env:NKA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'daten'
           $p = Start-Process -FilePath "bin\${{ matrix.programm }}" -PassThru -RedirectStandardOutput server.log -RedirectStandardError server.err
           try {
-            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary
+            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ matrix.langsam }}
             if ($LASTEXITCODE -ne 0) { throw "Prüfung auf ${{ matrix.name }} fehlgeschlagen" }
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue

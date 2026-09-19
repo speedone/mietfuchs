@@ -110,7 +110,7 @@ jobs:
             ergebnis=0
             node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode docker --timeout 180 || ergebnis=$?
             # Der HEALTHCHECK aus dem Dockerfile muss den Container als gesund melden
-            for i in $(seq 1 60); do
+            for _ in $(seq 1 60); do
               status=$(docker inspect -f '{{.State.Health.Status}}' "pruefung-$arch")
               [ "$status" = healthy ] && break
               sleep 3

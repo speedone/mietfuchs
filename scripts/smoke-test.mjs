@@ -27,6 +27,10 @@ const VERSION = opt('version', JSON.parse(fs.readFileSync(path.join(root, 'serve
 // --network host ebenfalls 127.0.0.1)
 const OLLAMA_HOST = opt('ollama-host', '127.0.0.1')
 const WARTEN_SEK = Number(opt('timeout', '60'))
+// Mit --slow-ai 320 schweigt das nachgebaute Ollama so lange, bevor es antwortet. So prüft die
+// CI, dass eine Auswertung über fünf Minuten weder am Weg zu Ollama noch am Weg zum Browser
+// abbricht (fetch unter Node und Bun, Firefox: jeweils 300 Sekunden ohne Antwort-Header).
+const SLOW_AI_SECONDS = Number(opt('slow-ai', '0'))
 
 let schritte = 0
 function ok(text) {
@@ -47,8 +51,10 @@ async function holen(pfad, init) {
 const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 // ---------- Nachgebautes Ollama ----------
+// `delaySeconds` lässt /api/chat so lange schweigen, wie ein langsamer Rechner zum Einlesen braucht
 function starteOllama() {
   const anfragen = []
+  const control = { delaySeconds: 0 }
   const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', (d) => { body += d })
@@ -64,14 +70,34 @@ function starteOllama() {
         : props.docType
           ? { docType: 'rechnung' }
           : { vendor: 'Prüflieferant', positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 42.5 }], totalGrossEur: 42.5 }
-      // Wie Ollama: zeilenweise JSON, die letzte Zeile mit done und Grund
-      res.writeHead(200, { 'content-type': 'application/x-ndjson' })
-      res.write(`${JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(answer) }, done: false })}\n`)
-      res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 100, eval_count: 20 })}\n`)
+      // Wie Ollama: zeilenweise JSON, die letzte Zeile mit done und Grund. Die Header kommen wie
+      // bei Ollama erst mit dem ersten Stück der Antwort.
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' })
+        res.write(`${JSON.stringify({ message: { role: 'assistant', content: JSON.stringify(answer) }, done: false })}\n`)
+        res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 100, eval_count: 20 })}\n`)
+      }, props.categories ? 0 : control.delaySeconds * 1000)
     })
   })
   // Nur lokal erreichbar: Container laufen in der CI mit --network host und sehen 127.0.0.1 ebenso
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ port: server.address().port, anfragen, stop: () => server.close() })))
+  return new Promise((resolve) =>
+    server.listen(0, '127.0.0.1', () =>
+      resolve({ port: server.address().port, anfragen, control, stop: () => server.close() }),
+    ),
+  )
+}
+
+// Wie der Browser: Auswertung als Strom (Accept: application/x-ndjson). Liefert, wann die Header
+// kamen, alle Zeilen und die Gesamtdauer.
+async function extractAsStream(langerText) {
+  const fd = new FormData()
+  fd.append('file', new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' }), 'strom.pdf')
+  fd.append('pdfText', langerText)
+  const start = Date.now()
+  const res = await fetch(`${BASE}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } })
+  const headersAfterMs = Date.now() - start
+  const lines = (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
+  return { status: res.status, type: res.headers.get('content-type') ?? '', headersAfterMs, lines, totalMs: Date.now() - start }
 }
 
 // ---------- Ablauf ----------
@@ -150,6 +176,20 @@ async function kiAuswertung() {
     fd.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'foto.jpg')
     r = await holen('/api/intake', { method: 'POST', body: fd })
     pruefe(r.status === 200 && r.body.kind === 'rechnung', 'Handyfoto über den Schuhkarton (/api/intake)', r.body)
+
+    let stream = await extractAsStream(langerText)
+    const last = stream.lines.at(-1)
+    pruefe(stream.type.includes('application/x-ndjson') && last?.type === 'result' && last.data?.extraction?.vendor === 'Prüflieferant', 'Auswertung als Strom wie im Browser', last)
+    if (SLOW_AI_SECONDS > 0) {
+      console.log(`  … das nachgebaute Ollama schweigt jetzt ${SLOW_AI_SECONDS} Sekunden`)
+      ollama.control.delaySeconds = SLOW_AI_SECONDS
+      stream = await extractAsStream(langerText)
+      ollama.control.delaySeconds = 0
+      pruefe(stream.headersAfterMs < 5000, `langsames Modell: Header kommen trotzdem sofort (nach ${stream.headersAfterMs} ms)`)
+      pruefe(stream.lines.some((l) => l.type === 'heartbeat'), 'langsames Modell: Lebenszeichen während des Wartens', stream.lines.map((l) => l.type))
+      const end = stream.lines.at(-1)
+      pruefe(end?.type === 'result' && stream.totalMs >= SLOW_AI_SECONDS * 1000, `langsames Modell: Ergebnis nach ${Math.round(stream.totalMs / 1000)} Sekunden, kein Abbruch nach 300`, end)
+    }
   } finally {
     ollama.stop()
   }
