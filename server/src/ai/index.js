@@ -54,7 +54,9 @@ export function aiProvider(ai, { images = false } = {}) {
   const provider = providerFor(config)
   return {
     async json(request) {
-      // Ob ein lokales Ollama das Modell an die Cloud weiterreicht, weiß nur Ollama selbst
+      // Ob ein lokales Ollama das Modell an die Cloud weiterreicht, weiß nur Ollama selbst.
+      // Das kostet vor jeder Auswertung eine Anfrage an /api/show (eine Minute gemerkt); im
+      // Zweifel darf nichts hinausgehen, deshalb scheitert die Auswertung, wenn sie scheitert.
       const remoteModel = !isExternalUrl(config.url) && provider.isRemoteModel ? await provider.isRemoteModel(request.signal) : false
       const problem = consentProblem(config, { remoteModel })
       if (problem) throw new Error(problem)

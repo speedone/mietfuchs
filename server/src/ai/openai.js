@@ -17,7 +17,7 @@
 // Fehler kommen in verschiedenen Formaten (readProviderError) und werden in Meldungen für die
 // Oberfläche übersetzt. Ein Schlüssel erscheint nie in einer Meldung.
 
-import { openRequest, readText } from './http.js'
+import { openRequest, readText, maskSecret } from './http.js'
 import { presetById } from './presets.js'
 import { isExternalUrl } from './settings.js'
 
@@ -121,12 +121,12 @@ function handleEvent(block, state, onProgress) {
     throw new ProviderError(`Der Dienst lieferte eine unlesbare Antwort: ${text.slice(0, 200)}`)
   }
   // Fehler mitten im Strom kommen mit Status 200
-  if (type === 'error' || json.error) {
+  if (type === 'error' || json?.error) {
     const { message, code } = readProviderError(text)
     throw Object.assign(new ProviderError(message), { status: 200, code, detail: message, inStream: true })
   }
-  if (json.usage) state.usage = json.usage
-  const choice = json.choices?.[0]
+  if (json?.usage) state.usage = json.usage
+  const choice = json?.choices?.[0]
   if (!choice) return false
   const delta = choice.delta ?? choice.message ?? {}
   let written = 0
@@ -214,7 +214,7 @@ function serviceName(config) {
   return preset && preset.id !== 'openai-compatible' ? preset.label : new URL(config.url).host
 }
 
-const maskKey = (config, text) => (config.apiKey ? String(text).split(config.apiKey).join('…') : String(text))
+const maskKey = (config, text) => maskSecret(config.apiKey, text)
 
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -257,11 +257,12 @@ const isBusy = (err) =>
 
 // Übersetzt einen Fehler in eine Meldung für die Oberfläche. Das Zeitlimit hat Vorrang: Es
 // bricht die Verbindung ab, was sonst wie ein Netzfehler aussähe.
-function translateError(err, config, { timeout, signal, timeoutMs, connected, images = [] }) {
+function translateError(err, config, { timeout, signal, timeoutMs, connected, images = [], timeoutSettable = true }) {
   const name = serviceName(config)
   const base = baseUrl(config)
   if (timeout.aborted) {
-    return new ProviderError(`${name} hat nicht innerhalb von ${Math.round(timeoutMs / 1000)} Sekunden geantwortet. Das Zeitlimit lässt sich in den Einstellungen unter „Erweitert“ erhöhen.`)
+    const hint = timeoutSettable ? ' Das Zeitlimit lässt sich in den Einstellungen unter „Erweitert“ erhöhen.' : ''
+    return new ProviderError(`${name} hat nicht innerhalb von ${Math.round(timeoutMs / 1000)} Sekunden geantwortet.${hint}`)
   }
   if (signal?.aborted) {
     const cancelled = new Error('Die Auswertung wurde abgebrochen.')
@@ -277,7 +278,7 @@ function translateError(err, config, { timeout, signal, timeoutMs, connected, im
   if (err.status === undefined) return err // eigene Meldung, etwa zum Inhalt der Antwort
   const { status, detail = '', code } = err
   const model = config.model
-  if (err.inStream) return new ProviderError(`${name} meldet einen Fehler: ${detail}`)
+  if (err.inStream) return new ProviderError(`${name} meldet einen Fehler: ${maskKey(config, detail).slice(0, 500)}`)
   if (status === 401) {
     if (!config.apiKey) return new ProviderError(`${name} verlangt einen Schlüssel. Bitte in den Einstellungen einen eintragen.`)
     const expiry = config.preset === 'ionos' ? ' IONOS-Token laufen nach der gewählten Gültigkeit ab.' : ''
@@ -296,6 +297,9 @@ function translateError(err, config, { timeout, signal, timeoutMs, connected, im
       : `${name} meldet zu viele Anfragen. Bitte gleich noch einmal versuchen.`)
   }
   if (status >= 500) return new ProviderError(`${name} ist gerade überlastet oder gestört (Status ${status}). Bitte später noch einmal versuchen.`)
+  if (/maximum|too large|exceed|at most|less than or equal/i.test(detail) && /max_tokens|max_completion_tokens/.test(detail)) {
+    return new ProviderError(`Die eingestellte Länge der Antwort ist für das Modell „${model}“ zu groß. In den Einstellungen unter „Erweitert“ einen kleineren Wert eintragen. (${detail})`)
+  }
   if (images.length > 0 && /image|vision|multimodal/i.test(detail)) {
     return new ProviderError(`${name} lehnt die Bilder ab. Versteht das Modell „${model}“ Bilder? Sonst in den Einstellungen ein Modell mit Bildverständnis wählen. (${detail})`)
   }
@@ -325,7 +329,9 @@ function adjustAfterRejection(err, state, stages) {
     state.temperature = false
     return true
   }
-  if (!state.tokenFieldSwitched && mentions(state.tokenField)) {
+  // „zu groß“ ist kein falscher Feldname, sondern eine Grenze des Modells
+  const tooLarge = /maximum|too large|exceed|at most|less than or equal/i.test(err.detail ?? '')
+  if (!state.tokenFieldSwitched && !tooLarge && mentions(state.tokenField)) {
     state.tokenField = OTHER_TOKEN_FIELD[state.tokenField]
     state.tokenFieldSwitched = true
     return true
@@ -439,7 +445,8 @@ export function openaiProvider(config) {
 // Bilder versteht, bei den übrigen bleibt das offen (null).
 export async function listOpenAiModels(config) {
   const timeout = AbortSignal.timeout(10000)
-  const context = { timeout, signal: null, timeoutMs: 10000, connected: false }
+  // Für die Modellliste gilt ein festes Zeitlimit, nicht das eingestellte
+  const context = { timeout, signal: null, timeoutMs: 10000, connected: false, timeoutSettable: false }
   try {
     const res = await call(config, '/models', { signal: timeout })
     context.connected = true

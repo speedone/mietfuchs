@@ -184,7 +184,7 @@ export function AiSettings({ settings, reload }: Props) {
           <input
             type="checkbox"
             checked={form.images !== null}
-            onChange={(e) => setForm({ ...form, images: e.target.checked ? { ...form.text, model: form.text.model } : null })}
+            onChange={(e) => setForm({ ...form, images: e.target.checked ? { ...form.text } : null })}
           />
           Eigenen Anbieter für Fotos und Scans verwenden
         </label>
