@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Linux-Programmdatei startet auch ohne grafische Oberfläche.** Fehlte `xdg-open` — auf
+  einem Server, in einem Container oder bei Anmeldung per SSH —, beendete sich die
+  Programmdatei direkt nach dem Start, obwohl der Server schon lief. Jetzt erscheint ein
+  Hinweis, die Adresse von Hand im Browser zu öffnen, und Mietfuchs läuft weiter. Beitrag von
+  [@thorstenhornung1](https://github.com/thorstenhornung1) in
+  [#8](https://github.com/speedone/mietfuchs/pull/8).
+  ([#7](https://github.com/speedone/mietfuchs/issues/7))
 - **Rundungscent hängt nicht mehr von der Reihenfolge der Daten ab.** Haben mehrere
   Mietverhältnisse exakt gleiche Anteile, etwa bei drei gleich großen Wohnungen, bleibt beim
   Verteilen ein Cent übrig. Wer ihn trägt, entschied bisher die Reihenfolge der
