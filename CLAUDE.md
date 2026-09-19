@@ -194,7 +194,7 @@ werden nur übernommen, wenn sie ins eigene Repo zeigen. Ein Selbst-Update gibt 
 Hinweis führt zu einer Anleitung, bei der Programmdatei mit dem Download der passenden Datei
 und Schritten je System, bei Docker und npm mit Befehlen. Die Entscheidungslogik der
 Oberfläche liegt in [client/src/update.ts](client/src/update.ts). Ob später ein Updater
-dazukommt, ist offen (Issue #14). Die eigene Version liest
+dazukommt, ist offen (Issue #20). Die eigene Version liest
 [server/src/version.js](server/src/version.js) per JSON-Import aus `server/package.json`, den
 Bun beim Kompilieren einbettet. Die Betriebsart ergibt sich aus `globalThis.Bun`
 (Programmdatei) bzw. `NKA_RUNTIME=docker` (setzt das Dockerfile), sonst `npm`.
