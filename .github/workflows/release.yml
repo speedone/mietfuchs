@@ -16,6 +16,7 @@ on:
       - server/**
       - client/**
       - scripts/**
+      - packaging/**
       - package.json
       - package-lock.json
       - .github/workflows/release.yml
@@ -295,7 +296,9 @@ jobs:
             -e HOME=/home/pruefer -e CI=true -e NKA_PORT=3001 \
             -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
             pruefling sh -c 'mietfuchs > /tmp/server.log 2>&1'
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode binary
+          # Betriebsart „package“: Aus einem Paket installiert, erklärt der Update-Hinweis das
+          # Aktualisieren über die Paketverwaltung statt über das Austauschen der Datei.
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode package
           echo '--- Datenordner des Benutzers'
           docker exec pruefling ls -l /home/pruefer/.local/share/mietfuchs/db.json
           # Einmal genügt: Der Startmenü-Eintrag ist in jedem Paket derselbe, und nur Debian

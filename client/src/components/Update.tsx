@@ -250,6 +250,14 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
           <li>Mietfuchs wie gewohnt starten, etwa mit <code>./{fileName.replace(/\.tar\.gz$/, '')}</code>.</li>
         </ol>
       )}
+      {guide.system === 'package' && (
+        <ol className="update-steps">
+          <li>Auf der Release-Seite das Paket für deine Distribution laden: <code>.deb</code> für Debian, Ubuntu und Mint, <code>.rpm</code> für Fedora, openSUSE und RHEL, <code>.pkg.tar.zst</code> für Arch.</li>
+          {quitStep}
+          <li>Mit demselben Befehl installieren wie beim ersten Mal, etwa <code>sudo apt install ./mietfuchs_{status.latest}_amd64.deb</code>. Er ersetzt die installierte Fassung.</li>
+          <li>Mietfuchs wie gewohnt starten. Deine Daten bleiben, wo sie sind.</li>
+        </ol>
+      )}
       {guide.system === null && (
         <p>
           Auf der Release-Seite die Datei für dein System wählen. Danach wie beim ersten Mal

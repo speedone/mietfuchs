@@ -717,6 +717,10 @@ const server = app.listen(PORT, (err) => {
   // Tests lesen ihn aus dieser Meldung.
   const url = `http://127.0.0.1:${server.address().port}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
+  // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.js): neben der
+  // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
+  // oder umziehen will, soll ihn nicht suchen müssen.
+  console.log(`Daten: ${DATA_DIR}`)
   if (PACKAGED) {
     console.log('Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster

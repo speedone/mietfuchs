@@ -18,7 +18,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Linux, je für x64 und ARM64. Installiert wird mit dem gewohnten Befehl der Distribution;
   danach steht Mietfuchs mit Symbol im Startmenü. Die Daten liegen dann in
   `~/.local/share/mietfuchs`, weil ein Programm in `/usr/bin` nicht neben sich schreiben darf.
-  Wer das Archiv nutzt, behält seinen Ordner `data/` neben der Programmdatei.
+  Wer das Archiv nutzt, behält seinen Ordner `data/` neben der Programmdatei. Der Update-Hinweis
+  erklärt in einer Paketinstallation den Weg über die Paketverwaltung.
+  ([#25](https://github.com/speedone/mietfuchs/issues/25))
+- **Beim Start steht im Programmfenster, wo die Daten liegen.** Wer sie sichern oder umziehen
+  will, muss den Ordner nicht mehr suchen.
   ([#25](https://github.com/speedone/mietfuchs/issues/25))
 - **Empfehlungen, welches Modell taugt.** Die Einstellungen zeigen einige Modelle mit Größe,
   Bildverständnis und den Messwerten des KI-Prüflaufs. Mit eingeschalteter Update-Prüfung holt

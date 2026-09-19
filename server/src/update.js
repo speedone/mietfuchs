@@ -77,8 +77,10 @@ function describeError(err) {
   return err?.message || 'Die Abfrage ist fehlgeschlagen.'
 }
 
-// `mode` ist 'binary' (Programmdatei), 'docker' oder 'npm' und bestimmt, ob es einen direkten
-// Download gibt. `now` und `timeoutMs` lassen sich für Tests einstellen.
+// `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
+// 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche
+// der drei Paketdateien passt, weiß nur die Distribution des Nutzers, deshalb führt der Hinweis
+// dort auf die Release-Seite. `now` und `timeoutMs` lassen sich für Tests einstellen.
 export function createUpdateChecker({
   url = UPDATE_URL,
   currentVersion,

@@ -13,8 +13,10 @@ export const hintVisible = (st: UpdateStatus | null, s: Settings | null): boolea
 export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/latest'
 
 // Das System ergibt sich aus der Datei, die der Server passend zum Rechner ausgesucht hat
-// (server/src/update.js). Ohne passende Datei zeigt der Link auf die Release-Seite.
-export type System = 'windows' | 'macos' | 'linux' | null
+// (server/src/update.js). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
+// steht für eine Installation aus einem Linux-Paket: Dort wird nicht die Datei getauscht,
+// sondern das Paket neu installiert.
+export type System = 'windows' | 'macos' | 'linux' | 'package' | null
 
 export type UpdateGuide =
   | { kind: 'download'; href: string; system: System; newTab: boolean }
@@ -36,6 +38,10 @@ export function updateGuide(st: UpdateStatus): UpdateGuide {
     const system = systemOf(href)
     return { kind: 'download', href, system, newTab: system === null }
   }
+  // Aus einem Paket installiert: Welche der drei Paketdateien passt, weiß nur die Distribution
+  // des Nutzers. Deshalb führt der Weg über die Release-Seite, und installiert wird mit dem
+  // Befehl, den er schon beim ersten Mal genommen hat.
+  if (st.mode === 'package') return { kind: 'download', href: st.releaseUrl ?? RELEASES_URL, system: 'package', newTab: true }
   if (st.mode === 'docker') return { kind: 'command', lines: ['docker compose pull', 'docker compose up -d'] }
   return { kind: 'command', lines: ['git pull', 'npm install', 'npm run build'] }
 }

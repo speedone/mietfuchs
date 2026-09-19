@@ -6,9 +6,15 @@
 // Version kennt. Dort gibt es keine package.json im Dateisystem. Node lädt JSON-Module erst ab
 // 22.12 ohne Warnung und bricht vor 20.10 mit einem Syntaxfehler ab, daher engines >=22.12.
 import pkg from '../package.json' with { type: 'json' }
+import { systemLocation } from './paths.js'
 
 export const APP_VERSION = pkg.version
 
-// 'binary' in der Programmdatei (Bun), 'docker' im Container (das Dockerfile setzt
-// NKA_RUNTIME), sonst 'npm'. Bestimmt, wie der Update-Hinweis das Aktualisieren erklärt.
-export const RUNTIME = globalThis.Bun ? 'binary' : process.env.NKA_RUNTIME === 'docker' ? 'docker' : 'npm'
+// 'binary' in der Programmdatei (Bun), 'package' bei derselben Datei aus einem
+// Installationspaket (#25: sie liegt dann an einem Ort, der dem System gehört), 'docker' im
+// Container (das Dockerfile setzt NKA_RUNTIME), sonst 'npm'. Bestimmt, wie der Update-Hinweis
+// das Aktualisieren erklärt: Datei austauschen, Paket neu installieren, Container ziehen oder
+// neu bauen.
+export const RUNTIME = globalThis.Bun
+  ? systemLocation() ? 'package' : 'binary'
+  : process.env.NKA_RUNTIME === 'docker' ? 'docker' : 'npm'
