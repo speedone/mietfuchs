@@ -59,7 +59,7 @@ async function startServerIn(dataDir, env = {}) {
     child.kill()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
-  return { api, dataDir, stop }
+  return { api, base, dataDir, stop }
 }
 
 let srv
@@ -259,4 +259,169 @@ test('Version: /healthz und der Update-Hinweis nennen die Version aus package.js
   const status = await srv.api('/api/update')
   assert.equal(bericht.version, serverVersion)
   assert.equal(status.current, serverVersion)
+})
+
+// ---------- KI-Auswertung: Text und Seitenbilder kommen aus dem Browser (#21) ----------
+// Der Server öffnet keine PDFs mehr selbst. Ollama ersetzt ein lokaler Server, der jede
+// Anfrage mitschreibt und eine feste Antwort liefert.
+
+const LANGER_TEXT =
+  'Stadtwerke Musterstadt, Rechnung Nr. 4711 vom 15.03.2026. Frischwasser 12,50 EUR, Schmutzwasser 8,20 EUR. Gesamt 20,70 EUR.'
+
+async function fakeOllama() {
+  const http = await import('node:http')
+  const anfragen = []
+  const server = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', (d) => { body += d })
+    req.on('end', () => {
+      const json = body ? JSON.parse(body) : {}
+      anfragen.push({ url: req.url, body: json })
+      // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
+      const content = json.format?.properties?.categories
+        ? { categories: ['Wasser/Abwasser'] }
+        : {
+            vendor: 'Stadtwerke Musterstadt',
+            positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }],
+            totalGrossEur: 12.5,
+          }
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ message: { content: JSON.stringify(content) } }))
+    })
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  return { url: `http://127.0.0.1:${server.address().port}`, anfragen, stop: () => server.close() }
+}
+
+async function mitOllama(fn) {
+  const ollama = await fakeOllama()
+  const s = await startServer()
+  try {
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: 'test' }) })
+    await fn(s, ollama)
+  } finally {
+    s.stop()
+    ollama.stop()
+  }
+}
+
+// Der Inhalt des PDFs spielt keine Rolle mehr: Der Server liest es nicht, er legt es nur ab.
+const PDF = Buffer.from('%PDF-1.4\n%Mietfuchs-Test\n')
+const seite = (n) => new Blob([Buffer.from(`JPEG-Seite-${n}`)], { type: 'image/jpeg' })
+const base64 = (n) => Buffer.from(`JPEG-Seite-${n}`).toString('base64')
+
+async function hochladen(s, route, { text, seiten = [] } = {}) {
+  const fd = new FormData()
+  fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
+  if (text !== undefined) fd.append('pdfText', text)
+  seiten.forEach((b, i) => fd.append('pages', b, `seite-${i + 1}.jpg`))
+  const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd })
+  return { status: res.status, body: await res.json() }
+}
+
+const chatAnfragen = (ollama) => ollama.anfragen.filter((a) => a.url === '/api/chat')
+const ersteNachricht = (ollama) => chatAnfragen(ollama)[0].body.messages[0]
+
+test('KI-Auswertung: PDF mit Textebene geht als Text an Ollama, ohne Bilder', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/extract', { text: LANGER_TEXT, seiten: [seite(1)] })
+    assert.equal(r.status, 200)
+    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
+    const m = ersteNachricht(ollama)
+    assert.match(m.content, /RECHNUNGSTEXT/)
+    assert.ok(m.content.includes(LANGER_TEXT))
+    assert.equal(m.images, undefined) // brauchbarer Text hat Vorrang vor Bildern
+  })
+})
+
+test('KI-Auswertung: Scan ohne Textebene geht mit den Seitenbildern aus dem Browser an Ollama', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/extract', { text: 'kurz', seiten: [seite(1), seite(2)] })
+    assert.equal(r.status, 200)
+    const m = ersteNachricht(ollama)
+    assert.deepEqual(m.images, [base64(1), base64(2)])
+    assert.doesNotMatch(m.content, /RECHNUNGSTEXT/)
+  })
+})
+
+test('KI-Auswertung: ohne Text und ohne Seitenbilder eine klare Meldung, Ollama wird nicht gefragt', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/extract')
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /Oberfläche/)
+    assert.equal(chatAnfragen(ollama).length, 0)
+  })
+})
+
+test('KI-Auswertung: Seitenbilder landen nicht im Belegarchiv', async () => {
+  await mitOllama(async (s) => {
+    const vorher = (await s.api('/api/uploads')).length
+    await hochladen(s, '/api/extract', { seiten: [seite(1), seite(2), seite(3)] })
+    const nachher = await s.api('/api/uploads')
+    assert.equal(nachher.length, vorher + 1)
+    assert.match(nachher.map((u) => u.file).join(' '), /rechnung\.pdf/)
+  })
+})
+
+test('KI-Auswertung: mehr als vier Seitenbilder lehnt der Server ab, ohne Reste im Archiv', async () => {
+  await mitOllama(async (s, ollama) => {
+    const vorher = (await s.api('/api/uploads')).length
+    const r = await hochladen(s, '/api/extract', { seiten: [1, 2, 3, 4, 5].map(seite) })
+    assert.equal(r.status, 400)
+    assert.match(r.body.error, /Höchstens 4 Seitenbilder/)
+    assert.equal(chatAnfragen(ollama).length, 0)
+    assert.equal((await s.api('/api/uploads')).length, vorher)
+  })
+})
+
+test('KI-Auswertung: ein Foto geht wie bisher als Bild an Ollama', async () => {
+  await mitOllama(async (s, ollama) => {
+    const foto = Buffer.from('JPEG-Foto')
+    const fd = new FormData()
+    fd.append('file', new Blob([foto], { type: 'image/jpeg' }), 'rechnung.jpg')
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200)
+    assert.deepEqual(ersteNachricht(ollama).images, [foto.toString('base64')])
+  })
+})
+
+test('Beleg anhängen: /api/upload legt die Datei ins Belegarchiv, sie ist abrufbar', async () => {
+  const s = await startServer()
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'Beleg Müll 2025.pdf')
+    const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200)
+    const { file } = await res.json()
+    assert.match(file, /^\d+_Beleg_Müll_2025\.pdf$/)
+    assert.deepEqual((await s.api('/api/uploads')).map((u) => u.file), [file])
+    const abruf = await fetch(`${s.base}/uploads/${encodeURIComponent(file)}`)
+    assert.equal(abruf.status, 200)
+    assert.deepEqual(Buffer.from(await abruf.arrayBuffer()), PDF)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Hochladen: eine zu große Datei ergibt eine lesbare Meldung statt einer HTML-Seite', async () => {
+  const s = await startServer()
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([Buffer.alloc(25 * 1024 * 1024 + 1)], { type: 'application/pdf' }), 'riesig.pdf')
+    const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
+    assert.equal(res.status, 400)
+    assert.match((await res.json()).error, /größer als 25 MB/)
+    assert.equal((await s.api('/api/uploads')).length, 0)
+  } finally {
+    s.stop()
+  }
+})
+
+test('KI-Auswertung: der Schuhkarton (/api/intake) nimmt die Seitenbilder ebenso', async () => {
+  await mitOllama(async (s, ollama) => {
+    const r = await hochladen(s, '/api/intake', { seiten: [seite(1)] })
+    assert.equal(r.status, 200)
+    assert.equal(r.body.kind, 'rechnung')
+    assert.deepEqual(ersteNachricht(ollama).images, [base64(1)])
+  })
 })
