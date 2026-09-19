@@ -19,12 +19,20 @@ async function startServer() {
   return startServerIn(dataDir)
 }
 
-async function startServerIn(dataDir) {
+// `env` ergänzt oder überschreibt Umgebungsvariablen. NKA_UPDATE_URL zeigt standardmäßig ins
+// Leere (Port 9 nimmt keine Verbindung an): Kein Test darf versehentlich das echte GitHub fragen.
+async function startServerIn(dataDir, env = {}) {
   const port = 34000 + Math.floor(Math.random() * 8000)
   const base = `http://127.0.0.1:${port}`
   const child = spawn(process.execPath, ['src/index.js'], {
     cwd: serverRoot,
-    env: { ...process.env, NKA_PORT: String(port), NKA_DATA_DIR: dataDir },
+    env: {
+      ...process.env,
+      NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test',
+      ...env,
+      NKA_PORT: String(port),
+      NKA_DATA_DIR: dataDir,
+    },
     stdio: 'ignore',
   })
   const api = async (pfad, init) => {
@@ -166,4 +174,88 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
   } finally {
     alt.stop()
   }
+})
+
+// ---------- Update-Hinweis ----------
+// Ein nachgebauter GitHub-Server liefert die echte Antwort der Releases-API, umgeschrieben auf
+// eine neuere Version. Er zählt mit, damit sich belegen lässt, dass ohne Zustimmung nichts
+// hinausgeht.
+
+const serverVersion = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8')).version
+const releaseJson = fs
+  .readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')
+  .replaceAll(JSON.parse(fs.readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')).tag_name, 'v9.9.9')
+
+async function fakeGitHub() {
+  const http = await import('node:http')
+  const anfragen = []
+  const server = http.createServer((req, res) => {
+    anfragen.push(req.url)
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(releaseJson)
+  })
+  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  const url = `http://127.0.0.1:${server.address().port}/repos/speedone/mietfuchs/releases/latest`
+  return { url, anfragen, stop: () => server.close() }
+}
+
+async function mitUpdateServer(env, fn) {
+  const github = await fakeGitHub()
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-update-'))
+  const s = await startServerIn(dataDir, { NKA_UPDATE_URL: github.url, ...env })
+  try {
+    await fn(s, github)
+  } finally {
+    s.stop()
+    github.stop()
+  }
+}
+
+test('Update-Hinweis: ohne Zustimmung fragt der Server GitHub nicht', async () => {
+  await mitUpdateServer({}, async (s, github) => {
+    const status = await s.api('/api/update')
+    assert.equal(status.enabled, false)
+    assert.equal(status.available, false)
+    // auch „Jetzt prüfen" darf ohne Zustimmung nichts anfragen
+    await s.api('/api/update/check', { method: 'POST', body: '{}' })
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'off' }) })
+    await s.api('/api/update')
+    assert.equal(github.anfragen.length, 0)
+  })
+})
+
+test('Update-Hinweis: mit Zustimmung meldet der Server die neue Version', async () => {
+  await mitUpdateServer({}, async (s, github) => {
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
+    const status = await s.api('/api/update')
+    assert.equal(github.anfragen.length, 1)
+    assert.equal(status.enabled, true)
+    assert.equal(status.current, serverVersion)
+    assert.equal(status.latest, '9.9.9')
+    assert.equal(status.available, true)
+    assert.equal(status.mode, 'npm') // der Test startet den Server mit node, ohne Programmdatei
+    assert.equal(status.releaseUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v9.9.9')
+    // Bis zum nächsten Tag kommt das gemerkte Ergebnis, „Jetzt prüfen" fragt neu
+    await s.api('/api/update')
+    assert.equal(github.anfragen.length, 1)
+    const neu = await s.api('/api/update/check', { method: 'POST', body: '{}' })
+    assert.equal(github.anfragen.length, 2)
+    assert.equal(neu.latest, '9.9.9')
+  })
+})
+
+test('Update-Hinweis: im Docker-Container lautet die Betriebsart docker', async () => {
+  await mitUpdateServer({ NKA_RUNTIME: 'docker' }, async (s) => {
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
+    const status = await s.api('/api/update')
+    assert.equal(status.mode, 'docker')
+    assert.equal(status.downloadUrl, null)
+  })
+})
+
+test('Version: /healthz und der Update-Hinweis nennen die Version aus package.json', async () => {
+  const bericht = await srv.api('/healthz')
+  const status = await srv.api('/api/update')
+  assert.equal(bericht.version, serverVersion)
+  assert.equal(status.current, serverVersion)
 })

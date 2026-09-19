@@ -19,6 +19,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 # Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / server/src/index.js)
 ENV NKA_PORT=3001
+# Betriebsart für den Update-Hinweis: Im Container wird per Image aktualisiert, nicht per Download
+ENV NKA_RUNTIME=docker
 
 # Server inkl. node_modules und das gebaute Frontend übernehmen.
 # Die Verzeichnisstruktur muss erhalten bleiben: server liefert ../../client/dist aus.
