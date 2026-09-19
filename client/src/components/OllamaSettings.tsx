@@ -75,7 +75,7 @@ export function OllamaSettings({ settings, reload }: Props) {
     await loadStatus()
   }
 
-  const models = status?.ok ? status.models ?? [] : []
+  const models = status?.ok ? status.modelDetails ?? [] : []
   const showSelect = status?.ok && !freeInput && !modelFixed
   const hint = status?.ok ? modelHint(models, form.ollamaModel) : null
   const modelName = form.ollamaModel.trim()

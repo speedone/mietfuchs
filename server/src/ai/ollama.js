@@ -21,8 +21,10 @@ function numCtx() {
 // Fehler mit einer Meldung, die so in der Oberfläche stehen kann
 class OllamaError extends Error {}
 
+// Zuerst, was jeder tun kann: Beim ersten Beleg lädt Ollama das Modell erst in den Speicher, ein
+// zweiter Versuch geht deshalb oft schneller. Die Umgebungsvariable hilft nur bei Docker und npm.
 const timeoutMessage = (ms) =>
-  `Ollama hat nicht innerhalb von ${Math.round(ms / 1000)} Sekunden geantwortet. Ohne Grafikkarte ist ein großes Modell oft zu langsam, dann hilft ein kleineres. Das Zeitlimit lässt sich mit NKA_AI_TIMEOUT erhöhen.`
+  `Ollama hat nicht innerhalb von ${Math.round(ms / 1000)} Sekunden geantwortet. Beim ersten Beleg lädt Ollama das Modell erst in den Speicher, ein zweiter Versuch geht oft schneller. Ohne Grafikkarte ist ein großes Modell oft zu langsam, dann hilft ein kleineres Modell. Bei Docker oder dem Start aus dem Quellcode lässt sich das Zeitlimit mit NKA_AI_TIMEOUT erhöhen.`
 
 // Übersetzt, was beim Verbinden oder Lesen schiefgeht, in eine verständliche Meldung. Das
 // Zeitlimit hat Vorrang: Es bricht die Verbindung ab, was sonst wie ein Netzfehler aussähe.
@@ -34,7 +36,11 @@ function translateError(err, { timeout, signal, timeoutMs, base, connected }) {
     return cancelled
   }
   if (err instanceof OllamaError) return err
-  if (!connected) return new OllamaError(`Ollama ist unter ${base} nicht erreichbar. Läuft Ollama? Die Adresse steht in den Einstellungen.`)
+  if (!connected) {
+    const unreachable = new OllamaError(`Ollama ist unter ${base} nicht erreichbar. Läuft Ollama? Die Adresse steht in den Einstellungen.`)
+    unreachable.unreachable = true // nur dann lohnt die Suche unter anderen Adressen
+    return unreachable
+  }
   return new OllamaError(`Die Verbindung zu Ollama brach während der Antwort ab (${err?.message ?? err}).`)
 }
 
@@ -175,9 +181,17 @@ export async function listOllamaModels(settings) {
   return list.filter(Boolean)
 }
 
-// Sucht Ollama unter den üblichen Adressen, wenn die eingestellte nicht antwortet: auf diesem
-// Rechner, vom Docker-Container aus auf dem Host und als Dienst `ollama` im Compose-Profil.
-// Die erste Adresse der Liste, die wie Ollama antwortet, gewinnt.
+// Übliche Adressen für die Suche, je nach Betriebsart. Im Container: der Host
+// (host.docker.internal) und der Dienst `ollama` aus dem Compose-Profil. Sonst nur dieser
+// Rechner; die Docker-Namen gingen dort per DNS oder unter Windows per Broadcast ins Netz.
+export function defaultCandidates(runtime) {
+  return runtime === 'docker'
+    ? ['http://host.docker.internal:11434', 'http://ollama:11434']
+    : ['http://localhost:11434', 'http://127.0.0.1:11434']
+}
+
+// Sucht Ollama unter anderen Adressen, wenn die eingestellte gar nicht erreichbar war. Die
+// erste Adresse der Liste, die wie Ollama antwortet, gewinnt.
 export async function findOllama(candidates) {
   const answers = await Promise.all(
     candidates.map(async (url) => {

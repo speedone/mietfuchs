@@ -8,7 +8,7 @@ import AdmZip from 'adm-zip'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
-import { listOllamaModels, findOllama } from './ai/ollama.js'
+import { listOllamaModels, findOllama, defaultCandidates } from './ai/ollama.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME } from './version.js'
@@ -230,17 +230,39 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // { type: 'error', error, file }. Ohne diesen Accept-Wert bleibt es bei einer JSON-Antwort,
 // etwa für Tabs von vor einem Update.
 //
-// Schließt der Browser die Verbindung vorher (Seite verlassen, Abbrechen), soll das Modell nicht
-// umsonst weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade
-// hochgeladene Beleg, auf den noch nichts verweist, verschwindet wieder aus dem Archiv.
+// Bricht der Browser ab (Knopf „Abbrechen“, Seite verlassen), soll das Modell nicht umsonst
+// weiterrechnen: Das Signal bricht dann die Anfrage an den Anbieter ab, und der gerade
+// hochgeladene Beleg, auf den noch nichts verweist, verschwindet wieder aus dem Archiv. Den
+// Abbruch erfährt der Server auf zwei Wegen: Unter Node meldet Express das Schließen der
+// Verbindung. Unter Bun (Programmdatei) geschieht das nicht, deshalb schickt der Browser jeder
+// Auswertung eine Kennung (`requestId`) mit und ruft beim Abbrechen POST /api/ai/cancel/<id> auf.
 const HEARTBEAT_MS = 10000
 const PROGRESS_EVERY_MS = 500
+const REQUEST_ID = /^[a-f0-9-]{16,64}$/i
+const runningAiRequests = new Map() // requestId → cancel()
 
 function aiResponse(req, res) {
   const controller = new AbortController()
   const streaming = (req.get('accept') ?? '').includes('application/x-ndjson')
   const writeLine = (obj) => res.write(`${JSON.stringify(obj)}\n`)
+  const requestId = typeof req.body?.requestId === 'string' && REQUEST_ID.test(req.body.requestId) ? req.body.requestId : null
   let heartbeat
+  let settled = false
+  const settle = () => {
+    settled = true
+    clearInterval(heartbeat)
+    if (requestId) runningAiRequests.delete(requestId)
+  }
+  const cancel = () => {
+    if (settled) return
+    settle()
+    controller.abort()
+    const upload = belegAus(req)
+    if (upload) fs.rmSync(upload.path, { force: true })
+    // Die Verbindung beenden; hat der Browser sie schon geschlossen, schadet das nicht
+    if (!res.writableEnded) res.end()
+  }
+  if (requestId) runningAiRequests.set(requestId, cancel)
   if (streaming) {
     res.writeHead(200, {
       'Content-Type': 'application/x-ndjson; charset=utf-8',
@@ -250,11 +272,8 @@ function aiResponse(req, res) {
     heartbeat = setInterval(() => writeLine({ type: 'heartbeat' }), HEARTBEAT_MS)
   }
   res.on('close', () => {
-    clearInterval(heartbeat)
-    if (res.writableFinished) return
-    controller.abort()
-    const beleg = belegAus(req)
-    if (beleg) fs.rmSync(beleg.path, { force: true })
+    if (!res.writableFinished) cancel()
+    else settle()
   })
   let lastKey = ''
   let lastAt = 0
@@ -272,20 +291,28 @@ function aiResponse(req, res) {
       writeLine({ type: 'progress', ...event })
     },
     done(data) {
-      clearInterval(heartbeat)
+      if (settled) return // abgebrochen, der Browser wartet nicht mehr
+      settle()
       if (!streaming) return res.json(data)
       writeLine({ type: 'result', data })
       res.end()
     },
     fail(data) {
-      clearInterval(heartbeat)
-      if (controller.signal.aborted) return // der Browser wartet nicht mehr
+      if (settled) return
+      settle()
       if (!streaming) return res.status(502).json(data)
       writeLine({ type: 'error', ...data })
       res.end()
     },
   }
 }
+
+app.post('/api/ai/cancel/:id', (req, res) => {
+  const cancel = runningAiRequests.get(req.params.id)
+  if (!cancel) return res.status(404).json({ error: 'Keine laufende Auswertung mit dieser Kennung.' })
+  cancel()
+  res.json({ ok: true })
+})
 
 // PDFs liest der Browser vor dem Hochladen (client/src/pdfIntake.ts): Er schickt die Textebene
 // mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs. `stats`
@@ -429,23 +456,23 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   res.json({ ok: true })
 })
 
-// Übliche Adressen, falls die eingestellte nicht antwortet (siehe findOllama). Die Tests
-// setzen NKA_OLLAMA_CANDIDATES, um die Suche gegen einen eigenen Server zu prüfen.
-const OLLAMA_CANDIDATES = process.env.NKA_OLLAMA_CANDIDATES?.split(',').map((u) => u.trim()).filter(Boolean) ?? [
-  'http://localhost:11434',
-  'http://host.docker.internal:11434',
-  'http://ollama:11434',
-]
+// Adressen für die Suche, falls die eingestellte nicht erreichbar ist (siehe defaultCandidates).
+// Die Tests setzen NKA_OLLAMA_CANDIDATES, um die Suche gegen einen eigenen Server zu prüfen.
+const OLLAMA_CANDIDATES =
+  process.env.NKA_OLLAMA_CANDIDATES?.split(',').map((u) => u.trim()).filter(Boolean) ?? defaultCandidates(RUNTIME)
 
+// `models` bleibt eine Liste von Namen: Ein Tab von vor dem Update erwartet genau das und
+// bliebe sonst weiß. Die Einzelheiten stehen in `modelDetails`.
 app.get('/api/ollama/status', async (req, res) => {
   const settings = effectiveSettings()
   try {
     const models = await listOllamaModels(settings)
-    res.json({ ok: true, models })
+    res.json({ ok: true, models: models.map((m) => m.name), modelDetails: models })
   } catch (err) {
     const status = { ok: false, error: String(err.message || err) }
-    // Eine vom Betreiber festgelegte Adresse steht nicht zur Wahl
-    if (!settingsFromEnv().ollamaUrl) {
+    // Nur suchen, wenn Ollama gar nicht erreichbar war, und nicht, wenn der Betreiber die
+    // Adresse festgelegt hat
+    if (err.unreachable && !settingsFromEnv().ollamaUrl) {
       const configured = settings.ollamaUrl.replace(/\/+$/, '')
       const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
       if (found) status.found = found

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+// jsdom für pagehide und navigator.sendBeacon; fetch, Response und ReadableStream kommen von Node.
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { aiRequest, fmtElapsed, progressText, type AiProgress } from './aiRequest'
 
@@ -68,6 +70,69 @@ describe('aiRequest', () => {
     const controller = new AbortController()
     await aiRequest('/api/extract', new FormData(), { signal: controller.signal })
     expect(requests[0].init?.signal).toBe(controller.signal)
+  })
+
+  test('eine Antwort, die kein JSON ist, ergibt eine klare Meldung', async () => {
+    serve(() => new Response('<html>Proxy-Fehler</html>', { status: 200, headers: { 'content-type': 'text/html' } }))
+    await expect(aiRequest('/api/extract', new FormData())).rejects.toThrow(/unerwartete Antwort/)
+  })
+})
+
+// Unter Bun (Programmdatei) bemerkt der Server nicht, dass der Browser die Verbindung schließt.
+// Jede Auswertung trägt deshalb eine Kennung, über die der Browser ausdrücklich abbricht.
+describe('Abbrechen über die Kennung', () => {
+  // wie fetch: hängt, bis das Signal abbricht
+  function serveHanging() {
+    requests = []
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      requests.push({ url, init })
+      if (url.startsWith('/api/ai/cancel/')) return Promise.resolve(new Response('{"ok":true}', { status: 200 }))
+      return new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('abgebrochen', 'AbortError'))))
+    })
+  }
+  const requestIdOf = () => (requests[0].init?.body as FormData).get('requestId') as string
+
+  test('jede Auswertung schickt eine zufällige Kennung mit', async () => {
+    serve(() => streamResponse(ndjson({ type: 'result', data: {} })))
+    await aiRequest('/api/extract', new FormData())
+    const first = requestIdOf()
+    await aiRequest('/api/extract', new FormData())
+    const second = (requests[1].init?.body as FormData).get('requestId')
+    expect(first).toMatch(/^[a-f0-9]{32}$/)
+    expect(second).not.toBe(first)
+  })
+
+  test('Abbrechen ruft den Abbruch beim Server auf', async () => {
+    serveHanging()
+    const controller = new AbortController()
+    const pending = aiRequest('/api/extract', new FormData(), { signal: controller.signal })
+    controller.abort()
+    await expect(pending).rejects.toThrow()
+    const cancel = requests.find((r) => r.url.startsWith('/api/ai/cancel/'))
+    expect(cancel?.url).toBe(`/api/ai/cancel/${requestIdOf()}`)
+    expect(cancel?.init?.method).toBe('POST')
+    expect(cancel?.init?.keepalive).toBe(true)
+  })
+
+  test('schließt jemand den Tab, geht der Abbruch per sendBeacon hinaus', async () => {
+    serveHanging()
+    const beacon = vi.fn(() => true)
+    vi.stubGlobal('navigator', { sendBeacon: beacon })
+    const controller = new AbortController()
+    const pending = aiRequest('/api/extract', new FormData(), { signal: controller.signal }).catch(() => null)
+    window.dispatchEvent(new Event('pagehide'))
+    expect(beacon).toHaveBeenCalledWith(`/api/ai/cancel/${requestIdOf()}`)
+    controller.abort()
+    await pending
+  })
+
+  test('nach dem Ende einer Auswertung löst pagehide nichts mehr aus', async () => {
+    serve(() => streamResponse(ndjson({ type: 'result', data: {} })))
+    const beacon = vi.fn(() => true)
+    vi.stubGlobal('navigator', { sendBeacon: beacon })
+    await aiRequest('/api/extract', new FormData())
+    window.dispatchEvent(new Event('pagehide'))
+    expect(beacon).not.toHaveBeenCalled()
   })
 })
 

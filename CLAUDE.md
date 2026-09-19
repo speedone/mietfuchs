@@ -236,11 +236,18 @@ findet (#21). Intern laufen Bilder als `{ mimeType, data }`.
 `/api/extract` und `/api/intake` antworten mit `Accept: application/x-ndjson` als Strom: Header
 sofort, dann Zeilen mit `progress`, `heartbeat` (alle zehn Sekunden) und zuletzt `result` oder
 `error`. Grund: Firefox wartet höchstens 300 Sekunden auf Header. Ohne diesen Accept-Wert gibt
-es die JSON-Antwort wie früher. Schließt der Browser vorher, bricht der Server die Anfrage an
-den Anbieter ab und löscht den gerade hochgeladenen Beleg wieder. Im Client liest
-[client/src/aiRequest.ts](client/src/aiRequest.ts) den Strom, die Ollama-Karte der Einstellungen
-ist [OllamaSettings.tsx](client/src/components/OllamaSettings.tsx) mit der Logik in
-[client/src/modelForm.ts](client/src/modelForm.ts).
+es die JSON-Antwort wie früher. Bricht der Browser ab, stoppt der Server die Anfrage an den
+Anbieter und löscht den gerade hochgeladenen Beleg wieder. Den Abbruch erfährt er über
+`POST /api/ai/cancel/<requestId>` (die Kennung schickt der Browser im Formularfeld `requestId`
+mit, beim Schließen des Tabs per `sendBeacon`); unter Node zusätzlich über das Schließen der
+Verbindung. Unter Bun meldet Express das nicht, deshalb ist die Kennung der verlässliche Weg,
+und der Smoke-Test prüft ihn auf jeder Programmdatei. Im Client liest
+[client/src/aiRequest.ts](client/src/aiRequest.ts) den Strom und kümmert sich um den Abbruch,
+die Ollama-Karte der Einstellungen ist [OllamaSettings.tsx](client/src/components/OllamaSettings.tsx)
+mit der Logik in [client/src/modelForm.ts](client/src/modelForm.ts). `/api/ollama/status`
+liefert in `models` nur Namen (für Tabs von vor dem Update), die Einzelheiten in `modelDetails`.
+Die Adresssuche fragt je nach Betriebsart nur Sinnvolles (Docker: Host und Compose-Dienst,
+sonst dieser Rechner) und nur, wenn die eingestellte Adresse gar nicht erreichbar war.
 
 Umgebungsvariablen: `NKA_OLLAMA_URL` und `NKA_OLLAMA_MODEL` legen Adresse und Modell fest (die
 Einstellungen zeigen sie gesperrt, `fixedByEnv`, in die db.json gelangen sie nicht),
