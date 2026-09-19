@@ -2,7 +2,8 @@
 //
 //   text:   { provider, preset, url, model, vision }  Standard-Anbieter für alle Belege
 //   images: null | wie text                           eigener Anbieter für Fotos und Scans
-//   timeoutSeconds, numCtx, jsonMode, reasoningEffort, extraInstructions   für Fortgeschrittene
+//   timeoutSeconds, numCtx, maxOutputTokens, jsonMode, reasoningEffort, extraInstructions
+//                                                     für Fortgeschrittene, null = Standard
 //   consent: { [Platz]: { url, date } }               Bestätigung eines externen Dienstes
 //
 // `provider` ist die Art der Schnittstelle ('ollama' oder 'openai' für alle OpenAI-kompatiblen
@@ -24,6 +25,7 @@ const SLOT_LABELS = { text: 'Standard-Anbieter', images: 'Anbieter für Fotos un
 const LIMITS = {
   timeoutSeconds: [10, 7200],
   numCtx: [2048, 1048576],
+  maxOutputTokens: [256, 262144],
   modelLength: 200,
   extraInstructions: 2000,
 }
@@ -58,13 +60,17 @@ function validateSlot(raw, slot) {
 // Prüft alle Felder außer `consent` und liefert sie bereinigt. Wirft mit `status` 400.
 function validateAi(raw) {
   const {
-    text, images = null, timeoutSeconds = null, numCtx = null, jsonMode = 'auto', reasoningEffort = null, extraInstructions = '',
+    text, images = null, timeoutSeconds = null, numCtx = null, maxOutputTokens = null, jsonMode = 'auto', reasoningEffort = null,
+    extraInstructions = '',
   } = raw
   if (timeoutSeconds !== null && !inRange(timeoutSeconds, LIMITS.timeoutSeconds)) {
     throw fail(`Das Zeitlimit muss zwischen ${LIMITS.timeoutSeconds[0]} und ${LIMITS.timeoutSeconds[1]} Sekunden liegen.`)
   }
   if (numCtx !== null && !inRange(numCtx, LIMITS.numCtx)) {
     throw fail(`Der Kontext muss zwischen ${LIMITS.numCtx[0]} und ${LIMITS.numCtx[1]} Token liegen.`)
+  }
+  if (maxOutputTokens !== null && !inRange(maxOutputTokens, LIMITS.maxOutputTokens)) {
+    throw fail(`Die Antwortlänge muss zwischen ${LIMITS.maxOutputTokens[0]} und ${LIMITS.maxOutputTokens[1]} Token liegen.`)
   }
   if (!JSON_MODES.includes(jsonMode)) throw fail(`Unbekannte JSON-Stufe „${jsonMode}“.`)
   if (reasoningEffort !== null && !(typeof reasoningEffort === 'string' && /^[a-z]{1,20}$/.test(reasoningEffort))) {
@@ -78,6 +84,7 @@ function validateAi(raw) {
     images: images === null ? null : validateSlot(images, 'images'),
     timeoutSeconds,
     numCtx,
+    maxOutputTokens,
     jsonMode,
     reasoningEffort,
     extraInstructions: extraInstructions.trim(),
@@ -115,6 +122,7 @@ export function migrateAi(settings) {
     images: stored.images == null ? null : lenient(() => validateSlot(repairPreset(stored.images), 'images'), null),
     timeoutSeconds: field('timeoutSeconds', null, (v) => inRange(v, LIMITS.timeoutSeconds)),
     numCtx: field('numCtx', null, (v) => inRange(v, LIMITS.numCtx)),
+    maxOutputTokens: field('maxOutputTokens', null, (v) => inRange(v, LIMITS.maxOutputTokens)),
     jsonMode: field('jsonMode', 'auto', (v) => JSON_MODES.includes(v)),
     reasoningEffort: field('reasoningEffort', null, (v) => typeof v === 'string' && /^[a-z]{1,20}$/.test(v)),
     extraInstructions: field('extraInstructions', '', (v) => typeof v === 'string'),
@@ -172,12 +180,29 @@ export function aiFromEnv(env = process.env) {
   if (ollamaUrl && !url) ollama.url = ollamaUrl
   const ollamaModel = read('NKA_OLLAMA_MODEL')
   if (ollamaModel && !model) ollama.model = ollamaModel
-  return { text, ollama, fixed, error: errors.length ? errors.join(' ') : null }
+  // Zeitlimit für alle Schritte, Kontext für Ollama und Antwortlänge für OpenAI-kompatible
+  // Dienste. Anders als in der Oberfläche sind auch sehr kleine Werte erlaubt, die Tests
+  // brauchen etwa ein Zeitlimit von zwei Sekunden.
+  const advanced = {}
+  const positiveInt = (name, key) => {
+    const value = read(name)
+    if (!value) return
+    if (!/^\d+$/.test(value) || Number(value) < 1) {
+      errors.push(`${name} muss eine ganze Zahl größer als 0 sein.`)
+      return
+    }
+    advanced[key] = Number(value)
+    fixed.push(`ai.${key}`)
+  }
+  positiveInt('NKA_AI_TIMEOUT', 'timeoutSeconds')
+  positiveInt('NKA_OLLAMA_NUM_CTX', 'numCtx')
+  positiveInt('NKA_AI_MAX_TOKENS', 'maxOutputTokens')
+  return { text, ollama, advanced, fixed, error: errors.length ? errors.join(' ') : null }
 }
 
 // Pfade der Felder, die gerade aus der Umgebung kommen (für `fixedByEnv` und beim Speichern)
 export function fixedFields(ai, env) {
-  const provider = env.text.provider ?? ai.text.provider
+  const provider = env.text.provider ?? ai.text?.provider
   const fromOllama = provider === 'ollama' ? Object.keys(env.ollama).map((f) => `ai.text.${f}`) : []
   return [...env.fixed, ...fromOllama]
 }
@@ -191,7 +216,7 @@ export function effectiveAi(ai, env) {
   const text = { ...ai.text, ...env.text }
   if (presetById(text.preset)?.provider !== text.provider) text.preset = GENERIC_PRESETS[text.provider]
   if (text.provider === 'ollama') Object.assign(text, env.ollama)
-  return { ...ai, text }
+  return { ...ai, ...env.advanced, text }
 }
 
 // ---------- Änderungen aus der Oberfläche ----------
@@ -203,23 +228,28 @@ export function effectiveAi(ai, env) {
 // und ändert dann nichts.
 export function applyAiChanges(settings, body, env) {
   const current = settings.ai
-  let next
+  let raw
   if (isObject(body.ai)) {
-    next = validateAi(body.ai)
+    raw = { ...body.ai, text: isObject(body.ai.text) ? { ...body.ai.text } : body.ai.text }
   } else if (typeof body.ollamaUrl === 'string' || typeof body.ollamaModel === 'string') {
     if (current.text.provider !== 'ollama') return settings
-    const text = { ...current.text, url: body.ollamaUrl ?? current.text.url, model: body.ollamaModel ?? current.text.model }
-    next = { ...current, text: validateSlot(text, 'text') }
+    raw = { ...current, text: { ...current.text, url: body.ollamaUrl ?? current.text.url, model: body.ollamaModel ?? current.text.model } }
   } else {
     return settings
   }
-  for (const path of fixedFields(next, env)) {
-    const [, slot, field] = path.split('.')
-    next[slot] = { ...next[slot], [field]: current[slot][field] }
-    // Die Vorlage gehört zum Anbieter: Bleibt der gespeicherte, bleibt auch seine Vorlage
-    if (field === 'provider') next[slot].preset = current[slot].preset
+  // Vor der Prüfung: Die Oberfläche schickt die wirksamen Werte zurück, auch solche aus der
+  // Umgebung, und die dürfen außerhalb der Grenzen der Oberfläche liegen
+  for (const path of fixedFields(raw, env)) {
+    const [, key, field] = path.split('.')
+    if (field === undefined) {
+      raw[key] = current[key]
+    } else if (isObject(raw[key])) {
+      raw[key][field] = current[key][field]
+      // Die Vorlage gehört zum Anbieter: Bleibt der gespeicherte, bleibt auch seine Vorlage
+      if (field === 'provider') raw[key].preset = current[key].preset
+    }
   }
-  settings.ai = { ...next, consent: current.consent }
+  settings.ai = { ...validateAi(raw), consent: current.consent }
   mirrorLegacy(settings)
   return settings
 }

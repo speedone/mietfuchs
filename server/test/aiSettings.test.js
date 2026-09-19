@@ -2,7 +2,7 @@
 // und Wahl des Anbieters je Beleg. Reine Funktionen, deshalb ohne Serverstart.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, slotFor, isExternalUrl } from '../src/ai/settings.js'
+import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl } from '../src/ai/settings.js'
 import { PRESETS, presetById } from '../src/ai/presets.js'
 
 const legacy = (extra = {}) => ({ houseName: 'Haus', ollamaUrl: 'http://ki.intern:11434', ollamaModel: 'gemma4:12b', ...extra })
@@ -98,6 +98,44 @@ test('Umgebung: ein unbekannter Anbieter oder eine ungültige Adresse ist ein Fe
   assert.match(aiFromEnv({ NKA_AI_PROVIDER: 'chatgpt' }).error, /NKA_AI_PROVIDER.*ollama.*openai/)
   assert.match(aiFromEnv({ NKA_AI_URL: 'api.openai.com/v1' }).error, /NKA_AI_URL/)
   assert.match(aiFromEnv({ NKA_OLLAMA_URL: 'ftp://x' }).error, /NKA_OLLAMA_URL/)
+})
+
+test('Umgebung: NKA_AI_TIMEOUT und NKA_OLLAMA_NUM_CTX überlagern Zeitlimit und Kontext', () => {
+  const settings = migrateAi(legacy({ ai: { timeoutSeconds: 900, numCtx: 8192 } }))
+  // Die Umgebung darf kürzere Zeitlimits als die Oberfläche, etwa für Tests
+  const env = aiFromEnv({ NKA_AI_TIMEOUT: '2', NKA_OLLAMA_NUM_CTX: '32768' })
+  assert.equal(env.error, null)
+  const effective = effectiveAi(settings.ai, env)
+  assert.equal(effective.timeoutSeconds, 2)
+  assert.equal(effective.numCtx, 32768)
+  assert.deepEqual(fixedFields(settings.ai, env).sort(), ['ai.numCtx', 'ai.timeoutSeconds'])
+  // Beim Speichern bleiben die gespeicherten Werte, die Umgebung landet nicht in der db.json
+  applyAiChanges(settings, { ai: effective }, env)
+  assert.equal(settings.ai.timeoutSeconds, 900)
+  assert.equal(settings.ai.numCtx, 8192)
+})
+
+test('Umgebung: unbrauchbare Zahlen für Zeitlimit, Kontext und Antwortlänge sind ein Fehler', () => {
+  assert.match(aiFromEnv({ NKA_AI_TIMEOUT: '10min' }).error, /NKA_AI_TIMEOUT/)
+  assert.match(aiFromEnv({ NKA_AI_TIMEOUT: '0' }).error, /NKA_AI_TIMEOUT/)
+  assert.match(aiFromEnv({ NKA_OLLAMA_NUM_CTX: '-5' }).error, /NKA_OLLAMA_NUM_CTX/)
+  assert.match(aiFromEnv({ NKA_AI_MAX_TOKENS: '16k' }).error, /NKA_AI_MAX_TOKENS/)
+})
+
+// Höchstlänge der Antwort für OpenAI-kompatible Dienste. IONOS nimmt ohne Angabe nur 16 Token,
+// deshalb schickt Mietfuchs immer einen Wert, Standard 16384.
+test('Antwortlänge: einstellbar, per NKA_AI_MAX_TOKENS festlegbar, ohne Angabe null', () => {
+  const settings = migrateAi(legacy())
+  assert.equal(settings.ai.maxOutputTokens, null)
+  applyAiChanges(settings, { ai: { ...settings.ai, maxOutputTokens: 4096 } }, aiFromEnv({}))
+  assert.equal(settings.ai.maxOutputTokens, 4096)
+  assert.equal(migrateAi(structuredClone(settings)).ai.maxOutputTokens, 4096)
+  const env = aiFromEnv({ NKA_AI_MAX_TOKENS: '32768' })
+  assert.equal(effectiveAi(settings.ai, env).maxOutputTokens, 32768)
+  assert.ok(fixedFields(settings.ai, env).includes('ai.maxOutputTokens'))
+  for (const invalid of [100, 5000000, 1.5, '4096']) {
+    assert.throws(() => applyAiChanges(settings, { ai: { ...settings.ai, maxOutputTokens: invalid } }, aiFromEnv({})), /Antwortlänge/, String(invalid))
+  }
 })
 
 test('Umgebung: ohne Variablen ändert sich nichts', () => {

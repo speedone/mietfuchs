@@ -2,29 +2,30 @@
 // Schnittstelle aus ai/index.js um und liefert dazu, was es nur bei Ollama gibt: die
 // installierten Modelle mit ihren Fähigkeiten und die Suche nach Ollama unter den üblichen
 // Adressen.
+//
+// Die Funktionen bekommen die Konfiguration aus providerConfig (ai/index.js): `url`, `model`,
+// `apiKey` (für Ollama hinter einem Proxy oder Ollama Cloud, sonst null) und `numCtx`.
 
 import { openRequest, readLines, readText } from './http.js'
 
-const baseUrl = (settings) => settings.ollamaUrl.replace(/\/+$/, '')
+const baseUrl = (config) => config.url.replace(/\/+$/, '')
 
 // Ohne Angabe nimmt Ollama bei weniger als 24 GB Grafikspeicher 4096 Token Kontext und kürzt
 // längere Anfragen stillschweigend. Eine Rechnung mit 20.000 Zeichen Text braucht grob 7.000
 // Token, vier Seitenbilder bei Qwen-Modellen etwa 10.000. Der Wert ist fest, denn ein anderer
-// Wert als bei der vorigen Anfrage lässt Ollama das Modell neu laden. NKA_OLLAMA_NUM_CTX
-// ändert ihn, etwa für Rechner mit wenig Arbeitsspeicher.
+// Wert als bei der vorigen Anfrage lässt Ollama das Modell neu laden. Unter „Erweitert“ (oder
+// mit NKA_OLLAMA_NUM_CTX) lässt er sich ändern, etwa für Rechner mit wenig Arbeitsspeicher.
 const DEFAULT_NUM_CTX = 16384
-function numCtx() {
-  const value = Number(process.env.NKA_OLLAMA_NUM_CTX)
-  return Number.isInteger(value) && value > 0 ? value : DEFAULT_NUM_CTX
-}
+const numCtx = (config) => config.numCtx ?? DEFAULT_NUM_CTX
 
-// Fehler mit einer Meldung, die so in der Oberfläche stehen kann
+// Fehler mit einer Meldung, die so in der Oberfläche stehen kann. `status` und `detail` tragen
+// die Antwort von Ollama, wenn es eine gab.
 class OllamaError extends Error {}
 
 // Zuerst, was jeder tun kann: Beim ersten Beleg lädt Ollama das Modell erst in den Speicher, ein
-// zweiter Versuch geht deshalb oft schneller. Die Umgebungsvariable hilft nur bei Docker und npm.
+// zweiter Versuch geht deshalb oft schneller.
 const timeoutMessage = (ms) =>
-  `Ollama hat nicht innerhalb von ${Math.round(ms / 1000)} Sekunden geantwortet. Beim ersten Beleg lädt Ollama das Modell erst in den Speicher, ein zweiter Versuch geht oft schneller. Ohne Grafikkarte ist ein großes Modell oft zu langsam, dann hilft ein kleineres Modell. Bei Docker oder dem Start aus dem Quellcode lässt sich das Zeitlimit mit NKA_AI_TIMEOUT erhöhen.`
+  `Ollama hat nicht innerhalb von ${Math.round(ms / 1000)} Sekunden geantwortet. Beim ersten Beleg lädt Ollama das Modell erst in den Speicher, ein zweiter Versuch geht oft schneller. Ohne Grafikkarte ist ein großes Modell oft zu langsam, dann hilft ein kleineres Modell. Das Zeitlimit lässt sich in den Einstellungen unter „Erweitert“ erhöhen.`
 
 // Übersetzt, was beim Verbinden oder Lesen schiefgeht, in eine verständliche Meldung. Das
 // Zeitlimit hat Vorrang: Es bricht die Verbindung ab, was sonst wie ein Netzfehler aussähe.
@@ -46,18 +47,31 @@ function translateError(err, { timeout, signal, timeoutMs, base, connected }) {
 
 const readJson = async (res) => JSON.parse(await readText(res.body))
 
+// Die Meldung aus einer Fehlerantwort von Ollama ({ "error": "…" }), sonst der Text selbst
+function errorDetail(text) {
+  try {
+    const parsed = JSON.parse(text)
+    if (typeof parsed.error === 'string') return parsed.error
+  } catch {
+    // kein JSON
+  }
+  return text
+}
+
 // Gemeinsamer Weg für alle Anfragen. `timeoutMs` und `signal` (Abbruch durch den Aufrufer)
 // gelten für die ganze Anfrage einschließlich des Lesens der Antwort in `consume`.
-async function request(settings, path, { body, timeoutMs, signal, consume = readJson }) {
-  const base = baseUrl(settings)
+async function request(config, path, { body, timeoutMs, signal, consume = readJson }) {
+  const base = baseUrl(config)
   const timeout = AbortSignal.timeout(timeoutMs)
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
   const context = { timeout, signal, timeoutMs, base, connected: false }
+  const headers = body ? { 'Content-Type': 'application/json' } : {}
+  if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`
   let res
   try {
     res = await openRequest(`${base}${path}`, {
       method: body ? 'POST' : 'GET',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
+      headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: combined,
     })
@@ -67,11 +81,19 @@ async function request(settings, path, { body, timeoutMs, signal, consume = read
   context.connected = true
   try {
     if (!res.ok) {
-      const text = await readText(res.body).catch(() => '')
-      if (res.status === 404 && body?.model) {
-        throw new OllamaError(`Das Modell „${body.model}“ ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${body.model}“ laden.`)
+      const detail = errorDetail(await readText(res.body).catch(() => ''))
+      const fail = (message) => Object.assign(new OllamaError(message), { status: res.status, detail })
+      if (res.status === 401 || res.status === 403) {
+        throw fail(config.apiKey
+          ? `Ollama unter ${base} lehnt den Schlüssel ab. Bitte den Schlüssel in den Einstellungen prüfen.`
+          : `Ollama unter ${base} verlangt einen Schlüssel. Bitte in den Einstellungen einen eintragen.`)
       }
-      throw new OllamaError(`Ollama antwortet mit ${res.status}: ${text.slice(0, 300)}`)
+      if (res.status === 404 && body?.model) {
+        throw fail(config.preset === 'ollama-cloud'
+          ? `Das Modell „${body.model}“ gibt es bei Ollama Cloud nicht. Bitte in den Einstellungen ein anderes wählen.`
+          : `Das Modell „${body.model}“ ist in Ollama nicht installiert. In den Einstellungen ein installiertes Modell wählen oder es mit „ollama pull ${body.model}“ laden.`)
+      }
+      throw fail(`Ollama antwortet mit ${res.status}: ${detail.slice(0, 300)}`)
     }
     return await consume(res)
   } catch (err) {
@@ -81,7 +103,7 @@ async function request(settings, path, { body, timeoutMs, signal, consume = read
 
 // Liest die gestreamte Chat-Antwort: zeilenweise JSON, die letzte Zeile mit `done: true`
 // trägt den Grund des Endes und die Kennzahlen. `onProgress` erfährt die bisherige Länge.
-async function readChatStream(res, onProgress) {
+async function readChatStream(res, onProgress, contextTokens) {
   let content = ''
   let final = null
   for await (const line of readLines(res.body)) {
@@ -100,7 +122,7 @@ async function readChatStream(res, onProgress) {
   if (!final) throw new OllamaError('Die Antwort von Ollama brach vorzeitig ab.')
   // Ohne Obergrenze für die Ausgabe endet eine Antwort nur am Kontextende vorzeitig
   if (final.done_reason === 'length') {
-    throw new OllamaError(`Die Antwort von Ollama wurde abgeschnitten, weil der Kontext von ${numCtx()} Token nicht reicht. Mit NKA_OLLAMA_NUM_CTX lässt er sich vergrößern.`)
+    throw new OllamaError(`Die Antwort von Ollama wurde abgeschnitten, weil der Kontext von ${contextTokens} Token nicht reicht. In den Einstellungen unter „Erweitert“ lässt er sich vergrößern.`)
   }
   return { content, final }
 }
@@ -109,26 +131,34 @@ const seconds = (ns) => (ns == null ? null : Math.round(ns / 1e8) / 10)
 
 // Fähigkeiten laut /api/show, etwa ['completion', 'vision']. Ältere Versionen kennen das Feld
 // nicht, dann null. `remote`: Ollama reicht Anfragen an dieses Modell an einen Cloud-Dienst weiter.
-async function getCapabilities(settings, model, signal) {
-  const info = await request(settings, '/api/show', { body: { model }, timeoutMs: 10000, signal })
+async function getCapabilities(config, model, signal) {
+  const info = await request(config, '/api/show', { body: { model }, timeoutMs: 10000, signal })
   return { capabilities: Array.isArray(info.capabilities) ? info.capabilities : null, remote: Boolean(info.remote_host) }
 }
 
-export function ollamaProvider(settings) {
-  const model = settings.ollamaModel
+// Modelle, die `think: false` abgelehnt haben (je Adresse und Modell, solange der Server läuft).
+// Lokal übergeht Ollama den Schalter bei Modellen ohne Nachdenken; manche Modelle bei Ollama
+// Cloud lassen sich das Nachdenken aber nicht abschalten und antworten mit 400.
+const thinkOffRejected = new Set()
+const rejectsThinkOff = (err) => err instanceof OllamaError && err.status === 400 && /think/i.test(err.detail ?? '')
+
+export function ollamaProvider(config) {
+  const { model } = config
+  const thinkKey = `${baseUrl(config)}|${model}`
   return {
     async json({ prompt, images = [], schema, timeoutMs, signal, onProgress }) {
       onProgress?.({ phase: 'waiting' })
       const message = { role: 'user', content: prompt }
       if (images.length > 0) {
         // Kennt Ollama die Fähigkeiten nicht (ältere Version), wird es versucht
-        const { capabilities } = await getCapabilities(settings, model, signal)
+        const { capabilities } = await getCapabilities(config, model, signal)
         if (capabilities && !capabilities.includes('vision')) {
           throw new OllamaError(`Das Modell „${model}“ versteht keine Bilder. Für Fotos und gescannte PDFs in den Einstellungen ein Modell mit Bildverständnis wählen.`)
         }
         message.images = images.map((image) => image.data) // Ollama nimmt reines Base64 ohne Typangabe
       }
-      const { content, final } = await request(settings, '/api/chat', {
+      const contextTokens = numCtx(config)
+      const chat = (withThinkOff) => request(config, '/api/chat', {
         body: {
           model,
           messages: [message],
@@ -137,13 +167,22 @@ export function ollamaProvider(settings) {
           // Neuere Modelle denken sonst erst ausführlich nach. Für das Auslesen einer Rechnung
           // bringt das wenig und kostet auf dem Prozessor Minuten. Modelle ohne diese
           // Fähigkeit übergehen den Schalter.
-          think: false,
-          options: { temperature: 0, num_ctx: numCtx() },
+          ...(withThinkOff ? { think: false } : {}),
+          options: { temperature: 0, num_ctx: contextTokens },
         },
         timeoutMs,
         signal,
-        consume: (res) => readChatStream(res, onProgress),
+        consume: (res) => readChatStream(res, onProgress, contextTokens),
       })
+      let answer
+      try {
+        answer = await chat(!thinkOffRejected.has(thinkKey))
+      } catch (err) {
+        if (thinkOffRejected.has(thinkKey) || !rejectsThinkOff(err)) throw err
+        thinkOffRejected.add(thinkKey)
+        answer = await chat(false)
+      }
+      const { content, final } = answer
       let data
       try {
         data = JSON.parse(content || '{}')
@@ -164,11 +203,11 @@ export function ollamaProvider(settings) {
 // Installierte Modelle für die Auswahl in den Einstellungen, mit Größe, Bildverständnis (null:
 // unbekannt) und Cloud-Kennzeichen. Reine Embedding-Modelle können keine Rechnung lesen und
 // fehlen deshalb.
-export async function listOllamaModels(settings) {
-  const { models = [] } = await request(settings, '/api/tags', { timeoutMs: 5000 })
+export async function listOllamaModels(config) {
+  const { models = [] } = await request(config, '/api/tags', { timeoutMs: 5000 })
   const list = await Promise.all(
     models.map(async (m) => {
-      const info = await getCapabilities(settings, m.name).catch(() => ({ capabilities: null, remote: false }))
+      const info = await getCapabilities(config, m.name).catch(() => ({ capabilities: null, remote: false }))
       if (info.capabilities && !info.capabilities.includes('completion')) return null
       return {
         name: m.name,
