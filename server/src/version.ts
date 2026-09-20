@@ -8,7 +8,7 @@
 // diese Version. `engines` steht heute höher, bei >=24.12, weil TypeScript-Dateien erst ab
 // dort ohne Build-Schritt als stabil ausführbar gelten.
 import pkg from '../package.json' with { type: 'json' }
-import { systemLocation } from './paths.js'
+import { systemLocation } from './paths.ts'
 
 export const APP_VERSION: string = pkg.version
 

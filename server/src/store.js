@@ -4,7 +4,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { migrateAi } from './ai/settings.js'
-import { systemLocation, writable } from './paths.js'
+import { systemLocation, writable } from './paths.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PACKAGED = !!globalThis.Bun
@@ -25,7 +25,7 @@ function homeDir() {
 // vor; ein relativer Wert hinge am Arbeitsverzeichnis, und das steht beim Start aus dem
 // Startmenü nicht fest.
 function userDataHome(env, platform, home = homeDir) {
-  // Wie in paths.js nach der genannten Plattform rechnen, nicht nach der des laufenden
+  // Wie in paths.ts nach der genannten Plattform rechnen, nicht nach der des laufenden
   // Rechners: Sonst hinge das Ergebnis daran, wo geprüft wird.
   const p = platform === 'win32' ? path.win32 : path.posix
   const fromEnv = (name) => (env[name] && p.isAbsolute(env[name]) ? env[name] : null)

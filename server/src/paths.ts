@@ -1,5 +1,5 @@
 // Wo das Programm liegt und wohin es schreiben darf (#25). Zwei Stellen brauchen dieselbe
-// Antwort: der Datenordner (store.js) und die Betriebsart für den Update-Hinweis (version.js).
+// Antwort: der Datenordner (store.js) und die Betriebsart für den Update-Hinweis (version.ts).
 // Deshalb steht die Regel hier, nicht zweimal.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,7 +7,7 @@ import path from 'node:path'
 // Liegt die Programmdatei an einem Ort, der dem System gehört? Dann stammt sie aus einem
 // Installationspaket: Die Daten gehören in den Benutzerordner, und aktualisiert wird über die
 // Paketverwaltung, nicht durch Austauschen der Datei.
-export function systemLocation(execPath = process.execPath, platform = process.platform) {
+export function systemLocation(execPath: string = process.execPath, platform: NodeJS.Platform = process.platform): boolean {
   // Bewusst nach der genannten Plattform trennen, nicht nach der des laufenden Rechners:
   // Sonst hinge das Ergebnis daran, wo geprüft wird.
   if (platform === 'win32') {
@@ -23,7 +23,7 @@ export function systemLocation(execPath = process.execPath, platform = process.p
 }
 
 // Lässt sich in dem Ordner schreiben? Gibt es ihn noch nicht, zählt der übergeordnete.
-export function writable(dir) {
+export function writable(dir: string): boolean {
   let probe = dir
   while (!fs.existsSync(probe)) {
     const up = path.dirname(probe)
