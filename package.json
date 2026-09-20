@@ -2,6 +2,7 @@
   "name": "mietfuchs",
   "version": "0.7.1",
   "private": true,
+  "type": "module",
   "description": "Mietfuchs — lokales Web-Tool für Nebenkostenabrechnungen privater Vermieter",
   "author": "speedone",
   "license": "MIT",
