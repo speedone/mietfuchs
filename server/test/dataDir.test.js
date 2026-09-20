@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { chooseDataDir } from '../src/store.js'
-import { writable } from '../src/paths.js'
+import { writable } from '../src/paths.ts'
 
 // Nichts anfassen, was wirklich auf der Platte liegt: Schreibtest und Heimatordner werden
 // hineingereicht.
