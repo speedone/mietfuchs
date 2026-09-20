@@ -466,7 +466,11 @@ test('Löschen einer Wohnung entfernt ihren vereinbarten Prozentanteil', async (
   await srv.api(`/api/units/${b.id}`, { method: 'DELETE' })
   const items = await srv.api<CostItem[]>('/api/costItems')
   const itemAfter = items.find((x) => x.id === item.id)
-  assert.deepEqual(Object.keys(itemAfter?.customShares ?? {}), [a.id], 'Anteil der gelöschten Wohnung bleibt zurück')
+  // Verschwundene Position und fehlender Schlüssel wären andere Befunde als ein
+  // zurückgebliebener Anteil, deshalb hier prüfen statt einen leeren Schlüssel einzusetzen.
+  if (!itemAfter) assert.fail('die Kostenposition ist verschwunden')
+  if (!itemAfter.customShares) assert.fail('der vereinbarte Schlüssel der Position fehlt ganz')
+  assert.deepEqual(Object.keys(itemAfter.customShares), [a.id], 'Anteil der gelöschten Wohnung bleibt zurück')
 
   await srv.api(`/api/costItems/${item.id}`, { method: 'DELETE' })
   await srv.api(`/api/units/${a.id}`, { method: 'DELETE' })

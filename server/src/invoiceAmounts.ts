@@ -18,27 +18,31 @@ import { largestRemainder } from './calc.ts'
 // fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur durchgereicht.
 // Exportiert, weil extract.ts dieselbe rohe Gestalt braucht (die Antwort der KI, bevor sie
 // normalizeAmounts geradezieht).
+// Beide Betragsfelder stehen ungeprüft so da, wie das Modell sie geliefert hat: `unknown`, aus
+// demselben Grund wie die Hinweisfelder unten. Gelesen werden sie nur über `toCents`, das jeden
+// Wert selbst prüft. Nach dem Geraderücken schreibt die Funktion Zahlen hinein — was der
+// Browser bekommt, beschreibt deshalb `Extraction` in shared/types.ts, und dort sind es Zahlen.
 export type Position = {
-  amountEur?: number
-  // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen — so steht es
-  // schon im Schema und in shared/types.ts.
-  labor35aEur?: number | null
+  amountEur?: unknown
+  // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen; so steht es schon
+  // im Schema und in shared/types.ts.
+  labor35aEur?: unknown
   [key: string]: unknown
 }
 
 // Die Rohausgabe der KI-Auswertung, so weit diese Funktion sie liest oder ergänzt. Auch hier
 // bleiben unbekannte Felder über den Index-Zugriff erhalten.
 //
-// Die drei Hinweisfelder oben sind bewusst `unknown`: Sie kommen ungeprüft aus dem Modell, das
-// statt einer Zahl auch „neunzehn“ oder null schicken kann. Die Funktion prüft jeden dieser
-// Werte selbst (`=== true`, `typeof`, `toCents`), und sie trennt sie beim Zerlegen ab, sodass
-// sie die Auswertung nie verlassen. Ein engerer Typ wäre also eine Behauptung, die niemand
-// einlöst, und würde nur die Prüfungen unten wie toten Code aussehen lassen.
+// Alles, was aus dem Modell kommt, ist hier `unknown`: Es kann statt einer Zahl auch „neunzehn“
+// oder null schicken. Die Funktion prüft jeden dieser Werte selbst (`=== true`, `typeof`,
+// `toCents`), und die drei Hinweisfelder trennt sie beim Zerlegen ab, sodass sie die Auswertung
+// nie verlassen. Ein engerer Typ wäre eine Behauptung, die niemand einlöst, und würde nur die
+// Prüfungen unten wie toten Code aussehen lassen.
 export type Extraction = {
   positionsAreNet?: unknown
   vatRatePercent?: unknown
   labor35aTotalEur?: unknown
-  totalGrossEur?: number
+  totalGrossEur?: unknown
   positions?: Position[]
   amountsAdjusted?: string
   laborFromTotal?: boolean
