@@ -39,12 +39,13 @@ const sum = (positions: RawPosition[], key: 'amountEur' | 'labor35aEur' = 'amoun
     return a + cents(value ?? 0)
   }, 0)
 
-// normalizeAmounts legt `positions` immer an, auch wenn die KI keine geliefert hat. Im Typ
-// steht das nicht, weil er die rohe Antwort beschreibt, in der das Feld fehlen darf. Statt die
-// Zusage zu behaupten, wird sie hier geprüft: Bleibt sie aus, scheitert der Test mit Ansage.
+// normalizeAmounts legt `positions` immer als Liste an, auch wenn die KI keine geliefert hat. Im
+// Typ steht das nicht, weil er die rohe Antwort beschreibt, in der das Feld alles sein darf.
+// Statt die Zusage zu behaupten, wird sie hier geprüft: Bleibt sie aus, scheitert der Test mit
+// Ansage.
 function positionsOf(result: ReturnType<typeof normalizeAmounts>): RawPosition[] {
   const { positions } = result
-  if (!positions) assert.fail('normalizeAmounts liefert immer Positionen')
+  if (!Array.isArray(positions)) assert.fail('normalizeAmounts liefert immer eine Liste von Positionen')
   return positions
 }
 
@@ -56,21 +57,48 @@ test('Nettopositionen werden brutto und ergeben genau den Rechnungsbetrag', () =
   assert.equal(result.amountsAdjusted, 'netto')
 })
 
-test('Ohne brauchbaren Steuersatz wird der Rechnungsbetrag anteilig verteilt', () => {
-  for (const rate of [null, 300, 'neunzehn']) {
-    const result = normalizeAmounts({ ...chimney(), vatRatePercent: rate })
-    assert.equal(sum(positionsOf(result)), cents(101.86), String(rate))
-    assert.equal(result.amountsAdjusted, 'netto', String(rate))
+test('Hochgerechnet wird anteilig, ein genannter Steuersatz ändert daran nichts', () => {
+  // Der Rechnungsbetrag ist die härtere Angabe als ein Satz, den das Modell gelesen haben will.
+  // Mit dem Satz zu rechnen brachte nichts, weil das Restverfahren ohnehin auf den
+  // Rechnungsbetrag normiert, und konnte schaden: Bei Satz 30 und Rechnungsbetrag 11,00 wurden
+  // aus 9,90 und 0,10 die Beträge 11,87 und -0,87, und das mit der Markierung „netto“.
+  const steep = { totalGrossEur: 11, positionsAreNet: true, vatRatePercent: 30, positions: [{ amountEur: 9.9 }, { amountEur: 0.1 }] }
+  const result = normalizeAmounts(steep)
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [10.89, 0.11])
+  assert.equal(sum(positionsOf(result)), cents(11))
+  // Und mit richtigem Satz kommt in jeder Position dasselbe heraus wie ohne ihn
+  for (const rate of [19, null, 300, 'neunzehn']) {
+    const withRate = normalizeAmounts({ ...chimney(), vatRatePercent: rate })
+    assert.deepEqual(positionsOf(withRate).map((p) => p.amountEur), [34.15, 29.51, 26.89, 11.31], String(rate))
   }
-  const result = normalizeAmounts({ ...chimney(), vatRatePercent: null })
-  assert.equal(sum(positionsOf(result)), cents(101.86))
-  const vorher = chimney().positions
-  assert.ok(positionsOf(result).every((p, i) => typeof p.amountEur === 'number' && p.amountEur > vorher[i].amountEur))
 })
 
-test('Passt die Summe schon, bleibt alles, wie es ist', () => {
+test('Ein Beleg mit sieben Prozent wird ebenso hochgerechnet', () => {
+  // Der ermäßigte Satz ist der blinde Fleck jeder Obergrenze: Je kleiner der erwartete Abstand,
+  // desto mehr kann eine fehlende Position darunter verschwinden.
+  const result = normalizeAmounts({ totalGrossEur: 214, positionsAreNet: true, positions: [{ amountEur: 100 }, { amountEur: 100 }] })
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [107, 107])
+  assert.equal(result.amountsAdjusted, 'netto')
+})
+
+test('Der Abstand muss zu einem Steuersatz passen, nicht nur unter einer Obergrenze liegen', () => {
+  // Genau an der Schranke (19 Prozent plus eine halbe für Rundung) wird noch gerechnet,
+  // einen Cent darüber nicht mehr. Dazwischen liegt der Unterschied zwischen einer
+  // Nettorechnung und einer, bei der etwas fehlt.
+  const atLimit = normalizeAmounts({ totalGrossEur: 119.5, positionsAreNet: true, positions: [{ amountEur: 50 }, { amountEur: 50 }] })
+  assert.equal(atLimit.amountsAdjusted, 'netto')
+  const beyond = normalizeAmounts({ totalGrossEur: 119.51, positionsAreNet: true, positions: [{ amountEur: 50 }, { amountEur: 50 }] })
+  assert.deepEqual(positionsOf(beyond).map((p) => p.amountEur), [50, 50])
+  assert.equal(beyond.amountsAdjusted, undefined)
+})
+
+test('Passt die Summe schon, bleibt alles, wie es ist, auch mit Kennzeichen „netto“', () => {
+  // Das Kennzeichen allein ist kein Anlass: Stimmt die Positionssumme bereits mit dem
+  // Rechnungsbetrag überein, gibt es nichts hochzurechnen, und die Oberfläche soll auch keine
+  // Hochrechnung melden, die nicht stattgefunden hat.
   const brutto = {
     totalGrossEur: 42.5,
+    positionsAreNet: true,
     positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 42.5 }],
   }
   const result = normalizeAmounts(brutto)
@@ -87,17 +115,19 @@ test('Ohne Kennzeichen „netto“ wird nicht gerechnet, auch wenn die Summe abw
 
 // Fehlt der Wert einer Position, verteilt die Hochrechnung den ganzen Rechnungsbetrag auf die
 // übrigen. Das Ergebnis ist das gefährlichste, das hier entstehen kann: Die Summe passt zum
-// Beleg, und wer die Vorschläge prüft, sieht nichts Auffälliges — dabei ist jede einzelne
-// Position rund zwanzig Prozent zu hoch, und das landet in einer Nebenkostenabrechnung.
+// Beleg, und wer die Vorschläge prüft, sieht nichts Auffälliges, dabei ist jede einzelne
+// Position zu hoch, und das landet in einer Nebenkostenabrechnung.
 //
 // Auf drei Wegen kann der Wert fehlen, und das Modell wählt eher die beiden letzten: Es schreibt
 // etwas, das keine Zahl ist, es schreibt die im Schema verlangte Zahl als 0, oder es lässt die
-// Position ganz weg. Alle drei enden gleich, nämlich damit, dass die Positionssumme viel weiter
-// unter dem Rechnungsbetrag liegt, als eine Umsatzsteuer erklären kann.
+// Position ganz weg. Alle drei enden gleich, nämlich damit, dass die Positionssumme weiter unter
+// dem Rechnungsbetrag liegt, als eine Umsatzsteuer erklären kann. Der Lohnanteil steht hier
+// niedrig genug, dass ihn die Bruttosumme nicht ohnehin verhindert. Geprüft werden soll, dass
+// die fehlende Position ihn verhindert.
 for (const [name, broken] of [
-  ['unlesbar', { ...chimney(), positions: chimney().positions.map((p, i) => (i === 2 ? { ...p, amountEur: 'siehe Anlage' } : p)) }],
-  ['als 0 geliefert', { ...chimney(), positions: chimney().positions.map((p, i) => (i === 2 ? { ...p, amountEur: 0 } : p)) }],
-  ['ganz weggelassen', { ...chimney(), positions: chimney().positions.filter((_, i) => i !== 2) }],
+  ['unlesbar', { ...chimney(), labor35aTotalEur: 20, positions: chimney().positions.map((p, i) => (i === 2 ? { ...p, amountEur: 'siehe Anlage' } : p)) }],
+  ['als 0 geliefert', { ...chimney(), labor35aTotalEur: 20, positions: chimney().positions.map((p, i) => (i === 2 ? { ...p, amountEur: 0 } : p)) }],
+  ['ganz weggelassen', { ...chimney(), labor35aTotalEur: 20, positions: chimney().positions.filter((_, i) => i !== 2) }],
 ] as const) {
   test(`Fehlt der Betrag einer Position (${name}), wird nicht hochgerechnet`, () => {
     const vorher = broken.positions.map((p) => p.amountEur)
@@ -111,6 +141,19 @@ for (const [name, broken] of [
     assert.equal(result.laborFromTotal, undefined)
   })
 }
+
+test('Ein unlesbarer Betrag blockt auch dann, wenn der Abstand nach Umsatzsteuer aussieht', () => {
+  // Hier trägt allein die Prüfung, ob jeder Betrag gelesen wurde: Die beiden gelesenen Positionen
+  // stehen zum Rechnungsbetrag wie 19 Prozent. Ohne sie käme für die unlesbare Position ein NaN
+  // heraus, weil die Hochrechnung nur so viele Werte liefert, wie sie gelesen hat.
+  const result = normalizeAmounts({
+    totalGrossEur: 238,
+    positionsAreNet: true,
+    positions: [{ amountEur: 100 }, { amountEur: 100 }, { amountEur: 'siehe Anlage' }],
+  })
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [100, 100, 'siehe Anlage'])
+  assert.equal(result.amountsAdjusted, undefined)
+})
 
 test('Eine Position, die laut Rechnung nichts kostet, verhindert das Hochrechnen nicht', () => {
   // Null ist etwas anderes als „nicht gelesen“: Eine Position mit 0,00 € steht so auf der
@@ -131,18 +174,20 @@ test('Eine Position, die laut Rechnung nichts kostet, verhindert das Hochrechnen
 })
 
 test('Ist ein Betrag unlesbar, wird auch der Lohnanteil nicht verteilt', () => {
-  // Der Lohnanteil nach §35a gehört zur ganzen Rechnung. Wird er auf die Positionen verteilt,
-  // die einen Betrag haben, bekommen sie den Anteil der übrigen mit dazu. Die Position ohne
-  // Betrag übernimmt der Nutzer nicht (sie ist nicht einmal vorgehakt), also stünde am Ende zu
-  // viel §35a in der Steuererklärung: hier 500 € Lohn auf 600 € Kosten, richtig wären 333 €.
+  // Der Lohnanteil nach §35a gehört zur ganzen Rechnung. Wird er nur auf die Positionen mit
+  // Betrag verteilt, bekommen sie den Anteil der übrigen mit dazu. Die Position ohne Betrag
+  // übernimmt der Nutzer nicht (sie ist nicht einmal vorgehakt), also stünde am Ende zu viel
+  // §35a in der Steuererklärung. Hier trägt allein die Prüfung, ob jeder Betrag gelesen wurde:
+  // Die gelesenen Positionen ergeben zusammen genau den Rechnungsbetrag. Ohne sie käme
+  // [150, 150, NaN] heraus, und ein NaN landet beim Nutzer im Feld.
   const handwerker = {
     vendor: 'Handwerk Muster',
-    totalGrossEur: 900,
-    labor35aTotalEur: 500,
+    totalGrossEur: 600,
+    labor35aTotalEur: 300,
     positions: [
       { description: 'Arbeit A', category: 'Nicht umlagefähig', amountEur: 300 },
-      { description: 'Arbeit B', category: 'Nicht umlagefähig', amountEur: 300 },
-      { description: 'Arbeit C', category: 'Nicht umlagefähig', amountEur: 'siehe Anlage' },
+      { description: 'Arbeit B', category: 'Nicht umlagefähig', amountEur: 'siehe Anlage' },
+      { description: 'Arbeit C', category: 'Nicht umlagefähig', amountEur: 300 },
     ],
   }
   const result = normalizeAmounts(handwerker)
@@ -151,11 +196,35 @@ test('Ist ein Betrag unlesbar, wird auch der Lohnanteil nicht verteilt', () => {
 })
 
 test('Fehlt eine Position, wird der Lohnanteil nicht verteilt', () => {
-  // Dasselbe von der anderen Seite: Decken die Positionen den Rechnungsbetrag nicht ab, fehlt
-  // etwas, und der Lohnanteil der fehlenden Position ginge an die vorhandenen.
-  const result = normalizeAmounts({ ...chimney(), positionsAreNet: false, labor35aTotalEur: 20, positions: chimney().positions.slice(0, 2) })
+  // Dasselbe von der anderen Seite, und hier trägt allein der Abstand: Alle Beträge sind
+  // gelesen, aber zusammen decken sie nur zwei Drittel des Rechnungsbetrags ab. So weit reicht
+  // keine Umsatzsteuer, also fehlt eine Position, und ihr Lohnanteil ginge an die übrigen.
+  const result = normalizeAmounts({
+    totalGrossEur: 900,
+    labor35aTotalEur: 500,
+    positions: [{ amountEur: 300 }, { amountEur: 300 }],
+  })
   assert.ok(positionsOf(result).every((p) => p.labor35aEur == null))
   assert.equal(result.laborFromTotal, undefined)
+})
+
+test('Der Lohnanteil wird verteilt, wenn der Abstand erklärbar ist', () => {
+  // Die Gegenprobe zu den beiden Tests davor, denn ein ausbleibender Lohnanteil kostet den
+  // Nutzer bare Steuer. Zwei Fälle, in denen die Positionen vollständig sind, obwohl ihre Summe
+  // nicht dem Rechnungsbetrag entspricht.
+  //
+  // Erstens eine Nettorechnung, bei der das Modell `positionsAreNet` nicht gesetzt hat: Die
+  // Positionen bleiben netto, der Abstand ist die Umsatzsteuer.
+  const netto = normalizeAmounts({ ...chimney(), positionsAreNet: null, labor35aTotalEur: 20 })
+  assert.equal(sum(positionsOf(netto), 'labor35aEur'), cents(20))
+  assert.equal(netto.laborFromTotal, true)
+  assert.equal(netto.amountsAdjusted, undefined)
+
+  // Zweitens eine Abschlagszahlung: Der Rechnungsbetrag liegt unter der Positionssumme, und das
+  // ist kein Zeichen für eine fehlende Position.
+  const abschlag = normalizeAmounts({ totalGrossEur: 200, labor35aTotalEur: 100, positions: [{ amountEur: 300 }, { amountEur: 300 }] })
+  assert.deepEqual(positionsOf(abschlag).map((p) => p.labor35aEur), [50, 50])
+  assert.equal(abschlag.laborFromTotal, true)
 })
 
 test('Unsinnige Angaben ändern nichts', () => {

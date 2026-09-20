@@ -79,9 +79,10 @@ async function ask(
 // Ein Text aus der Antwort des Modells. Kommt statt einer Zeichenkette eine Zahl, wird sie
 // umgewandelt statt verworfen: Eine Zählernummer besteht meist nur aus Ziffern, deshalb schickt
 // manches Modell sie als Zahl, während die Oberfläche sie als Zeichenkette vergleicht
-// (autoMatchMeter in client/src/triage.ts). Für Beschreibung, Kostenart und Rechnungssteller
-// gilt dasselbe, denn auch dort steht die Zahl danach in einem Feld, das ein Mensch liest und
-// bei Bedarf überschreibt. Alles andere, etwa eine Liste oder ein Objekt, ist kein Text.
+// (autoMatchMeter in client/src/triage.ts). Für Beschreibung und Kostenart gilt dasselbe, denn
+// auch dort steht die Zahl danach in einem Feld, das ein Mensch liest und bei Bedarf
+// überschreibt. Nicht dagegen für den Rechnungssteller und die Datumsfelder, siehe
+// stringOrUndefined weiter unten. Alles andere, etwa eine Liste oder ein Objekt, ist kein Text.
 const textOrNull = (value: unknown): string | null => {
   if (typeof value === 'string') return value.trim() || null
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : null
@@ -91,7 +92,7 @@ const textOrNull = (value: unknown): string | null => {
 // für Beträge und Zählerstände Zahlen, erzwungen wird das aber nicht immer: Lehnt ein Dienst
 // das Schema ab, fällt ai/openai.ts stufenweise bis auf „nur Prompt“ zurück, und ein kleines
 // Modell auf dem eigenen Rechner antwortet dann, wie es mag. Ein Wert als Text darf deshalb
-// nicht verlorengehen — die KI füllt vor, ein Mensch prüft, und wer abtippen muss, was das
+// nicht verlorengehen: Die KI füllt vor, ein Mensch prüft, und wer abtippen muss, was das
 // Modell schon gelesen hat, hat nichts gewonnen.
 //
 // Angenommen wird deutsche wie technische Schreibweise. Offen bleibt nur, was wirklich offen
@@ -198,7 +199,6 @@ const SCHEMA = {
     },
     totalGrossEur: { type: 'number', description: 'Gesamtbetrag brutto in Euro' },
     positionsAreNet: { type: ['boolean', 'null'], description: 'true, wenn die Positionsbeträge OHNE Umsatzsteuer ausgewiesen sind und die Steuer erst in der Summe steht' },
-    vatRatePercent: { type: ['number', 'null'], description: 'Umsatzsteuersatz in Prozent, falls die Rechnung ihn nennt (z. B. 19)' },
     labor35aTotalEur: { type: ['number', 'null'], description: 'Arbeits-/Lohnkosten nach §35a EStG als EIN Betrag für die ganze Rechnung, falls nur so ausgewiesen' },
   },
   required: ['vendor', 'positions', 'totalGrossEur'],
@@ -223,8 +223,8 @@ Wichtige Regeln:
 - Kosten für Instandhaltung, Reparaturen oder Verwaltung sind "Nicht umlagefähig".
 - Beträge in Euro mit Dezimalpunkt, so wie sie auf der Rechnung stehen. Rechne nichts um.
 - Stehen die Positionsbeträge ohne Umsatzsteuer da und taucht die Steuer erst in der Summe auf
-  (häufig bei Handwerkern und Schornsteinfegern), setze positionsAreNet auf true und
-  vatRatePercent auf den genannten Satz. Die Positionen bleiben dann netto, wie gedruckt.
+  (häufig bei Handwerkern und Schornsteinfegern), setze positionsAreNet auf true. Die Positionen
+  bleiben dann netto, wie gedruckt; das Hochrechnen übernimmt Mietfuchs.
 - Weist die Rechnung Arbeits-/Lohnkosten gesondert aus (häufig bei Handwerkern, Gartenpflege,
   Schornsteinfeger als "Anteil nach §35a EStG"), gib sie als labor35aEur an, sonst null.
 - Nennt die Rechnung die Arbeitskosten nur als einen Betrag für das Ganze ("Im Rechnungsbetrag
@@ -340,7 +340,7 @@ export async function extractFromFile(
 
 // Eingang: die Antwort des Modells, zurechtgelegt für das Geraderücken. Zweierlei geschieht
 // dabei. Erstens nimmt Mietfuchs dem Modell zwei Felder aus der Hand: `amountsAdjusted` und
-// `laborFromTotal` sagen aus, was Mietfuchs selbst gerechnet hat (#34) — behauptete das Modell
+// `laborFromTotal` sagen aus, was Mietfuchs selbst gerechnet hat (#34); behauptete das Modell
 // sie, stünde in der Oberfläche ein Hinweis auf eine Rechnung, die nie stattgefunden hat.
 // Zweitens werden Beträge, die als Text dastehen, hier gelesen (numberFromModel) und nicht erst
 // am Ausgang: So rechnet normalizeAmounts mit denselben Zahlen, die der Nutzer danach sieht.
@@ -360,7 +360,7 @@ export function rawFromAnswer(answer: Record<string, unknown>): RawExtraction {
 }
 
 // Ausgang: hier entsteht die Zusage, die die Oberfläche bekommt, und nur hier. Geprüft wird
-// dabei bewusst wenig — nur das, was die Oberfläche wirklich braucht. Eine vollständige Prüfung
+// dabei bewusst wenig, nämlich nur das, was die Oberfläche braucht. Eine vollständige Prüfung
 // der Modellantwort wäre am Werkzeug vorbei: Die KI schlägt vor, ein Mensch prüft jede Position,
 // bevor sie übernommen wird. Verworfen wird deshalb nur, was niemand gebrauchen kann.
 //
@@ -400,7 +400,7 @@ export function toExtraction(raw: RawExtraction): Extraction {
   }
 }
 
-// Eine Position, wie die Oberfläche sie bekommt — aus shared/types.ts abgeleitet, damit hier
+// Eine Position, wie die Oberfläche sie bekommt, aus shared/types.ts abgeleitet, damit hier
 // nichts zu pflegen ist, wenn das Datenmodell wächst.
 type ExtractionPosition = NonNullable<Extraction['positions']>[number]
 // Beschreibung und Kostenart stehen in einem Eingabefeld, das ein Mensch liest und bei Bedarf
@@ -472,7 +472,7 @@ export async function extractMeterReading(
   }
   const answer = await ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
   // Die drei Felder einzeln einengen statt die ganze Antwort zuzusichern. Der Zählerstand darf
-  // dabei auch als Text kommen (siehe numberFromModel), die Zählernummer ebenso als Zahl — sie
+  // dabei auch als Text kommen (siehe numberFromModel), die Zählernummer ebenso als Zahl, denn sie
   // besteht ja meist nur aus Ziffern, und die Oberfläche vergleicht sie als Zeichenkette.
   return {
     meterNumber: textOrNull(answer.meterNumber),
