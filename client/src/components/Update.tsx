@@ -7,7 +7,7 @@ import FoxLogo from './Logo'
 
 // Update-Hinweis in drei Teilen: die einmalige Frage im Cockpit, der Hinweis oben in der
 // Seitenleiste und die Karte in den Einstellungen. Nach GitHub fragt nur der Server, und nur
-// mit Zustimmung (server/src/update.js). /api/update selbst ist lokal und liefert ohne
+// mit Zustimmung (server/src/update.ts). /api/update selbst ist lokal und liefert ohne
 // Zustimmung nur die installierte Version.
 
 const README = 'https://github.com/speedone/mietfuchs#herunterladen--starten-ohne-installation'

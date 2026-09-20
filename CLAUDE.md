@@ -38,7 +38,7 @@ bewusst ohne aus (siehe KI-Belegauswertung). Das Frontend wird beim Build über
 `with { type: 'file' }`) und im gepackten Betrieb daraus ausgeliefert. In der Binary erkennt der
 Server den gepackten Modus an `globalThis.Bun`: Daten landen dann in `data/` **neben der
 ausführbaren Datei** (nicht in `server/data`), und der Standard-Browser wird automatisch geöffnet.
-Wo die Daten liegen, entscheidet `chooseDataDir` in [server/src/store.js](server/src/store.js).
+Wo die Daten liegen, entscheidet `chooseDataDir` in [server/src/store.ts](server/src/store.ts).
 
 **Linux-Pakete** (#25): [scripts/package-linux.mjs](scripts/package-linux.mjs) (`npm run
 package:linux`) baut aus denselben Linux-Programmdateien `.deb`, `.rpm` und das Arch-Paket, je
@@ -48,13 +48,13 @@ Container, mehr als Docker braucht der Rechner nicht. Das Paket legt die Program
 `/usr/bin`, dazu [packaging/mietfuchs.desktop](packaging/mietfuchs.desktop) (Startmenü,
 `Terminal=false`, siehe unten) und das Symbol als SVG und PNG. Dort installiert, kann der Server nicht neben sich schreiben, deshalb liegen die Daten
 dann in `~/.local/share/mietfuchs` (XDG; entsprechend unter Windows und macOS). Die Regel dafür
-steht in `systemLocation` ([server/src/paths.js](server/src/paths.js), gemeinsame Quelle für
+steht in `systemLocation` ([server/src/paths.ts](server/src/paths.ts), gemeinsame Quelle für
 Datenordner und Betriebsart): ein Systemort (`/usr`, `/opt`, `Program Files`) führt immer in den
 Benutzerordner, auch mit Schreibrecht, sonst würde ein Start als Administrator die Daten dorthin
 legen, wo der normale Benutzer sie nicht wiederfindet. Der Heimatordner wird erst gesucht, wenn
 er gebraucht wird: `os.homedir()` wirft ohne `HOME` und ohne Eintrag in der Benutzerdatenbank
 (Container mit `--user`), und das darf den Start nicht verhindern. Dieselbe Regel ergibt die
-Betriebsart `package` ([server/src/version.js](server/src/version.js)): Der Update-Hinweis
+Betriebsart `package` ([server/src/version.ts](server/src/version.ts)): Der Update-Hinweis
 erklärt dann das Neuinstallieren des Pakets statt des Austauschens der Datei. Beim Start nennt
 der Server den Datenordner in der zweiten Zeile. Vor dem Release wird jedes Format in einem
 Container seiner Distribution installiert, als gewöhnlicher Benutzer gestartet und mit
@@ -125,12 +125,12 @@ Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc
 
 **Tests, drei Ebenen** — beim Erweitern der Verteilung oder der Formulare jeweils mitdenken:
 
-1. [server/test/calc.test.js](server/test/calc.test.js) — Engine (node:test, kein Framework).
+1. [server/test/calc.test.ts](server/test/calc.test.ts) — Engine (node:test, kein Framework).
    Neben Beispielfällen prüfen drei Tests Invarianten über zufällig erzeugte Datenbestände
    (fester Startwert, also reproduzierbar): Mieteranteile + Vermieteranteil = Gesamtkosten,
    keine negativen Anteile, Eigenanteil ≤ Vermieteranteil. Einzelfall-Tests übersehen genau
    die schiefen Konstellationen — ein Geldverlust bei der Direktzuordnung fiel erst hier auf.
-2. [server/test/api.test.js](server/test/api.test.js) — Integration: startet den Server als
+2. [server/test/api.test.ts](server/test/api.test.ts) — Integration: startet den Server als
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
    Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`. `NKA_UPDATE_URL`
    zeigt dort standardmäßig auf einen geschlossenen Port, damit kein Test GitHub erreicht.
@@ -144,6 +144,16 @@ Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc
    der State-Wert nicht in der Optionsliste, zeigt der Browser den ersten Eintrag, ohne ein
    `change`-Ereignis zu senden — gespeichert wird dann etwas anderes als das Sichtbare. Neue
    Selects deshalb über `meterTypeOptions`/`costKeyOptions` speisen.
+
+Die Tests sind selbst TypeScript und werden von `npm run typecheck` mitgeprüft. Das ist der
+eigentliche Wert: Sie bauen Datenbestände von Hand auf, und der Übersetzer vergleicht sie mit
+`shared/types.ts`. Neue Testdaten deshalb über die Typen des Modells bauen, nicht als freies
+Objektliteral — `calc.test.ts` hat dafür kleine Helfer (`emptyDb`, `tenancy`), die die
+Pflichtfelder füllen, damit im Test nur das Fachliche steht. Geht eine Zusicherung nicht auf,
+weil ein Wert fehlen könnte, gehört der fehlende Wert geprüft (`assert.fail` mit Ansage) und
+nicht mit `as` oder `!` behauptet: Eine Behauptung verdeckt genau den Befund, den der Test
+zutage fördern soll. Die Helfer der Tests liegen bewusst in `server/testing/` statt in
+`server/test/`, weil `node --test` jede Quelldatei unter `test/` als Test ausführt.
 
 Nennenswerte Änderungen gehören ins [CHANGELOG.md](CHANGELOG.md) (Keep-a-Changelog, deutsch);
 der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
@@ -170,20 +180,24 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 
 ## Architektur
 
-Zwei getrennte npm-Pakete: `server/` (Express, ESM, kein TypeScript) und `client/` (React 19 +
-Vite + TypeScript). Im Dev proxyt Vite `/api` und `/uploads` an `localhost:3001`
-([client/vite.config.ts](client/vite.config.ts)); im Produktivbuild liefert der Express-Server
-das statische `client/dist` selbst aus ([server/src/index.js](server/src/index.js)).
+Zwei getrennte npm-Pakete: `server/` (Express, ESM, TypeScript) und `client/` (React 19 + Vite +
+TypeScript), dazu der Ordner `shared/` mit dem gemeinsamen Datenmodell (#48). Der Server wird
+nicht gebaut: Node führt die `.ts`-Dateien unmittelbar aus und streift die Typen dabei ab, das
+ist ab Node 24.12 stabil und der Grund für die Untergrenze in `engines`. Geprüft werden sie
+trotzdem, durch `npm run typecheck`. Im Dev proxyt Vite `/api` und `/uploads` an
+`localhost:3001` ([client/vite.config.ts](client/vite.config.ts)); im Produktivbuild liefert der
+Express-Server das statische `client/dist` selbst aus
+([server/src/index.ts](server/src/index.ts)).
 
 **Persistenz**: eine einzige JSON-Datei `server/data/db.json`, atomar geschrieben (Temp +
-rename) über [server/src/store.js](server/src/store.js). `NKA_DATA_DIR` verlegt den Ordner
+rename) über [server/src/store.ts](server/src/store.ts). `NKA_DATA_DIR` verlegt den Ordner
 (Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel externer
-KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.js; nicht im Backup).
+KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht im Backup).
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
-älterer `db.json` passieren imperativ in `load()` in store.js (z. B. fester Monatsbetrag →
+älterer `db.json` passieren imperativ in `load()` in store.ts (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
 
-**API** ([server/src/index.js](server/src/index.js)): generische CRUD-Routen werden in einer
+**API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
 Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze (auch `payments`
 beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
@@ -201,7 +215,7 @@ Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GE
 `taxReport` den Eigenanteil aus dem Snapshot, damit Steuerübersicht und versendete Abrechnung
 nicht auseinanderlaufen.
 
-**Berechnungs-Engine** ([server/src/calc.js](server/src/calc.js)) — das Herzstück, hier liegt
+**Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
 - Centgenaue Verteilung per **Hare/largest-remainder** (`largestRemainder`). Schöpfen die
@@ -220,7 +234,7 @@ die ganze fachliche Komplexität:
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
   (`consumptionInPeriod`). Zählerwechsel über `replacement: true` + `oldEndValue`. Negativer
   Verbrauch erzeugt eine Warnung.
-- **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in types.ts): `participates:
+- **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
   Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den
   Vermieteranteil · beides `false` = außerhalb der Abrechnungseinheit, bleibt ganz außen vor.
@@ -239,41 +253,51 @@ die ganze fachliche Komplexität:
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
 
-Der Server kennt **keine Domänentypen als Code** — die maßgebliche Typdefinition des gesamten
-Datenmodells steht in [client/src/types.ts](client/src/types.ts) (Unit, Tenancy, Meter,
-Reading, CostItem, Settings, Settlement …). Server und Client müssen hier konsistent bleiben.
-Die `KEY_LABELS` existieren bewusst doppelt (calc.js liefert UI-Strings im Settlement, types.ts
-hat eigene Labels für die Eingabe-Oberfläche).
+**Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
+CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
+enthält ausschließlich Typen und keinen Laufzeitanteil; beide Seiten importieren sie
+unmittelbar, deshalb kann eine Änderung am Modell nicht mehr nur auf einer Seite ankommen.
+
+Die Grenze zu [client/src/types.ts](client/src/types.ts) verläuft an der Frage, ob etwas beim
+Ausführen noch da ist. Ein neuer Typ, ein neues Feld oder ein neuer Wert eines Aufzählungstyps
+gehört nach `shared/`. Alles, was die Oberfläche daraus macht, bleibt beim Client: die
+Beschriftungen (`UNIT_USAGE_LABELS`, `METER_TYPE_LABELS`, `CATEGORIES`) und die Helfer
+(`usageOf`, `matchCategory`, `defaultKeyFor`). Die Datei des Clients reicht das gemeinsame
+Modell per `export type *` weiter, sodass die Importe der Seiten unverändert auf `../types`
+zeigen; der Server importiert `shared/types.ts` unmittelbar.
+
+Die `KEY_LABELS` existieren bewusst doppelt: calc.ts liefert die Beschriftung, die auf der
+fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Oberfläche.
 
 **KI-Belegauswertung**: optional, gegen **Ollama** oder einen **OpenAI-kompatiblen Dienst**
 (#18). Die KI macht nur Vorschläge, übernommen wird erst nach manueller Prüfung. Aufgeteilt in:
-- [server/src/extract.js](server/src/extract.js): das Fachliche, also Prompts, JSON-Schemas,
+- [server/src/extract.ts](server/src/extract.ts): das Fachliche, also Prompts, JSON-Schemas,
   Ablauf (Auswertung, zweiter Durchgang nur für Kostenarten, Belegart, Zählerstand) und
-  Zeitlimits je Schritt. Die Kategorie-Enums dort und `CATEGORIES`/`matchCategory` in types.ts
-  müssen zusammenpassen.
-- [server/src/ai/settings.js](server/src/ai/settings.js): das Datenmodell `settings.ai` mit den
+  Zeitlimits je Schritt. Die Kategorie-Enums dort und `CATEGORIES`/`matchCategory` in
+  client/src/types.ts müssen zusammenpassen.
+- [server/src/ai/settings.ts](server/src/ai/settings.ts): das Datenmodell `settings.ai` mit den
   Plätzen `text` (Standard) und `images` (eigener Anbieter für Fotos und Scans), den
   Einstellungen für Fortgeschrittene, der Migration aus `ollamaUrl`/`ollamaModel`, den
   Umgebungsvariablen und der Regel, was als extern gilt (`isExternalUrl`, `consentProblem`).
-- [server/src/ai/presets.js](server/src/ai/presets.js): die Vorlagen (Ollama lokal, entfernt,
+- [server/src/ai/presets.ts](server/src/ai/presets.ts): die Vorlagen (Ollama lokal, entfernt,
   Cloud, OpenAI, IONOS, Mistral, LM Studio, eigener Dienst) mit Adresse, Bedarf an einem
   Schlüssel, Feldname für die Antwortlänge, Temperatur, `json_object` und Links. Sie belegen
   nur vor, geändert werden darf alles.
-- [server/src/ai/index.js](server/src/ai/index.js): die Schnittstelle der Anbieter,
+- [server/src/ai/index.ts](server/src/ai/index.ts): die Schnittstelle der Anbieter,
   `json({ prompt, images, schema, timeoutMs, signal, onProgress }) → { data, stats }`, dazu die
   Wahl des Platzes je Beleg (Bilder → `images`, falls eingerichtet) und die Durchsetzung der
   Bestätigung vor jeder Anfrage.
-- [server/src/ai/openai.js](server/src/ai/openai.js): Chat-Completions-Schnittstelle als
+- [server/src/ai/openai.ts](server/src/ai/openai.ts): Chat-Completions-Schnittstelle als
   SSE-Strom. Schickt immer eine Antwortlänge (IONOS nimmt sonst 16 Token), Temperatur 0 außer
   bei OpenAI, und JSON in Stufen: striktes Schema, Schema ohne `strict`, `json_object` mit
   Schema im Prompt (nicht bei LM Studio), nur Prompt. Lehnt ein Dienst etwas ab, probiert das
   Modul die nächste Möglichkeit und merkt sie sich je Adresse und Modell. Fehlerformate von
   OpenAI, Mistral, IONOS und Ollama werden gleich gelesen, ein Schlüssel erscheint nie in einer
   Meldung.
-- [server/src/secrets.js](server/src/secrets.js): API-Schlüssel je Platz in `data/secrets.json`
+- [server/src/secrets.ts](server/src/secrets.ts): API-Schlüssel je Platz in `data/secrets.json`
   (unter Unix 0600), nie in `GET /api/settings` und nicht im Backup. `NKA_AI_API_KEY` oder
   `NKA_AI_API_KEY_FILE` (Docker-Secret) haben Vorrang.
-- [server/src/ai/ollama.js](server/src/ai/ollama.js): Transport und Eigenheiten von Ollama.
+- [server/src/ai/ollama.ts](server/src/ai/ollama.ts): Transport und Eigenheiten von Ollama.
   Streamt `/api/chat`, setzt `think: false` und einen festen Kontext (`num_ctx` 16384, sonst
   kürzt Ollama bei unter 24 GB Grafikspeicher auf 4096 Token; ein wechselnder Wert lädt das
   Modell neu). Lehnt ein Modell `think: false` ab, wie manche bei Ollama Cloud, geht die
@@ -281,7 +305,7 @@ hat eigene Labels für die Eingabe-Oberfläche).
   Ollama es an einen Cloud-Dienst weiterreicht (eine Minute gemerkt), und übersetzt Fehler in
   Meldungen für die Oberfläche (nicht erreichbar, nicht installiert, Schlüssel, Zeitlimit,
   abgeschnittene Antwort). Dazu Modellliste und Suche nach Ollama unter üblichen Adressen.
-- [server/src/ai/http.js](server/src/ai/http.js): Verbindung ohne die 300-Sekunden-Grenze von
+- [server/src/ai/http.ts](server/src/ai/http.ts): Verbindung ohne die 300-Sekunden-Grenze von
   `fetch` (Node und Bun brechen ab, wenn so lange keine Antwort-Header kommen, Ollama schickt
   sie erst mit dem ersten Token). Unter Node über `node:http(s)`, unter Bun über `fetch` mit
   `timeout: false`. Für KI-Anfragen deshalb nicht `fetch` direkt nehmen.
@@ -290,7 +314,7 @@ PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mi
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
 `pdfText` mit, bei Scans ohne brauchbare Textebene (unter 80 Zeichen) bis zu vier Seiten als
 JPEG im Feld `pages`. Die Seitenbilder bleiben im Arbeitsspeicher (gemischter multer-Speicher
-in index.js) und landen nicht im Belegarchiv. So braucht der Server kein natives Modul:
+in index.ts) und landen nicht im Belegarchiv. So braucht der Server kein natives Modul:
 `pdf-to-img` scheiterte in der Bun-Programmdatei, weil pdf.js dort `@napi-rs/canvas` nicht
 findet (#21). Intern laufen Bilder als `{ mimeType, data }`.
 
@@ -339,7 +363,7 @@ Bilder-Anbieters gibt es bewusst nur in der Oberfläche, die Umgebung legt nur d
 Compose-Profil `ki` startet Ollama als Dienst `ollama` mit und lädt das Modell über den Dienst
 `ollama-pull`.
 
-**Modelle laden und Empfehlungen** (#33): [server/src/ai/recommendations.js](server/src/ai/recommendations.js)
+**Modelle laden und Empfehlungen** (#33): [server/src/ai/recommendations.ts](server/src/ai/recommendations.ts)
 hält die Empfehlungsliste. Jede Version bringt eine Kopie mit (`BUILT_IN`, muss mit
 [ki-modelle.json](ki-modelle.json) übereinstimmen, ein Test vergleicht beide). Nachgeladen wird
 die Datei aus dem Repo nur mit derselben Zustimmung wie beim Update-Hinweis
@@ -368,7 +392,7 @@ ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), 
 Textebene, Scan und Foto. Start von Hand oder per Label `ki-pruefung` an einem PR. Neue
 Beispielbelege nur erfunden, nie echte Rechnungen.
 
-**Update-Hinweis** ([server/src/update.js](server/src/update.js)): Nur mit Zustimmung
+**Update-Hinweis** ([server/src/update.ts](server/src/update.ts)): Nur mit Zustimmung
 (`settings.updateCheck === 'on'`, beim ersten Start im Cockpit gefragt) fragt der Server
 `releases/latest` bei GitHub ab, höchstens einmal am Tag je laufender Instanz. Ohne Zustimmung
 geht keine Anfrage hinaus, `/api/update` liefert dann nur die installierte Version. Nach einem
@@ -380,7 +404,7 @@ Hinweis führt zu einer Anleitung, bei der Programmdatei mit dem Download der pa
 und Schritten je System, bei Docker und npm mit Befehlen. Die Entscheidungslogik der
 Oberfläche liegt in [client/src/update.ts](client/src/update.ts). Ob später ein Updater
 dazukommt, ist offen (Issue #20). Die eigene Version liest
-[server/src/version.js](server/src/version.js) per JSON-Import aus `server/package.json`, den
+[server/src/version.ts](server/src/version.ts) per JSON-Import aus `server/package.json`, den
 Bun beim Kompilieren einbettet. Die Betriebsart ergibt sich aus `globalThis.Bun`
 (Programmdatei, an einem Systemort `package`, siehe Linux-Pakete) bzw. `NKA_RUNTIME=docker`
 (setzt das Dockerfile), sonst `npm`.
@@ -412,9 +436,22 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   `'kaltwasser'`, die Kostenarten). Seitenkomponenten heißen wie die Seite (`Kosten.tsx`).
 - **Geld immer in Cent als Integer.** Eingabe-Parsing (deutsche + technische Schreibweise) über
   `parseEuro`; Ausgabe über `fmtEuro`.
-- **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.js die
-  bestehende Konvention beibehalten und gegen [server/test/calc.test.js](server/test/calc.test.js)
+- **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.ts die
+  bestehende Konvention beibehalten und gegen [server/test/calc.test.ts](server/test/calc.test.ts)
   prüfen.
+- **Importe tragen die Endung `.ts`** (`import { load } from './store.ts'`). Node führt die
+  Dateien unmittelbar aus und löst den Pfad auf, wie er dasteht; eine Endung `.js` oder gar
+  keine zeigt ins Leere. Der Übersetzer erlaubt das über `allowImportingTsExtensions`.
+- **Reine Typimporte brauchen `import type`** (`verbatimModuleSyntax`). Sonst bliebe der Import
+  beim Ausführen stehen und Node suchte nach einer Datei, die nur Typen enthält.
+- **Kein Konstrukt, das erst beim Übersetzen entsteht** (`erasableSyntaxOnly`): keine `enum`,
+  keine `namespace`, keine Parameter-Eigenschaften im Konstruktor (`constructor(private x)`),
+  kein `declare` in einer Klasse. Node streift Typen nur ab, es übersetzt nicht; was Code
+  erzeugen würde, wäre nach dem Abstreifen verschwunden. Statt `enum` ein Vereinigungstyp aus
+  Zeichenketten, wie ihn `UnitUsage` oder `CostKey` in shared/types.ts zeigen.
+- **`npm run typecheck` ist die einzige Prüfung.** Es gibt keinen Linter, und weil der Server
+  ohne Build-Schritt läuft, merkt niemand sonst einen Typfehler. Vor jedem Commit also einmal
+  laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein).
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).
 - Zielbild ist das kleine Mehrfamilienhaus in Eigenverwaltung: wenige Wohnungen, davon

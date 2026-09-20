@@ -50,12 +50,12 @@ Beitragende werden im Changelog und in den Release-Notes genannt.
 ## Änderungen an der Berechnung
 
 Eine Nebenkostenabrechnung ist ein Dokument mit rechtlicher Wirkung. Deshalb gilt für die
-Berechnung ([server/src/calc.js](server/src/calc.js)):
+Berechnung ([server/src/calc.ts](server/src/calc.ts)):
 
 - Jede fachliche Änderung braucht einen Test, der ohne die Änderung fehlschlägt.
 - Bestehende Abrechnungen dürfen sich nicht unbemerkt anders rechnen — weder durch eine neue
   Regel noch durch eine Migration.
-- Die Invarianten-Tests in [server/test/calc.test.js](server/test/calc.test.js) bleiben grün:
+- Die Invarianten-Tests in [server/test/calc.test.ts](server/test/calc.test.ts) bleiben grün:
   Mieteranteile und Vermieteranteil ergeben immer die Gesamtkosten, kein Anteil ist negativ.
 
 ## Fehler melden

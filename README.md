@@ -138,12 +138,18 @@ in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfu
 
 ## Aus dem Quellcode starten (für Entwickler)
 
+Dafür braucht es **Node 24.12 oder neuer**. Server und Oberfläche sind in TypeScript
+geschrieben, und der Server wird nicht gebaut: Node führt die Dateien unmittelbar aus und
+streift die Typen dabei ab. Das gilt erst ab dieser Version als stabil. Wer Mietfuchs als
+Programmdatei, als Linux-Paket oder im Docker-Image nutzt, braucht kein Node — dort ist die
+Laufzeit schon dabei.
+
 ```powershell
 npm install        # einmalig: installiert Server + Client
 npm run dev        # startet Server (Port 3001) und Oberfläche (http://localhost:5173)
 ```
 
-Tests der Berechnungs-Engine: `npm test`
+Tests der Berechnungs-Engine: `npm test`. Typen prüfen: `npm run typecheck`.
 
 Eigenständige Binaries selbst bauen (benötigt [Bun](https://bun.com)): `npm run package` →
 legt die Dateien für alle Plattformen in `dist-bin/` ab.
