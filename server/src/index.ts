@@ -1,13 +1,14 @@
-import express from 'express'
+import express, { type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer'
 import path from 'node:path'
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
+import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
-import { extractFromFile, classifyDocType, extractMeterReading } from './extract.ts'
+import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
 import { listOpenAiModels } from './ai/openai.ts'
@@ -15,6 +16,7 @@ import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
+import { isProviderError } from './ai/errors.ts'
 import { healthReport } from './health.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
@@ -22,6 +24,25 @@ import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 app.use(express.json())
+
+// ---------- Kleine Helfer ----------
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// Die Meldung eines geworfenen Fehlers, wie zuvor `String(err.message || err)`. In einem catch
+// ist der Fehler `unknown`: Wer wirft, bestimmt, was ankommt.
+const messageOf = (err: unknown): string => {
+  const message = isObject(err) && typeof err.message === 'string' ? err.message : ''
+  return message || String(err)
+}
+
+// Fehler aus ai/settings.ts und secrets.ts tragen ein `status` für die Antwort der Route (dort
+// mit Object.assign an den Error gehängt). Fehlt es, bleibt es wie bisher bei 500.
+const statusOf = (err: unknown): number => (isObject(err) && typeof err.status === 'number' ? err.status : 500)
+
+// Mit upload.fields() ist `req.files` ein Objekt je Feldname; die Listenform entsteht nur bei
+// upload.array(), das hier niemand benutzt. Diese Sicht hält den Zugriff typisiert.
+const filesOf = (req: Request): Record<string, Express.Multer.File[]> =>
+  req.files && !Array.isArray(req.files) ? req.files : {}
 
 // Belege landen im Belegarchiv auf der Platte. Seitenbilder, die der Browser aus einem
 // gescannten PDF rendert (Feld `pages`), braucht nur die KI-Auswertung: Sie bleiben im
@@ -35,7 +56,7 @@ const diskStore = multer.diskStorage({
   },
 })
 const memoryStore = multer.memoryStorage()
-const storageFor = (file) => (file.fieldname === 'pages' ? memoryStore : diskStore)
+const storageFor = (file: Express.Multer.File): multer.StorageEngine => (file.fieldname === 'pages' ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 const upload = multer({
   storage: {
@@ -54,21 +75,24 @@ const MAX_PAGES = 4
 // Echte Seitenbilder sind deutlich unter 1 MB. Die Grenze hält den Arbeitsspeicher klein, denn
 // Seitenbilder werden dort gehalten und für Ollama noch einmal als Base64 kopiert.
 const PAGE_MAX_BYTES = 5 * 1024 * 1024
-const checkPageSizes = (req, res, next) => {
-  if (!(req.files?.pages ?? []).some((p) => p.size > PAGE_MAX_BYTES)) return next()
+const checkPageSizes = (req: Request, res: Response, next: NextFunction): void => {
+  if (!(filesOf(req).pages ?? []).some((p) => p.size > PAGE_MAX_BYTES)) return next()
   // Der Beleg liegt da schon auf der Platte: wieder entfernen, sonst bliebe ein Rest im Archiv
-  const file = req.files?.file?.[0]
+  const file = filesOf(req).file?.[0]
   if (file) fs.rmSync(file.path, { force: true })
   res.status(400).json({ error: 'Ein Seitenbild ist größer als 5 MB.' })
 }
 const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes]
-const uploadedFile = (req) => req.files?.file?.[0] ?? null
-const aiInput = (req) => ({
-  pdfText: typeof req.body?.pdfText === 'string' ? req.body.pdfText : '',
-  pages: (req.files?.pages ?? [])
-    .filter((p) => p.mimetype.startsWith('image/'))
-    .map((p) => ({ mimeType: p.mimetype, data: p.buffer.toString('base64') })),
-})
+const uploadedFile = (req: Request): Express.Multer.File | null => filesOf(req).file?.[0] ?? null
+const aiInput = (req: Request): { pdfText: string, pages: { mimeType: string, data: string }[] } => {
+  const pdfText: unknown = req.body?.pdfText
+  return {
+    pdfText: typeof pdfText === 'string' ? pdfText : '',
+    pages: (filesOf(req).pages ?? [])
+      .filter((p) => p.mimetype.startsWith('image/'))
+      .map((p) => ({ mimeType: p.mimetype, data: p.buffer.toString('base64') })),
+  }
+}
 
 // ---------- Einstellungen ----------
 // Den KI-Anbieter kann der Betreiber per Umgebungsvariable festlegen, etwa im Container (siehe
@@ -76,20 +100,28 @@ const aiInput = (req) => ({
 // sagt der Oberfläche, welche Felder sie nur anzeigen soll. In die db.json gelangen sie nicht.
 const AI_ENV = aiFromEnv()
 
+// `settings.ai` ist im Datenmodell optional, weil eine db.json von vor #18 es noch nicht kennt.
+// Beim Laden ergänzt store.ts es immer (migrateAi in load()), hier ist es also gesetzt. Die
+// Prüfung benennt den Fall mit einer lesbaren Meldung, statt ihn zu verdecken.
+function aiOf(settings: Settings): AiSettings {
+  if (!settings.ai) throw new Error('Die KI-Einstellungen fehlen im Datenbestand.')
+  return settings.ai
+}
+
 // Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung. ollamaUrl und
 // ollamaModel zeigen dabei, was für Ollama gilt, für Tabs von vor dem Update.
-function effectiveSettings() {
+function effectiveSettings(): Settings & { ai: AiSettings } {
   const settings = getDb().settings
-  const ai = effectiveAi(settings.ai, AI_ENV)
+  const ai = effectiveAi(aiOf(settings), AI_ENV)
   const legacy = ai.text.provider === 'ollama' ? { ollamaUrl: ai.text.url, ollamaModel: ai.text.model } : {}
   return { ...settings, ...legacy, ai }
 }
 
 // Pfade wie 'ai.text.url', dazu die alten Namen, die ein Tab von vor dem Update kennt
-function fixedByEnv() {
-  const settings = getDb().settings
-  const paths = fixedFields(settings.ai, AI_ENV)
-  const legacy = effectiveAi(settings.ai, AI_ENV).text.provider === 'ollama'
+function fixedByEnv(): string[] {
+  const ai = aiOf(getDb().settings)
+  const paths = fixedFields(ai, AI_ENV)
+  const legacy = effectiveAi(ai, AI_ENV).text.provider === 'ollama'
     ? [['ai.text.url', 'ollamaUrl'], ['ai.text.model', 'ollamaModel']].filter(([p]) => paths.includes(p)).map(([, name]) => name)
     : []
   return [...legacy, ...paths]
@@ -113,7 +145,7 @@ app.put('/api/settings', (req, res) => {
   try {
     applyAiChanges(settings, body, AI_ENV)
   } catch (err) {
-    return res.status(err.status ?? 500).json({ error: err.message })
+    return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
   Object.assign(settings, changes)
   save()
@@ -123,54 +155,74 @@ app.put('/api/settings', (req, res) => {
 // API-Schlüssel haben eigene Routen statt PUT /api/settings: Ein Schlüssel geht nur zum Server,
 // nie zurück, und nur, wenn jemand ihn neu eingibt. Ein unverändertes Formular überschreibt so
 // nichts.
-const keyRoute = (change) => (req, res) => {
+const keyRoute = (change: (req: Request) => void) => (req: Request, res: Response) => {
   try {
     change(req)
   } catch (err) {
-    return res.status(err.status ?? 500).json({ error: err.message })
+    return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
   res.json(keyInfo())
 }
+// Ein Routen-Parameter als einzelner Wert. Express kennt wiederholbare Parameter und liefert
+// dafür eine Liste; bei `:slot` kommt immer ein einzelner Wert an. Käme doch eine Liste, fiele
+// sie in secrets.ts als unbekannter Platz durch, genau wie zuvor.
+const singleParam = (value: string | string[]): string => (typeof value === 'string' ? value : '')
+
 app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
-app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
+app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(singleParam(req.params.slot))))
+
+// Die beiden Plätze der KI-Einstellungen. Als Prädikat, damit eine Angabe aus der Oberfläche
+// danach als `AiSlotName` weiterverwendet werden kann.
+const isSlotName = (value: unknown): value is AiSlotName => value === 'text' || value === 'images'
 
 // Bestätigung, dass Belege an einen externen Dienst gehen dürfen (siehe consentProblem in
 // ai/settings.ts). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
 // auch wenn sie aus der Umgebung kommen.
+const NO_SLOT = 'Für diesen Platz ist kein KI-Anbieter eingerichtet.'
 app.post('/api/ai/consent', (req, res) => {
-  const slot = req.body?.slot
+  const slot: unknown = req.body?.slot
   const effective = effectiveSettings().ai
-  if (!['text', 'images'].includes(slot) || !effective[slot]) {
-    return res.status(400).json({ error: 'Für diesen Platz ist kein KI-Anbieter eingerichtet.' })
-  }
-  const { url, model } = effective[slot]
+  if (!isSlotName(slot)) return res.status(400).json({ error: NO_SLOT })
+  const target = effective[slot]
+  if (!target) return res.status(400).json({ error: NO_SLOT })
+  const { url, model } = target
   const settings = getDb().settings
-  settings.ai.consent = { ...settings.ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
+  const ai = aiOf(settings)
+  ai.consent = { ...ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
   save()
   res.json(settingsForClient())
 })
 
 app.delete('/api/ai/consent/:slot', (req, res) => {
-  const { slot } = req.params
-  if (!['text', 'images'].includes(slot)) return res.status(400).json({ error: 'Unbekannter Platz.' })
-  const settings = getDb().settings
-  const { [slot]: _revoked, ...rest } = settings.ai.consent
-  settings.ai.consent = rest
+  const slot: string = req.params.slot
+  if (!isSlotName(slot)) return res.status(400).json({ error: 'Unbekannter Platz.' })
+  const ai = aiOf(getDb().settings)
+  const { [slot]: _revoked, ...rest } = ai.consent
+  ai.consent = rest
   save()
   res.json(settingsForClient())
 })
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
-for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']) {
-  app.get(`/api/${coll}`, (req, res) => res.json(getDb()[coll]))
+// Die generischen Routen behandeln alle Collections gleich und brauchen von einem Datensatz nur
+// die Kennung. `collections()` liefert genau diese Sicht auf die db.json: dieselben Listen,
+// betrachtet als „Datensätze mit id". Geschrieben wird darüber nur das Ergebnis eines filter()
+// auf derselben Liste, die Datensätze selbst bleiben also, was sie sind.
+type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
+type Entity = { id: string }
+const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
+const collections = (): Record<CollectionName, Entity[]> => getDb()
+
+for (const coll of COLLECTIONS) {
+  app.get(`/api/${coll}`, (req, res) => res.json(collections()[coll]))
   app.post(`/api/${coll}`, (req, res) => {
     const item = { ...req.body, id: newId() }
-    getDb()[coll].push(item)
+    collections()[coll].push(item)
     save()
     res.status(201).json(item)
   })
   app.put(`/api/${coll}/:id`, (req, res) => {
-    const item = getDb()[coll].find((x) => x.id === req.params.id)
+    const item = collections()[coll].find((x) => x.id === req.params.id)
     if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
     Object.assign(item, req.body, { id: item.id })
     save()
@@ -178,8 +230,9 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'pa
   })
   app.delete(`/api/${coll}/:id`, (req, res) => {
     const db = getDb()
-    const before = db[coll].length
-    db[coll] = db[coll].filter((x) => x.id !== req.params.id)
+    const lists = collections()
+    const before = lists[coll].length
+    lists[coll] = lists[coll].filter((x) => x.id !== req.params.id)
     if (coll === 'units') {
       // Abhängige Daten einer gelöschten Wohnung mit entfernen
       const tenancyIds = db.tenancies.filter((t) => t.unitId === req.params.id).map((t) => t.id)
@@ -200,7 +253,7 @@ for (const coll of ['units', 'tenancies', 'costItems', 'meters', 'readings', 'pa
     if (coll === 'meters') {
       db.readings = db.readings.filter((r) => r.meterId !== req.params.id)
     }
-    if (db[coll].length === before) return res.status(404).json({ error: 'Nicht gefunden' })
+    if (lists[coll].length === before) return res.status(404).json({ error: 'Nicht gefunden' })
     save()
     res.json({ ok: true })
   })
@@ -213,7 +266,8 @@ app.get('/api/settlement/:year', (req, res) => {
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
-  // vorbelegen, damit die Antwort immer der Form in types.ts entspricht.
+  // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
+  // Feld in StoredSettlement (store.ts) optional.
   if (closed) return res.json({ selfUsedShareCents: 0, ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
   res.json({ ...computeSettlement(getDb(), year), closed: null })
 })
@@ -305,21 +359,39 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 const HEARTBEAT_MS = 10000
 const PROGRESS_EVERY_MS = 500
 const REQUEST_ID = /^[a-f0-9-]{16,64}$/i
-const runningAiRequests = new Map() // requestId → cancel()
+const runningAiRequests = new Map<string, () => void>() // requestId → cancel()
 
-function aiResponse(req, res) {
+// Fortschritt, wie ihn die Routen als Zeile { type: 'progress', … } hinausschicken: entweder aus
+// der Belegauswertung (extract.ts) oder aus dem Laden eines Modells (POST /api/ai/pull).
+type PullProgressLine = { step: 'pull', phase: string, completed: number | null, total: number | null }
+type ProgressLine = AskProgressEvent | PullProgressLine
+
+// Was eine KI-Route zum Antworten braucht: Abbruchsignal, Sammelstelle für die Kennzahlen der
+// Schritte und die drei Wege hinaus (Fortschritt, Ergebnis, Fehler).
+type AiAnswer = {
+  signal: AbortSignal
+  stats: AskStats[]
+  onProgress: (event: ProgressLine) => void
+  done: (data: Record<string, unknown>) => void
+  fail: (data: Record<string, unknown>) => void
+}
+
+function aiResponse(req: Request, res: Response): AiAnswer {
   const controller = new AbortController()
   const streaming = (req.get('accept') ?? '').includes('application/x-ndjson')
-  const writeLine = (obj) => res.write(`${JSON.stringify(obj)}\n`)
-  const requestId = typeof req.body?.requestId === 'string' && REQUEST_ID.test(req.body.requestId) ? req.body.requestId : null
-  let heartbeat
+  const writeLine = (obj: Record<string, unknown>): void => {
+    res.write(`${JSON.stringify(obj)}\n`)
+  }
+  const sentId: unknown = req.body?.requestId
+  const requestId = typeof sentId === 'string' && REQUEST_ID.test(sentId) ? sentId : null
+  let heartbeat: NodeJS.Timeout | undefined
   let settled = false
-  const settle = () => {
+  const settle = (): void => {
     settled = true
     clearInterval(heartbeat)
     if (requestId) runningAiRequests.delete(requestId)
   }
-  const cancel = () => {
+  const cancel = (): void => {
     if (settled) return
     settle()
     controller.abort()
@@ -384,7 +456,7 @@ app.post('/api/ai/cancel/:id', (req, res) => {
 // mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs. `stats`
 // enthält die Kennzahlen des Modells je Schritt (Token, Sekunden), die Oberfläche braucht sie
 // nicht, der KI-Prüflauf wertet sie aus.
-app.post('/api/extract', fileWithPages, async (req, res) => {
+app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   const file = uploadedFile(req)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   const answer = aiResponse(req, res)
@@ -393,14 +465,14 @@ app.post('/api/extract', fileWithPages, async (req, res) => {
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     answer.done({ file: file.filename, extraction: result, stats })
   } catch (err) {
-    answer.fail({ file: file.filename, error: String(err.message || err), stats })
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
   }
 })
 
 // Universeller Eingang (Schuhkarton): erkennt automatisch, ob die Datei eine Rechnung oder
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
 // Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
-app.post('/api/intake', fileWithPages, async (req, res) => {
+app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   const file = uploadedFile(req)
   if (!file) return res.status(400).json({ error: 'Keine Datei' })
   const answer = aiResponse(req, res)
@@ -417,7 +489,7 @@ app.post('/api/intake', fileWithPages, async (req, res) => {
       answer.done({ file: file.filename, kind: 'rechnung', extraction, stats })
     }
   } catch (err) {
-    answer.fail({ file: file.filename, error: String(err.message || err), stats })
+    answer.fail({ file: file.filename, error: messageOf(err), stats })
   }
 })
 
@@ -465,8 +537,8 @@ const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
-function readBackup(buffer) {
-  let zip
+function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string, content: Buffer }[] } {
+  let zip: AdmZip
   try {
     zip = new AdmZip(buffer)
     zip.getEntries() // adm-zip 0.6 liest das Verzeichnis erst hier
@@ -495,7 +567,7 @@ function readBackup(buffer) {
     throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_UNPACKED_MAX_BYTES / 1024 / 1024)} MB).`)
   }
 
-  let dbText
+  let dbText: string
   try {
     dbText = zip.readAsText(dbEntry)
     JSON.parse(dbText)
@@ -512,7 +584,7 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   try {
     backup = readBackup(req.file.buffer)
   } catch (err) {
-    return res.status(400).json({ error: err.message })
+    return res.status(400).json({ error: messageOf(err) })
   }
   // Sicherheitskopie des aktuellen Stands, dann ersetzen
   fs.copyFileSync(path.join(DATA_DIR, 'db.json'), path.join(DATA_DIR, 'db.json.vor-restore'))
@@ -531,7 +603,7 @@ const OLLAMA_CANDIDATES =
 // Ollama gar nicht erreichbar, sucht der Server es unter den üblichen Adressen, außer der
 // Betreiber hat die Adresse festgelegt. Die Liste abzufragen schickt keine Belege, deshalb
 // braucht sie auch bei externen Diensten keine Bestätigung.
-async function aiStatus(slot) {
+async function aiStatus(slot: AiSlotName): Promise<AiStatus> {
   const ai = effectiveSettings().ai
   if (slot === 'images' && !ai.images) return { ok: false, error: 'Kein eigener Anbieter für Fotos und Scans eingerichtet.' }
   const config = providerConfig(ai, { images: slot === 'images' })
@@ -539,9 +611,9 @@ async function aiStatus(slot) {
     const models = config.provider === 'openai' ? await listOpenAiModels(config) : await listOllamaModels(config)
     return { ok: true, models }
   } catch (err) {
-    const status = { ok: false, error: String(err.message || err) }
+    const status: AiStatus = { ok: false, error: messageOf(err) }
     const addressFixed = slot === 'text' && fixedByEnv().includes('ai.text.url')
-    if (config.provider === 'ollama' && err.unreachable && !addressFixed && !isExternalUrl(config.url)) {
+    if (config.provider === 'ollama' && isProviderError(err) && err.unreachable && !addressFixed && !isExternalUrl(config.url)) {
       const configured = config.url.replace(/\/+$/, '')
       const found = await findOllama(OLLAMA_CANDIDATES.filter((u) => u !== configured))
       if (found) status.found = found
@@ -566,14 +638,15 @@ app.get('/api/ai/recommendations', async (req, res) => {
 const MODEL_NAME = /^[\w.:/-]{1,100}$/
 
 app.post('/api/ai/pull', async (req, res) => {
-  const slot = req.body?.slot === 'images' ? 'images' : 'text'
+  const slot: AiSlotName = req.body?.slot === 'images' ? 'images' : 'text'
   const ai = effectiveSettings().ai
-  if (slot === 'images' && !ai.images) return res.status(400).json({ error: 'Für diesen Platz ist kein KI-Anbieter eingerichtet.' })
+  if (slot === 'images' && !ai.images) return res.status(400).json({ error: NO_SLOT })
   const config = providerConfig(ai, { images: slot === 'images' })
   if (config.provider !== 'ollama' || config.preset === 'ollama-cloud' || isExternalUrl(config.url)) {
     return res.status(400).json({ error: 'Modelle lädt nur ein Ollama auf diesem Rechner oder im Heimnetz. Ein Dienst im Internet bringt seine Modelle mit.' })
   }
-  const model = typeof req.body?.model === 'string' ? req.body.model.trim() : ''
+  const sentModel: unknown = req.body?.model
+  const model = typeof sentModel === 'string' ? sentModel.trim() : ''
   if (!MODEL_NAME.test(model)) return res.status(400).json({ error: 'Der Modellname enthält unerlaubte Zeichen.' })
   const answer = aiResponse(req, res)
   try {
@@ -583,7 +656,7 @@ app.post('/api/ai/pull', async (req, res) => {
     })
     answer.done({ model })
   } catch (err) {
-    answer.fail({ model, error: String(err.message || err) })
+    answer.fail({ model, error: messageOf(err) })
   }
 })
 
@@ -637,7 +710,7 @@ app.post('/api/quit', (req, res) => {
 })
 
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
-app.use('/api', (err, req, res, next) => {
+app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) return next(err)
   if (err instanceof multer.MulterError) {
     const limit = req.path === '/restore' ? RESTORE_MAX_BYTES : UPLOAD_MAX_BYTES
@@ -649,8 +722,8 @@ app.use('/api', (err, req, res, next) => {
     return res.status(400).json({ error: message })
   }
   // Zum Beispiel ein abgebrochener Upload („Unexpected end of form“), den busboy selbst meldet
-  const status = Number(err.status ?? err.statusCode) || 500
-  res.status(status >= 400 && status < 600 ? status : 500).json({ error: `Die Anfrage ist fehlgeschlagen: ${err.message}` })
+  const status = (isObject(err) ? Number(err.status ?? err.statusCode) : NaN) || 500
+  res.status(status >= 400 && status < 600 ? status : 500).json({ error: `Die Anfrage ist fehlgeschlagen: ${messageOf(err)}` })
 })
 
 // ---------- Frontend (Produktions-Build) ----------
@@ -660,7 +733,7 @@ app.use('/api', (err, req, res, next) => {
 const PACKAGED = !!globalThis.Bun
 if (PACKAGED) {
   const { embeddedFiles, mimeFor } = await import('./embedded-client.js')
-  const sendEmbedded = (res, urlPath) => {
+  const sendEmbedded = (res: Response, urlPath: string): boolean => {
     const embedded = embeddedFiles[urlPath]
     if (!embedded) return false
     res.type(mimeFor(urlPath)).send(fs.readFileSync(embedded))
@@ -682,8 +755,8 @@ if (PACKAGED) {
 }
 
 // Standard-Browser mit der App öffnen (nur in der gepackten Binary — im Dev stört das).
-function openBrowser(url) {
-  const [cmd, args] =
+function openBrowser(url: string): void {
+  const [cmd, args]: [string, string[]] =
     process.platform === 'win32'
       ? ['cmd', ['/c', 'start', '""', url]]
       : process.platform === 'darwin'
@@ -706,8 +779,9 @@ function openBrowser(url) {
 }
 
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
-// sind für das Frontend gedacht und würden hier mit Vite kollidieren.
-const PORT = process.env.NKA_PORT || 3001
+// sind für das Frontend gedacht und würden hier mit Vite kollidieren. Als Zahl, denn node:net
+// nimmt eine Zeichenkette, die keine Zahl ist, als Pfad eines Unix-Sockets.
+const PORT = Number(process.env.NKA_PORT || 3001)
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
@@ -719,10 +793,11 @@ if (startProblem) {
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
 // ein zweiter Start kein Fehler, sondern ein zweiter Klick im Startmenü (#45).
-async function mietfuchsAlreadyOn(url) {
+async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
   try {
     const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) })
-    return (await res.json())?.app === 'mietfuchs'
+    const report: unknown = await res.json()
+    return isObject(report) && report.app === 'mietfuchs'
   } catch {
     return false
   }
@@ -730,7 +805,7 @@ async function mietfuchsAlreadyOn(url) {
 
 // Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
 // wenigstens eine Meldung des Systems, sofern es notify-send gibt.
-function notifyDesktop(message) {
+function notifyDesktop(message: string): void {
   if (!STANDALONE || process.platform !== 'linux' || process.env.CI) return
   try {
     const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
@@ -749,8 +824,10 @@ const server = app.listen(PORT, (err) => {
   // (::1) auf. Der Server lauscht auf IPv4 (0.0.0.0), und auf ::1 kann ein anderer
   // Dienst sitzen (z. B. WSLs wslrelay), der dann 404 liefert. 127.0.0.1 erzwingt IPv4.
   // Der Port kommt vom Server selbst: Mit NKA_PORT=0 vergibt das System einen freien, und die
-  // Tests lesen ihn aus dieser Meldung.
-  const url = `http://127.0.0.1:${server.address().port}`
+  // Tests lesen ihn aus dieser Meldung. `address()` liefert einen String nur bei einem
+  // Unix-Socket und null vor dem Lauschen; beides kann hier nicht sein.
+  const address = server.address()
+  const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
   // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
@@ -768,7 +845,8 @@ const server = app.listen(PORT, (err) => {
     if (!process.env.CI) openBrowser(url)
   }
 })
-server.on('error', async (err) => {
+// Fehler von node:net tragen `code`, das Error selbst nicht.
+server.on('error', async (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     const running = `http://127.0.0.1:${PORT}`
     // Ein zweiter Klick im Startmenü ist kein Fehler: Läuft dort schon Mietfuchs, gehört die

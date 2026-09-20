@@ -1,7 +1,7 @@
 // Generiert server/src/embedded-client.js aus client/dist.
 // Jede Frontend-Datei wird per Bun-Importattribut `with { type: "file" }` roh ins
 // Binary eingebettet (kein Base64-Bloat). Das erzeugte Modul wird NUR in der
-// gepackten Bun-Binary geladen (siehe index.js) — im Dev-Betrieb nie importiert,
+// gepackten Bun-Binary geladen (siehe index.ts) — im Dev-Betrieb nie importiert,
 // weil `type: "file"` ein Bun-spezifisches Feature ist.
 import fs from 'node:fs'
 import path from 'node:path'
