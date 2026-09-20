@@ -74,7 +74,18 @@ async function ask(
   return answer.data
 }
 
-// ---------- Zahlen aus der Antwort des Modells ----------
+// ---------- Zahlen und Texte aus der Antwort des Modells ----------
+
+// Ein Text aus der Antwort des Modells. Kommt statt einer Zeichenkette eine Zahl, wird sie
+// umgewandelt statt verworfen: Eine Zählernummer besteht meist nur aus Ziffern, deshalb schickt
+// manches Modell sie als Zahl, während die Oberfläche sie als Zeichenkette vergleicht
+// (autoMatchMeter in client/src/triage.ts). Für Beschreibung, Kostenart und Rechnungssteller
+// gilt dasselbe, denn auch dort steht die Zahl danach in einem Feld, das ein Mensch liest und
+// bei Bedarf überschreibt. Alles andere, etwa eine Liste oder ein Objekt, ist kein Text.
+const textOrNull = (value: unknown): string | null => {
+  if (typeof value === 'string') return value.trim() || null
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null
+}
 
 // Eine Zahl aus der Antwort des Modells, auch wenn sie als Text dasteht. Die Schemas verlangen
 // für Beträge und Zählerstände Zahlen, erzwungen wird das aber nicht immer: Lehnt ein Dienst
@@ -94,19 +105,22 @@ const GROUPED_COMMA = /^\d{1,3}(?:,\d{3})+$/ // 1,234,567
 const DECIMAL_COMMA = /^\d+(?:\.\d{3})*,\d+$/ // 1234,5 · 1.234,56
 const DECIMAL_DOT = /^\d+(?:,\d{3})*\.\d+$/ // 1234.5 · 1,234.56
 
-// Einheiten, die ein Modell hinter die Zahl schreibt („12,50 €“, „1234 m³“). Sie machen die Zahl
-// nicht mehrdeutig, und in der Rückfallstufe „nur Prompt“ ist genau diese Schreibweise
-// naheliegend, bei einem Betrag noch mehr als bei einem Zählerstand. Im Browser liest parseEuro
-// solche Angaben seit jeher, hier sollen sie deshalb auch ankommen.
+// Einheiten, die ein Modell um die Zahl herum schreibt („12,50 €“, „EUR 12,50“, „1234 m³“). Sie
+// machen die Zahl nicht mehrdeutig, und in der Rückfallstufe „nur Prompt“ ist genau diese
+// Schreibweise naheliegend, bei einem Betrag noch mehr als bei einem Zählerstand. Im Browser
+// liest parseEuro solche Angaben seit jeher, hier sollen sie deshalb auch ankommen.
 //
-// Die Liste ist mit Absicht kurz und soll es bleiben. Sie nennt das Eurozeichen und EUR für
-// Beträge sowie die Einheiten, die bei den Zählern dieses Werkzeugs überhaupt vorkommen
-// (Kubikmeter für Wasser, Kilowattstunden für Strom und Wärme), je in den Schreibweisen, die ein
-// Modell dafür benutzt. Was hier nicht steht, bleibt ungelesen. Eine allgemeine Regel, also
-// „alles abschneiden, was keine Ziffer ist“, wäre etwas anderes: Sie würde auch „ca. 1234“ oder
+// Die Listen sind mit Absicht kurz und sollen es bleiben. Sie nennen die Währung, mit der dieses
+// Werkzeug rechnet, und die Einheiten, die bei seinen Zählern überhaupt vorkommen (Kubikmeter
+// für Wasser, Kilowattstunden für Strom und Wärme), je in den Schreibweisen, die ein Modell
+// dafür benutzt. Eine Währung darf vor oder hinter der Zahl stehen, eine Zählereinheit nur
+// dahinter. Was hier nicht steht, bleibt ungelesen. Eine allgemeine Regel, also „alles
+// abschneiden, was keine Ziffer ist“, wäre etwas anderes: Sie würde auch „ca. 1234“ oder
 // „12 oder 13“ zu einer Zahl machen. Das ist keine Einheit, sondern eine Unsicherheit des
-// Modells, und die soll der Mensch sehen.
-const UNITS = ['€', 'eur', 'm³', 'm3', 'cbm', 'kwh']
+// Modells, und die soll der Mensch sehen. Die längere Schreibweise steht jeweils vorn, damit
+// „EURO“ nicht als „EUR“ mit einem übrig gebliebenen O gelesen wird.
+const CURRENCIES = ['euro', 'eur', '€']
+const UNITS = [...CURRENCIES, 'm³', 'm3', 'cbm', 'kwh']
 
 // Eine bekannte Einheit am Ende abtrennen, sonst den Wert unverändert lassen
 function withoutUnit(body: string): string {
@@ -115,12 +129,22 @@ function withoutUnit(body: string): string {
   return unit ? body.slice(0, body.length - unit.length) : body
 }
 
+// Eine vorangestellte Währung abtrennen, auch vor einem Vorzeichen („EUR -5“ wie „-5 EUR“)
+function withoutCurrency(text: string): string {
+  const sign = /^[+-]/.test(text) ? text.slice(0, 1) : ''
+  const rest = text.slice(sign.length)
+  const lower = rest.toLowerCase()
+  const currency = CURRENCIES.find((c) => lower.length > c.length && lower.startsWith(c))
+  return sign + (currency ? rest.slice(currency.length) : rest)
+}
+
 export function numberFromModel(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value !== 'string') return null
   const text = value.replace(/[\s  ]/g, '') // manche Modelle gruppieren mit Leerzeichen
-  const negative = text.startsWith('-')
-  const body = withoutUnit(text.replace(/^[+-]/, ''))
+  const signed = withoutCurrency(text) // „EUR 12,50“ genauso wie „12,50 EUR“
+  const negative = signed.startsWith('-')
+  const body = withoutUnit(signed.replace(/^[+-]/, ''))
   if (!/^[\d.,]+$/.test(body) || AMBIGUOUS.test(body)) return null
   let digits: string | null = null
   if (PLAIN.test(body)) digits = body
@@ -363,19 +387,22 @@ export function toExtraction(raw: RawExtraction): Extraction {
       if (amountEur !== null) position.amountEur = amountEur
       return position
     }),
-    // Die beiden hat Mietfuchs selbst gesetzt (normalizeAmounts), nicht das Modell — dafür
-    // sorgt der Eingang oben. Ihren Typ nehmen sie in invoiceAmounts.ts aus Extraction,
-    // deshalb passen beide Seiten hier ohne weitere Prüfung zusammen.
-    amountsAdjusted: raw.amountsAdjusted,
-    laborFromTotal: raw.laborFromTotal,
+    // Die beiden hat Mietfuchs selbst gesetzt (normalizeAmounts), nicht das Modell; dafür sorgt
+    // der Eingang oben, und ihren Typ nehmen sie in invoiceAmounts.ts aus Extraction. Geprüft
+    // werden sie hier trotzdem, denn eine Zusage soll dort eingelöst werden, wo sie gegeben
+    // wird, statt davon abzuhängen, was an anderer Stelle geschieht.
+    amountsAdjusted: raw.amountsAdjusted === 'netto' ? 'netto' : undefined,
+    laborFromTotal: raw.laborFromTotal === true ? true : undefined,
   }
 }
 
 // Eine Position, wie die Oberfläche sie bekommt — aus shared/types.ts abgeleitet, damit hier
 // nichts zu pflegen ist, wenn das Datenmodell wächst.
 type ExtractionPosition = NonNullable<Extraction['positions']>[number]
-const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value : '')
-const textOrUndefined = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined)
+// Beide lesen Texte nach derselben Regel wie der Zählerstand (textOrNull), nur ist ein fehlender
+// Text hier einmal ein leeres Feld und einmal gar kein Feld.
+const textOrEmpty = (value: unknown): string => textOrNull(value) ?? ''
+const textOrUndefined = (value: unknown): string | undefined => textOrNull(value) ?? undefined
 const finiteOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
 // ---------- Universeller Eingang (Schuhkarton): Dokumenttyp + Zählerstand ----------
@@ -419,14 +446,6 @@ Lies ab und gib JSON zurück:
 - "meterNumber": die aufgedruckte Zählernummer / Gerätenummer, falls erkennbar, sonst null.
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
-
-// Ein Text aus der Antwort des Modells. Eine Zählernummer besteht meist nur aus Ziffern, deshalb
-// schickt manches Modell sie als Zahl; die Oberfläche vergleicht sie aber als Zeichenkette
-// (autoMatchMeter in client/src/triage.ts), also wird hier umgewandelt statt verworfen.
-const textOrNull = (value: unknown): string | null => {
-  if (typeof value === 'string') return value.trim() || null
-  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null
-}
 
 export async function extractMeterReading(
   filePath: string,
