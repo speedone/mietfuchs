@@ -206,6 +206,48 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
   }
 })
 
+// Dieselbe Falle wie bei PUT /api/settings, hier in den generischen CRUD-Routen: express.json()
+// lässt auch eine Liste als Rumpf durch. Deren Indizes landeten als Schlüssel „0“, „1“ … im
+// Datensatz und blieben in der db.json stehen. Geprüft an /api/units, die Routen entstehen für
+// alle sechs Collections in derselben Schleife.
+test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an', async () => {
+  const res = await fetch(`${srv.base}/api/units`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['unsinn', 'noch mehr']),
+  })
+  assert.equal(res.status, 201)
+  const created = await res.json()
+  try {
+    assert.equal(created['0'], undefined)
+    assert.equal((await srv.api('/api/units')).find((u) => u.id === created.id)['0'], undefined)
+    const stored = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8'))
+    assert.equal(stored.units.find((u) => u.id === created.id)['0'], undefined)
+  } finally {
+    await srv.api(`/api/units/${created.id}`, { method: 'DELETE' })
+  }
+})
+
+test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet', async () => {
+  const unit = await srv.api('/api/units', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Rumpfprobe', areaM2: 50, participates: true }),
+  })
+  try {
+    const res = await fetch(`${srv.base}/api/units/${unit.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(['unsinn', 'noch mehr']),
+    })
+    assert.equal(res.status, 200)
+    const updated = await res.json()
+    assert.equal(updated['0'], undefined)
+    assert.equal(updated.name, 'Rumpfprobe')
+  } finally {
+    await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
+  }
+})
+
 test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () => {
   const unit = await srv.api('/api/units', {
     method: 'POST',
