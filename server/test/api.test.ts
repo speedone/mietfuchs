@@ -5,15 +5,160 @@
 // Löschkaskade aufräumt und dass die Abrechnungs-Routen liefern, was das Frontend erwartet.
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
+import type { Readable } from 'node:stream'
 import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
+import type { JsonSchema } from '../src/ai/ollama.ts'
+import type {
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
+  MeterReadingExtraction, OllamaStatus, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus, UploadInfo,
+} from '../../shared/types.ts'
+import type { Db } from '../src/store.ts'
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+// ---------- Was über die Routen zurückkommt ----------
+//
+// Eine Antwort ist JSON aus einem anderen Prozess: `res.json()` liefert deshalb `unknown`, und
+// kein Typ kann prüfen, was wirklich ankommt — das tun die Zusicherungen. Der Aufruf nennt
+// aber, was die Route zusagt, und wo das ein Typ aus shared/types.ts ist, prüft der Übersetzer
+// mit, dass Route und Datenmodell zusammenpassen. Die eine Behauptung dieser Datei steckt
+// deshalb hier, an einer Stelle und benannt, statt verstreut in jedem Test.
+const jsonOf = <T>(res: Response): Promise<T> => res.json() as Promise<T>
+
+// Der Betriebszustand aus /healthz (server/src/health.ts). Kein Typ des Datenmodells: Der
+// Bericht ist für Container-Orchestratoren, nicht für die Oberfläche.
+type HealthCheck = { ok: boolean, detail: string }
+type HealthReport = { status: string, version: string, app: string, checks: { data: HealthCheck, uploads: HealthCheck } }
+
+// Die Antwort von /api/upload, /api/extract und /api/intake. Welche Felder gesetzt sind, hängt
+// vom Status und der Belegart ab; die Tests prüfen erst den Status und lesen dann das Passende.
+type AiStat = { step: string, promptTokens: number, outputTokens: number, seconds: number, loadSeconds: number }
+type UploadBody = {
+  file?: string
+  kind?: string
+  extraction?: Extraction
+  reading?: MeterReadingExtraction
+  stats?: AiStat[]
+  error?: string
+}
+
+// Eine Zeile des Stroms (Accept: application/x-ndjson): `type` sagt, was sie bedeutet, die
+// übrigen Felder gehören je nach Art dazu.
+type StreamLine = {
+  type?: 'progress' | 'heartbeat' | 'result' | 'error'
+  step?: string
+  phase?: string
+  chars?: number
+  status?: string
+  total?: number
+  completed?: number
+  error?: string
+  file?: string
+  data?: UploadBody
+}
+
+// Was /api/settings liefert: die gespeicherten Einstellungen, ergänzt um die wirksamen
+// KI-Einstellungen und um das, was die Oberfläche nur anzeigt. `ai` ist im Datenmodell optional,
+// weil eine db.json von vor #18 es nicht kennt; über die Route kommt es immer, der Server
+// ergänzt es beim Laden.
+type ClientSettings = Settings & {
+  ai: AiSettings
+  fixedByEnv: string[]
+  aiKeys: Record<AiSlotName, AiKeyInfo>
+  aiExternal: Record<AiSlotName, boolean>
+}
+
+// Die Meldung einer abgelehnten Anfrage. Fehlt sie, hat die Route etwas anderes geantwortet,
+// und der Test soll genau das benennen statt an undefined zu scheitern.
+const errorOf = (body: { error?: string }): string => {
+  if (typeof body.error !== 'string') assert.fail(`keine Meldung in der Antwort: ${JSON.stringify(body).slice(0, 200)}`)
+  return body.error
+}
+
+// Dieselbe Meldung, direkt aus einer Antwort gelesen.
+const errorFrom = async (res: Response): Promise<string> => errorOf(await jsonOf<{ error?: string }>(res))
+
+// Dasselbe für den Belegnamen, den /api/upload zurückgibt.
+const fileOf = (body: { file?: string }): string => {
+  if (typeof body.file !== 'string') assert.fail(`kein Beleg in der Antwort: ${JSON.stringify(body).slice(0, 200)}`)
+  return body.file
+}
+
+// Die db.json auf der Platte. Die Tests sehen hinein, weil der Schaden mancher Fehler gerade
+// im dauerhaften Speichern besteht.
+const storedDb = (s: { dataDir: string }): Db => JSON.parse(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8'))
+
+// Die letzte Zeile eines Stroms. Ein leerer Strom ist immer ein Fehler.
+const lastLine = (lines: StreamLine[]): StreamLine => {
+  const line = lines.at(-1)
+  if (!line) assert.fail('der Strom ist leer geblieben')
+  return line
+}
+
+// Der Port eines nachgebauten Dienstes. address() kennt auch den Unix-Socket und den nicht
+// lauschenden Server; beides kommt hier nicht vor, und wäre es doch so, hilft die Ansage.
+const portOf = (server: http.Server | import('node:net').Server): number => {
+  const address = server.address()
+  if (address === null || typeof address === 'string') assert.fail('der nachgebaute Dienst lauscht nicht auf einem Port')
+  return address.port
+}
+
+// Auf das Lauschen warten. listen() ruft ohne Argument zurück, deshalb der eigene Aufruf.
+const listening = (server: http.Server | import('node:net').Server, host?: string): Promise<void> =>
+  new Promise((r) => (host ? server.listen(0, host, () => r()) : server.listen(0, () => r())))
+
+// ---------- Anfragen an die nachgebauten Dienste ----------
+// Beide Seiten stehen in dieser Datei, deshalb steht hier genau, was geschickt und gelesen wird.
+
+type OllamaMessage = { role: string, content: string, images?: string[] }
+type OllamaBody = {
+  model?: string
+  messages?: OllamaMessage[]
+  think?: boolean
+  stream?: boolean
+  options?: { temperature?: number, num_ctx?: number }
+  format?: JsonSchema
+}
+type OllamaRequest = { url: string | undefined, body: OllamaBody, headers: http.IncomingHttpHeaders }
+
+// Der Inhalt einer Nachricht an einen OpenAI-kompatiblen Dienst ist entweder Text oder eine
+// Liste von Teilen (Text und Bilder).
+type OpenAiContentPart = { type: string, text?: string, image_url?: { url: string } }
+type OpenAiMessage = { role: string, content: string | OpenAiContentPart[] }
+type OpenAiBody = {
+  model?: string
+  messages?: OpenAiMessage[]
+  stream?: boolean
+  stream_options?: { include_usage?: boolean }
+  temperature?: number
+  max_tokens?: number
+  max_completion_tokens?: number
+  response_format?: { type?: string, json_schema?: { strict?: boolean, schema?: JsonSchema } }
+}
+type OpenAiRequest = { url: string | undefined, method: string | undefined, body: OpenAiBody, raw: string, headers: http.IncomingHttpHeaders }
+
+// Der Text einer Nachricht, gleich ob sie als Zeichenkette oder als Liste von Teilen kam.
+const textOf = (m: OpenAiMessage): string =>
+  typeof m.content === 'string' ? m.content : m.content.map((p) => p.text ?? '').join('')
+
+// Die Teile einer Nachricht. Nur ein Beleg mit Bild wird so geschickt.
+const partsOf = (m: OpenAiMessage): OpenAiContentPart[] => {
+  if (typeof m.content === 'string') assert.fail('die Nachricht besteht nur aus Text, nicht aus Teilen')
+  return m.content
+}
+
+// Die erste Nachricht einer Anfrage — ohne sie hätte der Dienst nichts zu tun gehabt.
+const messageOf = <T>(messages: T[] | undefined): T => {
+  const first = messages?.[0]
+  if (!first) assert.fail('die Anfrage hat keine Nachricht mitgebracht')
+  return first
+}
 
 // Startet eine Server-Instanz auf einem eigenen Datenordner und wartet auf Bereitschaft.
 async function startServer() {
@@ -24,12 +169,12 @@ async function startServer() {
 // Liest die Adresse aus der Startmeldung „Mietfuchs-Server läuft auf …“. Wirft, wenn der Prozess
 // vorher endet oder die Meldung ausbleibt. Die Ausgabe wird danach weiter gelesen, sonst liefe
 // der Puffer der Pipe voll und der Server bliebe beim nächsten console.log hängen.
-function readStartUrl(child, timeoutMs = 20000) {
+function readStartUrl(child: ChildProcess & { stdout: Readable }, timeoutMs = 20000): Promise<string> {
   return new Promise((resolve, reject) => {
     let output = ''
     let found = false
     const timer = setTimeout(() => reject(new Error(`Server ist nicht gestartet: ${output}`)), timeoutMs)
-    child.stdout.on('data', (chunk) => {
+    child.stdout.on('data', (chunk: Buffer) => {
       if (found) return
       output += chunk
       const match = output.match(/läuft auf (http:\/\/\S+)/)
@@ -38,7 +183,7 @@ function readStartUrl(child, timeoutMs = 20000) {
       clearTimeout(timer)
       resolve(match[1])
     })
-    child.on('exit', (code) => {
+    child.on('exit', (code: number | null) => {
       clearTimeout(timer)
       reject(new Error(`Server hat sich beendet (Code ${code}): ${output}`))
     })
@@ -53,7 +198,7 @@ function readStartUrl(child, timeoutMs = 20000) {
 // Den Port vergibt das System (NKA_PORT=0). Ein selbst gewählter Zufallsport lag im Bereich,
 // aus dem Linux auch den nachgebauten Diensten der Tests Ports gibt, und traf gelegentlich einen
 // belegten.
-async function startServerIn(dataDir, env = {}) {
+async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     env: {
@@ -88,13 +233,13 @@ async function startServerIn(dataDir, env = {}) {
     stop() // sonst hielte der verwaiste Prozess den Testlauf für immer offen
     throw err
   }
-  const api = async (urlPath, init) => {
+  const api = async <T = void>(urlPath: string, init?: RequestInit): Promise<T> => {
     const res = await fetch(`${base}${urlPath}`, {
       ...init,
       headers: init?.body ? { 'content-type': 'application/json' } : undefined,
     })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${urlPath} → ${res.status}`)
-    return res.json()
+    return jsonOf<T>(res)
   }
   // Sicherung: der Server muss wirklich im Wegwerf-Ordner arbeiten, sonst nichts weiter tun.
   if (!fs.existsSync(path.join(dataDir, 'uploads'))) {
@@ -104,7 +249,7 @@ async function startServerIn(dataDir, env = {}) {
   return { api, base, dataDir, stop, child }
 }
 
-let srv
+let srv: Awaited<ReturnType<typeof startServerIn>>
 
 before(async () => {
   srv = await startServer()
@@ -115,7 +260,7 @@ after(() => srv?.stop())
 test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
   // Antwortete hier die index.html, stünde die Route hinter dem Frontend-Catch-All — dann
   // meldete ein kaputter Container HTTP 200.
-  const report = await srv.api('/healthz')
+  const report = await srv.api<HealthReport>('/healthz')
   assert.equal(report.status, 'ok')
   assert.equal(report.checks.data.ok, true)
   assert.equal(report.checks.uploads.ok, true)
@@ -124,10 +269,10 @@ test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
 // ---------- Start aus dem Startmenü (#45) ----------
 
 // Wartet, bis der Prozess endet, und liefert den Code. Wirft nach der Wartezeit.
-const waitForExit = (child, timeoutMs = 15000) =>
+const waitForExit = (child: ChildProcess, timeoutMs = 15000): Promise<number | null> =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Der Prozess hat sich nicht beendet')), timeoutMs)
-    child.on('exit', (code) => {
+    child.on('exit', (code: number | null) => {
       clearTimeout(timer)
       resolve(code)
     })
@@ -135,28 +280,28 @@ const waitForExit = (child, timeoutMs = 15000) =>
 
 // Startet den Server, ohne auf die Startmeldung zu warten, und sammelt seine Ausgabe. Für die
 // Fälle, in denen der Start gerade nicht gelingen soll.
-function startServerRaw(dataDir, env = {}) {
+function startServerRaw(dataDir: string, env: NodeJS.ProcessEnv = {}) {
   const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, CI: 'true', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
-  child.stdout.on('data', (c) => { output += c })
-  child.stderr.on('data', (c) => { output += c })
+  child.stdout.on('data', (c: Buffer) => { output += c })
+  child.stderr.on('data', (c: Buffer) => { output += c })
   return { child, out: () => output }
 }
 
 test('Healthcheck: /healthz nennt Mietfuchs beim Namen', async () => {
   // Daran erkennt ein zweiter Start, dass auf dem Port schon Mietfuchs läuft
-  assert.equal((await srv.api('/healthz')).app, 'mietfuchs')
+  assert.equal((await srv.api<HealthReport>('/healthz')).app, 'mietfuchs')
 })
 
 test('Beenden: im npm-Betrieb gibt es die Route nicht', async () => {
   // Dort beendet die Umgebung den Dienst, und ein Neustart käme von selbst
   const res = await fetch(`${srv.base}/api/quit`, { method: 'POST' })
   assert.equal(res.status, 404)
-  assert.match((await res.json()).error, /Programmdatei/)
+  assert.match(await errorFrom(res), /Programmdatei/)
 })
 
 test('Beenden: als Programmdatei antwortet Mietfuchs erst und endet dann', async () => {
@@ -189,8 +334,8 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
   const fremder = http.createServer((req, res) => res.end('nicht Mietfuchs'))
   // Auf allen Adressen lauschen, nicht nur auf 127.0.0.1: Windows lässt sonst eine zweite
   // Bindung an 0.0.0.0 auf demselben Port zu, und der Port wäre gar nicht belegt.
-  await new Promise((r) => fremder.listen(0, r))
-  const port = String(fremder.address().port)
+  await listening(fremder)
+  const port = String(portOf(fremder))
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   const start = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
   try {
@@ -217,20 +362,22 @@ test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an'
     body: JSON.stringify(['unsinn', 'noch mehr']),
   })
   assert.equal(res.status, 201)
-  const created = await res.json()
+  const created = await jsonOf<Unit>(res)
   try {
-    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
-    const stored = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8'))
-    assert.equal(stored.units.find((u) => u.id === created.id)['0'], undefined)
-    assert.equal(created['0'], undefined)
-    assert.equal((await srv.api('/api/units')).find((u) => u.id === created.id)['0'], undefined)
+    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern. Geprüft wird, dass es das
+    // Feld gar nicht gibt, nicht nur, dass es undefined ist.
+    const stored = storedDb(srv).units.find((u) => u.id === created.id)
+    assert.ok(stored && !('0' in stored), 'Index als Feld in der db.json')
+    assert.ok(!('0' in created))
+    const listed = (await srv.api<Unit[]>('/api/units')).find((u) => u.id === created.id)
+    assert.ok(listed && !('0' in listed))
   } finally {
     await srv.api(`/api/units/${created.id}`, { method: 'DELETE' })
   }
 })
 
 test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet', async () => {
-  const unit = await srv.api('/api/units', {
+  const unit = await srv.api<Unit>('/api/units', {
     method: 'POST',
     body: JSON.stringify({ name: 'Rumpfprobe', areaM2: 50, participates: true }),
   })
@@ -241,12 +388,12 @@ test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet
       body: JSON.stringify(['unsinn', 'noch mehr']),
     })
     assert.equal(res.status, 200)
-    const updated = await res.json()
+    const updated = await jsonOf<Unit>(res)
     // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
-    const stored = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8')).units.find((u) => u.id === unit.id)
-    assert.equal(stored['0'], undefined)
-    assert.equal(stored.name, 'Rumpfprobe')
-    assert.equal(updated['0'], undefined)
+    const stored = storedDb(srv).units.find((u) => u.id === unit.id)
+    assert.ok(stored && !('0' in stored))
+    assert.equal(stored?.name, 'Rumpfprobe')
+    assert.ok(!('0' in updated))
     assert.equal(updated.name, 'Rumpfprobe')
   } finally {
     await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
@@ -254,13 +401,13 @@ test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet
 })
 
 test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () => {
-  const unit = await srv.api('/api/units', {
+  const unit = await srv.api<Unit>('/api/units', {
     method: 'POST',
     body: JSON.stringify({ name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 }),
   })
   assert.equal(unit.selfUsed, true)
   assert.equal(unit.selfPersons, 2)
-  const updated = await srv.api(`/api/units/${unit.id}`, {
+  const updated = await srv.api<Unit>(`/api/units/${unit.id}`, {
     method: 'PUT',
     body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true, selfUsed: false, selfPersons: null }),
   })
@@ -270,32 +417,32 @@ test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () 
 })
 
 test('Abrechnung: Eigenanteil kommt über die Route beim Frontend an', async () => {
-  const selfUsedUnit = await srv.api('/api/units', {
+  const selfUsedUnit = await srv.api<Unit>('/api/units', {
     method: 'POST',
     body: JSON.stringify({ name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 }),
   })
-  const rentedUnit = await srv.api('/api/units', {
+  const rentedUnit = await srv.api<Unit>('/api/units', {
     method: 'POST',
     body: JSON.stringify({ name: 'OG', areaM2: 150, participates: true }),
   })
-  const tenancy = await srv.api('/api/tenancies', {
+  const tenancy = await srv.api<Tenancy>('/api/tenancies', {
     method: 'POST',
     body: JSON.stringify({
       unitId: rentedUnit.id, tenantName: 'Familie A', start: '2020-01-01', end: null,
       personHistory: [{ from: '2020-01-01', persons: 2 }], prepayments: [], baseRents: [], prepaymentOverrides: {},
     }),
   })
-  const costItem = await srv.api('/api/costItems', {
+  const costItem = await srv.api<CostItem>('/api/costItems', {
     method: 'POST',
     body: JSON.stringify({ year: 2031, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' }),
   })
 
-  const s = await srv.api('/api/settlement/2031')
+  const s = await srv.api<Settlement>('/api/settlement/2031')
   assert.equal(s.statements[0].totalShareCents, 150000) // 150 von 230 m²
   assert.equal(s.landlord.totalCents, 80000)
   assert.equal(s.selfUsedShareCents, 80000)
 
-  const tax = await srv.api('/api/taxreport/2031')
+  const tax = await srv.api<TaxReport>('/api/taxreport/2031')
   assert.equal(tax.selfUsedShareCents, 80000)
   assert.equal(tax.selfOccupiedExists, true)
 
@@ -306,9 +453,9 @@ test('Abrechnung: Eigenanteil kommt über die Route beim Frontend an', async () 
 })
 
 test('Löschen einer Wohnung entfernt ihren vereinbarten Prozentanteil', async () => {
-  const a = await srv.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'A', areaM2: 50, participates: true }) })
-  const b = await srv.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'B', areaM2: 50, participates: true }) })
-  const item = await srv.api('/api/costItems', {
+  const a = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'A', areaM2: 50, participates: true }) })
+  const b = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'B', areaM2: 50, participates: true }) })
+  const item = await srv.api<CostItem>('/api/costItems', {
     method: 'POST',
     body: JSON.stringify({
       year: 2032, category: 'Sonstige Betriebskosten', description: 'Vereinbart',
@@ -316,27 +463,28 @@ test('Löschen einer Wohnung entfernt ihren vereinbarten Prozentanteil', async (
     }),
   })
   await srv.api(`/api/units/${b.id}`, { method: 'DELETE' })
-  const items = await srv.api('/api/costItems')
+  const items = await srv.api<CostItem[]>('/api/costItems')
   const itemAfter = items.find((x) => x.id === item.id)
-  assert.deepEqual(Object.keys(itemAfter.customShares), [a.id], 'Anteil der gelöschten Wohnung bleibt zurück')
+  assert.deepEqual(Object.keys(itemAfter?.customShares ?? {}), [a.id], 'Anteil der gelöschten Wohnung bleibt zurück')
 
   await srv.api(`/api/costItems/${item.id}`, { method: 'DELETE' })
   await srv.api(`/api/units/${a.id}`, { method: 'DELETE' })
 })
 
 test('Standardmodell: eine neue Installation nutzt qwen3.5:4b', async () => {
-  assert.equal((await srv.api('/api/settings')).ollamaModel, 'qwen3.5:4b')
+  assert.equal((await srv.api<ClientSettings>('/api/settings')).ollamaModel, 'qwen3.5:4b')
 })
 
 test('Standardmodell: das frühere, nie vorhandene qwen3.6-35b wird umgestellt, andere Modelle bleiben', async () => {
   // „qwen3.6-35b“ gab es in der Ollama-Bibliothek nie (gemeint war qwen3.6:35b), wer es nicht
   // geändert hat, konnte also gar nicht auswerten. Eine eigene Wahl bleibt unangetastet.
-  for (const [stored, expected] of [['qwen3.6-35b', 'qwen3.5:4b'], ['gemma4:12b', 'gemma4:12b']]) {
+  const cases: [string, string][] = [['qwen3.6-35b', 'qwen3.5:4b'], ['gemma4:12b', 'gemma4:12b']]
+  for (const [stored, expected] of cases) {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-alt-'))
     fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ settings: { ollamaModel: stored } }))
     const s = await startServerIn(dataDir)
     try {
-      assert.equal((await s.api('/api/settings')).ollamaModel, expected, stored)
+      assert.equal((await s.api<ClientSettings>('/api/settings')).ollamaModel, expected, stored)
     } finally {
       s.stop()
     }
@@ -361,9 +509,9 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
   )
   const legacyServer = await startServerIn(dataDir)
   try {
-    const s = await legacyServer.api('/api/settlement/2030')
+    const s = await legacyServer.api<Settlement>('/api/settlement/2030')
     assert.equal(s.selfUsedShareCents, 0)
-    assert.equal(s.closed.closedAt, '2031-01-05')
+    assert.equal(s.closed?.closedAt, '2031-01-05')
   } finally {
     legacyServer.stop()
   }
@@ -374,25 +522,28 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
 // eine neuere Version. Er zählt mit, damit sich belegen lässt, dass ohne Zustimmung nichts
 // hinausgeht.
 
-const serverVersion = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8')).version
+const serverVersion: string = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8')).version
 const releaseJson = fs
   .readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')
-  .replaceAll(JSON.parse(fs.readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')).tag_name, 'v9.9.9')
+  .replaceAll(JSON.parse(fs.readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')).tag_name as string, 'v9.9.9')
 
 async function fakeGitHub() {
   const http = await import('node:http')
-  const requests = []
+  const requests: (string | undefined)[] = []
   const server = http.createServer((req, res) => {
     requests.push(req.url)
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(releaseJson)
   })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
-  const url = `http://127.0.0.1:${server.address().port}/repos/speedone/mietfuchs/releases/latest`
+  await listening(server, '127.0.0.1')
+  const url = `http://127.0.0.1:${portOf(server)}/repos/speedone/mietfuchs/releases/latest`
   return { url, requests, stop: () => server.close() }
 }
 
-async function withUpdateServer(env, fn) {
+type Server = Awaited<ReturnType<typeof startServerIn>>
+type GitHub = Awaited<ReturnType<typeof fakeGitHub>>
+
+async function withUpdateServer(env: NodeJS.ProcessEnv, fn: (s: Server, github: GitHub) => Promise<void>) {
   const github = await fakeGitHub()
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-update-'))
   const s = await startServerIn(dataDir, { NKA_UPDATE_URL: github.url, ...env })
@@ -406,12 +557,12 @@ async function withUpdateServer(env, fn) {
 
 test('Update-Hinweis: ohne Zustimmung fragt der Server GitHub nicht', async () => {
   await withUpdateServer({}, async (s, github) => {
-    const status = await s.api('/api/update')
+    const status = await s.api<UpdateStatus>('/api/update')
     assert.equal(status.enabled, false)
     assert.equal(status.available, false)
     // auch „Jetzt prüfen" darf ohne Zustimmung nichts anfragen
     await s.api('/api/update/check', { method: 'POST', body: '{}' })
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'off' }) })
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'off' }) })
     await s.api('/api/update')
     assert.equal(github.requests.length, 0)
   })
@@ -419,8 +570,8 @@ test('Update-Hinweis: ohne Zustimmung fragt der Server GitHub nicht', async () =
 
 test('Update-Hinweis: mit Zustimmung meldet der Server die neue Version', async () => {
   await withUpdateServer({}, async (s, github) => {
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
-    const status = await s.api('/api/update')
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
+    const status = await s.api<UpdateStatus>('/api/update')
     assert.equal(github.requests.length, 1)
     assert.equal(status.enabled, true)
     assert.equal(status.current, serverVersion)
@@ -429,10 +580,10 @@ test('Update-Hinweis: mit Zustimmung meldet der Server die neue Version', async 
     assert.equal(status.mode, 'npm') // der Test startet den Server mit node, ohne Programmdatei
     assert.equal(status.releaseUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v9.9.9')
     // Bis zum nächsten Tag kommt das gemerkte Ergebnis. „Jetzt prüfen" fragt neu, aber höchstens
-    // einmal pro Minute; wann genau, prüft update.test.js mit gestellter Uhr.
+    // einmal pro Minute; wann genau, prüft update.test.ts mit gestellter Uhr.
     await s.api('/api/update')
     assert.equal(github.requests.length, 1)
-    const rechecked = await s.api('/api/update/check', { method: 'POST', body: '{}' })
+    const rechecked = await s.api<UpdateStatus>('/api/update/check', { method: 'POST', body: '{}' })
     assert.equal(github.requests.length, 1)
     assert.equal(rechecked.latest, '9.9.9')
   })
@@ -440,16 +591,16 @@ test('Update-Hinweis: mit Zustimmung meldet der Server die neue Version', async 
 
 test('Update-Hinweis: im Docker-Container lautet die Betriebsart docker', async () => {
   await withUpdateServer({ NKA_RUNTIME: 'docker' }, async (s) => {
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
-    const status = await s.api('/api/update')
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ updateCheck: 'on' }) })
+    const status = await s.api<UpdateStatus>('/api/update')
     assert.equal(status.mode, 'docker')
     assert.equal(status.downloadUrl, null)
   })
 })
 
 test('Version: /healthz und der Update-Hinweis nennen die Version aus package.json', async () => {
-  const report = await srv.api('/healthz')
-  const status = await srv.api('/api/update')
+  const report = await srv.api<HealthReport>('/healthz')
+  const status = await srv.api<UpdateStatus>('/api/update')
   assert.equal(report.version, serverVersion)
   assert.equal(status.current, serverVersion)
 })
@@ -474,25 +625,36 @@ const LONG_TEXT =
 // dem Ende getrennt hat. `garbledShow` lässt /api/show mit einer nicht lesbaren Antwort
 // antworten, die den Schlüssel enthält (Befund aus der Codeprüfung: readJson gab ihn ungeprüft
 // weiter).
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false, garbledShow = false } = {}) {
+// Ein Modell, wie der nachgebaute Dienst es kennt (Ollamas /api/tags und /api/show).
+type FakeModel = { name: string, size?: number, capabilities?: string[], remote_host?: string }
+type FakeOllamaOptions = {
+  models?: FakeModel[]
+  chat?: 'normal' | 'netto' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff'
+  key?: string | null
+  echoKey?: boolean
+  garbledShow?: boolean
+}
+
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false, garbledShow = false }: FakeOllamaOptions = {}) {
   const http = await import('node:http')
-  const requests = []
-  const open = new Set()
+  const requests: OllamaRequest[] = []
+  const open = new Set<http.ServerResponse>()
   const state = { closedEarly: 0 }
   // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden
   const control = { pullHangs: false }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
+  const modelOf = (body: OllamaBody): string => body.model ?? ''
   const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', (d) => { body += d })
     req.on('end', () => {
-      const json = body ? JSON.parse(body) : {}
+      const json: OllamaBody = body ? JSON.parse(body) : {}
       requests.push({ url: req.url, body: json, headers: req.headers })
-      const send = (status, data) => {
+      const send = (status: number, data: unknown) => {
         res.writeHead(status, { 'content-type': 'application/json' })
         res.end(JSON.stringify(data))
       }
-      const notFound = () => send(404, { error: `model '${json.model}' not found` })
+      const notFound = () => send(404, { error: `model '${modelOf(json)}' not found` })
       if (req.url === '/api/version') return send(200, { version: '0.34.2' })
       if (key && req.headers.authorization !== `Bearer ${key}`) return send(401, { error: 'unauthorized' })
       if (echoKey) return send(400, { error: `Proxy lehnt ab: ${req.headers.authorization}` })
@@ -505,7 +667,7 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         res.writeHead(200, { 'content-type': 'application/x-ndjson' })
         open.add(res)
         res.on('close', () => { open.delete(res); if (!res.writableFinished) state.closedEarly++ })
-        const line = (obj) => res.write(`${JSON.stringify(obj)}\n`)
+        const line = (obj: unknown) => res.write(`${JSON.stringify(obj)}\n`)
         line({ status: 'pulling manifest' })
         if (control.pullHangs) return
         line({ status: 'pulling 4b2c1f', digest: '4b2c1f', total: 3_600_000_000, completed: 1_800_000_000 })
@@ -517,10 +679,10 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
           res.writeHead(200, { 'content-type': 'text/plain' })
           return res.end(`kaputt: ${req.headers.authorization}`)
         }
-        const m = findModel(json.model)
+        const m = findModel(modelOf(json))
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
-      if (!findModel(json.model)) return notFound()
+      if (!findModel(modelOf(json))) return notFound()
       // Eine Rechnung mit Nettopositionen und dem Lohnanteil als Gesamtbetrag (#34)
       if (chat === 'netto' && !json.format?.properties?.categories) {
         const netto = {
@@ -541,7 +703,7 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         return res.end(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 10, eval_count: 5 })}\n`)
       }
       if (chat === 'rejectThinkOff' && json.think === false) {
-        return send(400, { error: `think value "false" is not supported for "${json.model}"` })
+        return send(400, { error: `think value "false" is not supported for "${modelOf(json)}"` })
       }
       // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
       const content = JSON.stringify(
@@ -567,8 +729,8 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       })
       if (chat === 'hang') return
       res.writeHead(200, { 'content-type': 'application/x-ndjson' })
-      const line = (obj) => res.write(`${JSON.stringify(obj)}\n`)
-      const piece = (text) => ({ message: { role: 'assistant', content: text }, done: false })
+      const line = (obj: unknown) => res.write(`${JSON.stringify(obj)}\n`)
+      const piece = (text: string) => ({ message: { role: 'assistant', content: text }, done: false })
       const third = Math.ceil(content.length / 3)
       line(piece(content.slice(0, third)))
       if (chat === 'hangAfterFirstChunk') return
@@ -586,9 +748,9 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       res.end()
     })
   })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  await listening(server, '127.0.0.1')
   return {
-    url: `http://127.0.0.1:${server.address().port}`,
+    url: `http://127.0.0.1:${portOf(server)}`,
     requests,
     control,
     get closedEarly() { return state.closedEarly },
@@ -599,11 +761,14 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
   }
 }
 
-async function withOllama(fn, { models, model = 'test', chat, env = {} } = {}) {
+type Ollama = Awaited<ReturnType<typeof fakeOllama>>
+type WithOllamaOptions = { models?: FakeModel[], model?: string, chat?: FakeOllamaOptions['chat'], env?: NodeJS.ProcessEnv }
+
+async function withOllama(fn: (s: Server, ollama: Ollama) => Promise<void>, { models, model = 'test', chat, env = {} }: WithOllamaOptions = {}) {
   const ollama = await fakeOllama({ models, chat })
   const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
     await fn(s, ollama)
   } finally {
     s.stop()
@@ -613,26 +778,30 @@ async function withOllama(fn, { models, model = 'test', chat, env = {} } = {}) {
 
 // Der Inhalt des PDFs spielt keine Rolle mehr: Der Server liest es nicht, er legt es nur ab.
 const PDF = Buffer.from('%PDF-1.4\n%Mietfuchs-Test\n')
-const page = (n) => new Blob([Buffer.from(`JPEG-Seite-${n}`)], { type: 'image/jpeg' })
-const base64 = (n) => Buffer.from(`JPEG-Seite-${n}`).toString('base64')
+const page = (n: number) => new Blob([Buffer.from(`JPEG-Seite-${n}`)], { type: 'image/jpeg' })
+const base64 = (n: number) => Buffer.from(`JPEG-Seite-${n}`).toString('base64')
 
-async function uploadPdf(s, route, { text, pages = [] } = {}) {
+async function uploadPdf(s: Server, route: string, { text, pages = [] }: { text?: string, pages?: Blob[] } = {}) {
   const fd = new FormData()
   fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
   if (text !== undefined) fd.append('pdfText', text)
   pages.forEach((b, i) => fd.append('pages', b, `seite-${i + 1}.jpg`))
   const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd })
-  return { status: res.status, body: await res.json() }
+  return { status: res.status, body: await jsonOf<UploadBody>(res) }
 }
 
-const chatRequests = (ollama) => ollama.requests.filter((a) => a.url === '/api/chat')
-const firstMessage = (ollama) => chatRequests(ollama)[0].body.messages[0]
+const chatRequests = (ollama: Ollama) => ollama.requests.filter((a) => a.url === '/api/chat')
+const firstMessage = (ollama: Ollama): OllamaMessage => {
+  const first = chatRequests(ollama)[0]
+  if (!first) assert.fail('Ollama wurde gar nicht gefragt')
+  return messageOf(first.body.messages)
+}
 
 test('KI-Auswertung: PDF mit Textebene geht als Text an Ollama, ohne Bilder', async () => {
   await withOllama(async (s, ollama) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT, pages: [page(1)] })
     assert.equal(r.status, 200)
-    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
+    assert.equal(r.body.extraction?.vendor, 'Stadtwerke Musterstadt')
     const m = firstMessage(ollama)
     assert.match(m.content, /RECHNUNGSTEXT/)
     assert.ok(m.content.includes(LONG_TEXT))
@@ -654,16 +823,16 @@ test('KI-Auswertung: ohne Text und ohne Seitenbilder eine klare Meldung, Ollama 
   await withOllama(async (s, ollama) => {
     const r = await uploadPdf(s, '/api/extract')
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /Oberfläche/)
+    assert.match(errorOf(r.body), /Oberfläche/)
     assert.equal(chatRequests(ollama).length, 0)
   })
 })
 
 test('KI-Auswertung: Seitenbilder landen nicht im Belegarchiv', async () => {
   await withOllama(async (s) => {
-    const uploadsBefore = (await s.api('/api/uploads')).length
+    const uploadsBefore = (await s.api<UploadInfo[]>('/api/uploads')).length
     await uploadPdf(s, '/api/extract', { pages: [page(1), page(2), page(3)] })
-    const uploadsAfter = await s.api('/api/uploads')
+    const uploadsAfter = await s.api<UploadInfo[]>('/api/uploads')
     assert.equal(uploadsAfter.length, uploadsBefore + 1)
     assert.match(uploadsAfter.map((u) => u.file).join(' '), /rechnung\.pdf/)
   })
@@ -671,12 +840,12 @@ test('KI-Auswertung: Seitenbilder landen nicht im Belegarchiv', async () => {
 
 test('KI-Auswertung: mehr als vier Seitenbilder lehnt der Server ab, ohne Reste im Archiv', async () => {
   await withOllama(async (s, ollama) => {
-    const uploadsBefore = (await s.api('/api/uploads')).length
+    const uploadsBefore = (await s.api<UploadInfo[]>('/api/uploads')).length
     const r = await uploadPdf(s, '/api/extract', { pages: [1, 2, 3, 4, 5].map(page) })
     assert.equal(r.status, 400)
-    assert.match(r.body.error, /Höchstens 4 Seitenbilder/)
+    assert.match(errorOf(r.body), /Höchstens 4 Seitenbilder/)
     assert.equal(chatRequests(ollama).length, 0)
-    assert.equal((await s.api('/api/uploads')).length, uploadsBefore)
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, uploadsBefore)
   })
 })
 
@@ -702,9 +871,9 @@ test('KI-Auswertung: ein Seitenbild über 5 MB wird abgelehnt, ohne Reste im Arc
     const huge = new Blob([Buffer.alloc(5 * 1024 * 1024 + 1)], { type: 'image/jpeg' })
     const r = await uploadPdf(s, '/api/extract', { pages: [huge] })
     assert.equal(r.status, 400)
-    assert.match(r.body.error, /Seitenbild ist größer als 5 MB/)
+    assert.match(errorOf(r.body), /Seitenbild ist größer als 5 MB/)
     assert.equal(chatRequests(ollama).length, 0)
-    assert.equal((await s.api('/api/uploads')).length, 0)
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
   })
 })
 
@@ -712,8 +881,8 @@ test('KI-Auswertung: ein überlanger Text ergibt eine lesbare Meldung', async ()
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: 'x'.repeat(1024 * 1024 + 1) })
     assert.equal(r.status, 400)
-    assert.match(r.body.error, /Textfeld ist zu lang/)
-    assert.equal((await s.api('/api/uploads')).length, 0)
+    assert.match(errorOf(r.body), /Textfeld ist zu lang/)
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
   })
 })
 
@@ -735,9 +904,9 @@ test('Beleg anhängen: /api/upload legt die Datei ins Belegarchiv, sie ist abruf
     fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'Beleg Müll 2025.pdf')
     const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
     assert.equal(res.status, 200)
-    const { file } = await res.json()
+    const file = fileOf(await jsonOf<UploadBody>(res))
     assert.match(file, /^\d+_Beleg_Müll_2025\.pdf$/)
-    assert.deepEqual((await s.api('/api/uploads')).map((u) => u.file), [file])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file])
     const download = await fetch(`${s.base}/uploads/${encodeURIComponent(file)}`)
     assert.equal(download.status, 200)
     assert.deepEqual(Buffer.from(await download.arrayBuffer()), PDF)
@@ -751,7 +920,7 @@ test('Beleg anhängen: Umlaute in zerlegter Unicode-Form (macOS) werden zusammen
   try {
     const fd = new FormData()
     fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'Müll.pdf') // „ü“ als u + Trema
-    const { file } = await (await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })).json()
+    const file = fileOf(await jsonOf<UploadBody>(await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })))
     assert.match(file, /^\d+_Müll\.pdf$/)
   } finally {
     s.stop()
@@ -768,7 +937,7 @@ test('Hochladen: ein abgebrochener Upload ergibt JSON statt einer HTML-Fehlersei
     })
     assert.ok(res.status >= 400)
     assert.match(res.headers.get('content-type') ?? '', /json/)
-    assert.equal(typeof (await res.json()).error, 'string')
+    assert.equal(typeof (await jsonOf<{ error?: string }>(res)).error, 'string')
   } finally {
     s.stop()
   }
@@ -781,8 +950,8 @@ test('Hochladen: eine zu große Datei ergibt eine lesbare Meldung statt einer HT
     fd.append('file', new Blob([Buffer.alloc(25 * 1024 * 1024 + 1)], { type: 'application/pdf' }), 'riesig.pdf')
     const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
     assert.equal(res.status, 400)
-    assert.match((await res.json()).error, /größer als 25 MB/)
-    assert.equal((await s.api('/api/uploads')).length, 0)
+    assert.match(await errorFrom(res), /größer als 25 MB/)
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
   } finally {
     s.stop()
   }
@@ -801,7 +970,7 @@ test('KI-Auswertung: der Schuhkarton (/api/intake) nimmt die Seitenbilder ebenso
 // Im Container oder bei zentraler Einrichtung legt der Betreiber Adresse und Modell fest.
 // Die Einstellungen zeigen sie dann an, überschreiben sie aber nicht.
 
-async function withEnv(env, fn) {
+async function withEnv(env: NodeJS.ProcessEnv, fn: (s: Server) => Promise<void>) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   const s = await startServerIn(dataDir, env)
   try {
@@ -811,12 +980,14 @@ async function withEnv(env, fn) {
   }
 }
 
-const storedSettings = (s) =>
-  JSON.parse(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')).settings
+// Die Einstellungen, wie sie wirklich in der db.json stehen. `ai` ergänzt der Server beim
+// Laden, es steht also auch in der Datei; was die Oberfläche nur anzeigt (fixedByEnv, aiKeys,
+// aiExternal), darf dort gerade nicht stehen — genau das prüfen mehrere Tests.
+const storedSettings = (s: { dataDir: string }): ClientSettings => storedDb(s).settings as ClientSettings
 
 test('Ollama: NKA_OLLAMA_URL und NKA_OLLAMA_MODEL gelten und sind als fest markiert', async () => {
   await withEnv({ NKA_OLLAMA_URL: 'http://ki.intern:11434', NKA_OLLAMA_MODEL: 'env-modell:4b' }, async (s) => {
-    const settings = await s.api('/api/settings')
+    const settings = await s.api<ClientSettings>('/api/settings')
     assert.equal(settings.ollamaUrl, 'http://ki.intern:11434')
     assert.equal(settings.ollamaModel, 'env-modell:4b')
     // Die alten Namen für Tabs von vor dem Update, dazu die Pfade der KI-Einstellungen
@@ -828,7 +999,7 @@ test('Ollama: NKA_OLLAMA_URL und NKA_OLLAMA_MODEL gelten und sind als fest marki
 
 test('Ollama: Speichern lässt fest vorgegebene Werte unberührt, alles andere wird gespeichert', async () => {
   await withEnv({ NKA_OLLAMA_URL: 'http://ki.intern:11434' }, async (s) => {
-    const response = await s.api('/api/settings', {
+    const response = await s.api<ClientSettings>('/api/settings', {
       method: 'PUT',
       body: JSON.stringify({ ollamaUrl: 'http://anders:11434', ollamaModel: 'eigenes:2b', landlordName: 'Vermieterin', fixedByEnv: [] }),
     })
@@ -846,29 +1017,29 @@ test('Ollama: Speichern lässt fest vorgegebene Werte unberührt, alles andere w
 
 test('Ollama: Variablen aus der Shell des Entwicklers erreichen die Test-Server nicht', async () => {
   // Wer NKA_OLLAMA_URL für sein eigenes Ollama gesetzt hat, soll keine Testbelege dorthin schicken
-  const saved = { url: process.env.NKA_OLLAMA_URL, candidates: process.env.NKA_OLLAMA_CANDIDATES }
+  const saved: Record<string, string | undefined> = { NKA_OLLAMA_URL: process.env.NKA_OLLAMA_URL, NKA_OLLAMA_CANDIDATES: process.env.NKA_OLLAMA_CANDIDATES }
   process.env.NKA_OLLAMA_URL = 'http://aus-der-shell.invalid:11434'
   process.env.NKA_OLLAMA_CANDIDATES = 'http://aus-der-shell.invalid:11434'
   try {
     const s = await startServer()
     try {
-      const settings = await s.api('/api/settings')
+      const settings = await s.api<ClientSettings>('/api/settings')
       assert.deepEqual(settings.fixedByEnv, [])
       assert.equal(settings.ollamaUrl, 'http://localhost:11434')
     } finally {
       s.stop()
     }
   } finally {
-    for (const [key, name] of [['url', 'NKA_OLLAMA_URL'], ['candidates', 'NKA_OLLAMA_CANDIDATES']]) {
-      if (saved[key] === undefined) delete process.env[name]
-      else process.env[name] = saved[key]
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
     }
   }
 })
 
 test('Ollama: leere Umgebungsvariablen zählen als nicht gesetzt', async () => {
   await withEnv({ NKA_OLLAMA_URL: '', NKA_OLLAMA_MODEL: '  ' }, async (s) => {
-    const settings = await s.api('/api/settings')
+    const settings = await s.api<ClientSettings>('/api/settings')
     assert.deepEqual(settings.fixedByEnv, [])
     assert.equal(settings.ollamaUrl, 'http://localhost:11434')
   })
@@ -878,7 +1049,7 @@ test('Ollama: die Auswertung nutzt Adresse und Modell aus der Umgebung', async (
   const ollama = await fakeOllama({ models: [{ name: 'env-modell:4b', capabilities: ['completion'] }] })
   try {
     await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'env-modell:4b' }, async (s) => {
-      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaModel: 'db-modell' }) })
+      await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaModel: 'db-modell' }) })
       const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
       assert.equal(r.status, 200)
       assert.equal(chatRequests(ollama)[0].body.model, 'env-modell:4b')
@@ -893,7 +1064,7 @@ test('Ollama: die Auswertung nutzt Adresse und Modell aus der Umgebung', async (
 // Anfragen stillschweigend. Neuere Modelle denken außerdem standardmäßig erst lange nach,
 // was auf dem Prozessor Minuten kostet. Beides legt Mietfuchs deshalb selbst fest.
 
-const chatOptions = (ollama) => chatRequests(ollama).map((a) => ({ think: a.body.think, ...a.body.options }))
+const chatOptions = (ollama: Ollama) => chatRequests(ollama).map((a) => ({ think: a.body.think, ...a.body.options }))
 
 test('Ollama: jede Anfrage setzt festen Kontext, Temperatur 0 und schaltet das Nachdenken ab', async () => {
   await withOllama(async (s, ollama) => {
@@ -913,7 +1084,7 @@ test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße', async () => {
     await withEnv({ NKA_OLLAMA_URL: ollama.url, NKA_OLLAMA_MODEL: 'test', NKA_OLLAMA_NUM_CTX: '8192' }, async (s) => {
       await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
       assert.equal(chatOptions(ollama)[0].num_ctx, 8192)
-      assert.ok((await s.api('/api/settings')).fixedByEnv.includes('ai.numCtx'))
+      assert.ok((await s.api<ClientSettings>('/api/settings')).fixedByEnv.includes('ai.numCtx'))
     })
   } finally {
     ollama.stop()
@@ -926,7 +1097,7 @@ test('Ollama: NKA_OLLAMA_NUM_CTX ändert die Kontextgröße', async () => {
 // und spricht Ollama ohne diese Grenze an. Es gilt nur das eigene Zeitlimit, und das soll als
 // solches gemeldet werden, nicht als „nicht erreichbar“.
 
-const until = async (condition, ms = 5000) => {
+const until = async (condition: () => boolean, ms = 5000) => {
   const end = Date.now() + ms
   while (!condition()) {
     if (Date.now() > end) return false
@@ -939,8 +1110,8 @@ test('Ollama: die Antwort kommt als Strom und wird zusammengesetzt', async () =>
   await withOllama(async (s, ollama) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 200)
-    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
-    assert.equal(r.body.extraction.positions[0].category, 'Wasser/Abwasser')
+    assert.equal(r.body.extraction?.vendor, 'Stadtwerke Musterstadt')
+    assert.equal(r.body.extraction?.positions?.[0].category, 'Wasser/Abwasser')
     assert.ok(chatRequests(ollama).every((a) => a.body.stream === true))
   })
 })
@@ -961,7 +1132,7 @@ test('Ollama: das Zeitlimit greift vor der ersten Antwort und heißt auch so (NK
     const start = Date.now()
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.match(errorOf(r.body), /nicht innerhalb von 2 Sekunden geantwortet/)
     assert.ok(Date.now() - start < 15000, 'das Zeitlimit wurde nicht eingehalten')
   }, { chat: 'hang', env: { NKA_AI_TIMEOUT: '2' } })
 })
@@ -970,7 +1141,7 @@ test('Ollama: verstummt Ollama mitten im Strom, greift ebenfalls das Zeitlimit',
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.match(errorOf(r.body), /nicht innerhalb von 2 Sekunden geantwortet/)
   }, { chat: 'hangAfterFirstChunk', env: { NKA_AI_TIMEOUT: '2' } })
 })
 
@@ -978,8 +1149,8 @@ test('Ollama: eine am Kontextende abgeschnittene Antwort ergibt eine klare Meldu
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /abgeschnitten/)
-    assert.match(r.body.error, /Kontext von 16384 Token.*unter „Erweitert“/)
+    assert.match(errorOf(r.body), /abgeschnitten/)
+    assert.match(errorOf(r.body), /Kontext von 16384 Token.*unter „Erweitert“/)
   }, { chat: 'length' })
 })
 
@@ -987,7 +1158,7 @@ test('Ollama: ein Fehler mitten im Strom kommt lesbar an', async () => {
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /Ollama meldet einen Fehler: model runner has unexpectedly stopped/)
+    assert.match(errorOf(r.body), /Ollama meldet einen Fehler: model runner has unexpectedly stopped/)
   }, { chat: 'error' })
 })
 
@@ -1003,7 +1174,7 @@ test('Ollama: bricht der Browser ab, bricht Mietfuchs die Anfrage an Ollama ab',
     assert.equal((await upload).name, 'AbortError')
     assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
     // Auf den abgebrochenen Beleg verweist nichts, er soll nicht im Archiv liegen bleiben
-    assert.deepEqual(await s.api('/api/uploads'), [])
+    assert.deepEqual(await s.api<UploadInfo[]>('/api/uploads'), [])
   }, { chat: 'hang' })
 })
 
@@ -1021,7 +1192,7 @@ test('Abbrechen per Kennung: stoppt Ollama und entfernt den Beleg, auch bei offe
     const cancel = await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })
     assert.equal(cancel.status, 200)
     assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
-    assert.deepEqual(await s.api('/api/uploads'), [])
+    assert.deepEqual(await s.api<UploadInfo[]>('/api/uploads'), [])
     await pending // der Strom endet, statt offen zu hängen
     // Danach ist die Kennung verbraucht
     assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 404)
@@ -1032,7 +1203,7 @@ test('Abbrechen per Kennung: unbekannte oder ungültige Kennungen ergeben 404', 
   for (const id of ['ffffffffffffffffffffffffffffffff', 'kurz', '../../etc']) {
     const res = await fetch(`${srv.base}/api/ai/cancel/${encodeURIComponent(id)}`, { method: 'POST' })
     assert.equal(res.status, 404, id)
-    assert.match((await res.json()).error, /Keine laufende Auswertung/)
+    assert.match(await errorFrom(res), /Keine laufende Auswertung/)
   }
 })
 
@@ -1041,31 +1212,32 @@ test('Abbrechen per Kennung: unbekannte oder ungültige Kennungen ergeben 404', 
 // Fordert der Browser mit Accept: application/x-ndjson an, schickt Mietfuchs die Header sofort,
 // danach Fortschritt, Lebenszeichen und zuletzt Ergebnis oder Fehler, je eine JSON-Zeile.
 
-async function uploadStreaming(s, route, { text, signal } = {}) {
+async function uploadStreaming(s: Server, route: string, { text, signal }: { text?: string, signal?: AbortSignal } = {}) {
   const fd = new FormData()
   fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'rechnung.pdf')
   if (text !== undefined) fd.append('pdfText', text)
   const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
   return res
 }
-const linesOf = async (res) => (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l))
+const linesOf = async (res: Response): Promise<StreamLine[]> =>
+  (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l) as StreamLine)
 
 test('Strom: Fortschritt je Schritt und am Ende das Ergebnis wie bisher', async () => {
   await withOllama(async (s) => {
     const res = await uploadStreaming(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(res.status, 200)
-    assert.match(res.headers.get('content-type'), /application\/x-ndjson/)
+    assert.match(res.headers.get('content-type') ?? '', /application\/x-ndjson/)
     const lines = await linesOf(res)
-    const result = lines.at(-1)
+    const result = lastLine(lines)
     assert.equal(result.type, 'result')
-    assert.equal(result.data.extraction.vendor, 'Stadtwerke Musterstadt')
-    assert.match(result.data.file, /rechnung\.pdf$/)
+    assert.equal(result.data?.extraction?.vendor, 'Stadtwerke Musterstadt')
+    assert.match(fileOf(result.data ?? {}), /rechnung\.pdf$/)
     const progress = lines.filter((l) => l.type === 'progress').map((l) => `${l.step}:${l.phase}`)
     assert.ok(progress.includes('extraction:waiting'), progress.join(' '))
     assert.ok(progress.includes('extraction:writing'), progress.join(' '))
     assert.ok(progress.includes('classification:waiting'), progress.join(' '))
     const writing = lines.find((l) => l.phase === 'writing')
-    assert.ok(writing.chars > 0)
+    assert.ok((writing?.chars ?? 0) > 0)
   })
 })
 
@@ -1073,10 +1245,10 @@ test('Strom: ein Fehler kommt als letzte Zeile, samt Beleg', async () => {
   await withOllama(async (s) => {
     const res = await uploadStreaming(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(res.status, 200)
-    const last = (await linesOf(res)).at(-1)
+    const last = lastLine(await linesOf(res))
     assert.equal(last.type, 'error')
-    assert.match(last.error, /nicht installiert/)
-    assert.match(last.file, /rechnung\.pdf$/)
+    assert.match(errorOf(last), /nicht installiert/)
+    assert.match(fileOf(last), /rechnung\.pdf$/)
   }, { model: 'fehlt:4b' })
 })
 
@@ -1087,15 +1259,15 @@ test('Strom: die Header kommen sofort, auch wenn das Modell noch schweigt, danac
     assert.ok(Date.now() - start < 3000, 'die Header kamen erst mit der Antwort')
     const lines = await linesOf(res)
     assert.ok(lines.some((l) => l.type === 'heartbeat'), 'kein Lebenszeichen während des Wartens')
-    assert.match(lines.at(-1).error, /nicht innerhalb von 12 Sekunden/)
+    assert.match(errorOf(lastLine(lines)), /nicht innerhalb von 12 Sekunden/)
   }, { chat: 'hang', env: { NKA_AI_TIMEOUT: '12' } })
 })
 
 test('Strom: der Schuhkarton (/api/intake) streamt ebenso', async () => {
   await withOllama(async (s) => {
     const lines = await linesOf(await uploadStreaming(s, '/api/intake', { text: LONG_TEXT }))
-    assert.equal(lines.at(-1).type, 'result')
-    assert.equal(lines.at(-1).data.kind, 'rechnung')
+    assert.equal(lastLine(lines).type, 'result')
+    assert.equal(lastLine(lines).data?.kind, 'rechnung')
   })
 })
 
@@ -1112,7 +1284,7 @@ test('Ollama: die Modellliste nennt Größe, Bildverständnis und Cloud-Modelle,
     { name: 'einbettung:latest', size: 270000000, capabilities: ['embedding'] },
   ]
   await withOllama(async (s) => {
-    const status = await s.api('/api/ollama/status')
+    const status = await s.api<OllamaStatus>('/api/ollama/status')
     assert.equal(status.ok, true)
     assert.deepEqual(status.modelDetails, [
       { name: 'bild:4b', sizeBytes: 3400000000, vision: true, remote: false },
@@ -1128,13 +1300,13 @@ test('Ollama: die Modellliste nennt Größe, Bildverständnis und Cloud-Modelle,
 test('Ollama: ist der Server nicht erreichbar, nennen Status und Auswertung die Adresse', async () => {
   const s = await startServer()
   try {
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: `${UNREACHABLE}/` }) })
-    const status = await s.api('/api/ollama/status')
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: `${UNREACHABLE}/` }) })
+    const status = await s.api<OllamaStatus>('/api/ollama/status')
     assert.equal(status.ok, false)
-    assert.match(status.error, /Ollama ist unter http:\/\/127\.0\.0\.1:9 nicht erreichbar/)
+    assert.match(errorOf(status), /Ollama ist unter http:\/\/127\.0\.0\.1:9 nicht erreichbar/)
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /Ollama ist unter http:\/\/127\.0\.0\.1:9 nicht erreichbar/)
+    assert.match(errorOf(r.body), /Ollama ist unter http:\/\/127\.0\.0\.1:9 nicht erreichbar/)
   } finally {
     s.stop()
   }
@@ -1144,8 +1316,8 @@ test('Ollama: ein nicht installiertes Modell nennt den Befehl zum Laden', async 
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /„fehlt:4b“ ist in Ollama nicht installiert/)
-    assert.match(r.body.error, /ollama pull fehlt:4b/)
+    assert.match(errorOf(r.body), /„fehlt:4b“ ist in Ollama nicht installiert/)
+    assert.match(errorOf(r.body), /ollama pull fehlt:4b/)
   }, { model: 'fehlt:4b' })
 })
 
@@ -1153,12 +1325,12 @@ test('Ollama: ein Modell ohne Bildverständnis bekommt keine Bilder, sondern ein
   await withOllama(async (s, ollama) => {
     const scan = await uploadPdf(s, '/api/extract', { pages: [page(1)] })
     assert.equal(scan.status, 502)
-    assert.match(scan.body.error, /„text:8b“ versteht keine Bilder/)
+    assert.match(errorOf(scan.body), /„text:8b“ versteht keine Bilder/)
     const photo = new FormData()
     photo.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'zaehler.jpg')
     const intake = await fetch(`${s.base}/api/intake`, { method: 'POST', body: photo })
     assert.equal(intake.status, 502)
-    assert.match((await intake.json()).error, /versteht keine Bilder/)
+    assert.match(await errorFrom(intake), /versteht keine Bilder/)
     assert.equal(chatRequests(ollama).length, 0)
     // Text braucht kein Bildverständnis
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
@@ -1177,14 +1349,14 @@ test('Ollama: antwortet Ollama mit einem Fehler, sucht der Status keine andere A
   // Derselbe Server unter anderem Namen wäre kein hilfreicher Vorschlag
   const http = await import('node:http')
   const broken = http.createServer((req, res) => { res.writeHead(500); res.end('kaputt') })
-  await new Promise((r) => broken.listen(0, '127.0.0.1', r))
+  await listening(broken, '127.0.0.1')
   const ollama = await fakeOllama()
   try {
     await withEnv({ NKA_OLLAMA_CANDIDATES: ollama.url }, async (s) => {
-      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: `http://127.0.0.1:${broken.address().port}` }) })
-      const status = await s.api('/api/ollama/status')
+      await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: `http://127.0.0.1:${portOf(broken)}` }) })
+      const status = await s.api<OllamaStatus>('/api/ollama/status')
       assert.equal(status.ok, false)
-      assert.match(status.error, /Ollama antwortet mit 500/)
+      assert.match(errorOf(status), /Ollama antwortet mit 500/)
       assert.equal(status.found, undefined)
       assert.equal(ollama.requests.length, 0, 'die Suche hat trotzdem gefragt')
     })
@@ -1199,14 +1371,14 @@ test('Ollama: ist die Adresse nicht erreichbar, schlägt der Status eine gefunde
   const candidates = `${UNREACHABLE},${ollama.url}`
   try {
     await withEnv({ NKA_OLLAMA_CANDIDATES: candidates }, async (s) => {
-      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: 'http://127.0.0.1:10' }) })
-      const status = await s.api('/api/ollama/status')
+      await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: 'http://127.0.0.1:10' }) })
+      const status = await s.api<OllamaStatus>('/api/ollama/status')
       assert.equal(status.ok, false)
       assert.equal(status.found, ollama.url)
     })
     // Hat der Betreiber die Adresse festgelegt, bleibt es bei der Meldung
     await withEnv({ NKA_OLLAMA_CANDIDATES: candidates, NKA_OLLAMA_URL: 'http://127.0.0.1:10' }, async (s) => {
-      const status = await s.api('/api/ollama/status')
+      const status = await s.api<OllamaStatus>('/api/ollama/status')
       assert.equal(status.ok, false)
       assert.equal(status.found, undefined)
     })
@@ -1219,21 +1391,21 @@ test('Ollama: ist die Adresse nicht erreichbar, schlägt der Status eine gefunde
 // Ein Backup ist ein ZIP mit db.json und uploads/. Beim Zurückspielen darf ein fremdes oder
 // kaputtes Archiv nie einen halb ersetzten Datenstand hinterlassen.
 
-async function restore(s, zipBuffer) {
+async function restore(s: Server, zipBuffer: Buffer) {
   const fd = new FormData()
   fd.append('file', new Blob([zipBuffer], { type: 'application/zip' }), 'backup.zip')
   const res = await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })
   const contentType = res.headers.get('content-type') ?? ''
-  return { status: res.status, contentType, body: contentType.includes('json') ? await res.json() : await res.text() }
+  return { status: res.status, contentType, body: contentType.includes('json') ? await jsonOf<{ error?: string }>(res) : { error: await res.text() } }
 }
 
-async function withData(fn) {
+async function withData(fn: (s: Server, data: { unit: Unit, file: string }) => Promise<void>) {
   const s = await startServer()
   try {
-    const unit = await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
     const fd = new FormData()
     fd.append('file', new Blob([Buffer.from('%PDF-Beleg')], { type: 'application/pdf' }), 'Gebührenbescheid Müll.pdf')
-    const { file } = await (await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })).json()
+    const file = fileOf(await jsonOf<UploadBody>(await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })))
     await fn(s, { unit, file })
   } finally {
     s.stop()
@@ -1241,7 +1413,9 @@ async function withData(fn) {
 }
 
 // Ein Archiv mit gültiger db.json und frei wählbaren weiteren Einträgen
-function archive(entries = {}, db = { units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} }) {
+// `db` ist der Inhalt der db.json im Archiv: ein Bestand, eine rohe Zeichenkette (fuer eine
+// kaputte Datei) oder null (gar keine db.json).
+function archive(entries: Record<string, string | Buffer> = {}, db: unknown = { units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} }): Buffer {
   const zip = new AdmZip()
   if (db !== null) zip.addFile('db.json', Buffer.from(typeof db === 'string' ? db : JSON.stringify(db)))
   for (const [name, content] of Object.entries(entries)) zip.addFile(name, Buffer.from(content))
@@ -1256,8 +1430,8 @@ test('Backup: herunterladen und zurückspielen bringt Daten und Belege zurück',
     fs.rmSync(path.join(s.dataDir, 'uploads', file))
     const r = await restore(s, backup)
     assert.equal(r.status, 200)
-    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
-    assert.deepEqual((await s.api('/api/uploads')).map((u) => u.file), [file]) // Umlaute überleben das ZIP
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file]) // Umlaute überleben das ZIP
   })
 })
 
@@ -1270,15 +1444,15 @@ test('Backup: ein Archiv ohne db.json oder mit kaputter db.json ändert nichts',
     }
     const r = await restore(s, Buffer.from('kein ZIP'))
     assert.equal(r.status, 400)
-    assert.match(r.body.error, /kein gültiges ZIP/)
-    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+    assert.match(errorOf(r.body), /kein gültiges ZIP/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
   })
 })
 
 // Setzt einen Eintragsnamen roh ins Archiv, wie ein präpariertes ZIP ihn enthielte. adm-zip
 // bereinigt Namen schon beim Erzeugen, deshalb erst mit gleich langem Platzhalter bauen und die
 // Bytes danach ersetzen (der Name steckt in lokalem Kopf und zentralem Verzeichnis).
-function archiveWithRawName(name) {
+function archiveWithRawName(name: string): Buffer {
   const placeholder = `uploads/${'X'.repeat(name.length - 'uploads/'.length)}`
   const raw = archive({ [placeholder]: 'boese' }).toString('latin1')
   assert.equal(raw.split(placeholder).length - 1, 2, 'Platzhalter steht zweimal im Archiv')
@@ -1292,7 +1466,7 @@ test('Backup: ein Eintrag, der aus dem Belegordner ausbrechen will, wird abgeleh
       assert.equal(r.status, 400, `${name}: ${JSON.stringify(r.body)}`)
       assert.match(r.contentType, /json/)
       // Nichts ersetzt: die Wohnung ist noch da, obwohl die db.json im Archiv leer ist
-      assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
+      assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
     }
     assert.equal(fs.existsSync(path.join(s.dataDir, 'boese.txt')), false)
     assert.equal(fs.existsSync(path.join(s.dataDir, '..', 'boese.txt')), false)
@@ -1305,14 +1479,14 @@ test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor et
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-restore-'))
   const s = await startServerIn(dataDir, { NKA_RESTORE_MAX_BYTES: String(100 * 1024) })
   try {
-    const unit = await s.api('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
     const bomb = archive({ 'uploads/gross.pdf': Buffer.alloc(200 * 1024) })
     assert.ok(bomb.length < 10 * 1024, 'das Archiv selbst ist klein')
     const r = await restore(s, bomb)
     assert.equal(r.status, 400)
-    assert.match(r.body.error, /zu groß/)
-    assert.deepEqual((await s.api('/api/units')).map((u) => u.id), [unit.id])
-    assert.equal((await s.api('/api/uploads')).length, 0)
+    assert.match(errorOf(r.body), /zu groß/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.equal((await s.api<UploadInfo[]>('/api/uploads')).length, 0)
   } finally {
     s.stop()
   }
@@ -1359,8 +1533,8 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
   const net = await import('node:net')
   const blocker = net.createServer()
   // Ohne Host wie Mietfuchs selbst, sonst lauschten beide auf verschiedenen Adressfamilien
-  await new Promise((r) => blocker.listen(0, r))
-  const port = blocker.address().port
+  await listening(blocker)
+  const port = portOf(blocker)
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
   try {
     const child = spawn(process.execPath, ['src/index.ts'], {
@@ -1370,7 +1544,7 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
     let output = ''
     child.stdout.on('data', (d) => { output += d })
     child.stderr.on('data', (d) => { output += d })
-    const code = await Promise.race([
+    const code = await Promise.race<number | null | string>([
       new Promise((r) => child.on('exit', r)),
       new Promise((r) => setTimeout(() => { child.kill(); r('läuft nach 15 s noch') }, 15000)),
     ])
@@ -1389,19 +1563,19 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
 // nicht ins Backup-ZIP, das schnell in einer Cloud oder auf einem USB-Stick landet.
 
 const SECRET = 'sk-test-geheim-1234567890abcd'
-const putKey = (s, body) => fetch(`${s.base}/api/ai/key`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const putKey = (s: Server, body: { slot?: string, key?: string }) => fetch(`${s.base}/api/ai/key`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 test('Schlüssel: wird gespeichert, erscheint aber nirgends im Klartext', async () => {
   await withEnv({}, async (s) => {
     const res = await putKey(s, { slot: 'text', key: `  ${SECRET}  ` })
     assert.equal(res.status, 200)
-    assert.deepEqual((await res.json()).text, { set: true, hint: '…abcd', fromEnv: null })
-    const settings = await s.api('/api/settings')
+    assert.deepEqual((await jsonOf<Record<AiSlotName, AiKeyInfo>>(res)).text, { set: true, hint: '…abcd', fromEnv: null })
+    const settings = await s.api<ClientSettings>('/api/settings')
     assert.deepEqual(settings.aiKeys.text, { set: true, hint: '…abcd', fromEnv: null })
     assert.deepEqual(settings.aiKeys.images, { set: false, hint: '', fromEnv: null })
     assert.ok(!JSON.stringify(settings).includes(SECRET), 'Schlüssel in /api/settings')
     // Speichert die Oberfläche die Einstellungen samt `aiKeys` zurück, landet nichts davon in der db.json
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify(settings) })
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(settings) })
     const db = fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')
     assert.ok(!db.includes(SECRET), 'Schlüssel in der db.json')
     assert.ok(!db.includes('aiKeys'), 'aiKeys in der db.json')
@@ -1417,7 +1591,7 @@ test('Schlüssel: nicht im Backup, und eine Wiederherstellung lässt ihn stehen'
     assert.ok(!entries.some((e) => e.entryName.includes('secrets')), 'secrets.json im Backup')
     assert.ok(!entries.some((e) => e.getData().includes(SECRET)), 'Schlüssel in einem Eintrag des Backups')
     assert.equal((await restore(s, zip)).status, 200)
-    assert.equal((await s.api('/api/settings')).aiKeys.text.set, true)
+    assert.equal((await s.api<ClientSettings>('/api/settings')).aiKeys.text.set, true)
   })
 })
 
@@ -1429,7 +1603,7 @@ test('Schlüssel: eine secrets.json im Backup wird nicht übernommen', async () 
     const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
     zip.addFile('secrets.json', Buffer.from(JSON.stringify({ text: 'fremder-schluessel-0000', images: 'fremd-1111' })))
     assert.equal((await restore(s, zip.toBuffer())).status, 200)
-    const { aiKeys } = await s.api('/api/settings')
+    const { aiKeys } = await s.api<ClientSettings>('/api/settings')
     assert.equal(aiKeys.text.hint, '…abcd')
     assert.equal(aiKeys.images.set, false)
     assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'secrets.json'), 'utf8')).text, SECRET)
@@ -1441,16 +1615,16 @@ test('Schlüssel: löschen', async () => {
     await putKey(s, { slot: 'images', key: SECRET })
     const res = await fetch(`${s.base}/api/ai/key/images`, { method: 'DELETE' })
     assert.equal(res.status, 200)
-    assert.equal((await s.api('/api/settings')).aiKeys.images.set, false)
+    assert.equal((await s.api<ClientSettings>('/api/settings')).aiKeys.images.set, false)
   })
 })
 
 test('Schlüssel: NKA_AI_API_KEY hat Vorrang und lässt sich nicht überschreiben', async () => {
   await withEnv({ NKA_AI_API_KEY: SECRET }, async (s) => {
-    assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY' })
+    assert.deepEqual((await s.api<ClientSettings>('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY' })
     const res = await putKey(s, { slot: 'text', key: 'anderer-schluessel-9999' })
     assert.equal(res.status, 409)
-    assert.match((await res.json()).error, /NKA_AI_API_KEY/)
+    assert.match(await errorFrom(res), /NKA_AI_API_KEY/)
     assert.ok(!fs.existsSync(path.join(s.dataDir, 'secrets.json')))
   })
 })
@@ -1463,10 +1637,10 @@ test('Schlüssel: NKA_AI_API_KEY_FILE liest ihn aus einer Datei, etwa einem Dock
   fs.writeFileSync(secretFile, `${SECRET}\n`) // Zeilenumbruch am Ende wie bei `echo … > datei`
   try {
     await withEnv({ NKA_AI_API_KEY_FILE: secretFile }, async (s) => {
-      assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY_FILE' })
+      assert.deepEqual((await s.api<ClientSettings>('/api/settings')).aiKeys.text, { set: true, hint: '…abcd', fromEnv: 'NKA_AI_API_KEY_FILE' })
       const res = await putKey(s, { slot: 'text', key: 'anderer-schluessel-9999' })
       assert.equal(res.status, 409)
-      assert.match((await res.json()).error, /NKA_AI_API_KEY_FILE/)
+      assert.match(await errorFrom(res), /NKA_AI_API_KEY_FILE/)
       assert.ok(!fs.existsSync(path.join(s.dataDir, 'secrets.json')))
     })
   } finally {
@@ -1478,12 +1652,12 @@ test('Schlüssel: NKA_AI_API_KEY_FILE liest ihn aus einer Datei, etwa einem Dock
 // sich erst bei der ersten Auswertung als „Schlüssel ungültig“
 test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Meldung', async () => {
   const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-secret-'))
-  const file = (name, content) => {
+  const file = (name: string, content: string) => {
     const p = path.join(secretDir, name)
     fs.writeFileSync(p, content)
     return p
   }
-  const cases = [
+  const cases: [NodeJS.ProcessEnv, RegExp][] = [
     [{ NKA_AI_API_KEY: SECRET, NKA_AI_API_KEY_FILE: file('beide', SECRET) }, /beide gesetzt/],
     [{ NKA_AI_API_KEY_FILE: path.join(secretDir, 'fehlt') }, /fehlt, die Datei lässt sich aber nicht lesen \(ENOENT\)/],
     [{ NKA_AI_API_KEY_FILE: file('leer', '\n') }, /ist leer/],
@@ -1505,7 +1679,7 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
       let output = ''
       child.stdout.on('data', (d) => { output += d })
       child.stderr.on('data', (d) => { output += d })
-      const code = await Promise.race([
+      const code = await Promise.race<number | null | string>([
         new Promise((r) => child.on('exit', r)),
         new Promise((r) => setTimeout(() => { child.kill(); r('läuft nach 15 s noch') }, 15000)),
       ])
@@ -1534,7 +1708,7 @@ test('Schlüssel: löschen geht nicht bei Umgebungsvariable oder unbekanntem Pla
   await withEnv({ NKA_AI_API_KEY: SECRET }, async (s) => {
     assert.equal((await fetch(`${s.base}/api/ai/key/text`, { method: 'DELETE' })).status, 409)
     assert.equal((await fetch(`${s.base}/api/ai/key/fremd`, { method: 'DELETE' })).status, 400)
-    assert.equal((await s.api('/api/settings')).aiKeys.text.set, true)
+    assert.equal((await s.api<ClientSettings>('/api/settings')).aiKeys.text.set, true)
   })
 })
 
@@ -1542,7 +1716,7 @@ test('Schlüssel: löschen geht nicht bei Umgebungsvariable oder unbekanntem Pla
 test('Schlüssel: kurze Schlüssel werden nicht angedeutet', async () => {
   await withEnv({}, async (s) => {
     await putKey(s, { slot: 'text', key: 'kurz-1234' })
-    assert.deepEqual((await s.api('/api/settings')).aiKeys.text, { set: true, hint: '', fromEnv: null })
+    assert.deepEqual((await s.api<ClientSettings>('/api/settings')).aiKeys.text, { set: true, hint: '', fromEnv: null })
   })
 })
 
@@ -1551,7 +1725,7 @@ test('Schlüssel: eine von Hand verdorbene secrets.json stört den Start nicht',
   fs.writeFileSync(path.join(dataDir, 'secrets.json'), JSON.stringify({ text: 12345, images: { a: 1 } }))
   const s = await startServerIn(dataDir)
   try {
-    const { aiKeys } = await s.api('/api/settings')
+    const { aiKeys } = await s.api<ClientSettings>('/api/settings')
     assert.equal(aiKeys.text.set, false)
     assert.equal(aiKeys.images.set, false)
   } finally {
@@ -1566,7 +1740,7 @@ test('Schlüssel: eine secrets.json mit dem Literal null stört den Start nicht'
   fs.writeFileSync(path.join(dataDir, 'secrets.json'), 'null')
   const s = await startServerIn(dataDir)
   try {
-    const { aiKeys } = await s.api('/api/settings')
+    const { aiKeys } = await s.api<ClientSettings>('/api/settings')
     assert.equal(aiKeys.text.set, false)
     assert.equal(aiKeys.images.set, false)
   } finally {
@@ -1583,7 +1757,7 @@ test('Schlüssel: die Datei ist nur für den eigenen Benutzer lesbar', async (t)
 })
 
 // ---------- KI-Einstellungen (#18) ----------
-// Das Datenmodell selbst prüft aiSettings.test.js ohne Server. Hier geht es um das
+// Das Datenmodell selbst prüft aiSettings.test.ts ohne Server. Hier geht es um das
 // Zusammenspiel mit db.json, Umgebung und der Route.
 
 const OPENAI_SLOT = { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true }
@@ -1593,7 +1767,7 @@ test('KI-Einstellungen: eine db.json von vor #18 bekommt beim Start den Standard
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ settings: { ollamaUrl: 'http://nas:11434', ollamaModel: 'gemma4:12b' } }))
   const s = await startServerIn(dataDir)
   try {
-    const { ai } = await s.api('/api/settings')
+    const { ai } = await s.api<ClientSettings>('/api/settings')
     // nas ist nicht dieser Rechner, deshalb die Vorlage für ein entferntes Ollama
     assert.deepEqual(ai.text, { provider: 'ollama', preset: 'ollama-remote', url: 'http://nas:11434', model: 'gemma4:12b', vision: null })
     assert.equal(ai.images, null)
@@ -1604,8 +1778,8 @@ test('KI-Einstellungen: eine db.json von vor #18 bekommt beim Start den Standard
 
 test('KI-Einstellungen: Wechsel zu OpenAI wird gespeichert, die Ollama-Felder bleiben für ein Downgrade', async () => {
   await withEnv({}, async (s) => {
-    const before = await s.api('/api/settings')
-    const saved = await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...before, ai: { ...before.ai, text: OPENAI_SLOT } }) })
+    const before = await s.api<ClientSettings>('/api/settings')
+    const saved = await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...before, ai: { ...before.ai, text: OPENAI_SLOT } }) })
     assert.deepEqual(saved.ai.text, OPENAI_SLOT)
     const stored = storedSettings(s)
     assert.deepEqual(stored.ai.text, OPENAI_SLOT)
@@ -1616,27 +1790,27 @@ test('KI-Einstellungen: Wechsel zu OpenAI wird gespeichert, die Ollama-Felder bl
 
 test('KI-Einstellungen: eine ungültige Angabe ergibt 400, und nichts wird gespeichert', async () => {
   await withEnv({}, async (s) => {
-    const before = await s.api('/api/settings')
+    const before = await s.api<ClientSettings>('/api/settings')
     const res = await fetch(`${s.base}/api/settings`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...before, landlordName: 'Neu', ai: { ...before.ai, text: { ...OPENAI_SLOT, url: 'api.openai.com' } } }),
     })
     assert.equal(res.status, 400)
-    assert.match((await res.json()).error, /Adresse muss mit http/)
-    assert.equal((await s.api('/api/settings')).landlordName, '')
+    assert.match(await errorFrom(res), /Adresse muss mit http/)
+    assert.equal((await s.api<ClientSettings>('/api/settings')).landlordName, '')
   })
 })
 
 test('KI-Einstellungen: NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL gelten und sind als fest markiert', async () => {
   await withEnv({ NKA_AI_PROVIDER: 'openai', NKA_AI_URL: 'https://api.mistral.ai/v1', NKA_AI_MODEL: 'mistral-small-latest', NKA_OLLAMA_URL: 'http://ollama:11434' }, async (s) => {
-    const settings = await s.api('/api/settings')
+    const settings = await s.api<ClientSettings>('/api/settings')
     assert.equal(settings.ai.text.provider, 'openai')
     assert.equal(settings.ai.text.url, 'https://api.mistral.ai/v1')
     assert.equal(settings.ai.text.model, 'mistral-small-latest')
     // NKA_OLLAMA_URL gilt nicht, solange ein anderer Anbieter festgelegt ist
     assert.deepEqual(settings.fixedByEnv, ['ai.text.provider', 'ai.text.url', 'ai.text.model'])
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, landlordName: 'X' }) })
+    await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, landlordName: 'X' }) })
     const stored = storedSettings(s)
     assert.equal(stored.ai.text.provider, 'ollama') // Werte aus der Umgebung landen nicht in der db.json
     assert.equal(stored.ai.text.url, 'http://localhost:11434')
@@ -1646,12 +1820,12 @@ test('KI-Einstellungen: NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL gelten und 
 // ---------- Anbieterwahl je Beleg (#18) ----------
 
 // Speichert KI-Einstellungen über die Route, wie es die Oberfläche tut
-async function putAi(s, change) {
-  const settings = await s.api('/api/settings')
-  return s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, ai: { ...settings.ai, ...change } }) })
+async function putAi(s: Server, change: Partial<AiSettings>) {
+  const settings = await s.api<ClientSettings>('/api/settings')
+  return s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, ai: { ...settings.ai, ...change } }) })
 }
 
-const ollamaSlot = (url, model = 'test') => ({ provider: 'ollama', preset: 'ollama-remote', url, model, vision: null })
+const ollamaSlot = (url: string, model = 'test'): AiSlot => ({ provider: 'ollama', preset: 'ollama-remote', url, model, vision: null })
 const photoForm = () => {
   const fd = new FormData()
   fd.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'rechnung.jpg')
@@ -1663,7 +1837,7 @@ test('Anbieterwahl: Fotos gehen an den eigenen Bilder-Anbieter, Text an den Stan
   try {
     await withOllama(async (s, text) => {
       await putAi(s, { images: ollamaSlot(images.url, 'bild') })
-      const withImage = (ollama) => chatRequests(ollama).filter((c) => c.body.messages[0].images)
+      const withImage = (o: Ollama) => chatRequests(o).filter((c) => messageOf(c.body.messages).images)
       assert.equal((await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })).status, 200)
       assert.equal(withImage(images).length, 1)
       assert.equal(chatRequests(images)[0].body.model, 'bild')
@@ -1690,7 +1864,7 @@ test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuz
     // Ohne Schlüssel: verständliche Meldung statt 401
     const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(without.status, 502)
-    assert.match(without.body.error, /Schlüssel/)
+    assert.match(errorOf(without.body), /Schlüssel/)
     await putKey(s, { slot: 'text', key: KEY })
     const before = chatRequests(ollama).length
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
@@ -1698,7 +1872,7 @@ test('Anbieterwahl: Ollama mit Schlüssel schickt ihn als Bearer, ohne ihn anzuz
     assert.ok(chatRequests(ollama).slice(before).every((c) => c.headers.authorization === `Bearer ${KEY}`))
     assert.ok(!JSON.stringify(r.body).includes(KEY))
     // Auch die Modellliste der Einstellungen fragt mit Schlüssel
-    const status = await s.api('/api/ollama/status')
+    const status = await s.api<OllamaStatus>('/api/ollama/status')
     assert.equal(status.ok, true)
   } finally {
     s.stop()
@@ -1711,7 +1885,7 @@ test('Anbieterwahl: zusätzliche Hinweise an das Modell stehen im Prompt', async
     await putAi(s, { extraInstructions: 'Beträge immer brutto übernehmen.' })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
     assert.ok(chatRequests(ollama).length > 0, 'keine Anfrage an Ollama')
-    assert.ok(chatRequests(ollama).every((c) => c.body.messages[0].content.includes('Beträge immer brutto übernehmen.')))
+    assert.ok(chatRequests(ollama).every((c) => messageOf(c.body.messages).content.includes('Beträge immer brutto übernehmen.')))
   })
 })
 
@@ -1751,25 +1925,25 @@ test('Bestätigung: ohne sie gehen keine Belege an einen externen Dienst', async
     const started = Date.now()
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /192\.0\.2\.1:11434.*bestätigt/s)
+    assert.match(errorOf(r.body), /192\.0\.2\.1:11434.*bestätigt/s)
     assert.ok(Date.now() - started < 1500, 'ohne Bestätigung darf keine Verbindung versucht werden')
     // Nach der Bestätigung versucht Mietfuchs es, der Dienst ist nur eben nicht erreichbar
-    const confirmed = await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
-    assert.equal(confirmed.ai.consent.text.url, EXTERNAL)
-    assert.match(confirmed.ai.consent.text.date, /^\d{4}-\d{2}-\d{2}$/)
+    const confirmed = await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    assert.equal(confirmed.ai.consent.text?.url, EXTERNAL)
+    assert.match(confirmed.ai.consent.text?.date ?? '', /^\d{4}-\d{2}-\d{2}$/)
     const again = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
-    assert.doesNotMatch(again.body.error, /bestätigt/)
+    assert.doesNotMatch(errorOf(again.body), /bestätigt/)
     // Eine neue Adresse braucht eine neue Bestätigung
     await putAi(s, { text: ollamaSlot('http://192.0.2.2:11434') })
-    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /192\.0\.2\.2:11434.*bestätigt/s)
+    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /192\.0\.2\.2:11434.*bestätigt/s)
   })
 })
 
 test('Bestätigung: lässt sich widerrufen und gilt je Platz', async () => {
   await withEnv({}, async (s) => {
     await putAi(s, { text: ollamaSlot(EXTERNAL) })
-    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
-    const revoked = await s.api('/api/ai/consent/text', { method: 'DELETE' })
+    await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    const revoked = await s.api<ClientSettings>('/api/ai/consent/text', { method: 'DELETE' })
     assert.equal(revoked.ai.consent.text, undefined)
     // Ohne eigenen Bilder-Anbieter gibt es für Bilder nichts zu bestätigen
     const res = await fetch(`${s.base}/api/ai/consent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slot: 'images' }) })
@@ -1782,9 +1956,9 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
   await withOllama(async (s, ollama) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /gpt-oss:120b-cloud.*Cloud/s)
+    assert.match(errorOf(r.body), /gpt-oss:120b-cloud.*Cloud/s)
     assert.equal(chatRequests(ollama).length, 0)
-    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
   }, { models: [{ name: 'gpt-oss:120b-cloud', capabilities: ['completion'], remote_host: 'https://ollama.com:443' }], model: 'gpt-oss:120b-cloud' })
 })
@@ -1809,22 +1983,42 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
 //   echoKey            wiederholt den geschickten Schlüssel in einer Fehlermeldung
 //   echoKeyInStream    wiederholt ihn in einem Fehler mitten im Strom (Status 200)
 //   garbledStream      schickt ein nicht als JSON lesbares Ereignis, das den Schlüssel enthält
-async function fakeOpenAi(rules = {}) {
+// Die Eigenheiten echter Dienste, die der nachgebaute auf Wunsch nachstellt (siehe oben).
+type OpenAiRules = {
+  key?: string
+  errorFormat?: 'ionos'
+  busyOnce?: boolean
+  quota?: boolean
+  rejectTemperature?: boolean
+  onlyMaxTokens?: boolean
+  rejectJsonSchema?: boolean
+  rejectJsonObject?: boolean
+  finish?: string
+  whole?: boolean
+  reasoning?: boolean
+  fenced?: boolean
+  hang?: boolean
+  echoKey?: boolean
+  echoKeyInStream?: boolean
+  garbledStream?: boolean
+}
+
+async function fakeOpenAi(rules: OpenAiRules = {}) {
   const http = await import('node:http')
-  const requests = []
-  const open = new Set()
+  const requests: OpenAiRequest[] = []
+  const open = new Set<http.ServerResponse>()
   let busy = rules.busyOnce ? 1 : 0
   const server = http.createServer((req, res) => {
     let raw = ''
     req.on('data', (d) => { raw += d })
     req.on('end', () => {
-      const body = raw ? JSON.parse(raw) : {}
+      const body: OpenAiBody & { response_format?: { type?: string } } = raw ? JSON.parse(raw) : {}
       requests.push({ url: req.url, method: req.method, body, raw, headers: req.headers })
-      const send = (status, data, headers = {}) => {
+      const send = (status: number, data: unknown, headers: http.OutgoingHttpHeaders = {}) => {
         res.writeHead(status, { 'content-type': 'application/json', ...headers })
         res.end(JSON.stringify(data))
       }
-      const reject = (status, message, param, code = 'unsupported_parameter') =>
+      const reject = (status: number, message: string, param: string | null, code = 'unsupported_parameter') =>
         rules.errorFormat === 'ionos'
           ? send(status, { httpStatus: status, messages: [{ errorCode: code, message }] })
           : send(status, { error: { message, type: 'invalid_request_error', param, code } })
@@ -1876,7 +2070,7 @@ async function fakeOpenAi(rules = {}) {
       const usage = { prompt_tokens: 900, completion_tokens: 40, total_tokens: 940 }
       if (rules.whole) return send(200, { choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }], usage })
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      const event = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`)
+      const event = (data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`)
       if (rules.reasoning) event({ choices: [{ index: 0, delta: { reasoning_content: 'Ich rechne die Summe nach.' } }] })
       const half = Math.ceil(content.length / 2)
       event({ choices: [{ index: 0, delta: { role: 'assistant', content: content.slice(0, half) }, finish_reason: null }] })
@@ -1886,9 +2080,9 @@ async function fakeOpenAi(rules = {}) {
       res.end('data: [DONE]\n\n')
     })
   })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  await listening(server, '127.0.0.1')
   return {
-    url: `http://127.0.0.1:${server.address().port}/v1`,
+    url: `http://127.0.0.1:${portOf(server)}/v1`,
     requests,
     completions: () => requests.filter((r) => r.url === '/v1/chat/completions'),
     stop: () => {
@@ -1898,7 +2092,25 @@ async function fakeOpenAi(rules = {}) {
   }
 }
 
-async function withOpenAi(fn, { rules = {}, preset = 'openai-compatible', model = 'modell-a', vision = null, key = null, ai = {}, env = {} } = {}) {
+type OpenAiService = Awaited<ReturnType<typeof fakeOpenAi>>
+type WithOpenAiOptions = {
+  rules?: OpenAiRules
+  preset?: string
+  model?: string
+  vision?: boolean | null
+  key?: string | null
+  ai?: Partial<AiSettings>
+  env?: NodeJS.ProcessEnv
+}
+
+// Die n-te Chat-Anfrage an den Dienst. Fehlt sie, hat Mietfuchs weniger gefragt als erwartet.
+const completionOf = (service: OpenAiService, n: number): OpenAiRequest => {
+  const request = service.completions()[n]
+  if (!request) assert.fail(`es gibt keine ${n + 1}. Anfrage an den Dienst`)
+  return request
+}
+
+async function withOpenAi(fn: (s: Server, service: OpenAiService) => Promise<void>, { rules = {}, preset = 'openai-compatible', model = 'modell-a', vision = null, key = null, ai = {}, env = {} }: WithOpenAiOptions = {}) {
   const service = await fakeOpenAi(rules)
   const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
@@ -1915,29 +2127,29 @@ test('OpenAI-kompatibel: Auswertung als Strom mit striktem Schema, Antwortlänge
   await withOpenAi(async (s, service) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 200, JSON.stringify(r.body))
-    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt')
-    assert.equal(r.body.extraction.positions[0].category, 'Wasser/Abwasser')
-    const [first] = service.completions()
+    assert.equal(r.body.extraction?.vendor, 'Stadtwerke Musterstadt')
+    assert.equal(r.body.extraction?.positions?.[0].category, 'Wasser/Abwasser')
+    const first = completionOf(service, 0)
     assert.equal(first.body.stream, true)
     assert.deepEqual(first.body.stream_options, { include_usage: true })
     assert.equal(first.body.max_tokens, 16384) // Eigener Dienst: das verbreitete Feld
     assert.equal(first.body.temperature, 0)
-    assert.equal(first.body.response_format.type, 'json_schema')
-    assert.equal(first.body.response_format.json_schema.strict, true)
-    assert.equal(first.body.response_format.json_schema.schema.additionalProperties, false)
+    assert.equal(first.body.response_format?.type, 'json_schema')
+    assert.equal(first.body.response_format?.json_schema?.strict, true)
+    assert.equal(first.body.response_format?.json_schema?.schema?.additionalProperties, false)
     assert.equal(first.headers.accept, 'text/event-stream')
     assert.equal(first.headers['content-length'], String(Buffer.byteLength(first.raw)))
     assert.equal(first.headers['transfer-encoding'], undefined)
-    const extraction = r.body.stats.find((x) => x.step === 'extraction')
-    assert.equal(extraction.promptTokens, 900)
-    assert.equal(extraction.outputTokens, 40)
+    const extraction = (r.body.stats ?? []).find((x) => x.step === 'extraction')
+    assert.equal(extraction?.promptTokens, 900)
+    assert.equal(extraction?.outputTokens, 40)
   })
 })
 
 test('OpenAI-kompatibel: Vorlage OpenAI schickt max_completion_tokens und keine Temperatur', async () => {
   await withOpenAi(async (s, service) => {
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
-    const [first] = service.completions()
+    const first = completionOf(service, 0)
     assert.equal(first.body.max_completion_tokens, 16384)
     assert.equal(first.body.max_tokens, undefined)
     assert.equal(first.body.temperature, undefined)
@@ -1955,14 +2167,15 @@ test('OpenAI-kompatibel: die Antwortlänge aus den Einstellungen gilt', async ()
 test('OpenAI-kompatibel: Fotos gehen als data-URL, außer das Modell versteht laut Einstellung keine Bilder', async () => {
   await withOpenAi(async (s, service) => {
     assert.equal((await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })).status, 200)
-    const [first] = service.completions()
-    assert.equal(first.body.messages[0].content[0].type, 'text')
-    assert.deepEqual(first.body.messages[0].content[1], { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from('JPEG-Foto').toString('base64')}` } })
+    const first = completionOf(service, 0)
+    const parts = partsOf(messageOf(first.body.messages))
+    assert.equal(parts[0].type, 'text')
+    assert.deepEqual(parts[1], { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from('JPEG-Foto').toString('base64')}` } })
   })
   await withOpenAi(async (s, service) => {
     const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photoForm() })
     assert.equal(res.status, 502)
-    assert.match((await res.json()).error, /versteht das Modell „modell-a“ keine Bilder/)
+    assert.match(await errorFrom(res), /versteht das Modell „modell-a“ keine Bilder/)
     assert.equal(service.completions().length, 0)
   }, { vision: false })
 })
@@ -1979,7 +2192,8 @@ test('OpenAI-kompatibel: eine abgelehnte Temperatur fällt weg, auch bei den nä
 test('OpenAI-kompatibel: lehnt der Dienst max_completion_tokens ab, geht es mit max_tokens', async () => {
   await withOpenAi(async (s, service) => {
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
-    const [first, second] = service.completions()
+    const first = completionOf(service, 0)
+    const second = completionOf(service, 1)
     assert.equal(first.body.max_completion_tokens, 16384)
     assert.equal(second.body.max_tokens, 16384)
     assert.equal(second.body.max_completion_tokens, undefined)
@@ -1991,7 +2205,7 @@ test('OpenAI-kompatibel: ohne json_schema geht es mit json_object und dem Schema
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
     const formats = service.completions().map((c) => c.body.response_format?.type ?? 'keins')
     assert.deepEqual(formats.slice(0, 3), ['json_schema', 'json_schema', 'json_object'])
-    assert.match(service.completions()[2].body.messages[0].content, /JSON-Schema/)
+    assert.match(textOf(messageOf(service.completions()[2].body.messages)), /JSON-Schema/)
   }, { rules: { rejectJsonSchema: true } })
 })
 
@@ -1999,7 +2213,7 @@ test('OpenAI-kompatibel: LM Studio überspringt json_object, zuletzt zählt der 
   await withOpenAi(async (s, service) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 200, JSON.stringify(r.body))
-    assert.equal(r.body.extraction.vendor, 'Stadtwerke Musterstadt') // aus dem Codeblock gelöst
+    assert.equal(r.body.extraction?.vendor, 'Stadtwerke Musterstadt') // aus dem Codeblock gelöst
     const formats = service.completions().map((c) => c.body.response_format?.type ?? 'keins')
     assert.deepEqual(formats.slice(0, 3), ['json_schema', 'json_schema', 'keins'])
     assert.ok(!formats.includes('json_object'))
@@ -2010,14 +2224,14 @@ test('OpenAI-kompatibel: Schlüssel als Bearer, verständliche Meldungen ohne de
   const KEY = 'sk-test-richtig-1234567890'
   await withOpenAi(async (s, service) => {
     const without = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
-    assert.match(without.body.error, /verlangt einen Schlüssel/)
+    assert.match(errorOf(without.body), /verlangt einen Schlüssel/)
     await putKey(s, { slot: 'text', key: 'sk-test-falsch-0987654321' })
     const wrong = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
-    assert.match(wrong.body.error, /lehnt den Schlüssel ab/)
-    assert.ok(!wrong.body.error.includes('sk-test-falsch'))
+    assert.match(errorOf(wrong.body), /lehnt den Schlüssel ab/)
+    assert.ok(!errorOf(wrong.body).includes('sk-test-falsch'))
     await putKey(s, { slot: 'text', key: KEY })
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
-    assert.equal(service.completions().at(-1).headers.authorization, `Bearer ${KEY}`)
+    assert.equal(service.completions().at(-1)?.headers.authorization, `Bearer ${KEY}`)
   }, { rules: { key: KEY } })
 })
 
@@ -2025,7 +2239,7 @@ test('OpenAI-kompatibel: IONOS-Fehlerformat und Hinweis auf abgelaufene Token', 
   await withOpenAi(async (s) => {
     await putKey(s, { slot: 'text', key: 'eyJ-abgelaufen-1234567890' })
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
-    assert.match(r.body.error, /IONOS AI Model Hub lehnt den Schlüssel ab\. IONOS-Token laufen/)
+    assert.match(errorOf(r.body), /IONOS AI Model Hub lehnt den Schlüssel ab\. IONOS-Token laufen/)
   }, { preset: 'ionos', rules: { key: 'eyJ-gueltig-1234567890', errorFormat: 'ionos' } })
 })
 
@@ -2042,20 +2256,20 @@ test('OpenAI-kompatibel: aufgebrauchtes Guthaben wird nicht wiederholt', async (
   await withOpenAi(async (s, service) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /Guthaben oder Budget/)
+    assert.match(errorOf(r.body), /Guthaben oder Budget/)
     assert.equal(service.completions().length, 1)
   }, { rules: { quota: true } })
 })
 
 test('OpenAI-kompatibel: abgeschnittene Antwort, unbekanntes Modell, Zeitlimit', async () => {
   await withOpenAi(async (s) => {
-    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /Höchstlänge von 16384 Token.*„Erweitert“/)
+    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /Höchstlänge von 16384 Token.*„Erweitert“/)
   }, { rules: { finish: 'length' } })
   await withOpenAi(async (s) => {
-    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /kennt das Modell „gibt-es-nicht“ nicht/)
+    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /kennt das Modell „gibt-es-nicht“ nicht/)
   }, { model: 'gibt-es-nicht' })
   await withOpenAi(async (s) => {
-    assert.match((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body.error, /nicht innerhalb von 2 Sekunden geantwortet/)
+    assert.match(errorOf((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).body), /nicht innerhalb von 2 Sekunden geantwortet/)
   }, { rules: { hang: true }, env: { NKA_AI_TIMEOUT: '2' } })
 })
 
@@ -2073,26 +2287,26 @@ test('OpenAI-kompatibel: wiederholt der Dienst den Schlüssel in einer Meldung, 
   await withOpenAi(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /lehnt die Anfrage ab: Invalid request for credentials Bearer …/)
-    assert.ok(!r.body.error.includes(KEY))
+    assert.match(errorOf(r.body), /lehnt die Anfrage ab: Invalid request for credentials Bearer …/)
+    assert.ok(!errorOf(r.body).includes(KEY))
   }, { key: KEY, rules: { echoKey: true } })
 })
 
 // ---------- Vorlagen und Status für die Einstellungen (#18) ----------
 
 test('Vorlagen: /api/ai/presets liefert alle Vorlagen mit Links und Eigenheiten', async () => {
-  const presets = await srv.api('/api/ai/presets')
+  const presets = await srv.api<AiPreset[]>('/api/ai/presets')
   const ids = presets.map((p) => p.id)
   assert.deepEqual(ids, ['ollama-local', 'ollama-remote', 'ollama-cloud', 'openai', 'ionos', 'mistral', 'lmstudio', 'openai-compatible'])
   const openai = presets.find((p) => p.id === 'openai')
-  assert.equal(openai.keyUrl, 'https://platform.openai.com/api-keys')
-  assert.equal(openai.key, 'required')
-  assert.match(presets.find((p) => p.id === 'mistral').notice, /Training/)
+  assert.equal(openai?.keyUrl, 'https://platform.openai.com/api-keys')
+  assert.equal(openai?.key, 'required')
+  assert.match(presets.find((p) => p.id === 'mistral')?.notice ?? '', /Training/)
 })
 
 test('Status: Modellliste eines OpenAI-kompatiblen Dienstes, sortiert, Bildverständnis wo gemeldet', async () => {
   await withOpenAi(async (s) => {
-    const status = await s.api('/api/ai/status?slot=text')
+    const status = await s.api<AiStatus>('/api/ai/status?slot=text')
     assert.equal(status.ok, true)
     assert.deepEqual(status.models, [
       { name: 'modell-a', sizeBytes: null, vision: true, remote: false },
@@ -2103,26 +2317,26 @@ test('Status: Modellliste eines OpenAI-kompatiblen Dienstes, sortiert, Bildverst
 
 test('Status: ein abgelehnter Schlüssel ergibt eine verständliche Meldung', async () => {
   await withOpenAi(async (s) => {
-    const status = await s.api('/api/ai/status?slot=text')
+    const status = await s.api<AiStatus>('/api/ai/status?slot=text')
     assert.equal(status.ok, false)
-    assert.match(status.error, /verlangt einen Schlüssel/)
+    assert.match(errorOf(status), /verlangt einen Schlüssel/)
   }, { rules: { key: 'sk-test-1234567890abcdef' } })
 })
 
 test('Status: für Ollama wie bisher, für Bilder nur mit eigenem Anbieter', async () => {
   await withOllama(async (s) => {
-    const status = await s.api('/api/ai/status?slot=text')
+    const status = await s.api<AiStatus>('/api/ai/status?slot=text')
     assert.equal(status.ok, true)
-    assert.equal(status.models[0].name, 'test:latest')
-    const images = await s.api('/api/ai/status?slot=images')
+    assert.equal(status.models?.[0].name, 'test:latest')
+    const images = await s.api<AiStatus>('/api/ai/status?slot=images')
     assert.equal(images.ok, false)
-    assert.match(images.error, /Kein eigener Anbieter für Fotos und Scans/)
+    assert.match(errorOf(images), /Kein eigener Anbieter für Fotos und Scans/)
   })
 })
 
 test('Einstellungen: aiExternal sagt je Platz, ob die Adresse aus dem Haus zeigt', async () => {
   await withEnv({}, async (s) => {
-    assert.deepEqual((await s.api('/api/settings')).aiExternal, { text: false, images: false })
+    assert.deepEqual((await s.api<ClientSettings>('/api/settings')).aiExternal, { text: false, images: false })
     const saved = await putAi(s, { images: { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true } })
     assert.deepEqual(saved.aiExternal, { text: false, images: true })
     // aiExternal gehört nicht in die db.json
@@ -2139,9 +2353,9 @@ test('Einstellungen: ein Rumpf, der kein Objekt ist, ändert nichts', async () =
     body: JSON.stringify(['unsinn', 'noch mehr Unsinn']),
   })
   assert.equal(res.status, 200)
-  assert.equal((await res.json())['0'], undefined)
-  assert.equal((await srv.api('/api/settings'))['0'], undefined)
-  assert.equal(JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8')).settings['0'], undefined)
+  assert.ok(!('0' in await jsonOf<ClientSettings>(res)))
+  assert.ok(!('0' in await srv.api<ClientSettings>('/api/settings')))
+  assert.ok(!('0' in storedSettings(srv)))
 })
 
 // ---------- Befunde aus der Codeprüfung ----------
@@ -2151,8 +2365,8 @@ test('Schlüssel: auch ein Fehler mitten im Strom zeigt ihn nicht', async () => 
   await withOpenAi(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /meldet einen Fehler: Ungültige Anmeldung mit Bearer …/)
-    assert.ok(!r.body.error.includes(KEY))
+    assert.match(errorOf(r.body), /meldet einen Fehler: Ungültige Anmeldung mit Bearer …/)
+    assert.ok(!errorOf(r.body).includes(KEY))
   }, { key: KEY, rules: { echoKeyInStream: true } })
 })
 
@@ -2165,8 +2379,8 @@ test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
     await putKey(s, { slot: 'text', key: KEY })
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /Proxy lehnt ab: Bearer …/)
-    assert.ok(!r.body.error.includes(KEY))
+    assert.match(errorOf(r.body), /Proxy lehnt ab: Bearer …/)
+    assert.ok(!errorOf(r.body).includes(KEY))
   } finally {
     s.stop()
     ollama.stop()
@@ -2184,8 +2398,8 @@ test('Schlüssel: eine unlesbare Antwort von Ollama zeigt ihn nicht', async () =
     await putKey(s, { slot: 'text', key: KEY })
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /unlesbare Antwort: kaputt: Bearer …/)
-    assert.ok(!r.body.error.includes(KEY))
+    assert.match(errorOf(r.body), /unlesbare Antwort: kaputt: Bearer …/)
+    assert.ok(!errorOf(r.body).includes(KEY))
   } finally {
     s.stop()
     ollama.stop()
@@ -2197,8 +2411,8 @@ test('Schlüssel: eine unlesbare Antwort mitten im Strom zeigt ihn nicht', async
   await withOpenAi(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 502)
-    assert.match(r.body.error, /unlesbare Antwort: kaputt: Bearer …/)
-    assert.ok(!r.body.error.includes(KEY))
+    assert.match(errorOf(r.body), /unlesbare Antwort: kaputt: Bearer …/)
+    assert.ok(!errorOf(r.body).includes(KEY))
   }, { key: KEY, rules: { garbledStream: true } })
 })
 
@@ -2206,18 +2420,18 @@ test('Schlüssel: eine unlesbare Antwort mitten im Strom zeigt ihn nicht', async
 test('Bestätigung: der Bilder-Anbieter braucht eine eigene, die des Standards zählt nicht', async () => {
   await withOllama(async (s) => {
     await putAi(s, { images: ollamaSlot(EXTERNAL, 'bild') })
-    await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
+    await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'text' }) })
     const photo = new FormData()
     photo.append('file', new Blob([Buffer.from('JPEG-Foto')], { type: 'image/jpeg' }), 'rechnung.jpg')
     const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: photo })
     assert.equal(res.status, 502)
-    const error = (await res.json()).error
+    const error = await errorFrom(res)
     assert.match(error, /192\.0\.2\.1:11434/)
     assert.match(error, /Anbieter für Fotos und Scans/)
     // Text geht weiter an den Standard, der lokal läuft
     assert.equal((await uploadPdf(s, '/api/extract', { text: LONG_TEXT })).status, 200)
-    const confirmed = await s.api('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'images' }) })
-    assert.equal(confirmed.ai.consent.images.url, EXTERNAL)
+    const confirmed = await s.api<ClientSettings>('/api/ai/consent', { method: 'POST', body: JSON.stringify({ slot: 'images' }) })
+    assert.equal(confirmed.ai.consent.images?.url, EXTERNAL)
     assert.equal(confirmed.aiExternal.images, true)
   })
 })
@@ -2235,7 +2449,7 @@ test('KI-Einstellungen: eine ältere Version darf Adresse und Modell noch über 
   }))
   const s = await startServerIn(dataDir)
   try {
-    const { ai } = await s.api('/api/settings')
+    const { ai } = await s.api<ClientSettings>('/api/settings')
     assert.equal(ai.text.url, 'http://neu:11434')
     assert.equal(ai.text.model, 'neues:4b')
   } finally {
@@ -2246,14 +2460,14 @@ test('KI-Einstellungen: eine ältere Version darf Adresse und Modell noch über 
 // ---------- Modell aus Mietfuchs laden (#33) ----------
 
 // Wie der Browser: Fortschritt als Strom (Accept: application/x-ndjson)
-async function pullAsStream(s, { model = 'neu:4b', requestId, slot } = {}) {
+async function pullAsStream(s: Server, { model = 'neu:4b', requestId, slot }: { model?: string, requestId?: string, slot?: AiSlotName } = {}) {
   const res = await fetch(`${s.base}/api/ai/pull`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
     body: JSON.stringify({ model, requestId, slot }),
   })
   const text = await res.text()
-  return { status: res.status, type: res.headers.get('content-type') ?? '', lines: text.split('\n').filter(Boolean).map((l) => JSON.parse(l)) }
+  return { status: res.status, type: res.headers.get('content-type') ?? '', lines: text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as StreamLine) }
 }
 
 test('Modell laden: der Fortschritt kommt als Strom, am Ende meldet Mietfuchs Erfolg', async () => {
@@ -2263,8 +2477,8 @@ test('Modell laden: der Fortschritt kommt als Strom, am Ende meldet Mietfuchs Er
     assert.ok(r.type.includes('application/x-ndjson'), r.type)
     const progress = r.lines.filter((l) => l.type === 'progress')
     assert.ok(progress.length >= 2, JSON.stringify(r.lines).slice(0, 300))
-    assert.ok(progress.some((p) => p.total > 0 && p.completed >= 0), JSON.stringify(progress))
-    assert.equal(r.lines.at(-1).type, 'result')
+    assert.ok(progress.some((p) => (p.total ?? 0) > 0 && (p.completed ?? -1) >= 0), JSON.stringify(progress))
+    assert.equal(lastLine(r.lines).type, 'result')
     assert.deepEqual(ollama.requests.filter((a) => a.url === '/api/pull').map((a) => a.body.model), ['neu:4b'])
   })
 })
@@ -2313,17 +2527,17 @@ test('Empfehlungen: ohne Zustimmung die mitgelieferte Liste, mit Zustimmung die 
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify(liste))
   })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
+  await listening(server, '127.0.0.1')
   try {
-    await withEnv({ NKA_MODELS_URL: `http://127.0.0.1:${server.address().port}/ki-modelle.json` }, async (s) => {
-      const ohne = await s.api('/api/ai/recommendations')
+    await withEnv({ NKA_MODELS_URL: `http://127.0.0.1:${portOf(server)}/ki-modelle.json` }, async (s) => {
+      const ohne = await s.api<AiRecommendations>('/api/ai/recommendations')
       assert.equal(ohne.source, 'mitgeliefert')
       assert.ok(ohne.models.some((m) => m.name === 'qwen3.5:4b'), JSON.stringify(ohne.models.map((m) => m.name)))
 
       // Dieselbe Zustimmung wie beim Update-Hinweis
-      const settings = await s.api('/api/settings')
-      await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, updateCheck: 'on' }) })
-      const mit = await s.api('/api/ai/recommendations')
+      const settings = await s.api<ClientSettings>('/api/settings')
+      await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, updateCheck: 'on' }) })
+      const mit = await s.api<AiRecommendations>('/api/ai/recommendations')
       assert.equal(mit.source, 'netz')
       assert.deepEqual(mit.models.map((m) => m.name), ['frisch:4b'])
       assert.equal(mit.updated, '2026-10-05')
@@ -2351,10 +2565,11 @@ test('Auswertung: Nettopositionen werden brutto, der Lohnanteil aus dem Gesamtbe
   await withOllama(async (s) => {
     const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
     assert.equal(r.status, 200, JSON.stringify(r.body))
-    const { extraction } = r.body
-    const cents = (eur) => Math.round(eur * 100)
-    assert.equal(extraction.positions.reduce((a, p) => a + cents(p.amountEur), 0), cents(101.86))
-    assert.equal(extraction.positions.reduce((a, p) => a + cents(p.labor35aEur), 0), cents(90.56))
+    const extraction = r.body.extraction ?? {}
+    const positions = extraction.positions ?? []
+    const cents = (eur: number) => Math.round(eur * 100)
+    assert.equal(positions.reduce((a, p) => a + cents(p.amountEur), 0), cents(101.86))
+    assert.equal(positions.reduce((a, p) => a + cents(p.labor35aEur ?? 0), 0), cents(90.56))
     assert.equal(extraction.amountsAdjusted, 'netto')
     assert.equal(extraction.laborFromTotal, true)
     // Die Hilfsfelder des Modells gehen nicht an den Browser

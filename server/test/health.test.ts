@@ -6,7 +6,7 @@
 // Docker legt dann ein anonymes an, und das ist beschreibbar.
 //
 // Geprüft wird die Funktion, nicht die Route: index.ts startet den Server beim Import. Dass
-// die Route als JSON antwortet und nicht vom Frontend verdeckt wird, prüft api.test.js.
+// die Route als JSON antwortet und nicht vom Frontend verdeckt wird, prüft api.test.ts.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -16,7 +16,7 @@ import path from 'node:path'
 import { healthReport } from '../src/health.ts'
 
 // Ein Datenordner, wie der Server ihn vorfindet
-function makeDataDir(contents = {}) {
+function makeDataDir(contents: { db?: string } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-health-'))
   fs.mkdirSync(path.join(dir, 'uploads'), { recursive: true })
   if (contents.db !== undefined) fs.writeFileSync(path.join(dir, 'db.json'), contents.db, 'utf8')

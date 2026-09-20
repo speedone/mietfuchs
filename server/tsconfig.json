@@ -6,8 +6,6 @@
     "moduleResolution": "nodenext",
     "strict": true,
     "noEmit": true,
-    "allowJs": true,
-    "checkJs": false,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,

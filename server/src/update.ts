@@ -117,7 +117,10 @@ type CreateUpdateCheckerOptions = {
   timeoutMs?: number
 }
 
-type CheckOptions = { consent?: string, force?: boolean }
+// `consent` kommt aus settings.updateCheck, also ungeprüft aus der db.json: Wer die Datei von
+// Hand bearbeitet, kann dort alles hineinschreiben. Deshalb `unknown` statt eines Typs, der
+// schon Zustimmung nahelegt — geprüft wird unten genau auf 'on', alles andere heißt nein.
+type CheckOptions = { consent?: unknown, force?: boolean }
 
 // `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
 // 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche

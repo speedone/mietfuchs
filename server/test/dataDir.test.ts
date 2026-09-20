@@ -9,9 +9,14 @@ import path from 'node:path'
 import { chooseDataDir } from '../src/store.ts'
 import { writable } from '../src/paths.ts'
 
+// Die Argumente von chooseDataDir, aus der Funktion selbst abgeleitet: So prüft der Übersetzer
+// die gestellten Werte (etwa `platform: 'linux'`) gegen das, was die Funktion wirklich annimmt,
+// ohne dass der Test den Typ noch einmal beschreibt.
+type Args = NonNullable<Parameters<typeof chooseDataDir>[0]>
+
 // Nichts anfassen, was wirklich auf der Platte liegt: Schreibtest und Heimatordner werden
 // hineingereicht.
-const args = (over = {}) => ({
+const args = (over: Args = {}): Args => ({
   env: {},
   execPath: '/usr/bin/mietfuchs',
   packaged: true,
@@ -115,7 +120,7 @@ test('ohne Heimatordner bricht der Start mit klarer Ansage ab', () => {
 })
 
 test('der Schreibtest bekommt den Ordner neben der Programmdatei', () => {
-  const asked = []
+  const asked: string[] = []
   chooseDataDir(args({ execPath: '/mnt/stick/mietfuchs-linux', canWrite: (dir) => (asked.push(dir), false) }))
   assert.deepEqual(asked, [path.join('/mnt/stick', 'data')])
 })

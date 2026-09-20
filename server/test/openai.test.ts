@@ -1,10 +1,24 @@
 // Hilfsfunktionen des Moduls für OpenAI-kompatible Dienste (#18): Umformung des JSON-Schemas
 // für den strikten Modus, Lesen der Fehlerformate verschiedener Dienste, Lesen des SSE-Stroms
 // und das Herauslösen von JSON aus einer Antwort. Das Zusammenspiel mit einem nachgebauten
-// Dienst prüft api.test.js.
+// Dienst prüft api.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { toStrictSchema, stripAddedNulls, readProviderError, readCompletionStream, parseJsonContent } from '../src/ai/openai.ts'
+import type { JsonSchema, ProviderProgressEvent } from '../src/ai/ollama.ts'
+
+// Ein Schritt in ein Teilschema hinein. `properties` und `items` sind im Typ optional, weil
+// nicht jedes Schema sie hat. Fehlt hier eines, ist die Umformung falsch, und das soll der Test
+// mit Ansage melden statt am Zugriff auf undefined zu scheitern.
+const prop = (schema: JsonSchema, name: string): JsonSchema => {
+  const child = schema.properties?.[name]
+  if (!child) assert.fail(`Teilschema „${name}“ fehlt`)
+  return child
+}
+const itemsOf = (schema: JsonSchema): JsonSchema => {
+  if (!schema.items) assert.fail('Teilschema „items“ fehlt')
+  return schema.items
+}
 
 const SCHEMA = {
   type: 'object',
@@ -35,21 +49,21 @@ test('Striktes Schema: überall additionalProperties false und alle Felder Pflic
   const strict = toStrictSchema(SCHEMA)
   assert.equal(strict.additionalProperties, false)
   assert.deepEqual(strict.required, ['vendor', 'periodStart', 'positions', 'totalGrossEur'])
-  const item = strict.properties.positions.items
+  const item = itemsOf(prop(strict, 'positions'))
   assert.equal(item.additionalProperties, false)
   assert.deepEqual(item.required, ['description', 'category', 'labor35aEur', 'note'])
 })
 
 test('Striktes Schema: bisher optionale Felder dürfen null sein, Pflichtfelder bleiben, wie sie sind', () => {
   const strict = toStrictSchema(SCHEMA)
-  assert.deepEqual(strict.properties.totalGrossEur.type, ['number', 'null'])
-  assert.deepEqual(strict.properties.periodStart.type, ['string', 'null']) // schon vorher erlaubt
-  assert.equal(strict.properties.vendor.type, 'string')
-  const item = strict.properties.positions.items.properties
-  assert.deepEqual(item.note.type, ['string', 'null'])
-  assert.deepEqual(item.note.enum, ['x', 'y', null])
-  assert.equal(item.category.type, 'string')
-  assert.deepEqual(item.category.enum, ['A', 'B'])
+  assert.deepEqual(prop(strict, 'totalGrossEur').type, ['number', 'null'])
+  assert.deepEqual(prop(strict, 'periodStart').type, ['string', 'null']) // schon vorher erlaubt
+  assert.equal(prop(strict, 'vendor').type, 'string')
+  const item = itemsOf(prop(strict, 'positions'))
+  assert.deepEqual(prop(item, 'note').type, ['string', 'null'])
+  assert.deepEqual(prop(item, 'note').enum, ['x', 'y', null])
+  assert.equal(prop(item, 'category').type, 'string')
+  assert.deepEqual(prop(item, 'category').enum, ['A', 'B'])
   // Das Original bleibt unverändert
   assert.equal(SCHEMA.properties.totalGrossEur.type, 'number')
 })
@@ -91,15 +105,16 @@ test('Fehler: die Formate von OpenAI, Mistral, IONOS und Ollama werden gleich ge
 
 // ---------- SSE-Strom ----------
 
-async function* chunks(...parts) {
+async function* chunks(...parts: string[]) {
   const encoder = new TextEncoder()
   for (const part of parts) yield encoder.encode(part)
 }
-const event = (data) => `data: ${JSON.stringify(data)}\n\n`
-const delta = (d, extra = {}) => event({ choices: [{ index: 0, delta: d, finish_reason: null }], ...extra })
+const event = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`
+const delta = (d: unknown, extra: Record<string, unknown> = {}) =>
+  event({ choices: [{ index: 0, delta: d, finish_reason: null }], ...extra })
 
 test('Strom: Inhalt über Chunk-Grenzen hinweg, Kommentare, Kennzahlen und [DONE]', async () => {
-  const progress = []
+  const progress: ProviderProgressEvent[] = []
   const stream = chunks(
     ': ping\n\n',
     delta({ role: 'assistant', content: '{"a":' }).slice(0, 20),
@@ -122,7 +137,7 @@ test('Strom: Zeilenenden mit CRLF und ein Strom ohne [DONE]', async () => {
 })
 
 test('Strom: Mistral schickt Inhalt als Liste, Denktext zählt nur für den Fortschritt', async () => {
-  const progress = []
+  const progress: ProviderProgressEvent[] = []
   const stream = chunks(
     delta({ content: [{ type: 'thinking', thinking: [{ type: 'text', text: 'Ich prüfe die Summe.' }] }] }),
     delta({ reasoning_content: 'Noch mehr Gedanken.' }),
