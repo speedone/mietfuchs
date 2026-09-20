@@ -330,7 +330,16 @@ export function applyAiChanges(settings: Settings, body: Record<string, unknown>
     raw = { ...body.ai, text: isObject(body.ai.text) ? { ...body.ai.text } : body.ai.text }
   } else if (typeof body.ollamaUrl === 'string' || typeof body.ollamaModel === 'string') {
     if (current.text.provider !== 'ollama') return settings
-    raw = { ...current, text: { ...current.text, url: (body.ollamaUrl as string | undefined) ?? current.text.url, model: (body.ollamaModel as string | undefined) ?? current.text.model } }
+    // Nur eines der beiden Felder muss eine Zeichenkette sein, damit dieser Zweig greift: Was
+    // beim anderen steht, bleibt hier ungeprüft und wird deshalb eingeengt statt zugesichert.
+    raw = {
+      ...current,
+      text: {
+        ...current.text,
+        url: typeof body.ollamaUrl === 'string' ? body.ollamaUrl : current.text.url,
+        model: typeof body.ollamaModel === 'string' ? body.ollamaModel : current.text.model,
+      },
+    }
   } else {
     return settings
   }

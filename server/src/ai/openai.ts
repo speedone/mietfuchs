@@ -496,7 +496,13 @@ export function openaiProvider(config: OpenAiConfig): Provider {
         }
         throw providerError(`${name} lieferte kein gültiges JSON: ${result.content.slice(0, 200)}`)
       }
-      if (stages[state.stage] === 'strict') data = stripAddedNulls(data, schema) as Record<string, unknown>
+      if (stages[state.stage] === 'strict') {
+        // stripAddedNulls nimmt und liefert jeden JSON-Wert, deshalb `unknown`. Aus einem
+        // Objekt wird zwar wieder eines, aber das zuzusichern wäre eine Behauptung über eine
+        // fremde Funktion; der Wächter kostet eine Zeile und bleibt wahr, falls sie sich ändert.
+        const stripped = stripAddedNulls(data, schema)
+        if (isObject(stripped)) data = stripped
+      }
       const usage = isObject(result.usage) ? result.usage : undefined
       const stats: ProviderStats = {
         promptTokens: typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null,
@@ -523,9 +529,9 @@ export async function listOpenAiModels(config: OpenAiConfig): Promise<AiModel[]>
     const data: unknown[] = Array.isArray(root.data) ? root.data : []
     const external = isExternalUrl(config.url)
     return data
-      .filter((m): m is Record<string, unknown> => isObject(m) && typeof m.id === 'string')
+      .filter((m): m is Record<string, unknown> & { id: string } => isObject(m) && typeof m.id === 'string')
       .map((m) => ({
-        name: m.id as string,
+        name: m.id,
         sizeBytes: null,
         vision: isObject(m.capabilities) && typeof m.capabilities.vision === 'boolean' ? m.capabilities.vision : null,
         remote: external,

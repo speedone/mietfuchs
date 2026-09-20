@@ -43,18 +43,24 @@ export type AskOptions = {
   onProgress?: (event: AskProgressEvent) => void
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+
 // Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
 // Route, `signal` bricht ab, wenn der Browser nicht mehr wartet, `onProgress` meldet den
 // Fortschritt mit dem Namen des Schritts weiter. Mit Bildern wählt ai/index.ts den Anbieter für
-// Fotos und Scans, falls einer eingerichtet ist. `T` beschreibt, was die KI laut Schema liefern
-// soll; wie beim Rest der KI-Auswertung wird das nicht zur Laufzeit gegen das Schema geprüft,
-// die Oberfläche zeigt jeden Vorschlag erst zur Prüfung an.
-async function ask<T>(
+// Fotos und Scans, falls einer eingerichtet ist.
+//
+// Zurück kommt genau das, was der Anbieter geliefert hat: ein Objekt mit Feldern vom Typ
+// `unknown`. Ein Modell hält sich nicht zwingend an sein Schema, und nichts prüft das zur
+// Laufzeit gegen das Schema — deshalb engt jeder Aufrufer unten selbst ein, was er braucht,
+// statt sich hier einen fertigen Typ zusichern zu lassen. Falsches fällt so beim Lesen auf und
+// nicht erst in der Oberfläche.
+async function ask(
   settings: AiCapableSettings,
   step: string,
   { prompt, images = [], schema }: { prompt: string; images?: ProviderImage[]; schema: JsonSchema },
   { signal, stats, onProgress }: AskOptions = {},
-): Promise<T> {
+): Promise<Record<string, unknown>> {
   const { ai } = settings
   const answer = await aiProvider(ai, { images: images.length > 0 }).json({
     prompt: withInstructions(prompt, ai),
@@ -65,7 +71,7 @@ async function ask<T>(
     onProgress: onProgress && ((event: ProviderProgressEvent) => onProgress({ step, ...event })),
   })
   stats?.push({ step, ...answer.stats })
-  return answer.data as unknown as T
+  return answer.data
 }
 
 // Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
@@ -185,9 +191,12 @@ Positionen:
 ${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
 
 Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
-  const { categories } = await ask<{ categories: string[] }>(settings, 'classification', { prompt, schema }, options)
+  const { categories } = await ask(settings, 'classification', { prompt, schema }, options)
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
-  return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
+  return positions.map((p, i) => {
+    const category: unknown = categories[i]
+    return { ...p, category: typeof category === 'string' && CATEGORY_ENUM.includes(category) ? category : p.category }
+  })
 }
 
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
@@ -219,8 +228,15 @@ export async function extractFromFile(
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
 
-  // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34)
-  const raw = await ask<RawExtraction>(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
+  // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34).
+  // Von der Antwort wird nur eingeengt, was normalizeAmounts als Gestalt voraussetzt: eine
+  // Liste von Positionen. Die Werte darin bleiben `unknown` und werden dort geprüft, wo sie
+  // gebraucht werden (`toCents` und die Wächter in invoiceAmounts.ts).
+  const answer = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
+  const raw: RawExtraction = {
+    ...answer,
+    positions: Array.isArray(answer.positions) ? answer.positions.filter((p: unknown) => isObject(p)) : [],
+  }
   const result = normalizeAmounts(raw)
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
@@ -257,7 +273,7 @@ Antworte nur mit der Kategorie.`
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
 export async function classifyDocType(filePath: string, mimetype: string, settings: AiCapableSettings, options: AskOptions): Promise<'rechnung' | 'zaehlerstand'> {
   if (!mimetype.startsWith('image/')) return 'rechnung'
-  const { docType } = await ask<{ docType: string }>(
+  const { docType } = await ask(
     settings,
     'docType',
     { prompt: DOCTYPE_PROMPT, images: [photoOf(filePath, mimetype)], schema: DOCTYPE_SCHEMA },
@@ -297,5 +313,14 @@ export async function extractMeterReading(
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  return ask<MeterReadingExtraction>(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
+  const answer = await ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
+  // Die drei Felder einzeln einengen statt die ganze Antwort zuzusichern. Was nicht die Gestalt
+  // aus dem Schema hat, gilt als nicht gelesen; die Oberfläche zeigt den Vorschlag ohnehin nur
+  // zur Prüfung an und lässt ihn von Hand ausfüllen. Derselbe Maßstab wie bei den Beträgen einer
+  // Rechnung, wo `toCents` alles verwirft, was keine Zahl ist.
+  return {
+    meterNumber: typeof answer.meterNumber === 'string' ? answer.meterNumber : null,
+    value: typeof answer.value === 'number' && Number.isFinite(answer.value) ? answer.value : null,
+    dateOnImage: typeof answer.dateOnImage === 'string' ? answer.dateOnImage : null,
+  }
 }
