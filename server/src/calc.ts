@@ -449,10 +449,17 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
   // Verteilbasis nicht verkleinern — das würde die Mieteranteile über 100 % treiben.
   const selfPersonsOf = (u: Unit) => Math.max(0, Number(u.selfPersons) || 0)
 
-  // Mietverhältnisse mit Überlappung im Jahr
-  const tenancies = db.tenancies
-    .map((t) => ({ ...t, days: overlapDays(t.start, t.end, year), unit: unitById.get(t.unitId) }))
-    .filter((t) => t.days > 0 && t.unit) as TenancyWithUnit[]
+  // Mietverhältnisse mit Überlappung im Jahr, bewusst mit flatMap statt map().filter(): Erst so
+  // prüft der Übersetzer mit, dass jedes übriggebliebene Mietverhältnis wirklich eine Wohnung
+  // hat. Weder eine Zusicherung `as TenancyWithUnit[]` noch ein Prädikat
+  // `(t): t is TenancyWithUnit` täte das — beide sind bloße Behauptungen über die Bedingung.
+  // Fiele das `unit` später aus ihr heraus, übersetzte das weiterhin, und die Engine stürzte
+  // ab, sobald eine gelöschte Wohnung ein Mietverhältnis hinterlässt (`t.unit` unten).
+  const tenancies: TenancyWithUnit[] = db.tenancies.flatMap((t) => {
+    const days = overlapDays(t.start, t.end, year)
+    const unit = unitById.get(t.unitId)
+    return days > 0 && unit ? [{ ...t, days, unit }] : []
+  })
   const partTenancies = tenancies.filter((t) => t.unit.participates)
   // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
   const selfPersonDays = selfUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
