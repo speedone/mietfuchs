@@ -10,7 +10,7 @@ import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '.
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
-import { listOpenAiModels } from './ai/openai.js'
+import { listOpenAiModels } from './ai/openai.ts'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
