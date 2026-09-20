@@ -3,11 +3,15 @@
   "version": "0.7.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=24.12"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "pdfjs-dist": "^6.3.289",

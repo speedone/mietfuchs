@@ -21,6 +21,7 @@ npm test           # alle Tests: Server (node:test) + Client (vitest)
 npm run test:server # nur Engine- und API-Tests
 npm run test:client # nur Formularlogik- und Komponententests
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
+npm run typecheck  # nur Typprüfung: Server + Client (tsc --noEmit), ohne Build
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
@@ -79,8 +80,8 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 ändern, baut er nur zur Probe (ohne Login und Push).
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
-Mindestversion 22.12 aus `engines` (erst ab dort lädt Node JSON-Module ohne Warnung, siehe
-[server/src/version.js](server/src/version.js)). Beim Anheben alle Stellen mitziehen: `engines` (plus
+Mindestversion 24.12 aus `engines` (erst ab dort gilt das Ausführen von TypeScript ohne
+Build-Schritt als stabil). Beim Anheben alle Stellen mitziehen: `engines` (plus
 `package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Actions und npm-Pakete
 hält Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich: Actions
 in einem PR, kleine npm-Updates gebündelt je Ordner, Hauptversionen einzeln). Sicherheitswarnungen
@@ -119,7 +120,8 @@ npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
 npm --prefix client test -- costForm
 ```
 
-Es gibt **keinen Linter**; `npm run build` ist der einzige Typecheck-Pfad (`tsc --noEmit`).
+Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc --noEmit`,
+`npm run build` schließt dieselbe Prüfung für den Client mit ein und baut zusätzlich das Frontend.
 
 **Tests, drei Ebenen** — beim Erweitern der Verteilung oder der Formulare jeweils mitdenken:
 
@@ -149,7 +151,7 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 **Issues & Releases** — Ziel ist, dass man vom Issue zum Code und vom Release zum Issue kommt:
 
 - `main` ist per Ruleset geschützt: nur über PRs, lineare Historie (Rebase oder Squash), und die
-  CI-Jobs „Tests und Build (Node 22.12)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
+  CI-Jobs „Tests und Build (Node 24.12)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
   Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
   mitziehen, sonst wartet jeder PR auf einen Check, den es nicht mehr gibt.
 - Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
