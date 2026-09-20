@@ -7,7 +7,7 @@
 // { mimeType, data } an den Anbieter und erfordern ein Modell, das Bilder versteht.
 
 import fs from 'node:fs'
-import { aiProvider } from './ai/index.js'
+import { aiProvider } from './ai/index.ts'
 import { normalizeAmounts } from './invoiceAmounts.ts'
 
 const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
