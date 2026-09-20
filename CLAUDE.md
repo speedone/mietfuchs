@@ -350,18 +350,32 @@ Dass ein Betrag fehlen darf, hat eine Folge für das Geraderücken in
 Positionssumme unter dem Rechnungsbetrag, und die Bedingung zum Hochrechnen griffe erst recht;
 verteilt würde dann der ganze Rechnungsbetrag auf die übrigen Positionen. Das Ergebnis wäre das
 gefährlichste, das hier entstehen kann: Die Summe passt zum Beleg, jede einzelne Position ist zu
-hoch, und beim Prüfen fällt nichts auf. Gerechnet wird deshalb nur, wenn die Positionen die ganze
-Rechnung beschreiben, und das prüfen zwei Bedingungen. Erstens muss jeder Betrag gelesen sein.
-Zweitens muss der Abstand zum Rechnungsbetrag wie eine Umsatzsteuer aussehen, also höchstens
-`MAX_VAT_PERCENT` betragen; dieselbe Schranke gilt für einen ausdrücklich genannten Satz. Nötig
-ist die zweite, weil das Schema den Betrag als Pflichtzahl verlangt: Ein Modell, das ihn nicht
-lesen kann, schreibt eher eine 0 oder lässt die Position weg, als eine Lücke zu lassen. Ein
-Betrag, der laut Rechnung null ist, verhindert das Hochrechnen dagegen nicht, denn „nicht
-gelesen“ und „kostet nichts“ sind zweierlei. Dieselbe Linie gilt für den §35a-Lohnanteil aus
-einem Gesamtbetrag: Er gehört zur ganzen Rechnung, wird also nur verteilt, wenn jeder Betrag
-gelesen ist und die Positionen den Rechnungsbetrag abdecken. Sonst bekämen die vorhandenen
-Positionen den Anteil der fehlenden mit dazu, und weil eine Position ohne Betrag nicht übernommen
-wird, stünde am Ende zu viel §35a in der Steuerübersicht.
+hoch, und beim Prüfen fällt nichts auf.
+
+Die Antwort darauf ist `vatExplainsGap`, eine Prüfung mit einem Namen: **Lässt sich der Abstand
+zwischen Positionssumme und Rechnungsbetrag durch Umsatzsteuer erklären?** Gemessen wird gegen
+den Regelsatz von 19 Prozent plus eine halbe Prozentstelle für Rundung, nicht gegen eine
+großzügige Obergrenze, denn eine Nettorechnung hat genau diesen Abstand und keinen beliebigen.
+Nach unten ist alles bis 0 möglich, weil eine Rechnung ermäßigte und steuerfreie Anteile mischen
+kann, und ein Rechnungsbetrag unter der Positionssumme ist eine Abschlagszahlung, kein fehlender
+Posten. Eine Obergrenze von 30 Prozent ließe bei 19 Prozent Steuer eine fehlende Position von 9
+Prozent durch und bei 7 Prozent eine von 21; gegen den Regelsatz gemessen fällt bei 19 Prozent
+schon ein fehlendes halbes Prozent auf. Nötig ist die Prüfung, weil das Schema den Betrag als
+Pflichtzahl verlangt: Ein Modell, das ihn nicht lesen kann, schreibt eher eine 0 oder lässt die
+Position weg, als eine Lücke zu lassen. Der Rest des Bandes bleibt offen: Bei 7 Prozent Steuer
+kann eine fehlende Position von bis zu 10 Prozent durchgehen, weil sich der Abstand dann immer
+noch wie eine Steuer liest.
+
+Dazu muss jeder Betrag gelesen sein (`null` aus `toCents` heißt „nicht gelesen“ und ist etwas
+anderes als 0: Eine Position kann laut Rechnung nichts kosten). Beides gilt für das Hochrechnen
+wie für den §35a-Lohnanteil aus einem Gesamtbetrag, denn auch er gehört zur ganzen Rechnung; sonst
+bekämen die vorhandenen Positionen den Anteil der fehlenden mit dazu, und weil eine Position ohne
+Betrag nicht übernommen wird, stünde am Ende zu viel §35a in der Steuerübersicht. Zu streng darf
+es dort aber nicht sein, denn ein ausbleibender Lohnanteil kostet denselben Nutzer dieselbe
+Steuer. Hochgerechnet wird immer anteilig auf den Rechnungsbetrag und nie mit einem genannten
+Steuersatz: Bei richtigem Satz kommt dasselbe heraus, bei falschem verteilt das Restverfahren die
+Differenz reihum, bis hin zu einem negativen Betrag. `vatRatePercent` wird deshalb nirgends mehr
+gelesen. Jede dieser Bedingungen hat einen Test, der rot wird, wenn genau sie fehlt.
 
 PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
