@@ -15,7 +15,7 @@ import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.js'
 import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
-import { healthReport } from './health.js'
+import { healthReport } from './health.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
@@ -717,7 +717,7 @@ if (startProblem) {
   process.exit(1)
 }
 
-// Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.js). Dann ist
+// Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
 // ein zweiter Start kein Fehler, sondern ein zweiter Klick im Startmenü (#45).
 async function mietfuchsAlreadyOn(url) {
   try {
