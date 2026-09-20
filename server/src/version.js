@@ -4,7 +4,9 @@
 // Die Version steht in server/package.json. Als JSON-Import statt per Dateizugriff: Buns
 // Bundler baut importiertes JSON beim Kompilieren fest ein, sodass auch die Programmdatei ihre
 // Version kennt. Dort gibt es keine package.json im Dateisystem. Node lädt JSON-Module erst ab
-// 22.12 ohne Warnung und bricht vor 20.10 mit einem Syntaxfehler ab, daher engines >=22.12.
+// 22.12 ohne Warnung und bricht vor 20.10 mit einem Syntaxfehler ab; das allein verlangte nur
+// diese Version. `engines` steht heute höher, bei >=24.12, weil TypeScript-Dateien erst ab
+// dort ohne Build-Schritt als stabil ausführbar gelten.
 import pkg from '../package.json' with { type: 'json' }
 import { systemLocation } from './paths.js'
 
