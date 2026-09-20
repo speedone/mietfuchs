@@ -18,7 +18,10 @@ import net from 'node:net'
 import type { AiConsent, AiJsonMode, AiProviderKind, AiSettings, AiSlot, AiSlotName, Settings } from '../../../shared/types.ts'
 import { presetById, defaultPresetFor } from './presets.ts'
 
-export const SLOTS: AiSlotName[] = ['text', 'images']
+// Die Plätze zum Durchlaufen. Welche es gibt, sagt `AiSlotName` in shared/types.ts; die Liste
+// steht hier, weil shared/types.ts bewusst keinen Laufzeitanteil hat. `readonly AiSlotName[]`
+// sorgt dafür, dass beide zusammenpassen müssen.
+export const SLOTS: readonly AiSlotName[] = ['text', 'images']
 const PROVIDERS: AiProviderKind[] = ['ollama', 'openai']
 const JSON_MODES: AiJsonMode[] = ['auto', 'schema', 'object', 'prompt']
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'

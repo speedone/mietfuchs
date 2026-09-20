@@ -13,7 +13,7 @@ import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from
 import { createRecommendations } from './ai/recommendations.ts'
 import { listOpenAiModels } from './ai/openai.ts'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
-import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
+import { SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
@@ -169,30 +169,26 @@ const keyRoute = (change: (req: Request) => void) => (req: Request, res: Respons
   }
   res.json(keyInfo())
 }
-// Ein Routen-Parameter als einzelner Wert. Express kennt wiederholbare Parameter und liefert
-// dafür eine Liste; bei `:slot` kommt immer ein einzelner Wert an. Käme doch eine Liste, fiele
-// sie in secrets.ts als unbekannter Platz durch, genau wie zuvor.
-//
-// Nötig ist das nur hier: `keyRoute` reicht ein allgemeines `Request` durch, in dem jeder
-// Parameter `string | string[]` ist. Wo ein Handler direkt an seiner Route hängt, liest Express
-// den Pfad mit und kennt `:slot` als einzelnen String, siehe DELETE /api/ai/consent/:slot.
-const singleParam = (value: string | string[]): string => (typeof value === 'string' ? value : '')
-
+// Beide Routen geben den Platz weiter, wie er hereinkommt: secrets.ts nimmt ihn als `unknown`
+// und prüft ihn gegen die bekannten Plätze. Das deckt auch den Fall ab, dass Express für einen
+// wiederholbaren Parameter eine Liste liefert (`keyRoute` reicht ein allgemeines `Request`
+// durch, in dem jeder Parameter `string | string[]` ist) — eine Liste ist kein bekannter Platz.
 app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
-app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(singleParam(req.params.slot))))
+app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
 
-// Die beiden Plätze der KI-Einstellungen. Als Prädikat, damit eine Angabe aus der Oberfläche
-// danach als `AiSlotName` weiterverwendet werden kann.
-const isSlotName = (value: unknown): value is AiSlotName => value === 'text' || value === 'images'
+// Die Plätze der KI-Einstellungen. Eine Angabe aus der Oberfläche wird in der Liste gesucht,
+// und was dort steht, ist ein `AiSlotName` — deshalb braucht es dafür weder eine Zusicherung
+// noch ein Prädikat, dessen Rumpf der Übersetzer nicht prüft.
+const slotNameOf = (value: unknown): AiSlotName | null => SLOTS.find((known) => known === value) ?? null
 
 // Bestätigung, dass Belege an einen externen Dienst gehen dürfen (siehe consentProblem in
 // ai/settings.ts). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
 // auch wenn sie aus der Umgebung kommen.
 const NO_SLOT = 'Für diesen Platz ist kein KI-Anbieter eingerichtet.'
 app.post('/api/ai/consent', (req, res) => {
-  const slot: unknown = req.body?.slot
+  const slot = slotNameOf(req.body?.slot)
   const effective = effectiveSettings().ai
-  if (!isSlotName(slot)) return res.status(400).json({ error: NO_SLOT })
+  if (!slot) return res.status(400).json({ error: NO_SLOT })
   const target = effective[slot]
   if (!target) return res.status(400).json({ error: NO_SLOT })
   const { url, model } = target
@@ -204,8 +200,8 @@ app.post('/api/ai/consent', (req, res) => {
 })
 
 app.delete('/api/ai/consent/:slot', (req, res) => {
-  const slot: string = req.params.slot
-  if (!isSlotName(slot)) return res.status(400).json({ error: 'Unbekannter Platz.' })
+  const slot = slotNameOf(req.params.slot)
+  if (!slot) return res.status(400).json({ error: 'Unbekannter Platz.' })
   const ai = aiOf(getDb().settings)
   const { [slot]: _revoked, ...rest } = ai.consent
   ai.consent = rest
