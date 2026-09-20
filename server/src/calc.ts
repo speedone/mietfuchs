@@ -161,14 +161,12 @@ export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): 
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen
-  // aufgerufen (siehe calc.test.ts), daher der gezielte Zugriff über eine Typ-Erweiterung.
-  // Der Schnappschuss reicht die Datensätze unverändert durch, damit das Feld hier ankommt.
-  const legacy = tenancy as SnapshotTenancy & { prepaymentMonthlyCents?: number }
+  // aufgerufen (siehe calc.test.ts), deshalb führt `SnapshotTenancy` das Feld weiterhin.
   const schedule = (
     tenancy.prepayments?.length
       ? tenancy.prepayments
-      : legacy.prepaymentMonthlyCents != null // Altformat: ein fester Monatsbetrag
-        ? [{ from: tenancy.start.slice(0, 7), monthlyCents: legacy.prepaymentMonthlyCents }]
+      : tenancy.prepaymentMonthlyCents != null // Altformat: ein fester Monatsbetrag
+        ? [{ from: tenancy.start.slice(0, 7), monthlyCents: tenancy.prepaymentMonthlyCents }]
         : []
   )
     .slice()
@@ -325,7 +323,10 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const sollCents = ledger.totals.sollYearCents
   const paidCents = ledger.totals.paidYearCents
 
-  // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren
+  // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren. Der Filter ist
+  // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
+  // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
+  // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
   const items = snapshot.costItems.filter((c) => c.year === year)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   for (const item of items) {
@@ -521,6 +522,10 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
 
   const landlordRows: SettlementRow[] = []
   const warnings: string[] = []
+  // Der Filter ist bewusst doppelt: `snapshotFromDb` grenzt bereits nach Jahr ein. Er bleibt,
+  // weil er das Einzige ist, was eine falsch eingegrenzte Ablage noch auffängt. Ohne ihn
+  // rechnete ein Repository, das zu viel liefert, die Kosten mehrerer Jahre in eine Abrechnung,
+  // und das fiele niemandem auf, weil jede Zeile für sich stimmig aussieht. Nicht entfernen.
   const items = snapshot.costItems.filter((c) => c.year === year)
   let totalCostsCents = 0
   let selfUsedShareCents = 0
