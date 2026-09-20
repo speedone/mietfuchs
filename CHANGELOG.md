@@ -39,6 +39,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Ein falsch gesetztes `NKA_PORT` bricht den Start jetzt mit einer klaren Meldung ab.** Ein
   Wert, der keine Portnummer ist, galt bisher als Pfad eines Unix-Sockets: Mietfuchs meldete
   „läuft auf http://127.0.0.1:undefined“ und war über keine Adresse erreichbar.
+- **Das Versanddatum einer abgeschlossenen Abrechnung wird geprüft, bevor es gespeichert
+  wird.** An diesem Datum hängt die Frist nach §556 BGB, und Mietfuchs zeigt im Cockpit und auf
+  der Abrechnung an, ob sie gewahrt ist. Über die Schnittstelle ließ sich dort bisher jede
+  beliebige Angabe hinterlegen, auch eine, die gar kein Datum ist; die Frist wurde dann gegen
+  Unsinn gerechnet. Jetzt nimmt Mietfuchs nur ein Datum an und weist alles andere ab. Über die
+  Oberfläche war das nie möglich, dort kommt das Datum aus einem Datumsfeld.
 - **Fremde Programme hinterlassen keine unsinnigen Felder mehr in den Daten.** Wer Mietfuchs
   nicht über die Oberfläche, sondern über seine Schnittstelle anspricht, etwa mit einem eigenen
   Skript, konnte beim Anlegen und Ändern von Wohnungen, Mietverhältnissen, Kosten, Zählern,

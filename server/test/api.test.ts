@@ -522,6 +522,65 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
   }
 })
 
+// ---------- Versanddatum der abgeschlossenen Abrechnung (§556 BGB) ----------
+//
+// An diesem Datum hängt die Frist aus §556 BGB, und die Oberfläche vergleicht es als
+// Zeichenkette mit dem 31.12. des Folgejahrs. Ein beliebiger Wert aus dem Rumpf der Anfrage
+// darf dort deshalb nie ankommen — er bliebe dauerhaft in der db.json stehen.
+
+// Der eingefrorene Stand eines Jahres, so wie er auf der Platte steht
+const closedOf = (s: { dataDir: string }, year: number) =>
+  (storedDb(s).closedSettlements ?? []).find((c) => c.year === year)
+
+// Alles, was kein Datum als JJJJ-MM-TT ist: falscher Typ, deutsche Schreibweise, Zeitstempel
+// und Tage, die es im Kalender nicht gibt.
+const NO_DATES: unknown[] = [
+  42, true, { tag: 1 }, ['2041-03-14'], 'morgen', '14.03.2041', '2041-03-14T10:00:00Z', '2041-02-30', '2041-13-01',
+]
+
+// Eine Anfrage, die scheitern soll — s.api wirft sonst schon am Status.
+const closeRequest = (method: string, year: number, body: unknown): Promise<Response> =>
+  fetch(`${srv.base}/api/settlement/${year}/close`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+test('Versanddatum: ohne Angabe abgeschlossen, mit Datum nachgetragen, leer wieder gelöscht', async () => {
+  await srv.api('/api/settlement/2040/close', { method: 'POST', body: JSON.stringify({}) })
+  assert.equal(closedOf(srv, 2040)?.sentAt, null)
+
+  // So schickt es die Oberfläche aus <input type="date">
+  await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: '2041-03-14' }) })
+  assert.equal(closedOf(srv, 2040)?.sentAt, '2041-03-14')
+
+  // Ein geleertes Feld heißt „doch noch nicht versendet"
+  await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: null }) })
+  assert.equal(closedOf(srv, 2040)?.sentAt, null)
+
+  await srv.api('/api/settlement/2040/close', { method: 'DELETE' })
+})
+
+test('Versanddatum: was kein Datum ist, kommt nicht in die db.json', async () => {
+  await srv.api('/api/settlement/2041/close', { method: 'POST', body: JSON.stringify({ sentAt: '2042-05-02' }) })
+  for (const sentAt of NO_DATES) {
+    const res = await closeRequest('PUT', 2041, { sentAt })
+    assert.equal(res.status, 400, `angenommen: ${JSON.stringify(sentAt)}`)
+    assert.match(await errorFrom(res), /Versanddatum/)
+  }
+  assert.equal(closedOf(srv, 2041)?.sentAt, '2042-05-02', 'das gespeicherte Datum wurde überschrieben')
+
+  await srv.api('/api/settlement/2041/close', { method: 'DELETE' })
+})
+
+test('Versanddatum: ein ungültiges Datum friert die Abrechnung gar nicht erst ein', async () => {
+  for (const sentAt of NO_DATES) {
+    const res = await closeRequest('POST', 2042, { sentAt })
+    assert.equal(res.status, 400, `angenommen: ${JSON.stringify(sentAt)}`)
+  }
+  assert.equal(closedOf(srv, 2042), undefined)
+})
+
 // ---------- Update-Hinweis ----------
 // Ein nachgebauter GitHub-Server liefert die echte Antwort der Releases-API, umgeschrieben auf
 // eine neuere Version. Er zählt mit, damit sich belegen lässt, dass ohne Zustimmung nichts

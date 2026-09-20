@@ -286,11 +286,34 @@ app.get('/api/settlement/:year', (req, res) => {
   res.json({ ...computeSettlement(getDb(), year), closed: null })
 })
 
+// Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
+// Rückweg über Date schließt Tage aus, die es im Kalender nicht gibt: JavaScript rechnet den
+// 31. Februar stillschweigend in den 3. März um, statt ihn abzulehnen.
+const isDateOnly = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const ms = Date.parse(`${value}T00:00:00Z`)
+  return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value
+}
+
+// Das Versanddatum aus dem Rumpf, geprüft: `null` heißt „noch nicht versendet" (so schickt es
+// die Oberfläche für ein leeres Feld), `false` heißt „keine gültige Angabe" und führt zu 400.
+// An diesem Datum hängt die Frist aus §556 BGB, und die Oberfläche vergleicht es als
+// Zeichenkette mit dem 31.12. des Folgejahrs — ein beliebiger Wert aus `req.body` (`any`, siehe
+// bodyObject) dürfte hier also nie durchgereicht werden.
+const SENT_AT_INVALID = 'Das Versanddatum muss ein Datum als JJJJ-MM-TT sein oder fehlen.'
+const sentAtOf = (req: Request): string | null | false => {
+  const value: unknown = bodyObject(req).sentAt
+  if (value === undefined || value === null || value === '') return null
+  return isDateOnly(value) ? value : false
+}
+
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
 app.post('/api/settlement/:year/close', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const db = getDb()
   if ((db.closedSettlements ?? []).some((c) => c.year === year)) {
     return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
@@ -299,7 +322,7 @@ app.post('/api/settlement/:year/close', (req, res) => {
     id: newId(),
     year,
     closedAt: new Date().toISOString(),
-    sentAt: req.body?.sentAt ?? null,
+    sentAt,
     settlement: computeSettlement(db, year),
   })
   save()
@@ -309,9 +332,11 @@ app.post('/api/settlement/:year/close', (req, res) => {
 // Versanddatum nachtragen (für die §556-Frist)
 app.put('/api/settlement/:year/close', (req, res) => {
   const year = Number(req.params.year)
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
   if (!closed) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
-  closed.sentAt = req.body?.sentAt ?? null
+  closed.sentAt = sentAt
   save()
   res.json({ ok: true })
 })
