@@ -33,20 +33,26 @@ test('Zahlen aus der Antwort: eine Zahl als Text wird übernommen, deutsch wie t
   for (const [text, expected] of cases) assert.equal(numberFromModel(text), expected, text)
 })
 
-test('Zahlen aus der Antwort: eine nachgestellte Einheit stört nicht', () => {
-  // Eine Einheit hinter der Zahl macht sie nicht mehrdeutig, und ein Modell ohne erzwungenes
-  // Schema schreibt sie naheliegenderweise dazu. Angenommen wird nur, was in der kurzen Liste
-  // in extract.ts steht: Euro für Beträge, Kubikmeter und Kilowattstunden für die Zähler.
+test('Zahlen aus der Antwort: eine Einheit vor oder hinter der Zahl stört nicht', () => {
+  // Eine Einheit macht die Zahl nicht mehrdeutig, und ein Modell ohne erzwungenes Schema
+  // schreibt sie naheliegenderweise dazu. Angenommen wird nur, was in den kurzen Listen in
+  // extract.ts steht: die Währung vor oder hinter der Zahl, die Einheiten der Zähler dahinter.
   const cases: [string, number][] = [
     ['12,50 €', 12.5],
     ['12,50€', 12.5],
     ['1.234,56 EUR', 1234.56],
     ['99 eur', 99],
+    ['12,50 EURO', 12.5],
+    ['€ 12,50', 12.5],
+    ['EUR 12,50', 12.5],
+    ['euro 1.234,56', 1234.56],
     ['1234 m³', 1234],
     ['1234 m3', 1234],
     ['1234 cbm', 1234],
     ['4711,5 kWh', 4711.5],
     ['-5 €', -5],
+    ['€ -5', -5],
+    ['-€ 5', -5],
   ]
   for (const [text, expected] of cases) assert.equal(numberFromModel(text), expected, text)
 })
@@ -60,11 +66,12 @@ test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht
   const notANumber: unknown[] = [
     null, undefined, true, {}, [], NaN, Infinity,
     '', '   ', 'abc', '-', '1234,', ',5', '1,2,3',
-    // Vorangestelltes bleibt ungültig: Das ist keine Einheit, sondern eine Unsicherheit des
-    // Modells, und die soll der Mensch sehen.
-    'ca. 1234', 'rund 12,50 €', '12 oder 13',
-    // Nachgestellt wird nur abgetrennt, was in der Liste steht — kein allgemeines Abschneiden.
-    '1234 Liter', '12,50 Dollar', '12,50 $', '1234 m²', '€', 'kWh',
+    // Eine Unsicherheit des Modells ist keine Einheit, und sie soll der Mensch sehen.
+    'ca. 1234', 'rund 12,50 €', 'ca. EUR 12,50', '12 oder 13', '12,50 pro Monat',
+    // Abgetrennt wird nur, was in den Listen steht — kein allgemeines Abschneiden.
+    '1234 Liter', '12,50 Dollar', '12,50 $', '$ 12,50', '1234 m²', 'm³ 1234',
+    // Und auch nur je einmal, nicht so lange, bis eine Zahl übrig bleibt.
+    '€ € 12,50', '12,50 € €', '€', 'EUR', 'kWh',
   ]
   for (const value of notANumber) assert.equal(numberFromModel(value), null, JSON.stringify(value) ?? String(value))
 })
@@ -111,15 +118,34 @@ test('Ausgang: eine Position ohne brauchbaren Betrag bleibt erhalten, der Betrag
 
 test('Ausgang: fehlende Texte werden leer, unbrauchbare Zahlen fallen weg', () => {
   const extraction = toExtraction({
-    vendor: 42,
+    vendor: '  Stadtwerke  ',
     invoiceDate: '2026-03-15',
     totalGrossEur: 'etwa zwanzig',
     positions: [{ description: null, category: ['Wasser/Abwasser'], amountEur: 12.5, labor35aEur: 'kein' }],
   })
-  assert.equal(extraction.vendor, undefined)
+  assert.equal(extraction.vendor, 'Stadtwerke')
   assert.equal(extraction.invoiceDate, '2026-03-15')
   assert.equal(extraction.totalGrossEur, undefined)
   assert.deepEqual(extraction.positions, [{ description: '', category: '', amountEur: 12.5, labor35aEur: null }])
+})
+
+test('Ausgang: ein Text als Zahl gilt überall gleich', () => {
+  // Dieselbe Regel wie beim Zählerstand (textOrNull): Eine Zahl wird zum Text statt verworfen,
+  // denn sie landet in einem Feld, das ein Mensch liest und bei Bedarf überschreibt. Was weder
+  // Text noch Zahl ist, bleibt leer.
+  const extraction = toExtraction({ vendor: 2026, positions: [{ description: 4711, category: {} }] })
+  assert.equal(extraction.vendor, '2026')
+  assert.deepEqual(extraction.positions, [{ description: '4711', category: '', labor35aEur: null }])
+})
+
+test('Ausgang: nur Mietfuchs selbst kann sagen, dass es gerechnet hat', () => {
+  // Die Zusage wird dort eingelöst, wo sie gegeben wird, und hängt nicht daran, was der Eingang
+  // vorher abgeräumt hat.
+  assert.equal(toExtraction({ amountsAdjusted: 'netto' }).amountsAdjusted, 'netto')
+  assert.equal(toExtraction({ laborFromTotal: true }).laborFromTotal, true)
+  const raw: Record<string, unknown> = { amountsAdjusted: 'brutto', laborFromTotal: 'ja' }
+  assert.equal(toExtraction(raw).amountsAdjusted, undefined)
+  assert.equal(toExtraction(raw).laborFromTotal, undefined)
 })
 
 test('Ausgang: nur zugesagte Felder erreichen den Browser', () => {
