@@ -85,6 +85,35 @@ test('Ohne Kennzeichen „netto“ wird nicht gerechnet, auch wenn die Summe abw
   assert.equal(result.amountsAdjusted, undefined)
 })
 
+test('Ist auch nur ein Betrag unlesbar, wird nicht hochgerechnet', () => {
+  // Sonst verteilt die Hochrechnung den ganzen Rechnungsbetrag auf die Positionen, die gelesen
+  // wurden. Das Ergebnis ist das gefährlichste, das es hier gibt: Die Summe passt zum Beleg, und
+  // wer die Vorschläge prüft, sieht nichts Auffälliges — dabei ist jede einzelne Position zu
+  // hoch, und das landet in einer Nebenkostenabrechnung. Erreichbar ist der Fall, seit ein
+  // Betrag auch fehlen darf (#63); vorher war die Nettosumme dann Null und nichts geschah.
+  const unreadable = {
+    ...chimney(),
+    positions: chimney().positions.map((p, i) => (i === 2 ? { ...p, amountEur: 'siehe Anlage' } : p)),
+  }
+  const result = normalizeAmounts(unreadable)
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [28.7, 24.8, 'siehe Anlage', 9.5])
+  assert.equal(result.amountsAdjusted, undefined)
+})
+
+test('Eine Position, die laut Rechnung nichts kostet, verhindert das Hochrechnen nicht', () => {
+  // Null ist etwas anderes als „nicht gelesen": Eine Position mit 0,00 € steht so auf der
+  // Rechnung (mitversicherte Leistung, Gutschriftszeile), und die übrigen bleiben netto.
+  const free = {
+    ...chimney(),
+    totalGrossEur: 101.86,
+    positions: [...chimney().positions, { description: 'Anfahrt inklusive', category: 'Schornsteinfeger', amountEur: 0 }],
+  }
+  const result = normalizeAmounts(free)
+  assert.equal(sum(positionsOf(result)), cents(101.86))
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [34.15, 29.51, 26.89, 11.31, 0])
+  assert.equal(result.amountsAdjusted, 'netto')
+})
+
 test('Unsinnige Angaben ändern nichts', () => {
   for (const patch of [
     { totalGrossEur: 0 },

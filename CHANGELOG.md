@@ -23,10 +23,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der ganze Beleg war verloren, obwohl Beschreibungen, Kostenarten und die übrigen Beträge
   brauchbar waren. Jetzt steht die Position ganz normal da, nur mit leerem Betragsfeld zum
   Ausfüllen; in der Schnellerfassung zeigt die Ampel sie rot mit dem Hinweis „Betrag fehlt oder
-  ist 0“. Ebenso wird ein Betrag jetzt auch dann übernommen, wenn das Modell ihn als Text
-  geschrieben hat („12,50“ statt 12.5) oder die Einheit dazugeschrieben hat („12,50 €“); beim
-  Zählerstand gilt dasselbe für „1234 m³“ und „4711 kWh“. Betroffen waren vor allem kleine
-  Modelle auf dem eigenen Rechner, die sich nicht streng an die Vorgabe halten.
+  ist 0“. Auf der Kostenseite ist eine solche Position nicht mehr vorgehakt, damit sie nicht
+  angehakt dasteht und beim Übernehmen dann stillschweigend übersprungen wird; wer den Betrag
+  einträgt, setzt den Haken selbst. Ebenso wird ein Betrag jetzt auch dann übernommen, wenn das
+  Modell ihn als Text geschrieben hat („12,50“ statt 12.5) oder die Währung dazugeschrieben hat
+  („12,50 €“ wie „EUR 12,50“); beim Zählerstand gilt dasselbe für „1234 m³“ und „4711 kWh“.
+  Betroffen waren vor allem kleine Modelle auf dem eigenen Rechner, die sich nicht streng an die
+  Vorgabe halten. ([#63](https://github.com/speedone/mietfuchs/issues/63))
+- **Stand ein Betrag auf einer Nettorechnung unlesbar da, erfand Mietfuchs Zahlen, die stimmig
+  aussahen.** Weist eine Rechnung ihre Positionen ohne Umsatzsteuer aus und nennt sie erst in der
+  Summe, rechnet Mietfuchs die Positionen auf den Rechnungsbetrag hoch. Konnte die KI einen
+  Betrag nicht lesen, wurde der ganze Rechnungsbetrag auf die übrigen Positionen verteilt: Die
+  Summe passte zum Beleg, jede einzelne Position war aber rund zwanzig Prozent zu hoch, und beim
+  Prüfen fiel nichts auf. Jetzt wird nur hochgerechnet, wenn jeder Betrag gelesen wurde; sonst
+  bleiben die Positionen so stehen, wie sie auf der Rechnung stehen. Eine Position, die laut
+  Rechnung nichts kostet, verhindert das Hochrechnen weiterhin nicht.
   ([#63](https://github.com/speedone/mietfuchs/issues/63))
 - **Ein API-Schlüssel konnte im Klartext in einer Fehlermeldung auf dem Bildschirm stehen.**
   Antwortete ein KI-Dienst mit etwas, das Mietfuchs nicht als Auswertung lesen konnte, zeigte
