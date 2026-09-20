@@ -16,7 +16,7 @@ import path from 'node:path'
 import { DATA_DIR } from './store.js'
 
 // Die Rohdaten aus secrets.json: je Platz ein Schlüssel, aber ungeprüft, wie sie auf der
-// Platte stehen — eine von Hand verdorbene Datei (siehe Test dazu) darf den Start nicht stören.
+// Platte stehen. Eine von Hand verdorbene Datei (siehe Tests dazu) darf den Start nicht stören.
 type StoredSecrets = Record<string, unknown>
 
 export const KEY_SLOTS = ['text', 'images']
@@ -35,21 +35,21 @@ let unreadable = false
 
 function read(): StoredSecrets {
   if (cache) return cache
+  let parsed: unknown = null
   try {
-    cache = JSON.parse(fs.readFileSync(FILE, 'utf8'))
+    parsed = JSON.parse(fs.readFileSync(FILE, 'utf8'))
     unreadable = false
   } catch (err) {
     // Gibt es die Datei nicht, gibt es eben keine Schlüssel. War sie nur vorübergehend nicht
     // lesbar (etwa durch einen Virenscanner), darf ein späteres Speichern den anderen Platz
     // nicht überschreiben: Dann merkt sich `unreadable` das, und `write` verweigert.
     unreadable = (err as NodeJS.ErrnoException).code !== 'ENOENT'
-    cache = {}
-    if (unreadable) cache = null
-    return {}
   }
-  // An dieser Stelle ist der try-Block ohne Fehler durchgelaufen (der catch-Zweig kehrt selbst
-  // zurück), cache also gesetzt. TypeScript sieht das nicht, weil die Zuweisung im try-Block steht.
-  return cache!
+  if (unreadable) return {}
+  // Ein geparstes `null` ist gültiges JSON, aber kein Objekt. Es zählt wie eine fehlende Datei:
+  // ein leerer Schlüsselspeicher, kein Fehler.
+  cache = (parsed as StoredSecrets | null) ?? {}
+  return cache
 }
 
 function write(data: StoredSecrets): void {
