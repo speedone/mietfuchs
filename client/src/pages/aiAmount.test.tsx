@@ -16,7 +16,7 @@ import Schnellerfassung from './Schnellerfassung'
 
 const UNITS: Unit[] = [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }]
 
-// Die zweite Position hat keinen Betrag — so, wie der Server sie durchlässt (toExtraction in
+// Die zweite Position hat keinen Betrag, so wie der Server sie durchlässt (toExtraction in
 // server/src/extract.ts verwirft nur, was niemand gebrauchen kann).
 const EXTRACTION: Extraction = {
   vendor: 'Stadtwerke Musterstadt',

@@ -172,12 +172,12 @@ const keyRoute = (change: (req: Request) => void) => (req: Request, res: Respons
 // Beide Routen geben den Platz weiter, wie er hereinkommt: secrets.ts nimmt ihn als `unknown`
 // und prüft ihn gegen die bekannten Plätze. Das deckt auch den Fall ab, dass Express für einen
 // wiederholbaren Parameter eine Liste liefert (`keyRoute` reicht ein allgemeines `Request`
-// durch, in dem jeder Parameter `string | string[]` ist) — eine Liste ist kein bekannter Platz.
+// durch, in dem jeder Parameter `string | string[]` ist): Eine Liste ist kein bekannter Platz.
 app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
 app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
 
 // Die Plätze der KI-Einstellungen. Eine Angabe aus der Oberfläche wird in der Liste gesucht,
-// und was dort steht, ist ein `AiSlotName` — deshalb braucht es dafür weder eine Zusicherung
+// und was dort steht, ist ein `AiSlotName`. Deshalb braucht es dafür weder eine Zusicherung
 // noch ein Prädikat, dessen Rumpf der Übersetzer nicht prüft.
 const slotNameOf = (value: unknown): AiSlotName | null => SLOTS.find((known) => known === value) ?? null
 

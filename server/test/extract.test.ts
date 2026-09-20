@@ -69,7 +69,7 @@ test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht
     '', '   ', 'abc', '-', '1234,', ',5', '1,2,3',
     // Eine Unsicherheit des Modells ist keine Einheit, und sie soll der Mensch sehen.
     'ca. 1234', 'rund 12,50 €', 'ca. EUR 12,50', '12 oder 13', '12,50 pro Monat',
-    // Abgetrennt wird nur, was in den Listen steht — kein allgemeines Abschneiden.
+    // Abgetrennt wird nur, was in den Listen steht, kein allgemeines Abschneiden.
     '1234 Liter', '12,50 Dollar', '12,50 $', '$ 12,50', '1234 m²', 'm³ 1234',
     // Und auf jeder Seite nur einmal, nicht so lange, bis eine Zahl übrig bleibt.
     '€ € 12,50', '12,50 € €', '€', 'EUR', 'kWh',
@@ -136,7 +136,7 @@ test('Ausgang: eine Zahl gilt als Beschreibung, aber nicht als Rechnungssteller'
   // In der Beschreibung gilt dieselbe Regel wie beim Zählerstand (textOrNull): Eine Zahl wird
   // zum Text statt verworfen, denn sie landet in einem Feld, das ein Mensch liest und bei Bedarf
   // überschreibt. Der Rechnungssteller wird dagegen gespeichert und steht als Überschrift über
-  // den Positionen eines Belegs — dort ist „2026“ keine Auskunft, und ohne ihn nimmt die
+  // den Positionen eines Belegs. Dort ist „2026“ keine Auskunft, und ohne ihn nimmt die
   // Oberfläche den Dateinamen des Belegs, der weiterhilft.
   const extraction = toExtraction({ vendor: 2026, positions: [{ description: 4711, category: {} }] })
   assert.equal(extraction.vendor, undefined)
