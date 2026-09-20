@@ -271,18 +271,29 @@ export type SettlementRow = {
   category: string
   description: string
   totalCents: number
+  // Umlageschlüssel der Position. `keyLabel` daneben ist seine Beschriftung für die Abrechnung.
+  // Die Zeilen des Vermieteranteils führen den Schlüssel nicht mit, dort wird nichts verteilt —
+  // deshalb optional.
+  key?: CostKey
   keyLabel: string
   basisText?: string
   shareCents: number
+  // §35a-Lohnanteil dieser Zeile. Auch ihn gibt es nur in den Zeilen der Mieter.
   labor35aCents?: number
 }
 
 export type Statement = {
   tenancyId: string
+  // Die Wohnung des Mietverhältnisses. Die Abrechnung zeigt `unitName` an; die Kennung braucht,
+  // wer die Zeilen einer Wohnung zuordnet (etwa der Prüfkatalog).
+  unitId: string
   tenantName: string
   unitName: string
   persons: number
   days: number
+  // Personentage des Zeitraums: die Rechengrundlage des Personenschlüssels. `basisText` der
+  // einzelnen Zeile beschreibt sie im Klartext, hier steht die Zahl dahinter.
+  personDays: number
   periodStart: string
   periodEnd: string
   rows: SettlementRow[]

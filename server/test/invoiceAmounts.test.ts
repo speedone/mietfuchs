@@ -10,7 +10,7 @@
 // Gerechnet wird in Cent mit dem Restverfahren, wie in calc.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeAmounts } from '../src/invoiceAmounts.ts'
+import { normalizeAmounts, type Position } from '../src/invoiceAmounts.ts'
 
 const chimney = () => ({
   vendor: 'Schornsteinfegerei Muster',
@@ -26,26 +26,37 @@ const chimney = () => ({
   ],
 })
 
-const cents = (eur) => Math.round(eur * 100)
-const sum = (positions, key = 'amountEur') => positions.reduce((a, p) => a + cents(p[key] ?? 0), 0)
+const cents = (eur: number) => Math.round(eur * 100)
+const sum = (positions: Position[], key: 'amountEur' | 'labor35aEur' = 'amountEur') =>
+  positions.reduce((a, p) => a + cents(p[key] ?? 0), 0)
+
+// normalizeAmounts legt `positions` immer an, auch wenn die KI keine geliefert hat. Im Typ
+// steht das nicht, weil er die rohe Antwort beschreibt, in der das Feld fehlen darf. Statt die
+// Zusage zu behaupten, wird sie hier geprüft: Bleibt sie aus, scheitert der Test mit Ansage.
+function positionsOf(result: ReturnType<typeof normalizeAmounts>): Position[] {
+  const { positions } = result
+  if (!positions) assert.fail('normalizeAmounts liefert immer Positionen')
+  return positions
+}
 
 test('Nettopositionen werden brutto und ergeben genau den Rechnungsbetrag', () => {
   const result = normalizeAmounts(chimney())
-  assert.equal(sum(result.positions), cents(101.86))
+  assert.equal(sum(positionsOf(result)), cents(101.86))
   // Mit 19 % aufgeschlagen, der Rest-Cent geht an den größten Rest
-  assert.deepEqual(result.positions.map((p) => p.amountEur), [34.15, 29.51, 26.89, 11.31])
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [34.15, 29.51, 26.89, 11.31])
   assert.equal(result.amountsAdjusted, 'netto')
 })
 
 test('Ohne brauchbaren Steuersatz wird der Rechnungsbetrag anteilig verteilt', () => {
   for (const rate of [null, 300, 'neunzehn']) {
     const result = normalizeAmounts({ ...chimney(), vatRatePercent: rate })
-    assert.equal(sum(result.positions), cents(101.86), String(rate))
+    assert.equal(sum(positionsOf(result)), cents(101.86), String(rate))
     assert.equal(result.amountsAdjusted, 'netto', String(rate))
   }
   const result = normalizeAmounts({ ...chimney(), vatRatePercent: null })
-  assert.equal(sum(result.positions), cents(101.86))
-  assert.ok(result.positions.every((p, i) => p.amountEur > chimney().positions[i].amountEur))
+  assert.equal(sum(positionsOf(result)), cents(101.86))
+  const vorher = chimney().positions
+  assert.ok(positionsOf(result).every((p, i) => typeof p.amountEur === 'number' && p.amountEur > vorher[i].amountEur))
 })
 
 test('Passt die Summe schon, bleibt alles, wie es ist', () => {
@@ -61,7 +72,7 @@ test('Passt die Summe schon, bleibt alles, wie es ist', () => {
 test('Ohne Kennzeichen „netto“ wird nicht gerechnet, auch wenn die Summe abweicht', () => {
   // Fehlt eine Position, wäre Hochrechnen falsch: Dann stimmt die Position, nicht die Summe.
   const result = normalizeAmounts({ ...chimney(), positionsAreNet: false })
-  assert.deepEqual(result.positions.map((p) => p.amountEur), [28.7, 24.8, 22.6, 9.5])
+  assert.deepEqual(positionsOf(result).map((p) => p.amountEur), [28.7, 24.8, 22.6, 9.5])
   assert.equal(result.amountsAdjusted, undefined)
 })
 
@@ -78,8 +89,10 @@ test('Unsinnige Angaben ändern nichts', () => {
 
 test('Der Lohnanteil als Gesamtbetrag wird nach Beträgen verteilt und bleibt in der Summe gleich', () => {
   const result = normalizeAmounts(chimney())
-  assert.equal(sum(result.positions, 'labor35aEur'), cents(90.56))
-  assert.ok(result.positions.every((p) => p.labor35aEur > 0 && p.labor35aEur <= p.amountEur))
+  assert.equal(sum(positionsOf(result), 'labor35aEur'), cents(90.56))
+  assert.ok(positionsOf(result).every((p) =>
+    typeof p.labor35aEur === 'number' && typeof p.amountEur === 'number'
+    && p.labor35aEur > 0 && p.labor35aEur <= p.amountEur))
   assert.equal(result.laborFromTotal, true)
 })
 
@@ -90,13 +103,13 @@ test('Ein je Position ausgewiesener Lohnanteil bleibt unangetastet', () => {
     positions: chimney().positions.map((p, i) => ({ ...p, labor35aEur: i === 0 ? 10 : null })),
   }
   const result = normalizeAmounts(withLabor)
-  assert.equal(result.positions[0].labor35aEur, 10)
+  assert.equal(positionsOf(result)[0].labor35aEur, 10)
   assert.equal(result.laborFromTotal, undefined)
 })
 
 test('Ein Lohnanteil über dem Rechnungsbetrag wird nicht verteilt', () => {
   const result = normalizeAmounts({ ...chimney(), labor35aTotalEur: 500 })
-  assert.ok(result.positions.every((p) => p.labor35aEur == null))
+  assert.ok(positionsOf(result).every((p) => p.labor35aEur == null))
   assert.equal(result.laborFromTotal, undefined)
 })
 

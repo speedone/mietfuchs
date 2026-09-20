@@ -1,5 +1,5 @@
 // Ablage der db.json (store.ts): hier nur das Verhalten von load()/getDb() bei einem
-// scheiternden Migrationsschritt. Alles andere rund um den Datenordner steht in dataDir.test.js.
+// scheiternden Migrationsschritt. Alles andere rund um den Datenordner steht in dataDir.test.ts.
 //
 // `DATA_DIR` wird beim Import von store.ts einmalig aus der Umgebung berechnet, und `db` ist
 // modulweiter Zustand. Damit jeder Testfall mit einem eigenen Datenordner und einem frischen
@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-async function freshStore(dataDir) {
+async function freshStore(dataDir: string): Promise<typeof import('../src/store.ts')> {
   const prevEnv = process.env.NKA_DATA_DIR
   process.env.NKA_DATA_DIR = dataDir
   try {

@@ -20,16 +20,24 @@ import { largestRemainder } from './calc.ts'
 // normalizeAmounts geradezieht).
 export type Position = {
   amountEur?: number
-  labor35aEur?: number
+  // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen — so steht es
+  // schon im Schema und in shared/types.ts.
+  labor35aEur?: number | null
   [key: string]: unknown
 }
 
 // Die Rohausgabe der KI-Auswertung, so weit diese Funktion sie liest oder ergänzt. Auch hier
 // bleiben unbekannte Felder über den Index-Zugriff erhalten.
+//
+// Die drei Hinweisfelder oben sind bewusst `unknown`: Sie kommen ungeprüft aus dem Modell, das
+// statt einer Zahl auch „neunzehn“ oder null schicken kann. Die Funktion prüft jeden dieser
+// Werte selbst (`=== true`, `typeof`, `toCents`), und sie trennt sie beim Zerlegen ab, sodass
+// sie die Auswertung nie verlassen. Ein engerer Typ wäre also eine Behauptung, die niemand
+// einlöst, und würde nur die Prüfungen unten wie toten Code aussehen lassen.
 export type Extraction = {
-  positionsAreNet?: boolean
-  vatRatePercent?: number
-  labor35aTotalEur?: number
+  positionsAreNet?: unknown
+  vatRatePercent?: unknown
+  labor35aTotalEur?: unknown
   totalGrossEur?: number
   positions?: Position[]
   amountsAdjusted?: string

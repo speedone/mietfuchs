@@ -39,7 +39,7 @@ t3 = 3.333 ct = 33,33 €
 **Wichtig:** „Erster“ heißt hier *erster nach fachlichem Schlüssel* (Mietverhältnis-ID), nicht
 *erster in der zufälligen Eingabereihenfolge*. Würde die Zuteilung von der Array- oder
 Datenbankreihenfolge abhängen, wäre dasselbe Fixture bei anderer Eingabesortierung anders
-verteilt. Das prüft der Test „Restcent bei gleichen Anteilen“ in `calc.test.js` mit
+verteilt. Das prüft der Test „Restcent bei gleichen Anteilen“ in `calc.test.ts` mit
 vertauschter Eingabe.
 
 Vorauszahlungen: je 12 × 10,00 € = 120,00 €.

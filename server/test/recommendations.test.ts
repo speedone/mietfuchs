@@ -23,7 +23,9 @@ test('Die mitgelieferte Liste nennt zu jedem Modell das Nötige', () => {
     assert.match(m.name, /^[\w.:/-]{1,100}$/)
     assert.ok(['ollama', 'openai'].includes(m.provider), m.name)
     assert.ok(typeof m.note === 'string' && m.note.length > 0, m.name)
-    if (m.provider === 'ollama') assert.ok(m.sizeGb > 0, m.name)
+    // Ein Ollama-Modell wird heruntergeladen, die Größe gehört dazu; bei einem Dienst im Netz
+    // fehlt sie (daher `sizeGb?`). Geprüft wird deshalb beides: vorhanden und plausibel.
+    if (m.provider === 'ollama') assert.ok(typeof m.sizeGb === 'number' && m.sizeGb > 0, m.name)
     assert.ok(typeof m.vision === 'boolean', m.name)
   }
   assert.ok(BUILT_IN.models.some((m) => m.name === 'qwen3.5:4b'), 'das voreingestellte Modell fehlt')
@@ -41,8 +43,10 @@ test('Prüfung: kaputte Einträge fallen weg, unbekannte Felder stören nicht', 
       { name: 'ohne-note:1b', provider: 'ollama', sizeGb: 1, vision: true },
     ],
   })
+  assert.ok(checked, 'die Liste ist brauchbar und darf nicht verworfen werden')
   assert.deepEqual(checked.models.map((m) => m.name), ['gut:4b'])
-  assert.equal(checked.models[0].neuesFeld, undefined)
+  // „Fällt weg“ heißt: gar nicht vorhanden, nicht bloß undefined.
+  assert.ok(!('neuesFeld' in checked.models[0]))
   assert.equal(checked.updated, '2026-10-01')
 })
 
@@ -54,7 +58,7 @@ test('Prüfung: eine fremde oder unbrauchbare Datei ergibt null', () => {
 
 // ---------- Nachladen ----------
 
-const later = (start, days) => () => start + days * 24 * 60 * 60 * 1000
+const later = (start: number, days: number) => () => start + days * 24 * 60 * 60 * 1000
 
 test('Nachladen: ohne Zustimmung geht keine Anfrage hinaus', async () => {
   let calls = 0

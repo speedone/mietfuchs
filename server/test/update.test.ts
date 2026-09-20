@@ -11,14 +11,34 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseVersion, isNewer, assetFor, createUpdateChecker } from '../src/update.ts'
+import type { UpdateStatus } from '../../shared/types.ts'
+
+// Die Gestalt der abgespeicherten Antwort, so weit die Tests sie anfassen. update.ts beschreibt
+// dieselbe Antwort für sich selbst mit lauter optionalen Feldern, weil sie aus dem Netz kommt;
+// hier liegt sie als Datei im Repo, deshalb steht sie fest.
+type ReleaseAsset = { name: string, browser_download_url: string }
+type Release = { tag_name: string, html_url?: string, assets: ReleaseAsset[], draft?: boolean, prerelease?: boolean }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const realResponse = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'github-release-latest.json'), 'utf8'))
+const realResponse: Release = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'github-release-latest.json'), 'utf8'))
 
 // Die echte Antwort, umgeschrieben auf eine angenommene neuere Version
-function releaseWith(tag, extra = {}) {
+function releaseWith(tag: string, extra: Partial<Release> = {}): Release {
   const text = JSON.stringify(realResponse).replaceAll(realResponse.tag_name, tag)
   return { ...JSON.parse(text), ...extra }
+}
+
+// assetFor liefert null, wenn es für das System keine Datei gibt. Der Name wird deshalb über
+// den Umweg gelesen: Fehlt die Datei, steht hier undefined, und der Vergleich schlägt fehl,
+// statt dass der Test am Zugriff auf null zerbricht.
+const assetName = (assets: ReleaseAsset[], platform: string, arch: string): string | undefined =>
+  assetFor(assets, platform, arch)?.name
+
+// assert.match verlangt eine Zeichenkette, `error` im Status ist `string | null`. Fehlt die
+// Meldung, ist genau das der Befund, und der Test benennt ihn.
+const errorOf = (status: UpdateStatus): string => {
+  if (status.error === null) assert.fail('es fehlt die Fehlermeldung')
+  return status.error
 }
 
 // ---------- Versionen ----------
@@ -49,20 +69,20 @@ test('isNewer: ohne bekannte eigene oder fremde Version gibt es keinen Hinweis',
 
 test('assetFor: wählt die Datei für das eigene Betriebssystem und die Architektur', () => {
   const assets = realResponse.assets
-  assert.equal(assetFor(assets, 'win32', 'x64').name, 'mietfuchs-win.exe')
-  assert.equal(assetFor(assets, 'darwin', 'arm64').name, 'mietfuchs-macos-apple-silicon.zip')
-  assert.equal(assetFor(assets, 'darwin', 'x64').name, 'mietfuchs-macos-intel.zip')
-  assert.equal(assetFor(assets, 'linux', 'x64').name, 'mietfuchs-linux.tar.gz')
+  assert.equal(assetName(assets, 'win32', 'x64'), 'mietfuchs-win.exe')
+  assert.equal(assetName(assets, 'darwin', 'arm64'), 'mietfuchs-macos-apple-silicon.zip')
+  assert.equal(assetName(assets, 'darwin', 'x64'), 'mietfuchs-macos-intel.zip')
+  assert.equal(assetName(assets, 'linux', 'x64'), 'mietfuchs-linux.tar.gz')
 })
 
 test('assetFor: ARM-Programmdateien für Linux und Windows (#22), die bisherigen Namen bleiben', () => {
   // Ältere Versionen suchen ihre Datei unter dem bisherigen Namen, der darf sich nie ändern.
   const names = ['mietfuchs-win.exe', 'mietfuchs-win-arm64.exe', 'mietfuchs-linux.tar.gz', 'mietfuchs-linux-arm64.tar.gz']
   const assets = names.map((name) => ({ name, browser_download_url: `https://github.com/speedone/mietfuchs/releases/download/v0.6.0/${name}` }))
-  assert.equal(assetFor(assets, 'linux', 'arm64').name, 'mietfuchs-linux-arm64.tar.gz')
-  assert.equal(assetFor(assets, 'win32', 'arm64').name, 'mietfuchs-win-arm64.exe')
-  assert.equal(assetFor(assets, 'linux', 'x64').name, 'mietfuchs-linux.tar.gz')
-  assert.equal(assetFor(assets, 'win32', 'x64').name, 'mietfuchs-win.exe')
+  assert.equal(assetName(assets, 'linux', 'arm64'), 'mietfuchs-linux-arm64.tar.gz')
+  assert.equal(assetName(assets, 'win32', 'arm64'), 'mietfuchs-win-arm64.exe')
+  assert.equal(assetName(assets, 'linux', 'x64'), 'mietfuchs-linux.tar.gz')
+  assert.equal(assetName(assets, 'win32', 'x64'), 'mietfuchs-win.exe')
 })
 
 test('assetFor: für Systeme ohne eigene Datei gibt es keine', () => {
@@ -74,29 +94,37 @@ test('assetFor: für Systeme ohne eigene Datei gibt es keine', () => {
 // ---------- Abfrage bei GitHub ----------
 
 // Nachgebauter GitHub-Server. `respond` lässt sich je Test umstellen; `requests` zählt mit.
-let github
-let respond
-const requests = []
+let github: http.Server
+let respond: http.RequestListener
+const requests: { url: string | undefined, userAgent: string }[] = []
 
 before(async () => {
   github = http.createServer((req, res) => {
     requests.push({ url: req.url, userAgent: req.headers['user-agent'] ?? '' })
     respond(req, res)
   })
-  await new Promise((r) => github.listen(0, '127.0.0.1', r))
+  await new Promise<void>((r) => github.listen(0, '127.0.0.1', () => r()))
 })
 after(() => {
   github.closeAllConnections() // der Test „Keine Antwort" lässt eine Anfrage offen
   github.close()
 })
 
-const url = () => `http://127.0.0.1:${github.address().port}/repos/speedone/mietfuchs/releases/latest`
-const serve = (body, status = 200, headers = {}) => (req, res) => {
+const url = () => {
+  // address() kennt auch den Unix-Socket (eine Zeichenkette) und den nicht lauschenden Server
+  // (null). Hier ist weder das eine noch das andere möglich, und wäre es doch, hilft die Ansage.
+  const address = github.address()
+  if (address === null || typeof address === 'string') assert.fail('der nachgebaute GitHub-Server lauscht nicht auf einem Port')
+  return `http://127.0.0.1:${address.port}/repos/speedone/mietfuchs/releases/latest`
+}
+const serve = (body: unknown, status = 200, headers: http.OutgoingHttpHeaders = {}): http.RequestListener => (req, res) => {
   res.writeHead(status, { 'content-type': 'application/json', ...headers })
   res.end(typeof body === 'string' ? body : JSON.stringify(body))
 }
 
-function makeChecker(extra = {}) {
+type CheckerOptions = Parameters<typeof createUpdateChecker>[0]
+
+function makeChecker(extra: Partial<CheckerOptions> = {}) {
   return createUpdateChecker({
     url: url(), currentVersion: '0.4.0', mode: 'binary', platform: 'win32', arch: 'x64', ...extra,
   })
@@ -144,7 +172,8 @@ test('Gleiche Version: kein Hinweis', async () => {
 
 test('Außerhalb der Programmdatei gibt es keinen Download, nur die Release-Seite', async () => {
   respond = serve(releaseWith('v0.5.0'))
-  for (const mode of ['docker', 'npm']) {
+  const modes: UpdateStatus['mode'][] = ['docker', 'npm']
+  for (const mode of modes) {
     const s = await makeChecker({ mode }).check({ consent: 'on' })
     assert.equal(s.available, true)
     assert.equal(s.mode, mode)
@@ -205,8 +234,7 @@ test('Fehler bei GitHub bleiben still: kein Absturz, kein Hinweis', async () => 
     respond = failure
     const s = await makeChecker().check({ consent: 'on', force: true })
     assert.equal(s.available, false)
-    assert.equal(typeof s.error, 'string')
-    assert.ok(s.error.length > 0)
+    assert.ok(errorOf(s).length > 0)
   }
 })
 
@@ -214,7 +242,7 @@ test('Antwort ohne Nutzdaten (kein Objekt): klare Meldung statt eines kryptische
   respond = serve('null') // gültiges JSON, aber kein Objekt mit den erwarteten Feldern
   const s = await makeChecker().check({ consent: 'on', force: true })
   assert.equal(s.available, false)
-  assert.match(s.error, /kein Objekt/)
+  assert.match(errorOf(s), /kein Objekt/)
 })
 
 // GitHub-Vorgabe: nach Fehlern nicht sofort erneut fragen, bei einem Rate-Limit bis zur
@@ -249,7 +277,7 @@ test('Rate-Limit: gewartet wird bis x-ratelimit-reset, auch bei „Jetzt prüfen
   requests.length = 0
   const p = makeChecker({ now: () => clock })
   const s = await p.check({ consent: 'on' })
-  assert.match(s.error, /zu viele Anfragen/)
+  assert.match(errorOf(s), /zu viele Anfragen/)
   await p.check({ consent: 'on', force: true })
   clock += 90 * MINUTE
   await p.check({ consent: 'on', force: true })

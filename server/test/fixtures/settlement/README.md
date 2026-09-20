@@ -9,7 +9,7 @@ Ergebnis:
 | `expected.json` | erwartetes Ergebnis, cent-genau, **von Hand hergeleitet, nicht aus dem Code abgelesen** |
 | `README.md` | die Handrechnung mit fachlicher Begründung |
 
-`settlement-golden.test.js` rechnet jedes Fixture und vergleicht ohne Toleranz: Anteile,
+`settlement-golden.test.ts` rechnet jedes Fixture und vergleicht ohne Toleranz: Anteile,
 Vermieter- und Eigenanteil, Vorauszahlungen, Salden, §35a, Verbrauch und Warnungen im Wortlaut.
 Nicht verglichen werden reine Anzeigetexte wie `basisText`.
 
