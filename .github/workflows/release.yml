@@ -8,7 +8,8 @@ name: Release-Binaries
 # System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
 # (gescannte PDFs, #21) fiel sonst erst bei Nutzern auf.
 #
-# Die volle Liste der Distributionen und Pakete lässt ein Pull Request aus (#52): Er prüft davon
+# Hier stehen auch die beiden Prüfungen, die ein Pull Request auslässt (#52): die lange
+# KI-Antwort unter Node und die volle Liste der Distributionen und Pakete. Ein PR prüft davon
 # eine Auswahl, der Tag alles. Wer die volle Breite schon vor dem Merge will, hängt dem PR das
 # Label „volle-pruefung“ an; das startet diesen Workflow neu, dann mit allem.
 on:
@@ -420,10 +421,45 @@ jobs:
               throw new Error("Mietfuchs läuft nach dem Beenden weiter");
             })()'
 
-  # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind.
+  # Eine KI-Auswertung auf dem Prozessor kann länger als fünf Minuten dauern. fetch unter Node und
+  # Firefox brechen nach 300 Sekunden ohne Antwort-Header ab (#17). Das nachgebaute Ollama
+  # schweigt hier 320 Sekunden; die Auswertung muss trotzdem ankommen. Geprüft wird der Start aus
+  # dem Quellcode, also der Weg von npm und Docker-Image; die Programmdateien prüft derselbe
+  # Lauf oben je Betriebssystem mit `slow_ai`.
+  #
+  # Der Job stand bis #52 in ci.yml und lief bei jedem PR. Er kostete dort knapp sieben von neun
+  # Minuten Wartezeit, hängt aber an der Laufzeit und der HTTP-Schicht statt am Fachcode und
+  # ändert sich damit erst mit einer neuen Node- oder Bun-Version. Deshalb läuft er jetzt nur
+  # noch beim Tag, beim Start von Hand und an einem PR mit dem Label „volle-pruefung“, also
+  # genau dann, wenn auch die volle Matrix läuft.
+  slow-ai-answer:
+    name: Lange KI-Antwort (Node)
+    needs: umfang
+    if: needs.umfang.outputs.vollstaendig == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: '**/package-lock.json'
+      - run: npm install
+      - run: npm run build
+      - name: Auswertung mit 320 Sekunden Wartezeit
+        run: |
+          NKA_DATA_DIR="$RUNNER_TEMP/daten" NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
+            node server/src/index.ts > server.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
+          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320
+
+  # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind. Beim Tag läuft
+  # auch die lange KI-Antwort, sie gehört deshalb in die Liste: Was hier nicht grün ist, wird
+  # nicht ans Release gehängt.
   veroeffentlichen:
     name: Ans Release anhängen
-    needs: [pruefen, distributionen, pakete]
+    needs: [pruefen, distributionen, pakete, slow-ai-answer]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     permissions:
