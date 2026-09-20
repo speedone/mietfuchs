@@ -24,9 +24,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   brauchbar waren. Jetzt steht die Position ganz normal da, nur mit leerem Betragsfeld zum
   Ausfüllen; in der Schnellerfassung zeigt die Ampel sie rot mit dem Hinweis „Betrag fehlt oder
   ist 0“. Ebenso wird ein Betrag jetzt auch dann übernommen, wenn das Modell ihn als Text
-  geschrieben hat („12,50“ statt 12.5), so wie es beim Zählerstand schon war. Betroffen waren
-  vor allem kleine Modelle auf dem eigenen Rechner, die sich nicht streng an die Vorgabe
-  halten. ([#63](https://github.com/speedone/mietfuchs/issues/63))
+  geschrieben hat („12,50“ statt 12.5) oder die Einheit dazugeschrieben hat („12,50 €“); beim
+  Zählerstand gilt dasselbe für „1234 m³“ und „4711 kWh“. Betroffen waren vor allem kleine
+  Modelle auf dem eigenen Rechner, die sich nicht streng an die Vorgabe halten.
+  ([#63](https://github.com/speedone/mietfuchs/issues/63))
 - **Ein API-Schlüssel konnte im Klartext in einer Fehlermeldung auf dem Bildschirm stehen.**
   Antwortete ein KI-Dienst mit etwas, das Mietfuchs nicht als Auswertung lesen konnte, zeigte
   die Meldung die Antwort im Wortlaut. Gab der Dienst dabei die eigene Anfrage zurück, wie es

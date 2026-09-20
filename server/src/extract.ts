@@ -94,12 +94,33 @@ const GROUPED_COMMA = /^\d{1,3}(?:,\d{3})+$/ // 1,234,567
 const DECIMAL_COMMA = /^\d+(?:\.\d{3})*,\d+$/ // 1234,5 · 1.234,56
 const DECIMAL_DOT = /^\d+(?:,\d{3})*\.\d+$/ // 1234.5 · 1,234.56
 
+// Einheiten, die ein Modell hinter die Zahl schreibt („12,50 €“, „1234 m³“). Sie machen die Zahl
+// nicht mehrdeutig, und in der Rückfallstufe „nur Prompt“ ist genau diese Schreibweise
+// naheliegend, bei einem Betrag noch mehr als bei einem Zählerstand. Im Browser liest parseEuro
+// solche Angaben seit jeher, hier sollen sie deshalb auch ankommen.
+//
+// Die Liste ist mit Absicht kurz und soll es bleiben. Sie nennt das Eurozeichen und EUR für
+// Beträge sowie die Einheiten, die bei den Zählern dieses Werkzeugs überhaupt vorkommen
+// (Kubikmeter für Wasser, Kilowattstunden für Strom und Wärme), je in den Schreibweisen, die ein
+// Modell dafür benutzt. Was hier nicht steht, bleibt ungelesen. Eine allgemeine Regel, also
+// „alles abschneiden, was keine Ziffer ist“, wäre etwas anderes: Sie würde auch „ca. 1234“ oder
+// „12 oder 13“ zu einer Zahl machen. Das ist keine Einheit, sondern eine Unsicherheit des
+// Modells, und die soll der Mensch sehen.
+const UNITS = ['€', 'eur', 'm³', 'm3', 'cbm', 'kwh']
+
+// Eine bekannte Einheit am Ende abtrennen, sonst den Wert unverändert lassen
+function withoutUnit(body: string): string {
+  const lower = body.toLowerCase()
+  const unit = UNITS.find((u) => lower.length > u.length && lower.endsWith(u))
+  return unit ? body.slice(0, body.length - unit.length) : body
+}
+
 export function numberFromModel(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null
   if (typeof value !== 'string') return null
   const text = value.replace(/[\s  ]/g, '') // manche Modelle gruppieren mit Leerzeichen
   const negative = text.startsWith('-')
-  const body = text.replace(/^[+-]/, '')
+  const body = withoutUnit(text.replace(/^[+-]/, ''))
   if (!/^[\d.,]+$/.test(body) || AMBIGUOUS.test(body)) return null
   let digits: string | null = null
   if (PLAIN.test(body)) digits = body
