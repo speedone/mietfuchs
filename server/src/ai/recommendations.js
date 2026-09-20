@@ -6,7 +6,7 @@
 // oder bei einer unbrauchbaren Datei gilt die mitgelieferte Kopie.
 //
 // Empfehlungen belegen nur vor: Jedes andere Modell lässt sich weiterhin eintragen und laden.
-import { readText, openRequest } from './http.js'
+import { readText, openRequest } from './http.ts'
 
 // Muss mit ki-modelle.json übereinstimmen, ein Test vergleicht beide. Die Kopie steht hier im
 // Code, weil die Programmdatei (Bun) keine Dateien neben sich lesen kann.
