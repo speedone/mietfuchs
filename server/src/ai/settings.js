@@ -15,7 +15,7 @@
 // Modell, solange Ollama der Standard-Anbieter ist. Eine ältere Version liest sie nach einem
 // Downgrade weiter, und ein Tab von vor dem Update schickt nur sie.
 import net from 'node:net'
-import { presetById, defaultPresetFor } from './presets.js'
+import { presetById, defaultPresetFor } from './presets.ts'
 
 export const SLOTS = ['text', 'images']
 const PROVIDERS = ['ollama', 'openai']

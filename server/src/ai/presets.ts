@@ -13,7 +13,13 @@
 // - jsonObject: false, wenn der Dienst `response_format: json_object` ablehnt (LM Studio)
 // - keyUrl: wo man einen Schlüssel bekommt, privacyUrl: Bedingungen zur Datenverarbeitung,
 //   notice: ein Hinweis, der vor der Bestätigung eines externen Dienstes erscheint
-export const PRESETS = [
+import type { AiPreset } from '../../../shared/types.ts'
+
+// Ein Eintrag in PRESETS nennt nur, was von den Standardwerten (DEFAULTS) abweicht. presetById
+// füllt den Rest auf.
+type PresetSeed = Pick<AiPreset, 'id' | 'provider' | 'label' | 'url' | 'key'> & Partial<Omit<AiPreset, 'id' | 'provider' | 'label' | 'url' | 'key'>>
+
+export const PRESETS: PresetSeed[] = [
   { id: 'ollama-local', provider: 'ollama', label: 'Ollama auf diesem Rechner', url: 'http://localhost:11434', key: 'none' },
   { id: 'ollama-remote', provider: 'ollama', label: 'Ollama auf einem anderen Rechner', url: '', key: 'optional' },
   {
@@ -40,13 +46,16 @@ export const PRESETS = [
   { id: 'openai-compatible', provider: 'openai', label: 'Eigener OpenAI-kompatibler Dienst', url: '', key: 'optional' },
 ]
 
-const DEFAULTS = { tokenField: 'max_tokens', temperature: true, jsonObject: true, keyUrl: null, privacyUrl: null, notice: null }
+const DEFAULTS: Omit<AiPreset, 'id' | 'provider' | 'label' | 'url' | 'key'> = {
+  tokenField: 'max_tokens', temperature: true, jsonObject: true, keyUrl: null, privacyUrl: null, notice: null,
+}
 
-// Vorlage mit allen Feldern, fehlende mit Standardwerten; null bei unbekannter Kennung
-export function presetById(id) {
+// Vorlage mit allen Feldern, fehlende mit Standardwerten; null bei unbekannter Kennung. `id`
+// kommt teils ungeprüft aus der Oberfläche, deshalb bewusst ohne Typvorgabe.
+export function presetById(id: unknown): AiPreset | null {
   const preset = PRESETS.find((p) => p.id === id)
   return preset ? { ...DEFAULTS, ...preset } : null
 }
 
 // Die erste Vorlage eines Anbieters, wenn eine gespeicherte Vorlage unbrauchbar ist
-export const defaultPresetFor = (provider) => PRESETS.find((p) => p.provider === provider)?.id ?? null
+export const defaultPresetFor = (provider: unknown): string | null => PRESETS.find((p) => p.provider === provider)?.id ?? null
