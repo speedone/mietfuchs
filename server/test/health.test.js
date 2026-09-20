@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { healthReport } from '../src/health.js'
+import { healthReport } from '../src/health.ts'
 
 // Ein Datenordner, wie der Server ihn vorfindet
 function makeDataDir(contents = {}) {
