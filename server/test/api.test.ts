@@ -19,6 +19,7 @@ import type {
   MeterReadingExtraction, OllamaStatus, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
+import type { MigratedSettings } from '../src/ai/settings.ts'
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -981,9 +982,16 @@ async function withEnv(env: NodeJS.ProcessEnv, fn: (s: Server) => Promise<void>)
 }
 
 // Die Einstellungen, wie sie wirklich in der db.json stehen. `ai` ergänzt der Server beim
-// Laden, es steht also auch in der Datei; was die Oberfläche nur anzeigt (fixedByEnv, aiKeys,
-// aiExternal), darf dort gerade nicht stehen — genau das prüfen mehrere Tests.
-const storedSettings = (s: { dataDir: string }): ClientSettings => storedDb(s).settings as ClientSettings
+// Laden, es steht also auch in der Datei — fehlt es dort, ist genau das der Befund. Was die
+// Oberfläche nur anzeigt (fixedByEnv, aiKeys, aiExternal), darf dort gerade nicht stehen, und
+// deshalb ist hier bewusst nicht ClientSettings der Typ: Diese Felder bleiben optional, mehrere
+// Tests prüfen ihr Fehlen.
+const storedSettings = (s: { dataDir: string }): MigratedSettings => {
+  const settings = storedDb(s).settings
+  const { ai } = settings
+  if (!ai) assert.fail('in der db.json fehlen die KI-Einstellungen')
+  return { ...settings, ai }
+}
 
 test('Ollama: NKA_OLLAMA_URL und NKA_OLLAMA_MODEL gelten und sind als fest markiert', async () => {
   await withEnv({ NKA_OLLAMA_URL: 'http://ki.intern:11434', NKA_OLLAMA_MODEL: 'env-modell:4b' }, async (s) => {
@@ -1219,8 +1227,9 @@ async function uploadStreaming(s: Server, route: string, { text, signal }: { tex
   const res = await fetch(`${s.base}${route}`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' }, signal })
   return res
 }
+const parseLine = (line: string): StreamLine => JSON.parse(line)
 const linesOf = async (res: Response): Promise<StreamLine[]> =>
-  (await res.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l) as StreamLine)
+  (await res.text()).split('\n').filter(Boolean).map(parseLine)
 
 test('Strom: Fortschritt je Schritt und am Ende das Ergebnis wie bisher', async () => {
   await withOllama(async (s) => {
@@ -2467,7 +2476,7 @@ async function pullAsStream(s: Server, { model = 'neu:4b', requestId, slot }: { 
     body: JSON.stringify({ model, requestId, slot }),
   })
   const text = await res.text()
-  return { status: res.status, type: res.headers.get('content-type') ?? '', lines: text.split('\n').filter(Boolean).map((l) => JSON.parse(l) as StreamLine) }
+  return { status: res.status, type: res.headers.get('content-type') ?? '', lines: text.split('\n').filter(Boolean).map(parseLine) }
 }
 
 test('Modell laden: der Fortschritt kommt als Strom, am Ende meldet Mietfuchs Erfolg', async () => {
