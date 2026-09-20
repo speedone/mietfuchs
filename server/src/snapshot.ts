@@ -40,7 +40,16 @@ export type SnapshotTenancy = Pick<
   | 'prepayments'
   | 'prepaymentOverrides'
   | 'baseRents'
->
+> & {
+  // Das Altformat der Vorauszahlung: ein fester Monatsbetrag statt einer Staffel. Im
+  // Datenmodell gibt es das Feld nicht mehr, `load()` in store.ts wandelt es bei jedem
+  // Einlesen um und löscht es. `computePrepaymentCents` liest es trotzdem weiterhin, und
+  // deshalb steht es hier: Der Schnappschuss ist der Vertrag zwischen Ablage und Berechnung,
+  // und was die Berechnung liest, muss darin vorkommen. Sonst baut ein späteres Repository
+  // seine Mietverhältnisse ohne dieses Feld zusammen, der Übersetzer schweigt dazu, und ein
+  // Bestand, der nie durch die Migration gelaufen ist, steht plötzlich ohne Vorauszahlung da.
+  prepaymentMonthlyCents?: number
+}
 
 // Gelesen werden Kennung, Jahr, Kostenart, Beschreibung, Betrag, Schlüssel samt seiner Angaben
 // und der Lohnanteil nach §35a. Der Rechnungssteller und die Belegdatei fehlen: Sie stehen auf
@@ -116,23 +125,23 @@ export type Snapshot = {
 //   Wohnungen, Zähler  tragen gar kein Jahr. Sie gehören zum Haus, nicht zur Abrechnung.
 export function snapshotFromDb(db: Db, year: number): Snapshot {
   // Die Datensätze werden durchgereicht, nicht Feld für Feld neu gebaut. Der Schnappschuss ist
-  // eine Sicht, keine Kopie; die Berechnung ändert nichts an ihm. Und sie liest an einer Stelle
-  // bewusst ein Feld des Altformats, das der heutige Typ nicht mehr kennt
-  // (`prepaymentMonthlyCents`, siehe computePrepaymentCents in calc.ts). Ein Neuaufbau ließe
-  // es verschwinden und setzte die Vorauszahlung eines ungewanderten Bestands auf 0.
-  const closed = (db.closedSettlements ?? []).find((c) => c.year === year)
+  // eine Sicht, keine Kopie; die Berechnung ändert nichts an ihm.
+  //
+  // Hier steht bewusst kein `?? []` an den Sammlungen. Der Typ verlangt sie, und wenn eine
+  // trotzdem `null` ist (in der Datei steht `"costItems": null`, siehe #59), soll es krachen.
+  // Ein aufgefangenes `null` ergäbe eine leere Abrechnung ohne Kosten, ohne Zeilen und ohne
+  // Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig
+  // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
+  // calc.test.ts hält das fest.
+  const closed = db.closedSettlements.find((c) => c.year === year)
   return {
     year,
-    // Das `?? []` an jeder Sammlung: Die Typen sagen Pflichtfeld, eine von Hand bearbeitete
-    // oder sehr alte db.json kann eine Sammlung trotzdem nicht haben. Bisher stand diese
-    // Absicherung verstreut und uneinheitlich in der Berechnung; sie gehört auf diese Seite der
-    // Grenze, denn sie betrifft die Ablage und nicht das Fachliche.
-    units: db.units ?? [],
-    tenancies: db.tenancies ?? [],
-    costItems: (db.costItems ?? []).filter((c) => c.year === year),
-    meters: db.meters ?? [],
-    readings: db.readings ?? [],
-    payments: db.payments ?? [],
+    units: db.units,
+    tenancies: db.tenancies,
+    costItems: db.costItems.filter((c) => c.year === year),
+    meters: db.meters,
+    readings: db.readings,
+    payments: db.payments,
     // Ein Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch nicht. Der Rückfall auf 0
     // stand bisher in der Steuerübersicht; er gehört hierher, weil er die Gestalt alter
     // gespeicherter Daten betrifft.

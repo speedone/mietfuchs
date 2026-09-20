@@ -103,6 +103,12 @@ test('overlapDays: volles Jahr, Teiljahr, kein Überlapp', () => {
 // Abrechnung: Wer zu viel wegschneidet, bekommt kein Fehlerbild, sondern eine stille
 // Falschrechnung. Diese Tests halten die Regel fest, damit sie nicht wieder verhandelt wird.
 
+// Die Sammlungen des Schnappschusses sind Mengen: In welcher Reihenfolge die Datensätze in der
+// Datei stehen, hat keine fachliche Bedeutung, und der Schnappschuss sagt dazu nichts zu. Die
+// Tests unten vergleichen deshalb sortiert; sonst schriebe der erste Umbau der Ablage über
+// einen roten Test hinweg, der nie etwas Fachliches gemeint hat.
+const sorted = (values: string[]): string[] => values.slice().sort()
+
 // Eine abgeschlossene (eingefrorene) Abrechnung, wie sie in der Datei steht. Für diese Tests
 // zählt daran nur das Jahr und der Eigenanteil; der Rest sind die Pflichtfelder des Modells.
 const closedSettlement = (year: number, selfUsedShareCents: number): ClosedSettlement => ({
@@ -132,7 +138,7 @@ test('Schnappschuss: Ablesungen bleiben vollständig, auch die vor dem Abrechnun
   const snap = snapshotFromDb(db, 2025)
   // Der Anfangsstand des Jahres ist die Ablesung vom 31. Dezember des Vorjahres. Ohne sie gibt
   // es kein Verbrauchssegment, und der Jahresverbrauch wäre still 0 statt 100.
-  assert.deepEqual(snap.readings.map((r) => r.date), ['2024-12-31', '2025-12-31', '2026-12-31'])
+  assert.deepEqual(sorted(snap.readings.map((r) => r.date)), ['2024-12-31', '2025-12-31', '2026-12-31'])
   assert.equal(consumptionInPeriod(snap.readings, '2025-01-01', '2025-12-31'), 100)
 })
 
@@ -164,12 +170,12 @@ test('Schnappschuss: Wohnungen, Zähler, Mietverhältnisse und Zahlungen bleiben
   )
   const snap = snapshotFromDb(db, 2025)
   // Wohnungen und Zähler tragen kein Jahr: sie gehören zum Haus, nicht zur Abrechnung.
-  assert.deepEqual(snap.units.map((u) => u.id), ['u1', 'u2', 'u3'])
-  assert.deepEqual(snap.meters.map((m) => m.id), ['mh'])
+  assert.deepEqual(sorted(snap.units.map((u) => u.id)), ['u1', 'u2', 'u3'])
+  assert.deepEqual(sorted(snap.meters.map((m) => m.id)), ['mh'])
   // Ob ein Mietverhältnis ins Jahr fällt, entscheidet overlapDays in der Berechnung, und ob
   // eine Zahlung dazuzählt, entscheidet das Mietkonto. Beides bleibt dort, wo es geprüft ist.
-  assert.deepEqual(snap.tenancies.map((t) => t.id), ['t2', 't3', 't0'])
-  assert.deepEqual(snap.payments.map((p) => p.date), ['2024-12-05', '2025-03-05'])
+  assert.deepEqual(sorted(snap.tenancies.map((t) => t.id)), ['t0', 't2', 't3'])
+  assert.deepEqual(sorted(snap.payments.map((p) => p.date)), ['2024-12-05', '2025-03-05'])
 })
 
 test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum Jahr', () => {
@@ -181,9 +187,32 @@ test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum
   db.closedSettlements.push(closedSettlement(2024, 11100), closedSettlement(2025, 22200))
   const snap = snapshotFromDb(db, 2025)
   // Beide tragen ihr Jahr als Feld. Eingrenzen heißt hier lesen, was dasteht, nicht herleiten.
-  assert.deepEqual(snap.costItems.map((c) => c.id), ['c25'])
+  assert.deepEqual(sorted(snap.costItems.map((c) => c.id)), ['c25'])
   assert.deepEqual(snap.closedSettlement, { selfUsedShareCents: 22200 })
-  assert.equal(snapshotFromDb(db, 2023).closedSettlement, null)
+  assert.strictEqual(snapshotFromDb(db, 2023).closedSettlement, null)
+})
+
+// Ein Datenbestand so, wie er aus der Datei kommt: ungeprüft. Genau so betritt er den Prozess,
+// denn store.ts legt den Dateiinhalt über die Vorgabewerte, und ein `null` in der Datei gewinnt
+// dabei (#59). JSON.parse ist hier der ehrliche Weg; eine Zusicherung würde behaupten, der
+// Inhalt entspreche dem Modell, und genau das tut er im folgenden Test nicht.
+const fromFile = (content: unknown): Db => JSON.parse(JSON.stringify(content))
+
+test('Schnappschuss: eine Sammlung als null bricht ab, statt stillschweigend alles zu erstatten', () => {
+  // Steht in der db.json `"costItems": null`, warf die Berechnung bisher, und der Nutzer sah
+  // einen Fehler. Fängt der Schnappschuss das mit einem `?? []` ab, kommt stattdessen eine
+  // leere Abrechnung heraus: keine Kosten, keine Zeilen, und jeder Mieter bekommt seine
+  // Vorauszahlung in voller Höhe erstattet. Das sieht stimmig aus und ist falsch, und das ist
+  // der schlimmere der beiden Ausgänge. Der Test bleibt gültig, wenn die Prüfung aus #59 die
+  // Ursache beseitigt: Er baut den kaputten Bestand selbst und fragt nicht, wie er entstand.
+  for (const collection of ['units', 'tenancies', 'costItems']) {
+    const db = fromFile({ ...makeDb(), [collection]: null })
+    assert.throws(
+      () => computeSettlement(snapshotFromDb(db, 2025)),
+      TypeError,
+      `„${collection}": null blieb unbemerkt, die Abrechnung wäre leer statt fehlerhaft`,
+    )
+  }
 })
 
 test('Schnappschuss: das Altformat der Vorauszahlung überlebt die Grenze', () => {

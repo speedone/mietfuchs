@@ -272,7 +272,10 @@ Staffeln für Personenzahl, Vorauszahlung und Kaltmiete gelten „ab diesem Datu
 Eintrag, der Jahre alt sein kann. Wer dort filtert, bekommt keinen Fehler, sondern eine stille
 Falschrechnung. Die Begründung je Sammlung steht in snapshot.ts, die Tests dazu in calc.test.ts.
 Der Schnappschuss reicht die Datensätze durch und kopiert sie nicht; die Berechnung ändert
-nichts an ihm.
+nichts an ihm. Aufgefangen wird dort nichts: Ist eine Sammlung in der Datei `null` (#59), soll
+es krachen. Ein `?? []` an der Grenze ergäbe eine leere Abrechnung ohne Kosten und ohne
+Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig aus
+und wäre falsch, und das ist der schlimmere der beiden Ausgänge.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
