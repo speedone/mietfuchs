@@ -2083,6 +2083,20 @@ test('Einstellungen: aiExternal sagt je Platz, ob die Adresse aus dem Haus zeigt
   })
 })
 
+test('Einstellungen: ein Rumpf, der kein Objekt ist, ändert nichts', async () => {
+  // express.json() lässt auch eine Liste durch. Deren Indizes landeten als Schlüssel „0“, „1“ …
+  // in den Einstellungen, und die db.json trug sie von da an mit.
+  const res = await fetch(`${srv.base}/api/settings`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['unsinn', 'noch mehr Unsinn']),
+  })
+  assert.equal(res.status, 200)
+  assert.equal((await res.json())['0'], undefined)
+  assert.equal((await srv.api('/api/settings'))['0'], undefined)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8')).settings['0'], undefined)
+})
+
 // ---------- Befunde aus der Codeprüfung ----------
 
 test('Schlüssel: auch ein Fehler mitten im Strom zeigt ihn nicht', async () => {
