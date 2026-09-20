@@ -39,7 +39,8 @@ type HealthReport = { status: string, version: string, app: string, checks: { da
 
 // Die Antwort von /api/upload, /api/extract und /api/intake. Welche Felder gesetzt sind, hängt
 // vom Status und der Belegart ab; die Tests prüfen erst den Status und lesen dann das Passende.
-type AiStat = { step: string, promptTokens: number, outputTokens: number, seconds: number, loadSeconds: number }
+// Jede Kennzahl ist null, wenn der Anbieter sie nicht meldet (ProviderStats in ai/ollama.ts).
+type AiStat = { step: string, promptTokens: number | null, outputTokens: number | null, seconds: number | null, loadSeconds: number | null }
 type UploadBody = {
   file?: string
   kind?: string
@@ -587,9 +588,10 @@ test('Versanddatum: ein ungültiges Datum friert die Abrechnung gar nicht erst e
 // hinausgeht.
 
 const serverVersion: string = JSON.parse(fs.readFileSync(path.join(serverRoot, 'package.json'), 'utf8')).version
-const releaseJson = fs
-  .readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')
-  .replaceAll(JSON.parse(fs.readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')).tag_name as string, 'v9.9.9')
+// Die abgespeicherte echte Antwort der Releases-API, umgeschrieben auf eine höhere Version,
+// damit der Hinweis anspringt.
+const releaseFixture = fs.readFileSync(path.join(serverRoot, 'test', 'fixtures', 'github-release-latest.json'), 'utf8')
+const releaseJson = releaseFixture.replaceAll(JSON.parse(releaseFixture).tag_name as string, 'v9.9.9')
 
 async function fakeGitHub() {
   const http = await import('node:http')

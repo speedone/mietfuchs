@@ -451,9 +451,12 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.ts die
   bestehende Konvention beibehalten und gegen [server/test/calc.test.ts](server/test/calc.test.ts)
   prüfen.
-- **Importe tragen die Endung `.ts`** (`import { load } from './store.ts'`). Node führt die
-  Dateien unmittelbar aus und löst den Pfad auf, wie er dasteht; eine Endung `.js` oder gar
-  keine zeigt ins Leere. Der Übersetzer erlaubt das über `allowImportingTsExtensions`.
+- **Im Server tragen Importe die Endung `.ts`** (`import { load } from './store.ts'`). Node
+  führt die Dateien unmittelbar aus und löst den Pfad auf, wie er dasteht; eine Endung `.js`
+  oder gar keine zeigt ins Leere. Der Übersetzer erlaubt das über `allowImportingTsExtensions`.
+  Im Client gilt die Regel nicht, dort bündelt Vite: Seine Importe bleiben endungslos
+  (`from './types'`). Nur sein Import aus `shared/` trägt die Endung
+  (`from '../../shared/types.ts'`), weil dieselbe Datei auch der Server unmittelbar lädt.
 - **Reine Typimporte brauchen `import type`** (`verbatimModuleSyntax`). Sonst bliebe der Import
   beim Ausführen stehen und Node suchte nach einer Datei, die nur Typen enthält.
 - **Kein Konstrukt, das erst beim Übersetzen entsteht** (`erasableSyntaxOnly`): keine `enum`,
