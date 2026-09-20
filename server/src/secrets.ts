@@ -13,13 +13,14 @@
 // Gelesen wird die Umgebung einmal beim Start (`checkKeyEnvironment`).
 import fs from 'node:fs'
 import path from 'node:path'
+import type { AiKeyInfo, AiSlotName } from '../../shared/types.ts'
+import { SLOTS } from './ai/settings.ts'
 import { DATA_DIR } from './store.ts'
 
 // Die Rohdaten aus secrets.json: je Platz ein Schlüssel, aber ungeprüft, wie sie auf der
 // Platte stehen. Eine von Hand verdorbene Datei (siehe Tests dazu) darf den Start nicht stören.
 type StoredSecrets = Record<string, unknown>
 
-export const KEY_SLOTS = ['text', 'images']
 const FILE = path.join(DATA_DIR, 'secrets.json')
 const MAX_KEY_LENGTH = 4096
 const KEY_ENV = 'NKA_AI_API_KEY'
@@ -108,9 +109,9 @@ export function checkKeyEnvironment(): string | null {
 }
 
 // Name der Umgebungsvariable, die den Schlüssel dieses Platzes festlegt, sonst null
-export const envVariableFor = (slot: string): string | null => (slot === 'text' ? envKeyState().variable : null)
+const envVariableFor = (slot: AiSlotName): string | null => (slot === 'text' ? envKeyState().variable : null)
 
-export function getKey(slot: string): string {
+export function getKey(slot: AiSlotName): string {
   if (envVariableFor(slot)) return envKeyState().key
   const stored = read()[slot]
   return typeof stored === 'string' ? stored : ''
@@ -124,33 +125,42 @@ const hintFor = (key: string): string => (key.length >= HINT_MIN_LENGTH ? `…${
 // Fehler mit Meldung für die Oberfläche und `status` für die Route
 const fail = (status: number, message: string) => Object.assign(new Error(message), { status })
 
-function assertChangeable(slot: string): void {
-  if (!KEY_SLOTS.includes(slot)) throw fail(400, 'Unbekannter Platz für den Schlüssel.')
+// Der Platz, wie die Route ihn mitbringt: eine Angabe von außen, also `unknown`. Welche es gibt,
+// sagt `AiSlotName` in shared/types.ts; die Liste dazu steht einmal im Server (SLOTS in
+// ai/settings.ts) und ist danach typisiert. Der gefundene Eintrag stammt aus dieser Liste und
+// ist deshalb ein Platzname — ohne Zusicherung und ohne ein Prädikat, dessen Rumpf niemand prüft.
+// Ein Platz, den es nicht gibt, bricht hier ab, statt eine Datei mit erfundenen Feldern anzulegen.
+function changeableSlot(value: unknown): AiSlotName {
+  const slot = SLOTS.find((known) => known === value)
+  if (!slot) throw fail(400, 'Unbekannter Platz für den Schlüssel.')
   const variable = envVariableFor(slot)
   if (variable) throw fail(409, `Der Schlüssel ist über die Umgebungsvariable ${variable} festgelegt.`)
+  return slot
 }
 
-export function setKey(slot: string, key: unknown): void {
-  assertChangeable(slot)
+export function setKey(requested: unknown, key: unknown): void {
+  const slot = changeableSlot(requested)
   const value = typeof key === 'string' ? key.trim() : ''
   if (!value) throw fail(400, 'Bitte einen Schlüssel eingeben.')
   if (!validFormat(value)) throw fail(400, 'Der Schlüssel hat ein ungültiges Format.')
   write({ ...read(), [slot]: value })
 }
 
-export function deleteKey(slot: string): void {
-  assertChangeable(slot)
-  const { [slot]: _removed, ...rest } = read()
+export function deleteKey(requested: unknown): void {
+  const { [changeableSlot(requested)]: _removed, ...rest } = read()
   write(rest)
 }
 
 // Was die Oberfläche erfahren darf: ob ein Schlüssel gesetzt ist, ein Hinweis zum
-// Wiedererkennen und welche Umgebungsvariable ihn gegebenenfalls festlegt
-export function keyInfo(): Record<string, { set: boolean, hint: string, fromEnv: string | null }> {
-  return Object.fromEntries(
-    KEY_SLOTS.map((slot) => {
-      const key = getKey(slot)
-      return [slot, { set: Boolean(key), hint: hintFor(key), fromEnv: envVariableFor(slot) }]
-    }),
-  )
+// Wiedererkennen und welche Umgebungsvariable ihn gegebenenfalls festlegt. Die Gestalt dazu
+// steht in shared/types.ts, damit Server und Oberfläche dasselbe meinen; die Plätze einzeln
+// aufzuzählen ist Absicht, denn so meldet der Übersetzer einen neuen Platz, statt ihn hier
+// stillschweigend wegzulassen.
+export function keyInfo(): Record<AiSlotName, AiKeyInfo> {
+  return { text: infoFor('text'), images: infoFor('images') }
+}
+
+function infoFor(slot: AiSlotName): AiKeyInfo {
+  const key = getKey(slot)
+  return { set: Boolean(key), hint: hintFor(key), fromEnv: envVariableFor(slot) }
 }
