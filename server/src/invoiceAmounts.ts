@@ -58,6 +58,11 @@ const toCents = (eur: unknown): number | null => (typeof eur === 'number' && Num
 const toEur = (cents: number): number => Math.round(cents) / 100
 // Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
 const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
+// Was noch als Umsatzsteuersatz durchgeht. Deutschland kennt 19 und 7 Prozent, das Ausland auch
+// höhere; alles darüber ist keine Steuer mehr, sondern ein Zeichen, dass etwas fehlt. Dieselbe
+// Schranke gilt für einen ausdrücklich genannten Satz und für den, der sich aus der Rechnung
+// ergibt, damit im Modul nicht zwei Vorstellungen von „plausibel“ stehen.
+const MAX_VAT_PERCENT = 30
 
 export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   const { positionsAreNet, vatRatePercent, labor35aTotalEur, ...result } = extraction ?? {}
@@ -71,15 +76,29 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   const readNet = netCents.filter((c) => c !== null)
   const allNetRead = readNet.length === netCents.length
   const netSum = readNet.reduce((a, b) => a + b, 0)
+  // Was der Abstand zwischen Positionssumme und Rechnungsbetrag als Umsatzsteuersatz bedeutete.
+  // Bei der Schornsteinfeger-Rechnung sind 85,60 zu 101,86 genau die 19 Prozent; fehlt eine
+  // Position, sind es 63,00 zu 101,86 und damit 62 Prozent, und die gibt es nicht.
+  const impliedVatPercent = netSum > 0 ? ((totalCents - netSum) / netSum) * 100 : 0
 
-  // 1. Netto → brutto. Nur, wenn jeder Betrag gelesen wurde: Fehlt einer, liegt die Summe der
-  // übrigen unter dem Rechnungsbetrag, und die Bedingung griffe erst recht. Verteilt würde dann
-  // der ganze Rechnungsbetrag auf die gelesenen Positionen, und das Ergebnis ist das
-  // gefährlichste, das es hier gibt: Die Summe passt zum Beleg, jede einzelne Position ist aber
-  // zu hoch, und beim Prüfen fällt nichts auf. Lieber bleiben die Positionen netto stehen; die
-  // Schnellerfassung meldet die Abweichung zur Rechnungssumme ohnehin (invoiceSumCheck).
-  if (positionsAreNet === true && allNetRead && positions.length > 0 && netSum > 0 && totalCents > 0 && netSum < totalCents - tolerance(totalCents)) {
-    const rate = typeof vatRatePercent === 'number' && Number.isFinite(vatRatePercent) && vatRatePercent > 0 && vatRatePercent <= 30
+  // 1. Netto → brutto. Zwei Bedingungen sichern, dass die Positionen wirklich die ganze Rechnung
+  // beschreiben. Erstens muss jeder Betrag gelesen sein. Zweitens muss der Abstand zum
+  // Rechnungsbetrag wie eine Umsatzsteuer aussehen: Fehlt ein Betrag, ist er viel größer, als
+  // eine Steuer erklären kann. Der zweite Teil fängt die beiden Wege, auf denen das Modell einen
+  // Betrag nicht als Lücke schreibt — das Schema verlangt eine Pflichtzahl, also schreibt es eher
+  // 0, oder es lässt die Position ganz weg.
+  //
+  // Ohne diese Sicherung verteilt die Hochrechnung den ganzen Rechnungsbetrag auf die Positionen,
+  // die übrig sind, und das Ergebnis ist das gefährlichste, das hier entstehen kann: Die Summe
+  // passt zum Beleg, jede einzelne Position ist aber zu hoch, und beim Prüfen fällt nichts auf.
+  // Wird nicht gerechnet, bleiben die Positionen so stehen, wie sie auf der Rechnung stehen, und
+  // stimmen damit mit dem Beleg überein, den der Nutzer vor sich hat; in der Schnellerfassung
+  // meldet zusätzlich invoiceSumCheck, dass die Positionssumme nicht zur Rechnungssumme passt.
+  if (
+    positionsAreNet === true && allNetRead && positions.length > 0 && netSum > 0 && totalCents > 0
+    && netSum < totalCents - tolerance(totalCents) && impliedVatPercent <= MAX_VAT_PERCENT
+  ) {
+    const rate = typeof vatRatePercent === 'number' && Number.isFinite(vatRatePercent) && vatRatePercent > 0 && vatRatePercent <= MAX_VAT_PERCENT
       ? vatRatePercent
       : null
     const raws = rate ? readNet.map((c) => c * (1 + rate / 100)) : readNet.map((c) => (c * totalCents) / netSum)
@@ -88,17 +107,24 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
     result.amountsAdjusted = 'netto'
   }
 
-  // 2. Lohnanteil aus dem Gesamtbetrag. Hier genügt ein ungelesener Betrag nicht als Grund,
-  // nichts zu tun: Verteilt wird der ausgewiesene Lohnanteil, und die Summe über die Rechnung
-  // bleibt richtig, auch wenn eine Position ohne Betrag nichts davon abbekommt. Erfunden wird
-  // also nichts, es verschiebt sich nur die Zuordnung, und die steht als Vorschlag je Position
-  // sichtbar da.
+  // 2. Lohnanteil aus dem Gesamtbetrag, nach derselben Linie. Der Betrag gehört zur ganzen
+  // Rechnung; fehlt eine Position, bekämen die übrigen deren Anteil mit dazu. Übernommen wird
+  // eine Position ohne Betrag nicht (sie ist in der Oberfläche nicht einmal vorgehakt), am Ende
+  // stünde also zu viel §35a in der Steuererklärung, und das ist bares Geld. Deshalb wird auch
+  // hier nur verteilt, wenn jeder Betrag gelesen ist und die Positionen den Rechnungsbetrag
+  // abdecken. Ohne bekannten Rechnungsbetrag lässt sich das nicht prüfen; dann bleibt es beim
+  // Verteilen, denn die Summe ist die einzige Angabe, gegen die man prüfen könnte.
   const laborTotal = toCents(labor35aTotalEur) ?? 0
   const hasOwnLabor = positions.some((p) => (toCents(p.labor35aEur) ?? 0) > 0)
-  const grossCents = positions.map((p) => toCents(p.amountEur) ?? 0)
-  const grossSum = grossCents.reduce((a, b) => a + b, 0)
-  if (laborTotal > 0 && !hasOwnLabor && grossSum > 0 && laborTotal <= grossSum) {
-    const parts = largestRemainder(laborTotal, grossCents.map((c) => (c * laborTotal) / grossSum), keys)
+  const grossCents = positions.map((p) => toCents(p.amountEur))
+  const readGross = grossCents.filter((c) => c !== null)
+  const grossSum = readGross.reduce((a, b) => a + b, 0)
+  const positionsCoverInvoice = totalCents <= 0 || Math.abs(grossSum - totalCents) <= tolerance(totalCents)
+  if (
+    laborTotal > 0 && !hasOwnLabor && readGross.length === grossCents.length && positionsCoverInvoice
+    && grossSum > 0 && laborTotal <= grossSum
+  ) {
+    const parts = largestRemainder(laborTotal, readGross.map((c) => (c * laborTotal) / grossSum), keys)
     positions.forEach((p, i) => { p.labor35aEur = toEur(parts[i]) })
     result.laborFromTotal = true
   }
