@@ -1,7 +1,7 @@
 /// <reference types="vitest/config" />
 // Nur eine Typ-Referenz (zur Laufzeit entfernt) — so bleibt `test` unten typgeprüft, ohne
 // dass der Produktionsbuild vitest auflösen müsste.
-import { defineConfig } from 'vite'
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
@@ -28,6 +28,10 @@ export default defineConfig({
     include: ['src/**/*.test.{ts,tsx}'],
   },
   server: {
+    // Ohne `workspaces`-Feld in der package.json endet Vites Suche am Projektordner, und ein
+    // Import aus ../shared käme im Dev-Server als 403 zurück. Der Produktivbuild ist nicht
+    // betroffen, dort bündelt Rollup die Datei ohnehin.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), '..'] },
     proxy: {
       // 127.0.0.1 statt localhost: Auf Windows löst "localhost" zuerst zu IPv6 (::1)
       // auf — dort kann eine WSL-Portweiterleitung (wslrelay) Port 3001 belegen und
