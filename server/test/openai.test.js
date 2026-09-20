@@ -109,7 +109,7 @@ test('Strom: Inhalt über Chunk-Grenzen hinweg, Kommentare, Kennzahlen und [DONE
     event({ choices: [], usage: { prompt_tokens: 100, completion_tokens: 7 } }),
     'data: [DONE]\n\n',
   )
-  const result = await readCompletionStream(stream, (p) => progress.push(p))
+  const result = await readCompletionStream(stream, null, (p) => progress.push(p))
   assert.equal(result.content, '{"a":1}')
   assert.equal(result.finishReason, 'stop')
   assert.deepEqual(result.usage, { prompt_tokens: 100, completion_tokens: 7 })
@@ -118,7 +118,7 @@ test('Strom: Inhalt über Chunk-Grenzen hinweg, Kommentare, Kennzahlen und [DONE
 
 test('Strom: Zeilenenden mit CRLF und ein Strom ohne [DONE]', async () => {
   const stream = chunks(delta({ content: '{"b":2}' }).replaceAll('\n', '\r\n'))
-  assert.equal((await readCompletionStream(stream)).content, '{"b":2}')
+  assert.equal((await readCompletionStream(stream, null)).content, '{"b":2}')
 })
 
 test('Strom: Mistral schickt Inhalt als Liste, Denktext zählt nur für den Fortschritt', async () => {
@@ -128,15 +128,15 @@ test('Strom: Mistral schickt Inhalt als Liste, Denktext zählt nur für den Fort
     delta({ reasoning_content: 'Noch mehr Gedanken.' }),
     delta({ content: [{ type: 'text', text: '{"c":3}' }] }),
   )
-  const result = await readCompletionStream(stream, (p) => progress.push(p))
+  const result = await readCompletionStream(stream, null, (p) => progress.push(p))
   assert.equal(result.content, '{"c":3}')
   assert.ok(result.reasoningChars > 0)
   assert.ok(progress.some((p) => p.phase === 'thinking'))
 })
 
 test('Strom: ein Fehler mitten im Strom wird zum Fehler, auch bei Status 200', async () => {
-  await assert.rejects(readCompletionStream(chunks(delta({ content: '{' }), event({ error: { message: 'Server overloaded', code: 'overloaded' } }))), /Server overloaded/)
-  await assert.rejects(readCompletionStream(chunks('event: error\ndata: {"message":"kaputt"}\n\n')), /kaputt/)
+  await assert.rejects(readCompletionStream(chunks(delta({ content: '{' }), event({ error: { message: 'Server overloaded', code: 'overloaded' } })), null), /Server overloaded/)
+  await assert.rejects(readCompletionStream(chunks('event: error\ndata: {"message":"kaputt"}\n\n'), null), /kaputt/)
 })
 
 // ---------- JSON aus der Antwort ----------
