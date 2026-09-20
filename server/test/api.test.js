@@ -1489,6 +1489,21 @@ test('Schlüssel: eine von Hand verdorbene secrets.json stört den Start nicht',
   }
 })
 
+// Gültiges JSON, aber kein Objekt: Der vorige Test schreibt ein Objekt mit falschen Werttypen,
+// dieser prüft den anderen Rand, das JSON-Literal null.
+test('Schlüssel: eine secrets.json mit dem Literal null stört den Start nicht', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'secrets.json'), 'null')
+  const s = await startServerIn(dataDir)
+  try {
+    const { aiKeys } = await s.api('/api/settings')
+    assert.equal(aiKeys.text.set, false)
+    assert.equal(aiKeys.images.set, false)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Schlüssel: die Datei ist nur für den eigenen Benutzer lesbar', async (t) => {
   if (process.platform === 'win32') return t.skip('Unix-Rechte gibt es unter Windows nicht')
   await withEnv({}, async (s) => {
