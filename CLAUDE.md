@@ -464,6 +464,17 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   kein `declare` in einer Klasse. Node streift Typen nur ab, es übersetzt nicht; was Code
   erzeugen würde, wäre nach dem Abstreifen verschwunden. Statt `enum` ein Vereinigungstyp aus
   Zeichenketten, wie ihn `UnitUsage` oder `CostKey` in shared/types.ts zeigen.
+- **Beide Pakete fahren dieselbe Compiler-Fassung und dieselben strengen Einstellungen** (#64):
+  `typescript ^7.0.2` in `server/package.json` und `client/package.json`, `erasableSyntaxOnly`
+  und `verbatimModuleSyntax` in beiden `tsconfig.json`. Die beiden Regeln oben gelten deshalb
+  im ganzen Projekt. Der Grund ist `shared/types.ts`: Beide Seiten prüfen dieselbe Datei, und
+  mit verschiedenen Regeln ginge auf einer Seite etwas durch, das Node ohne Bauschritt nicht
+  ausführen kann. Der Client merkte nichts davon, weil Vite es für ihn übersetzt; auffallen
+  würde es erst beim Start des Servers. Für sich genommen bräuchte der Client die Einschränkung
+  nicht, sein Bündler könnte mehr — dass er trotzdem auf `enum` und auf stehenbleibende
+  Typimporte verzichtet, ist der Preis für diese eine Zusage. Wird eine der beiden Fassungen
+  angehoben, die andere mitziehen; sonst sagen die Prüfer wieder Verschiedenes über dieselbe
+  Datei.
 - **`npm run typecheck` ist die einzige Prüfung.** Es gibt keinen Linter, und weil der Server
   ohne Build-Schritt läuft, merkt niemand sonst einen Typfehler. Vor jedem Commit also einmal
   laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein).
