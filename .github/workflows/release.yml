@@ -12,11 +12,26 @@ name: Release-Binaries
 # und Pakete, die lange KI-Antwort unter Node und das lange Warten bei den Programmdateien. Ein
 # PR prüft davon eine Auswahl, der Tag alles, und nichts geht ans Release, was nicht geprüft
 # ist. Wer die volle Breite schon vor dem Merge will, hängt dem PR das Label „volle-pruefung“
-# an; das startet diesen Workflow neu, dann mit allem.
+# an; das startet diesen Workflow neu, dann mit allem. Dazu läuft einmal die Woche derselbe
+# volle Umfang von selbst, siehe „schedule“ unten.
 on:
   push:
     tags:
       - 'v*'
+
+  # Das Netz für alles, was ein Pull Request nicht mehr prüft (#52), vor allem für die lange
+  # KI-Antwort: Sie prüft, dass eine Antwort noch ankommt, wenn der Anbieter länger als fünf
+  # Minuten schweigt, und das hängt bei der Programmdatei an Bun. Bun wird bewusst mit `latest`
+  # gebaut, kann sich also jeden Tag ändern, und ohne diesen Lauf fiele eine kaputte Fassung
+  # erst beim Tag auf, wenn das Release schon halb gebaut ist. Genau das schließt #52 aus.
+  # Wöchentlich reicht, weil der Lauf nichts kostet, was ein Entwickler abwartet.
+  #
+  # Mittwochs 4:23 UTC, also bewusst nicht zur vollen Stunde: Dorthin legen alle ihre Zeitpläne,
+  # GitHub verzögert sie dann oder lässt sie ausfallen. Der Lauf nimmt den Standardzweig.
+  # Wer ihn löschen will, gibt dieses Netz auf. Achtung: GitHub schaltet Zeitpläne nach 60 Tagen
+  # ohne Bewegung im Repo ab, nach einer langen Pause also nachsehen, ob er noch läuft.
+  schedule:
+    - cron: '23 4 * * 3'
   pull_request:
     # Ohne „types“ gälten nur opened, synchronize und reopened. „labeled“ kommt dazu, damit das
     # Label „volle-pruefung“ einen neuen Lauf auslöst. Die Pfadliste gilt auch dafür: An einem
@@ -51,11 +66,12 @@ jobs:
   #     belegtem Port und das Beenden aus der Oberfläche. Das .deb prüft zusätzlich den
   #     Startmenü-Eintrag, denn nur Debian und Verwandte bringen desktop-file-validate mit.
   #
-  # Was ein Pull Request damit nicht sieht und erst der Tag abdeckt: alle Distributionen
-  # zwischen den beiden Enden (Debian 11 bis 13, Ubuntu 20.04 und 22.04, AlmaLinux, Rocky,
-  # openSUSE und Arch), jede Container-Prüfung auf ARM64, das Arch-Paket sowie das .rpm auf dem
-  # älteren openSUSE Leap und auf ARM64. Ein Fehler, der nur eine dieser Umgebungen trifft,
-  # fällt also erst beim Tag auf, und zwar bevor etwas ans Release gehängt wird. Die
+  # Was ein Pull Request damit nicht sieht und erst der Zeitplan oder der Tag abdeckt: alle
+  # Distributionen zwischen den beiden Enden (Debian 11 bis 13, Ubuntu 20.04 und 22.04,
+  # AlmaLinux, Rocky, openSUSE und Arch), jede Container-Prüfung auf ARM64, das Arch-Paket sowie
+  # das .rpm auf dem älteren openSUSE Leap und auf ARM64. Ein Fehler, der nur eine dieser
+  # Umgebungen trifft, fällt also spätestens eine Woche später auf, immer aber vor dem
+  # Anhängen ans Release. Die
   # ARM64-Programmdatei selbst prüft weiterhin jeder PR, nämlich im Job „Prüfen auf Linux
   # ARM64“ auf einem ARM-Runner.
   umfang:
@@ -68,15 +84,18 @@ jobs:
     steps:
       - id: waehlen
         env:
-          # Vollständig geprüft wird beim Tag, beim Start von Hand und an einem Pull Request mit
-          # dem Label „volle-pruefung“. Die drei Fälle stehen einzeln da, damit beim Lesen
-          # eindeutig ist, wann die Bedingung greift. Bei einem Push ohne Tag ergibt sie falsch,
-          # und auf einem Ereignis ohne Pull Request ist die Labelliste leer, nicht fehlerhaft.
+          # Vollständig geprüft wird alles außer einem Pull Request ohne das Label
+          # „volle-pruefung“. Also der Tag, der wöchentliche Zeitplan und der Start von Hand.
+          #
+          # Bewusst als Ausnahme geschrieben und nicht als Liste der vollen Fälle: Eine Liste
+          # vergisst man beim nächsten Auslöser. Genau das wäre hier fast passiert, der
+          # Zeitplan hätte still die kleine Auswahl gefahren. So läuft ein neuer Auslöser
+          # vollständig, also im Zweifel zu viel statt zu wenig. Der push-Auslöser oben hört nur
+          # auf Tags `v*`, ein Push ohne Tag kommt hier gar nicht an. Auf Ereignissen ohne Pull
+          # Request ist die Labelliste leer, das ergibt falsch und keinen Fehler.
           VOLLSTAENDIG: >-
-            ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-            || github.event_name == 'workflow_dispatch'
-            || (github.event_name == 'pull_request'
-            && contains(github.event.pull_request.labels.*.name, 'volle-pruefung')) }}
+            ${{ github.event_name != 'pull_request'
+            || contains(github.event.pull_request.labels.*.name, 'volle-pruefung') }}
         run: |
           # Jede Distribution unterscheidet sich in der C-Bibliothek und in den mitgelieferten
           # Werkzeugen, deshalb prüft jede die Programmdatei erneut.
@@ -125,7 +144,7 @@ jobs:
           if [ "$VOLLSTAENDIG" = 'true' ]; then
             distributionen=$alle_distributionen
             pakete=$alle_pakete
-            beschreibung='volle Matrix (Tag, Start von Hand oder Label „volle-pruefung“)'
+            beschreibung='volle Matrix (Tag, Zeitplan, Start von Hand oder Label „volle-pruefung“)'
           else
             distributionen=$auswahl_distributionen
             pakete=$auswahl_pakete
@@ -457,8 +476,8 @@ jobs:
   # Der Job stand bis #52 in ci.yml und lief bei jedem PR. Er kostete dort knapp sieben von neun
   # Minuten Wartezeit, hängt aber an der Laufzeit und der HTTP-Schicht statt am Fachcode und
   # ändert sich damit erst mit einer neuen Node- oder Bun-Version. Deshalb läuft er jetzt nur
-  # noch beim Tag, beim Start von Hand und an einem PR mit dem Label „volle-pruefung“, also
-  # genau dann, wenn auch die volle Matrix läuft.
+  # noch beim Tag, beim wöchentlichen Zeitplan, beim Start von Hand und an einem PR mit dem
+  # Label „volle-pruefung“, also genau dann, wenn auch die volle Matrix läuft.
   slow-ai-answer:
     name: Lange KI-Antwort (Node)
     needs: umfang
