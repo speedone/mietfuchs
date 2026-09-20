@@ -16,9 +16,16 @@
 // Bewusst IM Vergleich: warnings im Wortlaut. Eine geänderte Warnung ist eine sichtbare
 // fachliche Änderung und soll auffallen.
 
-const byId = (key) => (a, b) => String(a[key]).localeCompare(String(b[key]))
+import type { ComputedSettlement, ConsumptionOverviewRow } from '../src/calc.ts'
 
-export function normalizeSettlement(result) {
+// Sortiert nach einem Feld, das es auf beiden Seiten gibt. Der Schlüssel bleibt generisch,
+// damit derselbe Helfer für tenancyId, costItemId und meterId taugt.
+const byId =
+  <K extends PropertyKey>(key: K) =>
+  (a: Record<K, unknown>, b: Record<K, unknown>) =>
+    String(a[key]).localeCompare(String(b[key]))
+
+export function normalizeSettlement(result: ComputedSettlement) {
   return {
     year: result.year,
     daysInYear: result.daysInYear,
@@ -70,7 +77,7 @@ export function normalizeSettlement(result) {
   }
 }
 
-export function normalizeConsumption(overview) {
+export function normalizeConsumption(overview: ConsumptionOverviewRow[]) {
   return overview
     .slice()
     .sort(byId('meterId'))

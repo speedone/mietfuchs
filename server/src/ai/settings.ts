@@ -146,10 +146,20 @@ function repairPreset(slot: unknown): unknown {
   return slot
 }
 
+// Der Bestand, wie migrateAi ihn vorfindet: `ai` kommt ungeprüft aus der db.json und kann alles
+// enthalten, auch eine von Hand verdorbene Gestalt. Genau das zieht die Migration gerade,
+// deshalb steht hier `unknown` statt AiSettings.
+export type SettingsBeforeMigration = Omit<Settings, 'ai'> & { ai?: unknown }
+
+// Der Bestand danach: `ai` ist gesetzt und gültig. Im Datenmodell bleibt es optional, weil eine
+// db.json von vor #18 es noch nicht kennt; nach der Migration ist es aber keine offene Frage
+// mehr, und der Rückgabetyp sagt das, statt jeden Aufrufer prüfen zu lassen.
+export type MigratedSettings = Settings & { ai: AiSettings }
+
 // Ergänzt `settings.ai` beim Laden der db.json. Fehlt es, entsteht es aus ollamaUrl und
 // ollamaModel. Unbrauchbare Einzelwerte fallen auf den Standard zurück, statt den Start zu
 // verhindern.
-export function migrateAi(settings: Settings): Settings {
+export function migrateAi(settings: SettingsBeforeMigration): MigratedSettings {
   const stored: Record<string, unknown> = isObject(settings.ai) ? settings.ai : {}
   const legacyUrl = isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL
   const legacyText: AiSlot = {
@@ -162,7 +172,7 @@ export function migrateAi(settings: Settings): Settings {
     vision: null,
   }
   const field = <T, F>(name: string, fallback: F, valid: (v: unknown) => v is T): T | F => fieldFrom(stored, name, fallback, valid)
-  settings.ai = {
+  const ai: AiSettings = {
     text: lenient(() => validateSlot(repairPreset(stored.text), 'text'), legacyText),
     images: stored.images == null ? null : lenient(() => validateSlot(repairPreset(stored.images), 'images'), null),
     timeoutSeconds: field('timeoutSeconds', null, (v): v is number => inRange(v, LIMITS.timeoutSeconds)),
@@ -176,17 +186,19 @@ export function migrateAi(settings: Settings): Settings {
     // von Hand verdorbene Bestätigung verhindert den Start nicht, sie greift dann einfach nicht.
     consent: (isObject(stored.consent) ? stored.consent : {}) as Partial<Record<AiSlotName, AiConsent>>,
   }
+  // Object.assign statt einer Zuweisung: Derselbe Bestand wird weiterhin an Ort und Stelle
+  // geändert, und der Übersetzer weiß danach, dass `ai` gesetzt ist.
+  const migrated = Object.assign(settings, { ai })
   // Eine Version von vor #18 ändert beim Speichern nur ollamaUrl und ollamaModel und reicht `ai`
   // unverändert durch. Weichen die Felder beim Laden ab, stammt die jüngere Änderung von dort,
   // denn diese Version hält sie immer deckungsgleich (mirrorLegacy). So geht nach einem
   // Downgrade und einem erneuten Update nichts verloren.
-  const ai = settings.ai
   if (isObject(stored.text) && ai.text.provider === 'ollama') {
-    if (isHttpUrl(settings.ollamaUrl) && settings.ollamaUrl !== ai.text.url) ai.text.url = settings.ollamaUrl
-    if (typeof settings.ollamaModel === 'string' && settings.ollamaModel !== ai.text.model) ai.text.model = settings.ollamaModel
+    if (isHttpUrl(migrated.ollamaUrl) && migrated.ollamaUrl !== ai.text.url) ai.text.url = migrated.ollamaUrl
+    if (typeof migrated.ollamaModel === 'string' && migrated.ollamaModel !== ai.text.model) ai.text.model = migrated.ollamaModel
   }
-  mirrorLegacy(settings)
-  return settings
+  mirrorLegacy(migrated)
+  return migrated
 }
 
 // Nur aufgerufen, nachdem `settings.ai` gesetzt ist (migrateAi, applyAiChanges); die Prüfung ist

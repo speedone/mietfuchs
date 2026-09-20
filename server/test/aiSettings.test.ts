@@ -3,9 +3,42 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl, consentProblem } from '../src/ai/settings.ts'
+import type { AiEnv, ConsentCheckConfig, SettingsBeforeMigration } from '../src/ai/settings.ts'
 import { PRESETS, presetById } from '../src/ai/presets.ts'
 
-const legacy = (extra = {}) => ({ houseName: 'Haus', ollamaUrl: 'http://ki.intern:11434', ollamaModel: 'gemma4:12b', ...extra })
+// Einstellungen, wie sie in einer db.json von vor #18 stehen: ollamaUrl und ollamaModel, kein
+// `ai`. Die übrigen Pflichtfelder füllt store.ts beim Laden mit denselben leeren Vorgaben, hier
+// stehen sie nur, damit der Bestand vollständig ist.
+const legacy = (extra: Partial<SettingsBeforeMigration> = {}): SettingsBeforeMigration => ({
+  houseName: 'Haus',
+  address: '',
+  landlordName: '',
+  iban: '',
+  paymentDeadlineDays: 30,
+  ollamaUrl: 'http://ki.intern:11434',
+  ollamaModel: 'gemma4:12b',
+  ...extra,
+})
+
+// Die Meldung einer fehlgeschlagenen Prüfung. Bleibt sie aus, ist genau das der Befund: Der
+// Test soll ihn benennen und nicht an null scheitern.
+const envError = (env: AiEnv): string => {
+  if (env.error === null) assert.fail('es fehlt die Meldung zur ungültigen Umgebungsvariable')
+  return env.error
+}
+
+// applyAiChanges wirft bei ungültigen Werten einen Fehler mit `status` (siehe StatusError in
+// ai/settings.ts). Geprüft wird beides: die Kennzeichnung als Eingabefehler und der Wortlaut.
+const isStatusError = (err: unknown): err is Error & { status: number } =>
+  err instanceof Error && 'status' in err && typeof err.status === 'number'
+
+// consentProblem liefert null, wenn keine Bestätigung nötig ist. Wo der Test eine Meldung
+// erwartet, ist das Ausbleiben der Befund, und er darf nicht als Typfehler durchgehen.
+const problemOf = (config: ConsentCheckConfig, remoteModel: boolean): string => {
+  const problem = consentProblem(config, { remoteModel })
+  if (problem === null) assert.fail('hier muss eine Bestätigung verlangt werden')
+  return problem
+}
 
 // ---------- Migration ----------
 
@@ -23,7 +56,7 @@ test('Migration: bestehende Ollama-Einstellungen werden zum Standard-Anbieter', 
 test('Migration: ein Ollama im Heimnetz bekommt die Vorlage für ein entferntes', () => {
   // Nur diese Vorlage kennt ein Feld für den Schlüssel, etwa hinter einem Proxy
   assert.equal(migrateAi(legacy({ ollamaUrl: 'http://nas:11434' })).ai.text.preset, 'ollama-remote')
-  assert.equal(migrateAi({ ollamaUrl: 'http://localhost:11434', ollamaModel: 'x' }).ai.text.preset, 'ollama-local')
+  assert.equal(migrateAi(legacy({ ollamaUrl: 'http://localhost:11434', ollamaModel: 'x' })).ai.text.preset, 'ollama-local')
 })
 
 test('Migration: fehlende Felder einer vorhandenen KI-Einstellung werden ergänzt, gesetzte bleiben', () => {
@@ -56,10 +89,10 @@ test('Vorlagen: jede hat Anbieter, Namen und eine gültige Adresse oder bewusst 
     if (p.url) assert.doesNotThrow(() => new URL(p.url), p.id)
     assert.ok(['none', 'optional', 'required'].includes(p.key), p.id)
   }
-  assert.equal(presetById('openai').tokenField, 'max_completion_tokens')
-  assert.equal(presetById('ionos').tokenField, 'max_completion_tokens') // IONOS nimmt sonst 16 Token
-  assert.equal(presetById('mistral').tokenField, 'max_tokens')
-  assert.equal(presetById('lmstudio').jsonObject, false) // LM Studio lehnt json_object ab
+  assert.equal(presetById('openai')?.tokenField, 'max_completion_tokens')
+  assert.equal(presetById('ionos')?.tokenField, 'max_completion_tokens') // IONOS nimmt sonst 16 Token
+  assert.equal(presetById('mistral')?.tokenField, 'max_tokens')
+  assert.equal(presetById('lmstudio')?.jsonObject, false) // LM Studio lehnt json_object ab
   assert.equal(presetById('gibt-es-nicht'), null)
 })
 
@@ -102,9 +135,9 @@ test('Umgebung: NKA_AI_URL hat Vorrang vor NKA_OLLAMA_URL', () => {
 })
 
 test('Umgebung: ein unbekannter Anbieter oder eine ungültige Adresse ist ein Fehler', () => {
-  assert.match(aiFromEnv({ NKA_AI_PROVIDER: 'chatgpt' }).error, /NKA_AI_PROVIDER.*ollama.*openai/)
-  assert.match(aiFromEnv({ NKA_AI_URL: 'api.openai.com/v1' }).error, /NKA_AI_URL/)
-  assert.match(aiFromEnv({ NKA_OLLAMA_URL: 'ftp://x' }).error, /NKA_OLLAMA_URL/)
+  assert.match(envError(aiFromEnv({ NKA_AI_PROVIDER: 'chatgpt' })), /NKA_AI_PROVIDER.*ollama.*openai/)
+  assert.match(envError(aiFromEnv({ NKA_AI_URL: 'api.openai.com/v1' })), /NKA_AI_URL/)
+  assert.match(envError(aiFromEnv({ NKA_OLLAMA_URL: 'ftp://x' })), /NKA_OLLAMA_URL/)
 })
 
 test('Umgebung: NKA_AI_TIMEOUT und NKA_OLLAMA_NUM_CTX überlagern Zeitlimit und Kontext', () => {
@@ -123,10 +156,10 @@ test('Umgebung: NKA_AI_TIMEOUT und NKA_OLLAMA_NUM_CTX überlagern Zeitlimit und 
 })
 
 test('Umgebung: unbrauchbare Zahlen für Zeitlimit, Kontext und Antwortlänge sind ein Fehler', () => {
-  assert.match(aiFromEnv({ NKA_AI_TIMEOUT: '10min' }).error, /NKA_AI_TIMEOUT/)
-  assert.match(aiFromEnv({ NKA_AI_TIMEOUT: '0' }).error, /NKA_AI_TIMEOUT/)
-  assert.match(aiFromEnv({ NKA_OLLAMA_NUM_CTX: '-5' }).error, /NKA_OLLAMA_NUM_CTX/)
-  assert.match(aiFromEnv({ NKA_AI_MAX_TOKENS: '16k' }).error, /NKA_AI_MAX_TOKENS/)
+  assert.match(envError(aiFromEnv({ NKA_AI_TIMEOUT: '10min' })), /NKA_AI_TIMEOUT/)
+  assert.match(envError(aiFromEnv({ NKA_AI_TIMEOUT: '0' })), /NKA_AI_TIMEOUT/)
+  assert.match(envError(aiFromEnv({ NKA_OLLAMA_NUM_CTX: '-5' })), /NKA_OLLAMA_NUM_CTX/)
+  assert.match(envError(aiFromEnv({ NKA_AI_MAX_TOKENS: '16k' })), /NKA_AI_MAX_TOKENS/)
 })
 
 // Höchstlänge der Antwort für OpenAI-kompatible Dienste. IONOS nimmt ohne Angabe nur 16 Token,
@@ -156,7 +189,7 @@ test('Seitenbilder: einstellbar, per NKA_AI_IMAGE_EDGE festlegbar, ohne Angabe n
   const env = aiFromEnv({ NKA_AI_IMAGE_EDGE: '900' })
   assert.equal(effectiveAi(settings.ai, env).pageImageEdge, 900)
   assert.ok(fixedFields(settings.ai, env).includes('ai.pageImageEdge'))
-  assert.match(aiFromEnv({ NKA_AI_IMAGE_EDGE: '1200px' }).error, /NKA_AI_IMAGE_EDGE/)
+  assert.match(envError(aiFromEnv({ NKA_AI_IMAGE_EDGE: '1200px' })), /NKA_AI_IMAGE_EDGE/)
   for (const invalid of [500, 4000, 1200.5, '1200']) {
     assert.throws(() => applyAiChanges(settings, { ai: { ...settings.ai, pageImageEdge: invalid } }, aiFromEnv({})), /Seitenbilder/, String(invalid))
   }
@@ -219,7 +252,7 @@ test('Änderungen: die Bestätigung externer Dienste lässt sich nicht über die
 })
 
 test('Änderungen: ungültige Werte werden mit Meldung abgelehnt und nichts wird übernommen', () => {
-  const cases = [
+  const cases: [Record<string, unknown>, RegExp][] = [
     [{ text: { ...openaiSlot, provider: 'chatgpt' } }, /Anbieterart/],
     [{ text: { ...openaiSlot, preset: 'gibt-es-nicht' } }, /Vorlage/],
     [{ text: { ...openaiSlot, preset: 'ollama-local' } }, /Vorlage/], // Vorlage passt nicht zum Anbieter
@@ -238,7 +271,11 @@ test('Änderungen: ungültige Werte werden mit Meldung abgelehnt und nichts wird
   for (const [change, message] of cases) {
     const settings = migrateAi(legacy())
     const before = structuredClone(settings)
-    assert.throws(() => applyAiChanges(settings, { ai: { ...settings.ai, ...change } }, aiFromEnv({})), (err) => err.status === 400 && message.test(err.message), JSON.stringify(change).slice(0, 80))
+    assert.throws(
+      () => applyAiChanges(settings, { ai: { ...settings.ai, ...change } }, aiFromEnv({})),
+      (err: unknown) => isStatusError(err) && err.status === 400 && message.test(err.message),
+      JSON.stringify(change).slice(0, 80),
+    )
     assert.deepEqual(settings, before)
   }
 })
@@ -291,24 +328,28 @@ test('Extern: öffentliche Adressen und Namen gelten als extern', () => {
 
 // ---------- Bestätigung externer Dienste ----------
 
-const external = { slot: 'text', provider: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', consent: null }
+// consentProblem liest nur slot, url, model und consent (ConsentCheckConfig). `provider` steht
+// hier zur Anschauung dabei und ist deshalb im Typ als Zugabe genannt, statt ihn zu verschweigen.
+const external: ConsentCheckConfig & { provider: string } =
+  { slot: 'text', provider: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', consent: null }
 
 test('Bestätigung: eine externe Adresse braucht sie, und zwar für genau diese Adresse', () => {
-  assert.match(consentProblem(external, { remoteModel: false }), /api\.openai\.com.*bestätig/s)
+  assert.match(problemOf(external, false), /api\.openai\.com.*bestätig/s)
   const confirmed = { ...external, consent: { url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', date: '2026-09-19' } }
   assert.equal(consentProblem(confirmed, { remoteModel: false }), null)
   // Ein anderes Modell beim selben Dienst braucht keine neue Bestätigung
   assert.equal(consentProblem({ ...confirmed, model: 'gpt-4.1-mini' }, { remoteModel: false }), null)
   // Eine andere Adresse schon
-  assert.match(consentProblem({ ...confirmed, url: 'https://api.mistral.ai/v1' }, { remoteModel: false }), /api\.mistral\.ai/)
+  assert.match(problemOf({ ...confirmed, url: 'https://api.mistral.ai/v1' }, false), /api\.mistral\.ai/)
 })
 
 test('Bestätigung: lokal braucht es keine, außer Ollama reicht das Modell an die Cloud weiter', () => {
-  const local = { slot: 'text', provider: 'ollama', url: 'http://localhost:11434', model: 'gpt-oss:120b-cloud', consent: null }
+  const local: ConsentCheckConfig & { provider: string } =
+    { slot: 'text', provider: 'ollama', url: 'http://localhost:11434', model: 'gpt-oss:120b-cloud', consent: null }
   assert.equal(consentProblem(local, { remoteModel: false }), null)
-  assert.match(consentProblem(local, { remoteModel: true }), /gpt-oss:120b-cloud.*Cloud/s)
+  assert.match(problemOf(local, true), /gpt-oss:120b-cloud.*Cloud/s)
   const confirmed = { ...local, consent: { url: 'http://localhost:11434', model: 'gpt-oss:120b-cloud', date: '2026-09-19' } }
   assert.equal(consentProblem(confirmed, { remoteModel: true }), null)
   // Bei Cloud-Modellen gilt sie nur für das bestätigte Modell
-  assert.match(consentProblem({ ...confirmed, model: 'deepseek-v4.1:cloud' }, { remoteModel: true }), /deepseek/)
+  assert.match(problemOf({ ...confirmed, model: 'deepseek-v4.1:cloud' }, true), /deepseek/)
 })

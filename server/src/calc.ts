@@ -414,18 +414,6 @@ function fmtNum(n: number): string {
 // herausgefiltert sind.
 type TenancyWithUnit = Tenancy & { days: number, unit: Unit }
 
-// Eine Zeile aus `Statement.rows`, wie sie tatsächlich berechnet wird: zusätzlich zu den in
-// shared/types.ts dokumentierten Feldern (die der Client anzeigt) trägt sie den Umlageschlüssel
-// (`key`) mit, den der Prüfkatalog (settlement-golden.test.js) mitvergleicht. Diese Lücke
-// bestand schon vor dem TypeScript-Umstieg (client/src/types.ts kannte `key` auf `main` schon
-// nicht) und wird hier nicht angetastet.
-type SettlementRowWithKey = SettlementRow & { key: CostKey }
-
-// Eine Abrechnungszeile je Mietverhältnis, wie sie tatsächlich berechnet wird: zusätzlich zu
-// den Feldern aus shared/types.ts trägt sie `unitId` und `personDays` mit (ebenfalls vom
-// Prüfkatalog verglichen, siehe SettlementRowWithKey oben).
-type ComputedStatement = Omit<Statement, 'rows'> & { unitId: string, personDays: number, rows: SettlementRowWithKey[] }
-
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
 type Target = { t: TenancyWithUnit, raw: number, basisText: string }
@@ -438,9 +426,8 @@ type Target = { t: TenancyWithUnit, raw: number, basisText: string }
 type ConsumptionByTypeEntry = { meters: (Meter & { unitId: string })[], basis: number, perUnit: Map<string, number>, selfConsumption: number }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
-// `closed` (das ergänzt erst die Route GET /api/settlement/:year) und mit den zusätzlichen
-// Feldern aus ComputedStatement.
-export type ComputedSettlement = Omit<Settlement, 'closed' | 'statements'> & { statements: ComputedStatement[] }
+// `closed` — das ergänzt erst die Route GET /api/settlement/:year.
+export type ComputedSettlement = Omit<Settlement, 'closed'>
 
 export function computeSettlement(db: Db, year: number): ComputedSettlement {
   const diy = daysInYear(year)
@@ -494,7 +481,7 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
     consumptionByType[type] = { meters, basis, perUnit, selfConsumption }
   }
 
-  const statements = new Map<string, ComputedStatement>()
+  const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
     const from = new Date(Math.max(toUTC(t.start), toUTC(yFrom)))
     const to = t.end ? new Date(Math.min(toUTC(t.end), toUTC(yTo))) : new Date(toUTC(yTo))
