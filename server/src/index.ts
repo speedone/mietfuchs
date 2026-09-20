@@ -138,7 +138,9 @@ function settingsForClient() {
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
-  const body = req.body ?? {}
+  // express.json() lässt auch eine Liste als Rumpf durch. Ohne diese Prüfung landeten deren
+  // Indizes als Schlüssel „0“, „1“ … in den Einstellungen und blieben in der db.json stehen.
+  const body: Record<string, unknown> = isObject(req.body) ? req.body : {}
   const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, ...changes } = body
   const settings = getDb().settings
   // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
