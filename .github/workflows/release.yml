@@ -8,10 +8,11 @@ name: Release-Binaries
 # System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
 # (gescannte PDFs, #21) fiel sonst erst bei Nutzern auf.
 #
-# Hier stehen auch die beiden Prüfungen, die ein Pull Request auslässt (#52): die lange
-# KI-Antwort unter Node und die volle Liste der Distributionen und Pakete. Ein PR prüft davon
-# eine Auswahl, der Tag alles. Wer die volle Breite schon vor dem Merge will, hängt dem PR das
-# Label „volle-pruefung“ an; das startet diesen Workflow neu, dann mit allem.
+# Was ein Pull Request auslässt, steht hier beisammen (#52): die volle Liste der Distributionen
+# und Pakete, die lange KI-Antwort unter Node und das lange Warten bei den Programmdateien. Ein
+# PR prüft davon eine Auswahl, der Tag alles, und nichts geht ans Release, was nicht geprüft
+# ist. Wer die volle Breite schon vor dem Merge will, hängt dem PR das Label „volle-pruefung“
+# an; das startet diesen Workflow neu, dann mit allem.
 on:
   push:
     tags:
@@ -246,9 +247,19 @@ jobs:
   # Option ab (#17). Weil Bun mit `latest` baut, prüft das je Betriebssystem ein Lauf. Die
   # Zeitgeber hängen an der Ereignisschleife des Systems (epoll, kqueue, libuv), nicht an der
   # Architektur, deshalb reicht x64 bzw. Apple Silicon.
+  #
+  # Seit #52 hängt auch dieser lange Lauf am Prüfumfang, und das ist die Stelle, an der ein Pull
+  # Request wirklich Wartezeit spart: Der Lauf wartet allein 320 Sekunden, und „Prüfen auf
+  # Linux x64“ bestimmte damit mit 10,4 Minuten den längsten Weg eines PRs. Die Abwägung: Der
+  # Test prüft, dass eine Antwort noch ankommt, wenn der Anbieter länger als fünf Minuten
+  # schweigt. Das hängt an der Laufzeit und der HTTP-Schicht, bei der Programmdatei also an Bun,
+  # und Bun wird bewusst mit `latest` gebaut, kann sich also jeden Tag ändern. Weg fällt die
+  # Prüfung deshalb nicht, sie rückt ans Release: „Ans Release anhängen“ hängt von diesem Job
+  # ab, ein Bun mit kaputtem Verhalten kommt also nicht ins Release. Wer es früher wissen will,
+  # hängt dem Pull Request das Label „volle-pruefung“ an.
   pruefen:
     name: Prüfen auf ${{ matrix.name }}
-    needs: signieren
+    needs: [umfang, signieren]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -264,6 +275,10 @@ jobs:
       NKA_PORT: '3001'
       # Kein Test darf das echte GitHub nach Updates fragen
       NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
+      # Die Angabe für das Prüfskript: beim vollen Umfang „--slow-ai 320“ auf den drei Systemen,
+      # die es in der Matrix tragen, sonst leer. Sie steht hier einmal, damit die beiden
+      # Startschritte unten sie nur noch einsetzen müssen.
+      SLOW_AI: ${{ needs.umfang.outputs.vollstaendig == 'true' && matrix.slow_ai || '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -302,7 +317,7 @@ jobs:
           "./bin/${{ matrix.programm }}" > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe der Programmdatei"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ matrix.slow_ai }}
+          node scripts/smoke-test.mjs --url "http://127.0.0.1:$NKA_PORT" --mode binary ${{ env.SLOW_AI }}
 
       - name: Starten und prüfen (Windows)
         if: runner.os == 'Windows'
@@ -311,7 +326,7 @@ jobs:
           $env:NKA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'daten'
           $p = Start-Process -FilePath "bin\${{ matrix.programm }}" -PassThru -RedirectStandardOutput server.log -RedirectStandardError server.err
           try {
-            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ matrix.slow_ai }}
+            node scripts/smoke-test.mjs --url "http://127.0.0.1:$env:NKA_PORT" --mode binary ${{ env.SLOW_AI }}
             if ($LASTEXITCODE -ne 0) { throw "Prüfung auf ${{ matrix.name }} fehlgeschlagen" }
           } finally {
             Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
@@ -424,8 +439,8 @@ jobs:
   # Eine KI-Auswertung auf dem Prozessor kann länger als fünf Minuten dauern. fetch unter Node und
   # Firefox brechen nach 300 Sekunden ohne Antwort-Header ab (#17). Das nachgebaute Ollama
   # schweigt hier 320 Sekunden; die Auswertung muss trotzdem ankommen. Geprüft wird der Start aus
-  # dem Quellcode, also der Weg von npm und Docker-Image; die Programmdateien prüft derselbe
-  # Lauf oben je Betriebssystem mit `slow_ai`.
+  # dem Quellcode, also der Weg von npm und Docker-Image; die Programmdateien prüft der Job
+  # „Prüfen auf …“ oben unter derselben Bedingung, dort mit Bun statt Node.
   #
   # Der Job stand bis #52 in ci.yml und lief bei jedem PR. Er kostete dort knapp sieben von neun
   # Minuten Wartezeit, hängt aber an der Laufzeit und der HTTP-Schicht statt am Fachcode und
