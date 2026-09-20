@@ -118,8 +118,11 @@ Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neue
 beenden solche Programme beim Start.
 
 **Prüfumfang je Anlass** (#52): Ein Pull Request prüft nicht mehr alles; vorher waren es 41 Jobs
-mit rund 80 Runner-Minuten und 10,4 Minuten Wartezeit. Jetzt sind es 15 Jobs, rund 22
-Runner-Minuten und gut fünf Minuten Wartezeit. Im PR laufen die Tests und der Build aus
+mit rund 80 Runner-Minuten und gut elf Minuten Wartezeit. Jetzt sind es 15 Jobs, rund 22
+Runner-Minuten und acht Minuten Wartezeit, am Pull Request dieser Änderung nachgemessen. Die
+Wartezeit sinkt weniger als die Rechenzeit, weil ein großer Teil davon nicht Prüfen ist, sondern
+Warten auf einen freien macOS-Intel-Runner bei GitHub; daran ändert der Umfang nichts. Im PR
+laufen die Tests und der Build aus
 [ci.yml](.github/workflows/ci.yml), das Bauen und Signieren, die sechs Betriebssysteme ohne die
 320 Sekunden Wartezeit der langen KI-Antwort und aus den Containern eine Auswahl: `centos:7` für
 die Untergrenze glibc 2.17 und `ubuntu:26.04` für das neueste Ende, dazu je ein Paket, nämlich
