@@ -10,7 +10,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseVersion, isNewer, assetFor, createUpdateChecker } from '../src/update.js'
+import { parseVersion, isNewer, assetFor, createUpdateChecker } from '../src/update.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const realResponse = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'github-release-latest.json'), 'utf8'))
@@ -208,6 +208,13 @@ test('Fehler bei GitHub bleiben still: kein Absturz, kein Hinweis', async () => 
     assert.equal(typeof s.error, 'string')
     assert.ok(s.error.length > 0)
   }
+})
+
+test('Antwort ohne Nutzdaten (kein Objekt): klare Meldung statt eines kryptischen Fehlers', async () => {
+  respond = serve('null') // gültiges JSON, aber kein Objekt mit den erwarteten Feldern
+  const s = await makeChecker().check({ consent: 'on', force: true })
+  assert.equal(s.available, false)
+  assert.match(s.error, /kein Objekt/)
 })
 
 // GitHub-Vorgabe: nach Fehlern nicht sofort erneut fragen, bei einem Rate-Limit bis zur

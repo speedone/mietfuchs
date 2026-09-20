@@ -16,7 +16,7 @@ import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } fr
 import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.ts'
-import { createUpdateChecker, UPDATE_URL } from './update.js'
+import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
