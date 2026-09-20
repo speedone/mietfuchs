@@ -39,6 +39,12 @@ const messageOf = (err: unknown): string => {
 // mit Object.assign an den Error gehängt). Fehlt es, bleibt es wie bisher bei 500.
 const statusOf = (err: unknown): number => (isObject(err) && typeof err.status === 'number' ? err.status : 500)
 
+// Der Rumpf einer Anfrage als Objekt. express.json() lässt auch eine Liste durch, und deren
+// Indizes landeten über Spread bzw. Object.assign als Schlüssel „0“, „1“ … in den Einstellungen
+// und in den Datensätzen; von dort trug die db.json sie mit. Ein Rumpf, der kein Objekt ist,
+// zählt deshalb als leer, und die Route antwortet wie bei einem leeren Rumpf.
+const bodyObject = (req: Request): Record<string, unknown> => (isObject(req.body) ? req.body : {})
+
 // Mit upload.fields() ist `req.files` ein Objekt je Feldname; die Listenform entsteht nur bei
 // upload.array(), das hier niemand benutzt. Diese Sicht hält den Zugriff typisiert.
 const filesOf = (req: Request): Record<string, Express.Multer.File[]> =>
@@ -138,9 +144,7 @@ function settingsForClient() {
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', (req, res) => {
-  // express.json() lässt auch eine Liste als Rumpf durch. Ohne diese Prüfung landeten deren
-  // Indizes als Schlüssel „0“, „1“ … in den Einstellungen und blieben in der db.json stehen.
-  const body: Record<string, unknown> = isObject(req.body) ? req.body : {}
+  const body = bodyObject(req)
   const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, ...changes } = body
   const settings = getDb().settings
   // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
@@ -168,6 +172,10 @@ const keyRoute = (change: (req: Request) => void) => (req: Request, res: Respons
 // Ein Routen-Parameter als einzelner Wert. Express kennt wiederholbare Parameter und liefert
 // dafür eine Liste; bei `:slot` kommt immer ein einzelner Wert an. Käme doch eine Liste, fiele
 // sie in secrets.ts als unbekannter Platz durch, genau wie zuvor.
+//
+// Nötig ist das nur hier: `keyRoute` reicht ein allgemeines `Request` durch, in dem jeder
+// Parameter `string | string[]` ist. Wo ein Handler direkt an seiner Route hängt, liest Express
+// den Pfad mit und kennt `:slot` als einzelnen String, siehe DELETE /api/ai/consent/:slot.
 const singleParam = (value: string | string[]): string => (typeof value === 'string' ? value : '')
 
 app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
@@ -207,9 +215,10 @@ app.delete('/api/ai/consent/:slot', (req, res) => {
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 // Die generischen Routen behandeln alle Collections gleich und brauchen von einem Datensatz nur
-// die Kennung. `collections()` liefert genau diese Sicht auf die db.json: dieselben Listen,
-// betrachtet als „Datensätze mit id". Geschrieben wird darüber nur das Ergebnis eines filter()
-// auf derselben Liste, die Datensätze selbst bleiben also, was sie sind.
+// die Kennung. `collections()` liefert genau diese Sicht auf die db.json: **dasselbe Objekt wie
+// `getDb()`**, nur betrachtet als „Datensätze mit id“. Wer über die Sicht schreibt, ändert also
+// den Datenbestand selbst. Geschrieben wird darüber nur das Ergebnis eines filter() auf
+// derselben Liste, die Datensätze selbst bleiben also, was sie sind.
 type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 type Entity = { id: string }
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
@@ -218,7 +227,7 @@ const collections = (): Record<CollectionName, Entity[]> => getDb()
 for (const coll of COLLECTIONS) {
   app.get(`/api/${coll}`, (req, res) => res.json(collections()[coll]))
   app.post(`/api/${coll}`, (req, res) => {
-    const item = { ...req.body, id: newId() }
+    const item = { ...bodyObject(req), id: newId() }
     collections()[coll].push(item)
     save()
     res.status(201).json(item)
@@ -226,11 +235,14 @@ for (const coll of COLLECTIONS) {
   app.put(`/api/${coll}/:id`, (req, res) => {
     const item = collections()[coll].find((x) => x.id === req.params.id)
     if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
-    Object.assign(item, req.body, { id: item.id })
+    Object.assign(item, bodyObject(req), { id: item.id })
     save()
     res.json(item)
   })
   app.delete(`/api/${coll}/:id`, (req, res) => {
+    // `db` und `lists` sind dasselbe Objekt, einmal mit den Fachtypen und einmal als Sicht für
+    // den Zugriff über den laufenden Namen. Eine Änderung an `lists` ist also keine an einer
+    // Kopie, sie trifft den Datenbestand, den `save()` gleich schreibt.
     const db = getDb()
     const lists = collections()
     const before = lists[coll].length
@@ -551,7 +563,9 @@ function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string
   const dbEntry = entries.find((e) => e.entryName === 'db.json')
   if (!dbEntry) throw new Error('Im Archiv fehlt die db.json. Ist das wirklich ein Mietfuchs-Backup?')
 
-  const files = []
+  // Ausdrücklich typisiert: Was hier hineinläuft, kommt aus einem hochgeladenen Archiv und wird
+  // gerade erst geprüft. Der Typ soll nicht davon abhängen, was weiter unten hineingeschoben wird.
+  const files: { fileName: string, e: AdmZip.IZipEntry }[] = []
   let totalSize = dbEntry.header.size
   for (const e of entries) {
     const name = e.entryName
@@ -786,7 +800,7 @@ const PORT = Number(process.env.NKA_PORT || 3001)
 
 // Ein Wert, der keine Portnummer ist, war für node:net der Pfad eines Unix-Sockets (unter
 // Windows einer Named Pipe): Der Server lief dann scheinbar, war aber über HTTP unter keiner
-// Adresse erreichbar, und `address()` lieferte den Pfad statt eines Objekts mit Port — die
+// Adresse erreichbar, und `address()` lieferte den Pfad statt eines Objekts mit Port. Die
 // Startmeldung nannte „http://127.0.0.1:undefined“.
 const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
   ? null
