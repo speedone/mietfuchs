@@ -26,15 +26,31 @@
 //
 // Bevor Belege das Haus verlassen, muss der Nutzer das einmal bestätigt haben (consentProblem in
 // ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
-import { ollamaProvider } from './ollama.ts'
+import type { AiConsent, AiJsonMode, AiSettings, AiSlot, AiSlotName } from '../../../shared/types.ts'
+import { ollamaProvider, type Provider, type ProviderRequest, type ProviderResult } from './ollama.ts'
 import { openaiProvider } from './openai.ts'
 import { slotFor, consentProblem, isExternalUrl } from './settings.ts'
 import { getKey } from '../secrets.ts'
 
+// Die Typen der Anbieter-Schnittstelle selbst kommen aus ollama.ts (dort definiert, weil
+// ollama.ts als erstes der beiden Provider-Module auf TypeScript umgestellt wurde). Hier nur
+// erneut exportiert, weil dieses Modul die eigentliche Schnittstelle ist.
+export type { JsonSchema, Provider, ProviderImage, ProviderProgressEvent, ProviderRequest, ProviderResult, ProviderStats } from './ollama.ts'
+
 // Alles, was ein Anbieter-Modul braucht: Platz, Art, Vorlage, Adresse, Modell, Bildverständnis,
 // Schlüssel, die Bestätigung für diesen Platz und die Einstellungen für Fortgeschrittene, die
 // den Transport betreffen
-export function providerConfig(ai, { images = false } = {}) {
+export type ProviderConfig = AiSlot & {
+  slot: AiSlotName
+  apiKey: string | null
+  consent: AiConsent | null
+  numCtx: number | null
+  maxOutputTokens: number | null
+  jsonMode: AiJsonMode
+  reasoningEffort: string | null
+}
+
+export function providerConfig(ai: AiSettings, { images = false }: { images?: boolean } = {}): ProviderConfig {
   const slot = slotFor(ai, { images })
   return {
     ...slot,
@@ -47,13 +63,13 @@ export function providerConfig(ai, { images = false } = {}) {
   }
 }
 
-const providerFor = (config) => (config.provider === 'openai' ? openaiProvider(config) : ollamaProvider(config))
+const providerFor = (config: ProviderConfig): Provider => (config.provider === 'openai' ? openaiProvider(config) : ollamaProvider(config))
 
-export function aiProvider(ai, { images = false } = {}) {
+export function aiProvider(ai: AiSettings, { images = false }: { images?: boolean } = {}): Provider {
   const config = providerConfig(ai, { images })
   const provider = providerFor(config)
   return {
-    async json(request) {
+    async json(request: ProviderRequest): Promise<ProviderResult> {
       // Ob ein lokales Ollama das Modell an die Cloud weiterreicht, weiß nur Ollama selbst.
       // Das kostet vor jeder Auswertung eine Anfrage an /api/show (eine Minute gemerkt); im
       // Zweifel darf nichts hinausgehen, deshalb scheitert die Auswertung, wenn sie scheitert.
