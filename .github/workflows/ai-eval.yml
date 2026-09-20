@@ -29,9 +29,9 @@ permissions:
 env:
   # Kandidaten für Rechner ohne Grafikkarte, von klein bis mittel
   DEFAULT_MODELS: qwen3.5:2b,qwen3.5:4b,qwen3.5:9b,gemma4:e2b-it-qat,gemma4:12b,minicpm-v4.5:8b,minicpm-v4.6:1b
-  # Seitenbilder eines Scans, lange Kante. 1684 entspricht pdf.js mit Faktor 2 auf A4, also dem,
-  # was der Browser heute schickt. Mehrere Werte vergleichen Trefferquote und Dauer (#35).
-  DEFAULT_PAGE_EDGES: '1684'
+  # Seitenbilder eines Scans, lange Kante, wie der Browser sie schickt (#35). Mehrere Werte
+  # vergleichen Trefferquote und Dauer über die Größen.
+  DEFAULT_PAGE_EDGES: '1200'
 
 jobs:
   models:

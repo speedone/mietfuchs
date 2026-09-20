@@ -2,8 +2,8 @@
 //
 //   text:   { provider, preset, url, model, vision }  Standard-Anbieter für alle Belege
 //   images: null | wie text                           eigener Anbieter für Fotos und Scans
-//   timeoutSeconds, numCtx, maxOutputTokens, jsonMode, reasoningEffort, extraInstructions
-//                                                     für Fortgeschrittene, null = Standard
+//   timeoutSeconds, numCtx, maxOutputTokens, pageImageEdge, jsonMode, reasoningEffort,
+//   extraInstructions                                 für Fortgeschrittene, null = Standard
 //   consent: { [Platz]: { url, date } }               Bestätigung eines externen Dienstes
 //
 // `provider` ist die Art der Schnittstelle ('ollama' oder 'openai' für alle OpenAI-kompatiblen
@@ -26,6 +26,10 @@ const LIMITS = {
   timeoutSeconds: [10, 7200],
   numCtx: [2048, 1048576],
   maxOutputTokens: [256, 262144],
+  // Lange Kante der Seitenbilder eines Scans (#35). Unter 600 Bildpunkten ist auf einer
+  // Rechnung nichts mehr zu lesen; über 2600 rechnen auch die großen Dienste die Bilder von
+  // sich aus wieder herunter.
+  pageImageEdge: [600, 2600],
   modelLength: 200,
   urlLength: 500,
   extraInstructions: 2000,
@@ -70,8 +74,8 @@ function validateSlot(raw, slot) {
 // Prüft alle Felder außer `consent` und liefert sie bereinigt. Wirft mit `status` 400.
 function validateAi(raw) {
   const {
-    text, images = null, timeoutSeconds = null, numCtx = null, maxOutputTokens = null, jsonMode = 'auto', reasoningEffort = null,
-    extraInstructions = '',
+    text, images = null, timeoutSeconds = null, numCtx = null, maxOutputTokens = null, pageImageEdge = null,
+    jsonMode = 'auto', reasoningEffort = null, extraInstructions = '',
   } = raw
   if (timeoutSeconds !== null && !inRange(timeoutSeconds, LIMITS.timeoutSeconds)) {
     throw fail(`Das Zeitlimit muss zwischen ${LIMITS.timeoutSeconds[0]} und ${LIMITS.timeoutSeconds[1]} Sekunden liegen.`)
@@ -81,6 +85,9 @@ function validateAi(raw) {
   }
   if (maxOutputTokens !== null && !inRange(maxOutputTokens, LIMITS.maxOutputTokens)) {
     throw fail(`Die Antwortlänge muss zwischen ${LIMITS.maxOutputTokens[0]} und ${LIMITS.maxOutputTokens[1]} Token liegen.`)
+  }
+  if (pageImageEdge !== null && !inRange(pageImageEdge, LIMITS.pageImageEdge)) {
+    throw fail(`Die Größe der Seitenbilder muss zwischen ${LIMITS.pageImageEdge[0]} und ${LIMITS.pageImageEdge[1]} Bildpunkten liegen.`)
   }
   if (!JSON_MODES.includes(jsonMode)) throw fail(`Unbekannte JSON-Stufe „${jsonMode}“.`)
   if (reasoningEffort !== null && !(typeof reasoningEffort === 'string' && /^[a-z]{1,20}$/.test(reasoningEffort))) {
@@ -95,6 +102,7 @@ function validateAi(raw) {
     timeoutSeconds,
     numCtx,
     maxOutputTokens,
+    pageImageEdge,
     jsonMode,
     reasoningEffort,
     extraInstructions: extraInstructions.trim(),
@@ -136,6 +144,7 @@ export function migrateAi(settings) {
     timeoutSeconds: field('timeoutSeconds', null, (v) => inRange(v, LIMITS.timeoutSeconds)),
     numCtx: field('numCtx', null, (v) => inRange(v, LIMITS.numCtx)),
     maxOutputTokens: field('maxOutputTokens', null, (v) => inRange(v, LIMITS.maxOutputTokens)),
+    pageImageEdge: field('pageImageEdge', null, (v) => inRange(v, LIMITS.pageImageEdge)),
     jsonMode: field('jsonMode', 'auto', (v) => JSON_MODES.includes(v)),
     reasoningEffort: field('reasoningEffort', null, (v) => typeof v === 'string' && /^[a-z]{1,20}$/.test(v)),
     extraInstructions: field('extraInstructions', '', (v) => typeof v === 'string'),
@@ -218,6 +227,7 @@ export function aiFromEnv(env = process.env) {
   positiveInt('NKA_AI_TIMEOUT', 'timeoutSeconds')
   positiveInt('NKA_OLLAMA_NUM_CTX', 'numCtx')
   positiveInt('NKA_AI_MAX_TOKENS', 'maxOutputTokens')
+  positiveInt('NKA_AI_IMAGE_EDGE', 'pageImageEdge')
   return { text, ollama, advanced, fixed, error: errors.length ? errors.join(' ') : null }
 }
 

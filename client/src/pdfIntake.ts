@@ -2,7 +2,7 @@
 // Textebene geht als Feld `pdfText` mit, bei Scans ohne brauchbare Textebene zusätzlich die
 // ersten Seiten als JPEG im Feld `pages`. Der Server öffnet keine PDFs mehr, deshalb braucht
 // die Programmdatei kein natives Modul (server/src/extract.js).
-import { openPdf, renderPage } from './pdf'
+import { INTAKE_EDGE, openPdf, renderPage } from './pdf'
 
 // Ab dieser Länge gilt die Textebene als brauchbar (dieselbe Schwelle wie im Server).
 export const PDF_TEXT_MIN = 80
@@ -11,9 +11,10 @@ export const PDF_TEXT_MAX = 20000
 export const MAX_PAGES = 4
 
 // Ein geöffnetes PDF. Es wird nur einmal geöffnet, auch wenn Text und Seiten gebraucht werden.
+// `pages` bekommt die lange Kante der Seitenbilder in Bildpunkten (#35).
 export type OpenedPdf = {
   text(): Promise<string>
-  pages(max: number): Promise<Blob[]>
+  pages(max: number, edge: number): Promise<Blob[]>
   close(): void
 }
 export type PdfReader = { open(file: File): Promise<OpenedPdf> }
@@ -49,9 +50,11 @@ export const pdfReader: PdfReader = {
         }
         return text
       },
-      async pages(max) {
+      async pages(max, edge) {
         const pages: Blob[] = []
-        for (let n = 1; n <= Math.min(doc.numPages, max); n++) pages.push(await toJpeg(await renderPage(doc, n)))
+        // Kleiner als für den Druck: Das Modell braucht die Auflösung nicht, und jedes Bild
+        // kostet Auswertungszeit (#35, siehe INTAKE_EDGE).
+        for (let n = 1; n <= Math.min(doc.numPages, max); n++) pages.push(await toJpeg(await renderPage(doc, n, { maxEdge: edge })))
         return pages
       },
       close,
@@ -68,7 +71,7 @@ function messageFor(err: unknown): string {
   return `Das PDF ließ sich nicht lesen (${message ?? String(err)}).`
 }
 
-export async function buildUpload(file: File, reader: PdfReader = pdfReader): Promise<FormData> {
+export async function buildUpload(file: File, reader: PdfReader = pdfReader, pageEdge = INTAKE_EDGE): Promise<FormData> {
   const fd = new FormData()
   fd.append('file', file)
   if (file.type !== 'application/pdf') return fd
@@ -79,7 +82,7 @@ export async function buildUpload(file: File, reader: PdfReader = pdfReader): Pr
   try {
     doc = await reader.open(file)
     text = (await doc.text()).trim().slice(0, PDF_TEXT_MAX)
-    if (text.length < PDF_TEXT_MIN) pages = (await doc.pages(MAX_PAGES)).slice(0, MAX_PAGES)
+    if (text.length < PDF_TEXT_MIN) pages = (await doc.pages(MAX_PAGES, pageEdge)).slice(0, MAX_PAGES)
   } catch (err) {
     throw new Error(messageFor(err))
   } finally {
