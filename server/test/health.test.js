@@ -5,7 +5,7 @@
 // eingehängt oder mit falschen Rechten. Ein nicht eingehängtes Volume erkennt er nicht:
 // Docker legt dann ein anonymes an, und das ist beschreibbar.
 //
-// Geprüft wird die Funktion, nicht die Route: index.js startet den Server beim Import. Dass
+// Geprüft wird die Funktion, nicht die Route: index.ts startet den Server beim Import. Dass
 // die Route als JSON antwortet und nicht vom Frontend verdeckt wird, prüft api.test.js.
 
 import { test } from 'node:test'

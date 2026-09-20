@@ -78,7 +78,7 @@ for (const [name, { target, out, archive: kind }] of Object.entries(selected)) {
     'build',
     '--compile',
     `--target=${target}`,
-    'server/src/index.js',
+    'server/src/index.ts',
     '--outfile',
     path.join(outDir, out),
   ])

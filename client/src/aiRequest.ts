@@ -1,5 +1,5 @@
 // KI-Auswertung aus dem Browser. Die Anfrage fordert die Antwort als Strom an (siehe
-// aiResponse in server/src/index.js): Die Header kommen sofort, dann Fortschritt und
+// aiResponse in server/src/index.ts): Die Header kommen sofort, dann Fortschritt und
 // Lebenszeichen, zuletzt Ergebnis oder Fehler, je eine JSON-Zeile. So bricht Firefox eine
 // minutenlange Auswertung nicht nach fünf Minuten ab, und die Oberfläche kann zeigen, dass das
 // Modell arbeitet. Geprüft in client/src/aiRequest.test.ts.

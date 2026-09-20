@@ -106,7 +106,7 @@ jobs:
           NKA_UPDATE_URL: http://127.0.0.1:9/kein-internet-im-test
         run: |
           export NKA_DATA_DIR="$RUNNER_TEMP/daten"
-          node server/src/index.js > server.log 2>&1 &
+          node server/src/index.ts > server.log 2>&1 &
           pid=$!
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; tail -50 server.log; echo "--- Ollama"; docker logs --tail 50 ollama' EXIT
           for _ in $(seq 1 30); do curl -sf -o /dev/null http://127.0.0.1:3001/healthz && break; sleep 1; done
