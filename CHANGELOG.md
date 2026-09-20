@@ -18,14 +18,33 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein API-Schlüssel konnte im Klartext in einer Fehlermeldung auf dem Bildschirm stehen.**
+  Antwortete ein KI-Dienst mit etwas, das Mietfuchs nicht als Auswertung lesen konnte, zeigte
+  die Meldung die Antwort im Wortlaut. Gab der Dienst dabei die eigene Anfrage zurück, wie es
+  manche bei einem Fehler tun, stand der Schlüssel darin. Jetzt ersetzt Mietfuchs ihn in jeder
+  Meldung durch Sternchen, so wie es die übrigen Meldungen schon taten. Betroffen war nur, wer
+  einen KI-Dienst mit Schlüssel eingetragen hat, also OpenAI, Mistral, IONOS oder Ollama Cloud;
+  ein Ollama auf dem eigenen Rechner oder im Heimnetz braucht keinen Schlüssel und war deshalb
+  nie betroffen. Zu tun ist nichts, solange die Meldung nur auf dem eigenen Bildschirm stand.
+  Wer eine solche Meldung weitergegeben hat, etwa als Bildschirmfoto in einem Fehlerbericht,
+  in einem Forum oder in einer E-Mail, sollte den Schlüssel beim Anbieter widerrufen, dort
+  einen neuen erzeugen und ihn in den Einstellungen eintragen.
+- **Eine unbrauchbare Datei `secrets.json` legt Mietfuchs nicht mehr lahm.** Enthielt die Datei
+  mit den API-Schlüsseln statt der Schlüssel nur das Wort `null`, antwortete der Server mit
+  einem Fehler, und die Oberfläche blieb leer: keine Wohnungen, keine Einstellungen, kein
+  Zugang zu den eigenen Daten. Jetzt gilt ein unbrauchbarer Inhalt als „kein Schlüssel
+  gespeichert“, und der Schlüssel lässt sich in den Einstellungen einfach neu eintragen. Die
+  Datei liegt im Datenordner neben der `db.json`; diesen Inhalt bekam sie nur, wenn sie von
+  Hand bearbeitet wurde oder ein Wiederherstellen sie beschädigt hat.
 - **Ein falsch gesetztes `NKA_PORT` bricht den Start jetzt mit einer klaren Meldung ab.** Ein
   Wert, der keine Portnummer ist, galt bisher als Pfad eines Unix-Sockets: Mietfuchs meldete
   „läuft auf http://127.0.0.1:undefined“ und war über keine Adresse erreichbar.
-- **Ein API-Aufruf mit einer Liste statt eines Objekts als Rumpf legt keine Felder „0“, „1“ …
-  mehr an.** Diese Indizes landeten in den Einstellungen und in neu angelegten oder geänderten
-  Datensätzen und blieben in der `db.json` stehen. Betroffen waren `PUT /api/settings` und die
-  Routen zum Anlegen und Ändern aller Stammdaten und Kostenpositionen; ein solcher Rumpf zählt
-  jetzt überall als leerer Rumpf. Über die Oberfläche war das nicht auszulösen.
+- **Fremde Programme hinterlassen keine unsinnigen Felder mehr in den Daten.** Wer Mietfuchs
+  nicht über die Oberfläche, sondern über seine Schnittstelle anspricht, etwa mit einem eigenen
+  Skript, konnte beim Anlegen und Ändern von Wohnungen, Mietverhältnissen, Kosten, Zählern,
+  Ablesungen, Zahlungen und Einstellungen Felder mit den Namen „0“, „1“ … erzeugen, die
+  dauerhaft in der `db.json` stehen blieben. Solche Angaben verwirft Mietfuchs jetzt. Über die
+  Oberfläche war das nie möglich, wer Mietfuchs nur dort bedient, war also nie betroffen.
 
 ## [0.7.1] – 2026-09-20
 
