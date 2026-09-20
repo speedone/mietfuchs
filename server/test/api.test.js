@@ -7,6 +7,7 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -100,7 +101,7 @@ async function startServerIn(dataDir, env = {}) {
     stop()
     assert.fail('NKA_DATA_DIR wird nicht beachtet')
   }
-  return { api, base, dataDir, stop }
+  return { api, base, dataDir, stop, child }
 }
 
 let srv
@@ -118,6 +119,91 @@ test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
   assert.equal(report.status, 'ok')
   assert.equal(report.checks.data.ok, true)
   assert.equal(report.checks.uploads.ok, true)
+})
+
+// ---------- Start aus dem Startmenü (#45) ----------
+
+// Wartet, bis der Prozess endet, und liefert den Code. Wirft nach der Wartezeit.
+const waitForExit = (child, timeoutMs = 15000) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Der Prozess hat sich nicht beendet')), timeoutMs)
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      resolve(code)
+    })
+  })
+
+// Startet den Server, ohne auf die Startmeldung zu warten, und sammelt seine Ausgabe. Für die
+// Fälle, in denen der Start gerade nicht gelingen soll.
+function startServerRaw(dataDir, env = {}) {
+  const child = spawn(process.execPath, ['src/index.js'], {
+    cwd: serverRoot,
+    env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, CI: 'true', ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.on('data', (c) => { output += c })
+  child.stderr.on('data', (c) => { output += c })
+  return { child, out: () => output }
+}
+
+test('Healthcheck: /healthz nennt Mietfuchs beim Namen', async () => {
+  // Daran erkennt ein zweiter Start, dass auf dem Port schon Mietfuchs läuft
+  assert.equal((await srv.api('/healthz')).app, 'mietfuchs')
+})
+
+test('Beenden: im npm-Betrieb gibt es die Route nicht', async () => {
+  // Dort beendet die Umgebung den Dienst, und ein Neustart käme von selbst
+  const res = await fetch(`${srv.base}/api/quit`, { method: 'POST' })
+  assert.equal(res.status, 404)
+  assert.match((await res.json()).error, /Programmdatei/)
+})
+
+test('Beenden: als Programmdatei antwortet Mietfuchs erst und endet dann', async () => {
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), { NKA_RUNTIME: 'binary' })
+  try {
+    // Erst die Bestätigung, dann das Ende: Sonst sähe der Browser einen Verbindungsabbruch
+    assert.deepEqual(await s.api('/api/quit', { method: 'POST' }), { ok: true })
+    assert.equal(await waitForExit(s.child), 0)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Belegter Port: läuft dort schon Mietfuchs, endet der zweite Start ohne Fehler', async () => {
+  // Ein zweiter Klick im Startmenü ist kein Fehler. Der zweite Start öffnet nur die Oberfläche
+  // (hier mit CI=true unterdrückt) und beendet sich.
+  const port = new URL(srv.base).port
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  const zweiter = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+  try {
+    assert.equal(await waitForExit(zweiter.child), 0)
+    assert.match(zweiter.out(), /läuft bereits/)
+  } finally {
+    zweiter.child.kill()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung', async () => {
+  const fremder = http.createServer((req, res) => res.end('nicht Mietfuchs'))
+  // Auf allen Adressen lauschen, nicht nur auf 127.0.0.1: Windows lässt sonst eine zweite
+  // Bindung an 0.0.0.0 auf demselben Port zu, und der Port wäre gar nicht belegt.
+  await new Promise((r) => fremder.listen(0, r))
+  const port = String(fremder.address().port)
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  const start = startServerRaw(dataDir, { NKA_PORT: port, NKA_RUNTIME: 'binary' })
+  try {
+    // Die Programmdatei lässt die Meldung zehn Sekunden stehen, bevor sie endet. Geprüft wird
+    // deshalb die Meldung, nicht das Ende.
+    const deadline = Date.now() + 15000
+    while (!/bereits belegt/.test(start.out()) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100))
+    assert.match(start.out(), /bereits belegt/)
+  } finally {
+    start.child.kill()
+    fremder.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
 })
 
 test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () => {
