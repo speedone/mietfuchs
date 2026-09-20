@@ -6,6 +6,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Ein falsch gesetztes `NKA_PORT` bricht den Start jetzt mit einer klaren Meldung ab.** Ein
+  Wert, der keine Portnummer ist, galt bisher als Pfad eines Unix-Sockets: Mietfuchs meldete
+  „läuft auf http://127.0.0.1:undefined“ und war über keine Adresse erreichbar.
+
 ## [0.7.1] – 2026-09-20
 
 ### Geändert
