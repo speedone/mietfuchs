@@ -1,4 +1,4 @@
-// Reine Funktionen der Ollama-Anbindung (server/src/ai/ollama.js), ohne Server
+// Reine Funktionen der Ollama-Anbindung (server/src/ai/ollama.ts), ohne Server
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'

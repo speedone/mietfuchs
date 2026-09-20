@@ -1,7 +1,7 @@
 // Anbindung an OpenAI-kompatible Dienste über die Chat-Completions-Schnittstelle
 // (POST {url}/chat/completions). Diese Schnittstelle sprechen OpenAI, IONOS AI Model Hub,
 // Mistral, LM Studio, die OpenAI-Schnittstelle von Ollama und viele weitere. Setzt die
-// Schnittstelle aus ai/index.js um.
+// Schnittstelle aus ai/index.ts um.
 //
 // Die Dienste unterscheiden sich in Einzelheiten (nach ihrer Dokumentation, Stand September
 // 2026). Die Vorlage in presets.js belegt die bekannten vor. Lehnt ein Dienst etwas ab, probiert

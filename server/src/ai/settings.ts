@@ -394,7 +394,7 @@ export type ConsentCheckConfig = {
 // Rechners und des Heimnetzes und für ein Modell, das ein lokales Ollama an einen Cloud-Dienst
 // weiterreicht. Die Bestätigung gilt für genau diese Adresse, beim weitergereichten Modell auch
 // nur für dieses Modell. Liefert die Meldung, wenn sie fehlt, sonst null. `config` stammt aus
-// providerConfig (ai/index.js), `remoteModel` meldet der Anbieter.
+// providerConfig (ai/index.ts), `remoteModel` meldet der Anbieter.
 export function consentProblem(config: ConsentCheckConfig, { remoteModel }: { remoteModel: boolean }): string | null {
   const { url, model, consent } = config
   const where = config.slot === 'images' ? 'beim Anbieter für Fotos und Scans' : 'beim KI-Anbieter'

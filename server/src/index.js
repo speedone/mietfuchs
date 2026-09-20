@@ -72,7 +72,7 @@ const aiInput = (req) => ({
 
 // ---------- Einstellungen ----------
 // Den KI-Anbieter kann der Betreiber per Umgebungsvariable festlegen, etwa im Container (siehe
-// aiFromEnv in ai/settings.js). Dann gelten die Werte vor den gespeicherten, und `fixedByEnv`
+// aiFromEnv in ai/settings.ts). Dann gelten die Werte vor den gespeicherten, und `fixedByEnv`
 // sagt der Oberfläche, welche Felder sie nur anzeigen soll. In die db.json gelangen sie nicht.
 const AI_ENV = aiFromEnv()
 
@@ -135,7 +135,7 @@ app.put('/api/ai/key', keyRoute((req) => setKey(req.body?.slot, req.body?.key)))
 app.delete('/api/ai/key/:slot', keyRoute((req) => deleteKey(req.params.slot)))
 
 // Bestätigung, dass Belege an einen externen Dienst gehen dürfen (siehe consentProblem in
-// ai/settings.js). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
+// ai/settings.ts). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
 // auch wenn sie aus der Umgebung kommen.
 app.post('/api/ai/consent', (req, res) => {
   const slot = req.body?.slot
@@ -554,7 +554,7 @@ app.get('/api/ai/presets', (req, res) => res.json(PRESETS.map((p) => presetById(
 app.get('/api/ai/status', async (req, res) => res.json(await aiStatus(req.query.slot === 'images' ? 'images' : 'text')))
 
 // Empfehlungen, welches Modell taugt (#33). Nachgeladen wird nur mit derselben Zustimmung wie
-// beim Update-Hinweis, sonst gilt die mitgelieferte Liste (siehe ai/recommendations.js).
+// beim Update-Hinweis, sonst gilt die mitgelieferte Liste (siehe ai/recommendations.ts).
 const recommendations = createRecommendations()
 app.get('/api/ai/recommendations', async (req, res) => {
   res.json(await recommendations.get({ consented: getDb().settings.updateCheck === 'on' }))
@@ -709,7 +709,7 @@ function openBrowser(url) {
 // sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = process.env.NKA_PORT || 3001
 
-// Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.js und
+// Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
 const startProblem = AI_ENV.error ?? checkKeyEnvironment()
 if (startProblem) {
