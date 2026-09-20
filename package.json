@@ -22,7 +22,7 @@
     "anlage-v"
   ],
   "engines": {
-    "node": ">=24.12"
+    "node": ">=24.15"
   },
   "scripts": {
     "postinstall": "npm --prefix server install && npm --prefix client install",
