@@ -1,9 +1,9 @@
 // Anbindung an Ollama (https://github.com/ollama/ollama/blob/main/docs/api.md). Setzt die
-// Schnittstelle aus ai/index.js um und liefert dazu, was es nur bei Ollama gibt: die
+// Schnittstelle aus ai/index.ts um und liefert dazu, was es nur bei Ollama gibt: die
 // installierten Modelle mit ihren Fähigkeiten und die Suche nach Ollama unter den üblichen
 // Adressen.
 //
-// Die Funktionen bekommen die Konfiguration aus providerConfig (ai/index.js): `url`, `model`,
+// Die Funktionen bekommen die Konfiguration aus providerConfig (ai/index.ts): `url`, `model`,
 // `apiKey` (für Ollama hinter einem Proxy oder Ollama Cloud, sonst null) und `numCtx`.
 import type { AiModel } from '../../../shared/types.ts'
 import { openRequest, readLines, readText, maskSecret, type HttpResponse } from './http.ts'
