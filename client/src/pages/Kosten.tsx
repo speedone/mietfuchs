@@ -176,7 +176,7 @@ export default function Kosten({ units, settings }: Props) {
     void (async () => {
       try {
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
-        const fd = await buildUpload(filesRef.current.get(next.id)!)
+        const fd = await buildUpload(filesRef.current.get(next.id)!, undefined, settings?.ai?.pageImageEdge ?? undefined)
         const res = await aiRequest<{ file: string; extraction: Extraction }>('/api/extract', fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),

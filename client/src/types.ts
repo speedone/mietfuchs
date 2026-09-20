@@ -218,6 +218,7 @@ export type AiSettings = {
   timeoutSeconds: number | null
   numCtx: number | null // nur Ollama
   maxOutputTokens: number | null // nur OpenAI-kompatible Dienste
+  pageImageEdge: number | null // lange Kante der Seitenbilder eines Scans, in Bildpunkten
   jsonMode: AiJsonMode
   reasoningEffort: string | null
   extraInstructions: string

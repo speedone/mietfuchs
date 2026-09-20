@@ -126,6 +126,7 @@ export function aiFormFrom(settings: Settings): AiSettings {
     timeoutSeconds: null,
     numCtx: null,
     maxOutputTokens: null,
+    pageImageEdge: null,
     jsonMode: 'auto',
     reasoningEffort: null,
     extraInstructions: '',
@@ -139,6 +140,17 @@ export function parseOptionalInt(text: string): number | null | undefined {
   const trimmed = text.trim()
   if (!trimmed) return null
   return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined
+}
+
+// Hinweis unter dem Feld für die Größe der Seitenbilder (#35). Viele denken bei Scans in dpi,
+// gerendert wird aber nach Bildpunkten an der langen Kante; bei A4 (11,69 Zoll hoch) lässt sich
+// beides ineinander umrechnen.
+const A4_HEIGHT_INCHES = 11.69
+export function pageEdgeHint(value: string, fallback: number): string {
+  const parsed = parseOptionalInt(value)
+  if (parsed === undefined) return 'Bitte eine ganze Zahl eintragen oder das Feld leer lassen.'
+  const edge = parsed ?? fallback
+  return `${edge} Bildpunkte entsprechen etwa ${Math.round(edge / A4_HEIGHT_INCHES)} dpi bei A4.`
 }
 
 export const VISION_OPTIONS: Option[] = [

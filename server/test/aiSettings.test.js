@@ -145,6 +145,25 @@ test('Antwortlänge: einstellbar, per NKA_AI_MAX_TOKENS festlegbar, ohne Angabe 
   }
 })
 
+// Größe der Seitenbilder eines Scans (#35). Gemessen wurde 1200 Bildpunkte an der langen
+// Kante; wer ein Modell mit anderem Bedarf nutzt, stellt es um.
+test('Seitenbilder: einstellbar, per NKA_AI_IMAGE_EDGE festlegbar, ohne Angabe null', () => {
+  const settings = migrateAi(legacy())
+  assert.equal(settings.ai.pageImageEdge, null)
+  applyAiChanges(settings, { ai: { ...settings.ai, pageImageEdge: 1600 } }, aiFromEnv({}))
+  assert.equal(settings.ai.pageImageEdge, 1600)
+  assert.equal(migrateAi(structuredClone(settings)).ai.pageImageEdge, 1600)
+  const env = aiFromEnv({ NKA_AI_IMAGE_EDGE: '900' })
+  assert.equal(effectiveAi(settings.ai, env).pageImageEdge, 900)
+  assert.ok(fixedFields(settings.ai, env).includes('ai.pageImageEdge'))
+  assert.match(aiFromEnv({ NKA_AI_IMAGE_EDGE: '1200px' }).error, /NKA_AI_IMAGE_EDGE/)
+  for (const invalid of [500, 4000, 1200.5, '1200']) {
+    assert.throws(() => applyAiChanges(settings, { ai: { ...settings.ai, pageImageEdge: invalid } }, aiFromEnv({})), /Seitenbilder/, String(invalid))
+  }
+  // Ein unbrauchbarer Wert in der db.json verhindert den Start nicht, sondern fällt zurück
+  assert.equal(migrateAi(legacy({ ai: { pageImageEdge: 99 } })).ai.pageImageEdge, null)
+})
+
 test('Umgebung: ohne Variablen ändert sich nichts', () => {
   const ai = migrateAi(legacy()).ai
   const env = aiFromEnv({})

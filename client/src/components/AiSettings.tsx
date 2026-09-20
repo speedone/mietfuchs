@@ -11,9 +11,10 @@ import { api, fmtDate } from '../api'
 import { pullModel, type PullProgress } from '../aiRequest'
 import { OTHER_MODEL, modelHint, modelOptions, pullInstructions } from '../modelForm'
 import {
-  JSON_MODE_OPTIONS, SLOT_LABELS, VISION_OPTIONS, aiFormFrom, consentState, isFixed, keyState, parseOptionalInt,
-  presetGroups, pullText, recommendationsFor, switchPreset, visionFromValue, visionValue,
+  JSON_MODE_OPTIONS, SLOT_LABELS, VISION_OPTIONS, aiFormFrom, consentState, isFixed, keyState, pageEdgeHint,
+  parseOptionalInt, presetGroups, pullText, recommendationsFor, switchPreset, visionFromValue, visionValue,
 } from '../aiForm'
+import { INTAKE_EDGE } from '../pdf'
 import { useToast, useConfirm } from './feedback'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
@@ -28,6 +29,7 @@ const ENV_NAMES: Record<string, string> = {
   'ai.timeoutSeconds': 'NKA_AI_TIMEOUT',
   'ai.numCtx': 'NKA_OLLAMA_NUM_CTX',
   'ai.maxOutputTokens': 'NKA_AI_MAX_TOKENS',
+  'ai.pageImageEdge': 'NKA_AI_IMAGE_EDGE',
 }
 
 function EnvHint({ path }: { path: string }) {
@@ -46,6 +48,7 @@ export function AiSettings({ settings, reload }: Props) {
     timeoutSeconds: String(settings.ai?.timeoutSeconds ?? ''),
     numCtx: String(settings.ai?.numCtx ?? ''),
     maxOutputTokens: String(settings.ai?.maxOutputTokens ?? ''),
+    pageImageEdge: String(settings.ai?.pageImageEdge ?? ''),
     reasoningEffort: settings.ai?.reasoningEffort ?? '',
   }))
   const [status, setStatus] = useState<Partial<Record<AiSlotName, { of: string; value: AiStatus }>>>({})
@@ -93,6 +96,7 @@ export function AiSettings({ settings, reload }: Props) {
       timeoutSeconds: parseOptionalInt(advanced.timeoutSeconds),
       numCtx: parseOptionalInt(advanced.numCtx),
       maxOutputTokens: parseOptionalInt(advanced.maxOutputTokens),
+      pageImageEdge: parseOptionalInt(advanced.pageImageEdge),
     }
     if (Object.values(numbers).some((v) => v === undefined)) {
       toast('Bitte in den Zahlenfeldern eine ganze Zahl eintragen oder das Feld leer lassen.', 'error')
@@ -103,6 +107,7 @@ export function AiSettings({ settings, reload }: Props) {
       timeoutSeconds: numbers.timeoutSeconds ?? null,
       numCtx: numbers.numCtx ?? null,
       maxOutputTokens: numbers.maxOutputTokens ?? null,
+      pageImageEdge: numbers.pageImageEdge ?? null,
       reasoningEffort: advanced.reasoningEffort.trim() || null,
     }
     setSaving(true)
@@ -269,10 +274,24 @@ export function AiSettings({ settings, reload }: Props) {
               />
             </label>
           )}
+          <label className="field">
+            Seitenbilder eines Scans (Bildpunkte)
+            <input
+              value={advanced.pageImageEdge}
+              disabled={isFixed(settings, 'ai.pageImageEdge')}
+              placeholder={`Standard: ${INTAKE_EDGE}`}
+              onChange={(e) => setAdvanced({ ...advanced, pageImageEdge: e.target.value })}
+            />
+          </label>
         </div>
+        <p className="muted">
+          Lange Kante der Seiten, die ein Scan an das Modell schickt. {pageEdgeHint(advanced.pageImageEdge, INTAKE_EDGE)} Mehr
+          verlängert die Auswertung, ohne die Trefferquote zu verbessern; deutlich weniger übersieht Beträge.
+        </p>
         {isFixed(settings, 'ai.timeoutSeconds') && <EnvHint path="ai.timeoutSeconds" />}
         {isFixed(settings, 'ai.numCtx') && <EnvHint path="ai.numCtx" />}
         {isFixed(settings, 'ai.maxOutputTokens') && <EnvHint path="ai.maxOutputTokens" />}
+        {isFixed(settings, 'ai.pageImageEdge') && <EnvHint path="ai.pageImageEdge" />}
         <div className="row">
           {usesOpenAi && (
             <>

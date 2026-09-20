@@ -50,15 +50,30 @@ export async function openPdf(source: PdfSource): Promise<{ doc: PDFDocumentProx
 
 // Längste Seite eines gerenderten Bildes. Skalierung 2 entspricht etwa 150 dpi bei A4; bei
 // übergroßen Seiten (etwa ein Scan, dessen Seitengröße der Pixelzahl entspricht) wird kleiner
-// gerendert. Sonst wüchse das Canvas über die Grenzen mancher Browser (iOS Safari um 16 MP),
-// und das Vision-Modell bekäme unnötig große Bilder.
+// gerendert. Sonst wüchse das Canvas über die Grenzen mancher Browser (iOS Safari um 16 MP).
 export const MAX_EDGE = 2500
 
-export async function renderPage(doc: PDFDocumentProxy, n: number, scale = 2): Promise<HTMLCanvasElement> {
+// Für die KI-Auswertung (#35) deutlich kleiner: Jedes Bild kostet Eingabe-Token, und auf einem
+// Rechner ohne Grafikkarte macht das Minuten aus. Der KI-Prüflauf hat vier Größen an denselben
+// Belegen verglichen (qwen3.5:4b und gemma4:12b, je Text, Scan und Foto): Bis 1200 Bildpunkten
+// bleibt die Trefferquote gleich, bei 1000 bricht sie bei beiden Modellen ein. Gegenüber den
+// früheren 1684 Punkten spart 1200 rund 40 Prozent der Eingabe-Token.
+export const INTAKE_EDGE = 1200
+
+// Maßstab für eine Seite: Faktor 2, aber nie über die lange Kante hinaus.
+export function pageScale(base: { width: number; height: number }, scale: number, maxEdge: number): number {
+  return Math.min(scale, maxEdge / Math.max(base.width, base.height))
+}
+
+export async function renderPage(
+  doc: PDFDocumentProxy,
+  n: number,
+  { scale = 2, maxEdge = MAX_EDGE }: { scale?: number; maxEdge?: number } = {},
+): Promise<HTMLCanvasElement> {
   const page = await doc.getPage(n)
   try {
     const base = page.getViewport({ scale: 1 })
-    const viewport = page.getViewport({ scale: Math.min(scale, MAX_EDGE / Math.max(base.width, base.height)) })
+    const viewport = page.getViewport({ scale: pageScale(base, scale, maxEdge) })
     const canvas = document.createElement('canvas')
     canvas.width = Math.ceil(viewport.width)
     canvas.height = Math.ceil(viewport.height)

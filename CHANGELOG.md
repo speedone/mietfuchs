@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Gescannte Belege werden schneller ausgewertet.** Die Seiten gehen jetzt mit 1200 statt 1684
+  Bildpunkten an der langen Kante an das Modell. Der KI-Prüflauf hat vier Größen an denselben
+  Belegen verglichen: Bis 1200 bleibt die Trefferquote gleich, darunter bricht sie ein, und
+  mehr bringt nichts. Das spart rund 40 Prozent der Eingabe-Token und damit auf einem Rechner
+  ohne Grafikkarte merklich Zeit. Wer ein Modell mit anderem Bedarf nutzt, ändert die Größe
+  unter „Erweitert“ oder mit `NKA_AI_IMAGE_EDGE`; daneben steht, welchem dpi-Wert sie bei A4
+  entspricht. ([#35](https://github.com/speedone/mietfuchs/issues/35))
+
 ### Hinzugefügt
 
 - **Modelle lassen sich aus Mietfuchs laden.** In den Einstellungen steht neben einem fehlenden

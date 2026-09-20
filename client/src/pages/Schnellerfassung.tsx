@@ -135,7 +135,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       try {
         const exifDate = await readExifDate(file)
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
-        const fd = await buildUpload(file)
+        const fd = await buildUpload(file, undefined, settings?.ai?.pageImageEdge ?? undefined)
         const res = await aiRequest<IntakeResult>('/api/intake', fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),
