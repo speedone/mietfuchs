@@ -678,6 +678,22 @@ test('Version: /healthz und der Update-Hinweis nennen die Version aus package.js
 const LONG_TEXT =
   'Stadtwerke Musterstadt, Rechnung Nr. 4711 vom 15.03.2026. Frischwasser 12,50 EUR, Schmutzwasser 8,20 EUR. Gesamt 20,70 EUR.'
 
+// Eine Antwort, die sich nicht an ihr Schema hält: Beträge deutsch als Text, einer fehlt ganz,
+// einer ist gar keine Zahl, dazu ein erfundenes Feld und eines, das nur Mietfuchs selbst setzen
+// darf. So antwortet ein kleines Modell auf dem eigenen Rechner, wenn der Dienst das Schema
+// nicht durchsetzt — und das ist die Voreinstellung.
+const OFF_SCHEMA = {
+  vendor: 'Stadtwerke Musterstadt',
+  totalGrossEur: '1.234,56',
+  invoiceNumber: 'R-4711',
+  amountsAdjusted: 'netto',
+  positions: [
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: '12,50', labor35aEur: '4,20' },
+    { description: 'Grundgebühr', category: 'Wasser/Abwasser' },
+    { description: 'Schmutzwasser', category: 'Wasser/Abwasser', amountEur: 'siehe Anlage' },
+  ],
+}
+
 // Antwortet wie Ollama 0.34: /api/tags listet die Modelle, /api/show nennt ihre Fähigkeiten,
 // und ein unbekanntes Modell ergibt 404. Ohne `capabilities` verhält es sich wie eine ältere
 // Ollama-Version, die das Feld noch nicht kennt. /api/chat streamt standardmäßig zeilenweise
@@ -686,7 +702,8 @@ const LONG_TEXT =
 // `chat` schaltet Störungen der Auswertung: 'hang' schickt nie etwas, 'hangAfterFirstChunk'
 // verstummt nach dem ersten Stück, 'length' endet am Kontextende mit halbem JSON, 'error'
 // schickt mitten im Strom eine Fehlerzeile, 'rejectThinkOff' lehnt `think: false` ab wie
-// manche Modelle bei Ollama Cloud. Mit `key` verlangt der Dienst diesen Bearer-Schlüssel und
+// manche Modelle bei Ollama Cloud, 'offSchema' antwortet an seinem Schema vorbei wie ein
+// kleines Modell ohne erzwungenes JSON. Mit `key` verlangt der Dienst diesen Bearer-Schlüssel und
 // antwortet sonst mit 401. `closedEarly` zählt Chat-Anfragen, deren Verbindung Mietfuchs vor
 // dem Ende getrennt hat. `garbledShow` lässt /api/show mit einer nicht lesbaren Antwort
 // antworten, die den Schlüssel enthält (Befund aus der Codeprüfung: readJson gab ihn ungeprüft
@@ -695,7 +712,7 @@ const LONG_TEXT =
 type FakeModel = { name: string, size?: number, capabilities?: string[], remote_host?: string }
 type FakeOllamaOptions = {
   models?: FakeModel[]
-  chat?: 'normal' | 'netto' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff'
+  chat?: 'normal' | 'netto' | 'offSchema' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff'
   key?: string | null
   echoKey?: boolean
   garbledShow?: boolean
@@ -775,11 +792,13 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       const content = JSON.stringify(
         json.format?.properties?.categories
           ? { categories: ['Wasser/Abwasser'] }
-          : {
-              vendor: 'Stadtwerke Musterstadt',
-              positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }],
-              totalGrossEur: 12.5,
-            },
+          : chat === 'offSchema'
+            ? OFF_SCHEMA
+            : {
+                vendor: 'Stadtwerke Musterstadt',
+                positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 12.5 }],
+                totalGrossEur: 12.5,
+              },
       )
       const final = {
         message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop',
@@ -2642,7 +2661,7 @@ test('Auswertung: Nettopositionen werden brutto, der Lohnanteil aus dem Gesamtbe
     const extraction = r.body.extraction ?? {}
     const positions = extraction.positions ?? []
     const cents = (eur: number) => Math.round(eur * 100)
-    assert.equal(positions.reduce((a, p) => a + cents(p.amountEur), 0), cents(101.86))
+    assert.equal(positions.reduce((a, p) => a + cents(p.amountEur ?? 0), 0), cents(101.86))
     assert.equal(positions.reduce((a, p) => a + cents(p.labor35aEur ?? 0), 0), cents(90.56))
     assert.equal(extraction.amountsAdjusted, 'netto')
     assert.equal(extraction.laborFromTotal, true)
@@ -2650,4 +2669,33 @@ test('Auswertung: Nettopositionen werden brutto, der Lohnanteil aus dem Gesamtbe
     assert.equal('positionsAreNet' in extraction, false)
     assert.equal('labor35aTotalEur' in extraction, false)
   }, { chat: 'netto' })
+})
+
+// ---------- Die Antwort des Modells und die Zusage an die Oberfläche (#63) ----------
+
+test('Auswertung: eine Antwort am Schema vorbei bricht die Zusage an die Oberfläche nicht', async () => {
+  await withOllama(async (s) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const extraction = r.body.extraction ?? {}
+    const positions = extraction.positions ?? []
+
+    // Keine Position geht verloren: Der Mensch prüft ohnehin alles, bevor er es übernimmt.
+    assert.deepEqual(positions.map((p) => p.description), ['Frischwasser', 'Grundgebühr', 'Schmutzwasser'])
+    // Was die Oberfläche als Zahl behandelt, ist auch eine — sonst bricht dort die Anzeige ab.
+    for (const p of positions) {
+      assert.ok(p.amountEur === undefined || typeof p.amountEur === 'number', `${p.description}: ${JSON.stringify(p.amountEur)}`)
+    }
+    // Ein deutsch geschriebener Betrag wird gelesen (dieselbe Lesart wie beim Zählerstand),
+    assert.equal(positions[0].amountEur, 12.5)
+    assert.equal(positions[0].labor35aEur, 4.2)
+    assert.equal(extraction.totalGrossEur, 1234.56)
+    // ein fehlender bleibt leer, und was keine Zahl ist, wird nicht erraten.
+    assert.equal(positions[1].amountEur, undefined)
+    assert.equal(positions[2].amountEur, undefined)
+    // Was Mietfuchs selbst gerechnet hat, kann das Modell nicht behaupten, und erfundene
+    // Felder erreichen den Browser nicht.
+    assert.equal(extraction.amountsAdjusted, undefined)
+    assert.equal('invoiceNumber' in extraction, false)
+  }, { chat: 'offSchema' })
 })
