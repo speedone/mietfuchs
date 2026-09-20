@@ -34,10 +34,11 @@ function releaseWith(tag: string, extra: Partial<Release> = {}): Release {
 const assetName = (assets: ReleaseAsset[], platform: string, arch: string): string | undefined =>
   assetFor(assets, platform, arch)?.name
 
-// assert.match verlangt eine Zeichenkette, `error` im Status ist `string | null`. Fehlt die
-// Meldung, ist genau das der Befund, und der Test benennt ihn.
+// assert.match verlangt eine Zeichenkette, `error` im Status ist `string | null`. Geprüft wird
+// deshalb auf eine Zeichenkette und nicht nur auf „nicht null": Steht dort etwas anderes, ist
+// das genauso ein Befund, und der Test benennt ihn.
 const errorOf = (status: UpdateStatus): string => {
-  if (status.error === null) assert.fail('es fehlt die Fehlermeldung')
+  if (typeof status.error !== 'string') assert.fail(`es fehlt die Fehlermeldung: ${JSON.stringify(status.error)}`)
   return status.error
 }
 

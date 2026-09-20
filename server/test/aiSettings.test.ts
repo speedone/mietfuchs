@@ -3,13 +3,16 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl, consentProblem } from '../src/ai/settings.ts'
-import type { AiEnv, ConsentCheckConfig, SettingsBeforeMigration } from '../src/ai/settings.ts'
+import type { AiEnv, ConsentCheckConfig } from '../src/ai/settings.ts'
+import type { Settings } from '../../shared/types.ts'
 import { PRESETS, presetById } from '../src/ai/presets.ts'
 
-// Einstellungen, wie sie in einer db.json von vor #18 stehen: ollamaUrl und ollamaModel, kein
-// `ai`. Die übrigen Pflichtfelder füllt store.ts beim Laden mit denselben leeren Vorgaben, hier
-// stehen sie nur, damit der Bestand vollständig ist.
-const legacy = (extra: Partial<SettingsBeforeMigration> = {}): SettingsBeforeMigration => ({
+// Einstellungen, wie sie in einer db.json von vor #18 stehen: vollständig bis auf `ai`, das
+// dort entweder fehlt oder in einer beliebigen, ungeprüften Gestalt steht. Genau das ist der
+// Bestand, den store.ts beim Laden an migrateAi reicht.
+type StoredSettings = Omit<Settings, 'ai'> & { ai?: unknown }
+
+const legacy = (extra: Partial<StoredSettings> = {}): StoredSettings => ({
   houseName: 'Haus',
   address: '',
   landlordName: '',
@@ -56,7 +59,9 @@ test('Migration: bestehende Ollama-Einstellungen werden zum Standard-Anbieter', 
 test('Migration: ein Ollama im Heimnetz bekommt die Vorlage für ein entferntes', () => {
   // Nur diese Vorlage kennt ein Feld für den Schlüssel, etwa hinter einem Proxy
   assert.equal(migrateAi(legacy({ ollamaUrl: 'http://nas:11434' })).ai.text.preset, 'ollama-remote')
-  assert.equal(migrateAi(legacy({ ollamaUrl: 'http://localhost:11434', ollamaModel: 'x' })).ai.text.preset, 'ollama-local')
+  // Ein Bestand, dem die übrigen Einstellungen ganz fehlen: migrateAi liest nur `ai`,
+  // `ollamaUrl` und `ollamaModel` und muss deshalb auch damit zurechtkommen.
+  assert.equal(migrateAi({ ollamaUrl: 'http://localhost:11434', ollamaModel: 'x' }).ai.text.preset, 'ollama-local')
 })
 
 test('Migration: fehlende Felder einer vorhandenen KI-Einstellung werden ergänzt, gesetzte bleiben', () => {

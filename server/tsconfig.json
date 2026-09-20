@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "../shared"]
+  "include": ["src", "test", "testing", "../shared"]
 }
