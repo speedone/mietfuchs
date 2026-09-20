@@ -25,7 +25,10 @@ function homeDir() {
 // vor; ein relativer Wert hinge am Arbeitsverzeichnis, und das steht beim Start aus dem
 // Startmenü nicht fest.
 function userDataHome(env, platform, home = homeDir) {
-  const fromEnv = (name) => (env[name] && path.isAbsolute(env[name]) ? env[name] : null)
+  // Wie in paths.js nach der genannten Plattform rechnen, nicht nach der des laufenden
+  // Rechners: Sonst hinge das Ergebnis daran, wo geprüft wird.
+  const p = platform === 'win32' ? path.win32 : path.posix
+  const fromEnv = (name) => (env[name] && p.isAbsolute(env[name]) ? env[name] : null)
   const inHome = (...parts) => {
     const dir = home()
     if (!dir) {
@@ -34,11 +37,11 @@ function userDataHome(env, platform, home = homeDir) {
           'Bitte NKA_DATA_DIR auf einen Ordner setzen, in dem Mietfuchs schreiben darf.',
       )
     }
-    return path.join(dir, ...parts)
+    return p.join(dir, ...parts)
   }
-  if (platform === 'win32') return path.join(fromEnv('LOCALAPPDATA') || inHome('AppData', 'Local'), 'Mietfuchs')
+  if (platform === 'win32') return p.join(fromEnv('LOCALAPPDATA') || inHome('AppData', 'Local'), 'Mietfuchs')
   if (platform === 'darwin') return inHome('Library', 'Application Support', 'Mietfuchs')
-  return path.join(fromEnv('XDG_DATA_HOME') || inHome('.local', 'share'), 'mietfuchs')
+  return p.join(fromEnv('XDG_DATA_HOME') || inHome('.local', 'share'), 'mietfuchs')
 }
 
 // Wo die Daten liegen. Im Dev-/npm-Betrieb server/data. In der gepackten Programmdatei liegt
