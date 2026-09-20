@@ -47,18 +47,25 @@ für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
 
 ## Herunterladen & starten (ohne Installation)
 
-Der einfachste Weg — **keine Installation, kein Node nötig**. Auf der
-[**Releases-Seite**](https://github.com/speedone/mietfuchs/releases/latest) die passende Datei
-für dein System laden:
+Der einfachste Weg, **keine Installation und kein Node nötig**. Ein Klick lädt immer die
+neueste Fassung:
+
+[![Windows herunterladen](https://img.shields.io/badge/Windows-herunterladen-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win.exe)
+[![macOS herunterladen](https://img.shields.io/badge/macOS-herunterladen-111111?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip)
+[![Linux herunterladen](https://img.shields.io/badge/Linux-herunterladen-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz)
+
+Der macOS-Knopf gilt für Macs mit Apple-Chip (M1 bis M4). Für einen älteren Mac mit
+Intel-Prozessor, für ARM-Rechner wie den Raspberry Pi oder für ein Linux-Installationspaket
+steht alles in den beiden Tabellen. Jeder Dateiname führt direkt zur neuesten Fassung:
 
 | System | Datei |
 | --- | --- |
-| Windows | `mietfuchs-win.exe` |
-| Windows auf ARM (z. B. Snapdragon) | `mietfuchs-win-arm64.exe` |
-| macOS (Apple Silicon, M1–M4) | `mietfuchs-macos-apple-silicon.zip` |
-| macOS (Intel) | `mietfuchs-macos-intel.zip` |
-| Linux | `mietfuchs-linux.tar.gz` |
-| Linux auf ARM (z. B. Raspberry Pi 4/5 mit 64-Bit-System) | `mietfuchs-linux-arm64.tar.gz` |
+| Windows | [`mietfuchs-win.exe`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win.exe) |
+| Windows auf ARM (z. B. Snapdragon) | [`mietfuchs-win-arm64.exe`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-win-arm64.exe) |
+| macOS (Apple Silicon, M1–M4) | [`mietfuchs-macos-apple-silicon.zip`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-apple-silicon.zip) |
+| macOS (Intel) | [`mietfuchs-macos-intel.zip`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-macos-intel.zip) |
+| Linux | [`mietfuchs-linux.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux.tar.gz) |
+| Linux auf ARM (z. B. Raspberry Pi 4/5 mit 64-Bit-System) | [`mietfuchs-linux-arm64.tar.gz`](https://github.com/speedone/mietfuchs/releases/latest/download/mietfuchs-linux-arm64.tar.gz) |
 
 Voraussetzungen: Windows 10 (1809) oder neuer, macOS 13 oder neuer, Linux mit glibc 2.17 oder
 neuer. Das sind praktisch alle gängigen Distributionen; vor jedem Release startet jede Datei
