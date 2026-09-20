@@ -298,6 +298,50 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
+// Ein Text aus der Antwort des Modells. Eine Zählernummer besteht meist nur aus Ziffern, deshalb
+// schickt manches Modell sie als Zahl; die Oberfläche vergleicht sie aber als Zeichenkette
+// (autoMatchMeter in client/src/triage.ts), also wird hier umgewandelt statt verworfen.
+const textOrNull = (value: unknown): string | null => {
+  if (typeof value === 'string') return value.trim() || null
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : null
+}
+
+// Der Zählerstand aus der Antwort des Modells. Das Schema verlangt eine Zahl, erzwungen wird das
+// aber nicht immer: Lehnt ein Dienst das Schema ab, fällt ai/openai.ts stufenweise bis auf „nur
+// Prompt" zurück, und ein kleines Modell auf dem eigenen Rechner antwortet dann, wie es mag. Ein
+// Stand als Text darf deshalb nicht verlorengehen — die KI füllt vor, ein Mensch prüft, und wer
+// abtippen muss, was das Modell schon gelesen hat, hat nichts gewonnen.
+//
+// Angenommen wird deutsche wie technische Schreibweise. Offen bleibt nur, was wirklich offen
+// ist: Bei genau einem Trennzeichen mit genau drei Ziffern dahinter („1.234") lässt sich nicht
+// entscheiden, ob es gruppiert oder die Nachkommastellen abtrennt, und die beiden Lesarten
+// liegen um den Faktor 1000 auseinander. Dann bleibt das Feld leer, statt zu raten.
+const PLAIN = /^\d+$/
+const AMBIGUOUS = /^\d{1,3}[.,]\d{3}$/
+const GROUPED_DOT = /^\d{1,3}(?:\.\d{3})+$/ // 1.234.567
+const GROUPED_COMMA = /^\d{1,3}(?:,\d{3})+$/ // 1,234,567
+const DECIMAL_COMMA = /^\d+(?:\.\d{3})*,\d+$/ // 1234,5 · 1.234,56
+const DECIMAL_DOT = /^\d+(?:,\d{3})*\.\d+$/ // 1234.5 · 1,234.56
+
+export function readingNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string') return null
+  const text = value.replace(/[\s  ]/g, '') // manche Modelle gruppieren mit Leerzeichen
+  const negative = text.startsWith('-')
+  const body = text.replace(/^[+-]/, '')
+  if (!/^[\d.,]+$/.test(body) || AMBIGUOUS.test(body)) return null
+  let digits: string | null = null
+  if (PLAIN.test(body)) digits = body
+  else if (GROUPED_DOT.test(body)) digits = body.replaceAll('.', '')
+  else if (GROUPED_COMMA.test(body)) digits = body.replaceAll(',', '')
+  else if (DECIMAL_COMMA.test(body)) digits = body.replaceAll('.', '').replace(',', '.')
+  else if (DECIMAL_DOT.test(body)) digits = body.replaceAll(',', '')
+  if (digits === null) return null
+  const parsed = Number(digits)
+  if (!Number.isFinite(parsed)) return null
+  return negative ? -parsed : parsed
+}
+
 export async function extractMeterReading(
   filePath: string,
   mimetype: string,
@@ -314,13 +358,12 @@ export async function extractMeterReading(
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
   const answer = await ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
-  // Die drei Felder einzeln einengen statt die ganze Antwort zuzusichern. Was nicht die Gestalt
-  // aus dem Schema hat, gilt als nicht gelesen; die Oberfläche zeigt den Vorschlag ohnehin nur
-  // zur Prüfung an und lässt ihn von Hand ausfüllen. Derselbe Maßstab wie bei den Beträgen einer
-  // Rechnung, wo `toCents` alles verwirft, was keine Zahl ist.
+  // Die drei Felder einzeln einengen statt die ganze Antwort zuzusichern. Der Zählerstand darf
+  // dabei auch als Text kommen (siehe readingNumber), die Zählernummer ebenso als Zahl — sie
+  // besteht ja meist nur aus Ziffern, und die Oberfläche vergleicht sie als Zeichenkette.
   return {
-    meterNumber: typeof answer.meterNumber === 'string' ? answer.meterNumber : null,
-    value: typeof answer.value === 'number' && Number.isFinite(answer.value) ? answer.value : null,
+    meterNumber: textOrNull(answer.meterNumber),
+    value: readingNumber(answer.value),
     dateOnImage: typeof answer.dateOnImage === 'string' ? answer.dateOnImage : null,
   }
 }
