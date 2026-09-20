@@ -151,11 +151,13 @@ function repairPreset(slot: unknown): unknown {
 // und genau das zieht die Migration gerade. Alle übrigen Felder sind optional, weil die
 // Funktion nur `ai`, `ollamaUrl` und `ollamaModel` anfasst und deshalb auch mit einem
 // unvollständigen Bestand umgehen muss, wie ihn eine alte db.json enthält.
-export type SettingsBeforeMigration = Partial<Omit<Settings, 'ai'>> & { ai?: unknown }
+type SettingsBeforeMigration = Partial<Omit<Settings, 'ai'>> & { ai?: unknown }
 
-// Der Bestand danach: `ai` ist gesetzt und gültig. Im Datenmodell bleibt es optional, weil eine
-// db.json von vor #18 es noch nicht kennt; nach der Migration ist es aber keine offene Frage
-// mehr, und der Rückgabetyp sagt das, statt jeden Aufrufer prüfen zu lassen.
+// Ein vollständiger Bestand nach der Migration, also das, was store.ts nach `load()` in der
+// Hand hält. Im Datenmodell bleibt `ai` optional, weil eine db.json von vor #18 es noch nicht
+// kennt; danach ist es keine offene Frage mehr. migrateAi selbst gibt diesen Typ nicht zurück,
+// sondern reicht die Gestalt der Eingabe durch (siehe unten); der Name steht hier für alle, die
+// den fertigen Bestand beschreiben wollen, derzeit die Tests.
 export type MigratedSettings = Settings & { ai: AiSettings }
 
 // Ergänzt `settings.ai` beim Laden der db.json. Fehlt es, entsteht es aus ollamaUrl und

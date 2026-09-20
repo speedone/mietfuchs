@@ -20,8 +20,8 @@ import { largestRemainder } from './calc.ts'
 // normalizeAmounts geradezieht).
 // Beide Betragsfelder stehen ungeprüft so da, wie das Modell sie geliefert hat: `unknown`, aus
 // demselben Grund wie die Hinweisfelder unten. Gelesen werden sie nur über `toCents`, das jeden
-// Wert selbst prüft. Nach dem Geraderücken schreibt die Funktion Zahlen hinein — was der
-// Browser bekommt, beschreibt deshalb `Extraction` in shared/types.ts, und dort sind es Zahlen.
+// Wert selbst prüft, geschrieben nur über `toEur`. Nach dem Geraderücken stehen dort deshalb
+// Zahlen, und was der Browser bekommt, beschreibt `Extraction` in shared/types.ts.
 export type Position = {
   amountEur?: unknown
   // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen; so steht es schon

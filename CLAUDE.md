@@ -258,15 +258,20 @@ CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaß
 enthält ausschließlich Typen und keinen Laufzeitanteil; beide Seiten importieren sie
 unmittelbar, deshalb kann eine Änderung am Modell nicht mehr nur auf einer Seite ankommen.
 
-Die Grenze zu [client/src/types.ts](client/src/types.ts) verläuft an der Frage, ob etwas beim
-Ausführen noch da ist. Ein neuer Typ, ein neues Feld oder ein neuer Wert eines Aufzählungstyps
-gehört nach `shared/`, sofern beide Seiten ihn brauchen; was nur eine Seite kennt, bleibt bei
-ihr (`Db` und `ComputedSettlement` im Server, die Formularzustände im Client). Maßstab ist, was
-über die API geht. Alles, was die Oberfläche daraus macht, bleibt beim Client: die
+Die Grenze zu [client/src/types.ts](client/src/types.ts) hängt an einer einzigen Frage:
+**Brauchen beide Seiten dasselbe?** Nur dann gehört ein Typ, ein Feld oder ein Wert eines
+Aufzählungstyps nach `shared/`, denn nur dann kauft man sich damit etwas ein, nämlich dass eine
+Änderung nicht auf einer Seite ankommt und auf der anderen nicht. Was nur eine Seite kennt,
+bleibt bei ihr, und zwar auch dann, wenn es über die Leitung geht: `Db` und `ComputedSettlement`
+im Server, die Formularzustände im Client, und ebenso `ClientSettings` in api.test.ts, das genau
+die Antwort von `GET /api/settings` beschreibt und trotzdem nur den Server etwas angeht, weil
+der Client sie nie so liest.
+
+Beim Client bleibt deshalb auch alles, was die Oberfläche aus dem Modell macht: die
 Beschriftungen (`UNIT_USAGE_LABELS`, `METER_TYPE_LABELS`, `CATEGORIES`) und die Helfer
-(`usageOf`, `matchCategory`, `defaultKeyFor`). Die Datei des Clients reicht das gemeinsame
-Modell per `export type *` weiter, sodass die Importe der Seiten unverändert auf `../types`
-zeigen; der Server importiert `shared/types.ts` unmittelbar.
+(`usageOf`, `matchCategory`, `defaultKeyFor`). Seine Datei reicht das gemeinsame Modell per
+`export type *` weiter, sodass die Importe der Seiten unverändert auf `../types` zeigen; der
+Server importiert `shared/types.ts` unmittelbar.
 
 Die `KEY_LABELS` existieren bewusst doppelt: calc.ts liefert die Beschriftung, die auf der
 fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Oberfläche.
