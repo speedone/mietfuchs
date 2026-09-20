@@ -6,10 +6,11 @@ Comment=Nebenkostenabrechnung für private Vermieter, lokal auf diesem Rechner
 Comment[en]=Utility cost statements for private landlords, running on this computer
 Exec=mietfuchs
 Icon=mietfuchs
-# Mietfuchs ist ein Server mit Oberfläche im Browser: Der Start öffnet den Browser, das Fenster
-# bleibt offen, solange das Programm läuft, und sein Schließen beendet es. Ohne Fenster gäbe es
-# keinen sichtbaren Weg zum Beenden und keine Meldung, wenn der Port schon belegt ist.
-Terminal=true
+# Kein Konsolenfenster: Mietfuchs wird im Browser bedient, und mit Terminal=true startet auf
+# Systemen ohne Terminalprogramm gar nichts („Unable to find terminal required for application“).
+# Beendet wird über den Knopf in der Seitenleiste, ein zweiter Klick im Menü holt die laufende
+# Oberfläche nach vorn, und misslingt der Start, meldet sich Mietfuchs per Systemmeldung (#45).
+Terminal=false
 Categories=Office;Finance;
 Keywords=Nebenkosten;Betriebskosten;Abrechnung;Vermieter;Miete;Mietkonto;
 StartupNotify=false

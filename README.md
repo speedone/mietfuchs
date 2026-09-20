@@ -104,6 +104,15 @@ Symbol und der Kategorie „Büro“.
 Für ARM-Rechner (Raspberry Pi 4/5 mit 64-Bit-System) heißen die Dateien `arm64` statt `amd64`
 und `aarch64` statt `x86_64`.
 
+Ein Klick im Startmenü startet Mietfuchs und öffnet den Browser; ein Konsolenfenster gibt es
+dabei nicht. Zum Beenden dient der Knopf **„Mietfuchs beenden"** unten in der Seitenleiste. Ein
+zweiter Klick im Menü holt einfach die laufende Oberfläche nach vorn.
+
+Ohne grafische Oberfläche, etwa auf einem Server oder einem Raspberry Pi per SSH, funktioniert
+das Paket genauso: `mietfuchs` im Terminal starten und die Oberfläche von einem anderen Rechner
+unter `http://<ip-des-rechners>:3001` aufrufen. Dass sich dort kein Browser öffnet, ist normal;
+Mietfuchs sagt es in der Ausgabe.
+
 Aus einem Paket installiert, liegen die Daten in **`~/.local/share/mietfuchs`** statt neben der
 Programmdatei; in `/usr/bin` darf niemand schreiben. Backup = diesen Ordner kopieren. Wer die
 Archiv-Fassung schon nutzt, behält seinen Ordner `data/` neben der Programmdatei. Beim Umstieg

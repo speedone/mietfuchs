@@ -17,7 +17,7 @@ import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
-import { APP_VERSION, RUNTIME } from './version.js'
+import { APP_VERSION, RUNTIME, STANDALONE } from './version.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -625,6 +625,17 @@ app.get('/healthz', (req, res) => {
   res.status(report.status === 'ok' ? 200 : 503).json(report)
 })
 
+// Beenden aus der Oberfläche (#45). Nur in der Programmdatei: Aus einem Linux-Paket startet
+// Mietfuchs ohne Konsolenfenster, es fehlt also der gewohnte Weg zum Schließen. Im Container
+// und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von selbst.
+app.post('/api/quit', (req, res) => {
+  if (!STANDALONE) return res.status(404).json({ error: 'Beenden geht nur bei der Programmdatei. Hier beendet die Umgebung den Dienst.' })
+  res.json({ ok: true })
+  // Erst antworten, dann beenden: Sonst sähe der Browser einen Verbindungsabbruch statt der
+  // Bestätigung. Offene Schreibvorgänge gibt es nicht, store.js schreibt jede Änderung sofort.
+  res.on('finish', () => setTimeout(() => process.exit(0), 100))
+})
+
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express
 app.use('/api', (err, req, res, next) => {
   if (res.headersSent) return next(err)
@@ -706,6 +717,30 @@ if (startProblem) {
   process.exit(1)
 }
 
+// Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.js). Dann ist
+// ein zweiter Start kein Fehler, sondern ein zweiter Klick im Startmenü (#45).
+async function mietfuchsAlreadyOn(url) {
+  try {
+    const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(2000) })
+    return (await res.json())?.app === 'mietfuchs'
+  } catch {
+    return false
+  }
+}
+
+// Ohne Konsolenfenster (Startmenü unter Linux) läuft eine Fehlermeldung ins Leere. Dann
+// wenigstens eine Meldung des Systems, sofern es notify-send gibt.
+function notifyDesktop(message) {
+  if (!STANDALONE || process.platform !== 'linux' || process.env.CI) return
+  try {
+    const child = spawn('notify-send', ['--app-name=Mietfuchs', 'Mietfuchs', message], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {}) // ohne notify-send bleibt es bei der Ausgabe auf der Konsole
+    child.unref()
+  } catch {
+    /* egal, die Meldung steht auf der Konsole */
+  }
+}
+
 const server = app.listen(PORT, (err) => {
   // Express 5 ruft diesen Callback auch bei einem Fehler auf (etwa belegter Port). Den meldet
   // der error-Handler unten; hier darf dann weder „läuft“ stehen noch der Browser aufgehen.
@@ -721,19 +756,35 @@ const server = app.listen(PORT, (err) => {
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.
   console.log(`Daten: ${DATA_DIR}`)
-  if (PACKAGED) {
-    console.log('Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
+  if (STANDALONE) {
+    // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
+    // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
+    // weiterhin, und dort ist sein Schließen der gewohnte Weg.
+    console.log(RUNTIME === 'package'
+      ? 'Zum Beenden in der Seitenleiste auf „Mietfuchs beenden“ klicken.'
+      : 'Fenster offen lassen, solange Mietfuchs läuft. Zum Beenden dieses Fenster schließen.')
     // In der CI (GitHub setzt CI=true) prüft ein Skript die Programmdatei; ein Browserfenster
     // auf dem Runner nützt dort niemandem.
     if (!process.env.CI) openBrowser(url)
   }
 })
-server.on('error', (err) => {
+server.on('error', async (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} ist bereits belegt. Läuft Mietfuchs vielleicht schon? Sonst mit NKA_PORT einen anderen Port setzen.`)
+    const running = `http://127.0.0.1:${PORT}`
+    // Ein zweiter Klick im Startmenü ist kein Fehler: Läuft dort schon Mietfuchs, gehört die
+    // Oberfläche nach vorn (#45).
+    if (STANDALONE && await mietfuchsAlreadyOn(running)) {
+      console.log(`Mietfuchs läuft bereits auf ${running}. Die Oberfläche wird geöffnet.`)
+      if (!process.env.CI) openBrowser(running)
+      process.exit(0)
+    }
+    const message = `Port ${PORT} ist bereits belegt. Dort antwortet ein anderes Programm. Mit NKA_PORT lässt sich ein anderer Port setzen.`
+    console.error(message)
+    notifyDesktop(message)
   } else {
     console.error(err)
+    notifyDesktop(`Start fehlgeschlagen: ${err.message}`)
   }
-  if (PACKAGED) setTimeout(() => process.exit(1), 10000) // Fenster kurz offen lassen, damit man die Meldung liest
+  if (STANDALONE) setTimeout(() => process.exit(1), 10000) // Fenster kurz offen lassen, damit man die Meldung liest
   else process.exit(1)
 })

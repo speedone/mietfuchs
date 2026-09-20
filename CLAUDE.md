@@ -45,8 +45,7 @@ für x64 und ARM64. Gebaut wird mit **nFPM** nach [packaging/nfpm.yaml](packagin
 das alle Formate aus einer Vorschrift erzeugt; nFPM kommt von der Platte oder aus seinem
 Container, mehr als Docker braucht der Rechner nicht. Das Paket legt die Programmdatei nach
 `/usr/bin`, dazu [packaging/mietfuchs.desktop](packaging/mietfuchs.desktop) (Startmenü,
-`Terminal=true`, weil das Fenster der sichtbare Weg zum Beenden ist) und das Symbol als SVG und
-PNG. Dort installiert, kann der Server nicht neben sich schreiben, deshalb liegen die Daten
+`Terminal=false`, siehe unten) und das Symbol als SVG und PNG. Dort installiert, kann der Server nicht neben sich schreiben, deshalb liegen die Daten
 dann in `~/.local/share/mietfuchs` (XDG; entsprechend unter Windows und macOS). Die Regel dafür
 steht in `systemLocation` ([server/src/paths.js](server/src/paths.js), gemeinsame Quelle für
 Datenordner und Betriebsart): ein Systemort (`/usr`, `/opt`, `Program Files`) führt immer in den
@@ -59,6 +58,19 @@ erklärt dann das Neuinstallieren des Pakets statt des Austauschens der Datei. B
 der Server den Datenordner in der zweiten Zeile. Vor dem Release wird jedes Format in einem
 Container seiner Distribution installiert, als gewöhnlicher Benutzer gestartet und mit
 [scripts/smoke-test.mjs](scripts/smoke-test.mjs) geprüft (`--mode package`).
+
+**Start aus dem Startmenü** (#45): Der Eintrag hat `Terminal=false`. Mit `Terminal=true` startet
+auf Systemen ohne Terminalprogramm gar nichts, und zwar ohne sichtbare Meldung („Unable to find
+terminal required for application“, nachgestellt mit `gio launch`). Ohne Konsolenfenster fehlen
+zwei Dinge, die es leistete, deshalb gibt es dafür Ersatz: `POST /api/quit` beendet den Server
+aus der Oberfläche (Knopf in der Seitenleiste, nur wenn `STANDALONE`, also Betriebsart `binary`
+oder `package`); ein Start auf belegtem Port fragt `/healthz` und beendet sich still mit Code 0,
+wenn dort schon Mietfuchs antwortet (die Marke dafür ist `app: 'mietfuchs'` im Bericht), sodass
+ein zweiter Klick im Menü nur die Oberfläche nach vorn holt; und scheitert der Start aus einem
+anderen Grund, geht unter Linux zusätzlich eine Meldung über `notify-send` hinaus. Für Tests
+gibt `NKA_RUNTIME=binary` die Programmdatei vor, ohne eine zu sein; die Auslieferung des
+Frontends hängt weiterhin an `globalThis.Bun`. Den Klick im Menü selbst prüft kein Test, das
+bleibt eine Probe auf einem echten Desktop.
 
 **Docker-Image**: [.github/workflows/docker.yml](.github/workflows/docker.yml) baut das
 [Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
