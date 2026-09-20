@@ -1,7 +1,7 @@
 // Ein Beleg für die KI-Auswertung vorbereiten (#21). PDFs liest der Browser selbst: Die
 // Textebene geht als Feld `pdfText` mit, bei Scans ohne brauchbare Textebene zusätzlich die
 // ersten Seiten als JPEG im Feld `pages`. Der Server öffnet keine PDFs mehr, deshalb braucht
-// die Programmdatei kein natives Modul (server/src/extract.js).
+// die Programmdatei kein natives Modul (server/src/extract.ts).
 import { INTAKE_EDGE, openPdf, renderPage } from './pdf'
 
 // Ab dieser Länge gilt die Textebene als brauchbar (dieselbe Schwelle wie im Server).

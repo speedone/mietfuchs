@@ -7,7 +7,7 @@
 //   consent: { [Platz]: { url, date } }               Bestätigung eines externen Dienstes
 //
 // `provider` ist die Art der Schnittstelle ('ollama' oder 'openai' für alle OpenAI-kompatiblen
-// Dienste), `preset` die gewählte Vorlage aus presets.js. `vision` ist null, solange unbekannt
+// Dienste), `preset` die gewählte Vorlage aus presets.ts. `vision` ist null, solange unbekannt
 // ist, ob das Modell Bilder versteht (Ollama meldet es selbst), sonst die Angabe des Nutzers.
 // Die API-Schlüssel liegen getrennt in secrets.ts.
 //
