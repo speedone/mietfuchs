@@ -18,7 +18,7 @@
 // Oberfläche übersetzt. Ein Schlüssel erscheint nie in einer Meldung.
 
 import { openRequest, readText, maskSecret } from './http.js'
-import { presetById } from './presets.js'
+import { presetById } from './presets.ts'
 import { isExternalUrl } from './settings.js'
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
