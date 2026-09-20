@@ -21,7 +21,7 @@
     "anlage-v"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=24.12"
   },
   "scripts": {
     "postinstall": "npm --prefix server install && npm --prefix client install",
@@ -32,7 +32,8 @@
     "package": "node scripts/package-binaries.mjs",
     "package:linux": "node scripts/package-linux.mjs",
     "test:server": "npm --prefix server test",
-    "test:client": "npm --prefix client test"
+    "test:client": "npm --prefix client test",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck"
   },
   "devDependencies": {
     "concurrently": "^10.0.5"

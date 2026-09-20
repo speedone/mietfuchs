@@ -9,13 +9,13 @@ jobs:
   test-build:
     name: Tests und Build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    # 22.12 ist die Mindestversion (engines in package.json), 24 die von Docker-Image und
-    # Release-Build. Beide müssen grün sein. Getestet wird genau 22.12, nicht die neueste 22er:
-    # Erst ab dort lädt Node JSON-Module ohne Warnung (server/src/version.js).
+    # 24.12 ist die Mindestversion (engines in package.json): Erst ab dort gilt das Ausführen
+    # von TypeScript ohne Build-Schritt als stabil. 24 ist die Version von Docker-Image und
+    # Release-Build. Beide müssen grün sein.
     strategy:
       fail-fast: false
       matrix:
-        node: ['22.12', '24']
+        node: ['24.12', '24']
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -27,6 +27,8 @@ jobs:
           cache-dependency-path: '**/package-lock.json'
       # npm install (nicht ci): postinstall installiert Server + Client mit.
       - run: npm install
+      - name: Typen prüfen
+        run: npm run typecheck
       # Tests der Berechnungs-Engine (node:test)
       - run: npm test
       # Typecheck (tsc --noEmit) + Vite-Build
