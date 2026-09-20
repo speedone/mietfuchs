@@ -11,11 +11,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Ein falsch gesetztes `NKA_PORT` bricht den Start jetzt mit einer klaren Meldung ab.** Ein
   Wert, der keine Portnummer ist, galt bisher als Pfad eines Unix-Sockets: Mietfuchs meldete
   „läuft auf http://127.0.0.1:undefined“ und war über keine Adresse erreichbar.
-- **Ein Aufruf der API mit einer Liste statt eines Objekts als Rumpf ändert nichts mehr.** Deren
-  Indizes landeten als Schlüssel „0“, „1“ … in den Einstellungen und in neu angelegten oder
-  geänderten Datensätzen und blieben in der `db.json` stehen. Betroffen waren
-  `PUT /api/settings` und die Routen zum Anlegen und Ändern aller Stammdaten und
-  Kostenpositionen. Über die Oberfläche war das nicht auszulösen.
+- **Ein API-Aufruf mit einer Liste statt eines Objekts als Rumpf legt keine Felder „0“, „1“ …
+  mehr an.** Diese Indizes landeten in den Einstellungen und in neu angelegten oder geänderten
+  Datensätzen und blieben in der `db.json` stehen. Betroffen waren `PUT /api/settings` und die
+  Routen zum Anlegen und Ändern aller Stammdaten und Kostenpositionen; ein solcher Rumpf zählt
+  jetzt überall als leerer Rumpf. Über die Oberfläche war das nicht auszulösen.
 
 ## [0.7.1] – 2026-09-20
 

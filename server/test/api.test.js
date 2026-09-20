@@ -219,10 +219,11 @@ test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an'
   assert.equal(res.status, 201)
   const created = await res.json()
   try {
-    assert.equal(created['0'], undefined)
-    assert.equal((await srv.api('/api/units')).find((u) => u.id === created.id)['0'], undefined)
+    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
     const stored = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8'))
     assert.equal(stored.units.find((u) => u.id === created.id)['0'], undefined)
+    assert.equal(created['0'], undefined)
+    assert.equal((await srv.api('/api/units')).find((u) => u.id === created.id)['0'], undefined)
   } finally {
     await srv.api(`/api/units/${created.id}`, { method: 'DELETE' })
   }
@@ -241,6 +242,10 @@ test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet
     })
     assert.equal(res.status, 200)
     const updated = await res.json()
+    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
+    const stored = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'db.json'), 'utf8')).units.find((u) => u.id === unit.id)
+    assert.equal(stored['0'], undefined)
+    assert.equal(stored.name, 'Rumpfprobe')
     assert.equal(updated['0'], undefined)
     assert.equal(updated.name, 'Rumpfprobe')
   } finally {
