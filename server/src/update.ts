@@ -5,6 +5,7 @@
 //
 // Ein Selbst-Update gibt es nicht. Ob und welcher Updater später dazukommt, ist offen. Die
 // Möglichkeiten mit Vor- und Nachteilen stehen in Issue #20.
+import type { UpdateStatus } from '../../shared/types.ts'
 
 export const UPDATE_URL = 'https://api.github.com/repos/speedone/mietfuchs/releases/latest'
 
@@ -16,19 +17,19 @@ const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/
 // Links aus der Antwort landen in der Oberfläche. Übernommen wird nur, was ins Mietfuchs-Repo
 // auf GitHub zeigt, auch wenn NKA_UPDATE_URL die Abfrage anderswohin lenkt.
 const REPO_URL = 'https://github.com/speedone/mietfuchs/'
-const trusted = (link) => (typeof link === 'string' && link.startsWith(REPO_URL) ? link : null)
+const trusted = (link: string | undefined): string | null => (typeof link === 'string' && link.startsWith(REPO_URL) ? link : null)
 
 const TOO_MANY_REQUESTS =
   'GitHub hat zu viele Anfragen von diesem Internetanschluss gezählt. Mietfuchs fragt später noch einmal.'
 
 // 'v0.4.0' oder '0.4.0' → [0, 4, 0]. Vorabversionen und alles andere → null.
-export function parseVersion(v) {
+export function parseVersion(v: unknown): [number, number, number] | null {
   const m = VERSION.exec(String(v ?? '').trim())
   return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
 }
 
 // Ist `candidate` neuer als `current`? Ohne gültige Versionen auf beiden Seiten nie.
-export function isNewer(candidate, current) {
+export function isNewer(candidate: unknown, current: unknown): boolean {
   const a = parseVersion(candidate)
   const b = parseVersion(current)
   if (!a || !b) return false
@@ -36,9 +37,29 @@ export function isNewer(candidate, current) {
   return false
 }
 
+// Nur die Felder, die wir wirklich lesen. Alles andere aus der Antwort interessiert nicht.
+type GithubReleaseAsset = { name?: string, browser_download_url?: string }
+type GithubRelease = {
+  draft?: boolean
+  prerelease?: boolean
+  tag_name?: string
+  html_url?: string
+  assets?: GithubReleaseAsset[]
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
+
+// GitHub liefert hier fremde Daten von außen. Statt sie ungeprüft als GithubRelease zu
+// behandeln, wird nur sichergestellt, dass es überhaupt ein Objekt ist — die einzelnen Felder
+// bleiben optional und werden dort geprüft, wo sie gebraucht werden (parseVersion, trusted).
+function asRelease(body: unknown): GithubRelease {
+  if (!isObject(body)) throw new Error('Die Antwort von GitHub ist kein Objekt.')
+  return body as GithubRelease
+}
+
 // Release-Dateien je Betriebssystem und Architektur, wie scripts/package-binaries.mjs sie baut.
 // Die bisherigen Namen dürfen sich nie ändern: Ältere Versionen suchen ihre Datei darunter.
-const ASSET_NAMES = {
+const ASSET_NAMES: Record<string, string> = {
   'win32-x64': 'mietfuchs-win.exe',
   'win32-arm64': 'mietfuchs-win-arm64.exe',
   'darwin-arm64': 'mietfuchs-macos-apple-silicon.zip',
@@ -47,7 +68,7 @@ const ASSET_NAMES = {
   'linux-arm64': 'mietfuchs-linux-arm64.tar.gz',
 }
 
-export function assetFor(assets, platform, arch) {
+export function assetFor(assets: GithubReleaseAsset[] | null | undefined, platform: string, arch: string): GithubReleaseAsset | null {
   const name = ASSET_NAMES[`${platform}-${arch}`]
   return (name && (assets ?? []).find((a) => a.name === name)) || null
 }
@@ -56,7 +77,7 @@ export function assetFor(assets, platform, arch) {
 // (Sekunden seit 1970), ohne Angabe mindestens eine Minute. Wer trotzdem weiterfragt, riskiert
 // eine Sperre. Liefert den Zeitpunkt, ab dem wieder gefragt werden darf, oder null. Länger als
 // einen Tag wird nie gewartet, sonst legte eine unsinnige Angabe den Hinweis dauerhaft still.
-function rateLimitUntil(res, now) {
+function rateLimitUntil(res: Response, now: number): number | null {
   if (res.status !== 403 && res.status !== 429) return null
   let until = null
   const retryAfter = Number(res.headers.get('retry-after'))
@@ -69,13 +90,34 @@ function rateLimitUntil(res, now) {
   return until === null ? null : Math.min(until, now + ONE_DAY)
 }
 
+// Die von rateLimitUntil per Object.assign angehängte Wartezeit auslesen, sonst 0 (siehe query).
+function untilOf(err: unknown): number {
+  const value = err instanceof Error ? (err as Error & { until?: unknown }).until : undefined
+  return typeof value === 'number' ? value : 0
+}
+
 // Fehler in eine Meldung für die Einstellungen übersetzen. Im Hinweis selbst erscheinen sie nie.
-function describeError(err) {
-  if (err?.name === 'TimeoutError' || err?.name === 'AbortError') return 'GitHub hat nicht rechtzeitig geantwortet.'
+function describeError(err: unknown): string {
+  const name = err instanceof Error ? err.name : undefined
+  if (name === 'TimeoutError' || name === 'AbortError') return 'GitHub hat nicht rechtzeitig geantwortet.'
   if (err instanceof SyntaxError) return 'Die Antwort von GitHub ließ sich nicht lesen.'
   if (err instanceof TypeError) return 'GitHub ist nicht erreichbar.'
-  return err?.message || 'Die Abfrage ist fehlgeschlagen.'
+  return (err instanceof Error && err.message) || 'Die Abfrage ist fehlgeschlagen.'
 }
+
+type CreateUpdateCheckerOptions = {
+  url?: string
+  currentVersion: string
+  mode: UpdateStatus['mode']
+  platform?: string
+  arch?: string
+  now?: () => number
+  ttlMs?: number
+  errorPauseMs?: number
+  timeoutMs?: number
+}
+
+type CheckOptions = { consent?: string, force?: boolean }
 
 // `mode` ist 'binary' (Programmdatei), 'package' (aus einem Installationspaket), 'docker' oder
 // 'npm' und bestimmt, ob es einen direkten Download gibt. Aus einem Paket gibt es keinen: Welche
@@ -91,15 +133,15 @@ export function createUpdateChecker({
   ttlMs = ONE_DAY,
   errorPauseMs = ONE_HOUR,
   timeoutMs = 5000,
-}) {
-  let cached = null // { at, result }: die letzte erfolgreiche Abfrage, gilt einen Tag
+}: CreateUpdateCheckerOptions) {
+  let cached: { at: number, result: UpdateStatus } | null = null // die letzte erfolgreiche Abfrage, gilt einen Tag
   // Nach einem Fehler: bis `until` keine automatische Abfrage, bis `blockedUntil` (Rate-Limit)
   // auch nicht auf Knopfdruck. Sonst fragte jeder Seitenaufruf sofort wieder.
-  let backoff = null // { until, blockedUntil, result }
-  let pending = null // die gerade offene Anfrage, gleichzeitige Aufrufe warten auf sie
-  let lastQueriedAt = null // Zeitpunkt der letzten Anfrage, für den Mindestabstand
+  let backoff: { until: number, blockedUntil: number, result: UpdateStatus } | null = null
+  let pending: Promise<UpdateStatus> | null = null // die gerade offene Anfrage, gleichzeitige Aufrufe warten auf sie
+  let lastQueriedAt: number | null = null // Zeitpunkt der letzten Anfrage, für den Mindestabstand
 
-  const emptyResult = (enabled) => ({
+  const emptyResult = (enabled: boolean): UpdateStatus => ({
     enabled,
     current: currentVersion,
     mode,
@@ -111,7 +153,7 @@ export function createUpdateChecker({
     error: null,
   })
 
-  async function fetchLatestRelease(result) {
+  async function fetchLatestRelease(result: UpdateStatus): Promise<void> {
     // Bewusst ohne X-GitHub-Api-Version: Installationen laufen oft jahrelang ohne Update. Eine
     // fest eingetragene Version, die GitHub irgendwann abschaltet, ließe den Hinweis genau dort
     // verstummen, wo er am nötigsten ist. Die wenigen genutzten Felder sichert der Test mit der
@@ -126,22 +168,24 @@ export function createUpdateChecker({
       if (until) throw Object.assign(new Error(TOO_MANY_REQUESTS), { until })
       throw new Error(`GitHub antwortet mit Status ${res.status}.`)
     }
-    const release = await res.json()
+    const body: unknown = await res.json()
+    const release = asRelease(body)
     // /releases/latest liefert keine Vorabversionen. Falls doch, zählen sie nicht.
     if (release.draft || release.prerelease) return
     const version = parseVersion(release.tag_name)
     if (!version) throw new Error(`Unbekanntes Versionsformat „${release.tag_name}".`)
-    result.latest = version.join('.')
-    result.available = isNewer(result.latest, currentVersion)
+    const latest = version.join('.')
+    result.latest = latest
+    result.available = isNewer(latest, currentVersion)
     result.releaseUrl = trusted(release.html_url)
     if (mode === 'binary') {
       result.downloadUrl = trusted(assetFor(release.assets, platform, arch)?.browser_download_url) ?? result.releaseUrl
     }
   }
 
-  async function query() {
+  async function query(): Promise<UpdateStatus> {
     lastQueriedAt = now()
-    const result = { ...emptyResult(true), checkedAt: new Date(now()).toISOString() }
+    const result: UpdateStatus = { ...emptyResult(true), checkedAt: new Date(now()).toISOString() }
     try {
       await fetchLatestRelease(result)
       cached = { at: now(), result }
@@ -149,21 +193,21 @@ export function createUpdateChecker({
       return result
     } catch (err) {
       // Was schon bekannt war, bleibt gültig: Ein kurzer Ausfall soll den Hinweis nicht löschen.
-      const failed = { ...(cached?.result ?? result), checkedAt: result.checkedAt, error: describeError(err) }
-      const blockedUntil = err?.until ?? 0
+      const failed: UpdateStatus = { ...(cached?.result ?? result), checkedAt: result.checkedAt, error: describeError(err) }
+      const blockedUntil = untilOf(err)
       backoff = { until: Math.max(now() + errorPauseMs, blockedUntil), blockedUntil, result: failed }
       return failed
     }
   }
 
-  async function check({ consent, force = false } = {}) {
+  async function check({ consent, force = false }: CheckOptions = {}): Promise<UpdateStatus> {
     if (consent !== 'on') return emptyResult(false)
     if (pending) return pending
     if (backoff && (now() < backoff.blockedUntil || (!force && now() < backoff.until))) return backoff.result
     if (!force && cached && now() - cached.at < ttlMs) return cached.result
     // Auch „Jetzt prüfen" fragt höchstens einmal pro Minute, wiederholtes Klicken bleibt lokal.
     const last = backoff?.result ?? cached?.result
-    if (force && last && now() - lastQueriedAt < ONE_MINUTE) return last
+    if (force && last && now() - (lastQueriedAt ?? 0) < ONE_MINUTE) return last
     pending = query().finally(() => { pending = null })
     return pending
   }
