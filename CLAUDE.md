@@ -107,12 +107,12 @@ Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
 (siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
 Apple Silicon und gegen Node im Job „Lange KI-Antwort (Node)“, beides aber nur noch beim vollen
-Umfang, also beim Tag und auf Zuruf (siehe Prüfumfang je Anlass). Diese Prüfung fällt damit
-nicht weg, sie rückt ans Release: Ohne sie wird nichts angehängt. Sie gehört dorthin, weil sie
-an der Laufzeit hängt, bei der Programmdatei also an Bun, und Bun wird bewusst mit `latest`
-gebaut. Ist `CI` gesetzt, öffnet die Programmdatei keinen
-Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
-fällt in diesen Tests auf. Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
+Umfang, also beim Tag, im wöchentlichen Lauf und auf Zuruf (siehe Prüfumfang je Anlass). Weg
+fällt die Prüfung damit nicht, sie rückt ans Release: Ohne sie wird nichts angehängt. Ist `CI`
+gesetzt, öffnet die Programmdatei keinen Browser. Bun baut bewusst mit `latest`; eine
+fehlerhafte neue Version fällt in diesen Tests auf, seit #52 im Pull Request allerdings nicht
+mehr, sondern erst im wöchentlichen Lauf oder mit dem Label.
+Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
 `codesign --sign -` neu signiert: Buns eigene Ad-hoc-Signatur beim Cross-Kompilieren unter
 Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neuere macOS-Versionen
 beenden solche Programme beim Start.
@@ -125,10 +125,17 @@ Runner-Minuten und gut fünf Minuten Wartezeit. Im PR laufen die Tests und der B
 die Untergrenze glibc 2.17 und `ubuntu:26.04` für das neueste Ende, dazu je ein Paket, nämlich
 das `.deb` auf Ubuntu 24.04 (dort auch der Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim
 Tag läuft alles: 22 Distributionen, sieben Pakete, die lange KI-Antwort unter Node und dieselbe
-lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon. Den Umfang entscheidet der Job
-„Prüfumfang
+lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon. Denselben vollen Umfang fährt
+mittwochs um 4:23 UTC ein Zeitplan auf `main`, damit niemand auf ein Label angewiesen ist: Er
+ist das Netz für die Prüfungen, die im PR fehlen, vor allem gegen eine fehlerhafte Bun-Fassung,
+denn Bun wird mit `latest` gebaut. Veröffentlicht wird dabei nichts, „Ans Release anhängen“
+hängt weiter am Tag. Die Zeit liegt bewusst nicht auf einer vollen Stunde, weil GitHub Zeitpläne
+dort staut; und nach 60 Tagen ohne Bewegung im Repo schaltet GitHub Zeitpläne ab, nach einer
+langen Pause also nachsehen. Den Umfang entscheidet der Job „Prüfumfang
 festlegen“ in [release.yml](.github/workflows/release.yml); seine Zusammenfassung nennt jeden
-Container, den der Lauf geprüft hat. Wer die volle Breite schon vor dem Merge braucht, hängt dem
+Container, den der Lauf geprüft hat. Seine Bedingung ist bewusst als Ausnahme geschrieben, also
+vollständig außer an einem Pull Request ohne Label: Ein neuer Auslöser läuft so im Zweifel zu
+breit statt still zu schmal. Wer die volle Breite schon vor dem Merge braucht, hängt dem
 Pull Request das Label `volle-pruefung` an, wie beim KI-Prüflauf das Label `ki-pruefung`; das
 startet release.yml neu, dann mit allem. Ein Start von Hand über Actions prüft ebenfalls alles.
 Das Label muss im Repo angelegt sein, sonst lässt es sich nicht vergeben. Am Pull Request läuft
@@ -136,11 +143,12 @@ release.yml nur, wenn er Server, Oberfläche, Skripte, Paketierung oder die Date
 sonst bewirkt auch das Label nichts, dann gibt es aber auch nichts zu prüfen. Offen bleibt im PR
 alles zwischen den beiden Enden, also Debian 11 bis 13, Ubuntu 20.04 und 22.04, AlmaLinux,
 Rocky, openSUSE und Arch, dazu jeder Container auf ARM64, das Arch-Paket und die Pakete auf
-ARM64. Ein Fehler, der nur dort auftritt, zeigt sich erst beim Tag, aber immer noch vor dem
-Anhängen ans Release. Die ARM64-Programmdatei selbst prüft weiterhin jeder PR auf einem
-ARM-Runner. Am selben Label hängt die lange KI-Antwort, damit ein Lauf von Hand alles abdeckt,
-was ein PR auslässt. Eine leere Liste wäre die gefährlichste Lücke, weil eine Matrix ohne
-Einträge keinen Job erzeugt und GitHub das nicht als Fehler meldet, sondern überspringt; der Job
+ARM64. Ein Fehler, der nur dort auftritt, zeigt sich spätestens im Lauf der folgenden Woche,
+immer aber vor dem Anhängen ans Release. Die ARM64-Programmdatei selbst prüft weiterhin jeder PR
+auf einem ARM-Runner. Am selben Umfang hängt die lange KI-Antwort, damit Zeitplan und Label
+alles abdecken, was ein PR auslässt. Eine leere Liste wäre die gefährlichste Lücke, weil eine
+Matrix ohne Einträge keinen Job erzeugt und GitHub das nicht als Fehler meldet, sondern
+überspringt; der Job
 „Prüfumfang festlegen“ bricht deshalb ab, wenn eine der beiden Listen leer ist.
 
 Einzelnen Test ausführen:
