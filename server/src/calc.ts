@@ -2,10 +2,8 @@
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
   CostKey,
-  Meter,
   MeterType,
   PersonEntry,
-  Reading,
   RentLedger,
   RentLedgerRow,
   RentMonth,
@@ -15,10 +13,11 @@ import type {
   TaxExpenseCategory,
   TaxExpenseGroup,
   TaxReport,
-  Tenancy,
-  Unit,
 } from '../../shared/types.ts'
-import type { Db } from './store.ts'
+// Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
+// Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
+// entscheidet dort die Ablage und nicht hier.
+import type { Snapshot, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -55,7 +54,7 @@ export function overlapDays(start: string, end: string | null, year: number): nu
 
 // ---------- Personen-Staffel ----------
 
-function personHistoryOf(tenancy: Tenancy): PersonEntry[] {
+function personHistoryOf(tenancy: SnapshotTenancy): PersonEntry[] {
   const h = Array.isArray(tenancy.personHistory) && tenancy.personHistory.length
     ? tenancy.personHistory
     : [{ from: tenancy.start, persons: tenancy.persons ?? 1 }]
@@ -63,7 +62,7 @@ function personHistoryOf(tenancy: Tenancy): PersonEntry[] {
 }
 
 // Personentage eines Mietverhältnisses im Zeitraum [from, to] (inklusiv)
-export function personDaysInPeriod(tenancy: Tenancy, from: string, to: string): number {
+export function personDaysInPeriod(tenancy: SnapshotTenancy, from: string, to: string): number {
   const h = personHistoryOf(tenancy)
   let sum = 0
   for (let i = 0; i < h.length; i++) {
@@ -78,7 +77,7 @@ export function personDaysInPeriod(tenancy: Tenancy, from: string, to: string): 
 }
 
 // Aktuelle Personenzahl zu einem Stichtag
-export function personsAt(tenancy: Tenancy, dateIso: string): number {
+export function personsAt(tenancy: SnapshotTenancy, dateIso: string): number {
   const h = personHistoryOf(tenancy)
   let p = h[0]?.persons ?? 0
   for (const e of h) if (e.from <= dateIso) p = e.persons
@@ -92,7 +91,7 @@ type MeterSegment = { from: string, to: string, delta: number, days: number }
 // Ablesungen eines Zählers → Verbrauchssegmente zwischen aufeinanderfolgenden Ablesungen.
 // Konvention: eine Ablesung gilt zum Tagesende ihres Datums. Bei Zählerwechsel trägt die
 // Ablesung replacement=true: oldEndValue = Endstand des alten Geräts, value = Startstand des neuen.
-export function meterSegments(readings: Reading[]): { segments: MeterSegment[], warnings: string[] } {
+export function meterSegments(readings: SnapshotReading[]): { segments: MeterSegment[], warnings: string[] } {
   const sorted = readings.slice().sort((a, b) => a.date.localeCompare(b.date))
   const segments: MeterSegment[] = []
   const warnings: string[] = []
@@ -112,7 +111,7 @@ export function meterSegments(readings: Reading[]): { segments: MeterSegment[], 
 // Verbrauch im Zeitraum [from, to] (inklusive Tage). Segmente werden tagesanteilig
 // interpoliert — liegt eine Ablesung genau auf der Zeitraumgrenze (z. B. Zwischenablesung
 // beim Mieterwechsel), ist die Aufteilung exakt.
-export function consumptionInPeriod(readings: Reading[], from: string, to: string): number {
+export function consumptionInPeriod(readings: SnapshotReading[], from: string, to: string): number {
   const { segments } = meterSegments(readings)
   let sum = 0
   const pStart = toUTC(from) - MS_DAY // Zeitraum beginnt nach Tagesende des Vortags
@@ -136,11 +135,11 @@ export type ConsumptionOverviewRow = {
 }
 
 // Jahresübersicht für die Zähler-Seite: Verbrauch pro Zähler + Warnungen
-export function consumptionOverview(db: Db, year: number): ConsumptionOverviewRow[] {
-  const from = `${year}-01-01`
-  const to = `${year}-12-31`
-  return (db.meters ?? []).map((m) => {
-    const readings = (db.readings ?? []).filter((r) => r.meterId === m.id)
+export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[] {
+  const from = `${snapshot.year}-01-01`
+  const to = `${snapshot.year}-12-31`
+  return snapshot.meters.map((m) => {
+    const readings = snapshot.readings.filter((r) => r.meterId === m.id)
     const { warnings } = meterSegments(readings)
     return {
       meterId: m.id,
@@ -157,13 +156,14 @@ export function consumptionOverview(db: Db, year: number): ConsumptionOverviewRo
 // Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine manuelle
 // Korrektur pro Jahr (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich
 // sind die tatsächlich geleisteten Vorauszahlungen anzusetzen.
-export function computePrepaymentCents(tenancy: Tenancy, year: number): { cents: number, overridden: boolean } {
+export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): { cents: number, overridden: boolean } {
   const override = tenancy.prepaymentOverrides?.[String(year)]
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen
   // aufgerufen (siehe calc.test.ts), daher der gezielte Zugriff über eine Typ-Erweiterung.
-  const legacy = tenancy as Tenancy & { prepaymentMonthlyCents?: number }
+  // Der Schnappschuss reicht die Datensätze unverändert durch, damit das Feld hier ankommt.
+  const legacy = tenancy as SnapshotTenancy & { prepaymentMonthlyCents?: number }
   const schedule = (
     tenancy.prepayments?.length
       ? tenancy.prepayments
@@ -203,13 +203,16 @@ function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
-export function rentLedger(db: Db, year: number): RentLedger {
+export function rentLedger(snapshot: Snapshot): RentLedger {
+  const year = snapshot.year
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
-  const unitById = new Map(db.units.map((u) => [u.id, u]))
-  const payments = db.payments ?? []
+  const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
+  // Der Schnappschuss führt alle Zahlungen. Welche zum Jahr zählt, entscheidet das Mietkonto
+  // hier nach ihrem Datum, und diese Regel bleibt bewusst an dieser Stelle.
+  const payments = snapshot.payments
 
-  const rows: RentLedgerRow[] = (db.tenancies ?? [])
+  const rows: RentLedgerRow[] = snapshot.tenancies
     .filter((t) => overlapDays(t.start, t.end, year) > 0)
     .map((t) => {
       const baseSchedule: MonthlySchedule[] = Array.isArray(t.baseRents) ? t.baseRents : []
@@ -314,15 +317,16 @@ const ANLAGE_V_GROUP_ORDER = [
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
 // werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-export function taxReport(db: Db, year: number): TaxReport {
-  const ledger = rentLedger(db, year)
+export function taxReport(snapshot: Snapshot): TaxReport {
+  const year = snapshot.year
+  const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
   const sollCents = ledger.totals.sollYearCents
   const paidCents = ledger.totals.paidYearCents
 
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren
-  const items = (db.costItems ?? []).filter((c) => c.year === year)
+  const items = snapshot.costItems.filter((c) => c.year === year)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   for (const item of items) {
     const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
@@ -355,7 +359,7 @@ export function taxReport(db: Db, year: number): TaxReport {
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
 
   // Flächenanteil der vermieteten (beteiligten) Einheiten — Hinweis bei gemischter Nutzung
-  const allUnits = db.units ?? []
+  const allUnits = snapshot.units
   const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   const rentedArea = allUnits.filter((u) => u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
   const rentedAreaShare = totalArea > 0 ? rentedArea / totalArea : 1
@@ -365,10 +369,9 @@ export function taxReport(db: Db, year: number): TaxReport {
   // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
   // Ist die Abrechnung abgeschlossen, gilt ihr eingefrorener Stand (wie in
   // GET /api/settlement/:year), sonst widersprächen Übersicht und versendete Abrechnung.
-  const closed = (db.closedSettlements ?? []).find((c) => c.year === year)
-  const selfUsedShareCents = closed
-    ? (closed.settlement?.selfUsedShareCents ?? 0)
-    : computeSettlement(db, year).selfUsedShareCents
+  const selfUsedShareCents = snapshot.closedSettlement
+    ? snapshot.closedSettlement.selfUsedShareCents
+    : computeSettlement(snapshot).selfUsedShareCents
 
   return {
     year,
@@ -412,7 +415,7 @@ function fmtNum(n: number): string {
 // Mietverhältnis, ergänzt um die im Jahr belegten Tage und die zugehörige Wohnung: das
 // Ergebnis der Vorbereitung unten, sobald Mietverhältnisse ohne (mehr) vorhandene Wohnung
 // herausgefiltert sind.
-type TenancyWithUnit = Tenancy & { days: number, unit: Unit }
+type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
@@ -423,17 +426,18 @@ type Target = { t: TenancyWithUnit, raw: number, basisText: string }
 // Zählertyp ohne Zähler gibt es keinen Eintrag, und `data` unten ist dann `undefined` statt
 // eines für den Übersetzer immer vorhandenen Werts. Nur so bleibt die folgende Prüfung
 // `if (!data || data.basis <= 0)` sichtbar nötig statt totem Code.
-type ConsumptionByTypeEntry = { meters: (Meter & { unitId: string })[], basis: number, perUnit: Map<string, number>, selfConsumption: number }
+type ConsumptionByTypeEntry = { meters: (SnapshotMeter & { unitId: string })[], basis: number, perUnit: Map<string, number>, selfConsumption: number }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
 // `closed` — das ergänzt erst die Route GET /api/settlement/:year.
 export type ComputedSettlement = Omit<Settlement, 'closed'>
 
-export function computeSettlement(db: Db, year: number): ComputedSettlement {
+export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
+  const year = snapshot.year
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
-  const unitById = new Map(db.units.map((u) => [u.id, u]))
+  const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
   // Mieter umgelegt werden, der auf die selbstgenutzte Wohnung entfallende Teil bleibt beim
@@ -441,13 +445,13 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
   // nicht zur Abrechnungseinheit und bleiben ganz außen vor.
   // `participates` hat Vorrang: eine vermietete Wohnung ist nie Eigennutzung, auch wenn ein
   // von Hand bearbeiteter Datenbestand beide Kennzeichen trägt (siehe usageOf in types.ts).
-  const selfUnits = db.units.filter((u) => u.selfUsed && !u.participates)
-  const basisUnits = db.units.filter((u) => u.participates || u.selfUsed)
+  const selfUnits = snapshot.units.filter((u) => u.selfUsed && !u.participates)
+  const basisUnits = snapshot.units.filter((u) => u.participates || u.selfUsed)
   const basisArea = basisUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   const selfArea = selfUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   // Werte aus der Datei defensiv behandeln: negative oder unsinnige Personenzahlen dürfen die
   // Verteilbasis nicht verkleinern — das würde die Mieteranteile über 100 % treiben.
-  const selfPersonsOf = (u: Unit) => Math.max(0, Number(u.selfPersons) || 0)
+  const selfPersonsOf = (u: SnapshotUnit) => Math.max(0, Number(u.selfPersons) || 0)
 
   // Mietverhältnisse mit Überlappung im Jahr, bewusst mit flatMap statt map().filter(): Erst so
   // prüft der Übersetzer mit, dass jedes übriggebliebene Mietverhältnis wirklich eine Wohnung
@@ -455,7 +459,7 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
   // `(t): t is TenancyWithUnit` täte das — beide sind bloße Behauptungen über die Bedingung.
   // Fiele das `unit` später aus ihr heraus, übersetzte das weiterhin, und die Engine stürzte
   // ab, sobald eine gelöschte Wohnung ein Mietverhältnis hinterlässt (`t.unit` unten).
-  const tenancies: TenancyWithUnit[] = db.tenancies.flatMap((t) => {
+  const tenancies: TenancyWithUnit[] = snapshot.tenancies.flatMap((t) => {
     const days = overlapDays(t.start, t.end, year)
     const unit = unitById.get(t.unitId)
     return days > 0 && unit ? [{ ...t, days, unit }] : []
@@ -467,12 +471,14 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
     partTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0) + selfPersonDays
 
   // Verbrauch je Zählertyp vorbereiten (nur Wohnungszähler bilden die Verteilbasis)
-  const allMeters = db.meters ?? []
-  const allReadings = db.readings ?? []
+  // Alle Ablesungen, nicht nur die des Jahres: Der Anfangsstand steht im Vorjahr (siehe
+  // snapshot.ts). `consumptionInPeriod` schneidet den Zeitraum tagesanteilig heraus.
+  const allMeters = snapshot.meters
+  const allReadings = snapshot.readings
   const meterTypes = [...new Set(allMeters.filter((m) => m.unitId).map((m) => m.type))]
   const consumptionByType: Record<string, ConsumptionByTypeEntry | undefined> = {}
   for (const type of meterTypes) {
-    const meters = allMeters.filter((m) => m.unitId && m.type === type) as (Meter & { unitId: string })[]
+    const meters = allMeters.filter((m) => m.unitId && m.type === type) as (SnapshotMeter & { unitId: string })[]
     const perUnit = new Map<string, number>()
     let basis = 0
     for (const m of meters) {
@@ -515,7 +521,7 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
 
   const landlordRows: SettlementRow[] = []
   const warnings: string[] = []
-  const items = db.costItems.filter((c) => c.year === year)
+  const items = snapshot.costItems.filter((c) => c.year === year)
   let totalCostsCents = 0
   let selfUsedShareCents = 0
 
@@ -544,7 +550,7 @@ export function computeSettlement(db: Db, year: number): ComputedSettlement {
   // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Fehlt ihr
   // Basiswert, verteilt der Schlüssel ihren Anteil still auf die anderen — bei einer
   // vermieteten Wohnung zahlen dann die übrigen Mieter mit. Für Mieter der teuerste Fall.
-  const partNoArea = db.units.filter((u) => u.participates && !(u.areaM2 > 0))
+  const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0))
   if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
     warnings.push(
       `Für die Wohnung(en) ${partNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,

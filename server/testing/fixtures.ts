@@ -6,6 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeSettlement, consumptionOverview } from '../src/calc.ts'
+import { snapshotFromDb } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
 import { normalizeSettlement, normalizeConsumption } from './normalize.ts'
 
@@ -48,9 +49,13 @@ export function loadFixtures(): Fixture[] {
 // Die vollständige, normalisierte Momentaufnahme eines Abrechnungsjahres —
 // der Umfang, der cent-genau verglichen wird.
 export function actualOf(db: Db, year: number) {
+  // Die Fixtures stehen im Dateiformat, weil genau das der Eingang ist, den ein Nutzer hat.
+  // Den Schritt über den Schnappschuss macht der Prüfkatalog deshalb mit: Schneidet die Ablage
+  // eines Tages zu viel weg, wird hier ein Cent anders.
+  const snapshot = snapshotFromDb(db, year)
   return {
     year,
-    settlement: normalizeSettlement(computeSettlement(db, year)),
-    consumption: normalizeConsumption(consumptionOverview(db, year)),
+    settlement: normalizeSettlement(computeSettlement(snapshot)),
+    consumption: normalizeConsumption(consumptionOverview(snapshot)),
   }
 }
