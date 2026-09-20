@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.7.0] – 2026-09-20
+
 ### Geändert
 
 - **Gescannte Belege werden schneller ausgewertet.** Die Seiten gehen jetzt mit 1200 statt 1684
@@ -365,7 +367,9 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.5.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/speedone/mietfuchs/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/speedone/mietfuchs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/speedone/mietfuchs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/speedone/mietfuchs/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/speedone/mietfuchs/compare/v0.3.0...v0.3.1
