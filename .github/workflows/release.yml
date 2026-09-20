@@ -132,6 +132,18 @@ jobs:
             beschreibung='Auswahl für den Pull Request (Label „volle-pruefung“ prüft alles)'
           fi
 
+          # Sicherung gegen die stille Lücke: Eine Matrix ohne Einträge erzeugt keinen einzigen
+          # Job, und GitHub meldet das nicht als Fehler, sondern überspringt den abhängigen Job.
+          # Im Überblick sähe das fast aus wie bestanden, geprüft wäre aber nichts. Eine leere
+          # Liste ist deshalb hier ein Fehler, bevor sie jemand als grün missversteht.
+          anzahl_distributionen=$(printf '%s' "$distributionen" | jq 'length')
+          anzahl_pakete=$(printf '%s' "$pakete" | jq 'length')
+          if [ "$anzahl_distributionen" -lt 1 ] || [ "$anzahl_pakete" -lt 1 ]; then
+            echo "Leere Liste: $anzahl_distributionen Distributionen, $anzahl_pakete Pakete." >&2
+            echo "Eine leere Matrix prüft nichts und fiele niemandem auf. Abbruch." >&2
+            exit 1
+          fi
+
           # jq prüft dabei das JSON: Ist eine Liste kaputt, scheitert diese Zuweisung und damit
           # der Job, statt eine leere Matrix weiterzureichen.
           distributionen_json=$(printf '%s' "$distributionen" | jq -c '{include: .}')
