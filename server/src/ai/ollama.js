@@ -6,7 +6,7 @@
 // Die Funktionen bekommen die Konfiguration aus providerConfig (ai/index.js): `url`, `model`,
 // `apiKey` (für Ollama hinter einem Proxy oder Ollama Cloud, sonst null) und `numCtx`.
 
-import { openRequest, readLines, readText, maskSecret } from './http.js'
+import { openRequest, readLines, readText, maskSecret } from './http.ts'
 
 const baseUrl = (config) => config.url.replace(/\/+$/, '')
 
