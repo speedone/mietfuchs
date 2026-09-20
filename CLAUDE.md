@@ -256,6 +256,24 @@ Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GE
 `taxReport` den Eigenanteil aus dem Snapshot, damit Steuerübersicht und versendete Abrechnung
 nicht auseinanderlaufen.
 
+**Der Schnappschuss** ([server/src/snapshot.ts](server/src/snapshot.ts), #55): Die Berechnung
+liest den Speicher nicht mehr selbst, sondern bekommt den `Snapshot` eines Abrechnungsjahres
+gereicht. `snapshotFromDb(db, year)` baut ihn, die Routen in index.ts rufen ihn auf, und
+`computeSettlement`, `rentLedger`, `taxReport` und `consumptionOverview` nehmen nur noch ihn
+(das Jahr steckt darin, damit sich ein Schnappschuss nicht mit einem anderen Jahr verrechnen
+lässt). Der Typ führt nur die Sammlungen und Felder, die die Berechnung wirklich liest, mit
+`Pick` aus `shared/types.ts` geschnitten: keine Einstellungen, keine Kontaktdaten, keine
+Belegdateien. So sieht man der Grenze an, woraus eine Abrechnung entsteht, und ein zweites
+Speicher-Backend wird später eine neue Datei statt eines Umbaus.
+**Nach Jahr eingegrenzt wird nur, was sein Jahr als Feld trägt** (`costItems`, die abgeschlossene
+Abrechnung). Ablesungen, Mietverhältnisse, Zahlungen, Wohnungen und Zähler gehen vollständig
+hinein: Der Anfangsstand eines Jahres ist die Ablesung vom 31. Dezember des Vorjahres, und die
+Staffeln für Personenzahl, Vorauszahlung und Kaltmiete gelten „ab diesem Datum" mit einem
+Eintrag, der Jahre alt sein kann. Wer dort filtert, bekommt keinen Fehler, sondern eine stille
+Falschrechnung. Die Begründung je Sammlung steht in snapshot.ts, die Tests dazu in calc.test.ts.
+Der Schnappschuss reicht die Datensätze durch und kopiert sie nicht; die Berechnung ändert
+nichts an ihm.
+
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
