@@ -53,12 +53,13 @@ test('Zahlen aus der Antwort: eine Einheit vor oder hinter der Zahl stört nicht
     ['-5 €', -5],
     ['€ -5', -5],
     ['-€ 5', -5],
+    ['€ 12,50 €', 12.5], // vorn und hinten je einmal, das ist ungewöhnlich, aber eindeutig
   ]
   for (const [text, expected] of cases) assert.equal(numberFromModel(text), expected, text)
 })
 
 test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht gelesen', () => {
-  // „1.234" ist entweder tausendzweihundertvierunddreißig oder eins Komma zwei drei vier.
+  // „1.234“ ist entweder tausendzweihundertvierunddreißig oder eins Komma zwei drei vier.
   // Raten hieße hier, einen Faktor 1000 zu raten, deshalb bleibt das Feld leer.
   const ambiguous = ['1.234', '1,234', '123.456', '12,345']
   for (const text of ambiguous) assert.equal(numberFromModel(text), null, text)
@@ -70,7 +71,7 @@ test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht
     'ca. 1234', 'rund 12,50 €', 'ca. EUR 12,50', '12 oder 13', '12,50 pro Monat',
     // Abgetrennt wird nur, was in den Listen steht — kein allgemeines Abschneiden.
     '1234 Liter', '12,50 Dollar', '12,50 $', '$ 12,50', '1234 m²', 'm³ 1234',
-    // Und auch nur je einmal, nicht so lange, bis eine Zahl übrig bleibt.
+    // Und auf jeder Seite nur einmal, nicht so lange, bis eine Zahl übrig bleibt.
     '€ € 12,50', '12,50 € €', '€', 'EUR', 'kWh',
   ]
   for (const value of notANumber) assert.equal(numberFromModel(value), null, JSON.stringify(value) ?? String(value))
@@ -120,22 +121,35 @@ test('Ausgang: fehlende Texte werden leer, unbrauchbare Zahlen fallen weg', () =
   const extraction = toExtraction({
     vendor: '  Stadtwerke  ',
     invoiceDate: '2026-03-15',
+    periodStart: 2026,
     totalGrossEur: 'etwa zwanzig',
     positions: [{ description: null, category: ['Wasser/Abwasser'], amountEur: 12.5, labor35aEur: 'kein' }],
   })
   assert.equal(extraction.vendor, 'Stadtwerke')
+  assert.equal(extraction.periodStart, undefined) // ein Zeitraum wird als Datum gelesen, eine Zahl ist keines
   assert.equal(extraction.invoiceDate, '2026-03-15')
   assert.equal(extraction.totalGrossEur, undefined)
   assert.deepEqual(extraction.positions, [{ description: '', category: '', amountEur: 12.5, labor35aEur: null }])
 })
 
-test('Ausgang: ein Text als Zahl gilt überall gleich', () => {
-  // Dieselbe Regel wie beim Zählerstand (textOrNull): Eine Zahl wird zum Text statt verworfen,
-  // denn sie landet in einem Feld, das ein Mensch liest und bei Bedarf überschreibt. Was weder
-  // Text noch Zahl ist, bleibt leer.
+test('Ausgang: eine Zahl gilt als Beschreibung, aber nicht als Rechnungssteller', () => {
+  // In der Beschreibung gilt dieselbe Regel wie beim Zählerstand (textOrNull): Eine Zahl wird
+  // zum Text statt verworfen, denn sie landet in einem Feld, das ein Mensch liest und bei Bedarf
+  // überschreibt. Der Rechnungssteller wird dagegen gespeichert und steht als Überschrift über
+  // den Positionen eines Belegs — dort ist „2026“ keine Auskunft, und ohne ihn nimmt die
+  // Oberfläche den Dateinamen des Belegs, der weiterhilft.
   const extraction = toExtraction({ vendor: 2026, positions: [{ description: 4711, category: {} }] })
-  assert.equal(extraction.vendor, '2026')
+  assert.equal(extraction.vendor, undefined)
   assert.deepEqual(extraction.positions, [{ description: '4711', category: '', labor35aEur: null }])
+})
+
+test('Ausgang: unbrauchbare Positionen werfen nicht', () => {
+  // Die Funktion soll für sich stehen und nicht davon abhängen, was der Eingang vorher
+  // abgeräumt hat. Beides kam aus einem Modell so schon an.
+  const notAList: Record<string, unknown> = { positions: 'abc' }
+  assert.deepEqual(toExtraction(notAList).positions, [])
+  const notObjects: Record<string, unknown> = { positions: [null, 'Frischwasser'] }
+  assert.deepEqual(toExtraction(notObjects).positions, [])
 })
 
 test('Ausgang: nur Mietfuchs selbst kann sagen, dass es gerechnet hat', () => {
