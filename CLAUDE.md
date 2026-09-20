@@ -105,13 +105,35 @@ KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup 
 Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
 `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
-(siehe KI-Belegauswertung). So läuft es in der CI gegen Node und beim Prüfen der
-Programmdateien je Betriebssystem einmal. Ist `CI` gesetzt, öffnet die Programmdatei keinen
+(siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
+Apple Silicon, und gegen Node im Job „Lange KI-Antwort (Node)“, der nur noch beim Tag und auf
+Zuruf startet (siehe Prüfumfang je Anlass). Ist `CI` gesetzt, öffnet die Programmdatei keinen
 Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
 fällt in diesen Tests auf. Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
 `codesign --sign -` neu signiert: Buns eigene Ad-hoc-Signatur beim Cross-Kompilieren unter
 Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neuere macOS-Versionen
 beenden solche Programme beim Start.
+
+**Prüfumfang je Anlass** (#52): Ein Pull Request prüft nicht mehr alles; vorher waren es rund 40
+Jobs mit 77 Runner-Minuten. Im PR laufen die Tests und der Build aus
+[ci.yml](.github/workflows/ci.yml), das Bauen und Signieren, die sechs Betriebssysteme und aus
+den Containern eine Auswahl: `centos:7` für die Untergrenze glibc 2.17 und `ubuntu:26.04` für
+das neueste Ende, dazu je ein Paket, nämlich das `.deb` auf Ubuntu 24.04 (dort auch der
+Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim Tag läuft alles: 22 Distributionen, sieben
+Pakete und die lange KI-Antwort unter Node. Den Umfang entscheidet der Job „Prüfumfang
+festlegen“ in [release.yml](.github/workflows/release.yml); seine Zusammenfassung nennt jeden
+Container, den der Lauf geprüft hat. Wer die volle Breite schon vor dem Merge braucht, hängt dem
+Pull Request das Label `volle-pruefung` an, wie beim KI-Prüflauf das Label `ki-pruefung`; das
+startet release.yml neu, dann mit allem. Ein Start von Hand über Actions prüft ebenfalls alles.
+Das Label muss im Repo angelegt sein, sonst lässt es sich nicht vergeben. Am Pull Request läuft
+release.yml nur, wenn er Server, Oberfläche, Skripte, Paketierung oder die Datei selbst anfasst;
+sonst bewirkt auch das Label nichts, dann gibt es aber auch nichts zu prüfen. Offen bleibt im PR
+alles zwischen den beiden Enden, also Debian 11 bis 13, Ubuntu 20.04 und 22.04, AlmaLinux,
+Rocky, openSUSE und Arch, dazu jeder Container auf ARM64, das Arch-Paket und die Pakete auf
+ARM64. Ein Fehler, der nur dort auftritt, zeigt sich erst beim Tag, aber immer noch vor dem
+Anhängen ans Release. Die ARM64-Programmdatei selbst prüft weiterhin jeder PR auf einem
+ARM-Runner. Am selben Label hängt die lange KI-Antwort, damit ein Lauf von Hand alles abdeckt,
+was ein PR auslässt.
 
 Einzelnen Test ausführen:
 
