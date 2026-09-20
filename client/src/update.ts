@@ -1,5 +1,5 @@
 // Entscheidungslogik des Update-Hinweises, ohne DOM prüfbar (siehe update.test.ts).
-// Die Prüfung selbst macht der Server (server/src/update.js), und nur mit Zustimmung.
+// Die Prüfung selbst macht der Server (server/src/update.ts), und nur mit Zustimmung.
 import type { Settings, UpdateStatus } from './types'
 
 // Gefragt wird, bis eine Antwort gespeichert ist. Vor dem Laden der Einstellungen ist
@@ -19,7 +19,7 @@ export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/late
 export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package'
 
 // Das System ergibt sich aus der Datei, die der Server passend zum Rechner ausgesucht hat
-// (server/src/update.js). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
+// (server/src/update.ts). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
 // steht für eine Installation aus einem Linux-Paket: Dort wird nicht die Datei getauscht,
 // sondern das Paket neu installiert.
 export type System = 'windows' | 'macos' | 'linux' | 'package' | null
