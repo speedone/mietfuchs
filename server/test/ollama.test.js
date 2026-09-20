@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultCandidates } from '../src/ai/ollama.js'
+import { defaultCandidates } from '../src/ai/ollama.ts'
 import { DEFAULT_OLLAMA_MODEL } from '../src/store.ts'
 
 // Das Compose-Profil „ki“ lädt ein Modell, das der Server als Standard erwartet. Die beiden

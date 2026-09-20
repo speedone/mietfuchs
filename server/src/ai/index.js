@@ -26,7 +26,7 @@
 //
 // Bevor Belege das Haus verlassen, muss der Nutzer das einmal bestätigt haben (consentProblem in
 // ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
-import { ollamaProvider } from './ollama.js'
+import { ollamaProvider } from './ollama.ts'
 import { openaiProvider } from './openai.js'
 import { slotFor, consentProblem, isExternalUrl } from './settings.ts'
 import { getKey } from '../secrets.ts'
