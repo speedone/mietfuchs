@@ -30,15 +30,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   („12,50 €“ wie „EUR 12,50“); beim Zählerstand gilt dasselbe für „1234 m³“ und „4711 kWh“.
   Betroffen waren vor allem kleine Modelle auf dem eigenen Rechner, die sich nicht streng an die
   Vorgabe halten. ([#63](https://github.com/speedone/mietfuchs/issues/63))
-- **Stand ein Betrag auf einer Nettorechnung unlesbar da, erfand Mietfuchs Zahlen, die stimmig
-  aussahen.** Weist eine Rechnung ihre Positionen ohne Umsatzsteuer aus und nennt sie erst in der
-  Summe, rechnet Mietfuchs die Positionen auf den Rechnungsbetrag hoch. Konnte die KI einen
-  Betrag nicht lesen, wurde der ganze Rechnungsbetrag auf die übrigen Positionen verteilt: Die
-  Summe passte zum Beleg, jede einzelne Position war aber rund zwanzig Prozent zu hoch, und beim
-  Prüfen fiel nichts auf. Jetzt wird nur hochgerechnet, wenn jeder Betrag gelesen wurde; sonst
-  bleiben die Positionen so stehen, wie sie auf der Rechnung stehen. Eine Position, die laut
-  Rechnung nichts kostet, verhindert das Hochrechnen weiterhin nicht.
-  ([#63](https://github.com/speedone/mietfuchs/issues/63))
+- **Fehlte auf einer Nettorechnung der Betrag einer Position, erfand Mietfuchs Zahlen, die
+  stimmig aussahen.** Weist eine Rechnung ihre Positionen ohne Umsatzsteuer aus und nennt sie erst
+  in der Summe, rechnet Mietfuchs die Positionen auf den Rechnungsbetrag hoch. Fehlte dabei eine
+  Position, wurde der ganze Rechnungsbetrag auf die übrigen verteilt: Die Summe passte zum Beleg,
+  jede einzelne Position war aber rund zwanzig Prozent zu hoch, und beim Prüfen fiel nichts auf.
+  Jetzt rechnet Mietfuchs nur noch hoch, wenn jeder Betrag gelesen wurde **und** der Abstand
+  zwischen Positionssumme und Rechnungsbetrag einer glaubhaften Umsatzsteuer entspricht. Damit
+  ist es gleich, ob die KI den Betrag unlesbar geschrieben, als 0 geliefert oder die Position
+  ganz weggelassen hat: In allen drei Fällen bleiben die Positionen so stehen, wie sie auf der
+  Rechnung stehen. Eine Position, die laut Rechnung nichts kostet, verhindert das Hochrechnen
+  dagegen weiterhin nicht. ([#63](https://github.com/speedone/mietfuchs/issues/63))
+- **Aus demselben Grund wurde der Arbeitskostenanteil nach §35a zu hoch vorgeschlagen.** Steht
+  er nur als ein Betrag unter der Rechnung, verteilt Mietfuchs ihn auf die Positionen. Fehlte
+  eine, bekamen die übrigen deren Anteil mit dazu, und weil eine Position ohne Betrag nicht
+  übernommen wird, stand am Ende zu viel §35a in der Steuerübersicht: aus einer Rechnung über
+  900 € mit 500 € Arbeitskosten wurden 500 € auf 600 € gebuchte Kosten, während 333 € richtig
+  gewesen wären. Verteilt wird jetzt nur, wenn jeder Betrag gelesen wurde und die Positionen den
+  Rechnungsbetrag abdecken. ([#63](https://github.com/speedone/mietfuchs/issues/63))
 - **Ein API-Schlüssel konnte im Klartext in einer Fehlermeldung auf dem Bildschirm stehen.**
   Antwortete ein KI-Dienst mit etwas, das Mietfuchs nicht als Auswertung lesen konnte, zeigte
   die Meldung die Antwort im Wortlaut. Gab der Dienst dabei die eigene Anfrage zurück, wie es
