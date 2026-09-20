@@ -4,7 +4,7 @@
 // Dienst prüft api.test.js.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { toStrictSchema, stripAddedNulls, readProviderError, readCompletionStream, parseJsonContent } from '../src/ai/openai.js'
+import { toStrictSchema, stripAddedNulls, readProviderError, readCompletionStream, parseJsonContent } from '../src/ai/openai.ts'
 
 const SCHEMA = {
   type: 'object',
