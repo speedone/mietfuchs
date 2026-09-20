@@ -33,6 +33,24 @@ test('Zahlen aus der Antwort: eine Zahl als Text wird übernommen, deutsch wie t
   for (const [text, expected] of cases) assert.equal(numberFromModel(text), expected, text)
 })
 
+test('Zahlen aus der Antwort: eine nachgestellte Einheit stört nicht', () => {
+  // Eine Einheit hinter der Zahl macht sie nicht mehrdeutig, und ein Modell ohne erzwungenes
+  // Schema schreibt sie naheliegenderweise dazu. Angenommen wird nur, was in der kurzen Liste
+  // in extract.ts steht: Euro für Beträge, Kubikmeter und Kilowattstunden für die Zähler.
+  const cases: [string, number][] = [
+    ['12,50 €', 12.5],
+    ['12,50€', 12.5],
+    ['1.234,56 EUR', 1234.56],
+    ['99 eur', 99],
+    ['1234 m³', 1234],
+    ['1234 m3', 1234],
+    ['1234 cbm', 1234],
+    ['4711,5 kWh', 4711.5],
+    ['-5 €', -5],
+  ]
+  for (const [text, expected] of cases) assert.equal(numberFromModel(text), expected, text)
+})
+
 test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht gelesen', () => {
   // „1.234" ist entweder tausendzweihundertvierunddreißig oder eins Komma zwei drei vier.
   // Raten hieße hier, einen Faktor 1000 zu raten, deshalb bleibt das Feld leer.
@@ -41,7 +59,12 @@ test('Zahlen aus der Antwort: was mehrdeutig oder keine Zahl ist, gilt als nicht
 
   const notANumber: unknown[] = [
     null, undefined, true, {}, [], NaN, Infinity,
-    '', '   ', 'abc', 'ca. 1234', '1234 m³', '12 oder 13', '-', '1234,', ',5', '1,2,3',
+    '', '   ', 'abc', '-', '1234,', ',5', '1,2,3',
+    // Vorangestelltes bleibt ungültig: Das ist keine Einheit, sondern eine Unsicherheit des
+    // Modells, und die soll der Mensch sehen.
+    'ca. 1234', 'rund 12,50 €', '12 oder 13',
+    // Nachgestellt wird nur abgetrennt, was in der Liste steht — kein allgemeines Abschneiden.
+    '1234 Liter', '12,50 Dollar', '12,50 $', '1234 m²', '€', 'kWh',
   ]
   for (const value of notANumber) assert.equal(numberFromModel(value), null, JSON.stringify(value) ?? String(value))
 })
