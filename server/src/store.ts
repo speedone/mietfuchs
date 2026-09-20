@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
-import { migrateAi } from './ai/settings.js'
+import { migrateAi } from './ai/settings.ts'
 import { systemLocation, writable } from './paths.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

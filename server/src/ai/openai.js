@@ -19,7 +19,7 @@
 
 import { openRequest, readText, maskSecret } from './http.ts'
 import { presetById } from './presets.ts'
-import { isExternalUrl } from './settings.js'
+import { isExternalUrl } from './settings.ts'
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16384
 // Obergrenze für Versuche einer Anfrage: Rückfälle bei abgelehnten Parametern und Wiederholungen

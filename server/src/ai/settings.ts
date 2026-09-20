@@ -15,31 +15,41 @@
 // Modell, solange Ollama der Standard-Anbieter ist. Eine ältere Version liest sie nach einem
 // Downgrade weiter, und ein Tab von vor dem Update schickt nur sie.
 import net from 'node:net'
+import type { AiConsent, AiJsonMode, AiProviderKind, AiSettings, AiSlot, AiSlotName, Settings } from '../../../shared/types.ts'
 import { presetById, defaultPresetFor } from './presets.ts'
 
-export const SLOTS = ['text', 'images']
-const PROVIDERS = ['ollama', 'openai']
-const JSON_MODES = ['auto', 'schema', 'object', 'prompt']
+export const SLOTS: AiSlotName[] = ['text', 'images']
+const PROVIDERS: AiProviderKind[] = ['ollama', 'openai']
+const JSON_MODES: AiJsonMode[] = ['auto', 'schema', 'object', 'prompt']
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434'
-const SLOT_LABELS = { text: 'Standard-Anbieter', images: 'Anbieter für Fotos und Scans' }
+const SLOT_LABELS: Record<AiSlotName, string> = { text: 'Standard-Anbieter', images: 'Anbieter für Fotos und Scans' }
+
+type Range = [number, number]
 const LIMITS = {
-  timeoutSeconds: [10, 7200],
-  numCtx: [2048, 1048576],
-  maxOutputTokens: [256, 262144],
+  timeoutSeconds: [10, 7200] as Range,
+  numCtx: [2048, 1048576] as Range,
+  maxOutputTokens: [256, 262144] as Range,
   // Lange Kante der Seitenbilder eines Scans (#35). Unter 600 Bildpunkten ist auf einer
   // Rechnung nichts mehr zu lesen; über 2600 rechnen auch die großen Dienste die Bilder von
   // sich aus wieder herunter.
-  pageImageEdge: [600, 2600],
+  pageImageEdge: [600, 2600] as Range,
   modelLength: 200,
   urlLength: 500,
   extraInstructions: 2000,
 }
 
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
-const fail = (message) => Object.assign(new Error(message), { status: 400 })
-const inRange = (v, [min, max]) => Number.isInteger(v) && v >= min && v <= max
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+// Fehler mit Meldung für die Oberfläche und `status` für die Route, wie in secrets.ts
+type StatusError = Error & { status: number }
+const fail = (message: string): StatusError => Object.assign(new Error(message), { status: 400 })
+// Ist `value` einer der erlaubten Werte von `list`? Als Typprädikat, damit die aufrufende Stelle
+// danach mit dem engeren Typ weiterarbeiten kann.
+const oneOf = <T extends string>(list: readonly T[], value: unknown): value is T => list.includes(value as T)
+function inRange(v: unknown, [min, max]: Range): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
+}
 
-export function isHttpUrl(value) {
+export function isHttpUrl(value: string): boolean {
   try {
     const { protocol } = new URL(value)
     return protocol === 'http:' || protocol === 'https:'
@@ -49,7 +59,7 @@ export function isHttpUrl(value) {
 }
 
 const THIS_MACHINE = ['localhost', '127.0.0.1', '::1']
-const onThisMachine = (url) => {
+const onThisMachine = (url: string): boolean => {
   try {
     return THIS_MACHINE.includes(new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, ''))
   } catch {
@@ -59,20 +69,22 @@ const onThisMachine = (url) => {
 
 // ---------- Prüfen ----------
 
-function validateSlot(raw, slot) {
+function validateSlot(raw: unknown, slot: AiSlotName): AiSlot {
   const label = SLOT_LABELS[slot]
   if (!isObject(raw)) throw fail(`${label}: ungültige Angabe.`)
   const { provider, preset, url, model = '', vision = null } = raw
-  if (!PROVIDERS.includes(provider)) throw fail(`${label}: unbekannte Anbieterart „${provider}“.`)
-  if (presetById(preset)?.provider !== provider) throw fail(`${label}: Die Vorlage „${preset}“ passt nicht zu diesem Anbieter.`)
+  if (!oneOf(PROVIDERS, provider)) throw fail(`${label}: unbekannte Anbieterart „${String(provider)}“.`)
+  if (presetById(preset)?.provider !== provider) throw fail(`${label}: Die Vorlage „${String(preset)}“ passt nicht zu diesem Anbieter.`)
   if (typeof url !== 'string' || !isHttpUrl(url) || url.length > LIMITS.urlLength) throw fail(`${label}: Die Adresse muss mit http:// oder https:// beginnen und darf höchstens ${LIMITS.urlLength} Zeichen haben.`)
   if (typeof model !== 'string' || model.length > LIMITS.modelLength) throw fail(`${label}: Der Modellname ist zu lang.`)
   if (vision !== null && typeof vision !== 'boolean') throw fail(`${label}: Die Angabe zum Bildverständnis ist ungültig.`)
-  return { provider, preset, url: url.trim(), model: model.trim(), vision }
+  // `preset` ist an dieser Stelle als String bestätigt: presetById fand ihn nur, wenn er einer
+  // der (string-wertigen) Vorlagen-Kennungen entspricht.
+  return { provider, preset: String(preset), url: url.trim(), model: model.trim(), vision }
 }
 
 // Prüft alle Felder außer `consent` und liefert sie bereinigt. Wirft mit `status` 400.
-function validateAi(raw) {
+function validateAi(raw: Record<string, unknown>): Omit<AiSettings, 'consent'> {
   const {
     text, images = null, timeoutSeconds = null, numCtx = null, maxOutputTokens = null, pageImageEdge = null,
     jsonMode = 'auto', reasoningEffort = null, extraInstructions = '',
@@ -89,7 +101,7 @@ function validateAi(raw) {
   if (pageImageEdge !== null && !inRange(pageImageEdge, LIMITS.pageImageEdge)) {
     throw fail(`Die Größe der Seitenbilder muss zwischen ${LIMITS.pageImageEdge[0]} und ${LIMITS.pageImageEdge[1]} Bildpunkten liegen.`)
   }
-  if (!JSON_MODES.includes(jsonMode)) throw fail(`Unbekannte JSON-Stufe „${jsonMode}“.`)
+  if (!oneOf(JSON_MODES, jsonMode)) throw fail(`Unbekannte JSON-Stufe „${String(jsonMode)}“.`)
   if (reasoningEffort !== null && !(typeof reasoningEffort === 'string' && /^[a-z]{1,20}$/.test(reasoningEffort))) {
     throw fail('Der Denkaufwand ist ungültig. Erlaubt sind kleine Buchstaben wie low, medium oder none.')
   }
@@ -111,20 +123,36 @@ function validateAi(raw) {
 
 // ---------- Migration ----------
 
+// Liefert den Wert aus `stored[name]`, wenn er `valid` besteht, sonst `fallback`. Generisch über
+// beide, damit etwa `timeoutSeconds` als `number | null` herauskommt.
+function fieldFrom<T, F>(stored: Record<string, unknown>, name: string, fallback: F, valid: (v: unknown) => v is T): T | F {
+  const value = stored[name]
+  return valid(value) ? value : fallback
+}
+
+function lenient<T>(read: () => T, fallback: T): T {
+  try {
+    return read()
+  } catch {
+    return fallback
+  }
+}
+
+// Vorlage ergänzen, wenn Anbieter bekannt, aber die gespeicherte Vorlage unbrauchbar ist
+function repairPreset(slot: unknown): unknown {
+  if (isObject(slot) && oneOf(PROVIDERS, slot.provider) && !presetById(slot.preset)) {
+    return { ...slot, preset: defaultPresetFor(slot.provider) }
+  }
+  return slot
+}
+
 // Ergänzt `settings.ai` beim Laden der db.json. Fehlt es, entsteht es aus ollamaUrl und
 // ollamaModel. Unbrauchbare Einzelwerte fallen auf den Standard zurück, statt den Start zu
 // verhindern.
-export function migrateAi(settings) {
-  const stored = isObject(settings.ai) ? settings.ai : {}
-  const lenient = (read, fallback) => {
-    try {
-      return read()
-    } catch {
-      return fallback
-    }
-  }
+export function migrateAi(settings: Settings): Settings {
+  const stored: Record<string, unknown> = isObject(settings.ai) ? settings.ai : {}
   const legacyUrl = isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL
-  const legacyText = {
+  const legacyText: AiSlot = {
     provider: 'ollama',
     // Zeigt die Adresse woandershin, passt die Vorlage für ein entferntes Ollama: Nur sie kennt
     // ein Feld für den Schlüssel, etwa für ein Ollama hinter einem Proxy.
@@ -133,36 +161,38 @@ export function migrateAi(settings) {
     model: typeof settings.ollamaModel === 'string' ? settings.ollamaModel : '',
     vision: null,
   }
-  const repairPreset = (slot) =>
-    isObject(slot) && PROVIDERS.includes(slot.provider) && !presetById(slot.preset)
-      ? { ...slot, preset: defaultPresetFor(slot.provider) }
-      : slot
-  const field = (name, fallback, valid) => (valid(stored[name]) ? stored[name] : fallback)
+  const field = <T, F>(name: string, fallback: F, valid: (v: unknown) => v is T): T | F => fieldFrom(stored, name, fallback, valid)
   settings.ai = {
     text: lenient(() => validateSlot(repairPreset(stored.text), 'text'), legacyText),
     images: stored.images == null ? null : lenient(() => validateSlot(repairPreset(stored.images), 'images'), null),
-    timeoutSeconds: field('timeoutSeconds', null, (v) => inRange(v, LIMITS.timeoutSeconds)),
-    numCtx: field('numCtx', null, (v) => inRange(v, LIMITS.numCtx)),
-    maxOutputTokens: field('maxOutputTokens', null, (v) => inRange(v, LIMITS.maxOutputTokens)),
-    pageImageEdge: field('pageImageEdge', null, (v) => inRange(v, LIMITS.pageImageEdge)),
-    jsonMode: field('jsonMode', 'auto', (v) => JSON_MODES.includes(v)),
-    reasoningEffort: field('reasoningEffort', null, (v) => typeof v === 'string' && /^[a-z]{1,20}$/.test(v)),
-    extraInstructions: field('extraInstructions', '', (v) => typeof v === 'string'),
-    consent: isObject(stored.consent) ? stored.consent : {},
+    timeoutSeconds: field('timeoutSeconds', null, (v): v is number => inRange(v, LIMITS.timeoutSeconds)),
+    numCtx: field('numCtx', null, (v): v is number => inRange(v, LIMITS.numCtx)),
+    maxOutputTokens: field('maxOutputTokens', null, (v): v is number => inRange(v, LIMITS.maxOutputTokens)),
+    pageImageEdge: field('pageImageEdge', null, (v): v is number => inRange(v, LIMITS.pageImageEdge)),
+    jsonMode: field('jsonMode', 'auto' as AiJsonMode, (v): v is AiJsonMode => oneOf(JSON_MODES, v)),
+    reasoningEffort: field('reasoningEffort', null, (v): v is string => typeof v === 'string' && /^[a-z]{1,20}$/.test(v)),
+    extraInstructions: field('extraInstructions', '', (v): v is string => typeof v === 'string'),
+    // Nur grob geprüft (ein Objekt), die einzelnen Bestätigungen selbst prüft niemand nach: eine
+    // von Hand verdorbene Bestätigung verhindert den Start nicht, sie greift dann einfach nicht.
+    consent: (isObject(stored.consent) ? stored.consent : {}) as Partial<Record<AiSlotName, AiConsent>>,
   }
   // Eine Version von vor #18 ändert beim Speichern nur ollamaUrl und ollamaModel und reicht `ai`
   // unverändert durch. Weichen die Felder beim Laden ab, stammt die jüngere Änderung von dort,
   // denn diese Version hält sie immer deckungsgleich (mirrorLegacy). So geht nach einem
   // Downgrade und einem erneuten Update nichts verloren.
-  if (isObject(stored.text) && settings.ai.text.provider === 'ollama') {
-    if (isHttpUrl(settings.ollamaUrl) && settings.ollamaUrl !== settings.ai.text.url) settings.ai.text.url = settings.ollamaUrl
-    if (typeof settings.ollamaModel === 'string' && settings.ollamaModel !== settings.ai.text.model) settings.ai.text.model = settings.ollamaModel
+  const ai = settings.ai
+  if (isObject(stored.text) && ai.text.provider === 'ollama') {
+    if (isHttpUrl(settings.ollamaUrl) && settings.ollamaUrl !== ai.text.url) ai.text.url = settings.ollamaUrl
+    if (typeof settings.ollamaModel === 'string' && settings.ollamaModel !== ai.text.model) ai.text.model = settings.ollamaModel
   }
   mirrorLegacy(settings)
   return settings
 }
 
-function mirrorLegacy(settings) {
+// Nur aufgerufen, nachdem `settings.ai` gesetzt ist (migrateAi, applyAiChanges); die Prüfung ist
+// für den Typprüfer, `settings.ai` ist zur Laufzeit an dieser Stelle immer vorhanden.
+function mirrorLegacy(settings: Settings): void {
+  if (!settings.ai) return
   const { text } = settings.ai
   if (text.provider !== 'ollama') return
   settings.ollamaUrl = text.url
@@ -171,26 +201,35 @@ function mirrorLegacy(settings) {
 
 // ---------- Umgebungsvariablen ----------
 
+// Was NKA_AI_* bzw. NKA_OLLAMA_* aus der Umgebung festlegen, siehe aiFromEnv.
+export type AiEnv = {
+  text: Partial<Pick<AiSlot, 'provider' | 'url' | 'model'>>
+  ollama: Partial<Pick<AiSlot, 'url' | 'model'>>
+  advanced: Partial<Pick<AiSettings, 'timeoutSeconds' | 'numCtx' | 'maxOutputTokens' | 'pageImageEdge'>>
+  fixed: string[]
+  error: string | null
+}
+
 // NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL legen den Standard-Anbieter fest, etwa im
 // Container. NKA_OLLAMA_URL und NKA_OLLAMA_MODEL aus der Zeit vor #18 gelten weiter, aber nur,
 // solange Ollama der Anbieter ist: Wer im Compose-Profil „ki“ trotzdem OpenAI wählt, soll nicht
 // an der Ollama-Adresse hängen. Liefert { text, ollama, fixed, error }; `error` ist eine Meldung
 // für das Startprotokoll oder null.
-export function aiFromEnv(env = process.env) {
-  const read = (name) => env[name]?.trim() || null
-  const text = {}
-  const fixed = []
-  const errors = []
+export function aiFromEnv(env: NodeJS.ProcessEnv = process.env): AiEnv {
+  const read = (name: string): string | null => env[name]?.trim() || null
+  const text: AiEnv['text'] = {}
+  const fixed: string[] = []
+  const errors: string[] = []
   const provider = read('NKA_AI_PROVIDER')
   if (provider) {
-    if (PROVIDERS.includes(provider)) {
+    if (oneOf(PROVIDERS, provider)) {
       text.provider = provider
       fixed.push('ai.text.provider')
     } else {
       errors.push(`NKA_AI_PROVIDER „${provider}“ ist unbekannt. Möglich sind ollama und openai.`)
     }
   }
-  const urlVar = (name) => {
+  const urlVar = (name: string): string | null => {
     const value = read(name)
     if (value && !isHttpUrl(value)) errors.push(`${name} muss eine Adresse mit http:// oder https:// sein.`)
     return value && isHttpUrl(value) ? value : null
@@ -205,7 +244,7 @@ export function aiFromEnv(env = process.env) {
     text.model = model
     fixed.push('ai.text.model')
   }
-  const ollama = {}
+  const ollama: AiEnv['ollama'] = {}
   const ollamaUrl = urlVar('NKA_OLLAMA_URL')
   if (ollamaUrl && !url) ollama.url = ollamaUrl
   const ollamaModel = read('NKA_OLLAMA_MODEL')
@@ -213,8 +252,8 @@ export function aiFromEnv(env = process.env) {
   // Zeitlimit für alle Schritte, Kontext für Ollama und Antwortlänge für OpenAI-kompatible
   // Dienste. Anders als in der Oberfläche sind auch sehr kleine Werte erlaubt, die Tests
   // brauchen etwa ein Zeitlimit von zwei Sekunden.
-  const advanced = {}
-  const positiveInt = (name, key) => {
+  const advanced: AiEnv['advanced'] = {}
+  const positiveInt = (name: string, key: keyof AiEnv['advanced']): void => {
     const value = read(name)
     if (!value) return
     if (!/^\d+$/.test(value) || Number(value) < 1) {
@@ -231,8 +270,10 @@ export function aiFromEnv(env = process.env) {
   return { text, ollama, advanced, fixed, error: errors.length ? errors.join(' ') : null }
 }
 
-// Pfade der Felder, die gerade aus der Umgebung kommen (für `fixedByEnv` und beim Speichern)
-export function fixedFields(ai, env) {
+// Pfade der Felder, die gerade aus der Umgebung kommen (für `fixedByEnv` und beim Speichern).
+// `ai` kann auch ein noch nicht validiertes Zwischenergebnis sein (siehe applyAiChanges), daher
+// nur `Partial<AiSettings>`.
+export function fixedFields(ai: Partial<AiSettings>, env: AiEnv): string[] {
   const provider = env.text.provider ?? ai.text?.provider
   const fromOllama = provider === 'ollama' ? Object.keys(env.ollama).map((f) => `ai.text.${f}`) : []
   return [...env.fixed, ...fromOllama]
@@ -240,10 +281,10 @@ export function fixedFields(ai, env) {
 
 // Allgemeine Vorlage je Anbieter, wenn die Umgebung einen anderen Anbieter festlegt als den
 // gespeicherten und dessen Vorlage deshalb nicht passt
-const GENERIC_PRESETS = { ollama: 'ollama-remote', openai: 'openai-compatible' }
+const GENERIC_PRESETS: Record<AiProviderKind, string> = { ollama: 'ollama-remote', openai: 'openai-compatible' }
 
 // Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung
-export function effectiveAi(ai, env) {
+export function effectiveAi(ai: AiSettings, env: AiEnv): AiSettings {
   const text = { ...ai.text, ...env.text }
   if (presetById(text.preset)?.provider !== text.provider) text.preset = GENERIC_PRESETS[text.provider]
   if (text.provider === 'ollama') Object.assign(text, env.ollama)
@@ -256,28 +297,33 @@ export function effectiveAi(ai, env) {
 // ihren gespeicherten Wert, damit Werte aus der Umgebung nicht in die db.json gelangen, und
 // `consent` ändert nur die eigene Route. Ein Tab von vor dem Update schickt statt `ai` nur
 // ollamaUrl und ollamaModel; die gelten, solange Ollama der Anbieter ist. Wirft mit `status` 400
-// und ändert dann nichts.
-export function applyAiChanges(settings, body, env) {
+// und ändert dann nichts. `body` ist ungeprüfte Eingabe aus der Oberfläche.
+export function applyAiChanges(settings: Settings, body: Record<string, unknown>, env: AiEnv): Settings {
+  if (!settings.ai) return settings
   const current = settings.ai
-  let raw
+  let raw: Record<string, unknown>
   if (isObject(body.ai)) {
     raw = { ...body.ai, text: isObject(body.ai.text) ? { ...body.ai.text } : body.ai.text }
   } else if (typeof body.ollamaUrl === 'string' || typeof body.ollamaModel === 'string') {
     if (current.text.provider !== 'ollama') return settings
-    raw = { ...current, text: { ...current.text, url: body.ollamaUrl ?? current.text.url, model: body.ollamaModel ?? current.text.model } }
+    raw = { ...current, text: { ...current.text, url: (body.ollamaUrl as string | undefined) ?? current.text.url, model: (body.ollamaModel as string | undefined) ?? current.text.model } }
   } else {
     return settings
   }
   // Vor der Prüfung: Die Oberfläche schickt die wirksamen Werte zurück, auch solche aus der
-  // Umgebung, und die dürfen außerhalb der Grenzen der Oberfläche liegen
+  // Umgebung, und die dürfen außerhalb der Grenzen der Oberfläche liegen. Die Pfade greifen mit
+  // dynamischen Schlüsseln auf `raw`/`current` zu, deshalb hier als lose Objekte betrachtet.
+  const currentDyn = current as unknown as Record<string, unknown>
   for (const path of fixedFields(raw, env)) {
     const [, key, field] = path.split('.')
     if (field === undefined) {
-      raw[key] = current[key]
-    } else if (isObject(raw[key])) {
-      raw[key][field] = current[key][field]
+      raw[key] = currentDyn[key]
+    } else if (isObject(raw[key]) && isObject(currentDyn[key])) {
+      const rawSlot = raw[key] as Record<string, unknown>
+      const currentSlot = currentDyn[key] as Record<string, unknown>
+      rawSlot[field] = currentSlot[field]
       // Die Vorlage gehört zum Anbieter: Bleibt der gespeicherte, bleibt auch seine Vorlage
-      if (field === 'provider') raw[key].preset = current[key].preset
+      if (field === 'provider') rawSlot.preset = currentSlot.preset
     }
   }
   settings.ai = { ...validateAi(raw), consent: current.consent }
@@ -289,7 +335,7 @@ export function applyAiChanges(settings, body, env) {
 
 // Der Platz, der einen Beleg auswertet: Fotos und Scans gehen an den eigenen Bilder-Anbieter,
 // falls einer eingerichtet ist, alles andere an den Standard
-export function slotFor(ai, { images }) {
+export function slotFor(ai: AiSettings, { images = false }: { images?: boolean } = {}): AiSlot & { slot: AiSlotName } {
   return images && ai.images ? { slot: 'images', ...ai.images } : { slot: 'text', ...ai.text }
 }
 
@@ -302,13 +348,13 @@ export function slotFor(ai, { images }) {
 const LOCAL_SUFFIXES = ['.localhost', '.local', '.lan', '.home.arpa', '.internal', '.intern', '.fritz.box']
 const LOCAL_NAMES = ['localhost', 'fritz.box']
 
-function isPrivateIPv4(ip) {
+function isPrivateIPv4(ip: string): boolean {
   const [a, b] = ip.split('.').map(Number)
   return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
     || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) // Link-local, Carrier-NAT (etwa Tailscale)
 }
 
-function isPrivateIPv6(ip) {
+function isPrivateIPv6(ip: string): boolean {
   const lower = ip.toLowerCase()
   if (lower === '::1' || lower === '::') return true
   const mapped = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
@@ -319,8 +365,8 @@ function isPrivateIPv6(ip) {
   return /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower) // Unique Local und Link-local
 }
 
-export function isExternalUrl(url) {
-  let host
+export function isExternalUrl(url: string): boolean {
+  let host: string
   try {
     host = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
   } catch {
@@ -334,13 +380,22 @@ export function isExternalUrl(url) {
 
 // ---------- Bestätigung externer Dienste ----------
 
+// Was consentProblem von einem Anbieter-Platz braucht (ein Ausschnitt von providerConfig in
+// ai/index.ts)
+export type ConsentCheckConfig = {
+  slot: AiSlotName
+  url: string
+  model: string
+  consent: AiConsent | null
+}
+
 // Verlassen die Belege das Haus, schickt Mietfuchs sie erst nach einer einmaligen Bestätigung
 // in den Einstellungen (POST /api/ai/consent). Das gilt für eine Adresse außerhalb dieses
 // Rechners und des Heimnetzes und für ein Modell, das ein lokales Ollama an einen Cloud-Dienst
 // weiterreicht. Die Bestätigung gilt für genau diese Adresse, beim weitergereichten Modell auch
 // nur für dieses Modell. Liefert die Meldung, wenn sie fehlt, sonst null. `config` stammt aus
 // providerConfig (ai/index.js), `remoteModel` meldet der Anbieter.
-export function consentProblem(config, { remoteModel }) {
+export function consentProblem(config: ConsentCheckConfig, { remoteModel }: { remoteModel: boolean }): string | null {
   const { url, model, consent } = config
   const where = config.slot === 'images' ? 'beim Anbieter für Fotos und Scans' : 'beim KI-Anbieter'
   if (isExternalUrl(url)) {

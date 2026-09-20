@@ -28,7 +28,7 @@
 // ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
 import { ollamaProvider } from './ollama.js'
 import { openaiProvider } from './openai.js'
-import { slotFor, consentProblem, isExternalUrl } from './settings.js'
+import { slotFor, consentProblem, isExternalUrl } from './settings.ts'
 import { getKey } from '../secrets.ts'
 
 // Alles, was ein Anbieter-Modul braucht: Platz, Art, Vorlage, Adresse, Modell, Bildverständnis,
