@@ -191,13 +191,13 @@ function handleEvent(block: string, state: StreamState, onProgress: ((event: Pro
 // Liest den Strom einer Chat-Antwort: Ereignisse getrennt durch eine Leerzeile, je Zeile
 // `data: {…}`. Denktext zählt nur für den Fortschritt, nie für das Ergebnis. Die Kennzahlen
 // stehen im letzten Ereignis mit `usage`, das je nach Dienst eigens nach dem Inhalt kommt.
-// `apiKey` ist optional (Standard null) und geht nur an handleEvent zum Maskieren durch, damit
-// die bestehenden Aufrufe dieser Funktion ohne Schlüssel (etwa in openai.test.js) unverändert
-// bleiben.
+// `apiKey` geht an handleEvent zum Maskieren durch und ist bewusst kein optionaler Parameter
+// mit Vorbelegung: Eine vergessene Übergabe soll nicht stillschweigend ohne Maskierung
+// durchlaufen, sondern beim Aufruf auffallen.
 export async function readCompletionStream(
   body: AsyncIterable<Uint8Array>,
+  apiKey: string | null,
   onProgress?: (event: ProviderProgressEvent) => void,
-  apiKey: string | null = null,
 ): Promise<StreamState> {
   const decoder = new TextDecoder()
   const state: StreamState = { content: '', reasoningChars: 0, usage: null, finishReason: null }
@@ -463,7 +463,7 @@ export function openaiProvider(config: OpenAiConfig): Provider {
           const contentType = String(res.headers['content-type'] ?? '')
           result = contentType.includes('application/json')
             ? fromWholeResponse(JSON.parse(await readText(res.body)))
-            : await readCompletionStream(res.body, onProgress, config.apiKey)
+            : await readCompletionStream(res.body, config.apiKey, onProgress)
           break
         } catch (err) {
           if (isProviderError(err) && err.status !== undefined) context.connected = true
