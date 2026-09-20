@@ -37,41 +37,43 @@ test('neben einer entpackten Programmdatei liegen die Daten daneben', () => {
 })
 
 test('aus einem Paket installiert, landen die Daten im Benutzerordner', () => {
-  assert.equal(chooseDataDir(args()), path.join('/home/erika', '.local', 'share', 'mietfuchs'))
+  assert.equal(chooseDataDir(args()), path.posix.join('/home/erika', '.local', 'share', 'mietfuchs'))
 })
 
 test('auch mit Schreibrecht in /usr/bin bleibt es beim Benutzerordner', () => {
   // Als Administrator gestartet, lägen die Daten sonst dort und wären beim nächsten Start
   // als normaler Benutzer verschwunden.
   const dir = chooseDataDir(args({ canWrite: () => true }))
-  assert.equal(dir, path.join('/home/erika', '.local', 'share', 'mietfuchs'))
+  assert.equal(dir, path.posix.join('/home/erika', '.local', 'share', 'mietfuchs'))
 })
 
 test('ein Ordner neben der Programmdatei, in den niemand schreiben darf, weicht aus', () => {
   const dir = chooseDataDir(args({ execPath: '/mnt/stick/mietfuchs-linux', canWrite: () => false }))
-  assert.equal(dir, path.join('/home/erika', '.local', 'share', 'mietfuchs'))
+  assert.equal(dir, path.posix.join('/home/erika', '.local', 'share', 'mietfuchs'))
 })
 
 test('XDG_DATA_HOME wird beachtet, aber nur mit absolutem Pfad', () => {
   assert.equal(
     chooseDataDir(args({ env: { XDG_DATA_HOME: '/home/erika/daten' } })),
-    path.join('/home/erika/daten', 'mietfuchs'),
+    path.posix.join('/home/erika/daten', 'mietfuchs'),
   )
   // Ein relativer Wert hinge am Arbeitsverzeichnis; die XDG-Spezifikation sagt, er ist zu
   // ignorieren.
   const relativ = chooseDataDir(args({ env: { XDG_DATA_HOME: 'daten' } }))
-  assert.equal(relativ, path.join('/home/erika', '.local', 'share', 'mietfuchs'))
+  assert.equal(relativ, path.posix.join('/home/erika', '.local', 'share', 'mietfuchs'))
   assert.ok(path.isAbsolute(relativ))
 })
 
 test('Windows und macOS haben eigene Benutzerordner', () => {
+  // Gerechnet wird nach der genannten Plattform, nicht nach der des Prüfrechners: Sonst fiele
+  // der Windows-Fall unter Linux durch, weil dort „C:\…“ nicht als absolut gilt.
   assert.equal(
     chooseDataDir(args({ platform: 'win32', env: { LOCALAPPDATA: 'C:\\Users\\Erika\\AppData\\Local' }, execPath: 'C:\\Program Files\\Mietfuchs\\mietfuchs.exe' })),
-    path.join('C:\\Users\\Erika\\AppData\\Local', 'Mietfuchs'),
+    path.win32.join('C:\\Users\\Erika\\AppData\\Local', 'Mietfuchs'),
   )
   assert.equal(
     chooseDataDir(args({ platform: 'darwin', execPath: '/Applications/mietfuchs', home: () => '/Users/erika' })),
-    path.join('/Users/erika', 'Library', 'Application Support', 'Mietfuchs'),
+    path.posix.join('/Users/erika', 'Library', 'Application Support', 'Mietfuchs'),
   )
 })
 
@@ -100,9 +102,9 @@ test('nach dem Heimatordner wird nur gesucht, wenn er gebraucht wird', () => {
     chooseDataDir(args({ home, execPath: '/home/erika/Downloads/mietfuchs-linux', canWrite: () => true })),
     path.join('/home/erika/Downloads', 'data'),
   )
-  assert.equal(chooseDataDir(args({ home, env: { XDG_DATA_HOME: '/daten' } })), path.join('/daten', 'mietfuchs'))
+  assert.equal(chooseDataDir(args({ home, env: { XDG_DATA_HOME: '/daten' } })), path.posix.join('/daten', 'mietfuchs'))
   assert.equal(lookups, 0)
-  assert.equal(chooseDataDir(args({ home })), path.join('/home/erika', '.local', 'share', 'mietfuchs'))
+  assert.equal(chooseDataDir(args({ home })), path.posix.join('/home/erika', '.local', 'share', 'mietfuchs'))
   assert.equal(lookups, 1)
 })
 
