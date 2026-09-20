@@ -14,12 +14,33 @@
 // erst nach Prüfung. `amountsAdjusted` und `laborFromTotal` sagen ihr, was gerechnet wurde.
 import { largestRemainder } from './calc.js'
 
-const toCents = (eur) => (typeof eur === 'number' && Number.isFinite(eur) ? Math.round(eur * 100) : null)
-const toEur = (cents) => Math.round(cents) / 100
-// Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
-const tolerance = (totalCents) => Math.max(50, Math.round(totalCents * 0.02))
+// Eine Rechnungsposition aus der KI-Auswertung. Weitere Felder (Beschreibung, Kategorie, …)
+// fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur durchgereicht.
+type Position = {
+  amountEur?: number
+  labor35aEur?: number
+  [key: string]: unknown
+}
 
-export function normalizeAmounts(extraction) {
+// Die Rohausgabe der KI-Auswertung, so weit diese Funktion sie liest oder ergänzt. Auch hier
+// bleiben unbekannte Felder über den Index-Zugriff erhalten.
+type Extraction = {
+  positionsAreNet?: boolean
+  vatRatePercent?: number
+  labor35aTotalEur?: number
+  totalGrossEur?: number
+  positions?: Position[]
+  amountsAdjusted?: string
+  laborFromTotal?: boolean
+  [key: string]: unknown
+}
+
+const toCents = (eur: unknown): number | null => (typeof eur === 'number' && Number.isFinite(eur) ? Math.round(eur * 100) : null)
+const toEur = (cents: number): number => Math.round(cents) / 100
+// Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
+const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
+
+export function normalizeAmounts(extraction: Extraction | null | undefined) {
   const { positionsAreNet, vatRatePercent, labor35aTotalEur, ...result } = extraction ?? {}
   const positions = Array.isArray(result.positions) ? result.positions.map((p) => ({ ...p })) : []
   result.positions = positions
