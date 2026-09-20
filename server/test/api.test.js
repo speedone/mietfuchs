@@ -54,7 +54,7 @@ function readStartUrl(child, timeoutMs = 20000) {
 // aus dem Linux auch den nachgebauten Diensten der Tests Ports gibt, und traf gelegentlich einen
 // belegten.
 async function startServerIn(dataDir, env = {}) {
-  const child = spawn(process.execPath, ['src/index.js'], {
+  const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     env: {
       ...process.env,
@@ -136,7 +136,7 @@ const waitForExit = (child, timeoutMs = 15000) =>
 // Startet den Server, ohne auf die Startmeldung zu warten, und sammelt seine Ausgabe. Für die
 // Fälle, in denen der Start gerade nicht gelingen soll.
 function startServerRaw(dataDir, env = {}) {
-  const child = spawn(process.execPath, ['src/index.js'], {
+  const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     env: { ...process.env, NKA_UPDATE_URL: 'http://127.0.0.1:9/kein-internet-im-test', NKA_DATA_DIR: dataDir, CI: 'true', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -1275,7 +1275,7 @@ test('Backup: ein Archiv, das ausgepackt zu groß wird, wird abgelehnt, bevor et
 // lesen den Port aus der Startmeldung (siehe startServerIn).
 test('Start: mit NKA_PORT=0 nennt die Startmeldung den tatsächlich vergebenen Port', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
-  const child = spawn(process.execPath, ['src/index.js'], {
+  const child = spawn(process.execPath, ['src/index.ts'], {
     cwd: serverRoot,
     env: { ...process.env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
   })
@@ -1299,7 +1299,7 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
   const port = blocker.address().port
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
   try {
-    const child = spawn(process.execPath, ['src/index.js'], {
+    const child = spawn(process.execPath, ['src/index.ts'], {
       cwd: serverRoot,
       env: { ...process.env, NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/' },
     })
@@ -1434,7 +1434,7 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
   try {
     for (const [env, message] of cases) {
       const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-start-'))
-      const child = spawn(process.execPath, ['src/index.js'], {
+      const child = spawn(process.execPath, ['src/index.ts'], {
         cwd: serverRoot,
         env: { ...process.env, NKA_AI_API_KEY: '', NKA_AI_API_KEY_FILE: '', ...env, NKA_PORT: '0', NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: '1' },
       })

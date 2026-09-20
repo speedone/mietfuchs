@@ -7,8 +7,8 @@
     "node": ">=24.12"
   },
   "scripts": {
-    "dev": "node --watch-path=src src/index.js",
-    "start": "node src/index.js",
+    "dev": "node --watch-path=src src/index.ts",
+    "start": "node src/index.ts",
     "test": "node --test",
     "typecheck": "tsc --noEmit"
   },

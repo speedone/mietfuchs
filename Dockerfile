@@ -17,7 +17,7 @@ RUN npm run build
 FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-# Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / server/src/index.js)
+# Bewusst NKA_PORT statt PORT (siehe CLAUDE.md / server/src/index.ts)
 ENV NKA_PORT=3001
 # Betriebsart für den Update-Hinweis: Im Container wird per Image aktualisiert, nicht per Download
 ENV NKA_RUNTIME=docker
@@ -38,4 +38,4 @@ VOLUME ["/app/server/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.NKA_PORT||3001)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "server/src/index.js"]
+CMD ["node", "server/src/index.ts"]
