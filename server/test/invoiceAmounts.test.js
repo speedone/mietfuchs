@@ -10,7 +10,7 @@
 // Gerechnet wird in Cent mit dem Restverfahren, wie in calc.js.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeAmounts } from '../src/invoiceAmounts.js'
+import { normalizeAmounts } from '../src/invoiceAmounts.ts'
 
 const chimney = () => ({
   vendor: 'Schornsteinfegerei Muster',
