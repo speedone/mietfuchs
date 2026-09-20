@@ -253,7 +253,7 @@ jobs:
 
   # Die Installationspakete (#25) werden installiert wie bei einem Nutzer, danach startet
   # Mietfuchs als ganz normaler Benutzer. In /usr/bin darf der nicht schreiben, seine Daten
-  # gehören deshalb nach ~/.local/share/mietfuchs (server/src/store.js). Geprüft wird mit
+  # gehören deshalb nach ~/.local/share/mietfuchs (server/src/store.ts). Geprüft wird mit
   # demselben Skript wie jede Programmdatei, und zwar auf je einer Distribution pro Format.
   pakete:
     name: Paket auf ${{ matrix.name }}

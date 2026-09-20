@@ -253,7 +253,7 @@ export type OllamaStatus = {
   found?: string // Adresse, unter der Ollama stattdessen antwortet
 }
 
-// Antwort von /api/update (server/src/update.js)
+// Antwort von /api/update (server/src/update.ts)
 export type UpdateStatus = {
   enabled: boolean // nur mit Zustimmung
   current: string
@@ -361,7 +361,7 @@ export type Extraction = {
   periodEnd?: string | null
   totalGrossEur?: number
   positions?: { description: string; category: string; amountEur: number; labor35aEur?: number | null }[]
-  // Vom Server gerechnet (#34, server/src/invoiceAmounts.js): 'netto' heißt, die Positionen
+  // Vom Server gerechnet (#34, server/src/invoiceAmounts.ts): 'netto' heißt, die Positionen
   // standen ohne Umsatzsteuer da und wurden auf den Rechnungsbetrag hochgerechnet
   amountsAdjusted?: 'netto'
   // Der Lohnanteil nach §35a stand nur als ein Betrag da und wurde auf die Positionen verteilt

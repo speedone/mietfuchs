@@ -27,7 +27,7 @@ const runShell = (cmd, args, opts = {}) => run(cmd, args, { shell: isWin, ...opt
 // Dateirechte) — Zip/Tarball konservieren es. Zip für macOS (entpackt der Finder per
 // Doppelklick), tar.gz für Linux; die Windows-.exe braucht kein Exec-Bit und bleibt roh.
 // Die Namen der x64-Dateien bleiben unverändert: Der Update-Hinweis älterer Versionen sucht
-// seine Datei darunter (server/src/update.js). ARM-Dateien bekommen den Zusatz „-arm64“.
+// seine Datei darunter (server/src/update.ts). ARM-Dateien bekommen den Zusatz „-arm64“.
 const TARGETS = {
   win: { target: 'bun-windows-x64', out: 'mietfuchs-win.exe' },
   'win-arm64': { target: 'bun-windows-arm64', out: 'mietfuchs-win-arm64.exe' },
