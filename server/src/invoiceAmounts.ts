@@ -21,7 +21,7 @@ import { largestRemainder } from './calc.ts'
 // Beide Betragsfelder stehen ungeprüft so da, wie das Modell sie geliefert hat: `unknown`, aus
 // demselben Grund wie die Hinweisfelder unten. Gelesen werden sie nur über `toCents`, das jeden
 // Wert selbst prüft, geschrieben nur über `toEur`. Was der Browser am Ende bekommt, beschreibt
-// `Extraction` in shared/types.ts — dorthin führt `toExtraction` in extract.ts, und nur dort.
+// `Extraction` in shared/types.ts; dorthin führt `toExtraction` in extract.ts, und nur dort.
 export type RawPosition = {
   amountEur?: unknown
   // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen; so steht es schon
@@ -45,10 +45,15 @@ export type RawPosition = {
 // extract.ts sicher, bevor die Antwort hierher kommt.
 export type RawExtraction = {
   positionsAreNet?: unknown
+  // Gerechnet wird damit nicht mehr (siehe unten), abgetrennt schon: Ein Tab von vor dem Update
+  // schickt das Feld noch, und in der Oberfläche hat es nichts verloren.
   vatRatePercent?: unknown
   labor35aTotalEur?: unknown
   totalGrossEur?: unknown
-  positions?: RawPosition[]
+  // Auch das, obwohl es hier als Liste gebraucht wird: Ein Modell kann etwas anderes schicken,
+  // und wer die Positionen liest, prüft das selbst (`Array.isArray`). Ein enger Typ ließe diese
+  // Prüfungen wie toten Code aussehen und wäre doch nur eine Behauptung.
+  positions?: unknown
   amountsAdjusted?: Extraction['amountsAdjusted']
   laborFromTotal?: Extraction['laborFromTotal']
   [key: string]: unknown
@@ -58,15 +63,35 @@ const toCents = (eur: unknown): number | null => (typeof eur === 'number' && Num
 const toEur = (cents: number): number => Math.round(cents) / 100
 // Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
 const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
-// Was noch als Umsatzsteuersatz durchgeht. Deutschland kennt 19 und 7 Prozent, das Ausland auch
-// höhere; alles darüber ist keine Steuer mehr, sondern ein Zeichen, dass etwas fehlt. Dieselbe
-// Schranke gilt für einen ausdrücklich genannten Satz und für den, der sich aus der Rechnung
-// ergibt, damit im Modul nicht zwei Vorstellungen von „plausibel“ stehen.
-const MAX_VAT_PERCENT = 30
+
+// Der Regelsatz der Umsatzsteuer, dazu eine halbe Prozentstelle für Rundung. Mehr als den
+// Regelsatz gibt es in Deutschland nicht; nach unten ist alles bis 0 möglich, weil eine Rechnung
+// ermäßigte (7 Prozent) und steuerfreie Anteile mischen kann.
+const VAT_PERCENT = 19
+const VAT_ROUNDING_PERCENT = 0.5
+
+// Lässt sich der Abstand zwischen Positionssumme und Rechnungsbetrag durch Umsatzsteuer
+// erklären? An dieser Frage hängt in diesem Modul alles, denn ein größerer Abstand heißt: Die
+// Positionen beschreiben nicht die ganze Rechnung, es fehlt eine.
+//
+// Geprüft wird gegen das, was der Abstand sein soll, und nicht gegen eine großzügige Obergrenze.
+// Eine Schranke von 30 Prozent etwa ließe bei 19 Prozent Steuer eine fehlende Position von 9
+// Prozent durch und bei 7 Prozent eine von 21; jede Position wäre dann um genau diesen Anteil zu
+// hoch, und beim Prüfen fiele nichts auf. Gegen den Regelsatz gemessen fällt bei 19 Prozent schon
+// ein fehlendes halbes Prozent auf.
+//
+// Ein Rechnungsbetrag unter der Positionssumme ist dagegen kein Zeichen für eine fehlende
+// Position, sondern für eine Abschlagszahlung, und ein gar nicht bekannter Rechnungsbetrag ist
+// überhaupt kein Zeichen. Beides blockt deshalb nicht.
+const vatExplainsGap = (positionCents: number, totalCents: number): boolean =>
+  positionCents > 0 && totalCents <= positionCents * (1 + (VAT_PERCENT + VAT_ROUNDING_PERCENT) / 100)
 
 export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
-  const { positionsAreNet, vatRatePercent, labor35aTotalEur, ...result } = extraction ?? {}
-  const positions = Array.isArray(result.positions) ? result.positions.map((p) => ({ ...p })) : []
+  // Die drei Hilfsfelder des Modells verlassen die Auswertung nicht. Mit `vatRatePercent`
+  // gerechnet wird nicht mehr (siehe unten), abgetrennt wird es trotzdem: In der Oberfläche hat
+  // es nichts verloren.
+  const { positionsAreNet, vatRatePercent: _rate, labor35aTotalEur, ...result } = extraction ?? {}
+  const positions: RawPosition[] = Array.isArray(result.positions) ? result.positions.map((p) => ({ ...p })) : []
   result.positions = positions
   const keys = positions.map((_, i) => String(i))
   const totalCents = toCents(result.totalGrossEur) ?? 0
@@ -76,53 +101,55 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   const readNet = netCents.filter((c) => c !== null)
   const allNetRead = readNet.length === netCents.length
   const netSum = readNet.reduce((a, b) => a + b, 0)
-  // Was der Abstand zwischen Positionssumme und Rechnungsbetrag als Umsatzsteuersatz bedeutete.
-  // Bei der Schornsteinfeger-Rechnung sind 85,60 zu 101,86 genau die 19 Prozent; fehlt eine
-  // Position, sind es 63,00 zu 101,86 und damit 62 Prozent, und die gibt es nicht.
-  const impliedVatPercent = netSum > 0 ? ((totalCents - netSum) / netSum) * 100 : 0
 
-  // 1. Netto → brutto. Zwei Bedingungen sichern, dass die Positionen wirklich die ganze Rechnung
-  // beschreiben. Erstens muss jeder Betrag gelesen sein. Zweitens muss der Abstand zum
-  // Rechnungsbetrag wie eine Umsatzsteuer aussehen: Fehlt ein Betrag, ist er viel größer, als
-  // eine Steuer erklären kann. Der zweite Teil fängt die beiden Wege, auf denen das Modell einen
-  // Betrag nicht als Lücke schreibt — das Schema verlangt eine Pflichtzahl, also schreibt es eher
-  // 0, oder es lässt die Position ganz weg.
+  // 1. Netto auf brutto. Vier Bedingungen, und jede verhindert einen eigenen Schaden:
+  // `positionsAreNet` ist der Anlass, ohne den nichts zu rechnen ist; der Abstand muss größer
+  // sein als die Rundung, sonst gibt es nichts zu tun; jeder Betrag muss gelesen sein, sonst
+  // rechnet die Verteilung an einer Position vorbei und schreibt ihr ein NaN; und der Abstand
+  // muss durch Umsatzsteuer erklärbar sein, sonst fehlt eine Position.
   //
-  // Ohne diese Sicherung verteilt die Hochrechnung den ganzen Rechnungsbetrag auf die Positionen,
+  // Die letzte Bedingung fängt die beiden Wege, auf denen ein Betrag fehlt, ohne zu fehlen: Das
+  // Schema verlangt eine Pflichtzahl, also schreibt ein Modell eher 0, oder es lässt die Position
+  // ganz weg. Ohne sie verteilt die Hochrechnung den ganzen Rechnungsbetrag auf die Positionen,
   // die übrig sind, und das Ergebnis ist das gefährlichste, das hier entstehen kann: Die Summe
   // passt zum Beleg, jede einzelne Position ist aber zu hoch, und beim Prüfen fällt nichts auf.
-  // Wird nicht gerechnet, bleiben die Positionen so stehen, wie sie auf der Rechnung stehen, und
-  // stimmen damit mit dem Beleg überein, den der Nutzer vor sich hat; in der Schnellerfassung
-  // meldet zusätzlich invoiceSumCheck, dass die Positionssumme nicht zur Rechnungssumme passt.
+  //
+  // Wird nicht gerechnet, bleiben die Positionen so stehen, wie sie auf der Rechnung stehen. Das
+  // ist die Sicherung: Was der Nutzer sieht, steht genauso auf dem Beleg vor ihm. In der
+  // Schnellerfassung kommt der Vergleich mit der Rechnungssumme dazu (invoiceSumCheck); auf der
+  // Kostenseite gibt es ihn nicht, dort bleibt es beim Blick auf den Beleg.
   if (
-    positionsAreNet === true && allNetRead && positions.length > 0 && netSum > 0 && totalCents > 0
-    && netSum < totalCents - tolerance(totalCents) && impliedVatPercent <= MAX_VAT_PERCENT
+    positionsAreNet === true && allNetRead
+    && netSum < totalCents - tolerance(totalCents) && vatExplainsGap(netSum, totalCents)
   ) {
-    const rate = typeof vatRatePercent === 'number' && Number.isFinite(vatRatePercent) && vatRatePercent > 0 && vatRatePercent <= MAX_VAT_PERCENT
-      ? vatRatePercent
-      : null
-    const raws = rate ? readNet.map((c) => c * (1 + rate / 100)) : readNet.map((c) => (c * totalCents) / netSum)
-    const gross = largestRemainder(totalCents, raws, keys)
+    // Immer anteilig, nie mit einem genannten Steuersatz. Das Restverfahren normiert ohnehin auf
+    // den Rechnungsbetrag, bei richtigem Satz kommt deshalb in jeder Position dasselbe heraus.
+    // Bei falschem Satz dagegen verteilt es die Differenz reihum: Aus 9,90 und 0,10 wurden bei
+    // genanntem Satz 30 und Rechnungsbetrag 11,00 die Beträge 11,87 und -0,87. Der
+    // Rechnungsbetrag ist die härtere Angabe als ein Satz, den das Modell gelesen haben will.
+    const gross = largestRemainder(totalCents, readNet.map((c) => (c * totalCents) / netSum), keys)
     positions.forEach((p, i) => { p.amountEur = toEur(gross[i]) })
     result.amountsAdjusted = 'netto'
   }
 
-  // 2. Lohnanteil aus dem Gesamtbetrag, nach derselben Linie. Der Betrag gehört zur ganzen
-  // Rechnung; fehlt eine Position, bekämen die übrigen deren Anteil mit dazu. Übernommen wird
-  // eine Position ohne Betrag nicht (sie ist in der Oberfläche nicht einmal vorgehakt), am Ende
-  // stünde also zu viel §35a in der Steuererklärung, und das ist bares Geld. Deshalb wird auch
-  // hier nur verteilt, wenn jeder Betrag gelesen ist und die Positionen den Rechnungsbetrag
-  // abdecken. Ohne bekannten Rechnungsbetrag lässt sich das nicht prüfen; dann bleibt es beim
-  // Verteilen, denn die Summe ist die einzige Angabe, gegen die man prüfen könnte.
+  // 2. Lohnanteil aus dem Gesamtbetrag, nach derselben Linie und mit derselben Prüfung. Der
+  // Betrag gehört zur ganzen Rechnung; fehlt eine Position, bekämen die übrigen deren Anteil mit
+  // dazu. Übernommen wird eine Position ohne Betrag nicht (sie ist in der Oberfläche nicht einmal
+  // vorgehakt), am Ende stünde also zu viel §35a in der Steuererklärung, und das ist bares Geld.
+  //
+  // Zu streng darf die Prüfung deshalb auch nicht sein, denn ein ausbleibender Lohnanteil kostet
+  // denselben Nutzer dieselbe Steuer. Eine Nettorechnung ohne gesetztes Kennzeichen und eine
+  // Abschlagszahlung sind vollständig, obwohl ihre Positionssumme nicht dem Rechnungsbetrag
+  // entspricht; beide gehen durch, weil `vatExplainsGap` genau das beschreibt.
   const laborTotal = toCents(labor35aTotalEur) ?? 0
   const hasOwnLabor = positions.some((p) => (toCents(p.labor35aEur) ?? 0) > 0)
   const grossCents = positions.map((p) => toCents(p.amountEur))
   const readGross = grossCents.filter((c) => c !== null)
+  const allGrossRead = readGross.length === grossCents.length
   const grossSum = readGross.reduce((a, b) => a + b, 0)
-  const positionsCoverInvoice = totalCents <= 0 || Math.abs(grossSum - totalCents) <= tolerance(totalCents)
   if (
-    laborTotal > 0 && !hasOwnLabor && readGross.length === grossCents.length && positionsCoverInvoice
-    && grossSum > 0 && laborTotal <= grossSum
+    laborTotal > 0 && !hasOwnLabor && allGrossRead
+    && vatExplainsGap(grossSum, totalCents) && laborTotal <= grossSum
   ) {
     const parts = largestRemainder(laborTotal, readGross.map((c) => (c * laborTotal) / grossSum), keys)
     positions.forEach((p, i) => { p.labor35aEur = toEur(parts[i]) })
