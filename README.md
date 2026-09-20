@@ -5,7 +5,7 @@ Keine Cloud, kein Konto, keine Abogebühren.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Download](https://img.shields.io/github/v/release/speedone/mietfuchs?label=Download&logo=github)](https://github.com/speedone/mietfuchs/releases/latest)
-![Node ≥ 24.12](https://img.shields.io/badge/Node-%E2%89%A5%2024.12-339933?logo=node.js&logoColor=white)
+![Node ≥ 24.15](https://img.shields.io/badge/Node-%E2%89%A5%2024.15-339933?logo=node.js&logoColor=white)
 ![100% lokal & offline](https://img.shields.io/badge/100%25-lokal%20%26%20offline-2563eb)
 ![Docker ready](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 
@@ -138,7 +138,7 @@ in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfu
 
 ## Aus dem Quellcode starten (für Entwickler)
 
-Dafür braucht es **Node 24.12 oder neuer**. Server und Oberfläche sind in TypeScript
+Dafür braucht es **Node 24.15 oder neuer**. Server und Oberfläche sind in TypeScript
 geschrieben, und der Server wird nicht gebaut: Node führt die Dateien unmittelbar aus und
 streift die Typen dabei ab. Das gilt erst ab dieser Version als stabil. Wer Mietfuchs als
 Programmdatei, als Linux-Paket oder im Docker-Image nutzt, braucht kein Node, dort ist die

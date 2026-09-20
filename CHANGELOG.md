@@ -8,13 +8,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
-- **Wer Mietfuchs aus dem Quellcode startet, braucht jetzt mindestens Node 24.12.** Der Server
-  ist von JavaScript auf TypeScript umgestellt und wird weiterhin nicht gebaut: Node führt die
-  Dateien unmittelbar aus und streift die Typen dabei ab. Das gilt erst ab dieser Version als
-  stabil. Für alle anderen ändert sich nichts: Die Programmdatei, die Linux-Pakete und das
+- **Wer Mietfuchs aus dem Quellcode startet, braucht jetzt mindestens Node 24.15.** Zwei Gründe
+  kommen dort zusammen. Der Server ist von JavaScript auf TypeScript umgestellt und wird
+  weiterhin nicht gebaut: Node führt die Dateien unmittelbar aus und streift die Typen dabei ab,
+  und das gilt erst ab 24.12 als stabil. Dazu kommt die Datenbank, die gerade entsteht: Sie
+  nutzt das eingebaute `node:sqlite`, und bis Node 24.14 meldet das bei jedem Start eine
+  Warnung, dass es sich um eine experimentelle Funktion handelt. Ab 24.15 ist sie weg. Statt sie
+  zu unterdrücken, was auch nützliche Warnungen verschluckt hätte, liegt die Untergrenze jetzt
+  dort. Für alle anderen ändert sich nichts: Die Programmdatei, die Linux-Pakete und das
   Docker-Image bringen ihre Laufzeit selbst mit, und an der Bedienung, an den Daten und an den
   Einstellungen ist nichts anders.
-  ([#48](https://github.com/speedone/mietfuchs/issues/48))
+  ([#48](https://github.com/speedone/mietfuchs/issues/48),
+  [#55](https://github.com/speedone/mietfuchs/issues/55))
 
 ### Behoben
 
