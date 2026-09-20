@@ -106,21 +106,27 @@ Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
 `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
 (siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
-Apple Silicon, und gegen Node im Job „Lange KI-Antwort (Node)“, der nur noch beim Tag und auf
-Zuruf startet (siehe Prüfumfang je Anlass). Ist `CI` gesetzt, öffnet die Programmdatei keinen
+Apple Silicon und gegen Node im Job „Lange KI-Antwort (Node)“, beides aber nur noch beim vollen
+Umfang, also beim Tag und auf Zuruf (siehe Prüfumfang je Anlass). Diese Prüfung fällt damit
+nicht weg, sie rückt ans Release: Ohne sie wird nichts angehängt. Sie gehört dorthin, weil sie
+an der Laufzeit hängt, bei der Programmdatei also an Bun, und Bun wird bewusst mit `latest`
+gebaut. Ist `CI` gesetzt, öffnet die Programmdatei keinen
 Browser. Bun baut bewusst mit `latest`; eine fehlerhafte neue Version
 fällt in diesen Tests auf. Die macOS-Dateien werden nach dem Bau auf einem Mac-Runner mit
 `codesign --sign -` neu signiert: Buns eigene Ad-hoc-Signatur beim Cross-Kompilieren unter
 Linux war wiederholt ungültig (zuletzt die Intel-Datei mit Bun 1.4.2), und neuere macOS-Versionen
 beenden solche Programme beim Start.
 
-**Prüfumfang je Anlass** (#52): Ein Pull Request prüft nicht mehr alles; vorher waren es rund 40
-Jobs mit 77 Runner-Minuten. Im PR laufen die Tests und der Build aus
-[ci.yml](.github/workflows/ci.yml), das Bauen und Signieren, die sechs Betriebssysteme und aus
-den Containern eine Auswahl: `centos:7` für die Untergrenze glibc 2.17 und `ubuntu:26.04` für
-das neueste Ende, dazu je ein Paket, nämlich das `.deb` auf Ubuntu 24.04 (dort auch der
-Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim Tag läuft alles: 22 Distributionen, sieben
-Pakete und die lange KI-Antwort unter Node. Den Umfang entscheidet der Job „Prüfumfang
+**Prüfumfang je Anlass** (#52): Ein Pull Request prüft nicht mehr alles; vorher waren es 41 Jobs
+mit rund 80 Runner-Minuten und 10,4 Minuten Wartezeit. Jetzt sind es 15 Jobs, rund 22
+Runner-Minuten und gut fünf Minuten Wartezeit. Im PR laufen die Tests und der Build aus
+[ci.yml](.github/workflows/ci.yml), das Bauen und Signieren, die sechs Betriebssysteme ohne die
+320 Sekunden Wartezeit der langen KI-Antwort und aus den Containern eine Auswahl: `centos:7` für
+die Untergrenze glibc 2.17 und `ubuntu:26.04` für das neueste Ende, dazu je ein Paket, nämlich
+das `.deb` auf Ubuntu 24.04 (dort auch der Startmenü-Eintrag) und das `.rpm` auf Fedora. Beim
+Tag läuft alles: 22 Distributionen, sieben Pakete, die lange KI-Antwort unter Node und dieselbe
+lange Wartezeit auf Linux x64, Windows x64 und Apple Silicon. Den Umfang entscheidet der Job
+„Prüfumfang
 festlegen“ in [release.yml](.github/workflows/release.yml); seine Zusammenfassung nennt jeden
 Container, den der Lauf geprüft hat. Wer die volle Breite schon vor dem Merge braucht, hängt dem
 Pull Request das Label `volle-pruefung` an, wie beim KI-Prüflauf das Label `ki-pruefung`; das
@@ -133,7 +139,9 @@ Rocky, openSUSE und Arch, dazu jeder Container auf ARM64, das Arch-Paket und die
 ARM64. Ein Fehler, der nur dort auftritt, zeigt sich erst beim Tag, aber immer noch vor dem
 Anhängen ans Release. Die ARM64-Programmdatei selbst prüft weiterhin jeder PR auf einem
 ARM-Runner. Am selben Label hängt die lange KI-Antwort, damit ein Lauf von Hand alles abdeckt,
-was ein PR auslässt.
+was ein PR auslässt. Eine leere Liste wäre die gefährlichste Lücke, weil eine Matrix ohne
+Einträge keinen Job erzeugt und GitHub das nicht als Fehler meldet, sondern überspringt; der Job
+„Prüfumfang festlegen“ bricht deshalb ab, wenn eine der beiden Listen leer ist.
 
 Einzelnen Test ausführen:
 
