@@ -80,6 +80,11 @@ test('Fehler: die Formate von OpenAI, Mistral, IONOS und Ollama werden gleich ge
     readProviderError(JSON.stringify({ httpStatus: 401, messages: [{ errorCode: 'INVALID_TOKEN', message: 'Token abgelaufen' }] })),
     { message: 'Token abgelaufen', code: 'INVALID_TOKEN', param: null },
   )
+  // IONOS schickt errorCode auch als Zahl, nicht nur als Zeichenkette
+  assert.deepEqual(
+    readProviderError(JSON.stringify({ httpStatus: 400, messages: [{ errorCode: 4001, message: 'Ungültige Anfrage' }] })),
+    { message: 'Ungültige Anfrage', code: 4001, param: null },
+  )
   assert.deepEqual(readProviderError(JSON.stringify({ error: 'model not found' })), { message: 'model not found', code: null, param: null })
   assert.deepEqual(readProviderError('<html>Bad Gateway</html>'), { message: '<html>Bad Gateway</html>', code: null, param: null })
 })
