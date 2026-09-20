@@ -424,8 +424,10 @@ const LONG_TEXT =
 // schickt mitten im Strom eine Fehlerzeile, 'rejectThinkOff' lehnt `think: false` ab wie
 // manche Modelle bei Ollama Cloud. Mit `key` verlangt der Dienst diesen Bearer-Schlüssel und
 // antwortet sonst mit 401. `closedEarly` zählt Chat-Anfragen, deren Verbindung Mietfuchs vor
-// dem Ende getrennt hat.
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false } = {}) {
+// dem Ende getrennt hat. `garbledShow` lässt /api/show mit einer nicht lesbaren Antwort
+// antworten, die den Schlüssel enthält (Befund aus der Codeprüfung: readJson gab ihn ungeprüft
+// weiter).
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false, garbledShow = false } = {}) {
   const http = await import('node:http')
   const requests = []
   const open = new Set()
@@ -464,6 +466,10 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         return res.end()
       }
       if (req.url === '/api/show') {
+        if (garbledShow) {
+          res.writeHead(200, { 'content-type': 'text/plain' })
+          return res.end(`kaputt: ${req.headers.authorization}`)
+        }
         const m = findModel(json.model)
         return m ? send(200, { capabilities: m.capabilities, remote_host: m.remote_host }) : notFound()
       }
@@ -1738,6 +1744,7 @@ test('Bestätigung: ein Cloud-Modell über das lokale Ollama braucht sie auch', 
 //   hang               antwortet nie
 //   echoKey            wiederholt den geschickten Schlüssel in einer Fehlermeldung
 //   echoKeyInStream    wiederholt ihn in einem Fehler mitten im Strom (Status 200)
+//   garbledStream      schickt ein nicht als JSON lesbares Ereignis, das den Schlüssel enthält
 async function fakeOpenAi(rules = {}) {
   const http = await import('node:http')
   const requests = []
@@ -1785,6 +1792,13 @@ async function fakeOpenAi(rules = {}) {
         res.write(`data: ${JSON.stringify({ error: { message: `Ungültige Anmeldung mit ${req.headers.authorization}` } })}
 
 `)
+        return res.end()
+      }
+      // Ein Ereignis, das sich nicht als JSON lesen lässt und den Schlüssel enthält (Befund aus
+      // der Codeprüfung: handleEvent gab ihn ungeprüft weiter)
+      if (rules.garbledStream) {
+        res.writeHead(200, { 'content-type': 'text/event-stream' })
+        res.write(`data: kaputt: ${req.headers.authorization}\n\n`)
         return res.end()
       }
       // Den zweiten Durchgang (nur Kategorien) erkennt man an Schema oder Prompt
@@ -2079,6 +2093,35 @@ test('Schlüssel: auch Ollama hinter einem Proxy zeigt ihn nicht', async () => {
     s.stop()
     ollama.stop()
   }
+})
+
+// Zweite Runde der Durchsicht: dieselbe Lücke fand sich noch einmal, an je einer Stelle, die
+// eine Antwort nicht als JSON lesen konnte (statt einen Fehlerstatus zu melden).
+test('Schlüssel: eine unlesbare Antwort von Ollama zeigt ihn nicht', async () => {
+  const KEY = 'ollama-status-schluessel-1234'
+  const ollama = await fakeOllama({ garbledShow: true })
+  const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')))
+  try {
+    await putAi(s, { text: ollamaSlot(ollama.url) })
+    await putKey(s, { slot: 'text', key: KEY })
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /unlesbare Antwort: kaputt: Bearer …/)
+    assert.ok(!r.body.error.includes(KEY))
+  } finally {
+    s.stop()
+    ollama.stop()
+  }
+})
+
+test('Schlüssel: eine unlesbare Antwort mitten im Strom zeigt ihn nicht', async () => {
+  const KEY = 'sk-test-geheim-strom-1234567890'
+  await withOpenAi(async (s) => {
+    const r = await uploadPdf(s, '/api/extract', { text: LONG_TEXT })
+    assert.equal(r.status, 502)
+    assert.match(r.body.error, /unlesbare Antwort: kaputt: Bearer …/)
+    assert.ok(!r.body.error.includes(KEY))
+  }, { key: KEY, rules: { garbledStream: true } })
 })
 
 // Der eigene Anbieter für Fotos und Scans ist gerade der Fall, für den die Trennung gedacht ist
