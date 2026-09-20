@@ -345,13 +345,23 @@ Behauptung brach: Fehlte ein Betrag, rief die Oberfläche `toLocaleString` auf e
 auf und zeigte statt des Vorschlags einen Fehler. Erreichbar ist das, obwohl das Schema den
 Betrag verlangt, weil die Anbindung bei Ablehnung stufenweise bis auf „nur Prompt“ zurückfällt.
 
-Dass ein Betrag fehlen darf, hat eine Folge für das Geraderücken: `normalizeAmounts` rechnet
-Nettopositionen nur noch hoch, wenn **jeder** Betrag gelesen wurde. Fehlt einer, läge die Summe
-der übrigen unter dem Rechnungsbetrag, die Bedingung griffe erst recht, und verteilt würde der
-ganze Rechnungsbetrag auf die gelesenen Positionen. Das Ergebnis wäre das gefährlichste, das
-hier entstehen kann: Die Summe passt zum Beleg, jede einzelne Position ist zu hoch, und beim
-Prüfen fällt nichts auf. Ein Betrag, der laut Rechnung null ist, verhindert das Hochrechnen
-dagegen nicht, denn „nicht gelesen“ und „kostet nichts“ sind zweierlei.
+Dass ein Betrag fehlen darf, hat eine Folge für das Geraderücken in
+[server/src/invoiceAmounts.ts](server/src/invoiceAmounts.ts). Fehlt eine Position, liegt die
+Positionssumme unter dem Rechnungsbetrag, und die Bedingung zum Hochrechnen griffe erst recht;
+verteilt würde dann der ganze Rechnungsbetrag auf die übrigen Positionen. Das Ergebnis wäre das
+gefährlichste, das hier entstehen kann: Die Summe passt zum Beleg, jede einzelne Position ist zu
+hoch, und beim Prüfen fällt nichts auf. Gerechnet wird deshalb nur, wenn die Positionen die ganze
+Rechnung beschreiben, und das prüfen zwei Bedingungen. Erstens muss jeder Betrag gelesen sein.
+Zweitens muss der Abstand zum Rechnungsbetrag wie eine Umsatzsteuer aussehen, also höchstens
+`MAX_VAT_PERCENT` betragen; dieselbe Schranke gilt für einen ausdrücklich genannten Satz. Nötig
+ist die zweite, weil das Schema den Betrag als Pflichtzahl verlangt: Ein Modell, das ihn nicht
+lesen kann, schreibt eher eine 0 oder lässt die Position weg, als eine Lücke zu lassen. Ein
+Betrag, der laut Rechnung null ist, verhindert das Hochrechnen dagegen nicht, denn „nicht
+gelesen“ und „kostet nichts“ sind zweierlei. Dieselbe Linie gilt für den §35a-Lohnanteil aus
+einem Gesamtbetrag: Er gehört zur ganzen Rechnung, wird also nur verteilt, wenn jeder Betrag
+gelesen ist und die Positionen den Rechnungsbetrag abdecken. Sonst bekämen die vorhandenen
+Positionen den Anteil der fehlenden mit dazu, und weil eine Position ohne Betrag nicht übernommen
+wird, stünde am Ende zu viel §35a in der Steuerübersicht.
 
 PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
