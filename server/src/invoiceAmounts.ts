@@ -65,21 +65,34 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   result.positions = positions
   const keys = positions.map((_, i) => String(i))
   const totalCents = toCents(result.totalGrossEur) ?? 0
-  const netCents = positions.map((p) => toCents(p.amountEur) ?? 0)
-  const netSum = netCents.reduce((a, b) => a + b, 0)
+  // `null` heißt „nicht gelesen“ und ist etwas anderes als 0: Eine Position kann laut Rechnung
+  // nichts kosten (mitversicherte Leistung, Gutschriftszeile), und dann stimmt alles.
+  const netCents = positions.map((p) => toCents(p.amountEur))
+  const readNet = netCents.filter((c) => c !== null)
+  const allNetRead = readNet.length === netCents.length
+  const netSum = readNet.reduce((a, b) => a + b, 0)
 
-  // 1. Netto → brutto
-  if (positionsAreNet === true && positions.length > 0 && netSum > 0 && totalCents > 0 && netSum < totalCents - tolerance(totalCents)) {
+  // 1. Netto → brutto. Nur, wenn jeder Betrag gelesen wurde: Fehlt einer, liegt die Summe der
+  // übrigen unter dem Rechnungsbetrag, und die Bedingung griffe erst recht. Verteilt würde dann
+  // der ganze Rechnungsbetrag auf die gelesenen Positionen, und das Ergebnis ist das
+  // gefährlichste, das es hier gibt: Die Summe passt zum Beleg, jede einzelne Position ist aber
+  // zu hoch, und beim Prüfen fällt nichts auf. Lieber bleiben die Positionen netto stehen; die
+  // Schnellerfassung meldet die Abweichung zur Rechnungssumme ohnehin (invoiceSumCheck).
+  if (positionsAreNet === true && allNetRead && positions.length > 0 && netSum > 0 && totalCents > 0 && netSum < totalCents - tolerance(totalCents)) {
     const rate = typeof vatRatePercent === 'number' && Number.isFinite(vatRatePercent) && vatRatePercent > 0 && vatRatePercent <= 30
       ? vatRatePercent
       : null
-    const raws = rate ? netCents.map((c) => c * (1 + rate / 100)) : netCents.map((c) => (c * totalCents) / netSum)
+    const raws = rate ? readNet.map((c) => c * (1 + rate / 100)) : readNet.map((c) => (c * totalCents) / netSum)
     const gross = largestRemainder(totalCents, raws, keys)
     positions.forEach((p, i) => { p.amountEur = toEur(gross[i]) })
     result.amountsAdjusted = 'netto'
   }
 
-  // 2. Lohnanteil aus dem Gesamtbetrag
+  // 2. Lohnanteil aus dem Gesamtbetrag. Hier genügt ein ungelesener Betrag nicht als Grund,
+  // nichts zu tun: Verteilt wird der ausgewiesene Lohnanteil, und die Summe über die Rechnung
+  // bleibt richtig, auch wenn eine Position ohne Betrag nichts davon abbekommt. Erfunden wird
+  // also nichts, es verschiebt sich nur die Zuordnung, und die steht als Vorschlag je Position
+  // sichtbar da.
   const laborTotal = toCents(labor35aTotalEur) ?? 0
   const hasOwnLabor = positions.some((p) => (toCents(p.labor35aEur) ?? 0) > 0)
   const grossCents = positions.map((p) => toCents(p.amountEur) ?? 0)

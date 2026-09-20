@@ -345,6 +345,14 @@ Behauptung brach: Fehlte ein Betrag, rief die Oberfläche `toLocaleString` auf e
 auf und zeigte statt des Vorschlags einen Fehler. Erreichbar ist das, obwohl das Schema den
 Betrag verlangt, weil die Anbindung bei Ablehnung stufenweise bis auf „nur Prompt“ zurückfällt.
 
+Dass ein Betrag fehlen darf, hat eine Folge für das Geraderücken: `normalizeAmounts` rechnet
+Nettopositionen nur noch hoch, wenn **jeder** Betrag gelesen wurde. Fehlt einer, läge die Summe
+der übrigen unter dem Rechnungsbetrag, die Bedingung griffe erst recht, und verteilt würde der
+ganze Rechnungsbetrag auf die gelesenen Positionen. Das Ergebnis wäre das gefährlichste, das
+hier entstehen kann: Die Summe passt zum Beleg, jede einzelne Position ist zu hoch, und beim
+Prüfen fällt nichts auf. Ein Betrag, der laut Rechnung null ist, verhindert das Hochrechnen
+dagegen nicht, denn „nicht gelesen“ und „kostet nichts“ sind zweierlei.
+
 PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
 `pdfText` mit, bei Scans ohne brauchbare Textebene (unter 80 Zeichen) bis zu vier Seiten als
