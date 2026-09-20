@@ -31,8 +31,8 @@ const OPENAI_MODELS: AiModel[] = [
 const LOCAL: AiSlot = { provider: 'ollama', preset: 'ollama-local', url: 'http://localhost:11434', model: 'bild:4b', vision: null }
 const OPENAI: AiSlot = { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true }
 const ai = (patch: Partial<AiSettingsType> = {}): AiSettingsType => ({
-  text: LOCAL, images: null, timeoutSeconds: null, numCtx: null, maxOutputTokens: null, jsonMode: 'auto',
-  reasoningEffort: null, extraInstructions: '', consent: {}, ...patch,
+  text: LOCAL, images: null, timeoutSeconds: null, numCtx: null, maxOutputTokens: null, pageImageEdge: null,
+  jsonMode: 'auto', reasoningEffort: null, extraInstructions: '', consent: {}, ...patch,
 })
 const NO_KEYS = { text: { set: false, hint: '', fromEnv: null }, images: { set: false, hint: '', fromEnv: null } }
 const settings = (patch: Partial<Settings> = {}): Settings => ({

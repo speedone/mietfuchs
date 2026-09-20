@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { AiModel, AiPreset, AiRecommendation, AiSettings, AiSlot, Settings } from './types'
 import {
-  aiFormFrom, aiSummary, consentState, externalNotice, keyState, pullText, recommendationsFor, parseOptionalInt, presetGroups, switchPreset, visionFromValue, visionValue,
+  aiFormFrom, aiSummary, consentState, externalNotice, keyState, pageEdgeHint, pullText, recommendationsFor, parseOptionalInt, presetGroups, switchPreset, visionFromValue, visionValue,
 } from './aiForm'
 
 const preset = (p: Partial<AiPreset> & Pick<AiPreset, 'id' | 'provider' | 'label'>): AiPreset => ({
@@ -23,8 +23,8 @@ const LOCAL: AiSlot = { provider: 'ollama', preset: 'ollama-local', url: 'http:/
 const OPENAI: AiSlot = { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true }
 
 const ai = (patch: Partial<AiSettings> = {}): AiSettings => ({
-  text: LOCAL, images: null, timeoutSeconds: null, numCtx: null, maxOutputTokens: null, jsonMode: 'auto',
-  reasoningEffort: null, extraInstructions: '', consent: {}, ...patch,
+  text: LOCAL, images: null, timeoutSeconds: null, numCtx: null, maxOutputTokens: null, pageImageEdge: null,
+  jsonMode: 'auto', reasoningEffort: null, extraInstructions: '', consent: {}, ...patch,
 })
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -187,5 +187,18 @@ describe('Fortschritt beim Laden', () => {
     expect(pullText({ step: 'pull', phase: 'verifying sha256 digest' })).toBe('Wird geprüft …')
     expect(pullText({ step: 'pull', phase: 'writing manifest' })).toBe('Wird gespeichert …')
     expect(pullText({ step: 'pull', phase: 'success' })).toBe('Fertig.')
+  })
+})
+
+describe('Größe der Seitenbilder (#35)', () => {
+  test('der Hinweis rechnet Bildpunkte in dpi um', () => {
+    // Viele denken bei Scans in dpi, gerendert wird nach Bildpunkten. A4 ist 11,69 Zoll hoch.
+    expect(pageEdgeHint('1200', 1200)).toBe('1200 Bildpunkte entsprechen etwa 103 dpi bei A4.')
+    expect(pageEdgeHint('2400', 1200)).toBe('2400 Bildpunkte entsprechen etwa 205 dpi bei A4.')
+  })
+
+  test('ein leeres Feld zeigt den Standard, eine unsinnige Eingabe sagt es', () => {
+    expect(pageEdgeHint('  ', 1200)).toBe('1200 Bildpunkte entsprechen etwa 103 dpi bei A4.')
+    expect(pageEdgeHint('viel', 1200)).toBe('Bitte eine ganze Zahl eintragen oder das Feld leer lassen.')
   })
 })

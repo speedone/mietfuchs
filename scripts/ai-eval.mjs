@@ -36,11 +36,13 @@ const opt = (name, fallback) => {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const evalDir = path.join(root, 'scripts', 'ai-eval')
 
-// Wie der Browser: Seiten mit Faktor 2 bezogen auf 72 dpi, höchstens vier (client/src/pdf.ts)
+// Wie der Browser: höchstens vier Seiten, in der Größe von INTAKE_EDGE (client/src/pdf.ts)
 const MAX_PAGES = 4
 const PAGE_CSS_PX = { width: 794, height: 1123 } // A4 bei 96 dpi
 const PHOTO_SCALE = 1.5 // das Foto bleibt fest, nur die Seitenbilder des Scans ändern sich
-const PAGE_EDGE = 1684 // lange Kante in Bildpunkten, entspricht pdf.js mit Faktor 2 auf A4
+// Lange Kante der Seitenbilder in Bildpunkten, so wie der Browser sie schickt (INTAKE_EDGE in
+// client/src/pdf.ts). Mit diesem Prüflauf gemessen (#35).
+const PAGE_EDGE = 1200
 const TEXT_MAX = 20000
 const VARIANT_LABELS = { text: 'Text', scan: 'Scan', photo: 'Foto' }
 

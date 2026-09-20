@@ -2,6 +2,7 @@
 // Leser mit festen Antworten; das echte Lesen und Rendern prüft der Durchlauf im Browser.
 import { describe, expect, test, vi } from 'vitest'
 import { buildUpload, MAX_PAGES, PDF_TEXT_MAX, PDF_TEXT_MIN, type OpenedPdf, type PdfReader } from './pdfIntake'
+import { INTAKE_EDGE } from './pdf'
 
 const pdf = () => new File(['%PDF-1.4'], 'rechnung.pdf', { type: 'application/pdf' })
 const photo = () => new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' })
@@ -49,12 +50,23 @@ describe('Beleg vor dem Hochladen vorbereiten', () => {
     expect(doc.pages).not.toHaveBeenCalled()
   })
 
+  test('die eingestellte Größe der Seitenbilder wird durchgereicht (#35)', async () => {
+    // Unter „Erweitert“ oder per NKA_AI_IMAGE_EDGE lässt sich die lange Kante ändern. Ohne
+    // Angabe gilt der gemessene Standard.
+    const { reader, doc } = fakeReader('kurz', 1)
+    await buildUpload(pdf(), reader, 900)
+    expect(doc.pages).toHaveBeenCalledWith(MAX_PAGES, 900)
+    const ohneAngabe = fakeReader('kurz', 1)
+    await buildUpload(pdf(), ohneAngabe.reader)
+    expect(ohneAngabe.doc.pages).toHaveBeenCalledWith(MAX_PAGES, INTAKE_EDGE)
+  })
+
   test('Scan: höchstens vier Seiten gehen als Bilder mit, das PDF wird nur einmal geöffnet', async () => {
     // Rechnungen stehen praktisch immer vorn, und jedes Bild kostet Auswertungszeit.
     const { reader, doc } = fakeReader('Seite 1', 6)
     const fd = await buildUpload(pdf(), reader)
     expect(reader.open).toHaveBeenCalledTimes(1)
-    expect(doc.pages).toHaveBeenCalledWith(MAX_PAGES)
+    expect(doc.pages).toHaveBeenCalledWith(MAX_PAGES, INTAKE_EDGE)
     const pages = fd.getAll('pages') as File[]
     expect(pages).toHaveLength(4)
     expect(pages.map((s) => s.name)).toEqual(['seite-1.jpg', 'seite-2.jpg', 'seite-3.jpg', 'seite-4.jpg'])

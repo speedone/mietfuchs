@@ -313,7 +313,8 @@ dieser Rechner) und nur, wenn die eingestellte Adresse gar nicht erreichbar war.
 
 Umgebungsvariablen (die Einstellungen zeigen betroffene Felder gesperrt, `fixedByEnv`, in die
 db.json gelangen die Werte nicht): `NKA_AI_PROVIDER`, `NKA_AI_URL`, `NKA_AI_MODEL`,
-`NKA_AI_API_KEY` bzw. `NKA_AI_API_KEY_FILE`, `NKA_AI_TIMEOUT`, `NKA_AI_MAX_TOKENS`; dazu
+`NKA_AI_API_KEY` bzw. `NKA_AI_API_KEY_FILE`, `NKA_AI_TIMEOUT`, `NKA_AI_MAX_TOKENS`,
+`NKA_AI_IMAGE_EDGE`; dazu
 `NKA_OLLAMA_URL`, `NKA_OLLAMA_MODEL` und `NKA_OLLAMA_NUM_CTX`, die weiter gelten, solange
 Ollama der Anbieter ist. Ein ungültiger Wert verhindert den Start mit klarer Meldung. Einzige
 Ausnahme vom Grundsatz, dass Werte aus der Umgebung nicht in die db.json gelangen: Die
@@ -335,6 +336,17 @@ einen nachgebauten Server. `GET /api/ai/recommendations` liefert `{ models, upda
 wie die Auswertung (Fortschritt, Lebenszeichen, Abbruch über die Kennung). Nur für ein Ollama
 auf diesem Rechner oder im Heimnetz: Dienste im Internet bringen ihre Modelle mit. Vor dem
 Download fragt die Oberfläche nach, denn Mietfuchs ist im Heimnetz ohne Anmeldung erreichbar.
+
+**Größe der Seitenbilder** (#35): Ein Scan geht mit `INTAKE_EDGE` Bildpunkten an der langen
+Kante an das Modell ([client/src/pdf.ts](client/src/pdf.ts)), der Druck weiter mit Faktor 2 bis
+`MAX_EDGE`. Der Wert stammt aus dem KI-Prüflauf, der vier Größen an denselben Belegen verglichen
+hat (`--page-edge`, mehrere Werte im Workflow ergeben je Modell einen Lauf pro Größe): Bis 1200
+bleibt die Trefferquote gleich, bei 1000 bricht sie bei beiden geprüften Modellen ein, und mehr
+als 1200 bringt nichts, kostet aber rund 40 Prozent mehr Eingabe-Token. Dasselbe Band nutzen die
+großen Dienste von sich aus: OpenAI stutzt die kurze Kante auf 768 Bildpunkte, Anthropic
+rechnet oberhalb von 1568 Token herunter. Wer ein Modell mit anderem Bedarf hat, stellt
+`ai.pageImageEdge` unter „Erweitert“ oder per `NKA_AI_IMAGE_EDGE` um (600 bis 2600); die
+Oberfläche zeigt dazu den dpi-Wert bei A4.
 
 **KI-Prüflauf** ([.github/workflows/ai-eval.yml](.github/workflows/ai-eval.yml),
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern

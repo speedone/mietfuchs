@@ -285,7 +285,11 @@ nicht in dieser Liste steht.
 Auf einem Rechner ohne Grafikkarte rechnet das Modell auf dem Prozessor. Ein PDF mit Textebene
 braucht dann meist unter einer Minute, ein gescannter Beleg einige Minuten. Mit Grafikkarte
 oder auf einem Mac mit Apple-Chip geht es deutlich schneller, bei einem Dienst im Internet
-dauert ein Beleg wenige Sekunden. Während der Auswertung zeigt Mietfuchs, was das Modell
+dauert ein Beleg wenige Sekunden. Die Seiten eines Scans schickt Mietfuchs mit 1200 Bildpunkten
+an der langen Kante: Der KI-Prüflauf hat gezeigt, dass mehr die Trefferquote nicht verbessert,
+aber jede Auswertung verlängert. Wer ein Modell mit anderem Bedarf nutzt, ändert den Wert unter
+*Einstellungen → KI → Erweitert* oder mit `NKA_AI_IMAGE_EDGE`; daneben steht, welchem dpi-Wert
+er bei A4 entspricht. Während der Auswertung zeigt Mietfuchs, was das Modell
 gerade tut und wie lange es schon läuft. Abbrechen stoppt auch das Modell.
 
 ### Ollama und Docker
@@ -329,6 +333,7 @@ ist dann gesperrt, und in die `db.json` gelangen sie nicht:
 | `NKA_AI_API_KEY_FILE` | Pfad einer Datei mit dem Schlüssel, etwa eines Docker-Secrets unter `/run/secrets/`. Nicht zusammen mit `NKA_AI_API_KEY`. Gilt für den Standard-Anbieter; den Schlüssel für einen eigenen Bilder-Anbieter trägt man in der Oberfläche ein. |
 | `NKA_AI_TIMEOUT` | Zeitlimit je Auswertungsschritt in Sekunden, Standard 1200 für das Auslesen. |
 | `NKA_AI_MAX_TOKENS` | Höchstlänge der Antwort in Token, Standard 16384 (nur OpenAI-kompatible Dienste). |
+| `NKA_AI_IMAGE_EDGE` | Lange Kante der Seitenbilder eines Scans in Bildpunkten, Standard 1200 (etwa 103 dpi bei A4). Erlaubt sind 600 bis 2600. |
 | `NKA_OLLAMA_URL` | Adresse von Ollama, gilt weiter, solange Ollama der Anbieter ist. |
 | `NKA_OLLAMA_MODEL` | Modell für Ollama. Im Compose-Profil lädt `ollama-pull` dieses Modell. |
 | `NKA_OLLAMA_NUM_CTX` | Kontextgröße in Token, Standard 16384. Kleiner spart Arbeitsspeicher, zu klein schneidet lange Belege ab. |
