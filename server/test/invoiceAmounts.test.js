@@ -7,7 +7,7 @@
 // 2. Der Arbeitskostenanteil nach §35a steht nur als ein Betrag unter der Rechnung. Er wird auf
 //    die Positionen verteilt, damit die Bescheinigung ihn ausweisen kann.
 //
-// Gerechnet wird in Cent mit dem Restverfahren, wie in calc.js.
+// Gerechnet wird in Cent mit dem Restverfahren, wie in calc.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeAmounts } from '../src/invoiceAmounts.ts'

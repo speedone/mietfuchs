@@ -13,7 +13,7 @@
 // Gelesen wird die Umgebung einmal beim Start (`checkKeyEnvironment`).
 import fs from 'node:fs'
 import path from 'node:path'
-import { DATA_DIR } from './store.js'
+import { DATA_DIR } from './store.ts'
 
 // Die Rohdaten aus secrets.json: je Platz ein Schlüssel, aber ungeprüft, wie sie auf der
 // Platte stehen. Eine von Hand verdorbene Datei (siehe Tests dazu) darf den Start nicht stören.

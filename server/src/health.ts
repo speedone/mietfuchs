@@ -10,7 +10,7 @@ import path from 'node:path'
 type Check = { ok: boolean, detail: string }
 
 // Ist der Datenbestand lesbar? Eine fehlende db.json ist kein Fehler: Beim ersten Start legt
-// store.js sie erst beim ersten Schreiben an. Ein Fehler ist eine vorhandene, aber unlesbare
+// store.ts sie erst beim ersten Schreiben an. Ein Fehler ist eine vorhandene, aber unlesbare
 // Datei.
 function checkData(dataDir: string): Check {
   const file = path.join(dataDir, 'db.json')

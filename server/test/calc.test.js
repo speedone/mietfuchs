@@ -10,7 +10,7 @@ import {
   personDaysInPeriod,
   rentLedger,
   taxReport,
-} from '../src/calc.js'
+} from '../src/calc.ts'
 
 // Beispielhaus für die Tests: 3 Wohnungen, davon eine selbstgenutzt und zwei vermietet.
 // Die selbstgenutzte Wohnung ist hier ohne Eigennutzungs-Kennzeichen angelegt (Altbestand) —

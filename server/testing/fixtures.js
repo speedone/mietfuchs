@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { computeSettlement, consumptionOverview } from '../src/calc.js'
+import { computeSettlement, consumptionOverview } from '../src/calc.ts'
 import { normalizeSettlement, normalizeConsumption } from './normalize.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))

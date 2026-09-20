@@ -5,8 +5,8 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.js'
-import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.js'
+import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { extractFromFile, classifyDocType, extractMeterReading } from './extract.js'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.js'
 import { createRecommendations } from './ai/recommendations.js'
@@ -632,7 +632,7 @@ app.post('/api/quit', (req, res) => {
   if (!STANDALONE) return res.status(404).json({ error: 'Beenden geht nur bei der Programmdatei. Hier beendet die Umgebung den Dienst.' })
   res.json({ ok: true })
   // Erst antworten, dann beenden: Sonst sähe der Browser einen Verbindungsabbruch statt der
-  // Bestätigung. Offene Schreibvorgänge gibt es nicht, store.js schreibt jede Änderung sofort.
+  // Bestätigung. Offene Schreibvorgänge gibt es nicht, store.ts schreibt jede Änderung sofort.
   res.on('finish', () => setTimeout(() => process.exit(0), 100))
 })
 
@@ -752,7 +752,7 @@ const server = app.listen(PORT, (err) => {
   // Tests lesen ihn aus dieser Meldung.
   const url = `http://127.0.0.1:${server.address().port}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
-  // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.js): neben der
+  // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.
   console.log(`Daten: ${DATA_DIR}`)
