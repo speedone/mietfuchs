@@ -17,7 +17,7 @@ import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.js'
 import { createUpdateChecker, UPDATE_URL } from './update.js'
-import { APP_VERSION, RUNTIME, STANDALONE } from './version.js'
+import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()

@@ -10,7 +10,9 @@
 import pkg from '../package.json' with { type: 'json' }
 import { systemLocation } from './paths.js'
 
-export const APP_VERSION = pkg.version
+export const APP_VERSION: string = pkg.version
+
+export type Runtime = 'binary' | 'package' | 'docker' | 'npm'
 
 // 'binary' in der Programmdatei (Bun), 'package' bei derselben Datei aus einem
 // Installationspaket (#25: sie liegt dann an einem Ort, der dem System gehört), 'docker' im
@@ -20,7 +22,7 @@ export const APP_VERSION = pkg.version
 // `NKA_RUNTIME=binary` gibt die Programmdatei vor, ohne eine zu sein. Gedacht für Tests, die
 // das Verhalten beim Start aus dem Startmenü prüfen (Browser öffnen, Beenden aus der
 // Oberfläche, belegter Port). Die Auslieferung des Frontends hängt weiterhin an Bun selbst.
-export const RUNTIME = globalThis.Bun
+export const RUNTIME: Runtime = globalThis.Bun
   ? systemLocation() ? 'package' : 'binary'
   : process.env.NKA_RUNTIME === 'docker' ? 'docker'
     : process.env.NKA_RUNTIME === 'binary' ? 'binary' : 'npm'
@@ -28,4 +30,4 @@ export const RUNTIME = globalThis.Bun
 // Von einem Menschen gestartet und für sich selbst verantwortlich: Nur dann öffnet Mietfuchs
 // den Browser, bietet das Beenden aus der Oberfläche an und behandelt einen belegten Port als
 // „läuft schon“. Im Container und im npm-Betrieb übernimmt das die Umgebung.
-export const STANDALONE = RUNTIME === 'binary' || RUNTIME === 'package'
+export const STANDALONE: boolean = RUNTIME === 'binary' || RUNTIME === 'package'
