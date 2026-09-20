@@ -17,7 +17,7 @@
 // Fehler kommen in verschiedenen Formaten (readProviderError) und werden in Meldungen für die
 // Oberfläche übersetzt. Ein Schlüssel erscheint nie in einer Meldung.
 
-import { openRequest, readText, maskSecret } from './http.js'
+import { openRequest, readText, maskSecret } from './http.ts'
 import { presetById } from './presets.ts'
 import { isExternalUrl } from './settings.js'
 

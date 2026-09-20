@@ -11,24 +11,47 @@
 import http from 'node:http'
 import https from 'node:https'
 
+export type HttpOptions = {
+  method?: string
+  headers?: Record<string, string>
+  body?: string
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
+// Antwort-Header sind je nach Transportweg unterschiedlich geformt (fetch liefert nur einzelne
+// Werte, node:http bei manchen Feldern eine Liste), deshalb die weiteste Form für beide.
+export type HttpHeaders = Record<string, string | string[] | undefined>
+
+export type HttpResponse = {
+  status: number
+  ok: boolean
+  headers: HttpHeaders
+  body: AsyncIterable<Uint8Array>
+}
+
 // Liefert Status, Header (Namen klein geschrieben) und den Rumpf als asynchron iterierbare
 // Folge von Bytes. Wirft, wenn keine Verbindung zustande kommt oder `signal` abbricht; bricht
 // `signal` später ab, wirft das Lesen des Rumpfs.
-export function openRequest(url, { method = 'GET', headers = {}, body, signal } = {}) {
+export function openRequest(url: string, { method = 'GET', headers = {}, body, signal }: HttpOptions = {}): Promise<HttpResponse> {
   return globalThis.Bun ? viaFetch(url, { method, headers, body, signal }) : viaNodeHttp(url, { method, headers, body, signal })
 }
 
-async function viaFetch(url, { method, headers, body, signal }) {
-  const res = await fetch(url, { method, headers, body, signal, timeout: false })
-  return { status: res.status, ok: res.ok, headers: Object.fromEntries(res.headers), body: res.body ?? (async function* () {})() }
+async function viaFetch(url: string, { method, headers, body, signal }: HttpOptions): Promise<HttpResponse> {
+  // `timeout: false` ist eine Bun-Erweiterung von fetch, die TypeScript (mit den Node-Typen)
+  // nicht kennt; ansonsten unverändert die Standard-fetch-Optionen.
+  const init: RequestInit & { timeout?: false } = { method, headers, body, signal, timeout: false }
+  const res = await fetch(url, init)
+  const empty: AsyncIterable<Uint8Array> = (async function* () {})()
+  return { status: res.status, ok: res.ok, headers: Object.fromEntries(res.headers), body: res.body ?? empty }
 }
 
-function viaNodeHttp(url, { method, headers, body, signal }) {
+function viaNodeHttp(url: string, { method, headers, body, signal }: HttpOptions): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     const target = new URL(url)
     const client = target.protocol === 'https:' ? https : http
     const req = client.request(target, { method, headers, signal }, (res) => {
-      resolve({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, headers: res.headers, body: res })
+      resolve({ status: res.statusCode ?? 0, ok: (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300, headers: res.headers, body: res })
     })
     req.on('error', reject)
     req.end(body)
@@ -37,9 +60,10 @@ function viaNodeHttp(url, { method, headers, body, signal }) {
 
 // Ein API-Schlüssel darf nie in einer Meldung landen, auch nicht, wenn der Dienst oder ein
 // Proxy ihn in seiner Fehlermeldung wiederholt.
-export const maskSecret = (secret, text) => (secret ? String(text).split(secret).join('…') : String(text))
+export const maskSecret = (secret: string | null | undefined, text: unknown): string =>
+  secret ? String(text).split(secret).join('…') : String(text)
 
-export async function readText(body) {
+export async function readText(body: AsyncIterable<Uint8Array>): Promise<string> {
   const decoder = new TextDecoder()
   let text = ''
   for await (const chunk of body) text += decoder.decode(chunk, { stream: true })
@@ -47,7 +71,7 @@ export async function readText(body) {
 }
 
 // Zeilenweise lesen, etwa für NDJSON-Ströme. Leere Zeilen fallen weg.
-export async function* readLines(body) {
+export async function* readLines(body: AsyncIterable<Uint8Array>): AsyncGenerator<string> {
   const decoder = new TextDecoder()
   let rest = ''
   for await (const chunk of body) {
