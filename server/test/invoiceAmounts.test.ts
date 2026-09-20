@@ -29,8 +29,9 @@ const chimney = () => ({
 const cents = (eur: number) => Math.round(eur * 100)
 
 // Summe eines Betragsfelds in Cent. Die Felder stehen im Typ als `unknown`, weil sie ungeprüft
-// aus dem Modell kommen; nach dem Geraderücken müssen sie Zahlen sein, und steht dort etwas
-// anderes, ist genau das der Befund.
+// aus dem Modell kommen. Ein fehlender Wert zählt als Null: `labor35aEur` darf laut Schema
+// null sein, und eine Position ohne Lohnanteil ist der Normalfall. Steht dort aber etwas
+// anderes als eine Zahl, ist genau das der Befund, und der Test benennt ihn.
 const sum = (positions: Position[], key: 'amountEur' | 'labor35aEur' = 'amountEur') =>
   positions.reduce((a, p) => {
     const value = p[key]
