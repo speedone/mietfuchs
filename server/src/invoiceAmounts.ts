@@ -12,7 +12,7 @@
 //
 // Beides ist ein Vorschlag wie alles aus der KI: Die Oberfläche zeigt es an, übernommen wird
 // erst nach Prüfung. `amountsAdjusted` und `laborFromTotal` sagen ihr, was gerechnet wurde.
-import { largestRemainder } from './calc.js'
+import { largestRemainder } from './calc.ts'
 
 // Eine Rechnungsposition aus der KI-Auswertung. Weitere Felder (Beschreibung, Kategorie, …)
 // fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur durchgereicht.

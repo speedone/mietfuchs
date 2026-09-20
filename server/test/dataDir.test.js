@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { chooseDataDir } from '../src/store.js'
+import { chooseDataDir } from '../src/store.ts'
 import { writable } from '../src/paths.ts'
 
 // Nichts anfassen, was wirklich auf der Platte liegt: Schreibtest und Heimatordner werden

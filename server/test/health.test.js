@@ -33,7 +33,7 @@ test('Healthcheck: gesunder Datenordner meldet ok', () => {
 })
 
 test('Healthcheck: Erstinbetriebnahme ohne db.json ist gesund', () => {
-  // Beim ersten Start gibt es noch keine db.json — store.js legt sie erst beim ersten
+  // Beim ersten Start gibt es noch keine db.json — store.ts legt sie erst beim ersten
   // Schreiben an. Als Fehler gemeldet, hinge jeder frisch gestartete Container in einer
   // Neustart-Schleife.
   const report = healthReport({ dataDir: makeDataDir(), version: '0.3.1' })
