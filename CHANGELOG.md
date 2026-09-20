@@ -18,6 +18,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein Beleg, bei dem die KI einen Betrag nicht lesen konnte, ließ sich gar nicht mehr
+  übernehmen.** Statt der erkannten Positionen stand dann „Fehler“ in der Warteschlange, und
+  der ganze Beleg war verloren, obwohl Beschreibungen, Kostenarten und die übrigen Beträge
+  brauchbar waren. Jetzt steht die Position ganz normal da, nur mit leerem Betragsfeld zum
+  Ausfüllen; in der Schnellerfassung zeigt die Ampel sie rot mit dem Hinweis „Betrag fehlt oder
+  ist 0“. Ebenso wird ein Betrag jetzt auch dann übernommen, wenn das Modell ihn als Text
+  geschrieben hat („12,50“ statt 12.5), so wie es beim Zählerstand schon war. Betroffen waren
+  vor allem kleine Modelle auf dem eigenen Rechner, die sich nicht streng an die Vorgabe
+  halten. ([#63](https://github.com/speedone/mietfuchs/issues/63))
 - **Ein API-Schlüssel konnte im Klartext in einer Fehlermeldung auf dem Bildschirm stehen.**
   Antwortete ein KI-Dienst mit etwas, das Mietfuchs nicht als Auswertung lesen konnte, zeigte
   die Meldung die Antwort im Wortlaut. Gab der Dienst dabei die eigene Anfrage zurück, wie es

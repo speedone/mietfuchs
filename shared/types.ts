@@ -354,13 +354,22 @@ export type UploadInfo = {
   mtime: string
 }
 
+// Was die Oberfläche aus einer KI-Belegauswertung bekommt: das Ergebnis, nicht die rohe Antwort
+// des Modells. Die beschreibt `RawExtraction` in server/src/invoiceAmounts.ts, und dort ist alles
+// `unknown`; `toExtraction` in server/src/extract.ts ist die eine Stelle, an der daraus diese
+// Zusage wird.
+//
+// `amountEur` fehlt, wenn das Modell den Betrag nicht lesen konnte. Das ist der ehrliche Fall:
+// Die KI füllt ein Formular vor, ein Mensch prüft es, und ein leeres Feld kann er ausfüllen.
+// `description` und `category` sind dagegen Pflicht, weil toExtraction dort im Zweifel eine
+// leere Zeichenkette liefert.
 export type Extraction = {
   vendor?: string
   invoiceDate?: string
   periodStart?: string | null
   periodEnd?: string | null
   totalGrossEur?: number
-  positions?: { description: string; category: string; amountEur: number; labor35aEur?: number | null }[]
+  positions?: { description: string; category: string; amountEur?: number; labor35aEur?: number | null }[]
   // Vom Server gerechnet (#34, server/src/invoiceAmounts.ts): 'netto' heißt, die Positionen
   // standen ohne Umsatzsteuer da und wurden auf den Rechnungsbetrag hochgerechnet
   amountsAdjusted?: 'netto'

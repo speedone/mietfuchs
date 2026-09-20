@@ -12,17 +12,17 @@
 //
 // Beides ist ein Vorschlag wie alles aus der KI: Die Oberfläche zeigt es an, übernommen wird
 // erst nach Prüfung. `amountsAdjusted` und `laborFromTotal` sagen ihr, was gerechnet wurde.
+import type { Extraction } from '../../shared/types.ts'
 import { largestRemainder } from './calc.ts'
 
-// Eine Rechnungsposition aus der KI-Auswertung. Weitere Felder (Beschreibung, Kategorie, …)
-// fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur durchgereicht.
-// Exportiert, weil extract.ts dieselbe rohe Gestalt braucht (die Antwort der KI, bevor sie
-// normalizeAmounts geradezieht).
+// Eine Rechnungsposition, wie das Modell sie geliefert hat. Weitere Felder (Beschreibung,
+// Kategorie, …) fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur
+// durchgereicht. Exportiert, weil extract.ts dieselbe rohe Gestalt braucht.
 // Beide Betragsfelder stehen ungeprüft so da, wie das Modell sie geliefert hat: `unknown`, aus
 // demselben Grund wie die Hinweisfelder unten. Gelesen werden sie nur über `toCents`, das jeden
-// Wert selbst prüft, geschrieben nur über `toEur`. Nach dem Geraderücken stehen dort deshalb
-// Zahlen, und was der Browser bekommt, beschreibt `Extraction` in shared/types.ts.
-export type Position = {
+// Wert selbst prüft, geschrieben nur über `toEur`. Was der Browser am Ende bekommt, beschreibt
+// `Extraction` in shared/types.ts — dorthin führt `toExtraction` in extract.ts, und nur dort.
+export type RawPosition = {
   amountEur?: unknown
   // Die KI meldet „kein Lohnanteil“ auch als null, nicht nur durch Weglassen; so steht es schon
   // im Schema und in shared/types.ts.
@@ -38,14 +38,19 @@ export type Position = {
 // `toCents`), und die drei Hinweisfelder trennt sie beim Zerlegen ab, sodass sie die Auswertung
 // nie verlassen. Ein engerer Typ wäre eine Behauptung, die niemand einlöst, und würde nur die
 // Prüfungen unten wie toten Code aussehen lassen.
-export type Extraction = {
+//
+// Die beiden letzten Felder schreibt dagegen Mietfuchs selbst, für die Oberfläche. Sie nehmen
+// ihren Typ deshalb von dort, statt ihn zu wiederholen: So kann das Paar nicht auseinanderlaufen,
+// ohne dass der Übersetzer es meldet. Dass das Modell sie nicht selbst behauptet, stellt
+// extract.ts sicher, bevor die Antwort hierher kommt.
+export type RawExtraction = {
   positionsAreNet?: unknown
   vatRatePercent?: unknown
   labor35aTotalEur?: unknown
   totalGrossEur?: unknown
-  positions?: Position[]
-  amountsAdjusted?: string
-  laborFromTotal?: boolean
+  positions?: RawPosition[]
+  amountsAdjusted?: Extraction['amountsAdjusted']
+  laborFromTotal?: Extraction['laborFromTotal']
   [key: string]: unknown
 }
 
@@ -54,7 +59,7 @@ const toEur = (cents: number): number => Math.round(cents) / 100
 // Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
 const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
 
-export function normalizeAmounts(extraction: Extraction | null | undefined) {
+export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   const { positionsAreNet, vatRatePercent, labor35aTotalEur, ...result } = extraction ?? {}
   const positions = Array.isArray(result.positions) ? result.positions.map((p) => ({ ...p })) : []
   result.positions = positions
