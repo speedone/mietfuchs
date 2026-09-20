@@ -20,7 +20,9 @@ import { presetById, defaultPresetFor } from './presets.ts'
 
 // Die Plätze zum Durchlaufen. Welche es gibt, sagt `AiSlotName` in shared/types.ts; die Liste
 // steht hier, weil shared/types.ts bewusst keinen Laufzeitanteil hat. `readonly AiSlotName[]`
-// sorgt dafür, dass beide zusammenpassen müssen.
+// leistet dabei genau eines: Ein Name, den es nicht gibt, fällt beim Übersetzen auf. Dass hier
+// ein Platz fehlt, merkt der Typ nicht. Wo das zählt, wird deshalb ausdrücklich aufgezählt
+// statt durchlaufen (`keyInfo` in secrets.ts); dort meldet der Übersetzer einen neuen Platz.
 export const SLOTS: readonly AiSlotName[] = ['text', 'images']
 const PROVIDERS: AiProviderKind[] = ['ollama', 'openai']
 const JSON_MODES: AiJsonMode[] = ['auto', 'schema', 'object', 'prompt']
