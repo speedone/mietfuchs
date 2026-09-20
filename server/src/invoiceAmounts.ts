@@ -16,7 +16,9 @@ import { largestRemainder } from './calc.ts'
 
 // Eine Rechnungsposition aus der KI-Auswertung. Weitere Felder (Beschreibung, Kategorie, …)
 // fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur durchgereicht.
-type Position = {
+// Exportiert, weil extract.ts dieselbe rohe Gestalt braucht (die Antwort der KI, bevor sie
+// normalizeAmounts geradezieht).
+export type Position = {
   amountEur?: number
   labor35aEur?: number
   [key: string]: unknown
@@ -24,7 +26,7 @@ type Position = {
 
 // Die Rohausgabe der KI-Auswertung, so weit diese Funktion sie liest oder ergänzt. Auch hier
 // bleiben unbekannte Felder über den Index-Zugriff erhalten.
-type Extraction = {
+export type Extraction = {
   positionsAreNet?: boolean
   vatRatePercent?: number
   labor35aTotalEur?: number

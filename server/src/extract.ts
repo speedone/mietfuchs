@@ -7,10 +7,15 @@
 // { mimeType, data } an den Anbieter und erfordern ein Modell, das Bilder versteht.
 
 import fs from 'node:fs'
-import { aiProvider } from './ai/index.ts'
-import { normalizeAmounts } from './invoiceAmounts.ts'
+import type { AiSettings, Extraction, MeterReadingExtraction } from '../../shared/types.ts'
+import { aiProvider, type JsonSchema, type ProviderImage, type ProviderProgressEvent, type ProviderStats } from './ai/index.ts'
+import { normalizeAmounts, type Extraction as RawExtraction, type Position as RawPosition } from './invoiceAmounts.ts'
 
-const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
+// Settings-Ausschnitt, den dieses Modul braucht: nur die KI-Einstellungen, nicht die ganze
+// Settings-Gestalt aus shared/types.ts.
+type AiCapableSettings = { ai: AiSettings }
+
+const photoOf = (filePath: string, mimetype: string): ProviderImage => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
 // Zeitlimits je Schritt in Sekunden. Auf einem Rechner ohne Grafikkarte braucht ein Modell für
 // einen mehrseitigen Scan lange: Im KI-Prüflauf (4 Kerne, keine Grafikkarte) las qwen3.5:4b zwei
@@ -19,19 +24,37 @@ const photoOf = (filePath, mimetype) => ({ mimeType: mimetype, data: fs.readFile
 // Frage, was auf einem Foto zu sehen ist, ist in der Schnellerfassung der erste Schritt: Er
 // enthält das Laden des Modells und ein Bild. Nur der zweite Durchgang (Kategorien) ist reiner
 // Text und kurz. Das Zeitlimit unter „Erweitert“ (oder NKA_AI_TIMEOUT) gilt für alle Schritte.
-const TIMEOUT_SECONDS = { extraction: 1200, classification: 180, docType: 600, meterReading: 600 }
-const timeoutMs = (step, ai) => (ai.timeoutSeconds ?? TIMEOUT_SECONDS[step]) * 1000
+const TIMEOUT_SECONDS: Record<string, number> = { extraction: 1200, classification: 180, docType: 600, meterReading: 600 }
+const timeoutMs = (step: string, ai: AiSettings): number => (ai.timeoutSeconds ?? TIMEOUT_SECONDS[step]) * 1000
 
 // „Zusätzliche Hinweise an das Modell“ aus den Einstellungen, etwa zu Eigenheiten der eigenen
 // Belege. Sie stehen am Ende, damit sie die allgemeinen Regeln im Einzelfall ergänzen.
-const withInstructions = (prompt, ai) =>
+const withInstructions = (prompt: string, ai: AiSettings): string =>
   ai.extraInstructions ? `${prompt}\n\nZusätzliche Hinweise des Nutzers:\n${ai.extraInstructions}` : prompt
+
+// Ein Fortschrittsereignis, um den auslösenden Schritt ergänzt (siehe ask)
+export type AskProgressEvent = { step: string } & ProviderProgressEvent
+// Kennzahlen eines Schritts, wie sie /api/extract und /api/intake in ihrer Antwort mitschicken
+export type AskStats = { step: string } & ProviderStats
+
+export type AskOptions = {
+  signal?: AbortSignal
+  stats?: AskStats[]
+  onProgress?: (event: AskProgressEvent) => void
+}
 
 // Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
 // Route, `signal` bricht ab, wenn der Browser nicht mehr wartet, `onProgress` meldet den
 // Fortschritt mit dem Namen des Schritts weiter. Mit Bildern wählt ai/index.js den Anbieter für
-// Fotos und Scans, falls einer eingerichtet ist.
-async function ask(settings, step, { prompt, images = [], schema }, { signal, stats, onProgress } = {}) {
+// Fotos und Scans, falls einer eingerichtet ist. `T` beschreibt, was die KI laut Schema liefern
+// soll; wie beim Rest der KI-Auswertung wird das nicht zur Laufzeit gegen das Schema geprüft,
+// die Oberfläche zeigt jeden Vorschlag erst zur Prüfung an.
+async function ask<T>(
+  settings: AiCapableSettings,
+  step: string,
+  { prompt, images = [], schema }: { prompt: string; images?: ProviderImage[]; schema: JsonSchema },
+  { signal, stats, onProgress }: AskOptions = {},
+): Promise<T> {
   const { ai } = settings
   const answer = await aiProvider(ai, { images: images.length > 0 }).json({
     prompt: withInstructions(prompt, ai),
@@ -39,10 +62,10 @@ async function ask(settings, step, { prompt, images = [], schema }, { signal, st
     schema,
     timeoutMs: timeoutMs(step, ai),
     signal,
-    onProgress: onProgress && ((event) => onProgress({ step, ...event })),
+    onProgress: onProgress && ((event: ProviderProgressEvent) => onProgress({ step, ...event })),
   })
   stats?.push({ step, ...answer.stats })
-  return answer.data
+  return answer.data as unknown as T
 }
 
 // Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
@@ -138,7 +161,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
 
-async function classifyPositions(settings, vendor, positions, options) {
+async function classifyPositions(settings: AiCapableSettings, vendor: string | undefined, positions: RawPosition[], options: AskOptions): Promise<RawPosition[]> {
   const schema = {
     type: 'object',
     properties: {
@@ -162,16 +185,21 @@ Positionen:
 ${positions.map((p, i) => `${i + 1}. ${p.description} (${p.amountEur} €)`).join('\n')}
 
 Gib die Kategorien in derselben Reihenfolge wie die Positionen zurück.`
-  const { categories } = await ask(settings, 'classification', { prompt, schema }, options)
+  const { categories } = await ask<{ categories: string[] }>(settings, 'classification', { prompt, schema }, options)
   if (!Array.isArray(categories) || categories.length !== positions.length) return positions
   return positions.map((p, i) => ({ ...p, category: CATEGORY_ENUM.includes(categories[i]) ? categories[i] : p.category }))
 }
 
 // `pdfText` und `pages` ([{ mimeType, data }]) liefert der Browser für PDFs, siehe Kopf der Datei.
 // `signal`, `stats` und `onProgress` gehen an ask().
-export async function extractFromFile(filePath, mimetype, settings, { pdfText = '', pages = [], signal, stats, onProgress } = {}) {
+export async function extractFromFile(
+  filePath: string,
+  mimetype: string,
+  settings: AiCapableSettings,
+  { pdfText = '', pages = [], signal, stats, onProgress }: { pdfText?: string; pages?: ProviderImage[] } & AskOptions = {},
+): Promise<Extraction> {
   let prompt = PROMPT
-  let images = []
+  let images: ProviderImage[] = []
 
   if (mimetype === 'application/pdf') {
     const text = String(pdfText ?? '').trim()
@@ -192,19 +220,24 @@ export async function extractFromFile(filePath, mimetype, settings, { pdfText = 
   }
 
   // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34)
-  const result = normalizeAmounts(await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress }))
+  const raw = await ask<RawExtraction>(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
+  const result = normalizeAmounts(raw)
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
   if (Array.isArray(result.positions) && result.positions.length > 0) {
     try {
-      result.positions = await classifyPositions(settings, result.vendor, result.positions, { signal, stats, onProgress })
+      const vendor = typeof result.vendor === 'string' ? result.vendor : undefined
+      result.positions = await classifyPositions(settings, vendor, result.positions, { signal, stats, onProgress })
     } catch (err) {
       // Andere Fehler bewusst ignoriert; ein Abbruch soll die Auswertung aber beenden
-      if (err?.name === 'AbortError') throw err
+      if (err instanceof Error && err.name === 'AbortError') throw err
     }
   }
-  return result
+  // normalizeAmounts arbeitet mit der rohen Antwort der KI (RawExtraction); die KI macht nur
+  // Vorschläge, die erst nach Prüfung übernommen werden, deshalb wird die Gestalt hier nicht
+  // zur Laufzeit gegen die für die Oberfläche gedachte Extraction geprüft.
+  return result as Extraction
 }
 
 // ---------- Universeller Eingang (Schuhkarton): Dokumenttyp + Zählerstand ----------
@@ -222,9 +255,9 @@ Antworte nur mit der Kategorie.`
 
 // Bilder können Rechnungsfoto ODER Zählerfoto sein → klassifizieren. PDFs/Bescheide sind praktisch
 // immer Kostendokumente; dort sparen wir uns den zusätzlichen Vision-Call.
-export async function classifyDocType(filePath, mimetype, settings, options) {
+export async function classifyDocType(filePath: string, mimetype: string, settings: AiCapableSettings, options: AskOptions): Promise<'rechnung' | 'zaehlerstand'> {
   if (!mimetype.startsWith('image/')) return 'rechnung'
-  const { docType } = await ask(
+  const { docType } = await ask<{ docType: string }>(
     settings,
     'docType',
     { prompt: DOCTYPE_PROMPT, images: [photoOf(filePath, mimetype)], schema: DOCTYPE_SCHEMA },
@@ -249,8 +282,13 @@ Lies ab und gib JSON zurück:
 - "value": den aktuellen Zählerstand als Zahl. Nimm die schwarzen Vorkommastellen; rote Nachkommastellen (Liter/Hunderter) weglassen.
 - "dateOnImage": ein auf dem Bild sichtbares Datum als YYYY-MM-DD, sonst null.`
 
-export async function extractMeterReading(filePath, mimetype, settings, { pages = [], signal, stats, onProgress } = {}) {
-  let images
+export async function extractMeterReading(
+  filePath: string,
+  mimetype: string,
+  settings: AiCapableSettings,
+  { pages = [], signal, stats, onProgress }: { pages?: ProviderImage[] } & AskOptions = {},
+): Promise<MeterReadingExtraction> {
+  let images: ProviderImage[]
   if (mimetype === 'application/pdf') {
     if (pages.length === 0) throw new Error(NO_CONTENT)
     images = pages.slice(0, 1)
@@ -259,5 +297,5 @@ export async function extractMeterReading(filePath, mimetype, settings, { pages 
   } else {
     throw new Error(`Dateityp ${mimetype} wird nicht unterstützt (PDF oder Bild).`)
   }
-  return ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
+  return ask<MeterReadingExtraction>(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
 }
