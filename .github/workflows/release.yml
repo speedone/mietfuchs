@@ -309,6 +309,23 @@ jobs:
             docker exec pruefling sh -c 'ls /usr/share/icons/hicolor/*/apps/mietfuchs.*'
           fi
 
+          # Zweiter Klick im Startmenü, während Mietfuchs schon läuft: Er darf nicht mit einem
+          # Fehler enden, sondern soll nur die Oberfläche öffnen (#45).
+          echo '--- Zweiter Start auf demselben Port'
+          docker exec --user pruefer             -e HOME=/home/pruefer -e CI=true -e NKA_PORT=3001             -e NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test             pruefling mietfuchs
+
+          # Beenden aus der Oberfläche. Ohne Konsolenfenster ist das der einzige Weg, deshalb
+          # wird er auf jeder Programmdatei geprüft.
+          echo '--- Beenden über die Oberfläche'
+          node -e 'const url = "http://127.0.0.1:3001";
+            const gone = async () => { try { await fetch(url + "/healthz"); return false } catch { return true } };
+            (async () => {
+              const antwort = await (await fetch(url + "/api/quit", { method: "POST" })).json();
+              if (!antwort.ok) throw new Error("Unerwartete Antwort: " + JSON.stringify(antwort));
+              for (let i = 0; i < 50; i++) { if (await gone()) return console.log("Mietfuchs hat sich beendet"); await new Promise((r) => setTimeout(r, 200)) }
+              throw new Error("Mietfuchs läuft nach dem Beenden weiter");
+            })()'
+
   # Nur bei einem echten Tag-Push, und nur wenn alle Prüfungen bestanden sind.
   veroeffentlichen:
     name: Ans Release anhängen
