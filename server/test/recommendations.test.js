@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BUILT_IN, createRecommendations, validateRecommendations } from '../src/ai/recommendations.js'
+import { BUILT_IN, createRecommendations, validateRecommendations } from '../src/ai/recommendations.ts'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 

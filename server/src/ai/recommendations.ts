@@ -6,11 +6,16 @@
 // oder bei einer unbrauchbaren Datei gilt die mitgelieferte Kopie.
 //
 // Empfehlungen belegen nur vor: Jedes andere Modell lässt sich weiterhin eintragen und laden.
+import type { AiRecommendation, AiRecommendations } from '../../../shared/types.ts'
 import { readText, openRequest } from './http.ts'
+
+// Die Gestalt von ki-modelle.json bzw. der eingebauten Kopie: eine geprüfte Liste ohne die
+// Angabe, woher sie stammt (das ergänzt erst `get`).
+export type RecommendationsFile = { format: 1; updated: string | null; models: AiRecommendation[] }
 
 // Muss mit ki-modelle.json übereinstimmen, ein Test vergleicht beide. Die Kopie steht hier im
 // Code, weil die Programmdatei (Bun) keine Dateien neben sich lesen kann.
-export const BUILT_IN = {
+export const BUILT_IN: RecommendationsFile = {
   format: 1,
   updated: '2026-09-19',
   models: [
@@ -55,13 +60,13 @@ const AFTER_ERROR_MS = 60 * 60 * 1000 // nach einem Fehler eine Stunde Ruhe, wie
 const MAX_MODELS = 20
 const MAX_BYTES = 64 * 1024
 
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
-const number = (v, min, max) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null)
+const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v)
+const number = (v: unknown, min: number, max: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : null)
 
-function checkScores(raw) {
+function checkScores(raw: unknown): AiRecommendation['scores'] | null {
   if (!isObject(raw)) return null
-  const scores = {}
-  for (const key of ['text', 'scan', 'photo']) {
+  const scores: NonNullable<AiRecommendation['scores']> = {}
+  for (const key of ['text', 'scan', 'photo'] as const) {
     const value = number(raw[key], 0, 100)
     if (value !== null) scores[key] = value
   }
@@ -70,7 +75,7 @@ function checkScores(raw) {
 
 // Ein Eintrag, auf die bekannten Felder beschränkt. Unbekannte Felder einer neueren Fassung
 // fallen weg, unbrauchbare Einträge ebenso.
-function checkModel(raw) {
+function checkModel(raw: unknown): AiRecommendation | null {
   if (!isObject(raw)) return null
   const { name, provider, sizeGb, vision, note, preset } = raw
   if (typeof name !== 'string' || !/^[\w.:/-]{1,100}$/.test(name)) return null
@@ -79,7 +84,7 @@ function checkModel(raw) {
   if (typeof note !== 'string' || !note || note.length > 300) return null
   const size = sizeGb === undefined ? null : number(sizeGb, 0.05, 1000)
   if (provider === 'ollama' && size === null) return null
-  const model = { name, provider, vision, note }
+  const model: AiRecommendation = { name, provider, vision, note }
   if (size !== null) model.sizeGb = size
   if (typeof preset === 'string' && /^[\w-]{1,40}$/.test(preset)) model.preset = preset
   const scores = checkScores(raw.scores)
@@ -88,15 +93,15 @@ function checkModel(raw) {
 }
 
 // Prüft eine geladene Liste streng. Liefert die bereinigte Liste oder null.
-export function validateRecommendations(raw) {
+export function validateRecommendations(raw: unknown): RecommendationsFile | null {
   if (!isObject(raw) || raw.format !== 1 || !Array.isArray(raw.models)) return null
-  const models = raw.models.slice(0, MAX_MODELS).map(checkModel).filter(Boolean)
+  const models = raw.models.slice(0, MAX_MODELS).map(checkModel).filter((m): m is AiRecommendation => m !== null)
   if (models.length === 0) return null
   const updated = typeof raw.updated === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.updated) ? raw.updated : null
   return { format: 1, updated, models }
 }
 
-async function loadFromRepo(signal) {
+async function loadFromRepo(signal?: AbortSignal): Promise<unknown> {
   const res = await openRequest(MODELS_URL, { headers: { Accept: 'application/json' }, signal })
   if (!res.ok) throw new Error(`Status ${res.status}`)
   const text = await readText(res.body)
@@ -104,15 +109,18 @@ async function loadFromRepo(signal) {
   return JSON.parse(text)
 }
 
+export type LoadRecommendations = (signal?: AbortSignal) => Promise<unknown>
+type CreateRecommendationsOptions = { load?: LoadRecommendations; now?: () => number }
+
 // `load` und `now` lassen sich für Tests ersetzen. `get({ consented })` liefert
 // { models, updated, source }, wobei `source` 'mitgeliefert' oder 'netz' ist.
-export function createRecommendations({ load = loadFromRepo, now = Date.now } = {}) {
-  let cached = null // { at, value } — value ist eine geprüfte Liste
+export function createRecommendations({ load = loadFromRepo, now = Date.now }: CreateRecommendationsOptions = {}) {
+  let cached: { at: number; value: Omit<RecommendationsFile, 'format'> } | null = null
   let blockedUntil = 0
 
   return {
-    async get({ consented }) {
-      const builtIn = { models: BUILT_IN.models, updated: BUILT_IN.updated, source: 'mitgeliefert' }
+    async get({ consented }: { consented: boolean }): Promise<AiRecommendations> {
+      const builtIn: AiRecommendations = { models: BUILT_IN.models, updated: BUILT_IN.updated, source: 'mitgeliefert' }
       if (!consented) return builtIn
       const nowMs = now()
       if (cached && nowMs - cached.at < ONE_DAY_MS) return { ...cached.value, source: 'netz' }
