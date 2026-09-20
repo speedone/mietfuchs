@@ -10,7 +10,7 @@
 // Gerechnet wird in Cent mit dem Restverfahren, wie in calc.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { normalizeAmounts, type Position } from '../src/invoiceAmounts.ts'
+import { normalizeAmounts, type RawPosition } from '../src/invoiceAmounts.ts'
 
 const chimney = () => ({
   vendor: 'Schornsteinfegerei Muster',
@@ -32,7 +32,7 @@ const cents = (eur: number) => Math.round(eur * 100)
 // aus dem Modell kommen. Ein fehlender Wert zählt als Null: `labor35aEur` darf laut Schema
 // null sein, und eine Position ohne Lohnanteil ist der Normalfall. Steht dort aber etwas
 // anderes als eine Zahl, ist genau das der Befund, und der Test benennt ihn.
-const sum = (positions: Position[], key: 'amountEur' | 'labor35aEur' = 'amountEur') =>
+const sum = (positions: RawPosition[], key: 'amountEur' | 'labor35aEur' = 'amountEur') =>
   positions.reduce((a, p) => {
     const value = p[key]
     if (value != null && typeof value !== 'number') assert.fail(`${key} ist keine Zahl: ${JSON.stringify(value)}`)
@@ -42,7 +42,7 @@ const sum = (positions: Position[], key: 'amountEur' | 'labor35aEur' = 'amountEu
 // normalizeAmounts legt `positions` immer an, auch wenn die KI keine geliefert hat. Im Typ
 // steht das nicht, weil er die rohe Antwort beschreibt, in der das Feld fehlen darf. Statt die
 // Zusage zu behaupten, wird sie hier geprüft: Bleibt sie aus, scheitert der Test mit Ansage.
-function positionsOf(result: ReturnType<typeof normalizeAmounts>): Position[] {
+function positionsOf(result: ReturnType<typeof normalizeAmounts>): RawPosition[] {
   const { positions } = result
   if (!positions) assert.fail('normalizeAmounts liefert immer Positionen')
   return positions

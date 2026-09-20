@@ -9,7 +9,7 @@
 import fs from 'node:fs'
 import type { AiSettings, Extraction, MeterReadingExtraction } from '../../shared/types.ts'
 import { aiProvider, type JsonSchema, type ProviderImage, type ProviderProgressEvent, type ProviderStats } from './ai/index.ts'
-import { normalizeAmounts, type Extraction as RawExtraction, type Position as RawPosition } from './invoiceAmounts.ts'
+import { normalizeAmounts, type RawExtraction, type RawPosition } from './invoiceAmounts.ts'
 
 // Settings-Ausschnitt, den dieses Modul braucht: nur die KI-Einstellungen, nicht die ganze
 // Settings-Gestalt aus shared/types.ts.
@@ -72,6 +72,45 @@ async function ask(
   })
   stats?.push({ step, ...answer.stats })
   return answer.data
+}
+
+// ---------- Zahlen aus der Antwort des Modells ----------
+
+// Eine Zahl aus der Antwort des Modells, auch wenn sie als Text dasteht. Die Schemas verlangen
+// für Beträge und Zählerstände Zahlen, erzwungen wird das aber nicht immer: Lehnt ein Dienst
+// das Schema ab, fällt ai/openai.ts stufenweise bis auf „nur Prompt“ zurück, und ein kleines
+// Modell auf dem eigenen Rechner antwortet dann, wie es mag. Ein Wert als Text darf deshalb
+// nicht verlorengehen — die KI füllt vor, ein Mensch prüft, und wer abtippen muss, was das
+// Modell schon gelesen hat, hat nichts gewonnen.
+//
+// Angenommen wird deutsche wie technische Schreibweise. Offen bleibt nur, was wirklich offen
+// ist: Bei genau einem Trennzeichen mit genau drei Ziffern dahinter („1.234“) lässt sich nicht
+// entscheiden, ob es gruppiert oder die Nachkommastellen abtrennt, und die beiden Lesarten
+// liegen um den Faktor 1000 auseinander. Dann bleibt das Feld leer, statt zu raten.
+const PLAIN = /^\d+$/
+const AMBIGUOUS = /^\d{1,3}[.,]\d{3}$/
+const GROUPED_DOT = /^\d{1,3}(?:\.\d{3})+$/ // 1.234.567
+const GROUPED_COMMA = /^\d{1,3}(?:,\d{3})+$/ // 1,234,567
+const DECIMAL_COMMA = /^\d+(?:\.\d{3})*,\d+$/ // 1234,5 · 1.234,56
+const DECIMAL_DOT = /^\d+(?:,\d{3})*\.\d+$/ // 1234.5 · 1,234.56
+
+export function numberFromModel(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value !== 'string') return null
+  const text = value.replace(/[\s  ]/g, '') // manche Modelle gruppieren mit Leerzeichen
+  const negative = text.startsWith('-')
+  const body = text.replace(/^[+-]/, '')
+  if (!/^[\d.,]+$/.test(body) || AMBIGUOUS.test(body)) return null
+  let digits: string | null = null
+  if (PLAIN.test(body)) digits = body
+  else if (GROUPED_DOT.test(body)) digits = body.replaceAll('.', '')
+  else if (GROUPED_COMMA.test(body)) digits = body.replaceAll(',', '')
+  else if (DECIMAL_COMMA.test(body)) digits = body.replaceAll('.', '').replace(',', '.')
+  else if (DECIMAL_DOT.test(body)) digits = body.replaceAll(',', '')
+  if (digits === null) return null
+  const parsed = Number(digits)
+  if (!Number.isFinite(parsed)) return null
+  return negative ? -parsed : parsed
 }
 
 // Ab dieser Länge gilt die Textebene als brauchbar. Kürzerer Text stammt meist von einem
@@ -229,15 +268,8 @@ export async function extractFromFile(
   }
 
   // Netto-Positionen hochrechnen und einen Lohnanteil aus dem Gesamtbetrag verteilen (#34).
-  // Von der Antwort wird nur eingeengt, was normalizeAmounts als Gestalt voraussetzt: eine
-  // Liste von Positionen. Die Werte darin bleiben `unknown` und werden dort geprüft, wo sie
-  // gebraucht werden (`toCents` und die Wächter in invoiceAmounts.ts).
   const answer = await ask(settings, 'extraction', { prompt, images, schema: SCHEMA }, { signal, stats, onProgress })
-  const raw: RawExtraction = {
-    ...answer,
-    positions: Array.isArray(answer.positions) ? answer.positions.filter((p: unknown) => isObject(p)) : [],
-  }
-  const result = normalizeAmounts(raw)
+  const result = normalizeAmounts(rawFromAnswer(answer))
 
   // Zweiter Durchgang: Kategorien gezielt nachschärfen. Schlägt er fehl, bleiben die
   // Kategorien aus der Extraktion erhalten — der Client mappt notfalls per Stichwort.
@@ -250,11 +282,80 @@ export async function extractFromFile(
       if (err instanceof Error && err.name === 'AbortError') throw err
     }
   }
-  // normalizeAmounts arbeitet mit der rohen Antwort der KI (RawExtraction); die KI macht nur
-  // Vorschläge, die erst nach Prüfung übernommen werden, deshalb wird die Gestalt hier nicht
-  // zur Laufzeit gegen die für die Oberfläche gedachte Extraction geprüft.
-  return result as Extraction
+  return toExtraction(result)
 }
+
+// ---------- Die Naht: von der Antwort des Modells zu dem, was die Oberfläche bekommt ----------
+//
+// Zwei Stadien derselben Daten, und beide brauchen ihre eigene Beschreibung: Was vom Modell
+// kommt, ist `RawExtraction` (invoiceAmounts.ts) und darin alles `unknown`, denn ein Modell kann
+// statt einer Zahl auch „neunzehn“ schicken. Was der Browser bekommt, ist `Extraction`
+// (shared/types.ts) mit engen Typen. Die beiden Funktionen hier sind der Eingang und der Ausgang
+// dazwischen; überschritten wird die Grenze nur an diesen zwei Stellen, und benannt.
+
+// Eingang: die Antwort des Modells, zurechtgelegt für das Geraderücken. Zweierlei geschieht
+// dabei. Erstens nimmt Mietfuchs dem Modell zwei Felder aus der Hand: `amountsAdjusted` und
+// `laborFromTotal` sagen aus, was Mietfuchs selbst gerechnet hat (#34) — behauptete das Modell
+// sie, stünde in der Oberfläche ein Hinweis auf eine Rechnung, die nie stattgefunden hat.
+// Zweitens werden Beträge, die als Text dastehen, hier gelesen (numberFromModel) und nicht erst
+// am Ausgang: So rechnet normalizeAmounts mit denselben Zahlen, die der Nutzer danach sieht.
+// Alle übrigen Werte bleiben `unknown` und werden dort geprüft, wo sie gebraucht werden.
+export function rawFromAnswer(answer: Record<string, unknown>): RawExtraction {
+  const { amountsAdjusted: _adjusted, laborFromTotal: _fromTotal, ...fields } = answer
+  const positions: Record<string, unknown>[] = Array.isArray(answer.positions) ? answer.positions.filter(isObject) : []
+  return {
+    ...fields,
+    totalGrossEur: numberFromModel(answer.totalGrossEur) ?? answer.totalGrossEur,
+    positions: positions.map((p): RawPosition => ({
+      ...p,
+      amountEur: numberFromModel(p.amountEur) ?? p.amountEur,
+      labor35aEur: numberFromModel(p.labor35aEur) ?? p.labor35aEur,
+    })),
+  }
+}
+
+// Ausgang: hier entsteht die Zusage, die die Oberfläche bekommt, und nur hier. Geprüft wird
+// dabei bewusst wenig — nur das, was die Oberfläche wirklich braucht. Eine vollständige Prüfung
+// der Modellantwort wäre am Werkzeug vorbei: Die KI schlägt vor, ein Mensch prüft jede Position,
+// bevor sie übernommen wird. Verworfen wird deshalb nur, was niemand gebrauchen kann.
+//
+// Ein Betrag, der keine Zahl ist, fehlt danach; das leere Feld füllt der Mensch aus. Fehlt eine
+// Beschreibung oder eine Kostenart, steht dort eine leere Zeichenkette, denn die Oberfläche
+// zeigt beide als Eingabefeld und kommt damit zurecht. Felder, die das Modell erfunden hat,
+// erreichen den Browser gar nicht erst.
+export function toExtraction(raw: RawExtraction): Extraction {
+  return {
+    vendor: textOrUndefined(raw.vendor),
+    invoiceDate: textOrUndefined(raw.invoiceDate),
+    periodStart: textOrUndefined(raw.periodStart),
+    periodEnd: textOrUndefined(raw.periodEnd),
+    totalGrossEur: finiteOrNull(raw.totalGrossEur) ?? undefined,
+    positions: (raw.positions ?? []).map((p) => {
+      const position: ExtractionPosition = {
+        description: textOrEmpty(p.description),
+        category: textOrEmpty(p.category),
+        labor35aEur: finiteOrNull(p.labor35aEur),
+      }
+      // Der Lohnanteil darf ausdrücklich leer sein („keiner ausgewiesen“, so steht es im
+      // Schema), der Betrag nicht: Ist er keine Zahl, fehlt das Feld.
+      const amountEur = finiteOrNull(p.amountEur)
+      if (amountEur !== null) position.amountEur = amountEur
+      return position
+    }),
+    // Die beiden hat Mietfuchs selbst gesetzt (normalizeAmounts), nicht das Modell — dafür
+    // sorgt der Eingang oben. Ihren Typ nehmen sie in invoiceAmounts.ts aus Extraction,
+    // deshalb passen beide Seiten hier ohne weitere Prüfung zusammen.
+    amountsAdjusted: raw.amountsAdjusted,
+    laborFromTotal: raw.laborFromTotal,
+  }
+}
+
+// Eine Position, wie die Oberfläche sie bekommt — aus shared/types.ts abgeleitet, damit hier
+// nichts zu pflegen ist, wenn das Datenmodell wächst.
+type ExtractionPosition = NonNullable<Extraction['positions']>[number]
+const textOrEmpty = (value: unknown): string => (typeof value === 'string' ? value : '')
+const textOrUndefined = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined)
+const finiteOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
 // ---------- Universeller Eingang (Schuhkarton): Dokumenttyp + Zählerstand ----------
 
@@ -306,42 +407,6 @@ const textOrNull = (value: unknown): string | null => {
   return typeof value === 'number' && Number.isFinite(value) ? String(value) : null
 }
 
-// Der Zählerstand aus der Antwort des Modells. Das Schema verlangt eine Zahl, erzwungen wird das
-// aber nicht immer: Lehnt ein Dienst das Schema ab, fällt ai/openai.ts stufenweise bis auf „nur
-// Prompt" zurück, und ein kleines Modell auf dem eigenen Rechner antwortet dann, wie es mag. Ein
-// Stand als Text darf deshalb nicht verlorengehen — die KI füllt vor, ein Mensch prüft, und wer
-// abtippen muss, was das Modell schon gelesen hat, hat nichts gewonnen.
-//
-// Angenommen wird deutsche wie technische Schreibweise. Offen bleibt nur, was wirklich offen
-// ist: Bei genau einem Trennzeichen mit genau drei Ziffern dahinter („1.234") lässt sich nicht
-// entscheiden, ob es gruppiert oder die Nachkommastellen abtrennt, und die beiden Lesarten
-// liegen um den Faktor 1000 auseinander. Dann bleibt das Feld leer, statt zu raten.
-const PLAIN = /^\d+$/
-const AMBIGUOUS = /^\d{1,3}[.,]\d{3}$/
-const GROUPED_DOT = /^\d{1,3}(?:\.\d{3})+$/ // 1.234.567
-const GROUPED_COMMA = /^\d{1,3}(?:,\d{3})+$/ // 1,234,567
-const DECIMAL_COMMA = /^\d+(?:\.\d{3})*,\d+$/ // 1234,5 · 1.234,56
-const DECIMAL_DOT = /^\d+(?:,\d{3})*\.\d+$/ // 1234.5 · 1,234.56
-
-export function readingNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (typeof value !== 'string') return null
-  const text = value.replace(/[\s  ]/g, '') // manche Modelle gruppieren mit Leerzeichen
-  const negative = text.startsWith('-')
-  const body = text.replace(/^[+-]/, '')
-  if (!/^[\d.,]+$/.test(body) || AMBIGUOUS.test(body)) return null
-  let digits: string | null = null
-  if (PLAIN.test(body)) digits = body
-  else if (GROUPED_DOT.test(body)) digits = body.replaceAll('.', '')
-  else if (GROUPED_COMMA.test(body)) digits = body.replaceAll(',', '')
-  else if (DECIMAL_COMMA.test(body)) digits = body.replaceAll('.', '').replace(',', '.')
-  else if (DECIMAL_DOT.test(body)) digits = body.replaceAll(',', '')
-  if (digits === null) return null
-  const parsed = Number(digits)
-  if (!Number.isFinite(parsed)) return null
-  return negative ? -parsed : parsed
-}
-
 export async function extractMeterReading(
   filePath: string,
   mimetype: string,
@@ -359,11 +424,11 @@ export async function extractMeterReading(
   }
   const answer = await ask(settings, 'meterReading', { prompt: METER_PROMPT, images, schema: METER_SCHEMA }, { signal, stats, onProgress })
   // Die drei Felder einzeln einengen statt die ganze Antwort zuzusichern. Der Zählerstand darf
-  // dabei auch als Text kommen (siehe readingNumber), die Zählernummer ebenso als Zahl — sie
+  // dabei auch als Text kommen (siehe numberFromModel), die Zählernummer ebenso als Zahl — sie
   // besteht ja meist nur aus Ziffern, und die Oberfläche vergleicht sie als Zeichenkette.
   return {
     meterNumber: textOrNull(answer.meterNumber),
-    value: readingNumber(answer.value),
+    value: numberFromModel(answer.value),
     dateOnImage: typeof answer.dateOnImage === 'string' ? answer.dateOnImage : null,
   }
 }

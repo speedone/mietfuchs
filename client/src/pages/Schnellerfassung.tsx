@@ -180,7 +180,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             return {
               description: p.description,
               category,
-              amount: p.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+              // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
+              // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
+              // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
+              amount: p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? '',
               labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
               key: defaultKeyFor(category),
               matchedByDesc,

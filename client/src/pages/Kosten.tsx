@@ -190,13 +190,17 @@ export default function Kosten({ units, settings }: Props) {
             const byDesc = matchCategory(p.description || '')
             if (byDesc !== 'Sonstige Betriebskosten') category = byDesc
           }
+          // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
+          // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Ohne Betrag
+          // ist die Position auch nicht vorgewählt, sonst fiele sie beim Übernehmen still weg.
+          const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
           return {
             description: p.description,
             category,
-            amount: p.amountEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+            amount,
             labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
             key: defaultKeyFor(category),
-            checked: category !== 'Nicht umlagefähig',
+            checked: category !== 'Nicht umlagefähig' && amount !== '',
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })

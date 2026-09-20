@@ -322,6 +322,29 @@ fertigen Abrechnung steht, client/src/types.ts eine eigene für die Eingabe-Ober
   sie erst mit dem ersten Token). Unter Node über `node:http(s)`, unter Bun über `fetch` mit
   `timeout: false`. Für KI-Anfragen deshalb nicht `fetch` direkt nehmen.
 
+**Rohe Antwort und Zusage: zwei Beschreibungen, eine Grenze** (#63). Die Auswertung eines Belegs
+durchläuft zwei Stadien, und jedes hat seinen eigenen Typ. `RawExtraction` und `RawPosition` in
+[server/src/invoiceAmounts.ts](server/src/invoiceAmounts.ts) beschreiben die rohe Antwort des
+Modells: Dort ist alles `unknown`, denn ein Modell kann statt einer Zahl auch „neunzehn“
+schicken, und ein engerer Typ wäre eine Behauptung, die niemand einlöst. `Extraction` in
+[shared/types.ts](shared/types.ts) beschreibt, was der Browser bekommt, mit engen Typen. Was der
+Server selbst rechnet (`amountsAdjusted`, `laborFromTotal`), nimmt seinen Typ von dort, damit das
+Paar nicht auseinanderlaufen kann.
+
+Überschritten wird die Grenze nur an zwei benannten Stellen in
+[server/src/extract.ts](server/src/extract.ts). `rawFromAnswer` ist der Eingang: Es nimmt dem
+Modell die beiden Felder aus der Hand, die Mietfuchs selbst rechnet, und liest Beträge, die als
+Text dastehen, mit `numberFromModel` (dieselbe Funktion wie beim Zählerstand, deutsche wie
+technische Schreibweise, und was mehrdeutig ist, bleibt ungelesen). `toExtraction` ist der
+Ausgang und die einzige Stelle, an der die Zusage entsteht. Geprüft wird dort bewusst nur, was
+die Oberfläche wirklich braucht; eine vollständige Prüfung der Modellantwort gehört ausdrücklich
+nicht dazu, denn die KI schlägt vor und ein Mensch prüft jede Position, bevor sie übernommen
+wird. Verworfen wird nur, was niemand gebrauchen kann: Ein Betrag, der keine Zahl ist, fehlt
+danach, und das leere Feld füllt der Mensch aus. Vorher stand dort ein `as Extraction`, und diese
+Behauptung brach: Fehlte ein Betrag, rief die Oberfläche `toLocaleString` auf einem `undefined`
+auf und zeigte statt des Vorschlags einen Fehler. Erreichbar ist das, obwohl das Schema den
+Betrag verlangt, weil die Anbindung bei Ablehnung stufenweise bis auf „nur Prompt“ zurückfällt.
+
 PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
 `pdfText` mit, bei Scans ohne brauchbare Textebene (unter 80 Zeichen) bis zu vier Seiten als
