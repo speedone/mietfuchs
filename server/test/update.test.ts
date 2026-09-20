@@ -246,6 +246,22 @@ test('Antwort ohne Nutzdaten (kein Objekt): klare Meldung statt eines kryptische
   assert.match(errorOf(s), /kein Objekt/)
 })
 
+test('Antwort mit unbrauchbarer Dateiliste: der Hinweis bleibt, nur der Download fehlt', async () => {
+  // Die Liste der Release-Dateien braucht allein der Download-Knopf. Steht dort etwas anderes
+  // als eine Liste von Dateien, darf das weder abstürzen noch als „GitHub ist nicht erreichbar"
+  // erscheinen: Die neue Version steht ja in derselben Antwort, und für Systeme ohne eigene
+  // Datei führt der Hinweis ohnehin auf die Release-Seite.
+  const broken: unknown[] = ['kaputt', 42, { name: 'mietfuchs-win.exe' }, [null, 'x'], [{ name: null }]]
+  for (const assets of broken) {
+    respond = serve({ ...releaseWith('v0.5.0'), assets })
+    const s = await makeChecker().check({ consent: 'on', force: true })
+    assert.equal(s.error, null, JSON.stringify(assets))
+    assert.equal(s.latest, '0.5.0')
+    assert.equal(s.available, true)
+    assert.equal(s.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')
+  }
+})
+
 // GitHub-Vorgabe: nach Fehlern nicht sofort erneut fragen, bei einem Rate-Limit bis zur
 // genannten Zeit warten. Wer weiterfragt, riskiert eine Sperre für den ganzen Anschluss.
 const MINUTE = 60 * 1000

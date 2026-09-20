@@ -44,7 +44,11 @@ type GithubRelease = {
   prerelease?: boolean
   tag_name?: string
   html_url?: string
-  assets?: GithubReleaseAsset[]
+  // Die Liste der Release-Dateien bleibt `unknown`, obwohl wir sie lesen: Ob überhaupt eine
+  // Liste ankommt, prüft assetFor. Als Liste zugesichert ergäbe etwas anderes einen TypeError,
+  // und describeError bildet jeden TypeError auf „GitHub ist nicht erreichbar" ab — eine
+  // Meldung, die den Nutzer an die falsche Stelle schickt, obwohl GitHub geantwortet hat.
+  assets?: unknown
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -68,9 +72,15 @@ const ASSET_NAMES: Record<string, string> = {
   'linux-arm64': 'mietfuchs-linux-arm64.tar.gz',
 }
 
-export function assetFor(assets: GithubReleaseAsset[] | null | undefined, platform: string, arch: string): GithubReleaseAsset | null {
+// `assets` kommt ungeprüft aus der Antwort. Was keine Liste von Objekten ist, zählt als „keine
+// Datei dabei": Dann führt der Hinweis auf die Release-Seite, genau wie bei einem System, für
+// das es keine eigene Datei gibt. Die Version steht ja in derselben Antwort und bleibt gültig.
+export function assetFor(assets: unknown, platform: string, arch: string): GithubReleaseAsset | null {
   const name = ASSET_NAMES[`${platform}-${arch}`]
-  return (name && (assets ?? []).find((a) => a.name === name)) || null
+  if (!name || !Array.isArray(assets)) return null
+  const found: unknown = assets.find((a: unknown) => isObject(a) && a.name === name)
+  if (!isObject(found)) return null
+  return { name, browser_download_url: typeof found.browser_download_url === 'string' ? found.browser_download_url : undefined }
 }
 
 // Rate-Limit nach GitHub-Vorgabe: `retry-after` hat Vorrang, sonst gilt `x-ratelimit-reset`
