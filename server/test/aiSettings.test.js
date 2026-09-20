@@ -2,7 +2,7 @@
 // und Wahl des Anbieters je Beleg. Reine Funktionen, deshalb ohne Serverstart.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl, consentProblem } from '../src/ai/settings.js'
+import { migrateAi, aiFromEnv, effectiveAi, applyAiChanges, fixedFields, slotFor, isExternalUrl, consentProblem } from '../src/ai/settings.ts'
 import { PRESETS, presetById } from '../src/ai/presets.ts'
 
 const legacy = (extra = {}) => ({ houseName: 'Haus', ollamaUrl: 'http://ki.intern:11434', ollamaModel: 'gemma4:12b', ...extra })

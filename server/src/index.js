@@ -12,7 +12,7 @@ import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from
 import { createRecommendations } from './ai/recommendations.js'
 import { listOpenAiModels } from './ai/openai.js'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
-import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.js'
+import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.js'
 import { healthReport } from './health.ts'
