@@ -16,16 +16,16 @@
 // während die Antwort eintrifft. Die Oberfläche zeigt daran, dass das Modell arbeitet.
 //
 // `timeoutMs` gilt für die ganze Anfrage, auch wenn sie länger als fünf Minuten läuft (siehe
-// ai/http.js). Bricht `signal` ab, etwa weil der Browser die Seite verlassen hat, endet die
+// ai/http.ts). Bricht `signal` ab, etwa weil der Browser die Seite verlassen hat, endet die
 // Anfrage beim Anbieter und json() wirft einen Fehler mit dem Namen 'AbortError'. Alle anderen
 // Fehler tragen eine Meldung, die die Oberfläche so anzeigen kann.
 //
-// Welcher Anbieter einen Beleg auswertet, steht in `settings.ai` (siehe ai/settings.js): Fotos
+// Welcher Anbieter einen Beleg auswertet, steht in `settings.ai` (siehe ai/settings.ts): Fotos
 // und Scans gehen an den eigenen Bilder-Anbieter, falls einer eingerichtet ist, sonst alles an
 // den Standard.
 //
 // Bevor Belege das Haus verlassen, muss der Nutzer das einmal bestätigt haben (consentProblem in
-// ai/settings.js). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
+// ai/settings.ts). Das prüft aiProvider vor jeder Anfrage, nicht erst die Oberfläche.
 import type { AiConsent, AiJsonMode, AiSettings, AiSlot, AiSlotName } from '../../../shared/types.ts'
 import { ollamaProvider, type Provider, type ProviderRequest, type ProviderResult } from './ollama.ts'
 import { openaiProvider } from './openai.ts'

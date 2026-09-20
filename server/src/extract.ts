@@ -1,5 +1,5 @@
 // KI-Belegauswertung: Prompts, Schemas und Ablauf. Mit welchem Anbieter das Modell läuft,
-// entscheidet ai/index.js anhand von `settings.ai`, hier geht es nur um das Fachliche.
+// entscheidet ai/index.ts anhand von `settings.ai`, hier geht es nur um das Fachliche.
 // PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mit pdf.js
 // (client/src/pdfIntake.ts) und schickt die Textebene mit, bei Scans ohne Textebene die
 // gerenderten Seiten als Bilder. So braucht der Server kein natives Modul, und das verhält
@@ -45,7 +45,7 @@ export type AskOptions = {
 
 // Eine Anfrage an den Anbieter. `stats` sammelt die Kennzahlen je Schritt für die Antwort der
 // Route, `signal` bricht ab, wenn der Browser nicht mehr wartet, `onProgress` meldet den
-// Fortschritt mit dem Namen des Schritts weiter. Mit Bildern wählt ai/index.js den Anbieter für
+// Fortschritt mit dem Namen des Schritts weiter. Mit Bildern wählt ai/index.ts den Anbieter für
 // Fotos und Scans, falls einer eingerichtet ist. `T` beschreibt, was die KI laut Schema liefern
 // soll; wie beim Rest der KI-Auswertung wird das nicht zur Laufzeit gegen das Schema geprüft,
 // die Oberfläche zeigt jeden Vorschlag erst zur Prüfung an.

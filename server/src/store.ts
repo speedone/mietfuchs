@@ -160,7 +160,7 @@ function load(): Db {
   if (next.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) next.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
   if (next.settings.ai?.text?.model === INVALID_OLD_DEFAULT_MODEL) next.settings.ai.text.model = DEFAULT_OLLAMA_MODEL
   // KI-Anbieter (#18): `settings.ai` entsteht aus ollamaUrl und ollamaModel, fehlende Felder
-  // werden ergänzt (siehe ai/settings.js)
+  // werden ergänzt (siehe ai/settings.ts)
   migrateAi(next.settings)
   // Migrationen älterer Datenformate.
   // Wohnungen: `selfUsed`/`selfPersons` (Eigennutzung in der Verteilbasis) kamen später dazu.
