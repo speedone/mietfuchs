@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+## [0.7.1] – 2026-09-20
+
 ### Geändert
 
 - **Der Startmenü-Eintrag unter Linux startet ohne Konsolenfenster.** Mit Fenster startete auf
@@ -377,7 +379,8 @@ Verteilung nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder Direktz
 druckfertige Abrechnung je Mieter, Mietkonto, Steuerübersicht für die Anlage V, optionale
 KI-Belegauswertung gegen eine lokale Ollama-Instanz, Backup und Wiederherstellung.
 
-[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.7.0...HEAD
+[Unveröffentlicht]: https://github.com/speedone/mietfuchs/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/speedone/mietfuchs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/speedone/mietfuchs/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/speedone/mietfuchs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/speedone/mietfuchs/compare/v0.4.0...v0.5.0
