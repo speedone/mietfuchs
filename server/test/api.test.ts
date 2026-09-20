@@ -681,7 +681,7 @@ const LONG_TEXT =
 // Eine Antwort, die sich nicht an ihr Schema hält: Beträge deutsch als Text, einer fehlt ganz,
 // einer ist gar keine Zahl, dazu ein erfundenes Feld und eines, das nur Mietfuchs selbst setzen
 // darf. So antwortet ein kleines Modell auf dem eigenen Rechner, wenn der Dienst das Schema
-// nicht durchsetzt — und das ist die Voreinstellung.
+// nicht durchsetzt, und das ist die Voreinstellung.
 const OFF_SCHEMA = {
   vendor: 'Stadtwerke Musterstadt',
   totalGrossEur: '1.234,56',
@@ -2682,7 +2682,7 @@ test('Auswertung: eine Antwort am Schema vorbei bricht die Zusage an die Oberfl�
 
     // Keine Position geht verloren: Der Mensch prüft ohnehin alles, bevor er es übernimmt.
     assert.deepEqual(positions.map((p) => p.description), ['Frischwasser', 'Grundgebühr', 'Schmutzwasser'])
-    // Was die Oberfläche als Zahl behandelt, ist auch eine — sonst bricht dort die Anzeige ab.
+    // Was die Oberfläche als Zahl behandelt, ist auch eine, sonst bricht dort die Anzeige ab.
     for (const p of positions) {
       assert.ok(p.amountEur === undefined || typeof p.amountEur === 'number', `${p.description}: ${JSON.stringify(p.amountEur)}`)
     }

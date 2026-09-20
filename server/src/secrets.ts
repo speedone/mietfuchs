@@ -128,7 +128,7 @@ const fail = (status: number, message: string) => Object.assign(new Error(messag
 // Der Platz, wie die Route ihn mitbringt: eine Angabe von außen, also `unknown`. Welche es gibt,
 // sagt `AiSlotName` in shared/types.ts; die Liste dazu steht einmal im Server (SLOTS in
 // ai/settings.ts) und ist danach typisiert. Der gefundene Eintrag stammt aus dieser Liste und
-// ist deshalb ein Platzname — ohne Zusicherung und ohne ein Prädikat, dessen Rumpf niemand prüft.
+// ist deshalb ein Platzname, und zwar ohne Zusicherung und ohne ein Prädikat, das niemand prüft.
 // Ein Platz, den es nicht gibt, bricht hier ab, statt eine Datei mit erfundenen Feldern anzulegen.
 function changeableSlot(value: unknown): AiSlotName {
   const slot = SLOTS.find((known) => known === value)
