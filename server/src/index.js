@@ -11,7 +11,7 @@ import { extractFromFile, classifyDocType, extractMeterReading } from './extract
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.js'
 import { createRecommendations } from './ai/recommendations.js'
 import { listOpenAiModels } from './ai/openai.js'
-import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.js'
+import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
 import { aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.js'
 import { PRESETS, presetById } from './ai/presets.js'
 import { providerConfig } from './ai/index.js'
@@ -95,7 +95,7 @@ function fixedByEnv() {
   return [...legacy, ...paths]
 }
 
-// `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.js), nie welcher.
+// `aiKeys` sagt nur, ob ein API-Schlüssel gesetzt ist (siehe secrets.ts), nie welcher.
 // `aiExternal` sagt je Platz, ob die Adresse aus dem Haus zeigt und die Belege deshalb erst nach
 // einer Bestätigung dorthin gehen. So entscheidet allein der Server, was als extern gilt.
 function settingsForClient() {
@@ -710,7 +710,7 @@ function openBrowser(url) {
 const PORT = process.env.NKA_PORT || 3001
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.js und
-// secrets.js) fiele sonst erst bei der ersten Auswertung auf
+// secrets.ts) fiele sonst erst bei der ersten Auswertung auf
 const startProblem = AI_ENV.error ?? checkKeyEnvironment()
 if (startProblem) {
   console.error(startProblem)
