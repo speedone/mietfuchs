@@ -779,13 +779,20 @@ function openBrowser(url: string): void {
 }
 
 // Bewusst NKA_PORT statt PORT: generische PORT-Variablen (z. B. von Preview-Tools)
-// sind für das Frontend gedacht und würden hier mit Vite kollidieren. Als Zahl, denn node:net
-// nimmt eine Zeichenkette, die keine Zahl ist, als Pfad eines Unix-Sockets.
+// sind für das Frontend gedacht und würden hier mit Vite kollidieren.
 const PORT = Number(process.env.NKA_PORT || 3001)
+
+// Ein Wert, der keine Portnummer ist, war für node:net der Pfad eines Unix-Sockets (unter
+// Windows einer Named Pipe): Der Server lief dann scheinbar, war aber über HTTP unter keiner
+// Adresse erreichbar, und `address()` lieferte den Pfad statt eines Objekts mit Port — die
+// Startmeldung nannte „http://127.0.0.1:undefined“.
+const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
+  ? null
+  : `NKA_PORT „${process.env.NKA_PORT}“ ist keine Portnummer. Erlaubt sind 0 bis 65535; mit 0 vergibt das System einen freien Port.`
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment()
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)

@@ -1289,6 +1289,23 @@ test('Start: mit NKA_PORT=0 nennt die Startmeldung den tatsächlich vergebenen P
   }
 })
 
+test('Start: ein NKA_PORT, der keine Portnummer ist, bricht den Start mit klarer Meldung ab', async () => {
+  // node:net nimmt eine Zeichenkette, die keine Zahl ist, als Pfad eines Unix-Sockets (unter
+  // Windows einer Named Pipe). Mietfuchs lief damit scheinbar, war aber über HTTP unter keiner
+  // Adresse erreichbar: `address()` liefert dann den Pfad statt eines Objekts mit Port, und die
+  // Startmeldung nannte „http://127.0.0.1:undefined“.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-port-'))
+  const { child, out } = startServerRaw(dataDir, { NKA_PORT: 'kein-port' })
+  try {
+    assert.equal(await waitForExit(child), 1, out())
+    assert.match(out(), /NKA_PORT/)
+    assert.doesNotMatch(out(), /läuft auf/)
+  } finally {
+    child.kill()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu laufen', async () => {
   // Express 5 ruft den listen-Callback auch bei einem Fehler auf. Ohne Prüfung meldete Mietfuchs
   // dann „läuft auf …“ und öffnete in der Programmdatei sogar den Browser.
