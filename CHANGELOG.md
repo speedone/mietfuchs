@@ -6,6 +6,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Der Startmenü-Eintrag unter Linux startet ohne Konsolenfenster.** Mit Fenster startete auf
+  Systemen ohne Terminalprogramm gar nichts, und zwar ohne sichtbare Meldung. Beendet wird
+  Mietfuchs jetzt über den Knopf „Mietfuchs beenden“ unten in der Seitenleiste, den es nur bei
+  der Programmdatei gibt. Ein zweiter Klick im Startmenü holt die laufende Oberfläche nach
+  vorn, statt scheinbar nichts zu tun, und misslingt der Start, meldet sich Mietfuchs unter
+  Linux zusätzlich über eine Systemmeldung.
+  ([#45](https://github.com/speedone/mietfuchs/issues/45))
+
 ## [0.7.0] – 2026-09-20
 
 ### Geändert

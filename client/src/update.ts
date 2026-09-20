@@ -12,6 +12,12 @@ export const hintVisible = (st: UpdateStatus | null, s: Settings | null): boolea
 
 export const RELEASES_URL = 'https://github.com/speedone/mietfuchs/releases/latest'
 
+// Beenden aus der Oberfläche gibt es nur bei der Programmdatei (#45): Aus einem Linux-Paket
+// startet Mietfuchs ohne Konsolenfenster, deren Schließen sonst der Weg zum Beenden ist. Im
+// Container und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von
+// selbst. Die Betriebsart meldet der Server mit dem Update-Stand.
+export const canQuit = (st: UpdateStatus | null): boolean => st?.mode === 'binary' || st?.mode === 'package'
+
 // Das System ergibt sich aus der Datei, die der Server passend zum Rechner ausgesucht hat
 // (server/src/update.js). Ohne passende Datei zeigt der Link auf die Release-Seite. `package`
 // steht für eine Installation aus einem Linux-Paket: Dort wird nicht die Datei getauscht,

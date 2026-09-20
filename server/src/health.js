@@ -40,5 +40,7 @@ function checkUploads(dataDir) {
 export function healthReport({ dataDir, version }) {
   const checks = { data: checkData(dataDir), uploads: checkUploads(dataDir) }
   const status = Object.values(checks).every((c) => c.ok) ? 'ok' : 'error'
-  return { status, version, checks }
+  // `app` ist die Erkennungsmarke: Beim Start auf einem belegten Port fragt Mietfuchs hier
+  // nach, ob dort schon Mietfuchs antwortet, und öffnet dann nur die Oberfläche (#45).
+  return { app: 'mietfuchs', status, version, checks }
 }

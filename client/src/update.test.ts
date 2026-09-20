@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Settings, UpdateStatus } from './types'
-import { consentPending, hintVisible, updateGuide } from './update'
+import { canQuit, consentPending, hintVisible, updateGuide } from './update'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -97,5 +97,20 @@ describe('Anleitung je Betriebsart', () => {
       kind: 'command',
       lines: ['git pull', 'npm install', 'npm run build'],
     })
+  })
+})
+
+describe('Beenden aus der Oberfläche (#45)', () => {
+  test('nur als Programmdatei, dort aber in beiden Fassungen', () => {
+    // Aus einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst beendet
+    expect(canQuit(status({ mode: 'binary' }))).toBe(true)
+    expect(canQuit(status({ mode: 'package' }))).toBe(true)
+  })
+
+  test('nicht im Container und nicht aus dem Quellcode', () => {
+    // Dort beendet die Umgebung den Dienst, und ein Neustart käme von selbst
+    expect(canQuit(status({ mode: 'docker' }))).toBe(false)
+    expect(canQuit(status({ mode: 'npm' }))).toBe(false)
+    expect(canQuit(null)).toBe(false)
   })
 })

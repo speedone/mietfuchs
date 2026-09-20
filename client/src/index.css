@@ -136,6 +136,10 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppe
   box-shadow: var(--shadow-1);
 }
 
+/* Nach „Mietfuchs beenden": Die Seite bleibt im Browser stehen, ohne Seitenleiste (#45). */
+.stopped { display: flex; align-items: center; justify-content: center; min-height: 100vh; max-width: none; }
+.stopped .card { max-width: 420px; text-align: center; margin: 0; }
+
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .grow { flex: 1; }
 

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { UIProvider } from './components/feedback'
+import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
-import { hintVisible } from './update'
+import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
 import Schnellerfassung from './pages/Schnellerfassung'
@@ -79,8 +79,55 @@ function useTheme() {
   return { choice, cycle }
 }
 
+// Beenden aus der Oberfläche (#45). Nur sichtbar, wenn Mietfuchs als Programmdatei läuft: Aus
+// einem Linux-Paket gibt es kein Konsolenfenster, dessen Schließen sonst der Weg dorthin ist.
+function QuitButton({ onQuit }: { onQuit: () => void }) {
+  const confirm = useConfirm()
+  const toast = useToast()
+  const [stopping, setStopping] = useState(false)
+
+  async function stop() {
+    const ok = await confirm({
+      title: 'Mietfuchs beenden?',
+      message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis du Mietfuchs neu startest. Deine Daten bleiben gespeichert.',
+      confirmLabel: 'Beenden',
+    })
+    if (!ok) return
+    setStopping(true)
+    try {
+      await api('/api/quit', { method: 'POST' })
+      onQuit()
+    } catch (e) {
+      // Bricht die Verbindung ab, während der Server sich beendet, ist das kein Fehler
+      onQuit()
+      void e
+    }
+  }
+
+  return (
+    <button className="theme-toggle" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
+      ⏻ {stopping ? 'Wird beendet …' : 'Mietfuchs beenden'}
+    </button>
+  )
+}
+
+// Nach dem Beenden bleibt die Seite im Browser stehen. Ohne Erklärung sähe sie aus wie eine
+// kaputte Anwendung.
+function Stopped() {
+  return (
+    <main className="stopped">
+      <div className="card">
+        <h1>Mietfuchs ist beendet</h1>
+        <p>Dieses Fenster kann geschlossen werden. Deine Daten sind gespeichert.</p>
+        <p className="muted">Zum Weiterarbeiten Mietfuchs neu starten, etwa über den Eintrag im Startmenü.</p>
+      </div>
+    </main>
+  )
+}
+
 function Shell() {
   const [tab, setTab] = useState<Tab>('cockpit')
+  const [stopped, setStopped] = useState(false)
   const [units, setUnits] = useState<Unit[]>([])
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -102,6 +149,8 @@ function Shell() {
   useEffect(() => {
     reload().catch((e) => console.error(e))
   }, [reload])
+
+  if (stopped) return <Stopped />
 
   return (
     <>
@@ -142,6 +191,7 @@ function Shell() {
           <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)">
             🌗 Design: {THEME_LABELS[choice]}
           </button>
+          {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
           <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
         </div>
       </nav>
