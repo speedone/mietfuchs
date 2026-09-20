@@ -43,25 +43,8 @@ jobs:
           trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm
 
-  # Eine KI-Auswertung auf dem Prozessor kann länger als fünf Minuten dauern. fetch unter Node und
-  # Firefox brechen nach 300 Sekunden ohne Antwort-Header ab (#17). Das nachgebaute Ollama schweigt
-  # hier 320 Sekunden; die Auswertung muss trotzdem ankommen. Läuft parallel zu den Tests.
-  slow-ai-answer:
-    name: Lange KI-Antwort (Node)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: '**/package-lock.json'
-      - run: npm install
-      - run: npm run build
-      - name: Auswertung mit 320 Sekunden Wartezeit
-        run: |
-          NKA_DATA_DIR="$RUNNER_TEMP/daten" NKA_PORT=3001 NKA_UPDATE_URL=http://127.0.0.1:9/kein-internet-im-test \
-            node server/src/index.ts > server.log 2>&1 &
-          pid=$!
-          trap 'kill $pid 2>/dev/null; echo "--- Ausgabe des Servers"; cat server.log' EXIT
-          node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm --slow-ai 320
+# Die Prüfung „Lange KI-Antwort (Node)“ stand früher hier und läuft seit #52 in
+# .github/workflows/release.yml: beim Tag, beim Start von Hand und an einem Pull Request mit dem
+# Label „volle-pruefung“. Sie kostete knapp sieben von neun Minuten Wartezeit je PR und hängt an
+# der Laufzeit und der HTTP-Schicht, nicht am Fachcode, ändert sich also erst mit einer neuen
+# Node- oder Bun-Version. Alles, was ein PR auslässt, steht deshalb in einer Datei beisammen.
