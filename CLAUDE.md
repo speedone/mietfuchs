@@ -257,6 +257,11 @@ die ganze fachliche Komplexität:
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
 enthält ausschließlich Typen und keinen Laufzeitanteil; beide Seiten importieren sie
 unmittelbar, deshalb kann eine Änderung am Modell nicht mehr nur auf einer Seite ankommen.
+Der Ordner hat bewusst **keine eigene `package.json`** (Vite sucht darüber die Wurzel des
+Arbeitsbereichs); stattdessen trägt die Wurzel-`package.json` `"type": "module"`. Ohne dieses
+Feld gälte `shared/types.ts` für den Übersetzer als CommonJS, und ein gemeinsamer Helfer neben
+den Typen wäre dort gar nicht zu schreiben: `tsc` lehnte ihn mit TS1287 ab, und Node lüde die
+Datei nur über einen Notpfad mit der Warnung `MODULE_TYPELESS_PACKAGE_JSON`.
 
 Die Grenze zu [client/src/types.ts](client/src/types.ts) hängt an einer einzigen Frage:
 **Brauchen beide Seiten dasselbe?** Nur dann gehört ein Typ, ein Feld oder ein Wert eines
