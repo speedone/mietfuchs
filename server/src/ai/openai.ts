@@ -4,7 +4,7 @@
 // Schnittstelle aus ai/index.ts um.
 //
 // Die Dienste unterscheiden sich in Einzelheiten (nach ihrer Dokumentation, Stand September
-// 2026). Die Vorlage in presets.js belegt die bekannten vor. Lehnt ein Dienst etwas ab, probiert
+// 2026). Die Vorlage in presets.ts belegt die bekannten vor. Lehnt ein Dienst etwas ab, probiert
 // das Modul einmal die nächste Möglichkeit und merkt sich je Adresse und Modell, was
 // funktioniert hat, solange der Server läuft:
 // - Antwortlänge: `max_completion_tokens` oder `max_tokens`. Mietfuchs schickt immer einen
@@ -97,7 +97,13 @@ const schemaInstruction = (schema: JsonSchema): string =>
 
 // ---------- Antworten lesen ----------
 
-export type ProviderErrorInfo = { message: string; code: string | null; param: string | null }
+// IONOS schickt errorCode teils als Zahl statt als Zeichenkette, deshalb hier wie im
+// ursprünglichen JavaScript beide Formen (nur beide statt jedem beliebigen Wert wie zuvor
+// `source.code ?? source.errorCode ?? null`, denn ein Fehlercode ist niemals ein Objekt oder
+// eine Liste).
+const isCodeLike = (v: unknown): v is string | number => typeof v === 'string' || typeof v === 'number'
+
+export type ProviderErrorInfo = { message: string; code: string | number | null; param: string | null }
 
 // Fehlermeldung eines Dienstes als { message, code, param }. Die Formate: OpenAI und LM Studio
 // { error: { message, code, param } }, Mistral dieselben Felder oben, IONOS
@@ -111,7 +117,7 @@ export function readProviderError(text: string): ProviderErrorInfo {
   }
   const pick = (source: Record<string, unknown>): ProviderErrorInfo => ({
     message: String(source.message ?? text),
-    code: typeof source.code === 'string' ? source.code : (typeof source.errorCode === 'string' ? source.errorCode : null),
+    code: isCodeLike(source.code) ? source.code : (isCodeLike(source.errorCode) ? source.errorCode : null),
     param: typeof source.param === 'string' ? source.param : null,
   })
   const root = isObject(parsed) ? parsed : {}

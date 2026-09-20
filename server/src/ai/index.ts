@@ -1,4 +1,4 @@
-// Schnittstelle zu den KI-Anbietern der Belegauswertung. extract.js kennt nur diese
+// Schnittstelle zu den KI-Anbietern der Belegauswertung. extract.ts kennt nur diese
 // Schnittstelle: Prompts, Schemas und Ablauf bleiben dort, Transport, Fehlermeldungen und
 // Eigenheiten eines Anbieters liegen in seinem eigenen Modul.
 //

@@ -29,7 +29,7 @@ export type ProviderProgressEvent =
   | { phase: 'writing'; chars: number }
   | { phase: 'thinking'; chars: number }
 
-// Eine sehr lose Beschreibung des in extract.js verwendeten JSON-Schemas: nur die Felder, die
+// Eine sehr lose Beschreibung des in extract.ts verwendeten JSON-Schemas: nur die Felder, die
 // ein Anbieter tatsächlich ausliest oder umformt (toStrictSchema/stripAddedNulls in openai.ts).
 export type JsonSchema = {
   type?: string | string[]
@@ -95,16 +95,18 @@ function translateError(err: unknown, { timeout, signal, timeoutMs, base, connec
 }
 
 // Antwort als JSON, mit klarer Meldung statt eines rohen Absturzes, wenn Ollama entgegen der
-// eigenen Dokumentation kein Objekt liefert (etwa ein bloßes `null`).
-async function readJson(res: HttpResponse): Promise<Record<string, unknown>> {
+// eigenen Dokumentation kein Objekt liefert (etwa ein bloßes `null`). Wie bei den anderen
+// Meldungen mit rohem Antworttext maskiert, falls ein Proxy vor Ollama den Schlüssel im Rumpf
+// wiederholt.
+async function readJson(res: HttpResponse, apiKey: string | null): Promise<Record<string, unknown>> {
   const text = await readText(res.body)
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw providerError(`Ollama lieferte eine unlesbare Antwort: ${text.slice(0, 200)}`)
+    throw providerError(`Ollama lieferte eine unlesbare Antwort: ${maskSecret(apiKey, text).slice(0, 200)}`)
   }
-  if (!isObject(parsed)) throw providerError(`Ollama lieferte eine unlesbare Antwort: ${text.slice(0, 200)}`)
+  if (!isObject(parsed)) throw providerError(`Ollama lieferte eine unlesbare Antwort: ${maskSecret(apiKey, text).slice(0, 200)}`)
   return parsed
 }
 
@@ -220,7 +222,7 @@ async function getCapabilities(config: OllamaConfig, model: string, signal?: Abo
   const key = `${baseUrl(config)}|${model}`
   const cached = capabilityCache.get(key)
   if (cached && Date.now() - cached.at < CAPABILITIES_TTL_MS) return cached.value
-  const info = await request(config, '/api/show', { body: { model }, timeoutMs: 10000, signal, consume: readJson })
+  const info = await request(config, '/api/show', { body: { model }, timeoutMs: 10000, signal, consume: (res) => readJson(res, config.apiKey) })
   const capsField = info.capabilities
   const value: Capabilities = { capabilities: Array.isArray(capsField) ? (capsField as string[]) : null, remote: Boolean(info.remote_host) }
   capabilityCache.set(key, { at: Date.now(), value })
@@ -340,7 +342,7 @@ export async function pullOllamaModel(
 // unbekannt) und Cloud-Kennzeichen. Reine Embedding-Modelle können keine Rechnung lesen und
 // fehlen deshalb.
 export async function listOllamaModels(config: OllamaConfig): Promise<AiModel[]> {
-  const info = await request(config, '/api/tags', { timeoutMs: 5000, consume: readJson })
+  const info = await request(config, '/api/tags', { timeoutMs: 5000, consume: (res) => readJson(res, config.apiKey) })
   const modelsField = info.models
   const rawModels: unknown[] = Array.isArray(modelsField) ? modelsField : []
   const list = await Promise.all(

@@ -163,7 +163,7 @@ export type Settings = {
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
   updateDismissed?: string // Version, deren Hinweis mit „Später" ausgeblendet wurde
-  // KI-Belegauswertung (#18), siehe server/src/ai/settings.js. ollamaUrl und ollamaModel oben
+  // KI-Belegauswertung (#18), siehe server/src/ai/settings.ts. ollamaUrl und ollamaModel oben
   // spiegeln Adresse und Modell, solange Ollama der Standard-Anbieter ist.
   ai?: AiSettings
   // Per Umgebungsvariable festgelegt: Pfade wie 'ai.text.url' oder 'ai.timeoutSeconds', dazu
@@ -217,7 +217,7 @@ export type AiPreset = {
   notice: string | null
 }
 
-// Eine Empfehlung aus /api/ai/recommendations (server/src/ai/recommendations.js). Sie belegt nur
+// Eine Empfehlung aus /api/ai/recommendations (server/src/ai/recommendations.ts). Sie belegt nur
 // vor: Jedes andere Modell lässt sich weiterhin eintragen.
 export type AiRecommendation = {
   name: string
