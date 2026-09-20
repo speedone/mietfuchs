@@ -369,13 +369,17 @@ export function rawFromAnswer(answer: Record<string, unknown>): RawExtraction {
 // zeigt beide als Eingabefeld und kommt damit zurecht. Felder, die das Modell erfunden hat,
 // erreichen den Browser gar nicht erst.
 export function toExtraction(raw: RawExtraction): Extraction {
+  // Was keine Liste von Positionen ist, ist keine, und ein Eintrag, der kein Objekt ist, hat
+  // keine Felder. Der Eingang oben räumt beides schon ab; hier steht es noch einmal, weil diese
+  // Funktion für sich stehen können soll und nicht davon, was ein Aufrufer vorher getan hat.
+  const positions: RawPosition[] = Array.isArray(raw.positions) ? raw.positions.filter(isObject) : []
   return {
-    vendor: textOrUndefined(raw.vendor),
-    invoiceDate: textOrUndefined(raw.invoiceDate),
-    periodStart: textOrUndefined(raw.periodStart),
-    periodEnd: textOrUndefined(raw.periodEnd),
+    vendor: stringOrUndefined(raw.vendor),
+    invoiceDate: stringOrUndefined(raw.invoiceDate),
+    periodStart: stringOrUndefined(raw.periodStart),
+    periodEnd: stringOrUndefined(raw.periodEnd),
     totalGrossEur: finiteOrNull(raw.totalGrossEur) ?? undefined,
-    positions: (raw.positions ?? []).map((p) => {
+    positions: positions.map((p) => {
       const position: ExtractionPosition = {
         description: textOrEmpty(p.description),
         category: textOrEmpty(p.category),
@@ -399,10 +403,14 @@ export function toExtraction(raw: RawExtraction): Extraction {
 // Eine Position, wie die Oberfläche sie bekommt — aus shared/types.ts abgeleitet, damit hier
 // nichts zu pflegen ist, wenn das Datenmodell wächst.
 type ExtractionPosition = NonNullable<Extraction['positions']>[number]
-// Beide lesen Texte nach derselben Regel wie der Zählerstand (textOrNull), nur ist ein fehlender
-// Text hier einmal ein leeres Feld und einmal gar kein Feld.
+// Beschreibung und Kostenart stehen in einem Eingabefeld, das ein Mensch liest und bei Bedarf
+// überschreibt: Dort gilt dieselbe Regel wie beim Zählerstand, eine Zahl wird also zum Text.
 const textOrEmpty = (value: unknown): string => textOrNull(value) ?? ''
-const textOrUndefined = (value: unknown): string | undefined => textOrNull(value) ?? undefined
+// Datum und Zeitraum werden dagegen als Datum gelesen, und ein Rechnungssteller ist ein Name.
+// Eine Zahl ist beides nicht. Beim Rechnungssteller kommt dazu, dass er gespeichert wird und als
+// Überschrift über den Positionen eines Belegs steht: „42“ wäre dort keine Auskunft, während die
+// Oberfläche ohne ihn den Dateinamen des Belegs nimmt, und der hilft weiter.
+const stringOrUndefined = (value: unknown): string | undefined => (typeof value === 'string' ? value.trim() || undefined : undefined)
 const finiteOrNull = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
 // ---------- Universeller Eingang (Schuhkarton): Dokumenttyp + Zählerstand ----------
