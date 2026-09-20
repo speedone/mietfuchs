@@ -1,5 +1,5 @@
 // Wo das Programm liegt und wohin es schreiben darf (#25). Zwei Stellen brauchen dieselbe
-// Antwort: der Datenordner (store.js) und die Betriebsart für den Update-Hinweis (version.ts).
+// Antwort: der Datenordner (store.ts) und die Betriebsart für den Update-Hinweis (version.ts).
 // Deshalb steht die Regel hier, nicht zweimal.
 import fs from 'node:fs'
 import path from 'node:path'
