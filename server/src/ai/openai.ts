@@ -130,8 +130,9 @@ export function readProviderError(text: string): ProviderErrorInfo {
 
 type StreamState = { content: string; reasoningChars: number; usage: unknown; finishReason: string | null }
 
-// Ein Ereignis des SSE-Stroms. Liefert true bei `[DONE]`.
-function handleEvent(block: string, state: StreamState, onProgress: ((event: ProviderProgressEvent) => void) | undefined): boolean {
+// Ein Ereignis des SSE-Stroms. Liefert true bei `[DONE]`. `apiKey` nur zum Maskieren, falls ein
+// Proxy vor dem Dienst eine nicht lesbare Antwort mit dem Schlüssel darin zurückgibt.
+function handleEvent(block: string, state: StreamState, onProgress: ((event: ProviderProgressEvent) => void) | undefined, apiKey: string | null): boolean {
   let type = 'message'
   const data: string[] = []
   for (const line of block.split(/\r?\n/)) {
@@ -146,7 +147,7 @@ function handleEvent(block: string, state: StreamState, onProgress: ((event: Pro
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw providerError(`Der Dienst lieferte eine unlesbare Antwort: ${text.slice(0, 200)}`)
+    throw providerError(`Der Dienst lieferte eine unlesbare Antwort: ${maskSecret(apiKey, text).slice(0, 200)}`)
   }
   const json = isObject(parsed) ? parsed : {}
   // Fehler mitten im Strom kommen mit Status 200
@@ -190,7 +191,14 @@ function handleEvent(block: string, state: StreamState, onProgress: ((event: Pro
 // Liest den Strom einer Chat-Antwort: Ereignisse getrennt durch eine Leerzeile, je Zeile
 // `data: {…}`. Denktext zählt nur für den Fortschritt, nie für das Ergebnis. Die Kennzahlen
 // stehen im letzten Ereignis mit `usage`, das je nach Dienst eigens nach dem Inhalt kommt.
-export async function readCompletionStream(body: AsyncIterable<Uint8Array>, onProgress?: (event: ProviderProgressEvent) => void): Promise<StreamState> {
+// `apiKey` ist optional (Standard null) und geht nur an handleEvent zum Maskieren durch, damit
+// die bestehenden Aufrufe dieser Funktion ohne Schlüssel (etwa in openai.test.js) unverändert
+// bleiben.
+export async function readCompletionStream(
+  body: AsyncIterable<Uint8Array>,
+  onProgress?: (event: ProviderProgressEvent) => void,
+  apiKey: string | null = null,
+): Promise<StreamState> {
   const decoder = new TextDecoder()
   const state: StreamState = { content: '', reasoningChars: 0, usage: null, finishReason: null }
   const separator = /\r?\n\r?\n/
@@ -201,11 +209,11 @@ export async function readCompletionStream(body: AsyncIterable<Uint8Array>, onPr
     while ((match = separator.exec(buffer))) {
       const block = buffer.slice(0, match.index)
       buffer = buffer.slice(match.index + match[0].length)
-      if (handleEvent(block, state, onProgress)) return state
+      if (handleEvent(block, state, onProgress, apiKey)) return state
     }
   }
   buffer += decoder.decode()
-  if (buffer.trim()) handleEvent(buffer, state, onProgress)
+  if (buffer.trim()) handleEvent(buffer, state, onProgress, apiKey)
   return state
 }
 
@@ -455,7 +463,7 @@ export function openaiProvider(config: OpenAiConfig): Provider {
           const contentType = String(res.headers['content-type'] ?? '')
           result = contentType.includes('application/json')
             ? fromWholeResponse(JSON.parse(await readText(res.body)))
-            : await readCompletionStream(res.body, onProgress)
+            : await readCompletionStream(res.body, onProgress, config.apiKey)
           break
         } catch (err) {
           if (isProviderError(err) && err.status !== undefined) context.connected = true
