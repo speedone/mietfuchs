@@ -96,9 +96,10 @@ const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
 
 // Was POST /api/settlement/:year/close tatsächlich ablegt: das Ergebnis von computeSettlement,
 // aber `selfUsedShareCents` optional, weil Schnappschüsse von vor v0.3.0 es noch nicht kennen.
-// GET /api/settlement/:year in index.ts und taxReport in calc.ts sichern das deshalb mit `?? 0`
-// bzw. einem vorangestellten `selfUsedShareCents: 0` ab; das muss so bleiben. `closed` gehört
-// ohnehin nicht dazu, das ergänzt erst das Lesen in index.ts.
+// Zwei Stellen sichern das ab, und das muss so bleiben: GET /api/settlement/:year in index.ts
+// mit einem vorangestellten `selfUsedShareCents: 0`, und `snapshotFromDb` in snapshot.ts mit
+// `?? 0`, bevor die Steuerübersicht den Wert bekommt. `closed` gehört ohnehin nicht dazu, das
+// ergänzt erst das Lesen in index.ts.
 export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents'> & { selfUsedShareCents?: number }
 
 // Die Gestalt der db.json: Fachdaten je Collection plus abgeschlossene Abrechnungen.
