@@ -12,7 +12,8 @@ import {
   taxReport,
 } from '../src/calc.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
-import type { Db } from '../src/store.ts'
+import { snapshotFromDb } from '../src/snapshot.ts'
+import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostItem, CostKey, Meter, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, Unit, UnitUsage } from '../../shared/types.ts'
 
 // ---------- Bausteine für die Testdaten ----------
@@ -95,10 +96,111 @@ test('overlapDays: volles Jahr, Teiljahr, kein Überlapp', () => {
   assert.equal(daysInYear(2024), 366)
 })
 
+// ---------- Die Schnappschuss-Grenze ----------
+//
+// Die Berechnung bekommt nicht mehr den Datenbestand, sondern den Schnappschuss eines Jahres.
+// Welche Sammlung dabei nach Jahr eingegrenzt werden darf, entscheidet über die Richtigkeit der
+// Abrechnung: Wer zu viel wegschneidet, bekommt kein Fehlerbild, sondern eine stille
+// Falschrechnung. Diese Tests halten die Regel fest, damit sie nicht wieder verhandelt wird.
+
+// Eine abgeschlossene (eingefrorene) Abrechnung, wie sie in der Datei steht. Für diese Tests
+// zählt daran nur das Jahr und der Eigenanteil; der Rest sind die Pflichtfelder des Modells.
+const closedSettlement = (year: number, selfUsedShareCents: number): ClosedSettlement => ({
+  id: `cs${year}`,
+  year,
+  closedAt: `${year + 1}-06-30T10:00:00.000Z`,
+  sentAt: null,
+  settlement: {
+    year,
+    daysInYear: daysInYear(year),
+    statements: [],
+    landlord: { rows: [], totalCents: 0 },
+    selfUsedShareCents,
+    totalCostsCents: 0,
+    warnings: [],
+  },
+})
+
+test('Schnappschuss: Ablesungen bleiben vollständig, auch die vor dem Abrechnungsjahr', () => {
+  const db = makeDb()
+  db.meters.push({ id: 'm2', unitId: 'u2', type: 'kaltwasser', name: 'WZ OG links', unit: 'm³' })
+  db.readings.push(...readingsOf('m2', [
+    { date: '2024-12-31', value: 1000 },
+    { date: '2025-12-31', value: 1100 },
+    { date: '2026-12-31', value: 1250 },
+  ]))
+  const snap = snapshotFromDb(db, 2025)
+  // Der Anfangsstand des Jahres ist die Ablesung vom 31. Dezember des Vorjahres. Ohne sie gibt
+  // es kein Verbrauchssegment, und der Jahresverbrauch wäre still 0 statt 100.
+  assert.deepEqual(snap.readings.map((r) => r.date), ['2024-12-31', '2025-12-31', '2026-12-31'])
+  assert.equal(consumptionInPeriod(snap.readings, '2025-01-01', '2025-12-31'), 100)
+})
+
+test('Schnappschuss: Staffeln von vor dem Abrechnungsjahr bleiben erhalten', () => {
+  const db = makeDb()
+  const t = db.tenancies[0]
+  t.start = '2019-03-01'
+  t.personHistory = [{ from: '2019-03-01', persons: 2 }]
+  t.prepayments = [{ from: '2019-03', monthlyCents: 12000 }]
+  t.baseRents = [{ from: '2019-03', monthlyCents: 65000 }]
+  const snap = snapshotFromDb(db, 2025)
+  const stored = snap.tenancies.find((x) => x.id === t.id)
+  if (!stored) assert.fail('das Mietverhältnis fehlt im Schnappschuss')
+  // „Ab diesem Datum gilt dieser Wert": der maßgebliche Eintrag kann Jahre alt sein. Eine
+  // Staffel auf das Abrechnungsjahr zu kürzen, setzte Personenzahl, Vorauszahlung und
+  // Kaltmiete stillschweigend auf 0.
+  assert.deepEqual(stored.personHistory, [{ from: '2019-03-01', persons: 2 }])
+  assert.deepEqual(stored.prepayments, [{ from: '2019-03', monthlyCents: 12000 }])
+  assert.deepEqual(stored.baseRents, [{ from: '2019-03', monthlyCents: 65000 }])
+})
+
+test('Schnappschuss: Wohnungen, Zähler, Mietverhältnisse und Zahlungen bleiben vollständig', () => {
+  const db = makeDb()
+  db.meters.push({ id: 'mh', unitId: null, type: 'kaltwasser', name: 'Hauptzähler', unit: 'm³' })
+  db.tenancies.push(tenancy({ id: 't0', unitId: 'u2', tenantName: 'Vormieter', start: '2018-01-01', end: '2023-06-30' }))
+  db.payments.push(
+    { id: 'p1', tenancyId: 't2', date: '2024-12-05', amountCents: 15000 },
+    { id: 'p2', tenancyId: 't2', date: '2025-03-05', amountCents: 15000 },
+  )
+  const snap = snapshotFromDb(db, 2025)
+  // Wohnungen und Zähler tragen kein Jahr: sie gehören zum Haus, nicht zur Abrechnung.
+  assert.deepEqual(snap.units.map((u) => u.id), ['u1', 'u2', 'u3'])
+  assert.deepEqual(snap.meters.map((m) => m.id), ['mh'])
+  // Ob ein Mietverhältnis ins Jahr fällt, entscheidet overlapDays in der Berechnung, und ob
+  // eine Zahlung dazuzählt, entscheidet das Mietkonto. Beides bleibt dort, wo es geprüft ist.
+  assert.deepEqual(snap.tenancies.map((t) => t.id), ['t2', 't3', 't0'])
+  assert.deepEqual(snap.payments.map((p) => p.date), ['2024-12-05', '2025-03-05'])
+})
+
+test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum Jahr', () => {
+  const db = makeDb()
+  db.costItems.push(
+    { id: 'c24', year: 2024, category: 'Grundsteuer', description: 'Vorjahr', amountCents: 10000, key: 'area' },
+    { id: 'c25', year: 2025, category: 'Grundsteuer', description: 'Abrechnungsjahr', amountCents: 20000, key: 'area' },
+  )
+  db.closedSettlements.push(closedSettlement(2024, 11100), closedSettlement(2025, 22200))
+  const snap = snapshotFromDb(db, 2025)
+  // Beide tragen ihr Jahr als Feld. Eingrenzen heißt hier lesen, was dasteht, nicht herleiten.
+  assert.deepEqual(snap.costItems.map((c) => c.id), ['c25'])
+  assert.deepEqual(snap.closedSettlement, { selfUsedShareCents: 22200 })
+  assert.equal(snapshotFromDb(db, 2023).closedSettlement, null)
+})
+
+test('Schnappschuss: das Altformat der Vorauszahlung überlebt die Grenze', () => {
+  // makeDb legt die Vorauszahlung im Altformat an (ein fester Monatsbetrag statt einer
+  // Staffel), und computePrepaymentCents liest es weiterhin. Der Schnappschuss darf die
+  // Datensätze deshalb nur durchreichen; baute er sie Feld für Feld neu, verschwände der
+  // Betrag stillschweigend und der Mieter bekäme eine Nachforderung über das ganze Jahr.
+  const snap = snapshotFromDb(makeDb(), 2025)
+  const stored = snap.tenancies.find((x) => x.id === 't2')
+  if (!stored) assert.fail('das Mietverhältnis fehlt im Schnappschuss')
+  assert.equal(computePrepaymentCents(stored, 2025).cents, 180000) // 12 × 150 €
+})
+
 test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   const b = statementOf(s, 't3')
   assert.equal(a.totalShareCents, 54000) // 90/150 von 900 €
@@ -109,7 +211,7 @@ test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', () 
 test('Personenschlüssel: 4 vs 3 Personen, centgenau ohne Rest', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100001, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   const b = statementOf(s, 't3')
   assert.equal(a.totalShareCents + b.totalShareCents, 100001) // exakte Summe trotz krummer Teilung
@@ -129,7 +231,7 @@ test('Restcent bei gleichen Anteilen: entscheidet die Kennung des Mietverhältni
     costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area' }],
   })
   for (const order of [[1, 2, 3], [3, 2, 1], [2, 3, 1]]) {
-    const s = computeSettlement(make(order), 2025)
+    const s = computeSettlement(snapshotFromDb(make(order), 2025))
     const share = (id: string) => statementOf(s, id).totalShareCents
     assert.deepEqual([share('t1'), share('t2'), share('t3')], [3334, 3333, 3333], `Reihenfolge ${order.join(', ')}`)
   }
@@ -140,7 +242,7 @@ test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', 
   // Familie B zieht Ende März aus, Wohnung steht danach leer
   db.tenancies[1].end = '2025-03-31'
   db.costItems.push({ id: 'c1', year: 2025, category: 'Versicherung', description: 'Gebäudeversicherung', amountCents: 60000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   const b = statementOf(s, 't3')
   assert.equal(a.totalShareCents, 36000) // 90/150 volles Jahr
@@ -152,7 +254,7 @@ test('Mieterwechsel: zeitanteilige Verteilung, Leerstand trägt der Vermieter', 
 test('Direktzuordnung geht vollständig an eine Wohnung', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Zähler OG links', amountCents: 12345, key: 'direct', directUnitId: 'u2' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 12345)
   assert.equal(statementOf(s, 't3').totalShareCents, 0)
 })
@@ -160,7 +262,7 @@ test('Direktzuordnung geht vollständig an eine Wohnung', () => {
 test('Vorauszahlungen und Saldo', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 300000, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   assert.equal(a.prepaymentCents, 180000) // 150 € × 12
   assert.equal(a.totalShareCents, 150000) // halbe Kosten
@@ -170,7 +272,7 @@ test('Vorauszahlungen und Saldo', () => {
 test('Nicht umlagefähige Kosten trägt vollständig der Vermieter', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Nicht umlagefähig', description: 'Dachreparatur', amountCents: 50000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 0)
   assert.equal(s.landlord.totalCents, 50000)
 })
@@ -212,7 +314,7 @@ test('Vorauszahlungen: Altformat (fester Monatsbetrag) wird weiter unterstützt'
 test('Kosten anderer Jahre werden ignoriert', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2024, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.totalCostsCents, 0)
 })
 
@@ -237,7 +339,7 @@ test('Personenschlüssel nutzt die Staffel in der Abrechnung', () => {
     { from: '2025-07-01', persons: 5 },
   ]
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   const b = statementOf(s, 't3')
   const pdA = 181 * 4 + 184 * 5 // 1644
@@ -296,7 +398,7 @@ test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
     { id: 'r4', meterId: 'm3', date: '2025-12-31', value: 40 },
   ]
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 60000)
   assert.equal(statementOf(s, 't3').totalShareCents, 40000)
   assert.equal(s.landlord.totalCents, 0)
@@ -305,7 +407,7 @@ test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
 test('Verbrauchsschlüssel ohne Ablesungen: Warnung, Betrag an Vermieter', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 50000, key: 'meter', meterType: 'kaltwasser' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 50000)
   assert.equal(s.warnings.length, 1)
 })
@@ -313,7 +415,7 @@ test('Verbrauchsschlüssel ohne Ablesungen: Warnung, Betrag an Vermieter', () =>
 test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 60000, key: 'units', labor35aCents: 30000 })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   assert.equal(a.totalShareCents, 30000) // halbe Kosten (2 Einheiten)
   assert.equal(a.total35aCents, 15000) // halber Lohnanteil
@@ -350,7 +452,7 @@ test('§35a: Mieter-Lohnanteil kaufmännisch gerundet, Rest-Cent nach Restverfah
     costItems: [{ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gartenpflege', amountCents: 30000, key: 'area', labor35aCents: 10000 }],
   })
   for (const order of [[1, 2], [2, 1]]) {
-    const s = computeSettlement(make(order), 2025)
+    const s = computeSettlement(snapshotFromDb(make(order), 2025))
     const st = (id: string) => statementOf(s, id)
     assert.equal(st('t1').totalShareCents, 9545)
     assert.equal(st('t2').totalShareCents, 9545)
@@ -367,7 +469,7 @@ test('§35a: tragen die Mieter die Rechnung ganz, ergibt ihr Lohnanteil genau de
     tenancies: [1, 2, 3].map((n) => tenancy({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1 })),
     costItems: [{ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'area', labor35aCents: 20000 }],
   }
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.deepEqual(s.statements.map((x) => [x.tenancyId, x.total35aCents]), [['t1', 6667], ['t2', 6667], ['t3', 6666]])
 })
 
@@ -375,7 +477,7 @@ test('§35a: ungültiger Lohnanteil (negativ oder über dem Rechnungsbetrag) wir
   for (const labor of [-3000, 70000]) {
     const db = makeDb()
     db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Garten', amountCents: 60000, key: 'units', labor35aCents: labor })
-    const s = computeSettlement(db, 2025)
+    const s = computeSettlement(snapshotFromDb(db, 2025))
     assert.deepEqual(s.statements.map((x) => x.total35aCents), [0, 0], `Lohnanteil ${labor}`)
     assert.equal(statementOf(s, 't2').totalShareCents, 30000) // Kosten bleiben unberührt
     assert.deepEqual(s.warnings, ['„Garten": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.'])
@@ -385,13 +487,13 @@ test('§35a: ungültiger Lohnanteil (negativ oder über dem Rechnungsbetrag) wir
 test('§35a: eine Position ohne Lohnanteil löst keine §35a-Meldung aus, auch mit negativem Betrag', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Gutschrift', amountCents: -5000, key: 'units' })
-  assert.deepEqual(computeSettlement(db, 2025).warnings, [])
+  assert.deepEqual(computeSettlement(snapshotFromDb(db, 2025)).warnings, [])
 })
 
 test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 290050, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   // 1450,25 € / 12 = 120,85 € → 121 €
   assert.equal(a.suggestedMonthlyCents, 12100)
@@ -417,7 +519,7 @@ test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der 
       { id: 'p4', tenancyId: 't1', date: '2025-04-05', amountCents: 50000 },
     ],
   }
-  const l = rentLedger(db, 2025)
+  const l = rentLedger(snapshotFromDb(db, 2025))
   const r = l.rows[0]
   assert.equal(r.months[0].sollCents, 100000) // 800 + 200 €
   assert.equal(r.sollYearCents, 1200000) // 12 × 1000 €
@@ -445,7 +547,7 @@ test('Mietkonto: Teiljahr — vor Einzug kein Soll, Monat gilt als gedeckt', () 
       }),
     ],
   }
-  const l = rentLedger(db, 2025)
+  const l = rentLedger(snapshotFromDb(db, 2025))
   const r = l.rows[0]
   assert.equal(r.months[0].sollCents, 0) // Januar vor Einzug
   assert.equal(r.months[0].status, 'paid') // kein Soll → gedeckt
@@ -463,7 +565,7 @@ test('Eigennutzung: Flächenschlüssel nimmt die eigene Wohnung in die Basis, de
   db.units[0].selfUsed = true
   // 2.300 € auf 230 m² (80 + 90 + 60) = 10 €/m²
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 90000)
   assert.equal(statementOf(s, 't3').totalShareCents, 60000)
   assert.equal(s.landlord.totalCents, 80000) // 80 m² Eigenanteil
@@ -473,7 +575,7 @@ test('Eigennutzung: Einheitenschlüssel teilt durch drei, ein Drittel trägt der
   const db = makeDb()
   db.units[0].selfUsed = true
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 300000, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 100000)
   assert.equal(statementOf(s, 't3').totalShareCents, 100000)
   assert.equal(s.landlord.totalCents, 100000)
@@ -485,7 +587,7 @@ test('Eigennutzung: Personenschlüssel zählt die eigenen Personen mit', () => {
   db.units[0].selfPersons = 3
   // Personentage-Basis: (4 + 3 Mieter + 3 eigene) × 365
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 40000)
   assert.equal(statementOf(s, 't3').totalShareCents, 30000)
   assert.equal(s.landlord.totalCents, 30000)
@@ -495,7 +597,7 @@ test('Eigennutzung ohne Personenzahl: Warnung beim Personenschlüssel', () => {
   const db = makeDb()
   db.units[0].selfUsed = true // selfPersons fehlt
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.warnings.length, 1)
   assert.match(s.warnings[0], /Personenzahl/)
   // ohne Personenzahl bleibt die Verteilung wie zuvor (nur Mieter)
@@ -507,7 +609,7 @@ test('Eigennutzung und Leerstand werden im Vermieteranteil getrennt ausgewiesen'
   db.units[0].selfUsed = true
   db.tenancies[1].end = '2025-03-31' // die zweite vermietete Wohnung steht ab April leer
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.selfUsedShareCents, 80000) // 80 von 230 m², ganzjährig
   assert.ok(s.landlord.totalCents > s.selfUsedShareCents) // zusätzlich der Leerstand
 })
@@ -515,7 +617,7 @@ test('Eigennutzung und Leerstand werden im Vermieteranteil getrennt ausgewiesen'
 test('Ohne Eigennutzungs-Kennzeichen bleibt die Verteilung wie bisher (Bestandsdaten)', () => {
   const db = makeDb() // units[0]: participates false, selfUsed nicht gesetzt
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   // Basis bleiben die 150 m² der vermieteten Wohnungen
   assert.equal(statementOf(s, 't2').totalShareCents, 138000)
   assert.equal(s.landlord.totalCents, 0)
@@ -536,7 +638,7 @@ test('Zählerschlüssel: Verbrauch einer nicht beteiligten Wohnung bleibt in der
     { id: 'r4', meterId: 'm2', date: '2025-12-31', value: 60 },
   ]
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 60000)
   assert.equal(s.landlord.totalCents, 40000)
 })
@@ -547,7 +649,7 @@ test('Direktzuordnung an eine nicht vermietete Wohnung bleibt vollständig beim 
   // Die Wohnung war bis Ende März vermietet und wird danach selbst genutzt
   db.tenancies.push(tenancy({ id: 't1', unitId: 'u1', tenantName: 'Vormieter', persons: 2, end: '2025-03-31' }))
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Direkt', amountCents: 100000, key: 'direct', directUnitId: 'u1' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 0) // die Wohnung ist nicht beteiligt
   assert.equal(s.landlord.totalCents, 100000) // kein Cent darf unterwegs verschwinden
   assert.equal(s.selfUsedShareCents, 100000)
@@ -556,7 +658,7 @@ test('Direktzuordnung an eine nicht vermietete Wohnung bleibt vollständig beim 
 test('Direktzuordnung auf eine gelöschte Wohnung: Warnung, Betrag beim Vermieter', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Verwaist', amountCents: 40000, key: 'direct', directUnitId: 'weg' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 40000)
   assert.equal(s.warnings.length, 1)
 })
@@ -565,7 +667,7 @@ test('Eine Wohnung, die vermietet und als Eigennutzung markiert ist, gilt als ve
   const db = makeDb()
   db.units[1].selfUsed = true // widersprüchliche Kennzeichen
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 150000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 90000)
   assert.equal(s.selfUsedShareCents, 0) // kein Eigenanteil an einer vermieteten Wohnung
 })
@@ -575,7 +677,7 @@ test('Negative Personenzahl der eigenen Wohnung zählt wie „nicht hinterlegt"'
   db.units[0].selfUsed = true
   db.units[0].selfPersons = -5 // aus einem von Hand bearbeiteten Datenbestand
   db.costItems.push({ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 100000)
   assert.equal(s.landlord.totalCents, 0) // keine negative Verteilbasis, kein negativer Anteil
   assert.equal(s.warnings.length, 1)
@@ -586,7 +688,7 @@ test('Eigennutzung ohne Wohnfläche: Warnung beim Flächenschlüssel', () => {
   db.units[0].selfUsed = true
   db.units[0].areaM2 = 0 // Wohnfläche noch nicht erfasst
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.warnings.length, 1)
   assert.match(s.warnings[0], /Wohnfläche/)
 })
@@ -599,7 +701,7 @@ test('Prozentschlüssel: vereinbarte Anteile, der Rest trägt der Vermieter', ()
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Hausmeister',
     amountCents: 100000, key: 'custom', customShares: { u2: 60, u3: 30 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 60000)
   assert.equal(statementOf(s, 't3').totalShareCents, 30000)
   assert.equal(s.landlord.totalCents, 10000) // vereinbarter Eigenanteil
@@ -611,7 +713,7 @@ test('Prozentschlüssel: 100 % werden centgenau verteilt', () => {
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Krumme Summe',
     amountCents: 100001, key: 'custom', customShares: { u2: 33.33, u3: 66.67 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   const a = statementOf(s, 't2')
   const b = statementOf(s, 't3')
   assert.equal(a.totalShareCents + b.totalShareCents, 100001)
@@ -625,7 +727,7 @@ test('Prozentschlüssel: Teiljahr wird tagesanteilig gekürzt', () => {
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Wartung',
     amountCents: 100000, key: 'custom', customShares: { u2: 50, u3: 50 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 50000)
   assert.equal(statementOf(s, 't3').totalShareCents, Math.round(50000 * (90 / 365)))
   assert.equal(
@@ -640,7 +742,7 @@ test('Prozentschlüssel über 100 %: Warnung, keine Verteilung', () => {
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Zu viel',
     amountCents: 100000, key: 'custom', customShares: { u2: 60, u3: 60 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   // Niemals mehr verteilen als die Rechnung hergibt — sonst wären auch die §35a-Anteile zu hoch
   assert.equal(s.statements.reduce((a, x) => a + x.totalShareCents, 0), 0)
   assert.equal(s.landlord.totalCents, 100000)
@@ -653,7 +755,7 @@ test('Prozentschlüssel mit gelöschter Wohnung: Warnung, verfallener Anteil bei
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Verwaist',
     amountCents: 100000, key: 'custom', customShares: { u2: 50, weg: 30 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 50000)
   assert.equal(s.landlord.totalCents, 50000)
   assert.equal(s.warnings.length, 1)
@@ -668,7 +770,7 @@ test('Prozentschlüssel: Anteil einer nicht beteiligten Wohnung wird beim Namen 
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Vereinbart',
     amountCents: 100000, key: 'custom', customShares: { u1: 30, u2: 70 },
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.match(s.warnings[0], /EG \(Eigennutzung\)/)
   assert.doesNotMatch(s.warnings[0], /gelöscht/)
 })
@@ -679,7 +781,7 @@ test('Prozentschlüssel ohne Anteile: Warnung, Betrag an den Vermieter', () => {
     id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Ohne Anteile',
     amountCents: 50000, key: 'custom',
   })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 50000)
   assert.equal(s.warnings.length, 1)
 })
@@ -698,7 +800,7 @@ test('Flächenschlüssel ohne jede Wohnfläche: eine Meldung je Position, Betrag
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   // Nicht umlagefähige Kosten landen ohnehin beim Vermieter — dort ist das keine Meldung wert
   db.costItems.push({ id: 'c2', year: 2025, category: 'Nicht umlagefähig', description: 'Dachreparatur', amountCents: 50000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 140000)
   // Keine zusätzliche Meldung zur Eigennutzung („verteilt nur auf die Mieter") — verteilt wird nichts
   assert.deepEqual(s.warnings, ['„Grundsteuer": für keine Wohnung ist eine Wohnfläche hinterlegt — Betrag geht an den Vermieter.'])
@@ -709,7 +811,7 @@ test('Personenschlüssel ohne jede Personenzahl: eine Meldung je Position, Betra
   db.units[0].selfUsed = true // ohne selfPersons
   for (const t of db.tenancies) t.persons = 0
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 30000)
   assert.deepEqual(s.warnings, ['„Müll": für die vermieteten Wohnungen sind keine Personen hinterlegt — Betrag geht an den Vermieter.'])
 })
@@ -718,7 +820,7 @@ test('Einheitenschlüssel ohne Wohnung in der Abrechnungseinheit: Meldung, Betra
   const db = makeDb()
   for (const u of db.units) u.participates = false
   db.costItems.push({ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 24000, key: 'units' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 24000)
   assert.deepEqual(s.warnings, ['„Hauswart": keine Wohnung gehört zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
 })
@@ -728,7 +830,7 @@ test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im 
   db.units[2].areaM2 = 0 // OG rechts
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   db.costItems.push({ id: 'c2', year: 2025, category: 'Versicherung', description: 'Gebäudeversicherung', amountCents: 60000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   // So rechnet es heute: OG links trägt alles — genau das muss auffallen
   assert.equal(statementOf(s, 't2').totalShareCents, 150000)
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
@@ -740,7 +842,7 @@ test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt
   db.units[1].areaM2 = 0
   db.units[2].areaM2 = 0
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 90000)
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG links, OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
@@ -751,7 +853,7 @@ test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren 
   dropArea(dg) // in der Datei steht areaM2 gar nicht, und es gibt kein Mietverhältnis
   db.units.push(dg)
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 0)
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
@@ -760,7 +862,7 @@ test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, 
   const db = makeDb()
   dropArea(db.units[2])
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't3').totalShareCents, 0)
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
@@ -769,7 +871,7 @@ test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
   const db = makeDb()
   db.tenancies[1].persons = 0 // Familie B, OG rechts
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 30000)
   assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
 })
@@ -778,7 +880,7 @@ test('Direktzuordnung auf eine ganzjährig leerstehende Wohnung: regulärer Fall
   const db = makeDb()
   db.units.push({ id: 'u4', name: 'DG', areaM2: 50, participates: true })
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder DG', amountCents: 8000, key: 'direct', directUnitId: 'u4' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 8000)
   assert.deepEqual(s.warnings, [])
 })
@@ -786,7 +888,7 @@ test('Direktzuordnung auf eine ganzjährig leerstehende Wohnung: regulärer Fall
 test('Direktzuordnung auf eine Wohnung außerhalb der Abrechnungseinheit: Meldung, Betrag beim Vermieter', () => {
   const db = makeDb() // u1 ist weder vermietet noch als Eigennutzung gekennzeichnet
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder EG', amountCents: 8000, key: 'direct', directUnitId: 'u1' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 8000)
   assert.deepEqual(s.warnings, ['„Rauchmelder EG": die direkt zugeordnete Wohnung EG (Eigennutzung) gehört nicht zur Abrechnungseinheit — Betrag geht an den Vermieter.'])
 })
@@ -795,7 +897,7 @@ test('Direktzuordnung auf die selbstgenutzte Wohnung: Eigenanteil, keine Meldung
   const db = makeDb()
   db.units[0].selfUsed = true
   db.costItems.push({ id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'Rauchmelder EG', amountCents: 8000, key: 'direct', directUnitId: 'u1' })
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 8000)
   assert.equal(s.selfUsedShareCents, 8000)
   assert.deepEqual(s.warnings, [])
@@ -809,7 +911,7 @@ test('Leerstand im ganzen Haus ist keine fehlende Verteilbasis: keine Meldung', 
   for (const key of keys) {
     db.costItems.push({ id: key, year: 2025, category: 'Grundsteuer', description: key, amountCents: 90000, key })
   }
-  const s = computeSettlement(db, 2025)
+  const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 270000)
   assert.deepEqual(s.warnings, [])
 })
@@ -840,7 +942,7 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
       { id: 'c4', year: 2024, category: 'Grundsteuer', description: 'Vorjahr', amountCents: 99999, key: 'units' },
     ],
   }
-  const r = taxReport(db, 2025)
+  const r = taxReport(snapshotFromDb(db, 2025))
   assert.equal(r.income.baseRentSollCents, 960000) // 12 × 800 €
   assert.equal(r.income.prepaymentSollCents, 240000) // 12 × 200 €
   assert.equal(r.income.sollCents, 1200000)
@@ -864,12 +966,12 @@ test('Steuer (Anlage V): abgeschlossene Abrechnung liefert den eingefrorenen Eig
   db.payments = []
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
   db.closedSettlements = [
-    { id: 'x', year: 2025, closedAt: '2026-01-05', sentAt: null, settlement: computeSettlement(db, 2025) },
+    { id: 'x', year: 2025, closedAt: '2026-01-05', sentAt: null, settlement: computeSettlement(snapshotFromDb(db, 2025)) },
   ]
   // Nachträgliche Änderung an den Kosten: der eingefrorene Stand bleibt maßgeblich,
   // sonst widersprächen Steuerübersicht und versendete Abrechnung einander.
   db.costItems[0].amountCents = 460000
-  assert.equal(taxReport(db, 2025).selfUsedShareCents, 80000)
+  assert.equal(taxReport(snapshotFromDb(db, 2025)).selfUsedShareCents, 80000)
 })
 
 test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewiesen', () => {
@@ -877,7 +979,7 @@ test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewi
   db.units[0].selfUsed = true
   db.payments = []
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 230000, key: 'area' })
-  const r = taxReport(db, 2025)
+  const r = taxReport(snapshotFromDb(db, 2025))
   // 80 von 230 m² entfallen auf die eigene Wohnung — dieser Teil ist privat, nicht abziehbar
   assert.equal(r.selfUsedShareCents, 80000)
   assert.equal(r.expenses.totalCents, 230000) // die Werbungskosten selbst bleiben unangetastet
@@ -963,7 +1065,7 @@ test('Invariante: Mieteranteile + Vermieteranteil ergeben immer die Gesamtkosten
   const rnd = makeRng(20260918)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
-    const s = computeSettlement(db, 2025)
+    const s = computeSettlement(snapshotFromDb(db, 2025))
     const tenantsCents = s.statements.reduce((a, x) => a + x.totalShareCents, 0)
     assert.equal(
       tenantsCents + s.landlord.totalCents,
@@ -977,7 +1079,7 @@ test('Invariante: kein Mieter trägt einen negativen Anteil', () => {
   const rnd = makeRng(4711)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
-    for (const st of computeSettlement(db, 2025).statements) {
+    for (const st of computeSettlement(snapshotFromDb(db, 2025)).statements) {
       for (const row of st.rows) {
         assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}\n${JSON.stringify(db)}`)
         // Die Zeilen der Mieter führen den Lohnanteil immer mit (im Typ ist er optional, weil
@@ -995,7 +1097,7 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
   const rnd = makeRng(3552025)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
-    const s = computeSettlement(db, 2025)
+    const s = computeSettlement(snapshotFromDb(db, 2025))
     for (const item of db.costItems.filter((c) => c.year === 2025)) {
       // Der Lohnanteil ist optional — eine Position ohne ihn ist hier nichts zu prüfen.
       const itemLabor = item.labor35aCents ?? 0
@@ -1014,12 +1116,12 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
     rev.tenancies.reverse()
     rev.costItems.reverse()
     const byTenancy = (r: ComputedSettlement) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.total35aCents, st.totalShareCents]).sort())
-    assert.equal(byTenancy(computeSettlement(rev, 2025)), byTenancy(s), `Fall ${i}: Ergebnis hängt von der Reihenfolge ab`)
+    assert.equal(byTenancy(computeSettlement(snapshotFromDb(rev, 2025))), byTenancy(s), `Fall ${i}: Ergebnis hängt von der Reihenfolge ab`)
     // Die Kostenverteilung selbst hängt nicht am Lohnanteil
     const withoutLabor = structuredClone(db)
     for (const c of withoutLabor.costItems) delete c.labor35aCents
     const shares = (r: ComputedSettlement) => JSON.stringify(r.statements.map((st) => [st.tenancyId, st.rows.map((x) => x.shareCents)]))
-    assert.equal(shares(computeSettlement(withoutLabor, 2025)), shares(s), `Fall ${i}: Lohnanteil verändert die Kostenverteilung`)
+    assert.equal(shares(computeSettlement(snapshotFromDb(withoutLabor, 2025))), shares(s), `Fall ${i}: Lohnanteil verändert die Kostenverteilung`)
   }
 })
 
@@ -1027,7 +1129,7 @@ test('Invariante: der Eigenanteil steckt im Vermieteranteil', () => {
   const rnd = makeRng(1234567)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
-    const s = computeSettlement(db, 2025)
+    const s = computeSettlement(snapshotFromDb(db, 2025))
     assert.ok(
       s.selfUsedShareCents <= s.landlord.totalCents,
       `Fall ${i}: Eigenanteil ${s.selfUsedShareCents} > Vermieteranteil ${s.landlord.totalCents}\n${JSON.stringify(db)}`,

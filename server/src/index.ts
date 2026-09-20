@@ -8,6 +8,7 @@ import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
+import { snapshotFromDb } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -279,7 +280,7 @@ app.get('/api/settlement/:year', (req, res) => {
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
   if (closed) return res.json({ selfUsedShareCents: 0, ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
-  res.json({ ...computeSettlement(getDb(), year), closed: null })
+  res.json({ ...computeSettlement(snapshotFromDb(getDb(), year)), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -319,7 +320,7 @@ app.post('/api/settlement/:year/close', (req, res) => {
     year,
     closedAt: new Date().toISOString(),
     sentAt,
-    settlement: computeSettlement(db, year),
+    settlement: computeSettlement(snapshotFromDb(db, year)),
   })
   save()
   res.status(201).json({ ok: true })
@@ -351,21 +352,21 @@ app.delete('/api/settlement/:year/close', (req, res) => {
 app.get('/api/consumption/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(consumptionOverview(getDb(), year))
+  res.json(consumptionOverview(snapshotFromDb(getDb(), year)))
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
 app.get('/api/rentledger/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(rentLedger(getDb(), year))
+  res.json(rentLedger(snapshotFromDb(getDb(), year)))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
 app.get('/api/taxreport/:year', (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(taxReport(getDb(), year))
+  res.json(taxReport(snapshotFromDb(getDb(), year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
