@@ -148,7 +148,7 @@ Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc
 Die Tests sind selbst TypeScript und werden von `npm run typecheck` mitgeprüft. Das ist der
 eigentliche Wert: Sie bauen Datenbestände von Hand auf, und der Übersetzer vergleicht sie mit
 `shared/types.ts`. Neue Testdaten deshalb über die Typen des Modells bauen, nicht als freies
-Objektliteral — `calc.test.ts` hat dafür kleine Helfer (`emptyDb`, `tenancy`), die die
+Objektliteral. `calc.test.ts` hat dafür kleine Helfer (`emptyDb`, `tenancy`), die die
 Pflichtfelder füllen, damit im Test nur das Fachliche steht. Geht eine Zusicherung nicht auf,
 weil ein Wert fehlen könnte, gehört der fehlende Wert geprüft (`assert.fail` mit Ansage) und
 nicht mit `as` oder `!` behauptet: Eine Behauptung verdeckt genau den Befund, den der Test
@@ -260,7 +260,9 @@ unmittelbar, deshalb kann eine Änderung am Modell nicht mehr nur auf einer Seit
 
 Die Grenze zu [client/src/types.ts](client/src/types.ts) verläuft an der Frage, ob etwas beim
 Ausführen noch da ist. Ein neuer Typ, ein neues Feld oder ein neuer Wert eines Aufzählungstyps
-gehört nach `shared/`. Alles, was die Oberfläche daraus macht, bleibt beim Client: die
+gehört nach `shared/`, sofern beide Seiten ihn brauchen; was nur eine Seite kennt, bleibt bei
+ihr (`Db` und `ComputedSettlement` im Server, die Formularzustände im Client). Maßstab ist, was
+über die API geht. Alles, was die Oberfläche daraus macht, bleibt beim Client: die
 Beschriftungen (`UNIT_USAGE_LABELS`, `METER_TYPE_LABELS`, `CATEGORIES`) und die Helfer
 (`usageOf`, `matchCategory`, `defaultKeyFor`). Die Datei des Clients reicht das gemeinsame
 Modell per `export type *` weiter, sodass die Importe der Seiten unverändert auf `../types`

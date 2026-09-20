@@ -146,10 +146,12 @@ function repairPreset(slot: unknown): unknown {
   return slot
 }
 
-// Der Bestand, wie migrateAi ihn vorfindet: `ai` kommt ungeprüft aus der db.json und kann alles
-// enthalten, auch eine von Hand verdorbene Gestalt. Genau das zieht die Migration gerade,
-// deshalb steht hier `unknown` statt AiSettings.
-export type SettingsBeforeMigration = Omit<Settings, 'ai'> & { ai?: unknown }
+// Der Bestand, wie migrateAi ihn vorfindet. Zwei Gründe für die lockere Form: `ai` kommt
+// ungeprüft aus der db.json und kann alles enthalten, auch eine von Hand verdorbene Gestalt,
+// und genau das zieht die Migration gerade. Alle übrigen Felder sind optional, weil die
+// Funktion nur `ai`, `ollamaUrl` und `ollamaModel` anfasst und deshalb auch mit einem
+// unvollständigen Bestand umgehen muss, wie ihn eine alte db.json enthält.
+export type SettingsBeforeMigration = Partial<Omit<Settings, 'ai'>> & { ai?: unknown }
 
 // Der Bestand danach: `ai` ist gesetzt und gültig. Im Datenmodell bleibt es optional, weil eine
 // db.json von vor #18 es noch nicht kennt; nach der Migration ist es aber keine offene Frage
@@ -159,9 +161,14 @@ export type MigratedSettings = Settings & { ai: AiSettings }
 // Ergänzt `settings.ai` beim Laden der db.json. Fehlt es, entsteht es aus ollamaUrl und
 // ollamaModel. Unbrauchbare Einzelwerte fallen auf den Standard zurück, statt den Start zu
 // verhindern.
-export function migrateAi(settings: SettingsBeforeMigration): MigratedSettings {
+//
+// Der Rückgabetyp bleibt an dem hängen, was hineingegeben wurde: Ein vollständiger Bestand
+// kommt als MigratedSettings zurück, ein bruchstückhafter bleibt bruchstückhaft und hat nur
+// `ai` dazugewonnen. Alles andere wäre eine Behauptung über Felder, die die Funktion gar nicht
+// kennt.
+export function migrateAi<T extends SettingsBeforeMigration>(settings: T): T & { ai: AiSettings } {
   const stored: Record<string, unknown> = isObject(settings.ai) ? settings.ai : {}
-  const legacyUrl = isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL
+  const legacyUrl = typeof settings.ollamaUrl === 'string' && isHttpUrl(settings.ollamaUrl) ? settings.ollamaUrl : DEFAULT_OLLAMA_URL
   const legacyText: AiSlot = {
     provider: 'ollama',
     // Zeigt die Adresse woandershin, passt die Vorlage für ein entferntes Ollama: Nur sie kennt
@@ -194,16 +201,19 @@ export function migrateAi(settings: SettingsBeforeMigration): MigratedSettings {
   // denn diese Version hält sie immer deckungsgleich (mirrorLegacy). So geht nach einem
   // Downgrade und einem erneuten Update nichts verloren.
   if (isObject(stored.text) && ai.text.provider === 'ollama') {
-    if (isHttpUrl(migrated.ollamaUrl) && migrated.ollamaUrl !== ai.text.url) ai.text.url = migrated.ollamaUrl
-    if (typeof migrated.ollamaModel === 'string' && migrated.ollamaModel !== ai.text.model) ai.text.model = migrated.ollamaModel
+    const { ollamaUrl, ollamaModel } = migrated
+    if (typeof ollamaUrl === 'string' && isHttpUrl(ollamaUrl) && ollamaUrl !== ai.text.url) ai.text.url = ollamaUrl
+    if (typeof ollamaModel === 'string' && ollamaModel !== ai.text.model) ai.text.model = ollamaModel
   }
   mirrorLegacy(migrated)
   return migrated
 }
 
 // Nur aufgerufen, nachdem `settings.ai` gesetzt ist (migrateAi, applyAiChanges); die Prüfung ist
-// für den Typprüfer, `settings.ai` ist zur Laufzeit an dieser Stelle immer vorhanden.
-function mirrorLegacy(settings: Settings): void {
+// für den Typprüfer, `settings.ai` ist zur Laufzeit an dieser Stelle immer vorhanden. Der
+// Parametertyp ist so lose wie der von migrateAi, weil die Funktion von dort auch einen
+// unvollständigen Bestand bekommt.
+function mirrorLegacy(settings: SettingsBeforeMigration & { ai?: AiSettings }): void {
   if (!settings.ai) return
   const { text } = settings.ai
   if (text.provider !== 'ollama') return

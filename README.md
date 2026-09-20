@@ -141,7 +141,7 @@ in Mietfuchs sagt Bescheid, wenn es eine neue Fassung gibt, sofern du die Prüfu
 Dafür braucht es **Node 24.12 oder neuer**. Server und Oberfläche sind in TypeScript
 geschrieben, und der Server wird nicht gebaut: Node führt die Dateien unmittelbar aus und
 streift die Typen dabei ab. Das gilt erst ab dieser Version als stabil. Wer Mietfuchs als
-Programmdatei, als Linux-Paket oder im Docker-Image nutzt, braucht kein Node — dort ist die
+Programmdatei, als Linux-Paket oder im Docker-Image nutzt, braucht kein Node, dort ist die
 Laufzeit schon dabei.
 
 ```powershell

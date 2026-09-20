@@ -27,8 +27,16 @@ const chimney = () => ({
 })
 
 const cents = (eur: number) => Math.round(eur * 100)
+
+// Summe eines Betragsfelds in Cent. Die Felder stehen im Typ als `unknown`, weil sie ungeprüft
+// aus dem Modell kommen; nach dem Geraderücken müssen sie Zahlen sein, und steht dort etwas
+// anderes, ist genau das der Befund.
 const sum = (positions: Position[], key: 'amountEur' | 'labor35aEur' = 'amountEur') =>
-  positions.reduce((a, p) => a + cents(p[key] ?? 0), 0)
+  positions.reduce((a, p) => {
+    const value = p[key]
+    if (value != null && typeof value !== 'number') assert.fail(`${key} ist keine Zahl: ${JSON.stringify(value)}`)
+    return a + cents(value ?? 0)
+  }, 0)
 
 // normalizeAmounts legt `positions` immer an, auch wenn die KI keine geliefert hat. Im Typ
 // steht das nicht, weil er die rohe Antwort beschreibt, in der das Feld fehlen darf. Statt die

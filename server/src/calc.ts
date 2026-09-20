@@ -162,7 +162,7 @@ export function computePrepaymentCents(tenancy: Tenancy, year: number): { cents:
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen
-  // aufgerufen (siehe calc.test.js), daher der gezielte Zugriff über eine Typ-Erweiterung.
+  // aufgerufen (siehe calc.test.ts), daher der gezielte Zugriff über eine Typ-Erweiterung.
   const legacy = tenancy as Tenancy & { prepaymentMonthlyCents?: number }
   const schedule = (
     tenancy.prepayments?.length

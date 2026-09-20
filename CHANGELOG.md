@@ -11,7 +11,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Wer Mietfuchs aus dem Quellcode startet, braucht jetzt mindestens Node 24.12.** Der Server
   ist von JavaScript auf TypeScript umgestellt und wird weiterhin nicht gebaut: Node führt die
   Dateien unmittelbar aus und streift die Typen dabei ab. Das gilt erst ab dieser Version als
-  stabil. Für alle anderen ändert sich nichts — die Programmdatei, die Linux-Pakete und das
+  stabil. Für alle anderen ändert sich nichts: Die Programmdatei, die Linux-Pakete und das
   Docker-Image bringen ihre Laufzeit selbst mit, und an der Bedienung, an den Daten und an den
   Einstellungen ist nichts anders.
   ([#48](https://github.com/speedone/mietfuchs/issues/48))
