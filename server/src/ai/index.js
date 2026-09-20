@@ -29,7 +29,7 @@
 import { ollamaProvider } from './ollama.js'
 import { openaiProvider } from './openai.js'
 import { slotFor, consentProblem, isExternalUrl } from './settings.js'
-import { getKey } from '../secrets.js'
+import { getKey } from '../secrets.ts'
 
 // Alles, was ein Anbieter-Modul braucht: Platz, Art, Vorlage, Adresse, Modell, Bildverständnis,
 // Schlüssel, die Bestätigung für diesen Platz und die Einstellungen für Fortgeschrittene, die

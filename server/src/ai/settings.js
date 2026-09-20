@@ -9,7 +9,7 @@
 // `provider` ist die Art der Schnittstelle ('ollama' oder 'openai' für alle OpenAI-kompatiblen
 // Dienste), `preset` die gewählte Vorlage aus presets.js. `vision` ist null, solange unbekannt
 // ist, ob das Modell Bilder versteht (Ollama meldet es selbst), sonst die Angabe des Nutzers.
-// Die API-Schlüssel liegen getrennt in secrets.js.
+// Die API-Schlüssel liegen getrennt in secrets.ts.
 //
 // Die früheren Felder `ollamaUrl` und `ollamaModel` bleiben erhalten und spiegeln Adresse und
 // Modell, solange Ollama der Standard-Anbieter ist. Eine ältere Version liest sie nach einem
