@@ -80,8 +80,18 @@ läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten od
 ändern, baut er nur zur Probe (ohne Login und Push).
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
-Mindestversion 24.12 aus `engines` (erst ab dort gilt das Ausführen von TypeScript ohne
-Build-Schritt als stabil). Beim Anheben alle Stellen mitziehen: `engines` (plus
+Mindestversion 24.15 aus `engines`. Zwei Gründe liegen dort übereinander. Ab **24.12** gilt das
+Ausführen von TypeScript ohne Build-Schritt als stabil. Ab **24.15** meldet `node:sqlite` beim
+Laden keine `ExperimentalWarning: SQLite is an experimental feature and might change at any time`
+mehr; Node hat die Meldung dort entfernt (Commit `aaf9af1672`, PR #61262) und die Stufe auf
+„1.2 - Release candidate" gehoben. Auf 24.12 bis 24.14 bekäme sie jeder zu sehen, der Mietfuchs
+aus dem Quellcode startet, und für Vermieter ohne technische Vorkenntnisse ist eine solche Zeile
+bei jedem Start beunruhigend. Unterdrücken ließe sie sich nur mit Mitteln, die auch die
+Warnungen verschlucken, die man sehen will (`--no-warnings`,
+`process.removeAllListeners('warning')`); ein eigener `warning`-Horcher verdrängt Nodes Ausgabe
+nicht, sondern tritt daneben. Deshalb die Untergrenze statt eines Kniffs. Die Programmdatei
+nutzt `bun:sqlite` und war nie betroffen, das Docker-Image fährt `node:24-slim` und liegt
+ohnehin darüber. Beim Anheben alle Stellen mitziehen: `engines` (plus
 `package-lock.json`), README-Badge, Dockerfile, `ci.yml`, `release.yml`. Actions und npm-Pakete
 hält Dependabot aktuell ([.github/dependabot.yml](.github/dependabot.yml), monatlich: Actions
 in einem PR, kleine npm-Updates gebündelt je Ordner, Hauptversionen einzeln). Sicherheitswarnungen
@@ -202,7 +212,7 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 **Issues & Releases** — Ziel ist, dass man vom Issue zum Code und vom Release zum Issue kommt:
 
 - `main` ist per Ruleset geschützt: nur über PRs, lineare Historie (Rebase oder Squash), und die
-  CI-Jobs „Tests und Build (Node 24.12)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
+  CI-Jobs „Tests und Build (Node 24.15)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
   Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
   mitziehen, sonst wartet jeder PR auf einen Check, den es nicht mehr gibt.
 - Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
@@ -224,7 +234,8 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 Zwei getrennte npm-Pakete: `server/` (Express, ESM, TypeScript) und `client/` (React 19 + Vite +
 TypeScript), dazu der Ordner `shared/` mit dem gemeinsamen Datenmodell (#48). Der Server wird
 nicht gebaut: Node führt die `.ts`-Dateien unmittelbar aus und streift die Typen dabei ab, das
-ist ab Node 24.12 stabil und der Grund für die Untergrenze in `engines`. Geprüft werden sie
+ist ab Node 24.12 stabil und einer der beiden Gründe für die Untergrenze in `engines` (der
+andere ist die Warnung von `node:sqlite`, siehe Node-Versionen). Geprüft werden sie
 trotzdem, durch `npm run typecheck`. Im Dev proxyt Vite `/api` und `/uploads` an
 `localhost:3001` ([client/vite.config.ts](client/vite.config.ts)); im Produktivbuild liefert der
 Express-Server das statische `client/dist` selbst aus
