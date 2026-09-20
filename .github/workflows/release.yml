@@ -7,11 +7,20 @@ name: Release-Binaries
 # Bun kompiliert alle Ziele von einem einzigen Linux-Runner aus. Ob eine Datei auf ihrem
 # System wirklich startet, zeigt aber erst ein Rechner mit diesem System: Genau so ein Fehler
 # (gescannte PDFs, #21) fiel sonst erst bei Nutzern auf.
+#
+# Die volle Liste der Distributionen und Pakete lässt ein Pull Request aus (#52): Er prüft davon
+# eine Auswahl, der Tag alles. Wer die volle Breite schon vor dem Merge will, hängt dem PR das
+# Label „volle-pruefung“ an; das startet diesen Workflow neu, dann mit allem.
 on:
   push:
     tags:
       - 'v*'
   pull_request:
+    # Ohne „types“ gälten nur opened, synchronize und reopened. „labeled“ kommt dazu, damit das
+    # Label „volle-pruefung“ einen neuen Lauf auslöst. Die Pfadliste gilt auch dafür: An einem
+    # PR, der nichts davon anfasst, läuft dieser Workflow gar nicht, und das Label bewirkt
+    # nichts. Das ist gewollt, denn dann gibt es auch nichts zu prüfen.
+    types: [opened, synchronize, reopened, labeled]
     paths:
       - server/**
       - client/**
@@ -26,6 +35,122 @@ permissions:
   contents: read
 
 jobs:
+  # Legt fest, wie breit die Container-Prüfungen laufen, und gibt beide Matrizen als JSON weiter.
+  # Ein eigener Job dafür, weil die Matrix eines Jobs nur aus einem Ausdruck kommen kann und der
+  # keine Listen aus der Umgebung kennt (in „strategy“ gibt es github, needs, vars und inputs).
+  #
+  # Die Auswahl für den Pull Request, und warum gerade sie:
+  #   centos:7 hat genau glibc 2.17, die Untergrenze der Linux-Programmdatei. Was an der
+  #     C-Bibliothek bricht, bricht zuerst hier.
+  #   ubuntu:26.04 ist das andere Ende, also die neueste glibc und die neuesten Werkzeuge.
+  #     Zusammen spannen die beiden den Bereich auf, in dem alle übrigen Distributionen liegen.
+  #   Ubuntu 24.04 mit dem .deb und Fedora mit dem .rpm prüfen die beiden Paketformate, die nFPM
+  #     aus derselben Vorschrift baut, dazu den Datenordner des Benutzers, den zweiten Start auf
+  #     belegtem Port und das Beenden aus der Oberfläche. Das .deb prüft zusätzlich den
+  #     Startmenü-Eintrag, denn nur Debian und Verwandte bringen desktop-file-validate mit.
+  #
+  # Was ein Pull Request damit nicht sieht und erst der Tag abdeckt: alle Distributionen
+  # zwischen den beiden Enden (Debian 11 bis 13, Ubuntu 20.04 und 22.04, AlmaLinux, Rocky,
+  # openSUSE und Arch), jede Container-Prüfung auf ARM64, das Arch-Paket sowie das .rpm auf dem
+  # älteren openSUSE Leap und auf ARM64. Ein Fehler, der nur eine dieser Umgebungen trifft,
+  # fällt also erst beim Tag auf, und zwar bevor etwas ans Release gehängt wird. Die
+  # ARM64-Programmdatei selbst prüft weiterhin jeder PR, nämlich im Job „Prüfen auf Linux
+  # ARM64“ auf einem ARM-Runner.
+  umfang:
+    name: Prüfumfang festlegen
+    runs-on: ubuntu-24.04
+    outputs:
+      vollstaendig: ${{ steps.waehlen.outputs.vollstaendig }}
+      distributionen: ${{ steps.waehlen.outputs.distributionen }}
+      pakete: ${{ steps.waehlen.outputs.pakete }}
+    steps:
+      - id: waehlen
+        env:
+          # Vollständig geprüft wird beim Tag, beim Start von Hand und an einem Pull Request mit
+          # dem Label „volle-pruefung“. Die drei Fälle stehen einzeln da, damit beim Lesen
+          # eindeutig ist, wann die Bedingung greift. Bei einem Push ohne Tag ergibt sie falsch,
+          # und auf einem Ereignis ohne Pull Request ist die Labelliste leer, nicht fehlerhaft.
+          VOLLSTAENDIG: >-
+            ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
+            || github.event_name == 'workflow_dispatch'
+            || (github.event_name == 'pull_request'
+            && contains(github.event.pull_request.labels.*.name, 'volle-pruefung')) }}
+        run: |
+          # Jede Distribution unterscheidet sich in der C-Bibliothek und in den mitgelieferten
+          # Werkzeugen, deshalb prüft jede die Programmdatei erneut.
+          alle_distributionen='[
+            {"arch": "x64", "image": "centos:7"},
+            {"arch": "x64", "image": "debian:11"},
+            {"arch": "x64", "image": "debian:12"},
+            {"arch": "x64", "image": "debian:13"},
+            {"arch": "x64", "image": "ubuntu:20.04"},
+            {"arch": "x64", "image": "ubuntu:22.04"},
+            {"arch": "x64", "image": "ubuntu:24.04"},
+            {"arch": "x64", "image": "ubuntu:26.04"},
+            {"arch": "x64", "image": "fedora:latest"},
+            {"arch": "x64", "image": "almalinux:8"},
+            {"arch": "x64", "image": "almalinux:10"},
+            {"arch": "x64", "image": "rockylinux:9"},
+            {"arch": "x64", "image": "opensuse/leap:15.6"},
+            {"arch": "x64", "image": "opensuse/tumbleweed"},
+            {"arch": "x64", "image": "archlinux:latest"},
+            {"arch": "arm64", "image": "centos:7"},
+            {"arch": "arm64", "image": "debian:12"},
+            {"arch": "arm64", "image": "ubuntu:20.04"},
+            {"arch": "arm64", "image": "ubuntu:26.04"},
+            {"arch": "arm64", "image": "fedora:latest"},
+            {"arch": "arm64", "image": "almalinux:10"},
+            {"arch": "arm64", "image": "opensuse/tumbleweed"}
+          ]'
+          auswahl_distributionen='[
+            {"arch": "x64", "image": "centos:7"},
+            {"arch": "x64", "image": "ubuntu:26.04"}
+          ]'
+          alle_pakete='[
+            {"name": "Debian 12 (deb)", "image": "debian:12", "arch": "x64", "muster": "*_amd64.deb", "install": "dpkg -i"},
+            {"name": "Ubuntu 24.04 (deb)", "image": "ubuntu:24.04", "arch": "x64", "muster": "*_amd64.deb", "install": "dpkg -i", "startmenue": "ja"},
+            {"name": "Fedora (rpm)", "image": "fedora:latest", "arch": "x64", "muster": "*.x86_64.rpm", "install": "rpm -i"},
+            {"name": "openSUSE Leap 15.6 (rpm)", "image": "opensuse/leap:15.6", "arch": "x64", "muster": "*.x86_64.rpm", "install": "rpm -i"},
+            {"name": "Arch Linux", "image": "archlinux:latest", "arch": "x64", "muster": "*-x86_64.pkg.tar.zst", "install": "pacman -U --noconfirm"},
+            {"name": "Debian 12 (deb, ARM64)", "image": "debian:12", "arch": "arm64", "muster": "*_arm64.deb", "install": "dpkg -i"},
+            {"name": "AlmaLinux 10 (rpm, ARM64)", "image": "almalinux:10", "arch": "arm64", "muster": "*.aarch64.rpm", "install": "rpm -i"}
+          ]'
+          auswahl_pakete='[
+            {"name": "Ubuntu 24.04 (deb)", "image": "ubuntu:24.04", "arch": "x64", "muster": "*_amd64.deb", "install": "dpkg -i", "startmenue": "ja"},
+            {"name": "Fedora (rpm)", "image": "fedora:latest", "arch": "x64", "muster": "*.x86_64.rpm", "install": "rpm -i"}
+          ]'
+
+          if [ "$VOLLSTAENDIG" = 'true' ]; then
+            distributionen=$alle_distributionen
+            pakete=$alle_pakete
+            beschreibung='volle Matrix (Tag, Start von Hand oder Label „volle-pruefung“)'
+          else
+            distributionen=$auswahl_distributionen
+            pakete=$auswahl_pakete
+            beschreibung='Auswahl für den Pull Request (Label „volle-pruefung“ prüft alles)'
+          fi
+
+          # jq prüft dabei das JSON: Ist eine Liste kaputt, scheitert diese Zuweisung und damit
+          # der Job, statt eine leere Matrix weiterzureichen.
+          distributionen_json=$(printf '%s' "$distributionen" | jq -c '{include: .}')
+          pakete_json=$(printf '%s' "$pakete" | jq -c '{include: .}')
+          {
+            echo "vollstaendig=$VOLLSTAENDIG"
+            echo "distributionen=$distributionen_json"
+            echo "pakete=$pakete_json"
+          } >> "$GITHUB_OUTPUT"
+
+          # In Bericht und Zusammenfassung nachlesbar, was dieser Lauf geprüft hat.
+          echo "Umfang: $beschreibung"
+          printf '%s' "$distributionen" | jq -r '.[] | "  Distribution: \(.image) (\(.arch))"'
+          printf '%s' "$pakete" | jq -r '.[] | "  Paket: \(.name)"'
+          {
+            echo "### Prüfumfang"
+            echo "$beschreibung"
+            printf '%s' "$distributionen" | jq -r '.[] | "- Distribution: \(.image) (\(.arch))"'
+            printf '%s' "$pakete" | jq -r '.[] | "- Paket: \(.name)"'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
     name: Programmdateien bauen
     # Runner bewusst anpinnen (nicht ubuntu-latest) — reproduzierbare Release-Builds.
@@ -195,38 +320,14 @@ jobs:
 
   # Die Linux-Programmdatei braucht nur glibc 2.17 oder neuer. Derselbe Test läuft deshalb in
   # Containern gängiger Distributionen, von CentOS 7 (genau glibc 2.17) bis zu den neuesten.
+  # Welche davon dieser Lauf prüft, entscheidet der Job „Prüfumfang festlegen“ oben.
   distributionen:
     name: Prüfen auf ${{ matrix.image }} (${{ matrix.arch }})
-    needs: signieren
+    needs: [umfang, signieren]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
-      matrix:
-        arch: [x64]
-        image:
-          - centos:7
-          - debian:11
-          - debian:12
-          - debian:13
-          - ubuntu:20.04
-          - ubuntu:22.04
-          - ubuntu:24.04
-          - ubuntu:26.04
-          - fedora:latest
-          - almalinux:8
-          - almalinux:10
-          - rockylinux:9
-          - opensuse/leap:15.6
-          - opensuse/tumbleweed
-          - archlinux:latest
-        include:
-          - { arch: arm64, image: centos:7 }
-          - { arch: arm64, image: debian:12 }
-          - { arch: arm64, image: ubuntu:20.04 }
-          - { arch: arm64, image: ubuntu:26.04 }
-          - { arch: arm64, image: fedora:latest }
-          - { arch: arm64, image: almalinux:10 }
-          - { arch: arm64, image: opensuse/tumbleweed }
+      matrix: ${{ fromJSON(needs.umfang.outputs.distributionen) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -255,21 +356,14 @@ jobs:
   # Mietfuchs als ganz normaler Benutzer. In /usr/bin darf der nicht schreiben, seine Daten
   # gehören deshalb nach ~/.local/share/mietfuchs (server/src/store.ts). Geprüft wird mit
   # demselben Skript wie jede Programmdatei, und zwar auf je einer Distribution pro Format.
+  # Welche Pakete dieser Lauf prüft, entscheidet der Job „Prüfumfang festlegen“ oben.
   pakete:
     name: Paket auf ${{ matrix.name }}
-    needs: signieren
+    needs: [umfang, signieren]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { name: 'Debian 12 (deb)', image: 'debian:12', arch: x64, muster: '*_amd64.deb', install: 'dpkg -i' }
-          - { name: 'Ubuntu 24.04 (deb)', image: 'ubuntu:24.04', arch: x64, muster: '*_amd64.deb', install: 'dpkg -i', startmenue: 'ja' }
-          - { name: 'Fedora (rpm)', image: 'fedora:latest', arch: x64, muster: '*.x86_64.rpm', install: 'rpm -i' }
-          - { name: 'openSUSE Leap 15.6 (rpm)', image: 'opensuse/leap:15.6', arch: x64, muster: '*.x86_64.rpm', install: 'rpm -i' }
-          - { name: 'Arch Linux', image: 'archlinux:latest', arch: x64, muster: '*-x86_64.pkg.tar.zst', install: 'pacman -U --noconfirm' }
-          - { name: 'Debian 12 (deb, ARM64)', image: 'debian:12', arch: arm64, muster: '*_arm64.deb', install: 'dpkg -i' }
-          - { name: 'AlmaLinux 10 (rpm, ARM64)', image: 'almalinux:10', arch: arm64, muster: '*.aarch64.rpm', install: 'rpm -i' }
+      matrix: ${{ fromJSON(needs.umfang.outputs.pakete) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
