@@ -555,6 +555,11 @@ app.delete('/api/uploads/:file', (req, res) => {
 // ---------- Backup & Wiederherstellen ----------
 app.get('/api/backup', (req, res) => {
   save() // sicherstellen, dass der letzte Stand auf der Platte liegt
+  // Wie beim Wiederherstellen: Der Belegordner muss dastehen, bevor jemand ihn liest. Dass er
+  // es heute tut, liegt nur daran, dass multer ihn beim Laden des Moduls anlegt und `load()`
+  // ihn ebenfalls anlegt. Beides sind Nebenwirkungen an anderer Stelle, und ein Backup ist der
+  // schlechteste Zeitpunkt für einen Fehler.
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
   const zip = new AdmZip()
   zip.addLocalFile(path.join(DATA_DIR, 'db.json'))
   for (const name of fs.readdirSync(UPLOAD_DIR)) {
