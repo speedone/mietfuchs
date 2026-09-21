@@ -253,6 +253,32 @@ export type OllamaStatus = {
   found?: string // Adresse, unter der Ollama stattdessen antwortet
 }
 
+// ---------- Die Datenbank beim Start (#55) ----------
+
+// Was beim Start mit der Datenbank geschehen ist. Steht im Zustandsbericht (GET /healthz,
+// server/src/health.ts), und zwar nicht nur für Container-Orchestratoren: **Die Oberfläche liest
+// genau diesen Eintrag**, weil sie dem Nutzer einmal sagen muss, was mit seinen Daten geschehen
+// ist. Beim Start aus einem Linux-Paket gibt es keine Konsole, auf der es sonst stünde.
+//
+//   'none'   Es gab nichts zu übernehmen (keine db.json oder die Datenbank ist schon gefüllt).
+//   'done'   Die Daten liegen jetzt in der Datenbank.
+//   'failed' Der Umstieg ist nicht gelungen; Mietfuchs arbeitet mit der db.json weiter.
+export type ChangeoverState = 'none' | 'done' | 'failed'
+
+export type DatabaseState = {
+  open: boolean
+  file: string
+  migrations: number
+  detail: string
+  changeover: {
+    state: ChangeoverState
+    // Ein Satz für die Oberfläche.
+    message: string
+    // Was sich dadurch für den Nutzer ändert, etwa am Mietkonto.
+    notes: string[]
+  }
+}
+
 // Antwort von /api/update (server/src/update.ts)
 export type UpdateStatus = {
   enabled: boolean // nur mit Zustimmung

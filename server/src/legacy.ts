@@ -10,7 +10,7 @@
 // Der Validator in db/validate.ts prüft gegen dieselben Regeln: Was hier geradegezogen wird,
 // lehnt er nicht ab.
 
-import type { PersonEntry, Settings, Tenancy } from '../../shared/types.ts'
+import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shared/types.ts'
 import type { Db } from './store.ts'
 import { migrateAi, type MigratedSettings } from './ai/settings.ts'
 
@@ -130,6 +130,18 @@ export function legacyPrepaymentCase(prepayments: unknown, monthlyCents: unknown
   return prepayments.length === 0 ? 'empty-schedule' : 'none'
 }
 
+// Der Staffeleintrag, der aus dem alten Monatsbetrag wird: ab dem Einzugsmonat, genau wie ihn
+// `computePrepaymentCents` in calc.ts heute schon liest. `null`, wenn es nichts umzuwandeln gibt.
+//
+// Zwei Stellen brauchen ihn, und beide müssen denselben Eintrag bekommen: das Geraderücken
+// (unten) und der Vergleichsstand der Regression (db/regression.ts). Zwei Fassungen davon
+// ließen die Regression genau dort blind werden, wo sie am meisten zu tun hat.
+export function legacyPrepaymentEntry(tenancy: LegacyTenancy): PrepaymentEntry | null {
+  const monthly = tenancy.prepaymentMonthlyCents
+  if (monthly == null || legacyPrepaymentCase(tenancy.prepayments, monthly) === 'none') return null
+  return { from: textOr(tenancy.start, '').slice(0, 7), monthlyCents: monthly }
+}
+
 // ---------- Geraderücken für die Datenbank ----------
 
 // Ein Bestand, wie ihn die Datenbank annimmt: Die Einstellungen führen die KI-Felder, und jedes
@@ -211,11 +223,8 @@ export function straightenForDatabase(stored: Db): StraightDb {
 
   const tenancies = db.tenancies.map((t) => {
     const legacy: LegacyTenancy = { ...t }
-    const monthly = legacy.prepaymentMonthlyCents
-    const schedule =
-      legacyPrepaymentCase(t.prepayments, monthly) !== 'none' && monthly !== undefined
-        ? [{ from: textOr(t.start, '').slice(0, 7), monthlyCents: monthly }]
-        : Array.isArray(t.prepayments) ? t.prepayments : []
+    const fromLegacy = legacyPrepaymentEntry(legacy)
+    const schedule = fromLegacy ? [fromLegacy] : Array.isArray(t.prepayments) ? t.prepayments : []
     delete legacy.prepaymentMonthlyCents
     const personHistory = lastPerFrom(Array.isArray(t.personHistory) ? t.personHistory : [])
     return {
