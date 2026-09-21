@@ -404,6 +404,14 @@ async function main() {
   const health = await request('/healthz')
   assert(health.body.status === 'ok', 'Zustandsprüfung meldet ok', health.body)
   assert(health.body.version === VERSION, `Version ist ${VERSION}`, health.body.version)
+  // Die Datenbank (#55). Sie wird beim Start geöffnet, obwohl noch keine fachlichen Daten darin
+  // liegen, und genau deshalb steht sie hier: Diese Prüfung läuft auf jeder Programmdatei und in
+  // den Containern von 22 Distributionen. Ob das eingebaute SQLite dort trägt, ob Bun es in die
+  // Programmdatei gebündelt hat und ob die Migrationen ankommen, zeigt sich erst auf einem
+  // echten System. Der Datenordner ist leer (siehe oben), die Datei also frisch angelegt und
+  // die Zahl der Migrationen die volle.
+  assert(health.body.database?.open === true, 'Datenbank ist geöffnet', health.body.database)
+  assert(health.body.database.migrations >= 1, 'Migrationen sind angewendet', health.body.database)
   const update = await request('/api/update')
   assert(update.body.mode === MODE, `Betriebsart ist ${MODE}`, update.body)
   assert(update.body.enabled === false, 'ohne Zustimmung keine Update-Prüfung', update.body)
