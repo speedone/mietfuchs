@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
 
@@ -30,18 +31,41 @@ type Equals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
 type Assert<T extends true> = T
 
 // Passt der Wert einer Spalte in das Feld des Domänentyps? NULL in der Datenbank und ein
-// fehlendes Feld im Modell meinen dasselbe („nicht gesetzt"), deshalb wird beides vor dem
-// Vergleich abgezogen. Passt etwas nicht, steht statt `true` ein Objekt da, das den Namen der
-// Spalte und beide Typen nennt — so sagt die Fehlermeldung, worum es geht.
+// fehlendes Feld im Modell meinen dasselbe („nicht gesetzt"), deshalb wird beides für den
+// Vergleich der *Werte* abgezogen. Passt etwas nicht, steht statt `true` ein Objekt da, das den
+// Namen der Spalte und beide Typen nennt. So sagt die Fehlermeldung, worum es geht.
 type ValuesFit<Row, Domain> = {
   [K in keyof Row & keyof Domain]: Exclude<Row[K], null> extends Exclude<Domain[K], null | undefined>
     ? true
     : { spalte: K; inDerDatenbank: Row[K]; imModell: Domain[K] }
 }[keyof Row & keyof Domain]
 
-// Die beiden Prüfungen je Tabelle: gleiche Namen, passende Werte.
+// Die Nullbarkeit selbst prüft der Wertevergleich oben gerade **nicht**, weil er sie abzieht.
+// Sie ist aber die Hälfte der Zusicherung: Eine Spalte, die NULL zulässt, obwohl das Modell das
+// Feld für verpflichtend hält, liefert der Anwendung irgendwann ein `null`, mit dem sie nicht
+// rechnet. Umgekehrt zwingt ein `NOT NULL` auf einem Feld, das im Modell fehlen darf, den
+// Aufrufer zu einem Wert, den es gar nicht gibt.
+//
+// Verglichen wird deshalb ausdrücklich, ob beide Seiten dasselbe über „darf fehlen" sagen: in
+// der Datenbank `null`, im Modell ein optionales Feld (`undefined`) oder ein ausdrückliches
+// `null`, wie es `CostItem.directUnitId` führt.
+type NullableColumns<Row> = { [K in keyof Row]-?: null extends Row[K] ? K : never }[keyof Row]
+type OptionalFields<Domain> = {
+  [K in keyof Domain]-?: undefined extends Domain[K] ? K : null extends Domain[K] ? K : never
+}[keyof Domain]
+
+type NullabilityFits<Row, Domain> = Equals<NullableColumns<Row>, OptionalFields<Domain>> extends true
+  ? true
+  : {
+      nurInDerDatenbankNullbar: Exclude<NullableColumns<Row>, OptionalFields<Domain>>
+      nurImModellOptional: Exclude<OptionalFields<Domain>, NullableColumns<Row>>
+    }
+
+// Die drei Prüfungen je Tabelle: gleiche Namen, passende Werte, gleiche Nullbarkeit.
 type Matches<Row, Domain> = Equals<keyof Row, keyof Domain> extends true
-  ? Equals<ValuesFit<Row, Domain>, true>
+  ? Equals<ValuesFit<Row, Domain>, true> extends true
+    ? NullabilityFits<Row, Domain>
+    : Equals<ValuesFit<Row, Domain>, true>
   : { spaltenFehlen: Exclude<keyof Domain, keyof Row>; spaltenZuViel: Exclude<keyof Row, keyof Domain> }
 
 // --- Wohnungen ---
@@ -61,7 +85,7 @@ type _BaseRents = Assert<Matches<Omit<typeof schema.baseRents.$inferSelect, 'ten
 // `prepaymentOverrides` ist im Modell `Record<string, number>`, also Jahr auf Betrag. In der
 // Tabelle sind daraus zwei Spalten geworden. Ein Namensvergleich ginge hier ins Leere; geprüft
 // wird deshalb, dass Schlüssel und Wert die Typen behalten, die der Record vorgibt. Das Jahr
-// wird dabei zur Zahl, was es inhaltlich immer war — als Schlüssel eines JSON-Objekts konnte es
+// wird dabei zur Zahl, was es inhaltlich immer war. Als Schlüssel eines JSON-Objekts konnte es
 // nur nicht anders als eine Zeichenkette dastehen.
 type OverrideRow = typeof schema.prepaymentOverrides.$inferSelect
 type _Overrides = Assert<Equals<OverrideRow['year'], number>>
@@ -81,6 +105,21 @@ type _SharePercent = Assert<Equals<ShareRow['percent'], number>>
 type _Meters = Assert<Matches<typeof schema.meters.$inferSelect, Meter>>
 type _Readings = Assert<Matches<typeof schema.readings.$inferSelect, Reading>>
 type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
+
+// --- Abgeschlossene Abrechnungen ---
+// `ClosedSettlement` steht in store.ts und nicht in shared/types.ts, weil nur der Server sie
+// kennt. Geprüft wird sie trotzdem, denn sie beschreibt eine Tabelle.
+//
+// Der eingefrorene Berechnungsstand ist die eine Spalte, die bewusst JSON bleibt, und Drizzle
+// gibt sie als `unknown` heraus. Das ist richtig so: Geschrieben hat sie eine Version, die es
+// vielleicht nicht mehr gibt, und eine engere Zusage an dieser Stelle wäre eine Behauptung, die
+// niemand einlöst. Geprüft wird deshalb der Rahmen ringsum vollständig, und für die Spalte
+// selbst, dass sie überhaupt da ist und wirklich `unknown` liefert. Wer ihr später einen
+// engeren Typ anschreibt, muss diese Zeile anfassen und sich die Frage dabei stellen.
+type ClosedRow = typeof schema.closedSettlements.$inferSelect
+type _ClosedNames = Assert<Equals<keyof ClosedRow, keyof ClosedSettlement>>
+type _ClosedRahmen = Assert<Matches<Omit<ClosedRow, 'settlement'>, Omit<ClosedSettlement, 'settlement'>>>
+type _ClosedJson = Assert<Equals<ClosedRow['settlement'], unknown>>
 
 // --- Einstellungen ---
 // Was hier nicht als Spalte auftaucht und warum:
@@ -181,7 +220,7 @@ test('ein zweiter Lauf wendet nichts noch einmal an', async () => {
 
 // Der Grund für diesen Test steht in server/drizzle/README.md und im Bericht zu Aufgabe 2: Eine
 // Fassung von drizzle-kit (1.0.0-rc.4) lässt bei einem Primärschlüssel aus Text das `NOT NULL`
-// weg, und SQLite liest das als Erlaubnis für NULL-Kennungen — sogar für mehrere. Eine
+// weg, und SQLite liest das als Erlaubnis für NULL-Kennungen, sogar für mehrere. Eine
 // Wohnung ohne Kennung ist aber keine Wohnung. Deshalb wird es hier nachgemessen statt
 // vorausgesetzt, damit ein späterer Fassungswechsel hier scheitert und nicht bei einem Nutzer.
 test('Primärschlüssel aus Text weisen eine leere Kennung ab', async () => {
@@ -233,7 +272,7 @@ test('Löschen einer Wohnung räumt ab, was ohne sie sinnlos wäre', async () =>
     connection.exec("DELETE FROM units WHERE id = 'u1'")
 
     const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
-    // Die Zahlung hängt über das Mietverhältnis an der Wohnung — heute räumt index.ts sie über
+    // Die Zahlung hängt über das Mietverhältnis an der Wohnung. Heute räumt index.ts sie über
     // genau diesen Umweg weg, hier tut es die Kette der Fremdschlüssel.
     assert.equal(zahl('tenancies'), 0, 'Mietverhältnisse')
     assert.equal(zahl('payments'), 0, 'Zahlungen über das Mietverhältnis')
@@ -373,6 +412,31 @@ test('je Jahr höchstens eine abgeschlossene Abrechnung', async () => {
   }
 })
 
+// Die Datenbank prüft am Archivstück nur, dass es überhaupt JSON ist. Ob die Abrechnung darin
+// fachlich stimmt, weiß sie nicht und soll sie nicht wissen. Eine abgeschnittene Zeichenkette
+// fällt damit aber sofort auf statt erst Jahre später beim Öffnen der alten Abrechnung.
+test('der eingefrorene Berechnungsstand muss gültiges JSON sein', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(
+      `INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s1', 2025, '2026-03-01', '{"year":2025,"statements":[]}')`,
+    )
+    assert.ok(
+      rejects(
+        connection,
+        `INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s2', 2024, '2026-03-01', '{"year":2024,"statem')`,
+      ),
+      'eine abgeschnittene Abrechnung',
+    )
+    assert.ok(
+      rejects(connection, "INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s3', 2023, '2026-03-01', 'kein JSON')"),
+      'gar kein JSON',
+    )
+  } finally {
+    cleanup()
+  }
+})
+
 test('die Einstellungen bleiben eine einzige Zeile', async () => {
   const { connection, cleanup } = await freshDb()
   try {
@@ -404,6 +468,96 @@ test('eine gescheiterte Transaktion hinterlässt nichts', async () => {
       0,
       'auch das erste Mietverhältnis muss zurückgerollt sein',
     )
+  } finally {
+    cleanup()
+  }
+})
+
+// Der gefährlichste Fall, den dieses Schema haben kann, und er schlägt erst zu, wenn wir das
+// Schema zum ersten Mal ändern.
+//
+// SQLite kann eine Spalte oder eine Prüfbedingung nicht an Ort und Stelle ändern. drizzle-kit
+// baut die Tabelle dafür neu: neue Tabelle anlegen, Daten hinüberkopieren, alte löschen, neue
+// umbenennen. Damit das Löschen nicht die Kinder mitreißt, schreibt es
+// `PRAGMA foreign_keys=OFF` an den Anfang. Dieses Pragma ist laut SQLite-Dokumentation aber
+// „a no-op within a transaction". Wer die Migration in BEGIN/COMMIT einschließt, schaltet die
+// Prüfung also gar nicht ab. Das `DROP TABLE` kaskadiert dann, und das COMMIT meldet Erfolg.
+// Der Nutzer verliert Mietverhältnisse, Zähler und Zahlungen, ohne dass irgendwo etwas steht.
+//
+// Nachgestellt wird hier genau das, was drizzle-kit für eine geänderte Prüfbedingung schreibt.
+const tabelleNeuBauen = [
+  'PRAGMA foreign_keys=OFF;',
+  'CREATE TABLE `__new_units` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`name` text NOT NULL,\n\t`area_m2` real NOT NULL,\n\t`participates` integer NOT NULL,\n\t`self_used` integer,\n\t`self_persons` integer,\n\t`rooms` integer,\n\t`floor` text,\n\t`notes` text\n);',
+  'INSERT INTO `__new_units`("id", "name", "area_m2", "participates", "self_used", "self_persons", "rooms", "floor", "notes") SELECT "id", "name", "area_m2", "participates", "self_used", "self_persons", "rooms", "floor", "notes" FROM `units`;',
+  'DROP TABLE `units`;',
+  'ALTER TABLE `__new_units` RENAME TO `units`;',
+  'PRAGMA foreign_keys=ON;',
+]
+
+test('eine spätere Migration, die eine Tabelle neu baut, verliert keine abhängigen Daten', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
+    connection.exec("INSERT INTO meters (id, name, unit_id, type, unit) VALUES ('m1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
+
+    applyMigrations(connection, [
+      { tag: '0001_probe', hash: 'probe-tabelle-neu-bauen', folderMillis: Date.now(), statements: tabelleNeuBauen },
+    ])
+
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    assert.equal(zahl('units'), 1, 'die Wohnung muss den Neubau überstehen')
+    assert.equal(zahl('tenancies'), 1, 'das Mietverhältnis darf nicht mitgelöscht werden')
+    assert.equal(zahl('meters'), 1, 'der Zähler darf nicht mitgelöscht werden')
+  } finally {
+    cleanup()
+  }
+})
+
+test('nach dem Migrationslauf ist die Fremdschlüsselprüfung wieder an', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    applyMigrations(connection, [
+      { tag: '0001_probe', hash: 'probe-pragma-wieder-an', folderMillis: Date.now(), statements: tabelleNeuBauen },
+    ])
+    assert.equal(Number(connection.rows('PRAGMA foreign_keys')[0]?.[0]), 1, 'PRAGMA foreign_keys muss wieder 1 sein')
+    // Und sie greift auch wirklich wieder.
+    assert.ok(
+      rejects(
+        connection,
+        "INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t9', 'gibtesnicht', 'X', 1, '2025-01-01')",
+      ),
+    )
+  } finally {
+    cleanup()
+  }
+})
+
+// Die Gegenprobe zur Behebung: Hinterlässt eine Migration wirklich einen kaputten Verweis, darf
+// sie nicht stillschweigend durchgehen. `PRAGMA foreign_key_check` läuft deshalb noch innerhalb
+// der Transaktion, sodass der Schritt zurückgerollt wird und die Datenbank auf dem Stand davor
+// bleibt.
+test('eine Migration, die einen Verweis ins Leere hinterlässt, wird zurückgerollt', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
+    const kaputt = [
+      'PRAGMA foreign_keys=OFF;',
+      // Die Wohnung verschwindet, das Mietverhältnis bleibt zurück und zeigt ins Leere.
+      "DELETE FROM `units` WHERE id = 'u1';",
+      'PRAGMA foreign_keys=ON;',
+    ]
+    assert.throws(
+      () =>
+        applyMigrations(connection, [
+          { tag: '0001_kaputt', hash: 'probe-kaputter-verweis', folderMillis: Date.now(), statements: kaputt },
+        ]),
+      /Fremdschlüssel/,
+    )
+    // Zurückgerollt: Die Wohnung ist noch da, und der Schritt gilt nicht als erledigt.
+    assert.equal(Number(connection.rows('SELECT count(*) FROM units')[0]?.[0]), 1)
+    assert.equal(Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0]), 1, 'nur die erste Migration')
   } finally {
     cleanup()
   }
