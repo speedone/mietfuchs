@@ -252,8 +252,14 @@ rename) über [server/src/store.ts](server/src/store.ts). `NKA_DATA_DIR` verlegt
 (Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel externer
 KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht im Backup).
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
-älterer `db.json` passieren imperativ in `load()` in store.ts (z. B. fester Monatsbetrag →
-Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
+älterer `db.json` passieren imperativ in [server/src/legacy.ts](server/src/legacy.ts) (z. B.
+fester Monatsbetrag zur Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die
+Migration ergänzen. Sie stehen in einer **eigenen Datei** und nicht mehr in `load()`, weil der
+Umstieg in die Datenbank dieselben Regeln braucht: Ein Bestand, der beim Einlesen anders
+geradegezogen würde als beim Übernehmen, änderte beim Umstieg still eine Abrechnung. `load()`
+liest nur noch die Datei und reicht ihren Inhalt hinein. Die Tests dazu stehen in
+[server/test/store.test.ts](server/test/store.test.ts) und halten jede Regel einzeln fest;
+wer dort etwas ändert, sieht am roten Test, dass er eine Abrechnung verändert.
 
 **Die Datenbank** (#55, im Entstehen): Die JSON-Datei wird durch SQLite abgelöst, später soll
 auch PostgreSQL möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema
@@ -384,6 +390,32 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   zusammen**, zur Übersetzungszeit. `shared/types.ts` bleibt von Hand geschrieben, weil der
   Browser es benutzt und von Drizzle nichts wissen darf; der Test schlägt fehl, sobald jemand
   nur eine Seite ändert.
+- **Der Validator** ([server/src/db/validate.ts](server/src/db/validate.ts), #59) prüft einen
+  Datenbestand, bevor er übernommen wird: beim Wiederherstellen eines Backups (heute) und beim
+  Umstieg der vorhandenen Bestände (als Nächstes). Geprüft wird der **rohe** Inhalt der Datei
+  und nicht der schon eingelesene Bestand, denn `migrateLegacy` verträgt keinen beliebigen
+  Inhalt und genau davor soll die Prüfung schützen. Das Ergebnis ist eine **Liste von Befunden
+  mit Ort und Grund**, kein Wahrheitswert: „Die Datei enthält keine gültigen Daten" ist keine
+  Antwort, mit der ein Vermieter etwas anfangen kann. Die Listen erlaubter Werte kommen aus
+  schema.ts und stehen nicht noch einmal daneben.
+- **Die Grenze zwischen kaputt und krumm** ist der Entwurfspunkt des Validators, und an ihr
+  hängt der Umstieg. Zu streng heißt, dass ein Bestand, mit dem jemand seit Jahren arbeitet, nie
+  in die Datenbank käme; zu lasch heißt, dass ein beschädigter erst beim Einfügen auffällt,
+  mitten im Umstieg. **Abgelehnt** wird, was sich nicht übernehmen lässt, ohne eine Zahl der
+  Abrechnung zu verändern oder Erfasstes zu verlieren. **Hingenommen** wird, was beides
+  erfüllt: Es entsteht durch gewöhnliche Bedienung oder in einem älteren Bestand, und es lässt
+  sich so geraderücken, dass die Abrechnung dieselben Zahlen ergibt. Das Geraderücken folgt
+  dabei immer einer Regel, die schon in calc.ts oder legacy.ts steht, und erfindet nie eine
+  neue. Hingenommen sind heute: die alten Formate, eine fehlende Sammlung oder Einstellung, eine
+  Direktzuordnung auf eine gelöschte Wohnung (wird `null`, wie `ON DELETE SET NULL`), ein
+  vereinbarter Anteil auf eine gelöschte Wohnung (entfällt, verteilt wurde er ohnehin nicht),
+  zwei Staffeleinträge zum selben Stichtag (der letzte gilt, wie in calc.ts), eine fehlende
+  Wohnfläche (0 m², wie `u.areaM2 || 0`) und ein fehlendes Feld, das nur angezeigt wird. Was
+  hingenommen wird, steht als `adjustments` im Ergebnis und ist zugleich die **Vorschrift für
+  den Umstieg**. Ein Test in [validate.test.ts](server/test/validate.test.ts) rechnet für jeden
+  dieser Fälle die Abrechnung vor und nach dem Geraderücken und vergleicht sie; ein weiterer
+  lässt den ganzen Prüfkatalog durch den Validator laufen, damit niemand ihn unbemerkt
+  verschärft.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
@@ -396,7 +428,9 @@ unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` 
 `/api/ai/consent` sowie `/api/ollama/status` für ältere Tabs (alles siehe
 KI-Belegauswertung), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
-Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip) sowie
+Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
+Wiederherstellen prüft die `db.json` im Archiv erst mit dem Validator und lehnt sie ab, bevor
+irgendetwas überschrieben wird, siehe Die Datenbank) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; ebenso nimmt
