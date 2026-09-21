@@ -304,7 +304,13 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Dateisperren, die Netzwerk-Dateisysteme oft nur vortäuschen. Gefragt wird nach dem **wirklichen**
   Ort der Datei (Symlinks und Abzweigungen werden aufgelöst, sonst wäre ein Ordner im
   Heimatverzeichnis, der aufs NAS zeigt, unsichtbar); erkannt wird er unter Linux über
-  `/proc/self/mounts` und unter Windows am UNC-Pfad. Es gewinnt der längste passende
+  `/proc/self/mounts` und unter Windows am UNC-Pfad. Die Plattform **kommt in `networkLocation`
+  hinein** und stammt nicht aus der Laufzeit, wie bei `systemLocation` in paths.ts und aus
+  demselben Grund: Sonst prüft jeder Zweig nur dort, wo zufällig jemand entwickelt. Gerechnet
+  wird entsprechend mit `path.win32` beziehungsweise `path.posix`, nicht mit der Voreinstellung.
+  Dieselbe Falle hat hier schon einmal einen Prüflauf umgeworfen:
+  `path.posix.dirname` eines UNC-Pfads ergibt „.“, das Arbeitsverzeichnis lässt sich auflösen,
+  und danach beginnt der Pfad nicht mehr mit zwei Gegenschrägstrichen. Es gewinnt der längste passende
   Einhängepunkt, bei gleicher Länge der spätere: Gleich lang und beide im Pfad heißt derselbe
   Einhängepunkt, also ein Dateisystem über einem anderen, und wirksam ist dann das obere. Nicht
   erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter macOS und die
@@ -709,6 +715,14 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.ts die
   bestehende Konvention beibehalten und gegen [server/test/calc.test.ts](server/test/calc.test.ts)
   prüfen.
+- **Wer nach Plattform unterscheidet, bekommt sie hineingereicht**, wie `systemLocation` und
+  `chooseDataDir` in paths.ts und store.ts und `networkLocation` in db/open.ts. Dazu gehört, mit
+  `path.win32` beziehungsweise `path.posix` zu rechnen statt mit der Voreinstellung, und ebenso
+  das hineinzureichen, was die Funktion sonst noch vom Rechner erfragt (Schreibrecht,
+  Einhängepunkte, der wirkliche Ort einer Datei). Sonst prüft jeder Zweig nur dort, wo zufällig
+  jemand entwickelt, und die CI wirft den anderen um. Das ist in diesem Projekt schon zweimal
+  passiert, beide Male auf dem Linux-Runner. Ein Test unter `if (process.platform === …)` zu
+  überspringen ist dafür kein Ausweg, sondern die Aufgabe der Prüfung.
 - **Im Server tragen Importe die Endung `.ts`** (`import { load } from './store.ts'`). Node
   führt die Dateien unmittelbar aus und löst den Pfad auf, wie er dasteht; eine Endung `.js`
   oder gar keine zeigt ins Leere. Der Übersetzer erlaubt das über `allowImportingTsExtensions`.
