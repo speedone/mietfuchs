@@ -216,10 +216,27 @@ function appliedSteps(connection: Connection): AppliedStep[] {
   }))
 }
 
+// Änderungen am Aufbau, die dieses Programm nicht kennt: Dann hat eine neuere Mietfuchs-Version
+// auf der Datei gearbeitet.
+//
+// **Die Frage wird an zwei Stellen gestellt**, beim Öffnen (hier) und beim Wiederherstellen
+// eines Backups (db/backup.ts). Über den Umweg Backup käme ein neueres Schema sonst herein,
+// ohne dass die Prüfung beim Start je zum Zuge käme, denn die Datei läge dann schon an ihrem
+// Platz. Die **Antwort** steht deshalb nur hier; die Empfehlung an den Nutzer formuliert jeder
+// Aufrufer selbst, denn dort geht es um ein Archiv und hier um seine Arbeitsdatei.
+export type UnknownSteps = { count: number, newestMillis: number }
+
+export function unknownSteps(connection: Connection, known: Migration[]): UnknownSteps | null {
+  const bekannt = new Set(known.map((m) => m.hash))
+  const fremd = appliedSteps(connection).filter((step) => !bekannt.has(step.hash))
+  if (fremd.length === 0) return null
+  return { count: fremd.length, newestMillis: Math.max(...fremd.map((step) => step.createdAt)) }
+}
+
 // Ein Datum, das auf einer Rechnung stehen könnte, und keine Zeitmarke. Von Hand gesetzt statt
 // über die Ländereinstellungen: Die hängen davon ab, was auf dem Rechner installiert ist, und
 // eine Meldung soll überall gleich aussehen.
-function germanDate(millis: number): string {
+export function germanDate(millis: number): string {
   // Der Wert kommt aus einer Datei, für die wir nichts können. Außerhalb dieses Bereichs kennt
   // JavaScript kein Datum, und `toISOString` würde werfen, und zwar mitten in einer Meldung, die
   // gerade erklären soll, was los ist.
@@ -232,15 +249,12 @@ function germanDate(millis: number): string {
 // Mietfuchs-Version darauf gearbeitet. Dann wird sie weder geöffnet noch migriert: Unsere
 // Schritte auf einen neueren Aufbau anzuwenden hieße, gegen einen Stand zu arbeiten, den wir
 // nicht kennen, und am Ende stünde ein Bestand, den keine der beiden Versionen mehr lesen kann.
-function newerVersionProblem(file: string, applied: AppliedStep[], known: Migration[]): string | null {
-  const bekannt = new Set(known.map((m) => m.hash))
-  const fremd = applied.filter((step) => !bekannt.has(step.hash))
-  if (fremd.length === 0) return null
-  const juengste = Math.max(...fremd.map((step) => step.createdAt))
+function newerVersionProblem(file: string, fremd: UnknownSteps | null): string | null {
+  if (fremd === null) return null
   return (
     `Die Datenbank ${file} stammt aus einer neueren Mietfuchs-Version. Sie enthält ` +
-    `${fremd.length === 1 ? 'eine Änderung' : `${fremd.length} Änderungen`} am Aufbau, die diese ` +
-    `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(juengste)}. Mietfuchs ` +
+    `${fremd.count === 1 ? 'eine Änderung' : `${fremd.count} Änderungen`} am Aufbau, die diese ` +
+    `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. Mietfuchs ` +
     `öffnet sie deshalb nicht und verändert nichts daran, damit nichts verlorengeht. Bitte ` +
     `benutzen Sie wieder die neuere Fassung; sie kann diesen Datenbestand lesen. Wollen Sie ` +
     `bewusst bei dieser Version bleiben, spielen Sie ein Backup von vor dem Wechsel zurück.`
@@ -483,7 +497,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 
     // Schritt 4: eine Datei aus einer neueren Version wird erklärt, nicht migriert.
     const migrations = await loadMigrations()
-    const problem = newerVersionProblem(file, appliedSteps(connection), migrations)
+    const problem = newerVersionProblem(file, unknownSteps(connection, migrations))
     if (problem) fail(problem)
 
     let applied: number
