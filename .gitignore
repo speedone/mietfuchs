@@ -2,6 +2,7 @@ node_modules/
 client/dist/
 server/data/
 server/src/embedded-client.js
+server/src/db/embedded-migrations.js
 dist-bin/
 *.log
 

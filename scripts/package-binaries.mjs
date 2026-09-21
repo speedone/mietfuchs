@@ -49,6 +49,11 @@ runShell(npm, ['run', 'build'])
 console.log('→ Embed-Modul aus client/dist erzeugen …')
 run(process.execPath, ['scripts/embed-client.mjs'])
 
+// In der Programmdatei gibt es kein Dateisystem mit Projektdateien, die Migrationen müssen also
+// mit hinein (siehe server/drizzle/README.md).
+console.log('→ Embed-Modul aus server/drizzle erzeugen …')
+run(process.execPath, ['scripts/embed-migrations.mjs'])
+
 const outDir = path.join(root, 'dist-bin')
 fs.mkdirSync(outDir, { recursive: true })
 
