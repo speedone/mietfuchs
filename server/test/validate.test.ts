@@ -267,6 +267,10 @@ test('Krumm: die alten Formate werden nicht abgelehnt', () => {
   }
   expectClean(alt, 'Altformat')
   assert.match(textOf(adjustmentsOf(alt)), /Monatsbetrag/)
+  // Ein leerer Eintrag für die tatsächlich gezahlten Vorauszahlungen zählt wie keiner. Die
+  // Bedingung ist dieselbe wie beim Einlesen (`if (!t.prepaymentOverrides)`); eine strengere
+  // liefe genau dort auseinander, wo beide zusammenbleiben müssen.
+  expectClean(dbWith({ tenancies: [{ ...tenancy({ id: 't1', unitId: 'u1' }), prepaymentOverrides: 0 }] }), 'leerer Jahreseintrag')
 })
 
 test('Krumm: eine Wohnung ohne Wohnfläche wird nicht abgelehnt', () => {
