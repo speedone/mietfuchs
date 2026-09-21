@@ -78,7 +78,11 @@ bleibt eine Probe auf einem echten Desktop.
 [Dockerfile](Dockerfile) bei `v*`-Tags und Pushes auf `main` für `linux/amd64` + `linux/arm64`
 und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
-ändern, baut er nur zur Probe (ohne Login und Push).
+ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
+`client/dist` **und `shared`**. Der Ordner mit dem gemeinsamen Datenmodell wird heute nur für
+Typen gebraucht, die beim Ausführen verschwinden; sobald dort ein Helfer für die Laufzeit läge,
+startete das Image ohne ihn nicht mehr, und kein Prüflauf bemerkte es, weil alle gegen den Start
+aus dem Quellcode laufen.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
 Mindestversion 24.15 aus `engines`. Zwei Gründe liegen dort übereinander. Ab **24.12** gilt das
@@ -275,13 +279,20 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   das eingebaute SQLite (`node:sqlite` mit `setReturnArrays(true)` gegen `bun:sqlite` mit
   `values()`) und die Herkunft der Migrationen.
 - **`PRAGMA foreign_keys = ON` beim Öffnen**, je Verbindung. Die Voreinstellung von SQLite ist
-  aus; ohne diese Zeile sind alle Fremdschlüssel Dekoration. open.ts sieht nach dem Öffnen nach,
-  dass es wirklich so ist, statt es vorauszusetzen: Die Zusicherung soll nicht an der
-  Voreinstellung einer Laufzeit hängen, die sich ändern kann.
+  aus; ohne diese Zeile sind alle Fremdschlüssel Dekoration. Damit die Zeile wirklich die Arbeit
+  tut, öffnet `openNode` mit **`enableForeignKeyConstraints: false`**: `node:sqlite` schaltet die
+  Prüfung sonst von sich aus ein, `bun:sqlite` nicht, und dann bliebe unter Node jeder Test grün,
+  während in der Programmdatei alle Verweise still Zierde wären. open.ts sieht nach dem Öffnen
+  zusätzlich nach, dass der Wert wirklich 1 ist.
 - **Beim Start wird geprüft, bevor geschrieben wird** ([server/src/db/open.ts](server/src/db/open.ts)):
   ob der Datenordner beschreibbar ist (mit `writable` aus paths.ts, wie chooseDataDir), ob die
-  Fremdschlüsselprüfung gilt, ob `PRAGMA integrity_check` die Datei für unversehrt hält und ob
-  die Datei aus einer **neueren** Mietfuchs-Version stammt. Das Letzte steht in ihrer eigenen
+  Fremdschlüsselprüfung gilt, ob `PRAGMA integrity_check` die Datei für unversehrt hält, ob sich
+  in die Datei überhaupt schreiben lässt und ob sie aus einer **neueren** Mietfuchs-Version stammt.
+  Der Schreibschutz wird zweistufig erkannt: Die Rechteprüfung des Dateisystems ist billig, lügt
+  aber auf Netzlaufwerken, darf also nur den Verdacht wecken; bestätigt wird er mit einem
+  Schreibvorgang, der nichts ändert (`PRAGMA user_version` auf den Wert, der schon dasteht).
+  `BEGIN IMMEDIATE` taugt dafür nicht, nachgemessen: SQLite holt die Sperre erst beim ersten
+  wirklichen Schreiben. Das Letzte steht in ihrer eigenen
   Buchführung: Führt `__drizzle_migrations` eine Marke, die dieses Programm nicht kennt, hat eine
   neuere Fassung darauf gearbeitet. Dann wird nicht migriert, sondern erklärt; unsere Schritte
   auf einen unbekannten Aufbau anzuwenden ergäbe einen Bestand, den danach keine der beiden
@@ -290,11 +301,14 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Jede Meldung sagt, was los ist und was zu tun ist; die Meldung von SQLite steht höchstens
   benannt am Ende („Technischer Befund“) und nie allein.
 - **Ein Netzlaufwerk ergibt eine Warnung, keinen Abbruch.** SQLite verlässt sich auf
-  Dateisperren, die Netzwerk-Dateisysteme oft nur vortäuschen. Erkannt wird es unter Linux über
-  `/proc/self/mounts` (längster passender Einhängepunkt, Typ gegen eine Liste) und unter Windows
-  am UNC-Pfad. Nicht erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter
-  macOS und die Freigaben einer virtuellen Maschine; gewarnt wird dann nicht, falsch gewarnt
-  aber auch niemand.
+  Dateisperren, die Netzwerk-Dateisysteme oft nur vortäuschen. Gefragt wird nach dem **wirklichen**
+  Ort der Datei (Symlinks und Abzweigungen werden aufgelöst, sonst wäre ein Ordner im
+  Heimatverzeichnis, der aufs NAS zeigt, unsichtbar); erkannt wird er unter Linux über
+  `/proc/self/mounts` und unter Windows am UNC-Pfad. Es gewinnt der längste passende
+  Einhängepunkt, bei gleicher Länge der spätere: Gleich lang und beide im Pfad heißt derselbe
+  Einhängepunkt, also ein Dateisystem über einem anderen, und wirksam ist dann das obere. Nicht
+  erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter macOS und die
+  Freigaben einer virtuellen Maschine; gewarnt wird dann nicht, falsch gewarnt aber auch niemand.
 - **Scheitert das Öffnen, startet der Server trotzdem** und arbeitet mit der db.json weiter, mit
   einer Meldung auf der Konsole und `database.open === false` in `/healthz`. An diesem Stand
   braucht niemand die Datenbank. **Mit dem Umstieg der Bestände kehrt sich das um**: Dann sind
@@ -309,8 +323,17 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Transaktionen: Ein gewöhnliches Einfügen, das währenddessen hereinkommt, landet unbemerkt
   innerhalb der fremden Transaktion und verschwindet mit ihr, nachdem seine Anfrage längst mit
   „gespeichert“ geantwortet hat. Beides ist nachgemessen. Ein Schreibvorgang **im**
-  Schreibvorgang (erkannt über `AsyncLocalStorage`) meldet sich mit einem Fehler, statt auf sich
-  selbst zu warten.
+  Schreibvorgang meldet sich mit einem Fehler, statt auf sich selbst zu warten. Zwei Feinheiten
+  stecken darin, und beide waren Fehler, bevor sie es nicht mehr waren: Im Speicher von
+  `AsyncLocalStorage` liegt ein **veränderliches Kärtchen**, das am Ende des Vorgangs ungültig
+  gestempelt wird, denn der Speicher überlebt den Vorgang in jedem Zeitgeber, den er angelegt hat,
+  und ein Zeitgeber, der später aufräumt, gälte sonst für immer als verschachtelt. Und die
+  Ablehnung wird **geworfen** statt als abgelehntes Versprechen zurückgegeben: Wer sein Ergebnis
+  wegwirft, hätte sonst niemanden, der sie entgegennimmt, und Node beendet den Prozess bei einer
+  unbehandelten Ablehnung. Geworfen landet sie im Rumpf des äußeren Vorgangs und von dort bei
+  dessen Aufrufer. Dauert ein Schreibvorgang länger als 30 Sekunden, gibt es eine Meldung;
+  abgebrochen wird nichts, denn eine halb geschriebene Transaktion abzuräumen wäre schlimmer als
+  zu warten.
 - **Verschachtelte Listen wurden Tabellen**: die drei Staffeln (`person_history`, `prepayments`,
   `base_rents`), die Jahreskorrektur (`prepayment_overrides`, nach Jahr geschlüsselt statt nach
   Datum) und die vereinbarten Anteile (`cost_item_shares`). In einer Spalte mit JSON ließe sich
