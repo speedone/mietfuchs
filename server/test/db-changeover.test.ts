@@ -23,6 +23,7 @@ import type { Db } from '../src/store.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
 import { writeStock } from '../src/db/write.ts'
+import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 import { straightenForDatabase } from '../src/legacy.ts'
 import { BACKUP_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
@@ -407,6 +408,31 @@ test('Nach einem Fehler wird es beim nächsten Start erneut versucht', async () 
     assert.deepEqual((await stockOf(dataDir)).units.map((u) => u.id), ['u1', 'u2'])
   } finally {
     removeDir(dataDir)
+  }
+})
+
+// ---------- Der Prüfkatalog durch den Umstieg ----------
+
+test('Der Prüfkatalog kommt durch den Umstieg und rechnet danach aus der Datenbank dasselbe', async () => {
+  // Elf durchgerechnete Beispielbestände mit Handrechnung (server/test/fixtures/settlement).
+  // Sie laufen sonst gegen die Datei; hier laufen sie durch den ganzen Weg — Validator,
+  // Geraderücken, Schreiben, Lesen — und werden danach gegen dieselbe Handrechnung gehalten.
+  // Der Umstieg selbst rechnet zwar auch nach, aber er vergleicht mit sich selbst; hier steht
+  // eine Erwartung daneben, die niemand aus dem Code abgelesen hat.
+  const fixtures = loadFixtures()
+  assert.ok(fixtures.length > 0, 'keine Fixtures gefunden')
+  for (const fixture of fixtures) {
+    const dataDir = tempDir()
+    try {
+      fs.copyFileSync(path.join(fixture.dir, 'db.json'), dbFile(dataDir))
+      await changeoverIn(dataDir, async (result) => {
+        assert.equal(result.state, 'done', `${fixture.name}: ${result.message}`)
+      })
+      const stock = await stockOf(dataDir)
+      assert.deepStrictEqual(actualOfSnapshot(snapshotOf(stock, fixture.year)), fixture.expected, fixture.name)
+    } finally {
+      removeDir(dataDir)
+    }
   }
 })
 
