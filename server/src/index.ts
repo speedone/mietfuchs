@@ -636,7 +636,25 @@ app.get('/api/backup', async (req, res) => {
   // Genau daran führte das Backup bisher an der Sperre aus health.ts vorbei.
   const traegtDenBestand = database !== null && databaseUnavailable(databaseState()) === null
   const jsonFile = path.join(DATA_DIR, 'db.json')
-  if (!traegtDenBestand && fs.existsSync(jsonFile)) zip.addLocalFile(jsonFile)
+
+  // **Trägt gerade keine von beiden, entsteht kein Archiv.** Das ist der Fall, in dem der
+  // Umstieg gelaufen ist (die db.json heißt dann `db.json.abgeloest`) und danach die Datenbank
+  // kaputtgeht. Übrig bliebe ein Archiv aus Belegen, und genau so eines lehnt das
+  // Wiederherstellen ab, weil ihm der Bestand fehlt. Ein Backup, das sich nicht einspielen
+  // lässt, ist schlimmer als keines: Der Vermieter hält sich danach für gesichert. Deshalb sagt
+  // Mietfuchs, was los ist, und nennt den Weg, der immer funktioniert.
+  if (!traegtDenBestand && !fs.existsSync(jsonFile)) {
+    return res.status(503).json({
+      error:
+        'Mietfuchs kann gerade kein Backup erstellen, weil es an seine Daten nicht herankommt: ' +
+        'Die Datenbank lässt sich nicht lesen, und eine Datei db.json gibt es nicht mehr. Ein ' +
+        'Archiv ohne Bestand ließe sich später nicht einspielen, und deshalb entsteht keines. ' +
+        `Sichern Sie bitte stattdessen den ganzen Datenordner (${DATA_DIR}), indem Sie ihn ` +
+        'kopieren; darin ist alles enthalten. Woran es liegt, steht im Cockpit.',
+    })
+  }
+
+  if (!traegtDenBestand) zip.addLocalFile(jsonFile)
   for (const name of fs.readdirSync(UPLOAD_DIR)) {
     zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
   }
@@ -861,20 +879,72 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
 }
 
+// **Nur eine Wiederherstellung auf einmal.** Der eigene Name je Zwischendatei schützt die
+// geprüfte Datei, nicht aber den Austausch selbst: `restoreDatabase` nimmt die Datenbank aus der
+// Nahtstelle, schließt sie, schiebt die bisherige beiseite und die neue an ihren Platz. Liefe
+// ein zweiter Aufruf dazwischen, schöbe er die eben aktivierte Datei beiseite und ließe die
+// Verbindung des ersten offen; was am Ende an seinem Platz liegt, hinge an der Reihenfolge der
+// Fortsetzungen. Die Oberfläche sperrt das Dateifeld während des Vorgangs nicht, zwei Klicks
+// sind also nichts Ausgefallenes.
+//
+// Eine Schlange wäre hier falsch: Wer zweimal klickt, will nicht zwei Wiederherstellungen
+// nacheinander, sondern eine. Die zweite Anfrage bekommt deshalb eine Absage und keine Warteschlange.
+let restoreRunning = false
+
 app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+  if (restoreRunning) {
+    return res.status(409).json({
+      error: 'Es läuft gerade eine Wiederherstellung. Bitte warten Sie, bis sie fertig ist.',
+    })
+  }
   let backup: ReadBackup
   try {
     backup = readBackup(req.file.buffer)
   } catch (err) {
     return res.status(400).json({ error: messageOf(err) })
   }
+  restoreRunning = true
+  try {
+    await runRestore(backup, res)
+  } finally {
+    restoreRunning = false
+  }
+})
+
+// Der eigentliche Vorgang, ab dem Augenblick, in dem das Archiv gelesen und für brauchbar
+// befunden ist. Eigene Funktion, damit die Marke oben in einem `finally` zurückgesetzt wird und
+// nicht an jedem einzelnen Rückweg von Hand.
+async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // Der Datenordner und der Belegordner müssen dastehen, bevor hier etwas hineingeschrieben
   // wird. Heute tun sie das auch auf einem frischen Rechner, aber nur beiläufig: multer legt
   // den Belegordner beim Laden des Moduls an, weil `destination` ein fester Pfad ist. Diese
   // Route soll sich auf die Eigenheit einer Bibliothek nicht verlassen, zumal `recursive`
   // einen vorhandenen Ordner ohnehin in Ruhe lässt.
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+
+  // **Führt das Archiv eine db.json, gilt sie, und die mitgebrachte Datenbank wird verworfen.**
+  // Ohne diese Regel verliert der Aktualisierungsweg Daten: Wer eine Version vor dem Umstellen
+  // der Routen fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
+  // Umstiegstags stehengeblieben ist, und sein Archiv führt beides. Ebenso, wer ein Backup zieht,
+  // während der Umstieg gescheitert ist: Dann ist die Datenbank im Archiv leer. Würde sie
+  // aktiviert, sähe der Vermieter nach der Bestätigung „ok" ein veraltetes oder leeres Haus,
+  // schriebe hinein, und ab dem Augenblick fände der Umstieg eine gefüllte Datenbank vor und
+  // liefe nie wieder; die db.json wäre dauerhaft abgehängt. Genau der Ausgang, den die Sperre in
+  // health.ts verhindern soll, und das Backup führte daran vorbei.
+  //
+  // Geraten wird dabei nicht. Jede bisher veröffentlichte Version hat die db.json als lebenden
+  // Bestand geschrieben; ein Archiv, das eine führt, stammt also von dort, und sie ist das
+  // Neuere. Umgekehrt legt diese Version keine db.json mehr ins Archiv, sobald die Datenbank den
+  // Bestand trägt (siehe die Backup-Route), ein mehrdeutiges Archiv kann ab jetzt also gar nicht
+  // mehr entstehen.
+  //
+  // **Die Entscheidung fällt hier und nicht erst weiter unten**, und das ist nicht nur
+  // Aufräumen: Die Prüfung der mitgebrachten Datenbank lehnt ein Archiv mit 400 ab, wenn sie
+  // beschädigt ist oder aus einer neueren Version stammt. Stünde sie vor dieser Entscheidung,
+  // scheiterte ausgerechnet das Archiv des Aktualisierungswegs an einer Datei, die ohnehin
+  // gelöscht worden wäre, obwohl sein lebender Bestand einwandfrei ist.
+  const ausDerDatei = backup.dbText !== null
 
   // Die Datenbank aus dem Archiv wird geprüft, **bevor** irgendetwas ersetzt ist — dieselbe
   // Bauart wie bei der db.json darüber (#59) und aus demselben Grund. Über den Umweg Backup
@@ -884,18 +954,21 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   // Wiederherstellungen teilten sich sonst die Zwischendatei, und die zweite überschriebe, was
   // die erste gerade geprüft hat. Zwei Klicks sind nichts Ausgefallenes, die Oberfläche sperrt
   // das Dateifeld während des Vorgangs nicht.
-  const staged = backup.database ? `${databaseFile(DATA_DIR)}.restore-${newId()}` : null
-  if (staged && backup.database) {
+  const archiveDatabase = ausDerDatei ? null : backup.database
+  const staged = archiveDatabase ? `${databaseFile(DATA_DIR)}.restore-${newId()}` : null
+  if (staged && archiveDatabase) {
     try {
       fs.rmSync(staged, { force: true })
-      fs.writeFileSync(staged, backup.database)
+      fs.writeFileSync(staged, archiveDatabase)
     } catch (err) {
-      return res.status(500).json({ error: `Die Datenbank aus dem Archiv ließ sich nicht ablegen: ${messageOf(err)}` })
+      res.status(500).json({ error: `Die Datenbank aus dem Archiv ließ sich nicht ablegen: ${messageOf(err)}` })
+      return
     }
     const problem = await archiveDatabaseProblem(staged)
     if (problem) {
       fs.rmSync(staged, { force: true })
-      return res.status(400).json({ error: `${problem}\n\nDas Archiv stammt aus: ${backup.origin}.` })
+      res.status(400).json({ error: `${problem}\n\nDas Archiv stammt aus: ${backup.origin}.` })
+      return
     }
   }
 
@@ -914,35 +987,27 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   else fs.rmSync(current, { force: true })
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
 
-  // **Führt das Archiv eine db.json, gilt sie, und die mitgebrachte Datenbank wird verworfen.**
-  // Ohne diese Regel verliert der Aktualisierungsweg Daten: Wer eine Version vor dem Umstellen
-  // der Routen fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
-  // Umstiegstags stehengeblieben ist, und sein Archiv führt beides. Ebenso, wer ein Backup zieht,
-  // während der Umstieg gescheitert ist: Dann ist die Datenbank im Archiv leer. Würde sie
-  // aktiviert, sähe der Vermieter nach der Bestätigung „ok" ein veraltetes oder leeres Haus,
-  // schriebe hinein, und ab dem Augenblick fände der Umstieg eine gefüllte Datenbank vor und
-  // liefe nie wieder; die db.json wäre dauerhaft abgehängt. Genau der Ausgang, den die Sperre in
-  // health.ts verhindern soll, und das Backup führte daran vorbei.
-  //
-  // Geraten wird dabei nicht. Jede bisher veröffentlichte Version hat die db.json als lebenden
-  // Bestand geschrieben; ein Archiv, das eine führt, stammt also von dort, und sie ist das
-  // Neuere. Umgekehrt legt diese Version keine db.json mehr ins Archiv, sobald die Datenbank den
-  // Bestand trägt (siehe die Backup-Route), ein mehrdeutiges Archiv kann ab jetzt also gar nicht
-  // mehr entstehen.
-  const ausDerDatei = backup.dbText !== null
-  if (ausDerDatei && staged) fs.rmSync(staged, { force: true })
-
   let notes: string[]
   try {
-    notes = await restoreDatabase(ausDerDatei ? null : staged)
+    notes = await restoreDatabase(staged)
   } catch (err) {
-    // Die Daten sind zu diesem Zeitpunkt wiederhergestellt; nur die Datenbank steht schief.
-    // Verloren ist nichts, angezeigt wird bis zum nächsten Start trotzdem nichts, denn gelesen
-    // wird aus der Datenbank. Genau das sagt die Meldung.
+    // **Hier wird nicht versprochen, dass beim nächsten Start alles gut wird.** Das stand einmal
+    // so da und hielt nicht: Scheitert das Bewegen der Datei, kann die wiederhergestellte
+    // Datenbank unter ihrem Zwischennamen liegengeblieben sein, und der nächste Start legt dann
+    // eine frische leere an; oder die bisherige liegt noch an ihrem Platz, und der Vermieter
+    // arbeitet nach einer bestätigten Wiederherstellung mit dem alten Stand weiter. Beides sieht
+    // von hier aus gleich aus.
+    //
+    // Gesagt wird deshalb, was sicher stimmt: Nichts ist gelöscht, der Datenordner hat den
+    // Stand, und dort liegt alles beieinander. Weggeräumt wird nichts, auch die Zwischendatei
+    // nicht: Sie kann die einzige Kopie der wiederhergestellten Daten sein.
     notes = [
-      `Ihre Daten sind wiederhergestellt; es geht nichts verloren. Die Datenbank ließ sich dabei ` +
-        `nicht erneuern: ${messageOf(err)}. Bis das gelingt, zeigt Mietfuchs die Daten nicht an; ` +
-        'beim nächsten Start wird es erneut versucht.',
+      `Ihre Daten sind aus dem Archiv geschrieben worden, die Datenbank ließ sich dabei aber ` +
+        `nicht erneuern: ${messageOf(err)}. Gelöscht ist nichts; im Datenordner ` +
+        `(${DATA_DIR}) liegen der vorherige Stand als „mietfuchs.sqlite.vor-restore" und, falls ` +
+        'das Archiv eine mitgebracht hat, die neue Datenbank noch unter einem Namen, der mit ' +
+        '„mietfuchs.sqlite.restore-" beginnt. Bitte melden Sie diesen Fehler, bevor Sie etwas ' +
+        'von Hand verschieben.',
     ]
   }
 
@@ -961,7 +1026,7 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
     notes = [...notes, `Die Einstellungen ließen sich nach dem Wiederherstellen nicht lesen: ${messageOf(err)}`]
   }
   res.json({ ok: true, notes })
-})
+}
 
 // Adressen für die Suche, falls die eingestellte nicht erreichbar ist (siehe defaultCandidates).
 // Die Tests setzen NKA_OLLAMA_CANDIDATES, um die Suche gegen einen eigenen Server zu prüfen.
@@ -1070,6 +1135,10 @@ app.get('/healthz', (req, res) => {
 // Beenden aus der Oberfläche (#45). Nur in der Programmdatei: Aus einem Linux-Paket startet
 // Mietfuchs ohne Konsolenfenster, es fehlt also der gewohnte Weg zum Schließen. Im Container
 // und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von selbst.
+// Wie lange das Beenden auf einen laufenden Schreibvorgang wartet. Fünf Sekunden sind großzügig
+// für eine gewöhnliche Anfrage und kurz genug, dass niemand denkt, der Knopf habe nicht gewirkt.
+const QUIT_DRAIN_MS = 5000
+
 app.post('/api/quit', (req, res) => {
   if (!STANDALONE) return res.status(404).json({ error: 'Beenden geht nur bei der Programmdatei. Hier beendet die Umgebung den Dienst.' })
   res.json({ ok: true })
@@ -1084,10 +1153,27 @@ app.post('/api/quit', (req, res) => {
   // Anfrage stürbe ohne Antwort. Das Leerlaufen kostet im Regelfall nichts, weil beim Klick auf
   // „Beenden" nichts in der Schlange steht.
   res.on('finish', () => {
-    const beenden = () => setTimeout(() => process.exit(0), 100)
+    let schonBeendet = false
+    const beenden = () => {
+      if (schonBeendet) return
+      schonBeendet = true
+      setTimeout(() => process.exit(0), 100)
+    }
     if (!database) return beenden()
-    // Auch ein gescheitertes Leerlaufen darf das Beenden nicht verhindern: Der Nutzer hat auf
-    // einen Knopf gedrückt, der das Programm schließt, und er muss sich schließen.
+    // **Mit Frist, und die ist der Kern.** Die Schlange lehnt nie ab, das Risiko ist also nicht
+    // ein gescheitertes, sondern ein **hängendes** Leerlaufen. Genau davor warnt open.ts beim
+    // langsamen Schreibvorgang („Liegen die Daten auf einem Netzlaufwerk, ist das die häufigste
+    // Ursache") und bricht dort bewusst nichts ab. Hier ist die Abwägung umgekehrt: Der Vermieter
+    // hat auf einen Knopf gedrückt, der das Programm schließt, und aus dem Startmenü gestartet
+    // gibt es kein Konsolenfenster, dieser Knopf ist also der einzige Weg. Ein Programm, das sich
+    // nicht mehr schließen lässt, ist schlimmer als eine abgeschnittene Transaktion: Bestätigte
+    // Daten gehen dabei nicht verloren, denn die Antwort auf eine Speicheranfrage kommt erst nach
+    // dem Festschreiben, und SQLite rollt eine halbe Transaktion beim nächsten Öffnen zurück.
+    const frist = setTimeout(() => {
+      console.error(`Beim Beenden lief ein Schreibvorgang noch nach ${QUIT_DRAIN_MS / 1000} Sekunden. Mietfuchs schließt trotzdem.`)
+      beenden()
+    }, QUIT_DRAIN_MS)
+    frist.unref()
     database.write(async () => undefined).then(beenden, beenden)
   })
 })

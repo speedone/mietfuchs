@@ -2113,6 +2113,26 @@ const jsonStand = (namen: string[]): string => JSON.stringify({
   tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
 })
 
+test('Backup: gibt es gerade gar keinen Bestand, entsteht kein Archiv, das sich nicht einspielen lässt', async () => {
+  // **Ein Backup, das sich nicht wiederherstellen lässt, ist schlimmer als keines**, denn der
+  // Vermieter hält sich danach für gesichert. Genau das konnte entstehen: Ist der Umstieg
+  // gelaufen (die db.json heißt dann db.json.abgeloest) und geht danach die Datenbank kaputt,
+  // enthielte das Archiv nur noch die Belege. `readBackup` lehnt so eines beim Einspielen ab,
+  // und zwar zu Recht. Also entsteht es gar nicht erst.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), 'Das ist ein Brief und keine Datenbank.', 'utf8')
+  const s = await startServerIn(dataDir)
+  try {
+    const res = await fetch(`${s.base}/api/backup`)
+    assert.equal(res.status, 503, `erwartet 503, bekommen ${res.status}`)
+    const fehler = await errorFrom(res)
+    assert.match(fehler, /Datenordner/, 'die Meldung nennt den Weg nicht')
+    assert.match(fehler, /Datenbank/, fehler)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Backup: ist der Umstieg gescheitert, kommt die db.json ins Archiv und nicht die leere Datenbank', async () => {
   // **Die andere Hälfte derselben Behebung.** Packte das Backup die Datenbank ein, obwohl sie
   // den Bestand gar nicht trägt, entstünde genau das mehrdeutige Archiv, das beim

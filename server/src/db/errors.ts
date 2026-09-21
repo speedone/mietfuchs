@@ -197,25 +197,21 @@ function wrappedByDrizzle(err: unknown): boolean {
 // ihn nicht an. Ein abgebrochener Upload ist kein Fehler beim Speichern, und ihn als einen zu
 // bezeichnen wäre eine Falschauskunft. Die Fehlerbehandlung in index.ts fragt hier zuerst und
 // bleibt sonst bei ihrer eigenen Meldung.
+//
+// **Die Frage steht vor dem Einordnen und nicht dahinter**, und das war einmal andersherum.
+// Zwei der Muster in `classify` sind nicht datenbankeigen: Ein schreibgeschützter Datenträger
+// meldet `EROFS` auch beim Ablegen eines Belegs, eine volle Platte `ENOSPC`. Eingeordnet wurde
+// das als „In die Datenbank lässt sich nicht schreiben", und der Vermieter las eine Auskunft
+// über die Datenbank, während in Wahrheit sein Beleg nicht abgelegt werden konnte.
 export function databaseProblem(err: unknown): DatabaseProblem | null {
-  const grund = rootCause(err)
-  const eingeordnet = classify(grund)
-  if (eingeordnet) return eingeordnet
   if (!wrappedByDrizzle(err)) return null
-  // Erkennbar von der Datenbank, aber keine der bekannten Lagen. Die oberste Meldung darf
+  const grund = rootCause(err)
+  // Erkennbar von der Datenbank, aber keine der bekannten Lagen: Die oberste Meldung darf
   // trotzdem nicht hinaus, denn gerade sie trägt das SQL und die Werte.
-  return { status: 500, message: unknownMessage(grund, err) }
+  return classify(grund) ?? { status: 500, message: unknownMessage(grund, err) }
 }
 
 const unknownMessage = (grund: string, err: unknown): string =>
   'Beim Speichern ist etwas schiefgegangen, das Mietfuchs nicht einordnen kann. Ihre Eingabe ' +
   'ist möglicherweise nicht gespeichert. Bitte melden Sie diesen Fehler.' +
   `\n\nTechnischer Befund: ${grund || String(err)}`
-
-// Nimmt einen beliebigen Fehler und liefert einen Satz für die Oberfläche. Was nicht erkannt
-// wird, verschwindet nicht: Es steht benannt am Ende, damit eine Rückfrage etwas hat, woran sie
-// sich halten kann.
-export function databaseMessage(err: unknown): string {
-  const grund = rootCause(err)
-  return classify(grund)?.message ?? unknownMessage(grund, err)
-}

@@ -23,3 +23,31 @@ export function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
   entries.forEach((entry, index) => lastIndex.set(entry.from, index))
   return entries.filter((entry, index) => lastIndex.get(entry.from) === index)
 }
+
+// ---------- Die Personen-Staffel ist anders, und das ist gemessen ----------
+//
+// **Für sie trägt „es gilt der letzte" nicht.** `personDaysInPeriod` in calc.ts baut seine
+// Stufen aus allen Einträgen, und die erste gilt **ab Einzug** und nicht erst ab ihrem eigenen
+// Stichtag; im Quelltext steht es als Kommentar an der Zeile („erste Stufe gilt ab Einzug"), und
+// `personsAt` nimmt vor dem ersten Stichtag ebenfalls den ersten Eintrag. Wirft man also den
+// ersten von zwei Einträgen zum selben Stichtag weg, übernimmt der zweite rückwirkend die ganze
+// Zeit davor.
+//
+// Nachgemessen an einem Mietverhältnis ab 01.01.2024 mit [1 Person, 4 Personen], beide ab
+// 01.07.2024: 918 Personentage gegen 1464. Beim Personenschlüssel ist das unmittelbar Geld.
+//
+// **Die Lösung schreibt keine neue Regel, sondern eine vorhandene aus.** Weil die erste Stufe
+// ohnehin ab Einzug gilt, darf ihr Stichtag auf den Einzugstag vorgezogen werden: An der
+// Rechnung ändert das nichts, denn calc.ts liest ihn dort gar nicht. Danach unterscheidet sich
+// der erste Eintrag von seinem Nachfolger, und für alle übrigen gilt wieder „es gilt der
+// letzte" — eine Stufe, die am selben Tag endet, an dem sie beginnt, zählt null Tage, ihr
+// Wegfall bewegt also nichts.
+//
+// Wiederholt wird das, solange es nötig ist: Bei drei Einträgen zum selben Stichtag rückt der
+// erste heraus, und die beiden übrigen sind dann untereinander die gewöhnliche Doppelung.
+export function straightenPersonHistory<T extends { from: string }>(entries: T[], start: string): T[] {
+  const erster = entries[0]
+  if (erster === undefined) return []
+  const vorgezogen = erster.from > start ? [{ ...erster, from: start }, ...entries.slice(1)] : entries
+  return lastPerFrom(vorgezogen)
+}
