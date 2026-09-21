@@ -269,23 +269,6 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
   const tempFile = path.join(dataDir, TEMP_NAME)
   const protocolFile = path.join(dataDir, PROTOCOL_NAME)
 
-  // Schritt 1: Gibt es überhaupt etwas zu übernehmen? Auf einem frischen Rechner entsteht die
-  // db.json erst beim ersten Speichern.
-  if (!fs.existsSync(jsonFile)) {
-    return { state: 'none', message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [], protocol: null, database: opened }
-  }
-
-  // Schritt 2: Steht schon etwas in der Datenbank, ist der Umstieg gelaufen (oder eine neuere
-  // Version arbeitet damit). Ein zweiter wäre ein Überschreiben.
-  const filled = await firstFilledTable(opened.db)
-  if (filled) {
-    return {
-      state: 'none',
-      message: `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen.`,
-      notes: [], protocol: null, database: opened,
-    }
-  }
-
   let database: OpenedDatabase | null = opened
   let connection: Connection | null = null
   let counts: StockCounts | null = null
@@ -293,7 +276,31 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
   let adjustments: Finding[] = []
   const notes: string[] = []
 
+  // **Auch die ersten beiden Schritte stehen im `try`**, obwohl sie noch nichts anfassen. Die
+  // Zusage dieser Datei lautet, dass jeder Schritt eine Meldung ergibt und keinen Abbruch, und
+  // daran hängt mehr als die Höflichkeit: index.ts ruft `runChangeover` mit `await` auf oberster
+  // Ebene auf, ohne `try`. Eine Ausnahme von hier beendete den Start mit einem Stapelauszug,
+  // statt Mietfuchs mit der db.json weiterlaufen zu lassen, und der Nutzer stünde vor einem
+  // Programm, das sich nicht mehr öffnen lässt. Schritt 2 befragt die Datenbank und kann deshalb
+  // sehr wohl werfen. Dieselbe Falle hat beim Aufräumen schon einmal zugeschnappt.
   try {
+    // Schritt 1: Gibt es überhaupt etwas zu übernehmen? Auf einem frischen Rechner entsteht die
+    // db.json erst beim ersten Speichern.
+    if (!fs.existsSync(jsonFile)) {
+      return { state: 'none', message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [], protocol: null, database: opened }
+    }
+
+    // Schritt 2: Steht schon etwas in der Datenbank, ist der Umstieg gelaufen (oder eine neuere
+    // Version arbeitet damit). Ein zweiter wäre ein Überschreiben.
+    const filled = await firstFilledTable(opened.db)
+    if (filled) {
+      return {
+        state: 'none',
+        message: `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen.`,
+        notes: [], protocol: null, database: opened,
+      }
+    }
+
     // Schritt 3: erst lesen, dann prüfen, und bei einer Beanstandung abbrechen, bevor
     // irgendetwas geschrieben wurde.
     let raw: Partial<Db> | null
