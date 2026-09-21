@@ -111,7 +111,8 @@ export default function Einstellungen({ settings, reload, update }: Props) {
         {restoreMsg && <div className={restoreMsg.startsWith('Fehler') ? 'error' : 'ok'}>{restoreMsg}</div>}
         <p className="muted" style={{ marginTop: 10 }}>
           Beim Wiederherstellen werden die aktuellen Daten <strong>überschrieben</strong> (eine
-          Sicherheitskopie des vorherigen Stands bleibt als <code>db.json.vor-restore</code> erhalten).
+          Sicherheitskopie des vorherigen Stands bleibt als{' '}
+          <code>mietfuchs.sqlite.vor-restore</code> im Datenordner erhalten).
         </p>
       </div>
     </>

@@ -84,6 +84,17 @@ export function databaseUnavailable(database: DatabaseState): string | null {
   return null
 }
 
+// Dasselbe als Eintrag für den Bericht. **Die Begründung darf nicht das Gegenteil sagen:**
+// `detail` lautet bei offener Datei „geöffnet", und genau dann ist der gescheiterte Umstieg der
+// Grund. Stünde dort „geöffnet", meldete der Bericht eine fehlgeschlagene Prüfung und nennte als
+// Begründung, dass alles in Ordnung sei. Ließ sich die Datei gar nicht erst öffnen, trägt
+// `detail` den Grund bereits (etwa „ist beschädigt"), und dann bleibt er stehen.
+function checkDatabase(database: DatabaseState): Check {
+  if (databaseUnavailable(database) === null) return { ok: true, detail: database.detail }
+  if (!database.open) return { ok: false, detail: database.detail }
+  return { ok: false, detail: `${database.detail}, aber der Umstieg der Daten ist nicht gelungen` }
+}
+
 export function healthReport({ dataDir, version, database }: { dataDir: string, version: string, database?: DatabaseState }) {
   // **Die Datenbank zählt jetzt mit**, und das ist die angekündigte Umkehrung. Solange die
   // fachlichen Daten in der db.json lagen, arbeitete Mietfuchs ohne die Datenbank weiter, und
@@ -99,7 +110,7 @@ export function healthReport({ dataDir, version, database }: { dataDir: string, 
   const checks = {
     data: checkData(dataDir),
     uploads: checkUploads(dataDir),
-    ...(database ? { database: { ok: databaseUnavailable(database) === null, detail: database.detail } } : {}),
+    ...(database ? { database: checkDatabase(database) } : {}),
   }
   const status = Object.values(checks).every((c) => c.ok) ? 'ok' : 'error'
   // `app` ist die Erkennungsmarke: Beim Start auf einem belegten Port fragt Mietfuchs hier

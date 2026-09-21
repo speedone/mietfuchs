@@ -14,6 +14,7 @@ import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shar
 import type { Db } from './store.ts'
 import { migrateAi, type MigratedSettings } from './ai/settings.ts'
 import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from './defaults.ts'
+import { lastPerFrom } from './schedule.ts'
 
 // Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
 const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
@@ -146,22 +147,6 @@ const textOr = (value: unknown, fallback: string): string => (typeof value === '
 // Validator ab, und beides ergäbe in einer Spalte einen Wert, mit dem niemand rechnen kann.
 const numberOr = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
-
-// Zwei Einträge zum selben Stichtag sind über die Oberfläche erzeugbar: Sie setzt für eine Zeile
-// ohne Monat den Einzugsmonat ein und prüft nie auf Doppelung. In der Datenbank ist der Stichtag
-// Teil des Primärschlüssels, es kann ihn also nur einmal geben.
-//
-// **Es gilt der letzte.** Genau so liest ihn die Abrechnung: Sie sortiert nach Stichtag
-// (`Array.prototype.sort` ist stabil, gleiche Stichtage behalten die Reihenfolge der Datei) und
-// übernimmt den letzten Eintrag, dessen Stichtag erreicht ist. Gemessen ergibt [100 €, 250 €]
-// eine Jahresvorauszahlung von 3000 € und [250 €, 100 €] eine von 1200 €; wer hier den falschen
-// nähme, änderte eine Abrechnung um 1800 €. Die Reihenfolge der übrigen Einträge bleibt, wie sie
-// in der Datei stand.
-function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
-  const lastIndex = new Map<string, number>()
-  entries.forEach((entry, index) => lastIndex.set(entry.from, index))
-  return entries.filter((entry, index) => lastIndex.get(entry.from) === index)
-}
 
 // Der letzte Eintrag der Personen-Staffel, also die Personenzahl, die heute gilt. Sortiert wird
 // nach Stichtag, wie in `personsAt` in calc.ts.

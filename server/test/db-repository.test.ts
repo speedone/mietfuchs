@@ -203,14 +203,19 @@ test('Löschen einer Wohnung räumt auch die vereinbarten Anteile weg', async ()
 test('Ein Fehler mittendrin lässt nichts Halbes zurück', async () => {
   // Ein Mietverhältnis liegt über fünf Tabellen. Scheitert das Schreiben einer Staffel, darf
   // die Hauptzeile nicht allein zurückbleiben.
+  //
+  // **Der Auslöser war einmal ein doppelter Stichtag**, und das war die falsche Wahl: Der Fall
+  // ist über die Oberfläche erzeugbar, und seit repository.ts ihn nach der Regel aus schedule.ts
+  // geraderückt, löst er gar nichts mehr aus. Ein Test, der einen echten Bedienfall als
+  // Fehlerauslöser braucht, hält ihn fest, statt ihn zu melden. Jetzt ist es eine negative
+  // Vorauszahlung: Die Prüfbedingung `prepayments_monthly_not_negative` lehnt sie ab, und zwar
+  // erst, nachdem die Hauptzeile schon geschrieben ist.
   await withDatabase(async (opened) => {
     await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
     await assert.rejects(
       () => opened.write((db) => createEntity(db, 'tenancies', 't1', {
         unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
-        // Zwei Einträge zum selben Stichtag: Der zusammengesetzte Primärschlüssel lehnt den
-        // zweiten ab, und zwar erst, nachdem die Hauptzeile schon geschrieben ist.
-        prepayments: [{ from: '2024-01', monthlyCents: 100 }, { from: '2024-01', monthlyCents: 200 }],
+        prepayments: [{ from: '2024-01', monthlyCents: 100 }, { from: '2024-02', monthlyCents: -200 }],
       })),
     )
     assert.deepEqual(await opened.read((db) => listCollection(db, 'tenancies')), [], 'die Hauptzeile ist zurückgeblieben')

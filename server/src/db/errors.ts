@@ -135,48 +135,87 @@ function checkMessage(name: string): string {
 
 // ---------- Die Meldung ----------
 
+// **Der Status gehört zur Meldung und wird deshalb hier entschieden.** Eine verletzte Zusicherung
+// kommt aus der Anfrage: Der Verweis zeigt ins Leere, der Stichtag ist doppelt, der Wert ist
+// negativ. Das ist eine 400 und keine 500, denn am Server ist nichts kaputt, und eine 500 lüde
+// den Nutzer dazu ein, es einfach noch einmal zu versuchen. Schreibschutz und volle Platte sind
+// dagegen 503: vorübergehend nicht möglich, und an der Anfrage lag es nicht.
+export type DatabaseProblem = { status: number, message: string }
+
+const withFinding = (status: number, text: string, grund: string): DatabaseProblem => ({
+  status,
+  message: `${text}\n\nTechnischer Befund: ${grund}`,
+})
+
+// Was SQLite gemeldet hat, eingeordnet. `null` heißt: keine der bekannten Lagen.
+function classify(grund: string): DatabaseProblem | null {
+  if (/FOREIGN KEY constraint failed/i.test(grund)) return withFinding(400, FOREIGN_KEY, grund)
+
+  const unique = /UNIQUE constraint failed:\s*(.+)/i.exec(grund)
+  if (unique) return withFinding(400, uniqueMessage(unique[1]), grund)
+
+  const check = /CHECK constraint failed:\s*([a-z0-9_]+)/i.exec(grund)
+  if (check) return withFinding(400, checkMessage(check[1]), grund)
+
+  const notNull = /NOT NULL constraint failed:\s*\S+\.(\w+)/i.exec(grund)
+  if (notNull) return withFinding(400, `Das Feld ${fieldName(notNull[1])} muss ausgefüllt sein.`, grund)
+
+  // Kein Fehler in den Daten, sondern am Rechner. Beide kommen vor, wenn jemand seinen
+  // Datenordner auf einen vollen oder schreibgeschützten Datenträger legt.
+  if (/readonly|read-only/i.test(grund)) {
+    return withFinding(
+      503,
+      'In die Datenbank lässt sich nicht schreiben; sie ist schreibgeschützt. Ihre Eingabe ist ' +
+        'nicht gespeichert. Bitte geben Sie die Datei im Datenordner zum Schreiben frei.',
+      grund,
+    )
+  }
+  if (/disk (is )?full|no space|SQLITE_FULL/i.test(grund)) {
+    return withFinding(
+      503,
+      'Auf dem Datenträger ist kein Platz mehr, deshalb ist Ihre Eingabe nicht gespeichert. ' +
+        'Bitte schaffen Sie Platz und versuchen Sie es noch einmal.',
+      grund,
+    )
+  }
+  return null
+}
+
+// Drizzles Verpackung, an der sich ein Fehler der Datenbank auch dann erkennen lässt, wenn der
+// Grund darunter keiner der bekannten ist. Die Kette wird ganz abgegangen, weil die Verpackung
+// je nach Weg außen oder weiter innen sitzt.
+function wrappedByDrizzle(err: unknown): boolean {
+  let current: unknown = err
+  while (current instanceof Error) {
+    if (/^Failed query:/i.test(current.message)) return true
+    current = current.cause
+  }
+  return false
+}
+
+// **Ist das überhaupt ein Fehler der Datenbank?** `null` heißt nein, und dann fasst diese Datei
+// ihn nicht an. Ein abgebrochener Upload ist kein Fehler beim Speichern, und ihn als einen zu
+// bezeichnen wäre eine Falschauskunft. Die Fehlerbehandlung in index.ts fragt hier zuerst und
+// bleibt sonst bei ihrer eigenen Meldung.
+export function databaseProblem(err: unknown): DatabaseProblem | null {
+  const grund = rootCause(err)
+  const eingeordnet = classify(grund)
+  if (eingeordnet) return eingeordnet
+  if (!wrappedByDrizzle(err)) return null
+  // Erkennbar von der Datenbank, aber keine der bekannten Lagen. Die oberste Meldung darf
+  // trotzdem nicht hinaus, denn gerade sie trägt das SQL und die Werte.
+  return { status: 500, message: unknownMessage(grund, err) }
+}
+
+const unknownMessage = (grund: string, err: unknown): string =>
+  'Beim Speichern ist etwas schiefgegangen, das Mietfuchs nicht einordnen kann. Ihre Eingabe ' +
+  'ist möglicherweise nicht gespeichert. Bitte melden Sie diesen Fehler.' +
+  `\n\nTechnischer Befund: ${grund || String(err)}`
+
 // Nimmt einen beliebigen Fehler und liefert einen Satz für die Oberfläche. Was nicht erkannt
 // wird, verschwindet nicht: Es steht benannt am Ende, damit eine Rückfrage etwas hat, woran sie
 // sich halten kann.
 export function databaseMessage(err: unknown): string {
   const grund = rootCause(err)
-
-  const foreign = /FOREIGN KEY constraint failed/i.test(grund)
-  if (foreign) return `${FOREIGN_KEY}\n\nTechnischer Befund: ${grund}`
-
-  const unique = /UNIQUE constraint failed:\s*(.+)/i.exec(grund)
-  if (unique) return `${uniqueMessage(unique[1])}\n\nTechnischer Befund: ${grund}`
-
-  const check = /CHECK constraint failed:\s*([a-z0-9_]+)/i.exec(grund)
-  if (check) return `${checkMessage(check[1])}\n\nTechnischer Befund: ${grund}`
-
-  const notNull = /NOT NULL constraint failed:\s*\S+\.(\w+)/i.exec(grund)
-  if (notNull) {
-    return (
-      `Das Feld ${fieldName(notNull[1])} muss ausgefüllt sein.\n\nTechnischer Befund: ${grund}`
-    )
-  }
-
-  // Kein Fehler in den Daten, sondern am Rechner. Beide kommen vor, wenn jemand seinen
-  // Datenordner auf einen vollen oder schreibgeschützten Datenträger legt.
-  if (/readonly|read-only/i.test(grund)) {
-    return (
-      'In die Datenbank lässt sich nicht schreiben; sie ist schreibgeschützt. Ihre Eingabe ist ' +
-      'nicht gespeichert. Bitte geben Sie die Datei im Datenordner zum Schreiben frei.' +
-      `\n\nTechnischer Befund: ${grund}`
-    )
-  }
-  if (/disk (is )?full|no space|SQLITE_FULL/i.test(grund)) {
-    return (
-      'Auf dem Datenträger ist kein Platz mehr, deshalb ist Ihre Eingabe nicht gespeichert. ' +
-      'Bitte schaffen Sie Platz und versuchen Sie es noch einmal.' +
-      `\n\nTechnischer Befund: ${grund}`
-    )
-  }
-
-  return (
-    'Beim Speichern ist etwas schiefgegangen, das Mietfuchs nicht einordnen kann. Ihre Eingabe ' +
-    'ist möglicherweise nicht gespeichert. Bitte melden Sie diesen Fehler.' +
-    `\n\nTechnischer Befund: ${grund || String(err)}`
-  )
+  return classify(grund)?.message ?? unknownMessage(grund, err)
 }

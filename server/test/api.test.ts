@@ -613,6 +613,68 @@ test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () 
   await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
 })
 
+test('Staffel: zwei Einträge zum selben Stichtag werden angenommen, der letzte gilt', async () => {
+  // **Das ist über die Oberfläche erzeugbar und deshalb keine Spitzfindigkeit.** Stammdaten.tsx
+  // setzt für eine Staffelzeile ohne Monat den Einzugsmonat ein und prüft nie auf Doppelung;
+  // zwei so ausgefüllte Zeilen ergeben zwei Einträge zum selben Stichtag. Über die db.json war
+  // das hingenommen, in der Datenbank ist der Stichtag Teil des Primärschlüssels.
+  //
+  // Angenommen wird es trotzdem, und zwar nach derselben Regel, die legacy.ts beim Umstieg
+  // anwendet und calc.ts beim Rechnen: **Es gilt der letzte.** Alles andere wäre ein Rückschritt
+  // gegenüber der db.json, und zwar bei einer ganz gewöhnlichen Eingabe.
+  const unit = await srv.api<Unit>('/api/units', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Staffelprobe', areaM2: 60, participates: true }),
+  })
+  try {
+    const tenancy = await srv.api<Tenancy>('/api/tenancies', {
+      method: 'POST',
+      body: JSON.stringify({
+        unitId: unit.id, tenantName: 'Doppelt', start: '2024-01-01', end: null, persons: 1,
+        personHistory: [{ from: '2024-01-01', persons: 1 }, { from: '2024-01-01', persons: 3 }],
+        prepayments: [{ from: '2024-01', monthlyCents: 10000 }, { from: '2024-01', monthlyCents: 25000 }],
+        baseRents: [{ from: '2024-01', monthlyCents: 50000 }, { from: '2024-01', monthlyCents: 60000 }],
+        prepaymentOverrides: {},
+      }),
+    })
+    assert.deepEqual(tenancy.prepayments, [{ from: '2024-01', monthlyCents: 25000 }])
+    assert.deepEqual(tenancy.baseRents, [{ from: '2024-01', monthlyCents: 60000 }])
+    assert.deepEqual(tenancy.personHistory, [{ from: '2024-01-01', persons: 3 }])
+
+    // Und beim Ändern genauso: Derselbe Weg, dieselbe Regel.
+    const geaendert = await srv.api<Tenancy>(`/api/tenancies/${tenancy.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        prepayments: [{ from: '2025-01', monthlyCents: 11100 }, { from: '2025-01', monthlyCents: 22200 }],
+      }),
+    })
+    assert.deepEqual(geaendert.prepayments, [{ from: '2025-01', monthlyCents: 22200 }])
+  } finally {
+    await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
+  }
+})
+
+test('Fehler der Datenbank kommen als Satz an, nicht als SQL mit den Daten des Nutzers', async () => {
+  // **Der teuerste Teil einer durchgereichten Drizzle-Meldung sind nicht das SQL, sondern die
+  // Werte.** Sie lautet „Failed query: insert into … params: t1,2024-01,200", enthält also die
+  // eigenen Daten des Nutzers in einer Fehlermeldung. db/errors.ts ist dafür geschrieben; dieser
+  // Test hält fest, dass es an den Routen auch wirklich angewendet wird. Ohne ihn war es
+  // importiert und niemals aufgerufen.
+  //
+  // Ausgelöst über einen Verweis ins Leere, weil das der Fall ist, den ein fremdes Skript an der
+  // Schnittstelle am ehesten erzeugt.
+  const res = await fetch(`${srv.base}/api/readings`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ meterId: 'gibt-es-nicht', date: '2024-12-31', value: 100 }),
+  })
+  assert.equal(res.status, 400, 'ein Verweis ins Leere kommt aus der Anfrage und nicht vom Server')
+  const fehler = await errorFrom(res)
+  assert.doesNotMatch(fehler, /Failed query|insert into|params:/, 'SQL oder Werte in der Meldung')
+  assert.doesNotMatch(fehler, /gibt-es-nicht/, 'die Eingabe des Nutzers steht in der Meldung')
+  assert.match(fehler, /verweist auf etwas|gibt es nicht|nicht mehr/i, 'die Meldung erklärt nichts')
+})
+
 test('Abrechnung: Eigenanteil kommt über die Route beim Frontend an', async () => {
   const selfUsedUnit = await srv.api<Unit>('/api/units', {
     method: 'POST',
@@ -1999,6 +2061,74 @@ async function unitsInDatabase(dataDir: string): Promise<string[]> {
     connection.close()
   }
 }
+
+// Ein Bestand im Dateiformat, wie ihn eine Version vor dem Umstellen der Routen geschrieben hat.
+const jsonStand = (namen: string[]): string => JSON.stringify({
+  settings: { houseName: 'Aus der Datei', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
+  units: namen.map((name, i) => ({ id: `u${i + 1}`, name, areaM2: 50 + i, participates: true })),
+  tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+})
+
+test('Wiederherstellen: führt das Archiv eine db.json, gilt sie und nicht die mitgebrachte Datenbank', async () => {
+  // **Das ist der Aktualisierungsweg, und ohne diese Regel verliert er Daten.** Wer den Stand
+  // von `main` fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
+  // Umstiegstags stehengeblieben ist; sein Archiv führt beides. Ebenso, wer ein Backup zieht,
+  // während der Umstieg gescheitert ist: Dann ist die Datenbank im Archiv leer und die db.json
+  // trägt alles. Würde die mitgebrachte Datenbank einfach aktiviert, sähe der Vermieter nach der
+  // Bestätigung „ok" ein leeres oder veraltetes Haus, schriebe hinein, und ab dem Augenblick
+  // findet der Umstieg eine gefüllte Datenbank vor und läuft nie wieder. Die db.json wäre
+  // dauerhaft abgehängt.
+  //
+  // Jede bisher veröffentlichte Version hat die db.json als lebenden Bestand geschrieben. Ein
+  // Archiv, das eine führt, stammt also von dort, und sie ist das Neuere. Umgekehrt legt diese
+  // Version keine db.json mehr ins Archiv, sobald die Datenbank den Bestand trägt; ein
+  // mehrdeutiges Archiv kann ab jetzt gar nicht mehr entstehen.
+  await withFilledDatabase(async (s, unit) => {
+    const archiv = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    assert.ok(archiv.getEntry('mietfuchs.sqlite'), 'das Archiv führt keine Datenbank')
+    // Ein Archiv aus der Zeit davor: dieselbe Datenbank, dazu eine db.json mit dem neueren Stand.
+    archiv.addFile('db.json', Buffer.from(jsonStand(['Aus der Datei EG', 'Aus der Datei OG']), 'utf8'))
+
+    assert.equal((await restore(s, archiv.toBuffer())).status, 200)
+    const namen = (await s.api<Unit[]>('/api/units')).map((u) => u.name)
+    assert.deepEqual(namen, ['Aus der Datei EG', 'Aus der Datei OG'], 'die veraltete Datenbank hat gewonnen')
+    assert.equal(namen.includes(unit.name), false)
+    // Und der Bestand ist wirklich übernommen, nicht nur angezeigt.
+    assert.equal((await unitRowsInDatabase(s.dataDir)).length, 2, 'die Datenbank trägt den Stand nicht')
+  })
+})
+
+test('Wiederherstellen: die Einstellungen aus dem Archiv gelten sofort und überleben das nächste Speichern', async () => {
+  // **Zwei Schäden hängen daran, und der zweite ist der teure.** Die Einstellungen liegen als
+  // Kopie im Arbeitsspeicher (siehe die Begründung am Zwischenspeicher in index.ts). Frischt das
+  // Wiederherstellen sie nicht auf, zeigt die Oberfläche bis zum nächsten Neustart den Stand von
+  // vorher, und die gedruckte Abrechnung liest von dort **Vermietername und IBAN**. Schlimmer:
+  // `PUT /api/settings` geht vom Zwischenspeicher aus, also schreibt die nächste ganz gewöhnliche
+  // Änderung den veralteten Stand vollständig über den wiederhergestellten zurück.
+  await withFilledDatabase(async (s) => {
+    await s.api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ houseName: 'Haus im Backup', landlordName: 'Vermieter im Backup', iban: 'DE11' }),
+    })
+    const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    await s.api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ houseName: 'Haus danach', landlordName: 'Vermieter danach', iban: 'DE99' }),
+    })
+
+    assert.equal((await restore(s, zip)).status, 200)
+    const sofort = await s.api<ClientSettings>('/api/settings')
+    assert.equal(sofort.houseName, 'Haus im Backup', 'ohne Neustart gilt noch der alte Stand')
+    assert.equal(sofort.iban, 'DE11', 'die IBAN steht im Kopf der gedruckten Abrechnung')
+
+    // Eine beliebige andere Einstellung ändern, wie es ein Nutzer täte.
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ paymentDeadlineDays: 45 }) })
+    const danach = await s.api<ClientSettings>('/api/settings')
+    assert.equal(danach.paymentDeadlineDays, 45)
+    assert.equal(danach.houseName, 'Haus im Backup', 'der Stand von vor dem Wiederherstellen ist zurückgekehrt')
+    assert.equal(danach.iban, 'DE11', 'die alte IBAN ist zurückgekehrt')
+  })
+})
 
 test('Backup: das Archiv enthält die Datenbank und sagt, woher es stammt', async () => {
   await withFilledDatabase(async (s) => {
