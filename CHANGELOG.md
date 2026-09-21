@@ -32,6 +32,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein Backup mit beschädigten Daten wird jetzt abgelehnt, statt Mietfuchs unbrauchbar zu
+  machen.** Beim Wiederherstellen wurde bisher nur geprüft, ob sich die Datei im Archiv
+  überhaupt lesen lässt. Enthielt sie etwas anderes als einen Mietfuchs-Datenbestand, weil sie
+  unterwegs beschädigt wurde oder aus einem fremden Programm stammte, wurde sie trotzdem
+  übernommen. Danach beantwortete Mietfuchs keine einzige Anfrage mehr, und helfen konnte nur
+  noch, die Datei von Hand zurückzukopieren. Jetzt wird das Archiv vorher geprüft: Passt etwas
+  nicht, bleibt alles, wie es war, und die Meldung nennt jede Beanstandung mit der Stelle und
+  dem Grund, etwa dass bei der zweiten Wohnung eine negative Wohnfläche steht. Bestände, die zwar
+  ungewöhnlich, aber in Ordnung sind, gehen weiterhin durch, damit niemand vor seinem eigenen
+  Backup steht: eine Rechnung, deren Zuordnung auf eine gelöschte Wohnung zeigt, zwei Einträge
+  einer Staffel zum selben Stichtag oder eine Datei aus einer älteren Version.
+  ([#59](https://github.com/speedone/mietfuchs/issues/59))
+
 - **Ein Beleg, bei dem die KI einen Betrag nicht lesen konnte, ließ sich gar nicht mehr
   übernehmen.** Statt der erkannten Positionen stand dann „Fehler“ in der Warteschlange, und
   der ganze Beleg war verloren, obwohl Beschreibungen, Kostenarten und die übrigen Beträge
