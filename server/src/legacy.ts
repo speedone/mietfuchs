@@ -14,7 +14,7 @@ import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shar
 import type { Db } from './store.ts'
 import { migrateAi, type MigratedSettings } from './ai/settings.ts'
 import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from './defaults.ts'
-import { lastPerFrom } from './schedule.ts'
+import { lastPerFrom, straightenPersonHistory } from './schedule.ts'
 
 // Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
 const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
@@ -199,7 +199,12 @@ export function straightenForDatabase(stored: Db): StraightDb {
     const fromLegacy = legacyPrepaymentEntry(legacy)
     const schedule = fromLegacy ? [fromLegacy] : Array.isArray(t.prepayments) ? t.prepayments : []
     delete legacy.prepaymentMonthlyCents
-    const personHistory = lastPerFrom(Array.isArray(t.personHistory) ? t.personHistory : [])
+    // Die Personen-Staffel bekommt ihre eigene Regel, siehe schedule.ts: „es gilt der letzte"
+    // würde hier Personentage verschieben, weil die erste Stufe ab Einzug gilt.
+    const personHistory = straightenPersonHistory(
+      Array.isArray(t.personHistory) ? t.personHistory : [],
+      textOr(t.start, ''),
+    )
     return {
       ...legacy,
       tenantName: textOr(t.tenantName, ''),

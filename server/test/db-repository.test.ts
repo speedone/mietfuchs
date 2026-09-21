@@ -448,7 +448,10 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
   // `tenancy_id` und `cost_item_id` bleiben außen vor: Sie stehen nicht im Eintrag, sondern
   // ergeben sich aus dem Datensatz, an dem die Liste hängt.
   const staffeln: { table: SQLiteTable, feld: string, eintrag: Record<string, unknown> }[] = [
-    { table: personHistory, feld: 'personHistory', eintrag: { from: '2024-03-01', persons: 3 } },
+    // Der Stichtag ist hier der Einzugstag, und das ist kein Zufall: Die Personen-Staffel wird
+    // gegen ihn geradegerückt (schedule.ts), ein späterer erster Stichtag würde also vorgezogen
+    // und der Vergleich schlüge aus einem Grund fehl, der mit den Spalten nichts zu tun hat.
+    { table: personHistory, feld: 'personHistory', eintrag: { from: '2024-01-01', persons: 3 } },
     { table: prepayments, feld: 'prepayments', eintrag: { from: '2024-03', monthlyCents: 15000 } },
     { table: baseRents, feld: 'baseRents', eintrag: { from: '2024-03', monthlyCents: 60000 } },
   ]
