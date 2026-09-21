@@ -246,6 +246,23 @@ function protocolText(protocol: Protocol): string {
 
 // ---------- Der Umstieg ----------
 
+// Die Datenbank ließ sich gar nicht erst öffnen (beschädigt, schreibgeschützt, aus einer
+// neueren Version). Dann gibt es keinen Umstieg. Wer eine db.json hat, soll erfahren, warum
+// seine Daten nicht umgezogen sind, und zwar an derselben Stelle wie sonst auch; wer keine hat,
+// hat nichts versäumt und bekommt deshalb auch keine Meldung.
+export function changeoverWithoutDatabase(dataDir: string, problem: string): ChangeoverResult {
+  if (!fs.existsSync(path.join(dataDir, 'db.json'))) {
+    return { state: 'none', message: 'Ohne geöffnete Datenbank ist nichts zu übernehmen.', notes: [], protocol: null, database: null }
+  }
+  return {
+    state: 'failed',
+    message: `Der Umstieg der Daten in die Datenbank ist nicht gelungen. ${CONTINUES}\n\nDie Datenbank ließ sich nicht öffnen: ${problem}`,
+    notes: [],
+    protocol: null,
+    database: null,
+  }
+}
+
 export async function runChangeover(options: ChangeoverOptions): Promise<ChangeoverResult> {
   const { dataDir, opened, reopen, hooks = {}, now = () => new Date() } = options
   const jsonFile = path.join(dataDir, 'db.json')
@@ -409,11 +426,15 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       }
     }
     const message = `Der Umstieg der Daten in die Datenbank ist nicht gelungen. ${CONTINUES}\n\n${reason}`
+    // Ohne Übernahme gibt es weder etwas Geradegerücktes noch eine Änderung, die der Nutzer
+    // kennen müsste: Beides stünde hier als Ankündigung von etwas, das gerade nicht geschehen
+    // ist. Die geprüften Jahre bleiben, denn bei einer Abweichung sagen sie, wie weit die
+    // Prüfung gekommen ist.
     const protocol = writeProtocol(protocolFile, {
-      at: now(), counts: null, years, adjustments, notes,
+      at: now(), counts: null, years, adjustments: [], notes: [],
       outcome: `Der Umstieg ist nicht gelungen.\n\n${reason}\n\n${CONTINUES}`,
     })
-    return { state: 'failed', message, notes, protocol, database }
+    return { state: 'failed', message, notes: [], protocol, database }
   }
 }
 
