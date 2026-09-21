@@ -43,7 +43,7 @@ import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database } from './client.ts'
 import { messageOf, type OpenedDatabase } from './open.ts'
 import { readStock } from './read.ts'
-import { deviationMessage, runRegression, standToCompare, yearsToCheck } from './regression.ts'
+import { deviationMessage, frozenDifference, runRegression, standToCompare, yearsToCheck } from './regression.ts'
 import { findingsText, validateDb, type Finding } from './validate.ts'
 import { writeStock, type StockCounts } from './write.ts'
 import {
@@ -358,6 +358,10 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     const regression = runRegression(standToCompare(stock), written, years)
     // Schritt 8: weicht ein einziger Cent ab, wird nicht aktiviert.
     if (regression.deviation) stop(deviationMessage(regression.deviation))
+    // Dazu die Archivstücke: Die vier Rechnungen lesen aus einer abgeschlossenen Abrechnung nur
+    // den Eigenanteil, der Rest fiele oben also gar nicht auf.
+    const frozen = frozenDifference(stock.closedSettlements, written.closedSettlements)
+    if (frozen) stop(deviationMessage(frozen))
     if (regression.labelsChanged) {
       notes.push(
         'Eine Beschriftung sieht danach anders aus (ein Name, der in der Datei fehlte, steht jetzt ' +

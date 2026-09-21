@@ -201,6 +201,42 @@ export function runRegression(before: Db, after: SnapshotSource, years: number[]
   return { deviation: null, years, labelsChanged }
 }
 
+// ---------- Die eingefrorenen Abrechnungen ----------
+
+// Was von einer abgeschlossenen Abrechnung verglichen wird. Beide Seiten liefern den
+// eingefrorenen Berechnungsstand als `unknown`: Es ist ein Archivstück, und ein Typ darüber
+// wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat.
+export type FrozenSettlement = { id: string, year: number, settlement: unknown }
+
+// **Der eingefrorene Berechnungsstand muss wortgleich zurückkommen.** Er ist das, was dem
+// Mieter zugestellt wurde, und lässt sich nicht noch einmal ausrechnen. Die vier Rechnungen
+// oben lesen daraus nur den Eigenanteil; alles andere fiele dort also nicht auf, und ein
+// verstümmeltes Archivstück bemerkte erst der Vermieter, wenn er Jahre später die alte
+// Abrechnung öffnet.
+export function frozenDifference(before: FrozenSettlement[], after: FrozenSettlement[]): Deviation | null {
+  const nachher = new Map(after.map((entry) => [entry.id, entry]))
+  for (const vorher of before) {
+    const gegenstueck = nachher.get(vorher.id)
+    if (!gegenstueck) {
+      return {
+        year: vorher.year,
+        what: 'die abgeschlossene Abrechnung',
+        difference: { path: `Kennung ${vorher.id}`, before: 'vorhanden', after: 'fehlt' },
+      }
+    }
+    const difference = firstDifference(vorher.settlement, gegenstueck.settlement)
+    if (difference) return { year: vorher.year, what: 'die abgeschlossene Abrechnung', difference }
+  }
+  if (after.length !== before.length) {
+    return {
+      year: 0,
+      what: 'die abgeschlossene Abrechnung',
+      difference: { path: 'Zahl der Einträge', before: before.length, after: after.length },
+    }
+  }
+  return null
+}
+
 // Ein Wert, wie er in einer Meldung stehen kann. Zahlen so, wie sie sind (es ist eine Zahl aus
 // der Abrechnung, kein Euro-Betrag mit Komma), alles andere kurz.
 function shortValue(value: unknown): string {
@@ -216,7 +252,7 @@ function shortValue(value: unknown): string {
 export function deviationMessage(deviation: Deviation): string {
   const { year, what, difference } = deviation
   return (
-    `Nach dem Umstieg käme für ${year} eine andere Abrechnung heraus als bisher: In ${what} weicht ` +
+    `Nach dem Umstieg käme für ${year} etwas anderes heraus als bisher: In ${what} weicht ` +
     `${difference.path} ab (bisher ${shortValue(difference.before)}, nach dem Umstieg ` +
     `${shortValue(difference.after)}). Deshalb wurde nichts übernommen. Bitte melden Sie diesen ` +
     `Fehler, er gehört nicht zu Ihren Daten, sondern zu Mietfuchs.`
