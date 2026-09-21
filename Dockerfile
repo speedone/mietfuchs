@@ -26,6 +26,12 @@ ENV NKA_RUNTIME=docker
 # Die Verzeichnisstruktur muss erhalten bleiben: server liefert ../../client/dist aus.
 COPY --from=build /app/server ./server
 COPY --from=build /app/client/dist ./client/dist
+# Das gemeinsame Datenmodell (#48). Heute importiert der Server daraus ausschließlich Typen, die
+# beim Ausführen verschwinden, das Image liefe also auch ohne diesen Ordner. Das ist eine Falle:
+# Sobald dort ein Helfer liegt, der zur Laufzeit gebraucht wird, startet das Image nicht mehr, und
+# kein Test bemerkt es, weil alle Prüfläufe gegen den Start aus dem Quellcode laufen, wo der
+# Ordner ohnehin da ist. Eine Zeile nimmt die Falle ganz weg.
+COPY --from=build /app/shared ./shared
 
 EXPOSE 3001
 # Persistente Daten (db.json + uploads/) als Volume — beim Start anhängen:
