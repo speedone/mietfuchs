@@ -410,12 +410,23 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Direktzuordnung auf eine gelöschte Wohnung (wird `null`, wie `ON DELETE SET NULL`), ein
   vereinbarter Anteil auf eine gelöschte Wohnung (entfällt, verteilt wurde er ohnehin nicht),
   zwei Staffeleinträge zum selben Stichtag (der letzte gilt, wie in calc.ts), eine fehlende
-  Wohnfläche (0 m², wie `u.areaM2 || 0`) und ein fehlendes Feld, das nur angezeigt wird. Was
-  hingenommen wird, steht als `adjustments` im Ergebnis und ist zugleich die **Vorschrift für
-  den Umstieg**. Ein Test in [validate.test.ts](server/test/validate.test.ts) rechnet für jeden
-  dieser Fälle die Abrechnung vor und nach dem Geraderücken und vergleicht sie; ein weiterer
-  lässt den ganzen Prüfkatalog durch den Validator laufen, damit niemand ihn unbemerkt
-  verschärft.
+  Wohnfläche (0 m², wie `u.areaM2 || 0`), eine fehlende Beteiligung, eine fehlende Personenzahl,
+  ein Zähler mit leerer Wohnungs-Kennung (Hauptzähler, wie `m.unitId && …` ihn schon liest) und
+  ein fehlendes Feld, das nur angezeigt wird. Was hingenommen wird, steht als `adjustments` im
+  Ergebnis und ist zugleich die **Vorschrift für den Umstieg**.
+- **Geprüft wird das Geraderücken rechnend, und zwar über alle vier Rechnungen**
+  ([validate.test.ts](server/test/validate.test.ts)): Abrechnung, Mietkonto, Steuerübersicht und
+  Verbrauchsübersicht, je einmal vor und einmal nach dem Geraderücken. Die Abrechnung allein
+  genügt nicht, und das ist nicht theoretisch: **Ein Fall bewegt eine Zahl**, nämlich der feste
+  Monatsbetrag neben einer *leeren* Staffel. Die Abrechnung liest ihn (`computePrepaymentCents`),
+  das Mietkonto nicht (`rentLedger` liest nur `prepayments`), und die Steuerübersicht nimmt ihre
+  Einnahmen vom Mietkonto. Nach dem Geraderücken sagen alle drei dasselbe: Das Soll steigt um
+  die Vorauszahlung, dieselbe Zahlung deckt weniger Monate, und ein Monat kann von „bezahlt" auf
+  „teilweise" wechseln. Die Richtung ist gutartig, das Mietkonto forderte bisher zu wenig, aber
+  es ist eine Änderung und steht deshalb überall ausdrücklich dabei. Es ist eine gemessene
+  Ausprägung von #70. Ein weiterer Test lässt den ganzen Prüfkatalog durch den Validator laufen,
+  damit niemand ihn unbemerkt verschärft; seine Fangkraft hängt allerdings daran, dass zwei
+  Fixtures Felder auslassen (siehe die Warnung im Test).
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
