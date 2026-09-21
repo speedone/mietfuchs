@@ -32,17 +32,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- **Ein Backup mit beschädigten Daten wird jetzt abgelehnt, statt Mietfuchs unbrauchbar zu
-  machen.** Beim Wiederherstellen wurde bisher nur geprüft, ob sich die Datei im Archiv
-  überhaupt lesen lässt. Enthielt sie etwas anderes als einen Mietfuchs-Datenbestand, weil sie
-  unterwegs beschädigt wurde oder aus einem fremden Programm stammte, wurde sie trotzdem
-  übernommen. Danach beantwortete Mietfuchs keine einzige Anfrage mehr, und helfen konnte nur
-  noch, die Datei von Hand zurückzukopieren. Jetzt wird das Archiv vorher geprüft: Passt etwas
-  nicht, bleibt alles, wie es war, und die Meldung nennt jede Beanstandung mit der Stelle und
-  dem Grund, etwa dass bei der zweiten Wohnung eine negative Wohnfläche steht. Bestände, die zwar
+- **Das Wiederherstellen aus einem Backup lässt niemanden mehr mit einem Fehler stehen.** Zwei
+  Dinge gingen dabei schief, und beide trafen ausgerechnet die Lage, in der man ein Backup
+  überhaupt braucht. Zum einen wurde bisher nur geprüft, ob sich die Datei im Archiv überhaupt
+  lesen lässt. Enthielt sie etwas anderes als einen Mietfuchs-Datenbestand, weil sie unterwegs
+  beschädigt wurde oder aus einem fremden Programm stammte, wurde sie trotzdem übernommen;
+  danach beantwortete Mietfuchs keine einzige Anfrage mehr, und helfen konnte nur noch, die
+  Datei von Hand zurückzukopieren. Jetzt wird das Archiv vorher geprüft: Passt etwas nicht,
+  bleibt alles, wie es war, und die Meldung nennt jede Beanstandung mit der Stelle und dem
+  Grund, etwa dass bei der zweiten Wohnung eine negative Wohnfläche steht. Bestände, die zwar
   ungewöhnlich, aber in Ordnung sind, gehen weiterhin durch, damit niemand vor seinem eigenen
   Backup steht: eine Rechnung, deren Zuordnung auf eine gelöschte Wohnung zeigt, zwei Einträge
-  einer Staffel zum selben Stichtag oder eine Datei aus einer älteren Version.
+  einer Staffel zum selben Stichtag oder eine Datei aus einer älteren Version. Zum anderen
+  scheiterte das Wiederherstellen auf einem frischen Rechner mit einer technischen
+  Fehlermeldung, weil Mietfuchs den bisherigen Stand beiseitelegen wollte und es dort noch gar
+  keinen gab. Genau das ist aber der häufigste Fall, nämlich der Umzug auf einen neuen Rechner
+  und der Neuanfang nach einem Schaden. Jetzt gelingt es auch dort, und die Sicherheitskopie
+  `db.json.vor-restore` entsteht nur, wenn es wirklich etwas zu sichern gab.
   ([#59](https://github.com/speedone/mietfuchs/issues/59))
 
 - **Ein Beleg, bei dem die KI einen Betrag nicht lesen konnte, ließ sich gar nicht mehr

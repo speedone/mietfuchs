@@ -430,7 +430,12 @@ KI-Belegauswertung), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
 Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
 Wiederherstellen prüft die `db.json` im Archiv erst mit dem Validator und lehnt sie ab, bevor
-irgendetwas überschrieben wird, siehe Die Datenbank) sowie
+irgendetwas überschrieben wird, siehe Die Datenbank. Es setzt dabei **keinen vorhandenen Stand
+voraus**: Auf einem frischen Rechner gibt es noch keine `db.json`, denn die entsteht erst beim
+ersten Speichern, und genau dort wird am häufigsten wiederhergestellt. Die Sicherheitskopie
+`db.json.vor-restore` entsteht deshalb nur, wenn es etwas zu sichern gab, und den Belegordner
+legt die Route selbst an, statt sich darauf zu verlassen, dass multer ihn beim Laden des Moduls
+angelegt hat) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; ebenso nimmt
