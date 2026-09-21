@@ -1197,6 +1197,41 @@ test('Beleg anhängen: /api/upload legt die Datei ins Belegarchiv, sie ist abruf
   }
 })
 
+test('Belegarchiv: ein verknüpfter Beleg lässt sich nicht löschen', async () => {
+  // **Der Schutz muss die Datenbank fragen und nicht die db.json.** Fragte er die Datei, sähe
+  // er nach dem Umstieg einen leeren Bestand, jeder Beleg gälte als unbenutzt, und ein Klick im
+  // Belegarchiv löschte die Rechnung unter einer Kostenposition weg. Die Oberfläche zeigte
+  // danach eine Position ohne Beleg, und die Datei wäre fort.
+  const s = await startServer()
+  try {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'Rechnung.pdf')
+    const file = fileOf(await jsonOf<UploadBody>(await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })))
+
+    const item = await s.api<CostItem>('/api/costItems', {
+      method: 'POST',
+      body: JSON.stringify({
+        year: 2025, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000,
+        key: 'area', invoiceFile: file,
+      }),
+    })
+
+    const verweigert = await fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })
+    assert.equal(verweigert.status, 409)
+    assert.match(await errorFrom(verweigert), /verknüpft/)
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file], 'die Datei ist weg')
+
+    // Ohne Kostenposition darf sie weg, sonst bliebe im Archiv für immer liegen, was niemand
+    // mehr braucht.
+    await s.api(`/api/costItems/${item.id}`, { method: 'DELETE' })
+    const gelöscht = await fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })
+    assert.equal(gelöscht.status, 200)
+    assert.deepEqual(await s.api<UploadInfo[]>('/api/uploads'), [])
+  } finally {
+    s.stop()
+  }
+})
+
 test('Beleg anhängen: Umlaute in zerlegter Unicode-Form (macOS) werden zusammengesetzt', async () => {
   const s = await startServer()
   try {

@@ -53,16 +53,21 @@ test('der gelungene Umstieg steht als ein Satz da und lässt sich schließen', a
   expect(localStorage.getItem(DISMISS_KEY)).toBe('Ihre Daten liegen jetzt in einer Datenbank.')
 })
 
-test('der gescheiterte Umstieg erklärt, dass Mietfuchs weiterarbeitet', async () => {
+test('der gescheiterte Umstieg erklärt, wo die Daten sind und wie es weitergeht', async () => {
+  // Der Wortlaut stammt aus changeover.ts. Seit die Routen die Datenbank lesen, sagt er nicht
+  // mehr „Mietfuchs arbeitet weiter", denn das tut es nicht: Die Datenrouten sind gesperrt, bis
+  // der Umstieg gelingt. Diese Meldung ist dann das Einzige, was der Vermieter zu sehen bekommt.
   report = {
     database: state({
       state: 'failed',
-      message: 'Der Umstieg ist nicht gelungen. Mietfuchs arbeitet unverändert mit der Datei db.json weiter.',
+      message: 'Der Umstieg der Daten in die Datenbank ist nicht gelungen. Ihre Daten stehen ' +
+        'unverändert in der Datei db.json, es geht nichts verloren. Bis der Umstieg gelingt, ' +
+        'zeigt Mietfuchs sie allerdings nicht an; beim nächsten Start wird es erneut versucht.',
       notes: [],
     }),
   }
   render(<DatabaseNotice />)
-  await screen.findByText(/Mietfuchs arbeitet unverändert/)
+  await screen.findByText(/es geht nichts verloren/)
   screen.getByRole('heading', { name: 'Der Umstieg der Daten ist nicht gelungen' })
 })
 

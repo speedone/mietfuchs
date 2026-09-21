@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
-import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
+import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { snapshotOf } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
@@ -272,8 +272,9 @@ app.delete('/api/ai/consent/:slot', async (req, res) => {
 // Weg dorthin; eine Route, die `database.db` unmittelbar benutzte, ginge daran vorbei.
 //
 // **Ohne Datenbank gibt es keine Daten mehr.** Das ist die Umkehrung des bisherigen Zustands:
-// Bis zum Umstieg war eine nicht geöffnete Datenbank harmlos, weil Mietfuchs mit der db.json
-// weiterarbeitete. Jetzt liegen die Daten dort, und ein Start ohne sie ist ein Start ohne Daten.
+// Bis zum Umstellen der Routen war eine nicht geöffnete Datenbank harmlos, weil Mietfuchs mit
+// der db.json weiterarbeitete. Jetzt liegen die Daten dort, und ein Start ohne sie ist ein
+// Start ohne Daten.
 // Eine leere Liste wäre die schlimmste Antwort: Sie sähe aus wie „Sie haben noch nichts
 // erfasst". Deshalb 503 und nicht 500: Der Dienst ist vorübergehend nicht verfügbar, an den
 // Daten ist nichts kaputt.
@@ -598,12 +599,18 @@ app.get('/api/uploads', (req, res) => {
   res.json(files)
 })
 
-// Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist
-app.delete('/api/uploads/:file', (req, res) => {
+// Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
+//
+// **Gefragt wird die Datenbank und nicht die db.json.** Die Frage nach der Verknüpfung ist die
+// einzige Sicherung, die zwischen einem Klick im Belegarchiv und einer gelöschten Rechnung
+// steht. Fragte sie weiter die Datei, sähe sie nach dem Umstieg einen leeren Bestand, jeder
+// Beleg gälte als unbenutzt, und der Klick löschte die Rechnung unter einer Kostenposition weg.
+app.delete('/api/uploads/:file', async (req, res) => {
   const name = path.basename(req.params.file) // verhindert Pfad-Ausbrüche
   const full = path.join(UPLOAD_DIR, name)
   if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' })
-  if (getDb().costItems.some((c) => c.invoiceFile === name)) {
+  const inUse = await readData((db) => invoiceFilesInUse(db, [name]))
+  if (inUse.has(name)) {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
   fs.unlinkSync(full)
@@ -881,19 +888,19 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   if (backup.dbText !== null) fs.writeFileSync(current, backup.dbText, 'utf8')
   else fs.rmSync(current, { force: true })
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
-  reloadDb()
 
   let notes: string[]
   try {
     notes = await restoreDatabase(staged)
   } catch (err) {
     // Die Daten sind zu diesem Zeitpunkt wiederhergestellt; nur die Datenbank steht schief.
-    // Mietfuchs arbeitet mit der db.json weiter, und der nächste Start versucht es erneut.
+    // Verloren ist nichts, angezeigt wird bis zum nächsten Start trotzdem nichts, denn gelesen
+    // wird aus der Datenbank. Genau das sagt die Meldung.
     fs.rmSync(`${databaseFile(DATA_DIR)}.restore`, { force: true })
     notes = [
-      `Ihre Daten sind wiederhergestellt. Die Datenbank ließ sich dabei nicht erneuern: ${messageOf(err)}. ` +
-        'Mietfuchs arbeitet unverändert mit der Datei db.json weiter, es geht nichts verloren, und beim ' +
-        'nächsten Start wird es erneut versucht.',
+      `Ihre Daten sind wiederhergestellt und stehen in der Datei db.json; es geht nichts verloren. ` +
+        `Die Datenbank ließ sich dabei nicht erneuern: ${messageOf(err)}. Bis das gelingt, zeigt ` +
+        'Mietfuchs die Daten nicht an; beim nächsten Start wird es erneut versucht.',
     ]
   }
   res.json({ ok: true, notes })
@@ -1111,10 +1118,10 @@ if (startProblem) {
 // beweisen über diesen Weg gar nichts. So scheitert der Bau, wenn sich etwas nicht bündeln
 // lässt, und die Artefakt-Tests starten jede Programmdatei auf einem Rechner ihres Systems.
 //
-// **Scheitert das Öffnen, läuft der Server trotzdem** und arbeitet wie bisher mit der db.json.
-// An diesem Stand braucht niemand die Datenbank, und ihn deswegen auszusperren wäre die falsche
-// Reihenfolge. Mit dem Umstieg der Bestände kehrt sich das um: Dann sind die Daten dort, und ein
-// Start ohne sie wäre ein Start ohne Daten.
+// **Scheitert das Öffnen, läuft der Server trotzdem**, aber ohne Daten: Die Datenrouten melden
+// sich mit 503 und sagen, woran es liegt. Der Server selbst muss dennoch hochkommen, denn sonst
+// gäbe es auch keine Oberfläche, in der die Meldung stünde, und keine Route zum Wiederherstellen
+// eines Backups. Aus dem Startmenü gestartet sähe der Vermieter dann gar nichts.
 let database: OpenedDatabase | null = null
 let databaseProblem: string | null = null
 try {
@@ -1128,8 +1135,9 @@ try {
 // um an seine eigenen Daten zu kommen, und er läuft **vor** `app.listen`: Solange der Server
 // noch nicht antwortet, kann ihm auch niemand dazwischenschreiben.
 //
-// Scheitert er, geht der Start trotzdem weiter. Mietfuchs arbeitet dann mit der db.json wie
-// bisher, und beim nächsten Start wird es erneut versucht.
+// Scheitert er, geht der Start trotzdem weiter, die Datenrouten bleiben aber gesperrt: Die Daten
+// stehen dann noch in der db.json, und eine leere Datenbank auszugeben wäre schlimmer als eine
+// Meldung (siehe health.ts). Beim nächsten Start wird es erneut versucht.
 //
 // **Veränderlich, weil das Wiederherstellen eines Backups den Stand ändert** (siehe
 // `restoreDatabase`). Bliebe hier der Stand vom Start stehen, sperrte ein einmal gescheiterter

@@ -6,9 +6,18 @@
 // Zwei Zusagen bestimmen jeden Schritt hier, und wo sie sich widersprechen, gewinnt die zweite:
 //
 //   1. Gelingt der Umstieg, liegen die Daten danach in der Datenbank, und zwar vollständig.
-//   2. **Der Nutzer ist nie blockiert und verliert nie Daten.** Scheitert irgendetwas, arbeitet
-//      Mietfuchs mit der db.json weiter wie bisher, sagt, woran es lag, und versucht es beim
-//      nächsten Start erneut. Das ist wichtiger, als dass der Umstieg gelingt.
+//   2. **Der Nutzer verliert nie Daten.** Scheitert irgendetwas, bleibt die db.json unberührt
+//      liegen, Mietfuchs sagt, woran es lag, und beim nächsten Start wird es erneut versucht.
+//      Das ist wichtiger, als dass der Umstieg gelingt.
+//
+// **Zusage 2 lautete bis zum Umstellen der Routen „nie blockiert und nie Daten verloren".** Der
+// erste Teil ist entfallen, und das ist kein Nachlassen, sondern dieselbe Zusage unter neuen
+// Umständen. Solange die Routen die db.json lasen, hieß Weiterarbeiten auch Weiterarbeiten mit
+// den eigenen Daten. Jetzt gäbe eine offene, aber leere Datenbank keine Auskunft über einen
+// leeren Bestand, sondern eine falsche über einen vorhandenen, und was der Vermieter
+// hineinschriebe, stünde danach als zweiter Bestand da. Die Datenrouten sperren deshalb, bis
+// der Umstieg gelingt (die Regel steht in health.ts). Nicht blockiert zu sein war immer nur die
+// Form, in der Zusage 2 sich zeigte; wo beide auseinandergehen, gilt Zusage 2.
 //
 // ---------- Die Reihenfolge, und warum sie so ist ----------
 //
@@ -147,8 +156,8 @@ class ChangeoverStop extends Error {}
 const stop: (reason: string) => never = (reason) => { throw new ChangeoverStop(reason) }
 
 const CONTINUES =
-  'Mietfuchs arbeitet unverändert mit der Datei db.json weiter, es geht nichts verloren, und ' +
-  'beim nächsten Start wird es erneut versucht.'
+  'Ihre Daten stehen unverändert in der Datei db.json, es geht nichts verloren. Bis der Umstieg ' +
+  'gelingt, zeigt Mietfuchs sie allerdings nicht an; beim nächsten Start wird es erneut versucht.'
 
 // ---------- Die Datei für den Umstieg ----------
 
@@ -432,8 +441,8 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     try {
       database = await reopen()
     } catch (err) {
-      // Übernommen ist alles, nur die Verbindung fehlt. Der nächste Start öffnet sie; bis dahin
-      // arbeitet Mietfuchs mit der db.json weiter, und verloren ist nichts.
+      // Übernommen ist alles, nur die Verbindung fehlt. Der nächste Start öffnet sie, und
+      // verloren ist nichts: Die Daten liegen jetzt in der Datenbank.
       return {
         state: 'done',
         message,

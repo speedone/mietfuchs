@@ -276,7 +276,7 @@ test('Abbruch: eine unlesbare db.json', async () => {
     await changeoverIn(dataDir, async (result) => {
       assert.equal(result.state, 'failed')
       assert.match(result.message, /db\.json/)
-      assert.match(result.message, /arbeitet .* weiter|weiter mit/s, 'die Meldung sagt, wie es weitergeht')
+      assert.match(result.message, /nächsten Start wird es erneut versucht/, 'die Meldung sagt, wie es weitergeht')
     })
     assert.deepEqual((await stockOf(dataDir)).units, [], 'es wurde nichts geschrieben')
     assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false)
@@ -494,8 +494,8 @@ test('Abbruch: eine Datenbank, die nicht mehr antwortet, beendet nicht den Start
   // `runChangeover` verspricht, dass **jeder** Schritt eine Meldung ergibt und keinen Abbruch.
   // Daran hängt mehr als die Höflichkeit: index.ts ruft die Funktion mit `await` auf oberster
   // Ebene auf, ohne `try`. Käme von hier eine Ausnahme heraus, endete der Start mit einem
-  // Stapelauszug, statt Mietfuchs mit der db.json weiterlaufen zu lassen — und der Nutzer stünde
-  // vor einem Programm, das sich gar nicht mehr öffnen lässt.
+  // Stapelauszug, statt Mietfuchs weiterlaufen zu lassen — und der Nutzer stünde vor einem
+  // Programm, das sich gar nicht mehr öffnen lässt, samt der Meldung, die darin stünde.
   //
   // Geprüft wird es am zweiten Schritt, der Frage nach schon gefüllten Tabellen: Er ist der
   // einzige, der die Datenbank befragt, bevor der eigentliche Umstieg beginnt. Eine geschlossene
@@ -507,7 +507,9 @@ test('Abbruch: eine Datenbank, die nicht mehr antwortet, beendet nicht den Start
     opened.close()
     const result = await runChangeover({ dataDir, opened, reopen: () => openDatabase({ dataDir }) })
     assert.equal(result.state, 'failed')
-    assert.match(result.message, /arbeitet unverändert mit der Datei db.json weiter/)
+    // Geprüft wird die Zusage, nicht der Wortlaut: Es ist nichts verloren, und es geht weiter.
+    assert.match(result.message, /nichts verloren/)
+    assert.match(result.message, /nächsten Start wird es erneut versucht/)
     // Und nichts ist halb getan: keine Datei für den Umstieg, keine Sicherung.
     assert.equal(fs.existsSync(path.join(dataDir, TEMP_NAME)), false, 'die Datei für den Umstieg liegt noch da')
     assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false, 'es wurde schon gesichert')
