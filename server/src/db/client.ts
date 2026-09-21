@@ -57,6 +57,17 @@ import * as schema from './schema.ts'
 
 export type Database = SqliteRemoteDatabase<typeof schema>
 
+// Wo eine Anweisung laufen kann: auf der Verbindung selbst oder innerhalb einer Transaktion.
+// Beides ist nicht dasselbe, einer Transaktion fehlt zum Beispiel `batch`; wer also eine
+// Funktion schreibt, die in beiden Lagen benutzt wird, braucht diesen Typ und nicht `Database`.
+//
+// **Abgeleitet und nicht von Hand geschrieben.** Der Typ der Transaktion hängt an den
+// Gattungsparametern des Treibers, und eine eigene Fassung liefe beim Umstieg auf den eigenen
+// Treiber auseinander, ohne dass es jemandem auffiele (siehe die Begründung zur Wahl des
+// Treibers in CLAUDE.md). So folgt er ihm von selbst.
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+export type Executor = Database | Transaction
+
 // Was SQLite als Parameter annimmt. Alles andere ist ein Programmierfehler und soll mit einer
 // Meldung auffallen, statt still zu einer leeren Zelle zu werden.
 type SqlValue = null | number | bigint | string | Uint8Array
