@@ -21,7 +21,7 @@
 // Bleibt `sqlite-proxy`. Er ist eigentlich für einen Dienst am anderen Ende einer Leitung
 // gedacht: Drizzle baut das SQL, reicht es samt Parametern an eine Rückruffunktion, und die
 // schafft es irgendwohin. Wir nutzen ihn zweckentfremdet für eine Verbindung **im selben
-// Prozess** — der Rückruf geht nicht ins Netz, sondern unmittelbar an das eingebaute SQLite
+// Prozess**. Der Rückruf geht nicht ins Netz, sondern unmittelbar an das eingebaute SQLite
 // der Laufzeit. Das kostet etwas Geschwindigkeit, weil jede Anweisung einzeln durch den
 // Rückruf läuft; bei einem Haus mit wenigen Wohnungen fällt das nicht ins Gewicht.
 //
@@ -57,17 +57,31 @@ import * as schema from './schema.ts'
 
 export type Database = SqliteRemoteDatabase<typeof schema>
 
-// Was SQLite als Parameter annimmt. Alles andere ist ein Programmierfehler und soll auffallen,
-// statt als `undefined` still zu einer leeren Zelle zu werden.
+// Was SQLite als Parameter annimmt. Alles andere ist ein Programmierfehler und soll mit einer
+// Meldung auffallen, statt still zu einer leeren Zelle zu werden.
 type SqlValue = null | number | bigint | string | Uint8Array
 
-function toSqlValue(value: unknown): SqlValue {
-  if (value === null || value === undefined) return null
+// Ausgeführt wird sie nur vom Rückruf unten; ausgeführt **geprüft** wird sie im Test, deshalb
+// steht `export` davor.
+export function toSqlValue(value: unknown): SqlValue {
+  if (value === null) return null
   if (typeof value === 'number' || typeof value === 'bigint' || typeof value === 'string') return value
   if (value instanceof Uint8Array) return value
   // Drizzle wandelt Wahrheitswerte eigentlich selbst in 0 und 1; hier steht es als Netz, damit
   // eine künftige Spalte nicht still an SQLite scheitert.
   if (typeof value === 'boolean') return value ? 1 : 0
+  // `undefined` bekommt ausdrücklich **kein** NULL. In SQL bedeutet NULL „kein Wert", in
+  // JavaScript bedeutet `undefined` meist „hier fehlt etwas, das dastehen sollte", etwa eine
+  // Kennung, die der Aufrufer nicht gesetzt hat. Würde daraus stillschweigend NULL, liefe ein
+  // Vergleich wie `eq(units.id, undefined)` auf `= NULL` hinaus, das in SQL nie wahr ist: Die
+  // Abfrage käme leer zurück, und niemand erführe, warum. `node:sqlite` wirft an dieser Stelle
+  // von sich aus; diese Meldung sagt zusätzlich, was zu tun ist.
+  if (value === undefined) {
+    throw new Error(
+      'An die Datenbank wurde `undefined` übergeben. Gemeint ist vermutlich `null` (ausdrücklich kein Wert); ' +
+        'ein `undefined` an dieser Stelle ist fast immer eine Kennung oder ein Feld, das vorher nicht gesetzt wurde.',
+    )
+  }
   throw new Error(`Dieser Wert lässt sich nicht an SQLite übergeben: ${typeof value}`)
 }
 
@@ -132,9 +146,17 @@ export type Connection = {
 export async function connect(file: string): Promise<Connection> {
   const handle = globalThis.Bun ? await openBun(file) : await openNode(file)
 
-  // Ohne diese Zeile prüft SQLite Fremdschlüssel überhaupt nicht: Die Voreinstellung ist aus,
-  // und sie gilt je Verbindung. Alle `references()` im Schema wären sonst Dekoration, und das
-  // Löschen einer Wohnung ließe verwaiste Mietverhältnisse zurück, ohne dass etwas auffiele.
+  // Fremdschlüssel gelten je Verbindung und müssen ausdrücklich eingeschaltet sein; SQLite
+  // selbst liefert sie aus Rücksicht auf alte Datenbestände abgeschaltet aus, und `bun:sqlite`
+  // reicht diese Voreinstellung durch. `node:sqlite` schaltet sie von sich aus ein
+  // (`enableForeignKeyConstraints`, Voreinstellung `true`), dort ist die Zeile also nur eine
+  // Bestätigung. Sie steht trotzdem für beide da: So hängt die Zusicherung an einer sichtbaren
+  // Zeile und nicht an der Voreinstellung einer Laufzeit, die sich ändern kann. Ohne sie wären
+  // alle `references()` im Schema Dekoration, und das Löschen einer Wohnung ließe verwaiste
+  // Mietverhältnisse zurück, ohne dass etwas auffiele.
+  //
+  // `applyMigrations` schaltet sie vorübergehend ab und hier wieder an; die Begründung dafür
+  // steht dort.
   handle.exec('PRAGMA foreign_keys = ON')
 
   const db = drizzle(
@@ -191,13 +213,77 @@ export const hashOf = (sql: string): string => crypto.createHash('sha256').updat
 
 const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'drizzle')
 
+// Das Journal lesen und dabei wirklich prüfen, was dasteht.
+//
+// `JSON.parse` liefert `any`, und ein `any` nimmt jede Behauptung widerspruchslos an: Ein
+// Tippfehler im Feldnamen oder eine Zeichenkette statt einer Zahl käme ungehindert durch, und
+// der Fehler zeigte sich erst weit später als etwas ganz anderes. Das Bau-Skript
+// (scripts/embed-migrations.mjs) prüft an denselben Stellen und sagt, was fehlt. Dieser Weg
+// hier ist der, den ein Vermieter tatsächlich geht, und darf deshalb nicht weniger können.
+//
+// Verengt wird ausschließlich mit `typeof` und `in`, die der Übersetzer selbst nachrechnet;
+// ein angeschriebenes Typprädikat wäre wieder nur eine Behauptung.
+type JournalEntry = { tag: string; when: number }
+
+// Getrennt vom Lesen der Datei, damit der Test ihr unmittelbar kaputte Gestalten vorlegen kann,
+// ohne dafür Dateien anzulegen.
+export function parseJournal(raw: unknown, file: string): JournalEntry[] {
+  if (typeof raw !== 'object' || raw === null || !('entries' in raw)) {
+    throw new Error(`Die Buchführung der Migrationen (${file}) hat kein Feld „entries". Das kann nicht stimmen.`)
+  }
+  const entries = raw.entries
+  if (!Array.isArray(entries)) {
+    throw new Error(`Das Feld „entries" in ${file} ist keine Liste.`)
+  }
+  if (entries.length === 0) {
+    throw new Error(`Die Buchführung in ${file} führt keinen einzigen Migrationsschritt. Das kann nicht stimmen.`)
+  }
+  return entries.map((entry: unknown, index: number) => {
+    const wo = `Der ${index + 1}. Eintrag in ${file}`
+    if (typeof entry !== 'object' || entry === null || !('tag' in entry) || !('when' in entry)) {
+      throw new Error(`${wo} braucht die Felder „tag" und „when".`)
+    }
+    const { tag, when } = entry
+    if (typeof tag !== 'string' || tag === '') {
+      throw new Error(`${wo} hat kein brauchbares „tag" (den Namen des Schrittes).`)
+    }
+    if (typeof when !== 'number' || !Number.isFinite(when)) {
+      throw new Error(`${wo} („${tag}") hat kein brauchbares „when" (den Zeitpunkt, der die Reihenfolge bestimmt).`)
+    }
+    return { tag, when }
+  })
+}
+
+function readJournal(file: string): JournalEntry[] {
+  let raw: unknown
+  try {
+    raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch (err) {
+    throw new Error(`Die Buchführung der Migrationen (${file}) ließ sich nicht lesen: ${String(err)}`, { cause: err })
+  }
+  return parseJournal(raw, file)
+}
+
 // Die Migrationen von der Platte lesen, wie sie im npm-Betrieb und im Docker-Image vorliegen.
 // Maßgeblich für die Reihenfolge ist das Journal und nicht die Sortierung der Dateinamen.
 function migrationsFromDisk(): Migration[] {
-  const journal = JSON.parse(fs.readFileSync(path.join(migrationsDir, 'meta', '_journal.json'), 'utf8'))
-  return (journal.entries ?? []).map((entry: { tag: string; when: number }) => {
-    const sql = fs.readFileSync(path.join(migrationsDir, `${entry.tag}.sql`), 'utf8')
-    return { tag: entry.tag, hash: hashOf(sql), folderMillis: entry.when, statements: splitStatements(sql) }
+  const journalFile = path.join(migrationsDir, 'meta', '_journal.json')
+  if (!fs.existsSync(journalFile)) {
+    throw new Error(
+      `Die Migrationen fehlen: ${journalFile} gibt es nicht. Ohne sie lässt sich die Datenbank nicht anlegen.`,
+    )
+  }
+  return readJournal(journalFile).map((entry) => {
+    const file = path.join(migrationsDir, `${entry.tag}.sql`)
+    if (!fs.existsSync(file)) {
+      throw new Error(`Die Buchführung nennt den Schritt „${entry.tag}", aber die Datei ${file} fehlt.`)
+    }
+    const sql = fs.readFileSync(file, 'utf8')
+    const statements = splitStatements(sql)
+    if (statements.length === 0) {
+      throw new Error(`Der Migrationsschritt „${entry.tag}" enthält keine einzige Anweisung.`)
+    }
+    return { tag: entry.tag, hash: hashOf(sql), folderMillis: entry.when, statements }
   })
 }
 
@@ -214,9 +300,16 @@ export async function loadMigrations(): Promise<Migration[]> {
   return migrationsFromDisk()
 }
 
-// Buchführung darüber, was schon gelaufen ist. Name und Spalten sind bewusst die, die Drizzles
-// eigener Migrator anlegt: Sollten wir später auf ihn umstellen, findet er seine Tabelle vor,
-// statt neben ihr eine zweite zu beginnen.
+// Buchführung darüber, was schon gelaufen ist. Name und Spalten sind die, die Drizzles eigener
+// Migrator anlegt: Sollten wir später auf ihn umstellen, findet er seine Tabelle vor, statt
+// neben ihr eine zweite zu beginnen.
+//
+// Eine Abweichung gibt es, und sie ist unschädlich: Drizzle schreibt dort `id SERIAL PRIMARY
+// KEY`, hier steht `id integer PRIMARY KEY AUTOINCREMENT`. `SERIAL` kennt SQLite gar nicht; es
+// nimmt jeden unbekannten Typnamen an und gibt der Spalte die Affinität NUMERIC. Gelesen wird
+// die Spalte von niemandem, weder von Drizzle noch von uns, beide fragen nur `hash` und
+// `created_at` ab. Beide Schreibweisen ergeben eine brauchbare Kennung, und weil die Tabelle
+// mit `IF NOT EXISTS` angelegt wird, baut Drizzle sie später ohnehin nicht um.
 const BOOKKEEPING = `CREATE TABLE IF NOT EXISTS __drizzle_migrations (
   id integer PRIMARY KEY AUTOINCREMENT,
   hash text NOT NULL,
@@ -225,35 +318,80 @@ const BOOKKEEPING = `CREATE TABLE IF NOT EXISTS __drizzle_migrations (
 
 // Wendet an, was noch fehlt, und gibt zurück, wie viele Schritte das waren.
 //
-// Jeder Schritt läuft ganz oder gar nicht: Seine Anweisungen und der Eintrag in die Buchführung
-// stehen zusammen in einer Transaktion. Bricht einer ab, bleibt die Datenbank auf dem Stand des
-// vorigen Schrittes, und der nächste Start versucht denselben erneut. Ein halb angewendetes
-// Schema, bei dem die Hälfte der Tabellen fehlt und trotzdem alles als erledigt gilt, kann so
-// nicht entstehen.
+// Jeder Schritt läuft ganz oder gar nicht: Seine Anweisungen, der Eintrag in die Buchführung und
+// die abschließende Prüfung stehen zusammen in einer Transaktion. Bricht einer ab, bleibt die
+// Datenbank auf dem Stand des vorigen Schrittes, und der nächste Start versucht denselben
+// erneut. Ein halb angewendetes Schema, bei dem Tabellen fehlen und trotzdem alles als erledigt
+// gilt, kann so nicht entstehen.
 //
-// Wann das beim Start geschieht, was der Nutzer dabei zu sehen bekommt und ob vorher eine
-// Sicherung angelegt wird, entscheidet Aufgabe 3. Hier steht nur, wie ein Schritt in die
-// Datenbank kommt.
+// **Warum die Fremdschlüsselprüfung außerhalb der Transaktion abgeschaltet wird**
+//
+// SQLite kann eine Spalte oder eine Prüfbedingung nicht an Ort und Stelle ändern. drizzle-kit
+// baut die Tabelle dafür neu: neue anlegen, Daten hinüberkopieren, alte löschen, neue
+// umbenennen. Damit das Löschen nicht die Kinder mitreißt, schreibt es
+// `PRAGMA foreign_keys=OFF` an den Anfang der Migration. Genau das betrifft **jede** spätere
+// Änderung an einer Spalte oder einer Bedingung; unsere erste Migration legt nur an und ist
+// deshalb noch nicht betroffen.
+//
+// Nur: Dieses Pragma ist laut SQLite-Dokumentation „a no-op within a transaction; foreign key
+// constraint enforcement may only be enabled or disabled when there is no pending BEGIN or
+// SAVEPOINT". Stünde die Migration also samt ihrem Pragma in BEGIN/COMMIT, wäre die Prüfung gar
+// nicht abgeschaltet. Das `DROP TABLE` kaskadierte, und das COMMIT meldete Erfolg: Der Nutzer
+// verlöre Mietverhältnisse, Zähler und Zahlungen, ohne dass irgendwo etwas stünde. Das ist der
+// schlimmste Ausgang, den dieses Modul haben kann, denn er sieht wie ein geglücktes Update aus.
+//
+// `PRAGMA defer_foreign_keys = ON` hilft dagegen nicht: Es verschiebt die *Prüfung* ans Ende der
+// Transaktion, aber `ON DELETE CASCADE` ist keine Prüfung, sondern eine Handlung, und die
+// geschieht trotzdem.
+//
+// Deshalb hier das Verfahren, das SQLite selbst für Schemaänderungen vorschreibt
+// (lang_altertable.html, „Making Other Kinds Of Table Schema Changes"): abschalten **vor** der
+// Transaktion, am Ende und noch **innerhalb** der Transaktion `PRAGMA foreign_key_check`
+// fragen, und erst danach wieder einschalten. Weil die Prüfung eine gewöhnliche Abfrage ist und
+// kein Pragma, wirkt sie in der Transaktion; ein kaputter Verweis führt also zum Rückrollen und
+// nicht zu einem Fehler nach dem Festschreiben.
+//
+// **Achtung, wenn wir später auf Drizzles eigenen Migrator wechseln:** Der macht denselben
+// Fehler, er reicht alle Anweisungen als einen Block in eine Transaktion. Ein Wechsel auf ihn
+// löst das hier also nicht, sondern bringt es zurück. Diese Behebung darf dabei nicht
+// verschwinden.
 export function applyMigrations(connection: Connection, migrations: Migration[]): number {
   connection.exec(BOOKKEEPING)
-  const done = new Set(
-    connection.rows('SELECT hash FROM __drizzle_migrations').map((row) => String(row[0])),
-  )
-  let applied = 0
-  for (const migration of migrations) {
-    if (done.has(migration.hash)) continue
-    connection.exec('BEGIN')
-    try {
-      for (const statement of migration.statements) connection.exec(statement)
-      connection.exec(
-        `INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('${migration.hash}', ${migration.folderMillis})`,
-      )
-      connection.exec('COMMIT')
-    } catch (err) {
-      connection.exec('ROLLBACK')
-      throw new Error(`Die Migration ${migration.tag} ließ sich nicht anwenden: ${String(err)}`, { cause: err })
+  const done = new Set(connection.rows('SELECT hash FROM __drizzle_migrations').map((row) => String(row[0])))
+  const pending = migrations.filter((m) => !done.has(m.hash))
+  if (pending.length === 0) return 0
+
+  // Schritt 1 des Verfahrens: abschalten, solange keine Transaktion offen ist. Nur dann wirkt es.
+  connection.exec('PRAGMA foreign_keys = OFF')
+  try {
+    for (const migration of pending) {
+      connection.exec('BEGIN')
+      try {
+        for (const statement of migration.statements) connection.exec(statement)
+        connection.exec(
+          `INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('${migration.hash}', ${migration.folderMillis})`,
+        )
+        // Schritt 10: noch innerhalb der Transaktion, damit ein kaputter Verweis diesen Schritt
+        // zurückrollt, statt festgeschrieben zu werden.
+        const violations = connection.rows('PRAGMA foreign_key_check')
+        if (violations.length > 0) {
+          const betroffen = violations.slice(0, 5).map((row) => `${String(row[0])} (Zeile ${String(row[1])} verweist auf ${String(row[2])})`)
+          throw new Error(
+            `Nach diesem Schritt zeigen ${violations.length} Fremdschlüssel ins Leere: ${betroffen.join(', ')}` +
+              (violations.length > 5 ? ' und weitere' : ''),
+          )
+        }
+        connection.exec('COMMIT')
+      } catch (err) {
+        connection.exec('ROLLBACK')
+        throw new Error(`Die Migration ${migration.tag} ließ sich nicht anwenden: ${String(err)}`, { cause: err })
+      }
     }
-    applied++
+  } finally {
+    // Schritt 12, und zwar auch dann, wenn oben etwas schiefging: Sonst liefe der Server mit
+    // abgeschalteter Fremdschlüsselprüfung weiter, und alle `references()` im Schema wären für
+    // den Rest der Sitzung Dekoration.
+    connection.exec('PRAGMA foreign_keys = ON')
   }
-  return applied
+  return pending.length
 }
