@@ -32,7 +32,16 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      await api('/api/restore', { method: 'POST', body: fd })
+      const antwort = await api<{ notes?: string[] }>('/api/restore', { method: 'POST', body: fd })
+      // Hinweise gibt es selten, aber wenn, dann gehören sie gelesen: etwa dass die Daten zwar
+      // zurück sind, die Datenbank sich dabei aber nicht erneuern ließ. Dann wird bewusst nicht
+      // von selbst neu geladen, denn das Neuladen nähme die Meldung gleich wieder weg.
+      const hinweise = antwort?.notes ?? []
+      if (hinweise.length > 0) {
+        setRestoreMsg(`Backup wiederhergestellt. ${hinweise.join(' ')}`)
+        setRestoring(false)
+        return
+      }
       setRestoreMsg('Backup wiederhergestellt — die Seite wird neu geladen …')
       setTimeout(() => window.location.reload(), 1200)
     } catch (e) {

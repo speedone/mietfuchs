@@ -13,6 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
+import { connect } from '../src/db/client.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
@@ -1877,6 +1878,167 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
     blocker.close()
     removeDataDir(dataDir)
   }
+})
+
+// ---------- Backup, Wiederherstellung und die Datenbank (#55, Aufgabe 7a) ----------
+//
+// Der Grund für diese Gruppe ist ein Ausgang, den es zu vermeiden gilt: Sobald die Routen aus
+// der Datenbank lesen, spielt jemand ein Backup ein, sieht eine Bestätigung und arbeitet danach
+// mit den alten Daten weiter. Deshalb enthält das Archiv die Datenbank, und deshalb wird sie
+// geprüft, bevor irgendetwas ersetzt ist.
+
+// Den Serverprozess beenden, ohne den Datenordner mitzunehmen, und warten, bis er wirklich weg
+// ist: Unter Windows hält er sonst noch die Sperre auf der Datenbankdatei.
+async function stopKeepingData(s: Awaited<ReturnType<typeof startServerIn>>): Promise<void> {
+  const ende = new Promise((r) => s.child.on('exit', r))
+  s.child.kill()
+  await ende
+}
+
+// Ein Server mit **gefüllter** Datenbank. Beim ersten Start gibt es noch keine db.json, der
+// Umstieg hat also nichts zu übernehmen; erst der zweite Start findet sie vor. Genau diesen Weg
+// geht auch der Nutzer, der auf die neue Version aktualisiert.
+async function withFilledDatabase(fn: (s: Awaited<ReturnType<typeof startServerIn>>, unit: Unit) => Promise<void>) {
+  const erster = await startServer()
+  let unit: Unit
+  try {
+    unit = await erster.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    await stopKeepingData(erster)
+  } catch (err) {
+    erster.stop()
+    throw err
+  }
+  const s = await startServerIn(erster.dataDir)
+  try {
+    const bericht = await s.api<HealthReport>('/healthz')
+    if (!bericht.database) assert.fail(`der Zustandsbericht nennt die Datenbank nicht: ${JSON.stringify(bericht)}`)
+    assert.equal(bericht.database.changeover.state, 'done', 'der Umstieg ist beim zweiten Start gelaufen')
+    await fn(s, unit)
+  } finally {
+    s.stop()
+  }
+}
+
+// Ein Eintrag aus dem Archiv. Geprüft statt behauptet: Fehlt er, ist genau das der Befund, den
+// der Test zutage fördern soll, und ein `!` verdeckte ihn.
+function entryData(zip: AdmZip, name: string): Buffer {
+  const entry = zip.getEntry(name)
+  if (!entry) return assert.fail(`im Archiv fehlt der Eintrag ${name}`)
+  return entry.getData()
+}
+
+// Die Wohnungen, wie sie in der Datenbank stehen — unabhängig von den Routen gelesen, die
+// heute noch aus der db.json antworten.
+async function unitsInDatabase(dataDir: string): Promise<string[]> {
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  try {
+    return connection.rows('SELECT id FROM units ORDER BY rowid').map((row) => String(row[0]))
+  } finally {
+    connection.close()
+  }
+}
+
+test('Backup: das Archiv enthält die Datenbank und sagt, woher es stammt', async () => {
+  await withFilledDatabase(async (s) => {
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    const namen = zip.getEntries().map((e) => e.entryName)
+    assert.ok(namen.includes('db.json'), namen.join(', '))
+    assert.ok(namen.includes('mietfuchs.sqlite'), namen.join(', '))
+    assert.ok(namen.includes('mietfuchs-backup.json'), namen.join(', '))
+
+    const info: unknown = JSON.parse(zip.readAsText('mietfuchs-backup.json'))
+    assert.ok(info !== null && typeof info === 'object')
+    assert.equal(Reflect.get(info, 'app'), 'mietfuchs')
+    assert.equal(typeof Reflect.get(info, 'version'), 'string')
+
+    // Der Schnappschuss steht für sich: keine Beidatei, die im Archiv fehlen würde.
+    for (const suffix of ['-wal', '-shm', '-journal']) {
+      assert.ok(!namen.includes(`mietfuchs.sqlite${suffix}`), `${suffix} liegt im Archiv`)
+    }
+  })
+})
+
+test('Backup: die Rundreise bringt auch die Datenbank zurück', async () => {
+  await withFilledDatabase(async (s, unit) => {
+    const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id])
+
+    // Die Datenbank verfälschen, wie es ein Schaden täte. Die Routen lesen heute noch aus der
+    // db.json, es fällt also nur auf, wenn wirklich in die Datenbank gesehen wird.
+    const fremd = await connect(path.join(s.dataDir, 'mietfuchs.sqlite'))
+    fremd.exec("DELETE FROM units")
+    fremd.close()
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [])
+
+    assert.equal((await restore(s, zip)).status, 200)
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id], 'die Datenbank ist wieder da')
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    // Die bisherige Datenbank liegt daneben, wie die db.json auch.
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')), 'die Sicherheitskopie fehlt')
+  })
+})
+
+test('Backup: ein Archiv aus einer neueren Version wird abgelehnt, bevor etwas ersetzt ist', async () => {
+  await withFilledDatabase(async (s, unit) => {
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+
+    // Die Datenbank im Archiv bekommt eine Änderung am Aufbau, die diese Version nicht kennt.
+    const abgelegt = path.join(s.dataDir, 'fremde.sqlite')
+    fs.writeFileSync(abgelegt, entryData(zip, 'mietfuchs.sqlite'))
+    const fremd = await connect(abgelegt)
+    fremd.exec("INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('aus-der-zukunft', 1893456000000)")
+    fremd.close()
+    zip.updateFile('mietfuchs.sqlite', fs.readFileSync(abgelegt))
+    fs.rmSync(abgelegt)
+
+    // Dazu eine veränderte db.json, damit sich beweisen lässt, dass nichts davon übernommen wurde.
+    zip.updateFile('db.json', Buffer.from(JSON.stringify({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], settings: {} })))
+
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 400)
+    assert.match(errorOf(r.body), /neueren Mietfuchs-Version/)
+    assert.match(errorOf(r.body), /Das Archiv stammt aus: Mietfuchs/, errorOf(r.body))
+    // Nichts ist ersetzt: weder die Wohnungen noch die Datenbank, und keine Sicherheitskopie.
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id])
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json.vor-restore')), false)
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')), false)
+  })
+})
+
+test('Backup: ein Archiv mit beschädigter Datenbank wird abgelehnt', async () => {
+  await withFilledDatabase(async (s, unit) => {
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    const kaputt = entryData(zip, 'mietfuchs.sqlite')
+    kaputt.fill(0x5a, 4096, 8192)
+    zip.updateFile('mietfuchs.sqlite', kaputt)
+
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 400)
+    assert.match(errorOf(r.body), /beschädigt/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id])
+  })
+})
+
+test('Backup: ein Archiv ohne Datenbank baut sie aus der db.json neu auf', async () => {
+  // Jedes Archiv, das vor dieser Version entstanden ist, sieht so aus. Die db.json zu ersetzen
+  // und die alte Datenbank stehen zu lassen wäre der schlimmste Ausgang: Nach Aufgabe 6 sähe
+  // der Nutzer eine Bestätigung und arbeitete mit den Daten von vorher weiter.
+  await withFilledDatabase(async (s, unit) => {
+    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+    zip.deleteFile('mietfuchs.sqlite')
+    zip.deleteFile('mietfuchs-backup.json')
+
+    // Eine zweite Wohnung anlegen, damit sich der Stand vor und nach dem Einspielen unterscheidet.
+    const zweite = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 60, participates: true }) })
+    assert.equal((await s.api<Unit[]>('/api/units')).length, 2)
+
+    assert.equal((await restore(s, zip.toBuffer())).status, 200)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    // Und die Datenbank ist neu entstanden, mit dem Stand des Archivs und ohne die zweite Wohnung.
+    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id], `${zweite.id} steht noch in der Datenbank`)
+  })
 })
 
 // ---------- API-Schlüssel externer KI-Dienste (#18) ----------
