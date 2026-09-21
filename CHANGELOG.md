@@ -8,9 +8,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
-- **Das Backup enthält jetzt auch die Datenbank, und beim Wiederherstellen kommt sie mit
+- **Das Backup enthält jetzt die Datenbank, und beim Wiederherstellen kommt sie mit
   zurück.** Am Vorgehen ändert sich für Sie nichts: Backup bleibt „diesen Ordner kopieren", und
   der Knopf in den Einstellungen lädt weiterhin ein ZIP herunter. Neu ist, was darin liegt.
+  Im Archiv liegt genau die Ablage, die Ihre Daten wirklich trägt, und beim Wiederherstellen
+  gilt eine mitgelieferte Datei `db.json` vor der Datenbank. Das klingt nach einer Kleinigkeit
+  und ist keine: Spielen Sie ein Backup ein, das noch von einer Version stammt, die in die
+  `db.json` geschrieben hat, bekommen Sie dadurch den Stand zurück, mit dem Sie zuletzt
+  gearbeitet haben, und nicht einen älteren aus der Datenbank daneben.
   Spielen Sie ein Backup zurück, das noch mit einer älteren Version erstellt wurde und deshalb
   keine Datenbank enthält, wird sie aus den wiederhergestellten Daten neu aufgebaut, und zwar
   mit derselben Nachrechnung wie beim Umzug: Erst wenn Abrechnung, Verbrauchsübersicht,
@@ -30,6 +35,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abrechnung, Verbrauchsübersicht, Mietkonto und Steuerübersicht für jedes Jahr, in dem etwas
   erfasst ist, aus beiden Beständen nach und vergleicht sie auf den Cent. Weicht ein einziger
   ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl.
+  ([#55](https://github.com/speedone/mietfuchs/issues/55))
+
+- **Nach dem Wiederherstellen gelten sofort die Einstellungen aus dem Backup.** Vorher zeigte
+  Mietfuchs bis zum nächsten Start noch die Einstellungen von davor, und die nächste beliebige
+  Änderung an ihnen hätte den alten Stand wieder festgeschrieben. Betroffen waren auch
+  Vermietername und IBAN, die im Kopf der gedruckten Abrechnung stehen.
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
 
 - **Scheitert der Umzug, zeigt Mietfuchs Ihre Daten nicht an und sagt Ihnen, warum.** Verloren ist

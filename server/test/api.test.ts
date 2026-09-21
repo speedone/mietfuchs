@@ -546,6 +546,21 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
 // lässt auch eine Liste als Rumpf durch. Deren Indizes landeten als Schlüssel „0“, „1“ … im
 // Datensatz und blieben in der db.json stehen. Geprüft an /api/units, die Routen entstehen für
 // alle sechs Collections in derselben Schleife.
+
+// Die Spalten der Wohnungstabelle, wie SQLite sie wirklich führt. Das ist der einzige Ort, an
+// dem sich ein zusätzliches Feld zeigen könnte: Ein eingelesener Datensatz hat immer genau die
+// Schlüssel, die read.ts hinschreibt.
+const UNIT_COLUMNS = ['id', 'name', 'area_m2', 'participates', 'self_used', 'self_persons', 'rooms', 'floor', 'notes']
+
+async function unitColumns(dataDir: string): Promise<string[]> {
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  try {
+    return connection.rows(`SELECT name FROM pragma_table_info('units')`).map((zeile) => String(zeile[0]))
+  } finally {
+    connection.close()
+  }
+}
+
 test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an', async () => {
   const res = await fetch(`${srv.base}/api/units`, {
     method: 'POST',
@@ -555,13 +570,17 @@ test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an'
   assert.equal(res.status, 201)
   const created = await jsonOf<Unit>(res)
   try {
-    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern. Geprüft wird, dass es das
-    // Feld gar nicht gibt, nicht nur, dass es undefined ist.
-    const stored = (await storedDb(srv)).units.find((u) => u.id === created.id)
-    assert.ok(stored && !('0' in stored), 'Index als Feld im gespeicherten Bestand')
+    // **Gefragt werden die Spalten und nicht der eingelesene Bestand.** read.ts baut jede Zeile
+    // als Objektliteral mit festen Schlüsseln; ein `'0' in stored` darüber könnte gar nicht mehr
+    // wahr werden und prüfte deshalb nichts. Die Spalten der Tabelle sind die einzige Stelle, an
+    // der sich ein zusätzliches Feld überhaupt zeigen könnte, und sie sagen zugleich, warum es
+    // seit #60 keines mehr geben kann: Für ein unbekanntes Feld gibt es keinen Ort.
+    assert.deepEqual(await unitColumns(srv.dataDir), UNIT_COLUMNS, 'die Tabelle hat eine Spalte zu viel')
     assert.ok(!('0' in created))
     const listed = (await srv.api<Unit[]>('/api/units')).find((u) => u.id === created.id)
     assert.ok(listed && !('0' in listed))
+    // Und aus einem Rumpf, der kein Objekt ist, wird ein leerer Datensatz und kein Unsinn.
+    assert.equal(created.name, '')
   } finally {
     await srv.api(`/api/units/${created.id}`, { method: 'DELETE' })
   }
@@ -580,10 +599,12 @@ test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet
     })
     assert.equal(res.status, 200)
     const updated = await jsonOf<Unit>(res)
-    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
+    // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern. Gefragt werden die
+    // Spalten, siehe die Begründung beim Anlegen darüber.
+    assert.deepEqual(await unitColumns(srv.dataDir), UNIT_COLUMNS, 'die Tabelle hat eine Spalte zu viel')
     const stored = (await storedDb(srv)).units.find((u) => u.id === unit.id)
-    assert.ok(stored && !('0' in stored))
-    assert.equal(stored?.name, 'Rumpfprobe')
+    assert.equal(stored?.name, 'Rumpfprobe', 'der Datensatz ist angetastet worden')
+    assert.equal(stored?.areaM2, 50)
     assert.ok(!('0' in updated))
     assert.equal(updated.name, 'Rumpfprobe')
   } finally {
@@ -819,6 +840,28 @@ test('Versanddatum: ohne Angabe abgeschlossen, mit Datum nachgetragen, leer wied
   assert.equal((await closedOf(srv, 2040))?.sentAt, null)
 
   await srv.api('/api/settlement/2040/close', { method: 'DELETE' })
+})
+
+test('Abschließen: ein zweites Mal für dasselbe Jahr wird abgelehnt, und zwar mit einem Satz', async () => {
+  // Die Route fragt vor dem Einfrieren, ob es für das Jahr schon eine abgeschlossene Abrechnung
+  // gibt. Fiele diese Frage weg, käme statt einer Erklärung der Verstoß gegen den eindeutigen
+  // Index heraus. Beides hat keinen Test gehabt: weder der 409 noch die Meldung.
+  await srv.api('/api/settlement/2043/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    const zweites = await fetch(`${srv.base}/api/settlement/2043/close`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    assert.equal(zweites.status, 409)
+    const fehler = await errorFrom(zweites)
+    assert.match(fehler, /2043/, 'die Meldung nennt das Jahr nicht')
+    assert.doesNotMatch(fehler, /UNIQUE|Failed query|insert into/, 'die Meldung kommt aus der Datenbank')
+    // Und der erste Stand steht unverändert da.
+    assert.equal((await closedOf(srv, 2043))?.sentAt, null)
+  } finally {
+    await srv.api('/api/settlement/2043/close', { method: 'DELETE' })
+  }
 })
 
 test('Versanddatum: was kein Datum ist, kommt nicht in die db.json', async () => {
@@ -2366,6 +2409,32 @@ test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () 
     const res = await fetch(`${s.base}/api/units`)
     assert.equal(res.status, 503, `erwartet 503, bekommen ${res.status}`)
     assert.match(errorOf(await jsonOf<{ error?: string }>(res)), /Datenbank/)
+
+    // **Und auf jeder anderen Datenroute ebenso, nicht nur beim Lesen.** Geprüft war bisher nur
+    // dieses eine GET, dabei ist das Schreiben der Ausgang, dessentwegen es die Sperre gibt:
+    // Was der Vermieter in eine leere Datenbank hineinschriebe, stünde danach als zweiter
+    // Bestand da. Eine neue Route, die `database.db` unmittelbar benutzte, ginge an der
+    // Nahtstelle vorbei, ohne dass irgendetwas rot würde.
+    const gesperrt: [string, string, string | undefined][] = [
+      ['POST', '/api/units', JSON.stringify({ name: 'EG', areaM2: 80, participates: true })],
+      ['PUT', '/api/units/egal', JSON.stringify({ name: 'EG' })],
+      ['DELETE', '/api/units/egal', undefined],
+      ['GET', '/api/settlement/2024', undefined],
+      ['GET', '/api/consumption/2024', undefined],
+      ['GET', '/api/rentledger/2024', undefined],
+      ['GET', '/api/taxreport/2024', undefined],
+      ['POST', '/api/settlement/2024/close', JSON.stringify({})],
+      ['DELETE', '/api/settlement/2024/close', undefined],
+    ]
+    for (const [method, pfad, body] of gesperrt) {
+      const antwort = await fetch(`${s.base}${pfad}`, {
+        method,
+        ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body }),
+      })
+      assert.equal(antwort.status, 503, `${method} ${pfad} antwortet ${antwort.status} statt 503`)
+    }
+    // Die Wohnung ist auch wirklich nirgends gelandet.
+    assert.equal(fs.existsSync(path.join(dataDir, 'db.json')), false, 'es ist doch eine db.json entstanden')
 
     // Nicht über `s.api`: Der Helfer wirft bei allem außer 200, und genau das tut /healthz hier
     // zu Recht. Ein Container, der den Zustand abfragt, soll einen Fehler sehen und keine 200
