@@ -381,12 +381,21 @@ secrets:
 
 ## Daten & Backup
 
-Alles liegt in einem `data/`-Ordner (`db.json` + hochgeladene Belege in `uploads/`).
+Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und `db.json` + hochgeladene Belege in
+`uploads/`).
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
 Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
 `~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
 Windows in `%LOCALAPPDATA%\Mietfuchs`), weil das Programm dann an einem Ort liegt, an dem es
 nicht schreiben darf. Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
+
+Beim ersten Start einer Version mit Datenbank ziehen deine Daten von selbst in
+`mietfuchs.sqlite` um. Die bisherige `db.json` bleibt dabei liegen, daneben eine Kopie ihres
+Standes vor dem Umzug (`db.json.vor-umstieg`) und ein Protokoll. **Die liegengebliebene
+`db.json` ist der Stand zum Zeitpunkt des Umzugs und kein mitlaufendes Abbild**: Was du danach
+erfasst, steht nur noch in der Datenbank. Der Weg zurück ist also deine Sicherung, nicht diese
+Datei. Am Backup ändert sich nichts, es ist weiterhin dieser Ordner; das Backup über die
+Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt sie mit zurück.
 
 ## Produktivbetrieb ohne Dev-Server
 

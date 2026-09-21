@@ -8,6 +8,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Das Backup enthält jetzt auch die Datenbank, und beim Wiederherstellen kommt sie mit
+  zurück.** Am Vorgehen ändert sich für Sie nichts: Backup bleibt „diesen Ordner kopieren", und
+  der Knopf in den Einstellungen lädt weiterhin ein ZIP herunter. Neu ist, was darin liegt.
+  Spielen Sie ein Backup zurück, das noch mit einer älteren Version erstellt wurde und deshalb
+  keine Datenbank enthält, wird sie aus den wiederhergestellten Daten neu aufgebaut, und zwar
+  mit derselben Nachrechnung wie beim Umzug: Erst wenn Abrechnung, Verbrauchsübersicht,
+  Mietkonto und Steuerübersicht auf den Cent dieselben sind, gilt sie. Ihre bisherige Datenbank
+  bleibt dabei als `mietfuchs.sqlite.vor-restore` liegen, wie die `db.json.vor-restore` daneben.
+  Ein Archiv aus einer neueren Mietfuchs-Version oder mit beschädigter Datenbank wird abgelehnt,
+  bevor irgendetwas ersetzt ist; Ihre bisherigen Daten sind dann unverändert.
+  ([#55](https://github.com/speedone/mietfuchs/issues/55))
+
 - **Ihre Daten ziehen beim ersten Start in eine Datenbank um.** Im Datenordner liegt dafür die
   Datei `mietfuchs.sqlite`. Der Umzug läuft von selbst, es ist kein Befehl und keine Antwort
   nötig, und die Oberfläche sagt einmal, dass er stattgefunden hat. Ihre bisherige Datei

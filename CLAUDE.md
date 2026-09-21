@@ -433,6 +433,28 @@ lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
   Ausprägung von #70. Ein weiterer Test lässt den ganzen Prüfkatalog durch den Validator laufen,
   damit niemand ihn unbemerkt verschärft; seine Fangkraft hängt allerdings daran, dass zwei
   Fixtures Felder auslassen (siehe die Warnung im Test).
+- **Backup und Wiederherstellen sprechen die Datenbank**
+  ([server/src/db/backup.ts](server/src/db/backup.ts), Aufgabe 7a). Das steht **vor** dem
+  Umstellen der Routen, und zwar wegen des Ausgangs, den es zu vermeiden gilt: Sobald die Routen
+  aus der Datenbank lesen, spielt jemand ein Backup ein, sieht eine Bestätigung und arbeitet
+  danach mit den alten Daten weiter. Ein zweiter Umstieg holt das nicht nach, denn er
+  unterbleibt, sobald in der Datenbank etwas steht. Das Archiv enthält deshalb
+  `mietfuchs.sqlite` und `mietfuchs-backup.json` (Version und Zeitpunkt, eine **Auskunft und
+  keine Prüfung**; Archive aus älteren Versionen haben sie nicht). Der Schnappschuss entsteht
+  mit **`VACUUM INTO` und nicht als Dateikopie**: Der Server hält die Datei die ganze Laufzeit
+  offen, und eine laufende SQLite-Datei zu kopieren liefert im schlechtesten Fall einen Stand,
+  den es nie gab. `VACUUM INTO` liefert eine Datei, die für sich steht, ohne Beidateien und mit
+  der Buchführung über den Aufbau. Geprüft wird sie **vor** dem Austausch, mit derselben Frage
+  wie beim Öffnen (`unknownSteps` in open.ts steht dafür nur einmal da, die Empfehlung an den
+  Nutzer formuliert jeder Aufrufer selbst): Über den Umweg Backup käme ein neueres Schema sonst
+  herein, und die Prüfung beim Start käme zu spät, weil die Datei dann schon an ihrem Platz
+  läge. Ersetzt wird nach demselben Muster wie beim Umstieg, also schließen, ersetzen, neu
+  öffnen; die bisherige Datei wandert als `mietfuchs.sqlite.vor-restore` beiseite. **Ein Archiv
+  ohne Datenbank** ist kein Randfall, sondern jedes, das vor dieser Version entstanden ist:
+  Dann wird die Datenbank aus der wiederhergestellten `db.json` neu aufgebaut, mit `runChangeover`
+  und damit mit derselben centgenauen Regression. Sie wandert dafür ganz beiseite statt gelöscht
+  zu werden, damit der Umstieg sie leer vorfindet und seine Regel „steht schon etwas darin,
+  passiert nichts" nicht weich wird.
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
@@ -501,7 +523,8 @@ voraus**: Auf einem frischen Rechner gibt es noch keine `db.json`, denn die ents
 ersten Speichern, und genau dort wird am häufigsten wiederhergestellt. Die Sicherheitskopie
 `db.json.vor-restore` entsteht deshalb nur, wenn es etwas zu sichern gab, und den Belegordner
 legt die Route selbst an, statt sich darauf zu verlassen, dass multer ihn beim Laden des Moduls
-angelegt hat) sowie
+angelegt hat. Beides spricht seit Aufgabe 7a auch die Datenbank, siehe Backup und
+Wiederherstellen) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; ebenso nimmt
