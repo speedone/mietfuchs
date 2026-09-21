@@ -1,8 +1,11 @@
 // Baut Mietfuchs zu eigenständigen Binaries (Windows/macOS/Linux) über Bun --compile.
-// Ablauf: Frontend bauen → Embed-Modul aus client/dist erzeugen → für jedes Ziel
-// ein Binary kompilieren und für macOS/Linux als Archiv verpacken.
+// Ablauf: Frontend bauen → Embed-Modul aus client/dist erzeugen → Embed-Modul aus
+// server/drizzle erzeugen → für jedes Ziel ein Binary kompilieren und für macOS/Linux als
+// Archiv verpacken.
 // Bun führt ESM + top-level await nativ aus und bettet die
-// per `with { type: "file" }` referenzierten Frontend-Dateien mit ein.
+// per `with { type: "file" }` referenzierten Frontend-Dateien mit ein. Die Migrationen kommen
+// als gewöhnliche Zeichenketten mit hinein (siehe scripts/embed-migrations.mjs); in der
+// Programmdatei gibt es kein Dateisystem mit Projektdateien.
 //
 // Nutzung:
 //   node scripts/package-binaries.mjs            # alle Ziele

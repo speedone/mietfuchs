@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "27fc91f8-060f-4406-b6f8-ecea15a68139",
+  "id": "6ba44c62-eb64-4964-b94e-f15e865cc82a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "ai_slots": {
@@ -195,7 +195,12 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "closed_settlements_settlement_is_json": {
+          "name": "closed_settlements_settlement_is_json",
+          "value": "json_valid(\"closed_settlements\".\"settlement\")"
+        }
+      }
     },
     "cost_item_shares": {
       "name": "cost_item_shares",

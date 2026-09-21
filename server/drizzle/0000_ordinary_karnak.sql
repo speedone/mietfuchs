@@ -26,7 +26,8 @@ CREATE TABLE `closed_settlements` (
 	`year` integer NOT NULL,
 	`closed_at` text NOT NULL,
 	`sent_at` text,
-	`settlement` text NOT NULL
+	`settlement` text NOT NULL,
+	CONSTRAINT "closed_settlements_settlement_is_json" CHECK(json_valid("closed_settlements"."settlement"))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `closed_settlements_year_idx` ON `closed_settlements` (`year`);--> statement-breakpoint

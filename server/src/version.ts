@@ -5,8 +5,9 @@
 // Bundler baut importiertes JSON beim Kompilieren fest ein, sodass auch die Programmdatei ihre
 // Version kennt. Dort gibt es keine package.json im Dateisystem. Node lädt JSON-Module erst ab
 // 22.12 ohne Warnung und bricht vor 20.10 mit einem Syntaxfehler ab; das allein verlangte nur
-// diese Version. `engines` steht heute höher, bei >=24.12, weil TypeScript-Dateien erst ab
-// dort ohne Build-Schritt als stabil ausführbar gelten.
+// diese Version. `engines` steht heute höher, bei >=24.15: TypeScript-Dateien gelten erst ab
+// 24.12 ohne Build-Schritt als stabil ausführbar, und ab 24.15 meldet `node:sqlite` beim Laden
+// keine ExperimentalWarning mehr.
 import pkg from '../package.json' with { type: 'json' }
 import { systemLocation } from './paths.ts'
 
