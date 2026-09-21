@@ -1,0 +1,1167 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "27fc91f8-060f-4406-b6f8-ecea15a68139",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "ai_slots": {
+      "name": "ai_slots",
+      "columns": {
+        "slot": {
+          "name": "slot",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "preset": {
+          "name": "preset",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vision": {
+          "name": "vision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_url": {
+          "name": "consent_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_model": {
+          "name": "consent_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "consent_date": {
+          "name": "consent_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_slots_slot_known": {
+          "name": "ai_slots_slot_known",
+          "value": "\"slot\" IN ('text', 'images')"
+        },
+        "ai_slots_provider_known": {
+          "name": "ai_slots_provider_known",
+          "value": "\"provider\" IN ('ollama', 'openai')"
+        }
+      }
+    },
+    "base_rents": {
+      "name": "base_rents",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "base_rents_tenancy_id_tenancies_id_fk": {
+          "name": "base_rents_tenancy_id_tenancies_id_fk",
+          "tableFrom": "base_rents",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "base_rents_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "base_rents_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "base_rents_monthly_not_negative": {
+          "name": "base_rents_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        }
+      }
+    },
+    "closed_settlements": {
+      "name": "closed_settlements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "settlement": {
+          "name": "settlement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "closed_settlements_year_idx": {
+          "name": "closed_settlements_year_idx",
+          "columns": [
+            "year"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "cost_item_shares": {
+      "name": "cost_item_shares",
+      "columns": {
+        "cost_item_id": {
+          "name": "cost_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "percent": {
+          "name": "percent",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cost_item_shares_cost_item_id_cost_items_id_fk": {
+          "name": "cost_item_shares_cost_item_id_cost_items_id_fk",
+          "tableFrom": "cost_item_shares",
+          "tableTo": "cost_items",
+          "columnsFrom": [
+            "cost_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "cost_item_shares_unit_id_units_id_fk": {
+          "name": "cost_item_shares_unit_id_units_id_fk",
+          "tableFrom": "cost_item_shares",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "cost_item_shares_cost_item_id_unit_id_pk": {
+          "columns": [
+            "cost_item_id",
+            "unit_id"
+          ],
+          "name": "cost_item_shares_cost_item_id_unit_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_item_shares_percent_not_negative": {
+          "name": "cost_item_shares_percent_not_negative",
+          "value": "\"percent\" >= 0"
+        }
+      }
+    },
+    "cost_items": {
+      "name": "cost_items",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "vendor": {
+          "name": "vendor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "direct_unit_id": {
+          "name": "direct_unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "meter_type": {
+          "name": "meter_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "labor_35a_cents": {
+          "name": "labor_35a_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "invoice_file": {
+          "name": "invoice_file",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "cost_items_year_idx": {
+          "name": "cost_items_year_idx",
+          "columns": [
+            "year"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "cost_items_direct_unit_id_units_id_fk": {
+          "name": "cost_items_direct_unit_id_units_id_fk",
+          "tableFrom": "cost_items",
+          "tableTo": "units",
+          "columnsFrom": [
+            "direct_unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cost_items_key_known": {
+          "name": "cost_items_key_known",
+          "value": "\"key\" IN ('area', 'persons', 'units', 'direct', 'meter', 'custom')"
+        },
+        "cost_items_meter_type_known": {
+          "name": "cost_items_meter_type_known",
+          "value": "\"meter_type\" IN ('kaltwasser', 'strom', 'waerme', 'sonstig')"
+        }
+      }
+    },
+    "meters": {
+      "name": "meters",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "meter_number": {
+          "name": "meter_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "meters_unit_id_units_id_fk": {
+          "name": "meters_unit_id_units_id_fk",
+          "tableFrom": "meters",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "meters_type_known": {
+          "name": "meters_type_known",
+          "value": "\"type\" IN ('kaltwasser', 'strom', 'waerme', 'sonstig')"
+        }
+      }
+    },
+    "payments": {
+      "name": "payments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "payments_tenancy_id_tenancies_id_fk": {
+          "name": "payments_tenancy_id_tenancies_id_fk",
+          "tableFrom": "payments",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "person_history": {
+      "name": "person_history",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "persons": {
+          "name": "persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "person_history_tenancy_id_tenancies_id_fk": {
+          "name": "person_history_tenancy_id_tenancies_id_fk",
+          "tableFrom": "person_history",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "person_history_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "person_history_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "person_history_persons_not_negative": {
+          "name": "person_history_persons_not_negative",
+          "value": "\"persons\" >= 0"
+        }
+      }
+    },
+    "prepayment_overrides": {
+      "name": "prepayment_overrides",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "year": {
+          "name": "year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "prepayment_overrides_tenancy_id_tenancies_id_fk": {
+          "name": "prepayment_overrides_tenancy_id_tenancies_id_fk",
+          "tableFrom": "prepayment_overrides",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "prepayment_overrides_tenancy_id_year_pk": {
+          "columns": [
+            "tenancy_id",
+            "year"
+          ],
+          "name": "prepayment_overrides_tenancy_id_year_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "prepayment_overrides_amount_not_negative": {
+          "name": "prepayment_overrides_amount_not_negative",
+          "value": "\"amount_cents\" >= 0"
+        }
+      }
+    },
+    "prepayments": {
+      "name": "prepayments",
+      "columns": {
+        "tenancy_id": {
+          "name": "tenancy_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "from": {
+          "name": "from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "monthly_cents": {
+          "name": "monthly_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "prepayments_tenancy_id_tenancies_id_fk": {
+          "name": "prepayments_tenancy_id_tenancies_id_fk",
+          "tableFrom": "prepayments",
+          "tableTo": "tenancies",
+          "columnsFrom": [
+            "tenancy_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "prepayments_tenancy_id_from_pk": {
+          "columns": [
+            "tenancy_id",
+            "from"
+          ],
+          "name": "prepayments_tenancy_id_from_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "prepayments_monthly_not_negative": {
+          "name": "prepayments_monthly_not_negative",
+          "value": "\"monthly_cents\" >= 0"
+        }
+      }
+    },
+    "readings": {
+      "name": "readings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "meter_id": {
+          "name": "meter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "replacement": {
+          "name": "replacement",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "old_end_value": {
+          "name": "old_end_value",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "readings_meter_id_meters_id_fk": {
+          "name": "readings_meter_id_meters_id_fk",
+          "tableFrom": "readings",
+          "tableTo": "meters",
+          "columnsFrom": [
+            "meter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "readings_value_not_negative": {
+          "name": "readings_value_not_negative",
+          "value": "\"value\" >= 0"
+        },
+        "readings_old_end_value_not_negative": {
+          "name": "readings_old_end_value_not_negative",
+          "value": "\"old_end_value\" >= 0"
+        }
+      }
+    },
+    "settings": {
+      "name": "settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "house_name": {
+          "name": "house_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "landlord_name": {
+          "name": "landlord_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payment_deadline_days": {
+          "name": "payment_deadline_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ollama_url": {
+          "name": "ollama_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ollama_model": {
+          "name": "ollama_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "print_adjust_suggestion": {
+          "name": "print_adjust_suggestion",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "print_attachments": {
+          "name": "print_attachments",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "update_check": {
+          "name": "update_check",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "update_dismissed": {
+          "name": "update_dismissed",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_timeout_seconds": {
+          "name": "ai_timeout_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_num_ctx": {
+          "name": "ai_num_ctx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_max_output_tokens": {
+          "name": "ai_max_output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_page_image_edge": {
+          "name": "ai_page_image_edge",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_json_mode": {
+          "name": "ai_json_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ai_reasoning_effort": {
+          "name": "ai_reasoning_effort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ai_extra_instructions": {
+          "name": "ai_extra_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "settings_single_row": {
+          "name": "settings_single_row",
+          "value": "\"settings\".\"id\" = 1"
+        },
+        "settings_deadline_not_negative": {
+          "name": "settings_deadline_not_negative",
+          "value": "\"payment_deadline_days\" >= 0"
+        },
+        "settings_update_check_known": {
+          "name": "settings_update_check_known",
+          "value": "\"update_check\" IN ('on', 'off')"
+        },
+        "settings_ai_json_mode_known": {
+          "name": "settings_ai_json_mode_known",
+          "value": "\"ai_json_mode\" IN ('auto', 'schema', 'object', 'prompt')"
+        }
+      }
+    },
+    "tenancies": {
+      "name": "tenancies",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tenant_name": {
+          "name": "tenant_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "persons": {
+          "name": "persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start": {
+          "name": "start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end": {
+          "name": "end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "correspondence_address": {
+          "name": "correspondence_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "contract_date": {
+          "name": "contract_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deposit_cents": {
+          "name": "deposit_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deposit_status": {
+          "name": "deposit_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tenancies_unit_id_units_id_fk": {
+          "name": "tenancies_unit_id_units_id_fk",
+          "tableFrom": "tenancies",
+          "tableTo": "units",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tenancies_persons_not_negative": {
+          "name": "tenancies_persons_not_negative",
+          "value": "\"persons\" >= 0"
+        },
+        "tenancies_deposit_not_negative": {
+          "name": "tenancies_deposit_not_negative",
+          "value": "\"deposit_cents\" >= 0"
+        },
+        "tenancies_deposit_status_known": {
+          "name": "tenancies_deposit_status_known",
+          "value": "\"deposit_status\" IN ('offen', 'erhalten', 'teilweise', 'zurückgezahlt')"
+        }
+      }
+    },
+    "units": {
+      "name": "units",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "area_m2": {
+          "name": "area_m2",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "participates": {
+          "name": "participates",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "self_used": {
+          "name": "self_used",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "self_persons": {
+          "name": "self_persons",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rooms": {
+          "name": "rooms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "floor": {
+          "name": "floor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "units_area_not_negative": {
+          "name": "units_area_not_negative",
+          "value": "\"area_m2\" >= 0"
+        },
+        "units_self_persons_not_negative": {
+          "name": "units_self_persons_not_negative",
+          "value": "\"self_persons\" >= 0"
+        },
+        "units_rooms_not_negative": {
+          "name": "units_rooms_not_negative",
+          "value": "\"rooms\" >= 0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
