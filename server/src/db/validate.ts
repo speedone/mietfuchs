@@ -364,7 +364,11 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
     fields.text('start', 'Beginn', false)
     fields.optionalText('end', 'Ende')
     if (fieldOf(entry, 'persons') === undefined) {
-      adjust(c, where, 'Es ist keine Personenzahl hinterlegt. Übernommen wird 1, so wie Mietfuchs sie heute schon einliest.')
+      // Die aktuelle Personenzahl ist laut Datenmodell aus der Staffel abgeleitet; gerechnet
+      // wird ohnehin mit der Staffel, und nur wenn die leer ist, fällt die Berechnung auf
+      // dieses Feld zurück. Der Hinweis nennt beide Fälle, damit beim Übernehmen nicht geraten
+      // werden muss.
+      adjust(c, where, 'Es ist keine aktuelle Personenzahl hinterlegt. Übernommen wird der letzte Eintrag der Personen-Staffel, und ohne Staffel die 1, so wie Mietfuchs sie heute schon einliest.')
     } else {
       fields.number('persons', 'Personenzahl')
     }
@@ -404,7 +408,10 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
 // Die tatsächlich gezahlte Vorauszahlung eines Jahres: nach Jahr geschlüsselt, nicht nach Datum.
 function checkOverrides(c: Collector, tenancy: unknown, where: string): void {
   const raw = fieldOf(tenancy, 'prepaymentOverrides')
-  if (raw === undefined || raw === null || raw === '') {
+  // Dieselbe Bedingung wie in legacy.ts (`if (!t.prepaymentOverrides)`): Was dort leer ergänzt
+  // wird, ist hier kein Mangel. Eine eigene, strengere Bedingung liefe genau da auseinander,
+  // wo beide zusammenbleiben müssen.
+  if (!raw) {
     adjust(c, where, 'Es sind keine tatsächlich gezahlten Vorauszahlungen vermerkt. Der Eintrag bleibt leer, wie bisher beim Einlesen.')
     return
   }
@@ -412,7 +419,7 @@ function checkOverrides(c: Collector, tenancy: unknown, where: string): void {
     problem(c, where, `Bei den tatsächlich gezahlten Vorauszahlungen steht ${kindOf(raw)} statt einer Zuordnung von Jahr zu Betrag.`)
     return
   }
-  for (const [year, amount] of Object.entries(raw)) {
+  for (const year of Object.keys(raw)) {
     const at = `${where}, gezahlte Vorauszahlung ${year}`
     if (!/^\d{4}$/.test(year)) {
       problem(c, at, `„${short(year)}" ist keine Jahreszahl. Der Betrag ließe sich keinem Abrechnungsjahr zuordnen.`)
@@ -469,7 +476,7 @@ function checkShares(c: Collector, item: unknown, where: string, units: Collecti
     problem(c, where, `Bei den vereinbarten Anteilen steht ${kindOf(raw)} statt einer Zuordnung von Wohnung zu Prozentanteil.`)
     return
   }
-  for (const [unitId, percent] of Object.entries(raw)) {
+  for (const unitId of Object.keys(raw)) {
     const at = `${where}, vereinbarter Anteil für ${unitId}`
     fieldsOf(c, raw, at).number(unitId, 'Prozentanteil')
     // Beim Löschen einer Wohnung räumt Mietfuchs diese Einträge heute weg. Übrig bleiben kann
