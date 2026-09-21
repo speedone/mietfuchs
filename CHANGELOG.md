@@ -8,6 +8,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Im Datenordner liegt jetzt eine Datei `mietfuchs.sqlite`.** Das ist die Datenbank, die
+  gerade entsteht; sie wird beim Start angelegt und geöffnet, ist aber noch leer. Ihre
+  Wohnungen, Kosten, Zähler und Abrechnungen stehen weiterhin in der `db.json`, und an der
+  Bedienung ändert sich nichts. Angelegt wird sie schon jetzt, damit sich auf allen geprüften
+  Systemen zeigt, dass sie dort auch wirklich funktioniert, bevor Daten davon abhängen. Beim
+  Start nennt Mietfuchs ihren Pfad in einer eigenen Zeile. Lässt sie sich nicht öffnen, etwa
+  weil der Ordner schreibgeschützt ist, läuft Mietfuchs wie bisher weiter und sagt, woran es
+  lag. ([#55](https://github.com/speedone/mietfuchs/issues/55))
+
 - **Wer Mietfuchs aus dem Quellcode startet, braucht jetzt mindestens Node 24.15.** Zwei Gründe
   kommen dort zusammen. Der Server ist von JavaScript auf TypeScript umgestellt und wird
   weiterhin nicht gebaut: Node führt die Dateien unmittelbar aus und streift die Typen dabei ab,
