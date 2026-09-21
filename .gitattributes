@@ -1,3 +1,13 @@
-# Der Startmenü-Eintrag der Linux-Pakete muss Zeilenenden im Unix-Format behalten. Gebaut wird
-# er auch auf Windows-Rechnern (npm run package:linux), und mit CRLF gilt er als ungültig.
-*.desktop text eol=lf
+# Migrationen immer mit Zeilenumbruch LF auschecken, auf jedem System.
+#
+# Git stellt Textdateien beim Auschecken sonst auf die Schreibweise des Systems um; unter
+# Windows ist `core.autocrlf=true` die Voreinstellung. Damit hätte dieselbe Migration je nach
+# Rechner einen anderen Inhalt und damit eine andere Marke, und der Test „ein bereits
+# veröffentlichter Schritt ist unverändert" schlüge auf dem einen System fehl und auf dem
+# anderen nicht.
+#
+# Der Code verlässt sich darauf nicht: `normalize()` in server/src/db/client.ts und
+# scripts/embed-migrations.mjs vereinheitlicht die Zeilenenden ohnehin, damit auch ein Bestand
+# mit abweichender Einstellung richtig gelesen wird. Dieser Eintrag hält die Arbeitskopie
+# sauber, die Normalisierung im Code ist die eigentliche Zusicherung.
+server/drizzle/*.sql text eol=lf
