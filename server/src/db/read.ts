@@ -98,8 +98,11 @@ export async function readStock(db: Database): Promise<Stock> {
   const persons = groupBy(personRows, (r) => r.tenancyId, (r) => ({ from: r.from, persons: r.persons }))
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
-  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r) => [String(r.year), r.amountCents] as const)
-  const shares = groupBy(shareRows, (r) => r.costItemId, (r) => [r.unitId, r.percent] as const)
+  // Die beiden letzten werden gleich zu Objekten (`Object.fromEntries`), deshalb Paare. Der
+  // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
+  // Er beschreibt, was danebensteht, und der Übersetzer rechnet es nach.
+  const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [String(r.year), r.amountCents])
+  const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
 
   return {
     units: unitRows.map((u) => ({
