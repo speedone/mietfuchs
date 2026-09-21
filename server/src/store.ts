@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
-import { migrateAi } from './ai/settings.ts'
+import { migrateLegacy } from './legacy.ts'
 import { systemLocation, writable } from './paths.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -86,14 +86,6 @@ export const DATA_DIR = chooseDataDir()
 export const UPLOAD_DIR = path.join(DATA_DIR, 'uploads')
 const DB_FILE = path.join(DATA_DIR, 'db.json')
 
-// Standardmodell für die KI-Belegauswertung, gewählt mit dem KI-Prüflauf (#17): Auf Rechnern
-// ohne Grafikkarte liest es PDFs mit Textebene fast fehlerfrei, einseitige Scans meist richtig,
-// und es braucht rund 3,6 GB Arbeitsspeicher. Das Compose-Profil „ki“ lädt dasselbe Modell,
-// ein Test gleicht beides ab.
-export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:4b'
-// Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
-const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
-
 // Was POST /api/settlement/:year/close tatsächlich ablegt: das Ergebnis von computeSettlement,
 // aber `selfUsedShareCents` optional, weil Schnappschüsse von vor v0.3.0 es noch nicht kennen.
 // Zwei Stellen sichern das ab, und das muss so bleiben: GET /api/settlement/:year in index.ts
@@ -124,70 +116,17 @@ export type Db = {
   closedSettlements: ClosedSettlement[]
 }
 
-const DEFAULT_DB: Db = {
-  settings: {
-    houseName: '',
-    address: '',
-    landlordName: '',
-    iban: '',
-    paymentDeadlineDays: 30,
-    ollamaUrl: 'http://localhost:11434',
-    ollamaModel: DEFAULT_OLLAMA_MODEL,
-  },
-  units: [],
-  tenancies: [],
-  costItems: [],
-  meters: [],
-  readings: [],
-  // Gebuchte Mietzahlungen (Geldeingänge) fürs Mietkonto
-  payments: [],
-  // Abgeschlossene Abrechnungen: eingefrorener Berechnungsstand je Jahr
-  closedSettlements: [],
-}
-
 let db: Db | null = null
 
 function load(): Db {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-  let next: Db
-  if (fs.existsSync(DB_FILE)) {
-    next = { ...structuredClone(DEFAULT_DB), ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) }
-    next.settings = { ...DEFAULT_DB.settings, ...next.settings }
-  } else {
-    next = structuredClone(DEFAULT_DB)
-  }
-  // Der frühere Standard existierte nie, wer ihn nicht geändert hat, konnte gar nicht auswerten.
-  // Eine eigene Wahl bleibt unangetastet.
-  if (next.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) next.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
-  if (next.settings.ai?.text?.model === INVALID_OLD_DEFAULT_MODEL) next.settings.ai.text.model = DEFAULT_OLLAMA_MODEL
-  // KI-Anbieter (#18): `settings.ai` entsteht aus ollamaUrl und ollamaModel, fehlende Felder
-  // werden ergänzt (siehe ai/settings.ts)
-  migrateAi(next.settings)
-  // Migrationen älterer Datenformate.
-  // Wohnungen: `selfUsed`/`selfPersons` (Eigennutzung in der Verteilbasis) kamen später dazu.
-  // Bewusst ohne Rück-Migration — ein automatisch gesetztes Kennzeichen würde die Verteilung
-  // bereits abgerechneter Jahre verändern. Die Umstellung passiert in den Stammdaten; das
-  // Cockpit weist auf nicht beteiligte Wohnungen mit Wohnfläche hin.
-  for (const t of next.tenancies) {
-    // fester Monatsbetrag → Vorauszahlungs-Staffel
-    if (!Array.isArray(t.prepayments)) {
-      // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr, nur noch in
-      // ungewanderten Altbeständen. Daher der gezielte Zugriff über eine Erweiterung des Typs.
-      const legacy = t as Tenancy & { prepaymentMonthlyCents?: number }
-      t.prepayments =
-        legacy.prepaymentMonthlyCents != null
-          ? [{ from: t.start.slice(0, 7), monthlyCents: legacy.prepaymentMonthlyCents }]
-          : []
-      delete legacy.prepaymentMonthlyCents
-    }
-    if (!t.prepaymentOverrides) t.prepaymentOverrides = {}
-    // feste Personenzahl → Personen-Staffel
-    if (!Array.isArray(t.personHistory)) {
-      t.personHistory = [{ from: t.start, persons: t.persons ?? 1 }]
-    }
-    // Kaltmiete-Staffel kam später dazu — Altbestand hat sie noch nicht
-    if (!Array.isArray(t.baseRents)) t.baseRents = []
-  }
+  // Was in der Datei steht, weiß vorher niemand; der Typ ist hier eine Annahme und keine
+  // Prüfung, wie bisher. Geprüft wird dort, wo ein fremder Bestand hereinkommt: beim
+  // Wiederherstellen eines Backups, mit dem Validator in db/validate.ts.
+  const stored: Partial<Db> | null = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : null
+  // Die Vorgabewerte und die Umwandlung der alten Formate stehen in legacy.ts, weil der Umstieg
+  // in die Datenbank dieselben Regeln braucht.
+  const next = migrateLegacy(stored)
   db = next
   return next
 }
