@@ -35,9 +35,12 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { Database, Executor } from './client.ts'
-import { readCostItems, readMeters, readPayments, readReadings, readTenancies, readUnits } from './read.ts'
 import {
-  baseRents, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS, METER_TYPES, meters, payments,
+  readClosedSettlements, readCostItems, readMeters, readPayments, readReadings, readTenancies,
+  readUnits, type StoredClosedSettlement,
+} from './read.ts'
+import {
+  baseRents, closedSettlements, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS, METER_TYPES, meters, payments,
   personHistory, prepaymentOverrides, prepayments, readings, tenancies, units,
 } from './schema.ts'
 
@@ -477,6 +480,39 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
     await db.transaction(async (tx) => c.remove(tx, id))
     return true
   })
+}
+
+// ---------- Die abgeschlossene Abrechnung ----------
+//
+// Sie ist keine gewöhnliche Sammlung, deshalb eigene Vorgänge und keine Verschmelzung: Angelegt
+// wird sie nicht mit einem beliebigen Rumpf, sondern mit dem Berechnungsstand, den der Server
+// selbst gerade gerechnet hat. Der eingefrorene Stand bleibt dabei JSON, siehe die Begründung am
+// Schema: Er ist ein Archivstück, das wortgleich erhalten bleiben soll, auch wenn spätere
+// Versionen anders rechnen.
+
+export async function findClosedSettlement(db: Database, year: number): Promise<StoredClosedSettlement | undefined> {
+  return (await readClosedSettlements(db)).find((eintrag) => eintrag.year === year)
+}
+
+export async function closeSettlement(
+  db: Database,
+  entry: { id: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
+): Promise<void> {
+  await db.insert(closedSettlements).values(entry)
+}
+
+// `false`, wenn es für das Jahr keine abgeschlossene Abrechnung gibt; die Route macht daraus
+// ihre 404.
+export async function setSentAt(db: Database, year: number, sentAt: string | null): Promise<boolean> {
+  if (!(await findClosedSettlement(db, year))) return false
+  await db.update(closedSettlements).set({ sentAt }).where(eq(closedSettlements.year, year))
+  return true
+}
+
+export async function reopenSettlement(db: Database, year: number): Promise<boolean> {
+  if (!(await findClosedSettlement(db, year))) return false
+  await db.delete(closedSettlements).where(eq(closedSettlements.year, year))
+  return true
 }
 
 // ---------- Was die Sonderrouten brauchen ----------
