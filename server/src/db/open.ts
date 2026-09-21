@@ -124,7 +124,10 @@ function appliedSteps(connection: Connection): AppliedStep[] {
 // über die Ländereinstellungen: Die hängen davon ab, was auf dem Rechner installiert ist, und
 // eine Meldung soll überall gleich aussehen.
 function germanDate(millis: number): string {
-  if (!Number.isFinite(millis)) return 'unbekannt'
+  // Der Wert kommt aus einer Datei, für die wir nichts können. Außerhalb dieses Bereichs kennt
+  // JavaScript kein Datum, und `toISOString` würde werfen — mitten in einer Meldung, die gerade
+  // erklären soll, was los ist.
+  if (!Number.isFinite(millis) || Math.abs(millis) > 8.64e15) return 'unbekannt'
   const iso = new Date(millis).toISOString().slice(0, 10).split('-')
   return `${iso[2]}.${iso[1]}.${iso[0]}`
 }
