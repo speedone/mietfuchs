@@ -103,6 +103,25 @@ export type Snapshot = {
   closedSettlement: SnapshotClosedSettlement | null
 }
 
+// Die Sammlungen, aus denen ein Schnappschuss entsteht, ohne die Frage, woher sie kommen. Die
+// JSON-Datei füllt sie über `snapshotFromDb` unten, die Datenbank über `snapshotFromStock` in
+// db/read.ts.
+//
+// **Die Regel, was nach Jahr eingegrenzt wird, steht deshalb nur einmal**, nämlich in
+// `snapshotOf`. Zwei Fassungen davon wären die gefährlichste Doppelung im ganzen Umbau: Wer
+// dort zu viel eingrenzt, bekommt keine Fehlermeldung, sondern eine stille Falschrechnung
+// (siehe die Begründung je Sammlung unten).
+export type SnapshotSource = {
+  units: SnapshotUnit[]
+  tenancies: SnapshotTenancy[]
+  costItems: SnapshotCostItem[]
+  meters: SnapshotMeter[]
+  readings: SnapshotReading[]
+  payments: SnapshotPayment[]
+  // Alle Jahre, jedes eingedampft auf die eine Zahl, die die Berechnung daraus liest.
+  closedSettlements: (SnapshotClosedSettlement & { year: number })[]
+}
+
 // Baut den Schnappschuss eines Abrechnungsjahres aus dem Datenbestand.
 //
 // Eingegrenzt wird nach Jahr nur, was sein Jahr als Feld dabei hat: die Kostenpositionen und
@@ -123,7 +142,7 @@ export type Snapshot = {
 //   Zahlungen          Welche Zahlung zum Jahr zählt, entscheidet das Mietkonto nach ihrem
 //                      Datum. Diese Regel bleibt dort, wo sie kommentiert und geprüft ist.
 //   Wohnungen, Zähler  tragen gar kein Jahr. Sie gehören zum Haus, nicht zur Abrechnung.
-export function snapshotFromDb(db: Db, year: number): Snapshot {
+export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   // Die Datensätze werden durchgereicht, nicht Feld für Feld neu gebaut. Der Schnappschuss ist
   // eine Sicht, keine Kopie; die Berechnung ändert nichts an ihm.
   //
@@ -133,18 +152,38 @@ export function snapshotFromDb(db: Db, year: number): Snapshot {
   // Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig
   // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
   // calc.test.ts hält das fest.
-  const closed = db.closedSettlements.find((c) => c.year === year)
+  const closed = source.closedSettlements.find((c) => c.year === year)
   return {
     year,
-    units: db.units,
-    tenancies: db.tenancies,
-    costItems: db.costItems.filter((c) => c.year === year),
-    meters: db.meters,
-    readings: db.readings,
-    payments: db.payments,
-    // Ein Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch nicht. Der Rückfall auf 0
-    // stand bisher in der Steuerübersicht; er gehört hierher, weil er die Gestalt alter
-    // gespeicherter Daten betrifft.
-    closedSettlement: closed ? { selfUsedShareCents: closed.settlement?.selfUsedShareCents ?? 0 } : null,
+    units: source.units,
+    tenancies: source.tenancies,
+    costItems: source.costItems.filter((c) => c.year === year),
+    meters: source.meters,
+    readings: source.readings,
+    payments: source.payments,
+    closedSettlement: closed ? { selfUsedShareCents: closed.selfUsedShareCents } : null,
   }
+}
+
+// Der Schnappschuss aus dem Bestand der JSON-Datei.
+export function snapshotFromDb(db: Db, year: number): Snapshot {
+  return snapshotOf(
+    {
+      units: db.units,
+      tenancies: db.tenancies,
+      costItems: db.costItems,
+      meters: db.meters,
+      readings: db.readings,
+      payments: db.payments,
+      // Ein Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch nicht. Der Rückfall auf 0
+      // stand bisher in der Steuerübersicht; er gehört hierher, weil er die Gestalt alter
+      // gespeicherter Daten betrifft. Auch hier kein `?? []` um die Sammlung selbst: Ist sie
+      // `null`, soll es krachen, und `map` tut genau das.
+      closedSettlements: db.closedSettlements.map((c) => ({
+        year: c.year,
+        selfUsedShareCents: c.settlement?.selfUsedShareCents ?? 0,
+      })),
+    },
+    year,
+  )
 }
