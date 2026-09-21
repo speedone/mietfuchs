@@ -551,3 +551,39 @@ test('Eine unsinnige Jahreszahl sprengt den Vergleich nicht', () => {
   assert.ok(jahre.includes(2024) && jahre.includes(9999), jahre.join(', '))
   assert.ok(jahre.length < 100, `zu viele Jahre: ${jahre.length}`)
 })
+
+test('Ein krummes Datum nimmt der Prüfung nicht die Jahre dazwischen', () => {
+  // Der gefährliche Teil der vorigen Regel. `yearOfDate` liest die ersten vier Zeichen als Zahl,
+  // aus „12" wird also das Jahr 12. Reißt das den Bereich auf, fällt Mietfuchs darauf zurück,
+  // nur noch die Jahre zu prüfen, in denen ein Datensatz steht — und das sind ausgerechnet nicht
+  // die Jahre, für die die Berechnung am meisten herleitet. Ein Mietverhältnis von 2020 bis 2024
+  // hat auch 2022 ein Mietsoll.
+  //
+  // Erreichbar ist so ein Datum: Der Validator lehnt ein leeres Feld ab, prüft aber
+  // ausdrücklich keine Datumsformate, und die generischen CRUD-Routen prüfen gar nichts.
+  const db = fullDb()
+  db.costItems = []
+  db.readings = []
+  db.tenancies = [tenancy({ id: 't1', unitId: 'u1', start: '2020-01-01', end: '2024-12-31' })]
+  db.payments = [payment({ id: 'p1', tenancyId: 't1', date: '12' })]
+  const jahre = yearsToCheck(db, 2026)
+  for (const jahr of [2021, 2022, 2023]) {
+    assert.ok(jahre.includes(jahr), `${jahr} wird nicht geprüft: ${jahre.join(', ')}`)
+  }
+  // Das krumme Jahr selbst bleibt dabei, denn dort steht ein Datensatz.
+  assert.ok(jahre.includes(12), jahre.join(', '))
+})
+
+test('Ein altes, aber mögliches Jahr bleibt im zusammenhängenden Bereich', () => {
+  // Die Gegenprobe zur vorigen Regel: Sie darf nicht dazu führen, dass weniger geprüft wird als
+  // vorher. Ein Mietverhältnis, das weit zurückreicht, ist ungewöhnlich, aber kein Unsinn, und
+  // die Jahre dazwischen haben ein Mietsoll wie alle anderen auch. Die Grenze liegt deshalb am
+  // laufenden Jahr und nicht auf einer festen Jahreszahl.
+  const db = fullDb()
+  db.costItems = []
+  db.readings = []
+  db.payments = []
+  db.tenancies = [tenancy({ id: 't1', unitId: 'u1', start: '1950-01-01', end: '1955-12-31' })]
+  const jahre = yearsToCheck(db, 2026)
+  assert.deepEqual(jahre, [1950, 1951, 1952, 1953, 1954, 1955])
+})

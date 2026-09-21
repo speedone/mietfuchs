@@ -39,6 +39,25 @@ import type { Db } from '../store.ts'
 // die Jahre geprüft, in denen wirklich etwas steht.
 const MAX_YEARS = 200
 
+// Jahre, die zu einem Bestand gehören können. Sie bilden den zusammenhängenden Bereich; alles
+// außerhalb wird trotzdem geprüft, reißt den Bereich aber nicht auf.
+//
+// **Ohne diese Grenze nähme ein einziges krummes Datum der Prüfung ihre Mitte.** `yearOfDate`
+// liest die ersten vier Zeichen als Zahl, aus „12" wird also das Jahr 12. Der Bereich 12 bis
+// heute überspannt mehr als MAX_YEARS, und der Rückfall darauf, nur die genannten Jahre zu
+// prüfen, ließe ausgerechnet die Jahre dazwischen aus — die, für die die Berechnung am meisten
+// herleitet und für die der Kommentar an `yearsToCheck` begründet, warum sie dazugehören. Der
+// Validator fängt ein leeres Datum ab, ein nicht leeres unsinniges nicht.
+//
+// Die Grenze liegt bewusst **am laufenden Jahr und nicht auf einer festen Jahreszahl**, und
+// zwar genau MAX_YEARS zurück. Damit ist die Regel nie enger als die alte: Ein Jahr, das den
+// Bereich früher nicht gesprengt hätte, gilt auch hier als plausibel und bleibt in ihm drin.
+// Nach vorn genügt eine Generation; weiter reicht kein Mietverhältnis, und ein Datum dahinter
+// ist ein Tippfehler.
+const PLAUSIBLE_AHEAD = 50
+const plausibleYear = (year: number, currentYear: number): boolean =>
+  year >= currentYear - MAX_YEARS && year <= currentYear + PLAUSIBLE_AHEAD
+
 const yearOfDate = (date: unknown): number | null => {
   const year = typeof date === 'string' ? Number(date.slice(0, 4)) : Number.NaN
   return Number.isInteger(year) ? year : null
@@ -74,12 +93,17 @@ export function yearsToCheck(db: Db, currentYear: number): number[] {
   }
   const named = [...marks].sort((a, b) => a - b)
   if (named.length === 0) return []
-  const from = named[0]
-  const to = named[named.length - 1]
+  // Der Bereich entsteht nur aus plausiblen Jahren, die übrigen kommen einzeln dazu. Sie können
+  // nicht im Bereich liegen, denn sie stehen gerade außerhalb seiner Grenzen.
+  const plausible = named.filter((year) => plausibleYear(year, currentYear))
+  const odd = named.filter((year) => !plausibleYear(year, currentYear))
+  if (plausible.length === 0) return named
+  const from = plausible[0]
+  const to = plausible[plausible.length - 1]
   if (to - from + 1 > MAX_YEARS) return named
-  const all: number[] = []
+  const all: number[] = odd.filter((year) => year < from)
   for (let year = from; year <= to; year++) all.push(year)
-  return all
+  return [...all, ...odd.filter((year) => year > to)]
 }
 
 // ---------- Der Vergleichsstand ----------
