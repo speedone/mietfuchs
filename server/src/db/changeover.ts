@@ -185,7 +185,11 @@ function removeTemp(tempFile: string): void {
 // Ein `rename` kann unter Windows kurzzeitig scheitern, wenn ein Virenscanner oder die
 // Suchindizierung die Datei gerade offen hält. Ein paar Versuche im Abstand von Millisekunden
 // kosten nichts und ersparen dem Nutzer eine Fehlermeldung für etwas, das von selbst vergeht.
-async function replaceFile(from: string, to: string): Promise<void> {
+//
+// **Exportiert, weil das Wiederherstellen dieselbe Datei bewegt** (index.ts). Dort stand ein
+// nacktes `renameSync`, und damit scheiterte an genau diesem Virenscanner ein Vorgang, der die
+// einzige Kopie der wiederhergestellten Daten in der Hand hält.
+export async function replaceFile(from: string, to: string): Promise<void> {
   for (let attempt = 1; ; attempt++) {
     try {
       fs.renameSync(from, to)
