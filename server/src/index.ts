@@ -910,8 +910,10 @@ const server = app.listen(PORT, (err) => {
   // Die Datenbank in derselben Aufzählung: Wer seinen Bestand sichern oder umziehen will, soll
   // auch diese Datei nicht suchen müssen.
   if (database) console.log(`Datenbank: ${database.file}`)
-  else console.log(`Datenbank: nicht geöffnet. ${databaseProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
-  for (const warning of database?.warnings ?? []) console.log(`Hinweis: ${warning}`)
+  // Auf die Fehlerausgabe, nicht in die gewöhnliche: Der Start gelingt, aber etwas ist nicht in
+  // Ordnung, und wer Ausgaben einsammelt, soll genau das auseinanderhalten können.
+  else console.error(`Datenbank: nicht geöffnet. ${databaseProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
+  for (const warning of database?.warnings ?? []) console.error(`Hinweis: ${warning}`)
   if (STANDALONE) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
     // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
