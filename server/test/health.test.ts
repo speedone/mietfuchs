@@ -95,6 +95,10 @@ test('Healthcheck: ein gescheiterter Umstieg ist ein Fehler, obwohl die Datenban
   })
   assert.equal(report.status, 'error')
   assert.equal(report.checks.database?.ok, false)
+  // **Und die Begründung sagt nicht das Gegenteil.** `detail` ist bei offener Datei „geöffnet";
+  // stünde das hier, meldete der Bericht eine fehlgeschlagene Prüfung und nennte als Grund, dass
+  // alles in Ordnung sei. Wer einen Container überwacht, sieht nur diese Zeile.
+  assert.match(String(report.checks.database?.detail), /Umstieg/, report.checks.database?.detail)
   assert.equal(report.database?.changeover.state, 'failed', 'der Grund steht weiterhin im Bericht')
   assert.equal(report.database?.migrations, 1)
 })
