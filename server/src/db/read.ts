@@ -81,112 +81,152 @@ function selfUsedShareOf(settlement: unknown): number {
   return typeof value === 'number' ? value : 0
 }
 
-export async function readStock(db: Database): Promise<Stock> {
-  const unitRows = await db.select().from(units).orderBy(INSERTION_ORDER)
-  const tenancyRows = await db.select().from(tenancies).orderBy(INSERTION_ORDER)
+// ---------- Je Sammlung ein Leser ----------
+//
+// Jede Sammlung hat ihren eigenen Leser, und `readStock` setzt sie nur zusammen. Der Grund ist
+// die Route: `GET /api/units` braucht die Wohnungen und nicht den ganzen Bestand. Damit steht
+// die Naht zwischen Zeile und Domänentyp je Sammlung an genau einer Stelle, und sie ist eine
+// benannte Funktion und keine Zusicherung (dasselbe Muster wie bei der KI-Auswertung, #63).
+
+export async function readUnits(db: Database): Promise<Unit[]> {
+  const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
+  return rows.map((u) => ({
+    id: u.id,
+    name: u.name,
+    areaM2: u.areaM2,
+    participates: u.participates,
+    selfUsed: orUndefined(u.selfUsed),
+    selfPersons: orUndefined(u.selfPersons),
+    rooms: orUndefined(u.rooms),
+    floor: orUndefined(u.floor),
+    notes: orUndefined(u.notes),
+  }))
+}
+
+// Ein Mietverhältnis liegt über fünf Tabellen: sich selbst und die drei Staffeln, dazu die
+// Jahreskorrektur. Deshalb liest dieser Leser mehr als einen Tisch, und deshalb ist er der
+// einzige, bei dem das so ist.
+export async function readTenancies(db: Database): Promise<Tenancy[]> {
+  const rows = await db.select().from(tenancies).orderBy(INSERTION_ORDER)
   const personRows = await db.select().from(personHistory).orderBy(INSERTION_ORDER)
   const prepaymentRows = await db.select().from(prepayments).orderBy(INSERTION_ORDER)
   const baseRentRows = await db.select().from(baseRents).orderBy(INSERTION_ORDER)
   const overrideRows = await db.select().from(prepaymentOverrides).orderBy(INSERTION_ORDER)
-  const costItemRows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
-  const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
-  const meterRows = await db.select().from(meters).orderBy(INSERTION_ORDER)
-  const readingRows = await db.select().from(readings).orderBy(INSERTION_ORDER)
-  const paymentRows = await db.select().from(payments).orderBy(INSERTION_ORDER)
-  const closedRows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
 
   const persons = groupBy(personRows, (r) => r.tenancyId, (r) => ({ from: r.from, persons: r.persons }))
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
-  // Die beiden letzten werden gleich zu Objekten (`Object.fromEntries`), deshalb Paare. Der
+  // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare. Der
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
   // Er beschreibt, was danebensteht, und der Übersetzer rechnet es nach.
   const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [String(r.year), r.amountCents])
-  const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
 
-  return {
-    units: unitRows.map((u) => ({
-      id: u.id,
-      name: u.name,
-      areaM2: u.areaM2,
-      participates: u.participates,
-      selfUsed: orUndefined(u.selfUsed),
-      selfPersons: orUndefined(u.selfPersons),
-      rooms: orUndefined(u.rooms),
-      floor: orUndefined(u.floor),
-      notes: orUndefined(u.notes),
-    })),
-    tenancies: tenancyRows.map((t) => ({
-      id: t.id,
-      unitId: t.unitId,
-      tenantName: t.tenantName,
-      persons: t.persons,
-      personHistory: persons.get(t.id) ?? [],
-      start: t.start,
-      end: t.end,
-      prepayments: prepaid.get(t.id) ?? [],
-      prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
-      baseRents: rents.get(t.id) ?? [],
-      email: orUndefined(t.email),
-      phone: orUndefined(t.phone),
-      correspondenceAddress: orUndefined(t.correspondenceAddress),
-      iban: orUndefined(t.iban),
-      contractDate: orUndefined(t.contractDate),
-      depositCents: orUndefined(t.depositCents),
-      depositStatus: orUndefined(t.depositStatus),
-      notes: orUndefined(t.notes),
-    })),
-    costItems: costItemRows.map((c) => {
-      const own = shares.get(c.id)
-      return {
-        id: c.id,
-        year: c.year,
-        category: c.category,
-        description: c.description,
-        vendor: orUndefined(c.vendor),
-        amountCents: c.amountCents,
-        key: c.key,
-        directUnitId: c.directUnitId,
-        meterType: c.meterType,
-        // Das Feld nur, wenn es Anteile gibt: Eine Position ohne vereinbarte Anteile hat es
-        // auch in der Datei nicht.
-        ...(own ? { customShares: Object.fromEntries(own) } : {}),
-        labor35aCents: orUndefined(c.labor35aCents),
-        invoiceFile: orUndefined(c.invoiceFile),
-      }
-    }),
-    meters: meterRows.map((m) => ({
-      id: m.id,
-      name: m.name,
-      unitId: m.unitId,
-      type: m.type,
-      meterNumber: orUndefined(m.meterNumber),
-      unit: m.unit,
-    })),
-    readings: readingRows.map((r) => ({
-      id: r.id,
-      meterId: r.meterId,
-      date: r.date,
-      value: r.value,
-      replacement: orUndefined(r.replacement),
-      oldEndValue: orUndefined(r.oldEndValue),
-      note: orUndefined(r.note),
-    })),
-    payments: paymentRows.map((p) => ({
-      id: p.id,
-      tenancyId: p.tenancyId,
-      date: p.date,
-      amountCents: p.amountCents,
-      note: orUndefined(p.note),
-    })),
-    closedSettlements: closedRows.map((c) => ({
+  return rows.map((t) => ({
+    id: t.id,
+    unitId: t.unitId,
+    tenantName: t.tenantName,
+    persons: t.persons,
+    personHistory: persons.get(t.id) ?? [],
+    start: t.start,
+    end: t.end,
+    prepayments: prepaid.get(t.id) ?? [],
+    prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
+    baseRents: rents.get(t.id) ?? [],
+    email: orUndefined(t.email),
+    phone: orUndefined(t.phone),
+    correspondenceAddress: orUndefined(t.correspondenceAddress),
+    iban: orUndefined(t.iban),
+    contractDate: orUndefined(t.contractDate),
+    depositCents: orUndefined(t.depositCents),
+    depositStatus: orUndefined(t.depositStatus),
+    notes: orUndefined(t.notes),
+  }))
+}
+
+export async function readCostItems(db: Database): Promise<CostItem[]> {
+  const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
+  const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
+  const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
+  return rows.map((c) => {
+    const own = shares.get(c.id)
+    return {
       id: c.id,
       year: c.year,
-      closedAt: c.closedAt,
-      sentAt: c.sentAt,
-      selfUsedShareCents: selfUsedShareOf(c.settlement),
-      settlement: c.settlement,
-    })),
+      category: c.category,
+      description: c.description,
+      vendor: orUndefined(c.vendor),
+      amountCents: c.amountCents,
+      key: c.key,
+      directUnitId: c.directUnitId,
+      meterType: c.meterType,
+      // Das Feld nur, wenn es Anteile gibt: Eine Position ohne vereinbarte Anteile hat es
+      // auch in der Datei nicht.
+      ...(own ? { customShares: Object.fromEntries(own) } : {}),
+      labor35aCents: orUndefined(c.labor35aCents),
+      invoiceFile: orUndefined(c.invoiceFile),
+    }
+  })
+}
+
+export async function readMeters(db: Database): Promise<Meter[]> {
+  const rows = await db.select().from(meters).orderBy(INSERTION_ORDER)
+  return rows.map((m) => ({
+    id: m.id,
+    name: m.name,
+    unitId: m.unitId,
+    type: m.type,
+    meterNumber: orUndefined(m.meterNumber),
+    unit: m.unit,
+  }))
+}
+
+export async function readReadings(db: Database): Promise<Reading[]> {
+  const rows = await db.select().from(readings).orderBy(INSERTION_ORDER)
+  return rows.map((r) => ({
+    id: r.id,
+    meterId: r.meterId,
+    date: r.date,
+    value: r.value,
+    replacement: orUndefined(r.replacement),
+    oldEndValue: orUndefined(r.oldEndValue),
+    note: orUndefined(r.note),
+  }))
+}
+
+export async function readPayments(db: Database): Promise<Payment[]> {
+  const rows = await db.select().from(payments).orderBy(INSERTION_ORDER)
+  return rows.map((p) => ({
+    id: p.id,
+    tenancyId: p.tenancyId,
+    date: p.date,
+    amountCents: p.amountCents,
+    note: orUndefined(p.note),
+  }))
+}
+
+export async function readClosedSettlements(db: Database): Promise<StoredClosedSettlement[]> {
+  const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
+  return rows.map((c) => ({
+    id: c.id,
+    year: c.year,
+    closedAt: c.closedAt,
+    sentAt: c.sentAt,
+    selfUsedShareCents: selfUsedShareOf(c.settlement),
+    settlement: c.settlement,
+  }))
+}
+
+// Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
+// vergleicht (der Umstieg und sein Gleichstand).
+export async function readStock(db: Database): Promise<Stock> {
+  return {
+    units: await readUnits(db),
+    tenancies: await readTenancies(db),
+    costItems: await readCostItems(db),
+    meters: await readMeters(db),
+    readings: await readReadings(db),
+    payments: await readPayments(db),
+    closedSettlements: await readClosedSettlements(db),
     settings: await readSettings(db),
   }
 }
