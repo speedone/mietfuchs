@@ -47,7 +47,31 @@ export const databaseFile = (dataDir: string): string => path.join(dataDir, DB_F
 // Beides tritt nur auf, wenn zwei Dinge gleichzeitig geschehen, also selten und beim Nachstellen
 // meist gar nicht. Die Abhilfe ist eine Schlange: Ein Schreibvorgang beginnt erst, wenn der
 // vorige ganz fertig ist.
-export type WriteQueue = <T>(work: () => Promise<T>) => Promise<T>
+//
+// ---------- Und warum auch das Lesen hindurchgeht ----------
+//
+// **Es gibt nur eine Spur, nicht eine fürs Schreiben und eine fürs Lesen.** Auf derselben
+// Verbindung gehört jede Anweisung, die während einer offenen Transaktion abgesetzt wird, zu
+// dieser Transaktion. Ein Lesevorgang daneben liest also einen Stand, den es nie gegeben hat und
+// der gleich zurückgerollt werden kann. Solange die Routen aus der db.json lasen, war das
+// folgenlos; sobald sie aus der Datenbank lesen, wäre es eine Abrechnung, die gedruckt und einem
+// Mieter zugestellt wird. Ein Test hält beide Hälften fest: dass der halbe Stand daneben wirklich
+// sichtbar ist, und dass er es durch die Spur nicht ist.
+//
+// Die naheliegende Alternative wäre eine zweite Verbindung nur zum Lesen, zusammen mit dem
+// WAL-Modus, der Lesern und Schreibern echte Gleichzeitigkeit gibt. Sie scheidet aus zwei
+// Gründen aus: WAL bringt Beidateien mit, und der Umstieg wie das Wiederherstellen sind darauf
+// gebaut, dass die Datenbank **eine** Datei ist, die sich bewegen lässt. Und eine zweite
+// Verbindung verdoppelt die Stelle, an der `PRAGMA foreign_keys` gelten muss. Beides für eine
+// Gleichzeitigkeit, die auf dem Rechner eines einzelnen Vermieters niemand braucht.
+export type Lane = {
+  // Der einzige Weg zu einem Schreibvorgang.
+  write: <T>(work: () => Promise<T>) => Promise<T>
+  // Lesen reiht sich ein wie Schreiben — **außer innerhalb eines laufenden Vorgangs**, denn dort
+  // ist es schon in der richtigen Spur. Es erneut einzureihen hieße, auf sich selbst zu warten,
+  // und es abzulehnen nähme dem Repository die Möglichkeit, vor dem Schreiben nachzusehen.
+  read: <T>(work: () => Promise<T>) => Promise<T>
+}
 
 const NESTED =
   'Ein Schreibvorgang hat innerhalb eines Schreibvorgangs einen weiteren begonnen. Das ist ein ' +
@@ -68,7 +92,7 @@ const slowMessage = (seconds: number, waiting: number): string =>
   'Liegen die Daten auf einem Netzlaufwerk, ist das die häufigste Ursache. Mietfuchs bricht ' +
   'nichts ab und wartet weiter, damit nichts halb gespeichert liegen bleibt.'
 
-export type WriteQueueOptions = {
+export type LaneOptions = {
   slowAfterMs?: number
   onSlow?: (message: string) => void
 }
@@ -77,7 +101,7 @@ export type WriteQueueOptions = {
 // die Begründung unten, der Speicher des Kontexts überlebt den Vorgang.
 type Ticket = { running: boolean }
 
-export function createWriteQueue(options: WriteQueueOptions = {}): WriteQueue {
+export function createLane(options: LaneOptions = {}): Lane {
   const slowAfterMs = options.slowAfterMs ?? SLOW_AFTER_MS
   const onSlow = options.onSlow ?? ((message: string) => console.error(message))
   // Woran ein verschachtelter Aufruf erkannt wird. Ein einfaches „läuft gerade“ genügte nicht:
@@ -96,13 +120,7 @@ export function createWriteQueue(options: WriteQueueOptions = {}): WriteQueue {
   // folgenden nicht mitreißen, sonst brächte ein einzelner Fehler die ganze Sitzung zum Erliegen.
   let tail: Promise<void> = Promise.resolve()
   let waiting = 0
-  return <T>(work: () => Promise<T>): Promise<T> => {
-    // Geworfen und nicht als abgelehntes Versprechen zurückgegeben. Ein verschachtelter Aufruf
-    // steht immer im Rumpf eines anderen Schreibvorgangs, und wer sein Ergebnis wegwirft, wie es
-    // ein Aufräum-Schritt täte, hätte niemanden, der die Ablehnung entgegennimmt: Node beendet
-    // den Prozess bei einer unbehandelten Ablehnung, und die Meldung stünde nirgends. Geworfen
-    // landet sie im Rumpf des äußeren Vorgangs und von dort bei dessen Aufrufer.
-    if (inside.getStore()?.running) throw new Error(NESTED)
+  const enqueue = <T>(work: () => Promise<T>): Promise<T> => {
     const ticket: Ticket = { running: true }
     waiting++
     const result = tail.then(async () => {
@@ -125,6 +143,19 @@ export function createWriteQueue(options: WriteQueueOptions = {}): WriteQueue {
       () => undefined,
     )
     return result
+  }
+  return {
+    write: (work) => {
+      // Geworfen und nicht als abgelehntes Versprechen zurückgegeben. Ein verschachtelter Aufruf
+      // steht immer im Rumpf eines anderen Schreibvorgangs, und wer sein Ergebnis wegwirft, wie
+      // es ein Aufräum-Schritt täte, hätte niemanden, der die Ablehnung entgegennimmt: Node
+      // beendet den Prozess bei einer unbehandelten Ablehnung, und die Meldung stünde nirgends.
+      // Geworfen landet sie im Rumpf des äußeren Vorgangs und von dort bei dessen Aufrufer.
+      if (inside.getStore()?.running) throw new Error(NESTED)
+      return enqueue(work)
+    },
+    // Innerhalb eines laufenden Vorgangs einfach durchlaufen, siehe die Begründung am Typ.
+    read: (work) => (inside.getStore()?.running ? work() : enqueue(work)),
   }
 }
 
@@ -399,8 +430,11 @@ export type OpenedDatabase = {
   migrations: number
   // Was zwar zu sagen, aber kein Grund zum Abbruch ist. Der Aufrufer gibt sie aus.
   warnings: string[]
-  // Der einzige Weg zu einem Schreibvorgang. Siehe die Begründung bei createWriteQueue.
+  // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane.
   write: <T>(work: (db: Database) => Promise<T>) => Promise<T>
+  // Und der einzige zu einem Lesevorgang, aus demselben Grund: Auf der geteilten Verbindung
+  // sähe ein Lesevorgang daneben den nicht festgeschriebenen Stand einer fremden Transaktion.
+  read: <T>(work: (db: Database) => Promise<T>) => Promise<T>
   close: () => void
 }
 
@@ -516,13 +550,14 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
         err,
       )
     }
-    const queue = createWriteQueue()
+    const lane = createLane()
     return {
       db: connection.db,
       file,
       migrations: applied,
       warnings,
-      write: (work) => queue(() => work(connection.db)),
+      write: (work) => lane.write(() => work(connection.db)),
+      read: (work) => lane.read(() => work(connection.db)),
       close: connection.close,
     }
   } catch (err) {
