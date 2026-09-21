@@ -9,7 +9,8 @@
 // Alles läuft in **einer** Transaktion. Scheitert ein Datensatz, ist auch der erste wieder weg;
 // sonst stünde ein halber Bestand in der Datei, den niemand als halb erkennt.
 
-import type { AiSlot, AiSlotName } from '../../../shared/types.ts'
+import type { AiSettings, AiSlot, AiSlotName } from '../../../shared/types.ts'
+import type { MigratedSettings } from '../ai/settings.ts'
 import type { StraightDb } from '../legacy.ts'
 import type { Database } from './client.ts'
 import {
@@ -51,6 +52,56 @@ function chunks<T>(rows: T[]): T[][] {
 // client.ts wirft deshalb ausdrücklich, wenn ein `undefined` bis zur Datenbank durchkommt.
 const orNull = <T>(value: T | undefined | null): T | null => value ?? null
 
+// ---------- Die Zeilen der Einstellungen ----------
+//
+// Sie stehen als eigene Funktionen da, weil sie an **zwei** Stellen gebraucht werden: beim
+// Umstieg, der den ganzen Bestand schreibt, und beim Speichern über `PUT /api/settings`
+// (db/repository.ts). Zwei Fassungen liefen auseinander, sobald jemand ein Feld ergänzt, und
+// gemerkt hätte man es erst daran, dass eine Einstellung nach dem Umstieg anders dasteht als
+// nach dem Speichern.
+
+export function settingsRow(s: MigratedSettings) {
+  const ai = s.ai
+  return {
+    id: 1,
+    houseName: s.houseName,
+    address: s.address,
+    landlordName: s.landlordName,
+    iban: s.iban,
+    paymentDeadlineDays: s.paymentDeadlineDays,
+    ollamaUrl: s.ollamaUrl,
+    ollamaModel: s.ollamaModel,
+    printAdjustSuggestion: orNull(s.printAdjustSuggestion),
+    printAttachments: orNull(s.printAttachments),
+    updateCheck: orNull(s.updateCheck),
+    updateDismissed: orNull(s.updateDismissed),
+    aiTimeoutSeconds: orNull(ai.timeoutSeconds),
+    aiNumCtx: orNull(ai.numCtx),
+    aiMaxOutputTokens: orNull(ai.maxOutputTokens),
+    aiPageImageEdge: orNull(ai.pageImageEdge),
+    aiJsonMode: ai.jsonMode,
+    aiReasoningEffort: orNull(ai.reasoningEffort),
+    aiExtraInstructions: ai.extraInstructions,
+  }
+}
+
+// Die beiden Plätze der KI sind Zeilen und keine Spalten mit Präfix. Die Bestätigung eines
+// externen Dienstes steht in derselben Zeile wie die Adresse, für die sie gilt.
+export function aiSlotRows(ai: AiSettings) {
+  const slotRow = (name: AiSlotName, slot: AiSlot) => ({
+    slot: name,
+    provider: slot.provider,
+    preset: slot.preset,
+    url: slot.url,
+    model: slot.model,
+    vision: orNull(slot.vision),
+    consentUrl: orNull(ai.consent[name]?.url),
+    consentModel: orNull(ai.consent[name]?.model),
+    consentDate: orNull(ai.consent[name]?.date),
+  })
+  return [slotRow('text', ai.text), ...(ai.images ? [slotRow('images', ai.images)] : [])]
+}
+
 export async function writeStock(db: Database, stock: StraightDb): Promise<StockCounts> {
   // Die Staffeln stehen als eigene Tabellen und nicht als JSON in einer Spalte. Sie werden
   // deshalb hier aus den Mietverhältnissen herausgezogen, mitsamt der Kennung, an der sie
@@ -73,21 +124,7 @@ export async function writeStock(db: Database, stock: StraightDb): Promise<Stock
       costItemId: item.id, unitId, percent,
     })))
 
-  const ai = stock.settings.ai
-  // Die beiden Plätze der KI sind Zeilen und keine Spalten mit Präfix. Die Bestätigung eines
-  // externen Dienstes steht in derselben Zeile wie die Adresse, für die sie gilt.
-  const slotRow = (name: AiSlotName, slot: AiSlot) => ({
-    slot: name,
-    provider: slot.provider,
-    preset: slot.preset,
-    url: slot.url,
-    model: slot.model,
-    vision: orNull(slot.vision),
-    consentUrl: orNull(ai.consent[name]?.url),
-    consentModel: orNull(ai.consent[name]?.model),
-    consentDate: orNull(ai.consent[name]?.date),
-  })
-  const slotRows = [slotRow('text', ai.text), ...(ai.images ? [slotRow('images', ai.images)] : [])]
+  const slotRows = aiSlotRows(stock.settings.ai)
 
   await db.transaction(async (tx) => {
     // Die Reihenfolge ist die der Verweise: Erst die Wohnung, dann alles, was auf sie zeigt.
@@ -184,29 +221,8 @@ export async function writeStock(db: Database, stock: StraightDb): Promise<Stock
         settlement: c.settlement,
       })))
     }
-    const s = stock.settings
     // Die Einstellungen sind genau eine Zeile, die Prüfbedingung des Schemas sagt es.
-    await tx.insert(settings).values({
-      id: 1,
-      houseName: s.houseName,
-      address: s.address,
-      landlordName: s.landlordName,
-      iban: s.iban,
-      paymentDeadlineDays: s.paymentDeadlineDays,
-      ollamaUrl: s.ollamaUrl,
-      ollamaModel: s.ollamaModel,
-      printAdjustSuggestion: orNull(s.printAdjustSuggestion),
-      printAttachments: orNull(s.printAttachments),
-      updateCheck: orNull(s.updateCheck),
-      updateDismissed: orNull(s.updateDismissed),
-      aiTimeoutSeconds: orNull(ai.timeoutSeconds),
-      aiNumCtx: orNull(ai.numCtx),
-      aiMaxOutputTokens: orNull(ai.maxOutputTokens),
-      aiPageImageEdge: orNull(ai.pageImageEdge),
-      aiJsonMode: ai.jsonMode,
-      aiReasoningEffort: orNull(ai.reasoningEffort),
-      aiExtraInstructions: ai.extraInstructions,
-    })
+    await tx.insert(settings).values(settingsRow(stock.settings))
     await tx.insert(aiSlots).values(slotRows)
   })
 

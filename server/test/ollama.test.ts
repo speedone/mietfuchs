@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultCandidates } from '../src/ai/ollama.ts'
-import { DEFAULT_OLLAMA_MODEL } from '../src/legacy.ts'
+import { DEFAULT_OLLAMA_MODEL } from '../src/defaults.ts'
 
 // Das Compose-Profil „ki“ lädt ein Modell, das der Server als Standard erwartet. Die beiden
 // Angaben stehen in verschiedenen Dateien und dürfen nicht auseinanderlaufen.
