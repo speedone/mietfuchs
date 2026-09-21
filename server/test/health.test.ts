@@ -57,15 +57,18 @@ test('Healthcheck: unlesbare db.json ist ein Fehler', () => {
 })
 
 test('Healthcheck: die Datenbank steht im Bericht, bestimmt den Status aber nicht', () => {
-  // Die Datenbank (#55) ist an diesem Stand noch leer, und Mietfuchs arbeitet ohne sie weiter.
-  // Stünde sie unter `checks`, meldete /healthz einen Fehler, sobald sie sich nicht öffnen
-  // lässt, und ein Container liefe in eine Neustart-Schleife, obwohl die Anwendung tut, was
-  // sie soll. Beim Umstieg der Bestände gehört sie dorthin, heute noch nicht.
+  // Die Datenbank (#55) trägt die fachlichen Daten noch nicht: Der Umstieg füllt sie, gelesen
+  // wird weiterhin aus der db.json. Stünde sie unter `checks`, meldete /healthz einen Fehler,
+  // sobald sie sich nicht öffnen lässt oder der Umstieg scheitert, und ein Container liefe in
+  // eine Neustart-Schleife, obwohl die Anwendung tut, was sie soll — und obwohl der Nutzer
+  // gerade ausdrücklich nicht blockiert sein soll. Sobald die Routen aus der Datenbank lesen,
+  // gehört sie dorthin.
   const dir = makeDataDir({ db: '{}' })
+  const umstieg = { state: 'none' as const, message: 'Es ist nichts zu übernehmen.', notes: [] }
   const zu = healthReport({
     dataDir: dir,
     version: '0.7.1',
-    database: { open: false, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 0, detail: 'ist beschädigt' },
+    database: { open: false, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 0, detail: 'ist beschädigt', changeover: umstieg },
   })
   assert.equal(zu.status, 'ok')
   assert.equal(zu.database?.open, false)
@@ -74,10 +77,14 @@ test('Healthcheck: die Datenbank steht im Bericht, bestimmt den Status aber nich
   const offen = healthReport({
     dataDir: dir,
     version: '0.7.1',
-    database: { open: true, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet' },
+    database: {
+      open: true, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet',
+      changeover: { state: 'failed', message: 'Der Umstieg ist nicht gelungen.', notes: [] },
+    },
   })
-  assert.equal(offen.status, 'ok')
+  assert.equal(offen.status, 'ok', 'ein gescheiterter Umstieg schickt keinen Container in die Neustart-Schleife')
   assert.equal(offen.database?.migrations, 1)
+  assert.equal(offen.database?.changeover.state, 'failed')
 })
 
 test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {

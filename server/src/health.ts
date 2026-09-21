@@ -6,6 +6,7 @@
 // erkennt die Prüfung nicht — Docker legt dann ein anonymes, beschreibbares an.
 import fs from 'node:fs'
 import path from 'node:path'
+import type { DatabaseState } from '../../shared/types.ts'
 
 type Check = { ok: boolean, detail: string }
 
@@ -39,10 +40,14 @@ function checkUploads(dataDir: string): Check {
   }
 }
 
-// Was beim Start mit der Datenbank geschehen ist (#55). Der Bericht nennt es, damit die
-// Prüfläufe es von außen sehen: Sie laufen auf jeder Programmdatei und in den Containern von 22
-// Distributionen, und nur dort zeigt sich, ob das eingebaute SQLite überall trägt.
-export type DatabaseState = { open: boolean, file: string, migrations: number, detail: string }
+// Was beim Start mit der Datenbank geschehen ist (#55). Der Bericht nennt es aus zwei Gründen.
+// Erstens sehen es die Prüfläufe von außen: Sie laufen auf jeder Programmdatei und in den
+// Containern von 22 Distributionen, und nur dort zeigt sich, ob das eingebaute SQLite überall
+// trägt. Zweitens liest die Oberfläche daraus, was beim Umstieg der Daten geschehen ist — beim
+// Start aus einem Linux-Paket gibt es keine Konsole, auf der die Meldung sonst stünde.
+//
+// Der Typ steht in shared/types.ts, weil beide Seiten dasselbe brauchen.
+export type { DatabaseState }
 
 export function healthReport({ dataDir, version, database }: { dataDir: string, version: string, database?: DatabaseState }) {
   const checks = { data: checkData(dataDir), uploads: checkUploads(dataDir) }

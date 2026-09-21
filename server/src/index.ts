@@ -20,6 +20,7 @@ import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { healthReport, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
+import { runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { findingsText, validateDb } from './db/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
@@ -889,12 +890,39 @@ try {
   databaseProblem = messageOf(err)
 }
 
-// Für /healthz: Der Bericht nennt den Stand, damit der Smoke-Test ihn von außen sieht. Er läuft
+// Der Umstieg der vorhandenen Daten, beim ersten Start der neuen Version (siehe
+// db/changeover.ts). Er läuft hier und nicht auf Zuruf, weil niemand einen Befehl eingeben soll,
+// um an seine eigenen Daten zu kommen, und er läuft **vor** `app.listen`: Solange der Server
+// noch nicht antwortet, kann ihm auch niemand dazwischenschreiben.
+//
+// Scheitert er, geht der Start trotzdem weiter. Mietfuchs arbeitet dann mit der db.json wie
+// bisher, und beim nächsten Start wird es erneut versucht.
+let changeover: ChangeoverResult = {
+  state: 'none',
+  message: databaseProblem ? 'Ohne geöffnete Datenbank gibt es nichts zu übernehmen.' : 'Es ist nichts zu übernehmen.',
+  notes: [],
+  protocol: null,
+  database,
+}
+if (database) {
+  changeover = await runChangeover({
+    dataDir: DATA_DIR,
+    opened: database,
+    reopen: () => openDatabase({ dataDir: DATA_DIR }),
+  })
+  database = changeover.database
+  if (!database) databaseProblem = databaseProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
+}
+
+// Für /healthz: Der Bericht nennt den Stand, damit der Smoke-Test ihn von außen sieht (er läuft
 // auf jeder Programmdatei und in den Containern von 22 Distributionen; ob das eingebaute SQLite
-// überall trägt, zeigt sich erst dort.
+// überall trägt, zeigt sich erst dort) und damit die Oberfläche dem Nutzer einmal sagen kann,
+// was mit seinen Daten geschehen ist. Beim Start aus einem Linux-Paket gibt es keine Konsole,
+// auf der die Meldung sonst stünde.
 function databaseState(): DatabaseState {
-  if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet' }
-  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: databaseProblem ?? 'nicht geöffnet' }
+  const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes }
+  if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie }
+  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: databaseProblem ?? 'nicht geöffnet', changeover: wie }
 }
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
@@ -946,6 +974,16 @@ const server = app.listen(PORT, (err) => {
   // Ordnung, und wer Ausgaben einsammelt, soll genau das auseinanderhalten können.
   else console.error(`Datenbank: nicht geöffnet. ${databaseProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
   for (const warning of database?.warnings ?? []) console.error(`Hinweis: ${warning}`)
+  // Der Umstieg der Daten (#55). Gelungen ist er einen Satz wert, gescheitert eine Erklärung auf
+  // der Fehlerausgabe. Ohne Konsolenfenster (Linux-Paket) steht beides in der Oberfläche, die es
+  // aus /healthz liest.
+  if (changeover.state === 'done') {
+    console.log(changeover.message)
+    for (const note of changeover.notes) console.log(note)
+    if (changeover.protocol) console.log(`Protokoll des Umstiegs: ${changeover.protocol}`)
+  } else if (changeover.state === 'failed') {
+    console.error(changeover.message)
+  }
   if (STANDALONE) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
     // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
