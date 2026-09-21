@@ -45,7 +45,7 @@
 
 import { COST_KEYS, DEPOSIT_STATUS, METER_TYPES, UPDATE_CHECK } from './schema.ts'
 import { KEY_LABELS } from '../calc.ts'
-import { LEGACY_PREPAYMENT_FIELD } from '../legacy.ts'
+import { LEGACY_PREPAYMENT_FIELD, legacyPrepaymentCase } from '../legacy.ts'
 
 export type Finding = {
   // Der Ort: „Wohnung 2 („OG", Kennung u2)". Gemeint ist die Stelle in der Datei, und zwar so
@@ -451,14 +451,25 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
     // „bezahlt" auf „teilweise" wechseln. Gefordert wird damit, was die Abrechnung ohnehin
     // ansetzt; bisher forderte das Mietkonto zu wenig. Der Hinweis sagt das, statt es zu
     // verschweigen.
-    const legacyMonthly = fieldOf(entry, LEGACY_PREPAYMENT_FIELD)
-    if (legacyMonthly !== undefined && legacyMonthly !== null && (prepayments === null || prepayments.length === 0)) {
+    //
+    // **Welcher der beiden Fälle vorliegt, entscheidet `legacyPrepaymentCase` in legacy.ts**,
+    // also dieselbe Funktion, die beim Übernehmen das Geraderücken bestimmt. Eine eigene
+    // Bedingung daneben liefe genau dort auseinander, wo beide zusammenbleiben müssen.
+    const legacyCase = legacyPrepaymentCase(fieldOf(entry, 'prepayments'), fieldOf(entry, LEGACY_PREPAYMENT_FIELD))
+    if (legacyCase !== 'none') {
       fields.number(LEGACY_PREPAYMENT_FIELD, 'Fester Monatsbetrag', { cents: true })
-      adjust(
-        c,
-        where,
-        'Die Vorauszahlung steht noch als fester Monatsbetrag da. Daraus wird ein Staffeleintrag ab dem Einzugsmonat, genau wie ihn die Abrechnung heute liest. Das Mietkonto und die Steuerübersicht rechnen danach ebenfalls mit diesem Betrag; bisher fehlte er dort, sodass das monatliche Soll zu niedrig war.',
-      )
+      // Fehlt die Staffel ganz, wandelt `migrateLegacy` den Betrag schon beim Einlesen um: Die
+      // Ankündigung dafür steht bei der fehlenden Staffel, und bewegt wird dabei nichts. Nur
+      // neben einer **leeren** Staffel bleibt er heute liegen, und nur dort bewegt sich eine
+      // Zahl. Stünde der Satz über das Mietkonto bei beiden, sagte er in einem Fall etwas
+      // Falsches.
+      if (legacyCase === 'empty-schedule') {
+        adjust(
+          c,
+          where,
+          'Die Vorauszahlung steht noch als fester Monatsbetrag da. Daraus wird ein Staffeleintrag ab dem Einzugsmonat, genau wie ihn die Abrechnung heute liest. Das Mietkonto und die Steuerübersicht rechnen danach ebenfalls mit diesem Betrag; bisher fehlte er dort, sodass das monatliche Soll zu niedrig war.',
+        )
+      }
     }
 
     const baseRents = scheduleOf(c, entry, 'baseRents', where, 'Die Kaltmiete-Staffel fehlt. Sie bleibt leer, wie bisher beim Einlesen.')

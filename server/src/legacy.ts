@@ -10,9 +10,9 @@
 // Der Validator in db/validate.ts prüft gegen dieselben Regeln: Was hier geradegezogen wird,
 // lehnt er nicht ab.
 
-import type { Tenancy } from '../../shared/types.ts'
+import type { PersonEntry, Settings, Tenancy } from '../../shared/types.ts'
 import type { Db } from './store.ts'
-import { migrateAi } from './ai/settings.ts'
+import { migrateAi, type MigratedSettings } from './ai/settings.ts'
 
 // Standardmodell für die KI-Belegauswertung, gewählt mit dem KI-Prüflauf (#17): Auf Rechnern
 // ohne Grafikkarte liest es PDFs mit Textebene fast fehlerfrei, einseitige Scans meist richtig,
@@ -97,4 +97,175 @@ export function migrateLegacy(stored: Partial<Db> | null): Db {
     if (!Array.isArray(t.baseRents)) t.baseRents = []
   }
   return next
+}
+
+// ---------- Der feste Monatsbetrag aus der Zeit vor der Staffel ----------
+
+// Wie steht die Vorauszahlung eines Mietverhältnisses da? Die Frage wird an zwei Stellen
+// gestellt, und beide müssen dieselbe Antwort bekommen: beim Prüfen (db/validate.ts sagt an,
+// was beim Übernehmen geschieht) und beim Übernehmen selbst (straightenForDatabase unten).
+// Deshalb steht sie hier und nimmt beliebige Werte entgegen, denn der Validator sieht den rohen
+// Inhalt der Datei und nicht den eingelesenen Bestand.
+//
+//   'none'              Kein alter Betrag oder eine gefüllte Staffel: nichts zu tun.
+//   'missing-schedule'  Keine Staffel, aber ein alter Betrag. Daraus macht schon `migrateLegacy`
+//                       einen Staffeleintrag ab dem Einzugsmonat, und zwar bei jedem Einlesen.
+//                       Dabei bewegt sich keine Zahl: Abrechnung und Mietkonto rechnen danach
+//                       mit demselben Betrag wie vorher.
+//   'empty-schedule'    Eine **leere** Staffel neben einem alten Betrag. `migrateLegacy` fasst
+//                       das nicht an, denn seine Bedingung lautet „keine Liste", und eine leere
+//                       Liste ist eine. Die Abrechnung liest den alten Betrag trotzdem
+//                       (`computePrepaymentCents` in calc.ts), das Mietkonto nicht (`rentLedger`
+//                       liest nur `prepayments`). In der Datenbank gibt es für das Feld keine
+//                       Spalte mehr: Wer es übergeht, nimmt dem Mieter die ganze Vorauszahlung
+//                       aus der Abrechnung. Daraus wird deshalb ein Staffeleintrag — der eine
+//                       Fall, der eine Zahl bewegt, nämlich die des Mietkontos und damit der
+//                       Steuerübersicht (#70). Wer davon betroffen ist, erfährt es beim Umstieg.
+export type LegacyPrepaymentCase = 'none' | 'missing-schedule' | 'empty-schedule'
+
+export function legacyPrepaymentCase(prepayments: unknown, monthlyCents: unknown): LegacyPrepaymentCase {
+  // Eine 0 ist ein Betrag und kein fehlendes Feld: `!= null` und nicht `!value`.
+  if (monthlyCents === undefined || monthlyCents === null) return 'none'
+  if (!Array.isArray(prepayments)) return 'missing-schedule'
+  return prepayments.length === 0 ? 'empty-schedule' : 'none'
+}
+
+// ---------- Geraderücken für die Datenbank ----------
+
+// Ein Bestand, wie ihn die Datenbank annimmt: Die Einstellungen führen die KI-Felder, und jedes
+// Feld, für das es eine Spalte ohne NULL gibt, hat einen Wert.
+export type StraightDb = Omit<Db, 'settings'> & { settings: MigratedSettings }
+
+// Ein Text, wie ihn eine Spalte ohne NULL verlangt. Der Typ sagt `string`, die Datei kann
+// trotzdem etwas anderes enthalten: Der Validator lässt ein **fehlendes** Anzeigefeld
+// ausdrücklich durch (Name der Wohnung, Mietername, Beschreibung, Name und Maßeinheit eines
+// Zählers), weil es in keine Rechnung eingeht. Gerechnet wird damit nichts, angezeigt schon.
+const textOr = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
+
+// Dasselbe für eine Zahl. `Number.isFinite` schließt NaN und Unendlich mit ein; beides lehnt der
+// Validator ab, und beides ergäbe in einer Spalte einen Wert, mit dem niemand rechnen kann.
+const numberOr = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback
+
+// Zwei Einträge zum selben Stichtag sind über die Oberfläche erzeugbar: Sie setzt für eine Zeile
+// ohne Monat den Einzugsmonat ein und prüft nie auf Doppelung. In der Datenbank ist der Stichtag
+// Teil des Primärschlüssels, es kann ihn also nur einmal geben.
+//
+// **Es gilt der letzte.** Genau so liest ihn die Abrechnung: Sie sortiert nach Stichtag
+// (`Array.prototype.sort` ist stabil, gleiche Stichtage behalten die Reihenfolge der Datei) und
+// übernimmt den letzten Eintrag, dessen Stichtag erreicht ist. Gemessen ergibt [100 €, 250 €]
+// eine Jahresvorauszahlung von 3000 € und [250 €, 100 €] eine von 1200 €; wer hier den falschen
+// nähme, änderte eine Abrechnung um 1800 €. Die Reihenfolge der übrigen Einträge bleibt, wie sie
+// in der Datei stand.
+function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
+  const lastIndex = new Map<string, number>()
+  entries.forEach((entry, index) => lastIndex.set(entry.from, index))
+  return entries.filter((entry, index) => lastIndex.get(entry.from) === index)
+}
+
+// Der letzte Eintrag der Personen-Staffel, also die Personenzahl, die heute gilt. Sortiert wird
+// nach Stichtag, wie in `personsAt` in calc.ts.
+function currentPersons(history: PersonEntry[]): number | null {
+  const sorted = history.slice().sort((a, b) => a.from.localeCompare(b.from))
+  const last = sorted.at(-1)
+  return last ? numberOr(last.persons, 1) : null
+}
+
+// Ein `null` in den Einstellungen zählt wie ein fehlendes Feld, und genau so liest es auch der
+// Validator. Nötig ist das, weil `{ ...DEFAULT, ...{ houseName: null } }` das null übernimmt:
+// Die Vorgabewerte greifen also gerade dort nicht, wo sie gebraucht würden, und die Spalte
+// verlangt einen Wert.
+function withoutEmptyFields(settings: Settings): Partial<Settings> {
+  const kept: Partial<Settings> = {}
+  for (const key of Object.keys(settings)) {
+    const value: unknown = Reflect.get(settings, key)
+    if (value !== null && value !== undefined) Reflect.set(kept, key, value)
+  }
+  return kept
+}
+
+// Bringt einen eingelesenen Bestand in die Gestalt, die die Datenbank verlangt.
+//
+// **Jede Regel hier folgt einer, die schon in calc.ts oder oben in dieser Datei steht**, und
+// keine erfindet eine neue. Deshalb bewegt das Geraderücken keine Zahl — mit der einen benannten
+// Ausnahme des festen Monatsbetrags neben einer leeren Staffel, siehe `legacyPrepaymentCase`.
+// Nachgerechnet wird das zweimal: in validate.test.ts für jeden hingenommenen Fall und beim
+// Umstieg selbst für den wirklichen Bestand des Nutzers (db/changeover.ts).
+//
+// Die Eingabe bleibt unberührt. Der Umstieg rechnet beide Stände durch, den krummen und den
+// geradegerückten; änderte diese Funktion ihre Eingabe, verglichen beide Seiten dasselbe, und
+// die Regression wäre blind.
+export function straightenForDatabase(stored: Db): StraightDb {
+  const db = structuredClone(stored)
+  const knownUnits = new Set(db.units.map((u) => u.id))
+
+  const units = db.units.map((u) => ({
+    ...u,
+    name: textOr(u.name, ''),
+    areaM2: numberOr(u.areaM2, 0),
+    // Ohne Kennzeichen gehört die Wohnung nicht zur Abrechnungseinheit, so liest die Abrechnung
+    // sie heute schon. `=== true` und nicht `!!`: Der Validator lässt nur ja, nein oder gar
+    // nichts durch, und in JavaScript wäre die Zeichenkette „false" wahr.
+    participates: u.participates === true,
+  }))
+
+  const tenancies = db.tenancies.map((t) => {
+    const legacy: LegacyTenancy = { ...t }
+    const monthly = legacy.prepaymentMonthlyCents
+    const schedule =
+      legacyPrepaymentCase(t.prepayments, monthly) !== 'none' && monthly !== undefined
+        ? [{ from: textOr(t.start, '').slice(0, 7), monthlyCents: monthly }]
+        : Array.isArray(t.prepayments) ? t.prepayments : []
+    delete legacy.prepaymentMonthlyCents
+    const personHistory = lastPerFrom(Array.isArray(t.personHistory) ? t.personHistory : [])
+    return {
+      ...legacy,
+      tenantName: textOr(t.tenantName, ''),
+      // Die aktuelle Personenzahl ist aus der Staffel abgeleitet; gerechnet wird mit der
+      // Staffel, und nur wenn die leer ist, fällt die Abrechnung auf dieses Feld zurück. Ohne
+      // beides gilt eine Person, wie beim Einlesen (`t.persons ?? 1`).
+      persons: numberOr(t.persons, currentPersons(personHistory) ?? 1),
+      personHistory,
+      prepayments: lastPerFrom(schedule),
+      baseRents: lastPerFrom(Array.isArray(t.baseRents) ? t.baseRents : []),
+      prepaymentOverrides: t.prepaymentOverrides ?? {},
+    }
+  })
+
+  const costItems = db.costItems.map((item) => {
+    // Die Direktzuordnung auf eine gelöschte Wohnung bleibt als Zeile stehen und verliert nur
+    // ihr Ziel, wie `ON DELETE SET NULL` es täte. Die Zeile zu verwerfen entfernte eine bezahlte
+    // Rechnung aus einem abgerechneten Jahr. Die Abrechnung schlägt `null` genauso vergeblich
+    // nach wie eine unbekannte Kennung, es bewegt sich also nichts.
+    const direct = typeof item.directUnitId === 'string' && knownUnits.has(item.directUnitId) ? item.directUnitId : null
+    // Vereinbarte Anteile für gelöschte Wohnungen entfallen. Verteilt wurden sie schon bisher
+    // nicht, die Abrechnung zählt nur Wohnungen der Abrechnungseinheit; es entfällt also keine
+    // Zahl, sondern nur die Warnung darüber.
+    // Das Feld nur anfassen, wenn es eines gibt: Ein `customShares: undefined` neben einer
+    // Position ohne vereinbarte Anteile wäre ein Feld, das vorher nicht dastand.
+    const shares = item.customShares
+      ? { customShares: Object.fromEntries(Object.entries(item.customShares).filter(([unitId]) => knownUnits.has(unitId))) }
+      : {}
+    // `directUnitId` steht danach immer da, entweder mit einer Kennung oder ausdrücklich als
+    // „keine Zuordnung". Genau das hält auch die Spalte fest.
+    return { ...item, description: textOr(item.description, ''), directUnitId: direct, ...shares }
+  })
+
+  const meters = db.meters.map((m) => ({
+    ...m,
+    name: textOr(m.name, ''),
+    unit: textOr(m.unit, ''),
+    // Eine leere Kennung liest die Abrechnung schon heute wie gar keine (`m.unitId && …`): Es
+    // ist ein Hauptzähler für das ganze Haus.
+    unitId: typeof m.unitId === 'string' && m.unitId !== '' ? m.unitId : null,
+  }))
+
+  return {
+    ...db,
+    settings: migrateAi({ ...DEFAULT_DB.settings, ...withoutEmptyFields(db.settings) }),
+    units,
+    tenancies,
+    costItems,
+    meters,
+  }
 }
