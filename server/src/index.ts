@@ -21,6 +21,10 @@ import { isProviderError } from './ai/errors.ts'
 import { healthReport, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, runChangeover, type ChangeoverResult } from './db/changeover.ts'
+import {
+  ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
+  archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
+} from './db/backup.ts'
 import { findingsText, validateDb } from './db/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
@@ -554,7 +558,7 @@ app.delete('/api/uploads/:file', (req, res) => {
 })
 
 // ---------- Backup & Wiederherstellen ----------
-app.get('/api/backup', (req, res) => {
+app.get('/api/backup', async (req, res) => {
   save() // sicherstellen, dass der letzte Stand auf der Platte liegt
   // Wie beim Wiederherstellen: Der Belegordner muss dastehen, bevor jemand ihn liest. Dass er
   // es heute tut, liegt nur daran, dass multer ihn beim Laden des Moduls anlegt und `load()`
@@ -566,6 +570,26 @@ app.get('/api/backup', (req, res) => {
   for (const name of fs.readdirSync(UPLOAD_DIR)) {
     zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
   }
+
+  // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
+  // (db/backup.ts). Gibt es keine offene, wird das Archiv trotzdem gepackt: Die db.json ist der
+  // maßgebliche Stand, und niemand soll an einem Backup gehindert werden, weil die Datenbank
+  // gerade klemmt. Beim Wiederherstellen wird sie dann aus der db.json neu aufgebaut.
+  if (database) {
+    const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.backup`)
+    try {
+      await writeDatabaseSnapshot(database, temp)
+      zip.addFile(ARCHIVE_DB_NAME, fs.readFileSync(temp))
+    } catch (err) {
+      // Hier wird abgebrochen und nicht stillschweigend ohne Datenbank gepackt: Ein Archiv, das
+      // sich vollständig anfühlt und es nicht ist, fällt erst im Ernstfall auf.
+      return res.status(500).json({ error: `Die Datenbank ließ sich nicht sichern: ${messageOf(err)}` })
+    } finally {
+      fs.rmSync(temp, { force: true })
+    }
+  }
+  zip.addFile(ARCHIVE_INFO_NAME, Buffer.from(archiveInfoText(new Date()), 'utf8'))
+
   const stamp = new Date().toISOString().slice(0, 10)
   res.set('Content-Type', 'application/zip')
   res.set('Content-Disposition', `attachment; filename="nebenkosten-backup-${stamp}.zip"`)
@@ -581,7 +605,17 @@ const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
-function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string, content: Buffer }[] } {
+type ReadBackup = {
+  dbText: string
+  files: { fileName: string, content: Buffer }[]
+  // Die Datenbank aus dem Archiv, oder `null` bei einem Archiv aus einer Version vor ihr. Das
+  // ist kein Randfall: Genau solche Archive liegen bei den heutigen Nutzern.
+  database: Buffer | null
+  // Woher das Archiv stammt, in Worten für eine Meldung.
+  origin: string
+}
+
+function readBackup(buffer: Buffer): ReadBackup {
   let zip: AdmZip
   try {
     zip = new AdmZip(buffer)
@@ -595,8 +629,13 @@ function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string
 
   // Ausdrücklich typisiert: Was hier hineinläuft, kommt aus einem hochgeladenen Archiv und wird
   // gerade erst geprüft. Der Typ soll nicht davon abhängen, was weiter unten hineingeschoben wird.
+  // Die Datenbank und die Herkunftsangabe. Beide fehlen in jedem Archiv, das vor Aufgabe 7a
+  // entstanden ist, und beides ist in Ordnung: Die db.json ist dann der ganze Bestand.
+  const databaseEntry = entries.find((e) => e.entryName === ARCHIVE_DB_NAME)
+  const infoEntry = entries.find((e) => e.entryName === ARCHIVE_INFO_NAME)
+
   const files: { fileName: string, e: AdmZip.IZipEntry }[] = []
-  let totalSize = dbEntry.header.size
+  let totalSize = dbEntry.header.size + (databaseEntry?.header.size ?? 0) + (infoEntry?.header.size ?? 0)
   for (const e of entries) {
     const name = e.entryName
     if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
@@ -633,13 +672,80 @@ function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string
         `Ihre bisherigen Daten sind unverändert. Beanstandet wurde:\n${findingsText(problems)}`,
     )
   }
+  // Die Herkunftsangabe ist eine Auskunft und keine Prüfung: Ein unlesbares Feld darf das
+  // Wiederherstellen nicht verhindern, sondern führt nur zu „unbekannter Herkunft".
+  let info: unknown = null
+  if (infoEntry) {
+    try {
+      info = JSON.parse(zip.readAsText(infoEntry))
+    } catch {
+      info = null
+    }
+  }
+
   // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
-  return { dbText, files: files.map(({ fileName, e }) => ({ fileName, content: e.getData() })) }
+  return {
+    dbText,
+    files: files.map(({ fileName, e }) => ({ fileName, content: e.getData() })),
+    database: databaseEntry ? databaseEntry.getData() : null,
+    origin: originText(info),
+  }
 }
 
-app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
+// Die Datenbank nach dem Wiederherstellen (#55, Aufgabe 7a). Gibt zurück, was der Nutzer
+// darüber hinaus wissen muss; die Liste ist im Regelfall leer.
+//
+// **Der Server hält die Datei die ganze Laufzeit offen**, und unter Windows lässt sie sich dann
+// nicht ersetzen. Der Weg ist deshalb schließen, ersetzen, neu öffnen, migrieren — dieselbe
+// Reihenfolge wie beim Umstieg und aus demselben Grund.
+//
+// Zwei Fälle, und der zweite ist der, dessentwegen diese Aufgabe vorgezogen wurde:
+//
+//   1. **Das Archiv bringt eine Datenbank mit.** Sie wird die neue. Geprüft ist sie zu diesem
+//      Zeitpunkt schon.
+//   2. **Es bringt keine mit**, weil es aus einer Version vor dieser stammt. Dann wird die
+//      Datenbank aus der wiederhergestellten db.json **neu aufgebaut**, mit demselben Weg und
+//      derselben centgenauen Regression wie beim Umstieg. Die db.json zu ersetzen und die alte
+//      Datenbank stehen zu lassen wäre der schlimmste Ausgang: Der Nutzer sähe eine
+//      Bestätigung und arbeitete danach mit den Daten von vorher weiter.
+async function restoreDatabase(staged: string | null): Promise<string[]> {
+  const target = databaseFile(DATA_DIR)
+  database?.close()
+  database = null
+
+  // Die bisherige Datenbank beiseite, wie `db.json.vor-restore` daneben — und nur, wenn es
+  // eine gab. Sie wandert und bleibt nicht liegen: Der Umstieg unten muss sie leer vorfinden,
+  // sonst greift seine Regel „steht schon etwas darin, passiert nichts", und genau die soll
+  // hier nicht weich werden.
+  if (fs.existsSync(target)) fs.renameSync(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
+  if (staged) fs.renameSync(staged, target)
+
+  try {
+    database = await openDatabase({ dataDir: DATA_DIR })
+    databaseProblem = null
+  } catch (err) {
+    databaseProblem = messageOf(err)
+    return [`Die Datenbank ließ sich nach dem Wiederherstellen nicht öffnen: ${databaseProblem}`]
+  }
+
+  if (staged) return []
+
+  // Fall 2: neu aufbauen. Scheitert er, ist niemand blockiert — die wiederhergestellte db.json
+  // liegt da, Mietfuchs arbeitet mit ihr weiter, und beim nächsten Start wird es erneut
+  // versucht. Genau das sagt die Meldung auch.
+  const rebuilt = await runChangeover({
+    dataDir: DATA_DIR,
+    opened: database,
+    reopen: () => openDatabase({ dataDir: DATA_DIR }),
+  })
+  database = rebuilt.database
+  if (!database) databaseProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
+  return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
+}
+
+app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
-  let backup
+  let backup: ReadBackup
   try {
     backup = readBackup(req.file.buffer)
   } catch (err) {
@@ -651,6 +757,26 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   // Route soll sich auf die Eigenheit einer Bibliothek nicht verlassen, zumal `recursive`
   // einen vorhandenen Ordner ohnehin in Ruhe lässt.
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+
+  // Die Datenbank aus dem Archiv wird geprüft, **bevor** irgendetwas ersetzt ist — dieselbe
+  // Bauart wie bei der db.json darüber (#59) und aus demselben Grund. Über den Umweg Backup
+  // käme ein neueres Schema sonst herein, und die Prüfung beim Start käme zu spät, weil die
+  // Datei dann schon an ihrem Platz läge.
+  const staged = backup.database ? `${databaseFile(DATA_DIR)}.restore` : null
+  if (staged && backup.database) {
+    try {
+      fs.rmSync(staged, { force: true })
+      fs.writeFileSync(staged, backup.database)
+    } catch (err) {
+      return res.status(500).json({ error: `Die Datenbank aus dem Archiv ließ sich nicht ablegen: ${messageOf(err)}` })
+    }
+    const problem = await archiveDatabaseProblem(staged)
+    if (problem) {
+      fs.rmSync(staged, { force: true })
+      return res.status(400).json({ error: `${problem}\n\nDas Archiv stammt aus: ${backup.origin}.` })
+    }
+  }
+
   // Sicherheitskopie des aktuellen Stands, dann ersetzen. **Nur wenn es einen gibt**: Auf einem
   // frischen Rechner entsteht die db.json erst beim ersten Speichern, und genau dann wird am
   // häufigsten wiederhergestellt, nämlich beim Umzug auf einen neuen Rechner oder nach einem
@@ -663,7 +789,21 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   fs.writeFileSync(current, backup.dbText, 'utf8')
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
   reloadDb()
-  res.json({ ok: true })
+
+  let notes: string[]
+  try {
+    notes = await restoreDatabase(staged)
+  } catch (err) {
+    // Die Daten sind zu diesem Zeitpunkt wiederhergestellt; nur die Datenbank steht schief.
+    // Mietfuchs arbeitet mit der db.json weiter, und der nächste Start versucht es erneut.
+    fs.rmSync(`${databaseFile(DATA_DIR)}.restore`, { force: true })
+    notes = [
+      `Ihre Daten sind wiederhergestellt. Die Datenbank ließ sich dabei nicht erneuern: ${messageOf(err)}. ` +
+        'Mietfuchs arbeitet unverändert mit der Datei db.json weiter, es geht nichts verloren, und beim ' +
+        'nächsten Start wird es erneut versucht.',
+    ]
+  }
+  res.json({ ok: true, notes })
 })
 
 // Adressen für die Suche, falls die eingestellte nicht erreichbar ist (siehe defaultCandidates).

@@ -382,6 +382,11 @@ async function uploadsAndSettlement() {
 async function backupAndRestore(unit) {
   const backup = await request('/api/backup')
   assert(backup.status === 200 && backup.body.subarray(0, 2).toString() === 'PK', 'Backup als ZIP herunterladen')
+  // Die Datenbank gehört ins Archiv (#55, Aufgabe 7a). Der Name steht im ZIP im Klartext, ein
+  // Auspacken braucht es dafür nicht. Geprüft wird das gerade hier und nicht nur in den Tests:
+  // Der Schnappschuss entsteht mit `VACUUM INTO`, und ob das trägt, hängt am eingebauten SQLite
+  // der jeweiligen Laufzeit. In der Programmdatei ist das `bun:sqlite`, und die läuft nur hier.
+  assert(backup.body.includes('mietfuchs.sqlite'), 'Das Backup enthält die Datenbank')
   await request(`/api/units/${unit.id}`, { method: 'DELETE' })
   assert((await request('/api/units')).body.length === 0, 'Wohnung gelöscht, um die Wiederherstellung zu prüfen')
   const fd = new FormData()
@@ -391,6 +396,10 @@ async function backupAndRestore(unit) {
   assert(r.status === 200 && units.length === 1 && units[0].id === unit.id, 'Backup wiederherstellen bringt die Daten zurück', r.body)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
+  // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
+  // gelingt, hängt am Betriebssystem: Unter Windows lässt sich eine offene Datei nicht ersetzen.
+  const health = (await request('/healthz')).body
+  assert(health?.database?.open === true, 'Die Datenbank ist nach dem Wiederherstellen wieder offen', health?.database)
 }
 
 async function main() {
