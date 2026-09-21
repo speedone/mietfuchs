@@ -21,18 +21,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
 
 - **Ihre Daten ziehen beim ersten Start in eine Datenbank um.** Im Datenordner liegt dafür die
-  Datei `mietfuchs.sqlite`. Der Umzug läuft von selbst, es ist kein Befehl und keine Antwort
-  nötig, und die Oberfläche sagt einmal, dass er stattgefunden hat. Ihre bisherige Datei
-  `db.json` bleibt liegen, daneben eine Kopie ihres Standes vor dem Umzug
-  (`db.json.vor-umstieg`) und ein Protokoll, das aufzählt, was übernommen wurde. Am Backup
+  Datei `mietfuchs.sqlite`, und ab dem Umzug wird dort gelesen und gespeichert. Der Umzug läuft
+  von selbst, es ist kein Befehl und keine Antwort nötig, und die Oberfläche sagt einmal, dass er
+  stattgefunden hat. Ihre bisherige Datei `db.json` heißt danach `db.json.abgeloest`: Ihr Inhalt
+  bleibt unverändert als Rückweg liegen, nur der Name sagt jetzt, dass sie nicht mehr
+  mitgeschrieben wird. Daneben liegt ein Protokoll, das aufzählt, was übernommen wurde. Am Backup
   ändert sich nichts: weiterhin diesen Ordner kopieren. Bevor der Umzug gilt, rechnet Mietfuchs
   Abrechnung, Verbrauchsübersicht, Mietkonto und Steuerübersicht für jedes Jahr, in dem etwas
   erfasst ist, aus beiden Beständen nach und vergleicht sie auf den Cent. Weicht ein einziger
-  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl. Dasselbe
-  gilt, wenn irgendein anderer Schritt scheitert: Mietfuchs arbeitet dann unverändert mit der
-  `db.json` weiter, sagt woran es lag und versucht es beim nächsten Start erneut. Sie sind also
-  nie blockiert und verlieren nichts.
+  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl.
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
+
+- **Scheitert der Umzug, zeigt Mietfuchs Ihre Daten nicht an und sagt Ihnen, warum.** Verloren ist
+  dabei nichts: Ihr Bestand steht unverändert in der Datei `db.json`, und beim nächsten Start wird
+  es erneut versucht. Dass Mietfuchs in diesem Fall nichts anzeigt, ist Absicht. Es könnte
+  stattdessen die noch leere Datenbank zeigen, aber dann sähen Sie ein leeres Haus, und alles,
+  was Sie hineinschrieben, stünde danach als zweiter Bestand neben Ihrem eigentlichen. Eine
+  ehrliche Meldung ist besser als eine Oberfläche, die so tut, als hätten Sie noch nichts
+  erfasst. ([#55](https://github.com/speedone/mietfuchs/issues/55))
 
 - **Eine Vorauszahlung aus sehr alten Beständen zählt beim Umzug auch im Mietkonto mit.** Wer
   Mietfuchs schon vor der Vorauszahlungs-Staffel benutzt hat, kann ein Mietverhältnis haben, bei
@@ -148,6 +154,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Ablesungen, Zahlungen und Einstellungen Felder mit den Namen „0“, „1“ … erzeugen, die
   dauerhaft in der `db.json` stehen blieben. Solche Angaben verwirft Mietfuchs jetzt. Über die
   Oberfläche war das nie möglich, wer Mietfuchs nur dort bedient, war also nie betroffen.
+- **Auch erfundene Einstellungen werden nicht mehr gespeichert.** Dasselbe galt für jeden
+  beliebigen Namen: Wer über die Schnittstelle eine Einstellung namens `lieblingsfarbe` schickte,
+  bekam sie dauerhaft gespeichert. Seit die Einstellungen in der Datenbank in benannten Spalten
+  stehen, gibt es für ein unbekanntes Feld keinen Ort mehr, an dem es landen könnte.
+  ([#60](https://github.com/speedone/mietfuchs/issues/60))
 
 ## [0.7.1] – 2026-09-20
 
