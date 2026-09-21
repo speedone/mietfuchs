@@ -118,7 +118,9 @@ Start aus dem Quellcode. Alle nutzen [scripts/smoke-test.mjs](scripts/smoke-test
 prüft eine laufende Instanz von außen (Oberfläche mit allen Skriptteilen und pdf.js-Dateien,
 KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup und
 Wiederherstellung, dazu die beim Start angelegte Datenbank aus `/healthz`) und braucht einen
-leeren Datenordner. Lokal:
+leeren Datenordner. Aus `/healthz` liest er auch, dass der Umstieg gelaufen ist und im leeren
+Ordner nichts zu tun hatte; den **gelungenen** Umstieg prüft er nicht, dafür müsste dieselbe
+Instanz mit einer vorhandenen `db.json` ein zweites Mal starten (siehe den Bericht zu #55). Lokal:
 `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
 (siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
@@ -251,7 +253,9 @@ Express-Server das statische `client/dist` selbst aus
 rename) über [server/src/store.ts](server/src/store.ts). `NKA_DATA_DIR` verlegt den Ordner
 (Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel externer
 KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht im Backup).
-Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
+Backup = diesen Ordner kopieren. Seit dem Umstieg (#55) liegen dort zusätzlich
+`mietfuchs.sqlite` mit demselben Bestand in Tabellen, `db.json.vor-umstieg` als Kopie des
+Standes vor dem Umstieg und `umstieg-protokoll.txt`. Schema-Migrationen
 älterer `db.json` passieren imperativ in [server/src/legacy.ts](server/src/legacy.ts) (z. B.
 fester Monatsbetrag zur Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die
 Migration ergänzen. Sie stehen in einer **eigenen Datei** und nicht mehr in `load()`, weil der
@@ -263,11 +267,11 @@ wer dort etwas ändert, sieht am roten Test, dass er eine Abrechnung verändert.
 
 **Die Datenbank** (#55, im Entstehen): Die JSON-Datei wird durch SQLite abgelöst, später soll
 auch PostgreSQL möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema
-dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). Geöffnet wird sie
-inzwischen beim Start ([server/src/db/open.ts](server/src/db/open.ts)), **gelesen und geschrieben
-wird darin aber noch nichts**; das kommt in den nächsten Schritten, ebenso der Umstieg
-vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.sqlite` neben der
-`db.json`.
+dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). Geöffnet wird sie beim
+Start ([server/src/db/open.ts](server/src/db/open.ts)), und **die vorhandenen Bestände wandern
+beim ersten Start hinein** (siehe Umstieg unten). **Gelesen wird von den Routen aber noch aus der
+`db.json`**; das ist der nächste Schritt. Im Datenordner liegen also beide: die `db.json` als
+lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
 
 - **Der Treiber ist `drizzle-orm/sqlite-proxy`**, und das ist eine bewusste Wahl gegen zwei
   naheliegendere. `drizzle-orm/better-sqlite3` importiert ein natives Modul fest beim Laden, und
@@ -322,10 +326,12 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter macOS und die
   Freigaben einer virtuellen Maschine; gewarnt wird dann nicht, falsch gewarnt aber auch niemand.
 - **Scheitert das Öffnen, startet der Server trotzdem** und arbeitet mit der db.json weiter, mit
-  einer Meldung auf der Konsole und `database.open === false` in `/healthz`. An diesem Stand
-  braucht niemand die Datenbank. **Mit dem Umstieg der Bestände kehrt sich das um**: Dann sind
-  die Daten dort, ein Start ohne sie wäre ein Start ohne Daten, und der Eintrag gehört unter
-  `checks`, damit ein Container den Fehler sieht.
+  einer Meldung auf der Konsole und `database.open === false` in `/healthz`. Dasselbe gilt für
+  einen gescheiterten Umstieg: Der Nutzer darf nie blockiert sein, und ein `status: error` an
+  dieser Stelle schickte einen Container in die Neustart-Schleife, obwohl die Anwendung tut, was
+  sie soll. **Sobald die Routen aus der Datenbank lesen, kehrt sich das um**: Dann wäre ein Start
+  ohne sie ein Start ohne Daten, und der Eintrag gehört unter `checks`, damit ein Container den
+  Fehler sieht.
 - **Alle Schreibvorgänge laufen nacheinander**, durch die Schlange in open.ts
   (`createWriteQueue`, benutzt als `opened.write(...)`). Express bedient nebenläufig, und alle
   Anfragen teilen sich **eine** Verbindung. Eine Transaktion mit asynchronem Rumpf gibt zwischen
@@ -391,8 +397,8 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Browser es benutzt und von Drizzle nichts wissen darf; der Test schlägt fehl, sobald jemand
   nur eine Seite ändert.
 - **Der Validator** ([server/src/db/validate.ts](server/src/db/validate.ts), #59) prüft einen
-  Datenbestand, bevor er übernommen wird: beim Wiederherstellen eines Backups (heute) und beim
-  Umstieg der vorhandenen Bestände (als Nächstes). Geprüft wird der **rohe** Inhalt der Datei
+  Datenbestand, bevor er übernommen wird: beim Wiederherstellen eines Backups und beim
+  Umstieg der vorhandenen Bestände. Geprüft wird der **rohe** Inhalt der Datei
   und nicht der schon eingelesene Bestand, denn `migrateLegacy` verträgt keinen beliebigen
   Inhalt und genau davor soll die Prüfung schützen. Das Ergebnis ist eine **Liste von Befunden
   mit Ort und Grund**, kein Wahrheitswert: „Die Datei enthält keine gültigen Daten" ist keine
@@ -427,6 +433,55 @@ vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.s
   Ausprägung von #70. Ein weiterer Test lässt den ganzen Prüfkatalog durch den Validator laufen,
   damit niemand ihn unbemerkt verschärft; seine Fangkraft hängt allerdings daran, dass zwei
   Fixtures Felder auslassen (siehe die Warnung im Test).
+
+**Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
+der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
+eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
+**bevor irgendetwas geschrieben wird**), `db.json.vor-umstieg` anlegen, in eine eigene Datei
+`mietfuchs.sqlite.umstieg` schreiben, importieren, nachrechnen und erst dann mit einem `rename`
+aktivieren. Die `db.json` bleibt liegen, sie ist der Rückweg, und `umstieg-protokoll.txt` nennt,
+was übernommen wurde.
+
+- **Die centgenaue Regression ist die Bedingung, unter der überhaupt aktiviert wird**
+  ([server/src/db/regression.ts](server/src/db/regression.ts)). Für jedes Jahr, in dem der
+  Bestand etwas enthält, **und jedes Jahr dazwischen**, werden Abrechnung,
+  Verbrauchsübersicht, Mietkonto und Steuerübersicht aus beiden Beständen gerechnet und
+  verglichen. Die Jahre dazwischen gehören dazu, weil ein Mietverhältnis durch sie hindurchläuft
+  und der Verbrauch zwischen zwei Ablesungen interpoliert wird; ein unbefristetes
+  Mietverhältnis reicht bis ins laufende Jahr, sonst bliebe gerade das Jahr ungeprüft, in dem
+  der Vermieter arbeitet. Weicht ein Cent ab, wird nicht aktiviert, und die Meldung nennt Jahr
+  und Zahl. **Ausgenommen sind genau fünf Angaben** (`unitName`, `tenantName`, `description`,
+  `basisText`, `warnings`), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
+  stehen benannt in regression.ts. Verglichen wird gegen den Bestand, wie Mietfuchs ihn **heute**
+  rechnet, und nicht gegen den schon geradegerückten: Sonst prüfte die Regression das
+  Geraderücken gegen sich selbst. Die eine Ausnahme davon ist der feste Monatsbetrag neben einer
+  leeren Staffel, und sie steht als `standToCompare` sichtbar da.
+- **Das Geraderücken steht als Funktion in legacy.ts** (`straightenForDatabase`), nicht im
+  Umstieg. Dieselbe Datei hält die Regeln des Einlesens, und validate.test.ts rechnet mit
+  **dieser** Funktion nach, dass keine Zahl wandert. Solange das nur in den Tests von Hand
+  geschah, waren die Hinweise des Validators eine Beschreibung ohne Gegenstück im Code.
+- **Scheitert ein Schritt, ist der alte Zustand unberührt**, Mietfuchs arbeitet mit der `db.json`
+  weiter, und beim nächsten Start wird es erneut versucht. Jeder Abbruch hat seinen eigenen Test
+  ([db-changeover.test.ts](server/test/db-changeover.test.ts)); zwei davon lassen sich von außen
+  nicht herbeiführen (das Einfügen und die Regression), dafür gibt es benannte Griffe in den
+  Optionen. `runChangeover` **wirft nie**: Auch das Aufräumen im Fehlerfall schluckt, was es
+  nicht schafft, sonst käme aus dem Umstieg eine Ausnahme statt einer Meldung.
+- **Ohne WAL, und vor dem `rename` wird nachgesehen.** Ein `rename` bewegt nur die Hauptdatei;
+  eine liegengebliebene `-wal` oder `-journal` gehörte danach zu keiner Datenbank mehr. Die
+  Verbindungen werden vorher geschlossen, denn unter Windows lässt sich eine geöffnete Datei
+  nicht ersetzen, und der `rename` hat ein paar Wiederholungen, weil ein Virenscanner sie
+  kurzzeitig offen halten kann.
+- **Gelesen und geschrieben wird über [read.ts](server/src/db/read.ts) und
+  [write.ts](server/src/db/write.ts)**, und beide sind mechanisch: eine Spalte je Feld, keine
+  fachliche Regel. `read.ts` liest **in der Reihenfolge, in der die Zeilen angelegt wurden**
+  (`ORDER BY rowid`). Das ist keine Kosmetik: Zwei Ablesungen mit demselben Datum sortiert die
+  Berechnung stabil, es gilt also die Reihenfolge der Datei, und welcher der beiden Stände der
+  spätere ist, entscheidet über den Verbrauch.
+- **Der Nutzer erfährt es in der Oberfläche**, nicht nur auf der Konsole: Beim Start aus einem
+  Linux-Paket gibt es keine. Der Weg dafür ist `database.changeover` in `/healthz`
+  ([client/src/components/Database.tsx](client/src/components/Database.tsx), Logik in
+  [client/src/database.ts](client/src/database.ts)). Gelungen ist ein Satz mit einem Knopf,
+  gescheitert eine Erklärung samt der Zusage, dass unverändert weitergearbeitet wird.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.

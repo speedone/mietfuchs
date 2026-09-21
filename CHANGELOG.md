@@ -8,14 +8,31 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
-- **Im Datenordner liegt jetzt eine Datei `mietfuchs.sqlite`.** Das ist die Datenbank, die
-  gerade entsteht; sie wird beim Start angelegt und geöffnet, ist aber noch leer. Ihre
-  Wohnungen, Kosten, Zähler und Abrechnungen stehen weiterhin in der `db.json`, und an der
-  Bedienung ändert sich nichts. Angelegt wird sie schon jetzt, damit sich auf allen geprüften
-  Systemen zeigt, dass sie dort auch wirklich funktioniert, bevor Daten davon abhängen. Beim
-  Start nennt Mietfuchs ihren Pfad in einer eigenen Zeile. Lässt sie sich nicht öffnen, etwa
-  weil der Ordner schreibgeschützt ist, läuft Mietfuchs wie bisher weiter und sagt, woran es
-  lag. ([#55](https://github.com/speedone/mietfuchs/issues/55))
+- **Ihre Daten ziehen beim ersten Start in eine Datenbank um.** Im Datenordner liegt dafür die
+  Datei `mietfuchs.sqlite`. Der Umzug läuft von selbst, es ist kein Befehl und keine Antwort
+  nötig, und die Oberfläche sagt einmal, dass er stattgefunden hat. Ihre bisherige Datei
+  `db.json` bleibt liegen, daneben eine Kopie ihres Standes vor dem Umzug
+  (`db.json.vor-umstieg`) und ein Protokoll, das aufzählt, was übernommen wurde. Am Backup
+  ändert sich nichts: weiterhin diesen Ordner kopieren. Bevor der Umzug gilt, rechnet Mietfuchs
+  Abrechnung, Verbrauchsübersicht, Mietkonto und Steuerübersicht für jedes Jahr, in dem etwas
+  erfasst ist, aus beiden Beständen nach und vergleicht sie auf den Cent. Weicht ein einziger
+  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl. Dasselbe
+  gilt, wenn irgendein anderer Schritt scheitert: Mietfuchs arbeitet dann unverändert mit der
+  `db.json` weiter, sagt woran es lag und versucht es beim nächsten Start erneut. Sie sind also
+  nie blockiert und verlieren nichts.
+  ([#55](https://github.com/speedone/mietfuchs/issues/55))
+
+- **Eine Vorauszahlung aus sehr alten Beständen zählt beim Umzug auch im Mietkonto mit.** Wer
+  Mietfuchs schon vor der Vorauszahlungs-Staffel benutzt hat, kann ein Mietverhältnis haben, bei
+  dem die Vorauszahlung noch als fester Monatsbetrag gespeichert ist. Die Abrechnung hat diesen
+  Betrag immer gelesen, das Mietkonto nicht; dort war das monatliche Soll um die Vorauszahlung zu
+  niedrig. Beim Umzug wird daraus ein gewöhnlicher Staffeleintrag, und damit rechnen Abrechnung,
+  Mietkonto und Steuerübersicht ab jetzt mit demselben Betrag. Für Sie heißt das: Das Soll steigt
+  um die Vorauszahlung, dieselbe Zahlung deckt also weniger Monate, und ein Monat kann von
+  „bezahlt“ auf „teilweise“ wechseln. Gefordert wird damit, was die Abrechnung ohnehin ansetzt.
+  Betrifft es Sie, steht es nach dem Umzug in der Oberfläche und im Protokoll.
+  ([#55](https://github.com/speedone/mietfuchs/issues/55),
+  [#70](https://github.com/speedone/mietfuchs/issues/70))
 
 - **Wer Mietfuchs aus dem Quellcode startet, braucht jetzt mindestens Node 24.15.** Zwei Gründe
   kommen dort zusammen. Der Server ist von JavaScript auf TypeScript umgestellt und wird
