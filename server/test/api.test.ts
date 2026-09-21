@@ -1958,6 +1958,32 @@ test('Backup: das Archiv enthält die Datenbank und sagt, woher es stammt', asyn
   })
 })
 
+test('Backup: zwei gleichzeitige Anfragen liefern beide ein vollständiges Archiv', async () => {
+  // Der Schnappschuss entsteht in einer Zwischendatei im Datenordner. Trügen zwei Anfragen
+  // denselben Namen dafür, löschte die zweite, was die erste gerade packen will, und der Nutzer
+  // bekäme ein Archiv ohne Datenbank oder einen Serverfehler. Zwei Klicks auf denselben Knopf
+  // sind nichts Ausgefallenes.
+  //
+  // **Ehrlich dazu:** Dieser Test war auch mit dem früheren festen Namen grün, gemessen in drei
+  // Läufen. Er stellt den Fehler also nicht nach, sondern hält die Eigenschaft fest. Verhindert
+  // wurde er bis dahin allein davon, in welcher Reihenfolge Node die Fortsetzungen abarbeitet,
+  // und das sagt weder die Schreibschlange zu noch der Treiber darunter. Der eigene Name je
+  // Anfrage nimmt der Frage die Grundlage, statt sich auf diese Reihenfolge zu verlassen.
+  await withFilledDatabase(async (s) => {
+    const hole = async () => {
+      const res = await fetch(`${s.base}/api/backup`)
+      return { status: res.status, body: Buffer.from(await res.arrayBuffer()) }
+    }
+    const antworten = await Promise.all([hole(), hole(), hole()])
+    antworten.forEach((antwort, i) => {
+      assert.equal(antwort.status, 200, `Anfrage ${i + 1} scheiterte`)
+      const namen = new AdmZip(antwort.body).getEntries().map((e) => e.entryName)
+      assert.ok(namen.includes('mietfuchs.sqlite'), `Anfrage ${i + 1} ohne Datenbank: ${namen.join(', ')}`)
+      assert.ok(namen.includes('db.json'), `Anfrage ${i + 1} ohne db.json: ${namen.join(', ')}`)
+    })
+  })
+})
+
 test('Backup: die Rundreise bringt auch die Datenbank zurück', async () => {
   await withFilledDatabase(async (s, unit) => {
     const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
