@@ -1655,6 +1655,31 @@ test('Backup: ein krummer, aber gültiger Bestand wird übernommen', async () =>
   })
 })
 
+test('Backup: Wiederherstellen gelingt auch ohne vorhandene db.json (frischer Rechner)', async () => {
+  // Das ist der häufigste Fall überhaupt: Ein Backup macht man, um auf einen neuen Rechner zu
+  // ziehen oder nach einem Schaden neu anzufangen. Dann liegt keine db.json da, die sich
+  // beiseitelegen ließe, denn sie entsteht erst beim ersten Speichern. Vorher brach das
+  // Wiederherstellen genau dort mit einem Serverfehler ab (ENOENT beim Kopieren der
+  // Sicherheitskopie), also ausgerechnet da, wo es helfen sollte.
+  const s = await startServer()
+  try {
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json')), false, 'ein frischer Datenordner hat noch keine db.json')
+    const daten = {
+      settings: {}, units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+      tenancies: [], costItems: [], meters: [], readings: [], payments: [],
+    }
+    const r = await restore(s, archive({ 'uploads/beleg.pdf': '%PDF-Beleg' }, daten))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.name), ['EG'])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), ['beleg.pdf'])
+    // Gab es vorher nichts, gibt es auch nichts zu sichern: keine leere oder erfundene
+    // Sicherheitskopie, die später jemanden glauben ließe, dort stünde ein früherer Stand.
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json.vor-restore')), false)
+  } finally {
+    s.stop()
+  }
+})
+
 // Setzt einen Eintragsnamen roh ins Archiv, wie ein präpariertes ZIP ihn enthielte. adm-zip
 // bereinigt Namen schon beim Erzeugen, deshalb erst mit gleich langem Platzhalter bauen und die
 // Bytes danach ersetzen (der Name steckt in lokalem Kopf und zentralem Verzeichnis).

@@ -639,9 +639,22 @@ app.post('/api/restore', restoreUpload.single('file'), (req, res) => {
   } catch (err) {
     return res.status(400).json({ error: messageOf(err) })
   }
-  // Sicherheitskopie des aktuellen Stands, dann ersetzen
-  fs.copyFileSync(path.join(DATA_DIR, 'db.json'), path.join(DATA_DIR, 'db.json.vor-restore'))
-  fs.writeFileSync(path.join(DATA_DIR, 'db.json'), backup.dbText, 'utf8')
+  // Der Datenordner und der Belegordner müssen dastehen, bevor hier etwas hineingeschrieben
+  // wird. Heute tun sie das auch auf einem frischen Rechner, aber nur beiläufig: multer legt
+  // den Belegordner beim Laden des Moduls an, weil `destination` ein fester Pfad ist. Diese
+  // Route soll sich auf die Eigenheit einer Bibliothek nicht verlassen, zumal `recursive`
+  // einen vorhandenen Ordner ohnehin in Ruhe lässt.
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+  // Sicherheitskopie des aktuellen Stands, dann ersetzen. **Nur wenn es einen gibt**: Auf einem
+  // frischen Rechner entsteht die db.json erst beim ersten Speichern, und genau dann wird am
+  // häufigsten wiederhergestellt, nämlich beim Umzug auf einen neuen Rechner oder nach einem
+  // Schaden. Ohne diese Frage brach das Kopieren mit ENOENT ab, und der Nutzer bekam einen
+  // Serverfehler zu sehen, wo ihm gerade geholfen werden sollte. Eine leere Sicherheitskopie
+  // anzulegen wäre die falsche Abhilfe: Die Oberfläche verspricht dort den vorherigen Stand,
+  // und den gab es nicht.
+  const current = path.join(DATA_DIR, 'db.json')
+  if (fs.existsSync(current)) fs.copyFileSync(current, path.join(DATA_DIR, 'db.json.vor-restore'))
+  fs.writeFileSync(current, backup.dbText, 'utf8')
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
   reloadDb()
   res.json({ ok: true })
