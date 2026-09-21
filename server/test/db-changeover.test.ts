@@ -505,6 +505,32 @@ test('Der Prüfkatalog kommt durch den Umstieg und rechnet danach aus der Datenb
   }
 })
 
+test('Abbruch: eine Datenbank, die nicht mehr antwortet, beendet nicht den Start', async () => {
+  // `runChangeover` verspricht, dass **jeder** Schritt eine Meldung ergibt und keinen Abbruch.
+  // Daran hängt mehr als die Höflichkeit: index.ts ruft die Funktion mit `await` auf oberster
+  // Ebene auf, ohne `try`. Käme von hier eine Ausnahme heraus, endete der Start mit einem
+  // Stapelauszug, statt Mietfuchs mit der db.json weiterlaufen zu lassen — und der Nutzer stünde
+  // vor einem Programm, das sich gar nicht mehr öffnen lässt.
+  //
+  // Geprüft wird es am zweiten Schritt, der Frage nach schon gefüllten Tabellen: Er ist der
+  // einzige, der die Datenbank befragt, bevor der eigentliche Umstieg beginnt. Eine geschlossene
+  // Verbindung stellt die Bedingung her, ohne dass der Test etwas vortäuschen müsste.
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    const opened = await openDatabase({ dataDir })
+    opened.close()
+    const result = await runChangeover({ dataDir, opened, reopen: () => openDatabase({ dataDir }) })
+    assert.equal(result.state, 'failed')
+    assert.match(result.message, /arbeitet unverändert mit der Datei db.json weiter/)
+    // Und nichts ist halb getan: keine Datei für den Umstieg, keine Sicherung.
+    assert.equal(fs.existsSync(path.join(dataDir, TEMP_NAME)), false, 'die Datei für den Umstieg liegt noch da')
+    assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false, 'es wurde schon gesichert')
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 // ---------- Welche Jahre geprüft werden ----------
 
 test('Geprüft wird jedes Jahr, in dem etwas steht, und jedes Jahr dazwischen', () => {
