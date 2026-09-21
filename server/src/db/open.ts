@@ -55,18 +55,71 @@ const NESTED =
   'wird, und der äußere auf den inneren, sodass die Anfrage für immer hinge. Bitte melden Sie ' +
   'diesen Fehler; Ihre Daten sind unverändert.'
 
-export function createWriteQueue(): WriteQueue {
+// Ein Schreibvorgang darf dauern, aber nicht unbemerkt ewig. Nach dieser Zeit gibt es eine
+// Meldung. Großzügig gewählt: Eine Abrechnung mit allen Kostenpositionen zu schreiben dauert
+// Millisekunden, eine halbe Minute erreicht nur, wo wirklich etwas klemmt.
+const SLOW_AFTER_MS = 30_000
+
+const slowMessage = (seconds: number, waiting: number): string =>
+  `Ein Speichervorgang läuft seit ${seconds} Sekunden und ist noch nicht fertig. ` +
+  (waiting > 0
+    ? `${waiting === 1 ? 'Eine weitere Eingabe wartet' : `${waiting} weitere Eingaben warten`} darauf. `
+    : 'Weitere Eingaben müssten darauf warten. ') +
+  'Liegen die Daten auf einem Netzlaufwerk, ist das die häufigste Ursache. Mietfuchs bricht ' +
+  'nichts ab und wartet weiter, damit nichts halb gespeichert liegen bleibt.'
+
+export type WriteQueueOptions = {
+  slowAfterMs?: number
+  onSlow?: (message: string) => void
+}
+
+// Der laufende Vorgang. Ein Verweis auf ein veränderliches Objekt und kein bloßes `true`: Siehe
+// die Begründung unten, der Speicher des Kontexts überlebt den Vorgang.
+type Ticket = { running: boolean }
+
+export function createWriteQueue(options: WriteQueueOptions = {}): WriteQueue {
+  const slowAfterMs = options.slowAfterMs ?? SLOW_AFTER_MS
+  const onSlow = options.onSlow ?? ((message: string) => console.error(message))
   // Woran ein verschachtelter Aufruf erkannt wird. Ein einfaches „läuft gerade“ genügte nicht:
   // Das wäre auch für eine zweite Anfrage wahr, und die soll ja gerade warten dürfen. Der
-  // Speicher von AsyncLocalStorage gilt nur innerhalb eines Vorgangs und über seine await
-  // hinweg, unterscheidet also genau die beiden Fälle.
-  const inside = new AsyncLocalStorage<boolean>()
+  // Speicher von AsyncLocalStorage gilt nur unterhalb eines Vorgangs, unterscheidet also die
+  // beiden Fälle.
+  //
+  // **Er gilt aber länger, als der Vorgang dauert.** Jeder Zeitgeber und jede Rückruffunktion,
+  // die der Vorgang anlegt, erbt ihn und behält ihn, auch wenn sie erst Minuten später feuert.
+  // Stünde dort nur `true`, gälte ein Schreibvorgang aus einem solchen Zeitgeber heraus für
+  // immer als verschachtelt, obwohl er längst allein ist. Deshalb liegt im Speicher ein
+  // veränderliches Kärtchen, das am Ende des Vorgangs ungültig gestempelt wird: Was danach noch
+  // davon erbt, sieht ein abgelaufenes Kärtchen und darf schreiben.
+  const inside = new AsyncLocalStorage<Ticket>()
   // Das Ende der Schlange. Es wird nie abgelehnt: Ein gescheiterter Schreibvorgang darf die
   // folgenden nicht mitreißen, sonst brächte ein einzelner Fehler die ganze Sitzung zum Erliegen.
   let tail: Promise<void> = Promise.resolve()
+  let waiting = 0
   return <T>(work: () => Promise<T>): Promise<T> => {
-    if (inside.getStore()) return Promise.reject(new Error(NESTED))
-    const result = tail.then(() => inside.run(true, work))
+    // Geworfen und nicht als abgelehntes Versprechen zurückgegeben. Ein verschachtelter Aufruf
+    // steht immer im Rumpf eines anderen Schreibvorgangs, und wer sein Ergebnis wegwirft, wie es
+    // ein Aufräum-Schritt täte, hätte niemanden, der die Ablehnung entgegennimmt: Node beendet
+    // den Prozess bei einer unbehandelten Ablehnung, und die Meldung stünde nirgends. Geworfen
+    // landet sie im Rumpf des äußeren Vorgangs und von dort bei dessen Aufrufer.
+    if (inside.getStore()?.running) throw new Error(NESTED)
+    const ticket: Ticket = { running: true }
+    waiting++
+    const result = tail.then(async () => {
+      waiting--
+      // Die Dauer kommt aus der eingestellten Frist und nicht aus einer Messung: Der Zeitgeber
+      // feuert genau dann, und eine gemessene Zahl wäre dieselbe, nur mit Nachkommastellen.
+      const seconds = Math.max(1, Math.round(slowAfterMs / 1000))
+      const warner = setTimeout(() => onSlow(slowMessage(seconds, waiting)), slowAfterMs)
+      // Der Zeitgeber darf den Prozess nicht am Leben halten, wenn sonst nichts mehr läuft.
+      warner.unref()
+      try {
+        return await inside.run(ticket, work)
+      } finally {
+        clearTimeout(warner)
+        ticket.running = false
+      }
+    })
     tail = result.then(
       () => undefined,
       () => undefined,
@@ -104,6 +157,49 @@ const damaged = (file: string, befund: string): string =>
   `doch noch etwas retten lässt); beim nächsten Start legt Mietfuchs eine neue an. ` +
   `Technischer Befund: ${befund}`
 
+// Die Meldung für eine Datei, in die sich nicht schreiben lässt. `attempt to write a readonly
+// database` sagt einem Vermieter nichts, und der Fall ist alltäglich: eine Datei aus einem
+// Backup zurückkopiert, ein Datenträger, der nur gelesen werden darf, ein Ordner, der einem
+// anderen Benutzer gehört.
+const readonly = (file: string): string =>
+  `Die Datenbankdatei ${file} ist schreibgeschützt, Mietfuchs kann darin nichts speichern. Das ` +
+  `kommt vor, wenn die Datei aus einem Backup zurückkopiert wurde, wenn sie einem anderen ` +
+  `Benutzer gehört oder wenn der Datenträger nur gelesen werden darf. Bitte heben Sie den ` +
+  `Schreibschutz auf (unter Windows über die Eigenschaften der Datei, unter Linux und macOS mit ` +
+  `„chmod u+w“), oder wählen Sie mit der Umgebungsvariablen NKA_DATA_DIR einen Ordner, in dem ` +
+  `Mietfuchs schreiben darf.`
+
+// Lässt sich in die Datei schreiben? Zwei Stufen, und beide sind nötig.
+//
+// Die Rechteprüfung des Dateisystems ist billig und ändert nichts, aber sie lügt: Auf
+// Netzwerk-Dateisystemen und bei fremdem Volume-Eigentümer meldet sie regelmäßig etwas anderes
+// als der Schreibvorgang (dieselbe Erfahrung steht in health.ts). Sie darf deshalb allein nichts
+// entscheiden, sondern nur den Verdacht wecken.
+//
+// Bestätigt wird der Verdacht mit einem Schreibvorgang, der nichts ändert: `PRAGMA user_version`
+// wird auf den Wert gesetzt, der schon dasteht. Auf einer schreibgeschützten Datei bricht das ab,
+// auf einer gewöhnlichen kostet es einen Seitenschreibvorgang. `BEGIN IMMEDIATE` taugt dafür
+// nicht, nachgemessen: SQLite holt die Sperre erst beim ersten wirklichen Schreiben und lässt
+// die Anweisung auch auf einer schreibgeschützten Datei durch.
+function readonlyProblem(file: string, connection: Connection): string | null {
+  try {
+    fs.accessSync(file, fs.constants.W_OK)
+    return null
+  } catch {
+    // Verdacht. Jetzt nachfragen, statt ihn zu glauben.
+  }
+  const version = Number(connection.rows('PRAGMA user_version')[0]?.[0])
+  // Etwas anderes als eine ganze Zahl gehört dort nicht hin. Dann lieber gar nicht schreiben,
+  // als einen Wert zu setzen, der vorher nicht dastand.
+  if (!Number.isInteger(version)) return null
+  try {
+    connection.exec(`PRAGMA user_version = ${version}`)
+    return null
+  } catch {
+    return readonly(file)
+  }
+}
+
 // ---------- Schritt 4: stammt die Datei aus einer neueren Version? ----------
 
 type AppliedStep = { hash: string, createdAt: number }
@@ -125,8 +221,8 @@ function appliedSteps(connection: Connection): AppliedStep[] {
 // eine Meldung soll überall gleich aussehen.
 function germanDate(millis: number): string {
   // Der Wert kommt aus einer Datei, für die wir nichts können. Außerhalb dieses Bereichs kennt
-  // JavaScript kein Datum, und `toISOString` würde werfen — mitten in einer Meldung, die gerade
-  // erklären soll, was los ist.
+  // JavaScript kein Datum, und `toISOString` würde werfen, und zwar mitten in einer Meldung, die
+  // gerade erklären soll, was los ist.
   if (!Number.isFinite(millis) || Math.abs(millis) > 8.64e15) return 'unbekannt'
   const iso = new Date(millis).toISOString().slice(0, 10).split('-')
   return `${iso[2]}.${iso[1]}.${iso[0]}`
@@ -167,6 +263,9 @@ type NetworkOptions = {
   // Der Inhalt von /proc/self/mounts. Hineingereicht, damit der Test die Tabelle stellen kann,
   // ohne dass dafür irgendwo etwas eingehängt sein muss.
   mounts?: () => string | null
+  // Wo die Datei wirklich liegt. Ebenfalls hineingereicht, damit sich ein Symlink prüfen lässt,
+  // ohne einen anzulegen.
+  realpath?: (file: string) => string
 }
 
 function readMounts(): string | null {
@@ -174,6 +273,23 @@ function readMounts(): string | null {
     return fs.readFileSync('/proc/self/mounts', 'utf8')
   } catch {
     return null // kein Linux oder kein /proc: dann gibt es hier nichts zu erkennen
+  }
+}
+
+// Der Ort, an dem die Datei wirklich liegt. Ein Ordner im Heimatverzeichnis, der auf das NAS
+// zeigt, ist ein naheliegender Weg, sich die lange Adresse zu sparen, und wäre ohne diese
+// Auflösung unsichtbar. Beim ersten Start gibt es die Datei noch nicht; dann zählt ihr Ordner.
+// Lässt sich beides nicht auflösen, bleibt der Pfad, wie er dasteht: Ein fehlender Hinweis ist
+// besser als ein Abbruch an dieser Stelle.
+function realpathOf(file: string): string {
+  try {
+    return fs.realpathSync(file)
+  } catch {
+    try {
+      return path.join(fs.realpathSync(path.dirname(file)), path.basename(file))
+    } catch {
+      return file
+    }
   }
 }
 
@@ -197,20 +313,33 @@ function uncShare(file: string): string | null {
 
 // Liegt die Datei auf einem Netzlaufwerk? Liefert eine kurze Beschreibung oder null.
 //
-// Was hier nicht erkannt wird, steht im Bericht zu Aufgabe 3: ein verbundenes Netzlaufwerk unter
-// Windows, jedes eingebundene Netzlaufwerk unter macOS (dort gibt es kein /proc, und der Typ
-// eines Dateisystems ist ohne fremdes Programm nicht zu erfragen) und die Freigaben einer
-// virtuellen Maschine. Der Hinweis bleibt dann aus; falsch gewarnt wird niemand.
+// Was hier nicht erkannt wird, steht auch im Bericht zu Aufgabe 3, und alle Lücken gehen in
+// dieselbe Richtung: Der Hinweis bleibt aus, falsch gewarnt wird niemand.
+//
+//   - **Ein verbundenes Netzlaufwerk unter Windows** (`Z:\`) sieht aus wie eine Platte.
+//     Auseinanderhalten ließe es sich nur über die Windows-Schnittstelle oder durch das Starten
+//     von `net use`; beides beim Start nicht.
+//   - **macOS** wird gar nicht befragt: kein `/proc`, und `fs.statfsSync` hilft nicht, weil
+//     libuv dort `f_type` auf 0 setzt.
+//   - **Freigaben einer virtuellen Maschine** (`vboxsf`, `virtiofs`) stehen nicht in der Liste.
+//     Sie haben ähnliche Schwierigkeiten mit Dateisperren, aber `virtiofs` trägt unter Docker
+//     Desktop jeden Container, und eine Warnung, die fast immer kommt, liest bald niemand mehr.
+//   - **Ein Netzlaufwerk, das erst nach dem Start eingehängt wird**, fällt nicht auf.
+//   - **Ein Symlink auf ein Netzlaufwerk** wird aufgelöst und zählt mit; ein Symlink, der sich
+//     nicht auflösen lässt, weil es weder Datei noch Ordner schon gibt, dagegen nicht.
 export function networkLocation(file: string, options: NetworkOptions = {}): string | null {
   const platform = options.platform ?? process.platform
-  if (platform === 'win32') return uncShare(file)
+  // Erst den wirklichen Ort suchen: Ein Symlink oder eine Abzweigung auf das NAS sieht sonst aus
+  // wie ein gewöhnlicher Ordner.
+  const wirklich = (options.realpath ?? realpathOf)(file)
+  if (platform === 'win32') return uncShare(wirklich)
   if (platform !== 'linux') return null
   const text = (options.mounts ?? readMounts)()
   if (!text) return null
   // Der Pfad kommt in der Schreibweise des laufenden Rechners; die Einhängepunkte stehen mit
   // Schrägstrich da. Umgestellt wird nur, wenn dieser Rechner Gegenschrägstriche benutzt, damit
   // unter Linux ein Dateiname mit Gegenschrägstrich unangetastet bleibt.
-  const gesucht = path.sep === '\\' ? file.replace(/\\/g, '/') : file
+  const gesucht = path.sep === '\\' ? wirklich.replace(/\\/g, '/') : wirklich
   let treffer: { point: string, type: string, device: string } | null = null
   for (const line of text.split('\n')) {
     const [device, point, type] = line.split(' ')
@@ -219,8 +348,12 @@ export function networkLocation(file: string, options: NetworkOptions = {}): str
     // Der Einhängepunkt muss ein Ordner im Pfad sein und nicht bloß sein Anfang: /mnt/nase
     // liegt nicht in /mnt/nas.
     if (dir !== '/' && !gesucht.startsWith(dir.endsWith('/') ? dir : `${dir}/`)) continue
-    // Der längste passende Einhängepunkt gewinnt, sonst träfe immer „/“ zu.
-    if (!treffer || dir.length > treffer.point.length) treffer = { point: dir, type, device: unescapeMount(device) }
+    // Der längste passende Einhängepunkt gewinnt, sonst träfe immer „/“ zu. Bei gleicher Länge
+    // gewinnt der spätere, und das ist kein Gleichstand ohne Bedeutung: Gleich lang und beide
+    // im Pfad heißt derselbe Einhängepunkt, also ein Dateisystem, das über ein anderes gehängt
+    // wurde. Wirksam ist dann das obere, und /proc/self/mounts führt es zuletzt auf. Mit einem
+    // strengen Größer würde je nach Reihenfolge übersehen oder falsch gewarnt.
+    if (!treffer || dir.length >= treffer.point.length) treffer = { point: dir, type, device: unescapeMount(device) }
   }
   if (!treffer || !NETWORK_FILESYSTEMS.has(treffer.type)) return null
   return `${treffer.type} auf ${treffer.device}`
@@ -327,12 +460,33 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     }
     if (befund !== null) fail(damaged(file, befund))
 
+    // Lässt sich in die Datei überhaupt schreiben? Erst danach hat es Sinn, über Migrationen
+    // nachzudenken, und die Meldung soll vom Schreibschutz handeln und nicht von einem
+    // Migrationsschritt, der daran gescheitert ist.
+    const gesperrt = readonlyProblem(file, connection)
+    if (gesperrt !== null) fail(gesperrt)
+
     // Schritt 4: eine Datei aus einer neueren Version wird erklärt, nicht migriert.
     const migrations = await loadMigrations()
     const problem = newerVersionProblem(file, appliedSteps(connection), migrations)
     if (problem) fail(problem)
 
-    const applied = applyMigrations(connection, migrations)
+    let applied: number
+    try {
+      applied = applyMigrations(connection, migrations)
+    } catch (err) {
+      // Auch hier keine Meldung von SQLite unverändert weiterreichen. Ein Schreibschutz, der
+      // die Prüfung oben überstanden hat (ein Netzlaufwerk, das die Rechte anders meldet, als
+      // es sich verhält), zeigt sich spätestens hier.
+      const text = messageOf(err)
+      return fail(
+        /readonly|read-only/i.test(text)
+          ? readonly(file)
+          : `Der Aufbau der Datenbank ${file} ließ sich nicht herstellen. Mietfuchs arbeitet ` +
+            `deshalb nicht damit; an Ihren Daten ist nichts verändert. Technischer Befund: ${text}`,
+        err,
+      )
+    }
     const queue = createWriteQueue()
     return {
       db: connection.db,
@@ -344,7 +498,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     }
   } catch (err) {
     // Eine offene Verbindung zu einer Datei, mit der wir nicht arbeiten, hält unter Windows nur
-    // deren Sperre — und genau die bräuchte, wer die Datei jetzt austauschen will.
+    // deren Sperre, und genau die bräuchte, wer die Datei jetzt austauschen will.
     connection.close()
     throw err
   }

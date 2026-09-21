@@ -11,7 +11,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { connect } from '../src/db/client.ts'
-import { createWriteQueue, databaseFile, integrityProblem, networkLocation, openDatabase } from '../src/db/open.ts'
+import {
+  createWriteQueue, databaseFile, integrityProblem, networkLocation, openDatabase, type OpenedDatabase,
+} from '../src/db/open.ts'
 import { readings, units } from '../src/db/schema.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-db-'))
@@ -70,10 +72,28 @@ test('ein Datenordner ohne Schreibrecht wird benannt, bevor irgendetwas geöffne
   }
 })
 
+test('das Pragma für die Fremdschlüssel steht wirklich auf der Verbindung', async () => {
+  // Das Verhalten allein schützt die Zeile `PRAGMA foreign_keys = ON` in connect() nicht: Nimmt
+  // man sie heraus, bleibt unter Node alles grün, weil `node:sqlite` die Prüfung von sich aus
+  // einschaltet. Unter Bun ist sie aus. Deshalb zweierlei: openNode() schaltet die
+  // Voreinstellung ausdrücklich ab, damit die Zeile auf beiden Laufzeiten die Arbeit tut, und
+  // dieser Test liest den Wert, statt sich auf das Verhalten zu verlassen.
+  const dataDir = tempDir()
+  try {
+    const connection = await connect(databaseFile(dataDir))
+    try {
+      assert.deepEqual(connection.rows('PRAGMA foreign_keys'), [[1]])
+    } finally {
+      connection.close()
+    }
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('eine Ablesung ohne Zähler wird abgelehnt: die Fremdschlüssel gelten wirklich', async () => {
-  // In SQLite ist diese Prüfung je Verbindung standardmäßig aus. Ohne das Pragma beim Öffnen
-  // wären alle Verweise im Schema Zierde, und eine Ablesung ohne Zähler bliebe als verwaister
-  // Datensatz liegen, der in keiner Abrechnung mehr auftaucht.
+  // Was das Pragma oben bewirkt, hier am Verhalten: Ohne die Prüfung bliebe eine Ablesung ohne
+  // Zähler als verwaister Datensatz liegen, der in keiner Abrechnung mehr auftaucht.
   const dataDir = tempDir()
   try {
     const opened = await openDatabase({ dataDir })
@@ -94,6 +114,44 @@ test('eine Ablesung ohne Zähler wird abgelehnt: die Fremdschlüssel gelten wirk
       opened.close()
     }
   } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('eine schreibgeschützte Datenbankdatei wird erklärt, nicht durchgereicht', async (t) => {
+  // Kommt vor, wenn die Datei aus einem Backup zurückkopiert wurde oder auf einem Datenträger
+  // liegt, der nur gelesen werden darf. „attempt to write a readonly database“ sagt einem
+  // Vermieter nichts.
+  // Unter Windows setzt chmod das Schreibschutz-Kennzeichen der Datei, das genügt hier. Als
+  // root greifen Dateirechte dagegen gar nicht.
+  if (process.getuid?.() === 0) return t.skip('läuft als root, Dateirechte greifen dann nicht')
+  const dataDir = tempDir()
+  const file = databaseFile(dataDir)
+  // Geht das Öffnen wider Erwarten durch, muss die Verbindung trotzdem geschlossen werden: Sonst
+  // scheitert das Aufräumen unter Windows an der offenen Datei, und dessen Meldung verdeckt den
+  // eigentlichen Befund dieses Tests.
+  // Als Liste und nicht als einzelne Variable: Der Übersetzer verfolgt eine Zuweisung innerhalb
+  // einer Rückruffunktion nicht und hielte die Variable danach für unverändert `null`.
+  const doch: OpenedDatabase[] = []
+  try {
+    const erste = await openDatabase({ dataDir })
+    erste.close()
+    fs.chmodSync(file, 0o444)
+    await assert.rejects(
+      async () => {
+        doch.push(await openDatabase({ dataDir }))
+      },
+      (err: unknown) => {
+        const text = String(err)
+        assert.match(text, /schreibgeschützt/, 'die Meldung sagt, was los ist')
+        assert.match(text, /NKA_DATA_DIR/, 'die Meldung nennt auch den Ausweg über den Datenordner')
+        assert.doesNotMatch(text, /^Error: attempt to write/, 'keine nackte Meldung von SQLite')
+        return true
+      },
+    )
+  } finally {
+    for (const offen of doch) offen.close()
+    if (fs.existsSync(file)) fs.chmodSync(file, 0o644)
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
@@ -196,7 +254,7 @@ test('ein Netzlaufwerk wird erkannt und benannt', () => {
     'nas:/export /mnt/nfs nfs4 rw 0 0',
     '/dev/sdb1 /mnt/nas/lokal ext4 rw 0 0',
   ].join('\n')
-  const linux = (file: string) => networkLocation(file, { platform: 'linux', mounts: () => mounts })
+  const linux = (file: string) => networkLocation(file, { platform: 'linux', mounts: () => mounts, realpath: (p) => p })
   assert.match(String(linux('/mnt/nas/mietfuchs.sqlite')), /cifs/)
   assert.match(String(linux('/mnt/nfs/daten/mietfuchs.sqlite')), /nfs4/)
   assert.equal(linux('/home/erika/daten/mietfuchs.sqlite'), null)
@@ -215,6 +273,43 @@ test('ein Netzlaufwerk wird erkannt und benannt', () => {
   assert.equal(networkLocation('/Volumes/nas/mietfuchs.sqlite', { platform: 'darwin', mounts: () => null }), null)
 })
 
+test('ein Symlink auf ein Netzlaufwerk zählt als Netzlaufwerk', () => {
+  // Gefragt ist, wo die Datei wirklich liegt. Ein Ordner im Heimatverzeichnis, der auf das NAS
+  // zeigt, ist ein naheliegender Weg, sich die lange Adresse zu sparen, und wäre ohne das
+  // Auflösen unsichtbar.
+  const mounts = '/dev/sda1 / ext4 rw 0 0\n//nas/daten /mnt/nas cifs rw 0 0'
+  const ueberSymlink = networkLocation('/home/erika/daten/mietfuchs.sqlite', {
+    platform: 'linux',
+    mounts: () => mounts,
+    realpath: (p) => p.replace('/home/erika/daten', '/mnt/nas'),
+  })
+  assert.match(String(ueberSymlink), /cifs/)
+  // Unter Windows löst dasselbe eine Abzweigung auf einen UNC-Pfad auf.
+  const ueberAbzweigung = networkLocation('C:\\Daten\\mietfuchs.sqlite', {
+    platform: 'win32',
+    mounts: () => null,
+    realpath: () => '\\\\nas\\daten\\mietfuchs.sqlite',
+  })
+  assert.match(String(ueberAbzweigung), /\\\\nas\\daten/)
+})
+
+test('liegen zwei Dateisysteme am selben Einhängepunkt, gilt das obere', () => {
+  // Wird über einen Ordner ein zweites Dateisystem gehängt, führt /proc/self/mounts beide auf,
+  // und das spätere liegt über dem früheren. Der längste Einhängepunkt allein entscheidet hier
+  // nicht, denn beide sind gleich lang: Ohne diese Regel würde je nach Reihenfolge übersehen
+  // oder falsch gewarnt.
+  const ort = (zeilen: string[]) =>
+    networkLocation('/mnt/ablage/mietfuchs.sqlite', { platform: 'linux', mounts: () => zeilen.join('\n'), realpath: (p) => p })
+  assert.match(
+    String(ort(['/dev/sda1 / ext4 rw 0 0', '/dev/sdb1 /mnt/ablage ext4 rw 0 0', '//nas/daten /mnt/ablage cifs rw 0 0'])),
+    /cifs/,
+  )
+  assert.equal(
+    ort(['/dev/sda1 / ext4 rw 0 0', '//nas/daten /mnt/ablage cifs rw 0 0', '/dev/sdb1 /mnt/ablage ext4 rw 0 0']),
+    null,
+  )
+})
+
 test('ein Netzlaufwerk ist eine Warnung und kein Abbruch', async () => {
   const dataDir = tempDir()
   try {
@@ -222,6 +317,9 @@ test('ein Netzlaufwerk ist eine Warnung und kein Abbruch', async () => {
       dataDir,
       platform: 'linux',
       mounts: () => `//nas/daten ${dataDir.split(path.sep).join('/')} cifs rw 0 0`,
+      // Der wirkliche Ort wird hier nicht gesucht: Geprüft wird die Warnung, nicht das Auflösen
+      // von Symlinks, und ein aufgelöster Wegwerf-Ordner passte nicht mehr zur Tabelle oben.
+      realpath: (p) => p,
     })
     try {
       assert.equal(opened.warnings.length, 1, 'geöffnet wird trotzdem')
@@ -248,6 +346,7 @@ test('scheitert das Öffnen, nimmt die Meldung den Hinweis auf das Netzlaufwerk 
           dataDir,
           platform: 'linux',
           mounts: () => `//nas/daten ${dataDir.split(path.sep).join('/')} cifs rw 0 0`,
+          realpath: (p) => p,
         }),
       (err: unknown) => {
         assert.match(String(err), /beschädigt/)
@@ -354,4 +453,71 @@ test('ein Schreibvorgang im Schreibvorgang meldet sich, statt stillzustehen', as
   )
   // Und danach läuft die Schlange weiter.
   assert.equal(await reihen(async () => 'geht wieder'), 'geht wieder')
+})
+
+test('die Ablehnung wird geworfen und kommt dadurch beim Aufrufer an', async () => {
+  // Als abgelehntes Versprechen zurückgegeben, hätte die Meldung niemanden, der sie
+  // entgegennimmt, sobald der innere Aufruf sein Ergebnis wegwirft, wie es ein Aufräum-Schritt
+  // täte. Node beendet den Prozess bei einer unbehandelten Ablehnung, und dann stünde die
+  // Meldung nirgends. Geworfen landet sie im Rumpf des äußeren Vorgangs und von dort bei
+  // dessen Aufrufer, also dort, wo der Fehler gemacht wurde.
+  const reihen = createWriteQueue()
+  let geworfen: unknown = null
+  let rueckgabe: unknown = 'gar nichts zurückbekommen'
+  await reihen(async () => {
+    try {
+      rueckgabe = reihen(async () => 'innen')
+    } catch (err) {
+      geworfen = err
+    }
+  })
+  assert.match(String(geworfen), /Mietfuchs/)
+  assert.equal(rueckgabe, 'gar nichts zurückbekommen', 'kein abgelehntes Versprechen zurückgegeben')
+})
+
+test('ein Zeitgeber aus einem Schreibvorgang heraus darf danach wieder schreiben', async () => {
+  // Der Speicher des Kontexts lebt in jedem Zeitgeber weiter, den der Vorgang angelegt hat.
+  // Überlebt er den Vorgang, gilt ein solcher Schreibvorgang für immer als verschachtelt,
+  // obwohl er längst allein ist. Genau das ist der Fall, der in Aufgabe 6 scharf wird: Ein
+  // Zeitgeber, der nach dem Speichern aufräumt, schriebe nie wieder etwas.
+  const reihen = createWriteQueue()
+  const spaeter = new Promise<string>((resolve, reject) => {
+    void reihen(async () => {
+      setTimeout(() => {
+        try {
+          reihen(async () => 'darf schreiben').then(resolve, reject)
+        } catch (err) {
+          reject(err)
+        }
+      }, 20)
+    })
+  })
+  assert.equal(await spaeter, 'darf schreiben')
+})
+
+test('ein Schreibvorgang, der nie fertig wird, bleibt nicht stumm', async () => {
+  // Abgebrochen wird nichts: Mietfuchs weiß nicht, was SQLite gerade tut, und die Transaktion
+  // eines anderen abzuräumen wäre schlimmer als zu warten. Gesagt werden muss es trotzdem,
+  // sonst steht die Oberfläche ohne eine Zeile Ausgabe.
+  const gemeldet: string[] = []
+  const reihen = createWriteQueue({ slowAfterMs: 20, onSlow: (text) => gemeldet.push(text) })
+  let loesen = (): void => {}
+  const haengt = reihen(() => new Promise<void>((resolve) => { loesen = resolve }))
+  const wartet = reihen(async () => 'kommt später dran')
+  await new Promise((r) => setTimeout(r, 80))
+  assert.equal(gemeldet.length, 1, gemeldet.join(' | '))
+  assert.match(String(gemeldet[0]), /Speichervorgang/, 'die Meldung sagt, was los ist')
+  assert.match(String(gemeldet[0]), /wartet|warten/, 'sie sagt, was das für die übrigen Eingaben heißt')
+  assert.match(String(gemeldet[0]), /bricht nichts ab/, 'und dass Mietfuchs nichts abräumt')
+  loesen()
+  await haengt
+  assert.equal(await wartet, 'kommt später dran')
+})
+
+test('ein zügiger Schreibvorgang meldet nichts', async () => {
+  const gemeldet: string[] = []
+  const reihen = createWriteQueue({ slowAfterMs: 500, onSlow: (text) => gemeldet.push(text) })
+  await reihen(async () => 'schnell')
+  await new Promise((r) => setTimeout(r, 30))
+  assert.deepEqual(gemeldet, [])
 })
