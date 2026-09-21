@@ -42,7 +42,15 @@ type HealthReport = {
   checks: { data: HealthCheck, uploads: HealthCheck }
   // Die Datenbank (#55) steht bewusst neben `checks` und nicht darin: An diesem Stand arbeitet
   // Mietfuchs ohne sie weiter, und ein Fehler hier dürfte keinen Container neu starten lassen.
-  database?: { open: boolean, file: string, migrations: number, detail: string }
+  database?: {
+    open: boolean
+    file: string
+    migrations: number
+    detail: string
+    // Was beim Start mit den vorhandenen Daten geschehen ist. Aus diesem Eintrag erfährt es
+    // auch die Oberfläche; beim Start aus einem Linux-Paket gibt es keine Konsole.
+    changeover: { state: string, message: string, notes: string[] }
+  }
 }
 
 // Die Antwort von /api/upload, /api/extract und /api/intake. Welche Felder gesetzt sind, hängt
@@ -316,6 +324,76 @@ test('Start: die Datenbank entsteht neben den Daten und steht im Zustandsbericht
   assert.equal(report.database.file, path.join(srv.dataDir, 'mietfuchs.sqlite'))
   assert.ok(report.database.migrations >= 1, 'beim ersten Start laufen die Migrationen')
   assert.ok(fs.existsSync(report.database.file), 'die Datei liegt wirklich da')
+})
+
+test('Start: ohne db.json gibt es nichts zu übernehmen', async () => {
+  // Der Wegwerf-Ordner ist leer, die db.json entsteht erst beim ersten Speichern. Der Umstieg
+  // läuft trotzdem und sagt, dass er nichts zu tun hatte.
+  const report = await srv.api<HealthReport>('/healthz')
+  assert.equal(report.database?.changeover.state, 'none', JSON.stringify(report.database))
+})
+
+// ---------- Der Umstieg beim Start (#55) ----------
+
+test('Start: eine vorhandene db.json wandert beim ersten Start in die Datenbank', async () => {
+  // Der Weg, den ein Vermieter beim Update wirklich geht: Er startet die neue Version, und
+  // seine Daten sind da. Kein Befehl, keine Rückfrage.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus am Weg', address: 'Weg 1', landlordName: 'V', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [{
+      id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 2,
+      personHistory: [{ from: '2024-01-01', persons: 2 }], start: '2024-01-01', end: null,
+      prepayments: [{ from: '2024-01', monthlyCents: 15000 }], prepaymentOverrides: {}, baseRents: [],
+    }],
+    costItems: [{ id: 'c1', year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'area' }],
+    meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const report = await s.api<HealthReport>('/healthz')
+    assert.equal(report.database?.changeover.state, 'done', JSON.stringify(report.database))
+    assert.match(String(report.database?.changeover.message), /Datenbank/)
+    // Die Sicherung und das Protokoll liegen daneben, die db.json selbst ist unberührt.
+    assert.ok(fs.existsSync(path.join(dataDir, 'db.json.vor-umstieg')), 'die Sicherung fehlt')
+    assert.ok(fs.existsSync(path.join(dataDir, 'umstieg-protokoll.txt')), 'das Protokoll fehlt')
+    assert.equal(storedDb(s).units.length, 1)
+    // Gelesen wird an diesem Stand weiterhin aus der db.json; die Oberfläche merkt vom Umstieg
+    // nichts außer der Meldung.
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
+    // Und die Datei für den Umstieg ist weg.
+    assert.equal(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.umstieg')), false)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Start: ein Bestand, der nicht übernommen werden kann, hält den Server nicht auf', async () => {
+  // Der Nutzer ist nie blockiert: Mietfuchs läuft weiter, arbeitet mit der db.json und sagt,
+  // woran es lag. Ein negativer Zählerstand ist über die Oberfläche erzeugbar, also genau der
+  // Fall, der einem echten Vermieter passieren kann.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [],
+    meters: [{ id: 'm1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }],
+    readings: [{ id: 'r1', meterId: 'm1', date: '2024-12-31', value: -5 }],
+    payments: [], closedSettlements: [],
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const report = await s.api<HealthReport>('/healthz')
+    assert.equal(report.status, 'ok', 'der Server arbeitet weiter')
+    assert.equal(report.database?.changeover.state, 'failed', JSON.stringify(report.database))
+    assert.match(String(report.database?.changeover.message), /Küche/, 'die Meldung nennt die Ablesung')
+    // Die Oberfläche bedient sich weiter aus der db.json.
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
+    assert.equal(fs.existsSync(path.join(dataDir, 'db.json.vor-umstieg')), false, 'geprüft wird vor dem Schreiben')
+  } finally {
+    s.stop()
+  }
 })
 
 test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () => {

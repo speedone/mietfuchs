@@ -6,7 +6,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeSettlement, consumptionOverview } from '../src/calc.ts'
-import { snapshotFromDb } from '../src/snapshot.ts'
+import { snapshotFromDb, type Snapshot } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
 import { normalizeSettlement, normalizeConsumption } from './normalize.ts'
 
@@ -52,9 +52,15 @@ export function actualOf(db: Db, year: number) {
   // Die Fixtures stehen im Dateiformat, weil genau das der Eingang ist, den ein Nutzer hat.
   // Den Schritt über den Schnappschuss macht der Prüfkatalog deshalb mit: Schneidet die Ablage
   // eines Tages zu viel weg, wird hier ein Cent anders.
-  const snapshot = snapshotFromDb(db, year)
+  return actualOfSnapshot(snapshotFromDb(db, year))
+}
+
+// Dasselbe aus einem fertigen Schnappschuss. Gebraucht wird das vom Umstieg in die Datenbank
+// (#55): Dort läuft derselbe Prüfkatalog noch einmal, nur kommt der Schnappschuss dann aus der
+// Datenbank statt aus der Datei, und verglichen wird gegen dieselbe Handrechnung.
+export function actualOfSnapshot(snapshot: Snapshot) {
   return {
-    year,
+    year: snapshot.year,
     settlement: normalizeSettlement(computeSettlement(snapshot)),
     consumption: normalizeConsumption(consumptionOverview(snapshot)),
   }
