@@ -22,6 +22,7 @@ npm run test:server # nur Engine- und API-Tests
 npm run test:client # nur Formularlogik- und Komponententests
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
 npm run typecheck  # nur Typprüfung: Server + Client (tsc --noEmit), ohne Build
+npm --prefix server run db:generate # neue Migration aus server/src/db/schema.ts erzeugen
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
@@ -248,6 +249,74 @@ KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht
 Backup = diesen Ordner kopieren. Keine Datenbank, keine Migrationen-Tooling — Schema-Migrationen
 älterer `db.json` passieren imperativ in `load()` in store.ts (z. B. fester Monatsbetrag →
 Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration ergänzen.
+
+**Die Datenbank** (#55, im Entstehen): Die JSON-Datei wird durch SQLite abgelöst, später soll
+auch PostgreSQL möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema
+dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). **Geöffnet und benutzt
+wird die Datenbank noch nicht**, das kommt in den nächsten Schritten, ebenso der Umstieg
+vorhandener Bestände.
+
+- **Der Treiber ist `drizzle-orm/sqlite-proxy`**, und das ist eine bewusste Wahl gegen zwei
+  naheliegendere. `drizzle-orm/better-sqlite3` importiert ein natives Modul fest beim Laden, und
+  native Module lassen sich nicht für alle Ziele in die Bun-Programmdatei einbetten (#21).
+  `drizzle-orm/node-sqlite` gibt es nur in der 1.0.0-Vorabreihe, und die scheidet an zwei
+  nachgemessenen Stellen aus: Ihr Treiber wartet den Rumpf einer Transaktion nicht ab, wodurch
+  eine gescheiterte Transaktion festgeschrieben statt zurückgerollt wird, und ihr drizzle-kit
+  lässt bei einem Primärschlüssel aus Text das `NOT NULL` weg, was SQLite als Erlaubnis für
+  NULL-Kennungen liest. Der Proxy ist eigentlich für einen entfernten Dienst gedacht; wir nutzen
+  ihn für eine Verbindung im selben Prozess. Kommt die stabile 1.0, tauscht man ihn gegen den
+  eigenen Treiber — betroffen ist dann nur
+  [server/src/db/client.ts](server/src/db/client.ts), denn Schema und Migrationen liegen schon
+  in der Form der stabilen Reihe.
+- **Node und Bun unterscheidet allein client.ts**, erkannt an `globalThis.Bun`. Betroffen sind
+  das eingebaute SQLite (`node:sqlite` mit `setReturnArrays(true)` gegen `bun:sqlite` mit
+  `values()`) und die Herkunft der Migrationen.
+- **`PRAGMA foreign_keys = ON` beim Öffnen**, je Verbindung. Die Voreinstellung von SQLite ist
+  aus; ohne diese Zeile sind alle Fremdschlüssel Dekoration.
+- **Verschachtelte Listen wurden Tabellen**: die drei Staffeln (`person_history`, `prepayments`,
+  `base_rents`), die Jahreskorrektur (`prepayment_overrides`, nach Jahr geschlüsselt statt nach
+  Datum) und die vereinbarten Anteile (`cost_item_shares`). In einer Spalte mit JSON ließe sich
+  nichts zusichern: kein negativer Betrag, kein zweiter Eintrag zum selben Stichtag, kein
+  Eintrag ohne Mietverhältnis. Bei `cost_item_shares` am deutlichsten, weil seine Schlüssel
+  Wohnungs-Kennungen sind — index.ts geht sie beim Löschen einer Wohnung heute von Hand durch,
+  und genau das erledigt jetzt `ON DELETE CASCADE`.
+- **Die Einstellungen haben echte Spalten** (#60). Ein JSON-Klumpen hätte den Befund unverändert
+  mitgenommen: `PUT /api/settings` übernimmt heute jeden Schlüssel des Rumpfes, auch einen
+  erfundenen. Mit Spalten gibt es für ein unbekanntes Feld keinen Ort mehr. Die beiden Plätze
+  der KI sind Zeilen in `ai_slots` und keine Spalten mit Präfix, weil `text` und `images`
+  dieselbe Gestalt haben; die Bestätigung steht in derselben Zeile wie die Adresse, für die sie
+  gilt. **Kein Feld für den API-Schlüssel**, der bleibt in `data/secrets.json`.
+- **Löschverhalten ist aus index.ts abgelesen.** Eine Wohnung kaskadiert auf Mietverhältnisse,
+  Zähler, Ablesungen, Zahlungen (über das Mietverhältnis) und die vereinbarten Anteile. Bei
+  `cost_items.direct_unit_id` steht dagegen **`SET NULL`**: Die Rechnung ist bezahlt worden und
+  gehört weiter in die Abrechnung des Jahres. `CASCADE` löschte sie und veränderte damit die
+  Summe einer bereits abgerechneten Vergangenheit.
+- **Prüfbedingungen je Feld entschieden.** Ohne Bedingung bleiben bewusst
+  `cost_items.amount_cents` (eine Gutschrift ist negativ), `labor_35a_cents` (calc.ts meldet
+  einen ungültigen Lohnanteil als Warnung und rechnet weiter; eine Bedingung nähme dem Nutzer
+  genau diese Erklärung) und `payments.amount_cents` (Rücklastschrift). Dazu Bedingungen auf die
+  Aufzählungen, denn `text({ enum })` bindet nur den Übersetzer und hinterlässt im SQL nichts.
+- **Zwei Indizes, beide aus snapshot.ts abgelesen**: `cost_items(year)` ist der einzige Filter,
+  den der Schnappschuss wirklich setzt, und `closed_settlements(year)` ist eindeutig und damit
+  zugleich die Zusicherung, dass es je Jahr höchstens eine abgeschlossene Abrechnung gibt. Alle
+  übrigen Sammlungen gehen vollständig in den Schnappschuss; dort wäre ein Index auf Verdacht.
+- **Der eingefrorene Berechnungsstand bleibt JSON.** Er ist ein Archivstück, das wortgleich
+  erhalten bleiben soll, auch wenn spätere Versionen anders rechnen. In Spalten zerlegt hinge er
+  am heutigen Ergebnisformat, und eine Programmänderung veränderte rückwirkend, was dem Mieter
+  zugestellt wurde.
+- **Migrationen**: erzeugt mit `npm --prefix server run db:generate`, nie von Hand geschrieben.
+  Es gilt die Regel aus [server/drizzle/README.md](server/drizzle/README.md): **Ein Schritt wird
+  nie gelöscht und nie geändert**, sonst hält die Zusage nicht mehr, dass man von jeder alten
+  Version auf die neueste kommt. Ein Fehler wird mit einem neuen Schritt geradegerückt. Ein Test
+  hält die Marke jedes veröffentlichten Schrittes fest. Für die Programmdatei bettet
+  [scripts/embed-migrations.mjs](scripts/embed-migrations.mjs) sie in ein gitignoriertes Modul
+  ein, nach demselben Muster wie `embed-client.mjs` (erzeugte `.js`, gepflegte `.d.ts` daneben);
+  ein Test hält beide Wege gegeneinander. Zeilenenden werden dabei vereinheitlicht, weil Git
+  Textdateien unter Windows auf CRLF umstellt und die Marke sonst vom Rechner abhinge.
+- **Schema und Datenmodell hält [server/test/schema.test.ts](server/test/schema.test.ts)
+  zusammen**, zur Übersetzungszeit. `shared/types.ts` bleibt von Hand geschrieben, weil der
+  Browser es benutzt und von Drizzle nichts wissen darf; der Test schlägt fehl, sobald jemand
+  nur eine Seite ändert.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
