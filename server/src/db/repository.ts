@@ -35,6 +35,7 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
+import { lastPerFrom } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readMeters, readPayments, readReadings, readTenancies,
@@ -88,14 +89,23 @@ function merged<T>(body: unknown, key: string, current: T, read: (value: unknown
 // Eine Staffel ist eine Liste aus Stichtag und Wert. Steht im Rumpf etwas anderes als eine
 // Liste, gilt sie als leer; ein Eintrag ohne brauchbaren Stichtag fällt weg, denn ohne ihn
 // wüsste die Berechnung nicht, ab wann er gilt.
-function readSchedule<T>(value: unknown, entry: (row: unknown) => T | null): T[] {
+//
+// **Zwei Einträge zum selben Stichtag werden angenommen, und es gilt der letzte**
+// (`lastPerFrom`). Das ist kein Entgegenkommen, sondern die Regel, die legacy.ts beim Umstieg
+// und calc.ts beim Rechnen ohnehin anwenden; sie steht deshalb in schedule.ts und hier nicht
+// noch einmal. Ohne sie wäre eine ganz gewöhnliche Eingabe ein Fehler: Stammdaten.tsx setzt für
+// eine Staffelzeile ohne Monat den Einzugsmonat ein und prüft nie auf Doppelung, und der
+// Stichtag ist in der Datenbank Teil des Primärschlüssels. Der Vermieter bekäme für zwei so
+// ausgefüllte Zeilen einen Fehler statt eines gespeicherten Mietverhältnisses, wo die db.json
+// es klaglos annahm.
+function readSchedule<T extends { from: string }>(value: unknown, entry: (row: unknown) => T | null): T[] {
   if (!Array.isArray(value)) return []
   const rows: T[] = []
   for (const row of value) {
     const gelesen = entry(row)
     if (gelesen !== null) rows.push(gelesen)
   }
-  return rows
+  return lastPerFrom(rows)
 }
 
 const personEntry = (row: unknown): PersonEntry | null => {

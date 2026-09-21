@@ -26,7 +26,7 @@ import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } fr
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import type { Database } from './db/client.ts'
-import { databaseMessage } from './db/errors.ts'
+import { databaseProblem } from './db/errors.ts'
 import { readSettings, readStock } from './db/read.ts'
 import {
   closeSettlement, createEntity, findClosedSettlement, invoiceFilesInUse, listCollection,
@@ -623,20 +623,27 @@ app.get('/api/backup', async (req, res) => {
   // schlechteste Zeitpunkt für einen Fehler.
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
   const zip = new AdmZip()
-  // **Die db.json nur, wenn es sie gibt.** Seit die Routen die Datenbank lesen und schreiben,
-  // entsteht sie auf einem frischen Rechner gar nicht mehr, und wo sie liegt, ist sie der Stand
-  // vom Tag des Umstiegs. Sie gehört trotzdem ins Archiv: Wer ein Backup einspielt, bekommt
-  // damit denselben Rückweg zurück, den er vorher hatte.
+  // **Genau eine der beiden Ablagen kommt ins Archiv, nämlich die, die den Bestand trägt.**
+  //
+  // Solange die Datenbank ihn trägt, ist sie es, und eine danebenliegende db.json bleibt
+  // draußen: Sie ist der Stand vom Tag des Umstiegs, und beim Wiederherstellen gilt eine db.json
+  // im Archiv vor der Datenbank (siehe die Restore-Route). Legte man sie mit hinein, holte ein
+  // Wiederherstellen also den alten Stand zurück und verwürfe alles seither Erfasste.
+  //
+  // Trägt die Datenbank ihn **nicht** (nicht geöffnet oder Umstieg gescheitert), ist die db.json
+  // der ganze Bestand, und die Datenbank gehört umgekehrt nicht ins Archiv: Sie ist dann leer
+  // oder unvollständig, und ein Wiederherstellen würde sie zum maßgeblichen Bestand machen.
+  // Genau daran führte das Backup bisher an der Sperre aus health.ts vorbei.
+  const traegtDenBestand = database !== null && databaseUnavailable(databaseState()) === null
   const jsonFile = path.join(DATA_DIR, 'db.json')
-  if (fs.existsSync(jsonFile)) zip.addLocalFile(jsonFile)
+  if (!traegtDenBestand && fs.existsSync(jsonFile)) zip.addLocalFile(jsonFile)
   for (const name of fs.readdirSync(UPLOAD_DIR)) {
     zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
   }
 
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
-  // (db/backup.ts). Gibt es keine offene, wird das Archiv trotzdem gepackt: Ein Backup soll auch
-  // dann noch gehen, wenn die Datenbank klemmt, und die Belege liegen ohnehin im Ordner.
-  if (database) {
+  // (db/backup.ts).
+  if (traegtDenBestand && database) {
     // **Ein eigener Name je Anfrage.** Zwei gleichzeitige Backups teilten sich sonst die
     // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
     // Archiv ohne Datenbank oder ein Serverfehler, und zwei Klicks auf denselben Knopf sind
@@ -805,10 +812,10 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
 
   try {
     database = await openDatabase({ dataDir: DATA_DIR })
-    databaseProblem = null
+    openProblem = null
   } catch (err) {
-    databaseProblem = messageOf(err)
-    return [`Die Datenbank ließ sich nach dem Wiederherstellen nicht öffnen: ${databaseProblem}`]
+    openProblem = messageOf(err)
+    return [`Die Datenbank ließ sich nach dem Wiederherstellen nicht öffnen: ${openProblem}`]
   }
 
   if (staged) {
@@ -834,7 +841,7 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   })
   changeover = rebuilt
   database = rebuilt.database
-  if (!database) databaseProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
+  if (!database) openProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
   return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
 }
 
@@ -887,19 +894,51 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   else fs.rmSync(current, { force: true })
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
 
+  // **Führt das Archiv eine db.json, gilt sie, und die mitgebrachte Datenbank wird verworfen.**
+  // Ohne diese Regel verliert der Aktualisierungsweg Daten: Wer eine Version vor dem Umstellen
+  // der Routen fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
+  // Umstiegstags stehengeblieben ist, und sein Archiv führt beides. Ebenso, wer ein Backup zieht,
+  // während der Umstieg gescheitert ist: Dann ist die Datenbank im Archiv leer. Würde sie
+  // aktiviert, sähe der Vermieter nach der Bestätigung „ok" ein veraltetes oder leeres Haus,
+  // schriebe hinein, und ab dem Augenblick fände der Umstieg eine gefüllte Datenbank vor und
+  // liefe nie wieder; die db.json wäre dauerhaft abgehängt. Genau der Ausgang, den die Sperre in
+  // health.ts verhindern soll, und das Backup führte daran vorbei.
+  //
+  // Geraten wird dabei nicht. Jede bisher veröffentlichte Version hat die db.json als lebenden
+  // Bestand geschrieben; ein Archiv, das eine führt, stammt also von dort, und sie ist das
+  // Neuere. Umgekehrt legt diese Version keine db.json mehr ins Archiv, sobald die Datenbank den
+  // Bestand trägt (siehe die Backup-Route), ein mehrdeutiges Archiv kann ab jetzt also gar nicht
+  // mehr entstehen.
+  const ausDerDatei = backup.dbText !== null
+  if (ausDerDatei && staged) fs.rmSync(staged, { force: true })
+
   let notes: string[]
   try {
-    notes = await restoreDatabase(staged)
+    notes = await restoreDatabase(ausDerDatei ? null : staged)
   } catch (err) {
     // Die Daten sind zu diesem Zeitpunkt wiederhergestellt; nur die Datenbank steht schief.
     // Verloren ist nichts, angezeigt wird bis zum nächsten Start trotzdem nichts, denn gelesen
     // wird aus der Datenbank. Genau das sagt die Meldung.
-    fs.rmSync(`${databaseFile(DATA_DIR)}.restore`, { force: true })
     notes = [
-      `Ihre Daten sind wiederhergestellt und stehen in der Datei db.json; es geht nichts verloren. ` +
-        `Die Datenbank ließ sich dabei nicht erneuern: ${messageOf(err)}. Bis das gelingt, zeigt ` +
-        'Mietfuchs die Daten nicht an; beim nächsten Start wird es erneut versucht.',
+      `Ihre Daten sind wiederhergestellt; es geht nichts verloren. Die Datenbank ließ sich dabei ` +
+        `nicht erneuern: ${messageOf(err)}. Bis das gelingt, zeigt Mietfuchs die Daten nicht an; ` +
+        'beim nächsten Start wird es erneut versucht.',
     ]
+  }
+
+  // **Die Einstellungen neu einlesen.** Sie liegen als Kopie im Arbeitsspeicher (siehe die
+  // Begründung am Zwischenspeicher), und das Wiederherstellen ist eine der Stellen, die ihn
+  // ungültig machen. Ohne diese Zeile zeigte die Oberfläche bis zum nächsten Start den Stand von
+  // vorher, und die gedruckte Abrechnung nähme Vermietername und IBAN von dort. Schlimmer noch:
+  // `PUT /api/settings` geht vom Zwischenspeicher aus, die nächste beliebige Änderung schriebe
+  // also den veralteten Stand vollständig über den wiederhergestellten zurück.
+  //
+  // Scheitert es, bleibt es bei den Vorgabewerten und die Datenrouten melden sich ohnehin; ein
+  // Fehler hier darf das gelungene Wiederherstellen nicht in einen Fehlschlag verwandeln.
+  try {
+    await refreshSettings()
+  } catch (err) {
+    notes = [...notes, `Die Einstellungen ließen sich nach dem Wiederherstellen nicht lesen: ${messageOf(err)}`]
   }
   res.json({ ok: true, notes })
 })
@@ -1031,6 +1070,14 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
             : `Hochladen fehlgeschlagen: ${err.message}`
     return res.status(400).json({ error: message })
   }
+  // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
+  // Drizzles oberste Meldung heraus, und die trägt das SQL **samt der eingesetzten Werte des
+  // Nutzers**. Der Status kommt von dort mit, denn er gehört zur Einordnung: Eine verletzte
+  // Zusicherung kommt aus der Anfrage, ein Schreibschutz vom Rechner.
+  const ausDerDatenbank = databaseProblem(err)
+  if (ausDerDatenbank) {
+    return res.status(ausDerDatenbank.status).json({ error: ausDerDatenbank.message })
+  }
   // Zum Beispiel ein abgebrochener Upload („Unexpected end of form“), den busboy selbst meldet
   const status = (isObject(err) ? Number(err.status ?? err.statusCode) : NaN) || 500
   res.status(status >= 400 && status < 600 ? status : 500).json({ error: `Die Anfrage ist fehlgeschlagen: ${messageOf(err)}` })
@@ -1121,11 +1168,11 @@ if (startProblem) {
 // gäbe es auch keine Oberfläche, in der die Meldung stünde, und keine Route zum Wiederherstellen
 // eines Backups. Aus dem Startmenü gestartet sähe der Vermieter dann gar nichts.
 let database: OpenedDatabase | null = null
-let databaseProblem: string | null = null
+let openProblem: string | null = null
 try {
   database = await openDatabase({ dataDir: DATA_DIR })
 } catch (err) {
-  databaseProblem = messageOf(err)
+  openProblem = messageOf(err)
 }
 
 // Der Umstieg der vorhandenen Daten, beim ersten Start der neuen Version (siehe
@@ -1143,9 +1190,9 @@ try {
 // Mittel behoben hat, das ihm dafür angeboten wird.
 let changeover: ChangeoverResult = database
   ? await runChangeover({ dataDir: DATA_DIR, opened: database, reopen: () => openDatabase({ dataDir: DATA_DIR }) })
-  : changeoverWithoutDatabase(DATA_DIR, databaseProblem ?? 'unbekannter Grund')
+  : changeoverWithoutDatabase(DATA_DIR, openProblem ?? 'unbekannter Grund')
 database = changeover.database
-if (!database) databaseProblem = databaseProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
+if (!database) openProblem = openProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
 
 // Die Einstellungen in den Arbeitsspeicher holen, siehe die Begründung am Zwischenspeicher.
 // **Nach** dem Umstieg: Vorher stünde dort die leere Zeile einer frischen Datenbank, und der
@@ -1166,7 +1213,7 @@ try {
 function databaseState(): DatabaseState {
   const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes }
   if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie }
-  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: databaseProblem ?? 'nicht geöffnet', changeover: wie }
+  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie }
 }
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
@@ -1216,7 +1263,7 @@ const server = app.listen(PORT, (err) => {
   if (database) console.log(`Datenbank: ${database.file}`)
   // Auf die Fehlerausgabe, nicht in die gewöhnliche: Der Start gelingt, aber etwas ist nicht in
   // Ordnung, und wer Ausgaben einsammelt, soll genau das auseinanderhalten können.
-  else console.error(`Datenbank: nicht geöffnet. ${databaseProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
+  else console.error(`Datenbank: nicht geöffnet. ${openProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
   for (const warning of database?.warnings ?? []) console.error(`Hinweis: ${warning}`)
   // Der Umstieg der Daten (#55). Gelungen ist er einen Satz wert, gescheitert eine Erklärung auf
   // der Fehlerausgabe. Ohne Konsolenfenster (Linux-Paket) steht beides in der Oberfläche, die es
