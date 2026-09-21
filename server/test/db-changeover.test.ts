@@ -27,7 +27,7 @@ import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 import { straightenForDatabase } from '../src/legacy.ts'
 import { BACKUP_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
-import { costItems, units } from '../src/db/schema.ts'
+import { closedSettlements, costItems, units } from '../src/db/schema.ts'
 
 // ---------- Bausteine ----------
 
@@ -347,6 +347,44 @@ test('Abbruch: weicht ein einziger Cent ab, wird nicht aktiviert', async () => {
     )
     assert.deepEqual((await stockOf(dataDir)).units, [], 'es wurde nichts aktiviert')
     assert.equal(fs.existsSync(path.join(dataDir, TEMP_NAME)), false)
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
+test('Abbruch: eine eingefrorene Abrechnung, die anders zurückkommt, verhindert den Umstieg', async () => {
+  // Ein Archivstück: Es ist das, was dem Mieter zugestellt wurde, und lässt sich nicht noch
+  // einmal ausrechnen. Die Berechnung liest daraus nur den Eigenanteil, der Rest fiele also in
+  // der Regression gar nicht auf. Deshalb wird er wortgleich verglichen.
+  const dataDir = tempDir()
+  try {
+    const file = fullDb()
+    file.closedSettlements = [{
+      id: 's1', year: 2023, closedAt: '2024-03-01T10:00:00.000Z', sentAt: null,
+      settlement: {
+        year: 2023, daysInYear: 365, statements: [], landlord: { rows: [], totalCents: 900 },
+        selfUsedShareCents: 400, totalCostsCents: 9000, warnings: [],
+      },
+    }]
+    writeFile(dataDir, file)
+    await changeoverIn(
+      dataDir,
+      async (result) => {
+        assert.equal(result.state, 'failed')
+        assert.match(result.message, /2023/)
+        assert.match(result.message, /abgeschlossene Abrechnung|eingefroren/i)
+      },
+      // Der Eigenanteil bleibt, damit die vier Rechnungen nichts merken: Genau das ist der
+      // Fall, den nur dieser Vergleich fängt.
+      {
+        afterImport: async (db) => {
+          await db.update(closedSettlements).set({
+            settlement: { year: 2023, daysInYear: 365, statements: [], landlord: { rows: [], totalCents: 1 }, selfUsedShareCents: 400, totalCostsCents: 9000, warnings: [] },
+          })
+        },
+      },
+    )
+    assert.deepEqual((await stockOf(dataDir)).units, [])
   } finally {
     removeDir(dataDir)
   }
