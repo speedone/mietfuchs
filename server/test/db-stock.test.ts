@@ -1,11 +1,20 @@
 // Der Bestand in der Datenbank: hineinschreiben (db/write.ts) und wieder herauslesen
 // (db/read.ts), #55.
 //
-// Geprüft wird die Rundreise, und zwar an dem, worauf es ankommt: **Aus dem zurückgelesenen
-// Bestand muss dieselbe Abrechnung entstehen wie aus der Datei.** Ein Vergleich der beiden
-// Bestände selbst wäre schwächer und zugleich strenger als nötig — schwächer, weil er nichts
-// über die Berechnung sagt, und strenger, weil ein `null` statt eines fehlenden Feldes dort als
-// Unterschied zählte, obwohl keine Zahl davon abhängt.
+// Geprüft wird die Rundreise, und zwar auf zwei Weisen, weil eine allein nicht reicht.
+//
+// **Erstens an dem, worauf das Geld ankommt: Aus dem zurückgelesenen Bestand muss dieselbe
+// Abrechnung entstehen wie aus der Datei.** Das ist die Zusage des Umstiegs, und sie prüft sich
+// am besten rechnend.
+//
+// **Zweitens feldweise über den ganzen Bestand.** Das ist nicht dasselbe und auch nicht
+// überflüssig: In den Schnappschuss geht nur, was die Berechnung liest. IBAN, Kaution,
+// Vertragsdatum, Notizen, Zimmerzahl, Etage, Lieferant, Belegdatei und Zählernummer stehen in
+// keiner Rechnung. Fiele eines davon aus dem Lese- oder Schreibpfad heraus, bliebe der erste
+// Test grün, der Übersetzer schwiege (sie sind alle optional, ein fehlendes optionales Feld ist
+// kein Typfehler), und die Regression des Umstiegs sähe es ebenfalls nicht. Gemessen: Entfernt
+// man `notes` aus read.ts, bleiben Typprüfung und alle 487 Tests grün. Der Umstieg verspricht
+// aber, dass nichts verloren geht, und das ist der Test dafür.
 //
 // Die Reihenfolge bekommt einen eigenen Test. Sie ist kein Schönheitsfehler: Zwei Ablesungen
 // mit demselben Datum ergeben je nach Reihenfolge einen anderen Verbrauch.
@@ -15,6 +24,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { getTableColumns } from 'drizzle-orm'
+import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
 import { straightenForDatabase } from '../src/legacy.ts'
@@ -23,6 +34,10 @@ import type { Db } from '../src/store.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
 import { writeStock } from '../src/db/write.ts'
+import {
+  costItems as costItemsTable, meters as metersTable, payments as paymentsTable,
+  readings as readingsTable, tenancies as tenanciesTable, units as unitsTable,
+} from '../src/db/schema.ts'
 
 // ---------- Ein Bestand, in dem alle vier Rechnungen etwas zu tun haben ----------
 
@@ -203,6 +218,97 @@ test('Rundreise: die Reihenfolge der Datei bleibt erhalten', async () => {
       resultsOfSnapshot(snapshotOf(stock, 2024)).consumption,
       resultsOfSnapshot(snapshotFromDb(gerade, 2024)).consumption,
     )
+  })
+})
+
+// ---------- Feldtreue ----------
+
+// Ein Bestand, in dem **jedes** Feld des Datenmodells einen eigenen, wiedererkennbaren Wert
+// trägt, auch jedes optionale. Kein Feld bleibt hier absichtlich leer: Ein leeres Feld könnte
+// nicht verloren gehen, und genau darum geht es.
+//
+// Die eine Kostenposition trägt alle Felder zugleich, auch solche, die fachlich nicht
+// zusammenpassen (eine Direktzuordnung neben einem Zählertyp und vereinbarten Anteilen). Das ist
+// Absicht: Geprüft wird die Treue der Übertragung und nicht die Sinnhaftigkeit der Eingabe, und
+// jedes Feld, das hier fehlte, wäre eines, das der Test nicht bewachen kann.
+function everyFieldDb(): Db {
+  return {
+    settings: settings(),
+    units: [
+      unit({ id: 'u1', name: 'EG links', areaM2: 80, participates: true, selfUsed: false, selfPersons: 1, rooms: 3, floor: 'EG', notes: 'Notiz zur Wohnung' }),
+      unit({ id: 'u2', name: 'OG rechts', areaM2: 60, participates: false, selfUsed: true, selfPersons: 2, rooms: 2, floor: '1. OG', notes: 'selbst bewohnt' }),
+    ],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 2,
+        personHistory: [{ from: '2024-01-01', persons: 2 }],
+        start: '2024-01-01', end: '2024-12-31',
+        prepayments: [{ from: '2024-01', monthlyCents: 15000 }],
+        prepaymentOverrides: { '2024': 170000 },
+        baseRents: [{ from: '2024-01', monthlyCents: 60000 }],
+        email: 'mueller@example.org', phone: '0123 456789',
+        correspondenceAddress: 'Neue Straße 5, 12345 Anderswo',
+        iban: 'DE02120300000000202051', contractDate: '2023-12-01',
+        depositCents: 180000, depositStatus: 'erhalten', notes: 'Notiz zum Mietverhältnis',
+      }),
+    ],
+    costItems: [
+      costItem({
+        id: 'c1', year: 2024, category: 'Müllabfuhr', description: 'Abfallgebühren',
+        vendor: 'Firma Meier', amountCents: 12000, key: 'direct', directUnitId: 'u1',
+        meterType: 'kaltwasser', customShares: { u1: 60, u2: 40 },
+        labor35aCents: 4000, invoiceFile: 'beleg-2024-01.pdf',
+      }),
+    ],
+    meters: [meter({ id: 'm1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC-123', unit: 'm³' })],
+    readings: [
+      reading({ id: 'r1', meterId: 'm1', date: '2023-12-31', value: 100, replacement: false, oldEndValue: 0, note: 'Jahresablesung' }),
+      reading({ id: 'r2', meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Zählerwechsel' }),
+    ],
+    payments: [payment({ id: 'p1', tenancyId: 't1', date: '2024-01-05', amountCents: 75000, note: 'Dauerauftrag' })],
+    closedSettlements: [],
+  }
+}
+
+// Jede Sammlung mit ihrer Tabelle. Aus den Spalten leitet der Test seine Erwartung ab, statt
+// eine Liste von Feldnamen danebenzuschreiben: Eine solche Liste vergisst der nächste, der eine
+// Spalte hinzufügt, und dann bewacht der Test genau das Neue nicht.
+const collectionsWithTable = (stock: ReturnType<typeof straightenForDatabase>): { what: string, table: SQLiteTable, rows: readonly unknown[] }[] => [
+  { what: 'Wohnungen', table: unitsTable, rows: stock.units },
+  { what: 'Mietverhältnisse', table: tenanciesTable, rows: stock.tenancies },
+  { what: 'Kostenpositionen', table: costItemsTable, rows: stock.costItems },
+  { what: 'Zähler', table: metersTable, rows: stock.meters },
+  { what: 'Ablesungen', table: readingsTable, rows: stock.readings },
+  { what: 'Zahlungen', table: paymentsTable, rows: stock.payments },
+]
+
+test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
+  // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;
+  // kommt eine Spalte hinzu und niemand belegt sie, wäre er still wirkungslos. Hier schlägt er
+  // dann fehl und sagt, welches Feld in `everyFieldDb` fehlt.
+  const stock = straightenForDatabase(everyFieldDb())
+  for (const { what, table, rows } of collectionsWithTable(stock)) {
+    for (const column of Object.keys(getTableColumns(table))) {
+      const belegt = rows.some((row) => row !== null && typeof row === 'object' && Reflect.get(row, column) !== undefined)
+      assert.ok(belegt, `${what}: „${column}" ist in everyFieldDb nicht belegt, der Test bewacht das Feld deshalb nicht`)
+    }
+  }
+})
+
+test('Rundreise: jedes Feld des Datenmodells kommt zurück', async () => {
+  // Die Felder, die in keine Rechnung eingehen. Geht eines verloren, merkt es weder die
+  // Abrechnung noch die Regression des Umstiegs, sondern erst der Vermieter, wenn er Monate
+  // später die IBAN seines Mieters sucht.
+  await withDatabase(async (opened) => {
+    const gerade = straightenForDatabase(everyFieldDb())
+    await writeStock(opened.db, gerade)
+    const stock = await readStock(opened.db)
+    assert.deepStrictEqual(stock.units, gerade.units, 'Wohnungen')
+    assert.deepStrictEqual(stock.tenancies, gerade.tenancies, 'Mietverhältnisse')
+    assert.deepStrictEqual(stock.costItems, gerade.costItems, 'Kostenpositionen')
+    assert.deepStrictEqual(stock.meters, gerade.meters, 'Zähler')
+    assert.deepStrictEqual(stock.readings, gerade.readings, 'Ablesungen')
+    assert.deepStrictEqual(stock.payments, gerade.payments, 'Zahlungen')
   })
 })
 
