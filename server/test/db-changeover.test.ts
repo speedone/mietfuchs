@@ -142,6 +142,15 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
     await changeoverIn(dataDir, async (result) => {
       assert.equal(result.state, 'none')
       assert.match(result.message, /enthält bereits/)
+      // **Und der Nutzer erfährt, dass da eine db.json liegt.** Ein gelungener Umstieg benennt
+      // sie um, hier liegt also eine, die Mietfuchs nicht hinterlassen hat. Zwei Lagen führen
+      // dorthin und verlangen entgegengesetzte Antworten: Jemand hat eine alte Sicherung von
+      // Hand hereinkopiert (übernehmen wäre falsch), oder jemand hat mit einer Zwischenfassung
+      // gearbeitet, die noch in die Datei schrieb (ignorieren wäre falsch). Mietfuchs entscheidet
+      // das nicht, es sagt, was es vorfindet, und nennt den einen Weg, auf dem geprüft wird,
+      // bevor etwas ersetzt ist.
+      assert.match(result.message, /db\.json/, 'die Meldung verschweigt die vorgefundene Datei')
+      assert.match(result.message, /Backup/, 'die Meldung nennt keinen Weg')
     })
     const stock = await stockOf(dataDir)
     assert.deepEqual(stock.units.map((u) => u.id), ['schon-da'], 'der vorhandene Bestand ist unverändert')

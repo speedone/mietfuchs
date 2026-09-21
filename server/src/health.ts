@@ -1,21 +1,24 @@
 // Betriebszustand für Container-Orchestratoren (GET /healthz).
 //
 // Mehr als „der Prozess läuft": Die Anwendung muss ihren Datenbestand lesen und in den
-// Datenordner schreiben können. Erkannt werden eine beschädigte db.json und ein
-// schreibgeschützter oder falsch berechtigter Datenordner. Ein nicht eingehängtes Volume
-// erkennt die Prüfung nicht — Docker legt dann ein anonymes, beschreibbares an.
+// Datenordner schreiben können. Erkannt werden eine Datenbank, die nicht trägt (siehe unten),
+// eine beschädigte db.json aus der Zeit davor und ein schreibgeschützter oder falsch
+// berechtigter Datenordner. Ein nicht eingehängtes Volume erkennt die Prüfung nicht — Docker
+// legt dann ein anonymes, beschreibbares an.
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DatabaseState } from '../../shared/types.ts'
 
 type Check = { ok: boolean, detail: string }
 
-// Ist der Datenbestand lesbar? Eine fehlende db.json ist kein Fehler: Beim ersten Start legt
-// store.ts sie erst beim ersten Schreiben an. Ein Fehler ist eine vorhandene, aber unlesbare
-// Datei.
+// Ist eine vorgefundene db.json lesbar? Der Bestand liegt inzwischen in der Datenbank, diese
+// Frage gilt also nur noch dem Weg dorthin: Eine unlesbare db.json ist ein Bestand, der beim
+// Umstieg nicht übernommen werden kann. Ihr **Fehlen** ist dagegen der Normalfall, und zwar
+// gleich zweimal: bei einer frischen Einrichtung, die nie eine hatte, und nach einem gelungenen
+// Umstieg, der sie umbenannt hat.
 function checkData(dataDir: string): Check {
   const file = path.join(dataDir, 'db.json')
-  if (!fs.existsSync(file)) return { ok: true, detail: 'db.json noch nicht angelegt (erster Start)' }
+  if (!fs.existsSync(file)) return { ok: true, detail: 'keine db.json (frische Einrichtung oder Umstieg gelaufen)' }
   try {
     JSON.parse(fs.readFileSync(file, 'utf8'))
     return { ok: true, detail: 'db.json lesbar' }
