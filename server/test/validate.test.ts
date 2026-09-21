@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { findingsText, validateDb, type Finding } from '../src/db/validate.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
-import { migrateLegacy } from '../src/legacy.ts'
+import { migrateLegacy, straightenForDatabase } from '../src/legacy.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
 import { FIXTURE_DIR } from '../testing/fixtures.ts'
 import type { Db } from '../src/store.ts'
@@ -339,8 +339,31 @@ function resultsOf(file: Db) {
   }
 }
 
-const same = (gerade: Db, krumm: Db, hint: string): void =>
-  assert.deepEqual(resultsOf(gerade), resultsOf(krumm), hint)
+// Derselbe Bestand, aber so, wie ihn der Umstieg in die Datenbank schreibt: nach dem Einlesen
+// noch einmal durch `straightenForDatabase` (legacy.ts).
+//
+// **Das ist der Unterschied zu früher, und er ist der Punkt dieser Datei.** Vorher rückte jeder
+// Test hier von Hand gerade und verglich das Ergebnis mit dem krummen Bestand. Damit prüfte er,
+// dass *seine eigene* Handarbeit keine Zahl bewegt, und die Hinweise des Validators blieben
+// eine Beschreibung ohne Gegenstück im Code. Jetzt prüft er die Funktion, die beim Umstieg
+// wirklich läuft.
+function straightResultsOf(file: Db) {
+  const snapshot = snapshotFromDb(straightenForDatabase(migrateLegacy(structuredClone(file))), 2024)
+  return {
+    settlement: computeSettlement(snapshot),
+    ledger: rentLedger(snapshot),
+    tax: taxReport(snapshot),
+    consumption: consumptionOverview(snapshot),
+  }
+}
+
+// Der geradegerückte Bestand selbst, für die Frage, ob das Geraderücken auch das tut, was der
+// Hinweis ankündigt. Dass keine Zahl wandert, sagt `unchanged`.
+const straightened = (file: Db): Db => straightenForDatabase(migrateLegacy(structuredClone(file)))
+
+// Alle vier Rechnungen sagen vor und nach dem Geraderücken dasselbe.
+const unchanged = (krumm: Db, hint: string): void =>
+  assert.deepEqual(straightResultsOf(krumm), resultsOf(krumm), hint)
 
 // Die Mietkonto-Zeile eines Mietverhältnisses. Nach Kennung gesucht und nicht über den Index
 // genommen: `rentLedger` sortiert seine Zeilen nach Wohnungs- und Mietername, ein Zugriff über
@@ -399,77 +422,71 @@ test('Geraderücken: fehlende Sammlungen, Einstellungen, Kaltmiete-Staffel und J
   // Staffeln kamen ebenfalls später dazu. Die Einstellungen gehen in keine der vier Rechnungen
   // ein, der Schnappschuss führt sie gar nicht; der Vergleich hält genau das fest, und wer
   // eines Tages eine Einstellung in die Berechnung zieht, bekommt hier einen roten Test.
-  const gerade = fullDb()
-  gerade.payments = []
-  gerade.closedSettlements = []
-  gerade.tenancies[1].baseRents = []
-  gerade.tenancies[0].prepaymentOverrides = {}
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   drop(krumm, 'payments')
   drop(krumm, 'closedSettlements')
   drop(krumm, 'settings')
   drop(krumm.tenancies[1], 'baseRents')
   drop(krumm.tenancies[0], 'prepaymentOverrides')
-  same(gerade, krumm, 'fehlende Sammlungen und Staffeln')
+  unchanged(krumm, 'fehlende Sammlungen und Staffeln')
+  const gerade = straightened(krumm)
+  assert.deepEqual(gerade.payments, [])
+  assert.deepEqual(gerade.tenancies[1].baseRents, [])
+  assert.deepEqual(gerade.tenancies[0].prepaymentOverrides, {})
 })
 
 test('Geraderücken: eine fehlende Wohnfläche ist dasselbe wie 0 m²', () => {
-  const gerade = fullDb()
-  gerade.units[1].areaM2 = 0
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   drop(krumm.units[1], 'areaM2')
-  same(gerade, krumm, 'Wohnung ohne Wohnfläche')
+  unchanged(krumm, 'Wohnung ohne Wohnfläche')
+  assert.equal(straightened(krumm).units[1].areaM2, 0)
 })
 
 test('Geraderücken: eine fehlende Beteiligung ist dasselbe wie „gehört nicht dazu"', () => {
-  const gerade = fullDb()
-  gerade.units[1].participates = false
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   drop(krumm.units[1], 'participates')
-  same(gerade, krumm, 'Wohnung ohne Beteiligung')
+  unchanged(krumm, 'Wohnung ohne Beteiligung')
+  assert.equal(straightened(krumm).units[1].participates, false)
 })
 
 test('Geraderücken: eine fehlende Personenzahl', () => {
   // Mit Staffel liest die Berechnung das Feld gar nicht, dort gilt der letzte Eintrag.
   const mitStaffel = fullDb()
-  mitStaffel.tenancies[1].persons = 3
-  const krummMitStaffel = structuredClone(mitStaffel)
-  drop(krummMitStaffel.tenancies[1], 'persons')
-  same(mitStaffel, krummMitStaffel, 'Personenzahl fehlt, Staffel vorhanden')
+  drop(mitStaffel.tenancies[1], 'persons')
+  unchanged(mitStaffel, 'Personenzahl fehlt, Staffel vorhanden')
+  assert.equal(straightened(mitStaffel).tenancies[1].persons, 3, 'der letzte Eintrag der Staffel')
 
   // Ohne Staffel ist sie der Rückfall, und ohne beides gilt eine Person.
   const ohneStaffel = fullDb()
-  ohneStaffel.tenancies[1].persons = 1
   drop(ohneStaffel.tenancies[1], 'personHistory')
-  const krummOhneStaffel = structuredClone(ohneStaffel)
-  drop(krummOhneStaffel.tenancies[1], 'persons')
-  same(ohneStaffel, krummOhneStaffel, 'Personenzahl und Staffel fehlen')
+  drop(ohneStaffel.tenancies[1], 'persons')
+  unchanged(ohneStaffel, 'Personenzahl und Staffel fehlen')
+  assert.equal(straightened(ohneStaffel).tenancies[1].persons, 1)
 })
 
 test('Geraderücken: eine fehlende Personen-Staffel entsteht aus der Personenzahl', () => {
-  const gerade = fullDb()
-  gerade.tenancies[1].personHistory = [{ from: gerade.tenancies[1].start, persons: 3 }]
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   drop(krumm.tenancies[1], 'personHistory')
-  same(gerade, krumm, 'Personen-Staffel fehlt')
+  unchanged(krumm, 'Personen-Staffel fehlt')
+  assert.deepEqual(straightened(krumm).tenancies[1].personHistory, [{ from: krumm.tenancies[1].start, persons: 3 }])
 })
 
 test('Geraderücken: eine fehlende Vorauszahlungs-Staffel, mit und ohne festen Monatsbetrag', () => {
   const ohne = fullDb()
-  ohne.tenancies[1].prepayments = []
-  const krummOhne = structuredClone(ohne)
-  drop(krummOhne.tenancies[1], 'prepayments')
-  same(ohne, krummOhne, 'Staffel fehlt, kein alter Betrag')
+  drop(ohne.tenancies[1], 'prepayments')
+  unchanged(ohne, 'Staffel fehlt, kein alter Betrag')
+  assert.deepEqual(straightened(ohne).tenancies[1].prepayments, [])
 
   // Mit altem Betrag entsteht der Staffeleintrag ab dem Einzugsmonat, und zwar schon beim
   // Einlesen. Deshalb ist dieser Fall auch im Mietkonto zahlenneutral, anders als der nächste.
   const mit = fullDb()
-  mit.tenancies[1].prepayments = [{ from: mit.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }]
-  const krummMit = structuredClone(mit)
-  drop(krummMit.tenancies[1], 'prepayments')
-  const alt: Tenancy & { prepaymentMonthlyCents?: number } = krummMit.tenancies[1]
+  drop(mit.tenancies[1], 'prepayments')
+  const alt: Tenancy & { prepaymentMonthlyCents?: number } = mit.tenancies[1]
   alt.prepaymentMonthlyCents = 12000
-  same(mit, krummMit, 'Staffel fehlt, alter Betrag vorhanden')
+  unchanged(mit, 'Staffel fehlt, alter Betrag vorhanden')
+  assert.deepEqual(straightened(mit).tenancies[1].prepayments, [
+    { from: mit.tenancies[1].start.slice(0, 7), monthlyCents: 12000 },
+  ])
 })
 
 test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt das Mietkonto', () => {
@@ -478,16 +495,20 @@ test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt da
   // (computePrepaymentCents), das Mietkonto nicht (rentLedger liest nur `prepayments`). Also
   // bleibt die Abrechnung gleich, und das Mietkonto zeigt nachher, was die Abrechnung ohnehin
   // schon ansetzt. Das ist eine gemessene Ausprägung von #70.
-  const gerade = fullDb()
-  gerade.tenancies[1].prepayments = [{ from: gerade.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }]
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   krumm.tenancies[1].prepayments = []
   const alt: Tenancy & { prepaymentMonthlyCents?: number } = krumm.tenancies[1]
   alt.prepaymentMonthlyCents = 12000
 
   const vorher = resultsOf(krumm)
-  const nachher = resultsOf(gerade)
+  const nachher = straightResultsOf(krumm)
   const jahr = 12 * 12000
+
+  // Das Geraderücken macht daraus den Staffeleintrag ab dem Einzugsmonat, und das alte Feld
+  // verschwindet: In der Datenbank gibt es dafür keine Spalte mehr.
+  const gerade = straightened(krumm)
+  assert.deepEqual(gerade.tenancies[1].prepayments, [{ from: krumm.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }])
+  assert.equal('prepaymentMonthlyCents' in gerade.tenancies[1], false)
 
   // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin.
   assert.deepEqual(nachher.settlement, vorher.settlement, 'Abrechnung')
@@ -517,32 +538,35 @@ test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt da
 })
 
 test('Geraderücken: beim doppelten Stichtag gilt der letzte Eintrag der Datei', () => {
-  const gerade = fullDb()
-  gerade.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 18000 }]
-  gerade.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 5 }]
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   krumm.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 15000 }, { from: '2024-01', monthlyCents: 18000 }]
   krumm.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 2 }, { from: '2024-01-01', persons: 5 }]
-  same(gerade, krumm, 'doppelter Stichtag')
+  unchanged(krumm, 'doppelter Stichtag')
+  // 150 gegen 180 Euro im Monat: Nähme das Geraderücken den ersten, wäre die Abrechnung um 360
+  // Euro im Jahr anders. Die Abrechnung nimmt den letzten, und genau den behält die Datenbank.
+  const gerade = straightened(krumm)
+  assert.deepEqual(gerade.tenancies[0].prepayments, [{ from: '2024-01', monthlyCents: 18000 }])
+  assert.deepEqual(gerade.tenancies[0].personHistory, [{ from: '2024-01-01', persons: 5 }])
 })
 
 test('Geraderücken: eine Direktzuordnung ins Leere ist dasselbe wie keine Zuordnung', () => {
-  const gerade = fullDb()
-  gerade.costItems.push(costItem({ id: 'c5', description: 'Rohrbruch', amountCents: 30000, key: 'direct', directUnitId: null }))
-  const krumm = structuredClone(gerade)
-  krumm.costItems[4].directUnitId = 'gibt-es-nicht'
+  const krumm = fullDb()
+  krumm.costItems.push(costItem({ id: 'c5', description: 'Rohrbruch', amountCents: 30000, key: 'direct', directUnitId: 'gibt-es-nicht' }))
   // Auch die Warnung bleibt dieselbe: Die Berechnung schlägt eine unbekannte Kennung genauso
   // nach wie `null`, nämlich vergeblich.
-  same(gerade, krumm, 'Direktzuordnung ins Leere')
+  unchanged(krumm, 'Direktzuordnung ins Leere')
+  assert.equal(straightened(krumm).costItems[4].directUnitId, null)
+  // Und die Zeile bleibt: Sie zu verwerfen entfernte eine bezahlte Rechnung aus einem
+  // abgerechneten Jahr.
+  assert.equal(straightened(krumm).costItems.length, 5)
 })
 
 test('Geraderücken: ein vereinbarter Anteil ins Leere bewegt keine Zahl, nur die Warnung entfällt', () => {
-  const gerade = fullDb()
-  gerade.costItems.push(costItem({ id: 'c5', description: 'Aufzug', amountCents: 50000, key: 'custom', customShares: { u1: 60 } }))
-  const krumm = structuredClone(gerade)
-  krumm.costItems[4].customShares = { u1: 60, weg: 40 }
-  const nachher = resultsOf(gerade)
+  const krumm = fullDb()
+  krumm.costItems.push(costItem({ id: 'c5', description: 'Aufzug', amountCents: 50000, key: 'custom', customShares: { u1: 60, weg: 40 } }))
+  const nachher = straightResultsOf(krumm)
   const vorher = resultsOf(krumm)
+  assert.deepEqual(straightened(krumm).costItems[4].customShares, { u1: 60 })
   assert.deepEqual({ ...nachher.settlement, warnings: [] }, { ...vorher.settlement, warnings: [] })
   assert.deepEqual(nachher.ledger, vorher.ledger)
   assert.deepEqual(nachher.tax, vorher.tax)
@@ -553,11 +577,10 @@ test('Geraderücken: ein vereinbarter Anteil ins Leere bewegt keine Zahl, nur di
 })
 
 test('Geraderücken: ein Zähler ohne ausgefüllte Wohnung ist ein Hauptzähler', () => {
-  const gerade = fullDb()
-  gerade.meters[0].unitId = null
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   krumm.meters[0].unitId = ''
-  same(gerade, krumm, 'Zähler mit leerer Wohnungs-Kennung')
+  unchanged(krumm, 'Zähler mit leerer Wohnungs-Kennung')
+  assert.equal(straightened(krumm).meters[0].unitId, null)
 })
 
 // Nur für den einen Fall, in dem sich Anzeigetexte ändern dürfen, Beträge aber nicht: Jeder
@@ -574,13 +597,7 @@ function withoutTexts(value: unknown): unknown {
 }
 
 test('Geraderücken: fehlende Anzeigefelder bewegen keine Zahl, ändern aber das Aussehen', () => {
-  const gerade = fullDb()
-  gerade.units[1].name = ''
-  gerade.tenancies[1].tenantName = ''
-  gerade.costItems[0].description = ''
-  gerade.meters[0].name = ''
-  gerade.meters[0].unit = ''
-  const krumm = structuredClone(gerade)
+  const krumm = fullDb()
   drop(krumm.units[1], 'name')
   drop(krumm.tenancies[1], 'tenantName')
   drop(krumm.costItems[0], 'description')
@@ -588,7 +605,10 @@ test('Geraderücken: fehlende Anzeigefelder bewegen keine Zahl, ändern aber das
   drop(krumm.meters[0], 'unit')
 
   const vorher = resultsOf(krumm)
-  const nachher = resultsOf(gerade)
+  const nachher = straightResultsOf(krumm)
+  const gerade = straightened(krumm)
+  assert.equal(gerade.units[1].name, '')
+  assert.equal(gerade.meters[0].unit, '')
   assert.deepEqual(withoutTexts(nachher), withoutTexts(vorher), 'Zahlen')
   // Der benannte Unterschied: Das Mietkonto setzt für eine Wohnung ohne Namen einen Strich ein.
   // Nach dem Übernehmen steht dort der leere Name. Beide sagen dasselbe, nämlich dass kein Name
