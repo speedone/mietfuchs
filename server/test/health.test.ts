@@ -56,6 +56,30 @@ test('Healthcheck: unlesbare db.json ist ein Fehler', () => {
   assert.equal(report.checks.data.ok, false)
 })
 
+test('Healthcheck: die Datenbank steht im Bericht, bestimmt den Status aber nicht', () => {
+  // Die Datenbank (#55) ist an diesem Stand noch leer, und Mietfuchs arbeitet ohne sie weiter.
+  // Stünde sie unter `checks`, meldete /healthz einen Fehler, sobald sie sich nicht öffnen
+  // lässt, und ein Container liefe in eine Neustart-Schleife, obwohl die Anwendung tut, was
+  // sie soll. Beim Umstieg der Bestände gehört sie dorthin, heute noch nicht.
+  const dir = makeDataDir({ db: '{}' })
+  const zu = healthReport({
+    dataDir: dir,
+    version: '0.7.1',
+    database: { open: false, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 0, detail: 'ist beschädigt' },
+  })
+  assert.equal(zu.status, 'ok')
+  assert.equal(zu.database?.open, false)
+  assert.match(String(zu.database?.detail), /beschädigt/)
+
+  const offen = healthReport({
+    dataDir: dir,
+    version: '0.7.1',
+    database: { open: true, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet' },
+  })
+  assert.equal(offen.status, 'ok')
+  assert.equal(offen.database?.migrations, 1)
+})
+
 test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {
   // Als root greifen Dateirechte nicht — dann lässt sich das nicht prüfen. Unter Windows
   // ebenso wenig: chmod setzt dort keine Schreibsperre, der Schreibversuch gelingt trotzdem.

@@ -18,7 +18,8 @@ import { SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalU
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
-import { healthReport } from './health.ts'
+import { healthReport, type DatabaseState } from './health.ts'
+import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
@@ -732,7 +733,7 @@ app.post('/api/update/check', async (req, res) => {
 // kaputter Container HTTP 200. Bewusst nicht unter /api: Das ist eine Schnittstelle für den
 // Betrieb, nicht für die Oberfläche.
 app.get('/healthz', (req, res) => {
-  const report = healthReport({ dataDir: DATA_DIR, version: APP_VERSION })
+  const report = healthReport({ dataDir: DATA_DIR, version: APP_VERSION, database: databaseState() })
   res.status(report.status === 'ok' ? 200 : 503).json(report)
 })
 
@@ -836,6 +837,34 @@ if (startProblem) {
   process.exit(1)
 }
 
+// ---------- Die Datenbank (#55) ----------
+//
+// Geöffnet wird sie beim Start, obwohl noch keine fachlichen Daten darin liegen, und das ist
+// der eigentliche Gewinn dieses Schrittes: Solange kein Einstiegspunkt db/open.ts erreicht,
+// bündelt Bun weder Drizzle noch das eingebaute SQLite in die Programmdatei, und die Prüfläufe
+// beweisen über diesen Weg gar nichts. So scheitert der Bau, wenn sich etwas nicht bündeln
+// lässt, und die Artefakt-Tests starten jede Programmdatei auf einem Rechner ihres Systems.
+//
+// **Scheitert das Öffnen, läuft der Server trotzdem** und arbeitet wie bisher mit der db.json.
+// An diesem Stand braucht niemand die Datenbank, und ihn deswegen auszusperren wäre die falsche
+// Reihenfolge. Mit dem Umstieg der Bestände kehrt sich das um: Dann sind die Daten dort, und ein
+// Start ohne sie wäre ein Start ohne Daten.
+let database: OpenedDatabase | null = null
+let databaseProblem: string | null = null
+try {
+  database = await openDatabase({ dataDir: DATA_DIR })
+} catch (err) {
+  databaseProblem = messageOf(err)
+}
+
+// Für /healthz: Der Bericht nennt den Stand, damit der Smoke-Test ihn von außen sieht. Er läuft
+// auf jeder Programmdatei und in den Containern von 22 Distributionen; ob das eingebaute SQLite
+// überall trägt, zeigt sich erst dort.
+function databaseState(): DatabaseState {
+  if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet' }
+  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: databaseProblem ?? 'nicht geöffnet' }
+}
+
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist
 // ein zweiter Start kein Fehler, sondern ein zweiter Klick im Startmenü (#45).
 async function mietfuchsAlreadyOn(url: string): Promise<boolean> {
@@ -878,6 +907,11 @@ const server = app.listen(PORT, (err) => {
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.
   console.log(`Daten: ${DATA_DIR}`)
+  // Die Datenbank in derselben Aufzählung: Wer seinen Bestand sichern oder umziehen will, soll
+  // auch diese Datei nicht suchen müssen.
+  if (database) console.log(`Datenbank: ${database.file}`)
+  else console.log(`Datenbank: nicht geöffnet. ${databaseProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
+  for (const warning of database?.warnings ?? []) console.log(`Hinweis: ${warning}`)
   if (STANDALONE) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet
     // wird dann über die Oberfläche. Beim Doppelklick auf die Programmdatei gibt es das Fenster
