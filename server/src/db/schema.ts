@@ -22,7 +22,9 @@ import type {
 } from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
-// Laufzeitanteil hat und eine Prüfbedingung einen solchen braucht.
+// Laufzeitanteil hat und eine Prüfbedingung einen solchen braucht. Ausgeführt werden sie, weil
+// der Validator (validate.ts) dieselben Listen braucht: Er prüft genau das, was die Datenbank
+// gleich verlangen wird, und eine zweite Abschrift liefe irgendwann davon weg.
 //
 // Dass sie doppelt stehen, ist deshalb unvermeidlich, aber nicht ungesichert: `exactly<T>()`
 // unten bindet jede Liste an ihren Domänentyp, und zwar **in beide Richtungen**. Ein Wert zu
@@ -36,13 +38,13 @@ const exactly =
   <L extends readonly T[]>(values: L & ([T] extends [L[number]] ? unknown : never)): L =>
     values
 
-const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const)
-const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
-const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
+export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const)
+export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
+export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
 const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
 const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
-const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
+export const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
 
 // Prüfbedingung „dieser Betrag ist nicht negativ". Als Helfer, damit an jeder Stelle dasselbe
 // steht und der Grund je Spalte daneben als Kommentar auftaucht statt als Wiederholung.
