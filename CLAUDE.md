@@ -424,6 +424,18 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   dort. Dieselbe Haltung bei der Jahreskorrektur: Ihr Schlüssel muss eine **vierstellige**
   Jahreszahl sein, sonst führten „2024" und „2024.0" auf dieselbe Spalte und ließen den ganzen
   Vorgang am Primärschlüssel scheitern.
+- **Die Personen-Staffel ist dabei die Ausnahme, und das ist nachgemessen.** „Es gilt der
+  letzte" verschiebt dort Personentage, denn `personDaysInPeriod` in calc.ts baut seine Stufen
+  aus allen Einträgen, und **die erste gilt ab Einzug** und nicht erst ab ihrem eigenen Stichtag
+  (der Kommentar steht an der Zeile, `personsAt` nimmt davor ebenfalls den ersten Eintrag). Wirft
+  man den ersten von zwei Einträgen zum selben Stichtag weg, übernimmt der zweite rückwirkend die
+  ganze Zeit davor: an einem Mietverhältnis ab 01.01.2024 mit [1 Person, 4 Personen], beide ab
+  01.07.2024, sind das 918 Personentage gegen 1464. Beim Personenschlüssel ist das unmittelbar
+  Geld. `straightenPersonHistory` schreibt deshalb eine vorhandene Regel aus, statt eine neue zu
+  erfinden: Weil die erste Stufe ohnehin ab Einzug gilt, darf ihr Stichtag dorthin vorgezogen
+  werden, und danach greift „es gilt der letzte" wieder gefahrlos. Geprüft wird das **rechnend**
+  und nicht am Ergebnis der Funktion
+  ([server/test/schedule.test.ts](server/test/schedule.test.ts)).
 - **Fehler der Datenbank werden übersetzt**
   ([server/src/db/errors.ts](server/src/db/errors.ts)). Drizzles äußere Meldung enthält das SQL
   **samt der eingesetzten Werte des Nutzers** und gehört damit nicht in eine Oberfläche;
