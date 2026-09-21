@@ -35,7 +35,7 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
-import { lastPerFrom } from '../schedule.ts'
+import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readMeters, readPayments, readReadings, readTenancies,
@@ -98,15 +98,25 @@ function merged<T>(body: unknown, key: string, current: T, read: (value: unknown
 // Stichtag ist in der Datenbank Teil des Primärschlüssels. Der Vermieter bekäme für zwei so
 // ausgefüllte Zeilen einen Fehler statt eines gespeicherten Mietverhältnisses, wo die db.json
 // es klaglos annahm.
-function readSchedule<T extends { from: string }>(value: unknown, entry: (row: unknown) => T | null): T[] {
+function readEntries<T>(value: unknown, entry: (row: unknown) => T | null): T[] {
   if (!Array.isArray(value)) return []
   const rows: T[] = []
   for (const row of value) {
     const gelesen = entry(row)
     if (gelesen !== null) rows.push(gelesen)
   }
-  return lastPerFrom(rows)
+  return rows
 }
+
+// Vorauszahlung und Kaltmiete: Es gilt der letzte.
+const readSchedule = <T extends { from: string }>(value: unknown, entry: (row: unknown) => T | null): T[] =>
+  lastPerFrom(readEntries(value, entry))
+
+// **Die Personen-Staffel bekommt ihre eigene Regel**, und dafür braucht sie den Einzugstag:
+// „es gilt der letzte" würde hier Personentage verschieben, weil die erste Stufe ab Einzug gilt.
+// Die Begründung steht in schedule.ts und ist nachgemessen.
+const readPersonHistory = (value: unknown, start: string): PersonEntry[] =>
+  straightenPersonHistory(readEntries(value, personEntry), start)
 
 const personEntry = (row: unknown): PersonEntry | null => {
   const from = asOptionalText(raw(row, 'from'))
@@ -183,13 +193,16 @@ function mergeUnit(current: Unit, body: unknown): Unit {
 }
 
 function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
+  // Der Einzugstag zuerst: Die Personen-Staffel wird gegen ihn geradegerückt, und im selben
+  // Rumpf kann beides stehen.
+  const start = merged(body, 'start', current.start, (v) => asText(v, ''))
   return {
     id: current.id,
     unitId: merged(body, 'unitId', current.unitId, (v) => asText(v, '')),
     tenantName: merged(body, 'tenantName', current.tenantName, (v) => asText(v, '')),
     persons: merged(body, 'persons', current.persons, (v) => asNumber(v, 1)),
-    personHistory: merged(body, 'personHistory', current.personHistory, (v) => readSchedule<PersonEntry>(v, personEntry)),
-    start: merged(body, 'start', current.start, (v) => asText(v, '')),
+    personHistory: merged(body, 'personHistory', current.personHistory, (v) => readPersonHistory(v, start)),
+    start,
     end: merged(body, 'end', current.end, asNullableText),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
     prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readAmountsByYear),

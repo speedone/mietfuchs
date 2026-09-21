@@ -18,7 +18,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { connect } from '../src/db/client.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { databaseMessage } from '../src/db/errors.ts'
+import { databaseProblem } from '../src/db/errors.ts'
 import { closedSettlements, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fehler-'))
@@ -46,7 +46,12 @@ async function messageOfFailure(opened: OpenedDatabase, work: () => Promise<unkn
   try {
     await work()
   } catch (err) {
-    return databaseMessage(err)
+    // Gefragt wird **derselbe** Weg, den auch die Fehlerbehandlung in index.ts geht. Eine
+    // zweite, nur hier benutzte Funktion prüfte sich selbst: Genau daran ist diese Datei einmal
+    // vorbeigelaufen, als sie importiert, aber nirgends aufgerufen war.
+    const problem = databaseProblem(err)
+    if (!problem) return assert.fail(`der Fehler gilt nicht als einer der Datenbank: ${String(err)}`)
+    return problem.message
   }
   return assert.fail('der Verstoß hat gar keinen Fehler ausgelöst')
 }
@@ -142,12 +147,33 @@ test('Weder SQL noch die Werte des Nutzers stehen in der Meldung', async () => {
   })
 })
 
-test('Ein Fehler, den niemand vorhergesehen hat, wird nicht verschwiegen', async () => {
+test('Ein Fehler der Datenbank, den niemand vorhergesehen hat, wird nicht verschwiegen', async () => {
   // Eine Übersetzung, die nur ihre eigenen Fälle kennt, verschluckte alles andere. Was nicht
-  // erkannt wird, kommt deshalb benannt am Ende heraus, wie in open.ts auch.
-  const text = databaseMessage(new Error('etwas ganz Unerwartetes'))
-  assert.match(text, /etwas ganz Unerwartetes/, text)
-  assert.match(text, /Technischer Befund/, text)
+  // erkannt wird, kommt deshalb benannt am Ende heraus, wie in open.ts auch. Erkannt wird es an
+  // Drizzles Hülle, denn gerade sie trägt das SQL und die Werte und darf nicht hinaus.
+  const problem = databaseProblem(new Error('Failed query: …', { cause: new Error('etwas ganz Unerwartetes') }))
+  if (!problem) return assert.fail('ein Fehler mit Drizzles Hülle gilt nicht als einer der Datenbank')
+  assert.equal(problem.status, 500)
+  assert.match(problem.message, /etwas ganz Unerwartetes/, problem.message)
+  assert.match(problem.message, /Technischer Befund/, problem.message)
+  assert.doesNotMatch(problem.message, /Failed query/i, problem.message)
+})
+
+test('Ein fremder Fehler wird nicht für einen der Datenbank ausgegeben', async () => {
+  // **Zwei der Muster sind nicht datenbankeigen.** Ein schreibgeschützter Datenträger meldet
+  // `EROFS` auch beim Ablegen eines Belegs, eine volle Platte `ENOSPC`. Wurde das eingeordnet,
+  // las der Vermieter „In die Datenbank lässt sich nicht schreiben", während in Wahrheit sein
+  // Beleg nicht abgelegt werden konnte. Ohne Drizzles Hülle gehört ein Fehler nicht hierher, und
+  // die Fehlerbehandlung in index.ts bleibt dann bei ihrer eigenen Meldung.
+  const fremde = [
+    'EROFS: read-only file system, open /app/server/data/uploads/beleg.pdf',
+    'ENOSPC: no space left on device, write',
+    'Unexpected end of form',
+    'etwas ganz Unerwartetes',
+  ]
+  for (const meldung of fremde) {
+    assert.equal(databaseProblem(new Error(meldung)), null, meldung)
+  }
 })
 
 test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
