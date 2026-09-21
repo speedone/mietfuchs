@@ -17,7 +17,7 @@ services:
     ports:
       - "3001:3001"
     volumes:
-      # Persistente Daten (db.json + hochgeladene Belege) — überleben Container-Updates.
+      # Persistente Daten (mietfuchs.sqlite + hochgeladene Belege) — überleben Container-Updates.
       - mietfuchs-data:/app/server/data
     environment:
       # Optional, etwa in einer .env-Datei neben dieser Datei: Adresse und Modell für die

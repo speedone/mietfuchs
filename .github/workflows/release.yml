@@ -441,7 +441,11 @@ jobs:
           # Aktualisieren über die Paketverwaltung statt über das Austauschen der Datei.
           node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode package
           echo '--- Datenordner des Benutzers'
-          docker exec pruefling ls -l /home/pruefer/.local/share/mietfuchs/db.json
+          # Aus einem Paket installiert, kann der Server nicht neben sich schreiben, die Daten
+          # müssen also im Heimatordner liegen (systemLocation in paths.ts). Geprüft wird die
+          # Datenbank, denn sie ist seit dem Umstellen der Routen die Ablage; eine db.json legt
+          # Mietfuchs gar nicht mehr an.
+          docker exec pruefling ls -l /home/pruefer/.local/share/mietfuchs/mietfuchs.sqlite
           # Einmal genügt: Der Startmenü-Eintrag ist in jedem Paket derselbe, und nur Debian
           # und Verwandte bringen das Prüfprogramm dafür mit.
           if [ '${{ matrix.startmenue }}' = 'ja' ]; then
