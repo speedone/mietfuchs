@@ -5,6 +5,7 @@ import { YearProvider, useYear, YEAR_OPTIONS } from './year'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
+import DatabaseNotice from './components/Database'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
@@ -196,6 +197,9 @@ function Shell() {
         </div>
       </nav>
       <main>
+        {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
+            nicht davon abhängt, wo der Nutzer gerade ist. */}
+        <DatabaseNotice />
         {tab === 'cockpit' && (
           <Cockpit units={units} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
