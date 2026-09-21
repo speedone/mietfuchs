@@ -35,7 +35,15 @@ const jsonOf = <T>(res: Response): Promise<T> => res.json() as Promise<T>
 // Der Betriebszustand aus /healthz (server/src/health.ts). Kein Typ des Datenmodells: Der
 // Bericht ist für Container-Orchestratoren, nicht für die Oberfläche.
 type HealthCheck = { ok: boolean, detail: string }
-type HealthReport = { status: string, version: string, app: string, checks: { data: HealthCheck, uploads: HealthCheck } }
+type HealthReport = {
+  status: string
+  version: string
+  app: string
+  checks: { data: HealthCheck, uploads: HealthCheck }
+  // Die Datenbank (#55) steht bewusst neben `checks` und nicht darin: An diesem Stand arbeitet
+  // Mietfuchs ohne sie weiter, und ein Fehler hier dürfte keinen Container neu starten lassen.
+  database?: { open: boolean, file: string, migrations: number, detail: string }
+}
 
 // Die Antwort von /api/upload, /api/extract und /api/intake. Welche Felder gesetzt sind, hängt
 // vom Status und der Belegart ab; die Tests prüfen erst den Status und lesen dann das Passende.
@@ -162,6 +170,34 @@ const messageOf = <T>(messages: T[] | undefined): T => {
   return first
 }
 
+// Einen Wegwerf-Ordner wieder loswerden, und zwar mit Wiederholungen.
+//
+// Seit die Datenbank beim Start geöffnet wird (#55), hält der Server eine Datei in diesem Ordner
+// offen, solange sein Prozess lebt. Unter Windows lässt sich ein Ordner nicht löschen, solange
+// darin etwas geöffnet ist, und `child.kill()` kehrt zurück, bevor der Prozess wirklich beendet
+// ist. Ohne Wiederholung scheiterte das Aufräumen mit EPERM und riss den Test mit, obwohl an ihm
+// nichts falsch war. Unter Linux und macOS ändert sich nichts: Dort darf ein geöffneter Pfad
+// gelöscht werden.
+//
+// `maxRetries` von fs.rmSync genügt dafür nicht, nachgemessen: Diesen EPERM wiederholt es nicht.
+// Gewartet wird deshalb selbst, und zwar blockierend, weil `stop()` an vielen Stellen im finally
+// ohne await steht. Bleibt der Ordner am Ende doch liegen, ist das hinzunehmen: Ein Wegwerf-
+// Ordner im Temp-Verzeichnis ist harmlos, ein wegen des Aufräumens rot gefärbter Test nicht.
+const sleepSync = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+const removeDataDir = (dir: string): void => {
+  for (let versuch = 0; versuch < 30; versuch++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+      return
+    } catch {
+      sleepSync(100)
+    }
+  }
+}
+
 // Startet eine Server-Instanz auf einem eigenen Datenordner und wartet auf Bereitschaft.
 async function startServer() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
@@ -226,7 +262,7 @@ async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}) {
   })
   const stop = () => {
     child.kill()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
   let base
   try {
@@ -266,6 +302,39 @@ test('Healthcheck: /healthz antwortet als JSON mit Status ok', async () => {
   assert.equal(report.status, 'ok')
   assert.equal(report.checks.data.ok, true)
   assert.equal(report.checks.uploads.ok, true)
+})
+
+// ---------- Die Datenbank beim Start (#55) ----------
+
+test('Start: die Datenbank entsteht neben den Daten und steht im Zustandsbericht', async () => {
+  // Geöffnet wird sie schon jetzt, obwohl noch keine fachlichen Daten darin liegen. Nur so
+  // bündelt Bun das eingebaute SQLite in die Programmdatei, und nur so sagen die Prüfläufe auf
+  // 22 Distributionen etwas über den Weg, den ein Vermieter wirklich geht.
+  const report = await srv.api<HealthReport>('/healthz')
+  if (!report.database) assert.fail(`der Zustandsbericht nennt die Datenbank nicht: ${JSON.stringify(report)}`)
+  assert.equal(report.database.open, true, report.database.detail)
+  assert.equal(report.database.file, path.join(srv.dataDir, 'mietfuchs.sqlite'))
+  assert.ok(report.database.migrations >= 1, 'beim ersten Start laufen die Migrationen')
+  assert.ok(fs.existsSync(report.database.file), 'die Datei liegt wirklich da')
+})
+
+test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () => {
+  // An diesem Stand braucht der Nutzer die Datenbank noch gar nicht. Ihn deswegen auszusperren
+  // wäre die falsche Reihenfolge; ab dem Umstieg der Bestände kehrt sich das um.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), 'das ist keine Datenbank, sondern Text')
+  const s = await startServerIn(dataDir)
+  try {
+    const report = await s.api<HealthReport>('/healthz')
+    assert.equal(report.status, 'ok', 'der Server arbeitet weiter')
+    if (!report.database) assert.fail('der Zustandsbericht nennt die Datenbank nicht')
+    assert.equal(report.database.open, false)
+    assert.match(report.database.detail, /beschädigt/)
+    // Und die Wohnungen kommen weiter aus der db.json.
+    assert.deepEqual(await s.api<Unit[]>('/api/units'), [])
+  } finally {
+    s.stop()
+  }
 })
 
 // ---------- Start aus dem Startmenü (#45) ----------
@@ -328,7 +397,7 @@ test('Belegter Port: läuft dort schon Mietfuchs, endet der zweite Start ohne Fe
     assert.match(zweiter.out(), /läuft bereits/)
   } finally {
     zweiter.child.kill()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
 })
 
@@ -349,7 +418,7 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
   } finally {
     start.child.kill()
     fremder.close()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
 })
 
@@ -1599,7 +1668,7 @@ test('Start: mit NKA_PORT=0 nennt die Startmeldung den tatsächlich vergebenen P
     assert.equal((await fetch(`${url}/healthz`)).status, 200)
   } finally {
     child.kill()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
 })
 
@@ -1616,7 +1685,7 @@ test('Start: ein NKA_PORT, der keine Portnummer ist, bricht den Start mit klarer
     assert.doesNotMatch(out(), /läuft auf/)
   } finally {
     child.kill()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
 })
 
@@ -1647,7 +1716,7 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
     assert.doesNotMatch(output, /läuft auf/)
   } finally {
     blocker.close()
-    fs.rmSync(dataDir, { recursive: true, force: true })
+    removeDataDir(dataDir)
   }
 })
 
@@ -1776,7 +1845,7 @@ test('Start: fehlerhafte Schlüssel-Variablen verhindern den Start mit klarer Me
         new Promise((r) => child.on('exit', r)),
         new Promise((r) => setTimeout(() => { child.kill(); r('läuft nach 15 s noch') }, 15000)),
       ])
-      fs.rmSync(dataDir, { recursive: true, force: true })
+      removeDataDir(dataDir)
       assert.notEqual(code, 'läuft nach 15 s noch', `${JSON.stringify(Object.keys(env))}: ${output}`)
       assert.notEqual(code, 0)
       assert.match(output, message)
