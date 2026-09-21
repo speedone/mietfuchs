@@ -221,6 +221,31 @@ test('ein Netzlaufwerk ist eine Warnung und kein Abbruch', async () => {
   }
 })
 
+test('scheitert das Öffnen, nimmt die Meldung den Hinweis auf das Netzlaufwerk mit', async () => {
+  // Ein Netzlaufwerk ist die wahrscheinlichste Erklärung dafür, dass eine SQLite-Datei
+  // beschädigt ist. Wer nur „beschädigt“ liest, kopiert sein Backup an dieselbe Stelle und
+  // steht bald wieder davor.
+  const dataDir = tempDir()
+  try {
+    fs.writeFileSync(databaseFile(dataDir), 'das ist keine Datenbank, sondern Text')
+    await assert.rejects(
+      () =>
+        openDatabase({
+          dataDir,
+          platform: 'linux',
+          mounts: () => `//nas/daten ${dataDir.split(path.sep).join('/')} cifs rw 0 0`,
+        }),
+      (err: unknown) => {
+        assert.match(String(err), /beschädigt/)
+        assert.match(String(err), /Netzlaufwerk/)
+        return true
+      },
+    )
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 // ---------- Die Reihung der Schreibvorgänge ----------
 
 test('zwei überlappende Transaktionen gehen beide durch', async () => {

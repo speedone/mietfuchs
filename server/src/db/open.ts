@@ -256,23 +256,32 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
   const { dataDir, canWrite = writable } = options
   const file = databaseFile(dataDir)
 
+  // Schritt 5 zuerst, denn die Antwort hängt nur am Pfad, und sie gehört auch an jede Meldung,
+  // die gleich folgen könnte: Ein Netzlaufwerk ist die wahrscheinlichste Erklärung dafür, dass
+  // eine SQLite-Datei beschädigt ist. Wer nur „beschädigt“ liest, kopiert ein Backup an
+  // dieselbe Stelle und steht bald wieder davor.
+  const warnings: string[] = []
+  const network = networkLocation(file, options)
+  if (network) warnings.push(networkWarning(network))
+
+  // Jede Meldung dieser Funktion nimmt die Hinweise mit. Der Typ steht ausdrücklich an der
+  // Konstanten und nicht nur am Rumpf: Nur so weiß der Übersetzer, dass es hinter einem Aufruf
+  // nicht weitergeht, und hält den folgenden Code für unerreichbar.
+  const fail: (text: string, cause?: unknown) => never = (text, cause) => {
+    throw new Error([text, ...warnings].join('\n'), cause === undefined ? undefined : { cause })
+  }
+
   // Schritt 1: früh und verständlich scheitern, nicht erst beim ersten Speichern. Dieselbe
   // Frage stellt schon chooseDataDir in store.ts, und sie wird hier mit derselben Funktion
   // beantwortet.
   if (!canWrite(dataDir)) {
-    throw new Error(
+    fail(
       `In den Datenordner ${dataDir} lässt sich nicht schreiben. Dort legt Mietfuchs seine Daten ab, ` +
         `und ohne Schreibrecht kann es gar nicht erst anfangen. Bitte geben Sie den Ordner zum ` +
         `Schreiben frei oder wählen Sie mit der Umgebungsvariablen NKA_DATA_DIR einen anderen.`,
     )
   }
   fs.mkdirSync(dataDir, { recursive: true })
-
-  // Schritt 5 vor dem Öffnen, denn die Antwort hängt nur am Pfad: Steht der Hinweis schon da,
-  // bevor SQLite die Datei anlangt, ordnet er einen Fehler gleich mit ein.
-  const warnings: string[] = []
-  const network = networkLocation(file, options)
-  if (network) warnings.push(networkWarning(network))
 
   const vorhanden = fs.existsSync(file)
   let connection: Connection
@@ -281,12 +290,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
   } catch (err) {
     // Eine Datei, die es gibt, die SQLite aber nicht öffnen kann, ist für den Vermieter
     // dasselbe wie eine beschädigte. Gibt es sie noch nicht, liegt es am Ordner.
-    throw new Error(
+    return fail(
       vorhanden
         ? damaged(file, messageOf(err))
         : `Die Datenbank ${file} ließ sich nicht anlegen. Bitte prüfen Sie, ob der Ordner ` +
           `beschreibbar ist, oder wählen Sie mit NKA_DATA_DIR einen anderen. Technischer Befund: ${messageOf(err)}`,
-      { cause: err },
+      err,
     )
   }
 
@@ -297,7 +306,7 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     // Nachricht davon ein verwaister Datensatz in der Abrechnung eines Vermieters.
     const fk = connection.rows('PRAGMA foreign_keys')
     if (Number(fk[0]?.[0]) !== 1) {
-      throw new Error(
+      fail(
         'Die Datenbank hat die Prüfung der Verweise zwischen den Tabellen nicht eingeschaltet. ' +
           'Ohne sie könnten Ablesungen ohne Zähler oder Mietverhältnisse ohne Wohnung entstehen, ' +
           'die in keiner Abrechnung mehr auftauchen. Mietfuchs arbeitet deshalb nicht damit.',
@@ -313,12 +322,12 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     } catch (err) {
       befund = messageOf(err)
     }
-    if (befund !== null) throw new Error(damaged(file, befund))
+    if (befund !== null) fail(damaged(file, befund))
 
     // Schritt 4: eine Datei aus einer neueren Version wird erklärt, nicht migriert.
     const migrations = await loadMigrations()
     const problem = newerVersionProblem(file, appliedSteps(connection), migrations)
-    if (problem) throw new Error(problem)
+    if (problem) fail(problem)
 
     const applied = applyMigrations(connection, migrations)
     const queue = createWriteQueue()
