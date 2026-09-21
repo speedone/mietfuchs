@@ -13,12 +13,8 @@
 import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shared/types.ts'
 import type { Db } from './store.ts'
 import { migrateAi, type MigratedSettings } from './ai/settings.ts'
+import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from './defaults.ts'
 
-// Standardmodell für die KI-Belegauswertung, gewählt mit dem KI-Prüflauf (#17): Auf Rechnern
-// ohne Grafikkarte liest es PDFs mit Textebene fast fehlerfrei, einseitige Scans meist richtig,
-// und es braucht rund 3,6 GB Arbeitsspeicher. Das Compose-Profil „ki“ lädt dasselbe Modell,
-// ein Test gleicht beides ab.
-export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:4b'
 // Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
 const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
 
@@ -29,15 +25,7 @@ export const LEGACY_PREPAYMENT_FIELD = 'prepaymentMonthlyCents'
 export type LegacyTenancy = Tenancy & { prepaymentMonthlyCents?: number }
 
 export const DEFAULT_DB: Db = {
-  settings: {
-    houseName: '',
-    address: '',
-    landlordName: '',
-    iban: '',
-    paymentDeadlineDays: 30,
-    ollamaUrl: 'http://localhost:11434',
-    ollamaModel: DEFAULT_OLLAMA_MODEL,
-  },
+  settings: DEFAULT_SETTINGS,
   units: [],
   tenancies: [],
   costItems: [],

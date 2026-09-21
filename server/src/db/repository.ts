@@ -34,15 +34,18 @@
 
 import { eq, inArray } from 'drizzle-orm'
 import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
+import type { MigratedSettings } from '../ai/settings.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readMeters, readPayments, readReadings, readTenancies,
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  baseRents, closedSettlements, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS, METER_TYPES, meters, payments,
-  personHistory, prepaymentOverrides, prepayments, readings, tenancies, units,
+  aiSlots, baseRents, closedSettlements, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS,
+  METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, readings,
+  settings, tenancies, units,
 } from './schema.ts'
+import { aiSlotRows, settingsRow } from './write.ts'
 
 export type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
 export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Payment
@@ -479,6 +482,22 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
     if (!(await c.read(db)).some((eintrag) => eintrag.id === id)) return false
     await db.transaction(async (tx) => c.remove(tx, id))
     return true
+  })
+}
+
+// ---------- Die Einstellungen ----------
+
+// Sie sind genau eine Zeile, dazu bis zu zwei für die KI-Plätze; die Prüfbedingung des Schemas
+// sagt es. Geschrieben wird deshalb nicht Feld für Feld, sondern die Zeile als Ganzes ersetzt.
+// Gebaut wird sie mit derselben Funktion wie beim Umstieg (db/write.ts): Zwei Fassungen liefen
+// auseinander, sobald jemand ein Feld ergänzt, und gemerkt hätte man es erst daran, dass eine
+// Einstellung nach dem Umstieg anders dasteht als nach dem Speichern.
+export async function writeSettings(db: Database, settingsToStore: MigratedSettings): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(aiSlots)
+    await tx.delete(settings)
+    await tx.insert(settings).values(settingsRow(settingsToStore))
+    await tx.insert(aiSlots).values(aiSlotRows(settingsToStore.ai))
   })
 }
 

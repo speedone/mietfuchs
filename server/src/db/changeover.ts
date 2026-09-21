@@ -18,7 +18,6 @@
 //    3. **Prüfen, bevor irgendetwas geschrieben wird.** Dafür ist der Validator geschrieben
 //       (db/validate.ts): Ein verdorbener Bestand fiele sonst erst beim Einfügen auf, mitten im
 //       Vorgang, und die Meldung käme von SQLite statt von Mietfuchs.
-//    4. Sicherung der db.json anlegen.
 //    5. In eine **eigene Datei** schreiben, nicht in die richtige. Sie heißt
 //       `mietfuchs.sqlite.umstieg` und wird erst am Ende an ihren Platz bewegt. Ein Stromausfall
 //       mittendrin lässt damit nur eine halbe Datei zurück, die niemand benutzt.
@@ -28,7 +27,8 @@
 //    8. Weicht ein einziger Cent ab, wird nicht aktiviert. Es bleibt alles, wie es war.
 //    9. Sonst aktivieren: ein `rename`, also ein Schritt, den das Dateisystem ganz oder gar
 //       nicht macht.
-//   10. Protokoll schreiben. Die db.json bleibt liegen, sie ist der Rückweg.
+//   10. Die db.json umbenennen und das Protokoll schreiben. Ihr Inhalt bleibt der Rückweg,
+//       aber unter einem Namen, den niemand für den laufenden Stand hält.
 //
 // **Ohne WAL.** Die Datei für den Umstieg wird bewusst im gewöhnlichen Journalmodus geführt: Ein
 // `rename` bewegt nur die Hauptdatei, die Beidateien (`-wal`, `-shm`) blieben verwaist zurück
@@ -54,10 +54,20 @@ import { count } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import type { ChangeoverState } from '../../../shared/types.ts'
 
-// Die Sicherung heißt wie die Datei, aus der sie stammt, mit einem deutschen Zusatz — wie
-// `db.json.vor-restore` beim Wiederherstellen eines Backups. Wer den Datenordner öffnet, soll
-// ohne Erklärung verstehen, was er vor sich hat.
-export const BACKUP_NAME = 'db.json.vor-umstieg'
+// **Der Name ist die Zusage „ab hier gilt die Datenbank".** Nach einem gelungenen Umstieg heißt
+// die db.json nicht mehr so: Ihr Inhalt bleibt der Rückweg, aber unter einem Namen, den niemand
+// für den laufenden Stand hält. Seit die Routen die Datenbank schreiben, läge sie sonst tot im
+// Ordner und sähe doch aus wie vorher.
+//
+// Deutscher Zusatz wie bei `db.json.vor-restore` und `umstieg-protokoll.txt`: Wer den
+// Datenordner öffnet, ist ein Vermieter und soll ohne Erklärung verstehen, was er vor sich hat.
+// Ohne Umlaut, damit der Name über Dateisysteme und Archive hinweg derselbe bleibt.
+//
+// **Eine gesonderte Sicherungskopie gibt es dafür nicht mehr.** Sie hatte den Sinn, den
+// vorgefundenen Stand einzufrieren, *während* die db.json weiterbenutzt wurde. Das tut sie seit
+// dem Umstellen der Routen nicht mehr, und zwei byteweise gleiche Dateien nebeneinander
+// erklären niemandem etwas.
+export const LEGACY_JSON_NAME = 'db.json.abgeloest'
 export const TEMP_NAME = 'mietfuchs.sqlite.umstieg'
 export const PROTOCOL_NAME = 'umstieg-protokoll.txt'
 
@@ -178,6 +188,20 @@ async function replaceFile(from: string, to: string): Promise<void> {
   }
 }
 
+// Die db.json unter ihren neuen Namen legen. **Scheitert das, scheitert nicht der Umstieg**:
+// Die Daten sind zu diesem Zeitpunkt übernommen und nachgerechnet, und ein Dateiname ist kein
+// Grund, das alles zu verwerfen. Liegt dort schon eine Datei, gewinnt die neuere; `rename`
+// ersetzt sie.
+function retireLegacyJson(dataDir: string): void {
+  const jsonFile = path.join(dataDir, 'db.json')
+  if (!fs.existsSync(jsonFile)) return
+  try {
+    fs.renameSync(jsonFile, path.join(dataDir, LEGACY_JSON_NAME))
+  } catch {
+    /* siehe oben: ein Dateiname ist kein Grund, einen gelungenen Umstieg zu verwerfen */
+  }
+}
+
 // ---------- Das Protokoll ----------
 
 const germanDateTime = (at: Date): string => {
@@ -238,8 +262,9 @@ function protocolText(protocol: Protocol): string {
     lines.push('Was sich dadurch ändert:', ...protocol.notes.map((note) => `  ${note}`), '')
   }
   lines.push(
-    'Die bisherige Datei db.json bleibt liegen, daneben eine Kopie ihres Standes vor dem Umstieg',
-    `(${BACKUP_NAME}). Am Backup ändert sich nichts: weiterhin diesen Ordner kopieren.`,
+    `Die bisherige Datei db.json heißt ab jetzt ${LEGACY_JSON_NAME}. Ihr Inhalt ist unverändert`,
+    'und bleibt der Rückweg; gelesen und geschrieben wird ab jetzt die Datenbank. Am Backup',
+    'ändert sich nichts: weiterhin diesen Ordner kopieren.',
   )
   return lines.join('\n')
 }
@@ -294,6 +319,12 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     // Version arbeitet damit). Ein zweiter wäre ein Überschreiben.
     const filled = await firstFilledTable(opened.db)
     if (filled) {
+      // **Hier wird die db.json bewusst nicht umbenannt.** Verlockend wäre es: Stirbt der
+      // Prozess zwischen dem Aktivieren und dem Umbenennen, bliebe eine unter altem Namen
+      // zurück. Aber dieselbe Lage entsteht auch, wenn jemand eine alte db.json in einen Ordner
+      // mit gefüllter Datenbank kopiert, und die beiden sind von hier aus nicht zu
+      // unterscheiden. Sie „abgelöst" zu nennen wäre dann eine Zusage, die niemand eingelöst
+      // hat: Nichts an ihr ist je übernommen worden.
       return {
         state: 'none',
         message: `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen.`,
@@ -323,14 +354,6 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     const stock = migrateLegacy(raw)
     const straight = straightenForDatabase(stock)
     notes.push(...notesFor(stock))
-
-    // Schritt 4: die Sicherung. Sie hält den Stand fest, den der Umstieg vorgefunden hat; die
-    // db.json selbst bleibt liegen und wird weiter benutzt.
-    try {
-      fs.copyFileSync(jsonFile, path.join(dataDir, BACKUP_NAME))
-    } catch (err) {
-      stop(`Die Sicherung der Datei db.json ließ sich nicht anlegen: ${messageOf(err)}`)
-    }
 
     // Schritt 5: eine eigene Datei, und zwar eine frische.
     try {
@@ -396,11 +419,12 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       stop(`Die fertige Datenbank ließ sich nicht an ihren Platz bewegen: ${messageOf(err)}`)
     }
 
-    // Schritt 10: Protokoll schreiben und die Datenbank wieder öffnen.
+    // Schritt 10: die db.json umbenennen, Protokoll schreiben, die Datenbank wieder öffnen.
+    retireLegacyJson(dataDir)
     const message =
       'Ihre Daten liegen jetzt in einer Datenbank (mietfuchs.sqlite im Datenordner). Die bisherige ' +
-      `Datei db.json bleibt als Sicherung daneben liegen. Am Backup ändert sich nichts: weiterhin ` +
-      'diesen Ordner kopieren.'
+      `Datei heißt ab jetzt ${LEGACY_JSON_NAME} und bleibt als Rückweg liegen. Am Backup ändert ` +
+      'sich nichts: weiterhin diesen Ordner kopieren.'
     const protocol = writeProtocol(protocolFile, {
       at: now(), counts, years, adjustments, notes,
       outcome: 'Der Umstieg ist gelungen.',

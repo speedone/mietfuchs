@@ -13,7 +13,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import { connect } from '../src/db/client.ts'
+import { LEGACY_JSON_NAME } from '../src/db/changeover.ts'
+import { connect, type Database } from '../src/db/client.ts'
+import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
@@ -109,9 +111,22 @@ const fileOf = (body: { file?: string }): string => {
   return body.file
 }
 
-// Die db.json auf der Platte. Die Tests sehen hinein, weil der Schaden mancher Fehler gerade
-// im dauerhaften Speichern besteht.
-const storedDb = (s: { dataDir: string }): Db => JSON.parse(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8'))
+// Der gespeicherte Bestand, an den Routen vorbei aus der Datenbank gelesen. Die Tests sehen
+// hinein, weil der Schaden mancher Fehler gerade im dauerhaften Speichern besteht: Eine Route
+// kann das Richtige antworten und das Falsche ablegen.
+//
+// Bis Aufgabe 6 stand hier die db.json. Sie wird seit dem Umstellen der Routen nicht mehr
+// fortgeschrieben, ein Blick hinein sähe also den Stand von damals und nicht den von jetzt.
+async function inDatabase<T>(s: { dataDir: string }, read: (db: Database) => Promise<T>): Promise<T> {
+  const connection = await connect(path.join(s.dataDir, 'mietfuchs.sqlite'))
+  try {
+    return await read(connection.db)
+  } finally {
+    connection.close()
+  }
+}
+
+const storedDb = (s: { dataDir: string }) => inDatabase(s, readStock)
 
 // Die letzte Zeile eines Stroms. Ein leerer Strom ist immer ein Fehler.
 const lastLine = (lines: StreamLine[]): StreamLine => {
@@ -356,12 +371,14 @@ test('Start: eine vorhandene db.json wandert beim ersten Start in die Datenbank'
     const report = await s.api<HealthReport>('/healthz')
     assert.equal(report.database?.changeover.state, 'done', JSON.stringify(report.database))
     assert.match(String(report.database?.changeover.message), /Datenbank/)
-    // Die Sicherung und das Protokoll liegen daneben, die db.json selbst ist unberührt.
-    assert.ok(fs.existsSync(path.join(dataDir, 'db.json.vor-umstieg')), 'die Sicherung fehlt')
+    // Die db.json heißt danach anders, und das Protokoll liegt daneben. Ihr Inhalt bleibt der
+    // Rückweg, aber unter einem Namen, den niemand für den laufenden Stand hält: Seit die Routen
+    // die Datenbank schreiben, läge sie sonst tot im Ordner und sähe doch aus wie vorher.
+    assert.equal(fs.existsSync(path.join(dataDir, 'db.json')), false, 'die db.json heißt noch wie vorher')
+    assert.ok(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), 'die abgelöste db.json fehlt')
     assert.ok(fs.existsSync(path.join(dataDir, 'umstieg-protokoll.txt')), 'das Protokoll fehlt')
-    assert.equal(storedDb(s).units.length, 1)
-    // Gelesen wird an diesem Stand weiterhin aus der db.json; die Oberfläche merkt vom Umstieg
-    // nichts außer der Meldung.
+    assert.equal((await storedDb(s)).units.length, 1)
+    // Und die Oberfläche bekommt die übernommenen Daten, also die aus der Datenbank.
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
     // Und die Datei für den Umstieg ist weg.
     assert.equal(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.umstieg')), false)
@@ -370,10 +387,17 @@ test('Start: eine vorhandene db.json wandert beim ersten Start in die Datenbank'
   }
 })
 
-test('Start: ein Bestand, der nicht übernommen werden kann, hält den Server nicht auf', async () => {
-  // Der Nutzer ist nie blockiert: Mietfuchs läuft weiter, arbeitet mit der db.json und sagt,
-  // woran es lag. Ein negativer Zählerstand ist über die Oberfläche erzeugbar, also genau der
-  // Fall, der einem echten Vermieter passieren kann.
+test('Start: ein Bestand, der nicht übernommen werden kann, sperrt die Datenrouten', async () => {
+  // **Hier kehrt sich die Regel um, und zwar seit die Routen die Datenbank lesen.** Vorher lief
+  // Mietfuchs nach einem gescheiterten Umstieg mit der db.json weiter, und Blockieren wäre
+  // schlimmer gewesen als Weitermachen. Jetzt stünde bei einem „Weiter" eine leere Datenbank als
+  // Antwort da: Der Vermieter sähe ein leeres Haus, und speicherte er etwas hinein, gäbe es
+  // danach zwei Bestände. Seine db.json wäre für immer abgehängt, denn der nächste Umstieg
+  // unterbleibt, sobald in der Datenbank etwas steht. Deshalb gilt die zweite Zusage aus
+  // changeover.ts vor der ersten: nie Daten verlieren, notfalls auf Kosten des Weiterarbeitens.
+  //
+  // Ein negativer Zählerstand ist über die Oberfläche erzeugbar, also genau der Fall, der einem
+  // echten Vermieter passieren kann.
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
     settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
@@ -385,21 +409,28 @@ test('Start: ein Bestand, der nicht übernommen werden kann, hält den Server ni
   }))
   const s = await startServerIn(dataDir)
   try {
-    const report = await s.api<HealthReport>('/healthz')
-    assert.equal(report.status, 'ok', 'der Server arbeitet weiter')
+    const report = await jsonOf<HealthReport>(await fetch(`${s.base}/healthz`))
+    assert.equal(report.status, 'error', 'ein Container soll das sehen')
     assert.equal(report.database?.changeover.state, 'failed', JSON.stringify(report.database))
     assert.match(String(report.database?.changeover.message), /Küche/, 'die Meldung nennt die Ablesung')
-    // Die Oberfläche bedient sich weiter aus der db.json.
-    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
-    assert.equal(fs.existsSync(path.join(dataDir, 'db.json.vor-umstieg')), false, 'geprüft wird vor dem Schreiben')
+
+    // Die Datenrouten antworten, statt eine leere Datenbank für den Bestand auszugeben.
+    const units = await fetch(`${s.base}/api/units`)
+    assert.equal(units.status, 503)
+    assert.match(await errorFrom(units), /nicht.*übernommen|db\.json/i, 'die Meldung erklärt nichts')
+
+    // Und der Bestand liegt unberührt da, unter seinem eigenen Namen: Gescheitert heißt, dass
+    // nichts angefasst wurde.
+    assert.ok(fs.existsSync(path.join(dataDir, 'db.json')), 'die db.json ist weg')
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false, 'ein gescheiterter Umstieg benennt nichts um')
   } finally {
     s.stop()
   }
 })
 
-test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () => {
-  // An diesem Stand braucht der Nutzer die Datenbank noch gar nicht. Ihn deswegen auszusperren
-  // wäre die falsche Reihenfolge; ab dem Umstieg der Bestände kehrt sich das um.
+test('Start: eine unbrauchbare Datenbank sperrt die Datenrouten', async () => {
+  // Dieselbe Umkehr wie beim gescheiterten Umstieg, nur eine Stufe früher: Ohne Datenbank gibt
+  // es die Daten nicht, und etwas anderes vorzugeben wäre schlimmer als die Sperre.
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), 'das ist keine Datenbank, sondern Text')
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
@@ -409,18 +440,18 @@ test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () =
   }))
   const s = await startServerIn(dataDir)
   try {
-    const report = await s.api<HealthReport>('/healthz')
-    assert.equal(report.status, 'ok', 'der Server arbeitet weiter')
+    const report = await jsonOf<HealthReport>(await fetch(`${s.base}/healthz`))
+    assert.equal(report.status, 'error', 'ein Container soll das sehen')
     if (!report.database) assert.fail('der Zustandsbericht nennt die Datenbank nicht')
     assert.equal(report.database.open, false)
     assert.match(report.database.detail, /beschädigt/)
-    // Und die Wohnungen kommen weiter aus der db.json.
-    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
+    // Die Wohnungen gibt es nicht, und die Route sagt das, statt eine leere Liste zu liefern.
+    const units = await fetch(`${s.base}/api/units`)
+    assert.equal(units.status, 503)
     // Ohne geöffnete Datenbank gibt es keinen Umstieg. Wer eine db.json hat, soll erfahren,
     // warum seine Daten nicht umgezogen sind, und zwar an derselben Stelle wie sonst auch.
     assert.equal(report.database.changeover.state, 'failed')
     assert.match(report.database.changeover.message, /nicht öffnen/)
-    assert.match(report.database.changeover.message, /db\.json weiter/)
   } finally {
     s.stop()
   }
@@ -526,8 +557,8 @@ test('Anlegen: ein Rumpf, der kein Objekt ist, legt keine Indizes als Felder an'
   try {
     // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern. Geprüft wird, dass es das
     // Feld gar nicht gibt, nicht nur, dass es undefined ist.
-    const stored = storedDb(srv).units.find((u) => u.id === created.id)
-    assert.ok(stored && !('0' in stored), 'Index als Feld in der db.json')
+    const stored = (await storedDb(srv)).units.find((u) => u.id === created.id)
+    assert.ok(stored && !('0' in stored), 'Index als Feld im gespeicherten Bestand')
     assert.ok(!('0' in created))
     const listed = (await srv.api<Unit[]>('/api/units')).find((u) => u.id === created.id)
     assert.ok(listed && !('0' in listed))
@@ -550,7 +581,7 @@ test('Ändern: ein Rumpf, der kein Objekt ist, lässt den Datensatz unangetastet
     assert.equal(res.status, 200)
     const updated = await jsonOf<Unit>(res)
     // Zuerst die Platte: Der Schaden bestand im dauerhaften Speichern
-    const stored = storedDb(srv).units.find((u) => u.id === unit.id)
+    const stored = (await storedDb(srv)).units.find((u) => u.id === unit.id)
     assert.ok(stored && !('0' in stored))
     assert.equal(stored?.name, 'Rumpfprobe')
     assert.ok(!('0' in updated))
@@ -572,7 +603,13 @@ test('Wohnungen: Eigennutzungs-Felder überleben Anlegen und Ändern', async () 
     body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true, selfUsed: false, selfPersons: null }),
   })
   assert.equal(updated.selfUsed, false)
-  assert.equal(updated.selfPersons, null)
+  // **Geleert heißt seit dem Umstieg „nicht da" und nicht mehr `null`.** Die Oberfläche schickt
+  // zum Leeren weiterhin `null` (unitForm.ts), aber `Unit.selfPersons` ist als `number | undefined`
+  // beschrieben und kennt gar kein `null`. Die db.json legte jeden Wert unbesehen ab und gab
+  // deshalb `null` zurück, was dem eigenen Typ widersprach; die Spalte kennt nur NULL, und
+  // read.ts macht daraus das fehlende Feld, das der Typ vorsieht. Für die Berechnung ist beides
+  // dasselbe, nämlich keine Zahl.
+  assert.equal(updated.selfPersons, undefined)
   await srv.api(`/api/units/${unit.id}`, { method: 'DELETE' })
 })
 
@@ -687,9 +724,11 @@ test('Vor dieser Version eingefrorene Abrechnung liefert einen Eigenanteil von 0
 // Zeichenkette mit dem 31.12. des Folgejahrs. Ein beliebiger Wert aus dem Rumpf der Anfrage
 // darf dort deshalb nie ankommen — er bliebe dauerhaft in der db.json stehen.
 
-// Der eingefrorene Stand eines Jahres, so wie er auf der Platte steht
-const closedOf = (s: { dataDir: string }, year: number) =>
-  (storedDb(s).closedSettlements ?? []).find((c) => c.year === year)
+// Der eingefrorene Stand eines Jahres, so wie er auf der Platte steht. Gelesen wird die
+// gespeicherte Fassung und nicht die Sicht des Schnappschusses: Geprüft wird hier `sentAt`,
+// und das liest die Berechnung gar nicht.
+const closedOf = async (s: { dataDir: string }, year: number) =>
+  (await inDatabase(s, readClosedSettlements)).find((c) => c.year === year)
 
 // Alles, was kein Datum als JJJJ-MM-TT ist: falscher Typ, deutsche Schreibweise, Zeitstempel
 // und Tage, die es im Kalender nicht gibt.
@@ -707,15 +746,15 @@ const closeRequest = (method: string, year: number, body: unknown): Promise<Resp
 
 test('Versanddatum: ohne Angabe abgeschlossen, mit Datum nachgetragen, leer wieder gelöscht', async () => {
   await srv.api('/api/settlement/2040/close', { method: 'POST', body: JSON.stringify({}) })
-  assert.equal(closedOf(srv, 2040)?.sentAt, null)
+  assert.equal((await closedOf(srv, 2040))?.sentAt, null)
 
   // So schickt es die Oberfläche aus <input type="date">
   await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: '2041-03-14' }) })
-  assert.equal(closedOf(srv, 2040)?.sentAt, '2041-03-14')
+  assert.equal((await closedOf(srv, 2040))?.sentAt, '2041-03-14')
 
   // Ein geleertes Feld heißt „doch noch nicht versendet"
   await srv.api('/api/settlement/2040/close', { method: 'PUT', body: JSON.stringify({ sentAt: null }) })
-  assert.equal(closedOf(srv, 2040)?.sentAt, null)
+  assert.equal((await closedOf(srv, 2040))?.sentAt, null)
 
   await srv.api('/api/settlement/2040/close', { method: 'DELETE' })
 })
@@ -727,7 +766,7 @@ test('Versanddatum: was kein Datum ist, kommt nicht in die db.json', async () =>
     assert.equal(res.status, 400, `angenommen: ${JSON.stringify(sentAt)}`)
     assert.match(await errorFrom(res), /Versanddatum/)
   }
-  assert.equal(closedOf(srv, 2041)?.sentAt, '2042-05-02', 'das gespeicherte Datum wurde überschrieben')
+  assert.equal((await closedOf(srv, 2041))?.sentAt, '2042-05-02', 'das gespeicherte Datum wurde überschrieben')
 
   await srv.api('/api/settlement/2041/close', { method: 'DELETE' })
 })
@@ -737,7 +776,7 @@ test('Versanddatum: ein ungültiges Datum friert die Abrechnung gar nicht erst e
     const res = await closeRequest('POST', 2042, { sentAt })
     assert.equal(res.status, 400, `angenommen: ${JSON.stringify(sentAt)}`)
   }
-  assert.equal(closedOf(srv, 2042), undefined)
+  assert.equal(await closedOf(srv, 2042), undefined)
 })
 
 // ---------- Update-Hinweis ----------
@@ -1223,15 +1262,13 @@ async function withEnv(env: NodeJS.ProcessEnv, fn: (s: Server) => Promise<void>)
   }
 }
 
-// Die Einstellungen, wie sie wirklich in der db.json stehen. `ai` ergänzt der Server beim
-// Laden, es steht also auch in der Datei — fehlt es dort, ist genau das der Befund. Was die
-// Oberfläche nur anzeigt (fixedByEnv, aiKeys, aiExternal), darf dort gerade nicht stehen, und
-// deshalb ist hier bewusst nicht ClientSettings der Typ: Diese Felder bleiben optional, mehrere
-// Tests prüfen ihr Fehlen.
-const storedSettings = (s: { dataDir: string }): MigratedSettings => {
-  const settings = storedDb(s).settings
+// Die Einstellungen, wie sie wirklich in der Datenbank stehen. Was die Oberfläche nur anzeigt
+// (fixedByEnv, aiKeys, aiExternal), darf dort gerade nicht stehen, und deshalb ist hier bewusst
+// nicht ClientSettings der Typ: Diese Felder bleiben optional, mehrere Tests prüfen ihr Fehlen.
+const storedSettings = async (s: { dataDir: string }): Promise<MigratedSettings> => {
+  const settings = (await storedDb(s)).settings
   const { ai } = settings
-  if (!ai) assert.fail('in der db.json fehlen die KI-Einstellungen')
+  if (!ai) assert.fail('in der Datenbank fehlen die KI-Einstellungen')
   return { ...settings, ai }
 }
 
@@ -1255,7 +1292,7 @@ test('Ollama: Speichern lässt fest vorgegebene Werte unberührt, alles andere w
     })
     assert.equal(response.ollamaUrl, 'http://ki.intern:11434')
     assert.deepEqual(response.fixedByEnv, ['ollamaUrl', 'ai.text.url'])
-    const stored = storedSettings(s)
+    const stored = await storedSettings(s)
     assert.equal(stored.ollamaUrl, 'http://localhost:11434') // Standard bleibt, Env landet nicht in der db.json
     assert.equal(stored.ai.text.url, 'http://localhost:11434')
     assert.equal(stored.ollamaModel, 'eigenes:2b')
@@ -1705,20 +1742,20 @@ test('Backup: ein Archiv mit beschädigten Daten wird abgelehnt, ohne etwas zu e
   // und danach beantwortete der Server keine einzige Anfrage mehr: Beim Einlesen verdrängt das
   // `null` den Vorgabewert, die Liste ist keine mehr, und jeder weitere Aufruf scheitert erneut.
   await withData(async (s, { unit, file }) => {
-    const vorher = fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')
     const kaputt = { settings: {}, units: null, tenancies: [], costItems: [], meters: [], readings: [], payments: [] }
     const r = await restore(s, archive({ 'uploads/fremd.pdf': 'x' }, kaputt))
     assert.equal(r.status, 400)
     // Die Meldung nennt, was nicht stimmt, und sagt, dass nichts verändert wurde.
     assert.match(errorOf(r.body), /Wohnungen/)
     assert.match(errorOf(r.body), /unverändert/)
-    // Und wirklich nichts ersetzt: weder die Daten noch die Belege. Die fehlende
-    // Sicherheitskopie ist dabei die schärfste der drei Zusicherungen: Hier **gäbe** es einen
-    // Stand zu sichern, die db.json steht ja da. Dass sie trotzdem nicht entstanden ist, heißt,
-    // dass die Route gar nicht erst bis zum Ersetzen gekommen ist.
-    assert.equal(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8'), vorher)
+    // Und wirklich nichts ersetzt: weder die Daten noch die Belege. Die fehlenden
+    // Sicherheitskopien sind dabei die schärfste Zusicherung: Hier **gäbe** es einen Stand zu
+    // sichern, die Datenbank steht ja da. Dass sie trotzdem nicht entstanden sind, heißt, dass
+    // die Route gar nicht erst bis zum Ersetzen gekommen ist.
     assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json.vor-restore')), false)
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'mietfuchs.sqlite.vor-restore')), false)
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual(await unitRowsInDatabase(s.dataDir), [unit.id], 'die Datenbank ist angefasst worden')
     assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file])
   })
 })
@@ -1895,24 +1932,14 @@ async function stopKeepingData(s: Awaited<ReturnType<typeof startServerIn>>): Pr
   await ende
 }
 
-// Ein Server mit **gefüllter** Datenbank. Beim ersten Start gibt es noch keine db.json, der
-// Umstieg hat also nichts zu übernehmen; erst der zweite Start findet sie vor. Genau diesen Weg
-// geht auch der Nutzer, der auf die neue Version aktualisiert.
+// Ein Server mit gefüllter Datenbank. Seit die Routen die Datenbank schreiben, genügt dafür ein
+// Aufruf: Was angelegt wird, steht sofort dort. (Vorher musste der Server dafür zweimal starten,
+// damit der Umstieg die db.json übernimmt.)
 async function withFilledDatabase(fn: (s: Awaited<ReturnType<typeof startServerIn>>, unit: Unit) => Promise<void>) {
-  const erster = await startServer()
-  let unit: Unit
+  const s = await startServer()
   try {
-    unit = await erster.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
-    await stopKeepingData(erster)
-  } catch (err) {
-    erster.stop()
-    throw err
-  }
-  const s = await startServerIn(erster.dataDir)
-  try {
-    const bericht = await s.api<HealthReport>('/healthz')
-    if (!bericht.database) assert.fail(`der Zustandsbericht nennt die Datenbank nicht: ${JSON.stringify(bericht)}`)
-    assert.equal(bericht.database.changeover.state, 'done', 'der Umstieg ist beim zweiten Start gelaufen')
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    assert.deepEqual(await unitRowsInDatabase(s.dataDir), [unit.id], 'die Wohnung steht nicht in der Datenbank')
     await fn(s, unit)
   } finally {
     s.stop()
@@ -1942,9 +1969,11 @@ test('Backup: das Archiv enthält die Datenbank und sagt, woher es stammt', asyn
   await withFilledDatabase(async (s) => {
     const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
     const namen = zip.getEntries().map((e) => e.entryName)
-    assert.ok(namen.includes('db.json'), namen.join(', '))
     assert.ok(namen.includes('mietfuchs.sqlite'), namen.join(', '))
     assert.ok(namen.includes('mietfuchs-backup.json'), namen.join(', '))
+    // Die db.json steht nur im Archiv, wenn es sie gibt. Auf einem Rechner, der nie eine hatte,
+    // entsteht sie seit dem Umstieg der Routen gar nicht mehr.
+    assert.equal(namen.includes('db.json'), fs.existsSync(path.join(s.dataDir, 'db.json')), namen.join(', '))
 
     const info: unknown = JSON.parse(zip.readAsText('mietfuchs-backup.json'))
     assert.ok(info !== null && typeof info === 'object')
@@ -1979,7 +2008,6 @@ test('Backup: zwei gleichzeitige Anfragen liefern beide ein vollständiges Archi
       assert.equal(antwort.status, 200, `Anfrage ${i + 1} scheiterte`)
       const namen = new AdmZip(antwort.body).getEntries().map((e) => e.entryName)
       assert.ok(namen.includes('mietfuchs.sqlite'), `Anfrage ${i + 1} ohne Datenbank: ${namen.join(', ')}`)
-      assert.ok(namen.includes('db.json'), `Anfrage ${i + 1} ohne db.json: ${namen.join(', ')}`)
     })
   })
 })
@@ -2052,19 +2080,141 @@ test('Backup: ein Archiv ohne Datenbank baut sie aus der db.json neu auf', async
   // und die alte Datenbank stehen zu lassen wäre der schlimmste Ausgang: Nach Aufgabe 6 sähe
   // der Nutzer eine Bestätigung und arbeitete mit den Daten von vorher weiter.
   await withFilledDatabase(async (s, unit) => {
-    const zip = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
-    zip.deleteFile('mietfuchs.sqlite')
-    zip.deleteFile('mietfuchs-backup.json')
+    // Ein Archiv, wie es eine ältere Version gepackt hat: nur die db.json, keine Datenbank und
+    // keine Herkunftsangabe. Es wird hier von Hand gebaut, denn ein heutiges Backup führt genau
+    // das nicht mehr — und dieser Test steht gerade für die Archive, die bei den Nutzern schon
+    // liegen.
+    const alt = archive({}, {
+      settings: {},
+      units: [{ id: 'aus-dem-archiv', name: 'Aus dem Archiv', areaM2: 55, participates: true }],
+      tenancies: [], costItems: [], meters: [], readings: [], payments: [],
+    })
 
-    // Eine zweite Wohnung anlegen, damit sich der Stand vor und nach dem Einspielen unterscheidet.
-    const zweite = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'OG', areaM2: 60, participates: true }) })
-    assert.equal((await s.api<Unit[]>('/api/units')).length, 2)
+    // Der Stand vorher ist ein anderer, sonst bewiese der Test nichts.
+    assert.deepEqual(await unitRowsInDatabase(s.dataDir), [unit.id], 'der Ausgangsstand stimmt nicht')
 
-    assert.equal((await restore(s, zip.toBuffer())).status, 200)
-    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
-    // Und die Datenbank ist neu entstanden, mit dem Stand des Archivs und ohne die zweite Wohnung.
-    assert.deepEqual(await unitsInDatabase(s.dataDir), [unit.id], `${zweite.id} steht noch in der Datenbank`)
+    assert.equal((await restore(s, alt)).status, 200)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['aus-dem-archiv'])
+    // Und die Datenbank ist aus der db.json neu entstanden, mit demselben Stand.
+    assert.deepEqual(await unitRowsInDatabase(s.dataDir), ['aus-dem-archiv'], 'die Datenbank trägt den alten Stand')
   })
+})
+
+// ---------- Die Routen lesen und schreiben die Datenbank (#55, Aufgabe 6) ----------
+//
+// Ab hier ist die Datenbank maßgeblich. Drei Zusagen hängen daran, und jede hat ihren Test: Was
+// gespeichert wird, steht in der Datenbank; ein unbekanntes Feld kommt nicht an (#60); und ohne
+// Datenbank gibt es keine Daten, also auch keine Antwort, die so tut, als gäbe es welche.
+
+// Die Wohnungen, wie sie in der Datenbank stehen — an den Routen vorbei gelesen. Nur so lässt
+// sich unterscheiden, ob eine Route wirklich dort geschrieben hat oder nur in der db.json.
+async function unitRowsInDatabase(dataDir: string): Promise<string[]> {
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  try {
+    return connection.rows('SELECT id FROM units ORDER BY rowid').map((zeile) => String(zeile[0]))
+  } finally {
+    connection.close()
+  }
+}
+
+test('Speichern landet in der Datenbank und nicht in der db.json', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    assert.deepEqual(await unitRowsInDatabase(s.dataDir), [unit.id], 'die Wohnung steht nicht in der Datenbank')
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+
+    // Und die db.json wird nicht mehr fortgeschrieben. Sie bleibt, was sie nach dem Umstieg ist:
+    // der Stand von damals, kein mitlaufendes Abbild.
+    const jsonFile = path.join(s.dataDir, 'db.json')
+    if (fs.existsSync(jsonFile)) {
+      assert.ok(!fs.readFileSync(jsonFile, 'utf8').includes(unit.id), 'die Wohnung steht in der db.json')
+    }
+  } finally {
+    s.stop()
+  }
+})
+
+test('Ein unbekanntes Feld wird nicht mitgespeichert', async () => {
+  // #60: `PUT /api/settings` und die CRUD-Routen übernahmen jeden Schlüssel des Rumpfes, auch
+  // einen erfundenen, und er blieb dauerhaft im Datenbestand stehen. Mit Spalten gibt es für ihn
+  // keinen Ort mehr.
+  const s = await startServer()
+  try {
+    const angelegt = await s.api<Unit>('/api/units', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true, fremdesFeld: 'bleibt haengen' }),
+    })
+    assert.ok(!JSON.stringify(angelegt).includes('bleibt haengen'), JSON.stringify(angelegt))
+    const gelesen = await s.api<Unit[]>('/api/units')
+    assert.ok(!JSON.stringify(gelesen).includes('bleibt haengen'), JSON.stringify(gelesen))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Einstellungen landen in der Datenbank und überleben einen Neustart', async () => {
+  // Sie werden im Arbeitsspeicher gehalten, weil sie auf fast jedem Weg gelesen und selten
+  // geschrieben werden. Genau deshalb braucht es diesen Test: Ein Zwischenspeicher, der beim
+  // Schreiben nicht bis zur Platte durchschlägt, sieht im laufenden Betrieb völlig richtig aus
+  // und ist beim nächsten Start weg.
+  const erster = await startServer()
+  let dataDir: string
+  try {
+    dataDir = erster.dataDir
+    await erster.api('/api/settings', { method: 'PUT', body: JSON.stringify({ houseName: 'Haus am Park', paymentDeadlineDays: 45 }) })
+    assert.equal((await erster.api<ClientSettings>('/api/settings')).houseName, 'Haus am Park')
+
+    const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+    try {
+      const zeilen = connection.rows('SELECT house_name, payment_deadline_days FROM settings')
+      assert.deepEqual(zeilen, [['Haus am Park', 45]], 'die Einstellungen stehen nicht in der Datenbank')
+    } finally {
+      connection.close()
+    }
+    await stopKeepingData(erster)
+  } catch (err) {
+    erster.stop()
+    throw err
+  }
+  const zweiter = await startServerIn(dataDir)
+  try {
+    const nachNeustart = await zweiter.api<ClientSettings>('/api/settings')
+    assert.equal(nachNeustart.houseName, 'Haus am Park', 'nach dem Neustart ist der Hausname weg')
+    assert.equal(nachNeustart.paymentDeadlineDays, 45)
+  } finally {
+    zweiter.stop()
+  }
+})
+
+test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () => {
+  // Die Umkehrung des bisherigen Zustands: Bis zum Umstieg war eine nicht geöffnete Datenbank
+  // harmlos, weil Mietfuchs mit der db.json weiterarbeitete. Jetzt liegen die Daten dort, und
+  // ein Start ohne sie ist ein Start ohne Daten. Eine leere Liste wäre die schlimmste Antwort:
+  // Sie sähe aus wie „Sie haben noch nichts erfasst".
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-ohne-db-'))
+  // Eine Datei, die keine Datenbank ist. Der Server startet trotzdem, damit die Oberfläche die
+  // Meldung zeigen kann; die Datenrouten antworten aber nicht mit Daten.
+  fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), 'Das ist ein Brief und keine Datenbank.', 'utf8')
+  const s = await startServerIn(dataDir)
+  try {
+    const res = await fetch(`${s.base}/api/units`)
+    assert.equal(res.status, 503, `erwartet 503, bekommen ${res.status}`)
+    assert.match(errorOf(await jsonOf<{ error?: string }>(res)), /Datenbank/)
+
+    // Nicht über `s.api`: Der Helfer wirft bei allem außer 200, und genau das tut /healthz hier
+    // zu Recht. Ein Container, der den Zustand abfragt, soll einen Fehler sehen und keine 200
+    // mit „error" im Rumpf.
+    const health = await fetch(`${s.base}/healthz`)
+    assert.equal(health.status, 503, 'der Zustandsbericht meldet sich als gesund')
+    const bericht = await jsonOf<HealthReport>(health)
+    if (!bericht.database) assert.fail('der Zustandsbericht nennt die Datenbank nicht')
+    assert.equal(bericht.database.open, false)
+    // Ab jetzt ist das ein Fehler und kein Hinweis: Ein Container soll ihn sehen.
+    assert.equal(bericht.status, 'error', `der Bericht meldet „${bericht.status}"`)
+  } finally {
+    s.stop()
+  }
 })
 
 // ---------- API-Schlüssel externer KI-Dienste (#18) ----------
@@ -2083,11 +2233,13 @@ test('Schlüssel: wird gespeichert, erscheint aber nirgends im Klartext', async 
     assert.deepEqual(settings.aiKeys.text, { set: true, hint: '…abcd', fromEnv: null })
     assert.deepEqual(settings.aiKeys.images, { set: false, hint: '', fromEnv: null })
     assert.ok(!JSON.stringify(settings).includes(SECRET), 'Schlüssel in /api/settings')
-    // Speichert die Oberfläche die Einstellungen samt `aiKeys` zurück, landet nichts davon in der db.json
+    // Speichert die Oberfläche die Einstellungen samt `aiKeys` zurück, landet nichts davon in der
+    // Datenbank. Gelesen wird sie dafür **als Bytes**: Ein Schlüssel, der irgendwo in einer
+    // Spalte gelandet wäre, die hier niemand vermutet, steht trotzdem in der Datei.
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(settings) })
-    const db = fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')
-    assert.ok(!db.includes(SECRET), 'Schlüssel in der db.json')
-    assert.ok(!db.includes('aiKeys'), 'aiKeys in der db.json')
+    const db = fs.readFileSync(path.join(s.dataDir, 'mietfuchs.sqlite'), 'latin1')
+    assert.ok(!db.includes(SECRET), 'Schlüssel in der Datenbank')
+    assert.ok(!db.includes('aiKeys'), 'aiKeys in der Datenbank')
     assert.equal(JSON.parse(fs.readFileSync(path.join(s.dataDir, 'secrets.json'), 'utf8')).text, SECRET)
   })
 })
@@ -2290,7 +2442,7 @@ test('KI-Einstellungen: Wechsel zu OpenAI wird gespeichert, die Ollama-Felder bl
     const before = await s.api<ClientSettings>('/api/settings')
     const saved = await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...before, ai: { ...before.ai, text: OPENAI_SLOT } }) })
     assert.deepEqual(saved.ai.text, OPENAI_SLOT)
-    const stored = storedSettings(s)
+    const stored = await storedSettings(s)
     assert.deepEqual(stored.ai.text, OPENAI_SLOT)
     assert.equal(stored.ollamaUrl, 'http://localhost:11434')
     assert.equal(stored.aiKeys, undefined)
@@ -2320,7 +2472,7 @@ test('KI-Einstellungen: NKA_AI_PROVIDER, NKA_AI_URL und NKA_AI_MODEL gelten und 
     // NKA_OLLAMA_URL gilt nicht, solange ein anderer Anbieter festgelegt ist
     assert.deepEqual(settings.fixedByEnv, ['ai.text.provider', 'ai.text.url', 'ai.text.model'])
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ...settings, landlordName: 'X' }) })
-    const stored = storedSettings(s)
+    const stored = await storedSettings(s)
     assert.equal(stored.ai.text.provider, 'ollama') // Werte aus der Umgebung landen nicht in der db.json
     assert.equal(stored.ai.text.url, 'http://localhost:11434')
   })
@@ -2849,7 +3001,7 @@ test('Einstellungen: aiExternal sagt je Platz, ob die Adresse aus dem Haus zeigt
     const saved = await putAi(s, { images: { provider: 'openai', preset: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-5.4-nano', vision: true } })
     assert.deepEqual(saved.aiExternal, { text: false, images: true })
     // aiExternal gehört nicht in die db.json
-    assert.equal(storedSettings(s).aiExternal, undefined)
+    assert.equal((await storedSettings(s)).aiExternal, undefined)
   })
 })
 
@@ -2864,7 +3016,7 @@ test('Einstellungen: ein Rumpf, der kein Objekt ist, ändert nichts', async () =
   assert.equal(res.status, 200)
   assert.ok(!('0' in await jsonOf<ClientSettings>(res)))
   assert.ok(!('0' in await srv.api<ClientSettings>('/api/settings')))
-  assert.ok(!('0' in storedSettings(srv)))
+  assert.ok(!('0' in await storedSettings(srv)))
 })
 
 // ---------- Befunde aus der Codeprüfung ----------

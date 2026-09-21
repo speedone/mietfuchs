@@ -14,7 +14,8 @@
 
 import { sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
-import type { MigratedSettings } from '../ai/settings.ts'
+import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
+import { DEFAULT_SETTINGS } from '../defaults.ts'
 import type { SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
@@ -231,13 +232,21 @@ export async function readStock(db: Database): Promise<Stock> {
   }
 }
 
-// Die Einstellungen samt der beiden KI-Plätze. Fehlt die Zeile, ist die Datenbank leer; dann
-// gilt, was auch eine fehlende db.json ergibt, nämlich die Vorgabewerte. Diese Frage beantwortet
-// der Aufrufer besser selbst, deshalb steht hier kein Rückfall, sondern der Bestand, wie er
-// dasteht.
+// Die Einstellungen samt der beiden KI-Plätze.
+//
+// **Fehlt die Zeile, gelten die Vorgabewerte einer neuen Einrichtung.** Das ist der häufigste
+// Fall überhaupt, nämlich jeder erste Start, denn die Zeile entsteht erst beim ersten Speichern.
+// Früher beantwortete das `load()` in store.ts, indem es eine fehlende db.json mit `DEFAULT_DB`
+// auffüllte; die Datenbank ist deren Nachfolgerin und antwortet deshalb genauso.
+//
+// Entschieden wird das an der **Zeile** und nie an einem Wert. Ein Feld, das der Nutzer geleert
+// hat, bleibt leer; eine Adresse still durch die Voreinstellung zu ersetzen, wäre eine Änderung
+// hinter seinem Rücken. Deshalb steht der Rückfall ganz oben und nicht als `?? ''` an jedem
+// einzelnen Feld.
 export async function readSettings(db: Database): Promise<MigratedSettings> {
   const rows = await db.select().from(settings).orderBy(INSERTION_ORDER)
   const row = rows[0]
+  if (!row) return migrateAi({ ...DEFAULT_SETTINGS })
   const slotRows = await db.select().from(aiSlots).orderBy(INSERTION_ORDER)
   const slotOf = (name: 'text' | 'images'): AiSlot | null => {
     const found = slotRows.find((s) => s.slot === name)
@@ -250,36 +259,38 @@ export async function readSettings(db: Database): Promise<MigratedSettings> {
       consent[slot.slot] = { url: slot.consentUrl, model: slot.consentModel, date: slot.consentDate }
     }
   }
-  // Ohne Zeile für den Standard-Platz gäbe es keinen Anbieter. Das kann nur in einer leeren
-  // Datenbank vorkommen; dann steht hier dasselbe, was eine frische Einrichtung ergibt.
-  const text = slotOf('text') ?? { provider: 'ollama', preset: 'ollama-local', url: row?.ollamaUrl ?? '', model: row?.ollamaModel ?? '', vision: null }
+  // Ohne Zeile für den Standard-Platz gäbe es keinen Anbieter. Durch Mietfuchs selbst kann das
+  // nicht entstehen: Einstellungen und Plätze werden immer zusammen in einer Transaktion
+  // geschrieben. Ein Wert muss hier trotzdem stehen, weil der Typ einen verlangt, und die alten
+  // Ollama-Felder derselben Zeile sind das Nächstliegende.
+  const text = slotOf('text') ?? { provider: 'ollama', preset: 'ollama-local', url: row.ollamaUrl, model: row.ollamaModel, vision: null }
   const ai: AiSettings = {
     text,
     images: slotOf('images'),
-    timeoutSeconds: row?.aiTimeoutSeconds ?? null,
-    numCtx: row?.aiNumCtx ?? null,
-    maxOutputTokens: row?.aiMaxOutputTokens ?? null,
-    pageImageEdge: row?.aiPageImageEdge ?? null,
-    jsonMode: row?.aiJsonMode ?? 'auto',
-    reasoningEffort: row?.aiReasoningEffort ?? null,
-    extraInstructions: row?.aiExtraInstructions ?? '',
+    timeoutSeconds: row.aiTimeoutSeconds,
+    numCtx: row.aiNumCtx,
+    maxOutputTokens: row.aiMaxOutputTokens,
+    pageImageEdge: row.aiPageImageEdge,
+    jsonMode: row.aiJsonMode,
+    reasoningEffort: row.aiReasoningEffort,
+    extraInstructions: row.aiExtraInstructions,
     consent,
   }
   const stored: Settings = {
-    houseName: row?.houseName ?? '',
-    address: row?.address ?? '',
-    landlordName: row?.landlordName ?? '',
-    iban: row?.iban ?? '',
-    paymentDeadlineDays: row?.paymentDeadlineDays ?? 30,
-    ollamaUrl: row?.ollamaUrl ?? '',
-    ollamaModel: row?.ollamaModel ?? '',
+    houseName: row.houseName,
+    address: row.address,
+    landlordName: row.landlordName,
+    iban: row.iban,
+    paymentDeadlineDays: row.paymentDeadlineDays,
+    ollamaUrl: row.ollamaUrl,
+    ollamaModel: row.ollamaModel,
     // Diese vier gibt es nur, wenn ein Wert dasteht. Ein Feld mit dem Wert `undefined` wäre
     // etwas anderes als ein fehlendes Feld, sobald jemand zwei Stände vergleicht — und genau
     // das tut der Umstieg.
-    ...(row?.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
-    ...(row?.printAttachments == null ? {} : { printAttachments: row.printAttachments }),
-    ...(row?.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
-    ...(row?.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
+    ...(row.printAdjustSuggestion == null ? {} : { printAdjustSuggestion: row.printAdjustSuggestion }),
+    ...(row.printAttachments == null ? {} : { printAttachments: row.printAttachments }),
+    ...(row.updateCheck == null ? {} : { updateCheck: row.updateCheck }),
+    ...(row.updateDismissed == null ? {} : { updateDismissed: row.updateDismissed }),
     ai,
   }
   return { ...stored, ai }

@@ -8,19 +8,30 @@ import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
 import { getDb, save, newId, reloadDb, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
-import { snapshotFromDb } from './snapshot.ts'
+import { snapshotOf } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
 import { listOpenAiModels } from './ai/openai.ts'
 import { checkKeyEnvironment, setKey, deleteKey, keyInfo } from './secrets.ts'
-import { SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl } from './ai/settings.ts'
+import {
+  SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl, migrateAi,
+  type MigratedSettings,
+} from './ai/settings.ts'
+import { DEFAULT_DB } from './legacy.ts'
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
-import { healthReport, type DatabaseState } from './health.ts'
+import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, runChangeover, type ChangeoverResult } from './db/changeover.ts'
+import type { Database } from './db/client.ts'
+import { databaseMessage } from './db/errors.ts'
+import { readSettings, readStock } from './db/read.ts'
+import {
+  closeSettlement, createEntity, findClosedSettlement, invoiceFilesInUse, listCollection,
+  removeEntity, reopenSettlement, setSentAt, updateEntity, writeSettings, type CollectionName,
+} from './db/repository.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
   archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
@@ -117,6 +128,36 @@ const AI_ENV = aiFromEnv()
 // `settings.ai` ist im Datenmodell optional, weil eine db.json von vor #18 es noch nicht kennt.
 // Beim Laden ergänzt store.ts es immer (migrateAi in load()), hier ist es also gesetzt. Die
 // Prüfung benennt den Fall mit einer lesbaren Meldung, statt ihn zu verdecken.
+// ---------- Die Einstellungen im Arbeitsspeicher ----------
+//
+// Sie liegen als Kopie hier, beim Start geladen und nach jeder Änderung neu gelesen.
+//
+// **Warum nicht bei jeder Anfrage aus der Datenbank?** Es ist eine einzige Zeile, und sie wird
+// auf fast jedem Weg gelesen: bei jeder KI-Anfrage, bei jedem Update-Hinweis, auf jeder Seite
+// der Oberfläche. Ein Lesen je Zugriff machte ein Dutzend synchroner Helfer asynchron und zöge
+// die Änderung durch die halbe Datei, ohne dass jemand etwas davon hätte.
+//
+// **Warum das hier trägt:** Mietfuchs ist ein Prozess, und dieser Prozess ist der einzige, der
+// schreibt. Was den Zwischenspeicher ungültig machen kann, ist deshalb aufzählbar, und jede
+// dieser Stellen frischt ihn auf: der Start, `PUT /api/settings`, die beiden Bestätigungsrouten,
+// das Wiederherstellen eines Backups und der Umstieg. Käme je ein zweiter Schreiber dazu, wäre
+// dieser Zwischenspeicher das Erste, was fällt — und dann gehört er auch weg.
+//
+// Aufgefrischt wird **aus der Datenbank** und nicht aus dem, was hineingeschrieben wurde: Was
+// die Spalten nicht aufnehmen, fehlt danach, und die Oberfläche soll denselben Stand sehen wie
+// der nächste Start.
+let storedSettings: MigratedSettings = migrateAi({ ...DEFAULT_DB.settings })
+
+async function refreshSettings(): Promise<void> {
+  storedSettings = await readData(readSettings)
+}
+
+// Speichert den übergebenen Stand und übernimmt danach, was wirklich dasteht.
+async function saveSettings(next: MigratedSettings): Promise<void> {
+  await writeData((db) => writeSettings(db, next))
+  await refreshSettings()
+}
+
 function aiOf(settings: Settings): AiSettings {
   if (!settings.ai) throw new Error('Die KI-Einstellungen fehlen im Datenbestand.')
   return settings.ai
@@ -125,7 +166,7 @@ function aiOf(settings: Settings): AiSettings {
 // Was tatsächlich gilt: gespeicherte Einstellungen, überlagert von der Umgebung. ollamaUrl und
 // ollamaModel zeigen dabei, was für Ollama gilt, für Tabs von vor dem Update.
 function effectiveSettings(): Settings & { ai: AiSettings } {
-  const settings = getDb().settings
+  const settings = storedSettings
   const ai = effectiveAi(aiOf(settings), AI_ENV)
   const legacy = ai.text.provider === 'ollama' ? { ollamaUrl: ai.text.url, ollamaModel: ai.text.model } : {}
   return { ...settings, ...legacy, ai }
@@ -133,7 +174,7 @@ function effectiveSettings(): Settings & { ai: AiSettings } {
 
 // Pfade wie 'ai.text.url', dazu die alten Namen, die ein Tab von vor dem Update kennt
 function fixedByEnv(): string[] {
-  const ai = aiOf(getDb().settings)
+  const ai = aiOf(storedSettings)
   const paths = fixedFields(ai, AI_ENV)
   const legacy = effectiveAi(ai, AI_ENV).text.provider === 'ollama'
     ? [['ai.text.url', 'ollamaUrl'], ['ai.text.model', 'ollamaModel']].filter(([p]) => paths.includes(p)).map(([, name]) => name)
@@ -151,18 +192,23 @@ function settingsForClient() {
 }
 
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', async (req, res) => {
   const body = bodyObject(req)
   const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, ...changes } = body
-  const settings = getDb().settings
+  // Gearbeitet wird auf einer Kopie und nicht auf dem Zwischenspeicher: Scheitert das
+  // Schreiben, soll der Stand im Arbeitsspeicher nicht schon verändert sein und etwas anzeigen,
+  // das nirgends steht.
+  const next = structuredClone(storedSettings)
   // Erst die KI-Einstellungen prüfen: Ist dort etwas ungültig, bleibt alles beim Alten
   try {
-    applyAiChanges(settings, body, AI_ENV)
+    applyAiChanges(next, body, AI_ENV)
   } catch (err) {
     return res.status(statusOf(err)).json({ error: messageOf(err) })
   }
-  Object.assign(settings, changes)
-  save()
+  // `changes` trägt alles, was nicht KI ist. Unbekannte Schlüssel kommen hier zwar noch mit,
+  // finden in den Spalten aber keinen Ort mehr und sind nach dem Zurücklesen verschwunden (#60).
+  Object.assign(next, changes)
+  await saveSettings(next)
   res.json(settingsForClient())
 })
 
@@ -193,29 +239,59 @@ const slotNameOf = (value: unknown): AiSlotName | null => SLOTS.find((known) => 
 // ai/settings.ts). Sie gilt für die Adresse und das Modell, die gerade für diesen Platz gelten,
 // auch wenn sie aus der Umgebung kommen.
 const NO_SLOT = 'Für diesen Platz ist kein KI-Anbieter eingerichtet.'
-app.post('/api/ai/consent', (req, res) => {
+app.post('/api/ai/consent', async (req, res) => {
   const slot = slotNameOf(req.body?.slot)
   const effective = effectiveSettings().ai
   if (!slot) return res.status(400).json({ error: NO_SLOT })
   const target = effective[slot]
   if (!target) return res.status(400).json({ error: NO_SLOT })
   const { url, model } = target
-  const settings = getDb().settings
-  const ai = aiOf(settings)
+  const next = structuredClone(storedSettings)
+  const ai = aiOf(next)
   ai.consent = { ...ai.consent, [slot]: { url, model, date: new Date().toISOString().slice(0, 10) } }
-  save()
+  await saveSettings(next)
   res.json(settingsForClient())
 })
 
-app.delete('/api/ai/consent/:slot', (req, res) => {
+app.delete('/api/ai/consent/:slot', async (req, res) => {
   const slot = slotNameOf(req.params.slot)
   if (!slot) return res.status(400).json({ error: 'Unbekannter Platz.' })
-  const ai = aiOf(getDb().settings)
+  const next = structuredClone(storedSettings)
+  const ai = aiOf(next)
   const { [slot]: _revoked, ...rest } = ai.consent
   ai.consent = rest
-  save()
+  await saveSettings(next)
   res.json(settingsForClient())
 })
+
+// ---------- Der Zugang zu den Daten ----------
+//
+// **Jeder Zugriff geht durch die Spur** (siehe db/open.ts): Lesen wie Schreiben reihen sich ein,
+// weil alle Anfragen sich eine Verbindung teilen und ein Lesevorgang daneben den noch nicht
+// festgeschriebenen Stand einer fremden Transaktion sähe. Diese beiden Helfer sind der einzige
+// Weg dorthin; eine Route, die `database.db` unmittelbar benutzte, ginge daran vorbei.
+//
+// **Ohne Datenbank gibt es keine Daten mehr.** Das ist die Umkehrung des bisherigen Zustands:
+// Bis zum Umstieg war eine nicht geöffnete Datenbank harmlos, weil Mietfuchs mit der db.json
+// weiterarbeitete. Jetzt liegen die Daten dort, und ein Start ohne sie ist ein Start ohne Daten.
+// Eine leere Liste wäre die schlimmste Antwort: Sie sähe aus wie „Sie haben noch nichts
+// erfasst". Deshalb 503 und nicht 500: Der Dienst ist vorübergehend nicht verfügbar, an den
+// Daten ist nichts kaputt.
+// Die Frage „trägt die Datenbank den Bestand?" und ihre beiden Gründe stehen in health.ts, damit
+// der Zustandsbericht und die Routen hier nicht Verschiedenes sagen können.
+const refuseData = <T>(reason: string): Promise<T> =>
+  Promise.reject(Object.assign(new Error(reason), { status: 503 }))
+
+const onDatabase = <T>(work: (opened: OpenedDatabase) => Promise<T>): Promise<T> => {
+  const reason = databaseUnavailable(databaseState())
+  // `databaseState()` meldet `open: true` genau dann, wenn `database` steht; ohne Grund gibt es
+  // sie also. Der Übersetzer sieht diesen Zusammenhang nicht, daher die zweite Frage.
+  if (!database) return refuseData(reason ?? NO_DATABASE)
+  return reason ? refuseData(reason) : work(database)
+}
+
+const readData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.read(work))
+const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatabase((opened) => opened.write(work))
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 // Die generischen Routen behandeln alle Collections gleich und brauchen von einem Datensatz nur
@@ -223,71 +299,51 @@ app.delete('/api/ai/consent/:slot', (req, res) => {
 // `getDb()`**, nur betrachtet als „Datensätze mit id“. Wer über die Sicht schreibt, ändert also
 // den Datenbestand selbst. Geschrieben wird darüber nur das Ergebnis eines filter() auf
 // derselben Liste, die Datensätze selbst bleiben also, was sie sind.
-type CollectionName = 'units' | 'tenancies' | 'costItems' | 'meters' | 'readings' | 'payments'
-type Entity = { id: string }
+// Was mit einem Datensatz geschieht, steht jetzt in db/repository.ts, und zwar aus zwei Gründen:
+// `Object.assign` übernahm jeden Schlüssel des Rumpfes, auch einen erfundenen (#60), und die
+// Kaskade beim Löschen lief als Schleife hier, die mittendrin abbrechen konnte. Beides erledigt
+// jetzt die Datenbank, das eine über ihre Spalten, das andere über ihre Fremdschlüssel.
+//
+// Ein Fehler wird hier nicht abgefangen: Express 5 reicht eine abgelehnte Zusage an die
+// Fehlerbehandlung weiter, und dort steht die Übersetzung an einer Stelle.
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
-const collections = (): Record<CollectionName, Entity[]> => getDb()
 
 for (const coll of COLLECTIONS) {
-  app.get(`/api/${coll}`, (req, res) => res.json(collections()[coll]))
-  app.post(`/api/${coll}`, (req, res) => {
-    const item = { ...bodyObject(req), id: newId() }
-    collections()[coll].push(item)
-    save()
-    res.status(201).json(item)
+  app.get(`/api/${coll}`, async (req, res) => {
+    res.json(await readData((db) => listCollection(db, coll)))
   })
-  app.put(`/api/${coll}/:id`, (req, res) => {
-    const item = collections()[coll].find((x) => x.id === req.params.id)
+  app.post(`/api/${coll}`, async (req, res) => {
+    res.status(201).json(await writeData((db) => createEntity(db, coll, newId(), bodyObject(req))))
+  })
+  app.put(`/api/${coll}/:id`, async (req, res) => {
+    const item = await writeData((db) => updateEntity(db, coll, req.params.id, bodyObject(req)))
     if (!item) return res.status(404).json({ error: 'Nicht gefunden' })
-    Object.assign(item, bodyObject(req), { id: item.id })
-    save()
     res.json(item)
   })
-  app.delete(`/api/${coll}/:id`, (req, res) => {
-    // `db` und `lists` sind dasselbe Objekt, einmal mit den Fachtypen und einmal als Sicht für
-    // den Zugriff über den laufenden Namen. Eine Änderung an `lists` ist also keine an einer
-    // Kopie, sie trifft den Datenbestand, den `save()` gleich schreibt.
-    const db = getDb()
-    const lists = collections()
-    const before = lists[coll].length
-    lists[coll] = lists[coll].filter((x) => x.id !== req.params.id)
-    if (coll === 'units') {
-      // Abhängige Daten einer gelöschten Wohnung mit entfernen
-      const tenancyIds = db.tenancies.filter((t) => t.unitId === req.params.id).map((t) => t.id)
-      db.tenancies = db.tenancies.filter((t) => t.unitId !== req.params.id)
-      db.payments = (db.payments ?? []).filter((p) => !tenancyIds.includes(p.tenancyId))
-      const meterIds = db.meters.filter((m) => m.unitId === req.params.id).map((m) => m.id)
-      db.meters = db.meters.filter((m) => m.unitId !== req.params.id)
-      db.readings = db.readings.filter((r) => !meterIds.includes(r.meterId))
-      // Vereinbarte Prozentanteile auf die gelöschte Wohnung entfernen, damit keine
-      // verwaisten Verweise in den Kostenpositionen zurückbleiben.
-      for (const c of db.costItems) {
-        if (c.customShares && req.params.id in c.customShares) delete c.customShares[req.params.id]
-      }
-    }
-    if (coll === 'tenancies') {
-      db.payments = (db.payments ?? []).filter((p) => p.tenancyId !== req.params.id)
-    }
-    if (coll === 'meters') {
-      db.readings = db.readings.filter((r) => r.meterId !== req.params.id)
-    }
-    if (lists[coll].length === before) return res.status(404).json({ error: 'Nicht gefunden' })
-    save()
+  app.delete(`/api/${coll}/:id`, async (req, res) => {
+    const geloescht = await writeData((db) => removeEntity(db, coll, req.params.id))
+    if (!geloescht) return res.status(404).json({ error: 'Nicht gefunden' })
     res.json({ ok: true })
   })
 }
 
 // ---------- Abrechnung ----------
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
-app.get('/api/settlement/:year', (req, res) => {
+app.get('/api/settlement/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
+  const closed = await readData((db) => findClosedSettlement(db, year))
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
-  if (closed) return res.json({ selfUsedShareCents: 0, ...closed.settlement, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt ?? null } })
-  res.json({ ...computeSettlement(snapshotFromDb(getDb(), year)), closed: null })
+  // Der eingefrorene Stand ist `unknown`: Er stammt womöglich aus einer früheren Version, und
+  // ein Typ darüber wäre eine Behauptung über etwas, das jemand anders geschrieben hat. Zum
+  // Ausbreiten genügt, dass es ein Objekt ist.
+  if (closed) {
+    const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
+    return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } })
+  }
+  res.json({ ...computeSettlement(snapshotOf(await readData(readStock), year)), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -313,67 +369,64 @@ const sentAtOf = (req: Request): string | null | false => {
 
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
-app.post('/api/settlement/:year/close', (req, res) => {
+app.post('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const db = getDb()
-  if ((db.closedSettlements ?? []).some((c) => c.year === year)) {
-    return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
-  }
-  db.closedSettlements.push({
-    id: newId(),
-    year,
-    closedAt: new Date().toISOString(),
-    sentAt,
-    settlement: computeSettlement(snapshotFromDb(db, year)),
+  // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
+  // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
+  const schonDa = await writeData(async (db) => {
+    if (await findClosedSettlement(db, year)) return true
+    await closeSettlement(db, {
+      id: newId(),
+      year,
+      closedAt: new Date().toISOString(),
+      sentAt,
+      settlement: computeSettlement(snapshotOf(await readStock(db), year)),
+    })
+    return false
   })
-  save()
+  if (schonDa) return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
   res.status(201).json({ ok: true })
 })
 
 // Versanddatum nachtragen (für die §556-Frist)
-app.put('/api/settlement/:year/close', (req, res) => {
+app.put('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const closed = (getDb().closedSettlements ?? []).find((c) => c.year === year)
-  if (!closed) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
-  closed.sentAt = sentAt
-  save()
+  const gefunden = await writeData((db) => setSentAt(db, year, sentAt))
+  if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
 // Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
-app.delete('/api/settlement/:year/close', (req, res) => {
+app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
-  const db = getDb()
-  const before = (db.closedSettlements ?? []).length
-  db.closedSettlements = (db.closedSettlements ?? []).filter((c) => c.year !== year)
-  if (db.closedSettlements.length === before) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
-  save()
+  const gefunden = await writeData((db) => reopenSettlement(db, year))
+  if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
-app.get('/api/consumption/:year', (req, res) => {
+app.get('/api/consumption/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(consumptionOverview(snapshotFromDb(getDb(), year)))
+  res.json(consumptionOverview(snapshotOf(await readData(readStock), year)))
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
-app.get('/api/rentledger/:year', (req, res) => {
+app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(rentLedger(snapshotFromDb(getDb(), year)))
+  res.json(rentLedger(snapshotOf(await readData(readStock), year)))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
-app.get('/api/taxreport/:year', (req, res) => {
+app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(taxReport(snapshotFromDb(getDb(), year)))
+  res.json(taxReport(snapshotOf(await readData(readStock), year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -559,22 +612,25 @@ app.delete('/api/uploads/:file', (req, res) => {
 
 // ---------- Backup & Wiederherstellen ----------
 app.get('/api/backup', async (req, res) => {
-  save() // sicherstellen, dass der letzte Stand auf der Platte liegt
   // Wie beim Wiederherstellen: Der Belegordner muss dastehen, bevor jemand ihn liest. Dass er
   // es heute tut, liegt nur daran, dass multer ihn beim Laden des Moduls anlegt und `load()`
   // ihn ebenfalls anlegt. Beides sind Nebenwirkungen an anderer Stelle, und ein Backup ist der
   // schlechteste Zeitpunkt für einen Fehler.
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
   const zip = new AdmZip()
-  zip.addLocalFile(path.join(DATA_DIR, 'db.json'))
+  // **Die db.json nur, wenn es sie gibt.** Seit die Routen die Datenbank lesen und schreiben,
+  // entsteht sie auf einem frischen Rechner gar nicht mehr, und wo sie liegt, ist sie der Stand
+  // vom Tag des Umstiegs. Sie gehört trotzdem ins Archiv: Wer ein Backup einspielt, bekommt
+  // damit denselben Rückweg zurück, den er vorher hatte.
+  const jsonFile = path.join(DATA_DIR, 'db.json')
+  if (fs.existsSync(jsonFile)) zip.addLocalFile(jsonFile)
   for (const name of fs.readdirSync(UPLOAD_DIR)) {
     zip.addLocalFile(path.join(UPLOAD_DIR, name), 'uploads')
   }
 
   // Die Datenbank kommt als **Schnappschuss** mit und nicht als Kopie der laufenden Datei
-  // (db/backup.ts). Gibt es keine offene, wird das Archiv trotzdem gepackt: Die db.json ist der
-  // maßgebliche Stand, und niemand soll an einem Backup gehindert werden, weil die Datenbank
-  // gerade klemmt. Beim Wiederherstellen wird sie dann aus der db.json neu aufgebaut.
+  // (db/backup.ts). Gibt es keine offene, wird das Archiv trotzdem gepackt: Ein Backup soll auch
+  // dann noch gehen, wenn die Datenbank klemmt, und die Belege liegen ohnehin im Ordner.
   if (database) {
     // **Ein eigener Name je Anfrage.** Zwei gleichzeitige Backups teilten sich sonst die
     // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
@@ -617,7 +673,9 @@ const restoreUpload = multer({ storage: multer.memoryStorage(), limits: { fileSi
 // Liest ein Backup vollständig und prüft es, bevor irgendetwas ersetzt wird. Wirft einen Fehler
 // mit einer Meldung für die Oberfläche; dann bleibt der bisherige Datenstand unangetastet.
 type ReadBackup = {
-  dbText: string
+  // `null`, wenn das Archiv keine db.json führt: Auf einem Rechner, der nie eine hatte,
+  // entsteht sie seit dem Umstieg der Routen gar nicht mehr.
+  dbText: string | null
   files: { fileName: string, content: Buffer }[]
   // Die Datenbank aus dem Archiv, oder `null` bei einem Archiv aus einer Version vor ihr. Das
   // ist kein Randfall: Genau solche Archive liegen bei den heutigen Nutzern.
@@ -636,7 +694,6 @@ function readBackup(buffer: Buffer): ReadBackup {
   }
   const entries = zip.getEntries()
   const dbEntry = entries.find((e) => e.entryName === 'db.json')
-  if (!dbEntry) throw new Error('Im Archiv fehlt die db.json. Ist das wirklich ein Mietfuchs-Backup?')
 
   // Ausdrücklich typisiert: Was hier hineinläuft, kommt aus einem hochgeladenen Archiv und wird
   // gerade erst geprüft. Der Typ soll nicht davon abhängen, was weiter unten hineingeschoben wird.
@@ -644,9 +701,15 @@ function readBackup(buffer: Buffer): ReadBackup {
   // entstanden ist, und beides ist in Ordnung: Die db.json ist dann der ganze Bestand.
   const databaseEntry = entries.find((e) => e.entryName === ARCHIVE_DB_NAME)
   const infoEntry = entries.find((e) => e.entryName === ARCHIVE_INFO_NAME)
+  // **Eines von beiden muss da sein.** Ein Archiv von vor dem Umstieg führt nur die db.json,
+  // eines von einem frischen Rechner nur die Datenbank, und eines dazwischen beide. Fehlt
+  // jedoch beides, ist es kein Mietfuchs-Backup.
+  if (!dbEntry && !databaseEntry) {
+    throw new Error('Im Archiv fehlen sowohl die Datenbank als auch die db.json. Ist das wirklich ein Mietfuchs-Backup?')
+  }
 
   const files: { fileName: string, e: AdmZip.IZipEntry }[] = []
-  let totalSize = dbEntry.header.size + (databaseEntry?.header.size ?? 0) + (infoEntry?.header.size ?? 0)
+  let totalSize = (dbEntry?.header.size ?? 0) + (databaseEntry?.header.size ?? 0) + (infoEntry?.header.size ?? 0)
   for (const e of entries) {
     const name = e.entryName
     if (name === 'db.json' || !name.startsWith('uploads/')) continue // anderes bleibt unbeachtet
@@ -663,20 +726,24 @@ function readBackup(buffer: Buffer): ReadBackup {
     throw new Error(`Das Archiv wäre ausgepackt zu groß (über ${Math.round(RESTORE_UNPACKED_MAX_BYTES / 1024 / 1024)} MB).`)
   }
 
-  let dbText: string
-  let parsed: unknown
-  try {
-    dbText = zip.readAsText(dbEntry)
-    parsed = JSON.parse(dbText)
-  } catch {
-    throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
+  // Die db.json nur, wenn das Archiv eine führt. Ist sie da, wird sie geprüft wie bisher: Was
+  // ihr fehlt, fiele sonst erst beim Einlesen auf, und dann ist schon etwas ersetzt.
+  let dbText: string | null = null
+  let parsed: unknown = null
+  if (dbEntry) {
+    try {
+      dbText = zip.readAsText(dbEntry)
+      parsed = JSON.parse(dbText)
+    } catch {
+      throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
+    }
   }
   // Gültiges JSON heißt noch nicht, dass es ein Mietfuchs-Datenbestand ist (#59). Käme hier
   // etwas durch, das dem Datenmodell nicht entspricht, ginge der laufende Server danach nicht
   // mehr: Das Einlesen wirft, und **jede** weitere Anfrage scheitert erneut, bis jemand die
   // Datei von Hand zurückkopiert. Deshalb wird geprüft, bevor irgendetwas überschrieben wird.
   // Was krumm, aber gültig ist, kommt weiterhin durch; die Begründung steht in db/validate.ts.
-  const { problems } = validateDb(parsed)
+  const { problems } = dbEntry ? validateDb(parsed) : { problems: [] }
   if (problems.length > 0) {
     throw new Error(
       'Die Daten in diesem Archiv passen nicht zu Mietfuchs, deshalb wurde nichts davon übernommen. ' +
@@ -739,16 +806,28 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
     return [`Die Datenbank ließ sich nach dem Wiederherstellen nicht öffnen: ${databaseProblem}`]
   }
 
-  if (staged) return []
+  if (staged) {
+    // Fall 1: Das Archiv hat seine Datenbank mitgebracht, und sie ist jetzt der Bestand. Ein
+    // Umstieg, der beim Start gescheitert war, ist damit gegenstandslos: Die db.json von damals
+    // ist mit ersetzt worden. Bliebe sein Stand stehen, sperrte er die Datenrouten weiter, und
+    // zwar ausgerechnet nach der Wiederherstellung, die das Problem behoben hat.
+    changeover = {
+      state: 'none',
+      message: 'Die wiederhergestellte Sicherung hat ihre Datenbank mitgebracht; es war nichts zu übernehmen.',
+      notes: [], protocol: null, database,
+    }
+    return []
+  }
 
-  // Fall 2: neu aufbauen. Scheitert er, ist niemand blockiert — die wiederhergestellte db.json
-  // liegt da, Mietfuchs arbeitet mit ihr weiter, und beim nächsten Start wird es erneut
-  // versucht. Genau das sagt die Meldung auch.
+  // Fall 2: neu aufbauen. Scheitert er, ist nichts verloren — die wiederhergestellte db.json
+  // liegt da, und beim nächsten Start wird es erneut versucht. Die Datenrouten bleiben bis
+  // dahin gesperrt, weil eine leere Datenbank auszugeben schlimmer wäre (siehe health.ts).
   const rebuilt = await runChangeover({
     dataDir: DATA_DIR,
     opened: database,
     reopen: () => openDatabase({ dataDir: DATA_DIR }),
   })
+  changeover = rebuilt
   database = rebuilt.database
   if (!database) databaseProblem = 'nach dem Wiederherstellen nicht wieder geöffnet'
   return rebuilt.state === 'failed' ? [rebuilt.message] : rebuilt.notes
@@ -797,7 +876,10 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   // und den gab es nicht.
   const current = path.join(DATA_DIR, 'db.json')
   if (fs.existsSync(current)) fs.copyFileSync(current, path.join(DATA_DIR, 'db.json.vor-restore'))
-  fs.writeFileSync(current, backup.dbText, 'utf8')
+  // Führt das Archiv keine db.json, wird auch keine angelegt. Eine leere wäre schlimmer als
+  // keine: Der Umstieg beim nächsten Start hielte sie für einen zu übernehmenden Bestand.
+  if (backup.dbText !== null) fs.writeFileSync(current, backup.dbText, 'utf8')
+  else fs.rmSync(current, { force: true })
   for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
   reloadDb()
 
@@ -852,7 +934,7 @@ app.get('/api/ai/status', async (req, res) => res.json(await aiStatus(req.query.
 // beim Update-Hinweis, sonst gilt die mitgelieferte Liste (siehe ai/recommendations.ts).
 const recommendations = createRecommendations()
 app.get('/api/ai/recommendations', async (req, res) => {
-  res.json(await recommendations.get({ consented: getDb().settings.updateCheck === 'on' }))
+  res.json(await recommendations.get({ consented: storedSettings.updateCheck === 'on' }))
 })
 
 // Ein Modell über Ollama laden. Nur für ein Ollama auf diesem Rechner oder im Heimnetz: Dienste
@@ -903,11 +985,11 @@ const updateChecker = createUpdateChecker({
 })
 
 app.get('/api/update', async (req, res) => {
-  res.json(await updateChecker.check({ consent: getDb().settings.updateCheck }))
+  res.json(await updateChecker.check({ consent: storedSettings.updateCheck }))
 })
 
 app.post('/api/update/check', async (req, res) => {
-  res.json(await updateChecker.check({ consent: getDb().settings.updateCheck, force: true }))
+  res.json(await updateChecker.check({ consent: storedSettings.updateCheck, force: true }))
 })
 
 // ---------- Betriebszustand ----------
@@ -1048,11 +1130,27 @@ try {
 //
 // Scheitert er, geht der Start trotzdem weiter. Mietfuchs arbeitet dann mit der db.json wie
 // bisher, und beim nächsten Start wird es erneut versucht.
-const changeover: ChangeoverResult = database
+//
+// **Veränderlich, weil das Wiederherstellen eines Backups den Stand ändert** (siehe
+// `restoreDatabase`). Bliebe hier der Stand vom Start stehen, sperrte ein einmal gescheiterter
+// Umstieg die Datenrouten auch dann noch, wenn der Nutzer das Problem gerade mit genau dem
+// Mittel behoben hat, das ihm dafür angeboten wird.
+let changeover: ChangeoverResult = database
   ? await runChangeover({ dataDir: DATA_DIR, opened: database, reopen: () => openDatabase({ dataDir: DATA_DIR }) })
   : changeoverWithoutDatabase(DATA_DIR, databaseProblem ?? 'unbekannter Grund')
 database = changeover.database
 if (!database) databaseProblem = databaseProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
+
+// Die Einstellungen in den Arbeitsspeicher holen, siehe die Begründung am Zwischenspeicher.
+// **Nach** dem Umstieg: Vorher stünde dort die leere Zeile einer frischen Datenbank, und der
+// Nutzer sähe seinen Hausnamen erst nach einem Neustart wieder. Scheitert es, arbeitet
+// Mietfuchs mit den Vorgabewerten weiter; die Datenrouten melden sich ohnehin mit 503, und die
+// Meldung darüber steht im Zustandsbericht.
+try {
+  await refreshSettings()
+} catch (err) {
+  console.error(`Die Einstellungen ließen sich nicht lesen: ${messageOf(err)}`)
+}
 
 // Für /healthz: Der Bericht nennt den Stand, damit der Smoke-Test ihn von außen sieht (er läuft
 // auf jeder Programmdatei und in den Containern von 22 Distributionen; ob das eingebaute SQLite
