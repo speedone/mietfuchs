@@ -615,9 +615,31 @@ function checkMeters(c: Collector, meters: Collection, units: Collection, unitId
   })
 }
 
+// Der Ort einer Ablesung. Sie trägt weder Namen noch etwas anderes, woran der Nutzer sie
+// wiedererkennt; in der Oberfläche steht sie unter ihrem Zähler und ihrem Datum. Genau die
+// nennt diese Angabe deshalb.
+//
+// **Das zählt hier besonders.** Ein negativer Zählerstand ist über die Oberfläche erzeugbar,
+// und ein bloßes Nein wäre die falsche Antwort: Der Vermieter stünde vor einer Ablehnung für
+// etwas, das Mietfuchs ihm selbst erlaubt hat. Er braucht einen Weg zurück, und der führt über
+// die Frage, welche Ablesung er berichtigen soll.
+function readingPlace(index: number, entry: unknown, meters: Collection): string {
+  const details: string[] = []
+  const meterId = fieldOf(entry, 'meterId')
+  const meter = typeof meterId === 'string' ? meters.entries.find((m) => fieldOf(m, 'id') === meterId) : undefined
+  const name = fieldOf(meter, 'name')
+  if (typeof name === 'string' && name.trim()) details.push(`Zähler „${name.trim()}"`)
+  else if (typeof meterId === 'string' && meterId.trim()) details.push(`Zähler ${meterId.trim()}`)
+  const date = fieldOf(entry, 'date')
+  if (typeof date === 'string' && date.trim()) details.push(`vom ${date.trim()}`)
+  const id = fieldOf(entry, 'id')
+  if (typeof id === 'string' && id.trim()) details.push(`Kennung ${id.trim()}`)
+  return details.length > 0 ? `Ablesung ${index + 1} (${details.join(', ')})` : `Ablesung ${index + 1}`
+}
+
 function checkReadings(c: Collector, readings: Collection, meters: Collection, meterIds: Set<string>): void {
   readings.entries.forEach((entry, index) => {
-    const where = place('Ablesung', index, entry)
+    const where = readingPlace(index, entry, meters)
     if (!isRecord(entry)) {
       problem(c, where, `Dort steht ${kindOf(entry)}, erwartet wird eine Ablesung.`)
       return
@@ -628,7 +650,19 @@ function checkReadings(c: Collector, readings: Collection, meters: Collection, m
     fields.text('date', 'Datum', false)
     // Ein Zählerstand ist eine abgelesene Menge und läuft nicht unter null. Der negative
     // *Verbrauch*, vor dem die Abrechnung warnt, entsteht aus zwei Ständen und ist etwas anderes.
-    fields.number('value', 'Zählerstand')
+    //
+    // Eine eigene Meldung statt der allgemeinen: Dieser Fall ist der einzige, den der Nutzer
+    // selbst erzeugt haben kann, und deshalb sagt sie, was zu tun ist und wo.
+    const value = fieldOf(entry, 'value')
+    if (typeof value === 'number' && Number.isFinite(value) && value < 0) {
+      problem(
+        c,
+        where,
+        `Der Zählerstand ist ${germanNumber(value)}. Ein abgelesener Stand läuft nicht unter null. Bitte berichtigen Sie die Ablesung in der Oberfläche unter „Zähler & Stände".`,
+      )
+    } else {
+      fields.number('value', 'Zählerstand')
+    }
     fields.optionalBoolean('replacement', 'Zählerwechsel')
     fields.optionalNumber('oldEndValue', 'Endstand des alten Geräts')
     fields.optionalText('note', 'Notiz')

@@ -521,8 +521,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 
 // Die Meldung eines geworfenen Fehlers. In einem catch ist er `unknown`: Wer wirft, bestimmt,
 // was ankommt. Dieselbe Überlegung wie in index.ts, hier noch einmal, weil diese Datei vom
-// Server nichts weiß.
-function messageOf(err: unknown): string {
+// Server nichts weiß. Ausgeführt auch von changeover.ts, damit im Ordner db/ nicht zwei
+// Fassungen derselben drei Zeilen stehen.
+export function messageOf(err: unknown): string {
   if (err !== null && typeof err === 'object' && 'message' in err && typeof err.message === 'string' && err.message) {
     return err.message
   }
