@@ -1,0 +1,300 @@
+// Die Vorgänge, die die Routen brauchen (db/repository.ts, #55, Aufgabe 6).
+//
+// Drei Zusagen hängen an dieser Datei, und jede hat ihre eigene Gruppe von Tests:
+//
+//   1. **`PUT` verschmilzt.** Die Oberfläche schickt Teilstücke: beim Auszug nur `{ end: … }`,
+//      beim Ändern der gezahlten Vorauszahlungen nur `{ prepaymentOverrides: … }`. Würde die
+//      Zeile ersetzt, wären danach Name, IBAN und alle Staffeln weg.
+//   2. **Nichts bleibt halb.** Ein Vorgang über mehrere Tabellen läuft in einer Transaktion.
+//   3. **Für ein unbekanntes Feld gibt es keinen Ort mehr** (#60).
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { getTableColumns } from 'drizzle-orm'
+import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
+import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
+import {
+  createEntity, findEntity, invoiceFilesInUse, listCollection, removeEntity, sharesForUnit,
+  updateEntity, type CollectionName,
+} from '../src/db/repository.ts'
+import { costItems, meters, payments, readings, tenancies, units } from '../src/db/schema.ts'
+
+const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-repo-'))
+
+async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
+  const dataDir = tempDir()
+  const opened = await openDatabase({ dataDir })
+  try {
+    await work(opened)
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+}
+
+// Ein Feld eines gelesenen Datensatzes, ohne Zusicherung: Was das Repository zurückgibt, ist
+// eine Vereinigung der sechs Datentypen, und der Test fragt nach einem Feld, das nur einer von
+// ihnen hat.
+const fieldOf = (entity: unknown, key: string): unknown =>
+  entity !== null && typeof entity === 'object' ? Reflect.get(entity, key) : undefined
+
+// ---------- Anlegen, Lesen, Ändern ----------
+
+test('Anlegen: der Datensatz kommt so zurück, wie er in der Datenbank steht', async () => {
+  await withDatabase(async (opened) => {
+    const u = await opened.write((db) => createEntity(db, 'units', 'u1', {
+      name: 'EG links', areaM2: 80, participates: true, rooms: 3, floor: 'EG', notes: 'Notiz',
+    }))
+    assert.equal(u.id, 'u1')
+    assert.equal(fieldOf(u, 'name'), 'EG links')
+    assert.equal(fieldOf(u, 'areaM2'), 80)
+    assert.equal(fieldOf(u, 'notes'), 'Notiz')
+  })
+})
+
+test('Ändern verschmilzt: ein Teilstück lässt alles andere stehen', async () => {
+  // **Der wichtigste Test dieser Datei.** Stammdaten.tsx schickt beim Auszug genau das hier:
+  // nur das Ende, sonst nichts. Ersetzte die Zeile, wären danach Name, IBAN, Kaution und alle
+  // drei Staffeln weg, und niemand bekäme eine Fehlermeldung.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', {
+      unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: null,
+      iban: 'DE02120300000000202051', depositCents: 180000,
+      personHistory: [{ from: '2024-01-01', persons: 2 }],
+      prepayments: [{ from: '2024-01', monthlyCents: 15000 }],
+      baseRents: [{ from: '2024-01', monthlyCents: 60000 }],
+      prepaymentOverrides: { 2024: 170000 },
+    }))
+
+    const nachher = await opened.write((db) => updateEntity(db, 'tenancies', 't1', { end: '2024-12-31' }))
+    if (!nachher) return assert.fail('das Mietverhältnis ist verschwunden')
+
+    assert.equal(fieldOf(nachher, 'end'), '2024-12-31', 'das Ende ist gesetzt')
+    assert.equal(fieldOf(nachher, 'tenantName'), 'Müller', 'der Name steht noch da')
+    assert.equal(fieldOf(nachher, 'iban'), 'DE02120300000000202051', 'die IBAN steht noch da')
+    assert.equal(fieldOf(nachher, 'depositCents'), 180000, 'die Kaution steht noch da')
+    assert.deepEqual(fieldOf(nachher, 'prepayments'), [{ from: '2024-01', monthlyCents: 15000 }], 'die Staffel steht noch da')
+    assert.deepEqual(fieldOf(nachher, 'baseRents'), [{ from: '2024-01', monthlyCents: 60000 }], 'die Kaltmiete steht noch da')
+    assert.deepEqual(fieldOf(nachher, 'prepaymentOverrides'), { 2024: 170000 }, 'die Jahreskorrektur steht noch da')
+  })
+})
+
+test('Ändern: ein ausdrückliches null setzt zurück, ein fehlendes Feld nicht', async () => {
+  // Der Unterschied zwischen Anwesenheit und Wert. In JSON gibt es kein `undefined`, die
+  // Anwesenheit eines Schlüssels ist also die einzige Auskunft, die der Browser geben kann.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', {
+      unitId: 'u1', tenantName: 'Müller', persons: 1, start: '2024-01-01', end: '2024-12-31',
+    }))
+
+    const ohneFeld = await opened.write((db) => updateEntity(db, 'tenancies', 't1', { persons: 3 }))
+    assert.equal(fieldOf(ohneFeld, 'end'), '2024-12-31', 'ein fehlendes Feld ändert nichts')
+
+    const mitNull = await opened.write((db) => updateEntity(db, 'tenancies', 't1', { end: null }))
+    assert.equal(fieldOf(mitNull, 'end'), null, 'ein ausdrückliches null setzt zurück')
+  })
+})
+
+test('Ändern lässt die Reihenfolge der Liste unverändert', async () => {
+  // Gelesen wird nach `rowid`. Würde die Zeile gelöscht und neu eingefügt, spränge der
+  // bearbeitete Datensatz ans Ende, und der Vermieter sähe seine Wohnungsliste nach jeder
+  // Änderung neu sortiert.
+  await withDatabase(async (opened) => {
+    for (const id of ['u1', 'u2', 'u3']) {
+      await opened.write((db) => createEntity(db, 'units', id, { name: id, areaM2: 50, participates: true }))
+    }
+    await opened.write((db) => updateEntity(db, 'units', 'u1', { name: 'geändert' }))
+    const liste = await opened.read((db) => listCollection(db, 'units'))
+    assert.deepEqual(liste.map((u) => u.id), ['u1', 'u2', 'u3'])
+  })
+})
+
+test('Ein unbekanntes Feld kommt gar nicht erst an', async () => {
+  // #60: Über die db.json übernahm die Route jeden Schlüssel des Rumpfes, auch einen
+  // erfundenen, und er blieb dort für immer stehen. Mit Spalten gibt es für ihn keinen Ort.
+  await withDatabase(async (opened) => {
+    const u = await opened.write((db) => createEntity(db, 'units', 'u1', {
+      name: 'EG', areaM2: 80, participates: true, fremdesFeld: 'bleibt haengen',
+    }))
+    assert.equal(fieldOf(u, 'fremdesFeld'), undefined, 'das erfundene Feld ist nicht angekommen')
+    assert.ok(!JSON.stringify(u).includes('bleibt haengen'), JSON.stringify(u))
+  })
+})
+
+test('Ändern eines Datensatzes, den es nicht gibt, meldet sich mit null', async () => {
+  await withDatabase(async (opened) => {
+    assert.equal(await opened.write((db) => updateEntity(db, 'units', 'gibt-es-nicht', { name: 'X' })), null)
+    assert.equal(await opened.write((db) => removeEntity(db, 'units', 'gibt-es-nicht')), false)
+  })
+})
+
+// ---------- Löschen und die Kaskade ----------
+
+test('Löschen einer Wohnung räumt mit, was an ihr hängt', async () => {
+  // Heute geht index.ts das von Hand durch; bricht es mittendrin ab, bleiben Reste. Hier
+  // erledigen es die Fremdschlüssel in einem Schritt.
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
+      await createEntity(db, 'payments', 'p1', { tenancyId: 't1', date: '2024-01-05', amountCents: 1000 })
+      await createEntity(db, 'meters', 'm1', { name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+      await createEntity(db, 'readings', 'r1', { meterId: 'm1', date: '2024-12-31', value: 100 })
+    })
+
+    assert.equal(await opened.write((db) => removeEntity(db, 'units', 'u1')), true)
+
+    for (const coll of ['units', 'tenancies', 'payments', 'meters', 'readings'] as CollectionName[]) {
+      const rest = await opened.read((db) => listCollection(db, coll))
+      assert.deepEqual(rest, [], `in ${coll} ist etwas zurückgeblieben`)
+    }
+  })
+})
+
+test('Löschen einer Wohnung lässt die Kostenposition stehen und nimmt ihr nur das Ziel', async () => {
+  // `SET NULL` und nicht `CASCADE`, so steht es im Schema: Die Rechnung ist bezahlt worden und
+  // gehört weiter in die Abrechnung des Jahres. Sie mitzulöschen veränderte die Summe einer
+  // bereits abgerechneten Vergangenheit.
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'costItems', 'c1', {
+        year: 2024, category: 'Müll', description: 'Gebühren', amountCents: 12000,
+        key: 'direct', directUnitId: 'u1',
+      })
+    })
+    await opened.write((db) => removeEntity(db, 'units', 'u1'))
+
+    const c = await opened.read((db) => findEntity(db, 'costItems', 'c1'))
+    if (!c) return assert.fail('die Kostenposition ist mitgelöscht worden')
+    assert.equal(fieldOf(c, 'amountCents'), 12000, 'der Betrag steht unverändert da')
+    assert.equal(fieldOf(c, 'directUnitId'), null, 'die Direktzuordnung zeigt ins Leere')
+  })
+})
+
+test('Löschen einer Wohnung räumt auch die vereinbarten Anteile weg', async () => {
+  // Heute geht index.ts die Kostenpositionen dafür von Hand durch. Im Schema hängt es an
+  // `cost_item_shares.unit_id`.
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'units', 'u2', { name: 'OG', areaM2: 60, participates: true })
+      await createEntity(db, 'costItems', 'c1', {
+        year: 2024, category: 'Müll', description: 'Gebühren', amountCents: 12000,
+        key: 'custom', customShares: { u1: 60, u2: 40 },
+      })
+    })
+    assert.equal(await opened.read((db) => sharesForUnit(db, 'u1')), 1)
+
+    await opened.write((db) => removeEntity(db, 'units', 'u1'))
+    assert.equal(await opened.read((db) => sharesForUnit(db, 'u1')), 0, 'der Anteil hängt noch da')
+
+    const c = await opened.read((db) => findEntity(db, 'costItems', 'c1'))
+    assert.deepEqual(fieldOf(c, 'customShares'), { u2: 40 }, 'der Anteil der anderen Wohnung bleibt')
+  })
+})
+
+test('Ein Fehler mittendrin lässt nichts Halbes zurück', async () => {
+  // Ein Mietverhältnis liegt über fünf Tabellen. Scheitert das Schreiben einer Staffel, darf
+  // die Hauptzeile nicht allein zurückbleiben.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await assert.rejects(
+      () => opened.write((db) => createEntity(db, 'tenancies', 't1', {
+        unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
+        // Zwei Einträge zum selben Stichtag: Der zusammengesetzte Primärschlüssel lehnt den
+        // zweiten ab, und zwar erst, nachdem die Hauptzeile schon geschrieben ist.
+        prepayments: [{ from: '2024-01', monthlyCents: 100 }, { from: '2024-01', monthlyCents: 200 }],
+      })),
+    )
+    assert.deepEqual(await opened.read((db) => listCollection(db, 'tenancies')), [], 'die Hauptzeile ist zurückgeblieben')
+  })
+})
+
+// ---------- Was die Sonderrouten brauchen ----------
+
+test('Ein Beleg, der noch an einer Kostenposition hängt, wird als benutzt gemeldet', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      year: 2024, category: 'Müll', description: 'G', amountCents: 1, key: 'area', invoiceFile: 'beleg.pdf',
+    }))
+    const benutzt = await opened.read((db) => invoiceFilesInUse(db, ['beleg.pdf', 'frei.pdf']))
+    assert.equal(benutzt.has('beleg.pdf'), true)
+    assert.equal(benutzt.has('frei.pdf'), false)
+    assert.equal((await opened.read((db) => invoiceFilesInUse(db, []))).size, 0)
+  })
+})
+
+// ---------- Der Wächter über die Verschmelzung ----------
+
+test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
+  // **Der Test, der diese Datei am Leben hält.** Die Verschmelzung liest Feld für Feld; wer eine
+  // Spalte hinzufügt und sie hier vergisst, verliert sie beim Speichern still. Die Erwartung
+  // wird deshalb aus den Spalten abgeleitet und nicht danebengeschrieben.
+  //
+  // `id` bleibt außen vor, die vergibt die Route; Fremdschlüssel bekommen eine Kennung, die es
+  // wirklich gibt, sonst lehnte die Datenbank schon das Einfügen ab.
+  const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown> }[] = [
+    {
+      coll: 'units', table: units,
+      body: { name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, rooms: 3, floor: 'EG', notes: 'Notiz' },
+    },
+    {
+      coll: 'tenancies', table: tenancies,
+      body: {
+        unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: '2024-12-31',
+        email: 'a@b.de', phone: '0123', correspondenceAddress: 'Weg 1', iban: 'DE01',
+        contractDate: '2023-12-01', depositCents: 1000, depositStatus: 'erhalten', notes: 'Notiz',
+      },
+    },
+    {
+      coll: 'costItems', table: costItems,
+      body: {
+        year: 2024, category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
+        key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
+      },
+    },
+    {
+      coll: 'meters', table: meters,
+      body: { name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC', unit: 'm³' },
+    },
+    {
+      coll: 'readings', table: readings,
+      body: { meterId: 'm1', date: '2024-12-31', value: 160, replacement: true, oldEndValue: 155, note: 'Wechsel' },
+    },
+    {
+      coll: 'payments', table: payments,
+      body: { tenancyId: 't1', date: '2024-01-05', amountCents: 1000, note: 'Dauerauftrag' },
+    },
+  ]
+
+  await withDatabase(async (opened) => {
+    // Die Datensätze, auf die die Fremdschlüssel zeigen.
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
+      await createEntity(db, 'meters', 'm1', { name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+    })
+
+    for (const { coll, table, body } of proben) {
+      const id = `probe-${coll}`
+      const gespeichert = await opened.write((db) => createEntity(db, coll, id, body))
+      for (const spalte of Object.keys(getTableColumns(table))) {
+        if (spalte === 'id') continue
+        assert.ok(
+          Object.hasOwn(body, spalte),
+          `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
+        )
+        assert.deepEqual(
+          fieldOf(gespeichert, spalte), body[spalte],
+          `${coll}: Die Spalte „${spalte}" ist beim Verschmelzen verlorengegangen`,
+        )
+      }
+    }
+  })
+})
