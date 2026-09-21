@@ -24,7 +24,7 @@ import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
-import { changeoverWithoutDatabase, runChangeover, type ChangeoverResult } from './db/changeover.ts'
+import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readSettings, readStock } from './db/read.ts'
@@ -800,15 +800,31 @@ function readBackup(buffer: Buffer): ReadBackup {
 //      Bestätigung und arbeitete danach mit den Daten von vorher weiter.
 async function restoreDatabase(staged: string | null): Promise<string[]> {
   const target = databaseFile(DATA_DIR)
-  database?.close()
+
+  // **Erst aus der Nahtstelle nehmen, dann leerlaufen lassen, dann schließen.** Die Reihenfolge
+  // ist die ganze Zusage. Ab dem `null` bekommt jede neue Anfrage ihre 503 statt einer
+  // geschlossenen Verbindung, und das Leerlaufen wartet ab, was schon läuft. Ein `close()` ohne
+  // beides schnitte eine gerade offene Transaktion mitten im Schreiben ab; SQLite rollt sie beim
+  // nächsten Öffnen zwar zurück, aber die Anfrage, die sie angestoßen hat, stirbt ohne Antwort.
+  const offen = database
   database = null
+  if (offen) {
+    await offen.write(async () => undefined)
+    offen.close()
+  }
 
   // Die bisherige Datenbank beiseite, wie `db.json.vor-restore` daneben — und nur, wenn es
   // eine gab. Sie wandert und bleibt nicht liegen: Der Umstieg unten muss sie leer vorfinden,
   // sonst greift seine Regel „steht schon etwas darin, passiert nichts", und genau die soll
   // hier nicht weich werden.
-  if (fs.existsSync(target)) fs.renameSync(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
-  if (staged) fs.renameSync(staged, target)
+  //
+  // **Bewegt wird mit Wiederholungen** (`replaceFile`, dieselbe Funktion wie beim Umstieg). Unter
+  // Windows kann ein Virenscanner die eben geschlossene Datei kurz offen halten; ein nacktes
+  // `renameSync` scheiterte dann an etwas, das von selbst vergeht, und zwar ausgerechnet in dem
+  // Augenblick, in dem die einzige Kopie der wiederhergestellten Daten noch unter ihrem
+  // Zwischennamen liegt.
+  if (fs.existsSync(target)) await replaceFile(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
+  if (staged) await replaceFile(staged, target)
 
   try {
     database = await openDatabase({ dataDir: DATA_DIR })
@@ -864,7 +880,11 @@ app.post('/api/restore', restoreUpload.single('file'), async (req, res) => {
   // Bauart wie bei der db.json darüber (#59) und aus demselben Grund. Über den Umweg Backup
   // käme ein neueres Schema sonst herein, und die Prüfung beim Start käme zu spät, weil die
   // Datei dann schon an ihrem Platz läge.
-  const staged = backup.database ? `${databaseFile(DATA_DIR)}.restore` : null
+  // **Ein eigener Name je Anfrage**, aus demselben Grund wie beim Backup: Zwei gleichzeitige
+  // Wiederherstellungen teilten sich sonst die Zwischendatei, und die zweite überschriebe, was
+  // die erste gerade geprüft hat. Zwei Klicks sind nichts Ausgefallenes, die Oberfläche sperrt
+  // das Dateifeld während des Vorgangs nicht.
+  const staged = backup.database ? `${databaseFile(DATA_DIR)}.restore-${newId()}` : null
   if (staged && backup.database) {
     try {
       fs.rmSync(staged, { force: true })
@@ -1054,8 +1074,22 @@ app.post('/api/quit', (req, res) => {
   if (!STANDALONE) return res.status(404).json({ error: 'Beenden geht nur bei der Programmdatei. Hier beendet die Umgebung den Dienst.' })
   res.json({ ok: true })
   // Erst antworten, dann beenden: Sonst sähe der Browser einen Verbindungsabbruch statt der
-  // Bestätigung. Offene Schreibvorgänge gibt es nicht, store.ts schreibt jede Änderung sofort.
-  res.on('finish', () => setTimeout(() => process.exit(0), 100))
+  // Bestätigung.
+  //
+  // **Vorher läuft die Schlange leer.** Die frühere Begründung („offene Schreibvorgänge gibt es
+  // nicht, store.ts schreibt jede Änderung sofort") trägt nicht mehr, seit über die Datenbank
+  // geschrieben wird: Ein Schreibvorgang kann eingereiht sein oder gerade laufen, und
+  // `process.exit` schnitte ihn mitten in seiner Transaktion ab. Bestätigte Daten gingen dabei
+  // nicht verloren, denn die Antwort kommt erst nach dem Festschreiben, aber die betroffene
+  // Anfrage stürbe ohne Antwort. Das Leerlaufen kostet im Regelfall nichts, weil beim Klick auf
+  // „Beenden" nichts in der Schlange steht.
+  res.on('finish', () => {
+    const beenden = () => setTimeout(() => process.exit(0), 100)
+    if (!database) return beenden()
+    // Auch ein gescheitertes Leerlaufen darf das Beenden nicht verhindern: Der Nutzer hat auf
+    // einen Knopf gedrückt, der das Programm schließt, und er muss sich schließen.
+    database.write(async () => undefined).then(beenden, beenden)
+  })
 })
 
 // Fehler an der API immer als lesbare JSON-Meldung, nie als HTML-Fehlerseite von Express

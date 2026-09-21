@@ -401,7 +401,10 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   genau das erledigt jetzt `ON DELETE CASCADE`.
 - **Die Einstellungen haben echte Spalten** (#60). Ein JSON-Klumpen hätte den Befund unverändert
   mitgenommen: `PUT /api/settings` übernahm jeden Schlüssel des Rumpfes, auch einen erfundenen.
-  Mit Spalten gibt es für ein unbekanntes Feld keinen Ort mehr, und damit ist #60 erledigt.
+  Mit Spalten gibt es für ein unbekanntes Feld keinen Ort mehr, und damit ist #60 erledigt. Die
+  beiden Plätze der KI sind Zeilen in `ai_slots` und keine Spalten mit Präfix, weil `text` und
+  `images` dieselbe Gestalt haben; die Bestätigung steht in derselben Zeile wie die Adresse, für
+  die sie gilt. **Kein Feld für den API-Schlüssel**, der bleibt in `data/secrets.json`.
 - **Was mit einem Datensatz geschieht, steht in
   [server/src/db/repository.ts](server/src/db/repository.ts)**, nicht mehr in index.ts. Drei
   Entscheidungen stehen dort begründet. `PUT` **ergänzt und ersetzt nicht**, weil die Oberfläche
@@ -411,15 +414,27 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   `rowid` und damit die Reihenfolge erhalten bleibt. Und ein unbekanntes Feld hat schlicht keine
   Spalte. Die Sammlungen hängen an einem Beschreiber (`withCollection`) statt an Abfragen auf
   Feldnamen: Wer eine Sammlung ergänzt, bekommt vom Übersetzer gesagt, was fehlt.
+- **Was krumm hereinkommt, wird geradegerückt und nicht abgelehnt.** Zwei Staffeleinträge zum
+  selben Stichtag sind über die Oberfläche erzeugbar: Stammdaten.tsx setzt für eine Zeile ohne
+  Monat den Einzugsmonat ein und prüft nie auf Doppelung. In der Datenbank ist der Stichtag Teil
+  des Primärschlüssels, ungeprüft hineingeschrieben gäbe das also einen Fehler statt eines
+  gespeicherten Mietverhältnisses, wo die db.json es klaglos annahm. Es gilt deshalb der letzte
+  Eintrag, wie in calc.ts und beim Umstieg; die Regel steht einmal in
+  [server/src/schedule.ts](server/src/schedule.ts), und legacy.ts wie repository.ts holen sie von
+  dort. Dieselbe Haltung bei der Jahreskorrektur: Ihr Schlüssel muss eine **vierstellige**
+  Jahreszahl sein, sonst führten „2024" und „2024.0" auf dieselbe Spalte und ließen den ganzen
+  Vorgang am Primärschlüssel scheitern.
 - **Fehler der Datenbank werden übersetzt**
-  ([server/src/db/errors.ts](server/src/db/errors.ts)). `databaseMessage` geht die `cause`-Kette
-  bis zur **innersten** Meldung von SQLite hinunter, denn Drizzles äußere Meldung enthält das SQL
-  **samt der eingesetzten Werte des Nutzers** und gehört damit nicht in eine Oberfläche. Aus
-  FOREIGN KEY, UNIQUE, CHECK und NOT NULL wird ein deutscher Satz; die Meldung von SQLite steht
-  höchstens am Ende als „Technischer Befund" und nie allein. Die beiden Plätze
-  der KI sind Zeilen in `ai_slots` und keine Spalten mit Präfix, weil `text` und `images`
-  dieselbe Gestalt haben; die Bestätigung steht in derselben Zeile wie die Adresse, für die sie
-  gilt. **Kein Feld für den API-Schlüssel**, der bleibt in `data/secrets.json`.
+  ([server/src/db/errors.ts](server/src/db/errors.ts)). Drizzles äußere Meldung enthält das SQL
+  **samt der eingesetzten Werte des Nutzers** und gehört damit nicht in eine Oberfläche;
+  `databaseProblem` geht deshalb die `cause`-Kette bis zur **innersten** Meldung von SQLite
+  hinunter. Aus FOREIGN KEY, UNIQUE, CHECK und NOT NULL wird ein deutscher Satz, die Meldung von
+  SQLite steht höchstens am Ende als „Technischer Befund" und nie allein. **Der Status gehört zur
+  Einordnung und kommt von dort mit**: Eine verletzte Zusicherung kommt aus der Anfrage und ist
+  eine 400, Schreibschutz und volle Platte sind eine 503. Angeschlossen ist es in der
+  Fehlerbehandlung von index.ts, und das war es einmal nicht: Die Datei war importiert und
+  niemals aufgerufen, 182 Zeilen mit zehn grünen Tests, die nur sich selbst prüften. Ein Test
+  über eine echte Route hält das jetzt fest.
 - **Löschverhalten ist aus index.ts abgelesen.** Eine Wohnung kaskadiert auf Mietverhältnisse,
   Zähler, Ablesungen, Zahlungen (über das Mietverhältnis) und die vereinbarten Anteile. Bei
   `cost_items.direct_unit_id` steht dagegen **`SET NULL`**: Die Rechnung ist bezahlt worden und
@@ -503,13 +518,35 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   wie beim Öffnen (`unknownSteps` in open.ts steht dafür nur einmal da, die Empfehlung an den
   Nutzer formuliert jeder Aufrufer selbst): Über den Umweg Backup käme ein neueres Schema sonst
   herein, und die Prüfung beim Start käme zu spät, weil die Datei dann schon an ihrem Platz
-  läge. Ersetzt wird nach demselben Muster wie beim Umstieg, also schließen, ersetzen, neu
-  öffnen; die bisherige Datei wandert als `mietfuchs.sqlite.vor-restore` beiseite. **Ein Archiv
-  ohne Datenbank** ist kein Randfall, sondern jedes, das vor dieser Version entstanden ist:
-  Dann wird die Datenbank aus der wiederhergestellten `db.json` neu aufgebaut, mit `runChangeover`
-  und damit mit derselben centgenauen Regression. Sie wandert dafür ganz beiseite statt gelöscht
-  zu werden, damit der Umstieg sie leer vorfindet und seine Regel „steht schon etwas darin,
-  passiert nichts" nicht weich wird.
+  läge. Ersetzt wird nach demselben Muster wie beim Umstieg, also die Schlange leerlaufen lassen,
+  schließen, ersetzen, neu öffnen; die bisherige Datei wandert als `mietfuchs.sqlite.vor-restore`
+  beiseite. Bewegt wird mit `replaceFile` und damit mit Wiederholungen, wie beim Umstieg: Ein
+  Virenscanner unter Windows hält die eben geschlossene Datei kurz fest, und ein nacktes `rename`
+  scheiterte dann ausgerechnet, während die einzige Kopie der wiederhergestellten Daten noch
+  unter ihrem Zwischennamen liegt.
+- **Genau eine der beiden Ablagen kommt ins Archiv, nämlich die, die den Bestand trägt.** Diese
+  Regel und ihr Gegenstück beim Wiederherstellen sind aus einer Durchsicht hervorgegangen, und
+  ohne sie verliert der Aktualisierungsweg Daten. Ein Archiv konnte beides führen, und beim
+  Wiederherstellen gewann die mitgebrachte Datenbank ohne Prüfung. Wer eine Version vor dem
+  Umstellen der Routen fährt, hat aber eine lebende `db.json` und eine Datenbank, die auf dem
+  Stand des Umstiegstags stehengeblieben ist; und wer ein Backup zieht, während der Umstieg
+  gescheitert ist, hat eine **leere** Datenbank neben einer vollen `db.json`. In beiden Fällen
+  sah der Vermieter nach der Bestätigung „ok" ein veraltetes oder leeres Haus, schrieb hinein,
+  und ab dem Augenblick fand der Umstieg eine gefüllte Datenbank vor und lief nie wieder. Genau
+  der Ausgang, den die Sperre in health.ts verhindern soll; das Backup führte daran vorbei.
+  Deshalb: Das Backup packt die Datenbank nur ein, wenn `databaseUnavailable` `null` sagt, sonst
+  die `db.json`. **Und beim Wiederherstellen gilt eine `db.json` im Archiv vor der Datenbank**,
+  denn jede bisher veröffentlichte Version hat sie als lebenden Bestand geschrieben. Geraten wird
+  dabei nichts: Ab dieser Version kann gar kein Archiv mehr entstehen, das beides führt.
+- **Ein Archiv ohne Datenbank** ist kein Randfall, sondern jedes, das vor dieser Version
+  entstanden ist: Dann wird die Datenbank aus der wiederhergestellten `db.json` neu aufgebaut,
+  mit `runChangeover` und damit mit derselben centgenauen Regression. Sie wandert dafür ganz
+  beiseite statt gelöscht zu werden, damit der Umstieg sie leer vorfindet und seine Regel „steht
+  schon etwas darin, passiert nichts" nicht weich wird. **Danach werden die Einstellungen neu
+  eingelesen**: Sie liegen als Kopie im Arbeitsspeicher, und ohne das Auffrischen zeigte die
+  Oberfläche bis zum nächsten Start den Stand von vorher. Die gedruckte Abrechnung nimmt von dort
+  Vermietername und IBAN, und weil `PUT /api/settings` vom Zwischenspeicher ausgeht, schriebe die
+  nächste beliebige Änderung den veralteten Stand vollständig zurück.
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl

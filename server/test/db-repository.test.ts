@@ -21,7 +21,10 @@ import {
   listCollection, removeEntity, reopenSettlement, setSentAt, sharesForUnit, updateEntity,
   type CollectionName,
 } from '../src/db/repository.ts'
-import { costItems, meters, payments, readings, tenancies, units } from '../src/db/schema.ts'
+import {
+  baseRents, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
+  prepayments, readings, tenancies, units,
+} from '../src/db/schema.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-repo-'))
 
@@ -112,6 +115,80 @@ test('Ändern lässt die Reihenfolge der Liste unverändert', async () => {
     await opened.write((db) => updateEntity(db, 'units', 'u1', { name: 'geändert' }))
     const liste = await opened.read((db) => listCollection(db, 'units'))
     assert.deepEqual(liste.map((u) => u.id), ['u1', 'u2', 'u3'])
+  })
+})
+
+test('Ändern trägt in jeder Sammlung, nicht nur bei Wohnungen und Mietverhältnissen', async () => {
+  // **Vier der sechs Änderungswege hatten keinen Test.** Geprüft wurde nur, was die Oberfläche
+  // am häufigsten anfasst; `costItems`, `meters`, `readings` und `payments` liefen ungeprüft
+  // mit. Gemessen: Ein `replace`, das statt auf die eigene Kennung auf ein anderes Feld
+  // verweist, übersetzt anstandslos, antwortet 200 mit dem unveränderten Datensatz, und kein
+  // Test würde rot. Eine korrigierte Ablesung ist eine der häufigsten Eingaben überhaupt und
+  // wandert unmittelbar in die verbrauchsabhängige Verteilung.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', start: '2024-01-01' }))
+    await opened.write((db) => createEntity(db, 'meters', 'm1', { name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }))
+    await opened.write((db) => createEntity(db, 'readings', 'r1', { meterId: 'm1', date: '2024-12-31', value: 100 }))
+    await opened.write((db) => createEntity(db, 'payments', 'p1', { tenancyId: 't1', date: '2024-01-05', amountCents: 50000 }))
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'area',
+    }))
+
+    const geaendert: [CollectionName, string, Record<string, unknown>, string, unknown][] = [
+      ['costItems', 'c1', { amountCents: 13500 }, 'amountCents', 13500],
+      ['meters', 'm1', { meterNumber: 'ZX-9' }, 'meterNumber', 'ZX-9'],
+      ['readings', 'r1', { value: 142 }, 'value', 142],
+      ['payments', 'p1', { amountCents: 49900 }, 'amountCents', 49900],
+    ]
+    for (const [coll, id, rumpf, feld, erwartet] of geaendert) {
+      const zurueck = await opened.write((db) => updateEntity(db, coll, id, rumpf))
+      assert.equal(fieldOf(zurueck, feld), erwartet, `${coll}: die Antwort trägt die Änderung nicht`)
+      const gelesen = await opened.read((db) => findEntity(db, coll, id))
+      assert.equal(fieldOf(gelesen, feld), erwartet, `${coll}: in der Datenbank steht der alte Wert`)
+    }
+  })
+})
+
+test('Ändern einer Kostenposition schreibt auch die vereinbarten Anteile', async () => {
+  // Die Anteile liegen in einer eigenen Tabelle und werden beim Ändern ganz ersetzt. Geprüft war
+  // bisher nur das Anlegen und das Wegräumen beim Löschen einer Wohnung; streicht man den Aufruf
+  // im Änderungsweg, bleibt alles grün, und das Ändern vereinbarter Prozentanteile wird still
+  // verworfen. Das ist der Umlageschlüssel, bei dem der Vermieter die Verteilung von Hand
+  // festlegt, eine Änderung dort bewegt also unmittelbar Geld.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u2', { name: 'OG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'custom',
+      customShares: { u1: 70, u2: 30 },
+    }))
+
+    const zurueck = await opened.write((db) => updateEntity(db, 'costItems', 'c1', { customShares: { u1: 40, u2: 60 } }))
+    assert.deepEqual(fieldOf(zurueck, 'customShares'), { u1: 40, u2: 60 }, 'die Antwort trägt die alten Anteile')
+    const gelesen = await opened.read((db) => findEntity(db, 'costItems', 'c1'))
+    assert.deepEqual(fieldOf(gelesen, 'customShares'), { u1: 40, u2: 60 }, 'in der Datenbank stehen die alten Anteile')
+
+    // Und ein Anteil, der wegfällt, fällt wirklich weg, statt neben dem neuen stehen zu bleiben.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c1', { customShares: { u1: 100 } }))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'customShares'), { u1: 100 })
+  })
+})
+
+test('Die Jahreskorrektur nimmt nur vierstellige Jahreszahlen an', async () => {
+  // In der Datei steht der Schlüssel als Text („2024"), in der Spalte als Zahl. Verlustfrei ist
+  // das Hin und Her nur, solange der Schlüssel wirklich eine Jahreszahl ist, und der Validator
+  // lässt beim Umstieg genau vierstellige durch. Der Schreibweg der Routen muss dieselbe Grenze
+  // ziehen: `Number('')` ist 0 und damit ganzzahlig, ein leerer Schlüssel ergäbe also eine
+  // Jahreskorrektur für das Jahr 0. Zwei Schlüssel, die auf dieselbe Zahl führen („2024" und
+  // „2024.0"), ließen sogar den ganzen Vorgang am Primärschlüssel scheitern.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    const t = await opened.write((db) => createEntity(db, 'tenancies', 't1', {
+      unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
+      prepaymentOverrides: { '2024': 180000, '': 1, ' ': 2, '2024.0': 3, '1e3': 4, 'zweitausend': 5, '-5': 6 },
+    }))
+    assert.deepEqual(fieldOf(t, 'prepaymentOverrides'), { '2024': 180000 })
   })
 })
 
@@ -358,5 +435,58 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
         )
       }
     }
+  })
+})
+
+test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () => {
+  // **Der Wächter darüber sieht nur die sechs Haupttabellen.** Die fünf Untertabellen hängen am
+  // Mietverhältnis beziehungsweise an der Kostenposition und werden von `personEntry`,
+  // `moneyEntry`, `readAmountsByYear` und `readShares` gelesen; eine neue Spalte dort ginge beim
+  // Speichern still verloren, und der Wächter oben bemerkte es nicht. Die Erwartung wird auch
+  // hier aus den Spalten abgeleitet.
+  //
+  // `tenancy_id` und `cost_item_id` bleiben außen vor: Sie stehen nicht im Eintrag, sondern
+  // ergeben sich aus dem Datensatz, an dem die Liste hängt.
+  const staffeln: { table: SQLiteTable, feld: string, eintrag: Record<string, unknown> }[] = [
+    { table: personHistory, feld: 'personHistory', eintrag: { from: '2024-03-01', persons: 3 } },
+    { table: prepayments, feld: 'prepayments', eintrag: { from: '2024-03', monthlyCents: 15000 } },
+    { table: baseRents, feld: 'baseRents', eintrag: { from: '2024-03', monthlyCents: 60000 } },
+  ]
+
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+
+    for (const { table, feld, eintrag } of staffeln) {
+      const gespeichert = await opened.write((db) => createEntity(db, 'tenancies', `t-${feld}`, {
+        unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', [feld]: [eintrag],
+      }))
+      const zurueck = fieldOf(gespeichert, feld)
+      for (const spalte of Object.keys(getTableColumns(table))) {
+        if (spalte === 'tenancyId') continue
+        assert.ok(
+          Object.hasOwn(eintrag, spalte),
+          `${feld}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
+        )
+      }
+      assert.deepEqual(zurueck, [eintrag], `${feld}: der Eintrag ist beim Verschmelzen verlorengegangen`)
+    }
+
+    // Die Jahreskorrektur und die vereinbarten Anteile sind Zuordnungen und keine Listen; ihre
+    // Spalten stehen deshalb hier benannt, und der Vergleich gegen `getTableColumns` sichert ab,
+    // dass es bei diesen dreien bleibt.
+    for (const [table, erwartet] of [
+      [prepaymentOverrides, ['tenancyId', 'year', 'amountCents']],
+      [costItemShares, ['costItemId', 'unitId', 'percent']],
+    ] as const) {
+      assert.deepEqual(Object.keys(getTableColumns(table)).sort(), [...erwartet].sort())
+    }
+    const mitKorrektur = await opened.write((db) => createEntity(db, 'tenancies', 't-korrektur', {
+      unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024': 180000 },
+    }))
+    assert.deepEqual(fieldOf(mitKorrektur, 'prepaymentOverrides'), { '2024': 180000 })
+    const mitAnteilen = await opened.write((db) => createEntity(db, 'costItems', 'c-anteile', {
+      year: 2024, category: 'Müll', description: 'G', amountCents: 100, key: 'custom', customShares: { u1: 55 },
+    }))
+    assert.deepEqual(fieldOf(mitAnteilen, 'customShares'), { u1: 55 })
   })
 })

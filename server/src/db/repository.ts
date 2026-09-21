@@ -117,13 +117,21 @@ const moneyEntry = (row: unknown): PrepaymentEntry | null => {
   return from === undefined ? null : { from, monthlyCents: asNumber(raw(row, 'monthlyCents'), 0) }
 }
 
-// Jahr zu Betrag, und beides muss stimmen: Ein Jahr, das keine Zahl ist, hätte in der Spalte
-// nichts zu suchen, denn dort steht es als Zahl und nicht als Text.
+// Jahr zu Betrag. In der Datei steht der Schlüssel als Text („2024"), in der Spalte als Zahl.
+//
+// **Verlangt wird genau eine vierstellige Jahreszahl**, dieselbe Grenze, die der Validator beim
+// Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
+// und `Number(' ')` sind 0, ein leerer Schlüssel ergäbe also eine Jahreskorrektur für das Jahr 0.
+// Und zwei verschiedene Schlüssel können auf dieselbe Zahl führen („2024" und „2024.0"), womit
+// der zusammengesetzte Primärschlüssel den ganzen Vorgang scheitern ließe: Das Mietverhältnis
+// wäre dann überhaupt nicht zu speichern.
+const YEAR_KEY = /^\d{4}$/
+
 function readAmountsByYear(value: unknown): Record<string, number> {
   if (!isObject(value)) return {}
   const rows: Record<string, number> = {}
   for (const [schluessel, betrag] of Object.entries(Object(value))) {
-    if (!Number.isInteger(Number(schluessel))) continue
+    if (!YEAR_KEY.test(schluessel)) continue
     const zahl = asOptionalNumber(betrag)
     if (zahl !== undefined) rows[schluessel] = zahl
   }
