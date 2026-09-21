@@ -9,6 +9,7 @@
 // Alles läuft in **einer** Transaktion. Scheitert ein Datensatz, ist auch der erste wieder weg;
 // sonst stünde ein halber Bestand in der Datei, den niemand als halb erkennt.
 
+import type { AiSlot, AiSlotName } from '../../../shared/types.ts'
 import type { StraightDb } from '../legacy.ts'
 import type { Database } from './client.ts'
 import {
@@ -75,20 +76,18 @@ export async function writeStock(db: Database, stock: StraightDb): Promise<Stock
   const ai = stock.settings.ai
   // Die beiden Plätze der KI sind Zeilen und keine Spalten mit Präfix. Die Bestätigung eines
   // externen Dienstes steht in derselben Zeile wie die Adresse, für die sie gilt.
-  const slotRows = [
-    { slot: 'text' as const, ...ai.text },
-    ...(ai.images ? [{ slot: 'images' as const, ...ai.images }] : []),
-  ].map((slot) => ({
-    slot: slot.slot,
+  const slotRow = (name: AiSlotName, slot: AiSlot) => ({
+    slot: name,
     provider: slot.provider,
     preset: slot.preset,
     url: slot.url,
     model: slot.model,
     vision: orNull(slot.vision),
-    consentUrl: orNull(ai.consent[slot.slot]?.url),
-    consentModel: orNull(ai.consent[slot.slot]?.model),
-    consentDate: orNull(ai.consent[slot.slot]?.date),
-  }))
+    consentUrl: orNull(ai.consent[name]?.url),
+    consentModel: orNull(ai.consent[name]?.model),
+    consentDate: orNull(ai.consent[name]?.date),
+  })
+  const slotRows = [slotRow('text', ai.text), ...(ai.images ? [slotRow('images', ai.images)] : [])]
 
   await db.transaction(async (tx) => {
     // Die Reihenfolge ist die der Verweise: Erst die Wohnung, dann alles, was auf sie zeigt.
