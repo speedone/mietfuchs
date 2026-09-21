@@ -576,7 +576,18 @@ app.get('/api/backup', async (req, res) => {
   // maßgebliche Stand, und niemand soll an einem Backup gehindert werden, weil die Datenbank
   // gerade klemmt. Beim Wiederherstellen wird sie dann aus der db.json neu aufgebaut.
   if (database) {
-    const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.backup`)
+    // **Ein eigener Name je Anfrage.** Zwei gleichzeitige Backups teilten sich sonst die
+    // Zwischendatei, und die zweite löschte, was die erste gerade packen will; heraus käme ein
+    // Archiv ohne Datenbank oder ein Serverfehler, und zwei Klicks auf denselben Knopf sind
+    // nichts Ausgefallenes. Dass es heute auch mit festem Namen gutginge, hängt allein daran,
+    // in welcher Reihenfolge Node die Fortsetzungen abarbeitet — das sagt weder unsere Schlange
+    // zu noch der Treiber darunter.
+    //
+    // Aufgeräumt wird im `finally`. Stirbt der Prozess mitten im Schnappschuss, bleibt eine
+    // Datei liegen; weggeräumt wird sie dann bewusst **nicht** von der nächsten Anfrage, denn
+    // eine Suche nach fremden Resten träfe genau die Zwischendatei eines gleichzeitig laufenden
+    // Backups und brächte die Verdrängung zurück, die dieser Name gerade verhindert.
+    const temp = path.join(DATA_DIR, `${ARCHIVE_DB_NAME}.${newId()}.backup`)
     try {
       await writeDatabaseSnapshot(database, temp)
       zip.addFile(ARCHIVE_DB_NAME, fs.readFileSync(temp))
