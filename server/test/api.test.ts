@@ -1611,6 +1611,50 @@ test('Backup: ein Archiv ohne db.json oder mit kaputter db.json ändert nichts',
   })
 })
 
+test('Backup: ein Archiv mit beschädigten Daten wird abgelehnt, ohne etwas zu ersetzen (#59)', async () => {
+  // Bisher genügte es, dass die db.json gültiges JSON ist. `{"units": null}` kam damit durch,
+  // und danach beantwortete der Server keine einzige Anfrage mehr: Beim Einlesen verdrängt das
+  // `null` den Vorgabewert, die Liste ist keine mehr, und jeder weitere Aufruf scheitert erneut.
+  await withData(async (s, { unit, file }) => {
+    const vorher = fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8')
+    const kaputt = { settings: {}, units: null, tenancies: [], costItems: [], meters: [], readings: [], payments: [] }
+    const r = await restore(s, archive({ 'uploads/fremd.pdf': 'x' }, kaputt))
+    assert.equal(r.status, 400)
+    // Die Meldung nennt, was nicht stimmt, und sagt, dass nichts verändert wurde.
+    assert.match(errorOf(r.body), /Wohnungen/)
+    assert.match(errorOf(r.body), /unverändert/)
+    // Und wirklich nichts ersetzt: weder die Daten noch die Belege, und auch keine
+    // Sicherheitskopie, die es ja gar nicht zu sichern gab.
+    assert.equal(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8'), vorher)
+    assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json.vor-restore')), false)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file])
+  })
+})
+
+test('Backup: ein krummer, aber gültiger Bestand wird übernommen', async () => {
+  // Der Unterschied zwischen kaputt und krumm entscheidet, wer sein Backup zurückspielen kann.
+  // Beides hier entsteht durch gewöhnliche Bedienung: Das Löschen einer Wohnung lässt die
+  // Direktzuordnung stehen, und die Vorauszahlungs-Staffel prüft nicht auf doppelte Monate.
+  await withData(async (s) => {
+    const krumm = {
+      settings: {},
+      units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+      tenancies: [{
+        id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: null,
+        personHistory: [{ from: '2024-01-01', persons: 2 }],
+        prepayments: [{ from: '2024-01', monthlyCents: 15000 }, { from: '2024-01', monthlyCents: 18000 }],
+        prepaymentOverrides: {}, baseRents: [],
+      }],
+      costItems: [{ id: 'c1', year: 2024, category: 'Sonstiges', description: 'Rohrbruch', amountCents: 30000, key: 'direct', directUnitId: 'gibt-es-nicht' }],
+      meters: [], readings: [], payments: [],
+    }
+    const r = await restore(s, archive({}, krumm))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.deepEqual((await s.api<CostItem[]>('/api/costItems')).map((c) => c.id), ['c1'])
+  })
+})
+
 // Setzt einen Eintragsnamen roh ins Archiv, wie ein präpariertes ZIP ihn enthielte. adm-zip
 // bereinigt Namen schon beim Erzeugen, deshalb erst mit gleich langem Platzhalter bauen und die
 // Bytes danach ersetzen (der Name steckt in lokalem Kopf und zentralem Verzeichnis).

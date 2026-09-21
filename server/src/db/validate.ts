@@ -73,15 +73,17 @@ const isRecord = (value: unknown): boolean => value !== null && typeof value ===
 const short = (text: string): string => (text.length > 40 ? `${text.slice(0, 40)}…` : text)
 
 // Was da steht, in der Sprache des Nutzers. Steht in jeder Meldung über einen falschen Typ,
-// damit der Nutzer die Stelle in der Datei wiedererkennt.
+// damit der Nutzer die Stelle in der Datei wiedererkennt. Im Nominativ, weil jede Meldung, die
+// ihn benutzt, mit „dort steht" gebaut ist; ein Satz mit vertauschtem Fall liest sich, als
+// hätte ihn eine Maschine zusammengesetzt, und das soll er nicht.
 function kindOf(value: unknown): string {
   if (value === null) return 'nichts'
   if (Array.isArray(value)) return 'eine Liste'
-  if (typeof value === 'string') return `einen Text („${short(value)}")`
+  if (typeof value === 'string') return `ein Text („${short(value)}")`
   if (typeof value === 'number') return `die Zahl ${value}`
-  if (typeof value === 'boolean') return 'einen Wahrheitswert'
+  if (typeof value === 'boolean') return 'ein Wahrheitswert'
   if (typeof value === 'object') return 'ein Objekt'
-  return 'einen unbrauchbaren Wert'
+  return 'ein unbrauchbarer Wert'
 }
 
 // Der Ort eines Datensatzes. Die laufende Nummer steht immer dabei, denn Name und Kennung
@@ -110,7 +112,7 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
   const missing = (label: string, raw: unknown, expected: string): string =>
     raw === undefined || raw === null
       ? `Das Feld „${label}" fehlt.`
-      : `Das Feld „${label}" enthält ${kindOf(raw)}, erwartet wird ${expected}.`
+      : `Im Feld „${label}" steht ${kindOf(raw)}, erwartet wird ${expected}.`
   const empty = (label: string): string => `Das Feld „${label}" ist leer.`
 
   const checkNumber = (raw: unknown, label: string, options: NumberOptions): number | null => {
@@ -185,12 +187,12 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
       const raw = fieldOf(record, field)
       if (raw === undefined || raw === null) return
       if (typeof raw === 'string' && values.includes(raw)) return
-      problem(c, where, `Das Feld „${label}" hat den Wert ${kindOf(raw)}. Erlaubt ist nur: ${values.join(', ')}.`)
+      problem(c, where, `Im Feld „${label}" steht ${kindOf(raw)}. Erlaubt ist nur: ${values.join(', ')}.`)
     },
     oneOf(field: string, label: string, values: readonly string[]): void {
       const raw = fieldOf(record, field)
       if (typeof raw === 'string' && values.includes(raw)) return
-      problem(c, where, `Das Feld „${label}" hat den Wert ${kindOf(raw)}. Erlaubt ist nur: ${values.join(', ')}.`)
+      problem(c, where, `Im Feld „${label}" steht ${kindOf(raw)}. Erlaubt ist nur: ${values.join(', ')}.`)
     },
   }
 }
@@ -240,7 +242,7 @@ function idsOf(c: Collector, collection: Collection, kind: string, nameField?: s
       problem(
         c,
         place(kind, index, entry, nameField),
-        `Die Kennung ${id} kommt mehrfach vor. Von zwei Datensätzen mit derselben Kennung käme nur einer an, und der andere fehlte, ohne dass es auffiele.`,
+        `Die Kennung „${id}" kommt mehrfach vor. Von zwei Datensätzen mit derselben Kennung käme nur einer an, und der andere fehlte, ohne dass es auffiele.`,
       )
       return
     }
@@ -266,7 +268,7 @@ function checkReference(
   // Ist die Zielsammlung selbst unbrauchbar, ist darüber schon alles gesagt; jeder Verweis
   // dorthin ergäbe sonst eine zweite Meldung über dieselbe Ursache.
   if (!usable || known.has(value)) return
-  problem(c, where, `${target} mit der Kennung ${value} kommt in der Datei nicht vor.`)
+  problem(c, where, `${target} mit der Kennung „${value}" kommt in der Datei nicht vor.`)
 }
 
 // ---------- Die Staffeln ----------
@@ -450,7 +452,7 @@ function checkCostItems(c: Collector, costItems: Collection, units: Collection, 
     // schlägt eine unbekannte Kennung genauso vergeblich nach wie `null`.
     const direct = fieldOf(entry, 'directUnitId')
     if (typeof direct === 'string' && direct.trim() && units.usable && !unitIds.has(direct)) {
-      adjust(c, where, `Die Direktzuordnung zeigt auf die Wohnung ${direct}, die es nicht mehr gibt. Sie wird als „keine Zuordnung" übernommen; der Betrag geht wie bisher an den Vermieter.`)
+      adjust(c, where, `Die Direktzuordnung zeigt auf die Wohnung „${direct}", die es nicht mehr gibt. Sie wird als „keine Zuordnung" übernommen; der Betrag geht wie bisher an den Vermieter.`)
     } else {
       fields.optionalText('directUnitId', 'Direkt zugeordnete Wohnung')
     }
@@ -501,14 +503,14 @@ function checkMeters(c: Collector, meters: Collection, units: Collection, unitId
     const unitId = fieldOf(entry, 'unitId')
     if (unitId === undefined || unitId === null) return
     if (typeof unitId !== 'string' || !unitId.trim()) {
-      problem(c, where, `Das Feld „Wohnung" enthält ${kindOf(unitId)}, erwartet wird eine Kennung oder gar nichts (Hauptzähler).`)
+      problem(c, where, `Im Feld „Wohnung" steht ${kindOf(unitId)}, erwartet wird eine Kennung oder gar nichts (Hauptzähler).`)
       return
     }
     if (units.usable && !unitIds.has(unitId)) {
       problem(
         c,
         where,
-        `Die Wohnung mit der Kennung ${unitId} kommt in der Datei nicht vor. Den Zähler stattdessen als Hauptzähler zu übernehmen ginge nicht ohne Folgen: Er zählte dann nicht mehr in die Verbrauchsbasis, und die Abrechnung verteilte andere Beträge als bisher.`,
+        `Die Wohnung mit der Kennung „${unitId}" kommt in der Datei nicht vor. Den Zähler stattdessen als Hauptzähler zu übernehmen ginge nicht ohne Folgen: Er zählte dann nicht mehr in die Verbrauchsbasis, und die Abrechnung verteilte andere Beträge als bisher.`,
       )
     }
   })

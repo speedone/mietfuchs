@@ -20,6 +20,7 @@ import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { healthReport, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
+import { findingsText, validateDb } from './db/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
@@ -607,11 +608,24 @@ function readBackup(buffer: Buffer): { dbText: string, files: { fileName: string
   }
 
   let dbText: string
+  let parsed: unknown
   try {
     dbText = zip.readAsText(dbEntry)
-    JSON.parse(dbText)
+    parsed = JSON.parse(dbText)
   } catch {
     throw new Error('Die db.json im Archiv ist beschädigt (kein gültiges JSON).')
+  }
+  // Gültiges JSON heißt noch nicht, dass es ein Mietfuchs-Datenbestand ist (#59). Käme hier
+  // etwas durch, das dem Datenmodell nicht entspricht, ginge der laufende Server danach nicht
+  // mehr: Das Einlesen wirft, und **jede** weitere Anfrage scheitert erneut, bis jemand die
+  // Datei von Hand zurückkopiert. Deshalb wird geprüft, bevor irgendetwas überschrieben wird.
+  // Was krumm, aber gültig ist, kommt weiterhin durch; die Begründung steht in db/validate.ts.
+  const { problems } = validateDb(parsed)
+  if (problems.length > 0) {
+    throw new Error(
+      'Die Daten in diesem Archiv passen nicht zu Mietfuchs, deshalb wurde nichts davon übernommen. ' +
+        `Ihre bisherigen Daten sind unverändert. Beanstandet wurde:\n${findingsText(problems)}`,
+    )
   }
   // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
   return { dbText, files: files.map(({ fileName, e }) => ({ fileName, content: e.getData() })) }
