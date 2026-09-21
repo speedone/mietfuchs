@@ -12,7 +12,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { connect } from '../src/db/client.ts'
 import {
-  createWriteQueue, databaseFile, integrityProblem, networkLocation, openDatabase, type OpenedDatabase,
+  createLane, databaseFile, integrityProblem, networkLocation, openDatabase, type OpenedDatabase,
 } from '../src/db/open.ts'
 import { readings, units } from '../src/db/schema.ts'
 
@@ -436,14 +436,71 @@ test('Gegenprobe: ohne die Reihung bricht die zweite Transaktion ab', async () =
   }
 })
 
+test('Lesen sieht nichts Halbes aus einem laufenden Schreibvorgang', async () => {
+  // **Der Grund, warum Lesen ab Aufgabe 6 durch dieselbe Spur läuft.** Alle Anfragen teilen sich
+  // eine Verbindung, und auf derselben Verbindung gehört jede Anweisung, die während einer
+  // offenen Transaktion abgesetzt wird, zu dieser Transaktion. Ein Lesevorgang daneben liest
+  // also einen Stand, den es nie gegeben hat und der gleich zurückgerollt wird. Bis Aufgabe 6
+  // war das folgenlos, weil nichts las; danach wäre es eine gedruckte Abrechnung.
+  const dataDir = tempDir()
+  const opened = await openDatabase({ dataDir })
+  try {
+    let losbinden = (): void => {}
+    const angehalten = new Promise<void>((fertig) => { losbinden = fertig })
+
+    // Ein Schreibvorgang, der mittendrin wartet und danach zurückrollt.
+    const schreiben = opened.write(async (db) => {
+      await db.transaction(async (tx) => {
+        await tx.insert(units).values({ id: 'u1', name: 'EG', areaM2: 80, participates: true })
+        await angehalten
+        throw new Error('wird zurückgerollt')
+      })
+    })
+    await yieldControl()
+
+    // Die Gegenprobe zuerst: **an der Spur vorbei ist der halbe Stand wirklich sichtbar.** Ohne
+    // sie wäre der Test unten nur eine Behauptung über eine Gefahr, die es vielleicht gar nicht
+    // gibt.
+    const vorbei = await opened.db.select().from(units)
+    assert.equal(vorbei.length, 1, 'die Gegenprobe greift nicht: der nicht festgeschriebene Stand ist unsichtbar')
+
+    // Und nun durch die Spur: Der Lesevorgang wartet, bis der Schreibvorgang fertig ist.
+    const durchDieSpur = opened.read((db) => db.select().from(units))
+    losbinden()
+    await assert.rejects(() => schreiben, /zurückgerollt/)
+    assert.deepEqual(await durchDieSpur, [], 'nach dem Rückrollen darf dort nichts stehen')
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
+test('ein Lesevorgang im Schreibvorgang läuft durch, statt sich zu melden', async () => {
+  // Anders als ein Schreibvorgang im Schreibvorgang. Wer innerhalb einer Transaktion liest, ist
+  // bereits in der richtigen Spur: Ihn erneut einzureihen hieße, auf sich selbst zu warten, und
+  // ihn abzulehnen nähme dem Repository die Möglichkeit, vor dem Schreiben nachzusehen.
+  const dataDir = tempDir()
+  const opened = await openDatabase({ dataDir })
+  try {
+    const gelesen = await opened.write(async (db) => {
+      await db.insert(units).values({ id: 'u1', name: 'EG', areaM2: 80, participates: true })
+      return opened.read((innen) => innen.select().from(units))
+    })
+    assert.deepEqual(gelesen.map((u) => u.id), ['u1'])
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
+})
+
 test('ein gescheiterter Schreibvorgang reißt die folgenden nicht mit', async () => {
-  const reihen = createWriteQueue()
+  const reihen = createLane()
   const ablauf: string[] = []
-  const scheitern = reihen(async () => {
+  const scheitern = reihen.write(async () => {
     ablauf.push('erster')
     throw new Error('geht schief')
   })
-  const danach = reihen(async () => {
+  const danach = reihen.write(async () => {
     ablauf.push('zweiter')
     return 'fertig'
   })
@@ -453,14 +510,14 @@ test('ein gescheiterter Schreibvorgang reißt die folgenden nicht mit', async ()
 })
 
 test('die Reihung hält die Vorgänge wirklich auseinander', async () => {
-  const reihen = createWriteQueue()
+  const reihen = createLane()
   const ablauf: string[] = []
   const arbeiten = async (name: string) => {
     ablauf.push(`${name} beginnt`)
     await yieldControl()
     ablauf.push(`${name} endet`)
   }
-  await Promise.all([reihen(() => arbeiten('a')), reihen(() => arbeiten('b'))])
+  await Promise.all([reihen.write(() => arbeiten('a')), reihen.write(() => arbeiten('b'))])
   assert.deepEqual(ablauf, ['a beginnt', 'a endet', 'b beginnt', 'b endet'])
 })
 
@@ -468,13 +525,13 @@ test('ein Schreibvorgang im Schreibvorgang meldet sich, statt stillzustehen', as
   // Er würde auf sich selbst warten: Die Schlange ist erst frei, wenn der äußere Vorgang fertig
   // ist, und der wartet auf den inneren. Ohne diese Meldung hinge die Anfrage für immer, und
   // niemand sähe, warum.
-  const reihen = createWriteQueue()
+  const reihen = createLane()
   await assert.rejects(
-    () => reihen(async () => reihen(async () => 'innen')),
+    () => reihen.write(async () => reihen.write(async () => 'innen')),
     /Mietfuchs/,
   )
   // Und danach läuft die Schlange weiter.
-  assert.equal(await reihen(async () => 'geht wieder'), 'geht wieder')
+  assert.equal(await reihen.write(async () => 'geht wieder'), 'geht wieder')
 })
 
 test('die Ablehnung wird geworfen und kommt dadurch beim Aufrufer an', async () => {
@@ -483,12 +540,12 @@ test('die Ablehnung wird geworfen und kommt dadurch beim Aufrufer an', async () 
   // täte. Node beendet den Prozess bei einer unbehandelten Ablehnung, und dann stünde die
   // Meldung nirgends. Geworfen landet sie im Rumpf des äußeren Vorgangs und von dort bei
   // dessen Aufrufer, also dort, wo der Fehler gemacht wurde.
-  const reihen = createWriteQueue()
+  const reihen = createLane()
   let geworfen: unknown = null
   let rueckgabe: unknown = 'gar nichts zurückbekommen'
-  await reihen(async () => {
+  await reihen.write(async () => {
     try {
-      rueckgabe = reihen(async () => 'innen')
+      rueckgabe = reihen.write(async () => 'innen')
     } catch (err) {
       geworfen = err
     }
@@ -502,12 +559,12 @@ test('ein Zeitgeber aus einem Schreibvorgang heraus darf danach wieder schreiben
   // Überlebt er den Vorgang, gilt ein solcher Schreibvorgang für immer als verschachtelt,
   // obwohl er längst allein ist. Genau das ist der Fall, der in Aufgabe 6 scharf wird: Ein
   // Zeitgeber, der nach dem Speichern aufräumt, schriebe nie wieder etwas.
-  const reihen = createWriteQueue()
+  const reihen = createLane()
   const spaeter = new Promise<string>((resolve, reject) => {
-    void reihen(async () => {
+    void reihen.write(async () => {
       setTimeout(() => {
         try {
-          reihen(async () => 'darf schreiben').then(resolve, reject)
+          reihen.write(async () => 'darf schreiben').then(resolve, reject)
         } catch (err) {
           reject(err)
         }
@@ -522,10 +579,10 @@ test('ein Schreibvorgang, der nie fertig wird, bleibt nicht stumm', async () => 
   // eines anderen abzuräumen wäre schlimmer als zu warten. Gesagt werden muss es trotzdem,
   // sonst steht die Oberfläche ohne eine Zeile Ausgabe.
   const gemeldet: string[] = []
-  const reihen = createWriteQueue({ slowAfterMs: 20, onSlow: (text) => gemeldet.push(text) })
+  const reihen = createLane({ slowAfterMs: 20, onSlow: (text) => gemeldet.push(text) })
   let loesen = (): void => {}
-  const haengt = reihen(() => new Promise<void>((resolve) => { loesen = resolve }))
-  const wartet = reihen(async () => 'kommt später dran')
+  const haengt = reihen.write(() => new Promise<void>((resolve) => { loesen = resolve }))
+  const wartet = reihen.write(async () => 'kommt später dran')
   await new Promise((r) => setTimeout(r, 80))
   assert.equal(gemeldet.length, 1, gemeldet.join(' | '))
   assert.match(String(gemeldet[0]), /Speichervorgang/, 'die Meldung sagt, was los ist')
@@ -538,8 +595,8 @@ test('ein Schreibvorgang, der nie fertig wird, bleibt nicht stumm', async () => 
 
 test('ein zügiger Schreibvorgang meldet nichts', async () => {
   const gemeldet: string[] = []
-  const reihen = createWriteQueue({ slowAfterMs: 500, onSlow: (text) => gemeldet.push(text) })
-  await reihen(async () => 'schnell')
+  const reihen = createLane({ slowAfterMs: 500, onSlow: (text) => gemeldet.push(text) })
+  await reihen.write(async () => 'schnell')
   await new Promise((r) => setTimeout(r, 30))
   assert.deepEqual(gemeldet, [])
 })
