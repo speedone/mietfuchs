@@ -555,6 +555,16 @@ td.actions { white-space: nowrap; text-align: right; }
 .sidebar .update-hint-links button:hover { background: none; color: #fff; text-decoration: underline; }
 .sidebar .update-hint :focus-visible { outline: 2px solid #ef6f2e; outline-offset: 2px; }
 
+/* Hinweis zum Umstieg der Daten in die Datenbank (#55). Er steht im Hauptbereich, nicht in der
+   Seitenleiste: Dort wäre er auf kleinen Bildschirmen ausgeblendet. */
+.db-notice { display: flex; gap: 16px; align-items: flex-start; border-color: rgba(239, 111, 46, 0.45); }
+.db-notice-icon { flex-shrink: 0; font-size: 22px; line-height: 1.2; }
+.db-notice-body { flex: 1; }
+.db-notice h2 { margin-bottom: 6px; }
+.db-notice p { margin: 0; max-width: 72ch; }
+.db-notice p.muted { margin-top: 8px; }
+.db-notice-problem { border-color: var(--error-border); background: var(--red-soft); }
+
 .update-consent { display: flex; gap: 16px; align-items: flex-start; border-color: rgba(239, 111, 46, 0.45); }
 .update-consent svg { flex-shrink: 0; margin-top: 2px; }
 .update-consent h2 { margin-bottom: 6px; }
