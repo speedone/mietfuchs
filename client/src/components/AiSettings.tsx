@@ -609,7 +609,7 @@ function PullHint({ model, url, onPull, busy }: { model: string; url: string; on
       <p>„{model}“ ist nicht installiert.</p>
       <div className="row">
         <button className="btn secondary" onClick={onPull} disabled={busy}>Modell laden</button>
-        <span className="muted">oder {text.replace(/^Zum Laden im/, 'im').replace(/:$/, ':')}</span>
+        <span className="muted">oder {text.replace(/^Zum Laden im/, 'im')}</span>
       </div>
       <div className="command-box">
         <pre><code>{command}</code></pre>
