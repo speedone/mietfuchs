@@ -6,7 +6,7 @@ name: KI-Prüflauf
 # Modelle lädt GitHub, niemand muss sie für einen Vergleich selbst herunterladen.
 #
 # Start von Hand (Actions, KI-Prüflauf) mit eigener Modellliste oder an einem PR über das
-# Label „ki-pruefung“. Ein Label startet genau einen Lauf mit den Standardwerten unten.
+# Label „ai-eval“. Ein Label startet genau einen Lauf mit den Standardwerten unten.
 # Von Hand lässt sich zusätzlich die Größe der Seitenbilder eines Scans vergleichen (#35):
 # Mehrere Werte ergeben je Modell einen Lauf pro Größe.
 on:
@@ -36,7 +36,7 @@ env:
 jobs:
   models:
     name: Modelle festlegen
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ki-pruefung'
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ai-eval'
     runs-on: ubuntu-24.04
     outputs:
       list: ${{ steps.list.outputs.list }}
@@ -116,7 +116,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: ki-pruefung-${{ strategy.job-index }}
+          name: ai-eval-${{ strategy.job-index }}
           path: ergebnis.json
           if-no-files-found: ignore
 
@@ -132,6 +132,6 @@ jobs:
           node-version: 24
       - uses: actions/download-artifact@v8
         with:
-          pattern: ki-pruefung-*
+          pattern: ai-eval-*
           path: ergebnisse
       - run: node scripts/ai-eval.mjs --summarize ergebnisse

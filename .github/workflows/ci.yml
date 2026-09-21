@@ -46,7 +46,7 @@ jobs:
 
 # Die Prüfung „Lange KI-Antwort (Node)“ stand früher hier und läuft seit #52 in
 # .github/workflows/release.yml: beim Tag, wöchentlich nach Zeitplan, beim Start von Hand und an
-# einem Pull Request mit dem Label „volle-pruefung“. Sie kostete knapp sieben von neun Minuten
+# einem Pull Request mit dem Label „full-check“. Sie kostete knapp sieben von neun Minuten
 # Wartezeit je PR und hängt an der Laufzeit und der HTTP-Schicht, nicht am Fachcode, ändert sich
 # also erst mit einer neuen Node- oder Bun-Version. Alles, was ein PR auslässt, steht deshalb in
 # einer Datei beisammen, und der wöchentliche Lauf dort ist das Netz dafür.
