@@ -526,3 +526,17 @@ jobs:
             dist-bin/*.pkg.tar.zst
           fail_on_unmatched_files: true
           generate_release_notes: true
+          # Ein Tag mit Bindestrich ist nach SemVer eine Vorabversion (v0.8.0-rc.1), und genau so
+          # wird das Release dann auch gekennzeichnet.
+          #
+          # **Das ist eine Sicherung, kein Verfahren.** `prerelease` steht in der action.yml von
+          # softprops ohne Automatik auf `false`; ohne diese Zeile erschiene ein
+          # Release-Kandidat als vollwertiges Release. Dann lieferte ihn `releases/latest` aus,
+          # und jeder Nutzer mit eingeschalteter Update-Prüfung bekäme ihn angeboten (siehe
+          # update.ts, das Vorabversionen ausdrücklich überspringt). Solange niemand einen
+          # solchen Tag setzt, ändert die Zeile nichts; setzt doch einmal jemand einen, verhindert
+          # sie den stillen Fehlgriff.
+          #
+          # Das Docker-Image braucht nichts dergleichen: `docker/metadata-action` mit
+          # `latest=auto` vergibt `latest` bei einer Vorabversion von sich aus nicht.
+          prerelease: ${{ contains(github.ref_name, '-') }}
