@@ -281,12 +281,21 @@ function readMounts(): string | null {
 // Auflösung unsichtbar. Beim ersten Start gibt es die Datei noch nicht; dann zählt ihr Ordner.
 // Lässt sich beides nicht auflösen, bleibt der Pfad, wie er dasteht: Ein fehlender Hinweis ist
 // besser als ein Abbruch an dieser Stelle.
-function realpathOf(file: string): string {
+//
+// Gerechnet wird mit dem Pfad-Modul der **genannten** Plattform und nicht mit dem des laufenden
+// Rechners. Dieselbe Regel wie in `systemLocation` (paths.ts), und aus demselben Grund: Sonst
+// hängt das Ergebnis daran, wo geprüft wird. Nachgemessen an dem Fall, der den Linux-Runner
+// umgeworfen hat: `path.posix.dirname('\\\\nas\\daten\\mietfuchs.sqlite')` ist „.“, der
+// Schreibtisch des Prüflaufs lässt sich auflösen, und der Pfad bekommt das Arbeitsverzeichnis
+// vorangestellt. Danach beginnt er nicht mehr mit zwei Gegenschrägstrichen, und aus einem
+// Netzpfad wird eine gewöhnliche Platte.
+function realpathOf(file: string, platform: NodeJS.Platform): string {
+  const p = platform === 'win32' ? path.win32 : path.posix
   try {
     return fs.realpathSync(file)
   } catch {
     try {
-      return path.join(fs.realpathSync(path.dirname(file)), path.basename(file))
+      return p.join(fs.realpathSync(p.dirname(file)), p.basename(file))
     } catch {
       return file
     }
@@ -327,19 +336,19 @@ function uncShare(file: string): string | null {
 //   - **Ein Netzlaufwerk, das erst nach dem Start eingehängt wird**, fällt nicht auf.
 //   - **Ein Symlink auf ein Netzlaufwerk** wird aufgelöst und zählt mit; ein Symlink, der sich
 //     nicht auflösen lässt, weil es weder Datei noch Ordner schon gibt, dagegen nicht.
+//
+// Die Plattform kommt herein und stammt nicht aus der Laufzeit, wie bei `systemLocation` in
+// paths.ts: Nur so prüfen beide Zweige auf jedem System. Dasselbe gilt für die Einhängepunkte
+// und das Auflösen des wirklichen Ortes, denn beide fragen die Umgebung des Prüfrechners.
 export function networkLocation(file: string, options: NetworkOptions = {}): string | null {
   const platform = options.platform ?? process.platform
   // Erst den wirklichen Ort suchen: Ein Symlink oder eine Abzweigung auf das NAS sieht sonst aus
   // wie ein gewöhnlicher Ordner.
-  const wirklich = (options.realpath ?? realpathOf)(file)
-  if (platform === 'win32') return uncShare(wirklich)
+  const gesucht = options.realpath ? options.realpath(file) : realpathOf(file, platform)
+  if (platform === 'win32') return uncShare(gesucht)
   if (platform !== 'linux') return null
   const text = (options.mounts ?? readMounts)()
   if (!text) return null
-  // Der Pfad kommt in der Schreibweise des laufenden Rechners; die Einhängepunkte stehen mit
-  // Schrägstrich da. Umgestellt wird nur, wenn dieser Rechner Gegenschrägstriche benutzt, damit
-  // unter Linux ein Dateiname mit Gegenschrägstrich unangetastet bleibt.
-  const gesucht = path.sep === '\\' ? wirklich.replace(/\\/g, '/') : wirklich
   let treffer: { point: string, type: string, device: string } | null = null
   for (const line of text.split('\n')) {
     const [device, point, type] = line.split(' ')
@@ -397,7 +406,13 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
   // eine SQLite-Datei beschädigt ist. Wer nur „beschädigt“ liest, kopiert ein Backup an
   // dieselbe Stelle und steht bald wieder davor.
   const warnings: string[] = []
-  const network = networkLocation(file, options)
+  // Die echte Plattform gibt der Aufrufer mit; in networkLocation selbst steht sie nur als
+  // Voreinstellung, damit die Tests beide Zweige überall prüfen können.
+  const network = networkLocation(file, {
+    platform: options.platform ?? process.platform,
+    mounts: options.mounts,
+    realpath: options.realpath,
+  })
   if (network) warnings.push(networkWarning(network))
 
   // Jede Meldung dieser Funktion nimmt die Hinweise mit. Der Typ steht ausdrücklich an der
