@@ -39,6 +39,11 @@ export default defineConfig({
       // zuverlässig den lokalen Express-Server.
       '/api': 'http://127.0.0.1:3001',
       '/uploads': 'http://127.0.0.1:3001',
+      // Die Oberfläche liest daraus, was beim Start mit den Daten geschehen ist (#55, siehe
+      // components/Database.tsx). Ohne diesen Eintrag beantwortete der Dev-Server die Anfrage
+      // selbst mit der index.html, und der Hinweis bliebe ausgerechnet dort aus, wo er
+      // entwickelt wird.
+      '/healthz': 'http://127.0.0.1:3001',
     },
   },
 })
