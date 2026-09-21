@@ -11,18 +11,38 @@
 
 import { sql } from 'drizzle-orm'
 import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type {
+  AiJsonMode,
+  AiProviderKind,
+  AiSlotName,
+  CostKey,
+  DepositStatus,
+  MeterType,
+  Settings,
+} from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
-// Laufzeitanteil hat und eine Prüfbedingung einen solchen braucht. Sie doppelt zu führen ist
-// kein Versehen: Der Test in schema.test.ts vergleicht die abgeleiteten Zeilentypen mit den
-// Domänentypen, ein Wert, der hier fehlt oder zu viel ist, fällt also beim Übersetzen auf.
-const COST_KEYS = ['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const
-const METER_TYPES = ['kaltwasser', 'strom', 'waerme', 'sonstig'] as const
-const DEPOSIT_STATUS = ['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const
-const AI_PROVIDERS = ['ollama', 'openai'] as const
-const AI_JSON_MODES = ['auto', 'schema', 'object', 'prompt'] as const
-const AI_SLOT_NAMES = ['text', 'images'] as const
-const UPDATE_CHECK = ['on', 'off'] as const
+// Laufzeitanteil hat und eine Prüfbedingung einen solchen braucht.
+//
+// Dass sie doppelt stehen, ist deshalb unvermeidlich, aber nicht ungesichert: `exactly<T>()`
+// unten bindet jede Liste an ihren Domänentyp, und zwar **in beide Richtungen**. Ein Wert zu
+// viel fällt ohnehin auf, weil er nicht in den Typ passt. Der gefährlichere Fall ist der
+// fehlende Wert, denn den bemerkt kein Typ von selbst: Die Spalte nähme ihn weiterhin an, aber
+// die Prüfbedingung wiese ihn ab, und die Datenbank verweigerte plötzlich gültige Daten. Ein
+// neuer Zählertyp in shared/types.ts, der hier vergessen wird, ließe sich also nicht mehr
+// speichern. Genau das fängt die zweite Richtung ab.
+const exactly =
+  <T extends string>() =>
+  <L extends readonly T[]>(values: L & ([T] extends [L[number]] ? unknown : never)): L =>
+    values
+
+const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const)
+const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
+const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
+const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
+const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt'] as const)
+const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
+const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
 
 // Prüfbedingung „dieser Betrag ist nicht negativ". Als Helfer, damit an jeder Stelle dasselbe
 // steht und der Grund je Spalte daneben als Kommentar auftaucht statt als Wiederholung.
@@ -107,7 +127,7 @@ export const tenancies = sqliteTable(
 
 // Die drei Staffeln und die Jahreskorrektur bekommen eigene Tabellen statt einer Spalte mit
 // JSON. Der Grund steht in CLAUDE.md ausführlich; kurz: In einer Spalte kann nichts davon
-// zugesichert werden, was hier selbstverständlich ist — kein negativer Betrag, kein zweiter
+// zugesichert werden, was hier selbstverständlich ist: kein negativer Betrag, kein zweiter
 // Eintrag zum selben Stichtag, kein Eintrag ohne Mietverhältnis.
 
 // Personenzahl ab einem Tag (`from` ist 'YYYY-MM-DD', anders als bei den beiden Geld-Staffeln).
@@ -179,7 +199,14 @@ export const prepaymentOverrides = sqliteTable(
   },
   (t) => [
     primaryKey({ columns: [t.tenancyId, t.year] }),
-    // Was tatsächlich gezahlt wurde, ist kein negativer Betrag.
+    // Was ein Mieter in einem Jahr insgesamt an Vorauszahlungen geleistet hat, ist kein
+    // negativer Betrag.
+    //
+    // Das steht bewusst anders als bei `payments.amount_cents`, das ohne Bedingung bleibt, und
+    // der Unterschied ist echt: Dort steht eine **einzelne** Buchung, und eine davon kann eine
+    // Rücklastschrift sein, also ein negativer Eingang. Hier steht die **Jahressumme**, und die
+    // fällt auch mit Rücklastschriften nicht unter null: Mehr zurückgeholt werden kann nicht,
+    // als vorher geflossen ist.
     notNegative('prepayment_overrides_amount_not_negative', 'amount_cents'),
   ],
 )
@@ -199,7 +226,7 @@ export const costItems = sqliteTable(
     // Direktzuordnung. Bewusst `SET NULL` und nicht `CASCADE`: Wird die Wohnung gelöscht, ist
     // die Rechnung trotzdem bezahlt worden und gehört weiter in die Abrechnung des Jahres.
     // `CASCADE` löschte sie und veränderte damit die Summe einer bereits abgerechneten
-    // Vergangenheit — das darf eine Datenbank niemals von sich aus tun.
+    // Vergangenheit, und das darf eine Datenbank niemals von sich aus tun.
     //
     // Heute räumt das Löschen einer Wohnung in index.ts die vereinbarten Anteile weg, lässt
     // `directUnitId` aber stehen; calc.ts fängt den ins Leere zeigenden Verweis mit der Warnung
@@ -216,7 +243,7 @@ export const costItems = sqliteTable(
     // Abrechnungsjahres (siehe snapshot.ts). Alle anderen Sammlungen gehen vollständig hinein.
     index('cost_items_year_idx').on(t.year),
     // Ein unbekannter Umlageschlüssel verteilte gar nichts, und die Position fiele still dem
-    // Vermieter zu — deshalb hier eine echte Bedingung und nicht nur der Typ.
+    // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
     oneOf('cost_items_meter_type_known', 'meter_type', METER_TYPES),
     // Hier steht bewusst **keine** Bedingung auf `amount_cents`. Eine Gutschrift ist ein
@@ -225,7 +252,7 @@ export const costItems = sqliteTable(
     //
     // Ebenso keine auf `labor_35a_cents`: calc.ts meldet einen Lohnanteil außerhalb von 0 bis
     // zum Rechnungsbetrag als Warnung und rechnet weiter. Eine Prüfbedingung machte daraus ein
-    // hartes Nein beim Speichern — der Nutzer bekäme die Warnung, die ihm den Fehler erklärt,
+    // hartes Nein beim Speichern, und der Nutzer bekäme die Warnung, die ihm den Fehler erklärt,
     // dann nie zu sehen.
   ],
 )
@@ -306,7 +333,7 @@ export const payments = sqliteTable('payments', {
   id: text('id').primaryKey().notNull(),
   // Heute räumt index.ts die Zahlungen beim Löschen eines Mietverhältnisses weg, und beim
   // Löschen einer Wohnung über den Umweg der zugehörigen Mietverhältnisse. Beides erledigt
-  // dieser eine Fremdschlüssel, der zweite Fall über die Kette Wohnung → Mietverhältnis.
+  // dieser eine Fremdschlüssel, der zweite Fall über die Kette von der Wohnung zum Mietverhältnis.
   tenancyId: text('tenancy_id')
     .notNull()
     .references(() => tenancies.id, { onDelete: 'cascade' }),
@@ -332,7 +359,7 @@ export const closedSettlements = sqliteTable(
     // Berechnungsstand ist ein **Archivstück**: das Ergebnis von computeSettlement zu dem
     // Zeitpunkt, als die Abrechnung verschickt wurde. Er soll wortgleich erhalten bleiben, auch
     // wenn spätere Versionen anders rechnen oder andere Felder führen. Ihn in Spalten zu
-    // zerlegen hieße, ihn an das heutige Ergebnisformat zu binden — dann veränderte eine
+    // zerlegen hieße, ihn an das heutige Ergebnisformat zu binden, denn dann veränderte eine
     // Programmänderung rückwirkend, was dem Mieter zugestellt wurde.
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
@@ -341,6 +368,15 @@ export const closedSettlements = sqliteTable(
     // eine abgeschlossene Abrechnung. Heute nimmt `find()` stillschweigend die erste, wenn
     // doch zwei dastehen.
     uniqueIndex('closed_settlements_year_idx').on(t.year),
+    // Dass der Inhalt überhaupt JSON ist, kann die Datenbank prüfen, und nur das prüft sie hier.
+    // Ob die Abrechnung darin fachlich stimmt, weiß sie nicht und soll sie nicht wissen; das ist
+    // gerade der Sinn eines Archivstücks. Eine abgeschnittene oder verstümmelte Zeichenkette
+    // fällt damit aber sofort auf, statt erst Jahre später beim Öffnen der alten Abrechnung.
+    //
+    // Diese Bedingung muss jetzt stehen oder nie: SQLite kann eine Prüfbedingung nicht
+    // nachträglich hinzufügen, das ginge nur über einen Neubau der ganzen Tabelle. Solange
+    // niemand Daten darin hat, kostet sie nichts.
+    check('closed_settlements_settlement_is_json', sql`json_valid(${t.settlement})`),
   ],
 )
 
@@ -349,7 +385,7 @@ export const closedSettlements = sqliteTable(
 // Echte Spalten statt eines JSON-Klumpens, und zwar genau deshalb, weil #60 sonst unverändert
 // mitwanderte: `PUT /api/settings` übernimmt heute jeden Schlüssel des Rumpfes, auch einen
 // erfundenen, und schreibt ihn dauerhaft. Mit Spalten gibt es für ein unbekanntes Feld keinen
-// Ort mehr — die Datenbank weist es ab, ohne dass jemand eine Liste erlaubter Felder pflegen
+// Ort mehr. Die Datenbank weist es ab, ohne dass jemand eine Liste erlaubter Felder pflegen
 // muss.
 export const settings = sqliteTable(
   'settings',
@@ -402,6 +438,13 @@ export const settings = sqliteTable(
 // Die Bestätigung eines externen Dienstes steht bewusst in derselben Zeile: Sie gilt für eine
 // bestimmte Adresse und ein bestimmtes Modell, und nur so lässt sich später prüfen, wofür sie
 // erteilt wurde.
+//
+// Eine Folge davon ist erwähnenswert, weil sie sich vom heutigen Verhalten unterscheidet: Wird
+// der Platz für Fotos und Scans entfernt, verschwindet mit seiner Zeile auch seine Bestätigung.
+// In der db.json überlebt sie das heute, weil `ai.consent` neben den Plätzen liegt. Die
+// Richtung ist die sichere: Wer den Platz neu einrichtet, wird erneut gefragt, bevor ein Beleg
+// hinausgeht. Der Preis ist eine Rückfrage, die man schon einmal beantwortet hatte, und den
+// ist die Zusicherung wert, dass es keine Bestätigung ohne den Dienst gibt, für den sie gilt.
 //
 // **Kein Feld für den API-Schlüssel.** Die Schlüssel liegen weiterhin außerhalb der Datenbank
 // in `data/secrets.json` (unter Unix mit 0600) und gehören auch nicht ins Backup. Das bleibt so.

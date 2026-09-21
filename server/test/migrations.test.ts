@@ -12,7 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { hashOf, loadMigrations, splitStatements } from '../src/db/client.ts'
+import { hashOf, loadMigrations, parseJournal, splitStatements, toSqlValue } from '../src/db/client.ts'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(here, '..', '..')
@@ -40,9 +40,9 @@ test('jede Migration im Journal hat ihre Datei, und die Reihenfolge stimmt', asy
 })
 
 // Die Marken der bereits veröffentlichten Schritte. Ein neuer Schritt kommt unten dazu, ein
-// vorhandener wird nie geändert — ändert ihn doch jemand, passt seine Marke nicht mehr.
+// vorhandener wird nie geändert. Ändert ihn doch jemand, passt seine Marke nicht mehr.
 const VEROEFFENTLICHT: Record<string, string> = {
-  '0000_ancient_mercury': 'a7dbd16632e635ed82d2cf5173ea6cb15d8ffb528c79a765fbb097817b41ac3c',
+  '0000_ordinary_karnak': 'd37deabbc5753761291aa59754f1569d11591512821c1825c180b41da1109fe9',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
@@ -79,4 +79,41 @@ test('Anweisungen werden an der Marke von drizzle-kit zerlegt', () => {
   assert.deepEqual(splitStatements('EINS;\n--> statement-breakpoint\nZWEI;'), ['EINS;', 'ZWEI;'])
   assert.deepEqual(splitStatements('  NUR EINE;  '), ['NUR EINE;'])
   assert.deepEqual(splitStatements(''), [])
+})
+
+// `JSON.parse` liefert `any`, und ein `any` nimmt jede Behauptung widerspruchslos an. Der
+// Bauweg (scripts/embed-migrations.mjs) prüft an denselben Stellen und sagt, was fehlt; dieser
+// Weg hier ist der, den ein Vermieter tatsächlich geht, und darf nicht weniger können.
+test('eine kaputte Buchführung wird nicht durchgewinkt, sondern benannt', () => {
+  const kaputt: [string, unknown, RegExp][] = [
+    ['gar kein Objekt', 42, /kein Feld/],
+    ['kein entries', { schritte: [] }, /kein Feld/],
+    ['entries ist keine Liste', { entries: 'nein' }, /keine Liste/],
+    ['entries ist leer', { entries: [] }, /keinen einzigen/],
+    ['Eintrag ohne Felder', { entries: [{}] }, /braucht die Felder/],
+    ['Tippfehler im Feldnamen', { entries: [{ tag: 'x', wann: 1 }] }, /braucht die Felder/],
+    ['tag ist leer', { entries: [{ tag: '', when: 1 }] }, /kein brauchbares .tag/],
+    ['when ist Text', { entries: [{ tag: 'x', when: '1' }] }, /kein brauchbares .when/],
+    ['when ist NaN', { entries: [{ tag: 'x', when: Number.NaN }] }, /kein brauchbares .when/],
+  ]
+  for (const [was, raw, erwartet] of kaputt) {
+    assert.throws(() => parseJournal(raw, 'journal.json'), erwartet, was)
+  }
+  // Und was in Ordnung ist, kommt durch.
+  assert.deepEqual(parseJournal({ entries: [{ tag: '0000_x', when: 5, extra: 'egal' }] }, 'journal.json'), [
+    { tag: '0000_x', when: 5 },
+  ])
+})
+
+// `undefined` darf nicht still zu NULL werden: In SQL ist `= NULL` nie wahr, eine Abfrage käme
+// also leer zurück, und niemand erführe warum.
+test('undefined an die Datenbank ist ein Fehler mit Ansage, kein stilles NULL', () => {
+  assert.throws(() => toSqlValue(undefined), /undefined/)
+  assert.throws(() => toSqlValue({ a: 1 }), /lässt sich nicht an SQLite übergeben/)
+  // Was erlaubt ist, geht unverändert durch; `null` bleibt ausdrücklich `null`.
+  assert.equal(toSqlValue(null), null)
+  assert.equal(toSqlValue(42), 42)
+  assert.equal(toSqlValue('Meier'), 'Meier')
+  assert.equal(toSqlValue(true), 1)
+  assert.equal(toSqlValue(false), 0)
 })
