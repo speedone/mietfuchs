@@ -108,7 +108,13 @@ Release-Automatik: [.github/workflows/release.yml](.github/workflows/release.yml
 `v*`-Tag alle Ziele auf einem Linux-Runner und hängt sie ans GitHub-Release — macOS als Zip,
 Linux als tar.gz (konserviert das Ausführungs-Bit, das rohe Downloads verlieren würden), die
 Windows-`.exe` roh. Ziele: Windows, Linux und macOS jeweils für x64 und ARM64. Die Namen der
-x64-Dateien bleiben fest, der Update-Hinweis älterer Versionen sucht sie darunter.
+x64-Dateien bleiben fest, der Update-Hinweis älterer Versionen sucht sie darunter. **Ein Tag mit
+Bindestrich ist eine Vorabversion** (`v0.8.0-rc.1`) und wird als solche gekennzeichnet. Das ist
+eine Sicherung und kein Verfahren: `prerelease` kennt bei softprops keine Automatik, ohne die
+Zeile erschiene ein Release-Kandidat als vollwertiges Release, `releases/latest` lieferte ihn
+aus, und jeder Nutzer mit eingeschalteter Update-Prüfung bekäme ihn angeboten. Das Docker-Image
+braucht nichts dergleichen, `docker/metadata-action` mit `latest=auto` vergibt `latest` bei einer
+Vorabversion von sich aus nicht.
 
 **Artefakt-Tests** (#22): Vor dem Anhängen startet jede Programmdatei auf einem GitHub-Runner
 ihres Systems (Linux, Windows und macOS jeweils x64 und ARM64), die Linux-Dateien zusätzlich in
