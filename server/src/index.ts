@@ -296,10 +296,8 @@ const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatab
 
 // ---------- Generische CRUD-Routen für Stammdaten & Kosten ----------
 // Die generischen Routen behandeln alle Collections gleich und brauchen von einem Datensatz nur
-// die Kennung. `collections()` liefert genau diese Sicht auf die db.json: **dasselbe Objekt wie
-// `getDb()`**, nur betrachtet als „Datensätze mit id“. Wer über die Sicht schreibt, ändert also
-// den Datenbestand selbst. Geschrieben wird darüber nur das Ergebnis eines filter() auf
-// derselben Liste, die Datensätze selbst bleiben also, was sie sind.
+// die Kennung.
+//
 // Was mit einem Datensatz geschieht, steht jetzt in db/repository.ts, und zwar aus zwei Gründen:
 // `Object.assign` übernahm jeden Schlüssel des Rumpfes, auch einen erfundenen (#60), und die
 // Kaskade beim Löschen lief als Schleife hier, die mittendrin abbrechen konnte. Beides erledigt

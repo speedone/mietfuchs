@@ -272,29 +272,30 @@ trotzdem, durch `npm run typecheck`. Im Dev proxyt Vite `/api` und `/uploads` an
 Express-Server das statische `client/dist` selbst aus
 ([server/src/index.ts](server/src/index.ts)).
 
-**Persistenz**: eine einzige JSON-Datei `server/data/db.json`, atomar geschrieben (Temp +
-rename) über [server/src/store.ts](server/src/store.ts). `NKA_DATA_DIR` verlegt den Ordner
-(Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel externer
-KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht im Backup).
-Backup = diesen Ordner kopieren. Seit dem Umstieg (#55) liegen dort zusätzlich
-`mietfuchs.sqlite` mit demselben Bestand in Tabellen, `db.json.vor-umstieg` als Kopie des
-Standes vor dem Umstieg und `umstieg-protokoll.txt`. Schema-Migrationen
-älterer `db.json` passieren imperativ in [server/src/legacy.ts](server/src/legacy.ts) (z. B.
-fester Monatsbetrag zur Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die
-Migration ergänzen. Sie stehen in einer **eigenen Datei** und nicht mehr in `load()`, weil der
-Umstieg in die Datenbank dieselben Regeln braucht: Ein Bestand, der beim Einlesen anders
-geradegezogen würde als beim Übernehmen, änderte beim Umstieg still eine Abrechnung. `load()`
-liest nur noch die Datei und reicht ihren Inhalt hinein. Die Tests dazu stehen in
-[server/test/store.test.ts](server/test/store.test.ts) und halten jede Regel einzeln fest;
-wer dort etwas ändert, sieht am roten Test, dass er eine Abrechnung verändert.
+**Persistenz**: die SQLite-Datei `server/data/mietfuchs.sqlite` (#55). `NKA_DATA_DIR` verlegt den
+Ordner (Tests, abweichende Ablage). Belege liegen in `server/data/uploads/`, API-Schlüssel
+externer KI-Dienste getrennt davon in `server/data/secrets.json` (siehe secrets.ts; nicht im
+Backup). Backup = diesen Ordner kopieren. Daneben liegen nach dem Umstieg
+`db.json.abgeloest` mit dem Bestand von davor und `umstieg-protokoll.txt`.
 
-**Die Datenbank** (#55, im Entstehen): Die JSON-Datei wird durch SQLite abgelöst, später soll
-auch PostgreSQL möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema
-dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). Geöffnet wird sie beim
-Start ([server/src/db/open.ts](server/src/db/open.ts)), und **die vorhandenen Bestände wandern
-beim ersten Start hinein** (siehe Umstieg unten). **Gelesen wird von den Routen aber noch aus der
-`db.json`**; das ist der nächste Schritt. Im Datenordner liegen also beide: die `db.json` als
-lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
+Die frühere `db.json` ist damit **Vergangenheit und nicht mehr Ablage**: Sie wird gelesen, wenn
+ein Bestand von vor dem Umstieg übernommen oder ein altes Backup eingespielt wird, und danach nie
+wieder geschrieben. Die Umwandlung ihrer alten Formate steht in
+[server/src/legacy.ts](server/src/legacy.ts) (z. B. fester Monatsbetrag zur
+Vorauszahlungs-Staffel), in einer **eigenen Datei** und nicht mehr in `load()`, weil der Umstieg
+dieselben Regeln braucht: Ein Bestand, der beim Einlesen anders geradegezogen würde als beim
+Übernehmen, änderte beim Umstieg still eine Abrechnung. Die Tests dazu stehen in
+[server/test/store.test.ts](server/test/store.test.ts) und halten jede Regel einzeln fest;
+wer dort etwas ändert, sieht am roten Test, dass er eine Abrechnung verändert. Der Rest von
+store.ts (`getDb`, `save`, `reloadDb`) ruft niemand mehr auf; gebraucht werden nur noch
+`chooseDataDir`, `DATA_DIR`, `UPLOAD_DIR`, `newId` und der Typ `Db`.
+
+**Die Datenbank** (#55): Die JSON-Datei ist durch SQLite abgelöst, später soll auch PostgreSQL
+möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema dahinter steht in
+[server/src/db/schema.ts](server/src/db/schema.ts). Geöffnet wird sie beim Start
+([server/src/db/open.ts](server/src/db/open.ts)), die vorhandenen Bestände wandern beim ersten
+Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
+([server/src/db/repository.ts](server/src/db/repository.ts)).
 
 - **Der Treiber ist `drizzle-orm/sqlite-proxy`**, und das ist eine bewusste Wahl gegen zwei
   naheliegendere. `drizzle-orm/better-sqlite3` importiert ein natives Modul fest beim Laden, und
@@ -348,15 +349,26 @@ lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
   Einhängepunkt, also ein Dateisystem über einem anderen, und wirksam ist dann das obere. Nicht
   erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter macOS und die
   Freigaben einer virtuellen Maschine; gewarnt wird dann nicht, falsch gewarnt aber auch niemand.
-- **Scheitert das Öffnen, startet der Server trotzdem** und arbeitet mit der db.json weiter, mit
-  einer Meldung auf der Konsole und `database.open === false` in `/healthz`. Dasselbe gilt für
-  einen gescheiterten Umstieg: Der Nutzer darf nie blockiert sein, und ein `status: error` an
-  dieser Stelle schickte einen Container in die Neustart-Schleife, obwohl die Anwendung tut, was
-  sie soll. **Sobald die Routen aus der Datenbank lesen, kehrt sich das um**: Dann wäre ein Start
-  ohne sie ein Start ohne Daten, und der Eintrag gehört unter `checks`, damit ein Container den
-  Fehler sieht.
-- **Alle Schreibvorgänge laufen nacheinander**, durch die Schlange in open.ts
-  (`createWriteQueue`, benutzt als `opened.write(...)`). Express bedient nebenläufig, und alle
+- **Scheitert das Öffnen, startet der Server trotzdem, aber ohne Daten.** Die angekündigte Umkehr
+  ist mit dem Umstellen der Routen eingetreten: Ein Start ohne Datenbank ist jetzt ein Start ohne
+  Daten. Die Datenrouten antworten mit **503** statt mit einer leeren Liste, und der Eintrag
+  steht unter `checks`, damit ein Container den Fehler sieht. Der Server selbst muss dennoch
+  hochkommen, sonst gäbe es auch keine Oberfläche, in der die Meldung stünde, und keine Route zum
+  Wiederherstellen eines Backups. **Dasselbe gilt für einen gescheiterten Umstieg**, und das ist
+  der schwerer zu sehende Fall: Die Datenbank ist dann offen, aber leer, und die Daten stehen noch
+  in der `db.json`. Eine leere Antwort wäre keine Auskunft über einen leeren Bestand, sondern eine
+  falsche über einen vorhandenen; und was der Vermieter in das leere Haus hineinschriebe, stünde
+  danach als zweiter Bestand da, während seine `db.json` für immer abgehängt wäre, denn der
+  nächste Umstieg unterbleibt, sobald in der Datenbank etwas steht. Von den beiden Zusagen aus
+  changeover.ts gewinnt deshalb die zweite: nie Daten verlieren, notfalls auf Kosten des
+  Weiterarbeitens. Die Frage „trägt die Datenbank den Bestand?" und ihre beiden Begründungen
+  stehen einmal in [server/src/health.ts](server/src/health.ts) (`databaseUnavailable`), denn ein
+  `/healthz` mit „ok", während jede Datenroute 503 antwortet, wäre die unbrauchbarste Auskunft von
+  beiden. Der Umstiegsstand in index.ts ist veränderlich, weil das Wiederherstellen eines Backups
+  ihn ändert: Sonst sperrte ein einmal gescheiterter Umstieg auch dann noch, wenn der Nutzer das
+  Problem gerade mit genau dem Mittel behoben hat, das ihm dafür angeboten wird.
+- **Alle Zugriffe laufen nacheinander**, durch die Schlange in open.ts
+  (`createLane`, benutzt als `opened.write(...)` und `opened.read(...)`). Express bedient nebenläufig, und alle
   Anfragen teilen sich **eine** Verbindung. Eine Transaktion mit asynchronem Rumpf gibt zwischen
   ihren Anweisungen die Kontrolle ab; eine zweite Anfrage beginnt dann mitten hinein ihre eigene,
   die SQLite mit „cannot start a transaction within a transaction“ ablehnt. Schlimmer ist der
@@ -374,17 +386,37 @@ lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
   unbehandelten Ablehnung. Geworfen landet sie im Rumpf des äußeren Vorgangs und von dort bei
   dessen Aufrufer. Dauert ein Schreibvorgang länger als 30 Sekunden, gibt es eine Meldung;
   abgebrochen wird nichts, denn eine halb geschriebene Transaktion abzuräumen wäre schlimmer als
-  zu warten.
+  zu warten. **Lesevorgänge gehen durch dieselbe Schlange**, seit die Routen aus der Datenbank
+  lesen: Alle Anfragen teilen sich eine Verbindung, und ein Lesevorgang neben einer offenen
+  Transaktion sähe deren noch nicht festgeschriebenen Stand. Ein Lesevorgang **innerhalb** eines
+  Schreibvorgangs läuft dagegen einfach durch, sonst wartete er auf die Schlange, die sein
+  eigener Aufrufer gerade hält. In index.ts sind `readData` und `writeData` der einzige Weg
+  dorthin; eine Route, die `database.db` unmittelbar benutzte, ginge daran vorbei.
 - **Verschachtelte Listen wurden Tabellen**: die drei Staffeln (`person_history`, `prepayments`,
   `base_rents`), die Jahreskorrektur (`prepayment_overrides`, nach Jahr geschlüsselt statt nach
   Datum) und die vereinbarten Anteile (`cost_item_shares`). In einer Spalte mit JSON ließe sich
   nichts zusichern: kein negativer Betrag, kein zweiter Eintrag zum selben Stichtag, kein
   Eintrag ohne Mietverhältnis. Bei `cost_item_shares` am deutlichsten, weil seine Schlüssel
-  Wohnungs-Kennungen sind — index.ts geht sie beim Löschen einer Wohnung heute von Hand durch,
-  und genau das erledigt jetzt `ON DELETE CASCADE`.
+  Wohnungs-Kennungen sind — index.ts ging sie beim Löschen einer Wohnung von Hand durch, und
+  genau das erledigt jetzt `ON DELETE CASCADE`.
 - **Die Einstellungen haben echte Spalten** (#60). Ein JSON-Klumpen hätte den Befund unverändert
-  mitgenommen: `PUT /api/settings` übernimmt heute jeden Schlüssel des Rumpfes, auch einen
-  erfundenen. Mit Spalten gibt es für ein unbekanntes Feld keinen Ort mehr. Die beiden Plätze
+  mitgenommen: `PUT /api/settings` übernahm jeden Schlüssel des Rumpfes, auch einen erfundenen.
+  Mit Spalten gibt es für ein unbekanntes Feld keinen Ort mehr, und damit ist #60 erledigt.
+- **Was mit einem Datensatz geschieht, steht in
+  [server/src/db/repository.ts](server/src/db/repository.ts)**, nicht mehr in index.ts. Drei
+  Entscheidungen stehen dort begründet. `PUT` **ergänzt und ersetzt nicht**, weil die Oberfläche
+  Teilrümpfe schickt (Stammdaten.tsx sendet beim Auszug nur `{ end }`); zusammengeführt wird nach
+  **Anwesenheit eines Schlüssels** und nicht nach seinem Wert, sonst ließe sich ein Feld nie
+  leeren. Die Hauptzeile wird **geändert und nicht gelöscht und neu eingefügt**, damit ihr
+  `rowid` und damit die Reihenfolge erhalten bleibt. Und ein unbekanntes Feld hat schlicht keine
+  Spalte. Die Sammlungen hängen an einem Beschreiber (`withCollection`) statt an Abfragen auf
+  Feldnamen: Wer eine Sammlung ergänzt, bekommt vom Übersetzer gesagt, was fehlt.
+- **Fehler der Datenbank werden übersetzt**
+  ([server/src/db/errors.ts](server/src/db/errors.ts)). `databaseMessage` geht die `cause`-Kette
+  bis zur **innersten** Meldung von SQLite hinunter, denn Drizzles äußere Meldung enthält das SQL
+  **samt der eingesetzten Werte des Nutzers** und gehört damit nicht in eine Oberfläche. Aus
+  FOREIGN KEY, UNIQUE, CHECK und NOT NULL wird ein deutscher Satz; die Meldung von SQLite steht
+  höchstens am Ende als „Technischer Befund" und nie allein. Die beiden Plätze
   der KI sind Zeilen in `ai_slots` und keine Spalten mit Präfix, weil `text` und `images`
   dieselbe Gestalt haben; die Bestätigung steht in derselben Zeile wie die Adresse, für die sie
   gilt. **Kein Feld für den API-Schlüssel**, der bleibt in `data/secrets.json`.
@@ -482,10 +514,14 @@ lebender Bestand und `mietfuchs.sqlite` mit derselben Ablage in Tabellen.
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
-**bevor irgendetwas geschrieben wird**), `db.json.vor-umstieg` anlegen, in eine eigene Datei
-`mietfuchs.sqlite.umstieg` schreiben, importieren, nachrechnen und erst dann mit einem `rename`
-aktivieren. Die `db.json` bleibt liegen, sie ist der Rückweg, und `umstieg-protokoll.txt` nennt,
-was übernommen wurde.
+**bevor irgendetwas geschrieben wird**), in eine eigene Datei `mietfuchs.sqlite.umstieg`
+schreiben, importieren, nachrechnen und erst dann mit einem `rename` aktivieren. Zuletzt heißt
+die `db.json` **`db.json.abgeloest`**: Ihr Inhalt bleibt unverändert der Rückweg, aber unter
+einem Namen, den niemand für den laufenden Stand hält. Seit die Routen die Datenbank schreiben,
+läge sie sonst tot im Ordner und sähe doch aus wie vorher. Eine gesonderte Sicherungskopie gibt
+es aus demselben Grund nicht mehr: Sie sollte den vorgefundenen Stand einfrieren, *während* die
+`db.json` weiterbenutzt wurde, und zwei byteweise gleiche Dateien nebeneinander erklären
+niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
 
 - **Die centgenaue Regression ist die Bedingung, unter der überhaupt aktiviert wird**
   ([server/src/db/regression.ts](server/src/db/regression.ts)). Für jedes Jahr, in dem der
@@ -521,7 +557,10 @@ was übernommen wurde.
   fachliche Regel. `read.ts` liest **in der Reihenfolge, in der die Zeilen angelegt wurden**
   (`ORDER BY rowid`). Das ist keine Kosmetik: Zwei Ablesungen mit demselben Datum sortiert die
   Berechnung stabil, es gilt also die Reihenfolge der Datei, und welcher der beiden Stände der
-  spätere ist, entscheidet über den Verbrauch.
+  spätere ist, entscheidet über den Verbrauch. Fehlt die Zeile der Einstellungen, gelten die
+  Vorgabewerte einer neuen Einrichtung ([server/src/defaults.ts](server/src/defaults.ts)) — das
+  ist jeder erste Start, denn die Zeile entsteht erst beim ersten Speichern. Entschieden wird das
+  an der **Zeile** und nie an einem Wert: Ein Feld, das der Nutzer geleert hat, bleibt leer.
 - **Der Nutzer erfährt es in der Oberfläche**, nicht nur auf der Konsole: Beim Start aus einem
   Linux-Paket gibt es keine. Der Weg dafür ist `database.changeover` in `/healthz`
   ([client/src/components/Database.tsx](client/src/components/Database.tsx), Logik in
@@ -530,8 +569,8 @@ was übernommen wurde.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
-Löschen einer `unit` bzw. `meter` kaskadiert manuell auf abhängige Datensätze (auch `payments`
-beim Löschen einer `unit`/`tenancy`). Daneben Spezialrouten:
+Sie gehen durch [server/src/db/repository.ts](server/src/db/repository.ts); das Kaskadieren beim
+Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Daneben Spezialrouten:
 `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
