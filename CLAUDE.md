@@ -113,7 +113,8 @@ wird für amd64 und arm64 ebenso geprüft, bevor es veröffentlicht wird, und di
 Start aus dem Quellcode. Alle nutzen [scripts/smoke-test.mjs](scripts/smoke-test.mjs): Es
 prüft eine laufende Instanz von außen (Oberfläche mit allen Skriptteilen und pdf.js-Dateien,
 KI-Auswertung gegen ein eigenes nachgebautes Ollama, Belege, Abrechnung, Backup und
-Wiederherstellung) und braucht einen leeren Datenordner. Lokal:
+Wiederherstellung, dazu die beim Start angelegte Datenbank aus `/healthz`) und braucht einen
+leeren Datenordner. Lokal:
 `node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
 (siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
@@ -252,9 +253,11 @@ Vorauszahlungs-Staffel). Beim Erweitern des Datenmodells dort die Migration erg�
 
 **Die Datenbank** (#55, im Entstehen): Die JSON-Datei wird durch SQLite abgelöst, später soll
 auch PostgreSQL möglich sein. Die Grenze dafür zog der Schnappschuss (siehe unten); das Schema
-dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). **Geöffnet und benutzt
-wird die Datenbank noch nicht**, das kommt in den nächsten Schritten, ebenso der Umstieg
-vorhandener Bestände.
+dahinter steht in [server/src/db/schema.ts](server/src/db/schema.ts). Geöffnet wird sie
+inzwischen beim Start ([server/src/db/open.ts](server/src/db/open.ts)), **gelesen und geschrieben
+wird darin aber noch nichts**; das kommt in den nächsten Schritten, ebenso der Umstieg
+vorhandener Bestände. Im Datenordner liegt deshalb eine noch leere `mietfuchs.sqlite` neben der
+`db.json`.
 
 - **Der Treiber ist `drizzle-orm/sqlite-proxy`**, und das ist eine bewusste Wahl gegen zwei
   naheliegendere. `drizzle-orm/better-sqlite3` importiert ein natives Modul fest beim Laden, und
@@ -272,7 +275,42 @@ vorhandener Bestände.
   das eingebaute SQLite (`node:sqlite` mit `setReturnArrays(true)` gegen `bun:sqlite` mit
   `values()`) und die Herkunft der Migrationen.
 - **`PRAGMA foreign_keys = ON` beim Öffnen**, je Verbindung. Die Voreinstellung von SQLite ist
-  aus; ohne diese Zeile sind alle Fremdschlüssel Dekoration.
+  aus; ohne diese Zeile sind alle Fremdschlüssel Dekoration. open.ts sieht nach dem Öffnen nach,
+  dass es wirklich so ist, statt es vorauszusetzen: Die Zusicherung soll nicht an der
+  Voreinstellung einer Laufzeit hängen, die sich ändern kann.
+- **Beim Start wird geprüft, bevor geschrieben wird** ([server/src/db/open.ts](server/src/db/open.ts)):
+  ob der Datenordner beschreibbar ist (mit `writable` aus paths.ts, wie chooseDataDir), ob die
+  Fremdschlüsselprüfung gilt, ob `PRAGMA integrity_check` die Datei für unversehrt hält und ob
+  die Datei aus einer **neueren** Mietfuchs-Version stammt. Das Letzte steht in ihrer eigenen
+  Buchführung: Führt `__drizzle_migrations` eine Marke, die dieses Programm nicht kennt, hat eine
+  neuere Fassung darauf gearbeitet. Dann wird nicht migriert, sondern erklärt; unsere Schritte
+  auf einen unbekannten Aufbau anzuwenden ergäbe einen Bestand, den danach keine der beiden
+  Versionen mehr liest. **Eine beschädigte oder neuere Datei wird nie angefasst**, auch nicht
+  beiseitegelegt: Ob nichts darin steht, ist genau das, was man in diesem Augenblick nicht weiß.
+  Jede Meldung sagt, was los ist und was zu tun ist; die Meldung von SQLite steht höchstens
+  benannt am Ende („Technischer Befund“) und nie allein.
+- **Ein Netzlaufwerk ergibt eine Warnung, keinen Abbruch.** SQLite verlässt sich auf
+  Dateisperren, die Netzwerk-Dateisysteme oft nur vortäuschen. Erkannt wird es unter Linux über
+  `/proc/self/mounts` (längster passender Einhängepunkt, Typ gegen eine Liste) und unter Windows
+  am UNC-Pfad. Nicht erkannt werden ein verbundenes Netzlaufwerk unter Windows (Z:), alles unter
+  macOS und die Freigaben einer virtuellen Maschine; gewarnt wird dann nicht, falsch gewarnt
+  aber auch niemand.
+- **Scheitert das Öffnen, startet der Server trotzdem** und arbeitet mit der db.json weiter, mit
+  einer Meldung auf der Konsole und `database.open === false` in `/healthz`. An diesem Stand
+  braucht niemand die Datenbank. **Mit dem Umstieg der Bestände kehrt sich das um**: Dann sind
+  die Daten dort, ein Start ohne sie wäre ein Start ohne Daten, und der Eintrag gehört unter
+  `checks`, damit ein Container den Fehler sieht.
+- **Alle Schreibvorgänge laufen nacheinander**, durch die Schlange in open.ts
+  (`createWriteQueue`, benutzt als `opened.write(...)`). Express bedient nebenläufig, und alle
+  Anfragen teilen sich **eine** Verbindung. Eine Transaktion mit asynchronem Rumpf gibt zwischen
+  ihren Anweisungen die Kontrolle ab; eine zweite Anfrage beginnt dann mitten hinein ihre eigene,
+  die SQLite mit „cannot start a transaction within a transaction“ ablehnt. Schlimmer ist der
+  zweite Ausgang, und deshalb läuft **jeder** Schreibvorgang durch die Schlange und nicht nur die
+  Transaktionen: Ein gewöhnliches Einfügen, das währenddessen hereinkommt, landet unbemerkt
+  innerhalb der fremden Transaktion und verschwindet mit ihr, nachdem seine Anfrage längst mit
+  „gespeichert“ geantwortet hat. Beides ist nachgemessen. Ein Schreibvorgang **im**
+  Schreibvorgang (erkannt über `AsyncLocalStorage`) meldet sich mit einem Fehler, statt auf sich
+  selbst zu warten.
 - **Verschachtelte Listen wurden Tabellen**: die drei Staffeln (`person_history`, `prepayments`,
   `base_rents`), die Jahreskorrektur (`prepayment_overrides`, nach Jahr geschlüsselt statt nach
   Datum) und die vereinbarten Anteile (`cost_item_shares`). In einer Spalte mit JSON ließe sich
