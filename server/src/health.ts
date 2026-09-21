@@ -39,10 +39,20 @@ function checkUploads(dataDir: string): Check {
   }
 }
 
-export function healthReport({ dataDir, version }: { dataDir: string, version: string }) {
+// Was beim Start mit der Datenbank geschehen ist (#55). Der Bericht nennt es, damit die
+// Prüfläufe es von außen sehen: Sie laufen auf jeder Programmdatei und in den Containern von 22
+// Distributionen, und nur dort zeigt sich, ob das eingebaute SQLite überall trägt.
+export type DatabaseState = { open: boolean, file: string, migrations: number, detail: string }
+
+export function healthReport({ dataDir, version, database }: { dataDir: string, version: string, database?: DatabaseState }) {
   const checks = { data: checkData(dataDir), uploads: checkUploads(dataDir) }
   const status = Object.values(checks).every((c) => c.ok) ? 'ok' : 'error'
   // `app` ist die Erkennungsmarke: Beim Start auf einem belegten Port fragt Mietfuchs hier
   // nach, ob dort schon Mietfuchs antwortet, und öffnet dann nur die Oberfläche (#45).
-  return { app: 'mietfuchs', status, version, checks }
+  //
+  // Die Datenbank steht neben `checks` und nicht darin, und das ist eine Entscheidung für
+  // diesen Stand: Fachliche Daten liegen noch in der db.json, Mietfuchs arbeitet ohne die
+  // Datenbank weiter, und ein Fehler dort dürfte deshalb keinen Container in eine
+  // Neustart-Schleife schicken. Mit dem Umstieg der Bestände gehört sie unter `checks`.
+  return { app: 'mietfuchs', status, version, checks, database }
 }
