@@ -11,7 +11,7 @@ name: Release-Binaries
 # Was ein Pull Request auslässt, steht hier beisammen (#52): die volle Liste der Distributionen
 # und Pakete, die lange KI-Antwort unter Node und das lange Warten bei den Programmdateien. Ein
 # PR prüft davon eine Auswahl, der Tag alles, und nichts geht ans Release, was nicht geprüft
-# ist. Wer die volle Breite schon vor dem Merge will, hängt dem PR das Label „volle-pruefung“
+# ist. Wer die volle Breite schon vor dem Merge will, hängt dem PR das Label „full-check“
 # an; das startet diesen Workflow neu, dann mit allem. Dazu läuft einmal die Woche derselbe
 # volle Umfang von selbst, siehe „schedule“ unten.
 on:
@@ -34,7 +34,7 @@ on:
     - cron: '23 4 * * 3'
   pull_request:
     # Ohne „types“ gälten nur opened, synchronize und reopened. „labeled“ kommt dazu, damit das
-    # Label „volle-pruefung“ einen neuen Lauf auslöst. Die Pfadliste gilt auch dafür: An einem
+    # Label „full-check“ einen neuen Lauf auslöst. Die Pfadliste gilt auch dafür: An einem
     # PR, der nichts davon anfasst, läuft dieser Workflow gar nicht, und das Label bewirkt
     # nichts. Das ist gewollt, denn dann gibt es auch nichts zu prüfen.
     types: [opened, synchronize, reopened, labeled]
@@ -85,7 +85,7 @@ jobs:
       - id: waehlen
         env:
           # Vollständig geprüft wird alles außer einem Pull Request ohne das Label
-          # „volle-pruefung“. Also der Tag, der wöchentliche Zeitplan und der Start von Hand.
+          # „full-check“. Also der Tag, der wöchentliche Zeitplan und der Start von Hand.
           #
           # Bewusst als Ausnahme geschrieben und nicht als Liste der vollen Fälle: Eine Liste
           # vergisst man beim nächsten Auslöser. Genau das wäre hier fast passiert, der
@@ -95,7 +95,7 @@ jobs:
           # Request ist die Labelliste leer, das ergibt falsch und keinen Fehler.
           VOLLSTAENDIG: >-
             ${{ github.event_name != 'pull_request'
-            || contains(github.event.pull_request.labels.*.name, 'volle-pruefung') }}
+            || contains(github.event.pull_request.labels.*.name, 'full-check') }}
         run: |
           # Jede Distribution unterscheidet sich in der C-Bibliothek und in den mitgelieferten
           # Werkzeugen, deshalb prüft jede die Programmdatei erneut.
@@ -144,11 +144,11 @@ jobs:
           if [ "$VOLLSTAENDIG" = 'true' ]; then
             distributionen=$alle_distributionen
             pakete=$alle_pakete
-            beschreibung='volle Matrix (Tag, Zeitplan, Start von Hand oder Label „volle-pruefung“)'
+            beschreibung='volle Matrix (Tag, Zeitplan, Start von Hand oder Label „full-check“)'
           else
             distributionen=$auswahl_distributionen
             pakete=$auswahl_pakete
-            beschreibung='Auswahl für den Pull Request (Label „volle-pruefung“ prüft alles)'
+            beschreibung='Auswahl für den Pull Request (Label „full-check“ prüft alles)'
           fi
 
           # Sicherung gegen die stille Lücke: Eine Matrix ohne Einträge erzeugt keinen einzigen
@@ -287,7 +287,7 @@ jobs:
   # und Bun wird bewusst mit `latest` gebaut, kann sich also jeden Tag ändern. Weg fällt die
   # Prüfung deshalb nicht, sie rückt ans Release: „Ans Release anhängen“ hängt von diesem Job
   # ab, ein Bun mit kaputtem Verhalten kommt also nicht ins Release. Wer es früher wissen will,
-  # hängt dem Pull Request das Label „volle-pruefung“ an.
+  # hängt dem Pull Request das Label „full-check“ an.
   pruefen:
     name: Prüfen auf ${{ matrix.name }}
     needs: [umfang, signieren]
@@ -477,7 +477,7 @@ jobs:
   # Minuten Wartezeit, hängt aber an der Laufzeit und der HTTP-Schicht statt am Fachcode und
   # ändert sich damit erst mit einer neuen Node- oder Bun-Version. Deshalb läuft er jetzt nur
   # noch beim Tag, beim wöchentlichen Zeitplan, beim Start von Hand und an einem PR mit dem
-  # Label „volle-pruefung“, also genau dann, wenn auch die volle Matrix läuft.
+  # Label „full-check“, also genau dann, wenn auch die volle Matrix läuft.
   slow-ai-answer:
     name: Lange KI-Antwort (Node)
     needs: umfang

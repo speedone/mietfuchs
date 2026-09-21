@@ -254,7 +254,7 @@ async function evaluate() {
   const { cases } = JSON.parse(fs.readFileSync(path.join(evalDir, 'cases.json'), 'utf8'))
   const selected = cases.filter((c) => !only || only.includes(c.name))
   const binary = findChrome()
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-ki-pruefung-'))
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-ai-eval-'))
   console.log(`KI-Prüflauf mit ${model} gegen ${baseUrl} (Chrome: ${binary}, Seitenbilder ${pageEdge} px)`)
 
   const prepared = []

@@ -157,7 +157,7 @@ festlegen“ in [release.yml](.github/workflows/release.yml); seine Zusammenfass
 Container, den der Lauf geprüft hat. Seine Bedingung ist bewusst als Ausnahme geschrieben, also
 vollständig außer an einem Pull Request ohne Label: Ein neuer Auslöser läuft so im Zweifel zu
 breit statt still zu schmal. Wer die volle Breite schon vor dem Merge braucht, hängt dem
-Pull Request das Label `volle-pruefung` an, wie beim KI-Prüflauf das Label `ki-pruefung`; das
+Pull Request das Label `full-check` an, wie beim KI-Prüflauf das Label `ai-eval`; das
 startet release.yml neu, dann mit allem. Ein Start von Hand über Actions prüft ebenfalls alles.
 Das Label muss im Repo angelegt sein, sonst lässt es sich nicht vergeben. Am Pull Request läuft
 release.yml nur, wenn er Server, Oberfläche, Skripte, Paketierung oder die Datei selbst anfasst;
@@ -233,6 +233,23 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 - Geschlossen wird **beim Release**: kurzer Kommentar mit Link auf das Release, in der Sprache
   des Melders, dazu nötige Schritte für bestehende Daten. Danach das Issue als *completed*
   schließen.
+- **Labels, knapp gehalten.** Die Art steht ohne Präfix (`bug`, `enhancement`, `documentation`,
+  `chore`), denn GitHub und Dependabot vergeben einige davon selbst; wer sie umbenennt, bricht
+  das und gewinnt nur Symmetrie. Mit Präfix stehen die beiden Dimensionen, nach denen man
+  wirklich filtert: `priority: high | medium | low` und `status: awaiting release | needs
+  decision`. Die Grenze der Dringlichkeit ist fachlich gezogen und nicht abstrakt: **hoch** heißt
+  „geht an Geld oder Daten", also falsche Zahlen in einer zugestellten Abrechnung oder in der
+  Steuer oder Datenverlust; **mittel** heißt falsch angezeigt, ohne dass eine Zahl wandert;
+  **niedrig** heißt, kein Nutzer merkt es. `status: awaiting release` trägt, was behoben und in
+  `main` ist: Weil erst beim Release geschlossen wird, sieht man sonst nicht, welche offenen
+  Issues eigentlich erledigt sind. Bereichs-Labels gibt es bewusst nicht, dafür sind es zu
+  wenige Issues; ab etwa dreißig lohnen sie.
+- **`ai-eval` und `full-check` sind keine Beschriftungen, sondern Schalter** und deshalb ohne
+  Präfix und klein geschrieben. Sie starten den KI-Prüflauf beziehungsweise die volle
+  Artefaktmatrix an einem Pull Request. Ihre Namen stehen im Klartext in
+  [ai-eval.yml](.github/workflows/ai-eval.yml) und [release.yml](.github/workflows/release.yml):
+  Wer eines umbenennt, ohne den Workflow mitzuziehen, schaltet den Auslöser **lautlos** ab,
+  dieselbe Falle wie bei den Job-Namen im Ruleset.
 - Release-Notes aus dem Changelog-Abschnitt erzeugen, dabei die harten Zeilenumbrüche der
   Listenpunkte zusammenziehen — GitHub stellt jeden Umbruch in Release-Texten als echten dar.
   Die automatisch erzeugte Nennung neuer Beitragender übernehmen.
@@ -793,7 +810,7 @@ Oberfläche zeigt dazu den dpi-Wert bei A4.
 **KI-Prüflauf** ([.github/workflows/ai-eval.yml](.github/workflows/ai-eval.yml),
 [scripts/ai-eval.mjs](scripts/ai-eval.mjs)): vergleicht echte Ollama-Modelle auf GitHub-Runnern
 ohne Grafikkarte an erfundenen Belegen in [scripts/ai-eval/](scripts/ai-eval/), je als PDF mit
-Textebene, Scan und Foto. Start von Hand oder per Label `ki-pruefung` an einem PR. Neue
+Textebene, Scan und Foto. Start von Hand oder per Label `ai-eval` an einem PR. Neue
 Beispielbelege nur erfunden, nie echte Rechnungen.
 
 **Update-Hinweis** ([server/src/update.ts](server/src/update.ts)): Nur mit Zustimmung
