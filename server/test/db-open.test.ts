@@ -246,6 +246,12 @@ test('eine Datei aus einer neueren Mietfuchs-Version wird erklärt, nicht migrie
 })
 
 test('ein Netzlaufwerk wird erkannt und benannt', () => {
+  // Beide Zweige werden auf jedem System geprüft, deshalb kommen Plattform, Einhängepunkte und
+  // der wirkliche Ort hinein. Wer den wirklichen Ort dem Prüfrechner überlässt, prüft nur noch,
+  // wo zufällig jemand entwickelt: Der Windows-Zweig fiel auf dem Linux-Runner um, weil
+  // `path.posix.dirname` eines UNC-Pfads „.“ ergibt, das Arbeitsverzeichnis sich auflösen lässt
+  // und der Pfad danach nicht mehr mit zwei Gegenschrägstrichen beginnt.
+  //
   // Unter Linux steht in /proc/self/mounts, welcher Ordner über welches Dateisystem eingebunden
   // ist. Maßgeblich ist der längste passende Einhängepunkt, sonst gewinnt immer „/“.
   const mounts = [
@@ -263,14 +269,33 @@ test('ein Netzlaufwerk wird erkannt und benannt', () => {
   // Ein Einhängepunkt darf nicht als Zeichenkettenanfang zählen: /mnt/nase ist nicht /mnt/nas.
   assert.equal(linux('/mnt/nase/mietfuchs.sqlite'), null)
 
-  const windows = (file: string) => networkLocation(file, { platform: 'win32', mounts: () => null })
+  const windows = (file: string) =>
+    networkLocation(file, { platform: 'win32', mounts: () => null, realpath: (p) => p })
   assert.match(String(windows('\\\\nas\\daten\\mietfuchs.sqlite')), /\\\\nas\\daten/)
   assert.match(String(windows('\\\\?\\UNC\\nas\\daten\\mietfuchs.sqlite')), /\\\\nas\\daten/)
   assert.equal(windows('C:\\Users\\Erika\\Mietfuchs\\mietfuchs.sqlite'), null)
   assert.equal(windows('\\\\?\\C:\\Users\\Erika\\mietfuchs.sqlite'), null)
 
   // macOS lässt sich ohne fremdes Programm nicht befragen; dort gibt es keinen Hinweis.
-  assert.equal(networkLocation('/Volumes/nas/mietfuchs.sqlite', { platform: 'darwin', mounts: () => null }), null)
+  assert.equal(
+    networkLocation('/Volumes/nas/mietfuchs.sqlite', { platform: 'darwin', mounts: () => null, realpath: (p) => p }),
+    null,
+  )
+})
+
+test('der wirkliche Ort wird mit dem Pfad-Modul der genannten Plattform gesucht', () => {
+  // Ohne Auflösung hineingereicht: Dann greift die Voreinstellung, die auf das Dateisystem des
+  // Prüfrechners sieht. Ein UNC-Pfad, den es dort nicht gibt, muss unverändert durchkommen und
+  // als Netzpfad erkannt werden, unter Windows wie unter Linux. Genau hier lag der Fehler, der
+  // den Prüflauf umgeworfen hat.
+  const ohneAufloesung = networkLocation('\\\\nas\\daten\\mietfuchs.sqlite', { platform: 'win32', mounts: () => null })
+  assert.match(String(ohneAufloesung), /\\\\nas\\daten/)
+  // Und andersherum: ein Pfad in der Schreibweise von Linux, ebenfalls ohne Auflösung.
+  const linux = networkLocation('/mnt/nas/gibt-es-nicht/mietfuchs.sqlite', {
+    platform: 'linux',
+    mounts: () => '/dev/sda1 / ext4 rw 0 0\n//nas/daten /mnt/nas cifs rw 0 0',
+  })
+  assert.match(String(linux), /cifs/)
 })
 
 test('ein Symlink auf ein Netzlaufwerk zählt als Netzlaufwerk', () => {
@@ -310,17 +335,20 @@ test('liegen zwei Dateisysteme am selben Einhängepunkt, gilt das obere', () => 
   )
 })
 
+// Ein Datenordner, der laut Auskunft auf einem Netzlaufwerk liegt. Die Datenbank entsteht in
+// Wahrheit im Wegwerf-Ordner; die Frage nach dem Netzlaufwerk wird aus hineingereichten Angaben
+// beantwortet. So prüfen die beiden folgenden Tests auf jedem System dasselbe, statt den
+// Wegwerf-Ordner des Prüfrechners in eine Einhängetabelle schreiben zu müssen.
+const alsNetzlaufwerk = {
+  platform: 'linux',
+  mounts: () => '/dev/sda1 / ext4 rw 0 0\n//nas/daten /mnt/nas cifs rw 0 0',
+  realpath: () => '/mnt/nas/mietfuchs.sqlite',
+} satisfies Partial<Parameters<typeof openDatabase>[0]>
+
 test('ein Netzlaufwerk ist eine Warnung und kein Abbruch', async () => {
   const dataDir = tempDir()
   try {
-    const opened = await openDatabase({
-      dataDir,
-      platform: 'linux',
-      mounts: () => `//nas/daten ${dataDir.split(path.sep).join('/')} cifs rw 0 0`,
-      // Der wirkliche Ort wird hier nicht gesucht: Geprüft wird die Warnung, nicht das Auflösen
-      // von Symlinks, und ein aufgelöster Wegwerf-Ordner passte nicht mehr zur Tabelle oben.
-      realpath: (p) => p,
-    })
+    const opened = await openDatabase({ dataDir, ...alsNetzlaufwerk })
     try {
       assert.equal(opened.warnings.length, 1, 'geöffnet wird trotzdem')
       assert.match(opened.warnings[0], /Netz/)
@@ -341,13 +369,7 @@ test('scheitert das Öffnen, nimmt die Meldung den Hinweis auf das Netzlaufwerk 
   try {
     fs.writeFileSync(databaseFile(dataDir), 'das ist keine Datenbank, sondern Text')
     await assert.rejects(
-      () =>
-        openDatabase({
-          dataDir,
-          platform: 'linux',
-          mounts: () => `//nas/daten ${dataDir.split(path.sep).join('/')} cifs rw 0 0`,
-          realpath: (p) => p,
-        }),
+      () => openDatabase({ dataDir, ...alsNetzlaufwerk }),
       (err: unknown) => {
         assert.match(String(err), /beschädigt/)
         assert.match(String(err), /Netzlaufwerk/)
