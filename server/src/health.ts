@@ -107,8 +107,18 @@ export function healthReport({ dataDir, version, database }: { dataDir: string, 
   //
   // Ein Bericht **ohne** Angabe zur Datenbank bleibt in Ordnung: Den liefert nur, wer
   // `healthReport` ohne sie aufruft, und das tun die Tests von health.ts selbst.
+  // **Die db.json zählt nur mit, solange die Datenbank den Bestand nicht trägt.** Sie ist seit
+  // dem Umstieg der Weg dorthin und nicht mehr die Ablage: Ist er gelaufen, kann eine
+  // danebenliegende Datei von Hand hereinkopiert worden sein, und ihr Inhalt geht Mietfuchs
+  // nichts mehr an. Bestimmte sie weiterhin den Status, schickte eine fremde kaputte Datei einen
+  // Container in die Neustart-Schleife, obwohl jede Route einwandfrei arbeitet. Umgekehrt zählt
+  // sie sehr wohl, solange der Bestand noch in ihr steht: Dann ist eine unlesbare Datei genau
+  // das Problem, das den Umstieg verhindert.
+  const traegtDenBestand = database !== undefined && databaseUnavailable(database) === null
   const checks = {
-    data: checkData(dataDir),
+    data: traegtDenBestand
+      ? { ok: true, detail: 'die Datenbank trägt den Bestand' }
+      : checkData(dataDir),
     uploads: checkUploads(dataDir),
     ...(database ? { database: checkDatabase(database) } : {}),
   }

@@ -19,7 +19,8 @@ import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
-  MeterReadingExtraction, OllamaStatus, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus, UploadInfo,
+  Meter, MeterReadingExtraction, OllamaStatus, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
+  UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
 import type { MigratedSettings } from '../src/ai/settings.ts'
@@ -2112,6 +2113,36 @@ const jsonStand = (namen: string[]): string => JSON.stringify({
   tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
 })
 
+test('Backup: ist der Umstieg gescheitert, kommt die db.json ins Archiv und nicht die leere Datenbank', async () => {
+  // **Die andere Hälfte derselben Behebung.** Packte das Backup die Datenbank ein, obwohl sie
+  // den Bestand gar nicht trägt, entstünde genau das mehrdeutige Archiv, das beim
+  // Wiederherstellen Daten kostet: eine leere Datenbank neben einer vollen db.json. Damit führte
+  // das Backup an der Sperre vorbei, die für diesen Zustand gerade erfunden wurde.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  // Ein negativer Zählerstand: Der Validator lehnt ihn ab, der Umstieg scheitert, und die
+  // Datenbank bleibt offen und leer. Über die Oberfläche erzeugbar, also ein echter Fall.
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [],
+    meters: [{ id: 'm1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }],
+    readings: [{ id: 'r1', meterId: 'm1', date: '2024-12-31', value: -5 }],
+    payments: [], closedSettlements: [],
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const bericht = await jsonOf<HealthReport>(await fetch(`${s.base}/healthz`))
+    assert.equal(bericht.database?.changeover.state, 'failed', 'der Umstieg ist wider Erwarten gelungen')
+
+    const namen = new AdmZip(Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer()))
+      .getEntries().map((e) => e.entryName)
+    assert.ok(namen.includes('db.json'), `die db.json fehlt im Archiv: ${namen.join(', ')}`)
+    assert.equal(namen.includes('mietfuchs.sqlite'), false, `die leere Datenbank ist im Archiv: ${namen.join(', ')}`)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Wiederherstellen: führt das Archiv eine db.json, gilt sie und nicht die mitgebrachte Datenbank', async () => {
   // **Das ist der Aktualisierungsweg, und ohne diese Regel verliert er Daten.** Wer den Stand
   // von `main` fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
@@ -2356,6 +2387,51 @@ test('Ein unbekanntes Feld wird nicht mitgespeichert', async () => {
     assert.ok(!JSON.stringify(angelegt).includes('bleibt haengen'), JSON.stringify(angelegt))
     const gelesen = await s.api<Unit[]>('/api/units')
     assert.ok(!JSON.stringify(gelesen).includes('bleibt haengen'), JSON.stringify(gelesen))
+
+    // **Und bei den Einstellungen ebenso**, obwohl der Kommentar darüber sie seit jeher nennt:
+    // Geprüft wurde bisher nur eine Wohnung. `PUT /api/settings` reicht unbekannte Schlüssel
+    // durch bis zum Schreiben, und erst `settingsRow` lässt sie fallen. Dass sie dort und nicht
+    // erst in der Antwort verschwinden, hält diese Zusicherung fest: Gelesen wird nach dem
+    // Speichern aus der Datenbank.
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ houseName: 'Haus', lieblingsfarbe: 'blau' }) })
+    const einstellungen = await s.api<ClientSettings>('/api/settings')
+    assert.equal(einstellungen.houseName, 'Haus', 'das gültige Feld ist nicht angekommen')
+    assert.ok(!JSON.stringify(einstellungen).includes('lieblingsfarbe'), JSON.stringify(einstellungen))
+    const inDerDatenbank = await storedSettings(s)
+    assert.ok(!JSON.stringify(inDerDatenbank).includes('lieblingsfarbe'), JSON.stringify(inDerDatenbank))
+  } finally {
+    s.stop()
+  }
+})
+
+test('Aufzählungen: ein Wert, den Mietfuchs nicht kennt, ersetzt den gespeicherten nicht', async () => {
+  // Eine neue Entscheidung aus dem Umstieg, die bisher keine Zeile festhielt. Über die db.json
+  // wurde ein erfundener Umlageschlüssel übernommen und stand danach im Bestand; die Spalte
+  // ließe ihn nicht zu. Statt die Eingabe mit einem technischen Befund abzulehnen, bleibt der
+  // bisherige Wert stehen. Das ist die mildere Antwort, aber sie geschieht stillschweigend, und
+  // genau deshalb gehört sie festgehalten: Wer sie später anders entscheidet, sieht es hier.
+  const s = await startServer()
+  try {
+    const item = await s.api<CostItem>('/api/costItems', {
+      method: 'POST',
+      body: JSON.stringify({ year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'area' }),
+    })
+    const geaendert = await s.api<CostItem>(`/api/costItems/${item.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ key: 'nach-mondphase', meterType: 'plutonium' }),
+    })
+    assert.equal(geaendert.key, 'area', 'der erfundene Umlageschlüssel ist angekommen')
+    assert.equal(geaendert.meterType, null, 'der erfundene Zählertyp ist angekommen')
+
+    const meter = await s.api<Meter>('/api/meters', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Küche', unitId: null, type: 'kaltwasser', unit: 'm³' }),
+    })
+    const meterGeaendert = await s.api<Meter>(`/api/meters/${meter.id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ type: 'plutonium' }),
+    })
+    assert.equal(meterGeaendert.type, 'kaltwasser', 'der erfundene Zählertyp ist angekommen')
   } finally {
     s.stop()
   }

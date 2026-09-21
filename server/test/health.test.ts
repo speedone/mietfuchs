@@ -103,6 +103,38 @@ test('Healthcheck: ein gescheiterter Umstieg ist ein Fehler, obwohl die Datenban
   assert.equal(report.database?.migrations, 1)
 })
 
+test('Healthcheck: eine liegengebliebene unlesbare db.json stört nicht, wenn die Datenbank trägt', () => {
+  // **Die db.json ist nur noch der Weg in die Datenbank, nicht mehr der Bestand.** Ist der
+  // Umstieg gelaufen, spielt es keine Rolle mehr, was in einer danebenliegenden Datei steht; sie
+  // kann von Hand hereinkopiert worden sein. Würde sie den Status weiterhin bestimmen, schickte
+  // eine fremde kaputte Datei einen Container in die Neustart-Schleife, obwohl jede Route
+  // einwandfrei arbeitet.
+  const dir = makeDataDir({ db: '{ das ist kein JSON' })
+  const report = healthReport({
+    dataDir: dir,
+    version: '0.7.1',
+    database: dbState(dir, { open: true, changeover: { state: 'none', message: 'schon gelaufen', notes: [] } }),
+  })
+  assert.equal(report.status, 'ok')
+  assert.equal(report.checks.data.ok, true, 'die fremde Datei bestimmt den Status')
+})
+
+test('Healthcheck: eine unlesbare db.json ist ein Fehler, solange die Datenbank nicht trägt', () => {
+  // Umgekehrt zählt sie sehr wohl: Solange der Bestand noch in ihr steht, ist eine unlesbare
+  // Datei genau das Problem, das den Umstieg verhindert.
+  const dir = makeDataDir({ db: '{ das ist kein JSON' })
+  const report = healthReport({
+    dataDir: dir,
+    version: '0.7.1',
+    database: dbState(dir, {
+      open: true,
+      changeover: { state: 'failed', message: 'Die Datei db.json ließ sich nicht lesen.', notes: [] },
+    }),
+  })
+  assert.equal(report.status, 'error')
+  assert.equal(report.checks.data.ok, false)
+})
+
 test('Healthcheck: eine offene Datenbank mit erledigtem Umstieg ist in Ordnung', () => {
   const dir = makeDataDir({ db: '{}' })
   for (const state of ['none', 'done'] as const) {
