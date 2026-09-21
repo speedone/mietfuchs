@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Ausdrücklich das Wenigste, wie in den übrigen Workflows. Ohne diesen Block bekäme der
+# GITHUB_TOKEN die Voreinstellung des Repos, und die kann schreibend sein: Ein Schritt, der
+# einmal etwas Fremdes ausführt (eine Action, eine Abhängigkeit), hätte damit Schreibrecht auf
+# das Repo. Dieser Workflow baut und testet nur, er braucht nichts als Lesen.
+permissions:
+  contents: read
+
 jobs:
   test-build:
     name: Tests und Build (Node ${{ matrix.node }})
