@@ -32,13 +32,13 @@ test('Healthcheck: gesunder Datenordner meldet ok', () => {
   assert.equal(report.checks.uploads.ok, true)
 })
 
-test('Healthcheck: Erstinbetriebnahme ohne db.json ist gesund', () => {
-  // Beim ersten Start gibt es noch keine db.json — store.ts legt sie erst beim ersten
-  // Schreiben an. Als Fehler gemeldet, hinge jeder frisch gestartete Container in einer
-  // Neustart-Schleife.
+test('Healthcheck: ohne db.json ist gesund', () => {
+  // Zwei ganz verschiedene Lagen ergeben dasselbe Bild, und beide sind in Ordnung: eine frische
+  // Einrichtung, die nie eine db.json hatte, und ein gelungener Umstieg, der sie umbenannt hat.
+  // Als Fehler gemeldet, hinge jeder frisch gestartete Container in einer Neustart-Schleife.
   const report = healthReport({ dataDir: makeDataDir(), version: '0.3.1' })
   assert.equal(report.status, 'ok')
-  assert.match(report.checks.data.detail, /noch nicht angelegt/)
+  assert.match(report.checks.data.detail, /keine db\.json/)
 })
 
 test('Healthcheck: unbrauchbarer Datenordner ist ein Fehler', () => {
