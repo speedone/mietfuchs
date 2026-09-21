@@ -20,7 +20,7 @@ import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
 import { healthReport, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
-import { runChangeover, type ChangeoverResult } from './db/changeover.ts'
+import { changeoverWithoutDatabase, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import { findingsText, validateDb } from './db/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
@@ -897,22 +897,11 @@ try {
 //
 // Scheitert er, geht der Start trotzdem weiter. Mietfuchs arbeitet dann mit der db.json wie
 // bisher, und beim nächsten Start wird es erneut versucht.
-let changeover: ChangeoverResult = {
-  state: 'none',
-  message: databaseProblem ? 'Ohne geöffnete Datenbank gibt es nichts zu übernehmen.' : 'Es ist nichts zu übernehmen.',
-  notes: [],
-  protocol: null,
-  database,
-}
-if (database) {
-  changeover = await runChangeover({
-    dataDir: DATA_DIR,
-    opened: database,
-    reopen: () => openDatabase({ dataDir: DATA_DIR }),
-  })
-  database = changeover.database
-  if (!database) databaseProblem = databaseProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
-}
+const changeover: ChangeoverResult = database
+  ? await runChangeover({ dataDir: DATA_DIR, opened: database, reopen: () => openDatabase({ dataDir: DATA_DIR }) })
+  : changeoverWithoutDatabase(DATA_DIR, databaseProblem ?? 'unbekannter Grund')
+database = changeover.database
+if (!database) databaseProblem = databaseProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
 
 // Für /healthz: Der Bericht nennt den Stand, damit der Smoke-Test ihn von außen sieht (er läuft
 // auf jeder Programmdatei und in den Containern von 22 Distributionen; ob das eingebaute SQLite

@@ -401,6 +401,11 @@ test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () =
   // wäre die falsche Reihenfolge; ab dem Umstieg der Bestände kehrt sich das um.
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
   fs.writeFileSync(path.join(dataDir, 'mietfuchs.sqlite'), 'das ist keine Datenbank, sondern Text')
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
   const s = await startServerIn(dataDir)
   try {
     const report = await s.api<HealthReport>('/healthz')
@@ -409,7 +414,12 @@ test('Start: eine unbrauchbare Datenbank hält den Server nicht auf', async () =
     assert.equal(report.database.open, false)
     assert.match(report.database.detail, /beschädigt/)
     // Und die Wohnungen kommen weiter aus der db.json.
-    assert.deepEqual(await s.api<Unit[]>('/api/units'), [])
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), ['u1'])
+    // Ohne geöffnete Datenbank gibt es keinen Umstieg. Wer eine db.json hat, soll erfahren,
+    // warum seine Daten nicht umgezogen sind, und zwar an derselben Stelle wie sonst auch.
+    assert.equal(report.database.changeover.state, 'failed')
+    assert.match(report.database.changeover.message, /nicht öffnen/)
+    assert.match(report.database.changeover.message, /db\.json weiter/)
   } finally {
     s.stop()
   }
