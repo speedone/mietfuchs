@@ -96,7 +96,14 @@ type Handle = {
 
 async function openNode(file: string): Promise<Handle> {
   const { DatabaseSync } = await import('node:sqlite')
-  const handle = new DatabaseSync(file)
+  // `enableForeignKeyConstraints: false` sieht verkehrt herum aus und ist es nicht. `node:sqlite`
+  // schaltet die Fremdschlüsselprüfung von sich aus ein, `bun:sqlite` nicht. Bliebe die
+  // Voreinstellung stehen, täte das `PRAGMA foreign_keys = ON` unten unter Node gar nichts:
+  // Nähme jemand die Zeile heraus, bliebe jeder Test unter Node grün, und in der
+  // Bun-Programmdatei wären alle Verweise des Schemas stillschweigend Zierde. So hängt die
+  // Zusicherung auf beiden Laufzeiten an derselben sichtbaren Zeile, und ein Test, der den Wert
+  // des Pragmas liest, schützt sie wirklich.
+  const handle = new DatabaseSync(file, { enableForeignKeyConstraints: false })
   return {
     rows: (sql, params) => {
       const stmt = handle.prepare(sql)
