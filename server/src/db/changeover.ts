@@ -334,9 +334,23 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       // mit gefüllter Datenbank kopiert, und die beiden sind von hier aus nicht zu
       // unterscheiden. Sie „abgelöst" zu nennen wäre dann eine Zusage, die niemand eingelöst
       // hat: Nichts an ihr ist je übernommen worden.
+      //
+      // **Gesagt wird es trotzdem, denn hierher kommt man nur mit einer db.json im Ordner**
+      // (Schritt 1 kehrt ohne sie um). Ein gelungener Umstieg benennt sie um; liegt hier also
+      // eine unter altem Namen, hat Mietfuchs sie nicht hinterlassen. Erraten wird nichts: Die
+      // Meldung sagt, was dasteht, und nennt den einen Weg, auf dem geprüft wird, bevor etwas
+      // ersetzt ist. **Ausdrücklich nicht gebaut ist die Brücke „dann steige eben noch einmal
+      // um"**: Sie klänge hilfreich und wäre ein zweiter stiller Überschreiber, denn eine
+      // hereinkopierte alte Datei verwürfe den neueren Stand der Datenbank, ohne zu fragen.
       return {
         state: 'none',
-        message: `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen.`,
+        message:
+          `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen. ` +
+          'Im Datenordner liegt trotzdem eine Datei db.json. Gelesen und geschrieben wird sie ' +
+          'nicht mehr, Ihr laufender Stand ist der in der Datenbank. Enthält sie Daten, die Sie ' +
+          'noch brauchen, spielen Sie sie als Backup über die Einstellungen ein: Dort wird ' +
+          'geprüft und nachgerechnet, bevor etwas ersetzt wird. Brauchen Sie sie nicht, können ' +
+          'Sie die Datei liegen lassen; sie stört nicht.',
         notes: [], protocol: null, database: opened,
       }
     }
