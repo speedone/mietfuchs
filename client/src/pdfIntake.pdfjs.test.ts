@@ -1,6 +1,6 @@
 // Echtes pdf.js statt Leser mit festen Antworten: Liest ein im Test erzeugtes Text-PDF mit
 // derselben legacy-Fassung, die die Oberfläche lädt (pdf.ts). Die CI läuft mindestens mit
-// Node 24.12, dessen JavaScript-Engine älter ist als aktuelle Browser. Käme wieder die
+// Node 24.15, dessen JavaScript-Engine älter ist als aktuelle Browser. Käme wieder die
 // moderne Fassung zum Einsatz, die nur die allerneuesten Browser kennt, fiele das hier auf.
 import { describe, expect, test } from 'vitest'
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs'

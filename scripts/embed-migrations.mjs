@@ -25,7 +25,7 @@ const journalFile = path.join(migrationsDir, 'meta', '_journal.json')
 const outFile = path.join(root, 'server', 'src', 'db', 'embedded-migrations.js')
 
 if (!fs.existsSync(journalFile)) {
-  console.error(`Journal fehlt (${journalFile}) — erst "npm --prefix server run db:generate" ausführen.`)
+  console.error(`Journal fehlt (${journalFile}). Bitte erst "npm --prefix server run db:generate" ausführen.`)
   process.exit(1)
 }
 
@@ -34,7 +34,7 @@ if (!fs.existsSync(journalFile)) {
 const journal = JSON.parse(fs.readFileSync(journalFile, 'utf8'))
 const entries = journal.entries ?? []
 if (entries.length === 0) {
-  console.error('Das Journal führt keinen einzigen Schritt — das kann nicht stimmen.')
+  console.error('Das Journal führt keinen einzigen Schritt. Das kann nicht stimmen.')
   process.exit(1)
 }
 
@@ -51,7 +51,7 @@ const migrations = entries.map((entry) => {
   const sql = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
   // Dieselbe Marke, die Drizzle für seine eigene Buchführung bildet: der SHA-256 über den
   // Inhalt der Datei. So lässt sich später erkennen, ob ein bereits angewendeter Schritt
-  // nachträglich verändert wurde — was laut server/drizzle/README.md nie passieren darf.
+  // nachträglich verändert wurde, was laut server/drizzle/README.md nie passieren darf.
   const hash = crypto.createHash('sha256').update(sql).digest('hex')
   // `--> statement-breakpoint` trennt die einzelnen Anweisungen. SQLite führt pro Aufruf nur
   // eine aus, deshalb wird hier schon zerlegt statt erst zur Laufzeit.
@@ -63,7 +63,7 @@ const migrations = entries.map((entry) => {
 })
 
 const lines = [
-  '// AUTO-GENERIERT von scripts/embed-migrations.mjs — nicht von Hand bearbeiten.',
+  '// AUTO-GENERIERT von scripts/embed-migrations.mjs, nicht von Hand bearbeiten.',
   '// Quelle: server/drizzle (siehe das README dort: nie ändern, nie löschen).',
   '',
   `export const migrations = ${JSON.stringify(migrations, null, 2)}`,
