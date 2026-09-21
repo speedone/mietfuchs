@@ -234,6 +234,37 @@ test('Der feste Monatsbetrag wandert mit, und der Nutzer erfährt, dass sich das
   }
 })
 
+test('Zwei Staffeleinträge zum selben Stichtag: übernommen wird der letzte, wie ihn die Abrechnung liest', async () => {
+  // Über die Oberfläche erzeugbar (zwei Zeilen ohne Monatsangabe tragen denselben
+  // Einzugsmonat ein, siehe legacy.ts), in der Datenbank aber nur einmal speicherbar: der
+  // Stichtag ist Teil des Primärschlüssels. Träfe `lastPerFrom` die falsche Wahl, bekäme die
+  // Datenbank den ersten statt des letzten Eintrags, und die Regression läse aus der
+  // unveränderten Datei weiterhin richtig den letzten (siehe `computePrepaymentCents` in
+  // calc.ts) — die beiden Stände wichen voneinander ab, und der Umstieg bräche ab, statt eine
+  // falsche Vorauszahlung zu aktivieren.
+  const dataDir = tempDir()
+  try {
+    const file = fullDb()
+    file.tenancies[1].prepayments = [
+      { from: '2024-01', monthlyCents: 10000 },
+      { from: '2024-01', monthlyCents: 25000 },
+    ]
+    writeFile(dataDir, file)
+
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'done', result.message)
+    })
+
+    const stock = await stockOf(dataDir)
+    const ledger = rentLedger(snapshotOf(stock, 2024))
+    const zeile = ledger.rows.find((r) => r.tenancyId === 't2')
+    if (!zeile) return assert.fail('die Zeile des Mietkontos fehlt')
+    assert.equal(zeile.prepaymentYearCents, 12 * 25000, 'übernommen wird der letzte Eintrag, nicht der erste')
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 // ---------- Jeder Abbruch einzeln ----------
 
 test('Abbruch: eine unlesbare db.json', async () => {
