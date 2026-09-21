@@ -25,7 +25,7 @@ import { readStock } from '../src/db/read.ts'
 import { writeStock } from '../src/db/write.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 import { straightenForDatabase } from '../src/legacy.ts'
-import { BACKUP_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
+import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
 import { closedSettlements, costItems, units } from '../src/db/schema.ts'
 
@@ -118,7 +118,7 @@ test('Ohne db.json geschieht nichts, und es entsteht auch nichts', async () => {
   try {
     await changeoverIn(dataDir, async (result) => {
       assert.equal(result.state, 'none', result.message)
-      assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false)
+      assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false)
       assert.equal(fs.existsSync(path.join(dataDir, PROTOCOL_NAME)), false)
     })
     assert.deepEqual((await stockOf(dataDir)).units, [])
@@ -145,7 +145,7 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
     })
     const stock = await stockOf(dataDir)
     assert.deepEqual(stock.units.map((u) => u.id), ['schon-da'], 'der vorhandene Bestand ist unverändert')
-    assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false)
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false)
   } finally {
     removeDir(dataDir)
   }
@@ -174,10 +174,12 @@ test('Ein gewöhnlicher Bestand wandert vollständig hinüber', async () => {
     assert.equal(stock.readings.length, 4)
     assert.equal(stock.settings.houseName, 'Haus')
 
-    // Die db.json bleibt liegen: Sie ist der Rückweg. Daneben liegt die Sicherung mit dem
-    // Stand, den der Umstieg vorgefunden hat.
-    assert.equal(fs.readFileSync(dbFile(dataDir), 'utf8'), vorher, 'die db.json ist unverändert')
-    assert.equal(fs.readFileSync(path.join(dataDir, BACKUP_NAME), 'utf8'), vorher)
+    // **Die db.json heißt danach nicht mehr so.** Ihr Inhalt bleibt unverändert der Rückweg,
+    // aber unter einem Namen, den niemand für den laufenden Stand hält: Seit die Routen die
+    // Datenbank schreiben, liegt sie tot im Ordner, sähe aber aus wie vorher. Wer hineinschaut,
+    // soll ohne Erklärung erkennen, welche Datei gilt.
+    assert.equal(fs.existsSync(dbFile(dataDir)), false, 'die db.json liegt noch unter ihrem alten Namen da')
+    assert.equal(fs.readFileSync(path.join(dataDir, LEGACY_JSON_NAME), 'utf8'), vorher)
     // Und ein Protokoll, das nennt, was übernommen wurde.
     const protokoll = fs.readFileSync(path.join(dataDir, PROTOCOL_NAME), 'utf8')
     assert.match(protokoll, /2 Wohnungen/)
@@ -277,7 +279,7 @@ test('Abbruch: eine unlesbare db.json', async () => {
       assert.match(result.message, /arbeitet .* weiter|weiter mit/s, 'die Meldung sagt, wie es weitergeht')
     })
     assert.deepEqual((await stockOf(dataDir)).units, [], 'es wurde nichts geschrieben')
-    assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false)
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false)
   } finally {
     removeDir(dataDir)
   }
@@ -300,24 +302,7 @@ test('Abbruch: ein negativer Zählerstand wird benannt, damit er sich berichtige
       assert.match(result.message, /Zählerstand/)
     })
     assert.deepEqual((await stockOf(dataDir)).units, [])
-    assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false, 'geprüft wird, bevor irgendetwas geschrieben wird')
-  } finally {
-    removeDir(dataDir)
-  }
-})
-
-test('Abbruch: die Sicherung der db.json lässt sich nicht anlegen', async () => {
-  const dataDir = tempDir()
-  try {
-    writeFile(dataDir, fullDb())
-    // Ein Ordner an der Stelle, an die die Sicherung soll: Das Kopieren scheitert, und zwar auf
-    // jedem System.
-    fs.mkdirSync(path.join(dataDir, BACKUP_NAME))
-    await changeoverIn(dataDir, async (result) => {
-      assert.equal(result.state, 'failed')
-      assert.match(result.message, /Sicherung/)
-    })
-    assert.deepEqual((await stockOf(dataDir)).units, [])
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false, 'geprüft wird, bevor irgendetwas geschrieben wird')
   } finally {
     removeDir(dataDir)
   }
@@ -525,7 +510,24 @@ test('Abbruch: eine Datenbank, die nicht mehr antwortet, beendet nicht den Start
     assert.match(result.message, /arbeitet unverändert mit der Datei db.json weiter/)
     // Und nichts ist halb getan: keine Datei für den Umstieg, keine Sicherung.
     assert.equal(fs.existsSync(path.join(dataDir, TEMP_NAME)), false, 'die Datei für den Umstieg liegt noch da')
-    assert.equal(fs.existsSync(path.join(dataDir, BACKUP_NAME)), false, 'es wurde schon gesichert')
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false, 'es wurde schon gesichert')
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
+test('Ein gescheiterter Umstieg lässt die db.json, wo sie ist', async () => {
+  // Der Name ist die Zusage „ab hier gilt die Datenbank". Solange sie nicht gilt, darf er auch
+  // nicht dastehen, sonst suchte der Nutzer seine Daten unter einem Namen, der behauptet, sie
+  // seien umgezogen.
+  const dataDir = tempDir()
+  try {
+    const bestand = fullDb()
+    bestand.readings = [reading({ id: 'r1', meterId: 'm1', value: -5 })]
+    writeFile(dataDir, bestand)
+    await changeoverIn(dataDir, async (result) => assert.equal(result.state, 'failed'))
+    assert.ok(fs.existsSync(dbFile(dataDir)), 'die db.json ist verschwunden')
+    assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false, 'sie gilt als abgelöst, obwohl nichts umgezogen ist')
   } finally {
     removeDir(dataDir)
   }

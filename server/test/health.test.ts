@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { healthReport } from '../src/health.ts'
+import { healthReport, type DatabaseState } from '../src/health.ts'
 
 // Ein Datenordner, wie der Server ihn vorfindet
 function makeDataDir(contents: { db?: string } = {}) {
@@ -56,35 +56,60 @@ test('Healthcheck: unlesbare db.json ist ein Fehler', () => {
   assert.equal(report.checks.data.ok, false)
 })
 
-test('Healthcheck: die Datenbank steht im Bericht, bestimmt den Status aber nicht', () => {
-  // Die Datenbank (#55) trägt die fachlichen Daten noch nicht: Der Umstieg füllt sie, gelesen
-  // wird weiterhin aus der db.json. Stünde sie unter `checks`, meldete /healthz einen Fehler,
-  // sobald sie sich nicht öffnen lässt oder der Umstieg scheitert, und ein Container liefe in
-  // eine Neustart-Schleife, obwohl die Anwendung tut, was sie soll — und obwohl der Nutzer
-  // gerade ausdrücklich nicht blockiert sein soll. Sobald die Routen aus der Datenbank lesen,
-  // gehört sie dorthin.
-  const dir = makeDataDir({ db: '{}' })
-  const umstieg = { state: 'none' as const, message: 'Es ist nichts zu übernehmen.', notes: [] }
-  const zu = healthReport({
-    dataDir: dir,
-    version: '0.7.1',
-    database: { open: false, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 0, detail: 'ist beschädigt', changeover: umstieg },
-  })
-  assert.equal(zu.status, 'ok')
-  assert.equal(zu.database?.open, false)
-  assert.match(String(zu.database?.detail), /beschädigt/)
+// **Die angekündigte Umkehr ist eingetreten.** Bis die Routen aus der Datenbank lasen, durfte
+// sie den Status nicht bestimmen: Mietfuchs arbeitete mit der db.json weiter, und ein Fehler an
+// der Datenbank hätte nur Container in eine Neustart-Schleife geschickt. Seit die Routen aus ihr
+// lesen, ist ein Start ohne sie ein Start ohne Daten, und genau das soll der Bericht sagen.
 
-  const offen = healthReport({
+const dbState = (dir: string, state: Partial<DatabaseState> & Pick<DatabaseState, 'open' | 'changeover'>): DatabaseState => ({
+  file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet', ...state,
+})
+
+test('Healthcheck: eine Datenbank, die sich nicht öffnen ließ, ist ein Fehler', () => {
+  const dir = makeDataDir({ db: '{}' })
+  const report = healthReport({
     dataDir: dir,
     version: '0.7.1',
-    database: {
-      open: true, file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet',
-      changeover: { state: 'failed', message: 'Der Umstieg ist nicht gelungen.', notes: [] },
-    },
+    database: dbState(dir, {
+      open: false, migrations: 0, detail: 'ist beschädigt',
+      changeover: { state: 'none', message: 'Es ist nichts zu übernehmen.', notes: [] },
+    }),
   })
-  assert.equal(offen.status, 'ok', 'ein gescheiterter Umstieg schickt keinen Container in die Neustart-Schleife')
-  assert.equal(offen.database?.migrations, 1)
-  assert.equal(offen.database?.changeover.state, 'failed')
+  assert.equal(report.status, 'error')
+  assert.equal(report.checks.database?.ok, false)
+  assert.match(String(report.database?.detail), /beschädigt/)
+})
+
+test('Healthcheck: ein gescheiterter Umstieg ist ein Fehler, obwohl die Datenbank offen ist', () => {
+  // Der gefährliche Fall: Die Datenbank steht, ist aber leer, und die Daten des Vermieters
+  // liegen noch in der db.json. Ein „ok" hieße hier, dass jede Datenroute mit 503 antwortet,
+  // während der Bericht Betriebsbereitschaft meldet.
+  const dir = makeDataDir({ db: '{}' })
+  const report = healthReport({
+    dataDir: dir,
+    version: '0.7.1',
+    database: dbState(dir, {
+      open: true,
+      changeover: { state: 'failed', message: 'Der Umstieg ist nicht gelungen.', notes: [] },
+    }),
+  })
+  assert.equal(report.status, 'error')
+  assert.equal(report.checks.database?.ok, false)
+  assert.equal(report.database?.changeover.state, 'failed', 'der Grund steht weiterhin im Bericht')
+  assert.equal(report.database?.migrations, 1)
+})
+
+test('Healthcheck: eine offene Datenbank mit erledigtem Umstieg ist in Ordnung', () => {
+  const dir = makeDataDir({ db: '{}' })
+  for (const state of ['none', 'done'] as const) {
+    const report = healthReport({
+      dataDir: dir,
+      version: '0.7.1',
+      database: dbState(dir, { open: true, changeover: { state, message: 'alles da', notes: [] } }),
+    })
+    assert.equal(report.status, 'ok', `Umstieg ${state}`)
+    assert.equal(report.checks.database?.ok, true, `Umstieg ${state}`)
+  }
 })
 
 test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {
