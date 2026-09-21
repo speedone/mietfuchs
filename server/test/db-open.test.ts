@@ -164,6 +164,20 @@ test('eine Datei aus einer neueren Mietfuchs-Version wird erklärt, nicht migrie
       },
     )
 
+    // Ein Zeitpunkt, den es als Datum gar nicht gibt. Der Wert kommt aus einer Datei, für die
+    // wir nichts können, und darf die Meldung nicht mitten im Satz zum Absturz bringen.
+    const zweiter = await connect(file)
+    zweiter.exec("INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('unsinniger-zeitpunkt', 9e99)")
+    zweiter.close()
+    await assert.rejects(
+      () => openDatabase({ dataDir }),
+      (err: unknown) => {
+        assert.match(String(err), /2 Änderungen/)
+        assert.match(String(err), /unbekannt/)
+        return true
+      },
+    )
+
     const nachher = await connect(file)
     const tabellen = nachher.rows("SELECT name FROM sqlite_master WHERE type = 'table'").map((row) => String(row[0]))
     nachher.close()
