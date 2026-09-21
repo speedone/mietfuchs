@@ -17,8 +17,9 @@ import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import {
-  createEntity, findEntity, invoiceFilesInUse, listCollection, removeEntity, sharesForUnit,
-  updateEntity, type CollectionName,
+  closeSettlement, createEntity, findClosedSettlement, findEntity, invoiceFilesInUse,
+  listCollection, removeEntity, reopenSettlement, setSentAt, sharesForUnit, updateEntity,
+  type CollectionName,
 } from '../src/db/repository.ts'
 import { costItems, meters, payments, readings, tenancies, units } from '../src/db/schema.ts'
 
@@ -227,6 +228,62 @@ test('Ein Beleg, der noch an einer Kostenposition hängt, wird als benutzt gemel
     assert.equal(benutzt.has('beleg.pdf'), true)
     assert.equal(benutzt.has('frei.pdf'), false)
     assert.equal((await opened.read((db) => invoiceFilesInUse(db, []))).size, 0)
+  })
+})
+
+// ---------- Die abgeschlossene Abrechnung ----------
+//
+// Sie ist keine gewöhnliche Sammlung: Angelegt wird sie nicht mit beliebigem Rumpf, sondern mit
+// dem Berechnungsstand, den der Server selbst gerade gerechnet hat.
+
+test('Abschließen: die Abrechnung lässt sich danach wiederfinden', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => closeSettlement(db, {
+      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
+      settlement: { year: 2024, totalCostsCents: 12000 },
+    }))
+    const gefunden = await opened.read((db) => findClosedSettlement(db, 2024))
+    if (!gefunden) return assert.fail('die abgeschlossene Abrechnung ist nicht auffindbar')
+    assert.equal(gefunden.year, 2024)
+    assert.equal(gefunden.sentAt, null)
+    // Wortgleich: Der eingefrorene Stand ist ein Archivstück und soll bleiben, wie er ist.
+    assert.deepEqual(gefunden.settlement, { year: 2024, totalCostsCents: 12000 })
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 2023)), undefined)
+  })
+})
+
+test('Abschließen: ein zweites Mal für dasselbe Jahr lehnt die Datenbank ab', async () => {
+  // Der eindeutige Index auf `year` ist zugleich die Zusicherung, dass es je Jahr höchstens eine
+  // abgeschlossene Abrechnung gibt. Ohne ihn entschiede die Reihenfolge beim Lesen, welche gilt.
+  await withDatabase(async (opened) => {
+    const eintrag = { year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {} }
+    await opened.write((db) => closeSettlement(db, { ...eintrag, id: 's1' }))
+    await assert.rejects(() => opened.write((db) => closeSettlement(db, { ...eintrag, id: 's2' })))
+  })
+})
+
+test('Das Versanddatum lässt sich nachtragen und wieder entfernen', async () => {
+  // An ihm hängt die Frist aus §556 BGB.
+  await withDatabase(async (opened) => {
+    await opened.write((db) => closeSettlement(db, {
+      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal(await opened.write((db) => setSentAt(db, 2024, '2025-02-01')), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, '2025-02-01')
+    assert.equal(await opened.write((db) => setSentAt(db, 2024, null)), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, null)
+    assert.equal(await opened.write((db) => setSentAt(db, 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
+  })
+})
+
+test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => closeSettlement(db, {
+      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), true)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 2024)), undefined)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), false, 'ein zweites Mal meldet sich')
   })
 })
 
