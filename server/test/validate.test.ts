@@ -18,11 +18,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { findingsText, validateDb, type Finding } from '../src/db/validate.ts'
-import { computeSettlement } from '../src/calc.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
+import { migrateLegacy } from '../src/legacy.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
 import { FIXTURE_DIR } from '../testing/fixtures.ts'
 import type { Db } from '../src/store.ts'
-import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, Meter, Payment, Reading, RentLedger, RentLedgerRow, Settings, Tenancy, Unit } from '../../shared/types.ts'
 
 // ---------- Bausteine ----------
 //
@@ -79,7 +80,7 @@ function expectProblem(value: unknown, pattern: RegExp, hint: string): void {
 }
 
 function expectClean(value: unknown, hint: string): void {
-  assert.deepEqual(problemsOf(value), [], `${hint}: unerwartete Beanstandung — ${textOf(problemsOf(value))}`)
+  assert.deepEqual(problemsOf(value), [], `${hint}: unerwartete Beanstandung, ${textOf(problemsOf(value))}`)
 }
 
 // ---------- 1. Was in Ordnung ist ----------
@@ -89,8 +90,16 @@ test('Ein gewöhnlicher Bestand hat keine Beanstandung', () => {
 })
 
 test('Die Beispielbestände des Prüfkatalogs kommen ohne Beanstandung durch', () => {
-  // Der Prüfkatalog ist das Nächste, was wir an echten Daten haben: vollständige Bestände, die
-  // bis auf den Cent nachgerechnet sind. Wäre der Validator zu streng, fiele hier etwas heraus.
+  // Der Prüfkatalog ist das Nächste, was wir an erfundenen, aber vollständigen Beständen
+  // haben: bis auf den Cent nachgerechnet. Wäre der Validator zu streng, fiele hier etwas
+  // heraus; genau das ist einmal passiert, und daraufhin ist die Regel für reine Anzeigefelder
+  // entstanden.
+  //
+  // **Achtung beim Pflegen der Fixtures.** Die Fangkraft dieses Tests hängt daran, dass die
+  // Zähler in F05 und F06 zwei Felder nicht führen (`name` und `unit`; statt `name` steht dort
+  // ein `label`, das es im Datenmodell gar nicht gibt). Wer die Beispieldaten vervollständigt,
+  // nimmt dem Test still seine schärfste Stelle. Dann gehört hier ein Bestand hinein, der
+  // weiterhin Felder auslässt, sonst prüft der Test nur noch das Erwartbare.
   const dirs = fs.readdirSync(FIXTURE_DIR, { withFileTypes: true }).filter((e) => e.isDirectory())
   assert.ok(dirs.length > 0, 'keine Fixtures gefunden')
   for (const dir of dirs) {
@@ -161,6 +170,17 @@ test('Ein Zähler, dessen Wohnung es nicht gibt, wird abgelehnt', () => {
   // Der einzige Ausweg wäre, ihn zum Hauptzähler zu machen. Das änderte die Verteilbasis:
   // Ein Wohnungszähler zählt in die Basis des Zählerschlüssels, ein Hauptzähler nicht.
   expectProblem(dbWith({ meters: [meter({ id: 'm1', unitId: 'weg' })] }), /Wohnung/, 'Zähler ohne Wohnung')
+  // Aus demselben Grund ist eine Kennung aus Leerzeichen ein Verweis ins Leere und keine leere
+  // Kennung: `m.unitId && …` in calc.ts hält sie für ausgefüllt.
+  expectProblem(dbWith({ meters: [meter({ id: 'm1', unitId: '  ' })] }), /Wohnung/, 'Zähler mit Leerzeichen als Kennung')
+})
+
+test('Krumm: ein Zähler ohne ausgefüllte Wohnung wird nicht abgelehnt', () => {
+  // Die leere Kennung liest die Abrechnung schon heute wie gar keine, er ist also ein
+  // Hauptzähler für das ganze Haus.
+  const krumm = dbWith({ meters: [meter({ id: 'm1', unitId: '' })] })
+  expectClean(krumm, 'Zähler mit leerer Wohnungs-Kennung')
+  assert.match(textOf(adjustmentsOf(krumm)), /Hauptzähler/)
 })
 
 test('Ein Betrag, der keine Zahl ist, wird abgelehnt', () => {
@@ -177,11 +197,11 @@ test('Ein Cent-Betrag mit Nachkommastellen wird abgelehnt', () => {
 test('Ein negativer Betrag, wo keiner sein darf, wird abgelehnt', () => {
   expectProblem(
     dbWith({ tenancies: [tenancy({ id: 't1', unitId: 'u1', prepayments: [{ from: '2024-01', monthlyCents: -15000 }] })] }),
-    /negativ/,
+    /unter null/,
     'negative Vorauszahlung',
   )
-  expectProblem(dbWith({ units: [unit({ id: 'u1', areaM2: -80 })] }), /negativ/, 'negative Wohnfläche')
-  expectProblem(dbWith({ readings: [reading({ id: 'r1', meterId: 'm1', value: -5 })] }), /negativ/, 'negativer Zählerstand')
+  expectProblem(dbWith({ units: [unit({ id: 'u1', areaM2: -80 })] }), /unter null/, 'negative Wohnfläche')
+  expectProblem(dbWith({ readings: [reading({ id: 'r1', meterId: 'm1', value: -5 })] }), /unter null/, 'negativer Zählerstand')
 })
 
 test('Ein unbekannter Umlageschlüssel oder Zählertyp wird abgelehnt', () => {
@@ -295,82 +315,284 @@ test('Krumm: eine fehlende Sammlung und fehlende Einstellungen werden nicht abge
   expectClean({ units: [], tenancies: [] }, 'Bestand ohne Einstellungen')
 })
 
-// ---------- 4. Geraderücken ändert keine Zahl ----------
+// ---------- 4. Geraderücken bewegt keine Zahl ----------
 //
-// Hier steht die Begründung der ganzen Grenze. Jeder krumme Fall wird so geradegerückt, wie es
-// der Hinweis ankündigt, und die Abrechnung wird vorher und nachher verglichen. Kommt dasselbe
-// heraus, war das Hinnehmen richtig; käme etwas anderes heraus, gehörte der Fall abgelehnt.
+// Hier steht die Begründung der ganzen Grenze, und deshalb steht hier **jeder** hingenommene
+// Fall und nicht eine Auswahl. Jeder wird so geradegerückt, wie es der Hinweis ankündigt, und
+// beide Stände werden durchgerechnet. Kommt dasselbe heraus, war das Hinnehmen richtig; kommt
+// etwas anderes heraus, gehört der Fall abgelehnt oder der Unterschied benannt.
+//
+// **Verglichen wird alles, was Mietfuchs rechnet**, und das ist nicht nur die Abrechnung.
+// Mietkonto und Abrechnung lesen die Vorauszahlung verschieden (#70), und genau dort sitzt der
+// eine Fall, der doch etwas bewegt. Wer nur die Abrechnung vergliche, übersähe ihn.
 
-const settlementOf = (db: Db) => computeSettlement(snapshotFromDb(db, 2024))
-
-// Ein Bestand mit zwei Wohnungen, zwei Mietverhältnissen und mehreren Kostenpositionen: Erst
-// dann fällt eine verschobene Verteilung überhaupt auf.
-function twoUnits(): Db {
+function resultsOf(file: Db) {
+  // Aus der Datei wird erst ein Bestand, mit denselben Regeln wie beim Einlesen. Geklont, weil
+  // migrateLegacy die Mietverhältnisse an Ort und Stelle ändert und die Testdaten sonst nach
+  // dem ersten Durchlauf andere wären.
+  const snapshot = snapshotFromDb(migrateLegacy(structuredClone(file)), 2024)
   return {
-    ...healthyDb(),
-    tenancies: [tenancy({ id: 't1', unitId: 'u1' }), tenancy({ id: 't2', unitId: 'u2', tenantName: 'Schmidt' })],
-    costItems: [costItem({ id: 'c1' }), costItem({ id: 'c2', description: 'Hausreinigung', amountCents: 24000, key: 'units' })],
+    settlement: computeSettlement(snapshot),
+    ledger: rentLedger(snapshot),
+    tax: taxReport(snapshot),
+    consumption: consumptionOverview(snapshot),
   }
 }
 
-test('Geraderücken: eine Direktzuordnung ins Leere ist dasselbe wie keine Zuordnung', () => {
-  const krumm = twoUnits()
-  krumm.costItems.push(costItem({ id: 'c3', description: 'Rohrbruch', amountCents: 30000, key: 'direct', directUnitId: 'weg' }))
-  const gerade = structuredClone(krumm)
-  gerade.costItems[2].directUnitId = null
-  // Auch die Warnung bleibt dieselbe: Die Berechnung schlägt eine unbekannte Kennung genauso
-  // nach wie `null`, nämlich vergeblich.
-  assert.deepEqual(settlementOf(gerade), settlementOf(krumm))
-})
+const same = (gerade: Db, krumm: Db, hint: string): void =>
+  assert.deepEqual(resultsOf(gerade), resultsOf(krumm), hint)
 
-test('Geraderücken: beim doppelten Stichtag gilt der letzte Eintrag der Datei', () => {
-  const krumm = twoUnits()
-  krumm.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 15000 }, { from: '2024-01', monthlyCents: 18000 }]
-  krumm.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 2 }, { from: '2024-01-01', persons: 5 }]
-  const gerade = structuredClone(krumm)
-  gerade.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 18000 }]
-  gerade.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 5 }]
-  assert.deepEqual(settlementOf(gerade), settlementOf(krumm))
-})
+// Die Mietkonto-Zeile eines Mietverhältnisses. Nach Kennung gesucht und nicht über den Index
+// genommen: `rentLedger` sortiert seine Zeilen nach Wohnungs- und Mietername, ein Zugriff über
+// den Index prüfte also je nach Namen eine andere Zeile. Genau das ist hier einmal passiert,
+// und der Test war dadurch grün an der falschen Stelle.
+function ledgerRow(ledger: RentLedger, tenancyId: string): RentLedgerRow {
+  const row = ledger.rows.find((r) => r.tenancyId === tenancyId)
+  if (!row) assert.fail(`Im Mietkonto fehlt die Zeile für ${tenancyId}`)
+  return row
+}
 
-test('Geraderücken: ein vereinbarter Anteil ins Leere ändert keine Zahl', () => {
-  const krumm = twoUnits()
-  krumm.costItems.push(costItem({ id: 'c3', description: 'Aufzug', amountCents: 50000, key: 'custom', customShares: { u1: 60, weg: 40 } }))
-  const gerade = structuredClone(krumm)
-  gerade.costItems[2].customShares = { u1: 60 }
-  const a = settlementOf(krumm)
-  const b = settlementOf(gerade)
-  assert.deepEqual({ ...b, warnings: [] }, { ...a, warnings: [] })
-  // Der eine Unterschied, und er ist benannt: Die Warnung über den verfallenen Anteil entfällt,
-  // weil es den Eintrag danach nicht mehr gibt. Kein Cent verschiebt sich dadurch.
-  assert.ok(a.warnings.some((w) => /vereinbarte Anteil/.test(w)), a.warnings.join(' | '))
-  assert.ok(!b.warnings.some((w) => /vereinbarte Anteil/.test(w)), b.warnings.join(' | '))
+// Ein Feld wirklich entfernen, nicht auf undefined setzen: Genau so fehlt es in der Datei. Der
+// Typ des Helfers sagt, dass das Feld fehlen darf; zugesichert wird dabei nichts.
+function drop<K extends string, T extends Partial<Record<K, unknown>>>(record: T, field: K): void {
+  delete record[field]
+}
+
+// Ein Bestand, in dem alle vier Rechnungen etwas zu tun haben: zwei Wohnungen, zwei
+// Mietverhältnisse mit Kaltmiete und Vorauszahlung, vier Kostenpositionen mit vier Schlüsseln,
+// zwei Zähler mit Ablesungen über den Jahreswechsel und eine Zahlung. An einem leeren Bestand
+// ließe sich nichts davon zeigen.
+function fullDb(): Db {
+  return {
+    settings: settings(),
+    units: [unit({ id: 'u1' }), unit({ id: 'u2', name: 'OG', areaM2: 60 })],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'u1', baseRents: [{ from: '2024-01', monthlyCents: 60000 }] }),
+      tenancy({
+        id: 't2', unitId: 'u2', tenantName: 'Schmidt', persons: 3,
+        personHistory: [{ from: '2024-01-01', persons: 3 }],
+        baseRents: [{ from: '2024-01', monthlyCents: 50000 }],
+      }),
+    ],
+    costItems: [
+      costItem({ id: 'c1' }),
+      costItem({ id: 'c2', description: 'Hausreinigung', amountCents: 24000, key: 'units' }),
+      costItem({ id: 'c3', description: 'Wasser', amountCents: 30000, key: 'meter', meterType: 'kaltwasser' }),
+      costItem({ id: 'c4', description: 'Gartenpflege', amountCents: 18000, key: 'persons' }),
+    ],
+    meters: [meter({ id: 'm1', unitId: 'u1' }), meter({ id: 'm2', unitId: 'u2', name: 'Bad' })],
+    readings: [
+      reading({ id: 'r1', meterId: 'm1', date: '2023-12-31', value: 100 }),
+      reading({ id: 'r2', meterId: 'm1', date: '2024-12-31', value: 160 }),
+      reading({ id: 'r3', meterId: 'm2', date: '2023-12-31', value: 200 }),
+      reading({ id: 'r4', meterId: 'm2', date: '2024-12-31', value: 240 }),
+    ],
+    // Die Zahlung für t2 deckt bei 50000 Kaltmiete genau zwei Monate. Ohne sie ließe sich am
+    // Mietkonto kein Statuswechsel zeigen, und genau darauf kommt es unten an.
+    payments: [payment({ id: 'p1', tenancyId: 't1', amountCents: 150000 }), payment({ id: 'p2', tenancyId: 't2', amountCents: 100000 })],
+    closedSettlements: [],
+  }
+}
+
+test('Geraderücken: fehlende Sammlungen, Einstellungen, Kaltmiete-Staffel und Jahreskorrektur', () => {
+  // Ein Backup aus einer früheren Version führt die späteren Sammlungen nicht, und die beiden
+  // Staffeln kamen ebenfalls später dazu. Die Einstellungen gehen in keine der vier Rechnungen
+  // ein, der Schnappschuss führt sie gar nicht; der Vergleich hält genau das fest, und wer
+  // eines Tages eine Einstellung in die Berechnung zieht, bekommt hier einen roten Test.
+  const gerade = fullDb()
+  gerade.payments = []
+  gerade.closedSettlements = []
+  gerade.tenancies[1].baseRents = []
+  gerade.tenancies[0].prepaymentOverrides = {}
+  const krumm = structuredClone(gerade)
+  drop(krumm, 'payments')
+  drop(krumm, 'closedSettlements')
+  drop(krumm, 'settings')
+  drop(krumm.tenancies[1], 'baseRents')
+  drop(krumm.tenancies[0], 'prepaymentOverrides')
+  same(gerade, krumm, 'fehlende Sammlungen und Staffeln')
 })
 
 test('Geraderücken: eine fehlende Wohnfläche ist dasselbe wie 0 m²', () => {
-  const krumm = twoUnits()
-  // Das Feld wirklich entfernen, nicht auf undefined setzen: Genau so steht es in der Datei.
-  const ohneFlaeche: Omit<Unit, 'areaM2'> & { areaM2?: number } = krumm.units[1]
-  delete ohneFlaeche.areaM2
-  const gerade = structuredClone(krumm)
+  const gerade = fullDb()
   gerade.units[1].areaM2 = 0
-  assert.deepEqual(settlementOf(gerade), settlementOf(krumm))
+  const krumm = structuredClone(gerade)
+  drop(krumm.units[1], 'areaM2')
+  same(gerade, krumm, 'Wohnung ohne Wohnfläche')
 })
 
-test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bleibt die Vorauszahlung', () => {
-  // Beim Einlesen wandelt legacy.ts den festen Monatsbetrag nur um, wenn die Staffel ganz
-  // fehlt. Steht daneben eine leere Staffel, bleibt das alte Feld liegen, und die Berechnung
-  // liest es weiterhin. In der Datenbank gibt es dafür keine Spalte mehr: Wer das beim Umstieg
-  // übersieht, nimmt dem Mieter seine ganze Vorauszahlung aus der Abrechnung.
-  const krumm = twoUnits()
-  const alt: Tenancy & { prepaymentMonthlyCents?: number } = krumm.tenancies[0]
-  alt.prepayments = []
-  alt.prepaymentMonthlyCents = 15000
-  const gerade = structuredClone(krumm)
-  const geradeAlt: Tenancy & { prepaymentMonthlyCents?: number } = gerade.tenancies[0]
-  delete geradeAlt.prepaymentMonthlyCents
-  gerade.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 15000 }]
-  assert.deepEqual(settlementOf(gerade), settlementOf(krumm))
-  // Und der Hinweis kündigt genau das an.
-  assert.match(textOf(adjustmentsOf(krumm)), /Monatsbetrag/)
+test('Geraderücken: eine fehlende Beteiligung ist dasselbe wie „gehört nicht dazu"', () => {
+  const gerade = fullDb()
+  gerade.units[1].participates = false
+  const krumm = structuredClone(gerade)
+  drop(krumm.units[1], 'participates')
+  same(gerade, krumm, 'Wohnung ohne Beteiligung')
+})
+
+test('Geraderücken: eine fehlende Personenzahl', () => {
+  // Mit Staffel liest die Berechnung das Feld gar nicht, dort gilt der letzte Eintrag.
+  const mitStaffel = fullDb()
+  mitStaffel.tenancies[1].persons = 3
+  const krummMitStaffel = structuredClone(mitStaffel)
+  drop(krummMitStaffel.tenancies[1], 'persons')
+  same(mitStaffel, krummMitStaffel, 'Personenzahl fehlt, Staffel vorhanden')
+
+  // Ohne Staffel ist sie der Rückfall, und ohne beides gilt eine Person.
+  const ohneStaffel = fullDb()
+  ohneStaffel.tenancies[1].persons = 1
+  drop(ohneStaffel.tenancies[1], 'personHistory')
+  const krummOhneStaffel = structuredClone(ohneStaffel)
+  drop(krummOhneStaffel.tenancies[1], 'persons')
+  same(ohneStaffel, krummOhneStaffel, 'Personenzahl und Staffel fehlen')
+})
+
+test('Geraderücken: eine fehlende Personen-Staffel entsteht aus der Personenzahl', () => {
+  const gerade = fullDb()
+  gerade.tenancies[1].personHistory = [{ from: gerade.tenancies[1].start, persons: 3 }]
+  const krumm = structuredClone(gerade)
+  drop(krumm.tenancies[1], 'personHistory')
+  same(gerade, krumm, 'Personen-Staffel fehlt')
+})
+
+test('Geraderücken: eine fehlende Vorauszahlungs-Staffel, mit und ohne festen Monatsbetrag', () => {
+  const ohne = fullDb()
+  ohne.tenancies[1].prepayments = []
+  const krummOhne = structuredClone(ohne)
+  drop(krummOhne.tenancies[1], 'prepayments')
+  same(ohne, krummOhne, 'Staffel fehlt, kein alter Betrag')
+
+  // Mit altem Betrag entsteht der Staffeleintrag ab dem Einzugsmonat, und zwar schon beim
+  // Einlesen. Deshalb ist dieser Fall auch im Mietkonto zahlenneutral, anders als der nächste.
+  const mit = fullDb()
+  mit.tenancies[1].prepayments = [{ from: mit.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }]
+  const krummMit = structuredClone(mit)
+  drop(krummMit.tenancies[1], 'prepayments')
+  const alt: Tenancy & { prepaymentMonthlyCents?: number } = krummMit.tenancies[1]
+  alt.prepaymentMonthlyCents = 12000
+  same(mit, krummMit, 'Staffel fehlt, alter Betrag vorhanden')
+})
+
+test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt das Mietkonto', () => {
+  // **Der eine hingenommene Fall, der eine Zahl bewegt.** Beim Einlesen bleibt der alte Betrag
+  // liegen, weil die leere Staffel als vorhanden zählt. Die Abrechnung liest ihn trotzdem
+  // (computePrepaymentCents), das Mietkonto nicht (rentLedger liest nur `prepayments`). Also
+  // bleibt die Abrechnung gleich, und das Mietkonto zeigt nachher, was die Abrechnung ohnehin
+  // schon ansetzt. Das ist eine gemessene Ausprägung von #70.
+  const gerade = fullDb()
+  gerade.tenancies[1].prepayments = [{ from: gerade.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }]
+  const krumm = structuredClone(gerade)
+  krumm.tenancies[1].prepayments = []
+  const alt: Tenancy & { prepaymentMonthlyCents?: number } = krumm.tenancies[1]
+  alt.prepaymentMonthlyCents = 12000
+
+  const vorher = resultsOf(krumm)
+  const nachher = resultsOf(gerade)
+  const jahr = 12 * 12000
+
+  // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin.
+  assert.deepEqual(nachher.settlement, vorher.settlement, 'Abrechnung')
+  assert.deepEqual(nachher.consumption, vorher.consumption, 'Verbrauch')
+
+  // Das Mietkonto bewegt sich, und zwar um genau die Vorauszahlung.
+  const vorherZeile = ledgerRow(vorher.ledger, 't2')
+  const nachherZeile = ledgerRow(nachher.ledger, 't2')
+  assert.equal(vorherZeile.prepaymentYearCents, 0, 'heute fehlt die Vorauszahlung im Mietkonto')
+  assert.equal(nachherZeile.prepaymentYearCents, jahr)
+  assert.equal(nachherZeile.sollYearCents - vorherZeile.sollYearCents, jahr)
+
+  // Und die Steuerübersicht nimmt die Zahlen des Mietkontos mit, bewegt sich also ebenfalls.
+  // Das ist der Grund, hier alle vier Rechnungen zu vergleichen und nicht nur die Abrechnung.
+  assert.equal(nachher.tax.income.prepaymentSollCents - vorher.tax.income.prepaymentSollCents, jahr, 'Steuerübersicht')
+
+  // Was der Vermieter davon sieht: Das Soll steigt, also deckt dieselbe Zahlung weniger Monate.
+  // Ein Monat, der als bezahlt dastand, ist danach nur noch teilweise gedeckt. Das ist die
+  // Richtung, in die es gehört, denn die Abrechnung rechnet schon heute mit diesem Betrag; das
+  // Mietkonto hat bisher zu wenig gefordert.
+  assert.equal(vorherZeile.months[1].status, 'paid')
+  assert.equal(nachherZeile.months[1].status, 'partial')
+  const statement = vorher.settlement.statements.find((s) => s.tenancyId === 't2')
+  if (!statement) return assert.fail('Abrechnung für t2 fehlt')
+  assert.equal(statement.prepaymentCents, jahr, 'die Abrechnung rechnet schon heute mit dem alten Betrag')
+  assert.equal(nachherZeile.prepaymentYearCents, statement.prepaymentCents, 'danach sagen beide dasselbe')
+})
+
+test('Geraderücken: beim doppelten Stichtag gilt der letzte Eintrag der Datei', () => {
+  const gerade = fullDb()
+  gerade.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 18000 }]
+  gerade.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 5 }]
+  const krumm = structuredClone(gerade)
+  krumm.tenancies[0].prepayments = [{ from: '2024-01', monthlyCents: 15000 }, { from: '2024-01', monthlyCents: 18000 }]
+  krumm.tenancies[0].personHistory = [{ from: '2024-01-01', persons: 2 }, { from: '2024-01-01', persons: 5 }]
+  same(gerade, krumm, 'doppelter Stichtag')
+})
+
+test('Geraderücken: eine Direktzuordnung ins Leere ist dasselbe wie keine Zuordnung', () => {
+  const gerade = fullDb()
+  gerade.costItems.push(costItem({ id: 'c5', description: 'Rohrbruch', amountCents: 30000, key: 'direct', directUnitId: null }))
+  const krumm = structuredClone(gerade)
+  krumm.costItems[4].directUnitId = 'gibt-es-nicht'
+  // Auch die Warnung bleibt dieselbe: Die Berechnung schlägt eine unbekannte Kennung genauso
+  // nach wie `null`, nämlich vergeblich.
+  same(gerade, krumm, 'Direktzuordnung ins Leere')
+})
+
+test('Geraderücken: ein vereinbarter Anteil ins Leere bewegt keine Zahl, nur die Warnung entfällt', () => {
+  const gerade = fullDb()
+  gerade.costItems.push(costItem({ id: 'c5', description: 'Aufzug', amountCents: 50000, key: 'custom', customShares: { u1: 60 } }))
+  const krumm = structuredClone(gerade)
+  krumm.costItems[4].customShares = { u1: 60, weg: 40 }
+  const nachher = resultsOf(gerade)
+  const vorher = resultsOf(krumm)
+  assert.deepEqual({ ...nachher.settlement, warnings: [] }, { ...vorher.settlement, warnings: [] })
+  assert.deepEqual(nachher.ledger, vorher.ledger)
+  assert.deepEqual(nachher.tax, vorher.tax)
+  // Der eine Unterschied, und er ist benannt: Die Warnung über den verfallenen Anteil entfällt,
+  // weil es den Eintrag danach nicht mehr gibt. Kein Cent verschiebt sich dadurch.
+  assert.ok(vorher.settlement.warnings.some((w) => /vereinbarte Anteil/.test(w)), vorher.settlement.warnings.join(' | '))
+  assert.ok(!nachher.settlement.warnings.some((w) => /vereinbarte Anteil/.test(w)), nachher.settlement.warnings.join(' | '))
+})
+
+test('Geraderücken: ein Zähler ohne ausgefüllte Wohnung ist ein Hauptzähler', () => {
+  const gerade = fullDb()
+  gerade.meters[0].unitId = null
+  const krumm = structuredClone(gerade)
+  krumm.meters[0].unitId = ''
+  same(gerade, krumm, 'Zähler mit leerer Wohnungs-Kennung')
+})
+
+// Nur für den einen Fall, in dem sich Anzeigetexte ändern dürfen, Beträge aber nicht: Jeder
+// Text wird durch dieselbe Marke ersetzt, ein fehlender Text ebenso. Was danach noch
+// unterschiedlich ist, ist keine Frage der Beschriftung.
+function withoutTexts(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutTexts)
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(value)) out[key] = withoutTexts(Reflect.get(value, key))
+    return out
+  }
+  return typeof value === 'string' || value === undefined ? 'Text' : value
+}
+
+test('Geraderücken: fehlende Anzeigefelder bewegen keine Zahl, ändern aber das Aussehen', () => {
+  const gerade = fullDb()
+  gerade.units[1].name = ''
+  gerade.tenancies[1].tenantName = ''
+  gerade.costItems[0].description = ''
+  gerade.meters[0].name = ''
+  gerade.meters[0].unit = ''
+  const krumm = structuredClone(gerade)
+  drop(krumm.units[1], 'name')
+  drop(krumm.tenancies[1], 'tenantName')
+  drop(krumm.costItems[0], 'description')
+  drop(krumm.meters[0], 'name')
+  drop(krumm.meters[0], 'unit')
+
+  const vorher = resultsOf(krumm)
+  const nachher = resultsOf(gerade)
+  assert.deepEqual(withoutTexts(nachher), withoutTexts(vorher), 'Zahlen')
+  // Der benannte Unterschied: Das Mietkonto setzt für eine Wohnung ohne Namen einen Strich ein.
+  // Nach dem Übernehmen steht dort der leere Name. Beide sagen dasselbe, nämlich dass kein Name
+  // erfasst ist, und kein Betrag ändert sich dadurch.
+  assert.equal(ledgerRow(vorher.ledger, 't2').unitName, '—')
+  assert.equal(ledgerRow(nachher.ledger, 't2').unitName, '')
 })

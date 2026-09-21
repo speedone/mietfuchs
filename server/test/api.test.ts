@@ -1623,8 +1623,10 @@ test('Backup: ein Archiv mit beschädigten Daten wird abgelehnt, ohne etwas zu e
     // Die Meldung nennt, was nicht stimmt, und sagt, dass nichts verändert wurde.
     assert.match(errorOf(r.body), /Wohnungen/)
     assert.match(errorOf(r.body), /unverändert/)
-    // Und wirklich nichts ersetzt: weder die Daten noch die Belege, und auch keine
-    // Sicherheitskopie, die es ja gar nicht zu sichern gab.
+    // Und wirklich nichts ersetzt: weder die Daten noch die Belege. Die fehlende
+    // Sicherheitskopie ist dabei die schärfste der drei Zusicherungen: Hier **gäbe** es einen
+    // Stand zu sichern, die db.json steht ja da. Dass sie trotzdem nicht entstanden ist, heißt,
+    // dass die Route gar nicht erst bis zum Ersetzen gekommen ist.
     assert.equal(fs.readFileSync(path.join(s.dataDir, 'db.json'), 'utf8'), vorher)
     assert.equal(fs.existsSync(path.join(s.dataDir, 'db.json.vor-restore')), false)
     assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
