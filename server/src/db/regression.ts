@@ -11,7 +11,7 @@
 // Verglichen wird alles: jede Zahl, jeder Zustand („bezahlt", „teilweise", „offen"), jeder
 // Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau fünf Angaben**, und jede
 // einzelne ist eine, die das Geraderücken ausdrücklich verändern darf, ohne dass ein Cent
-// wandert (siehe `straightenForDatabase` in legacy.ts und die Tests in validate.test.ts):
+// wandert (siehe `straightenForDatabase` in legacy/migrate.ts und die Tests in validate.test.ts):
 //
 //   unitName, tenantName, description   Ein fehlendes Anzeigefeld wird beim Übernehmen zum
 //                                       leeren Feld. Das Mietkonto setzt für eine Wohnung ohne
@@ -28,7 +28,7 @@
 // im Protokoll. Alles andere ist einer.
 
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../calc.ts'
-import { legacyPrepaymentEntry } from '../legacy.ts'
+import { legacyPrepaymentEntry } from '../legacy/migrate.ts'
 import { snapshotFromDb, snapshotOf, type Snapshot, type SnapshotSource } from '../snapshot.ts'
 import type { Db } from '../store.ts'
 

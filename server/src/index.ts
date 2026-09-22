@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
+import { DEFAULT_SETTINGS } from './defaults.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { snapshotOf } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
@@ -18,7 +19,7 @@ import {
   SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl, migrateAi,
   type MigratedSettings,
 } from './ai/settings.ts'
-import { DEFAULT_DB } from './legacy.ts'
+
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'
@@ -146,7 +147,7 @@ const AI_ENV = aiFromEnv()
 // Aufgefrischt wird **aus der Datenbank** und nicht aus dem, was hineingeschrieben wurde: Was
 // die Spalten nicht aufnehmen, fehlt danach, und die Oberfläche soll denselben Stand sehen wie
 // der nächste Start.
-let storedSettings: MigratedSettings = migrateAi({ ...DEFAULT_DB.settings })
+let storedSettings: MigratedSettings = migrateAi({ ...DEFAULT_SETTINGS })
 
 async function refreshSettings(): Promise<void> {
   storedSettings = await readData(readSettings)

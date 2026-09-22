@@ -1,5 +1,5 @@
-// Wie aus dem Inhalt einer db.json ein Datenbestand wird: die Vorgabewerte und die Umwandlung
-// der alten Formate.
+// Wie aus dem Inhalt einer db.json ein Datenbestand wird: die Vorgabewerte von damals und die
+// Umwandlung der alten Formate. **Teil des eingefrorenen Eingangs**, siehe [README.md](README.md).
 //
 // **Warum das eine eigene Datei ist.** Diese Regeln werden zweimal gebraucht. Beim Einlesen der
 // Datei (`load()` in store.ts) und beim einmaligen Umstieg der vorhandenen Bestände in die
@@ -10,12 +10,17 @@
 // Der Validator in legacy/validate.ts prüft gegen dieselben Regeln: Was hier geradegezogen wird,
 // lehnt er nicht ab.
 
-import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shared/types.ts'
-import type { Db } from './store.ts'
-import { migrateAi, type MigratedSettings } from './ai/settings.ts'
-import { compareText } from './calc.ts'
-import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from './defaults.ts'
-import { lastPerFrom, straightenPersonHistory } from './schedule.ts'
+import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../../shared/types.ts'
+import type { Db } from '../store.ts'
+import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
+// Verglichen wird mit **der Funktion aus calc.ts** und nicht mit einer eigenen (#70). Der
+// Kommentar an `currentPersons` sagt „wie in `personsAt` in calc.ts"; solange das nur ein
+// Kommentar war, konnte die eine Seite wechseln, ohne die andere mitzunehmen. Dass der Eingang
+// eingefroren ist, steht dem nicht entgegen: Er importiert aus demselben Grund schon
+// `schedule.ts`. Eingefroren ist der **Aufbau der Tabellen**, nicht jeder Helfer.
+import { compareText } from '../calc.ts'
+import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from '../defaults.ts'
+import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 
 // Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
 const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
@@ -26,7 +31,13 @@ const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
 export const LEGACY_PREPAYMENT_FIELD = 'prepaymentMonthlyCents'
 export type LegacyTenancy = Tenancy & { prepaymentMonthlyCents?: number }
 
-export const DEFAULT_DB: Db = {
+// Der Bestand, mit dem eine fehlende oder unvollständige Datei aufgefüllt wird.
+//
+// **Nicht mehr exportiert.** Er ist die Grundlage für das Einlesen einer alten Datei und damit
+// eine Aussage über damals; wer die Vorgaben einer **neuen** Einrichtung braucht, nimmt
+// `DEFAULT_SETTINGS` aus defaults.ts. Beides war einmal dasselbe Objekt, und dann hätte eine
+// geänderte Vorgabe still verändert, was aus einem alten Bestand wird.
+const DEFAULT_DB: Db = {
   settings: DEFAULT_SETTINGS,
   units: [],
   tenancies: [],

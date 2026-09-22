@@ -24,7 +24,7 @@ import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.
 import { readStock } from '../src/db/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
-import { straightenForDatabase } from '../src/legacy.ts'
+import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { connect, loadMigrations, type Migration } from '../src/db/client.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
@@ -319,7 +319,7 @@ test('Der feste Monatsbetrag wandert mit, und der Nutzer erfährt, dass sich das
 
 test('Zwei Staffeleinträge zum selben Stichtag: übernommen wird der letzte, wie ihn die Abrechnung liest', async () => {
   // Über die Oberfläche erzeugbar (zwei Zeilen ohne Monatsangabe tragen denselben
-  // Einzugsmonat ein, siehe legacy.ts), in der Datenbank aber nur einmal speicherbar: der
+  // Einzugsmonat ein, siehe legacy/migrate.ts), in der Datenbank aber nur einmal speicherbar: der
   // Stichtag ist Teil des Primärschlüssels. Träfe `lastPerFrom` die falsche Wahl, bekäme die
   // Datenbank den ersten statt des letzten Eintrags, und die Regression läse aus der
   // unveränderten Datei weiterhin richtig den letzten (siehe `computePrepaymentCents` in

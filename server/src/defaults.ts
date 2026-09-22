@@ -1,6 +1,6 @@
 // Womit eine **neue** Einrichtung anfängt.
 //
-// Die Werte standen bisher in legacy.ts, weil `migrateLegacy` sie als Grundlage zum Ergänzen
+// Die Werte standen bisher in legacy/migrate.ts, weil `migrateLegacy` sie als Grundlage zum Ergänzen
 // fehlender Felder braucht. Gebraucht werden sie inzwischen aber an einer zweiten Stelle, und
 // die hat mit alten Beständen nichts zu tun: Eine frische Datenbank hat noch keine Zeile in
 // `settings`, und dann gilt hier dasselbe wie früher bei einer noch nicht angelegten db.json

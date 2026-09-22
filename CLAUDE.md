@@ -281,7 +281,7 @@ Backup). Backup = diesen Ordner kopieren. Daneben liegen nach dem Umstieg
 Die frühere `db.json` ist damit **Vergangenheit und nicht mehr Ablage**: Sie wird gelesen, wenn
 ein Bestand von vor dem Umstieg übernommen oder ein altes Backup eingespielt wird, und danach nie
 wieder geschrieben. Die Umwandlung ihrer alten Formate steht in
-[server/src/legacy.ts](server/src/legacy.ts) (z. B. fester Monatsbetrag zur
+[server/src/legacy/migrate.ts](server/src/legacy/migrate.ts) (z. B. fester Monatsbetrag zur
 Vorauszahlungs-Staffel), in einer **eigenen Datei** und nicht mehr in `load()`, weil der Umstieg
 dieselben Regeln braucht: Ein Bestand, der beim Einlesen anders geradegezogen würde als beim
 Übernehmen, änderte beim Umstieg still eine Abrechnung. Die Tests dazu stehen in
@@ -420,7 +420,7 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   des Primärschlüssels, ungeprüft hineingeschrieben gäbe das also einen Fehler statt eines
   gespeicherten Mietverhältnisses, wo die db.json es klaglos annahm. Es gilt deshalb der letzte
   Eintrag, wie in calc.ts und beim Umstieg; die Regel steht einmal in
-  [server/src/schedule.ts](server/src/schedule.ts), und legacy.ts wie repository.ts holen sie von
+  [server/src/schedule.ts](server/src/schedule.ts), und legacy/migrate.ts wie repository.ts holen sie von
   dort. Dieselbe Haltung bei der Jahreskorrektur: Ihr Schlüssel muss eine **vierstellige**
   Jahreszahl sein, sonst führten „2024" und „2024.0" auf dieselbe Spalte und ließen den ganzen
   Vorgang am Primärschlüssel scheitern.
@@ -493,7 +493,7 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   Abrechnung zu verändern oder Erfasstes zu verlieren. **Hingenommen** wird, was beides
   erfüllt: Es entsteht durch gewöhnliche Bedienung oder in einem älteren Bestand, und es lässt
   sich so geraderücken, dass die Abrechnung dieselben Zahlen ergibt. Das Geraderücken folgt
-  dabei immer einer Regel, die schon in calc.ts oder legacy.ts steht, und erfindet nie eine
+  dabei immer einer Regel, die schon in calc.ts oder legacy/migrate.ts steht, und erfindet nie eine
   neue. Hingenommen sind heute: die alten Formate, eine fehlende Sammlung oder Einstellung, eine
   Direktzuordnung auf eine gelöschte Wohnung (wird `null`, wie `ON DELETE SET NULL`), ein
   vereinbarter Anteil auf eine gelöschte Wohnung (entfällt, verteilt wurde er ohnehin nicht),
@@ -586,7 +586,7 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   rechnet, und nicht gegen den schon geradegerückten: Sonst prüfte die Regression das
   Geraderücken gegen sich selbst. Die eine Ausnahme davon ist der feste Monatsbetrag neben einer
   leeren Staffel, und sie steht als `standToCompare` sichtbar da.
-- **Das Geraderücken steht als Funktion in legacy.ts** (`straightenForDatabase`), nicht im
+- **Das Geraderücken steht als Funktion in legacy/migrate.ts** (`straightenForDatabase`), nicht im
   Umstieg. Dieselbe Datei hält die Regeln des Einlesens, und validate.test.ts rechnet mit
   **dieser** Funktion nach, dass keine Zahl wandert. Solange das nur in den Tests von Hand
   geschah, waren die Hinweise des Validators eine Beschreibung ohne Gegenstück im Code.
