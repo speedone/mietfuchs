@@ -3,6 +3,29 @@
 Hier steht, wie aus einer alten `db.json` ein Datenbestand in der Datenbank wird. **Diese Dateien
 werden nicht mehr geändert.**
 
+Das gilt streng für `schema.ts`, `write.ts` und `migrate.ts`: Sie hängen an einer Prüfsumme in
+[legacy-schema.test.ts](../../test/legacy-schema.test.ts), und wer sie anfasst, bekommt einen
+roten Test mit einer Erklärung. `read.ts` steht bewusst nicht darunter, siehe seinen eigenen Kopf.
+
+**Eine Ausnahme gibt es, und sie ist eng.** Erlaubt ist eine Änderung, die
+
+- weder eine Datenregel noch einen Wortschatz berührt, also nichts daran ändert, *was* aus einem
+  alten Bestand wird,
+- deren Verhaltensgleichheit gemessen ist, nicht behauptet,
+- und deren neue Marke im **selben** Commit steht. Sonst ist der Zweig dazwischen rot, und
+  `git bisect` über diesen Test bricht dort ab. Genau das ist in diesem Ordner schon einmal
+  passiert.
+
+Der bisher einzige Fall ist `compareText` in `migrate.ts`: Der Vergleich beim Sortieren kam aus
+`calc.ts` statt aus einer eigenen Zeile, weil der Kommentar daneben „wie in `personsAt` in
+calc.ts" sagt und das wahr bleiben soll. Gemessen über 5 Millionen Paare aus ISO-Stichtagen und
+19 Sprachen: keine einzige abweichende Reihenfolge.
+
+Dass diese Dateien überhaupt lebenden Code importieren dürfen (`ai/settings.ts`, `schedule.ts`,
+`calc.ts`), ist kein Widerspruch: **Eingefroren ist der Aufbau der Tabellen, nicht jeder Helfer.**
+Was hier nie stehen darf, ist ein Import aus `db/schema.ts`, denn der zielte wieder auf den
+neuesten Stand. Dagegen steht ein eigener Wächter.
+
 ## Warum es diesen Ordner gibt
 
 Eine fachliche Regel stand einmal an mehreren Stellen. Beispiel: Ein Wert einer Auswahl heißt

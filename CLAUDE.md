@@ -127,7 +127,17 @@ Wiederherstellung, dazu die beim Start angelegte Datenbank aus `/healthz`) und b
 leeren Datenordner. Aus `/healthz` liest er auch, dass der Umstieg gelaufen ist und im leeren
 Ordner nichts zu tun hatte; den **gelungenen** Umstieg prüft er nicht, dafür müsste dieselbe
 Instanz mit einer vorhandenen `db.json` ein zweites Mal starten (siehe den Bericht zu #55). Lokal:
-`node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`. Mit `--slow-ai 320`
+`node scripts/smoke-test.mjs --url http://127.0.0.1:3001 --mode npm`.
+
+**Den Umstieg selbst spielt [scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs)
+durch** (`node scripts/umstieg-praxislauf.mjs`, ein Fall einzeln mit `--nur 6`). Es startet
+echte Server mit Wegwerf-Datenordnern und geht die Lagen durch, die beim Vermieter vorkommen:
+frischer Rechner, gewachsener Bestand, Altformate, ein zweiter Start nach gelungenem Umstieg,
+ein abgelehnter Bestand, Backup und Wiederherstellen mit und ohne Datenbank. Das deckt genau
+die Lücke, die der Smoke-Test offenlässt, nämlich den **gelungenen** Umstieg über zwei Starts
+hinweg. In der CI läuft es nicht, es ist für die Hand vor einem Release. Eine Nummer, die es
+nicht gibt, bricht ab statt still Erfolg zu melden; das war einmal anders und ist dieselbe Falle
+wie eine Matrix ohne Einträge. Mit `--slow-ai 320`
 schweigt das nachgebaute Ollama länger als fünf Minuten; die Auswertung muss trotzdem ankommen
 (siehe KI-Belegauswertung). So läuft es bei den Programmdateien auf Linux x64, Windows x64 und
 Apple Silicon und gegen Node im Job „Lange KI-Antwort (Node)“, beides aber nur noch beim vollen
@@ -474,6 +484,30 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   ein, nach demselben Muster wie `embed-client.mjs` (erzeugte `.js`, gepflegte `.d.ts` daneben);
   ein Test hält beide Wege gegeneinander. Zeilenenden werden dabei vereinheitlicht, weil Git
   Textdateien unter Windows auf CRLF umstellt und die Marke sonst vom Rechner abhinge.
+- **Der eingefrorene Eingang** ([server/src/legacy/](server/src/legacy/), Aufgabe 6b, mit eigenem
+  [README.md](server/src/legacy/README.md)): der Weg einer alten `db.json` in die Datenbank, und
+  zwar **auf den Stand nach Migration 0000 und nicht auf den neuesten**. Der Umstieg legt deshalb
+  nur den ersten Schritt an, importiert, rechnet nach, und **erst danach** läuft die übrige
+  Migrationskette darüber (`changeover.ts`, Schritt 8b). Möglich ist das, weil `applyMigrations`
+  an Prüfsummen hängt, ein zweiter Aufruf also nur das Fehlende nachholt. Dasselbe Muster wie
+  Djangos „historical models" und Flyways „baseline".
+  **Der Gewinn ist, dass eine Datenregel nur noch einmal dasteht.** Vorher hätte jede Änderung am
+  Wortschatz an zwei Stellen gepflegt werden müssen, im Migrationsschritt und im Importpfad, und
+  wer die zweite vergaß, bekam keinen Fehler, sondern einen Bestand, der still anders dasteht.
+  Jetzt trägt die Migrationskette die Regel allein.
+  **Drei Dateien hängen an einer Prüfsumme** (`schema.ts`, `write.ts`, `migrate.ts`, siehe
+  [legacy-schema.test.ts](server/test/legacy-schema.test.ts)), dazu zwei Quelltext-Wächter: kein
+  Import aus `db/schema.ts`, und der Umstieg liest mit `legacy/read.ts`. Geprüft wird der
+  Quelltext, weil es kein Verhalten gibt, solange Ausgangsstand und neuester Stand derselbe sind.
+  `read.ts` steht bewusst **nicht** unter der Marke: Es erfüllt `SnapshotSource` und wächst
+  deshalb mit dem mit, was die Berechnung aus einem Bestand liest.
+  **Eingefroren ist der Aufbau der Tabellen, nicht jeder Helfer** — die Dateien importieren
+  `ai/settings.ts`, `schedule.ts` und `calc.ts`. Die enge Ausnahme für eine Änderung steht im
+  README daneben, samt der Regel, dass die neue Marke in denselben Commit gehört; sonst ist der
+  Zweig dazwischen rot und `git bisect` bricht dort ab.
+  **Die Grenze zieht, was die Daten brauchen**: Fachliches wird eingefroren, weil es
+  reproduzierbar sein muss; die Einstellungen bleiben am lebenden Stand, weil sie heute benutzbar
+  sein müssen, und an der Grenze klemmt `legacy/write.ts` vier Aufzählungen auf erlaubte Werte.
 - **Schema und Datenmodell hält [server/test/schema.test.ts](server/test/schema.test.ts)
   zusammen**, zur Übersetzungszeit. `shared/types.ts` bleibt von Hand geschrieben, weil der
   Browser es benutzt und von Drizzle nichts wissen darf; der Test schlägt fehl, sobald jemand

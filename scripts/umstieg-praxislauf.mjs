@@ -8,7 +8,7 @@
 //
 // Aufruf:
 //   node scripts/umstieg-praxislauf.mjs
-//   node scripts/umstieg-praxislauf.mjs --nur 7        (nur einen Fall)
+//   node scripts/umstieg-praxislauf.mjs --nur 6        (nur einen Fall)
 //
 // Jeder Fall bekommt einen frischen Wegwerf-Ordner und einen eigenen Serverstart. Der Rückgabe-
 // wert ist 0, wenn alles hält, sonst 1.
@@ -418,9 +418,19 @@ fall(10, 'Zweiter Start, der Umstieg ist schon gelaufen', async () => {
 
 const nur = process.argv.includes('--nur') ? Number(process.argv[process.argv.indexOf('--nur') + 1]) : null
 
+// **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete
+// `--nur 7` „Alle Prüfungen bestanden." und einen Rückgabewert von 0, obwohl es den Fall 7 gar
+// nicht gibt und nichts gelaufen war. Das ist dieselbe Gestalt wie eine Matrix ohne Einträge, vor
+// der CLAUDE.md beim Prüfumfang warnt: keine Arbeit, kein Fehler, nur ein Überspringen. Wer eine
+// Nummer eintippt, die es nicht gibt, will nicht bestätigt bekommen, dass alles in Ordnung ist.
+const gewaehlt = faelle.filter(({ nr }) => nur === null || nr === nur)
+if (gewaehlt.length === 0) {
+  console.error(`Es gibt keinen Fall ${nur}. Vorhanden sind: ${faelle.map((f) => f.nr).join(', ')}.`)
+  process.exit(1)
+}
+
 console.log('Der Umstieg, praktisch durchgespielt\n')
-for (const { nr, titel, work } of faelle) {
-  if (nur !== null && nr !== nur) continue
+for (const { nr, titel, work } of gewaehlt) {
   console.log(`Fall ${nr}: ${titel}`)
   try {
     await work()
