@@ -6,9 +6,11 @@
 // `settings`, und dann gilt hier dasselbe wie früher bei einer noch nicht angelegten db.json
 // (db/read.ts).
 //
-// **Die beiden Verwendungen laufen auseinander, sobald der Eingang eingefroren wird**
-// (Aufgabe 6b). `migrateLegacy` ergänzt dann nach den Vorgaben von damals, diese Datei nennt
-// die von heute. Solange sie dieselben sind, stehen sie an einer Stelle.
+// **Die beiden Verwendungen sind getrennt** (Aufgabe 6b). `migrateLegacy` ergänzt nach den
+// Vorgaben von **damals**, die in `legacy/migrate.ts` eingefroren stehen; diese Datei nennt die
+// von **heute**. Dass sie zur Zeit dieselben Werte tragen, ist Zufall der Gegenwart und kein
+// Grund, sie zusammenzulegen: Wer hier eine Voreinstellung ändert, soll damit nicht verändern,
+// was aus einer alten Datei wird.
 
 import type { Settings } from '../../shared/types.ts'
 

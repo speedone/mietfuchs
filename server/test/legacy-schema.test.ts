@@ -95,30 +95,40 @@ test('Der eingefrorene Ausgangsstand ist der, den Migration 0000 anlegt', async 
   }
 })
 
-test('Der eingefrorene Ausgangsstand ist unverändert', () => {
-  // **Die Zusicherung, die die anderen erst tragfähig macht.** Der Vergleich der Spalten darüber
-  // sieht eine gelockerte Prüfbedingung nicht: Nimmt jemand einen Wert in eine Aufzählung mit
-  // auf, bleiben Tabellen und Spalten dieselben, und der Test blieb grün.
+test('Der eingefrorene Eingang ist unverändert', () => {
+  // **Die Zusicherung, die die anderen erst tragfähig macht.** Der Spaltenvergleich darüber sieht
+  // eine gelockerte Prüfbedingung nicht: Nimmt jemand einen Wert in eine Aufzählung mit auf,
+  // bleiben Tabellen und Spalten dieselben. Und die Quelltextsuche unten sieht nur Importe; eine
+  // Umschreibung von Hand (`if (m.type === 'sonstig') m.type = 'sonstiges'`) braucht keinen.
   //
-  // Und das ist keine erfundene Sorge, sondern die naheliegende falsche Behebung. Benennt jemand
-  // einen Wert im lebenden Modell um, bricht die Übersetzung in `legacy/write.ts`, zwei Zeilen
-  // (nachgemessen). Der schnelle Griff wäre, den neuen Wert hier mit aufzunehmen — und damit
-  // wäre der Wortschatz von damals verloren, ein alter Bestand käme nicht mehr durch, und die
-  // Migrationskette hätte nichts mehr zu tun. Genau dieser Griff wird hier rot.
+  // Das sind keine erfundenen Sorgen, sondern die beiden naheliegenden falschen Behebungen, und
+  // beide Durchsichten dieses Zweiges haben sie benannt. Benennt jemand einen Wert im lebenden
+  // Modell um, bricht die Übersetzung im Eingang. Der schnellste Griff wäre, den Wert hier mit
+  // aufzunehmen, der zweitschnellste eine Umschreibung beim Geraderücken. Danach stünde die Regel
+  // wieder an zwei Stellen, und nur die in der Migration wäre geschützt — also genau der Zustand,
+  // den dieser Umbau beenden sollte.
   //
-  // Dieselbe Technik wie bei den Migrationen, und aus demselben Grund: Was sich nicht ändern
-  // darf, wird an seiner Prüfsumme festgehalten. Zeilenenden werden dabei vereinheitlicht, weil
-  // Git Textdateien unter Windows auf CRLF umstellt und die Marke sonst vom Rechner abhinge.
-  const HASH = '2afc1504584f6b73393310bfcbf7e65bd516339a904a9d75de8c71d5b6a24de9'
-  const datei = path.join(import.meta.dirname, '..', 'src', 'legacy', 'schema.ts')
-  const inhalt = normalizedLineEndings(fs.readFileSync(datei, 'utf8'))
-  assert.equal(
-    createHash('sha256').update(inhalt).digest('hex'),
-    HASH,
-    'server/src/legacy/schema.ts ist verändert worden. Diese Datei beschreibt den Stand nach ' +
-      'Migration 0000 und wird nie geändert: Wer das Schema oder einen Auswahlwert ändert, ändert ' +
-      'db/schema.ts und erzeugt einen Migrationsschritt. Siehe server/src/legacy/README.md.',
-  )
+  // Dieselbe Technik wie bei den Migrationen: Was sich nicht ändern darf, hängt an seiner
+  // Prüfsumme. Zeilenenden werden vereinheitlicht, weil Git Textdateien unter Windows auf CRLF
+  // umstellt und die Marke sonst vom Rechner abhinge.
+  const PINNED: Record<string, string> = {
+    'schema.ts': 'ff30b3d4f67ada71fcfe148d7879b4975eeb7adc7ba178f45b9c5eb99fe216ef',
+    'write.ts': 'adbdf6e8365e46f76431eee9c82651798fd3d54aee03c46440f8b3f7c98dbc8a',
+    'migrate.ts': 'd85ae4b57815b7221614cc5000685155f1b5a29b33df02ce9f1e2a472af01d49',
+  }
+  for (const [name, erwartet] of Object.entries(PINNED)) {
+    const datei = path.join(import.meta.dirname, '..', 'src', 'legacy', name)
+    const inhalt = normalizedLineEndings(fs.readFileSync(datei, 'utf8'))
+    assert.equal(
+      createHash('sha256').update(inhalt).digest('hex'),
+      erwartet,
+      `server/src/legacy/${name} ist verändert worden. Der Eingang beschreibt den Stand von damals ` +
+        'und wird nicht geändert. Stehen Sie gerade vor einem Übersetzungsfehler hier, dann sind Sie ' +
+        'im Begriff, die Doppelung wiederherzustellen, die diese Dateien beseitigt haben: Die ' +
+        'richtige Stelle ist db/schema.ts samt einem neuen Migrationsschritt, der die Datenregel ' +
+        'selbst trägt. Siehe server/src/legacy/README.md.',
+    )
+  }
 })
 
 test('Der Eingang greift nicht auf das heutige Schema zu', () => {

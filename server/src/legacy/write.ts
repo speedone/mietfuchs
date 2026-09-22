@@ -27,8 +27,9 @@ import type { MigratedSettings } from '../ai/settings.ts'
 import type { StraightDb } from './migrate.ts'
 import type { Database } from '../db/client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
-  personHistory, prepaymentOverrides, prepayments, readings, settings, tenancies, units,
+  AI_JSON_MODES, AI_PROVIDERS, aiSlots, baseRents, closedSettlements, costItemShares, costItems,
+  meters, payments, personHistory, prepaymentOverrides, prepayments, readings, settings, tenancies,
+  units, UPDATE_CHECK,
 } from './schema.ts'
 
 // Was in welcher Zahl angekommen ist. Steht im Protokoll des Umstiegs, damit der Vermieter
@@ -101,9 +102,10 @@ const clamped = <T extends string>(known: readonly T[], value: unknown, fallback
 const clampedOrNull = <T extends string>(known: readonly T[], value: unknown): T | null =>
   known.find((eintrag) => eintrag === value) ?? null
 
-const V0_UPDATE_CHECK = ['on', 'off'] as const
-const V0_JSON_MODES = ['auto', 'schema', 'object', 'prompt'] as const
-const V0_PROVIDERS = ['ollama', 'openai'] as const
+// **Die Listen kommen aus schema.ts daneben und stehen hier nicht noch einmal.** Eine zweite
+// Abschrift ginge an allen drei Wächtern vorbei: Tabellen und Spalten blieben dieselben, das
+// heutige Schema wäre nicht importiert, und die Prüfsumme von schema.ts bliebe gleich. Wer dort
+// einen Wert ergänzte, brächte damit genau den Ausgang zurück, gegen den geklemmt wird.
 
 // ---------- Die Zeilen der Einstellungen ----------
 //
@@ -129,13 +131,13 @@ function settingsRow(s: MigratedSettings) {
     ollamaModel: s.ollamaModel,
     printAdjustSuggestion: orNull(s.printAdjustSuggestion),
     printAttachments: orNull(s.printAttachments),
-    updateCheck: clampedOrNull(V0_UPDATE_CHECK, s.updateCheck),
+    updateCheck: clampedOrNull(UPDATE_CHECK, s.updateCheck),
     updateDismissed: orNull(s.updateDismissed),
     aiTimeoutSeconds: orNull(ai.timeoutSeconds),
     aiNumCtx: orNull(ai.numCtx),
     aiMaxOutputTokens: orNull(ai.maxOutputTokens),
     aiPageImageEdge: orNull(ai.pageImageEdge),
-    aiJsonMode: clamped(V0_JSON_MODES, ai.jsonMode, 'auto'),
+    aiJsonMode: clamped(AI_JSON_MODES, ai.jsonMode, 'auto'),
     aiReasoningEffort: orNull(ai.reasoningEffort),
     aiExtraInstructions: ai.extraInstructions,
   }
@@ -144,7 +146,7 @@ function settingsRow(s: MigratedSettings) {
 function aiSlotRows(ai: AiSettings) {
   const slotRow = (name: AiSlotName, slot: AiSlot) => ({
     slot: name,
-    provider: clamped(V0_PROVIDERS, slot.provider, 'ollama'),
+    provider: clamped(AI_PROVIDERS, slot.provider, 'ollama'),
     preset: slot.preset,
     url: slot.url,
     model: slot.model,
