@@ -224,9 +224,17 @@ gilt für Tests, für Skripte und für jede Probe von Hand:
   `NKA_RUNTIME=binary` gesetzt ist, um den gepackten Betrieb nachzustellen.
 - **`NKA_UPDATE_URL`** auf einen geschlossenen Port, damit keine Anfrage zu GitHub hinausgeht.
 
-Dieselben drei stehen in [api.test.ts](server/test/api.test.ts) (`startServerRaw`) und in
-[scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs); wer einen neuen Prüfpfad baut,
-nimmt sie von dort.
+Dieselben drei stehen in [api.test.ts](server/test/api.test.ts) (`startServerIn` und
+`startServerRaw`) und in [scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs); wer
+einen neuen Prüfpfad baut, nimmt sie von dort.
+
+**`CI` steht dort hinter dem `...env` des Aufrufers und nicht davor**, kann also nicht
+versehentlich überschrieben werden. Das ist kein Übereifer: `startServerIn` setzte es gar nicht,
+ein Aufrufer stellt mit `NKA_RUNTIME: 'binary'` die Programmdatei nach, und damit riss **jeder
+volle Testlauf** ein Browserfenster auf, auf einem Zufallsport, weil `NKA_PORT` dort `'0'` ist.
+Ein Wächter in api.test.ts liest deshalb den `env`-Block jedes Serverstarts und verlangt das
+`CI`. Geprüft wird der Quelltext, denn am Verhalten ließe es sich nur messen, indem der Test
+genau das tut, was er verhindern soll.
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
    [client/src/costForm.ts](client/src/costForm.ts) und
    [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
