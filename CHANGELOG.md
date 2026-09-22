@@ -78,6 +78,23 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Eine Miete, die um den Jahreswechsel eingeht, fällt nicht mehr aus der Steuerübersicht
+  heraus.** Betroffen waren zwei alltägliche Fälle. Endet ein Mietverhältnis am 31. Dezember und
+  geht die Dezembermiete erst im Januar ein, kannte die Steuerübersicht dieses Geld in **keinem**
+  der beiden Jahre. Dasselbe umgekehrt, wenn ein Dauerauftrag die Januarmiete schon Ende Dezember
+  bucht und das Mietverhältnis erst im Januar beginnt. Der Grund war, dass die Einnahmen aus dem
+  Mietkonto kamen und das nur Mietverhältnisse führt, die im Jahr laufen. Jetzt zählt die
+  Steuerübersicht jede Zahlung mit Datum im Jahr, wie es das Zuflussprinzip verlangt. Das Mietkonto
+  bleibt, wie es war: Dort geht es darum, bis zu welchem Monat ein laufendes Mietverhältnis
+  gedeckt ist. ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
+- **Die Steuerübersicht sagt es, wenn für einen Teil der Mietverhältnisse keine Zahlung erfasst
+  ist.** Bisher gab es einen Hinweis nur, wenn im ganzen Jahr gar nichts erfasst war. Sind die
+  Eingänge für einen Mieter gepflegt und für einen zweiten nicht, sieht die Summe vollständig aus,
+  ist aber zu niedrig, und diese Zahl geht in die Anlage V. Jetzt steht dabei, für wie viele von
+  wie vielen Mietverhältnissen etwas fehlt.
+  ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
 - **Die Steuerübersicht rechnet jetzt von sich aus mit dem, was tatsächlich eingegangen ist.**
   Bisher war das vereinbarte Soll voreingestellt, weil es auch ohne erfasste Zahlungen eine Zahl
   liefert. Für die Anlage V ist das aber die falsche Grundlage: Steuerlich zählt, was Ihnen im

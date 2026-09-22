@@ -359,15 +359,26 @@ export type TaxReport = {
   income: {
     baseRentSollCents: number // Kaltmiete (netto), vereinbart
     prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
-    // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt. Das ist nicht
-    // dasselbe wie `prepaymentSollCents`, sobald eine Jahreskorrektur erfasst ist, und der
-    // Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten Vorauszahlungen
-    // einstellen (§ 556 BGB, ständige Rechtsprechung des BGH). Die Übersicht führt beide, damit
+    // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener
+    // Abrechnung ihr eingefrorener Stand. Das ist nicht dasselbe wie `prepaymentSollCents`, und
+    // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten
+    // Vorauszahlungen einstellen (§ 556 BGB, ständige Rechtsprechung des BGH), und sie verteilt
+    // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
     // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70).
     prepaymentSettlementCents: number
-    prepaymentOverridden: boolean // ist für dieses Jahr eine Jahreskorrektur erfasst?
+    // **Setzt die Abrechnung eine Jahreskorrektur an?** Bewusst nicht „ist eine erfasst": Eine
+    // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
+    // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
+    prepaymentOverridden: boolean
     sollCents: number // Summe Soll (brutto)
-    paidCents: number // tatsächlich eingegangen (Zuflussprinzip, § 11 Abs. 1 Satz 1 EStG)
+    // Tatsächlich zugeflossen (§ 11 Abs. 1 Satz 1 EStG): alle Zahlungen mit Datum im Jahr,
+    // unabhängig davon, ob das Mietkonto für sie eine Zeile führt. Siehe calc.ts.
+    paidCents: number
+    // Mietverhältnisse des Jahres mit einem Soll über null, und wie viele davon keine einzige
+    // Zahlung haben. Nicht für eine Rechnung, sondern für den Hinweis: Eine unvollständige
+    // Erfassung ergibt eine zu niedrige Einnahme, und die fällt sonst niemandem auf.
+    tenanciesWithSoll: number
+    tenanciesWithoutPayment: number
   }
   expenses: {
     groups: TaxExpenseGroup[]

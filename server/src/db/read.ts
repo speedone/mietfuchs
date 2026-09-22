@@ -26,13 +26,16 @@ import {
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
 // `unknown`: Es ist ein Archivstück, das wortgleich erhalten bleiben soll, und ein Typ darüber
 // wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat. Die Berechnung
-// liest daraus nur den Eigenanteil, und den holt `selfUsedShareCents` heraus.
+// liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holen `selfUsedShareOf`
+// und `prepaymentOf` heraus.
 export type StoredClosedSettlement = {
   id: string
   year: number
   closedAt: string
   sentAt: string | null
   selfUsedShareCents: number
+  prepaymentCents: number
+  prepaymentOverridden: boolean
   settlement: unknown
 }
 
@@ -80,6 +83,27 @@ function selfUsedShareOf(settlement: unknown): number {
   if (settlement === null || typeof settlement !== 'object') return 0
   const value: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   return typeof value === 'number' ? value : 0
+}
+
+// Die Vorauszahlungen, die auf der zugestellten Abrechnung standen (#70). Dasselbe Muster wie
+// darüber, nur eine Ebene tiefer: Gelesen wird `statements`, und zwar Stück für Stück mit
+// Prüfung, weil der Inhalt aus einer früheren Version stammt und niemand dafür geradesteht.
+// Eine Zusicherung `as Statement[]` wäre genau die Behauptung, die hier niemand einlösen kann.
+// Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur": Was nicht auf dem Papier stand, hat
+// der Mieter auch nicht bekommen.
+function prepaymentOf(settlement: unknown): { cents: number, overridden: boolean } {
+  if (settlement === null || typeof settlement !== 'object') return { cents: 0, overridden: false }
+  const statements: unknown = Reflect.get(settlement, 'statements')
+  if (!Array.isArray(statements)) return { cents: 0, overridden: false }
+  let cents = 0
+  let overridden = false
+  for (const statement of statements) {
+    if (statement === null || typeof statement !== 'object') continue
+    const value: unknown = Reflect.get(statement, 'prepaymentCents')
+    if (typeof value === 'number') cents += value
+    if (Reflect.get(statement, 'prepaymentOverridden') === true) overridden = true
+  }
+  return { cents, overridden }
 }
 
 // ---------- Je Sammlung ein Leser ----------
@@ -207,14 +231,19 @@ export async function readPayments(db: Database): Promise<Payment[]> {
 
 export async function readClosedSettlements(db: Database): Promise<StoredClosedSettlement[]> {
   const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
-  return rows.map((c) => ({
-    id: c.id,
-    year: c.year,
-    closedAt: c.closedAt,
-    sentAt: c.sentAt,
-    selfUsedShareCents: selfUsedShareOf(c.settlement),
-    settlement: c.settlement,
-  }))
+  return rows.map((c) => {
+    const prepayment = prepaymentOf(c.settlement)
+    return {
+      id: c.id,
+      year: c.year,
+      closedAt: c.closedAt,
+      sentAt: c.sentAt,
+      selfUsedShareCents: selfUsedShareOf(c.settlement),
+      prepaymentCents: prepayment.cents,
+      prepaymentOverridden: prepayment.overridden,
+      settlement: c.settlement,
+    }
+  })
 }
 
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes

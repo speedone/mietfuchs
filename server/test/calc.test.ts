@@ -192,7 +192,14 @@ test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum
   const snap = snapshotFromDb(db, 2025)
   // Beide tragen ihr Jahr als Feld. Eingrenzen heißt hier lesen, was dasteht, nicht herleiten.
   assert.deepEqual(sorted(snap.costItems.map((c) => c.id)), ['c25'])
-  assert.deepEqual(snap.closedSettlement, { selfUsedShareCents: 22200 })
+  // Der eingefrorene Stand bringt mit, was die Steuerübersicht daraus liest: den Eigenanteil und
+  // die Vorauszahlungen der zugestellten Abrechnung (#70). Die Prüfung steht bewusst als ganzes
+  // Objekt da: Ein neues Feld, das niemand füllt, fiele sonst nicht auf.
+  assert.deepEqual(snap.closedSettlement, {
+    selfUsedShareCents: 22200,
+    prepaymentCents: 0,
+    prepaymentOverridden: false,
+  })
   assert.strictEqual(snapshotFromDb(db, 2023).closedSettlement, null)
 })
 
@@ -1058,6 +1065,136 @@ test('Steuer (Anlage V): die Jahreskorrektur der Vorauszahlungen wird ausgewiese
   assert.equal(r.income.prepaymentSettlementCents, statement.prepaymentCents)
 })
 
+test('Steuer (Anlage V): jede Zahlung des Jahres zählt, auch ohne Zeile im Mietkonto (#70)', () => {
+  // **Der schwerste Befund der Durchsicht, und er wird erst durch diesen PR gefährlich.**
+  // `rentLedger` bildet Zeilen nur für Mietverhältnisse mit Überlappung im Jahr und zählt
+  // Zahlungen nur innerhalb dieser Zeilen. Zwei gewöhnliche Fälle fallen dadurch aus **beiden**
+  // Jahren heraus:
+  //
+  //   Ein Mietverhältnis endet am 31.12., die Dezembermiete geht am 5. Januar ein. Im alten Jahr
+  //   liegt die Zahlung außerhalb, im neuen gibt es keine Zeile mehr.
+  //
+  //   Ein Mietverhältnis beginnt am 1. Januar, der Dauerauftrag bucht die Januarmiete am
+  //   30. Dezember. Im neuen Jahr liegt die Zahlung außerhalb, im alten gibt es noch keine Zeile.
+  //
+  // Solange das vereinbarte Soll die Vorgabe der Steuerübersicht war, bestimmte diese Lücke
+  // nicht die Kopfzahl. Jetzt ist das tatsächlich Zugeflossene die Vorgabe und damit die Zahl,
+  // die in die Anlage V wandert. Zugeflossen ist Geld aber nach § 11 Abs. 1 Satz 1 EStG, wenn es
+  // da ist, und nicht, wenn das Mietkonto eine Zeile dafür führt.
+  //
+  // **Die Steuerübersicht summiert deshalb die Zahlungen selbst**, nach Datum, und nicht über
+  // das Mietkonto. Das Mietkonto behält seine Zeilen: Es beantwortet die Frage, bis zu welchem
+  // Monat ein laufendes Mietverhältnis gedeckt ist, und dafür ist eine Zahlung ohne Zeile kein
+  // Beitrag.
+  const beendet: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'OG', areaM2: 100, participates: true }],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'A', start: '2024-01-01', end: '2025-12-31',
+        personHistory: [{ from: '2024-01-01', persons: 2 }],
+        baseRents: [{ from: '2024-01', monthlyCents: 80000 }],
+      }),
+    ],
+    // Die Dezembermiete 2025, eingegangen am 5. Januar 2026.
+    payments: [{ id: 'p1', tenancyId: 't1', date: '2026-01-05', amountCents: 80000 }],
+  }
+  assert.equal(rentLedger(snapshotFromDb(beendet, 2026)).rows.length, 0, 'das Mietkonto führt 2026 eine Zeile; der Test prüft dann etwas anderes')
+  assert.equal(taxReport(snapshotFromDb(beendet, 2026)).income.paidCents, 80000, 'die Zahlung nach dem Ende fällt aus der Steuerübersicht')
+  assert.equal(taxReport(snapshotFromDb(beendet, 2025)).income.paidCents, 0, 'die Zahlung zählt doppelt')
+
+  const kuenftig: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'OG', areaM2: 100, participates: true }],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'A', start: '2026-01-01',
+        personHistory: [{ from: '2026-01-01', persons: 2 }],
+        baseRents: [{ from: '2026-01', monthlyCents: 80000 }],
+      }),
+    ],
+    // Die Januarmiete 2026, per Dauerauftrag am 30. Dezember 2025 gebucht.
+    payments: [{ id: 'p1', tenancyId: 't1', date: '2025-12-30', amountCents: 80000 }],
+  }
+  assert.equal(rentLedger(snapshotFromDb(kuenftig, 2025)).rows.length, 0, 'das Mietkonto führt 2025 eine Zeile; der Test prüft dann etwas anderes')
+  assert.equal(taxReport(snapshotFromDb(kuenftig, 2025)).income.paidCents, 80000, 'die Zahlung vor dem Beginn fällt aus der Steuerübersicht')
+
+  // Und der Überschuss folgt derselben Zahl, sonst stünden Einnahme und Ergebnis auseinander.
+  assert.equal(taxReport(snapshotFromDb(kuenftig, 2025)).surplusPaidCents, 80000)
+})
+
+test('Steuer (Anlage V): bei abgeschlossener Abrechnung gilt ihr eingefrorener Stand (#70)', () => {
+  // **Dieselbe Regel wie beim Eigenanteil, und aus demselben Grund.** Der Satz in der Oberfläche
+  // nennt die Zahl, die auf der Abrechnung steht. Ist die Abrechnung abgeschlossen, steht dort
+  // der eingefrorene Stand, und zwar bei dem Mieter im Briefkasten. Nähme die Übersicht den
+  // lebenden, nennte sie eine Zahl, die auf keinem zugestellten Papier steht — genau der
+  // Widerspruch, gegen den #70 antritt.
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'OG', areaM2: 100, participates: true }],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01',
+        personHistory: [{ from: '2025-01-01', persons: 2 }],
+        baseRents: [{ from: '2025-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+      }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'GS', amountCents: 50000, key: 'units' }],
+  }
+  db.closedSettlements = [
+    { id: 'x', year: 2025, closedAt: '2026-01-05', sentAt: null, settlement: computeSettlement(snapshotFromDb(db, 2025)) },
+  ]
+  // Nachträglich eine Jahreskorrektur erfasst: Der eingefrorene Stand kennt sie nicht.
+  const t1 = db.tenancies[0]
+  if (!t1) return assert.fail('das Mietverhältnis fehlt')
+  t1.prepaymentOverrides = { '2025': 180000 }
+
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.income.prepaymentSettlementCents, 240000, 'die Übersicht nennt eine Zahl, die auf der zugestellten Abrechnung nicht steht')
+  assert.equal(r.income.prepaymentOverridden, false, 'die zugestellte Abrechnung kennt keine Jahreskorrektur')
+})
+
+test('Steuer (Anlage V): Mietverhältnisse ohne jede Zahlung werden gezählt (#70)', () => {
+  // **Die Lücke, die der Hinweis „keine Zahlung erfasst" bisher nicht sah.** Er hing an
+  // `paidCents === 0`. Sind für einen Mieter Zahlungen erfasst und für einen zweiten nicht, ist
+  // die Summe größer als null, es erscheint kein Hinweis, und eine zu niedrige Einnahme geht
+  // ohne Vorbehalt in die Anlage V. Das ist der häufigere Fall, denn wer gar nichts erfasst
+  // hat, sieht die 0 wenigstens.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 100, participates: true },
+    ],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01', baseRents: [{ from: '2025-01', monthlyCents: 80000 }] }),
+      tenancy({ id: 't2', unitId: 'u2', tenantName: 'B', start: '2025-01-01', baseRents: [{ from: '2025-01', monthlyCents: 80000 }] }),
+    ],
+    payments: [{ id: 'p1', tenancyId: 't1', date: '2025-01-05', amountCents: 960000 }],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.income.tenanciesWithSoll, 2)
+  assert.equal(r.income.tenanciesWithoutPayment, 1)
+  // Ohne Soll zählt ein Mietverhältnis nicht mit: Dort ist eine fehlende Zahlung kein Versäumnis.
+  assert.equal(taxReport(snapshotFromDb(emptyDb(), 2025)).income.tenanciesWithSoll, 0)
+
+  // **Gezählt wird „nichts erfasst", nicht „Summe null".** Eine Zahlung und eine Rücklastschrift
+  // heben sich auf; erfasst ist dann sehr wohl etwas, und der Satz „für dieses Mietverhältnis ist
+  // keine einzige Zahlung erfasst" wäre schlicht falsch. Ohne diesen Fall bliebe der Unterschied
+  // zwischen beiden Regeln ungeprüft — nachgemessen, der Test war vorher auch mit der Summe grün.
+  const t2 = db.tenancies[1]
+  if (!t2) return assert.fail('das zweite Mietverhältnis fehlt')
+  db.payments.push(
+    { id: 'p2', tenancyId: t2.id, date: '2025-02-01', amountCents: 80000 },
+    { id: 'p3', tenancyId: t2.id, date: '2025-02-10', amountCents: -80000, note: 'Rücklastschrift' },
+  )
+  const nachRuecklastschrift = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(nachRuecklastschrift.income.tenanciesWithoutPayment, 0, 'eine Rücklastschrift gilt als „keine Zahlung erfasst"')
+  // Und die Einnahme folgt dem Geld: Die beiden heben sich auf.
+  assert.equal(nachRuecklastschrift.income.paidCents, 960000)
+})
+
 test('Steuer (Anlage V): ohne Jahreskorrektur nennen beide dieselbe Zahl (#70)', () => {
   // Die Gegenprobe. Ohne Korrektur gibt es keinen Unterschied zu erklären, und die Oberfläche
   // soll dann auch nichts erklären. Ohne diesen Fall bliebe offen, ob das Kennzeichen
@@ -1122,9 +1259,31 @@ test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
   //
   // Geprüft wird deshalb der Quelltext. Wer hier etwas ändert, soll sich zwischen den beiden
   // benannten Funktionen entscheiden müssen und nicht zwischen ihnen hindurchrutschen können.
-  const quelle = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'calc.ts'), 'utf8')
-  const aufrufe = quelle.split('\n').filter((zeile) => /\.localeCompare\(/.test(zeile))
-  assert.deepEqual(aufrufe, [], 'calc.ts sortiert nach der Locale der Laufzeit statt mit compareText/compareName')
+  // **Beide Schreibweisen, und die zweite ist die wahrscheinlichere.** Der erste Entwurf suchte
+  // nur nach `.localeCompare(`. Durch ging damit `new Intl.Collator()` **ohne Sprachargument**,
+  // und das ist genau der Fall, den die Regel verhindern soll: Wer später einen zweiten Kollator
+  // für eine weitere Liste anlegt, schreibt ihn leicht so, und er liest dann die Einstellung der
+  // Laufzeit. Gemessen: Mit beiden Lücken eingebaut blieben die Sortier-Tests grün.
+  //
+  // Das Leerzeichen in `\s*` ist billig mitgenommen: `a.localeCompare (b)` ist gültiges
+  // JavaScript und rutschte sonst ebenfalls durch.
+  //
+  // **Geprüft werden drei Dateien und nicht nur calc.ts.** Die beiden anderen halten dieselben
+  // Regeln über Staffeln und Ablesungen: legacy.ts rückt einen alten Bestand gerade, schedule.ts
+  // entscheidet, welcher von zwei Einträgen zum selben Stichtag gilt. Beide sagen in ihren
+  // Kommentaren „wie in calc.ts", und solange das nur ein Kommentar war, konnte die eine Seite
+  // wechseln, ohne die andere mitzunehmen. Genau das ist beim Umstellen passiert, und ohne diesen
+  // Test wäre es unbemerkt geblieben: Bei ISO-Stichtagen sagen Kollator und Zeichenvergleich
+  // dasselbe, ein Verhaltenstest kann den Unterschied also gar nicht zeigen.
+  const verboten = [/\.localeCompare\s*\(/, /new Intl\.Collator\(\s*\)/]
+  for (const datei of ['calc.ts', 'legacy.ts', 'schedule.ts']) {
+    const quelle = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', datei), 'utf8')
+    const treffer = quelle
+      .split('\n')
+      .filter((zeile) => !zeile.trimStart().startsWith('//'))
+      .filter((zeile) => verboten.some((muster) => muster.test(zeile)))
+    assert.deepEqual(treffer, [], `${datei} sortiert nach der Locale der Laufzeit statt mit compareText/compareName`)
+  }
 })
 
 // ---------- Invarianten über zufällige Datenbestände ----------
