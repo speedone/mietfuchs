@@ -130,10 +130,43 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     const r1 = sorted[i]
     const delta = r1.replacement ? (r1.oldEndValue ?? 0) - r0.value : r1.value - r0.value
     const days = Math.round((toUTC(r1.date) - toUTC(r0.date)) / MS_DAY)
+
+    // **Zwei Ablesungen am selben Tag: die Differenz verschwindet, und das wird gesagt** (#69).
+    //
+    // Ein Segment entsteht nur, wenn mindestens ein Tag dazwischenliegt, sonst müsste durch null
+    // geteilt werden, um tagesanteilig zu verteilen. Das ist richtig. Bisher fiel die Differenz
+    // dabei aber ersatzlos und wortlos unter den Tisch. Denkbar ist das vor allem beim
+    // Zählerwechsel, wenn der alte Endstand und der erste Stand des neuen auf denselben Tag
+    // fallen, und dort ist es am ärgerlichsten: Der Verbrauch fehlt beim Mieter und geht
+    // stillschweigend zulasten des Vermieters.
+    //
+    // **Verteilt wird trotzdem nicht, und zwar aus Überzeugung und nicht aus Vorsicht.** Beide
+    // erreichbaren Fälle sprechen dagegen. Zwei gewöhnliche Ablesungen am selben Tag sind fast
+    // immer eine Korrektur; die Differenz ist dann ein Tippfehler und keine Menge Wasser, und sie
+    // dem Nachbarsegment zuzuschlagen machte aus der Korrektur Verbrauch. Beim Zählerwechsel am
+    // selben Tag ist die Differenz Verbrauch über null Tage, also selbst schon ein Widerspruch.
+    // In beiden Fällen weiß nur der Vermieter, welche der beiden Ablesungen stimmt; verteilen
+    // hieße raten, und geraten wird in dieser Datei nicht.
+    //
+    // **Eine Meldung je Fall.** Hier gilt sie und nicht die über negativen Verbrauch, auch wenn
+    // die Differenz negativ ist: Jene spricht von einem Zähler, der über die Zeit zurückläuft,
+    // und über null Tage gibt es diese Zeit nicht. Zwei Meldungen nebeneinander sagten dasselbe
+    // zweimal und schickten auf die falsche Fährte („Zählerwechsel markieren"), obwohl hier eine
+    // der beiden Ablesungen zu korrigieren ist.
+    if (days === 0) {
+      if (delta !== 0) {
+        warnings.push(
+          `Zwei Ablesungen am ${r0.date} mit einem Unterschied von ${fmtNum(delta)} — dieser Verbrauch ` +
+            'wird nicht verteilt, weil dazwischen kein Tag liegt. Bitte eine der beiden Ablesungen prüfen.',
+        )
+      }
+      continue
+    }
+
     if (delta < 0) {
       warnings.push(`Negativer Verbrauch zwischen ${r0.date} und ${r1.date} (${delta}) — Ablesung prüfen oder Zählerwechsel markieren.`)
     }
-    if (days > 0) segments.push({ from: r0.date, to: r1.date, delta, days })
+    segments.push({ from: r0.date, to: r1.date, delta, days })
   }
   return { segments, warnings }
 }
