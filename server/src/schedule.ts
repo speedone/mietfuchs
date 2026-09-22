@@ -12,6 +12,13 @@
 // Eingabe. In der Datenbank ist der Stichtag Teil des Primärschlüssels; ungeprüft
 // hineingeschrieben gäbe es dafür einen Fehler statt eines gespeicherten Mietverhältnisses.
 
+// Verglichen wird mit **der Funktion aus calc.ts** und nicht mit einer eigenen. Unten steht, dass
+// hier genauso sortiert wird wie in `personHistoryOf`; solange das nur ein Kommentar war, konnte
+// die eine Seite wechseln, ohne die andere mitzunehmen. Genau das ist beim Umstellen auf den
+// zeichenweisen Vergleich (#70) auch passiert, und der Quelltext-Test in calc.test.ts hat es
+// gefangen. Jetzt ist es dieselbe Funktion.
+import { compareText } from './calc.ts'
+
 // **Es gilt der letzte.** Genau so liest ihn die Abrechnung: Sie sortiert nach Stichtag
 // (`Array.prototype.sort` ist stabil, gleiche Stichtage behalten ihre Reihenfolge) und übernimmt
 // den letzten Eintrag, dessen Stichtag erreicht ist. Gemessen ergibt [100 €, 250 €] eine
@@ -54,7 +61,7 @@ export function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
 // fest. Über die Stammdaten ist eine unsortierte Staffel nicht erzeugbar, über die Schnittstelle
 // und über eine von Hand bearbeitete Datei schon.
 export function straightenPersonHistory<T extends { from: string }>(entries: T[], start: string): T[] {
-  const sortiert = entries.slice().sort((a, b) => a.from.localeCompare(b.from))
+  const sortiert = entries.slice().sort((a, b) => compareText(a.from, b.from))
   const erster = sortiert[0]
   if (erster === undefined) return []
   const vorgezogen = erster.from > start ? [{ ...erster, from: start }, ...sortiert.slice(1)] : sortiert
