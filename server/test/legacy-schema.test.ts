@@ -140,6 +140,32 @@ test('Der Eingang greift nicht auf das heutige Schema zu', () => {
   }
 })
 
+test('Der Umstieg liest die Umstiegsdatei mit dem eingefrorenen Leser', () => {
+  // **Der Wächter über die Stelle, an der die Aufteilung sonst still zerbräche.** In der
+  // Umstiegsdatei steht beim Nachrechnen nur Migration 0000. Läse der Umstieg sie mit
+  // `db/read.ts`, erzeugte Drizzle die Spaltenliste aus dem heutigen Schema, und die erste
+  // Migration, die eine Spalte hinzufügt, ließe ihn mit `no such column` scheitern — nicht als
+  // geordneten Abbruch, sondern als „Unerwarteter Fehler". Weil ein gescheiterter Umstieg die
+  // Datenrouten sperrt, stünde danach jeder Nutzer mit einer alten db.json vor einem Programm
+  // ohne Daten.
+  //
+  // Geprüft wird der Quelltext, und das ist kein Notbehelf: Solange der Ausgangsstand und der
+  // neueste derselbe sind, lässt sich der Unterschied nicht messen. Ein Test mit einer
+  // zusätzlichen Migration bleibt grün, auch wenn der falsche Leser dort steht — nachgemessen.
+  const datei = path.join(import.meta.dirname, '..', 'src', 'db', 'changeover.ts')
+  const inhalt = fs.readFileSync(datei, 'utf8')
+  assert.match(
+    inhalt,
+    /import \{ readStock \} from '\.\.\/legacy\/read\.ts'/,
+    'db/changeover.ts liest nicht mehr mit dem eingefrorenen Leser',
+  )
+  assert.doesNotMatch(
+    inhalt,
+    /from '\.\/read\.ts'/,
+    'db/changeover.ts greift auf den heutigen Leser zu',
+  )
+})
+
 test('Der eingefrorene Wortschatz ist der von damals', () => {
   // Die Listen stehen in der Kopie bewusst **ohne** Bindung an die Domänentypen. Damit kann
   // niemand sie versehentlich mitziehen, wenn er `shared/types.ts` ändert — und genau dieses

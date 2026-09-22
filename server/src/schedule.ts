@@ -45,9 +45,18 @@ export function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
 //
 // Wiederholt wird das, solange es nötig ist: Bei drei Einträgen zum selben Stichtag rückt der
 // erste heraus, und die beiden übrigen sind dann untereinander die gewöhnliche Doppelung.
+// **Sortiert wird zuerst, und das ist keine neue Regel, sondern dieselbe:** `personHistoryOf` in
+// calc.ts sortiert vor dem Rechnen ebenso nach Stichtag. Ohne diesen Schritt zöge das Vorziehen
+// den falschen Eintrag vor, nämlich den ersten der Datei statt den frühesten, und `lastPerFrom`
+// würfe danach den richtigen weg. Gemessen an einem Mietverhältnis ab 01.01.2024 mit der Staffel
+// [4 Personen ab Juli, 1 Person ab Januar]: 918 Personentage gegen 366. Die Regression fängt es
+// ab, der Vermieter verlöre also kein Geld, säße aber dauerhaft in einem gescheiterten Umstieg
+// fest. Über die Stammdaten ist eine unsortierte Staffel nicht erzeugbar, über die Schnittstelle
+// und über eine von Hand bearbeitete Datei schon.
 export function straightenPersonHistory<T extends { from: string }>(entries: T[], start: string): T[] {
-  const erster = entries[0]
+  const sortiert = entries.slice().sort((a, b) => a.from.localeCompare(b.from))
+  const erster = sortiert[0]
   if (erster === undefined) return []
-  const vorgezogen = erster.from > start ? [{ ...erster, from: start }, ...entries.slice(1)] : entries
+  const vorgezogen = erster.from > start ? [{ ...erster, from: start }, ...sortiert.slice(1)] : sortiert
   return lastPerFrom(vorgezogen)
 }
