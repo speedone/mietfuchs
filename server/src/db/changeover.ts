@@ -54,7 +54,7 @@ import { messageOf, type OpenedDatabase } from './open.ts'
 import { readStock } from './read.ts'
 import { deviationMessage, frozenDifference, runRegression, standToCompare, yearsToCheck } from './regression.ts'
 import { findingsText, validateDb, type Finding } from './validate.ts'
-import { writeStock, type StockCounts } from './write.ts'
+import { writeStock, type StockCounts } from '../legacy/write.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
   personHistory, prepaymentOverrides, prepayments, readings, settings, tenancies, units,

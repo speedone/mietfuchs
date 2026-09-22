@@ -88,6 +88,25 @@ test('Der eingefrorene Ausgangsstand ist der, den Migration 0000 anlegt', async 
   }
 })
 
+test('Der Eingang greift nicht auf das heutige Schema zu', () => {
+  // **Das ist die Einfrierung als Zusicherung und nicht als Absicht.** Eine Datei im Eingang, die
+  // `db/schema.ts` benutzt, zielt wieder auf den neuesten Stand, und damit wäre die ganze
+  // Aufteilung wirkungslos: Jede Regel, die den Weg dorthin beschreibt, müsste dann ein zweites
+  // Mal hier stehen. Gemerkt hätte man es erst an einem Bestand, bei dem die Kette etwas
+  // umschreibt, was der Import schon umgeschrieben hat.
+  //
+  // Geprüft wird der Quelltext und nicht das Verhalten, weil es dafür kein Verhalten gibt: Solange
+  // der Ausgangsstand und der neueste derselbe ist, lässt sich der Unterschied nicht messen.
+  const verboten = /from '[^']*db\/schema\.ts'/
+  const ordner = path.join(import.meta.dirname, '..', 'src', 'legacy')
+  const dateien = fs.readdirSync(ordner).filter((name) => name.endsWith('.ts'))
+  assert.ok(dateien.length > 0, 'im Eingang liegt keine einzige Quelldatei; der Test wäre wirkungslos')
+  for (const name of dateien) {
+    const inhalt = fs.readFileSync(path.join(ordner, name), 'utf8')
+    assert.doesNotMatch(inhalt, verboten, `${name} benutzt das heutige Schema statt des eingefrorenen`)
+  }
+})
+
 test('Der eingefrorene Wortschatz ist der von damals', () => {
   // Die Listen stehen in der Kopie bewusst **ohne** Bindung an die Domänentypen. Damit kann
   // niemand sie versehentlich mitziehen, wenn er `shared/types.ts` ändert — und genau dieses

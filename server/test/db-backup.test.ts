@@ -22,7 +22,7 @@ import { straightenForDatabase } from '../src/legacy.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
 import { databaseFile, openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { writeStock } from '../src/db/write.ts'
+import { writeStock } from '../src/legacy/write.ts'
 import { archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot } from '../src/db/backup.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-backup-'))

@@ -30,7 +30,7 @@ import { migrateLegacy, straightenForDatabase } from '../src/legacy.ts'
 import { snapshotOf } from '../src/snapshot.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { writeStock } from '../src/db/write.ts'
+import { writeStock } from '../src/legacy/write.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 
 const fixtures = loadFixtures()
