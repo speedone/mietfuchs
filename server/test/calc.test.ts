@@ -1282,7 +1282,8 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   assert.equal(r.surplusPaidCents, 1000000) // 1.100.000 − 100.000
   // gemischte Nutzung: die halbe Fläche ist selbstgenutzt und damit privat
   assert.equal(r.selfOccupiedExists, true)
-  assert.equal(r.selfUsedAreaShare, 0.5)
+  assert.equal(r.selfUsedAreaM2, 100)
+  assert.equal(r.totalAreaM2, 200)
   assert.equal(r.excludedExists, false)
 })
 
@@ -1305,7 +1306,8 @@ test('Steuer (Anlage V): eine ausgenommene Wohnung ist keine Eigennutzung (#68)'
   }
   const r = taxReport(snapshotFromDb(db, 2025))
   assert.equal(r.selfOccupiedExists, false, 'eine ausgenommene Wohnung gilt als Eigennutzung')
-  assert.equal(r.selfUsedAreaShare, 0, 'eine ausgenommene Wohnung zählt als privat')
+  assert.equal(r.selfUsedAreaM2, 0, 'eine ausgenommene Wohnung zählt als privat')
+  assert.equal(r.totalAreaM2, 200, 'die Gesamtfläche umfasst das ganze Gebäude')
   // Sie ist aber nicht nichts: Der Vermieter soll wissen, dass Mietfuchs sie nicht einordnen kann.
   assert.equal(r.excludedExists, true)
 })
@@ -1333,13 +1335,15 @@ test('Steuer (Anlage V): der Flächenanteil misst das Private, nicht das Vermiet
   const r = taxReport(snapshotFromDb(db, 2025))
   assert.equal(r.selfOccupiedExists, true)
   assert.equal(r.excludedExists, true)
-  // 50 von 200 m² sind selbstgenutzt. Der Laden zählt nicht dazu, obwohl er nicht vermietet ist.
-  assert.equal(r.selfUsedAreaShare, 0.25)
+  // 50 von 200 m² sind selbstgenutzt. Der Laden zählt nicht dazu, obwohl er nicht vermietet ist,
+  // steht aber im Nenner: Die Frage lautet, wie viel des **Gebäudes** privat genutzt wird.
+  assert.equal(r.selfUsedAreaM2, 50)
+  assert.equal(r.totalAreaM2, 200)
 })
 
 test('Steuer (Anlage V): ein Bestand von vor der dreiwertigen Unterscheidung (#68)', () => {
   // **Der Fall, der den naheliegenden Fix zur Verschlechterung machte.** CLAUDE.md sagt
-  // ausdrücklich, dass `load()` das Kennzeichen bewusst **nicht** automatisch migriert, weil ein
+  // ausdrücklich, dass die Migration in legacy/migrate.ts das Kennzeichen bewusst **nicht** setzt, weil ein
   // gesetztes Kennzeichen die Verteilung bereits abgerechneter Jahre veränderte. Wer seine eigene
   // Wohnung damals nur auf „nicht beteiligt" gestellt hat, trägt also `participates: false` ohne
   // `selfUsed`. Für die Abrechnung ist das „außerhalb der Abrechnungseinheit".
@@ -1358,7 +1362,26 @@ test('Steuer (Anlage V): ein Bestand von vor der dreiwertigen Unterscheidung (#6
   const r = taxReport(snapshotFromDb(db, 2025))
   assert.equal(r.selfOccupiedExists, false, 'ohne gesetztes Kennzeichen wird Eigennutzung behauptet')
   assert.equal(r.excludedExists, true, 'der Hinweis erreicht alte Bestände nicht mehr')
-  assert.equal(r.selfUsedAreaShare, 0)
+  assert.equal(r.selfUsedAreaM2, 0)
+})
+
+test('Steuer (Anlage V): ohne erfasste Fläche wird kein Anteil behauptet (#68)', () => {
+  // Erreichbar ist das, weil die Datenbank `area_m2 >= 0` zulässt; nur die Oberfläche lehnt die
+  // Null ab. Ein Anteil von 0 wäre dort eine Aussage über etwas, das niemand eingetragen hat,
+  // und die Oberfläche lässt den Prozentsatz deshalb weg. Damit sie das kann, muss die
+  // Gesamtfläche als eigene Zahl herauskommen und nicht als fertiges Verhältnis.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 0, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 0, participates: false, selfUsed: true },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' })],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.totalAreaM2, 0)
+  assert.equal(r.selfUsedAreaM2, 0)
+  assert.equal(r.selfOccupiedExists, true, 'die Eigennutzung hängt an der Nutzungsart, nicht an der Fläche')
 })
 
 test('Steuer (Anlage V): abgeschlossene Abrechnung liefert den eingefrorenen Eigenanteil', () => {

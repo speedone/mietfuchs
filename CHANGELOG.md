@@ -99,7 +99,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   deshalb die Aufforderung, den privaten Anteil herauszurechnen, obwohl er gar nichts selbst
   nutzt. Der Flächenanteil misst jetzt außerdem das **Selbstgenutzte** statt des Vermieteten, denn
   nur das ist eindeutig: Ob eine Wohnung außerhalb der Abrechnungseinheit vermietet ist, weiß
-  Mietfuchs nicht, und steuerlich ist ohnehin der private Anteil die Frage. Gibt es Wohnungen,
+  Mietfuchs nicht, und steuerlich ist ohnehin der private Anteil die Frage. Genannt werden dabei
+  die Quadratmeter, denn genau die fragt die Anlage V im Kopf ab. Gibt es Wohnungen,
   die Mietfuchs nicht einordnen kann, steht das jetzt als eigener Hinweis dabei, statt sie
   stillschweigend als selbstgenutzt zu zählen. Dass der Flächenanteil über das ganze Gebäude
   rechnet und die Abrechnung nur über die Wohnungen der Abrechnungseinheit, erklärt die Seite
