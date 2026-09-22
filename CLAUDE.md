@@ -742,6 +742,14 @@ die ganze fachliche Komplexität:
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
   (`consumptionInPeriod`). Zählerwechsel über `replacement: true` + `oldEndValue`. Negativer
   Verbrauch erzeugt eine Warnung.
+  **Ein Zählerwechsel ohne `oldEndValue` ebenfalls** (#83), und dort entsteht **kein Segment**:
+  Das frühere `?? 0` las das fehlende Feld als Null und machte aus einem Stand von 980 einen
+  Verbrauch von minus 980 (im Jahr gemessen minus 910), der beim Verbrauchsschlüssel in die
+  Verteilbasis einging und die Anteile aller Mieter verschob. Gefragt wird nach `null` und nicht
+  nach dem Wert, denn ein eingetragener Endstand von 0 ist eine Angabe (Zähler lief rückwärts)
+  und keine Lücke. Validator und Schema bleiben bewusst außen vor: Beide würden den Bestand
+  ablehnen und dem Vermieter den Umstieg verwehren, obwohl die Übernahme selbst keine Zahl
+  verändert — die ist schon vorher falsch.
   **Zwei Ablesungen am selben Tag ebenso** (#69), und zwar statt der über negativen Verbrauch:
   Ein Segment entsteht nur bei mindestens einem Tag Abstand, sonst müsste durch null geteilt
   werden, und die Differenz fiel bisher wortlos heraus. Sie wird **nicht** verteilt, und das ist
