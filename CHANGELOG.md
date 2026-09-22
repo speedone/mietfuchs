@@ -78,6 +78,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein Zählerwechsel ohne Endstand des alten Geräts ergibt keinen negativen Verbrauch mehr.**
+  Wird ein Zähler als gewechselt gekennzeichnet, gehört der letzte Stand des alten Geräts dazu.
+  Fehlte er, las Mietfuchs ihn als Null, und aus einem Zählerstand von 980 wurde ein Verbrauch
+  von minus 980; im Jahr gemessen minus 910. Das blieb nicht bei der Anzeige: Bei einer Rechnung
+  nach Verbrauch geht eine solche Zahl in die Verteilung ein und verschiebt die Anteile aller
+  Mieter. Über die Eingabemaske ist das nicht möglich, dort wird der Endstand verlangt; über
+  eine von Hand bearbeitete Datei oder ein Backup aus fremder Quelle schon. Jetzt steht eine
+  Meldung auf der Zähler-Seite, und der Verbrauch des alten Geräts bis zum Wechsel wird weder
+  verteilt noch erfunden. Ein ausdrücklich eingetragener Endstand von 0 bleibt dabei eine
+  Angabe und keine Lücke. ([#83](https://github.com/speedone/mietfuchs/issues/83))
+
 - **Zwei Ablesungen am selben Tag verlieren ihren Verbrauch nicht mehr stillschweigend.** Liegen
   zwei Stände desselben Zählers auf demselben Tag, lässt sich die Differenz dazwischen nicht
   tagesanteilig verteilen, denn es ist kein Tag vergangen. Sie fiel deshalb ersatzlos heraus, und

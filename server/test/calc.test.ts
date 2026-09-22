@@ -593,6 +593,50 @@ test('Zwei Ablesungen am selben Tag: kleine Unterschiede werden nicht zu null ge
   assert.match(warnings[0], /0,004/, warnings[0])
 })
 
+test('Zählerwechsel ohne Endstand des alten Geräts: Meldung statt negativem Verbrauch (#83)', () => {
+  // **Gemessen minus 910 für ein Jahr, und nichts hielt das auf.** Der Endstand des alten Geräts
+  // steht in `oldEndValue`. Fehlt er, las die Berechnung ihn mit `?? 0` als Null, und aus einem
+  // Zählerstand von 980 wurde ein Segment von minus 980. Ein negativer Verbrauch ist nicht bloß
+  // eine falsche Zahl: Beim Verbrauchsschlüssel geht er in die Verteilbasis ein und verschiebt
+  // die Anteile aller Mieter.
+  //
+  // Die Oberfläche verlangt den Endstand, sobald der Wechsel angehakt ist. Über die
+  // Schnittstelle, über eine von Hand bearbeitete Datei und über ein fremdes Backup kommt der
+  // Eintrag trotzdem herein, und das Schema lässt die Spalte leer.
+  const ohneEndstand = readingsOf('m1', [
+    { date: '2024-12-31', value: 950 },
+    { date: '2025-06-30', value: 3, replacement: true },
+    { date: '2025-12-31', value: 40 },
+  ])
+  const { warnings, segments } = meterSegments(ohneEndstand)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /Endstand/)
+  assert.match(warnings[0], /2025-06-30/)
+
+  // Der Verbrauch des alten Geräts bis zum Wechsel ist unbekannt und wird nicht erfunden; das
+  // neue Gerät rechnet ganz normal weiter.
+  assert.equal(segments.length, 1, JSON.stringify(segments))
+  assert.ok(Math.abs(consumptionInPeriod(ohneEndstand, '2025-01-01', '2025-12-31') - 37) < 1e-9)
+  // Vor allem: nichts Negatives mehr.
+  assert.ok(consumptionInPeriod(ohneEndstand, '2025-01-01', '2025-12-31') >= 0)
+})
+
+test('Zählerwechsel: ein Endstand von 0 ist etwas anderes als keiner (#83)', () => {
+  // **Das `?? 0` warf beide Fälle zusammen, und das war der Kern des Fehlers.** Ein ausdrücklich
+  // eingetragener Endstand von 0 ist eine Angabe: Der alte Zähler stand auf null, lief also
+  // rückwärts, und dafür gibt es die Meldung über negativen Verbrauch. Ein fehlendes Feld ist
+  // keine Angabe. Gefragt wird deshalb nach `null` und nicht nach dem Wert.
+  const endstandNull = readingsOf('m1', [
+    { date: '2024-12-31', value: 950 },
+    { date: '2025-06-30', value: 3, replacement: true, oldEndValue: 0 },
+    { date: '2025-12-31', value: 40 },
+  ])
+  const { warnings } = meterSegments(endstandNull)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /Negativer Verbrauch/)
+  assert.doesNotMatch(warnings[0], /Endstand des alten/)
+})
+
 test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
   const db = makeDb()
   db.meters = [
