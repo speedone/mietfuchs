@@ -478,7 +478,7 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   zusammen**, zur Übersetzungszeit. `shared/types.ts` bleibt von Hand geschrieben, weil der
   Browser es benutzt und von Drizzle nichts wissen darf; der Test schlägt fehl, sobald jemand
   nur eine Seite ändert.
-- **Der Validator** ([server/src/db/validate.ts](server/src/db/validate.ts), #59) prüft einen
+- **Der Validator** ([server/src/legacy/validate.ts](server/src/legacy/validate.ts), #59) prüft einen
   Datenbestand, bevor er übernommen wird: beim Wiederherstellen eines Backups und beim
   Umstieg der vorhandenen Bestände. Geprüft wird der **rohe** Inhalt der Datei
   und nicht der schon eingelesene Bestand, denn `migrateLegacy` verträgt keinen beliebigen

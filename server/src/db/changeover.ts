@@ -25,7 +25,7 @@
 //    2. Ist die Datenbank noch leer? Steht schon etwas darin, wäre ein zweiter Umstieg ein
 //       Überschreiben.
 //    3. **Prüfen, bevor irgendetwas geschrieben wird.** Dafür ist der Validator geschrieben
-//       (db/validate.ts): Ein verdorbener Bestand fiele sonst erst beim Einfügen auf, mitten im
+//       (legacy/validate.ts): Ein verdorbener Bestand fiele sonst erst beim Einfügen auf, mitten im
 //       Vorgang, und die Meldung käme von SQLite statt von Mietfuchs.
 //    5. In eine **eigene Datei** schreiben, nicht in die richtige. Sie heißt
 //       `mietfuchs.sqlite.umstieg` und wird erst am Ende an ihren Platz bewegt. Ein Stromausfall
@@ -53,7 +53,7 @@ import { applyMigrations, connect, loadMigrations, type Connection, type Databas
 import { messageOf, type OpenedDatabase } from './open.ts'
 import { readStock } from './read.ts'
 import { deviationMessage, frozenDifference, runRegression, standToCompare, yearsToCheck } from './regression.ts'
-import { findingsText, validateDb, type Finding } from './validate.ts'
+import { findingsText, validateDb, type Finding } from '../legacy/validate.ts'
 import { writeStock, type StockCounts } from '../legacy/write.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
