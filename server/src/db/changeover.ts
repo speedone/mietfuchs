@@ -51,7 +51,7 @@ import type { Db } from '../store.ts'
 import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
 import { messageOf, type OpenedDatabase } from './open.ts'
-import { readStock } from './read.ts'
+import { readStock } from '../legacy/read.ts'
 import { deviationMessage, frozenDifference, runRegression, standToCompare, yearsToCheck } from './regression.ts'
 import { findingsText, validateDb, type Finding } from '../legacy/validate.ts'
 import { writeStock, type StockCounts } from '../legacy/write.ts'
@@ -421,6 +421,10 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     await hooks.afterImport?.(connection.db)
 
     // Schritt 7: die Regression. Der Prüfstein.
+    // **Gelesen wird mit dem eingefrorenen Leser**, denn in der Datei steht zu diesem Zeitpunkt
+    // nur Migration 0000. Der heutige Leser erzeugt seine Spaltenliste aus dem heutigen Schema;
+    // die erste Migration, die eine Spalte hinzufügt, ließe ihn hier mit `no such column`
+    // scheitern, und zwar bei jedem Nutzer mit einer alten db.json und bei jedem Start erneut.
     const written = await readStock(connection.db)
     years = yearsToCheck(stock, now().getFullYear())
     const regression = runRegression(standToCompare(stock), written, years)

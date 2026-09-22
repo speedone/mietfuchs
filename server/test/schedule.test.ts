@@ -57,6 +57,24 @@ test('Personen-Staffel: der doppelte Stichtag bewegt keine Personentage', () => 
   assert.equal(new Set(gerade.map((e) => e.from)).size, gerade.length, 'ein Stichtag kommt doppelt vor')
 })
 
+test('Personen-Staffel: eine unsortierte Staffel bewegt ebenfalls nichts', () => {
+  // **Das Vorziehen des ersten Eintrags stützt sich darauf, dass er der früheste ist.** Steht die
+  // Staffel nicht sortiert in der Datei, zöge es den falschen vor, und `lastPerFrom` würfe danach
+  // den richtigen weg. Gemessen an [4 Personen ab Juli, 1 Person ab Januar]: 918 Personentage
+  // gegen 366. Die Regression fängt das ab, der Vermieter verlöre also kein Geld, säße aber
+  // dauerhaft in einem gescheiterten Umstieg fest, mit einer Meldung, die nach einem Fehler in
+  // Mietfuchs klingt und keinen Weg heraus nennt.
+  //
+  // Über die Stammdaten ist eine unsortierte Staffel nicht erzeugbar, dort wird vor dem Speichern
+  // sortiert. Über die Schnittstelle und über eine von Hand bearbeitete Datei schon.
+  //
+  // Sortiert wird deshalb zuerst, und zwar genauso wie `personHistoryOf` in calc.ts es tut: Das
+  // ist keine neue Regel, sondern dieselbe.
+  const unsortiert: PersonEntry[] = [{ from: '2024-07-01', persons: 4 }, { from: '2024-01-01', persons: 1 }]
+  assert.equal(gerechnet(unsortiert).personentage, 918, 'die Ausgangsrechnung stimmt nicht mehr')
+  assert.deepEqual(gerechnet(straightenPersonHistory(unsortiert, '2024-01-01')), gerechnet(unsortiert))
+})
+
 test('Personen-Staffel: ohne Doppelung bleibt alles, wie es war', () => {
   for (const roh of [
     [{ from: '2024-01-01', persons: 2 }],

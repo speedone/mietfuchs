@@ -183,6 +183,61 @@ test('Die Kette der Migrationen läuft über den übernommenen Bestand, nicht da
   }
 })
 
+test('Eine Migration, die eine Spalte hinzufügt, bricht den Umstieg nicht ab', async () => {
+  // **Der Fall, an dem die ganze Aufteilung sonst zerbrochen wäre**, und beide unabhängigen
+  // Durchsichten dieses Zweiges haben ihn gefunden. Der Import zielt auf den Stand nach 0000;
+  // gelesen wurde danach mit dem heutigen Leser, und der erzeugt seine Spaltenliste aus dem
+  // heutigen Schema. Die erste Migration, die eine Spalte hinzufügt, ließ ihn deshalb mit
+  // `no such column` scheitern — nicht als geordneten Abbruch, sondern als „Unerwarteter
+  // Fehler". Und weil ein gescheiterter Umstieg die Datenrouten sperrt, stünde danach **jeder**
+  // Nutzer mit einer alten db.json vor einem Programm ohne Daten, bei jedem Start erneut.
+  //
+  // Der Test reicht deshalb eine zweite Migration hinein, die genau das tut, was die Regel aus
+  // legacy/README.md von jedem künftigen Schritt verlangt: Sie ändert das Schema, und den Eingang
+  // fasst niemand an.
+  //
+  // **Was dieser Test nicht leistet, und das gehört dazu:** Er wird nicht rot, wenn der Umstieg
+  // wieder mit dem heutigen Leser liest. Nachgemessen. Eine **hinzugefügte** Spalte stört den
+  // heutigen Leser nämlich nicht, er wählt nur die Spalten, die er kennt; scheitern würde er
+  // umgekehrt, wenn das heutige Schema eine Spalte führt, die es in der Umstiegsdatei noch nicht
+  // gibt. Herstellen lässt sich das nicht, solange der Ausgangsstand und der neueste derselbe
+  // sind. Dass der eingefrorene Leser benutzt wird, hält deshalb ein Wächter über den Quelltext
+  // fest (legacy-schema.test.ts). Dieser Test hier zeigt, dass die Kette läuft und der Bestand
+  // ankommt.
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    const echte = await loadMigrations()
+    const neueSpalte: Migration = {
+      tag: '0001_test_neue_spalte',
+      hash: 'hash-neue-spalte',
+      folderMillis: 1789952012373,
+      statements: [`ALTER TABLE units ADD COLUMN farbe text`],
+    }
+    const opened = await openDatabase({ dataDir })
+    const result = await runChangeover({
+      dataDir, opened, reopen: () => openDatabase({ dataDir }),
+      migrations: [...echte, neueSpalte],
+    })
+    try {
+      assert.equal(result.state, 'done', result.message)
+      assert.deepEqual(await unitNames(dataDir), ['EG', 'OG'], 'der Bestand ist nicht angekommen')
+      // Und die neue Spalte ist wirklich da: Die Kette ist gelaufen, nicht übersprungen.
+      const connection = await connect(databaseFile(dataDir))
+      try {
+        const spalten = connection.rows(`SELECT name FROM pragma_table_info('units')`).map((z) => String(z[0]))
+        assert.ok(spalten.includes('farbe'), `die Migration ist nicht gelaufen: ${spalten.join(', ')}`)
+      } finally {
+        connection.close()
+      }
+    } finally {
+      result.database?.close()
+    }
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 // ---------- Wann überhaupt etwas geschieht ----------
 
 test('Ohne db.json geschieht nichts, und es entsteht auch nichts', async () => {
