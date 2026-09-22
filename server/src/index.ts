@@ -36,7 +36,7 @@ import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
   archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
 } from './db/backup.ts'
-import { findingsText, validateDb } from './db/validate.ts'
+import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
 
@@ -772,7 +772,7 @@ function readBackup(buffer: Buffer): ReadBackup {
   // etwas durch, das dem Datenmodell nicht entspricht, ginge der laufende Server danach nicht
   // mehr: Das Einlesen wirft, und **jede** weitere Anfrage scheitert erneut, bis jemand die
   // Datei von Hand zurückkopiert. Deshalb wird geprüft, bevor irgendetwas überschrieben wird.
-  // Was krumm, aber gültig ist, kommt weiterhin durch; die Begründung steht in db/validate.ts.
+  // Was krumm, aber gültig ist, kommt weiterhin durch; die Begründung steht in legacy/validate.ts.
   const { problems } = dbEntry ? validateDb(parsed) : { problems: [] }
   if (problems.length > 0) {
     throw new Error(

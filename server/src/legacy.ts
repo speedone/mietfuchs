@@ -7,7 +7,7 @@
 // Abrechnung, und das ist der teuerste Fehler, den dieses Vorhaben haben kann. Deshalb steht
 // hier die eine Fassung, und beide Wege benutzen sie.
 //
-// Der Validator in db/validate.ts prüft gegen dieselben Regeln: Was hier geradegezogen wird,
+// Der Validator in legacy/validate.ts prüft gegen dieselben Regeln: Was hier geradegezogen wird,
 // lehnt er nicht ab.
 
 import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shared/types.ts'
@@ -45,7 +45,7 @@ export const DEFAULT_DB: Db = {
 //
 // Der Typ des Inhalts ist eine Annahme und keine Prüfung: Was in der Datei steht, weiß vorher
 // niemand. Wo geprüft werden muss, bevor etwas übernommen wird, tut das der Validator in
-// db/validate.ts.
+// legacy/validate.ts.
 export function migrateLegacy(stored: Partial<Db> | null): Db {
   let next: Db
   if (stored) {
@@ -92,7 +92,7 @@ export function migrateLegacy(stored: Partial<Db> | null): Db {
 // ---------- Der feste Monatsbetrag aus der Zeit vor der Staffel ----------
 
 // Wie steht die Vorauszahlung eines Mietverhältnisses da? Die Frage wird an zwei Stellen
-// gestellt, und beide müssen dieselbe Antwort bekommen: beim Prüfen (db/validate.ts sagt an,
+// gestellt, und beide müssen dieselbe Antwort bekommen: beim Prüfen (legacy/validate.ts sagt an,
 // was beim Übernehmen geschieht) und beim Übernehmen selbst (straightenForDatabase unten).
 // Deshalb steht sie hier und nimmt beliebige Werte entgegen, denn der Validator sieht den rohen
 // Inhalt der Datei und nicht den eingelesenen Bestand.

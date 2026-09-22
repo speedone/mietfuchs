@@ -43,6 +43,11 @@
 // wichtig: `migrateLegacy` in legacy.ts verträgt keinen beliebigen Inhalt (ein Mietverhältnis
 // ohne Beginn bringt es zum Absturz), und genau davor soll die Prüfung ja schützen.
 
+// **Die Wertlisten kommen aus dem eingefrorenen Schema und nicht aus dem heutigen.** Geprüft
+// wird hier eine alte db.json, also ein Bestand, der den Wortschatz von damals führt. Käme die
+// Liste aus `db/schema.ts`, beanstandete der Validator einen Wert, den es damals gab und heute
+// nicht mehr, und ein Bestand, mit dem jemand seit Jahren arbeitet, käme nie in die Datenbank.
+// Dass der Wert danach anders heißt, erledigt die Migrationskette.
 import { COST_KEYS, DEPOSIT_STATUS, METER_TYPES, UPDATE_CHECK } from './schema.ts'
 import { KEY_LABELS } from '../calc.ts'
 import { LEGACY_PREPAYMENT_FIELD, legacyPrepaymentCase } from '../legacy.ts'
