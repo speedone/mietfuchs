@@ -8,6 +8,7 @@ import {
   computeSettlement,
   computePrepaymentCents,
   consumptionInPeriod,
+  consumptionOverview,
   meterSegments,
   overlapDays,
   daysInYear,
@@ -448,6 +449,7 @@ test('Zwei Ablesungen am selben Tag: der Verbrauch dazwischen wird gemeldet (#69
   assert.equal(warnings.length, 1, warnings.join(' | '))
   assert.match(warnings[0], /2025-06-30/)
   assert.match(warnings[0], /nicht verteilt/)
+  assert.match(warnings[0], /um 10,/, warnings[0])
   // Der Verbrauch selbst bleibt, wie er war: 50 bis zum Stichtag, 40 danach. Die 10 sind weg,
   // und genau das sagt die Meldung.
   assert.equal(segments.length, 2)
@@ -501,6 +503,94 @@ test('Zwei Ablesungen am selben Tag: dann gilt diese Meldung und nicht die für 
   assert.equal(warnings.length, 1, warnings.join(' | '))
   assert.match(warnings[0], /nicht verteilt/)
   assert.doesNotMatch(warnings[0], /Negativer Verbrauch/)
+})
+
+test('Zwei Ablesungen am selben Tag: einen Mieter kostet es Geld (#69)', () => {
+  // **Nachgemessen, und es widerlegt die Annahme des Issues.** Dort steht, der verschwundene
+  // Verbrauch gehe „stillschweigend zulasten des Vermieters". Beim Verbrauchsschlüssel ist die
+  // Verteilbasis aber die Summe des **gemessenen** Verbrauchs: Fehlt bei einem Zähler etwas,
+  // schrumpfen Zähler und Nenner gemeinsam, und der Rechnungsbetrag wird trotzdem vollständig
+  // verteilt. Der Vermieter trägt also nichts, und **ein anderer Mieter zahlt es**.
+  //
+  // Das ist der schlimmere der beiden Ausgänge: Ein Verlust beim Vermieter wäre ärgerlich, aber
+  // niemandem unrecht. Hier bekommt ein Mieter eine zugestellte Abrechnung mit zu viel darauf,
+  // und niemandem fällt es auf.
+  const db = (readings: Reading[]): Db => ({
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 100, participates: true },
+    ],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' }),
+      tenancy({ id: 't2', unitId: 'u2', tenantName: 'B', start: '2025-01-01' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 200000, key: 'meter', meterType: 'kaltwasser' }],
+    meters: [
+      { id: 'm1', unitId: 'u1', name: 'A', type: 'kaltwasser', unit: 'm³' },
+      { id: 'm2', unitId: 'u2', name: 'B', type: 'kaltwasser', unit: 'm³' },
+    ],
+    readings,
+  })
+  const ablesung = (id: string, meterId: string, date: string, value: number): Reading => ({ id, meterId, date, value })
+  const beiB = [ablesung('b1', 'm2', '2024-12-31', 0), ablesung('b2', 'm2', '2025-12-31', 100)]
+  const anteile = (readings: Reading[]) =>
+    Object.fromEntries(computeSettlement(snapshotFromDb(db(readings), 2025)).statements.map((st) => [st.tenantName, st.totalShareCents]))
+
+  const sauber = anteile([ablesung('a1', 'm1', '2024-12-31', 0), ablesung('a2', 'm1', '2025-12-31', 100), ...beiB])
+  assert.deepEqual(sauber, { A: 100000, B: 100000 }, 'die Ausgangsrechnung stimmt nicht mehr')
+
+  // Derselbe Bestand, nur mit einer korrigierten Ablesung am 30.06.: A misst 90 statt 100.
+  const mitDoppelung = [
+    ablesung('a1', 'm1', '2024-12-31', 0),
+    ablesung('a2', 'm1', '2025-06-30', 50),
+    ablesung('a3', 'm1', '2025-06-30', 60),
+    ablesung('a4', 'm1', '2025-12-31', 100),
+    ...beiB,
+  ]
+  assert.deepEqual(anteile(mitDoppelung), { A: 94737, B: 105263 }, 'die gemessene Verschiebung stimmt nicht mehr')
+  // Der Vermieter trägt in beiden Fällen nichts — die Annahme des Issues war falsch.
+  assert.equal(computeSettlement(snapshotFromDb(db(mitDoppelung), 2025)).landlord.totalCents, 0)
+  // Und genau darüber meldet sich der Zähler.
+  assert.equal(consumptionOverview(snapshotFromDb(db(mitDoppelung), 2025)).find((z) => z.meterId === 'm1')?.warnings.length, 1)
+})
+
+test('Drei Ablesungen am selben Tag: eine Meldung, nicht zwei (#69)', () => {
+  // Je Paar gemeldet stünde hier zweimal wortgleich dasselbe, und das Wort „zwei" stimmte nicht.
+  const drei = readingsOf('m1', [
+    { date: '2024-12-31', value: 100 },
+    { date: '2025-06-30', value: 150 },
+    { date: '2025-06-30', value: 160 },
+    { date: '2025-06-30', value: 170 },
+    { date: '2025-12-31', value: 200 },
+  ])
+  const { warnings } = meterSegments(drei)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /um 20,/, warnings[0])
+
+  // Heben sich die Sprünge desselben Tages auf, fehlt nichts, und es gibt zu Recht keine Meldung.
+  const hebtSichAuf = readingsOf('m1', [
+    { date: '2024-12-31', value: 100 },
+    { date: '2025-06-30', value: 150 },
+    { date: '2025-06-30', value: 160 },
+    { date: '2025-06-30', value: 150 },
+    { date: '2025-12-31', value: 200 },
+  ])
+  assert.deepEqual(meterSegments(hebtSichAuf).warnings, [])
+  assert.ok(Math.abs(consumptionInPeriod(hebtSichAuf, '2025-01-01', '2025-12-31') - 100) < 1e-9)
+})
+
+test('Zwei Ablesungen am selben Tag: kleine Unterschiede werden nicht zu null gerundet (#69)', () => {
+  // Ein Wasserzähler zeigt drei Nachkommastellen. Mit zwei Stellen meldete die Warnung einen
+  // „Unterschied von 0" und widerspräche sich selbst.
+  const fein = readingsOf('m1', [
+    { date: '2024-12-31', value: 150.001 },
+    { date: '2025-06-30', value: 150.004 },
+    { date: '2025-06-30', value: 150.008 },
+  ])
+  const { warnings } = meterSegments(fein)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /0,004/, warnings[0])
 })
 
 test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
