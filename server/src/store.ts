@@ -5,7 +5,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
-import { migrateLegacy } from './legacy.ts'
+import { migrateLegacy } from './legacy/migrate.ts'
 import { systemLocation, writable } from './paths.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -124,7 +124,7 @@ function load(): Db {
   // Prüfung, wie bisher. Geprüft wird dort, wo ein fremder Bestand hereinkommt: beim
   // Wiederherstellen eines Backups, mit dem Validator in legacy/validate.ts.
   const stored: Partial<Db> | null = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : null
-  // Die Vorgabewerte und die Umwandlung der alten Formate stehen in legacy.ts, weil der Umstieg
+  // Die Vorgabewerte und die Umwandlung der alten Formate stehen in legacy/migrate.ts, weil der Umstieg
   // in die Datenbank dieselben Regeln braucht.
   const next = migrateLegacy(stored)
   db = next
