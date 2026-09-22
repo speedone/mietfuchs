@@ -742,7 +742,11 @@ die ganze fachliche Komplexität:
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
   (`consumptionInPeriod`). Zählerwechsel über `replacement: true` + `oldEndValue`. Negativer
   Verbrauch erzeugt eine Warnung.
-  **Ein Zählerwechsel ohne `oldEndValue` ebenfalls** (#83), und dort entsteht **kein Segment**:
+  **Ein Zählerwechsel ohne `oldEndValue` ebenfalls** (#83), und dort entsteht **kein Segment**.
+  Auch hier zahlt die Lücke **ein anderer Mieter** und nicht der Vermieter, aus demselben Grund
+  wie unten: gemessen 540,15 € statt 802,40 € beim einen und 1.459,85 € statt 1.197,60 € beim
+  anderen. Der Rechenweg auf der Abrechnung liest sich dabei plausibel, die Meldung ist also das
+  Einzige, was darauf stößt.
   Das frühere `?? 0` las das fehlende Feld als Null und machte aus einem Stand von 980 einen
   Verbrauch von minus 980 (im Jahr gemessen minus 910), der beim Verbrauchsschlüssel in die
   Verteilbasis einging und die Anteile aller Mieter verschob. Gefragt wird nach `null` und nicht

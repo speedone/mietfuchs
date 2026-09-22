@@ -621,6 +621,77 @@ test('Zählerwechsel ohne Endstand des alten Geräts: Meldung statt negativem Ve
   assert.ok(consumptionInPeriod(ohneEndstand, '2025-01-01', '2025-12-31') >= 0)
 })
 
+test('Zählerwechsel ohne Endstand: auch das kostet einen Mieter Geld (#83)', () => {
+  // **Dieselbe Mechanik wie bei #69, und sie gehört auch hier hingeschrieben.** Der fehlende
+  // Verbrauch geht nicht dem Vermieter verloren: Beim Verbrauchsschlüssel ist die Verteilbasis
+  // die Summe des gemessenen Verbrauchs, und der Rechnungsbetrag wird trotzdem vollständig
+  // verteilt. Gemessen an zwei Wohnungen mit 2.000 € Wasser: Fehlt der Endstand bei Mieter A,
+  // sinkt sein Anteil von 802,40 € auf 540,15 €, und **Mieter B zahlt 1.459,85 € statt
+  // 1.197,60 €**, also 262,25 € zu viel. Der Vermieter trägt in beiden Fällen nichts.
+  //
+  // Die Meldung ist deshalb kein Beiwerk, sondern das Einzige, was den Vermieter darauf stößt:
+  // Auf der Abrechnung selbst liest sich der Rechenweg völlig plausibel.
+  const db = (readings: Reading[]): Db => ({
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 100, participates: true },
+    ],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' }),
+      tenancy({ id: 't2', unitId: 'u2', tenantName: 'B', start: '2025-01-01' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 200000, key: 'meter', meterType: 'kaltwasser' }],
+    meters: [
+      { id: 'm1', unitId: 'u1', name: 'A', type: 'kaltwasser', unit: 'm³' },
+      { id: 'm2', unitId: 'u2', name: 'B', type: 'kaltwasser', unit: 'm³' },
+    ],
+    readings,
+  })
+  const ablesung = (id: string, meterId: string, date: string, value: number, mehr: Partial<Reading> = {}): Reading =>
+    ({ id, meterId, date, value, ...mehr })
+  const beiB = [ablesung('b1', 'm2', '2024-12-31', 0), ablesung('b2', 'm2', '2025-12-31', 100)]
+  const anteile = (readings: Reading[]) =>
+    Object.fromEntries(computeSettlement(snapshotFromDb(db(readings), 2025)).statements.map((st) => [st.tenantName, st.totalShareCents]))
+
+  const mitEndstand = [
+    ablesung('a1', 'm1', '2024-12-31', 950),
+    ablesung('a2', 'm1', '2025-06-30', 3, { replacement: true, oldEndValue: 980 }),
+    ablesung('a3', 'm1', '2025-12-31', 40),
+    ...beiB,
+  ]
+  assert.deepEqual(anteile(mitEndstand), { A: 80240, B: 119760 }, 'die Ausgangsrechnung stimmt nicht mehr')
+
+  const ohneEndstand = [
+    ablesung('a1', 'm1', '2024-12-31', 950),
+    ablesung('a2', 'm1', '2025-06-30', 3, { replacement: true }),
+    ablesung('a3', 'm1', '2025-12-31', 40),
+    ...beiB,
+  ]
+  assert.deepEqual(anteile(ohneEndstand), { A: 54015, B: 145985 }, 'die gemessene Verschiebung stimmt nicht mehr')
+  assert.equal(computeSettlement(snapshotFromDb(db(ohneEndstand), 2025)).landlord.totalCents, 0)
+  // Und genau darüber meldet sich der Zähler.
+  assert.equal(consumptionOverview(snapshotFromDb(db(ohneEndstand), 2025)).find((z) => z.meterId === 'm1')?.warnings.length, 1)
+})
+
+test('Zählerwechsel ohne Endstand am selben Tag: diese Meldung gilt, nicht die über zwei Ablesungen (#83)', () => {
+  // **Die Reihenfolge der beiden Prüfungen ist eine Entscheidung und muss gehalten werden.**
+  // Gewänne die Prüfung auf den gleichen Tag (#69), entstünde aus dem fehlenden Feld ein
+  // `delta` von minus 950, und der Vermieter läse „Die Stände unterscheiden sich um 950" — eine
+  // Zahl, die aus nichts errechnet ist. Genau davor soll die Behebung schützen, und ohne diesen
+  // Test bleibt die Reihenfolge unbewacht: nachgemessen blieben bei umgedrehter Reihenfolge
+  // alle Tests grün.
+  const selberTag = readingsOf('m1', [
+    { date: '2025-06-30', value: 950 },
+    { date: '2025-06-30', value: 3, replacement: true },
+    { date: '2025-12-31', value: 40 },
+  ])
+  const { warnings } = meterSegments(selberTag)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /Endstand/)
+  assert.doesNotMatch(warnings[0], /Mehrere Ablesungen/)
+})
+
 test('Zählerwechsel: ein Endstand von 0 ist etwas anderes als keiner (#83)', () => {
   // **Das `?? 0` warf beide Fälle zusammen, und das war der Kern des Fehlers.** Ein ausdrücklich
   // eingetragener Endstand von 0 ist eine Angabe: Der alte Zähler stand auf null, lief also

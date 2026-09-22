@@ -86,7 +86,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mieter. Über die Eingabemaske ist das nicht möglich, dort wird der Endstand verlangt; über
   eine von Hand bearbeitete Datei oder ein Backup aus fremder Quelle schon. Jetzt steht eine
   Meldung auf der Zähler-Seite, und der Verbrauch des alten Geräts bis zum Wechsel wird weder
-  verteilt noch erfunden. Ein ausdrücklich eingetragener Endstand von 0 bleibt dabei eine
+  verteilt noch erfunden. Wie bei zwei Ablesungen am selben Tag gilt auch hier: Die Lücke zahlt
+  ein anderer Mieter und nicht der Vermieter. Nachgemessen an zwei Wohnungen mit 2.000 € Wasser
+  sinkt der Anteil des einen von 802,40 € auf 540,15 €, während der andere 1.459,85 € statt
+  1.197,60 € zahlt. Ein ausdrücklich eingetragener Endstand von 0 bleibt dabei eine
   Angabe und keine Lücke. ([#83](https://github.com/speedone/mietfuchs/issues/83))
 
 - **Zwei Ablesungen am selben Tag verlieren ihren Verbrauch nicht mehr stillschweigend.** Liegen
