@@ -65,31 +65,30 @@ describe('Steuerübersicht: Grundlage und Hinweise (#70)', () => {
     expect(taxHints(report({ tenanciesWithoutPayment: 1 }), 'soll')).toEqual(['sollIsNotTaxBasis'])
   })
 
-  it('erklärt die 0 €, wenn für kein Mietverhältnis eine Zahlung erfasst ist', () => {
-    // Ohne diesen Hinweis stünde dort eine 0 ohne Grund, und der nächste Griff wäre das
-    // Umschalten auf das Soll — also genau zurück in den Fehler.
-    const hints = taxHints(report({ paidCents: 0, tenanciesWithSoll: 2, tenanciesWithoutPayment: 2 }), 'ist')
-    expect(hints).toContain('noPaymentsRecorded')
-    expect(hints).not.toContain('paymentsIncomplete')
-  })
+  it('warnt, sobald für ein Mietverhältnis mit Soll gar keine Zahlung erfasst ist', () => {
+    // **Ein Hinweis für beide Stärken, und das ist die Korrektur aus der zweiten Durchsicht.**
+    // Vorher gab es zwei, und der für „gar nichts erfasst" behauptete „Deshalb stehen hier 0 €".
+    // Gemessen stimmt das nicht: Eine Zahlung, die zu keiner Zeile des Jahres gehört (alter
+    // Mieter bis 31.12., Dezembermiete am 5. Januar), zählt in `paidCents`, aber zu keinem
+    // Mietverhältnis der Liste. Der Satz stand dann neben angesetzten Einnahmen von 800 €.
+    const alle = report({ paidCents: 0, tenanciesWithSoll: 2, tenanciesWithoutPayment: 2 })
+    expect(taxHints(alle, 'ist')).toContain('paymentsMissing')
 
-  it('warnt auch, wenn nur ein Teil der Mietverhältnisse ohne Zahlung dasteht', () => {
-    // **Der gefährlichere der beiden Fälle, und bisher fiel er durch.** Der Hinweis hing an
-    // „Summe ist null". Sind für einen Mieter Zahlungen erfasst und für einen zweiten nicht, ist
-    // die Summe größer als null, es erschien kein Hinweis, und eine zu niedrige Einnahme ginge
-    // ohne Vorbehalt in die Anlage V. Der einzige Anhalt war die Klammer „(Rückstand offen)",
-    // und die klingt nach säumigem Mieter und nicht nach unvollständiger Erfassung.
-    const hints = taxHints(report({ tenanciesWithSoll: 2, tenanciesWithoutPayment: 1 }), 'ist')
-    expect(hints).toContain('paymentsIncomplete')
-    expect(hints).not.toContain('noPaymentsRecorded')
+    // **Der gefährlichere der beiden Fälle, und bisher fiel er ganz durch.** Sind für einen
+    // Mieter Zahlungen erfasst und für einen zweiten nicht, ist die Summe größer als null, sieht
+    // also vollständig aus, und die zu niedrige Einnahme ginge ohne Vorbehalt in die Anlage V.
+    const teilweise = report({ tenanciesWithSoll: 2, tenanciesWithoutPayment: 1 })
+    expect(taxHints(teilweise, 'ist')).toContain('paymentsMissing')
+
+    // Und er bleibt aus, sobald überall etwas erfasst ist.
+    expect(taxHints(report({}), 'ist')).not.toContain('paymentsMissing')
   })
 
   it('schweigt über fehlende Zahlungen, wenn es auch kein Soll gibt', () => {
     // Ein Jahr ohne Mietverhältnis ist kein Versäumnis. Ohne diese Bedingung bekäme jeder, der
     // ein künftiges Jahr aufschlägt, eine Ermahnung für etwas, das es nicht gibt.
     const hints = taxHints(report({ paidCents: 0, sollCents: 0, tenanciesWithSoll: 0, tenanciesWithoutPayment: 0 }), 'ist')
-    expect(hints).not.toContain('noPaymentsRecorded')
-    expect(hints).not.toContain('paymentsIncomplete')
+    expect(hints).not.toContain('paymentsMissing')
   })
 
   it('nennt den Vorbehalt zum Jahreswechsel auf der Ist-Grundlage', () => {
