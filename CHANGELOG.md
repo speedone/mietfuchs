@@ -92,7 +92,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ist.** Bisher gab es einen Hinweis nur, wenn im ganzen Jahr gar nichts erfasst war. Sind die
   Eingänge für einen Mieter gepflegt und für einen zweiten nicht, sieht die Summe vollständig aus,
   ist aber zu niedrig, und diese Zahl geht in die Anlage V. Jetzt steht dabei, für wie viele von
-  wie vielen Mietverhältnissen etwas fehlt.
+  wie vielen Mietverhältnissen etwas fehlt. Die Zeile „davon tatsächlich eingegangen" heißt
+  außerdem nicht mehr „davon": Eine Zahlung kann zu einem Mietverhältnis gehören, das im Jahr gar
+  keine Zeile im Mietkonto hat, und ist dann kein Teil des Solls.
   ([#70](https://github.com/speedone/mietfuchs/issues/70))
 
 - **Die Steuerübersicht rechnet jetzt von sich aus mit dem, was tatsächlich eingegangen ist.**
@@ -106,12 +108,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#70](https://github.com/speedone/mietfuchs/issues/70))
 
 - **Abrechnung und Steuerübersicht erklären jetzt, warum sie bei den Vorauszahlungen verschiedene
-  Zahlen nennen.** Haben Sie für ein Jahr die tatsächlich gezahlten Vorauszahlungen von Hand
-  korrigiert, rechnet die Abrechnung mit dieser Korrektur, denn sie muss es: Dort sind die
-  tatsächlich geleisteten Vorauszahlungen einzustellen. Die Steuerübersicht führt daneben das
-  vereinbarte Soll. Beide Zahlen sind richtig, sie beantworten verschiedene Fragen, aber sie
-  standen unkommentiert nebeneinander, und wer sie verglich, musste eine davon für falsch
-  halten. Jetzt steht die Zahl der Abrechnung mit einem Satz dabei. Ebenso erklärt das Mietkonto
+  Zahlen nennen.** Die Abrechnung setzt die tatsächlich geleisteten Vorauszahlungen an, denn sie
+  muss es, und sie verteilt nur über Wohnungen, die zur Abrechnungseinheit gehören. Die
+  Steuerübersicht führt daneben das vereinbarte Soll über alle Mietverhältnisse. Beide Zahlen sind
+  richtig, sie beantworten verschiedene Fragen, aber sie standen unkommentiert nebeneinander, und
+  wer sie verglich, musste eine davon für falsch halten. Jetzt steht die Zahl der Abrechnung mit
+  einem Satz dabei, sobald sich die beiden unterscheiden. Ist die Abrechnung des Jahres
+  abgeschlossen, gilt die Zahl, die auf dem zugestellten Papier steht. Ebenso erklärt das Mietkonto
   einen offenen Dezember: Eine Miete zählt zu dem Jahr, in dem sie eingegangen ist, und geht die
   Dezembermiete erst im Januar ein, erscheint sie im Mietkonto des Folgejahres.
   ([#70](https://github.com/speedone/mietfuchs/issues/70))

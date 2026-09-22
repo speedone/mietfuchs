@@ -234,7 +234,8 @@ export type FrozenSettlement = { id: string, year: number, settlement: unknown }
 
 // **Der eingefrorene Berechnungsstand muss wortgleich zurückkommen.** Er ist das, was dem
 // Mieter zugestellt wurde, und lässt sich nicht noch einmal ausrechnen. Die vier Rechnungen
-// oben lesen daraus nur den Eigenanteil; alles andere fiele dort also nicht auf, und ein
+// oben lesen daraus nur den Eigenanteil und die Vorauszahlungen der Statements (#70); alles
+// andere fiele dort also nicht auf, und ein
 // verstümmeltes Archivstück bemerkte erst der Vermieter, wenn er Jahre später die alte
 // Abrechnung öffnet.
 export function frozenDifference(before: FrozenSettlement[], after: FrozenSettlement[]): Deviation | null {

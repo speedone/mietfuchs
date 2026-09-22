@@ -82,10 +82,11 @@ export type SnapshotReading = Pick<Reading, 'meterId' | 'date' | 'value' | 'repl
 // Monate, ohne die einzelne Zahlung auszuweisen.
 export type SnapshotPayment = Pick<Payment, 'tenancyId' | 'date' | 'amountCents'>
 
-// Die abgeschlossene (eingefrorene) Abrechnung des Jahres, eingedampft auf die eine Zahl, die
-// die Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen. Ihn nimmt die
-// Steuerübersicht von dort, damit sie nicht von der versendeten Abrechnung abweicht. `null`
-// heißt, das Jahr ist nicht abgeschlossen; dann rechnet die Steuerübersicht selbst.
+// Die abgeschlossene (eingefrorene) Abrechnung des Jahres, eingedampft auf das, was die
+// Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen und die Vorauszahlungen,
+// die auf dem zugestellten Papier standen. Beides nimmt die Steuerübersicht von dort, damit sie
+// nicht von der versendeten Abrechnung abweicht. `null` heißt, das Jahr ist nicht abgeschlossen;
+// dann rechnet die Steuerübersicht selbst.
 export type SnapshotClosedSettlement = {
   selfUsedShareCents: number
   // Was die zugestellte Abrechnung bei den Vorauszahlungen ansetzte (#70). Dieselbe Begründung
@@ -94,6 +95,40 @@ export type SnapshotClosedSettlement = {
   // ergäben.
   prepaymentCents: number
   prepaymentOverridden: boolean
+}
+
+// **Der eine Auszug aus einem eingefrorenen Berechnungsstand**, und zwar für beide Wege: die
+// JSON-Datei unten und die Datenbank (`readClosedSettlements` in db/read.ts). Er nimmt `unknown`
+// und nicht `Settlement`, denn ein Archivstück hat eine frühere Version geschrieben, und ein Typ
+// darüber wäre eine Behauptung über etwas, für das niemand mehr geradesteht.
+//
+// **Dass er nur einmal dasteht, ist der Punkt.** Vorher zog die Datei ihre Felder mit
+// `?? 0` und `?? []` heraus und die Datenbank mit geprüften Schritten. Bei sauberen Daten kam
+// dasselbe heraus, bei krummen nicht: `statements` als Objekt statt als Liste warf auf dem einen
+// Weg und ergab auf dem anderen 0. Zwei Leser desselben Archivstücks, die sich uneinig sind,
+// sind genau die Sorte Unterschied, die beim Umstieg als „Abrechnung weicht ab" auffällt und
+// dann niemand erklären kann.
+//
+// Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur". Das ist die richtige Antwort und keine
+// Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
+// Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false }
+  if (settlement === null || typeof settlement !== 'object') return leer
+  const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
+  const statements: unknown = Reflect.get(settlement, 'statements')
+  const auszug = {
+    ...leer,
+    selfUsedShareCents: typeof eigenanteil === 'number' ? eigenanteil : 0,
+  }
+  if (!Array.isArray(statements)) return auszug
+  for (const statement of statements) {
+    if (statement === null || typeof statement !== 'object') continue
+    const betrag: unknown = Reflect.get(statement, 'prepaymentCents')
+    if (typeof betrag === 'number') auszug.prepaymentCents += betrag
+    if (Reflect.get(statement, 'prepaymentOverridden') === true) auszug.prepaymentOverridden = true
+  }
+  return auszug
 }
 
 export type Snapshot = {
@@ -126,7 +161,7 @@ export type SnapshotSource = {
   meters: SnapshotMeter[]
   readings: SnapshotReading[]
   payments: SnapshotPayment[]
-  // Alle Jahre, jedes eingedampft auf die eine Zahl, die die Berechnung daraus liest.
+  // Alle Jahre, jedes eingedampft auf das, was die Berechnung daraus liest.
   closedSettlements: (SnapshotClosedSettlement & { year: number })[]
 }
 
@@ -189,18 +224,11 @@ export function snapshotFromDb(db: Db, year: number): Snapshot {
       meters: db.meters,
       readings: db.readings,
       payments: db.payments,
-      // Ein Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch nicht. Der Rückfall auf 0
-      // stand bisher in der Steuerübersicht; er gehört hierher, weil er die Gestalt alter
-      // gespeicherter Daten betrifft. Auch hier kein `?? []` um die Sammlung selbst: Ist sie
-      // `null`, soll es krachen, und `map` tut genau das.
+      // Der Auszug steht in `frozenSettlementOf` und gilt für beide Wege; die Begründung dort.
+      // Kein `?? []` um die Sammlung selbst: Ist sie `null`, soll es krachen, und `map` tut das.
       closedSettlements: db.closedSettlements.map((c) => ({
         year: c.year,
-        selfUsedShareCents: c.settlement?.selfUsedShareCents ?? 0,
-        // Dieselbe Behandlung alter Stände: Fehlen die Statements, ist die Summe 0 und es gilt
-        // keine Jahreskorrektur. Das ist die richtige Antwort und keine Notlösung — was nicht
-        // auf dem Papier stand, hat der Mieter auch nicht bekommen.
-        prepaymentCents: (c.settlement?.statements ?? []).reduce((a, st) => a + st.prepaymentCents, 0),
-        prepaymentOverridden: (c.settlement?.statements ?? []).some((st) => st.prepaymentOverridden),
+        ...frozenSettlementOf(c.settlement),
       })),
     },
     year,
