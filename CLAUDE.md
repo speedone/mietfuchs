@@ -716,6 +716,17 @@ die ganze fachliche Komplexität:
 - **Zähler**: Ablesungen → Verbrauchssegmente (`meterSegments`), tagesanteilig interpoliert
   (`consumptionInPeriod`). Zählerwechsel über `replacement: true` + `oldEndValue`. Negativer
   Verbrauch erzeugt eine Warnung.
+  **Zwei Ablesungen am selben Tag ebenso** (#69), und zwar statt der über negativen Verbrauch:
+  Ein Segment entsteht nur bei mindestens einem Tag Abstand, sonst müsste durch null geteilt
+  werden, und die Differenz fiel bisher wortlos heraus. Sie wird **nicht** verteilt, und das ist
+  eine Entscheidung mit Begründung: Zwei gewöhnliche Ablesungen am selben Tag sind fast immer
+  eine Korrektur, und dann wäre die Differenz ein Tippfehler und keine Menge Wasser; beim
+  Zählerwechsel wäre sie Verbrauch über null Tage, also selbst schon ein Widerspruch. Welche der
+  beiden stimmt, weiß nur der Vermieter, und geraten wird in calc.ts nicht.
+  Die Warnungen aus `meterSegments` erscheinen nur auf der Zähler-Seite
+  (über `consumptionOverview`), nicht auf der Abrechnung: `computeSettlement` ruft
+  `consumptionInPeriod` auf und wirft sie damit weg. Das war vorher schon so; sie dorthin zu
+  holen hieße, den Text einer Abrechnung zu ändern, die der Vermieter verschickt.
 - **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
   Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den
