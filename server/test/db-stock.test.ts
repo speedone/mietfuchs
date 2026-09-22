@@ -33,7 +33,7 @@ import { snapshotFromDb, snapshotOf } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { writeStock } from '../src/db/write.ts'
+import { writeStock } from '../src/legacy/write.ts'
 import {
   costItems as costItemsTable, meters as metersTable, payments as paymentsTable,
   readings as readingsTable, tenancies as tenanciesTable, units as unitsTable,
