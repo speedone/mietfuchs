@@ -572,16 +572,29 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const allUnits = snapshot.units
   const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   const selfUsedUnits = allUnits.filter((u) => u.selfUsed && !u.participates)
-  const selfUsedArea = selfUsedUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
-  const selfUsedAreaShare = totalArea > 0 ? selfUsedArea / totalArea : 0
+  // **Ausgegeben werden die Flächen und nicht ihr Verhältnis.** Die Anlage V fragt im Kopf nach
+  // der Gesamtwohnfläche und dem davon eigengenutzten Teil; das sind genau diese beiden Zahlen,
+  // und sie sind nachprüfbar. Ein bloßer Prozentsatz lädt außerdem dazu ein, den Rest für den
+  // abziehbaren Anteil zu halten, und das ist falsch, sobald es Wohnungen außerhalb der
+  // Abrechnungseinheit gibt.
+  const selfUsedAreaM2 = selfUsedUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
   const selfOccupiedExists = selfUsedUnits.length > 0
   // **Wohnungen, die Mietfuchs nicht einordnen kann**, und deshalb ein eigener Hinweis statt
-  // Schweigen. Zwei ganz verschiedene Bestände sehen hier gleich aus: die ausdrücklich
-  // ausgenommene Gewerbeeinheit und die eigene Wohnung aus einem Bestand von vor der
-  // dreiwertigen Unterscheidung, den `load()` bewusst nicht migriert (ein gesetztes Kennzeichen
-  // veränderte die Verteilung bereits abgerechneter Jahre). Beide tragen `participates: false`
-  // ohne `selfUsed`. Ohne diesen Hinweis nähme die Behebung ausgerechnet dem die Hilfe weg, der
-  // sie braucht, nämlich dem Vermieter mit altem Bestand und eigener Wohnung im Haus.
+  // Schweigen. Zwei verschiedene Bestände fallen hier zusammen: die ausdrücklich ausgenommene
+  // Gewerbeeinheit und die eigene Wohnung aus einem Bestand von vor der dreiwertigen
+  // Unterscheidung, den die Migration in legacy/migrate.ts bewusst nicht anfasst (ein gesetztes
+  // Kennzeichen veränderte die Verteilung bereits abgerechneter Jahre). Ohne diesen Hinweis
+  // nähme die Behebung ausgerechnet dem die Hilfe weg, der sie braucht, nämlich dem Vermieter
+  // mit altem Bestand und eigener Wohnung im Haus.
+  //
+  // **Dass beide zusammenfallen, ist eine Wahl und keine Eigenschaft der Daten.** Sie lassen
+  // sich sehr wohl unterscheiden: Die Stammdaten schreiben beide Kennzeichen immer gemeinsam
+  // (`unitForm.ts`), „ausgenommen" ergibt also ausdrücklich `selfUsed: false`, während ein alter
+  // Bestand das Feld gar nicht führt. Darauf eine Steuerauskunft zu stützen wäre aber brüchig:
+  // `emptyUnit` in db/repository.ts kennt das Feld nicht, und ein `POST /api/units` ohne das
+  // Feld liefert ebenfalls `undefined`. „Nicht gesetzt heißt nie eingeordnet" ist heute nirgends
+  // zugesichert, und ohne Zusicherung samt Test ist es keine Grundlage. Wer das ändern will,
+  // fängt bei der Zusicherung an, nicht hier.
   const excludedExists = allUnits.some((u) => !u.participates && !u.selfUsed)
   // Auf selbstgenutzte Wohnungen entfallender Teil der Kosten, aus der Verteilung des Jahres
   // übernommen: privat veranlasst und damit nicht als Werbungskosten abziehbar. Die
@@ -605,7 +618,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, labor35aCents },
-    selfUsedAreaShare,
+    totalAreaM2: totalArea,
+    selfUsedAreaM2,
     selfOccupiedExists,
     excludedExists,
     selfUsedShareCents,

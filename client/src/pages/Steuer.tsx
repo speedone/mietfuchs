@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxReport } from '../types'
-import { api, fmtEuro } from '../api'
+import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
 import PageHeader from '../components/PageHeader'
 import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
@@ -33,7 +33,11 @@ export default function Steuer({ settings }: Props) {
 
   const incomeCents = data ? incomeCentsFor(data, basis) : 0
   const surplusCents = data ? surplusCentsFor(data, basis) : 0
-  const sharePct = data ? Math.round(data.selfUsedAreaShare * 1000) / 10 : 0
+  // `null`, solange keine Fläche erfasst ist: Ein Prozentsatz von 0 wäre dort eine Aussage
+  // über etwas, das niemand eingetragen hat.
+  const sharePct = data && data.totalAreaM2 > 0
+    ? Math.round((data.selfUsedAreaM2 / data.totalAreaM2) * 1000) / 10
+    : null
   const hints = data ? taxHints(data, basis) : []
   const note = data ? prepaymentNote(data) : null
 
@@ -240,21 +244,54 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
 
+            {/* **Hinweis statt Automatik**, und zwar bewusst. Die Zuordnung hängt an der
+                vertraglichen Fälligkeit des einzelnen Mietverhältnisses, und der BFH verlangt,
+                dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
+                die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
+                Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
+                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude.
+                **Das Beispiel ist bewusst die Januarmiete und nicht die Dezembermiete.** Die
+                Dezembermiete ist nach § 556b Abs. 1 BGB im Dezember fällig; geht sie im Januar
+                ein, liegt die Fälligkeit weit außerhalb des kurzen Zeitraums, und die Regel
+                greift gerade nicht. Der häufige und für Mietfuchs ungünstige Fall ist der
+                umgekehrte: der Dauerauftrag, der die Januarmiete Ende Dezember bucht. Dort liegen
+                Fälligkeit und Zahlung beide im Zeitraum, und die Einnahme des alten Jahres ist zu
+                hoch. */}
+            {hints.includes('turnOfYear') && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr
+                ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
+                eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
+                oder nach dem Jahreswechsel und sind sie in dieser Zeit auch fällig, gehören sie in das
+                Jahr, zu dem sie wirtschaftlich zählen (§ 11 Abs. 1 Satz 2 EStG). Am häufigsten trifft
+                das die Januarmiete, die ein Dauerauftrag schon Ende Dezember bucht: Sie gehört ins
+                neue Jahr, steht hier aber im alten. Mietfuchs entscheidet das nicht selbst.
+              </p>
+            )}
+
             {/* **Zwei verschiedene Lagen, zwei verschiedene Sätze** (#68). Vorher gab es nur
-                einen, und er fragte `!participates`; damit schlug eine ausdrücklich ausgenommene
-                Wohnung als Eigennutzung durch, und der Vermieter sollte einen privaten Anteil
-                herausrechnen, den es nicht gibt. */}
+                einen, und er fragte das zweiwertige „nicht vermietet" ab; damit schlug eine
+                ausdrücklich ausgenommene Wohnung als Eigennutzung durch, und der Vermieter sollte
+                einen privaten Anteil herausrechnen, den es nicht gibt.
+                **Genannt werden Quadratmeter und nicht nur ein Prozentsatz.** Genau diese beiden
+                Zahlen fragt die Anlage V im Kopf ab, und ein bloßer Prozentsatz lädt dazu ein, den
+                Rest für den abziehbaren Anteil zu halten. Das stimmt nur, solange es keine
+                Wohnungen außerhalb der Abrechnungseinheit gibt; deshalb steht der Vorbehalt
+                daneben, sobald es sie gibt. */}
             {data.selfOccupiedExists && (
               <div className="notice" style={{ marginTop: 14 }}>
-                <strong>Gemischt genutztes Gebäude.</strong> <strong>{sharePct.toLocaleString('de-DE')} %</strong>{' '}
-                der Fläche sind selbstgenutzt und damit privat. Werbungskosten, die das gesamte Gebäude
-                betreffen, sind nur anteilig (nach Fläche) abziehbar; der auf die selbstgenutzte Wohnung
-                entfallende Teil ist es nicht.
+                <strong>Gemischt genutztes Gebäude.</strong> Von {fmtArea(data.totalAreaM2)} Gesamtfläche
+                sind <strong>{fmtArea(data.selfUsedAreaM2)}</strong> selbstgenutzt und damit privat
+                {sharePct !== null && <> ({sharePct.toLocaleString('de-DE')} %)</>}.
+                Werbungskosten, die das gesamte Gebäude betreffen, sind nur anteilig nach Fläche
+                abziehbar; der auf selbstgenutzte Wohnungen entfallende Teil ist privat.
                 {data.selfUsedShareCents > 0 && (
                   <>
                     {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
                     auf selbstgenutzte Wohnungen — dieser Teil ist in den oben ausgewiesenen Werbungskosten
-                    noch enthalten.
+                    noch enthalten. Die Verteilung rechnet dabei über die Wohnungen der Abrechnungseinheit
+                    und nicht über das ganze Gebäude; der Betrag entspricht also nicht unbedingt dem
+                    Flächenanteil daneben.
                   </>
                 )}{' '}
                 Bitte den abziehbaren Anteil mit dem Steuerberater abstimmen — diese Übersicht nimmt die
@@ -262,26 +299,39 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
 
-            {/* Der dritte Zustand, den es vorher nicht gab. Hier stehen zwei ganz verschiedene
-                Bestände nebeneinander, und Mietfuchs kann sie nicht unterscheiden: die getrennt
-                abgerechnete Gewerbeeinheit und die eigene Wohnung aus einem alten Bestand. Der
-                Satz fragt deshalb, statt zu behaupten. */}
+            {/* Der dritte Zustand, den es vorher nicht gab. Hier fallen zwei verschiedene Bestände
+                zusammen, und Mietfuchs unterscheidet sie bewusst nicht (die Begründung steht in
+                calc.ts): die getrennt abgerechnete Gewerbeeinheit und die eigene Wohnung aus einem
+                alten Bestand. Der Satz fragt deshalb, statt zu behaupten. */}
             {data.excludedExists && (
               <div className="notice" style={{ marginTop: 14 }}>
                 <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Sie sind weder als vermietet
                 noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie sie steuerlich
                 zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
                 <em> Eigennutzung</em>; dann beziffert diese Übersicht den privaten Anteil. Sind sie getrennt
-                vermietet, etwa eine Gewerbeeinheit mit eigener Abrechnung, betrifft Sie das hier nicht.
+                vermietet, etwa eine Gewerbeeinheit mit eigener Abrechnung, dann stehen ihre Einnahmen hier
+                nur, wenn Sie das Mietverhältnis in Mietfuchs erfasst haben.
+                {data.selfOccupiedExists && (
+                  <>
+                    {' '}Solange diese Wohnungen nicht eingeordnet sind, ist der Rest des Flächenanteils
+                    oben <strong>nicht</strong> einfach der abziehbare Teil.
+                  </>
+                )}
               </div>
             )}
 
-            {/* Der Unterschied, den das Issue in die Oberfläche verlangt hat. */}
-            {(data.selfOccupiedExists || data.excludedExists) && (
+            {/* Der Unterschied, den das Issue in die Oberfläche verlangt hat, und er hängt allein
+                an den ausgenommenen Wohnungen. Ohne sie ist die Verteilbasis der Abrechnung
+                (vermietet oder selbstgenutzt) genau das ganze Gebäude, die beiden Anteile können
+                dann gar nicht auseinandergehen. Das ist der Regelfall des Zielbilds, und ein
+                Absatz, der dort einen Unterschied erklärt, den es nicht gibt, ist schlechter als
+                keiner. Damit bleibt die Bedingung eine reine Durchreichung vom Server und trägt
+                keine eigene Aussage; sie gehört deshalb nicht nach taxView.ts. */}
+            {data.excludedExists && (
               <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
                 Der Flächenanteil hier rechnet über das <strong>ganze Gebäude</strong>. Die Abrechnung
                 desselben Jahres verteilt dagegen nur über die Wohnungen, die zur Abrechnungseinheit
-                gehören. Die beiden Anteile können deshalb auseinandergehen, und beide sind richtig: Die
+                gehören. Die beiden Anteile gehen deshalb auseinander, und beide sind richtig: Die
                 Abrechnung beantwortet, wer sich eine Rechnung teilt, diese Übersicht, wie viel Ihres
                 Gebäudes privat genutzt wird.
               </p>
