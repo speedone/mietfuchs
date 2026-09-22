@@ -352,7 +352,37 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
   const sollCents = ledger.totals.sollYearCents
-  const paidCents = ledger.totals.paidYearCents
+
+  // **Zugeflossen ist, was da ist, und nicht, was eine Zeile hat** (§ 11 Abs. 1 Satz 1 EStG).
+  // Deshalb wird hier nach Datum summiert und nicht `ledger.totals.paidYearCents` genommen.
+  // Das Mietkonto bildet Zeilen nur für Mietverhältnisse mit Überlappung im Jahr und zählt
+  // Zahlungen nur innerhalb dieser Zeilen; zwei gewöhnliche Fälle fielen dadurch aus **beiden**
+  // Jahren heraus. Ein Mietverhältnis endet am 31.12. und die Dezembermiete geht am 5. Januar
+  // ein: im alten Jahr liegt die Zahlung außerhalb, im neuen gibt es keine Zeile mehr. Oder ein
+  // Mietverhältnis beginnt am 1. Januar und der Dauerauftrag bucht am 30. Dezember.
+  //
+  // Für das Mietkonto ist seine Zeilenbindung richtig: Es beantwortet, bis zu welchem Monat ein
+  // laufendes Mietverhältnis gedeckt ist, und dafür ist eine Zahlung ohne Zeile kein Beitrag.
+  // Für die Steuerübersicht ist sie falsch, seit das Zugeflossene die maßgebliche Zahl ist.
+  const paidCents = snapshot.payments
+    .filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`)
+    .reduce((a, p) => a + p.amountCents, 0)
+
+  // Mietverhältnisse des Jahres mit Soll, und wie viele davon ohne jede Zahlung dastehen. Nicht
+  // für eine Rechnung, sondern für den Hinweis: Sind für einen Mieter Zahlungen erfasst und für
+  // einen zweiten nicht, ist die Summe größer als null, und eine zu niedrige Einnahme ginge
+  // ohne Vorbehalt in die Anlage V.
+  //
+  // Gezählt wird, für welches Mietverhältnis **überhaupt keine** Zahlung erfasst ist, und nicht,
+  // wessen Summe null ergibt. Heben sich im Jahr ein Eingang und eine Rücklastschrift auf, ist
+  // die Summe null, erfasst ist aber sehr wohl etwas, und der Satz „keine Zahlung erfasst" wäre
+  // dann schlicht falsch.
+  const paidTenancies = new Set(
+    snapshot.payments.filter((p) => p.date >= `${year}-01-01` && p.date <= `${year}-12-31`).map((p) => p.tenancyId),
+  )
+  const withSoll = ledger.rows.filter((r) => r.sollYearCents > 0)
+  const tenanciesWithSoll = withSoll.length
+  const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
   // werden ihr **entnommen** statt neu hergeleitet: Eine zweite Auslegung der Staffel oder eine
@@ -361,23 +391,26 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // Genau das ist der Befund aus #70.
   const settlement = computeSettlement(snapshot)
 
-  // Was die Abrechnung bei den Vorauszahlungen ansetzt. Das ist nicht `prepaymentSollCents`,
-  // sobald eine Jahreskorrektur erfasst ist, und der Unterschied ist gewollt: Die Abrechnung
-  // muss die tatsächlich geleisteten Vorauszahlungen einstellen, sonst ist sie materiell falsch
-  // und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr.
-  // Das Mietkonto dagegen führt das monatliche Soll, denn eine Jahreszahl auf zwölf Monate zu
-  // verteilen wäre erfunden und zerstörte seine Aussage, bis zu welchem Monat es gedeckt ist.
-  // Beide Zahlen sind also richtig, und deshalb stehen jetzt beide da.
+  // Was die Abrechnung bei den Vorauszahlungen ansetzt, und **bei abgeschlossener Abrechnung
+  // ihr eingefrorener Stand**, genau wie beim Eigenanteil weiter unten. Die Zahl steht in der
+  // Oberfläche als die, die auf der Abrechnung steht; ist sie abgeschlossen, steht dort der
+  // eingefrorene Stand, und zwar beim Mieter im Briefkasten. Der lebende nennte eine Zahl, die
+  // auf keinem zugestellten Papier steht — genau der Widerspruch, gegen den #70 antritt.
   //
-  // **Genommen wird der lebende Stand, auch wenn die Abrechnung abgeschlossen ist**, anders als
-  // beim Eigenanteil weiter unten. Der Eigenanteil ist ein Ergebnis der Verteilung und ändert
-  // sich mit jeder Kostenposition; er muss deshalb eingefroren sein, sonst widerspräche die
-  // Übersicht der zugestellten Abrechnung. Die Vorauszahlung hier beantwortet eine andere
-  // Frage, nämlich was die erfassten Daten heute ergeben — und wer nach dem Abschließen die
-  // Jahreskorrektur ändert, hat einen Widerspruch zwischen Daten und Archivstück, den die
-  // Abrechnungsseite zeigt und nicht diese.
-  const prepaymentSettlementCents = settlement.statements.reduce((a, st) => a + st.prepaymentCents, 0)
-  const prepaymentOverridden = settlement.statements.some((st) => st.prepaymentOverridden)
+  // Dass sie von `prepaymentSollCents` abweicht, ist gewollt und hat zwei Gründe. Die Abrechnung
+  // muss die tatsächlich geleisteten Vorauszahlungen einstellen, sonst ist sie materiell falsch
+  // und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr. Und
+  // sie verteilt nur über Wohnungen, die zur Abrechnungseinheit gehören, während das Mietkonto
+  // jedes Mietverhältnis führt. Das Mietkonto wiederum darf die Jahreskorrektur nicht übernehmen,
+  // denn eine Jahreszahl auf zwölf Monate zu verteilen wäre erfunden. Alle drei Zahlen sind
+  // richtig, und deshalb stehen sie jetzt nebeneinander statt jede für sich.
+  const frozen = snapshot.closedSettlement
+  const prepaymentSettlementCents = frozen
+    ? frozen.prepaymentCents
+    : settlement.statements.reduce((a, st) => a + st.prepaymentCents, 0)
+  const prepaymentOverridden = frozen
+    ? frozen.prepaymentOverridden
+    : settlement.statements.some((st) => st.prepaymentOverridden)
 
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren. Der Filter ist
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
@@ -439,6 +472,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       prepaymentOverridden,
       sollCents,
       paidCents,
+      tenanciesWithSoll,
+      tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, labor35aCents },
     rentedAreaShare,
