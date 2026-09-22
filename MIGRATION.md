@@ -3,9 +3,10 @@
 Diese Anleitung ist für Sie, wenn Sie Mietfuchs schon einmal benutzt haben und Ihre Daten in die
 aktuelle Version bekommen wollen. Sie brauchen dafür keine technischen Kenntnisse.
 
-Seit Version 0.8 liegen die Daten in einer Datenbank (`mietfuchs.sqlite`) statt in der Datei
-`db.json`. **Sie müssen dafür nichts tun.** Beim ersten Start wandern vorhandene Daten von selbst
-hinüber, und Mietfuchs sagt Ihnen in der Oberfläche, dass es passiert ist.
+Bis einschließlich Version 0.7.1 lagen Ihre Daten in einer Datei namens `db.json`. Seitdem liegen
+sie in einer Datenbank, der Datei `mietfuchs.sqlite` im selben Ordner. **Sie müssen dafür nichts
+tun.** Beim ersten Start wandern vorhandene Daten von selbst hinüber, und Mietfuchs sagt Ihnen in
+der Oberfläche, dass es passiert ist.
 
 Bevor der Umzug gilt, rechnet Mietfuchs Abrechnung, Verbrauchsübersicht, Mietkonto und
 Steuerübersicht für jedes Jahr, in dem etwas erfasst ist, aus beiden Beständen nach und
@@ -51,11 +52,12 @@ derselben centgenauen Nachrechnung wie oben.
 Zwei Dinge, die Sie wissen sollten. Wiederherstellen erwartet das **Archiv**, also die ZIP-Datei,
 und keine einzelne Datei. Das hat sich nicht geändert: Mietfuchs nimmt hier seit jeher ein ZIP.
 Gelockert wurde die Anforderung sogar, denn früher musste eine `db.json` darin sein, heute genügt
-eines von beidem. Und Ihr bisheriger Stand wird vorher beiseitegelegt, als `db.json.vor-restore`
-und `mietfuchs.sqlite.vor-restore`, falls Sie sich vertan haben.
+eines von beidem. Und Ihr bisheriger Stand wird vorher beiseitegelegt, als
+`mietfuchs.sqlite.vor-restore`, falls Sie sich vertan haben.
 
 Passt am Archiv etwas nicht, lehnt Mietfuchs es ab, **bevor** irgendetwas ersetzt ist, und nennt
-jede Beanstandung mit Stelle und Grund. Ihre bisherigen Daten sind dann unverändert.
+die Beanstandungen einzeln mit Stelle und Grund; sind es viele, die ersten fünf und die Zahl der
+übrigen. Ihre bisherigen Daten sind dann unverändert.
 
 ---
 
@@ -63,13 +65,23 @@ jede Beanstandung mit Stelle und Grund. Ihre bisherigen Daten sind dann unverän
 
 Zum Beispiel, weil Sie damals nur diese eine Datei gesichert haben.
 
-1. Finden Sie den Datenordner der neuen Version (siehe unten).
-2. Legen Sie die Datei dort hinein. Sie muss genau `db.json` heißen.
-3. Haben Sie auch Belege, legen Sie diese in einen Unterordner `uploads` daneben.
-4. Starten Sie Mietfuchs.
+**Packen Sie die Datei in ein ZIP-Archiv und stellen Sie dieses wieder her**, wie im Abschnitt
+davor beschrieben. Unter Windows genügt dafür ein Rechtsklick auf die Datei und der Eintrag zum
+Komprimieren, je nach Windows-Fassung *Senden an* oder *Komprimieren zu*; unter macOS heißt er
+*Komprimieren*. Haben Sie auch noch Ihre Belege, legen Sie diese vorher in einen Ordner namens
+`uploads` neben die Datei und packen beides zusammen ein.
 
-Der Umzug läuft dann genauso wie oben. Auch sehr alte Dateien gehen: Formate aus der Zeit vor der
-Vorauszahlungs-Staffel und vor den KI-Einstellungen werden beim Übernehmen mitgezogen.
+Naheliegender wirkt es, die Datei einfach in den Datenordner zu legen und Mietfuchs zu starten,
+und **auf einer frischen Installation geht das auch**. Der Umweg über das Archiv ist trotzdem der
+bessere, weil der direkte Weg still danebengeht, sobald in der neuen Version schon einmal etwas
+gespeichert wurde. Dafür genügt wenig: Beim allerersten Start fragt Mietfuchs im Cockpit, ob es
+nach Updates sehen darf, und beide Antworten werden gespeichert. Steht in der Datenbank erst
+einmal etwas, rührt Mietfuchs sie nicht mehr an, denn ein zweiter Umzug wäre ein Überschreiben
+dessen, was schon dasteht. Sie sähen dann ein leeres Haus. Verloren ist auch in diesem Fall
+nichts, Ihre Datei liegt unberührt im Ordner, und der Weg über das Archiv holt sie herein.
+
+Auch sehr alte Dateien gehen: Formate aus der Zeit vor der Vorauszahlungs-Staffel und vor den
+KI-Einstellungen werden beim Übernehmen mitgezogen.
 
 ---
 
@@ -93,15 +105,16 @@ Falls Sie doch selbst suchen wollen, hängt der Ort davon ab, wie Sie Mietfuchs 
 | --- | --- |
 | Programmdatei per Doppelklick | Ordner `data` **neben** der Programmdatei |
 | Aus einem Linux-Paket (deb, rpm, Arch) | `~/.local/share/mietfuchs` |
-| Programmdatei unter Windows aus `Programme` | `%LOCALAPPDATA%\Mietfuchs` |
+| Programmdatei unter Windows aus `Program Files` | `%LOCALAPPDATA%\Mietfuchs` |
 | Programmdatei unter macOS aus `/Applications` | `~/Library/Application Support/Mietfuchs` |
 | Aus dem Quellcode (`npm start`) | `server/data` im Projektordner |
 | Als Docker-Container | im eingebundenen Datenträger, im Container `/app/server/data` |
 
-Aus einem Paket oder einem Systemordner heraus kann Mietfuchs nicht neben sich schreiben, deshalb
-liegen die Daten dann in Ihrem Benutzerordner. Das ist Absicht: Sonst landeten sie bei einem Start
-mit Administratorrechten an einer Stelle, an der Sie sie als gewöhnlicher Benutzer nicht wieder
-fänden.
+Liegt Mietfuchs an einem Systemort, also in `/usr`, `/opt`, `Program Files` oder `Applications`,
+dann liegen die Daten immer in Ihrem Benutzerordner. Entschieden wird das allein am Ort und nicht
+danach, ob Mietfuchs dort schreiben dürfte. Das ist Absicht: Sonst landeten die Daten bei einem
+Start mit Administratorrechten an einer Stelle, an der Sie sie als gewöhnlicher Benutzer nicht
+wiederfänden.
 
 Mit der Umgebungsvariablen `NKA_DATA_DIR` können Sie jeden anderen Ordner vorgeben. Sie hat
 Vorrang vor allem oben.

@@ -34,7 +34,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ändert sich nichts: weiterhin diesen Ordner kopieren. Bevor der Umzug gilt, rechnet Mietfuchs
   Abrechnung, Verbrauchsübersicht, Mietkonto und Steuerübersicht für jedes Jahr, in dem etwas
   erfasst ist, aus beiden Beständen nach und vergleicht sie auf den Cent. Weicht ein einziger
-  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl.
+  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl. Haben Sie
+  nicht mehr den ganzen Ordner, sondern nur ein Backup-Archiv oder eine lose `db.json` von
+  früher, dann beschreibt [MIGRATION.md](MIGRATION.md) den Weg dafür.
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
 
 - **Nach dem Wiederherstellen gelten sofort die Einstellungen aus dem Backup.** Vorher zeigte
