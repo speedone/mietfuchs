@@ -29,22 +29,37 @@ export type Basis = 'soll' | 'ist'
 // niemand merkt es, bevor sie in der Anlage V steht.
 export const DEFAULT_BASIS: Basis = 'ist'
 
-export type TaxHint =
-  // Es ist das Soll angesetzt, und das ist keine steuerliche Grundlage.
-  | 'sollIsNotTaxBasis'
-  // Auf Ist-Basis, und für mindestens ein Mietverhältnis mit Soll ist im Jahr **überhaupt keine**
-  // Zahlung erfasst. Die angesetzte Einnahme ist dann zu niedrig, und das sieht man ihr nicht an.
-  //
-  // **Ein Hinweis für beide Stärken des Falls, und das ist eine Korrektur.** Vorher gab es zwei,
-  // und der für „gar nichts erfasst" behauptete dazu „Deshalb stehen hier 0 €". Das stimmt seit
-  // der Umstellung nicht mehr: Eine Zahlung, die zu keiner Zeile des Jahres gehört, zählt in
-  // `paidCents`, aber zu keinem Mietverhältnis der Liste. Gemessen stand der Satz neben
-  // angesetzten Einnahmen von 800 €, und zwar auch im Ausdruck. Wie viele Mietverhältnisse
-  // betroffen sind, sagt die Seite aus den beiden Zahlen; das ist dieselbe Auskunft ohne die
-  // falsche Ursache.
-  | 'paymentsMissing'
-  // Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas bedeutet.
-  | 'turnOfYear'
+// **Die Liste steht als Wert da und der Typ leitet sich daraus ab**, nicht umgekehrt. Ein
+// Vereinigungstyp allein verschwindet beim Übersetzen, und dann kann kein Test über alle
+// Hinweise laufen. Genau so ist einer von ihnen schon einmal aus der Seite verschwunden, ohne
+// dass etwas rot wurde: Die Logik war geprüft, die Darstellung nicht. Der Komponententest in
+// pages/Steuer.test.tsx geht diese Liste durch und verlangt für jeden Eintrag eine Lage, in der
+// er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
+// nicht einträgt.
+export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear'] as const
+
+export type TaxHint = (typeof TAX_HINTS)[number]
+
+// Was die drei bedeuten:
+//
+//   `sollIsNotTaxBasis`  Es ist das Soll angesetzt, und das ist keine steuerliche Grundlage.
+//
+//   `paymentsMissing`    Auf Ist-Basis, und für mindestens ein Mietverhältnis mit Soll ist im
+//                        Jahr **überhaupt keine** Zahlung erfasst. Die angesetzte Einnahme ist
+//                        dann zu niedrig, und das sieht man ihr nicht an.
+//
+//                        **Ein Hinweis für beide Stärken des Falls, und das ist eine
+//                        Korrektur.** Vorher gab es zwei, und der für „gar nichts erfasst"
+//                        behauptete dazu „Deshalb stehen hier 0 €". Das stimmt seit der
+//                        Umstellung nicht mehr: Eine Zahlung, die zu keiner Zeile des Jahres
+//                        gehört, zählt in `paidCents`, aber zu keinem Mietverhältnis der Liste.
+//                        Gemessen stand der Satz neben angesetzten Einnahmen von 800 €, und
+//                        zwar auch im Ausdruck. Wie viele Mietverhältnisse betroffen sind, sagt
+//                        die Seite aus den beiden Zahlen; das ist dieselbe Auskunft ohne die
+//                        falsche Ursache.
+//
+//   `turnOfYear`         Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas
+//                        bedeutet.
 
 export function taxHints(report: TaxReport, basis: Basis): TaxHint[] {
   const hints: TaxHint[] = []

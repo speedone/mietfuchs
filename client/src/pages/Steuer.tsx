@@ -305,9 +305,9 @@ export default function Steuer({ settings }: Props) {
                 alten Bestand. Der Satz fragt deshalb, statt zu behaupten. */}
             {data.excludedExists && (
               <div className="notice" style={{ marginTop: 14 }}>
-                <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Sie sind weder als vermietet
-                noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie sie steuerlich
-                zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
+                <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Diese Wohnungen sind weder
+                als vermietet noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie
+                sie steuerlich zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
                 <em> Eigennutzung</em>; dann beziffert diese Übersicht den privaten Anteil. Sind sie getrennt
                 vermietet, etwa eine Gewerbeeinheit mit eigener Abrechnung, dann stehen ihre Einnahmen hier
                 nur, wenn Sie das Mietverhältnis in Mietfuchs erfasst haben.
@@ -326,12 +326,18 @@ export default function Steuer({ settings }: Props) {
                 dann gar nicht auseinandergehen. Das ist der Regelfall des Zielbilds, und ein
                 Absatz, der dort einen Unterschied erklärt, den es nicht gibt, ist schlechter als
                 keiner. Damit bleibt die Bedingung eine reine Durchreichung vom Server und trägt
-                keine eigene Aussage; sie gehört deshalb nicht nach taxView.ts. */}
-            {data.excludedExists && (
+                keine eigene Aussage; sie gehört deshalb nicht nach taxView.ts.
+                **Und sie verlangt zusätzlich den Kasten darüber.** Der Absatz verweist auf „den
+                Flächenanteil hier", und den zeigt nur jener Kasten. Ohne ihn zeigte er ins Leere
+                und behauptete von zwei nirgends angezeigten Zahlen, dass sie auseinandergehen —
+                ausgerechnet auf der Seite des Vermieters mit altem Bestand, den diese Behebung
+                schützen soll. „Können" statt „gehen", weil eine ausgenommene Wohnung ohne
+                erfasste Fläche beide Grundmengen gleich lässt. */}
+            {data.selfOccupiedExists && data.excludedExists && (
               <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
                 Der Flächenanteil hier rechnet über das <strong>ganze Gebäude</strong>. Die Abrechnung
                 desselben Jahres verteilt dagegen nur über die Wohnungen, die zur Abrechnungseinheit
-                gehören. Die beiden Anteile gehen deshalb auseinander, und beide sind richtig: Die
+                gehören. Die beiden Anteile können deshalb auseinandergehen, und beide sind richtig: Die
                 Abrechnung beantwortet, wer sich eine Rechnung teilt, diese Übersicht, wie viel Ihres
                 Gebäudes privat genutzt wird.
               </p>
