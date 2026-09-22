@@ -19,8 +19,25 @@ import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 // eingefroren ist, steht dem nicht entgegen: Er importiert aus demselben Grund schon
 // `schedule.ts`. Eingefroren ist der **Aufbau der Tabellen**, nicht jeder Helfer.
 import { compareText } from '../calc.ts'
-import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from '../defaults.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
+
+// **Eigene Vorgaben, nicht die von defaults.ts.** Die dortigen sind die einer **neuen**
+// Einrichtung und wandern mit; diese sagen, was aus einem **fehlenden Feld in einer alten Datei**
+// wird, und das ist eine Aussage über damals. Der Unterschied ist nicht theoretisch: Setzte
+// jemand die Voreinstellung `paymentDeadlineDays` von 30 auf 14, bekäme eine db.json, in der das
+// Feld fehlt, beim Umstieg 14 statt 30, und auf der gedruckten Abrechnung stünde eine andere
+// Zahlungsfrist. Die Regression sähe es nicht, weil der Schnappschuss die Einstellungen bewusst
+// nicht führt.
+const V0_OLLAMA_MODEL = 'qwen3.5:4b'
+const V0_SETTINGS: Settings = {
+  houseName: '',
+  address: '',
+  landlordName: '',
+  iban: '',
+  paymentDeadlineDays: 30,
+  ollamaUrl: 'http://localhost:11434',
+  ollamaModel: V0_OLLAMA_MODEL,
+}
 
 // Früherer Standard, den es in der Ollama-Bibliothek nie gab (gemeint war qwen3.6:35b)
 const INVALID_OLD_DEFAULT_MODEL = 'qwen3.6-35b'
@@ -38,7 +55,7 @@ export type LegacyTenancy = Tenancy & { prepaymentMonthlyCents?: number }
 // `DEFAULT_SETTINGS` aus defaults.ts. Beides war einmal dasselbe Objekt, und dann hätte eine
 // geänderte Vorgabe still verändert, was aus einem alten Bestand wird.
 const DEFAULT_DB: Db = {
-  settings: DEFAULT_SETTINGS,
+  settings: V0_SETTINGS,
   units: [],
   tenancies: [],
   costItems: [],
@@ -67,8 +84,8 @@ export function migrateLegacy(stored: Partial<Db> | null): Db {
   }
   // Der frühere Standard existierte nie, wer ihn nicht geändert hat, konnte gar nicht auswerten.
   // Eine eigene Wahl bleibt unangetastet.
-  if (next.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) next.settings.ollamaModel = DEFAULT_OLLAMA_MODEL
-  if (next.settings.ai?.text?.model === INVALID_OLD_DEFAULT_MODEL) next.settings.ai.text.model = DEFAULT_OLLAMA_MODEL
+  if (next.settings.ollamaModel === INVALID_OLD_DEFAULT_MODEL) next.settings.ollamaModel = V0_OLLAMA_MODEL
+  if (next.settings.ai?.text?.model === INVALID_OLD_DEFAULT_MODEL) next.settings.ai.text.model = V0_OLLAMA_MODEL
   // KI-Anbieter (#18): `settings.ai` entsteht aus ollamaUrl und ollamaModel, fehlende Felder
   // werden ergänzt (siehe ai/settings.ts)
   migrateAi(next.settings)
