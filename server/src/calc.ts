@@ -137,6 +137,29 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
   for (let i = 1; i < sorted.length; i++) {
     const r0 = sorted[i - 1]
     const r1 = sorted[i]
+    // **Ein Zählerwechsel ohne Endstand des alten Geräts ist keine Angabe, sondern eine Lücke**
+    // (#83). Er wird mit `replacement` gekennzeichnet, und der letzte Stand des alten Geräts
+    // steht in `oldEndValue`. Fehlt das Feld, las ein `?? 0` es als Null, und aus einem
+    // Zählerstand von 980 wurde ein Segment von minus 980; gemessen ergab das einen
+    // Jahresverbrauch von minus 910. Das ist nicht bloß eine falsche Zahl: Beim
+    // Verbrauchsschlüssel geht sie in die Verteilbasis ein und verschiebt die Anteile aller
+    // Mieter, ohne dass irgendwo etwas auffällt.
+    //
+    // **Gefragt wird nach `null` und nicht nach dem Wert**, denn genau dieses Zusammenwerfen war
+    // der Fehler. Ein ausdrücklich eingetragener Endstand von 0 ist eine Angabe: Der alte Zähler
+    // stand auf null, lief also rückwärts, und dafür gibt es die Meldung weiter unten.
+    //
+    // Verteilt wird nichts, und erfunden erst recht nichts. Wie viel das alte Gerät bis zum
+    // Wechsel verbraucht hat, weiß nur der Vermieter; das neue rechnet ab seinem Startstand
+    // normal weiter. Dieselbe Haltung wie bei zwei Ablesungen am selben Tag (#69).
+    if (r1.replacement === true && r1.oldEndValue == null) {
+      warnings.push(
+        `Zählerwechsel am ${r1.date} ohne Endstand des alten Geräts — der Verbrauch bis zum ` +
+          'Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen.',
+      )
+      continue
+    }
+
     const delta = r1.replacement ? (r1.oldEndValue ?? 0) - r0.value : r1.value - r0.value
     const days = Math.round((toUTC(r1.date) - toUTC(r0.date)) / MS_DAY)
 
