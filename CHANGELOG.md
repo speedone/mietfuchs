@@ -20,7 +20,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   keine Datenbank enthält, wird sie aus den wiederhergestellten Daten neu aufgebaut, und zwar
   mit derselben Nachrechnung wie beim Umzug: Erst wenn Abrechnung, Verbrauchsübersicht,
   Mietkonto und Steuerübersicht auf den Cent dieselben sind, gilt sie. Ihre bisherige Datenbank
-  bleibt dabei als `mietfuchs.sqlite.vor-restore` liegen, wie die `db.json.vor-restore` daneben.
+  bleibt dabei als `mietfuchs.sqlite.vor-restore` liegen; lag daneben noch eine `db.json`, wird
+  auch sie als `db.json.vor-restore` gesichert.
   Ein Archiv aus einer neueren Mietfuchs-Version oder mit beschädigter Datenbank wird abgelehnt,
   bevor irgendetwas ersetzt ist; Ihre bisherigen Daten sind dann unverändert.
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
@@ -34,7 +35,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ändert sich nichts: weiterhin diesen Ordner kopieren. Bevor der Umzug gilt, rechnet Mietfuchs
   Abrechnung, Verbrauchsübersicht, Mietkonto und Steuerübersicht für jedes Jahr, in dem etwas
   erfasst ist, aus beiden Beständen nach und vergleicht sie auf den Cent. Weicht ein einziger
-  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl.
+  ab, wird nichts übernommen, und Sie erfahren, in welchem Jahr und in welcher Zahl. Haben Sie
+  nicht mehr den ganzen Ordner, sondern nur ein Backup-Archiv oder eine lose `db.json` von
+  früher, dann beschreibt [MIGRATION.md](MIGRATION.md) den Weg dafür.
   ([#55](https://github.com/speedone/mietfuchs/issues/55))
 
 - **Nach dem Wiederherstellen gelten sofort die Einstellungen aus dem Backup.** Vorher zeigte

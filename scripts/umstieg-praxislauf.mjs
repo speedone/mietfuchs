@@ -153,6 +153,34 @@ const bestandHeute = () => ({
   ...kern(),
 })
 
+// Ein Bestand, der mit dem Kern nichts gemein hat: eine andere Wohnung, ein anderer Betrag.
+//
+// **Er ist der Vorzustand, wenn ein Fall beweisen soll, dass ein Stand von außen wirklich
+// angekommen ist.** `fachlichePruefung` misst die Zahlen des Kerns, und stünde derselbe Kern
+// schon vorher in der Datenbank, bliebe sie auch dann grün, wenn nichts übernommen wurde. Eine
+// Zusicherung, die vor und nach dem Vorgang dasselbe sagt, prüft nichts. Gemessen an Fall 7:
+// Mit dem Kern als Vorzustand blieben sechs von zehn Zusicherungen grün, obwohl die Datenbank
+// den Stand des Archivs nie zu sehen bekam.
+const bestandAnderesHaus = () => ({
+  settings: { houseName: 'Anderes Haus', address: 'Allee 7', landlordName: 'V. Vermieter', iban: 'DE09 8765', paymentDeadlineDays: 30 },
+  units: [{ id: 'x1', name: 'Dachgeschoss', areaM2: 50, participates: true }],
+  tenancies: [
+    {
+      id: 'xt1', unitId: 'x1', tenantName: 'Lehmann', persons: 1,
+      personHistory: [{ from: '2024-01-01', persons: 1 }],
+      start: '2024-01-01', end: null,
+      prepayments: [{ from: '2024-01', monthlyCents: 9000 }],
+      prepaymentOverrides: {}, baseRents: [{ from: '2024-01', monthlyCents: 51000 }],
+    },
+  ],
+  costItems: [
+    { id: 'xc1', year: 2024, category: 'Gartenpflege', description: 'Heckenschnitt', amountCents: 33300, key: 'area' },
+  ],
+  meters: [], readings: [],
+  payments: [{ id: 'xp1', tenancyId: 'xt1', date: '2024-01-05', amountCents: 60000 }],
+  closedSettlements: [],
+})
+
 // Alles, was der Validator ausdrücklich hinnimmt: fester Monatsbetrag neben leerer Staffel,
 // zwei Staffeleinträge zum selben Stichtag, fehlende Wohnfläche, Direktzuordnung ins Leere,
 // Zähler ohne Wohnung, fehlende Beteiligung.
@@ -344,6 +372,64 @@ async function backupEinspielen(base, zip) {
   return { status: res.status, body: await jsonOf(res) }
 }
 
+fall(7, 'Archive von vor der Datenbank: mit Belegen und mit nichts als der db.json', async () => {
+  // **Das ist das Archiv, das bei den heutigen Nutzern liegt**, und in einem Jahr ist es bei
+  // manchem das Einzige, was noch da ist. Es führt keine `mietfuchs.sqlite`, denn die gab es
+  // damals nicht. Fall 8 hat eine veraltete Datenbank dabei, Fall 9 nur die Datenbank; dieser
+  // hier ist der Fall davor, und er war bis zuletzt ungeprüft — ausgerechnet der, der am
+  // längsten vorkommen wird. MIGRATION.md verweist Nutzer ausdrücklich auf diesen Weg.
+  const archiv = new AdmZip()
+  archiv.addFile('db.json', Buffer.from(JSON.stringify(bestandHeute())))
+  archiv.addFile('uploads/beleg.pdf', Buffer.from('%PDF-1.4 ein Beleg'))
+  const altesZip = archiv.toBuffer()
+
+  // Ein Rechner, auf dem schon gearbeitet wurde: Es gibt eine Datenbank, und der Stand des
+  // Archivs soll sie ersetzen. **Darin steht ein anderes Haus**, damit jede Zusicherung weiter
+  // unten den Unterschied auch sehen kann; die Begründung steht bei `bestandAnderesHaus`.
+  const dataDir = tempDir()
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(bestandAnderesHaus()))
+  await withServer(dataDir, async ({ base }) => {
+    await umstiegGelungen(base, 'Vorbereitung')
+    const vorher = await holen(base, '/api/units')
+    gleich(vorher.map((u) => u.name), ['Dachgeschoss'], 'vorher steht ein anderes Haus in der Datenbank')
+
+    const antwort = await backupEinspielen(base, altesZip)
+    gleich(antwort.status, 200, 'ein Archiv ganz ohne Datenbank wird angenommen')
+    gleich((await holen(base, '/api/settings')).paymentDeadlineDays, 21, 'die Einstellungen kommen mit')
+
+    // Dass die Datenbank aus der wiederhergestellten db.json **neu aufgebaut** wurde und nicht
+    // bloß beiseitegelegt, zeigen die Zahlen weiter unten. Diese Zeile deckt den anderen Ausgang
+    // ab: einen Neuaufbau, der **gelaufen und gescheitert** ist, etwa weil seine centgenaue
+    // Regression nicht aufging. Dann steht `changeover` auf `failed`, die Datenrouten bleiben
+    // gesperrt, und der Vermieter sieht eine Bestätigung, hinter der nichts steht. Gegen einen
+    // Neuaufbau, der gar nicht erst anläuft, hilft sie nicht, denn dann bleibt der Stand der
+    // Vorbereitung stehen; das fangen die Zahlen. `database.open` stand hier vorher und maß
+    // nichts von beidem, offen wäre auch eine frisch angelegte leere Datei.
+    await umstiegGelungen(base, 'nach dem Wiederherstellen')
+    const beleg = await fetch(`${base}/uploads/beleg.pdf`)
+    gleich(beleg.status, 200, 'der Beleg aus dem Archiv ist abrufbar')
+    dateienImOrdner(dataDir, 'Wiederherstellen', { 'mietfuchs.sqlite.vor-restore': true })
+
+    await fachlichePruefung(base, 'nach dem Wiederherstellen')
+
+    // **Ein Archiv mit nichts als der db.json darin.** Das ist der Weg, den MIGRATION.md dem
+    // empfiehlt, der nur noch die eine lose Datei hat: einpacken und wiederherstellen, statt sie
+    // in den Datenordner zu legen. Das Hineinlegen geht nämlich nur, solange die Datenbank leer
+    // ist, und ist damit ausgerechnet dort unbrauchbar, wo jemand es braucht. Geprüft wird es
+    // hier, weil eine Anleitung, die einen Weg empfiehlt, ihn auch begangen haben sollte.
+    //
+    // Genommen wird dafür ein Bestand von vor #18, damit die Zusicherung darunter zugleich
+    // zeigt, dass die alten Felder `ollamaUrl` und `ollamaModel` beim Übernehmen mitgezogen
+    // werden. Wer nur noch eine lose Datei hat, hat meist auch eine alte.
+    const nurDatei = new AdmZip()
+    nurDatei.addFile('db.json', Buffer.from(JSON.stringify(bestandVor18())))
+    const zweite = await backupEinspielen(base, nurDatei.toBuffer())
+    gleich(zweite.status, 200, 'ein Archiv mit nichts als der db.json wird angenommen')
+    gleich((await holen(base, '/api/settings')).ai?.text?.url, 'http://nas:11434', 'auch daraus gilt der Stand')
+    await fachlichePruefung(base, 'nach der losen Datei')
+  })
+})
+
 fall(8, 'Backup vom heutigen main-Stand: db.json und veraltete Datenbank', async () => {
   // **Der Aktualisierungsweg, und ohne die Regel verliert er Daten.** Wer heute den Stand von
   // `main` fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des Umstiegstags
@@ -416,13 +502,30 @@ fall(10, 'Zweiter Start, der Umstieg ist schon gelaufen', async () => {
 
 // ---------- Lauf ----------
 
-const nur = process.argv.includes('--nur') ? Number(process.argv[process.argv.indexOf('--nur') + 1]) : null
-
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete
-// `--nur 7` „Alle Prüfungen bestanden." und einen Rückgabewert von 0, obwohl es den Fall 7 gar
+// `--nur 99` „Alle Prüfungen bestanden." und einen Rückgabewert von 0, obwohl es den Fall 99 gar
 // nicht gibt und nichts gelaufen war. Das ist dieselbe Gestalt wie eine Matrix ohne Einträge, vor
 // der CLAUDE.md beim Prüfumfang warnt: keine Arbeit, kein Fehler, nur ein Überspringen. Wer eine
 // Nummer eintippt, die es nicht gibt, will nicht bestätigt bekommen, dass alles in Ordnung ist.
+//
+// Aus demselben Grund wird jede Angabe zurückgewiesen, die das Skript nicht versteht. `--nur 1 99`
+// lief sonst den Fall 1 und ließ die 99 wortlos fallen, und `--nur` ohne Wert meldete „Es gibt
+// keinen Fall NaN". Beides ist ein Vertippen, und beides sah vorher wie ein Lauf aus, der alles
+// geprüft hat.
+const argumente = process.argv.slice(2)
+const nurIndex = argumente.indexOf('--nur')
+const uebrig = nurIndex === -1 ? argumente : argumente.filter((_, i) => i !== nurIndex && i !== nurIndex + 1)
+if (uebrig.length > 0) {
+  console.error(`Damit kann ich nichts anfangen: ${uebrig.join(' ')}. Das Skript kennt nur \`--nur <Fallnummer>\`.`)
+  process.exit(1)
+}
+const nurWert = nurIndex === -1 ? null : argumente[nurIndex + 1]
+if (nurIndex !== -1 && !/^\d+$/.test(nurWert ?? '')) {
+  console.error('`--nur` braucht genau eine Fallnummer, zum Beispiel `--nur 7`.')
+  process.exit(1)
+}
+
+const nur = nurWert === null ? null : Number(nurWert)
 const gewaehlt = faelle.filter(({ nr }) => nur === null || nr === nur)
 if (gewaehlt.length === 0) {
   console.error(`Es gibt keinen Fall ${nur}. Vorhanden sind: ${faelle.map((f) => f.nr).join(', ')}.`)

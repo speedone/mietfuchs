@@ -90,8 +90,10 @@ signiert ist:
 - **Linux** — im Terminal: `tar -xzf mietfuchs-linux.tar.gz && ./mietfuchs-linux`
   (das Archiv erhält die Ausführungsrechte, `chmod` ist nicht nötig).
 
-Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`db.json` + Belege).
-Backup = diesen Ordner kopieren. Die optionale [KI-Belegauswertung](#ki-belegauswertung)
+Deine Daten liegen im Ordner **`data/` direkt neben der Programmdatei** (`mietfuchs.sqlite` +
+Belege). Backup = diesen Ordner kopieren. Kommst du von einer älteren Version und hast nur noch
+ein Backup-Archiv oder eine lose `db.json`, steht der Weg dafür in
+[MIGRATION.md](MIGRATION.md). Die optionale [KI-Belegauswertung](#ki-belegauswertung)
 braucht zusätzlich ein separat installiertes [Ollama](https://ollama.com) oder den Zugang zu
 einem KI-Dienst — ohne beides funktioniert die Abrechnung trotzdem vollständig.
 
@@ -381,21 +383,27 @@ secrets:
 
 ## Daten & Backup
 
-Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und `db.json` + hochgeladene Belege in
-`uploads/`).
+Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und hochgeladene Belege in `uploads/`).
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
 Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
 `~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
 Windows in `%LOCALAPPDATA%\Mietfuchs`), weil das Programm dann an einem Ort liegt, an dem es
 nicht schreiben darf. Backup = diesen Ordner kopieren. `NKA_DATA_DIR` legt ihn frei fest.
 
-Beim ersten Start einer Version mit Datenbank ziehen deine Daten von selbst in
-`mietfuchs.sqlite` um. Die bisherige `db.json` bleibt dabei liegen, daneben eine Kopie ihres
-Standes vor dem Umzug (`db.json.vor-umstieg`) und ein Protokoll. **Die liegengebliebene
-`db.json` ist der Stand zum Zeitpunkt des Umzugs und kein mitlaufendes Abbild**: Was du danach
-erfasst, steht nur noch in der Datenbank. Der Weg zurück ist also deine Sicherung, nicht diese
-Datei. Am Backup ändert sich nichts, es ist weiterhin dieser Ordner; das Backup über die
-Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt sie mit zurück.
+Bis einschließlich Version 0.7.1 lag alles in einer Datei `db.json`. Kommst du von dort, ziehen
+deine Daten beim ersten Start von selbst in
+`mietfuchs.sqlite` um. Die bisherige Datei heißt danach `db.json.abgeloest` und bleibt als
+Rückweg liegen, daneben ein Protokoll. **Sie ist der Stand zum Zeitpunkt des Umzugs und kein
+mitlaufendes Abbild**: Was du danach erfasst, steht nur noch in der Datenbank. Der Weg zurück ist
+also deine Sicherung, nicht diese Datei. Am Backup ändert sich nichts, es ist weiterhin dieser
+Ordner; das Backup über die Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt
+sie mit zurück.
+
+**Wiederherstellen erwartet das Backup-Archiv**, also die ZIP-Datei, und keine einzelne Datei.
+Alte Archive ohne Datenbank gehen weiterhin: Mietfuchs baut sie dann aus den wiederhergestellten
+Daten neu auf. Wer nur noch eine lose `db.json` von früher hat, packt sie in ein ZIP und stellt
+dieses wieder her. Warum das der verlässlichere Weg ist als das Hineinlegen in den Datenordner,
+und wo dieser Ordner liegt, steht in [MIGRATION.md](MIGRATION.md).
 
 ## Produktivbetrieb ohne Dev-Server
 
@@ -408,7 +416,7 @@ npm start          # Server liefert App + API auf http://localhost:3001
 
 Voraussetzung: [Docker](https://docs.docker.com/get-docker/) installiert (Docker Desktop unter
 Windows/macOS, Docker Engine unter Linux). Ein einziges Image liefert App + API auf Port 3001;
-die Daten (`db.json` + Belege) liegen im benannten Volume `mietfuchs-data` und überleben
+die Daten (`mietfuchs.sqlite` + Belege) liegen im benannten Volume `mietfuchs-data` und überleben
 Updates des Containers.
 
 ### Fertiges Image (ohne Clone)
