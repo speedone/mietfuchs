@@ -344,6 +344,41 @@ async function backupEinspielen(base, zip) {
   return { status: res.status, body: await jsonOf(res) }
 }
 
+fall(7, 'Backup von vor der Datenbank: nur db.json und Belege im Archiv', async () => {
+  // **Das ist das Archiv, das bei den heutigen Nutzern liegt**, und in einem Jahr ist es bei
+  // manchem das Einzige, was noch da ist. Es führt keine `mietfuchs.sqlite`, denn die gab es
+  // damals nicht. Fall 8 hat eine veraltete Datenbank dabei, Fall 9 nur die Datenbank; dieser
+  // hier ist der Fall davor, und er war bis zuletzt ungeprüft — ausgerechnet der, der am
+  // längsten vorkommen wird. MIGRATION.md verweist Nutzer ausdrücklich auf diesen Weg.
+  const archiv = new AdmZip()
+  archiv.addFile('db.json', Buffer.from(JSON.stringify(bestandHeute())))
+  archiv.addFile('uploads/beleg.pdf', Buffer.from('%PDF-1.4 ein Beleg'))
+  const altesZip = archiv.toBuffer()
+
+  // Ein Rechner, auf dem schon gearbeitet wurde: Es gibt eine Datenbank, und der Stand des
+  // Archivs soll sie ersetzen.
+  const dataDir = tempDir()
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(bestand02()))
+  await withServer(dataDir, async ({ base }) => {
+    await umstiegGelungen(base, 'Vorbereitung')
+
+    const antwort = await backupEinspielen(base, altesZip)
+    gleich(antwort.status, 200, 'ein Archiv ganz ohne Datenbank wird angenommen')
+    const units = await holen(base, '/api/units')
+    gleich(units.map((u) => u.name).sort(), ['EG', 'OG'], 'der Stand des Archivs gilt')
+    gleich((await holen(base, '/api/settings')).paymentDeadlineDays, 21, 'die Einstellungen kommen mit')
+
+    // Die Datenbank ist aus der wiederhergestellten db.json **neu aufgebaut**, nicht bloß
+    // beiseitegelegt — und zwar mit derselben centgenauen Regression wie beim Umstieg.
+    const bericht = await holen(base, '/healthz')
+    gleich(bericht.database.open, true, 'die Datenbank ist nach dem Wiederherstellen offen')
+    const beleg = await fetch(`${base}/uploads/beleg.pdf`)
+    gleich(beleg.status, 200, 'der Beleg aus dem Archiv ist abrufbar')
+    dateienImOrdner(dataDir, 'Wiederherstellen', { 'mietfuchs.sqlite.vor-restore': true })
+    await fachlichePruefung(base, 'nach dem Wiederherstellen')
+  })
+})
+
 fall(8, 'Backup vom heutigen main-Stand: db.json und veraltete Datenbank', async () => {
   // **Der Aktualisierungsweg, und ohne die Regel verliert er Daten.** Wer heute den Stand von
   // `main` fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des Umstiegstags

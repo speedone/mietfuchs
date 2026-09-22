@@ -133,7 +133,10 @@ Instanz mit einer vorhandenen `db.json` ein zweites Mal starten (siehe den Beric
 durch** (`node scripts/umstieg-praxislauf.mjs`, ein Fall einzeln mit `--nur 6`). Es startet
 echte Server mit Wegwerf-Datenordnern und geht die Lagen durch, die beim Vermieter vorkommen:
 frischer Rechner, gewachsener Bestand, Altformate, ein zweiter Start nach gelungenem Umstieg,
-ein abgelehnter Bestand, Backup und Wiederherstellen mit und ohne Datenbank. Das deckt genau
+ein abgelehnter Bestand, Backup und Wiederherstellen mit und ohne Datenbank. Fall 7 ist dabei der
+wichtigste für die Zukunft, weil er am längsten vorkommt: ein Archiv **von vor der Datenbank**,
+also genau das, was heutige Nutzer liegen haben. [MIGRATION.md](MIGRATION.md) verweist sie auf
+diesen Weg, und ohne den Fall stünde die Anleitung auf einer ungeprüften Zusage. Das deckt genau
 die Lücke, die der Smoke-Test offenlässt, nämlich den **gelungenen** Umstieg über zwei Starts
 hinweg. In der CI läuft es nicht, es ist für die Hand vor einem Release. Eine Nummer, die es
 nicht gibt, bricht ab statt still Erfolg zu melden; das war einmal anders und ist dieselbe Falle
