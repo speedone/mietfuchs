@@ -49,7 +49,7 @@ import path from 'node:path'
 import { migrateLegacy, legacyPrepaymentCase, straightenForDatabase, type LegacyTenancy } from '../legacy.ts'
 import type { Db } from '../store.ts'
 import { APP_VERSION } from '../version.ts'
-import { applyMigrations, connect, loadMigrations, type Connection, type Database } from './client.ts'
+import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
 import { messageOf, type OpenedDatabase } from './open.ts'
 import { readStock } from './read.ts'
 import { deviationMessage, frozenDifference, runRegression, standToCompare, yearsToCheck } from './regression.ts'
@@ -115,6 +115,12 @@ export type ChangeoverOptions = {
   reopen: () => Promise<OpenedDatabase>
   hooks?: ChangeoverHooks
   now?: () => Date
+  // Hineingereicht für den Test, wie die Griffe darüber und aus demselben Grund: Mit der einen
+  // veröffentlichten Migration ist die Frage, ob die Kette **nach** dem Import läuft, gar nicht
+  // zu stellen, denn der Stand nach 0000 ist derselbe wie der neueste. Ein Test reicht deshalb
+  // eine zweite Migration mit einer Datenregel hinein und sieht nach, ob sie den übernommenen
+  // Bestand erreicht.
+  migrations?: Migration[]
 }
 
 // ---------- Schritt 2: ist die Datenbank noch leer? ----------
@@ -382,7 +388,12 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     const straight = straightenForDatabase(stock)
     notes.push(...notesFor(stock))
 
-    // Schritt 5: eine eigene Datei, und zwar eine frische.
+    // Schritt 5: eine eigene Datei, und zwar eine frische, und in ihr **nur der Ausgangsstand**.
+    const migrations = options.migrations ?? (await loadMigrations())
+    const ausgangsstand = migrations[0]
+    if (!ausgangsstand) {
+      stop('Es gibt keine Migrationen; ohne den Ausgangsstand lässt sich keine Datenbank anlegen.')
+    }
     try {
       removeTemp(tempFile)
       connection = await connect(tempFile)
@@ -391,7 +402,7 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       // trotzdem, denn davon hängt ab, ob Schritt 9 heil bleibt.
       const mode = String(connection.rows('PRAGMA journal_mode')[0]?.[0] ?? '').toLowerCase()
       if (mode === 'wal') stop('Die Datei für den Umstieg steht im WAL-Modus; dann bliebe beim Bewegen eine Beidatei zurück.')
-      applyMigrations(connection, await loadMigrations())
+      applyMigrations(connection, [ausgangsstand])
     } catch (err) {
       if (err instanceof ChangeoverStop) throw err
       stop(`Die Datenbank für den Umstieg ließ sich nicht anlegen: ${messageOf(err)}`)
@@ -424,6 +435,29 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
         'Eine Beschriftung sieht danach anders aus (ein Name, der in der Datei fehlte, steht jetzt ' +
           'als leeres Feld da). An den Beträgen ändert sich dadurch nichts.',
       )
+    }
+
+    // ---------- Schritt 8b: jetzt die übrige Kette ----------
+    //
+    // **Hier ist der Grund für die ganze Aufteilung.** Der Import zielt auf den Stand nach 0000,
+    // und erst danach laufen die folgenden Schritte darüber. Nur so trägt jeder Schritt seine
+    // Datenregel selbst: Heißt ein Auswahlwert künftig anders, steht das `UPDATE` in **einer**
+    // Migration, und ein alter Bestand kommt auf demselben Weg dorthin wie eine vorhandene
+    // Datenbank. Liefe die Kette vorher, müsste dieselbe Regel ein zweites Mal im Eingang
+    // stehen, und nur die erste der beiden wäre durch „ein Schritt wird nie geändert" geschützt.
+    //
+    // Bei Django heißt das Muster „historische Modelle" und bei Flyway „Baseline". `applyMigrations`
+    // braucht dafür nichts Neues: Es arbeitet über Prüfsummen und wendet an, was in der
+    // Buchführung fehlt, überspringt also den Ausgangsstand von selbst.
+    //
+    // **Die Reihenfolge zur Regression ist Absicht.** Verglichen wird der v0-Bestand mit der
+    // v0-Datenbank, also Gleiches mit Gleichem. Lägen die Schritte davor, meldete jede Migration,
+    // die die Fachlichkeit ändert, eine Abweichung und verhinderte den Umstieg — obwohl sie
+    // genau das tun soll.
+    try {
+      applyMigrations(connection, migrations)
+    } catch (err) {
+      stop(`Die Datenbank ließ sich nach dem Übernehmen nicht auf den neuesten Stand bringen: ${messageOf(err)}`)
     }
 
     // Schritt 9: aktivieren. Erst die Verbindungen schließen, denn unter Windows lässt sich eine
