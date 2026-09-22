@@ -24,7 +24,7 @@ import { sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
-import type { SnapshotSource } from '../snapshot.ts'
+import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from '../db/client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
@@ -34,13 +34,20 @@ import {
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
 // `unknown`: Es ist ein Archivstück, das wortgleich erhalten bleiben soll, und ein Typ darüber
 // wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat. Die Berechnung
-// liest daraus nur den Eigenanteil, und den holt `selfUsedShareCents` heraus.
+// liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holt `frozenSettlementOf`
+// aus snapshot.ts heraus — dieselbe Funktion wie auf dem Weg über die Datei und wie im heutigen
+// Leser. Sie steht bewusst nicht hier: Der Eingang beschreibt den **Aufbau der Tabellen** von
+// damals, und der eingefrorene Berechnungsstand liegt als JSON in einer Spalte, ist von diesem
+// Aufbau also gar nicht betroffen. Zwei Fassungen davon wären genau die Doppelung, die dieser
+// Ordner beseitigen sollte.
 export type StoredClosedSettlement = {
   id: string
   year: number
   closedAt: string
   sentAt: string | null
   selfUsedShareCents: number
+  prepaymentCents: number
+  prepaymentOverridden: boolean
   settlement: unknown
 }
 
@@ -79,16 +86,6 @@ function groupBy<T, K>(rows: T[], keyOf: (row: T) => string, valueOf: (row: T) =
 // Die Reihenfolge, in der die Zeilen angelegt wurden. Siehe oben; steht als Konstante da, damit
 // keine Abfrage sie vergisst.
 const INSERTION_ORDER = sql`rowid`
-
-// Der Eigenanteil aus einem eingefrorenen Berechnungsstand. Er ist das Einzige, was die
-// Berechnung daraus liest (Steuerübersicht, damit sie nicht von der versendeten Abrechnung
-// abweicht). Ein Schnappschuss von vor v0.3.0 kennt ihn noch nicht, dann gilt 0 — dieselbe
-// Regel wie in snapshot.ts, nur auf den rohen JSON-Inhalt angewandt.
-function selfUsedShareOf(settlement: unknown): number {
-  if (settlement === null || typeof settlement !== 'object') return 0
-  const value: unknown = Reflect.get(settlement, 'selfUsedShareCents')
-  return typeof value === 'number' ? value : 0
-}
 
 // ---------- Je Sammlung ein Leser ----------
 //
@@ -220,7 +217,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
     year: c.year,
     closedAt: c.closedAt,
     sentAt: c.sentAt,
-    selfUsedShareCents: selfUsedShareOf(c.settlement),
+    ...frozenSettlementOf(c.settlement),
     settlement: c.settlement,
   }))
 }
