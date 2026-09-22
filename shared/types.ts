@@ -385,8 +385,16 @@ export type TaxReport = {
     totalCents: number
     labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
   }
-  rentedAreaShare: number // vermietete Fläche / Gesamtfläche (0..1)
-  selfOccupiedExists: boolean // gibt es nicht vermietete (selbstgenutzte) Einheiten?
+  // Selbstgenutzte Fläche / Gesamtfläche des Gebäudes (0..1). Gemessen wird das **Private** und
+  // nicht das Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der
+  // Abrechnungseinheit vermietet ist, weiß Mietfuchs nicht. Die Grundmenge ist das ganze
+  // Gebäude und damit eine andere als die Verteilbasis der Abrechnung (#68), siehe calc.ts.
+  selfUsedAreaShare: number
+  selfOccupiedExists: boolean // gibt es selbstgenutzte Einheiten (`selfUsed`, nicht vermietet)?
+  // Gibt es Wohnungen außerhalb der Abrechnungseinheit? Mietfuchs kann sie nicht einordnen: Es
+  // können getrennt abgerechnete Gewerbeeinheiten sein oder eine eigene Wohnung aus einem
+  // Bestand von vor der dreiwertigen Unterscheidung.
+  excludedExists: boolean
   selfUsedShareCents: number // auf selbstgenutzte Wohnungen entfallender Kostenanteil (privat)
   surplusSollCents: number // Einkünfte auf Soll-Basis = Einnahmen(Soll) − Werbungskosten
   surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
