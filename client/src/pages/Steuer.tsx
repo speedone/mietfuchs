@@ -3,20 +3,16 @@ import type { Settings, TaxReport } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
 import PageHeader from '../components/PageHeader'
+import { DEFAULT_BASIS, incomeCentsFor, surplusCentsFor, taxHints, type Basis } from '../taxView'
 
 type Props = { settings: Settings | null }
-
-// Einnahmen lassen sich nach zwei Prinzipien ansetzen: das vereinbarte Soll oder das
-// tatsächlich Zugeflossene (Zuflussprinzip — steuerlich maßgeblich). Beide werden geliefert,
-// umschaltbar, damit der Nutzer abgleichen kann.
-type Basis = 'soll' | 'ist'
 
 export default function Steuer({ settings }: Props) {
   const { year, setYear } = useYear()
   const [data, setData] = useState<TaxReport | null>(null)
-  // Standard: vereinbartes Soll — liefert auch ohne erfasste Zahlungen eine sinnvolle Zahl.
-  // Wer die Eingänge im Mietkonto pflegt, kann auf das (steuerlich maßgebliche) Ist umschalten.
-  const [basis, setBasis] = useState<Basis>('soll')
+  // Steuerlich maßgeblich ist das tatsächlich Zugeflossene; das vereinbarte Soll bleibt zum
+  // Abgleich umschaltbar. Die Begründung steht in taxView.ts.
+  const [basis, setBasis] = useState<Basis>(DEFAULT_BASIS)
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
@@ -35,9 +31,10 @@ export default function Steuer({ settings }: Props) {
     setTimeout(() => window.print(), 60)
   }
 
-  const incomeCents = data ? (basis === 'soll' ? data.income.sollCents : data.income.paidCents) : 0
-  const surplusCents = data ? (basis === 'soll' ? data.surplusSollCents : data.surplusPaidCents) : 0
+  const incomeCents = data ? incomeCentsFor(data, basis) : 0
+  const surplusCents = data ? surplusCentsFor(data, basis) : 0
   const sharePct = data ? Math.round(data.rentedAreaShare * 1000) / 10 : 0
+  const hints = data ? taxHints(data, basis) : []
 
   return (
     <>
@@ -57,8 +54,8 @@ export default function Steuer({ settings }: Props) {
           <label className="field">
             Einnahmen ansetzen als
             <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>
-              <option value="soll">vereinbart (Soll)</option>
               <option value="ist">tatsächlich gezahlt (Zuflussprinzip)</option>
+              <option value="soll">vereinbart (Soll) — nur zum Abgleich</option>
             </select>
           </label>
           <div className="field grow" />
@@ -96,6 +93,18 @@ export default function Steuer({ settings }: Props) {
               Werbungskosten nach Abflussprinzip (im Jahr gebuchte Kosten).
             </div>
 
+            {/* Auch im Druck sichtbar: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne
+                jeden Vorbehalt zum Steuerberater oder ins Formular. */}
+            {hints.includes('sollIsNotTaxBasis') && (
+              <div className="notice" style={{ marginBottom: 14 }}>
+                <strong>Diese Ansicht rechnet mit dem vereinbarten Soll.</strong> Für die Anlage V
+                zählt, was tatsächlich zugeflossen ist (§ 11 Abs. 1 Satz 1 EStG) — eine vereinbarte,
+                aber nicht gezahlte Miete ist keine Einnahme. Das Soll ist zum Abgleich gedacht, etwa
+                um Rückstände zu sehen. Für die Steuererklärung bitte auf
+                <em> tatsächlich gezahlt</em> umschalten.
+              </div>
+            )}
+
             <h3>Einnahmen</h3>
             <table>
               <tbody>
@@ -123,6 +132,27 @@ export default function Steuer({ settings }: Props) {
                 </tr>
               </tfoot>
             </table>
+
+            {hints.includes('noPaymentsRecorded') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                <strong>Für {year} ist noch keine Zahlung erfasst.</strong> Deshalb stehen hier 0 €:
+                Steuerlich zählt der Zufluss, und ohne erfasste Eingänge weiß Mietfuchs nicht, was
+                geflossen ist. Die Zahlungseingänge werden im <em>Mietkonto</em> erfasst.
+              </div>
+            )}
+
+            {/* Der Befund aus #70: Abrechnung und Steuerübersicht nennen bei den Vorauszahlungen
+                verschiedene Zahlen, und beide sind richtig. Bisher stand das nirgends, und wer sie
+                verglich, hielt eine davon für falsch. */}
+            {hints.includes('prepaymentOverridden') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                Für {year} ist eine <strong>Jahreskorrektur der Vorauszahlungen</strong> erfasst. Die
+                Abrechnung setzt deshalb {fmtEuro(data.income.prepaymentSettlementCents)} an, denn
+                dort sind die tatsächlich geleisteten Vorauszahlungen einzustellen. Die Zeile oben
+                zeigt das vereinbarte Soll. Beide Zahlen sind richtig, sie beantworten verschiedene
+                Fragen.
+              </p>
+            )}
 
             <h3 style={{ marginTop: 18 }}>Werbungskosten</h3>
             {data.expenses.groups.length === 0 ? (
@@ -213,6 +243,24 @@ export default function Steuer({ settings }: Props) {
                 Bitte den abziehbaren Anteil mit dem Steuerberater abstimmen — diese Übersicht nimmt die
                 Aufteilung nicht automatisch vor.
               </div>
+            )}
+
+            {/* **Hinweis statt Automatik**, und zwar bewusst. Die Zuordnung hängt an der
+                vertraglichen Fälligkeit des einzelnen Mietverhältnisses, und der BFH verlangt,
+                dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
+                die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
+                Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
+                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude. */}
+            {basis === 'ist' && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr
+                ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
+                eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
+                oder nach dem Jahreswechsel, gehören sie in das Jahr, zu dem sie wirtschaftlich zählen
+                (§ 11 Abs. 1 Satz 2 EStG). Ob das greift, hängt auch davon ab, wann die Miete nach dem
+                Mietvertrag fällig war. Eine Dezembermiete, die Anfang Januar eingeht, kann deshalb
+                noch ins alte Jahr gehören. Mietfuchs entscheidet das nicht selbst.
+              </p>
             )}
 
             <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
