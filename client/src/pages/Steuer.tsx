@@ -3,7 +3,7 @@ import type { Settings, TaxReport } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
 import PageHeader from '../components/PageHeader'
-import { DEFAULT_BASIS, incomeCentsFor, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 
 type Props = { settings: Settings | null }
 
@@ -35,6 +35,7 @@ export default function Steuer({ settings }: Props) {
   const surplusCents = data ? surplusCentsFor(data, basis) : 0
   const sharePct = data ? Math.round(data.rentedAreaShare * 1000) / 10 : 0
   const hints = data ? taxHints(data, basis) : []
+  const note = data ? prepaymentNote(data) : null
 
   return (
     <>
@@ -90,7 +91,8 @@ export default function Steuer({ settings }: Props) {
             <h2 style={{ marginBottom: 2 }}>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
             <div className="muted" style={{ marginBottom: 14 }}>
               Einnahmen angesetzt als {basis === 'soll' ? 'vereinbartes Soll' : 'tatsächlich gezahlt (Zuflussprinzip)'}.
-              Werbungskosten nach Abflussprinzip (im Jahr gebuchte Kosten).
+              Werbungskosten mit dem Jahr, unter dem die Kostenposition erfasst ist — für die Anlage V
+              zählt dort das Jahr der Zahlung (§ 11 Abs. 2 EStG).
             </div>
 
             {/* Auch im Druck sichtbar: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne
@@ -141,16 +143,31 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
 
+            {hints.includes('paymentsIncomplete') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                <strong>Für {data.income.tenanciesWithoutPayment} von {data.income.tenanciesWithSoll} Mietverhältnissen
+                ist {year} keine einzige Zahlung erfasst.</strong> Die angesetzten Einnahmen sind dann zu
+                niedrig, und das sieht man der Summe nicht an. Bitte im <em>Mietkonto</em> nachtragen,
+                bevor diese Zahl in die Anlage V geht.
+              </div>
+            )}
+
             {/* Der Befund aus #70: Abrechnung und Steuerübersicht nennen bei den Vorauszahlungen
                 verschiedene Zahlen, und beide sind richtig. Bisher stand das nirgends, und wer sie
-                verglich, hielt eine davon für falsch. */}
-            {hints.includes('prepaymentOverridden') && (
+                verglich, hielt eine davon für falsch.
+                **Keine Ursache behaupten.** Der Abstand kann aus der Jahreskorrektur kommen oder
+                daraus, dass ein Mietverhältnis auf einer Wohnung außerhalb der Abrechnungseinheit
+                liegt, und meistens aus beidem zu unbekannten Teilen. Der erste Entwurf schrieb ihn
+                der Korrektur zu; gemessen kamen von 1.500 € Abstand nur 600 € von dort. */}
+            {note && (
               <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-                Für {year} ist eine <strong>Jahreskorrektur der Vorauszahlungen</strong> erfasst. Die
-                Abrechnung setzt deshalb {fmtEuro(data.income.prepaymentSettlementCents)} an, denn
-                dort sind die tatsächlich geleisteten Vorauszahlungen einzustellen. Die Zeile oben
-                zeigt das vereinbarte Soll. Beide Zahlen sind richtig, sie beantworten verschiedene
-                Fragen.
+                Die Abrechnung {year} setzt bei den Vorauszahlungen{' '}
+                <strong>{fmtEuro(note.settlementCents)}</strong> an, hier steht das vereinbarte Soll
+                von {fmtEuro(note.sollCents)}. Beide Zahlen sind richtig und beantworten verschiedene
+                Fragen: Die Abrechnung stellt die tatsächlich geleisteten Vorauszahlungen ein und
+                verteilt nur über Wohnungen, die zur Abrechnungseinheit gehören.
+                {note.jahreskorrektur && <> Für {year} ist dazu eine <strong>Jahreskorrektur der
+                Vorauszahlungen</strong> erfasst.</>}
               </p>
             )}
 
@@ -250,16 +267,23 @@ export default function Steuer({ settings }: Props) {
                 dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
                 die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
                 Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
-                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude. */}
-            {basis === 'ist' && (
+                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude.
+                **Das Beispiel ist bewusst die Januarmiete und nicht die Dezembermiete.** Die
+                Dezembermiete ist nach § 556b Abs. 1 BGB im Dezember fällig; geht sie im Januar
+                ein, liegt die Fälligkeit weit außerhalb des kurzen Zeitraums, und die Regel
+                greift gerade nicht. Der häufige und für Mietfuchs ungünstige Fall ist der
+                umgekehrte: der Dauerauftrag, der die Januarmiete Ende Dezember bucht. Dort liegen
+                Fälligkeit und Zahlung beide im Zeitraum, die Einnahme des alten Jahres ist zu
+                hoch, und genau davon stand im ersten Entwurf nichts. */}
+            {hints.includes('turnOfYear') && (
               <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
                 <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr
                 ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
                 eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
-                oder nach dem Jahreswechsel, gehören sie in das Jahr, zu dem sie wirtschaftlich zählen
-                (§ 11 Abs. 1 Satz 2 EStG). Ob das greift, hängt auch davon ab, wann die Miete nach dem
-                Mietvertrag fällig war. Eine Dezembermiete, die Anfang Januar eingeht, kann deshalb
-                noch ins alte Jahr gehören. Mietfuchs entscheidet das nicht selbst.
+                oder nach dem Jahreswechsel und sind sie in dieser Zeit auch fällig, gehören sie in das
+                Jahr, zu dem sie wirtschaftlich zählen (§ 11 Abs. 1 Satz 2 EStG). Am häufigsten trifft
+                das die Januarmiete, die ein Dauerauftrag schon Ende Dezember bucht: Sie gehört ins
+                neue Jahr, steht hier aber im alten. Mietfuchs entscheidet das nicht selbst.
               </p>
             )}
 

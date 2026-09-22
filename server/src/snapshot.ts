@@ -86,7 +86,15 @@ export type SnapshotPayment = Pick<Payment, 'tenancyId' | 'date' | 'amountCents'
 // die Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen. Ihn nimmt die
 // Steuerübersicht von dort, damit sie nicht von der versendeten Abrechnung abweicht. `null`
 // heißt, das Jahr ist nicht abgeschlossen; dann rechnet die Steuerübersicht selbst.
-export type SnapshotClosedSettlement = { selfUsedShareCents: number }
+export type SnapshotClosedSettlement = {
+  selfUsedShareCents: number
+  // Was die zugestellte Abrechnung bei den Vorauszahlungen ansetzte (#70). Dieselbe Begründung
+  // wie beim Eigenanteil: Die Steuerübersicht nennt diese Zahl als die der Abrechnung, und für
+  // ein abgeschlossenes Jahr ist das die des Archivstücks und nicht die, die die heutigen Daten
+  // ergäben.
+  prepaymentCents: number
+  prepaymentOverridden: boolean
+}
 
 export type Snapshot = {
   // Das Abrechnungsjahr gehört zum Schnappschuss, nicht neben ihn. Sonst ließe sich ein
@@ -161,7 +169,13 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
     meters: source.meters,
     readings: source.readings,
     payments: source.payments,
-    closedSettlement: closed ? { selfUsedShareCents: closed.selfUsedShareCents } : null,
+    closedSettlement: closed
+      ? {
+          selfUsedShareCents: closed.selfUsedShareCents,
+          prepaymentCents: closed.prepaymentCents,
+          prepaymentOverridden: closed.prepaymentOverridden,
+        }
+      : null,
   }
 }
 
@@ -182,6 +196,11 @@ export function snapshotFromDb(db: Db, year: number): Snapshot {
       closedSettlements: db.closedSettlements.map((c) => ({
         year: c.year,
         selfUsedShareCents: c.settlement?.selfUsedShareCents ?? 0,
+        // Dieselbe Behandlung alter Stände: Fehlen die Statements, ist die Summe 0 und es gilt
+        // keine Jahreskorrektur. Das ist die richtige Antwort und keine Notlösung — was nicht
+        // auf dem Papier stand, hat der Mieter auch nicht bekommen.
+        prepaymentCents: (c.settlement?.statements ?? []).reduce((a, st) => a + st.prepaymentCents, 0),
+        prepaymentOverridden: (c.settlement?.statements ?? []).some((st) => st.prepaymentOverridden),
       })),
     },
     year,

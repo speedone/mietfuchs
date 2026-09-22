@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
+import { showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -220,16 +221,14 @@ export default function Mietkonto() {
                 <p className="muted" style={{ margin: '2px 0 10px' }}>
                   Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor.
                 </p>
-                {/* **Der überraschende Dezember** (#70). Eine Zahlung zählt zu dem Jahr, in dem
-                    sie eingegangen ist. Geht die Dezembermiete erst im Januar ein, bleibt der
-                    Dezember hier offen, obwohl der Mieter gezahlt hat, und das Geld taucht im
-                    Mietkonto des Folgejahres auf. Das ist richtig gerechnet und trotzdem nicht
-                    selbsterklärend, deshalb steht es dabei — aber nur, wenn der Fall vorliegt. */}
-                {r.months[11] && r.months[11].sollCents > 0 && r.months[11].status !== 'paid' && (
+                {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
+                    damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
+                    einmal im laufenden Jahr und einmal in der Aussage, wo das Geld auftaucht. */}
+                {showDecemberNote(r, year, new Date()) && (
                   <p className="muted" style={{ margin: '2px 0 10px' }}>
-                    Der Dezember steht offen: Zahlungen zählen zu dem Jahr, in dem sie eingegangen
-                    sind. Geht die Dezembermiete erst im Januar ein, erscheint sie im Mietkonto
-                    {' '}{year + 1} und der Dezember bleibt hier offen.
+                    Der Dezember steht offen. Das kann daran liegen, dass die Dezembermiete erst im
+                    Januar eingegangen ist: Zahlungen zählen zu dem Jahr, in dem sie eingegangen sind,
+                    und erscheinen dann unter den Zahlungseingängen {year + 1}.
                   </p>
                 )}
                 <table>

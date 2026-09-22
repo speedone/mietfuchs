@@ -13,6 +13,7 @@
 import type { PersonEntry, PrepaymentEntry, Settings, Tenancy } from '../../shared/types.ts'
 import type { Db } from './store.ts'
 import { migrateAi, type MigratedSettings } from './ai/settings.ts'
+import { compareText } from './calc.ts'
 import { DEFAULT_OLLAMA_MODEL, DEFAULT_SETTINGS } from './defaults.ts'
 import { lastPerFrom, straightenPersonHistory } from './schedule.ts'
 
@@ -149,9 +150,13 @@ const numberOr = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
 
 // Der letzte Eintrag der Personen-Staffel, also die Personenzahl, die heute gilt. Sortiert wird
-// nach Stichtag, wie in `personsAt` in calc.ts.
+// nach Stichtag, wie in `personsAt` in calc.ts — und zwar mit **dessen** Vergleichsfunktion und
+// nicht mit einer eigenen. Solange hier `localeCompare` stand, war „wie in calc.ts" ein
+// Kommentar, den die eine Seite ändern konnte, ohne die andere mitzunehmen (#70). Gemessen ist
+// der Unterschied bei ISO-Stichtagen heute null; das ist eine Zusicherung und kein Zufall, den
+// man stehen lässt.
 function currentPersons(history: PersonEntry[]): number | null {
-  const sorted = history.slice().sort((a, b) => a.from.localeCompare(b.from))
+  const sorted = history.slice().sort((a, b) => compareText(a.from, b.from))
   const last = sorted.at(-1)
   return last ? numberOr(last.persons, 1) : null
 }

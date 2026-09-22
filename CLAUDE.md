@@ -696,7 +696,8 @@ die ganze fachliche Komplexität:
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
   Monate verteilt (Status bezahlt/teilweise/offen).
-- **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (aus `rentLedger`, Soll + Ist) und
+- **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
+  unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
@@ -715,10 +716,29 @@ die ganze fachliche Komplexität:
   Mietkonto führt das monatliche Soll, denn eine Jahreszahl auf zwölf Monate zu verteilen wäre
   erfunden. `taxReport` führt beide nebeneinander (`prepaymentSollCents` und
   `prepaymentSettlementCents` samt `prepaymentOverridden`) und **entnimmt die zweite der
-  Abrechnung**, statt die Staffel ein zweites Mal auszulegen. Die Zehn-Tage-Regel des § 11 Abs. 1
+  Abrechnung**, statt die Staffel ein zweites Mal auszulegen; bei abgeschlossener Abrechnung gilt
+  ihr eingefrorener Stand, dieselbe Regel wie beim Eigenanteil und aus demselben Grund. Die
+  Oberfläche erklärt den Abstand, **sobald es ihn gibt, und schreibt ihm keine Ursache zu**: Er
+  entsteht aus der Jahreskorrektur und ebenso daraus, dass die Abrechnung nur über Wohnungen der
+  Abrechnungseinheit verteilt, während das Mietkonto jedes Mietverhältnis führt. Die Durchsicht
+  hat gemessen, dass von 1.500 € Abstand nur 600 € aus der Korrektur kamen; ein Kausalsatz wäre
+  dort zu 60 Prozent falsch gewesen.
+  **Das Ist kommt nicht aus dem Mietkonto**, sondern zählt jede Zahlung mit Datum im Jahr. Das
+  Mietkonto bildet Zeilen nur für Mietverhältnisse mit Überlappung, und dadurch fielen zwei
+  alltägliche Fälle aus **beiden** Jahren: die Dezembermiete, die im Januar eingeht, nachdem das
+  Mietverhältnis am 31.12. endete, und der Dauerauftrag, der die Januarmiete am 30.12. bucht.
+  Für das Mietkonto ist die Zeilenbindung richtig, für eine Zahl nach dem Zuflussprinzip nicht.
+  Die Zehn-Tage-Regel des § 11 Abs. 1
   Satz 2 EStG bleibt ein Hinweis in der Oberfläche und wird nicht gerechnet: Sie hängt an der
   vertraglichen Fälligkeit, die Mietfuchs nicht kennt, und ein Feld dafür machte eine Zahl der
-  Steuererklärung davon abhängig, dass jeder Nutzer es richtig ausfüllt.
+  Steuererklärung davon abhängig, dass jeder Nutzer es richtig ausfüllt. Das Beispiel dort ist
+  bewusst die vorab gezahlte Januarmiete: Die Dezembermiete ist nach § 556b Abs. 1 BGB im
+  Dezember fällig, bei ihr greift die Regel also gerade nicht.
+  **Nicht dem Abflussprinzip folgen die Werbungskosten**, und die Seite behauptet es auch nicht
+  mehr. `CostItem` trägt nur `year`, also das Abrechnungsjahr, und kein Zahlungsdatum; die
+  Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
+  § 11 Abs. 2 EStG in 2026 abfließt. Solange die Einnahmenseite ebenfalls auf Soll stand, war das
+  symmetrisch schief. Das Datenmodell dafür zu erweitern ist eine eigene Entscheidung.
 
 **Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
