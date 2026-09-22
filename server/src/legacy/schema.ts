@@ -35,9 +35,9 @@ import { check, index, integer, primaryKey, real, sqliteTable, text, uniqueIndex
 export const COST_KEYS = ['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const
 export const METER_TYPES = ['kaltwasser', 'strom', 'waerme', 'sonstig'] as const
 export const DEPOSIT_STATUS = ['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const
-const AI_PROVIDERS = ['ollama', 'openai'] as const
-const AI_JSON_MODES = ['auto', 'schema', 'object', 'prompt'] as const
-const AI_SLOT_NAMES = ['text', 'images'] as const
+export const AI_PROVIDERS = ['ollama', 'openai'] as const
+export const AI_JSON_MODES = ['auto', 'schema', 'object', 'prompt'] as const
+export const AI_SLOT_NAMES = ['text', 'images'] as const
 export const UPDATE_CHECK = ['on', 'off'] as const
 
 // Prüfbedingung „dieser Betrag ist nicht negativ". Als Helfer, damit an jeder Stelle dasselbe

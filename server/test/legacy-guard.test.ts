@@ -35,19 +35,28 @@ import os from 'node:os'
 import path from 'node:path'
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import type { Db } from '../src/store.ts'
-import { openDatabase } from '../src/db/open.ts'
-import { readSettings } from '../src/db/read.ts'
+import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
+import { readSettings } from '../src/legacy/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-wachter-'))
 
-async function withDatabase(work: (db: Awaited<ReturnType<typeof openDatabase>>) => Promise<void>): Promise<void> {
+// **Eine Datenbank mit genau Migration 0000**, so wie der Umstieg sie anlegt, und nicht mit der
+// ganzen Kette. Das ist der Unterschied, auf den es hier ankommt: Geklemmt wird gegen die
+// Prüfbedingungen von **damals**, und `openDatabase` wendet alle Schritte an. Solange beide
+// Stände dieselben sind, fiele das nicht auf; ab der ersten Migration, die eine Liste ändert,
+// träfe der Test die heutigen Bedingungen und bewiese etwas anderes, als er behauptet.
+async function withV0Database(work: (db: Database) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const connection = await connect(path.join(dataDir, 'v0.sqlite'))
   try {
-    await work(opened)
+    const migrations = await loadMigrations()
+    const ausgangsstand = migrations[0]
+    if (!ausgangsstand) return assert.fail('es gibt keine Migrationen')
+    applyMigrations(connection, [ausgangsstand])
+    await work(connection.db)
   } finally {
-    opened.close()
+    connection.close()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 }
@@ -74,11 +83,11 @@ function withUnknownVocabulary(): Db {
 test('Ein Wert, den der Wortschatz von damals nicht kennt, klemmt der Schreiber', async () => {
   // Ohne den Wächter scheitert schon das Schreiben, und zwar an
   // `ai_slots_provider_known`, `settings_ai_json_mode_known` und `settings_update_check_known`.
-  await withDatabase(async (opened) => {
+  await withV0Database(async (db) => {
     const stand = withUnknownVocabulary()
-    await opened.write((db) => writeStock(db, straightenForDatabase(stand)))
+    await writeStock(db, straightenForDatabase(stand))
 
-    const gelesen = await opened.read(readSettings)
+    const gelesen = await readSettings(db)
     assert.equal(gelesen.ai.text.provider, 'ollama', 'der unbekannte Anbieter ist durchgekommen')
     assert.equal(gelesen.ai.jsonMode, 'auto', 'der unbekannte Modus ist durchgekommen')
     assert.equal(gelesen.updateCheck, undefined, 'die unbekannte Update-Einstellung ist durchgekommen')
@@ -90,7 +99,7 @@ test('Ein Wert, den der Wortschatz von damals nicht kennt, klemmt der Schreiber'
 test('Ein Platz, den es damals nicht gab, kommt gar nicht in die Tabelle', async () => {
   // `ai_slots_slot_known` kennt genau `text` und `images`. Ein dritter Platz wäre eine
   // Einstellung, die niemand liest, und ein Import daran zu scheitern wäre das Schlechteste.
-  await withDatabase(async (opened) => {
+  await withV0Database(async (db) => {
     const stand = migrateLegacy({
       settings: { houseName: 'Haus', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' },
       units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
@@ -99,8 +108,8 @@ test('Ein Platz, den es damals nicht gab, kommt gar nicht in die Tabelle', async
     if (!ai) return assert.fail('migrateLegacy hat die KI-Einstellungen nicht ergänzt')
     Reflect.set(ai, 'stimme', { provider: 'ollama', preset: 'ollama-local', url: 'http://x:1', model: 'm', vision: null })
 
-    await opened.write((db) => writeStock(db, straightenForDatabase(stand)))
-    const gelesen = await opened.read(readSettings)
+    await writeStock(db, straightenForDatabase(stand))
+    const gelesen = await readSettings(db)
     assert.equal(gelesen.ai.text.provider, 'ollama')
     assert.equal(gelesen.ai.images, null, 'ein erfundener Platz ist als Bilder-Platz angekommen')
   })
