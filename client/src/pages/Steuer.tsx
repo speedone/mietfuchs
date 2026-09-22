@@ -33,7 +33,7 @@ export default function Steuer({ settings }: Props) {
 
   const incomeCents = data ? incomeCentsFor(data, basis) : 0
   const surplusCents = data ? surplusCentsFor(data, basis) : 0
-  const sharePct = data ? Math.round(data.rentedAreaShare * 1000) / 10 : 0
+  const sharePct = data ? Math.round(data.selfUsedAreaShare * 1000) / 10 : 0
   const hints = data ? taxHints(data, basis) : []
   const note = data ? prepaymentNote(data) : null
 
@@ -240,22 +240,21 @@ export default function Steuer({ settings }: Props) {
               </p>
             )}
 
+            {/* **Zwei verschiedene Lagen, zwei verschiedene Sätze** (#68). Vorher gab es nur
+                einen, und er fragte `!participates`; damit schlug eine ausdrücklich ausgenommene
+                Wohnung als Eigennutzung durch, und der Vermieter sollte einen privaten Anteil
+                herausrechnen, den es nicht gibt. */}
             {data.selfOccupiedExists && (
               <div className="notice" style={{ marginTop: 14 }}>
-                <strong>Gemischt genutztes Gebäude.</strong> Es gibt selbstgenutzte (nicht vermietete)
-                Einheiten — der vermietete Flächenanteil beträgt <strong>{sharePct.toLocaleString('de-DE')} %</strong>.
-                Werbungskosten, die das gesamte Gebäude betreffen, sind nur anteilig (nach Fläche) abziehbar;
-                der auf die selbstgenutzte Wohnung entfallende Teil ist privat.
-                {data.selfUsedShareCents > 0 ? (
+                <strong>Gemischt genutztes Gebäude.</strong> <strong>{sharePct.toLocaleString('de-DE')} %</strong>{' '}
+                der Fläche sind selbstgenutzt und damit privat. Werbungskosten, die das gesamte Gebäude
+                betreffen, sind nur anteilig (nach Fläche) abziehbar; der auf die selbstgenutzte Wohnung
+                entfallende Teil ist es nicht.
+                {data.selfUsedShareCents > 0 && (
                   <>
                     {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
                     auf selbstgenutzte Wohnungen — dieser Teil ist in den oben ausgewiesenen Werbungskosten
                     noch enthalten.
-                  </>
-                ) : (
-                  <>
-                    {' '}Damit dieser Teil bezifferbar wird, die selbstgenutzte Wohnung in den Stammdaten auf
-                    <em> Eigennutzung</em> stellen.
                   </>
                 )}{' '}
                 Bitte den abziehbaren Anteil mit dem Steuerberater abstimmen — diese Übersicht nimmt die
@@ -263,28 +262,28 @@ export default function Steuer({ settings }: Props) {
               </div>
             )}
 
-            {/* **Hinweis statt Automatik**, und zwar bewusst. Die Zuordnung hängt an der
-                vertraglichen Fälligkeit des einzelnen Mietverhältnisses, und der BFH verlangt,
-                dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
-                die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
-                Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
-                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude.
-                **Das Beispiel ist bewusst die Januarmiete und nicht die Dezembermiete.** Die
-                Dezembermiete ist nach § 556b Abs. 1 BGB im Dezember fällig; geht sie im Januar
-                ein, liegt die Fälligkeit weit außerhalb des kurzen Zeitraums, und die Regel
-                greift gerade nicht. Der häufige und für Mietfuchs ungünstige Fall ist der
-                umgekehrte: der Dauerauftrag, der die Januarmiete Ende Dezember bucht. Dort liegen
-                Fälligkeit und Zahlung beide im Zeitraum, die Einnahme des alten Jahres ist zu
-                hoch, und genau davon stand im ersten Entwurf nichts. */}
-            {hints.includes('turnOfYear') && (
-              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-                <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr
-                ihres Eingangs zu. Für regelmäßig wiederkehrende Einnahmen wie die Miete gibt es davon
-                eine Ausnahme: Fließen sie kurze Zeit — nach der Rechtsprechung bis zu zehn Tage — vor
-                oder nach dem Jahreswechsel und sind sie in dieser Zeit auch fällig, gehören sie in das
-                Jahr, zu dem sie wirtschaftlich zählen (§ 11 Abs. 1 Satz 2 EStG). Am häufigsten trifft
-                das die Januarmiete, die ein Dauerauftrag schon Ende Dezember bucht: Sie gehört ins
-                neue Jahr, steht hier aber im alten. Mietfuchs entscheidet das nicht selbst.
+            {/* Der dritte Zustand, den es vorher nicht gab. Hier stehen zwei ganz verschiedene
+                Bestände nebeneinander, und Mietfuchs kann sie nicht unterscheiden: die getrennt
+                abgerechnete Gewerbeeinheit und die eigene Wohnung aus einem alten Bestand. Der
+                Satz fragt deshalb, statt zu behaupten. */}
+            {data.excludedExists && (
+              <div className="notice" style={{ marginTop: 14 }}>
+                <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Sie sind weder als vermietet
+                noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie sie steuerlich
+                zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
+                <em> Eigennutzung</em>; dann beziffert diese Übersicht den privaten Anteil. Sind sie getrennt
+                vermietet, etwa eine Gewerbeeinheit mit eigener Abrechnung, betrifft Sie das hier nicht.
+              </div>
+            )}
+
+            {/* Der Unterschied, den das Issue in die Oberfläche verlangt hat. */}
+            {(data.selfOccupiedExists || data.excludedExists) && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                Der Flächenanteil hier rechnet über das <strong>ganze Gebäude</strong>. Die Abrechnung
+                desselben Jahres verteilt dagegen nur über die Wohnungen, die zur Abrechnungseinheit
+                gehören. Die beiden Anteile können deshalb auseinandergehen, und beide sind richtig: Die
+                Abrechnung beantwortet, wer sich eine Rechnung teilt, diese Übersicht, wie viel Ihres
+                Gebäudes privat genutzt wird.
               </p>
             )}
 

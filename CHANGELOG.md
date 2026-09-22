@@ -92,6 +92,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   1.197,60 € zahlt. Ein ausdrücklich eingetragener Endstand von 0 bleibt dabei eine
   Angabe und keine Lücke. ([#83](https://github.com/speedone/mietfuchs/issues/83))
 
+- **Eine getrennt abgerechnete Wohnung gilt in der Steuerübersicht nicht mehr als Eigennutzung.**
+  Seit einiger Zeit gibt es drei Zustände: vermietet, selbstgenutzt und außerhalb der
+  Abrechnungseinheit. Die Steuerübersicht kannte nur zwei und behandelte alles, was nicht
+  vermietet ist, als selbstgenutzt. Wer etwa eine Gewerbeeinheit getrennt abrechnet, bekam
+  deshalb die Aufforderung, den privaten Anteil herauszurechnen, obwohl er gar nichts selbst
+  nutzt. Der Flächenanteil misst jetzt außerdem das **Selbstgenutzte** statt des Vermieteten, denn
+  nur das ist eindeutig: Ob eine Wohnung außerhalb der Abrechnungseinheit vermietet ist, weiß
+  Mietfuchs nicht, und steuerlich ist ohnehin der private Anteil die Frage. Gibt es Wohnungen,
+  die Mietfuchs nicht einordnen kann, steht das jetzt als eigener Hinweis dabei, statt sie
+  stillschweigend als selbstgenutzt zu zählen. Dass der Flächenanteil über das ganze Gebäude
+  rechnet und die Abrechnung nur über die Wohnungen der Abrechnungseinheit, erklärt die Seite
+  jetzt ebenfalls: Beide Zahlen sind richtig, sie beantworten verschiedene Fragen.
+  ([#68](https://github.com/speedone/mietfuchs/issues/68))
+
 - **Zwei Ablesungen am selben Tag verlieren ihren Verbrauch nicht mehr stillschweigend.** Liegen
   zwei Stände desselben Zählers auf demselben Tag, lässt sich die Differenz dazwischen nicht
   tagesanteilig verteilen, denn es ist kein Tag vergangen. Sie fiel deshalb ersatzlos heraus, und

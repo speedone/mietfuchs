@@ -1243,7 +1243,9 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   const db: Db = {
     ...emptyDb(),
     units: [
-      { id: 'u1', name: 'EG (Eigennutzung)', areaM2: 100, participates: false },
+      // Das Kennzeichen stand hier nicht, obwohl der Name es sagt. Solange die Übersicht
+      // zweiwertig fragte, fiel das nicht auf — genau der Befund aus #68.
+      { id: 'u1', name: 'EG (Eigennutzung)', areaM2: 100, participates: false, selfUsed: true, selfPersons: 2 },
       { id: 'u2', name: 'OG', areaM2: 100, participates: true },
     ],
     tenancies: [
@@ -1278,9 +1280,85 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   // Überschuss
   assert.equal(r.surplusSollCents, 1100000) // 1.200.000 − 100.000
   assert.equal(r.surplusPaidCents, 1000000) // 1.100.000 − 100.000
-  // gemischte Nutzung: halbe Fläche vermietet
+  // gemischte Nutzung: die halbe Fläche ist selbstgenutzt und damit privat
   assert.equal(r.selfOccupiedExists, true)
-  assert.equal(r.rentedAreaShare, 0.5)
+  assert.equal(r.selfUsedAreaShare, 0.5)
+  assert.equal(r.excludedExists, false)
+})
+
+test('Steuer (Anlage V): eine ausgenommene Wohnung ist keine Eigennutzung (#68)', () => {
+  // **Die Steuerübersicht prüfte noch zweiwertig**, obwohl es drei Zustände gibt: vermietet,
+  // selbstgenutzt und außerhalb der Abrechnungseinheit (`UnitUsage` in shared/types.ts). Gefragt
+  // wurde `!u.participates`, und damit schlug eine ausdrücklich ausgenommene Wohnung — etwa eine
+  // getrennt abgerechnete Gewerbeeinheit — als Eigennutzung durch. Der Vermieter bekam dann die
+  // Aufforderung, den selbstgenutzten Anteil herauszurechnen, obwohl er gar nichts selbst nutzt.
+  //
+  // Gefragt wird jetzt nach derselben Regel, nach der auch die Abrechnung ihre selbstgenutzten
+  // Wohnungen erkennt (`selfUnits` in computeSettlement): `selfUsed` und nicht vermietet.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'Laden', areaM2: 100, participates: false, selfUsed: false },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' })],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.selfOccupiedExists, false, 'eine ausgenommene Wohnung gilt als Eigennutzung')
+  assert.equal(r.selfUsedAreaShare, 0, 'eine ausgenommene Wohnung zählt als privat')
+  // Sie ist aber nicht nichts: Der Vermieter soll wissen, dass Mietfuchs sie nicht einordnen kann.
+  assert.equal(r.excludedExists, true)
+})
+
+test('Steuer (Anlage V): der Flächenanteil misst das Private, nicht das Vermietete (#68)', () => {
+  // **Die zweite Frage des Issues, und die Antwort ist: Die Grundmengen dürfen auseinanderlaufen.**
+  // Die Verteilbasis der Abrechnung beantwortet „welche Wohnungen teilen sich diese Rechnung",
+  // der steuerliche Flächenanteil beantwortet „wie viel meines Gebäudes ist privat". Eine
+  // getrennt abgerechnete Gewerbeeinheit ist bei der ersten Frage draußen und bei der zweiten
+  // Teil des Gebäudes.
+  //
+  // Gemessen wird deshalb das **Private** und nicht das Vermietete. Nur das ist eindeutig: Ob
+  // eine ausgenommene Wohnung vermietet ist, weiß Mietfuchs nicht, ob sie selbstgenutzt ist,
+  // sehr wohl. Und die steuerliche Frage ist ohnehin die nach dem privaten Anteil, denn er ist
+  // der nicht abziehbare.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 50, participates: false, selfUsed: true, selfPersons: 2 },
+      { id: 'u3', name: 'Laden', areaM2: 50, participates: false, selfUsed: false },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' })],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.selfOccupiedExists, true)
+  assert.equal(r.excludedExists, true)
+  // 50 von 200 m² sind selbstgenutzt. Der Laden zählt nicht dazu, obwohl er nicht vermietet ist.
+  assert.equal(r.selfUsedAreaShare, 0.25)
+})
+
+test('Steuer (Anlage V): ein Bestand von vor der dreiwertigen Unterscheidung (#68)', () => {
+  // **Der Fall, der den naheliegenden Fix zur Verschlechterung machte.** CLAUDE.md sagt
+  // ausdrücklich, dass `load()` das Kennzeichen bewusst **nicht** automatisch migriert, weil ein
+  // gesetztes Kennzeichen die Verteilung bereits abgerechneter Jahre veränderte. Wer seine eigene
+  // Wohnung damals nur auf „nicht beteiligt" gestellt hat, trägt also `participates: false` ohne
+  // `selfUsed`. Für die Abrechnung ist das „außerhalb der Abrechnungseinheit".
+  //
+  // Der Hinweis muss diesen Vermieter weiterhin erreichen, sonst nimmt die Behebung ausgerechnet
+  // dem die Hilfe weg, der sie braucht. Er darf nur nicht mehr behaupten, die Wohnung sei
+  // selbstgenutzt — er fordert auf, sie einzuordnen.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 100, participates: true },
+      { id: 'u2', name: 'OG (eigene Wohnung, alt erfasst)', areaM2: 100, participates: false },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' })],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.selfOccupiedExists, false, 'ohne gesetztes Kennzeichen wird Eigennutzung behauptet')
+  assert.equal(r.excludedExists, true, 'der Hinweis erreicht alte Bestände nicht mehr')
+  assert.equal(r.selfUsedAreaShare, 0)
 })
 
 test('Steuer (Anlage V): abgeschlossene Abrechnung liefert den eingefrorenen Eigenanteil', () => {
