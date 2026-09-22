@@ -1268,9 +1268,9 @@ test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
   // Das Leerzeichen in `\s*` ist billig mitgenommen: `a.localeCompare (b)` ist gültiges
   // JavaScript und rutschte sonst ebenfalls durch.
   //
-  // **Geprüft werden drei Dateien und nicht nur calc.ts.** Die beiden anderen halten dieselben
-  // Regeln über Staffeln und Ablesungen: legacy.ts rückt einen alten Bestand gerade, schedule.ts
-  // entscheidet, welcher von zwei Einträgen zum selben Stichtag gilt. Beide sagen in ihren
+  // **Geprüft wird nicht nur calc.ts.** Die beiden anderen halten dieselben Regeln über Staffeln
+  // und Ablesungen: schedule.ts entscheidet, welcher von zwei Einträgen zum selben Stichtag gilt,
+  // und legacy/migrate.ts rückt einen alten Bestand gerade. Beide sagen in ihren
   // Kommentaren „wie in calc.ts", und solange das nur ein Kommentar war, konnte die eine Seite
   // wechseln, ohne die andere mitzunehmen. Genau das ist beim Umstellen passiert, und ohne diesen
   // Test wäre es unbemerkt geblieben: Bei ISO-Stichtagen sagen Kollator und Zeichenvergleich

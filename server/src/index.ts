@@ -19,7 +19,6 @@ import {
   SLOTS, aiFromEnv, applyAiChanges, effectiveAi, fixedFields, isExternalUrl, migrateAi,
   type MigratedSettings,
 } from './ai/settings.ts'
-
 import { PRESETS, presetById } from './ai/presets.ts'
 import { providerConfig } from './ai/index.ts'
 import { isProviderError } from './ai/errors.ts'

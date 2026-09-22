@@ -13,7 +13,17 @@
 // Start erneut. Beide unabhängigen Durchsichten dieses Zweiges haben genau das gefunden und
 // nachgestellt.
 //
-// **Diese Datei wird nicht mehr geändert.** Sie ist die Gegenrichtung zu write.ts daneben.
+// **Diese Datei trägt keine Datenregel und keinen Wortschatz**, und deshalb steht sie nicht unter
+// der Prüfsumme wie schema.ts, write.ts und migrate.ts. Sie muss es auch nicht: Sie ist die
+// Gegenrichtung zu write.ts daneben, und was sie beschreibt, ist der **Aufbau der Tabellen** von
+// damals.
+//
+// **Ändern wird man sie trotzdem müssen, und das ist kein Versehen.** `Stock` erfüllt
+// `SnapshotSource` aus snapshot.ts, ist also an das gebunden, was die **heutige** Berechnung aus
+// einem Bestand liest. Wächst das, wächst diese Datei mit; #70 hat genau das ausgelöst, als der
+// eingefrorene Berechnungsstand neben dem Eigenanteil auch die Vorauszahlungen hergeben musste.
+// Solche Änderungen sind mechanisch und berühren den Ausgangsstand nicht. Was hier nie passieren
+// darf, ist ein Import aus `db/schema.ts`; dagegen steht ein Wächter im Test.
 //
 // Dass die Regression danach mit dem **heutigen** `calc.ts` rechnet, ist kein Widerspruch: Sie
 // vergleicht zwei Seiten durch dieselbe Rechnung. Versteht calc.ts einen alten Wert eines Tages

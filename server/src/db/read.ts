@@ -1,8 +1,13 @@
 // Den ganzen Datenbestand aus der Datenbank lesen (#55).
 //
-// Gegenstück zu write.ts. Heute braucht es das der Umstieg, um nachzurechnen, dass aus der
-// Datenbank dieselbe Abrechnung entsteht wie aus der Datei (db/changeover.ts); danach lesen
-// die Routen von hier.
+// **Der Leser der Routen**, also der für den heutigen Stand des Schemas. Der Umstieg benutzt ihn
+// ausdrücklich **nicht**: In seiner Umstiegsdatei steht zu diesem Zeitpunkt nur Migration 0000,
+// und dafür gibt es `legacy/read.ts`. Ein Test hält das fest, denn läse der Umstieg von hier,
+// scheiterte er an der ersten Migration, die eine Spalte hinzufügt.
+//
+// Das Gegenstück zum Schreiben steht seit Aufgabe 6 nicht mehr an einer Stelle: Die Routen
+// schreiben über `db/repository.ts`, `db/write.ts` legt nur noch die Einstellungszeilen an, und
+// den ganzen Bestand schreibt `legacy/write.ts` beim Umstieg.
 //
 // **Gelesen wird in der Reihenfolge, in der die Zeilen angelegt wurden** (`rowid`), und das ist
 // keine Kosmetik. Zwei Ablesungen mit demselben Datum sortiert die Berechnung stabil, es gilt
