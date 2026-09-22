@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import {
+  compareName,
+  compareText,
   computeSettlement,
   computePrepaymentCents,
   consumptionInPeriod,
@@ -1012,6 +1016,115 @@ test('Steuer (Anlage V): auf die eigene Wohnung entfallender Anteil wird ausgewi
   // 80 von 230 m² entfallen auf die eigene Wohnung — dieser Teil ist privat, nicht abziehbar
   assert.equal(r.selfUsedShareCents, 80000)
   assert.equal(r.expenses.totalCents, 230000) // die Werbungskosten selbst bleiben unangetastet
+})
+
+test('Steuer (Anlage V): die Jahreskorrektur der Vorauszahlungen wird ausgewiesen (#70)', () => {
+  // **Der Befund aus #70, an seinem Ursprung gemessen.** Die Abrechnung setzt die tatsächlich
+  // geleisteten Vorauszahlungen an, denn nach ständiger Rechtsprechung des BGH muss sie das;
+  // eine Abrechnung auf Soll-Basis ist materiell falsch, und nach Ablauf der Frist des § 556
+  // Abs. 3 BGB gibt es dann keinen Nachforderungsanspruch mehr. Die Steuerübersicht dagegen
+  // hat bisher nur das vereinbarte Soll geführt. Beide Zahlen standen unkommentiert
+  // nebeneinander, und wer sie verglich, hielt eine davon für falsch.
+  //
+  // Geprüft wird deshalb **gegen die Abrechnung** und nicht gegen eine im Test noch einmal
+  // hingeschriebene Zahl: Die Zusage lautet, dass die Steuerübersicht dieselbe Vorauszahlung
+  // nennt, die auf der Abrechnung desselben Jahres steht. Rechneten beide getrennt, könnten
+  // sie wieder auseinanderlaufen, ohne dass ein Test es merkt.
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'OG', areaM2: 100, participates: true }],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01',
+        personHistory: [{ from: '2025-01-01', persons: 2 }],
+        baseRents: [{ from: '2025-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+        // Tatsächlich geflossen sind 1.800 € statt der vereinbarten 2.400 €.
+        prepaymentOverrides: { '2025': 180000 },
+      }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'GS', amountCents: 50000, key: 'units' }],
+  }
+  const snapshot = snapshotFromDb(db, 2025)
+  const r = taxReport(snapshot)
+
+  // Das vereinbarte Soll bleibt, wie es war: Es ist der Abgleich, nicht die steuerliche Zahl.
+  assert.equal(r.income.prepaymentSollCents, 240000)
+  // Und daneben steht jetzt, was die Abrechnung ansetzt.
+  assert.equal(r.income.prepaymentOverridden, true)
+  const statement = computeSettlement(snapshot).statements[0]
+  if (!statement) return assert.fail('die Abrechnung führt kein Mietverhältnis; der Test wäre wirkungslos')
+  assert.equal(statement.prepaymentCents, 180000, 'die Abrechnung rechnet nicht mit der Jahreskorrektur')
+  assert.equal(r.income.prepaymentSettlementCents, statement.prepaymentCents)
+})
+
+test('Steuer (Anlage V): ohne Jahreskorrektur nennen beide dieselbe Zahl (#70)', () => {
+  // Die Gegenprobe. Ohne Korrektur gibt es keinen Unterschied zu erklären, und die Oberfläche
+  // soll dann auch nichts erklären. Ohne diesen Fall bliebe offen, ob das Kennzeichen
+  // überhaupt etwas unterscheidet oder immer gesetzt ist.
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'OG', areaM2: 100, participates: true }],
+    tenancies: [
+      tenancy({
+        id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01',
+        personHistory: [{ from: '2025-01-01', persons: 2 }],
+        baseRents: [{ from: '2025-01', monthlyCents: 80000 }],
+        prepayments: [{ from: '2025-01', monthlyCents: 20000 }],
+      }),
+    ],
+  }
+  const r = taxReport(snapshotFromDb(db, 2025))
+  assert.equal(r.income.prepaymentOverridden, false)
+  assert.equal(r.income.prepaymentSettlementCents, r.income.prepaymentSollCents)
+})
+
+test('Sortieren: Kennungen zeichenweise, Namen auf Deutsch — beides fest (#70)', () => {
+  // **Die Kleinigkeit aus #70, und sie ist eine Haltungsfrage.** `largestRemainder` vergleicht
+  // seine Kennungen ausdrücklich Zeichen für Zeichen und begründet es: Sonst hinge das Ergebnis
+  // von der Locale der Laufzeit ab, und dieselben Daten ergäben auf zwei Rechnern zwei
+  // Reihenfolgen. Das Mietkonto sortierte daneben mit blankem `localeCompare()`, also genau so,
+  // wie die Laufzeit gerade eingestellt ist.
+  //
+  // **Die Antwort ist nicht, überall zeichenweise zu vergleichen.** „Älter" gehört vor „Zaun",
+  // und zeichenweise landete es dahinter, weil U+00C4 hinter dem Z liegt. Ein Vermieter mit
+  // Umlauten im Haus sähe eine Liste in einer Ordnung, die es in keiner Sprache gibt. Die
+  // Antwort ist, die Sprache festzunageln, wie es dieselbe Datei beim Formatieren von Zahlen
+  // schon tut (`toLocaleString('de-DE')`).
+  //
+  // Gemessen wird am Umlaut, denn genau dort gehen die beiden Ordnungen auseinander. Ohne einen
+  // solchen Fall wäre der Test wirkungslos, weil sie bei reinem ASCII dasselbe ergeben.
+  assert.ok(compareName('Älter', 'Zaun') < 0, 'Namen werden nicht auf Deutsch sortiert')
+  assert.ok(compareText('Älter', 'Zaun') > 0, 'Kennungen werden nicht zeichenweise verglichen')
+
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'Zaun', areaM2: 100, participates: true },
+      { id: 'u2', name: 'Älter', areaM2: 100, participates: true },
+    ],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01', baseRents: [{ from: '2025-01', monthlyCents: 1000 }] }),
+      tenancy({ id: 't2', unitId: 'u2', tenantName: 'B', start: '2025-01-01', baseRents: [{ from: '2025-01', monthlyCents: 1000 }] }),
+    ],
+  }
+  const rows = rentLedger(snapshotFromDb(db, 2025)).rows
+  assert.deepEqual(rows.map((r) => r.unitName), ['Älter', 'Zaun'])
+})
+
+test('Sortieren: in calc.ts gibt es kein blankes localeCompare (#70)', () => {
+  // **Die Zusage, die sich auf einem einzelnen Rechner nicht messen lässt.** `localeCompare()`
+  // ohne Sprache liest die Einstellung der Laufzeit. Hier entwickelt jemand auf Deutsch, und
+  // deshalb sagt jeder Vergleich dasselbe wie der deutsche Kollator — bis die Datei irgendwo
+  // anders läuft. Ein Verhaltenstest dafür bräuchte einen zweiten Prozess mit gesetzter Locale,
+  // und den beachtet Windows nicht; das wäre ein Test, der nur auf einem System prüft, und
+  // genau davor warnt CLAUDE.md.
+  //
+  // Geprüft wird deshalb der Quelltext. Wer hier etwas ändert, soll sich zwischen den beiden
+  // benannten Funktionen entscheiden müssen und nicht zwischen ihnen hindurchrutschen können.
+  const quelle = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'calc.ts'), 'utf8')
+  const aufrufe = quelle.split('\n').filter((zeile) => /\.localeCompare\(/.test(zeile))
+  assert.deepEqual(aufrufe, [], 'calc.ts sortiert nach der Locale der Laufzeit statt mit compareText/compareName')
 })
 
 // ---------- Invarianten über zufällige Datenbestände ----------

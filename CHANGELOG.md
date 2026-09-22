@@ -78,6 +78,40 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Die Steuerübersicht rechnet jetzt von sich aus mit dem, was tatsächlich eingegangen ist.**
+  Bisher war das vereinbarte Soll voreingestellt, weil es auch ohne erfasste Zahlungen eine Zahl
+  liefert. Für die Anlage V ist das aber die falsche Grundlage: Steuerlich zählt, was Ihnen im
+  Jahr zugeflossen ist, und eine vereinbarte, nicht gezahlte Miete ist keine Einnahme. Das Soll
+  bleibt umschaltbar, denn zum Abgleich ist es nützlich, und wer es ansetzt, sieht jetzt einen
+  Hinweis darauf, auch auf dem Ausdruck. Sind für ein Jahr noch keine Zahlungen erfasst, stehen
+  dort 0 € und ein Satz, der zum Mietkonto führt, statt einer Summe, die stimmig aussieht und
+  nicht in die Steuererklärung gehört.
+  ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
+- **Abrechnung und Steuerübersicht erklären jetzt, warum sie bei den Vorauszahlungen verschiedene
+  Zahlen nennen.** Haben Sie für ein Jahr die tatsächlich gezahlten Vorauszahlungen von Hand
+  korrigiert, rechnet die Abrechnung mit dieser Korrektur, denn sie muss es: Dort sind die
+  tatsächlich geleisteten Vorauszahlungen einzustellen. Die Steuerübersicht führt daneben das
+  vereinbarte Soll. Beide Zahlen sind richtig, sie beantworten verschiedene Fragen, aber sie
+  standen unkommentiert nebeneinander, und wer sie verglich, musste eine davon für falsch
+  halten. Jetzt steht die Zahl der Abrechnung mit einem Satz dabei. Ebenso erklärt das Mietkonto
+  einen offenen Dezember: Eine Miete zählt zu dem Jahr, in dem sie eingegangen ist, und geht die
+  Dezembermiete erst im Januar ein, erscheint sie im Mietkonto des Folgejahres.
+  ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
+- **Am Jahreswechsel weist die Steuerübersicht auf die Zehn-Tage-Regel hin.** Regelmäßig
+  wiederkehrende Einnahmen wie die Miete, die kurz vor oder nach dem Jahreswechsel fließen,
+  gehören unter Umständen in das andere Jahr (§ 11 Abs. 1 Satz 2 EStG). Ob das greift, hängt
+  auch davon ab, wann die Miete nach dem Mietvertrag fällig war. Mietfuchs entscheidet das nicht
+  selbst, sondern sagt es dazu, wie schon bei der Aufteilung gemischt genutzter Gebäude.
+  ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
+- **Das Mietkonto sortiert unabhängig davon, wie der Rechner eingestellt ist.** Bisher hing die
+  Reihenfolge der Wohnungen an der Spracheinstellung der Laufzeit, dieselben Daten konnten also
+  auf zwei Rechnern verschieden dastehen. Jetzt gilt fest deutsche Sortierung, „Älter" steht
+  also weiterhin vor „Zaun". An einer Zahl ändert das nichts.
+  ([#70](https://github.com/speedone/mietfuchs/issues/70))
+
 - **Das Wiederherstellen aus einem Backup lässt niemanden mehr mit einem Fehler stehen.** Zwei
   Dinge gingen dabei schief, und beide trafen ausgerechnet die Lage, in der man ein Backup
   überhaupt braucht. Zum einen wurde bisher nur geprüft, ob sich die Datei im Archiv überhaupt

@@ -700,6 +700,25 @@ die ganze fachliche Komplexität:
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
   vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
+  **Maßgeblich ist das Ist** (#70): § 11 Abs. 1 Satz 1 EStG setzt Einnahmen im Jahr des Zuflusses
+  an, ein vereinbartes, nicht gezahltes Soll ist keine Einnahme. Das Soll bleibt umschaltbar, denn
+  zum Abgleich taugt es, ist aber nicht mehr die Vorgabe; die Entscheidungslogik samt Hinweisen
+  steht in [client/src/taxView.ts](client/src/taxView.ts). Dass die Vorgabe früher das Soll war,
+  hatte einen ehrlichen Grund, nämlich eine Zahl auch ohne erfasste Zahlungen — und war genau
+  deshalb der schlimmere Ausgang: 0 € sind sichtbar falsch und führen ins Mietkonto, eine
+  Soll-Summe ist unsichtbar falsch und wandert in die Steuererklärung. Dieselbe Abwägung wie beim
+  `?? []` an der Schnappschuss-Grenze.
+  **Drei Sichten, drei Zahlen, und nur die Steuerübersicht war falsch.** Die Abrechnung setzt die
+  tatsächlich geleisteten Vorauszahlungen an (`prepaymentOverrides` hat Vorrang), weil sie es
+  muss: Nach ständiger Rechtsprechung des BGH ist eine Abrechnung auf Soll-Basis materiell falsch
+  und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr. Das
+  Mietkonto führt das monatliche Soll, denn eine Jahreszahl auf zwölf Monate zu verteilen wäre
+  erfunden. `taxReport` führt beide nebeneinander (`prepaymentSollCents` und
+  `prepaymentSettlementCents` samt `prepaymentOverridden`) und **entnimmt die zweite der
+  Abrechnung**, statt die Staffel ein zweites Mal auszulegen. Die Zehn-Tage-Regel des § 11 Abs. 1
+  Satz 2 EStG bleibt ein Hinweis in der Oberfläche und wird nicht gerechnet: Sie hängt an der
+  vertraglichen Fälligkeit, die Mietfuchs nicht kennt, und ein Feld dafür machte eine Zahl der
+  Steuererklärung davon abhängig, dass jeder Nutzer es richtig ausfüllt.
 
 **Das Datenmodell steht in [shared/types.ts](shared/types.ts)** (Unit, Tenancy, Meter, Reading,
 CostItem, Settings, Settlement …) und gilt für Server und Client gleichermaßen. Die Datei
@@ -954,6 +973,17 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.ts die
   bestehende Konvention beibehalten und gegen [server/test/calc.test.ts](server/test/calc.test.ts)
   prüfen.
+- **Nichts in calc.ts hängt an der Locale der Laufzeit** (#70). Ein blankes `localeCompare()`
+  liest die Einstellung des Rechners, und dieselben Daten ergäben auf zwei Rechnern zwei
+  Reihenfolgen; bei `largestRemainder` entscheidet sie, wer den Rest-Cent bekommt.
+  Abgeschafft wird die Sprache deshalb aber nicht, sondern festgenagelt, wie beim Formatieren
+  mit `'de-DE'` in derselben Datei. Es gibt zwei benannte Funktionen, und welche gilt, entscheidet
+  der Zweck: `compareText` vergleicht Zeichen für Zeichen, wo die Reihenfolge eine Bedeutung
+  trägt (Kennungen, ISO-Daten, Staffeln); `compareName` sortiert mit fest eingestelltem Deutsch,
+  wo ein Mensch die Liste liest, sonst stünde „Älter" hinter „Zaun". Ein Test prüft den
+  Quelltext, denn auf einem einzelnen Rechner sagen beide Ordnungen dasselbe. Wer eine weitere
+  Stelle anfasst, die eine Staffel oder Ablesungen sortiert, nimmt `compareText` von hier und
+  schreibt den Vergleich nicht noch einmal hin.
 - **Wer nach Plattform unterscheidet, bekommt sie hineingereicht**, wie `systemLocation` und
   `chooseDataDir` in paths.ts und store.ts und `networkLocation` in db/open.ts. Dazu gehört, mit
   `path.win32` beziehungsweise `path.posix` zu rechnen statt mit der Voreinstellung, und ebenso

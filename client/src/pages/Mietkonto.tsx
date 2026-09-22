@@ -220,6 +220,18 @@ export default function Mietkonto() {
                 <p className="muted" style={{ margin: '2px 0 10px' }}>
                   Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor.
                 </p>
+                {/* **Der überraschende Dezember** (#70). Eine Zahlung zählt zu dem Jahr, in dem
+                    sie eingegangen ist. Geht die Dezembermiete erst im Januar ein, bleibt der
+                    Dezember hier offen, obwohl der Mieter gezahlt hat, und das Geld taucht im
+                    Mietkonto des Folgejahres auf. Das ist richtig gerechnet und trotzdem nicht
+                    selbsterklärend, deshalb steht es dabei — aber nur, wenn der Fall vorliegt. */}
+                {r.months[11] && r.months[11].sollCents > 0 && r.months[11].status !== 'paid' && (
+                  <p className="muted" style={{ margin: '2px 0 10px' }}>
+                    Der Dezember steht offen: Zahlungen zählen zu dem Jahr, in dem sie eingegangen
+                    sind. Geht die Dezembermiete erst im Januar ein, erscheint sie im Mietkonto
+                    {' '}{year + 1} und der Dezember bleibt hier offen.
+                  </p>
+                )}
                 <table>
                   <tbody>
                     <tr>
