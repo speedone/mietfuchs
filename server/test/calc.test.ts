@@ -425,6 +425,84 @@ test('Zählerwechsel: Endstand alt + Startstand neu, kein negativer Verbrauch', 
   assert.equal(meterSegments(broken).warnings.length, 1)
 })
 
+test('Zwei Ablesungen am selben Tag: der Verbrauch dazwischen wird gemeldet (#69)', () => {
+  // **Er verschwand bisher ersatzlos und ohne ein Wort.** Verbrauchssegmente entstehen nur, wenn
+  // zwischen zwei Ablesungen mindestens ein Tag liegt, denn sonst müsste durch null geteilt
+  // werden, um tagesanteilig zu verteilen. Das ist richtig. Die Differenz zwischen den beiden
+  // Ständen fiel dabei aber unter den Tisch, statt irgendwo aufzutauchen.
+  //
+  // **Verteilt wird sie trotzdem nicht, und das ist eine Entscheidung mit Begründung.** Beide
+  // erreichbaren Fälle sprechen dagegen. Zwei gewöhnliche Ablesungen am selben Tag sind fast
+  // immer eine Korrektur; die Differenz ist dann ein Tippfehler und keine Menge Wasser, und sie
+  // dem Nachbarsegment zuzuschlagen machte aus der Korrektur Verbrauch. Beim Zählerwechsel am
+  // selben Tag ist die Differenz Verbrauch über null Tage, also selbst schon ein Widerspruch in
+  // den Daten. In beiden Fällen weiß nur der Vermieter, welche der beiden Ablesungen stimmt.
+  // Verteilen hieße raten. Es bleibt also bei der Meldung, wie bei der für negativen Verbrauch.
+  const doppelt = readingsOf('m1', [
+    { date: '2024-12-31', value: 100 },
+    { date: '2025-06-30', value: 150 },
+    { date: '2025-06-30', value: 160 }, // Korrektur am selben Tag: 10 fallen heraus
+    { date: '2025-12-31', value: 200 },
+  ])
+  const { warnings, segments } = meterSegments(doppelt)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /2025-06-30/)
+  assert.match(warnings[0], /nicht verteilt/)
+  // Der Verbrauch selbst bleibt, wie er war: 50 bis zum Stichtag, 40 danach. Die 10 sind weg,
+  // und genau das sagt die Meldung.
+  assert.equal(segments.length, 2)
+  assert.ok(Math.abs(consumptionInPeriod(doppelt, '2025-01-01', '2025-12-31') - 90) < 1e-9)
+
+  // Zwei Ablesungen am selben Tag mit demselben Stand sind eine Doppeleingabe und kein Verlust.
+  const gleich = readingsOf('m1', [
+    { date: '2024-12-31', value: 100 },
+    { date: '2025-06-30', value: 150 },
+    { date: '2025-06-30', value: 150 },
+  ])
+  assert.deepEqual(meterSegments(gleich).warnings, [])
+})
+
+test('Zwei Ablesungen am selben Tag: der Zählerwechsel ist der ärgerliche Fall (#69)', () => {
+  // Dafür gibt es das Kennzeichen, und genau hier wäre der verschwundene Verbrauch am
+  // ärgerlichsten: Er fehlt beim Mieter und geht stillschweigend zulasten des Vermieters.
+  const wechsel = readingsOf('m1', [
+    { date: '2024-12-31', value: 950 },
+    { date: '2025-06-30', value: 980 },
+    // Wechsel am selben Tag: Der alte Zähler stand bei 995, die 15 dazwischen fallen heraus.
+    { date: '2025-06-30', value: 0, replacement: true, oldEndValue: 995 },
+    { date: '2025-12-31', value: 40 },
+  ])
+  const { warnings } = meterSegments(wechsel)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /nicht verteilt/)
+
+  // Wird am Wechseltag gar nichts mehr verbraucht, gibt es auch nichts zu melden.
+  const sauber = readingsOf('m1', [
+    { date: '2024-12-31', value: 950 },
+    { date: '2025-06-30', value: 980 },
+    { date: '2025-06-30', value: 0, replacement: true, oldEndValue: 980 },
+    { date: '2025-12-31', value: 40 },
+  ])
+  assert.deepEqual(meterSegments(sauber).warnings, [])
+})
+
+test('Zwei Ablesungen am selben Tag: dann gilt diese Meldung und nicht die für negativen Verbrauch (#69)', () => {
+  // **Eine Meldung je Fall.** Die Meldung über negativen Verbrauch spricht von einem Zähler, der
+  // über die Zeit zurückläuft; über null Tage gibt es diese Zeit nicht, und die Differenz geht
+  // ohnehin nicht in die Rechnung ein. Zwei Meldungen nebeneinander sagten dasselbe zweimal und
+  // schickten den Vermieter auf die falsche Fährte („Zählerwechsel markieren"), obwohl hier eine
+  // der beiden Ablesungen zu korrigieren ist.
+  const rueckwaerts = readingsOf('m1', [
+    { date: '2024-12-31', value: 100 },
+    { date: '2025-06-30', value: 160 },
+    { date: '2025-06-30', value: 150 }, // die zweite steht niedriger
+  ])
+  const { warnings } = meterSegments(rueckwaerts)
+  assert.equal(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /nicht verteilt/)
+  assert.doesNotMatch(warnings[0], /Negativer Verbrauch/)
+})
+
 test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
   const db = makeDb()
   db.meters = [
