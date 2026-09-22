@@ -26,6 +26,7 @@ import { writeStock } from '../src/db/write.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 import { straightenForDatabase } from '../src/legacy.ts'
 import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
+import { connect, loadMigrations, type Migration } from '../src/db/client.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
 import { closedSettlements, costItems, units } from '../src/db/schema.ts'
 
@@ -99,6 +100,17 @@ async function changeoverIn(
   }
 }
 
+// Die Namen der Wohnungen über die rohe Verbindung. Gebraucht wird das, wo `openDatabase` die
+// Datei bewusst ablehnt, etwa weil ihre Buchführung eine unbekannte Migrationsmarke führt.
+async function unitNames(dataDir: string): Promise<string[]> {
+  const connection = await connect(databaseFile(dataDir))
+  try {
+    return connection.rows('SELECT name FROM units ORDER BY rowid').map((zeile) => String(zeile[0]))
+  } finally {
+    connection.close()
+  }
+}
+
 // Was in der Datenbank steht, unabhängig vom Umstieg gelesen.
 async function stockOf(dataDir: string) {
   const opened = await openDatabase({ dataDir })
@@ -110,6 +122,66 @@ async function stockOf(dataDir: string) {
 }
 
 const removeDir = (dir: string): void => fs.rmSync(dir, { recursive: true, force: true })
+
+// ---------- Die Reihenfolge: erst der Ausgangsstand, dann die Kette ----------
+
+test('Die Kette der Migrationen läuft über den übernommenen Bestand, nicht davor', async () => {
+  // **Der Kern von Aufgabe 6b.** Der Import zielt auf den Stand nach Migration 0000, und erst
+  // danach läuft die Migrationskette darüber. Nur so trägt jeder Schritt seine Datenregel selbst,
+  // und nur so muss eine Regel wie „dieser Auswahlwert heißt jetzt anders" nicht ein zweites Mal
+  // im Eingang geschrieben werden. Das Muster heißt bei Django „historische Modelle" und bei
+  // Flyway „Baseline".
+  //
+  // **Mit der einen veröffentlichten Migration ist die Frage nicht zu stellen**, denn der Stand
+  // nach 0000 ist derselbe wie der neueste. Der Test reicht deshalb eine zweite hinein, die
+  // etwas an den Daten tut. Liefe sie vor dem Import, wäre ihre Änderung wirkungslos, weil es
+  // noch nichts zu ändern gibt; läuft sie danach, trägt jede übernommene Wohnung das Kennzeichen.
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    const echte = await loadMigrations()
+    const nachtraeglich: Migration = {
+      tag: '0001_test_nur_fuer_diesen_lauf',
+      hash: 'hash-nur-fuer-diesen-lauf',
+      folderMillis: 1789952012372,
+      statements: [`UPDATE units SET name = name || ' (von 0001)'`],
+    }
+    const opened = await openDatabase({ dataDir })
+    const result = await runChangeover({
+      dataDir, opened, reopen: () => openDatabase({ dataDir }),
+      migrations: [...echte, nachtraeglich],
+      hooks: {
+        // Vor dem Import steht der Stand nach 0000 und keiner weiter: Die Buchführung führt genau
+        // die veröffentlichten Schritte.
+        beforeImport: async (db) => {
+          const zeilen = await db.select().from(units)
+          assert.deepEqual(zeilen, [], 'vor dem Import steht schon etwas in der Tabelle')
+        },
+        // Unmittelbar nach dem Import steht der rohe Name da; die Kette ist noch nicht gelaufen.
+        afterImport: async (db) => {
+          const namen = (await db.select().from(units)).map((u) => u.name)
+          assert.deepEqual(namen, ['EG', 'OG'], 'die Kette ist schon vor der Regression gelaufen')
+        },
+      },
+    })
+    try {
+      assert.equal(result.state, 'done', result.message)
+      // Und am Ende trägt jede übernommene Wohnung, was die Migration an ihr getan hat.
+      //
+      // Gelesen wird über die rohe Verbindung und nicht über `stockOf`. Das ist kein Umweg,
+      // sondern die Schutzregel aus open.ts bei der Arbeit: Sie lehnt eine Datenbank ab, deren
+      // Buchführung eine Marke führt, die dieses Programm nicht kennt, und die erfundene
+      // Migration dieses Tests ist genau so eine. Dass sie hier zuschlägt, ist der Beweis, dass
+      // die Marke auch wirklich eingetragen wurde.
+      const namen = await unitNames(dataDir)
+      assert.deepEqual(namen, ['EG (von 0001)', 'OG (von 0001)'], 'die Datenregel der Migration hat den Bestand nicht erreicht')
+    } finally {
+      result.database?.close()
+    }
+  } finally {
+    removeDir(dataDir)
+  }
+})
 
 // ---------- Wann überhaupt etwas geschieht ----------
 
