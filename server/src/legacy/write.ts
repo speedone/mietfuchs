@@ -65,6 +65,46 @@ function chunks<T>(rows: T[]): T[][] {
 // client.ts wirft deshalb ausdrücklich, wenn ein `undefined` bis zur Datenbank durchkommt.
 const orNull = <T>(value: T | undefined | null): T | null => value ?? null
 
+// ---------- Der Wächter an der eingefrorenen Grenze ----------
+//
+// **Die Einstellungen laufen weiter durch lebenden Code**, nämlich `migrateAi` in ai/settings.ts,
+// und das ist eine Entscheidung und kein Versäumnis. Die fachlichen Daten sind eingefroren, weil
+// dieselbe Datei immer dieselben Zahlen ergeben muss; die sind einem Mieter zugestellt worden.
+// Die Einstellungen brauchen die umgekehrte Zusage: Niemandem hilft eine Vorlagenwahl von 2026,
+// wenn er in einem Jahr einspielt, ihm hilft eine Einrichtung, die mit dem Code von dann
+// arbeitet. Und die Asymmetrie ist deutlich: Kommt eine Einstellung anders heraus, korrigiert es
+// die Oberfläche und nichts ist verloren; kommt eine Zahl anders heraus, hat ein Mieter eine
+// falsche Abrechnung bekommen.
+//
+// **Bleibt ein Risiko, und es ist begrenzt.** In den eingefrorenen Tabellen gibt es genau vier
+// Aufzählungsbedingungen. Lieferte lebender Code eines Tages einen Wert, den der Wortschatz von
+// damals nicht kennt, scheiterte der Umstieg an einer von ihnen, und zwar zur Laufzeit beim
+// Vermieter. Nachgemessen an `update_check`: Ein erfundener Wert bricht das Einfügen der ganzen
+// Zeile ab.
+//
+// Geklemmt wird deshalb hier, mit den Listen von damals. Das ist **kein Nachbau der Logik**,
+// sondern eine Aussage über das Schema: Diese Spalten konnten damals genau das enthalten. Eine
+// Kopie von `migrateAi` wäre die zweite Stelle, an der dieselbe Regel steht; dieser Wächter ist
+// keine.
+//
+// Der Platz selbst (`ai_slots_slot_known`) braucht keinen Wächter: `aiSlotRows` unten liest genau
+// `text` und `images`, ein dritter Name kommt also gar nicht erst an. Ein Test hält das fest.
+
+// Was die Spalte nicht kennt, wird zum Rückfallwert. Die Listen stehen hier als Zeichenketten und
+// nicht als Verweis auf `shared/types.ts`: Ein Verweis auf einen lebenden Typ wäre das Gegenteil
+// von eingefroren.
+const clamped = <T extends string>(known: readonly T[], value: unknown, fallback: T): T =>
+  known.find((eintrag) => eintrag === value) ?? fallback
+
+// Dasselbe für eine Spalte, die auch leer sein darf: Dort ist `null` der ehrlichere Rückfall als
+// ein erfundener Wert, denn „nicht eingetragen" ist etwas, das die Oberfläche versteht.
+const clampedOrNull = <T extends string>(known: readonly T[], value: unknown): T | null =>
+  known.find((eintrag) => eintrag === value) ?? null
+
+const V0_UPDATE_CHECK = ['on', 'off'] as const
+const V0_JSON_MODES = ['auto', 'schema', 'object', 'prompt'] as const
+const V0_PROVIDERS = ['ollama', 'openai'] as const
+
 // ---------- Die Zeilen der Einstellungen ----------
 //
 // **Hier steht eine Kopie, und das ist der Zweck der ganzen Aufteilung.** Dieselben Funktionen
@@ -89,13 +129,13 @@ function settingsRow(s: MigratedSettings) {
     ollamaModel: s.ollamaModel,
     printAdjustSuggestion: orNull(s.printAdjustSuggestion),
     printAttachments: orNull(s.printAttachments),
-    updateCheck: orNull(s.updateCheck),
+    updateCheck: clampedOrNull(V0_UPDATE_CHECK, s.updateCheck),
     updateDismissed: orNull(s.updateDismissed),
     aiTimeoutSeconds: orNull(ai.timeoutSeconds),
     aiNumCtx: orNull(ai.numCtx),
     aiMaxOutputTokens: orNull(ai.maxOutputTokens),
     aiPageImageEdge: orNull(ai.pageImageEdge),
-    aiJsonMode: ai.jsonMode,
+    aiJsonMode: clamped(V0_JSON_MODES, ai.jsonMode, 'auto'),
     aiReasoningEffort: orNull(ai.reasoningEffort),
     aiExtraInstructions: ai.extraInstructions,
   }
@@ -104,7 +144,7 @@ function settingsRow(s: MigratedSettings) {
 function aiSlotRows(ai: AiSettings) {
   const slotRow = (name: AiSlotName, slot: AiSlot) => ({
     slot: name,
-    provider: slot.provider,
+    provider: clamped(V0_PROVIDERS, slot.provider, 'ollama'),
     preset: slot.preset,
     url: slot.url,
     model: slot.model,
