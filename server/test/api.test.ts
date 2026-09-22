@@ -282,6 +282,11 @@ async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}) {
       ...env,
       NKA_PORT: '0',
       NKA_DATA_DIR: dataDir,
+      // **Hinter `...env`, damit es kein Aufrufer versehentlich abschaltet.** Ohne `CI` oeffnet
+      // der Server den Standard-Browser, sobald er sich fuer die Programmdatei haelt, und genau
+      // das tut ein Aufrufer weiter unten mit `NKA_RUNTIME: 'binary'`. Jeder volle Testlauf riss
+      // damit einen Tab auf einem Zufallsport auf. Siehe die Regel in CLAUDE.md.
+      CI: 'true',
     },
     stdio: ['ignore', 'pipe', 'ignore'],
   })
@@ -2039,7 +2044,7 @@ test('Start: ist der Port belegt, meldet der Server das und behauptet nicht, zu 
   try {
     const child = spawn(process.execPath, ['src/index.ts'], {
       cwd: serverRoot,
-      env: { ...process.env, NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/' },
+      env: { ...process.env, NKA_PORT: String(port), NKA_DATA_DIR: dataDir, NKA_UPDATE_URL: 'http://127.0.0.1:9/', CI: 'true' },
     })
     let output = ''
     child.stdout.on('data', (d) => { output += d })
@@ -3596,4 +3601,51 @@ test('Auswertung: eine Antwort am Schema vorbei bricht die Zusage an die Oberfl�
     assert.equal(extraction.amountsAdjusted, undefined)
     assert.equal('invoiceNumber' in extraction, false)
   }, { chat: 'offSchema' })
+})
+
+// ---------- Kein Serverstart ohne CI ----------
+
+test('Jeder Serverstart einer Prüfung setzt CI', () => {
+  // **Ohne `CI` reißt ein Testlauf Browserfenster auf dem Rechner des Entwicklers auf.**
+  // Der Server öffnet beim Start den Standard-Browser, sobald `STANDALONE` gilt, also in der
+  // Betriebsart `binary` oder `package` (siehe version.ts). Genau die stellt ein Test weiter
+  // oben mit `NKA_RUNTIME: 'binary'` nach, und weil `startServerIn` kein `CI` setzte, ging bei
+  // jedem vollen Lauf ein Tab auf — auf einem Zufallsport, denn `NKA_PORT` ist dort `'0'`.
+  //
+  // **Geprüft wird der Quelltext, und das ist hier das richtige Mittel.** Am Verhalten ließe es
+  // sich nur messen, indem der Test einen Browser öffnet, und das ist genau das, was er
+  // verhindern soll. Die Regel steht in CLAUDE.md bei den drei Variablen, die zu jedem
+  // Prüf-Serverstart gehören: NKA_DATA_DIR gegen echte Daten, CI gegen das Fenster,
+  // NKA_UPDATE_URL gegen Anfragen zu GitHub.
+  //
+  // Gelesen wird der Block `env: { … }` jedes Serverstarts, und zwar mit Klammerzählung statt
+  // mit einem festen Fenster: Ein Suchbereich „die nächsten N Zeichen" ginge irgendwann daneben,
+  // und ein Wächter, der zu früh aufhört, meldet nichts und schützt nichts.
+  const quelle = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8')
+  // Das Muster steht bewusst zweigeteilt da: Stünde es an einem Stück, fände der Wächter sich
+  // selbst und meldete seine eigene Zeile. Nachgemessen, das war der erste Lauf.
+  const marke = `spawn(process.execPath, ['src/` + `index.ts']`
+  const ohneCI: number[] = []
+  for (let von = quelle.indexOf(marke); von !== -1; von = quelle.indexOf(marke, von + 1)) {
+    const envStart = quelle.indexOf('env: {', von)
+    if (envStart === -1) return assert.fail(`Serverstart ohne env-Block bei Zeichen ${von}`)
+    let tiefe = 0
+    let envEnde = -1
+    for (let i = quelle.indexOf('{', envStart); i < quelle.length; i++) {
+      if (quelle[i] === '{') tiefe++
+      else if (quelle[i] === '}' && --tiefe === 0) { envEnde = i; break }
+    }
+    if (envEnde === -1) return assert.fail(`env-Block bei Zeichen ${envStart} ist nicht geschlossen`)
+    if (!/\bCI:\s*['"]/.test(quelle.slice(envStart, envEnde))) {
+      ohneCI.push(quelle.slice(0, von).split('\n').length)
+    }
+  }
+  assert.deepEqual(
+    ohneCI,
+    [],
+    'Serverstart ohne CI in diesen Zeilen. Ohne CI öffnet der Server ein Browserfenster, sobald ' +
+      'er sich für die Programmdatei hält. Siehe CLAUDE.md, Abschnitt zu den Tests.',
+  )
+  // Und der Wächter muss überhaupt etwas gefunden haben, sonst prüft er nichts.
+  assert.ok(quelle.includes(marke), 'kein einziger Serverstart gefunden; der Wächter wäre wirkungslos')
 })
