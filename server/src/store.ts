@@ -122,7 +122,7 @@ function load(): Db {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
   // Was in der Datei steht, weiß vorher niemand; der Typ ist hier eine Annahme und keine
   // Prüfung, wie bisher. Geprüft wird dort, wo ein fremder Bestand hereinkommt: beim
-  // Wiederherstellen eines Backups, mit dem Validator in db/validate.ts.
+  // Wiederherstellen eines Backups, mit dem Validator in legacy/validate.ts.
   const stored: Partial<Db> | null = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : null
   // Die Vorgabewerte und die Umwandlung der alten Formate stehen in legacy.ts, weil der Umstieg
   // in die Datenbank dieselben Regeln braucht.

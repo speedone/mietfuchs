@@ -1,4 +1,4 @@
-// Der Validator (server/src/db/validate.ts, #59): Was darf in die Datenbank, und was nicht?
+// Der Validator (server/src/legacy/validate.ts, #59): Was darf in die Datenbank, und was nicht?
 //
 // Die Tests sind in drei Gruppen geteilt, und die mittlere ist die eigentliche Aussage dieser
 // Datei:
@@ -17,7 +17,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
-import { findingsText, validateDb, type Finding } from '../src/db/validate.ts'
+import { findingsText, validateDb, type Finding } from '../src/legacy/validate.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
 import { migrateLegacy, straightenForDatabase } from '../src/legacy.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
