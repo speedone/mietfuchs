@@ -641,7 +641,7 @@ test('Staffel: zwei Einträge zum selben Stichtag werden angenommen, der letzte 
   // zwei so ausgefüllte Zeilen ergeben zwei Einträge zum selben Stichtag. Über die db.json war
   // das hingenommen, in der Datenbank ist der Stichtag Teil des Primärschlüssels.
   //
-  // Angenommen wird es trotzdem, und zwar nach derselben Regel, die legacy.ts beim Umstieg
+  // Angenommen wird es trotzdem, und zwar nach derselben Regel, die legacy/migrate.ts beim Umstieg
   // anwendet und calc.ts beim Rechnen: **Es gilt der letzte.** Alles andere wäre ein Rückschritt
   // gegenüber der db.json, und zwar bei einer ganz gewöhnlichen Eingabe.
   const unit = await srv.api<Unit>('/api/units', {

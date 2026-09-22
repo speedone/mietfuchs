@@ -19,7 +19,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { findingsText, validateDb, type Finding } from '../src/legacy/validate.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
-import { migrateLegacy, straightenForDatabase } from '../src/legacy.ts'
+import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
 import { FIXTURE_DIR } from '../testing/fixtures.ts'
 import type { Db } from '../src/store.ts'
@@ -340,7 +340,7 @@ function resultsOf(file: Db) {
 }
 
 // Derselbe Bestand, aber so, wie ihn der Umstieg in die Datenbank schreibt: nach dem Einlesen
-// noch einmal durch `straightenForDatabase` (legacy.ts).
+// noch einmal durch `straightenForDatabase` (legacy/migrate.ts).
 //
 // **Das ist der Unterschied zu früher, und er ist der Punkt dieser Datei.** Vorher rückte jeder
 // Test hier von Hand gerade und verglich das Ergebnis mit dem krummen Bestand. Damit prüfte er,

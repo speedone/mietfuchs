@@ -10,7 +10,7 @@
 // erzeugt einen Migrationsschritt; hier ist nichts zu tun.
 //
 // Die Zuordnung ist mechanisch: ein Feld, eine Spalte. **Was krumm ist, wird vorher
-// geradegerückt** (`straightenForDatabase` in legacy.ts), und deshalb steht hier keine einzige
+// geradegerückt** (`straightenForDatabase` in legacy/migrate.ts), und deshalb steht hier keine einzige
 // fachliche Regel. Der Typ der Eingabe sagt genau das: `StraightDb` ist ein Bestand, in dem jedes
 // Feld, für das es eine Spalte ohne NULL gibt, einen Wert hat.
 //
@@ -24,7 +24,7 @@
 
 import type { AiSettings, AiSlot, AiSlotName } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
-import type { StraightDb } from '../legacy.ts'
+import type { StraightDb } from './migrate.ts'
 import type { Database } from '../db/client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,

@@ -24,7 +24,7 @@
 //   **Hingenommen** wird, was beides erfüllt: Es entsteht durch gewöhnliche Bedienung oder in
 //   einem älteren Bestand, **und** es lässt sich so geraderücken, dass die Abrechnung danach
 //   dieselben Zahlen ergibt wie heute. Das Geraderücken folgt dabei immer einer Regel, die
-//   schon in calc.ts oder legacy.ts steht, und erfindet nie eine neue.
+//   schon in calc.ts oder legacy/migrate.ts steht, und erfindet nie eine neue.
 //
 // **Eine Ausnahme ist benannt, und sie ist die einzige**: Der feste Monatsbetrag neben einer
 // leeren Staffel (siehe checkTenancies) bewegt eine Zahl des **Mietkontos** und damit auch der
@@ -40,7 +40,7 @@
 // vergleicht sie.
 //
 // Geprüft wird der **rohe** Inhalt der Datei und nicht der schon eingelesene Bestand. Das ist
-// wichtig: `migrateLegacy` in legacy.ts verträgt keinen beliebigen Inhalt (ein Mietverhältnis
+// wichtig: `migrateLegacy` in legacy/migrate.ts verträgt keinen beliebigen Inhalt (ein Mietverhältnis
 // ohne Beginn bringt es zum Absturz), und genau davor soll die Prüfung ja schützen.
 
 // **Die Wertlisten kommen aus dem eingefrorenen Schema und nicht aus dem heutigen.** Geprüft
@@ -50,7 +50,7 @@
 // Dass der Wert danach anders heißt, erledigt die Migrationskette.
 import { COST_KEYS, DEPOSIT_STATUS, METER_TYPES, UPDATE_CHECK } from './schema.ts'
 import { KEY_LABELS } from '../calc.ts'
-import { LEGACY_PREPAYMENT_FIELD, legacyPrepaymentCase } from '../legacy.ts'
+import { LEGACY_PREPAYMENT_FIELD, legacyPrepaymentCase } from './migrate.ts'
 
 export type Finding = {
   // Der Ort: „Wohnung 2 („OG", Kennung u2)". Gemeint ist die Stelle in der Datei, und zwar so
@@ -264,7 +264,7 @@ const COLLECTIONS = [
 type Collection = { entries: unknown[], usable: boolean }
 
 // Eine Sammlung aus der Datei holen. Fehlt sie, ist das in Ordnung: Ein Backup aus einer
-// früheren Version kennt die späteren Sammlungen noch nicht, und legacy.ts ergänzt sie leer.
+// früheren Version kennt die späteren Sammlungen noch nicht, und legacy/migrate.ts ergänzt sie leer.
 // Steht dort etwas anderes als eine Liste, ist es der Fall aus #59, und er wird abgelehnt.
 function collectionOf(c: Collector, db: unknown, name: string, many: string): Collection {
   const raw = fieldOf(db, name)
@@ -360,7 +360,7 @@ function checkSchedule(
 }
 
 // Eine Staffel aus dem Mietverhältnis holen. Steht dort keine Liste, greift die Regel aus
-// legacy.ts, und die ist kein Mangel, sondern das alte Format.
+// legacy/migrate.ts, und die ist kein Mangel, sondern das alte Format.
 function scheduleOf(c: Collector, tenancy: unknown, field: string, where: string, missing: string): unknown[] | null {
   const raw = fieldOf(tenancy, field)
   if (Array.isArray(raw)) return raw
@@ -417,7 +417,7 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
     fields.text('id', 'Kennung', false)
     fields.displayText('tenantName', 'Mietername')
     checkReference(c, where, fieldOf(entry, 'unitId'), 'Wohnung', unitIds, units.usable, 'Eine Wohnung')
-    // Ohne Beginn lässt sich nichts ausrechnen, und legacy.ts stürzt daran ab.
+    // Ohne Beginn lässt sich nichts ausrechnen, und legacy/migrate.ts stürzt daran ab.
     fields.text('start', 'Beginn', false)
     fields.optionalText('end', 'Ende')
     if (fieldOf(entry, 'persons') === undefined) {
@@ -457,7 +457,7 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
     // ansetzt; bisher forderte das Mietkonto zu wenig. Der Hinweis sagt das, statt es zu
     // verschweigen.
     //
-    // **Welcher der beiden Fälle vorliegt, entscheidet `legacyPrepaymentCase` in legacy.ts**,
+    // **Welcher der beiden Fälle vorliegt, entscheidet `legacyPrepaymentCase` in legacy/migrate.ts**,
     // also dieselbe Funktion, die beim Übernehmen das Geraderücken bestimmt. Eine eigene
     // Bedingung daneben liefe genau dort auseinander, wo beide zusammenbleiben müssen.
     const legacyCase = legacyPrepaymentCase(fieldOf(entry, 'prepayments'), fieldOf(entry, LEGACY_PREPAYMENT_FIELD))
@@ -496,7 +496,7 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
 // Die tatsächlich gezahlte Vorauszahlung eines Jahres: nach Jahr geschlüsselt, nicht nach Datum.
 function checkOverrides(c: Collector, tenancy: unknown, where: string): void {
   const raw = fieldOf(tenancy, 'prepaymentOverrides')
-  // Dieselbe Bedingung wie in legacy.ts (`if (!t.prepaymentOverrides)`): Was dort leer ergänzt
+  // Dieselbe Bedingung wie in legacy/migrate.ts (`if (!t.prepaymentOverrides)`): Was dort leer ergänzt
   // wird, ist hier kein Mangel. Eine eigene, strengere Bedingung liefe genau da auseinander,
   // wo beide zusammenbleiben müssen.
   if (!raw) {

@@ -1,4 +1,4 @@
-// Das Geraderücken für die Datenbank (legacy.ts, #55).
+// Das Geraderücken für die Datenbank (legacy/migrate.ts, #55).
 //
 // `migrateLegacy` macht aus dem Inhalt einer db.json einen Datenbestand, wie ihn Mietfuchs
 // heute im Speicher hält. `straightenForDatabase` geht einen Schritt weiter: Es stellt das her,
@@ -13,7 +13,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem, Meter, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
-import { legacyPrepaymentCase, migrateLegacy, straightenForDatabase } from '../src/legacy.ts'
+import { legacyPrepaymentCase, migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 
 // ---------- Bausteine ----------
 

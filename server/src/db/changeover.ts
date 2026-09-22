@@ -46,7 +46,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { migrateLegacy, legacyPrepaymentCase, straightenForDatabase, type LegacyTenancy } from '../legacy.ts'
+import { migrateLegacy, legacyPrepaymentCase, straightenForDatabase, type LegacyTenancy } from '../legacy/migrate.ts'
 import type { Db } from '../store.ts'
 import { APP_VERSION } from '../version.ts'
 import { applyMigrations, connect, loadMigrations, type Connection, type Database, type Migration } from './client.ts'
@@ -383,7 +383,7 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     }
 
     // Der Bestand, wie ihn Mietfuchs heute liest, und derselbe Bestand in der Gestalt, die die
-    // Datenbank verlangt. Beide Regeln stehen in legacy.ts, damit sie nicht auseinanderlaufen.
+    // Datenbank verlangt. Beide Regeln stehen in legacy/migrate.ts, damit sie nicht auseinanderlaufen.
     const stock = migrateLegacy(raw)
     const straight = straightenForDatabase(stock)
     notes.push(...notesFor(stock))

@@ -1,7 +1,7 @@
 // Die Regel für eine Staffel mit zwei Einträgen zum selben Stichtag.
 //
 // **Sie wird an zwei Stellen gebraucht**, und das ist der Grund für diese Datei. Beim Umstieg
-// eines alten Bestandes (`straightenForDatabase` in legacy.ts) und beim Speichern über die
+// eines alten Bestandes (`straightenForDatabase` in legacy/migrate.ts) und beim Speichern über die
 // Routen (`readSchedule` in db/repository.ts). Zwei Fassungen liefen auseinander, und gemerkt
 // hätte man es erst daran, dass dieselbe Staffel nach dem Umstieg anders dasteht als nach dem
 // Speichern.

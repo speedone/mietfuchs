@@ -91,7 +91,7 @@ function merged<T>(body: unknown, key: string, current: T, read: (value: unknown
 // wüsste die Berechnung nicht, ab wann er gilt.
 //
 // **Zwei Einträge zum selben Stichtag werden angenommen, und es gilt der letzte**
-// (`lastPerFrom`). Das ist kein Entgegenkommen, sondern die Regel, die legacy.ts beim Umstieg
+// (`lastPerFrom`). Das ist kein Entgegenkommen, sondern die Regel, die legacy/migrate.ts beim Umstieg
 // und calc.ts beim Rechnen ohnehin anwenden; sie steht deshalb in schedule.ts und hier nicht
 // noch einmal. Ohne sie wäre eine ganz gewöhnliche Eingabe ein Fehler: Stammdaten.tsx setzt für
 // eine Staffelzeile ohne Monat den Einzugsmonat ein und prüft nie auf Doppelung, und der
