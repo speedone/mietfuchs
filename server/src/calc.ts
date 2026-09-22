@@ -548,12 +548,41 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
 
-  // Flächenanteil der vermieteten (beteiligten) Einheiten — Hinweis bei gemischter Nutzung
+  // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
+  //
+  // **Gefragt wird dreiwertig**, wie überall sonst (`UnitUsage` in shared/types.ts): vermietet,
+  // selbstgenutzt, außerhalb der Abrechnungseinheit. Vorher stand hier `!u.participates`, und
+  // damit schlug eine ausdrücklich ausgenommene Wohnung — etwa eine getrennt abgerechnete
+  // Gewerbeeinheit — als Eigennutzung durch. Der Vermieter bekam die Aufforderung, den
+  // selbstgenutzten Anteil herauszurechnen, obwohl er gar nichts selbst nutzt. Die Regel ist
+  // dieselbe wie bei `selfUnits` in computeSettlement, und sie steht bewusst nicht zweimal
+  // ausformuliert da.
+  //
+  // **Gemessen wird der selbstgenutzte Anteil und nicht der vermietete**, und das ist die
+  // Antwort auf die zweite Frage des Issues. Nur das Private ist eindeutig: Ob eine ausgenommene
+  // Wohnung vermietet ist, weiß Mietfuchs nicht, ob sie selbstgenutzt ist, sehr wohl. Und die
+  // steuerliche Frage ist ohnehin die nach dem privaten Anteil, denn er ist der nicht
+  // abziehbare.
+  //
+  // **Die Grundmenge ist das ganze Gebäude und damit eine andere als die der Abrechnung.** Das
+  // ist gewollt: Die Verteilbasis der Abrechnung beantwortet „welche Wohnungen teilen sich diese
+  // Rechnung" und lässt ausgenommene Wohnungen deshalb weg; hier lautet die Frage „wie viel
+  // meines Gebäudes ist privat", und dafür gehört jeder Quadratmeter in den Nenner. Der
+  // Unterschied steht in der Oberfläche, nicht nur hier.
   const allUnits = snapshot.units
   const totalArea = allUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
-  const rentedArea = allUnits.filter((u) => u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
-  const rentedAreaShare = totalArea > 0 ? rentedArea / totalArea : 1
-  const selfOccupiedExists = allUnits.some((u) => !u.participates)
+  const selfUsedUnits = allUnits.filter((u) => u.selfUsed && !u.participates)
+  const selfUsedArea = selfUsedUnits.reduce((a, u) => a + (u.areaM2 || 0), 0)
+  const selfUsedAreaShare = totalArea > 0 ? selfUsedArea / totalArea : 0
+  const selfOccupiedExists = selfUsedUnits.length > 0
+  // **Wohnungen, die Mietfuchs nicht einordnen kann**, und deshalb ein eigener Hinweis statt
+  // Schweigen. Zwei ganz verschiedene Bestände sehen hier gleich aus: die ausdrücklich
+  // ausgenommene Gewerbeeinheit und die eigene Wohnung aus einem Bestand von vor der
+  // dreiwertigen Unterscheidung, den `load()` bewusst nicht migriert (ein gesetztes Kennzeichen
+  // veränderte die Verteilung bereits abgerechneter Jahre). Beide tragen `participates: false`
+  // ohne `selfUsed`. Ohne diesen Hinweis nähme die Behebung ausgerechnet dem die Hilfe weg, der
+  // sie braucht, nämlich dem Vermieter mit altem Bestand und eigener Wohnung im Haus.
+  const excludedExists = allUnits.some((u) => !u.participates && !u.selfUsed)
   // Auf selbstgenutzte Wohnungen entfallender Teil der Kosten, aus der Verteilung des Jahres
   // übernommen: privat veranlasst und damit nicht als Werbungskosten abziehbar. Die
   // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
@@ -576,8 +605,9 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, labor35aCents },
-    rentedAreaShare,
+    selfUsedAreaShare,
     selfOccupiedExists,
+    excludedExists,
     selfUsedShareCents,
     surplusSollCents: sollCents - totalCents,
     surplusPaidCents: paidCents - totalCents,
