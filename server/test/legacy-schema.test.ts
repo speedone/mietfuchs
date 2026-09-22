@@ -16,6 +16,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -25,6 +26,12 @@ import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as v0 from '../src/legacy/schema.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-v0-'))
+
+// Zeilenenden vereinheitlichen, bevor eine Prüfsumme darüber gebildet wird. Git stellt
+// Textdateien unter Windows auf CRLF um; ohne diesen Schritt hinge die Marke vom Rechner ab.
+// Dieselbe Behandlung wie bei den Migrationen (scripts/embed-migrations.mjs).
+const CR = String.fromCharCode(13)
+const normalizedLineEndings = (text: string): string => text.split(CR).join('')
 
 // Die Tabellen der eingefrorenen Kopie, aus ihr selbst abgelesen. Eine Liste von Hand vergisst
 // der nächste, der eine Tabelle hinzufügt — und dann bewacht der Test genau sie nicht.
@@ -86,6 +93,32 @@ test('Der eingefrorene Ausgangsstand ist der, den Migration 0000 anlegt', async 
       `Tabelle ${name}: die Spalten der Kopie und die des ersten Migrationsschrittes gehen auseinander`,
     )
   }
+})
+
+test('Der eingefrorene Ausgangsstand ist unverändert', () => {
+  // **Die Zusicherung, die die anderen erst tragfähig macht.** Der Vergleich der Spalten darüber
+  // sieht eine gelockerte Prüfbedingung nicht: Nimmt jemand einen Wert in eine Aufzählung mit
+  // auf, bleiben Tabellen und Spalten dieselben, und der Test blieb grün.
+  //
+  // Und das ist keine erfundene Sorge, sondern die naheliegende falsche Behebung. Benennt jemand
+  // einen Wert im lebenden Modell um, bricht die Übersetzung in `legacy/write.ts`, zwei Zeilen
+  // (nachgemessen). Der schnelle Griff wäre, den neuen Wert hier mit aufzunehmen — und damit
+  // wäre der Wortschatz von damals verloren, ein alter Bestand käme nicht mehr durch, und die
+  // Migrationskette hätte nichts mehr zu tun. Genau dieser Griff wird hier rot.
+  //
+  // Dieselbe Technik wie bei den Migrationen, und aus demselben Grund: Was sich nicht ändern
+  // darf, wird an seiner Prüfsumme festgehalten. Zeilenenden werden dabei vereinheitlicht, weil
+  // Git Textdateien unter Windows auf CRLF umstellt und die Marke sonst vom Rechner abhinge.
+  const HASH = '2afc1504584f6b73393310bfcbf7e65bd516339a904a9d75de8c71d5b6a24de9'
+  const datei = path.join(import.meta.dirname, '..', 'src', 'legacy', 'schema.ts')
+  const inhalt = normalizedLineEndings(fs.readFileSync(datei, 'utf8'))
+  assert.equal(
+    createHash('sha256').update(inhalt).digest('hex'),
+    HASH,
+    'server/src/legacy/schema.ts ist verändert worden. Diese Datei beschreibt den Stand nach ' +
+      'Migration 0000 und wird nie geändert: Wer das Schema oder einen Auswahlwert ändert, ändert ' +
+      'db/schema.ts und erzeugt einen Migrationsschritt. Siehe server/src/legacy/README.md.',
+  )
 })
 
 test('Der Eingang greift nicht auf das heutige Schema zu', () => {
