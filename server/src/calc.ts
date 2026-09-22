@@ -152,7 +152,17 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     // Verteilt wird nichts, und erfunden erst recht nichts. Wie viel das alte Gerät bis zum
     // Wechsel verbraucht hat, weiß nur der Vermieter; das neue rechnet ab seinem Startstand
     // normal weiter. Dieselbe Haltung wie bei zwei Ablesungen am selben Tag (#69).
-    if (r1.replacement === true && r1.oldEndValue == null) {
+    //
+    // **Und dieselbe Folge: Bezahlt wird die Lücke von einem anderen Mieter**, nicht vom
+    // Vermieter. Gemessen an zwei Wohnungen mit 2.000 € Wasser sinkt der Anteil des Mieters mit
+    // der Lücke von 802,40 € auf 540,15 €, während der andere 1.459,85 € statt 1.197,60 € zahlt.
+    // Deshalb ist die Meldung das Einzige, was den Vermieter darauf stößt: Auf der Abrechnung
+    // liest sich der Rechenweg völlig plausibel.
+    //
+    // **Steht ein solcher Wechsel als allererste Ablesung des Zählers da, gibt es keine
+    // Meldung**, denn die Schleife beginnt beim zweiten Eintrag. Das ist richtig so: Ohne
+    // Vorgänger fehlt nichts, es gibt keinen Zeitraum, über den das alte Gerät gelaufen wäre.
+    if (r1.replacement && r1.oldEndValue == null) {
       warnings.push(
         `Zählerwechsel am ${r1.date} ohne Endstand des alten Geräts — der Verbrauch bis zum ` +
           'Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen.',
