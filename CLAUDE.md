@@ -209,6 +209,24 @@ Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc
    eigenen Prozess mit `NKA_DATA_DIR` auf einem Wegwerf-Ordner (deshalb gibt es diese
    Variable) und prüft die Routen. Berührt nie eine vorhandene `db.json`. `NKA_UPDATE_URL`
    zeigt dort standardmäßig auf einen geschlossenen Port, damit kein Test GitHub erreicht.
+
+**Wer für eine Prüfung einen Server startet, setzt drei Dinge**, und zwar immer zusammen. Das
+gilt für Tests, für Skripte und für jede Probe von Hand:
+
+- **`NKA_DATA_DIR`** auf einen Wegwerf-Ordner. Ohne ihn läuft die Prüfung gegen den echten
+  Bestand des Entwicklers, und der Umstieg, das Wiederherstellen und das Löschen von Belegen
+  schreiben dort wirklich.
+- **`CI=1`** gegen das Browserfenster. In der Betriebsart `binary` oder `package` öffnet
+  Mietfuchs beim Start den Standard-Browser ([version.ts](server/src/version.ts), `STANDALONE`).
+  Bei einer Prüfung nützt das niemandem, und auf einem Arbeitsrechner nimmt es den Fokus weg,
+  oft mehrfach hintereinander. Ein Fenster gehört nur dorthin, wo es wirklich gebraucht wird,
+  also zu einem Browser-Test oder einem Screenshot. Nötig ist das auch dann, wenn nur
+  `NKA_RUNTIME=binary` gesetzt ist, um den gepackten Betrieb nachzustellen.
+- **`NKA_UPDATE_URL`** auf einen geschlossenen Port, damit keine Anfrage zu GitHub hinausgeht.
+
+Dieselben drei stehen in [api.test.ts](server/test/api.test.ts) (`startServerRaw`) und in
+[scripts/umstieg-praxislauf.mjs](scripts/umstieg-praxislauf.mjs); wer einen neuen Prüfpfad baut,
+nimmt sie von dort.
 3. `client/src/**/*.test.ts(x)` — vitest. Die Entscheidungslogik der Formulare liegt in
    [client/src/costForm.ts](client/src/costForm.ts) und
    [client/src/unitForm.ts](client/src/unitForm.ts), damit sie ohne DOM prüfbar ist; die
@@ -723,10 +741,16 @@ die ganze fachliche Komplexität:
   eine Korrektur, und dann wäre die Differenz ein Tippfehler und keine Menge Wasser; beim
   Zählerwechsel wäre sie Verbrauch über null Tage, also selbst schon ein Widerspruch. Welche der
   beiden stimmt, weiß nur der Vermieter, und geraten wird in calc.ts nicht.
-  Die Warnungen aus `meterSegments` erscheinen nur auf der Zähler-Seite
-  (über `consumptionOverview`), nicht auf der Abrechnung: `computeSettlement` ruft
-  `consumptionInPeriod` auf und wirft sie damit weg. Das war vorher schon so; sie dorthin zu
-  holen hieße, den Text einer Abrechnung zu ändern, die der Vermieter verschickt.
+  **Wer das bezahlt, ist nachgemessen und stand im Issue falsch**: nicht der Vermieter, sondern
+  ein anderer Mieter. Die Verteilbasis des Verbrauchsschlüssels ist die Summe des *gemessenen*
+  Verbrauchs, Zähler und Nenner schrumpfen also gemeinsam, und der Rechnungsbetrag wird trotzdem
+  vollständig verteilt (zwei Wohnungen, 2.000 € Wasser, 10 m³ Tippfehler: 947,37 € gegen
+  1.052,63 €). Ein Test hält die Zahlen fest.
+  Die Warnungen aus `meterSegments` gehen über `consumptionOverview` an die **Zähler-Seite** und
+  ans **Cockpit**, dessen Ampel „Zählerstände" davon auf Rot springt; auf der Abrechnung
+  erscheinen sie nicht, denn `computeSettlement` ruft `consumptionInPeriod` auf und wirft sie
+  weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
+  Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
 - **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
   Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den

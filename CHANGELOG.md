@@ -81,10 +81,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Zwei Ablesungen am selben Tag verlieren ihren Verbrauch nicht mehr stillschweigend.** Liegen
   zwei Stände desselben Zählers auf demselben Tag, lässt sich die Differenz dazwischen nicht
   tagesanteilig verteilen, denn es ist kein Tag vergangen. Sie fiel deshalb ersatzlos heraus, und
-  zwar ohne ein Wort. Am ärgerlichsten war das beim Zählerwechsel, wenn der Endstand des alten
-  Geräts und der erste Stand des neuen auf denselben Tag fallen: Der Verbrauch fehlte beim Mieter
-  und ging stillschweigend zulasten des Vermieters. Jetzt steht auf der Zähler-Seite eine Meldung
-  mit dem Tag und der Menge, die herausfällt. Verteilt wird sie bewusst nicht: Zwei Ablesungen am
+  bei einer Rechnung nach Verbrauch **zahlt das ein anderer Mieter**. Nachgemessen an zwei
+  Wohnungen mit je 100 m³ und 2.000 € Wasser: Fehlen bei einer davon 10 m³, sinkt ihr Anteil auf
+  947,37 €, und der der anderen steigt auf 1.052,63 €. Dem Vermieter entgeht dabei nichts, und
+  genau das macht es schlimm: Ein Mieter bekommt eine Abrechnung mit zu viel darauf, und
+  niemandem fällt es auf. Am ehesten passiert das beim Zählerwechsel, wenn der Endstand des alten
+  Geräts und der erste Stand des neuen auf denselben Tag fallen, und beim Nacherfassen einer
+  falschen Ablesung. Jetzt steht auf der Zähler-Seite eine Meldung mit dem Tag und der Menge, die
+  herausfällt, und das Cockpit schaltet die Ampel „Zählerstände" auf Rot. Verteilt wird sie bewusst nicht: Zwei Ablesungen am
   selben Tag sind fast immer eine Korrektur, und dann wäre die Differenz ein Tippfehler und kein
   Wasser; beim Zählerwechsel wäre sie Verbrauch über null Tage. Welche der beiden Ablesungen
   stimmt, wissen nur Sie. ([#69](https://github.com/speedone/mietfuchs/issues/69))
