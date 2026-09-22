@@ -121,45 +121,69 @@ type MeterSegment = { from: string, to: string, delta: number, days: number }
 // Ablesungen eines Zählers → Verbrauchssegmente zwischen aufeinanderfolgenden Ablesungen.
 // Konvention: eine Ablesung gilt zum Tagesende ihres Datums. Bei Zählerwechsel trägt die
 // Ablesung replacement=true: oldEndValue = Endstand des alten Geräts, value = Startstand des neuen.
+// Zählerstände haben mehr Nachkommastellen als Geld: Ein Wasserzähler zeigt drei. Mit `fmtNum`
+// (zwei Stellen) meldete die Warnung unten bei 150,001 gegen 150,004 einen „Unterschied von 0"
+// und widerspräche sich damit selbst.
+function fmtMeter(n: number): string {
+  return n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
+}
+
 export function meterSegments(readings: SnapshotReading[]): { segments: MeterSegment[], warnings: string[] } {
   const sorted = readings.slice().sort((a, b) => compareText(a.date, b.date))
   const segments: MeterSegment[] = []
   const warnings: string[] = []
+  // Je Tag die Menge, die zwischen Ablesungen desselben Tages herausfällt (#69, unten begründet).
+  const lostPerDay = new Map<string, number>()
   for (let i = 1; i < sorted.length; i++) {
     const r0 = sorted[i - 1]
     const r1 = sorted[i]
     const delta = r1.replacement ? (r1.oldEndValue ?? 0) - r0.value : r1.value - r0.value
     const days = Math.round((toUTC(r1.date) - toUTC(r0.date)) / MS_DAY)
 
-    // **Zwei Ablesungen am selben Tag: die Differenz verschwindet, und das wird gesagt** (#69).
+    // **Ablesungen am selben Tag: die Differenz verschwindet, und das wird gesagt** (#69).
     //
     // Ein Segment entsteht nur, wenn mindestens ein Tag dazwischenliegt, sonst müsste durch null
     // geteilt werden, um tagesanteilig zu verteilen. Das ist richtig. Bisher fiel die Differenz
-    // dabei aber ersatzlos und wortlos unter den Tisch. Denkbar ist das vor allem beim
-    // Zählerwechsel, wenn der alte Endstand und der erste Stand des neuen auf denselben Tag
-    // fallen, und dort ist es am ärgerlichsten: Der Verbrauch fehlt beim Mieter und geht
-    // stillschweigend zulasten des Vermieters.
+    // dabei aber ersatzlos und ohne Meldung unter den Tisch.
     //
-    // **Verteilt wird trotzdem nicht, und zwar aus Überzeugung und nicht aus Vorsicht.** Beide
-    // erreichbaren Fälle sprechen dagegen. Zwei gewöhnliche Ablesungen am selben Tag sind fast
-    // immer eine Korrektur; die Differenz ist dann ein Tippfehler und keine Menge Wasser, und sie
-    // dem Nachbarsegment zuzuschlagen machte aus der Korrektur Verbrauch. Beim Zählerwechsel am
-    // selben Tag ist die Differenz Verbrauch über null Tage, also selbst schon ein Widerspruch.
-    // In beiden Fällen weiß nur der Vermieter, welche der beiden Ablesungen stimmt; verteilen
-    // hieße raten, und geraten wird in dieser Datei nicht.
+    // **Wer das bezahlt, ist nachgemessen, und es ist nicht der Vermieter.** Beim
+    // Verbrauchsschlüssel ist die Verteilbasis die Summe des *gemessenen* Verbrauchs: Fehlt bei
+    // einem Zähler etwas, schrumpfen Zähler und Nenner gemeinsam, und `largestRemainder` verteilt
+    // den Rechnungsbetrag trotzdem vollständig. Gemessen an zwei Wohnungen mit je 100 m³ und
+    // 2.000 € Wasser, mit einem Tippfehler von 10 m³ bei Mieter A: A zahlt 947,37 € statt
+    // 1.000 €, **B zahlt 1.052,63 €**, der Vermieter trägt in beiden Fällen nichts. Liegt die
+    // Doppelablesung am Zähler einer selbstgenutzten Wohnung, dreht es sich um und der Vermieter
+    // zahlt zu wenig. Das ist schlimmer als ein Verlust beim Vermieter: Ein Mieter bekommt eine
+    // zugestellte Abrechnung mit zu viel darauf, und niemandem fällt es auf.
     //
-    // **Eine Meldung je Fall.** Hier gilt sie und nicht die über negativen Verbrauch, auch wenn
-    // die Differenz negativ ist: Jene spricht von einem Zähler, der über die Zeit zurückläuft,
-    // und über null Tage gibt es diese Zeit nicht. Zwei Meldungen nebeneinander sagten dasselbe
-    // zweimal und schickten auf die falsche Fährte („Zählerwechsel markieren"), obwohl hier eine
-    // der beiden Ablesungen zu korrigieren ist.
+    // **Verteilt wird trotzdem nicht.** Das Haus hat für zwei Einträge zum selben Stichtag eine
+    // ausformulierte Regel, nämlich „es gilt der letzte" (`lastPerFrom` in schedule.ts), und sie
+    // käme hier auf das Richtige: Bei einer Korrektur gölte der zweite Stand, beim Zählerwechsel
+    // der `oldEndValue`. Sie greift hier aus zwei Gründen trotzdem nicht.
+    //
+    // Erstens bräuchte sie eine Ausnahme, nämlich dass die Wechsel-Ablesung immer gewinnt. Sonst
+    // löschte eine zufällige Eingabereihenfolge — erst der Wechsel, dann eine gewöhnliche
+    // Ablesung desselben Tages — den `oldEndValue` und mit ihm den ganzen Zählerwechsel. Das wäre
+    // eine neue Regel, und neue Regeln über Geld werden nicht nebenbei eingeführt.
+    //
+    // Zweitens, und das wiegt schwerer: Eine Doppelablesung liegt am wahrscheinlichsten auf einer
+    // Grenze, also am 31. Dezember oder am Auszugstag. Dort gehören die beiden Nachbarsegmente
+    // **verschiedenen Mietern**. Die Menge einem davon zuzuschlagen hieße, still einen von beiden
+    // auszuwählen, und welcher der richtige ist, weiß nur der Vermieter. Ihn zu fragen ist die
+    // einzige Antwort, die nicht rät.
+    //
+    // **Eine Meldung je Tag, nicht je Paar.** Bei drei Ablesungen am selben Tag stünde sonst
+    // zweimal wortgleich dasselbe da, und das Wort „zwei" stimmte nicht mehr. Summiert ergibt
+    // sich genau die Menge, die am Ende fehlt: Bei 150, 160, 150 heben sich die beiden Sprünge
+    // auf, es fehlt nichts, und es gibt zu Recht keine Meldung.
+    //
+    // **Hier gilt diese Meldung und nicht die über negativen Verbrauch**, auch wenn die Differenz
+    // negativ ist. Jene spricht von einem Zähler, der über die Zeit zurückläuft, und über null
+    // Tage gibt es diese Zeit nicht; ihr Wortlaut wäre an dieser Stelle in beiden Hälften falsch
+    // („zwischen dem 30.06. und dem 30.06." ist kein Zeitraum, und „Zählerwechsel markieren" ist
+    // gerade beim markierten Zählerwechsel der falsche Rat).
     if (days === 0) {
-      if (delta !== 0) {
-        warnings.push(
-          `Zwei Ablesungen am ${r0.date} mit einem Unterschied von ${fmtNum(delta)} — dieser Verbrauch ` +
-            'wird nicht verteilt, weil dazwischen kein Tag liegt. Bitte eine der beiden Ablesungen prüfen.',
-        )
-      }
+      if (delta !== 0) lostPerDay.set(r0.date, (lostPerDay.get(r0.date) ?? 0) + delta)
       continue
     }
 
@@ -167,6 +191,15 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
       warnings.push(`Negativer Verbrauch zwischen ${r0.date} und ${r1.date} (${delta}) — Ablesung prüfen oder Zählerwechsel markieren.`)
     }
     segments.push({ from: r0.date, to: r1.date, delta, days })
+  }
+  for (const [date, lost] of lostPerDay) {
+    // Heben sich mehrere Sprünge desselben Tages auf, fehlt nichts.
+    if (lost === 0) continue
+    warnings.push(
+      `Mehrere Ablesungen am ${date}: Die Stände unterscheiden sich um ${fmtMeter(Math.abs(lost))}, ` +
+        'und diese Menge wird nicht verteilt, weil zwischen ihnen kein Tag liegt. ' +
+        'Bitte eine der Ablesungen prüfen.',
+    )
   }
   return { segments, warnings }
 }
