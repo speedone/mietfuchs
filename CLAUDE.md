@@ -788,7 +788,10 @@ die ganze fachliche Komplexität:
 - **Steuer/Anlage V** (`taxReport`): aggregiert Einnahmen (das Soll aus `rentLedger`, das Ist
   unmittelbar aus den Zahlungen) und
   Werbungskosten (Kostenpositionen nach `ANLAGE_V_GROUP`-Mapping), liefert §35a-Summe,
-  vermieteten Flächenanteil und Überschuss. Bewusst beschreibende Gruppen statt fester
+  Gesamtfläche und selbstgenutzte Fläche in Quadratmetern (#68: **das Private wird gemessen, nicht
+  das Vermietete**, denn nur das ist eindeutig, und die Anlage V fragt genau diese beiden Zahlen
+  im Kopf ab; die Grundmenge ist das ganze Gebäude und damit eine andere als die Verteilbasis der
+  Abrechnung) sowie den Überschuss. Bewusst beschreibende Gruppen statt fester
   Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
   **Maßgeblich ist das Ist** (#70): § 11 Abs. 1 Satz 1 EStG setzt Einnahmen im Jahr des Zuflusses
   an, ein vereinbartes, nicht gezahltes Soll ist keine Einnahme. Das Soll bleibt umschaltbar, denn

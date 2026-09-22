@@ -14,8 +14,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const fmtEuro = (cents: number) =>
   (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
 
-// Eine Wohnfläche mit ihrer Einheit. Zwei Nachkommastellen genügen: Wohnflächen werden nach der
-// Wohnflächenverordnung auf Quadratzentimeter genau berechnet, angegeben wird aber gerundet.
+// Eine Wohnfläche mit ihrer Einheit. Zwei Nachkommastellen, wie Wohnflächen üblicherweise
+// angegeben werden; eine Vorschrift über die Genauigkeit gibt es nicht.
 export const fmtArea = (m2: number) =>
   `${m2.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m²`
 
