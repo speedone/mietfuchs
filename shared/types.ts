@@ -359,8 +359,15 @@ export type TaxReport = {
   income: {
     baseRentSollCents: number // Kaltmiete (netto), vereinbart
     prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
+    // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt. Das ist nicht
+    // dasselbe wie `prepaymentSollCents`, sobald eine Jahreskorrektur erfasst ist, und der
+    // Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten Vorauszahlungen
+    // einstellen (§ 556 BGB, ständige Rechtsprechung des BGH). Die Übersicht führt beide, damit
+    // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70).
+    prepaymentSettlementCents: number
+    prepaymentOverridden: boolean // ist für dieses Jahr eine Jahreskorrektur erfasst?
     sollCents: number // Summe Soll (brutto)
-    paidCents: number // tatsächlich eingegangen (Zuflussprinzip)
+    paidCents: number // tatsächlich eingegangen (Zuflussprinzip, § 11 Abs. 1 Satz 1 EStG)
   }
   expenses: {
     groups: TaxExpenseGroup[]

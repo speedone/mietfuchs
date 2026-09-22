@@ -52,13 +52,43 @@ export function overlapDays(start: string, end: string | null, year: number): nu
   return rangeOverlapDays(start, end, `${year}-01-01`, `${year}-12-31`)
 }
 
+// ---------- Sortieren ----------
+//
+// **Nichts in dieser Datei darf von der Locale der Laufzeit abhängen** (#70). Sonst ergäben
+// dieselben Daten auf zwei Rechnern zwei Reihenfolgen, und bei `largestRemainder` entscheidet
+// die Reihenfolge, wer den Rest-Cent bekommt. Ein blankes `localeCompare()` liest die
+// Einstellung der Laufzeit und ist deshalb hier nirgends erlaubt; ein Test in calc.test.ts hält
+// das fest, weil es sich auf einem einzelnen Rechner nicht messen lässt.
+//
+// Abgeschafft wird die Locale damit aber nicht, sondern festgenagelt — genau wie beim
+// Formatieren von Zahlen weiter unten, das ausdrücklich `'de-DE'` verlangt. Welche der beiden
+// Funktionen gilt, entscheidet, wofür die Reihenfolge da ist.
+
+// **Trägt die Reihenfolge eine Bedeutung**, wird Zeichen für Zeichen verglichen: der Rest-Cent
+// in `largestRemainder`, die Ablesungen und die Staffeln, bei denen sie entscheidet, welcher
+// von zwei Einträgen zum selben Stichtag der spätere ist (siehe schedule.ts). Hier wäre eine
+// Sprache die falsche Frage: Verglichen werden Kennungen und ISO-Daten, keine Wörter.
+export function compareText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+// **Steht die Reihenfolge in einer Liste, die ein Mensch liest**, gilt deutsche Sortierung, und
+// zwar fest eingestellt. Zeichenweise verglichen landete „Älter" hinter „Zaun", weil das Ä einen
+// höheren Zeichenwert hat als das Z — richtig wäre das nie, und einem Vermieter mit Umlauten im
+// Haus fiele es sofort auf. Die Sprache steht hier und kommt nicht aus der Umgebung.
+const NAME_COLLATOR = new Intl.Collator('de-DE')
+
+export function compareName(a: string, b: string): number {
+  return NAME_COLLATOR.compare(a, b)
+}
+
 // ---------- Personen-Staffel ----------
 
 function personHistoryOf(tenancy: SnapshotTenancy): PersonEntry[] {
   const h = Array.isArray(tenancy.personHistory) && tenancy.personHistory.length
     ? tenancy.personHistory
     : [{ from: tenancy.start, persons: tenancy.persons ?? 1 }]
-  return h.slice().sort((a, b) => a.from.localeCompare(b.from))
+  return h.slice().sort((a, b) => compareText(a.from, b.from))
 }
 
 // Personentage eines Mietverhältnisses im Zeitraum [from, to] (inklusiv)
@@ -92,7 +122,7 @@ type MeterSegment = { from: string, to: string, delta: number, days: number }
 // Konvention: eine Ablesung gilt zum Tagesende ihres Datums. Bei Zählerwechsel trägt die
 // Ablesung replacement=true: oldEndValue = Endstand des alten Geräts, value = Startstand des neuen.
 export function meterSegments(readings: SnapshotReading[]): { segments: MeterSegment[], warnings: string[] } {
-  const sorted = readings.slice().sort((a, b) => a.date.localeCompare(b.date))
+  const sorted = readings.slice().sort((a, b) => compareText(a.date, b.date))
   const segments: MeterSegment[] = []
   const warnings: string[] = []
   for (let i = 1; i < sorted.length; i++) {
@@ -170,7 +200,7 @@ export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): 
         : []
   )
     .slice()
-    .sort((a, b) => a.from.localeCompare(b.from))
+    .sort((a, b) => compareText(a.from, b.from))
   let cents = 0
   for (let m = 1; m <= 12; m++) {
     const firstDay = `${year}-${String(m).padStart(2, '0')}-01`
@@ -191,7 +221,7 @@ type MonthlySchedule = { from: string, monthlyCents: number }
 // `schedule`: Array aus { from: 'YYYY-MM', monthlyCents }. firstMonth: 'YYYY-MM'.
 function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
   let rate = 0
-  for (const e of schedule.slice().sort((a, b) => a.from.localeCompare(b.from))) {
+  for (const e of schedule.slice().sort((a, b) => compareText(a.from, b.from))) {
     if (e.from <= firstMonth) rate = e.monthlyCents
   }
   return rate
@@ -266,7 +296,8 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         openMonths: months.filter((mo) => mo.status !== 'paid').length,
       }
     })
-    .sort((a, b) => a.unitName.localeCompare(b.unitName) || a.tenantName.localeCompare(b.tenantName))
+    // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
+    .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
 
   return {
     year,
@@ -323,6 +354,31 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const sollCents = ledger.totals.sollYearCents
   const paidCents = ledger.totals.paidYearCents
 
+  // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
+  // werden ihr **entnommen** statt neu hergeleitet: Eine zweite Auslegung der Staffel oder eine
+  // zweite Auswahl der Mietverhältnisse liefe irgendwann auseinander, und gemerkt hätte man es
+  // erst daran, dass Steuerübersicht und versendete Abrechnung verschiedene Zahlen nennen.
+  // Genau das ist der Befund aus #70.
+  const settlement = computeSettlement(snapshot)
+
+  // Was die Abrechnung bei den Vorauszahlungen ansetzt. Das ist nicht `prepaymentSollCents`,
+  // sobald eine Jahreskorrektur erfasst ist, und der Unterschied ist gewollt: Die Abrechnung
+  // muss die tatsächlich geleisteten Vorauszahlungen einstellen, sonst ist sie materiell falsch
+  // und trägt nach Ablauf der Frist des § 556 Abs. 3 BGB keinen Nachforderungsanspruch mehr.
+  // Das Mietkonto dagegen führt das monatliche Soll, denn eine Jahreszahl auf zwölf Monate zu
+  // verteilen wäre erfunden und zerstörte seine Aussage, bis zu welchem Monat es gedeckt ist.
+  // Beide Zahlen sind also richtig, und deshalb stehen jetzt beide da.
+  //
+  // **Genommen wird der lebende Stand, auch wenn die Abrechnung abgeschlossen ist**, anders als
+  // beim Eigenanteil weiter unten. Der Eigenanteil ist ein Ergebnis der Verteilung und ändert
+  // sich mit jeder Kostenposition; er muss deshalb eingefroren sein, sonst widerspräche die
+  // Übersicht der zugestellten Abrechnung. Die Vorauszahlung hier beantwortet eine andere
+  // Frage, nämlich was die erfassten Daten heute ergeben — und wer nach dem Abschließen die
+  // Jahreskorrektur ändert, hat einen Widerspruch zwischen Daten und Archivstück, den die
+  // Abrechnungsseite zeigt und nicht diese.
+  const prepaymentSettlementCents = settlement.statements.reduce((a, st) => a + st.prepaymentCents, 0)
+  const prepaymentOverridden = settlement.statements.some((st) => st.prepaymentOverridden)
+
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren. Der Filter ist
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
@@ -372,11 +428,18 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // GET /api/settlement/:year), sonst widersprächen Übersicht und versendete Abrechnung.
   const selfUsedShareCents = snapshot.closedSettlement
     ? snapshot.closedSettlement.selfUsedShareCents
-    : computeSettlement(snapshot).selfUsedShareCents
+    : settlement.selfUsedShareCents
 
   return {
     year,
-    income: { baseRentSollCents, prepaymentSollCents, sollCents, paidCents },
+    income: {
+      baseRentSollCents,
+      prepaymentSollCents,
+      prepaymentSettlementCents,
+      prepaymentOverridden,
+      sollCents,
+      paidCents,
+    },
     expenses: { groups, totalCents, labor35aCents },
     rentedAreaShare,
     selfOccupiedExists,
@@ -392,13 +455,11 @@ export function taxReport(snapshot: Snapshot): TaxReport {
 // `keys` enthält je Rohanteil eine stabile Kennung (die ID des Mietverhältnisses). Sie
 // entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt — sonst hinge das an
 // der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
-// Verglichen wird Zeichen für Zeichen statt mit localeCompare, damit das Ergebnis nicht von
-// der Locale der Laufzeit abhängt.
 export function largestRemainder(totalCents: number, raws: number[], keys: string[]): number[] {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
   let rest = totalCents - floors.reduce((a, b) => a + b, 0)
-  const byKey = (i: number, j: number) => (keys[i] < keys[j] ? -1 : keys[i] > keys[j] ? 1 : 0)
+  const byKey = (i: number, j: number) => compareText(keys[i], keys[j])
   const order = raws
     .map((r, i): [number, number] => [r - Math.floor(r), i])
     .sort((a, b) => b[0] - a[0] || byKey(a[1], b[1]))
