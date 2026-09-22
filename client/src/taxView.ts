@@ -12,9 +12,11 @@
 // nicht mehr die Vorgabe.
 //
 // Die Entscheidungslogik steht hier ohne DOM, damit sie prüfbar bleibt (taxView.test.ts). Das
-// gilt für **jede** Entscheidung dieser Seite: Eine Bedingung, die in der Komponente stehen
-// bleibt, hat keinen Test, und genau an einer solchen hat die Durchsicht eine Aussage gefunden,
-// die nicht stimmte.
+// gilt für jede Entscheidung, an der eine **Aussage** hängt: Eine Bedingung, die in der
+// Komponente stehen bleibt, hat keinen Test, und genau an solchen hat die Durchsicht zweimal
+// eine Aussage gefunden, die nicht stimmte. Reines Ein- und Ausblenden ohne Behauptung bleibt in
+// der Seite, etwa der Kasten zur gemischten Nutzung: Dort entscheidet der Server mit
+// `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
 import type { TaxReport } from './types'
 
@@ -30,12 +32,17 @@ export const DEFAULT_BASIS: Basis = 'ist'
 export type TaxHint =
   // Es ist das Soll angesetzt, und das ist keine steuerliche Grundlage.
   | 'sollIsNotTaxBasis'
-  // Auf Ist-Basis, und für **kein** Mietverhältnis des Jahres ist eine Zahlung erfasst.
-  | 'noPaymentsRecorded'
-  // Auf Ist-Basis, und für einen Teil der Mietverhältnisse fehlt jede Zahlung. Der gefährlichere
-  // der beiden Fälle: Die Summe ist größer als null, sieht also vollständig aus, und die zu
-  // niedrige Einnahme ginge ohne Vorbehalt in die Anlage V.
-  | 'paymentsIncomplete'
+  // Auf Ist-Basis, und für mindestens ein Mietverhältnis mit Soll ist im Jahr **überhaupt keine**
+  // Zahlung erfasst. Die angesetzte Einnahme ist dann zu niedrig, und das sieht man ihr nicht an.
+  //
+  // **Ein Hinweis für beide Stärken des Falls, und das ist eine Korrektur.** Vorher gab es zwei,
+  // und der für „gar nichts erfasst" behauptete dazu „Deshalb stehen hier 0 €". Das stimmt seit
+  // der Umstellung nicht mehr: Eine Zahlung, die zu keiner Zeile des Jahres gehört, zählt in
+  // `paidCents`, aber zu keinem Mietverhältnis der Liste. Gemessen stand der Satz neben
+  // angesetzten Einnahmen von 800 €, und zwar auch im Ausdruck. Wie viele Mietverhältnisse
+  // betroffen sind, sagt die Seite aus den beiden Zahlen; das ist dieselbe Auskunft ohne die
+  // falsche Ursache.
+  | 'paymentsMissing'
   // Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas bedeutet.
   | 'turnOfYear'
 
@@ -48,9 +55,7 @@ export function taxHints(report: TaxReport, basis: Basis): TaxHint[] {
   // Nur wenn es überhaupt ein Mietverhältnis mit Soll gibt. Ein Jahr ohne ist kein Versäumnis,
   // und eine Ermahnung für etwas, das es nicht gibt, lehrt nur, Hinweise zu übersehen.
   const { tenanciesWithSoll, tenanciesWithoutPayment } = report.income
-  if (tenanciesWithSoll > 0 && tenanciesWithoutPayment > 0) {
-    hints.push(tenanciesWithoutPayment === tenanciesWithSoll ? 'noPaymentsRecorded' : 'paymentsIncomplete')
-  }
+  if (tenanciesWithSoll > 0 && tenanciesWithoutPayment > 0) hints.push('paymentsMissing')
   hints.push('turnOfYear')
   return hints
 }

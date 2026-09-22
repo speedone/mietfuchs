@@ -16,7 +16,7 @@ import { sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
-import type { SnapshotSource } from '../snapshot.ts'
+import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
@@ -26,8 +26,8 @@ import {
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
 // `unknown`: Es ist ein Archivstück, das wortgleich erhalten bleiben soll, und ein Typ darüber
 // wäre eine Behauptung über etwas, das eine frühere Version geschrieben hat. Die Berechnung
-// liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holen `selfUsedShareOf`
-// und `prepaymentOf` heraus.
+// liest daraus nur den Eigenanteil und die Vorauszahlungen, und die holt `frozenSettlementOf`
+// aus snapshot.ts heraus — dieselbe Funktion wie auf dem Weg über die Datei.
 export type StoredClosedSettlement = {
   id: string
   year: number
@@ -74,37 +74,6 @@ function groupBy<T, K>(rows: T[], keyOf: (row: T) => string, valueOf: (row: T) =
 // Die Reihenfolge, in der die Zeilen angelegt wurden. Siehe oben; steht als Konstante da, damit
 // keine Abfrage sie vergisst.
 const INSERTION_ORDER = sql`rowid`
-
-// Der Eigenanteil aus einem eingefrorenen Berechnungsstand. Er ist das Einzige, was die
-// Berechnung daraus liest (Steuerübersicht, damit sie nicht von der versendeten Abrechnung
-// abweicht). Ein Schnappschuss von vor v0.3.0 kennt ihn noch nicht, dann gilt 0 — dieselbe
-// Regel wie in snapshot.ts, nur auf den rohen JSON-Inhalt angewandt.
-function selfUsedShareOf(settlement: unknown): number {
-  if (settlement === null || typeof settlement !== 'object') return 0
-  const value: unknown = Reflect.get(settlement, 'selfUsedShareCents')
-  return typeof value === 'number' ? value : 0
-}
-
-// Die Vorauszahlungen, die auf der zugestellten Abrechnung standen (#70). Dasselbe Muster wie
-// darüber, nur eine Ebene tiefer: Gelesen wird `statements`, und zwar Stück für Stück mit
-// Prüfung, weil der Inhalt aus einer früheren Version stammt und niemand dafür geradesteht.
-// Eine Zusicherung `as Statement[]` wäre genau die Behauptung, die hier niemand einlösen kann.
-// Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur": Was nicht auf dem Papier stand, hat
-// der Mieter auch nicht bekommen.
-function prepaymentOf(settlement: unknown): { cents: number, overridden: boolean } {
-  if (settlement === null || typeof settlement !== 'object') return { cents: 0, overridden: false }
-  const statements: unknown = Reflect.get(settlement, 'statements')
-  if (!Array.isArray(statements)) return { cents: 0, overridden: false }
-  let cents = 0
-  let overridden = false
-  for (const statement of statements) {
-    if (statement === null || typeof statement !== 'object') continue
-    const value: unknown = Reflect.get(statement, 'prepaymentCents')
-    if (typeof value === 'number') cents += value
-    if (Reflect.get(statement, 'prepaymentOverridden') === true) overridden = true
-  }
-  return { cents, overridden }
-}
 
 // ---------- Je Sammlung ein Leser ----------
 //
@@ -231,19 +200,17 @@ export async function readPayments(db: Database): Promise<Payment[]> {
 
 export async function readClosedSettlements(db: Database): Promise<StoredClosedSettlement[]> {
   const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
-  return rows.map((c) => {
-    const prepayment = prepaymentOf(c.settlement)
-    return {
-      id: c.id,
-      year: c.year,
-      closedAt: c.closedAt,
-      sentAt: c.sentAt,
-      selfUsedShareCents: selfUsedShareOf(c.settlement),
-      prepaymentCents: prepayment.cents,
-      prepaymentOverridden: prepayment.overridden,
-      settlement: c.settlement,
-    }
-  })
+  return rows.map((c) => ({
+    id: c.id,
+    year: c.year,
+    closedAt: c.closedAt,
+    sentAt: c.sentAt,
+    // Derselbe Auszug wie auf dem Weg über die Datei (snapshot.ts). Zwei Leser desselben
+    // Archivstücks, die sich bei krummem Inhalt uneinig sind, wären genau die Sorte Unterschied,
+    // die beim Umstieg als „Abrechnung weicht ab" auffällt und die dann niemand erklären kann.
+    ...frozenSettlementOf(c.settlement),
+    settlement: c.settlement,
+  }))
 }
 
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes

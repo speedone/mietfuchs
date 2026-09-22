@@ -24,8 +24,13 @@ import type { RentLedgerRow } from './types'
 //
 // Das heutige Datum wird hineingereicht und nicht hier erfragt: Sonst hinge der Test an dem Tag,
 // an dem er läuft, und das ist dieselbe Regel, nach der auch die Plattform hineingereicht wird.
+//
+// Gelesen wird das Jahr **örtlich** und nicht in UTC. Der Nutzer sitzt in seiner Zeitzone, und
+// „das laufende Jahr" ist seines. Mit `getUTCFullYear` wäre in der Stunde nach Mitternacht am
+// 1. Januar (MEZ) noch das alte Jahr gemeint, und der Hinweis bliebe für das gerade vergangene
+// Jahr aus. Eine Stunde im Jahr, aber es ist derselbe Zonen-Mischfall, vor dem CLAUDE.md warnt.
 export function showDecemberNote(row: RentLedgerRow, year: number, today: Date): boolean {
-  if (year >= today.getUTCFullYear()) return false
+  if (year >= today.getFullYear()) return false
   const dezember = row.months[11]
   if (!dezember) return false
   return dezember.sollCents > 0 && dezember.status !== 'paid'

@@ -113,8 +113,32 @@ function fullDb(): Db {
     closedSettlements: [
       {
         id: 's1', year: 2023, closedAt: '2024-03-01T10:00:00.000Z', sentAt: '2024-03-05T09:00:00.000Z',
+        // **Mit Statements, und das ist kein Beiwerk.** Aus dem eingefrorenen Stand liest die
+        // Steuerübersicht neben dem Eigenanteil die Vorauszahlungen der zugestellten Abrechnung
+        // (#70). Stand hier eine leere Liste, lieferten beide Wege 0, und ein Leser, der immer 0
+        // liefert, wäre grün durchgekommen — nachgemessen. Eine nach dem Umstieg abgeschlossene
+        // Abrechnung steht nur in der Datenbank, die Regression sieht sie also nie.
         settlement: {
-          year: 2023, daysInYear: 365, statements: [], landlord: { rows: [], totalCents: 900 },
+          year: 2023, daysInYear: 365,
+          statements: [
+            {
+              tenancyId: 't1', tenantName: 'Alt', unitId: 'u1', unitName: 'EG',
+              persons: 2, personDays: 730, days: 365,
+              periodStart: '2023-01-01', periodEnd: '2023-12-31',
+              rows: [], totalShareCents: 8000, total35aCents: 0,
+              prepaymentCents: 12000, prepaymentOverridden: true,
+              balanceCents: 4000, suggestedMonthlyCents: 15000,
+            },
+            {
+              tenancyId: 't2', tenantName: 'Neu', unitId: 'u2', unitName: 'OG',
+              persons: 1, personDays: 365, days: 365,
+              periodStart: '2023-01-01', periodEnd: '2023-12-31',
+              rows: [], totalShareCents: 1000, total35aCents: 0,
+              prepaymentCents: 3000, prepaymentOverridden: false,
+              balanceCents: 2000, suggestedMonthlyCents: 4000,
+            },
+          ],
+          landlord: { rows: [], totalCents: 900 },
           selfUsedShareCents: 400, totalCostsCents: 9000, warnings: ['ein Hinweis'],
         },
       },
@@ -178,6 +202,24 @@ test('Rundreise: der eingefrorene Berechnungsstand kommt wortgleich zurück', as
     assert.deepEqual(stock.closedSettlements[0].settlement, gerade.closedSettlements[0].settlement)
     assert.equal(stock.closedSettlements[0].sentAt, '2024-03-05T09:00:00.000Z')
     assert.equal(stock.closedSettlements[0].closedAt, '2024-03-01T10:00:00.000Z')
+
+    // **Der Auszug daraus, und zwar an Zahlen, die nicht null sind.** Aus dem Archivstück liest
+    // die Steuerübersicht den Eigenanteil und die Vorauszahlungen der zugestellten Abrechnung
+    // (#70). Solange die Statements der Vorlage leer waren, lieferte jeder Leser 0, auch einer,
+    // der gar nichts täte — nachgemessen: Ein Leser, der fest `{ cents: 0, overridden: false }`
+    // zurückgab, kam grün durch. Genau dieser Weg ist der Produktivweg, denn eine nach dem
+    // Umstieg abgeschlossene Abrechnung steht nur in der Datenbank.
+    assert.equal(stock.closedSettlements[0].selfUsedShareCents, 400)
+    assert.equal(stock.closedSettlements[0].prepaymentCents, 15000, '12.000 + 3.000 aus den beiden Statements')
+    assert.equal(stock.closedSettlements[0].prepaymentOverridden, true, 'ein Statement trägt die Jahreskorrektur')
+
+    // Und beide Wege in den Schnappschuss sagen dasselbe. Zwei Leser desselben Archivstücks, die
+    // sich uneinig sind, fielen erst beim Umstieg als „Abrechnung weicht ab" auf.
+    assert.deepEqual(
+      snapshotOf(stock, 2023).closedSettlement,
+      snapshotFromDb(gerade, 2023).closedSettlement,
+      'Datei und Datenbank lesen den eingefrorenen Stand verschieden',
+    )
   })
 })
 

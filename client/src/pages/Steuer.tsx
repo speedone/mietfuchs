@@ -123,7 +123,13 @@ export default function Steuer({ settings }: Props) {
                   <td className="num"><strong>{fmtEuro(data.income.sollCents)}</strong></td>
                 </tr>
                 <tr>
-                  <td>davon tatsächlich eingegangen {data.income.paidCents < data.income.sollCents && <span className="muted">(Rückstand offen)</span>}</td>
+                  {/* **Kein „davon" mehr.** Seit das Zugeflossene nach Datum summiert wird und
+                      nicht mehr über die Zeilen des Mietkontos, ist es kein Teil des Solls: Eine
+                      Zahlung kann zu einem Mietverhältnis gehören, das im Jahr gar keine Zeile
+                      hat. Gemessen steht dann Soll 0,00 € und eingegangen 800,00 €. Aus demselben
+                      Grund fehlt hier „(Rückstand offen)": Es verglich zwei verschiedene
+                      Grundmengen. Wer wissen will, wer im Rückstand ist, fragt das Mietkonto. */}
+                  <td>Tatsächlich eingegangen {year} (Zufluss)</td>
                   <td className="num">{fmtEuro(data.income.paidCents)}</td>
                 </tr>
               </tbody>
@@ -135,20 +141,15 @@ export default function Steuer({ settings }: Props) {
               </tfoot>
             </table>
 
-            {hints.includes('noPaymentsRecorded') && (
+            {hints.includes('paymentsMissing') && (
               <div className="notice" style={{ marginTop: 10 }}>
-                <strong>Für {year} ist noch keine Zahlung erfasst.</strong> Deshalb stehen hier 0 €:
-                Steuerlich zählt der Zufluss, und ohne erfasste Eingänge weiß Mietfuchs nicht, was
-                geflossen ist. Die Zahlungseingänge werden im <em>Mietkonto</em> erfasst.
-              </div>
-            )}
-
-            {hints.includes('paymentsIncomplete') && (
-              <div className="notice" style={{ marginTop: 10 }}>
-                <strong>Für {data.income.tenanciesWithoutPayment} von {data.income.tenanciesWithSoll} Mietverhältnissen
-                ist {year} keine einzige Zahlung erfasst.</strong> Die angesetzten Einnahmen sind dann zu
-                niedrig, und das sieht man der Summe nicht an. Bitte im <em>Mietkonto</em> nachtragen,
-                bevor diese Zahl in die Anlage V geht.
+                <strong>
+                  {data.income.tenanciesWithoutPayment === data.income.tenanciesWithSoll
+                    ? `Für ${year} ist keine einzige Zahlung erfasst.`
+                    : `Für ${data.income.tenanciesWithoutPayment} von ${data.income.tenanciesWithSoll} Mietverhältnissen ist ${year} keine einzige Zahlung erfasst.`}
+                </strong>{' '}
+                Die angesetzten Einnahmen sind dann zu niedrig, und das sieht man der Summe nicht an.
+                Bitte im <em>Mietkonto</em> nachtragen, bevor diese Zahl in die Anlage V geht.
               </div>
             )}
 

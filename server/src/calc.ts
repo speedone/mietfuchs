@@ -341,7 +341,8 @@ const ANLAGE_V_GROUP_ORDER = [
   'Sonstige Werbungskosten',
 ]
 
-// Jahres-Steuerübersicht (Hilfe für die Anlage V): Einnahmen aus dem Mietkonto,
+// Jahres-Steuerübersicht (Hilfe für die Anlage V): das vereinbarte Soll aus dem Mietkonto, das
+// tatsächlich Zugeflossene unmittelbar aus den Zahlungen,
 // Werbungskosten aus den Kostenpositionen nach Anlage-V-Gruppen, §35a-Lohnanteile sowie
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
