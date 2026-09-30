@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fcc06606-5c6f-4169-bd53-b5870afced83",
-  "prevId": "c160fb32-a6cc-4ecf-9b83-b532609505de",
+  "id": "edc40212-0686-4a84-986a-b50461106fd9",
+  "prevId": "27c6c61d-177f-4488-b0c5-24d5ae0df6a9",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -220,7 +220,7 @@
       "checkConstraints": {
         "closed_settlements_settlement_is_json": {
           "name": "closed_settlements_settlement_is_json",
-          "value": "json_valid(\"closed_settlements\".\"settlement\")"
+          "value": "json_valid(\"settlement\")"
         }
       }
     },
