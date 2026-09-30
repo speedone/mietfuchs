@@ -337,6 +337,24 @@ function coveredDays(readings: SnapshotReading[], from: string, to: string): num
   )
 }
 
+// Wie viele Tage die Zähler einer Einheit zusammen abdecken. Zwei Fälle, und sie verlangen
+// Entgegengesetztes: **Nebeneinander** (Küche und Bad) muss jeder das ganze Jahr abdecken, es zählt
+// also der kürzeste; **nacheinander** (ein Tausch, als neuer Zähler angelegt statt als Wechsel)
+// decken sie es gemeinsam ab, es zählt die Summe. Unterschieden wird an den Zeiträumen: Überschneiden
+// sie sich nirgends, liefen die Zähler nacheinander (zweite Integrationsdurchsicht).
+function unitCoveredDays(readingsPerMeter: SnapshotReading[][], from: string, to: string): number {
+  const spans = readingsPerMeter
+    .map((readings) => {
+      const segs = meterSegments(readings).segments
+      const first = segs[0]
+      const last = segs[segs.length - 1]
+      return first && last ? { from: first.from, to: last.to, days: coveredDays(readings, from, to) } : { from: '', to: '', days: 0 }
+    })
+    .sort((a, b) => compareText(a.from, b.from))
+  const disjoint = spans.every((s, i) => i === 0 || (spans[i - 1]?.to ?? '') <= s.from)
+  return disjoint && spans.length > 1 ? spans.reduce((a, s) => a + s.days, 0) : Math.min(...spans.map((s) => s.days))
+}
+
 export type ConsumptionOverviewRow = {
   meterId: string
   consumption: number
@@ -912,7 +930,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
-        const covered = Math.min(...meters.filter((m) => m.unitId === u.id).map((m) => coveredDays(readingsOf(m.id), yFrom, yTo)))
+        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id).map((m) => readingsOf(m.id)), yFrom, yTo)
         const needed = neededDays(u)
         return covered < needed ? [{ unit: u, covered, needed }] : []
       })
@@ -1402,6 +1420,10 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     // ausgewiesene Betrag durch Rundung über dem Vermieteranteil liegen.
     if (selfRaw > 0 && landlordCents > 0) {
       selfUsedShareCents += Math.min(Math.round(selfRaw), landlordCents)
+    } else if (selfRaw < 0 && landlordCents < 0) {
+      // Eine Gutschrift senkt den Eigenanteil ebenso (#129), höchstens um den Teil, den der
+      // Vermieter von ihr trägt; sonst stünde der private Anteil der Steuer zu hoch da.
+      selfUsedShareCents += Math.max(Math.round(selfRaw), landlordCents)
     }
     if (landlordCents !== 0) {
       landlordRows.push({
