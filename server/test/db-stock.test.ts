@@ -343,6 +343,8 @@ const collectionsWithTable = (stock: ReturnType<typeof straightenForDatabase>): 
   { what: 'Zahlungen', table: paymentsTable, rows: stock.payments },
 ]
 
+const NOT_IN_DB_JSON = new Set(['propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents'])
+
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;
   // kommt eine Spalte hinzu und niemand belegt sie, wäre er still wirkungslos. Hier schlägt er
@@ -350,8 +352,9 @@ test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   const stock = straightenForDatabase(everyFieldDb())
   for (const { what, table, rows } of collectionsWithTable(stock)) {
     // `propertyId` kennt die db.json nicht, erst Migration 0001 setzt es (#92). Dass es danach an
-    // jeder Wurzel steht, prüft der Test „Objekt: nach dem Update …“ unten.
-    for (const column of Object.keys(getTableColumns(table)).filter((c) => c !== 'propertyId')) {
+    // jeder Wurzel steht, prüft der Test „Objekt: nach dem Update …“ unten. Ebenso wenig kennt sie
+    // die Angaben aus #94; deren Rundreise prüft db-repository.test.ts.
+    for (const column of Object.keys(getTableColumns(table)).filter((c) => !NOT_IN_DB_JSON.has(c))) {
       const belegt = rows.some((row) => row !== null && typeof row === 'object' && Reflect.get(row, column) !== undefined)
       assert.ok(belegt, `${what}: „${column}" ist in everyFieldDb nicht belegt, der Test bewacht das Feld deshalb nicht`)
     }

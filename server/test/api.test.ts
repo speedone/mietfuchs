@@ -559,7 +559,7 @@ test('Belegter Port: sitzt dort etwas anderes, bleibt es bei der Fehlermeldung',
 // Die Spalten der Wohnungstabelle, wie SQLite sie wirklich führt. Das ist der einzige Ort, an
 // dem sich ein zusätzliches Feld zeigen könnte: Ein eingelesener Datensatz hat immer genau die
 // Schlüssel, die read.ts hinschreibt.
-const UNIT_COLUMNS = ['id', 'property_id', 'name', 'area_m2', 'participates', 'self_used', 'self_persons', 'rooms', 'floor', 'notes']
+const UNIT_COLUMNS = ['id', 'property_id', 'name', 'area_m2', 'participates', 'self_used', 'self_persons', 'mea', 'rooms', 'floor', 'notes']
 
 async function unitColumns(dataDir: string): Promise<string[]> {
   const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))

@@ -26,6 +26,8 @@ export const KEY_LABELS: Record<CostKey, string> = {
   direct: 'Direktzuordnung',
   meter: 'Verbrauch (Zähler)',
   custom: 'Vereinbarte Anteile',
+  external: 'Laut Gemeinschaftsabrechnung',
+  amounts: 'Einzelbetrag',
 }
 
 const MS_DAY = 86400000

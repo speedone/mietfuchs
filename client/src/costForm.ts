@@ -67,7 +67,9 @@ export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType 
 
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
   return (Object.keys(KEY_LABELS) as CostKey[]).filter(
-    (k) => k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter',
+    (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
+      // Übergang (#94): angeboten erst, wenn ihre Felder im Formular stehen.
+      ((k !== 'external' && k !== 'amounts') || stored === k),
   )
 }
 

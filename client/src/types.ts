@@ -62,6 +62,8 @@ export const KEY_LABELS: Record<CostKey, string> = {
   direct: 'Direktzuordnung',
   meter: 'nach Verbrauch (Zähler)',
   custom: 'nach vereinbarten Anteilen (%)',
+  external: 'laut Gemeinschaftsabrechnung (Eigentumswohnung)',
+  amounts: 'Einzelbeträge je Mieter (z. B. Messdienst)',
 }
 
 // Ordnet eine frei formulierte Kategorie (z. B. aus der KI-Auswertung) der

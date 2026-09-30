@@ -21,7 +21,7 @@ import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, typ
 import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostKey, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
-import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
+import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -1232,7 +1232,7 @@ test('Leerstand im ganzen Haus ist keine fehlende Verteilbasis: keine Meldung', 
   const db = makeDb()
   db.tenancies = []
   // Ohne Mietverhältnis gibt es auch keine Personentage — das ist Leerstand, kein Datenmangel
-  const keys: CostKey[] = ['area', 'units', 'persons']
+  const keys: LegacyCostKey[] = ['area', 'units', 'persons']
   for (const key of keys) {
     db.costItems.push({ id: key, year: 2025, category: 'Grundsteuer', description: key, amountCents: 90000, key })
   }
@@ -1727,7 +1727,7 @@ function randomDb(rnd: Rng): Db {
   const costItems: CostItem[] = []
   const itemCount = 1 + Math.floor(rnd() * 5)
   for (let i = 0; i < itemCount; i++) {
-    const key = pick<CostKey>(['area', 'persons', 'units', 'meter', 'direct', 'custom'])
+    const key = pick<LegacyCostKey>(['area', 'persons', 'units', 'meter', 'direct', 'custom'])
     const item: CostItem = {
       id: `c${i}`, year: 2025,
       category: pick(['Grundsteuer', 'Wasser/Abwasser', 'Gartenpflege', 'Nicht umlagefähig']),

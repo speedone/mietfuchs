@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -92,8 +92,20 @@ type _Overrides = Assert<Equals<OverrideRow['year'], number>>
 type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepaymentOverrides'][string]>>
 
 // --- Kostenpositionen ---
-type CostItemColumns = Omit<CostItem, 'customShares'>
+// Die drei Angaben aus #94 liegen woanders: Teilnehmer und Einzelbeträge in eigenen Tabellen,
+// die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
+// deshalb die drei Spalten im Vergleich.
+type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'externalBasis'> & {
+  externalMeasure?: ExternalBasis['measure']
+  externalTotal?: ExternalBasis['total']
+  externalTotalCents?: ExternalBasis['totalCents']
+}
 type _CostItems = Assert<Matches<typeof schema.costItems.$inferSelect, CostItemColumns>>
+
+type ParticipantRow = typeof schema.costItemParticipants.$inferSelect
+type _ParticipantUnit = Assert<Equals<ParticipantRow['unitId'], Unit['id']>>
+type AmountRow = typeof schema.costItemAmounts.$inferSelect
+type _AmountCents = Assert<Equals<AmountRow['amountCents'], number>>
 
 // `customShares` ist `Record<Wohnungs-Kennung, Prozent>`. Auch hier prüft der Namensvergleich
 // nichts, wohl aber die Typen der beiden Spalten, die daraus geworden sind.
@@ -195,6 +207,8 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'ai_slots',
       'base_rents',
       'closed_settlements',
+      'cost_item_amounts',
+      'cost_item_participants',
       'cost_item_shares',
       'cost_items',
       'meters',
@@ -575,7 +589,7 @@ test('Drizzle liest und schreibt über den Proxy', async () => {
     await connection.db.insert(schema.units).values({ id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true })
     const rows = await connection.db.select().from(schema.units)
     assert.deepEqual(rows, [
-      { id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, rooms: null, floor: null, notes: null },
+      { id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, mea: null, rooms: null, floor: null, notes: null },
     ])
     // Wahrheitswerte kommen als 0 und 1 in die Datenbank und als boolean zurück.
     const eine = await connection.db.select().from(schema.units).get()

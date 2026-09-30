@@ -33,7 +33,7 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, eq, inArray, ne } from 'drizzle-orm'
-import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
+import type { CostItem, ExternalBasis, Meter, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -42,7 +42,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, baseRents, closedSettlements, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS,
+  aiSlots, baseRents, closedSettlements, COST_KEYS, costItemAmounts, costItemParticipants, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, units,
 } from './schema.ts'
@@ -159,6 +159,35 @@ function readShares(value: unknown): Record<string, number> {
   return rows
 }
 
+// Die Teilnehmer einer Kostenposition (#94): eine Liste von Wohnungs-Kennungen, ohne Doppel.
+function readParticipants(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((v): v is string => typeof v === 'string' && v !== ''))]
+}
+
+// Einzelbeträge je Mietverhältnis (#94). Ganze Cent; ein negativer bleibt stehen und wird von
+// der Datenbank abgewiesen, damit der Nutzer die Meldung dazu bekommt statt eines still
+// verschwundenen Betrags.
+function readAmounts(value: unknown): Record<string, number> {
+  if (!isObject(value)) return {}
+  const rows: Record<string, number> = {}
+  for (const [tenancyId, betrag] of Object.entries(Object(value))) {
+    const zahl = asOptionalNumber(betrag)
+    if (zahl !== undefined && Number.isInteger(zahl)) rows[tenancyId] = zahl
+  }
+  return rows
+}
+
+// Die Angaben der Gemeinschaft (#94). Unvollständig heißt: keine Angabe; die Zahlen prüft die
+// Datenbank (Summe der Anlage größer null).
+function readExternalBasis(value: unknown): ExternalBasis | null {
+  const measure = oneOfOrUndefined(EXTERNAL_MEASURES, raw(value, 'measure'))
+  const total = asOptionalNumber(raw(value, 'total'))
+  const totalCents = asOptionalNumber(raw(value, 'totalCents'))
+  if (!measure || total === undefined || totalCents === undefined || !Number.isInteger(totalCents)) return null
+  return { measure, total, totalCents }
+}
+
 // Die Aufzählungen kommen aus schema.ts und stehen nicht noch einmal daneben. Beim ersten
 // Entwurf standen sie hier abgeschrieben, und drei der Listen waren falsch: „sonstiges" statt
 // „sonstig", ein erfundenes „warmwasser", ein fehlendes „teilweise". Der Übersetzer hat es
@@ -191,6 +220,7 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     participates: merged(body, 'participates', current.participates, (v) => asBoolean(v, false)),
     selfUsed: merged(body, 'selfUsed', current.selfUsed, asOptionalBoolean),
     selfPersons: merged(body, 'selfPersons', current.selfPersons, asOptionalNumber),
+    mea: merged(body, 'mea', current.mea, asOptionalNumber),
     rooms: merged(body, 'rooms', current.rooms, asOptionalNumber),
     floor: merged(body, 'floor', current.floor, asOptionalText),
     notes: merged(body, 'notes', current.notes, asOptionalText),
@@ -225,6 +255,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
 
 function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
+  const participants = merged(body, 'participantUnitIds', current.participantUnitIds, (v) => (v === null ? null : readParticipants(v)))
+  const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
+  const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -241,6 +274,9 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     // Das Feld nur, wenn es eines gibt: Ein `customShares: undefined` neben einer Position ohne
     // vereinbarte Anteile wäre ein Feld, das vorher nicht dastand.
     ...(shares === undefined ? {} : { customShares: shares }),
+    ...(participants === undefined ? {} : { participantUnitIds: participants }),
+    ...(external === undefined ? {} : { externalBasis: external }),
+    ...(amounts === undefined ? {} : { tenancyAmounts: amounts }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
   }
@@ -344,7 +380,17 @@ async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Pr
 }
 
 async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem): Promise<void> {
-  const ziele = [...(after.directUnitId ? [after.directUnitId] : []), ...Object.keys(after.customShares ?? {})]
+  // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
+  const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
+  const ihreWohnungen = mietverhaeltnisse.length === 0
+    ? []
+    : (await db.select({ unitId: tenancies.unitId }).from(tenancies).where(inArray(tenancies.id, mietverhaeltnisse))).map((r) => r.unitId)
+  const ziele = [
+    ...(after.directUnitId ? [after.directUnitId] : []),
+    ...Object.keys(after.customShares ?? {}),
+    ...(after.participantUnitIds ?? []),
+    ...ihreWohnungen,
+  ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
 }
 
@@ -389,6 +435,21 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(costItemShares.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of anteile) befunde.push(`Die Kostenposition „${c.description}“ hat einen Anteil an einer Wohnung eines anderen Objekts.`)
+  const teilnehmer = await db
+    .select({ description: costItems.description })
+    .from(costItemParticipants)
+    .innerJoin(costItems, eq(costItemParticipants.costItemId, costItems.id))
+    .innerJoin(units, eq(costItemParticipants.unitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of teilnehmer) befunde.push(`Die Kostenposition „${c.description}“ hat eine Wohnung eines anderen Objekts als Teilnehmer.`)
+  const betraege = await db
+    .select({ description: costItems.description })
+    .from(costItemAmounts)
+    .innerJoin(costItems, eq(costItemAmounts.costItemId, costItems.id))
+    .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of betraege) befunde.push(`Die Kostenposition „${c.description}“ hat einen Einzelbetrag für ein Mietverhältnis eines anderen Objekts.`)
   return befunde
 }
 
@@ -462,7 +523,7 @@ const orNull = <T>(value: T | undefined): T | null => value ?? null
 
 const unitRow = (u: Unit) => ({
   id: u.id, propertyId: u.propertyId, name: u.name, areaM2: u.areaM2, participates: u.participates,
-  selfUsed: orNull(u.selfUsed), selfPersons: orNull(u.selfPersons), rooms: orNull(u.rooms),
+  selfUsed: orNull(u.selfUsed), selfPersons: orNull(u.selfPersons), mea: orNull(u.mea), rooms: orNull(u.rooms),
   floor: orNull(u.floor), notes: orNull(u.notes),
 })
 const tenancyRow = (t: Tenancy) => ({
@@ -475,6 +536,8 @@ const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
+  externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
+  externalTotalCents: c.externalBasis?.totalCents ?? null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
@@ -508,11 +571,23 @@ async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   }
 }
 
+// Die Untertabellen einer Kostenposition, ganz ersetzt: vereinbarte Anteile, Teilnehmer (#94)
+// und Einzelbeträge (#94).
 async function writeCostItemShares(db: Executor, c: CostItem): Promise<void> {
   await db.delete(costItemShares).where(eq(costItemShares.costItemId, c.id))
   const anteile = Object.entries(c.customShares ?? {})
   if (anteile.length > 0) {
     await db.insert(costItemShares).values(anteile.map(([unitId, percent]) => ({ costItemId: c.id, unitId, percent })))
+  }
+  await db.delete(costItemParticipants).where(eq(costItemParticipants.costItemId, c.id))
+  const teilnehmer = c.participantUnitIds ?? []
+  if (teilnehmer.length > 0) {
+    await db.insert(costItemParticipants).values(teilnehmer.map((unitId) => ({ costItemId: c.id, unitId })))
+  }
+  await db.delete(costItemAmounts).where(eq(costItemAmounts.costItemId, c.id))
+  const betraege = Object.entries(c.tenancyAmounts ?? {})
+  if (betraege.length > 0) {
+    await db.insert(costItemAmounts).values(betraege.map(([tenancyId, amountCents]) => ({ costItemId: c.id, tenancyId, amountCents })))
   }
 }
 
