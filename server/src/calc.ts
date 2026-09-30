@@ -145,6 +145,7 @@ const noticeKinds = {
   'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
+  'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'item.no-basis': { level: 'warning', title: 'Position geht ganz an den Vermieter', terms: ['distributionBasis'] },
   'external.value-missing': { level: 'warning', title: 'Miteigentumsanteil oder Wohnfläche fehlt', terms: ['mea', 'homeownersStatement'] },
   'external.amount-mismatch': { level: 'hint', title: 'Betrag passt nicht zum Anteil', terms: ['homeownersStatement', 'mea'] },
@@ -1106,8 +1107,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // Regel nur im Teil des Jahres, ist es das Übergangsjahr; gilt sie gar nicht mehr, die Zeit
   // danach. Einen Beginn hat die Regel nicht, „gar nicht“ heißt deshalb immer „vorbei“.
   const tvSignal = ruleCoverage('tv-signal', yFrom, yTo)
+  // Eine Anlage ab dem 01.12.2021 fiel nie unter die Regel (#121, § 2 Satz 2 BetrKV): dann in jedem
+  // Jahr ab 2021 dieselbe Warnung, ohne Übergangszeit.
+  const newSystem = snapshot.property?.cableBuiltBeforeDec2021 === false && year >= 2021
   for (const item of items.filter((c) => c.category === 'Kabel/Antenne')) {
-    if (tvSignal === 'partial') {
+    if (newSystem) {
+      warn('tv-signal.new-system', `„${item.description}": Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV). Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.`, itemSubject(item))
+    } else if (tvSignal === 'partial') {
       warn('tv-signal.partial-year', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))
     } else if (tvSignal === 'none') {
       warn('tv-signal.ended', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))

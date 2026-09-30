@@ -12,9 +12,18 @@ export type PropertyForm = {
   landlordName: string
   iban: string
   paymentDeadlineDays: string
+  // Kabelanlage vor oder ab dem 01.12.2021 errichtet (#121)
+  cable: CableAnswer
 }
 
-export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays'>
+export type CableAnswer = 'vor' | 'nach' | 'unbekannt'
+export const CABLE_LABELS: Record<CableAnswer, string> = {
+  unbekannt: 'unbekannt oder keine Anlage',
+  vor: 'vor dem 01.12.2021 errichtet',
+  nach: 'ab dem 01.12.2021 errichtet',
+}
+
+export type PropertyBody = Pick<Property, 'name' | 'address' | 'kind' | 'landlordName' | 'iban' | 'paymentDeadlineDays' | 'cableBuiltBeforeDec2021'>
 
 export const propertyToForm = (p: Property): PropertyForm => ({
   name: p.name,
@@ -24,6 +33,7 @@ export const propertyToForm = (p: Property): PropertyForm => ({
   landlordName: p.landlordName ?? '',
   iban: p.iban ?? '',
   paymentDeadlineDays: p.paymentDeadlineDays === null ? '' : String(p.paymentDeadlineDays),
+  cable: p.cableBuiltBeforeDec2021 === true ? 'vor' : p.cableBuiltBeforeDec2021 === false ? 'nach' : 'unbekannt',
 })
 
 // **Ein leeres Feld heißt „Vorgabe“, auch mit Haken.** Wer den Haken setzt, um nur eine andere
@@ -45,5 +55,6 @@ export function propertyBody(form: PropertyForm): PropertyBody | { error: string
     landlordName: override(form.landlordName),
     iban: override(form.iban),
     paymentDeadlineDays: deadline,
+    cableBuiltBeforeDec2021: form.cable === 'vor' ? true : form.cable === 'nach' ? false : null,
   }
 }

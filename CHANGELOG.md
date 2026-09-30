@@ -8,6 +8,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Baujahr der Kabel- oder Antennenanlage am Objekt.** Wurde die Anlage ab dem 01.12.2021
+  errichtet, waren die Gebühren für das TV-Signal nie umlagefähig, auch 2022 und 2023 nicht
+  (§ 2 Satz 2 BetrKV). Tragen Sie das in den Stammdaten beim Objekt ein; die Abrechnung warnt dann
+  in jedem Jahr bei der Kostenart „Kabel/Antenne“.
+  ([#121](https://github.com/speedone/mietfuchs/issues/121))
 - **Einheit ohne Anschluss.** An einer Wohnung oder Garage lässt sich angeben, für welche
   Zählertypen es keinen Anschluss gibt, etwa kein Wasser in der Garage. Beim Verbrauchsschlüssel
   gilt sie dann nicht als Wohnung ohne Zähler: Es gibt keine unzutreffende Warnung mehr, und der

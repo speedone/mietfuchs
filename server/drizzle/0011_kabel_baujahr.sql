@@ -1,0 +1,1 @@
+ALTER TABLE `properties` ADD `cable_built_before_dec_2021` integer;

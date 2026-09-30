@@ -510,6 +510,8 @@ function mergeProperty(current: Property, body: unknown): Property {
     landlordName: merged(body, 'landlordName', current.landlordName, asNullableText),
     iban: merged(body, 'iban', current.iban, asNullableText),
     paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
+    // `null` heißt unbekannt und ist ein ausdrücklicher Wert (#121).
+    cableBuiltBeforeDec2021: merged(body, 'cableBuiltBeforeDec2021', current.cableBuiltBeforeDec2021 ?? null, (v) => (typeof v === 'boolean' ? v : null)),
   }
 }
 

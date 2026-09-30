@@ -47,3 +47,18 @@ test('Kabel: die Zahlen bleiben, wie sie eingetragen sind', () => {
 test('Kabel: nicht umlagefähig verbucht, gibt es nichts zu warnen', () => {
   assert.deepEqual(warningsFor(2025, 'Nicht umlagefähig'), [])
 })
+
+test('Kabel: eine Anlage ab dem 01.12.2021 war nie umlagefähig, auch 2022 und 2023 nicht (#121)', () => {
+  const mit = (year: number, before: boolean | null) =>
+    computeSettlement({ ...snapshotOf(bestand(year), year), property: { kind: 'mfh', cableBuiltBeforeDec2021: before } }).notices
+  for (const year of [2022, 2023, 2025]) {
+    const n = mit(year, false)
+    assert.deepEqual(n.map((x) => x.code), ['tv-signal.new-system'], String(year))
+    assert.match(n[0]?.text ?? '', /nie umlagefähig/)
+    assert.equal(n[0]?.rule, 'tv-signal')
+  }
+  // Vor dem 01.12.2021 errichtet oder unbekannt: wie bisher.
+  assert.deepEqual(mit(2023, true), [])
+  assert.deepEqual(mit(2023, null), [])
+  assert.deepEqual(mit(2025, true).map((x) => x.code), ['tv-signal.ended'])
+})
