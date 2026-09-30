@@ -699,3 +699,9 @@ tr.calc-steps td { background: var(--bg); }
 
 /* Abweichung eines abgeschlossenen Jahres (#56) */
 .deviation-list { margin: 6px 0 0 18px; padding: 0; }
+
+/* Frühere Abschlüsse (#56, Teil 2) */
+.settlement-history { font-size: 13px; margin: 4px 0 16px; }
+.settlement-history summary { cursor: pointer; }
+.settlement-history-entry { margin-top: 8px; }
+.settlement-history-entry ul { margin: 4px 0 0 18px; padding: 0; }
