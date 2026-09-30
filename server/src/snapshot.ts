@@ -137,6 +137,10 @@ export type Snapshot = {
   // fehlten, käme eine leere statt einer falschen Abrechnung heraus. Der Fehler fiele dann
   // erst dem Mieter auf.
   year: number
+  // Das Objekt, dessen Daten der Schnappschuss trägt (#92), aus demselben Grund wie das Jahr:
+  // Er soll sich nicht mit einem anderen verwechseln lassen. `null` ist ein Bestand ohne
+  // Objekte, also der Stand von Migration 0000, wie ihn Regression und Umstieg rechnen.
+  propertyId: string | null
   units: SnapshotUnit[]
   tenancies: SnapshotTenancy[]
   costItems: SnapshotCostItem[]
@@ -163,6 +167,48 @@ export type SnapshotSource = {
   payments: SnapshotPayment[]
   // Alle Jahre, jedes eingedampft auf das, was die Berechnung daraus liest.
   closedSettlements: (SnapshotClosedSettlement & { year: number })[]
+}
+
+// Ein Bestand, dessen Wurzeln ihr Objekt tragen (#92). db/read.ts `Stock` erfüllt ihn.
+export type PropertyScopedSource = Omit<SnapshotSource, 'units' | 'meters' | 'costItems' | 'closedSettlements'> & {
+  units: (SnapshotUnit & { propertyId: string })[]
+  meters: (SnapshotMeter & { propertyId: string })[]
+  costItems: (SnapshotCostItem & { propertyId: string })[]
+  closedSettlements: (SnapshotClosedSettlement & { year: number, propertyId: string })[]
+}
+
+// Grenzt einen Bestand auf ein Objekt ein, und das **nur hier**.
+//
+// Ein fehlender Filter ergibt keine Fehlermeldung, sondern eine Verteilung über zwei Häuser: Die
+// Verteilbasis bekäme die Wohnungen des anderen Objekts, und jeder Mieter trüge einen zu
+// kleinen, der Vermieter einen zu großen Anteil. Deshalb steht die Regel einmal, und
+// `snapshotFor` ist der Weg dorthin.
+//
+// Die Wurzeln (Wohnungen, Zähler samt Hauptzähler, Kostenpositionen, Abschlüsse) tragen ihr
+// Objekt. Was erbt, folgt seiner Wurzel: Mietverhältnisse ihrer Wohnung, Zahlungen ihrem
+// Mietverhältnis, Ablesungen ihrem Zähler. Nach Jahr wird hier nichts eingegrenzt; das bleibt
+// die Sache von `snapshotOf`.
+export function narrowToProperty(source: PropertyScopedSource, propertyId: string): SnapshotSource {
+  const units = source.units.filter((u) => u.propertyId === propertyId)
+  const unitIds = new Set(units.map((u) => u.id))
+  const tenancies = source.tenancies.filter((t) => unitIds.has(t.unitId))
+  const tenancyIds = new Set(tenancies.map((t) => t.id))
+  const meters = source.meters.filter((m) => m.propertyId === propertyId)
+  const meterIds = new Set(meters.map((m) => m.id))
+  return {
+    units,
+    tenancies,
+    costItems: source.costItems.filter((c) => c.propertyId === propertyId),
+    meters,
+    readings: source.readings.filter((r) => meterIds.has(r.meterId)),
+    payments: source.payments.filter((p) => tenancyIds.has(p.tenancyId)),
+    closedSettlements: source.closedSettlements.filter((c) => c.propertyId === propertyId),
+  }
+}
+
+// Der Schnappschuss eines Objekts in einem Jahr. Die Routen rechnen nur hierüber.
+export function snapshotFor(source: PropertyScopedSource, propertyId: string, year: number): Snapshot {
+  return { ...snapshotOf(narrowToProperty(source, propertyId), year), propertyId }
 }
 
 // Baut den Schnappschuss eines Abrechnungsjahres aus dem Datenbestand.
@@ -198,6 +244,7 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   const closed = source.closedSettlements.find((c) => c.year === year)
   return {
     year,
+    propertyId: null,
     units: source.units,
     tenancies: source.tenancies,
     costItems: source.costItems.filter((c) => c.year === year),
