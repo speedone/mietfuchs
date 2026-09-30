@@ -515,6 +515,12 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   am heutigen Ergebnisformat, und eine Programmänderung veränderte rückwirkend, was dem Mieter
   zugestellt wurde.
 - **Migrationen**: erzeugt mit `npm --prefix server run db:generate`, nie von Hand geschrieben.
+  **Ausnahme Datenanweisungen** (#92, Muster 0001/0002): Braucht eine neue Pflichtspalte Werte,
+  wird sie zuerst ohne Pflicht erzeugt, die Daten werden an diesen Schritt angehängt, und ein
+  zweiter erzeugter Schritt zieht die Pflicht per Neubau nach; nur vor der Veröffentlichung, und
+  näher in [server/drizzle/README.md](server/drizzle/README.md). **Vor dem Anwenden ausstehender
+  Schritte** legt der Server eine Sicherung `mietfuchs.sqlite.vor-<Schritt>` daneben
+  (`backupBeforeMigrating` in open.ts); scheitert sie, wird nicht migriert.
   Es gilt die Regel aus [server/drizzle/README.md](server/drizzle/README.md): **Ein Schritt wird
   nie gelöscht und nie geändert**, sonst hält die Zusage nicht mehr, dass man von jeder alten
   Version auf die neueste kommt. Ein Fehler wird mit einem neuen Schritt geradegerückt. Ein Test
@@ -633,6 +639,47 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   Vermietername und IBAN, und weil `PUT /api/settings` vom Zwischenspeicher ausgeht, schriebe die
   nächste beliebige Änderung den veralteten Stand vollständig zurück.
 
+**Objekte** (#92): Eine Installation verwaltet mehrere Objekte (`properties`), und **ein Objekt
+ist zugleich die Abrechnungseinheit**. Eine dritte Ebene gibt es bewusst nicht: Alle Programme
+für Kleinvermieter haben Objekt → Einheit → Mietverhältnis, eine Wirtschaftseinheit als eigene
+Ebene nur Verwaltersoftware. Mehrere Gebäude, die gemeinsam abrechnen, sind *ein* Objekt; eine
+Rechnung für mehrere Objekte wird vorverteilt (#95). Die Flexibilität kommt in die
+Kostenposition (#94), nicht in weitere Ebenen.
+
+- **Wurzeln tragen das Objekt, alles andere erbt es**: `property_id` steht an Wohnungen, Zählern
+  (eigens, weil ein Hauptzähler keine Wohnung hat), Kostenpositionen und abgeschlossenen
+  Abrechnungen. Mietverhältnisse erben über die Wohnung, Zahlungen über das Mietverhältnis,
+  Ablesungen über den Zähler. Eine zweite Spalte wäre eine zweite Wahrheit. `ON DELETE RESTRICT`:
+  Gelöscht wird nur ein leeres Objekt, und nie das letzte (repository.ts, `removeProperty`).
+- **Eingegrenzt wird an genau einer Stelle**, `narrowToProperty` in snapshot.ts. Ein fehlender
+  Filter ergäbe keine Fehlermeldung, sondern eine Verteilung über zwei Häuser. Die Routen rechnen
+  über `snapshotFor` und listen über dieselbe Funktion; eine Invariante in calc.test.ts prüft an
+  zufälligen Beständen mit zwei Objekten, dass jedes rechnet, als wäre es allein.
+- **Kein Verweis über Objektgrenzen**: Zähler, Direktzuordnung und vereinbarte Anteile dürfen
+  nicht auf eine Wohnung eines anderen Objekts zeigen (`sameProperty`, `CrossPropertyError`
+  mit 400). Zusammengesetzte Fremdschlüssel scheiden aus, weil `direct_unit_id` mit `ON DELETE
+  SET NULL` alle Spalten des Schlüssels leeren würde, auch das Pflichtfeld. Das Wiederherstellen
+  fragt denselben Befund über den ganzen Bestand ab (`crossPropertyViolations`).
+- **Abgeschlossene Abrechnungen sind eindeutig je (Objekt, Jahr).** Vorher je Jahr, und mit zwei
+  Objekten hätten Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
+- **Die Routen nehmen `?property=`**, beim Anlegen einer Wurzel auch `propertyId` im Rumpf
+  (`propertyOf` in index.ts). **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**, so
+  arbeiten alte Tabs, Smoke-Test und Praxislauf unverändert; bei mehreren antwortet die Route mit
+  400, statt still alle zu liefern. Belege und Backup bleiben installationsweit; das Belegarchiv
+  fragt die Kostenpositionen deshalb je Objekt ab.
+- **Einstellungen**: Name und Adresse gehören zum Objekt. Die Spalten `house_name` und `address`
+  stehen noch in `settings`, weil der eingefrorene Eingang sie schreibt und Migration 0001 sie
+  abliest; ausgeliefert und angenommen werden sie nicht mehr. Vermieter, IBAN und Zahlungsfrist
+  bleiben dort als **Vorgabe**; am Objekt dürfen sie abweichen, `null` heißt „Vorgabe gilt“
+  (`effectiveLandlord` in client/src/landlord.ts).
+- **Die db.json kennt keine Objekte**: `Db` in store.ts beschreibt ihre Sammlungen mit
+  `LegacyUnit`, `LegacyMeter` und `LegacyCostItem`. Tests, die einen Bestand in die Datenbank
+  bringen, gehen den Weg des Umstiegs (`openDatabaseWithStock` in server/testing/database.ts):
+  auf 0000 schreiben, dann die Kette.
+- **Oberfläche**: `PropertyProvider` (client/src/property.tsx) nach dem Muster des
+  `YearProvider`; der Umschalter erscheint erst ab dem zweiten Objekt. Seiten hängen das Objekt
+  mit `withProperty` an ihre Abrufe.
+
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
@@ -692,8 +739,9 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
 Sie gehen durch [server/src/db/repository.ts](server/src/db/repository.ts); das Kaskadieren beim
-Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Daneben Spezialrouten:
-`/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten grenzen mit
+`?property=` auf ein Objekt ein (siehe Objekte). Daneben Spezialrouten: `/api/properties`
+(Objekte anlegen, ändern, nur leere löschen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
@@ -1146,9 +1194,17 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein).
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).
-- Zielbild ist das kleine Mehrfamilienhaus in Eigenverwaltung: wenige Wohnungen, davon
-  gegebenenfalls eine selbstgenutzte, kalte Betriebskosten. Heizung/Warmwasser nach HeizkostenV
-  deckt das Tool derzeit nicht ab — Energie rechnen die Mieter direkt mit ihrem Versorger ab.
+- **Zielbild ist jede gelebte Form privater Vermietung** (#91): mehrere Mehrfamilienhäuser,
+  vermietete Eigentumswohnungen, Gebäude, die gemeinsam abrechnen oder sich Kosten teilen,
+  Pauschalen und Warmmieten, die fertige Abrechnung eines Messdienstes. Was gelebt wird, aber
+  rechtlich angreifbar ist, wird unterstützt, mit Warnung und beziffertem Kürzungsbetrag, statt
+  verweigert; abgelehnt wird nur, was keine Kürzung heilt. Nicht dazu gehört die Verwaltung für
+  Dritte (Mandanten, Erlaubnis nach § 34c GewO). Der Weg dorthin steht in den Teil-Issues #92 bis
+  #99, jedes einzeln auslieferbar. Stand heute: mehrere Objekte (#92); Heizung und Warmwasser
+  nach HeizkostenV deckt Mietfuchs noch nicht ab, das kommt mit #94, #97 und #99. **Wer ein Haus
+  vermietet, merkt von der Breite nichts**: Jede neue Angabe hat eine Voreinstellung, die das
+  bisherige Verhalten ergibt, es gibt keine neuen Pflichtfelder, und die Golden-Tests bleiben
+  centgenau grün.
 - **Maßstab für Erweiterungen** (siehe [CONTRIBUTING.md](CONTRIBUTING.md)): Mietfuchs muss für
   Vermieter ohne technische Vorkenntnisse nutzbar und einfach einzurichten bleiben. Die Technik
   darunter darf wachsen (Datenbank, Serverbetrieb), solange Skripte, Installer und
