@@ -278,6 +278,18 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
   CI-Jobs „Tests und Build (Node 24.15)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
   Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
   mitziehen, sonst wartet jeder PR auf einen Check, den es nicht mehr gibt.
+- **Durchsicht vor jedem PR und vor jedem Merge.** Jeder Zweig bekommt vor dem PR eine
+  Durchsicht mit frischem Kontext; ihre Befunde werden mit einem Test behoben, der vorher rot
+  war, und stehen in der PR-Beschreibung. **Bauen mehrere PRs aufeinander auf, gibt es vor dem
+  Merge zusätzlich eine Integrationsdurchsicht des Endstands** (`main..Spitze`), denn jede
+  Einzeldurchsicht sieht nur ihren Zweig gegen seinen Vorgänger und nie das Zusammenspiel. Sie
+  hat zwei Blickwinkel: Geld (die Features gemeinsam in der Berechnung, Invarianten über alle
+  zugleich) und Daten (Migrationskette auf einer Datenbank der letzten Version, Umstieg,
+  Backup, Routen je Objekt, Doku). Dazu laufen auf der Spitze der Praxislauf
+  (`node scripts/umstieg-praxislauf.mjs`) und der volle Prüfumfang (Label `full-check` an der
+  obersten PR). Befunde werden auf dem Zweig behoben, zu dem sie gehören, und die darüber
+  nachgezogen. Gemergt wird der Reihe nach, jede PR erst nach dem Umstellen auf `main` und
+  grüner CI.
 - Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
   Commit-Nachricht. Das erzeugt die Verknüpfung im Issue-Verlauf. **Nicht** `Fixes`/`Closes #N`:
   diese Schlüsselwörter schließen das Issue schon beim Merge nach `main`, also bevor Nutzer den
