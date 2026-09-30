@@ -615,10 +615,14 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // vereinbart sind (Inklusivmiete), und eine Pauschale gehört zu den Umlagen in Zeile 20.
   // Heizung und Warmwasser gehören zu den Nebenkosten: „ganz inklusiv“ heißt deshalb kalt und warm
   // inklusiv, und eine Pauschale zählt bei kalt oder warm (Durchsicht).
+  // Steht im Jahr keine Heizposition, rechnen die Mieter die Heizung selbst mit dem Versorger ab,
+  // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
   const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
+  const heatingBilled = snapshot.costItems.some((c) => c.year === year && c.category === HEATING_CATEGORY)
   const models = ledger.rows.map((r) => {
     const t = tenancyById.get(r.tenancyId)
-    return { cold: t?.costModel ?? 'settlement', heat: t?.heatingModel ?? 'settlement' }
+    const cold = t?.costModel ?? 'settlement'
+    return { cold, heat: heatingBilled ? t?.heatingModel ?? 'settlement' : cold }
   })
   const costModels = {
     tenancies: models.length,

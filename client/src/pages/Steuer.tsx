@@ -317,8 +317,8 @@ export default function Steuer({ settings }: Props) {
                 {data.selfUsedShareCents !== 0 && (
                   <>
                     {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
-                    auf selbstgenutzte Wohnungen — dieser Teil ist in den oben ausgewiesenen Werbungskosten
-                    noch enthalten. Die Verteilung rechnet dabei über die Wohnungen der Abrechnungseinheit
+                    auf selbstgenutzte Wohnungen{data.selfUsedShareCents < 0 ? ', per Saldo eine Gutschrift, weil Gutschriften überwiegen' : ''} — dieser
+                    Teil ist in den oben ausgewiesenen Werbungskosten noch enthalten. Die Verteilung rechnet dabei über die Wohnungen der Abrechnungseinheit
                     und nicht über das ganze Gebäude; der Betrag entspricht also nicht unbedingt dem
                     Flächenanteil daneben.
                   </>

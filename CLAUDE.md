@@ -806,7 +806,10 @@ Staffeln für Personenzahl, Vorauszahlung und Kaltmiete gelten „ab diesem Datu
 Eintrag, der Jahre alt sein kann. Wer dort filtert, bekommt keinen Fehler, sondern eine stille
 Falschrechnung. Die Begründung je Sammlung steht in snapshot.ts, die Tests dazu in calc.test.ts.
 Der Schnappschuss reicht die Datensätze durch und kopiert sie nicht; die Berechnung ändert
-nichts an ihm. Aufgefangen wird dort nichts: Ist eine Sammlung in der Datei `null` (#59), soll
+nichts an ihm. **Vom Objekt führt er nur, was die Berechnung braucht** (`property`: Art und Baujahr
+der Kabelanlage, #121), gefüllt in `snapshotFor` aus dem Bestand. Fehlt es, etwa beim Umstieg aus
+einer `db.json` und in der Regression, rechnet die Berechnung wie ohne die Angabe; beide Seiten der
+Regression haben es deshalb gleichermaßen nicht. Aufgefangen wird dort nichts: Ist eine Sammlung in der Datei `null` (#59), soll
 es krachen. Ein `?? []` an der Grenze ergäbe eine leere Abrechnung ohne Kosten und ohne
 Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig aus
 und wäre falsch, und das ist der schlimmere der beiden Ausgänge.
@@ -992,6 +995,11 @@ die ganze fachliche Komplexität:
   Steuererklärung davon abhängig, dass jeder Nutzer es richtig ausfüllt. Das Beispiel dort ist
   bewusst die vorab gezahlte Januarmiete: Die Dezembermiete ist nach § 556b Abs. 1 BGB im
   Dezember fällig, bei ihr greift die Regel also gerade nicht.
+  **Die Kopfzeilen der Anlage V, die am Mietmodell hängen** (#96): `costModels` zählt die
+  Mietverhältnisse des Jahres, ganz inklusiv (kalt und warm; ohne Heizposition im Jahr zählt nur
+  kalt), teilweise inklusiv und mit Pauschale. Daraus entscheidet `taxView.ts` die Hinweise zu
+  Zeile 24 und Zeile 20; die Zuordnung der Pauschale zu Zeile 20 ist eine Auslegung und steht als
+  solche da.
   **Nicht dem Abflussprinzip folgen die Werbungskosten**, und die Seite behauptet es auch nicht
   mehr. `CostItem` trägt nur `year`, also das Abrechnungsjahr, und kein Zahlungsdatum; die
   Grundsteuer 2025, im Februar 2026 gezahlt, steht damit in der Anlage V 2025, obwohl sie nach
