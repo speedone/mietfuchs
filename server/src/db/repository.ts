@@ -406,10 +406,35 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   if ((direkt[0]?.n ?? 0) > 0) haengt.push('direkt zugeordnete Kostenpositionen')
   const anteile = await db.select({ n: count() }).from(costItemShares).where(eq(costItemShares.unitId, after.id))
   if ((anteile[0]?.n ?? 0) > 0) haengt.push('vereinbarte Anteile')
+  // Teilnehmer und Einzelbeträge (#94) gehören ebenso zum alten Objekt; der Wächter kannte sie
+  // anfangs nicht, und die Position verlor den Teilnehmer dann still.
+  const teilnahme = await db.select({ n: count() }).from(costItemParticipants).where(eq(costItemParticipants.unitId, after.id))
+  if ((teilnahme[0]?.n ?? 0) > 0) haengt.push('Teilnahmen an Kostenpositionen')
+  const betraege = await db
+    .select({ n: count() })
+    .from(costItemAmounts)
+    .innerJoin(tenancies, eq(costItemAmounts.tenancyId, tenancies.id))
+    .where(eq(tenancies.unitId, after.id))
+  if ((betraege[0]?.n ?? 0) > 0) haengt.push('Einzelbeträge ihrer Mietverhältnisse')
   if (haengt.length === 0) return
   throw new CrossPropertyError(
     `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
       `an ihr hängen, die zum bisherigen Objekt gehören. Bitte lösen Sie diese Verweise zuerst.`,
+  )
+}
+
+// Ein Mietverhältnis erbt sein Objekt über die Wohnung. Wechselt es in eine Wohnung eines anderen
+// Objekts, bleiben seine Einzelbeträge (#94) beim alten zurück; dann lieber ablehnen.
+async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
+  if (!before || before.unitId === after.unitId) return
+  const objektVon = async (unitId: string) =>
+    (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
+  if ((await objektVon(before.unitId)) === (await objektVon(after.unitId))) return
+  const betraege = await db.select({ n: count() }).from(costItemAmounts).where(eq(costItemAmounts.tenancyId, after.id))
+  if ((betraege[0]?.n ?? 0) === 0) return
+  throw new CrossPropertyError(
+    `Das Mietverhältnis „${after.tenantName}“ kann nicht in eine Wohnung eines anderen Objekts wechseln, weil noch ` +
+      'Einzelbeträge von Kostenpositionen des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
   )
 }
 
@@ -626,7 +651,7 @@ const unitCollection: Collection<Unit> = {
 }
 
 const tenancyCollection: Collection<Tenancy> = {
-  guard: noGuard,
+  guard: guardTenancy,
   read: readTenancies,
   empty: emptyTenancy,
   merge: mergeTenancy,

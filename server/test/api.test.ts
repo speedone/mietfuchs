@@ -3753,6 +3753,36 @@ test('Objekt: ändern, und ein Verweis über die Objektgrenze wird mit 400 abgel
   })
 })
 
+test('Objekt: Teilnehmer und Einzelbeträge halten die Objektgrenze auch beim Umziehen (#94)', async () => {
+  // Beides wurde mit #94 ergänzt, der Wächter kannte es nicht: Eine Wohnung mit Teilnahme oder
+  // ein Mietverhältnis mit Einzelbetrag konnte über die API in ein anderes Objekt wechseln. Die
+  // Position verlor still ihren Teilnehmer, und das nächste Backup ließ sich nicht einspielen.
+  await withProperties(async (s, b) => {
+    const a1 = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
+    const a2 = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-OG', areaM2: 50, participates: true }) })
+    const b1 = await s.api<Unit>(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 50, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      unitId: a2.id, tenantName: 'Meier', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    await s.api('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      year: 2025, category: 'Aufzug', description: 'Aufzug', amountCents: 10000, key: 'area', participantUnitIds: [a1.id],
+    }) })
+    await s.api('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      year: 2025, category: 'Heizung', description: 'Heizung', amountCents: 10000, key: 'amounts', tenancyAmounts: { [t.id]: 5000 },
+    }) })
+    const umzug = await fetch(`${s.base}/api/units/${a1.id}?property=objekt-1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ propertyId: b.id }),
+    })
+    assert.equal(umzug.status, 400, 'die Wohnung ist Teilnehmerin einer Position im alten Objekt')
+    assert.match((await jsonOf<{ error: string }>(umzug)).error, /Teilnahme/)
+    const wechsel = await fetch(`${s.base}/api/tenancies/${t.id}?property=objekt-1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ unitId: b1.id }),
+    })
+    assert.equal(wechsel.status, 400, 'das Mietverhältnis hat einen Einzelbetrag im alten Objekt')
+    assert.match((await jsonOf<{ error: string }>(wechsel)).error, /Einzelbetr/)
+  })
+})
+
 test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
   const s = await startServer()
   try {

@@ -656,8 +656,10 @@ Kostenposition (#94), nicht in weitere Ebenen.
   Filter ergäbe keine Fehlermeldung, sondern eine Verteilung über zwei Häuser. Die Routen rechnen
   über `snapshotFor` und listen über dieselbe Funktion; eine Invariante in calc.test.ts prüft an
   zufälligen Beständen mit zwei Objekten, dass jedes rechnet, als wäre es allein.
-- **Kein Verweis über Objektgrenzen**: Zähler, Direktzuordnung und vereinbarte Anteile dürfen
-  nicht auf eine Wohnung eines anderen Objekts zeigen (`sameProperty`, `CrossPropertyError`
+- **Kein Verweis über Objektgrenzen**: Zähler, Direktzuordnung, vereinbarte Anteile, Teilnehmer
+  und Einzelbeträge (#94) dürfen nicht auf eine Wohnung oder ein Mietverhältnis eines anderen
+  Objekts zeigen; das gilt auch, wenn eine Wohnung das Objekt oder ein Mietverhältnis die Wohnung
+  wechselt (`guardUnit`, `guardTenancy`) (`sameProperty`, `CrossPropertyError`
   mit 400). Zusammengesetzte Fremdschlüssel scheiden aus, weil `direct_unit_id` mit `ON DELETE
   SET NULL` alle Spalten des Schlüssels leeren würde, auch das Pflichtfeld. Das Wiederherstellen
   fragt denselben Befund über den ganzen Bestand ab (`crossPropertyViolations`).
