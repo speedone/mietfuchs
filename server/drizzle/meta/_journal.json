@@ -26,14 +26,14 @@
     {
       "idx": 3,
       "version": "6",
-      "when": 1790783105777,
+      "when": 1790784323987,
       "tag": "0003_verteilbasis",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "6",
-      "when": 1790783106995,
+      "when": 1790784332193,
       "tag": "0004_verteilbasis_bedingungen",
       "breakpoints": true
     }

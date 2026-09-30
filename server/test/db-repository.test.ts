@@ -371,7 +371,7 @@ test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
 
 // ---------- Der Wächter über die Verschmelzung ----------
 
-const EXTERNAL_COLUMNS = new Set(['externalMeasure', 'externalTotal', 'externalTotalCents'])
+const EXTERNAL_COLUMNS = new Set(['externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited'])
 
 test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   // **Der Test, der diese Datei am Leben hält.** Die Verschmelzung liest Feld für Feld; wer eine
@@ -737,5 +737,20 @@ test('Verteilbasis: Teilnehmer und Einzelbeträge bleiben im Objekt der Position
     const kosten = { propertyId: 'objekt-1', year: 2024, category: 'X', description: 'X', amountCents: 1000 }
     await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c1', { ...kosten, key: 'area', participantUnitIds: ['u1', 'b'] })), /Objekt/)
     await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c2', { ...kosten, key: 'amounts', tenancyAmounts: { tb: 100 } })), /Objekt/)
+  })
+})
+
+test('Verteilbasis: geht die letzte Teilnehmerwohnung verloren, wird nicht „alle Wohnungen“ daraus', async () => {
+  // Ohne eigene Kennzeichnung sähe eine Position, deren einzige Teilnehmerwohnung gelöscht
+  // wurde, genauso aus wie eine ohne Teilnehmer, und der Aufzug von Haus A verteilte sich still
+  // auf alle Wohnungen. Richtig ist die leere Liste: Die Berechnung meldet sie.
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'Aufzug', description: 'Aufzug', amountCents: 1000, key: 'area',
+      participantUnitIds: ['u2'],
+    }))
+    await opened.write((db) => removeEntity(db, 'units', 'u2'))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'participantUnitIds'), [])
   })
 })

@@ -292,6 +292,11 @@ export const costItems = sqliteTable(
     externalTotal: real('external_total'),
     // Ohne Vorzeichenbedingung, aus demselben Grund wie `amount_cents`: eine Gutschrift.
     externalTotalCents: integer('external_total_cents'),
+    // Ob die Position Teilnehmer hat (#94), eigens gespeichert: Ohne diese Spalte sähe eine
+    // Position, deren letzte Teilnehmerwohnung gelöscht wurde, aus wie eine ohne Teilnehmer, und
+    // ihre Kosten verteilten sich still auf alle Wohnungen. So bleibt es eine leere Liste, und die
+    // Berechnung meldet sie.
+    participantsLimited: integer('participants_limited', { mode: 'boolean' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines

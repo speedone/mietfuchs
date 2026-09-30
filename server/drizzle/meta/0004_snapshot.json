@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "0f621562-6ee0-40f8-a4da-51644c6b464f",
-  "prevId": "e6715cd3-ccfd-42a3-ac97-c7fc2b53a62c",
+  "id": "fcc06606-5c6f-4169-bd53-b5870afced83",
+  "prevId": "c160fb32-a6cc-4ecf-9b83-b532609505de",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -528,6 +528,13 @@
         },
         "external_total_cents": {
           "name": "external_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "participants_limited": {
+          "name": "participants_limited",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

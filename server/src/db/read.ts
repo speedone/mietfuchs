@@ -190,7 +190,7 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
       // auch in der Datei nicht.
       ...(own ? { customShares: Object.fromEntries(own) } : {}),
       // Dieselbe Haltung bei den Angaben aus #94: nur, wenn es sie gibt.
-      ...(teilnehmer ? { participantUnitIds: teilnehmer } : {}),
+      ...(c.participantsLimited ? { participantUnitIds: teilnehmer ?? [] } : {}),
       ...(betraege ? { tenancyAmounts: Object.fromEntries(betraege) } : {}),
       ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
         ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }

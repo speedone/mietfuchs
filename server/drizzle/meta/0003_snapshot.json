@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e6715cd3-ccfd-42a3-ac97-c7fc2b53a62c",
+  "id": "c160fb32-a6cc-4ecf-9b83-b532609505de",
   "prevId": "1dad016c-2d1b-4e74-9527-e301099fdba1",
   "tables": {
     "ai_slots": {
@@ -528,6 +528,13 @@
         },
         "external_total_cents": {
           "name": "external_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "participants_limited": {
+          "name": "participants_limited",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

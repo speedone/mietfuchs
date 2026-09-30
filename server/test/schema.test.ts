@@ -99,6 +99,8 @@ type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 't
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']
+  // Ob `participantUnitIds` gesetzt ist; die Liste selbst steht in cost_item_participants.
+  participantsLimited?: boolean
 }
 type _CostItems = Assert<Matches<typeof schema.costItems.$inferSelect, CostItemColumns>>
 

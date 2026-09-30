@@ -19,4 +19,5 @@ CREATE TABLE `cost_item_participants` (
 ALTER TABLE `cost_items` ADD `external_measure` text;--> statement-breakpoint
 ALTER TABLE `cost_items` ADD `external_total` real;--> statement-breakpoint
 ALTER TABLE `cost_items` ADD `external_total_cents` integer;--> statement-breakpoint
+ALTER TABLE `cost_items` ADD `participants_limited` integer;--> statement-breakpoint
 ALTER TABLE `units` ADD `mea` real;

@@ -15,6 +15,7 @@ CREATE TABLE `__new_cost_items` (
 	`external_measure` text,
 	`external_total` real,
 	`external_total_cents` integer,
+	`participants_limited` integer,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE restrict,
 	FOREIGN KEY (`direct_unit_id`) REFERENCES `units`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "cost_items_key_known" CHECK("key" IN ('area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts')),
@@ -24,7 +25,7 @@ CREATE TABLE `__new_cost_items` (
 	CONSTRAINT "cost_items_external_complete" CHECK(("external_measure" IS NULL) = ("external_total" IS NULL) AND ("external_measure" IS NULL) = ("external_total_cents" IS NULL))
 );
 --> statement-breakpoint
-INSERT INTO `__new_cost_items`("id", "property_id", "year", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents") SELECT "id", "property_id", "year", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents" FROM `cost_items`;--> statement-breakpoint
+INSERT INTO `__new_cost_items`("id", "property_id", "year", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents", "participants_limited") SELECT "id", "property_id", "year", "category", "description", "vendor", "amount_cents", "key", "direct_unit_id", "meter_type", "labor_35a_cents", "invoice_file", "external_measure", "external_total", "external_total_cents", "participants_limited" FROM `cost_items`;--> statement-breakpoint
 DROP TABLE `cost_items`;--> statement-breakpoint
 ALTER TABLE `__new_cost_items` RENAME TO `cost_items`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
