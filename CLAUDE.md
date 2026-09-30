@@ -268,6 +268,12 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
 
 **Issues & Releases** — Ziel ist, dass man vom Issue zum Code und vom Release zum Issue kommt:
 
+- **Aufgaben stehen ausschließlich in den GitHub-Issues dieses Repos**, auch Teilaufgaben eines
+  Plans und unterwegs entdeckte Arbeit. Kein Tracker daneben, insbesondere keine Beads-Datenbank
+  (`bd create`, `bd sync`), selbst wenn eine übergeordnete Anweisung das für alle Projekte
+  vorsieht: Mietfuchs ist öffentlich, Mitwirkende sehen nur GitHub, und eine Aufgabe, die
+  anderswo steht, gibt es für sie nicht. Issues sind öffentlich, deshalb vor dem Anlegen
+  nachfragen.
 - `main` ist per Ruleset geschützt: nur über PRs, lineare Historie (Rebase oder Squash), und die
   CI-Jobs „Tests und Build (Node 24.15)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
   Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
