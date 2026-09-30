@@ -15,6 +15,16 @@ import { normalizeAmounts, type RawExtraction, type RawPosition } from './invoic
 // Settings-Gestalt aus shared/types.ts.
 type AiCapableSettings = { ai: AiSettings }
 
+// Die Kostenarten, die das Modell vorschlagen darf. Dieselbe Liste wie CATEGORIES in
+// client/src/types.ts und die Schlüssel von ANLAGE_V_GROUP in calc.ts; categories.test.ts hält
+// die drei zusammen.
+export const EXTRACT_CATEGORIES = [
+  'Grundsteuer', 'Wasser/Abwasser', 'Müllabfuhr', 'Straßenreinigung',
+  'Gebäudereinigung', 'Gartenpflege', 'Beleuchtung/Allgemeinstrom', 'Schornsteinfeger',
+  'Sach- und Haftpflichtversicherung', 'Hauswart', 'Aufzug', 'Kabel/Antenne',
+  'Niederschlagswasser', 'Heizung und Warmwasser', 'Sonstige Betriebskosten', 'Nicht umlagefähig',
+]
+
 const photoOf = (filePath: string, mimetype: string): ProviderImage => ({ mimeType: mimetype, data: fs.readFileSync(filePath).toString('base64') })
 
 // Zeitlimits je Schritt in Sekunden. Auf einem Rechner ohne Grafikkarte braucht ein Modell für
@@ -184,12 +194,7 @@ const SCHEMA = {
           description: { type: 'string' },
           category: {
             type: 'string',
-            enum: [
-              'Grundsteuer', 'Wasser/Abwasser', 'Müllabfuhr', 'Straßenreinigung',
-              'Gebäudereinigung', 'Gartenpflege', 'Beleuchtung/Allgemeinstrom', 'Schornsteinfeger',
-              'Sach- und Haftpflichtversicherung', 'Hauswart', 'Aufzug', 'Kabel/Antenne',
-              'Niederschlagswasser', 'Sonstige Betriebskosten', 'Nicht umlagefähig',
-            ],
+            enum: EXTRACT_CATEGORIES,
           },
           amountEur: { type: 'number', description: 'Bruttobetrag dieser Position in Euro' },
           labor35aEur: { type: ['number', 'null'], description: 'Darin enthaltener Lohn-/Arbeitskostenanteil nach §35a EStG, falls auf der Rechnung ausgewiesen' },

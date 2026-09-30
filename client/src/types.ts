@@ -51,6 +51,7 @@ export const CATEGORIES = [
   'Hauswart',
   'Aufzug',
   'Kabel/Antenne',
+  'Heizung und Warmwasser',
   'Sonstige Betriebskosten',
   'Nicht umlagefähig',
 ]
@@ -72,6 +73,8 @@ export function matchCategory(raw: string): string {
   if (CATEGORIES.includes(raw)) return raw
   const s = raw.toLowerCase()
   if (/müll|abfall|restabfall|biotonne|wertstoff/.test(s)) return 'Müllabfuhr'
+  // Vor „Wasser“, sonst fiele „Warmwasser“ unter Wasser/Abwasser (#93).
+  if (/heiz|warmwasser|wärme|fernwärme|heizöl|pellet|techem|ista|brunata|minol/.test(s)) return 'Heizung und Warmwasser'
   if (/niederschlag|regenwasser|oberflächenwasser/.test(s)) return 'Niederschlagswasser'
   if (/wasser|abwasser|kanal/.test(s)) return 'Wasser/Abwasser'
   if (/grundsteuer|grundbesitz/.test(s)) return 'Grundsteuer'

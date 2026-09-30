@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { CostKey, MeterType, Unit } from './types'
-import { KEY_LABELS } from './types'
+import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
   buildCostItemBody,
@@ -230,5 +230,13 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     expect(f.tenancyAmounts).toEqual({ t1: '300,00' })
     expect([f.externalMeasure, f.externalTotal, f.externalTotalAmount]).toEqual(['area', '1.240', '1.000,00'])
     expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
+  })
+})
+
+describe('Heizkostenart (#93)', () => {
+  test('„Warmwasser“ und der Messdienst landen bei Heizung, nicht bei Wasser/Abwasser', () => {
+    expect(matchCategory('Warmwasserkosten')).toBe('Heizung und Warmwasser')
+    expect(matchCategory('Heizkostenabrechnung Techem')).toBe('Heizung und Warmwasser')
+    expect(matchCategory('Frischwasser')).toBe('Wasser/Abwasser')
   })
 })

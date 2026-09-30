@@ -419,7 +419,8 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
 // Betriebskostenarten den Anlage-V-nahen Positionsgruppen zuordnen. Bewusst beschreibende
 // Gruppen statt fester Zeilennummern (die sich jährlich ändern können). Unbekannte Kategorien
 // fallen auf „Sonstige Werbungskosten".
-const ANLAGE_V_GROUP: Record<string, string> = {
+// Ausgeführt für categories.test.ts, das die drei Listen der Kostenarten zusammenhält.
+export const ANLAGE_V_GROUP: Record<string, string> = {
   Grundsteuer: 'Grundsteuer & öffentliche Abgaben',
   'Wasser/Abwasser': 'Laufende Betriebskosten',
   Niederschlagswasser: 'Laufende Betriebskosten',
@@ -432,6 +433,8 @@ const ANLAGE_V_GROUP: Record<string, string> = {
   Hauswart: 'Laufende Betriebskosten',
   Aufzug: 'Laufende Betriebskosten',
   'Kabel/Antenne': 'Laufende Betriebskosten',
+  // #93: Heizung und Warmwasser sind laufende Betriebskosten wie Wasser und Strom.
+  'Heizung und Warmwasser': 'Laufende Betriebskosten',
   'Sach- und Haftpflichtversicherung': 'Versicherungen',
   'Sonstige Betriebskosten': 'Sonstige Werbungskosten',
   'Nicht umlagefähig': 'Verwaltung & Instandhaltung',
