@@ -544,6 +544,12 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               Zimmer
               <input value={unitForm.rooms} onChange={(e) => setUnitForm({ ...unitForm, rooms: e.target.value })} placeholder="z. B. 3" />
             </label>
+            {(property?.kind === 'etw' || unitForm.mea.trim() !== '') && (
+              <label className="field grow" title="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“">
+                Miteigentumsanteile
+                <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
+              </label>
+            )}
             <label className="field grow">
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />

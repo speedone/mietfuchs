@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, Extraction, Meter, MeterType, Settings, Unit } from '../types'
+import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settings, Tenancy, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -9,6 +9,11 @@ import {
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
+  amountsSumText,
+  externalHint,
+  tenanciesForAmounts,
+  EXTERNAL_MEASURE_OPTIONS,
+  PARTICIPANT_KEYS,
   type ItemForm,
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
@@ -22,7 +27,8 @@ import PageHeader from '../components/PageHeader'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 
-type Props = { units: Unit[]; settings: Settings | null }
+// `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
+type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
@@ -46,7 +52,7 @@ type QueueEntry = {
 
 const EMPTY = EMPTY_ITEM_FORM
 
-export default function Kosten({ units, settings }: Props) {
+export default function Kosten({ units, settings, tenancies = [] }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   const { year, setYear } = useYear()
@@ -564,6 +570,89 @@ export default function Kosten({ units, settings }: Props) {
                 </div>
                 <div className="muted" style={{ marginTop: 6 }}>Summe: {sumText}</div>
               </div>
+            )}
+            {form.key === 'external' && (
+              <div className="field-group">
+                <div className="field-group-label">Laut Gemeinschaftsabrechnung</div>
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  Betrag oben ist Ihr Anteil laut Hausgeldabrechnung. Hier die Angaben der Gemeinschaft
+                  zu dieser Kostenart; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
+                </div>
+                <div className="row">
+                  <label className="field grow">
+                    Maßstab
+                    <select value={form.externalMeasure} onChange={(e) => setForm({ ...form, externalMeasure: e.target.value as ExternalMeasure })}>
+                      {EXTERNAL_MEASURE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="field grow">
+                    Summe in der Anlage
+                    <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} placeholder="z. B. 10.000" inputMode="decimal" />
+                  </label>
+                  <label className="field grow">
+                    Gesamtkosten der Anlage €
+                    <input value={form.externalTotalAmount} onChange={(e) => setForm({ ...form, externalTotalAmount: e.target.value })} placeholder="z. B. 50.000,00" inputMode="decimal" />
+                  </label>
+                </div>
+                {externalHint(form, units) && <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>}
+              </div>
+            )}
+            {form.key === 'amounts' && (
+              <div className="field-group">
+                <div className="field-group-label">Einzelbeträge je Mieter</div>
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
+                  der Messdienst selbst auf; der Rest trägt der Vermieter.
+                </div>
+                {tenanciesForAmounts(tenancies, units, year).length === 0 ? (
+                  <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
+                ) : (
+                  <div className="row">
+                    {tenanciesForAmounts(tenancies, units, year).map((t) => (
+                      <label key={t.id} className="field grow">
+                        {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
+                        <input
+                          value={form.tenancyAmounts[t.id] ?? ''}
+                          onChange={(e) => setForm({ ...form, tenancyAmounts: { ...form.tenancyAmounts, [t.id]: e.target.value } })}
+                          placeholder="z. B. 312,40"
+                          inputMode="decimal"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form)}</div>
+              </div>
+            )}
+            {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (
+              <details open={form.participants !== null}>
+                <summary>Weitere Optionen: nur bestimmte Wohnungen beteiligen</summary>
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  Etwa der Aufzug nur für ein Haus oder die Waschküche nur für ihre Nutzer. Nur die
+                  angehakten Wohnungen bilden die Verteilbasis.
+                </div>
+                <div className="row">
+                  {basisUnits.map((u) => {
+                    const checked = form.participants === null || form.participants.includes(u.id)
+                    return (
+                      <label key={u.id} className="field checkline">
+                        <span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const current = form.participants ?? basisUnits.map((x) => x.id)
+                              const next = e.target.checked ? [...current, u.id] : current.filter((id) => id !== u.id)
+                              setForm({ ...form, participants: next })
+                            }}
+                          />{' '}
+                          {u.name}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </details>
             )}
             {form.key === 'direct' && (
               <label className="field grow">

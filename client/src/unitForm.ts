@@ -10,13 +10,15 @@ export type UnitForm = {
   areaM2: string
   usage: UnitUsage
   selfPersons: string
+  // Miteigentumsanteile (#94), für eine vermietete Eigentumswohnung
+  mea: string
   rooms: string
   floor: string
   notes: string
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
-  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', rooms: '', floor: '', notes: '',
+  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', rooms: '', floor: '', notes: '',
 }
 
 const numStr = (n: number | undefined | null) => (n != null ? String(n).replace('.', ',') : '')
@@ -28,6 +30,7 @@ export function unitToForm(u: Unit): UnitForm {
     areaM2: numStr(u.areaM2),
     usage: usageOf(u),
     selfPersons: numStr(u.selfPersons),
+    mea: numStr(u.mea),
     rooms: numStr(u.rooms),
     floor: u.floor ?? '',
     notes: u.notes ?? '',
@@ -51,6 +54,10 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
   if (form.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
     return { error: 'Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).' }
   }
+  const mea = form.mea.trim() ? Number(form.mea.replace(/\./g, '').replace(',', '.')) : null
+  if (mea !== null && (!Number.isFinite(mea) || mea < 0)) {
+    return { error: 'Miteigentumsanteile bitte als Zahl angeben (oder leer lassen).' }
+  }
   return {
     body: {
       name: form.name.trim(),
@@ -58,6 +65,7 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       participates: form.usage === 'vermietet',
       selfUsed: form.usage === 'eigen',
       selfPersons: form.usage === 'eigen' ? selfPersons : null,
+      mea,
       rooms,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,

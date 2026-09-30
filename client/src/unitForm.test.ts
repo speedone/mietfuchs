@@ -73,3 +73,13 @@ describe('Validierung', () => {
     expect(body(form({ usage: 'eigen', selfPersons: '' })).selfPersons).toBeNull()
   })
 })
+
+describe('Miteigentumsanteile (#94)', () => {
+  test('werden übernommen, geleert und geprüft', () => {
+    const base = { ...EMPTY_UNIT_FORM, name: 'ETW', areaM2: '62' }
+    expect(buildUnitBody({ ...base, mea: '124' })).toMatchObject({ body: { mea: 124 } })
+    expect(buildUnitBody({ ...base, mea: '' })).toMatchObject({ body: { mea: null } })
+    expect(buildUnitBody({ ...base, mea: 'viele' })).toHaveProperty('error')
+    expect(unitToForm({ id: 'u', propertyId: 'objekt-1', name: 'ETW', areaM2: 62, participates: true, mea: 124.5 }).mea).toBe('124,5')
+  })
+})
