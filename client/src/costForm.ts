@@ -137,12 +137,21 @@ const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, strin
 // Summe der Einzelbeträge und was davon der Vermieter trägt.
 const CREDIT_WITH_AMOUNTS = 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.'
 
-export function amountsSumText(form: ItemForm, units: Unit[]): string {
+// Einzelbeträge nur der Mietverhältnisse, deren Feld das Formular zeigt (Durchsicht zu #105):
+// Wer eine Wohnung als Teilnehmerin abwählt, sähe den Betrag ihres Mieters sonst nicht mehr, er
+// zählte aber in die Summe und ließe sich nicht löschen. Ohne Mietverhältnisse keine Einschränkung.
+const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number | undefined): Record<string, string> => {
+  if (!tenancies || year === undefined) return form.tenancyAmounts
+  const ids = new Set(tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => t.id))
+  return Object.fromEntries(Object.entries(form.tenancyAmounts).filter(([id]) => ids.has(id)))
+}
+
+export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], year?: number): string {
   const amount = parseEuro(form.amount) ?? 0
   // Eine Gutschrift (#105): Einzelbeträge sind nie negativ, die Summenprüfung ergäbe Unsinn.
   if (amount < 0) return CREDIT_WITH_AMOUNTS
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
-  const tenants = sumOf(form.tenancyAmounts)
+  const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, year))
   const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
@@ -190,7 +199,7 @@ export type BuildResult = { error: string } | { body: Record<string, unknown> }
 // Validiert das Formular und baut den API-Rumpf. Felder, die zum gewählten Schlüssel nicht
 // gehören, werden ausdrücklich auf null gesetzt: die generische PUT-Route übernimmt nur
 // vorhandene Felder, sonst blieben alte Zuordnungen in der Datei stehen.
-export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): BuildResult {
+export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
   const amount = parseEuro(form.amount)
   const labor35a = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
   if (!form.description.trim() || amount === null || amount <= 0) {
@@ -257,7 +266,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
       }
       return out
     }
-    tenancyAmounts = read(form.tenancyAmounts)
+    tenancyAmounts = read(visibleTenancyAmounts(form, units, tenancies, year))
     selfAmounts = read(visibleSelfAmounts(form, units))
     if (!tenancyAmounts || !selfAmounts) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }
     const sum = [...Object.values(tenancyAmounts), ...Object.values(selfAmounts)].reduce((a, c) => a + c, 0)

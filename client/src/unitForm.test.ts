@@ -98,3 +98,12 @@ describe('Zahlen in deutscher und technischer Schreibweise (#105)', () => {
     expect(buildUnitBody({ ...base, areaM2: '62,55' })).toMatchObject({ body: { areaM2: 62.55 } })
   })
 })
+
+describe('Zahlen: falsch gesetzte Punkte neben einem Komma sind kein Wert (Durchsicht zu #105)', () => {
+  const base = { ...EMPTY_UNIT_FORM, name: 'ETW', areaM2: '62' }
+  test('„78.43,5“ und „1,234.56“ werden abgelehnt statt still falsch gelesen', () => {
+    expect(buildUnitBody({ ...base, mea: '78.43,5' })).toHaveProperty('error')
+    expect(buildUnitBody({ ...base, mea: '1,234.56' })).toHaveProperty('error')
+    expect(buildUnitBody({ ...base, mea: '1.234,56' })).toMatchObject({ body: { mea: 1234.56 } })
+  })
+})

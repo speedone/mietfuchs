@@ -314,3 +314,13 @@ describe('Kleinigkeiten (#105)', () => {
     expect(f.externalTotal).toBe('1.000,125')
   })
 })
+
+describe('Durchsicht zu #105', () => {
+  test('Einzelbeträge abgewählter Teilnehmer zählen nicht und werden nicht gespeichert', () => {
+    const t = (id: string, unitId: string) => ({ id, unitId, tenantName: id, persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+    const tenancies = [t('t1', 'u1'), t('t2', 'u2')]
+    const f = form({ key: 'amounts', amount: '1.000,00', participants: ['u2'], tenancyAmounts: { t1: '600,00', t2: '500,00' } })
+    expect(amountsSumText(f, UNITS, tenancies, 2025)).toMatch(/^Summe 500,00/)
+    expect(buildCostItemBody(f, UNITS, 2025, tenancies)).toMatchObject({ body: { tenancyAmounts: { t2: 50000 } } })
+  })
+})

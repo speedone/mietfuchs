@@ -134,7 +134,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
 
   async function saveItem() {
     if (!form) return
-    const built = buildCostItemBody(form, units, year)
+    const built = buildCostItemBody(form, units, year, tenancies)
     if ('error' in built) {
       setError(built.error)
       return
@@ -644,7 +644,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     ))}
                   </div>
                 )}
-                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units)}</div>
+                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units, tenancies, year)}</div>
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (

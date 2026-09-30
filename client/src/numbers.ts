@@ -6,8 +6,12 @@ export function parseNumberDe(raw: string): number | null {
   const t = raw.trim().replace(/\s/g, '')
   if (!t) return null
   let normalized: string
-  if (t.includes(',')) normalized = t.replace(/\./g, '').replace(',', '.')
-  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) normalized = t.replace(/\./g, '')
+  // Mit Komma dürfen Punkte nur als Tausendertrenner stehen; „78.43,5“ oder „1,234.56“ sind
+  // keine Zahl, sondern ein Vertippen, und still falsch gelesen wären sie schlimmer als abgelehnt.
+  if (t.includes(',')) {
+    if (!/^-?\d{1,3}(\.\d{3})*,\d+$/.test(t) && !/^-?\d+,\d+$/.test(t)) return null
+    normalized = t.replace(/\./g, '').replace(',', '.')
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) normalized = t.replace(/\./g, '')
   else normalized = t
   if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null
   const n = Number(normalized)
