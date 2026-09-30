@@ -48,7 +48,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       // Frühere Abschlüsse (#56). Fehlt die Route (älterer Server), bleibt die Liste leer.
-      api<HistoryEntry[]>(withProperty(`/api/settlement/${year}/history`, propertyId)).catch(() => []),
+      // Nur ein älterer Server ohne die Route (404) heißt „keine“; jeder andere Fehler wird gezeigt.
+      api<HistoryEntry[]>(withProperty(`/api/settlement/${year}/history`, propertyId)).catch((e: unknown) => {
+        if (/\b404\b/.test(String((e as Error).message))) return []
+        throw e
+      }),
     ])
       .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
