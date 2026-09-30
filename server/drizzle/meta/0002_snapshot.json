@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1dad016c-2d1b-4e74-9527-e301099fdba1",
+  "id": "150de377-4df0-4533-b481-b15985e77c66",
   "prevId": "6f83ffcb-8e0f-482e-8e46-98a7894e70d9",
   "tables": {
     "ai_slots": {
@@ -220,7 +220,7 @@
       "checkConstraints": {
         "closed_settlements_settlement_is_json": {
           "name": "closed_settlements_settlement_is_json",
-          "value": "json_valid(\"closed_settlements\".\"settlement\")"
+          "value": "json_valid(\"settlement\")"
         }
       }
     },

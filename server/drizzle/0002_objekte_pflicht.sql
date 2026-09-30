@@ -7,7 +7,7 @@ CREATE TABLE `__new_closed_settlements` (
 	`sent_at` text,
 	`settlement` text NOT NULL,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE restrict,
-	CONSTRAINT "closed_settlements_settlement_is_json" CHECK(json_valid("__new_closed_settlements"."settlement"))
+	CONSTRAINT "closed_settlements_settlement_is_json" CHECK(json_valid("settlement"))
 );
 --> statement-breakpoint
 INSERT INTO `__new_closed_settlements`("id", "property_id", "year", "closed_at", "sent_at", "settlement") SELECT "id", "property_id", "year", "closed_at", "sent_at", "settlement" FROM `closed_settlements`;--> statement-breakpoint

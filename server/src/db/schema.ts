@@ -424,7 +424,10 @@ export const closedSettlements = sqliteTable(
     // Diese Bedingung muss jetzt stehen oder nie: SQLite kann eine Prüfbedingung nicht
     // nachträglich hinzufügen, das ginge nur über einen Neubau der ganzen Tabelle. Solange
     // niemand Daten darin hat, kostet sie nichts.
-    check('closed_settlements_settlement_is_json', sql`json_valid(${t.settlement})`),
+    // Unqualifiziert (`"settlement"` statt `"closed_settlements"."settlement"`): Beim Neubau der
+    // Tabelle stünde sonst der Name des Zwischenstands darin, und das SQLite von macOS lehnt den
+    // Verweis nach dem Umbenennen ab (migrations.test.ts).
+    check('closed_settlements_settlement_is_json', sql.raw('json_valid("settlement")')),
   ],
 )
 
