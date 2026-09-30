@@ -55,6 +55,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Einliegerwohnung mit Zwischenzähler: Der Mieter zahlte das Wasser des Vermieters mit.**
+  Hat eine Wohnung keinen eigenen Zähler, verteilte der Verbrauchsschlüssel die ganze Rechnung
+  auf die Wohnungen mit Zähler. Jetzt gilt der Hauptzähler des Hauses als Grundlage, und der
+  Rest nach Abzug der Zwischenzähler bleibt beim Vermieter, bei der eigenen Wohnung als
+  Eigenanteil. Beispiel: 200 m³ im Haus, 40 m³ in der Einliegerwohnung, 1.000 € Wasser; der
+  Mieter zahlt jetzt 200 € statt 1.000 €. Voraussetzung ist, dass der Hauptzähler unter
+  Zähler als „Haus (Hauptzähler)“ erfasst ist; fehlt er, weist die Abrechnung darauf hin.
+  Bitte prüfen Sie noch nicht abgeschlossene Abrechnungen mit dem Schlüssel „Verbrauch“.
+  Außerdem erklärt die Warnung zur Warmmiete, wie Mietfuchs die Ausnahme für das
+  Zweifamilienhaus mit selbstbewohnter Wohnung erkennt.
+  ([#116](https://github.com/speedone/mietfuchs/issues/116))
 - **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
   jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
   bis zum 30.06.2024 über die Nebenkosten umgelegt werden; Betriebsstrom und Wartung einer

@@ -883,7 +883,15 @@ die ganze fachliche Komplexität:
   Grund für die Basis-Zugehörigkeit: Kosten einer Rechnung über das ganze Haus dürfen nur
   anteilig auf die Mieter umgelegt werden. Beim `meter`-Schlüssel bilden **alle**
   Wohnungszähler die Basis, unabhängig vom Kennzeichen — ein Zählerstand belegt Verbrauch
-  innerhalb der abgerechneten Menge. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
+  innerhalb der abgerechneten Menge. **Fehlt einer Wohnung der Verteilbasis der Zähler, wird
+  der Hauptzähler (Zähler ohne Wohnung) zur Basis** (#116, Vorwegabzug): Ihr Verbrauch ist der
+  Rest nach Abzug der Wohnungszähler, bei selbstgenutzten Wohnungen als Eigenanteil, bei einer
+  vermieteten ohne Zähler beim Vermieter und mit Warnung, denn aufteilen ließe er sich nur mit
+  einer erfundenen Regel. Vorher zahlte bei einer Einliegerwohnung mit Zwischenzähler der
+  Mieter die ganze Rechnung (gemessen 1.000 € statt 200 €). Haben alle Wohnungen Zähler, bleibt
+  es beim Verhältnis der Wohnungszähler, und die Messdifferenz geht darin auf; zeigen sie
+  zusammen mehr als der Hauptzähler, ebenso, dann mit Warnung. Mit Teilnehmern (#94) gilt der
+  Hauptzähler nie, er misst das ganze Haus. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
   entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht
   abziehbar); `load()` migriert bewusst **nicht** automatisch, weil ein gesetztes Kennzeichen
   die Verteilung bereits abgerechneter Jahre verändern würde.
