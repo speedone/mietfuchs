@@ -14,7 +14,7 @@ import { YearProvider } from '../year'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
 
-const UNITS: Unit[] = [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }]
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 
 // Die zweite Position hat keinen Betrag, so wie der Server sie durchlässt (toExtraction in
 // server/src/extract.ts verwirft nur, was niemand gebrauchen kann).

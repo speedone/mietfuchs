@@ -23,7 +23,9 @@ import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
 import { FIXTURE_DIR } from '../testing/fixtures.ts'
 import type { Db } from '../src/store.ts'
-import type { CostItem, Meter, Payment, Reading, RentLedger, RentLedgerRow, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { Payment, Reading, RentLedger, RentLedgerRow, Settings, Tenancy } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 
 // ---------- Bausteine ----------
 //

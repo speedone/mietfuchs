@@ -11,7 +11,7 @@ import {
   type ItemForm,
 } from './costForm'
 
-const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({
+const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
   id, name: id.toUpperCase(), areaM2: 50, participates: true, ...extra,
 })
 const UNITS = [unit('u1'), unit('u2')]
@@ -146,7 +146,7 @@ describe('Felder eines nicht gewählten Schlüssels werden zurückgesetzt', () =
 describe('Bearbeiten einer gespeicherten Position', () => {
   test('Zählertyp und Anteile werden ins Formular übernommen', () => {
     const f = itemToForm({
-      id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser',
+      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser',
       amountCents: 123456, key: 'meter', meterType: 'sonstig', labor35aCents: 1000,
       customShares: { u1: 33.33 },
     })
@@ -157,14 +157,14 @@ describe('Bearbeiten einer gespeicherten Position', () => {
   })
 
   test('eine Position ohne Zählertyp füllt das Feld nicht mit einem geratenen Wert', () => {
-    const f = itemToForm({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
+    const f = itemToForm({ id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' })
     expect(f.meterType).toBe('')
   })
 
   test('der Rundlauf Formular → Rumpf verändert die Anteile nicht', () => {
     const original = { u1: 12.5, u2: 87.5 }
     const f = itemToForm({
-      id: 'c1', year: 2025, category: 'Sonstige Betriebskosten', description: 'X',
+      id: 'c1', propertyId: 'objekt-1', year: 2025, category: 'Sonstige Betriebskosten', description: 'X',
       amountCents: 50000, key: 'custom', customShares: original,
     })
     const r = buildCostItemBody(f, UNITS, 2025)

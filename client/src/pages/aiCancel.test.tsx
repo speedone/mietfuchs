@@ -10,7 +10,7 @@ import { YearProvider } from '../year'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
 
-const UNITS: Unit[] = [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }]
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 
 let calls: string[]
 

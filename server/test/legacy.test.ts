@@ -11,7 +11,9 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { CostItem, Meter, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { Settings, Tenancy } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import type { Db } from '../src/store.ts'
 import { legacyPrepaymentCase, migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 

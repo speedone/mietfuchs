@@ -422,6 +422,29 @@ const networkWarning = (beschreibung: string): string =>
 
 // ---------- Öffnen ----------
 
+// Legt vor dem Anwenden ausstehender Schritte eine Kopie des bisherigen Stands daneben, als
+// `mietfuchs.sqlite.vor-<erster ausstehender Schritt>`, und gibt ihren Pfad zurück.
+//
+// Nur, wenn es etwas zu sichern gibt: Eine Datenbank ohne einen einzigen angewendeten Schritt
+// ist frisch angelegt und leer. Und nur einmal je Schritt: Liegt die Kopie schon da, stammt sie
+// von einem früheren, gescheiterten Versuch und ist der ältere, also sicherere Stand.
+//
+// `VACUUM INTO` und keine Dateikopie, aus demselben Grund wie beim Backup (backup.ts): Es
+// liefert einen in sich stimmigen Stand ohne Beidateien.
+export function backupBeforeMigrating(connection: Connection, file: string, migrations: Migration[]): string | null {
+  const hasBookkeeping =
+    connection.rows(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'`).length > 0
+  if (!hasBookkeeping) return null
+  const done = new Set(connection.rows('SELECT hash FROM __drizzle_migrations').map((row) => String(row[0])))
+  if (done.size === 0) return null
+  const firstPending = migrations.find((m) => !done.has(m.hash))
+  if (!firstPending) return null
+  const target = `${file}.vor-${firstPending.tag}`
+  if (fs.existsSync(target)) return target
+  connection.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`)
+  return target
+}
+
 export type OpenedDatabase = {
   db: Database
   file: string
@@ -533,6 +556,19 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
     const migrations = await loadMigrations()
     const problem = newerVersionProblem(file, unknownSteps(connection, migrations))
     if (problem) fail(problem)
+
+    // Vor einem Update eine Sicherung des bisherigen Stands (#92). Scheitert sie, wird nicht
+    // migriert: Nichts anfassen, was man nicht zurückholen kann.
+    try {
+      backupBeforeMigrating(connection, file, migrations)
+    } catch (err) {
+      return fail(
+        `Vor dem Update der Datenbank ${file} ließ sich keine Sicherung anlegen. Mietfuchs ändert ` +
+          `die Datenbank deshalb nicht und arbeitet nicht damit; an Ihren Daten ist nichts ` +
+          `verändert. Bitte prüfen Sie den freien Speicherplatz. Technischer Befund: ${messageOf(err)}`,
+        err,
+      )
+    }
 
     let applied: number
     try {

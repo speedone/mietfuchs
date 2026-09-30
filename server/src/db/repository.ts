@@ -177,9 +177,14 @@ const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown)
 //
 // Die Gegenrichtung zu den Lesern in read.ts, und wie sie eine benannte Funktion je Sammlung.
 
+// Das Objekt einer Wurzel. Gesetzt wird es beim Anlegen von der Route; ob ein Wechsel erlaubt
+// ist und ob ein Verweis dabei über die Objektgrenze zeigte, entscheidet `sameProperty` unten.
+const mergedProperty = (body: unknown, current: string): string => merged(body, 'propertyId', current, (v) => asText(v, current))
+
 function mergeUnit(current: Unit, body: unknown): Unit {
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     areaM2: merged(body, 'areaM2', current.areaM2, (v) => asNumber(v, 0)),
     // `typeof v === 'boolean'` und nicht `!!v`: In JavaScript wäre die Zeichenkette „false" wahr.
@@ -222,6 +227,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     year: merged(body, 'year', current.year, (v) => asNumber(v, current.year)),
     category: merged(body, 'category', current.category, (v) => asText(v, '')),
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
@@ -243,6 +249,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
 function mergeMeter(current: Meter, body: unknown): Meter {
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     // `null` heißt Hauptzähler für das ganze Haus; eine leere Kennung liest die Abrechnung
     // schon heute genauso (`m.unitId && …`).
@@ -278,16 +285,18 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // Ein frisch angelegter Datensatz ist ein leerer, in den derselbe Rumpf verschmolzen wird. Damit
 // gibt es Anlegen und Ändern nur einmal, und ein Feld, das beim Anlegen anders behandelt würde
 // als beim Ändern, kann gar nicht erst entstehen.
-const emptyUnit = (id: string): Unit => ({ id, name: '', areaM2: 0, participates: false })
+// Ein leeres Objekt (`''`) gibt es nicht; ohne `propertyId` im Rumpf scheitert das Anlegen am
+// Fremdschlüssel. Die Route setzt es deshalb immer (index.ts, `propertyOf`).
+const emptyUnit = (id: string): Unit => ({ id, propertyId: '', name: '', areaM2: 0, participates: false })
 const emptyTenancy = (id: string): Tenancy => ({
   id, unitId: '', tenantName: '', persons: 1, personHistory: [], start: '', end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const emptyCostItem = (id: string): CostItem => ({
-  id, year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
+  id, propertyId: '', year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
   directUnitId: null, meterType: null,
 })
-const emptyMeter = (id: string): Meter => ({ id, name: '', unitId: null, type: 'sonstig', unit: '' })
+const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
 const emptyReading = (id: string): Reading => ({ id, meterId: '', date: '', value: 0 })
 const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', amountCents: 0 })
 
@@ -296,7 +305,7 @@ const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', am
 const orNull = <T>(value: T | undefined): T | null => value ?? null
 
 const unitRow = (u: Unit) => ({
-  id: u.id, name: u.name, areaM2: u.areaM2, participates: u.participates,
+  id: u.id, propertyId: u.propertyId, name: u.name, areaM2: u.areaM2, participates: u.participates,
   selfUsed: orNull(u.selfUsed), selfPersons: orNull(u.selfPersons), rooms: orNull(u.rooms),
   floor: orNull(u.floor), notes: orNull(u.notes),
 })
@@ -307,12 +316,12 @@ const tenancyRow = (t: Tenancy) => ({
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
 })
 const costItemRow = (c: CostItem) => ({
-  id: c.id, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
+  id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
 })
 const meterRow = (m: Meter) => ({
-  id: m.id, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
+  id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -546,7 +555,7 @@ export async function findClosedSettlement(db: Database, year: number): Promise<
 
 export async function closeSettlement(
   db: Database,
-  entry: { id: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
+  entry: { id: string, propertyId: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedSettlements).values(entry)
 }

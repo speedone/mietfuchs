@@ -10,13 +10,13 @@ import { YearProvider } from '../year'
 import Kosten from './Kosten'
 
 const UNITS: Unit[] = [
-  { id: 'u1', name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 },
-  { id: 'u2', name: 'OG links', areaM2: 90, participates: true },
-  { id: 'u3', name: 'OG rechts', areaM2: 60, participates: true },
+  { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 },
+  { id: 'u2', propertyId: 'objekt-1', name: 'OG links', areaM2: 90, participates: true },
+  { id: 'u3', propertyId: 'objekt-1', name: 'OG rechts', areaM2: 60, participates: true },
 ]
 
 // Nur ein Zähler, und zwar „sonstig" — die Konstellation aus der Fehlermeldung.
-const METERS: Meter[] = [{ id: 'm1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
+const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
 
@@ -102,6 +102,6 @@ test('Umlageschlüssel-Auswahl zeigt den gespeicherten Schlüssel auch ohne Wohn
     const keySelect = select(/Umlageschlüssel/i)
     expect([...keySelect.options].map((o) => o.value)).not.toContain('meter')
   } finally {
-    METERS.push({ id: 'm1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' })
+    METERS.push({ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' })
   }
 })

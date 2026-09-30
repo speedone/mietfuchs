@@ -27,7 +27,7 @@ import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
 import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readSettings, readStock } from './db/read.ts'
+import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
   closeSettlement, createEntity, findClosedSettlement, invoiceFilesInUse, listCollection,
   removeEntity, reopenSettlement, setSentAt, updateEntity, writeSettings, type CollectionName,
@@ -306,13 +306,22 @@ const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatab
 // Ein Fehler wird hier nicht abgefangen: Express 5 reicht eine abgelehnte Zusage an die
 // Fehlerbehandlung weiter, und dort steht die Übersetzung an einer Stelle.
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
+// Die Sammlungen, die ein Objekt tragen; die übrigen erben es (#92).
+const ROOTS: CollectionName[] = ['units', 'costItems', 'meters']
 
 for (const coll of COLLECTIONS) {
   app.get(`/api/${coll}`, async (req, res) => {
     res.json(await readData((db) => listCollection(db, coll)))
   })
   app.post(`/api/${coll}`, async (req, res) => {
-    res.status(201).json(await writeData((db) => createEntity(db, coll, newId(), bodyObject(req))))
+    const body = bodyObject(req)
+    res.status(201).json(await writeData(async (db) => {
+      // Übergang bis zu den Routen je Objekt (#92, Task 6): ohne Angabe das einzige Objekt.
+      const withProperty = ROOTS.includes(coll) && body.propertyId === undefined
+        ? { ...body, propertyId: (await readProperties(db))[0]?.id }
+        : body
+      return createEntity(db, coll, newId(), withProperty)
+    }))
   })
   app.put(`/api/${coll}/:id`, async (req, res) => {
     const item = await writeData((db) => updateEntity(db, coll, req.params.id, bodyObject(req)))
@@ -377,8 +386,12 @@ app.post('/api/settlement/:year/close', async (req, res) => {
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const schonDa = await writeData(async (db) => {
     if (await findClosedSettlement(db, year)) return true
+    // Übergang bis zu den Routen je Objekt (#92, Task 6): das einzige Objekt.
+    const [property] = await readProperties(db)
+    if (!property) throw new Error('Es gibt kein Objekt.')
     await closeSettlement(db, {
       id: newId(),
+      propertyId: property.id,
       year,
       closedAt: new Date().toISOString(),
       sentAt,

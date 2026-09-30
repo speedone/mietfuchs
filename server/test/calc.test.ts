@@ -19,7 +19,9 @@ import {
 import type { ComputedSettlement } from '../src/calc.ts'
 import { snapshotFromDb } from '../src/snapshot.ts'
 import type { ClosedSettlement, Db } from '../src/store.ts'
-import type { CostItem, CostKey, Meter, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, Unit, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
