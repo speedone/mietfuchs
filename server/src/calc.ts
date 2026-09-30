@@ -1186,8 +1186,16 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         // Eigenanteil, also im privaten, nicht abziehbaren Teil der Steuerübersicht. Das soll nicht
         // still geschehen.
         const selfForfeited = Object.entries(selfGiven).filter(([id, c]) => c > 0 && !selfIds.has(id))
-        if (selfForfeited.length > 0) {
-          warn('amounts.self-forfeited', `„${item.description}": ein Eigenbetrag ist für ${selfForfeited.map(([id]) => unitById.get(id)?.name ?? 'eine gelöschte Wohnung').join(', ')} eingetragen, die in diesem Jahr nicht selbstgenutzt ist — er zählt nicht als Eigenanteil und bleibt beim Vermieter.`, itemSubject(item))
+        // Zwei Gründe, und die Meldung nennt den richtigen: Die Wohnung ist nicht selbstgenutzt, oder
+        // sie ist es, nimmt aber an dieser Position nicht teil (Befund der Durchsicht).
+        const selfOutsideParticipants = selfForfeited.filter(([id]) => selfUnits.some((u) => u.id === id))
+        const selfNotSelfUsed = selfForfeited.filter(([id]) => !selfUnits.some((u) => u.id === id))
+        const nameOf = (id: string) => unitById.get(id)?.name ?? 'eine gelöschte Wohnung'
+        if (selfNotSelfUsed.length > 0) {
+          warn('amounts.self-forfeited', `„${item.description}": ein Eigenbetrag ist für ${selfNotSelfUsed.map(([id]) => nameOf(id)).join(', ')} eingetragen, die in diesem Jahr nicht selbstgenutzt ist — er zählt nicht als Eigenanteil und bleibt beim Vermieter.`, itemSubject(item))
+        }
+        if (selfOutsideParticipants.length > 0) {
+          warn('amounts.self-forfeited', `„${item.description}": ein Eigenbetrag ist für ${selfOutsideParticipants.map(([id]) => nameOf(id)).join(', ')} eingetragen, die an dieser Position nicht teilnimmt — er zählt nicht als Eigenanteil und bleibt beim Vermieter. Nehmen Sie die Wohnung als Teilnehmerin auf, wenn die Position sie betrifft.`, itemSubject(item))
         }
         selfRaw = selfSum
         const selfWithout = b.selfUnits.filter((u) => !Object.hasOwn(selfGiven, u.id))

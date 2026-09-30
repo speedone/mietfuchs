@@ -51,3 +51,11 @@ test('Ein Betrag für eine Wohnung, die nicht selbstgenutzt ist, wird nicht als 
   assert.equal(s.selfUsedShareCents, 0)
   assert.ok(s.notices.some((n) => n.code === 'amounts.self-forfeited'), s.warnings.join(' | '))
 })
+
+test('Nimmt die eigene Wohnung an der Position nicht teil, sagt die Warnung genau das', () => {
+  const s = settle(heizung({ participantUnitIds: ['el'], tenancyAmounts: { t: 124000 }, selfAmounts: { haupt: 50000 } }))
+  const n = s.notices.find((x) => x.code === 'amounts.self-forfeited')
+  assert.match(n?.text ?? '', /an dieser Position nicht teilnimmt/)
+  assert.doesNotMatch(n?.text ?? '', /nicht selbstgenutzt/)
+  assert.equal(s.selfUsedShareCents, 0)
+})

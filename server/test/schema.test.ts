@@ -215,6 +215,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'closed_settlements',
       'cost_item_amounts',
       'cost_item_participants',
+      'cost_item_self_amounts',
       'cost_item_shares',
       'cost_items',
       'flat_rates',

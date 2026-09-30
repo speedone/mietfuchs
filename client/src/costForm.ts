@@ -120,12 +120,24 @@ export function externalHint(form: ItemForm, units: Unit[]): string {
   return `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
 }
 
+// Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf
+// Teilnehmer beschränkt ist, unter ihnen. Genau für sie zeigt das Formular ein Feld. Ein Betrag für
+// eine andere Wohnung, etwa eine, die inzwischen vermietet ist, stünde sonst unsichtbar im Formular,
+// zählte in die Summe und ließe sich nicht mehr löschen (Befund der Durchsicht).
+export function selfAmountUnits(units: Unit[], participants: string[] | null): Unit[] {
+  return basisUnitsOf(units).filter((u) => usageOf(u) === 'eigen' && (participants === null || participants.includes(u.id)))
+}
+const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, string> => {
+  const ids = new Set(selfAmountUnits(units, form.participants).map((u) => u.id))
+  return Object.fromEntries(Object.entries(form.selfAmounts).filter(([id]) => ids.has(id)))
+}
+
 // Summe der Einzelbeträge und was davon der Vermieter trägt.
-export function amountsSumText(form: ItemForm): string {
+export function amountsSumText(form: ItemForm, units: Unit[]): string {
   const amount = parseEuro(form.amount) ?? 0
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
   const tenants = sumOf(form.tenancyAmounts)
-  const own = sumOf(form.selfAmounts)
+  const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
   const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
@@ -240,7 +252,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
       return out
     }
     tenancyAmounts = read(form.tenancyAmounts)
-    selfAmounts = read(form.selfAmounts)
+    selfAmounts = read(visibleSelfAmounts(form, units))
     if (!tenancyAmounts || !selfAmounts) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }
     const sum = [...Object.values(tenancyAmounts), ...Object.values(selfAmounts)].reduce((a, c) => a + c, 0)
     if (sum > amount) return { error: 'Die Einzelbeträge ergeben zusammen mehr als der Rechnungsbetrag.' }

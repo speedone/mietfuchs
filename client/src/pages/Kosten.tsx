@@ -15,6 +15,7 @@ import {
   EXTERNAL_MEASURE_OPTIONS,
   PARTICIPANT_KEYS,
   categoryNotice,
+  selfAmountUnits,
   type ItemForm,
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
@@ -624,9 +625,9 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     ))}
                   </div>
                 )}
-                {basisUnits.filter((u) => usageOf(u) === 'eigen').length > 0 && (
+                {selfAmountUnits(units, form.participants).length > 0 && (
                   <div className="row" style={{ marginTop: 8 }}>
-                    {basisUnits.filter((u) => usageOf(u) === 'eigen').map((u) => (
+                    {selfAmountUnits(units, form.participants).map((u) => (
                       <label key={u.id} className="field grow">
                         <span>{u.name} (selbstgenutzt, Ihr <Term id="ownShare">Eigenanteil</Term>)</span>
                         <input
@@ -639,7 +640,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     ))}
                   </div>
                 )}
-                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form)}</div>
+                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units)}</div>
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (
