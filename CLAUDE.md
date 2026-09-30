@@ -808,6 +808,15 @@ die ganze fachliche Komplexität:
   der Anteil genau der Betrag des Mietverhältnisses, ohne Tagesanteil (der Messdienst teilt beim
   Wechsel selbst), der Rest beim Vermieter; eine Summe über dem Rechnungsbetrag wird nicht
   verteilt. Tests in calc-verteilbasis.test.ts samt eigener Invariante.
+- **Nebenkostenmodell am Mietverhältnis** (#93): `costModel` (kalte Kosten) und
+  `heatingModel` (Kostenart „Heizung und Warmwasser“, `HEATING_CATEGORY` in calc.ts), jeweils
+  `settlement | flatRate | inclusive`, fehlend `settlement`. Ein Mietverhältnis mit Pauschale
+  oder Inklusivmiete **bleibt in der Verteilbasis**, sein Anteil wird ihm nicht zugebucht und
+  fällt dem Vermieter zu, und zwar **nicht als Eigenanteil** (abziehbar). Bleibt seine Abrechnung
+  leer, fehlt sie in `statements` und steht in `notSettled`. Die Pauschale wird als Staffel
+  „Vorauszahlung“ geführt, damit Mietkonto und Steuer ohne eigene Regel stimmen. Warnung nach
+  § 2 HeizkostenV außerhalb des selbstbewohnten Zweifamilienhauses. Die drei Listen der
+  Kostenarten (Oberfläche, KI-Schema, Anlage V) hält categories.test.ts zusammen.
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung
   (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Tatsächlich
   gezahlte Vorauszahlungen pro Jahr können via `prepaymentOverrides` überschrieben werden
