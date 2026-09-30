@@ -703,8 +703,8 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   und der Verbrauch zwischen zwei Ablesungen interpoliert wird; ein unbefristetes
   Mietverhältnis reicht bis ins laufende Jahr, sonst bliebe gerade das Jahr ungeprüft, in dem
   der Vermieter arbeitet. Weicht ein Cent ab, wird nicht aktiviert, und die Meldung nennt Jahr
-  und Zahl. **Ausgenommen sind genau fünf Angaben** (`unitName`, `tenantName`, `description`,
-  `basisText`, `warnings`), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
+  und Zahl. **Ausgenommen sind genau sechs Angaben** (`unitName`, `tenantName`, `description`,
+  `basisText`, `warnings` und `notices`, dieselben Meldungen in fester Gestalt), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
   stehen benannt in regression.ts. Verglichen wird gegen den Bestand, wie Mietfuchs ihn **heute**
   rechnet, und nicht gegen den schon geradegerückten: Sonst prüfte die Regression das
   Geraderücken gegen sich selbst. Die eine Ausnahme davon ist der feste Monatsbetrag neben einer
@@ -786,6 +786,24 @@ nichts an ihm. Aufgefangen wird dort nichts: Ist eine Sammlung in der Datei `nul
 es krachen. Ein `?? []` an der Grenze ergäbe eine leere Abrechnung ohne Kosten und ohne
 Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig aus
 und wäre falsch, und das ist der schlimmere der beiden Ausgänge.
+
+**Hinweise und Regelverzeichnis** (#112): Die Berechnung erzeugt keine losen Sätze mehr, sondern
+`notices` (`Notice` in shared/types.ts) mit Code, Stufe, Titel, Text, dem betroffenen Eintrag
+(`subject`, daraus wird „Hier beheben →“) und gegebenenfalls der Regel. **Stufe, Titel und Regel
+hängen am Code** (`noticeKinds` in calc.ts), und `warn` nimmt nur Codes aus dieser Tabelle; so
+hat derselbe Code nie zwei Stufen. Die Stufen sind fachlich bestimmt: `error` heißt, eine
+Position wird wegen widersprüchlicher Angaben gar nicht verteilt, `warning`, Geld landet anders
+als vermutlich gewollt oder eine Rechtsregel ist verletzt, `hint`, prüfen ohne sicheren Fehler.
+**`warnings` bleibt als Liste der Texte, Wortlaut unverändert**: Cockpit, ältere Tabs und
+eingefrorene Abrechnungen lesen sie, und eine vor #112 abgeschlossene Abrechnung kennt nur sie
+(die Oberfläche zeigt sie dann als Warnungen ohne Titel, `noticesOf` in
+[client/src/notices.ts](client/src/notices.ts)).
+Rechtsregeln mit Gültigkeit stehen in [server/src/rules.ts](server/src/rules.ts), und zwar nur
+solche, die die Berechnung wirklich anwendet. calc.ts fragt `ruleCoverage` statt ein Jahr fest
+hinzuschreiben (die Kabel-Regel: `partial` ist das Übergangsjahr 2024, `none` die Zeit danach).
+Jede Abrechnung trägt ihren **Rechtsstand** (`legalBasis`: `RULES_AS_OF` und die Regeln des
+Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert er mit ein. Wer
+eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
