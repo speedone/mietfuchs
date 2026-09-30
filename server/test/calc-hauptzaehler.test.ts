@@ -246,3 +246,18 @@ test('Alle Wohnungen haben Zähler, erfassen aber weit weniger als der Hauptzäh
   assert.equal(share(s, 't'), 100000)
   assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['meter.main-gap', 'hint']])
 })
+
+test('Deckt der Zwischenzähler nur einen Teil der Mietzeit ab, ist der Rest nicht allein der Eigenanteil', () => {
+  // Befund der Integrationsdurchsicht: Der Zähler der Einliegerwohnung wurde erst im Juli
+  // abgelesen, der Mieter wohnt aber das ganze Jahr. Sein Verbrauch bis Juli steckt dann im Rest
+  // des Hauptzählers, und als Eigenanteil gebucht wäre er in der Steuer privat.
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), { meterId: 'zz', date: '2025-06-30', value: 0 }, { meterId: 'zz', date: '2025-12-31', value: 20 }],
+  })
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.deepEqual(codes(s), ['meter.unit-partial'])
+  assert.deepEqual(s.notices[0]?.subject, { kind: 'unit', id: 'el' })
+})

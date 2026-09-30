@@ -21,8 +21,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   und Kosten und damit eine eigene Abrechnung, ein eigenes Mietkonto und eine eigene
   Steuerübersicht. Das Objekt wählen Sie in der Seitenleiste über dem Abrechnungsjahr. Solange
   Sie nur ein Objekt haben, erscheint dort nichts, und für Sie ändert sich nichts: Nach dem
-  Update steht Ihr bisheriger Bestand in „Objekt 1“, benannt wie bisher Ihr Haus, und jede
-  Abrechnung ergibt auf den Cent dieselben Zahlen. Weitere Objekte legen Sie in den Stammdaten
+  Update steht Ihr bisheriger Bestand in „Objekt 1“, benannt wie bisher Ihr Haus, und durch die
+  Objekte ergibt jede Abrechnung auf den Cent dieselben Zahlen (anders nur beim Wasser mit
+  Hauptzähler, siehe unter „Behoben“ #116). Weitere Objekte legen Sie in den Stammdaten
   an. Dort kann ein Objekt auch einen abweichenden Vermieter, eine andere Bankverbindung oder
   Zahlungsfrist haben, etwa das Haus der Eltern oder einer Erbengemeinschaft; sonst gelten die
   Angaben aus den Einstellungen. ([#92](https://github.com/speedone/mietfuchs/issues/92))
