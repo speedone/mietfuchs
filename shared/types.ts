@@ -1,5 +1,9 @@
 // Das Datenmodell von Mietfuchs, gemeinsam für Server und Client (#48). Was hier steht, hat
 // keinen Laufzeitanteil: nur Typen. Oberflächentexte und Helfer stehen in client/src/types.ts.
+// Einzige Ausnahme ist der Verweis auf die Begriffe des Lexikons (glossary.ts, #113), und auch
+// der nur als Typ.
+
+import type { TermId } from './glossary.ts'
 
 // Beteiligung einer Wohnung an der Kostenverteilung:
 //   'vermietet'  → participates: true — Anteil trägt der Mieter
@@ -413,6 +417,9 @@ export type Notice = {
   subject?: NoticeSubject
   // Code im Regelverzeichnis, wenn der Hinweis auf einer Rechtsregel beruht
   rule?: string
+  // Begriffe des Lexikons, die den Hinweis erklären (#113). Optional, weil Hinweise einer
+  // vorher abgeschlossenen Abrechnung sie nicht tragen.
+  terms?: TermId[]
 }
 // Eine Regel, wie sie in einer Abrechnung als Rechtsstand steht: ohne Kurzfassung, denn die
 // gehört zur Erklärung und nicht zum Archivstück.
