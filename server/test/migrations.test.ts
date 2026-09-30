@@ -48,6 +48,9 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // diese Schritte angewendet.
   '0001_objekte': '6cffdd54299e361e826b45ccdda8da9b53ad265020f8cc3a601569cd4f44e100',
   '0002_objekte_pflicht': '51304780eb2e8ad1f0333f6b18dd329a60ec001ee82f32d4adb7350bbd3d7f45',
+  // Verteilbasis erweitern (#94).
+  '0003_verteilbasis': 'ab61ae675516f5b4c7c059d3ce6401aab7811c344c2bc5c9ec18ba6088240f5a',
+  '0004_verteilbasis_bedingungen': 'c45ecdd05453eca7125b5c5c0d506a0af074aa912b8fd26c8cc48f419335c0fd',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

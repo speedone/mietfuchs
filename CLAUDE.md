@@ -794,7 +794,18 @@ die ganze fachliche Komplexität:
 - **Umlageschlüssel** (`item.key`): `area` (Wohnfläche), `persons` (personentagesgenau),
   `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung),
   `custom` (vereinbarte Prozentanteile je Wohnung in `item.customShares`, absolut gerechnet —
-  was unter 100 % fehlt, trägt der Vermieter).
+  was unter 100 % fehlt, trägt der Vermieter), `external` (laut Gemeinschaftsabrechnung, #94)
+  und `amounts` (Einzelbeträge je Mietverhältnis, #94).
+- **Verteilbasis je Position** (#94): `participantUnitIds` grenzt die Basis auf Teilnehmer ein
+  (Fläche, Einheiten, Personen, Verbrauch, `external`, `amounts`); ohne Teilnehmer ist sie
+  **dasselbe Objekt** wie bisher (`fullBasis` in calc.ts), damit die Umstellung keine Zahl
+  verschiebt. Bei `external` **trägt die Position den eigenen Anteil** laut Hausgeldabrechnung,
+  nicht die Summe der Anlage, sonst stünde die Summe als Vermieteranteil und Werbungskosten da;
+  `externalBasis` (Maßstab, Summe, Gesamtkosten) steht daneben für den Rechenweg und eine
+  Plausibilitätswarnung. Verteilt wird nach `mea`, Fläche oder 1 je Wohnung. Bei `amounts` ist
+  der Anteil genau der Betrag des Mietverhältnisses, ohne Tagesanteil (der Messdienst teilt beim
+  Wechsel selbst), der Rest beim Vermieter; eine Summe über dem Rechnungsbetrag wird nicht
+  verteilt. Tests in calc-verteilbasis.test.ts samt eigener Invariante.
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung
   (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Tatsächlich
   gezahlte Vorauszahlungen pro Jahr können via `prepaymentOverrides` überschrieben werden
