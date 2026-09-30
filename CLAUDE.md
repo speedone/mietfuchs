@@ -506,9 +506,10 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   einen ungültigen Lohnanteil als Warnung und rechnet weiter; eine Bedingung nähme dem Nutzer
   genau diese Erklärung) und `payments.amount_cents` (Rücklastschrift). Dazu Bedingungen auf die
   Aufzählungen, denn `text({ enum })` bindet nur den Übersetzer und hinterlässt im SQL nichts.
-- **Zwei Indizes, beide aus snapshot.ts abgelesen**: `cost_items(year)` ist der einzige Filter,
-  den der Schnappschuss wirklich setzt, und `closed_settlements(year)` ist eindeutig und damit
-  zugleich die Zusicherung, dass es je Jahr höchstens eine abgeschlossene Abrechnung gibt. Alle
+- **Zwei Indizes, beide aus snapshot.ts abgelesen**: `cost_items(property_id, year)` ist der
+  einzige Filter, den der Schnappschuss wirklich setzt, und `closed_settlements(property_id,
+  year)` ist eindeutig und damit zugleich die Zusicherung, dass es je Objekt und Jahr höchstens
+  eine abgeschlossene Abrechnung gibt (seit #92, vorher je Jahr). Alle
   übrigen Sammlungen gehen vollständig in den Schnappschuss; dort wäre ein Index auf Verdacht.
 - **Der eingefrorene Berechnungsstand bleibt JSON.** Er ist ein Archivstück, das wortgleich
   erhalten bleiben soll, auch wenn spätere Versionen anders rechnen. In Spalten zerlegt hinge er
