@@ -613,11 +613,18 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const tenanciesWithSoll = withSoll.length
   // Für die Kopfzeilen der Anlage V (#96): Zeile 24 fragt, ob Nebenkosten nicht gesondert
   // vereinbart sind (Inklusivmiete), und eine Pauschale gehört zu den Umlagen in Zeile 20.
-  const modelOf = new Map(snapshot.tenancies.map((t) => [t.id, t.costModel ?? 'settlement']))
+  // Heizung und Warmwasser gehören zu den Nebenkosten: „ganz inklusiv“ heißt deshalb kalt und warm
+  // inklusiv, und eine Pauschale zählt bei kalt oder warm (Durchsicht).
+  const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
+  const models = ledger.rows.map((r) => {
+    const t = tenancyById.get(r.tenancyId)
+    return { cold: t?.costModel ?? 'settlement', heat: t?.heatingModel ?? 'settlement' }
+  })
   const costModels = {
-    tenancies: ledger.rows.length,
-    inclusive: ledger.rows.filter((r) => modelOf.get(r.tenancyId) === 'inclusive').length,
-    flatRate: ledger.rows.filter((r) => modelOf.get(r.tenancyId) === 'flatRate').length,
+    tenancies: models.length,
+    inclusive: models.filter((m) => m.cold === 'inclusive' && m.heat === 'inclusive').length,
+    partlyInclusive: models.filter((m) => (m.cold === 'inclusive') !== (m.heat === 'inclusive')).length,
+    flatRate: models.filter((m) => m.cold === 'flatRate' || m.heat === 'flatRate').length,
   }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
 

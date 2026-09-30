@@ -36,11 +36,11 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // pages/Steuer.test.tsx geht diese Liste durch und verlangt für jeden Eintrag eine Lage, in der
 // er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
 // nicht einträgt.
-export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'flatRateLine20'] as const
+export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20'] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
 
-// Was die drei bedeuten:
+// Was sie bedeuten:
 //
 //   `sollIsNotTaxBasis`  Es ist das Soll angesetzt, und das ist keine steuerliche Grundlage.
 //
@@ -61,16 +61,21 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `turnOfYear`         Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas
 //                        bedeutet.
 //
-//   `inclusiveLine24`    Es gibt Mietverhältnisse mit Inklusivmiete (#96): Zeile 24 der Anlage V
-//                        („Nebenkosten nicht gesondert vereinbart“). Auf beiden Grundlagen.
+//   `inclusiveLine24`    Alle Mietverhältnisse sind kalt und warm inklusiv (#96): Zeile 24 der
+//                        Anlage V („Nebenkosten nicht gesondert vereinbart“). Auf beiden Grundlagen.
 //
-//   `flatRateLine20`     Es gibt eine Betriebskostenpauschale (#96): Sie ist eine Umlage im Sinn
-//                        von Zeile 20. Auf beiden Grundlagen.
+//   `inclusiveLine24Mixed` Nur ein Teil ist inklusiv, oder nur kalt oder nur warm: Zeile 24 fragt
+//                        für das ganze Objekt, und die Antwort ist dann nicht eindeutig.
+//
+//   `flatRateLine20`     Es gibt eine Betriebskostenpauschale (#96). Nach dem Wortlaut gehört sie
+//                        zu den Umlagen in Zeile 20; ausdrücklich sagt das die Anleitung nicht.
 
 export function taxHints(report: TaxReport, basis: Basis): TaxHint[] {
   const hints: TaxHint[] = []
-  if (report.costModels.inclusive > 0) hints.push('inclusiveLine24')
-  if (report.costModels.flatRate > 0) hints.push('flatRateLine20')
+  const { tenancies, inclusive, partlyInclusive, flatRate } = report.costModels
+  if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
+  else if (inclusive > 0 || partlyInclusive > 0) hints.push('inclusiveLine24Mixed')
+  if (flatRate > 0) hints.push('flatRateLine20')
   if (basis === 'soll') {
     hints.push('sollIsNotTaxBasis')
     return hints

@@ -557,7 +557,8 @@ export type TaxReport = {
   surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
   // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
   // der Anlage V).
-  costModels: { tenancies: number; inclusive: number; flatRate: number }
+  // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
+  costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
 }
 
 export type UploadInfo = {

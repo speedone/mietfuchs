@@ -26,7 +26,7 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
   selfUsedShareCents: 0,
   surplusSollCents: 1100000,
   surplusPaidCents: 900000,
-  costModels: { tenancies: 1, inclusive: 0, flatRate: 0 },
+  costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
   ...rest,
 })
 
@@ -128,5 +128,17 @@ describe('Steuerübersicht: der Unterschied zur Abrechnung (#70)', () => {
     const note = prepaymentNote(report({ prepaymentSettlementCents: 180000, prepaymentOverridden: true }))
     expect(note?.jahreskorrektur).toBe(true)
     expect(note?.settlementCents).toBe(180000)
+  })
+})
+
+describe('Anlage V, Zeilen 24 und 20 (#96)', () => {
+  it('eine 1 in Zeile 24 nur, wenn alle Mietverhältnisse ganz inklusiv sind; sonst der gemischte Fall', () => {
+    const cm = (c: Partial<TaxReport['costModels']>) => report({}, { costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 0, ...c } })
+    expect(taxHints(cm({ inclusive: 2 }), 'ist')).toContain('inclusiveLine24')
+    expect(taxHints(cm({ inclusive: 1 }), 'ist')).toContain('inclusiveLine24Mixed')
+    expect(taxHints(cm({ partlyInclusive: 2 }), 'ist')).toContain('inclusiveLine24Mixed')
+    expect(taxHints(cm({ partlyInclusive: 2 }), 'ist')).not.toContain('inclusiveLine24')
+    expect(taxHints(cm({ flatRate: 1 }), 'soll')).toContain('flatRateLine20')
+    expect(taxHints(cm({}), 'ist')).not.toContain('inclusiveLine24Mixed')
   })
 })

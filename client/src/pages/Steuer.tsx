@@ -273,10 +273,12 @@ export default function Steuer({ settings }: Props) {
                 Anleitung 2024; die Pauschale nennt die Anleitung nicht ausdrücklich. */}
             {hints.includes('inclusiveLine24') && (
               <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-                <strong>Zeile 24 der Anlage V.</strong>{' '}
-                {data.costModels.inclusive === data.costModels.tenancies
-                  ? 'Bei einer Inklusivmiete sind die Nebenkosten nicht gesondert vereinbart. Tragen Sie dort eine 1 ein; die ganze Miete gehört dann in die Zeilen 13 bis 15, die Zeilen 20 und 21 bleiben leer.'
-                  : `Für ${data.costModels.inclusive} von ${data.costModels.tenancies} Mietverhältnissen ist eine Inklusivmiete vereinbart. Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.`}
+                <strong>Zeile 24 der Anlage V.</strong> Bei einer Inklusivmiete sind die Nebenkosten nicht gesondert vereinbart. Tragen Sie dort eine 1 ein; die ganze Miete gehört dann zu den Mieteinnahmen, und für diese Mietverhältnisse sind keine Umlagen in den Zeilen 20 und 21 einzutragen.
+              </p>
+            )}
+            {hints.includes('inclusiveLine24Mixed') && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Zeile 24 der Anlage V.</strong> Für einen Teil der Mietverhältnisse, oder nur für die kalten Nebenkosten oder nur für die Heizung, ist eine Inklusivmiete vereinbart. Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.
               </p>
             )}
             {hints.includes('flatRateLine20') && (
