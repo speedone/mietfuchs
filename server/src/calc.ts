@@ -1494,7 +1494,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
   // Das Gesetz zählt die Wohnungen im Gebäude, also alle des Objekts und nicht nur die
   // beteiligten. Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs
-  // daran nicht (die Objektart steht nicht im Schnappschuss); dort bleibt die Warnung aus.
+  // daran nicht (nur die Zahl der Wohnungen, nicht die der Anlage); dort bleibt die Warnung aus.
   const exempt = snapshot.units.length <= 2 && selfUnits.length >= 1
   if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
     warn('heating.flat-rate',
@@ -1505,7 +1505,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         // Die Einliegerwohnung (#116): Wer nur die vermietete Wohnung anlegt, hat womöglich
         // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
         // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.
-        (snapshot.units.length === 1 && selfUnits.length === 0
+        // Nicht bei einer Eigentumswohnung: In einer Anlage hilft die eigene Wohnung nicht (#121).
+        (snapshot.units.length === 1 && selfUnits.length === 0 && snapshot.property?.kind !== 'etw'
           ? ' Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt.'
           : ''),
       tenancySubject(heatingFlat),
