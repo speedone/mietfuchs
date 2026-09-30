@@ -42,7 +42,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, baseRents, closedSettlements, COST_KEYS, costItemAmounts, costItemParticipants, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, baseRents, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, units,
 } from './schema.ts'
@@ -249,6 +249,9 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     contractDate: merged(body, 'contractDate', current.contractDate, asOptionalText),
     depositCents: merged(body, 'depositCents', current.depositCents, asOptionalNumber),
     depositStatus: merged(body, 'depositStatus', current.depositStatus, (v) => oneOfOrUndefined(DEPOSIT_STATUS, v)),
+    // Nebenkostenmodell (#93): ein unbekannter Wert heißt wie null die Abrechnung.
+    costModel: merged(body, 'costModel', current.costModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
+    heatingModel: merged(body, 'heatingModel', current.heatingModel, (v) => oneOfOrUndefined(COST_MODELS, v)),
     notes: merged(body, 'notes', current.notes, asOptionalText),
   }
 }
@@ -556,6 +559,7 @@ const tenancyRow = (t: Tenancy) => ({
   email: orNull(t.email), phone: orNull(t.phone), correspondenceAddress: orNull(t.correspondenceAddress),
   iban: orNull(t.iban), contractDate: orNull(t.contractDate), depositCents: orNull(t.depositCents),
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
+  costModel: orNull(t.costModel), heatingModel: orNull(t.heatingModel),
 })
 const costItemRow = (c: CostItem) => ({
   id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),

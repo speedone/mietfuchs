@@ -63,9 +63,16 @@ export type PersonEntry = {
   persons: number
 }
 
+// Wie die Nebenkosten eines Mietverhältnisses geregelt sind (#93): Vorauszahlung mit Abrechnung,
+// Betriebskostenpauschale (§ 556 Abs. 2 BGB) oder Inklusivmiete.
+export type CostModel = 'settlement' | 'flatRate' | 'inclusive'
+
 export type Tenancy = {
   id: string
   unitId: string
+  // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
+  costModel?: CostModel
+  heatingModel?: CostModel
   tenantName: string
   persons: number // aktuelle Personenzahl (abgeleitet aus personHistory)
   personHistory: PersonEntry[]
@@ -376,6 +383,14 @@ export type Statement = {
   balanceCents: number
 }
 
+export type NotSettled = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  costModel: CostModel
+  heatingModel: CostModel
+}
+
 export type Settlement = {
   year: number
   daysInYear: number
@@ -385,6 +400,9 @@ export type Settlement = {
   selfUsedShareCents: number
   totalCostsCents: number
   warnings: string[]
+  // Mietverhältnisse ohne Abrechnung (#93), mit ihrem Modell. Optional, weil eine vor #93
+  // abgeschlossene Abrechnung das Feld nicht kennt.
+  notSettled?: NotSettled[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
 }

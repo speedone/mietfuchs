@@ -159,6 +159,9 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     contractDate: orUndefined(t.contractDate),
     depositCents: orUndefined(t.depositCents),
     depositStatus: orUndefined(t.depositStatus),
+    // Nur mit Wert, wie die Angaben aus #94: Ein Mietverhältnis aus einer db.json hat sie nicht.
+    ...(t.costModel === null ? {} : { costModel: t.costModel }),
+    ...(t.heatingModel === null ? {} : { heatingModel: t.heatingModel }),
     notes: orUndefined(t.notes),
   }))
 }

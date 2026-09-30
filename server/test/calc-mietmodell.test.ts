@@ -1,0 +1,119 @@
+// Nebenkostenmodell am Mietverhältnis (#93): Pauschale, Inklusivmiete und Warmmiete, getrennt für
+// kalte Kosten und Heizung, mit Handrechnung.
+
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+
+const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
+  id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null,
+  prepayments: [{ from: '2025-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [], ...over,
+})
+const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
+const item = (over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
+  id: 'k', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', ...over,
+})
+const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
+  units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
+}, 2025))
+const statementOf = (s: ComputedSettlement, id: string) => s.statements.find((st) => st.tenancyId === id)
+
+const HEIZUNG = 'Heizung und Warmwasser'
+
+test('Pauschale: keine Abrechnung, der Anteil bleibt in der Basis und geht an den Vermieter', () => {
+  const s = settle({
+    units: [unit('a'), unit('b')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate' }), tenancy('t-b', 'b')],
+    costItems: [item({})],
+  })
+  assert.equal(statementOf(s, 't-a'), undefined, 'kein Mieter mit Pauschale bekommt eine Abrechnung')
+  assert.equal(statementOf(s, 't-b')?.totalShareCents, 50000, 'der andere Mieter trägt nur seine Hälfte')
+  assert.equal(s.landlord.totalCents, 50000)
+  assert.equal(s.selfUsedShareCents, 0, 'der Anteil ist abziehbar und kein Eigenanteil')
+  assert.deepEqual(s.notSettled, [{ tenancyId: 't-a', tenantName: 't-a', unitName: 'a', costModel: 'flatRate', heatingModel: 'settlement' }])
+})
+
+test('Gemischt: kalt pauschal, Heizung abgerechnet — die Abrechnung enthält nur die Heizung', () => {
+  const s = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate' })],
+    costItems: [item({ id: 'g' }), item({ id: 'h', category: HEIZUNG, description: 'Heizung laut Techem', amountCents: 80000, key: 'amounts', tenancyAmounts: { 't-a': 60000 } })],
+  })
+  const st = statementOf(s, 't-a')
+  assert.deepEqual(st?.rows.map((r) => r.costItemId), ['h'])
+  assert.equal(st?.totalShareCents, 60000)
+  assert.equal(s.landlord.totalCents, 120000)
+  assert.deepEqual(s.notSettled, [])
+})
+
+test('Inklusivmiete: keine Abrechnung, auch nicht für die Heizung', () => {
+  const s = settle({
+    units: [unit('a'), unit('eigen', { participates: false, selfUsed: true })],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'inclusive', heatingModel: 'inclusive' })],
+    costItems: [item({ category: HEIZUNG, description: 'Heizöl', key: 'area' })],
+  })
+  assert.equal(statementOf(s, 't-a'), undefined)
+  assert.deepEqual(s.notSettled.map((n) => [n.tenancyId, n.costModel, n.heatingModel]), [['t-a', 'inclusive', 'inclusive']])
+  // Zweifamilienhaus mit selbstgenutzter Wohnung: die Ausnahme des § 2, keine Warnung.
+  assert.deepEqual(s.warnings, [])
+})
+
+test('Warmmiete außerhalb der Ausnahme: Warnung nach § 2 HeizkostenV, nur wenn es eine Heizposition gibt', () => {
+  const ohneHeizung = settle({
+    units: [unit('a'), unit('b'), unit('c')],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate' })],
+    costItems: [item({})],
+  })
+  assert.deepEqual(ohneHeizung.warnings, [])
+  const mitHeizung = settle({
+    units: [unit('a'), unit('b'), unit('c')],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate' })],
+    costItems: [item({ category: HEIZUNG, description: 'Heizung' })],
+  })
+  assert.equal(mitHeizung.warnings.length, 1)
+  assert.match(mitHeizung.warnings[0] ?? '', /§ 2 HeizkostenV/)
+  assert.match(mitHeizung.warnings[0] ?? '', /t-a/)
+})
+
+test('Ohne Angabe gilt die Abrechnung wie bisher', () => {
+  const s = settle({ units: [unit('a')], tenancies: [tenancy('t-a', 'a')], costItems: [item({})] })
+  assert.equal(statementOf(s, 't-a')?.totalShareCents, 100000)
+  assert.deepEqual(s.notSettled, [])
+})
+
+test('Invariante (#93): Summen gehen auf, und ein Modell ändert den Eigenanteil nie', () => {
+  let seed = 93
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed / 0x7fffffff
+  }
+  const pick = <T>(arr: readonly T[]): T => {
+    const x = arr[Math.floor(rnd() * arr.length)]
+    if (x === undefined) throw new Error('leere Auswahl')
+    return x
+  }
+  const models = ['settlement', 'flatRate', 'inclusive'] as const
+  for (let i = 0; i < 300; i++) {
+    const units = Array.from({ length: 1 + Math.floor(rnd() * 4) }, (_, k) =>
+      unit(`u${k}`, rnd() < 0.2 ? { participates: false, selfUsed: true } : { areaM2: Math.round(rnd() * 100) }))
+    const tenancies = units.filter((u) => u.participates).map((u) =>
+      tenancy(`t-${u.id}`, u.id, { costModel: pick(models), heatingModel: pick(models) }))
+    const costItems = Array.from({ length: 1 + Math.floor(rnd() * 4) }, (_, k) =>
+      item({ id: `c${k}`, category: pick(['Grundsteuer', HEIZUNG]), amountCents: 1 + Math.floor(rnd() * 200000), key: pick(['area', 'units'] as const) }))
+    const s = settle({ units, tenancies, costItems })
+    const mieter = s.statements.reduce((a, st) => a + st.totalShareCents, 0)
+    assert.equal(mieter + s.landlord.totalCents, s.totalCostsCents, `Fall ${i}`)
+    for (const row of s.landlord.rows) assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Vermieteranteil`)
+    const ohneModelle = settle({ units, tenancies: tenancies.map((t) => ({ ...t, costModel: undefined, heatingModel: undefined })), costItems })
+    // Der ausgewiesene Eigenanteil ist je Position auf das begrenzt, was beim Vermieter gebucht
+    // ist. Ohne Pauschale kann diese Grenze einen Cent unter dem gerundeten Eigenanteil liegen,
+    // weil die Mieter aufgerundet haben; mit Pauschale wächst der Vermieteranteil, und die Grenze
+    // fällt weg. Jeder Mieter rundet höchstens einen halben Cent auf, die Grenze liegt also je
+    // Position höchstens (Mieter + 1) ÷ 2 Cent darunter. Ein Modell darf den Eigenanteil deshalb
+    // nie senken und höchstens um diese Rundung anheben.
+    const mehr = s.selfUsedShareCents - ohneModelle.selfUsedShareCents
+    const rundung = costItems.length * Math.ceil((tenancies.length + 1) / 2)
+    assert.ok(mehr >= 0 && mehr <= rundung, `Fall ${i}: Eigenanteil um ${mehr} Cent verschoben (Rundung höchstens ${rundung})`)
+  }
+})

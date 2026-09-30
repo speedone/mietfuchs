@@ -2,6 +2,8 @@
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
   CostKey,
+  CostModel,
+  NotSettled,
   ExternalMeasure,
   MeterType,
   PersonEntry,
@@ -684,7 +686,16 @@ type ConsumptionByTypeEntry = { meters: (SnapshotMeter & { unitId: string })[], 
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
 // `closed` — das ergänzt erst die Route GET /api/settlement/:year.
-export type ComputedSettlement = Omit<Settlement, 'closed'>
+export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled'> & { notSettled: NotSettled[] }
+
+// Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93). Dieselbe Zeichenkette
+// steht in CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
+export const HEATING_CATEGORY = 'Heizung und Warmwasser'
+
+// Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
+// für die kalten Kosten. Ohne Angabe die Abrechnung.
+const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
+  (item.category === HEATING_CATEGORY ? t.heatingModel : t.costModel) ?? 'settlement'
 
 export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   const year = snapshot.year
@@ -853,6 +864,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
 
   for (const item of items) {
     const b = basisOf(item)
+    const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
@@ -1053,7 +1065,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     if (labor !== 0 && (labor < 0 || labor > item.amountCents)) {
       warnings.push(`„${item.description}": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`)
     } else if (labor > 0) {
-      const booked = targets.map((_, i) => i).filter((i) => statements.has(targets[i].t.id))
+      const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
       const bookedCents = booked.reduce((a, i) => a + shares[i], 0)
       const tenantLabor = Math.min(labor, Math.round((labor * bookedCents) / item.amountCents))
       const parts = largestRemainder(
@@ -1065,6 +1077,10 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     }
     let distributed = 0
     targets.forEach((x, i) => {
+      // Ein Mietverhältnis mit Pauschale oder Inklusivmiete für diese Kostenart (#93) bleibt in der
+      // Verteilbasis, bekommt seinen Anteil aber nicht zugebucht: Er fällt dem Vermieter zu, als
+      // abziehbare Kosten und nicht als Eigenanteil.
+      if (!bookable(x.t)) return
       const st = statements.get(x.t.id)
       // Mietverhältnis in einer nicht beteiligten Wohnung (nur bei Direktzuordnung möglich):
       // Der Anteil gilt als nicht verteilt, sonst fehlte er in der Abrechnung ganz — er muss
@@ -1105,10 +1121,41 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     }
   }
 
+  // Ohne Abrechnung (#93): wer für keine der beiden Arten abgerechnet wird, oder wessen Abrechnung
+  // leer bliebe, weil die abzurechnende Art im Jahr keine Kosten hatte. Ein Mietverhältnis mit
+  // Abrechnung und ohne Kosten behält seine leere Abrechnung wie bisher.
+  const notSettled: NotSettled[] = []
+  for (const t of partTenancies) {
+    const costModel = t.costModel ?? 'settlement'
+    const heatingModel = t.heatingModel ?? 'settlement'
+    if (costModel === 'settlement' && heatingModel === 'settlement') continue
+    const st = statements.get(t.id)
+    const neither = costModel !== 'settlement' && heatingModel !== 'settlement'
+    if (neither || (st && st.rows.length === 0)) {
+      statements.delete(t.id)
+      notSettled.push({ tenancyId: t.id, tenantName: t.tenantName, unitName: t.unit.name, costModel, heatingModel })
+    }
+  }
+
+  // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor, ausgenommen ist nur das Gebäude
+  // mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt. Gemeldet wird nur,
+  // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
+  // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
+  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
+  const exempt = basisUnits.length <= 2 && selfUnits.length >= 1
+  if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
+    warnings.push(
+      `Für ${heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
+        'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Zweifamilienhaus mit selbstbewohnter Wohnung. ' +
+        'Der Mieter kann eine verbrauchsabhängige Abrechnung verlangen und bis dahin um 15 % kürzen (§ 12).',
+    )
+  }
+
   const result: ComputedSettlement = {
     year,
     daysInYear: diy,
     statements: [...statements.values()],
+    notSettled,
     landlord: {
       rows: landlordRows,
       totalCents: landlordRows.reduce((a, r) => a + r.shareCents, 0),
