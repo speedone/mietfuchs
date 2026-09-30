@@ -83,3 +83,18 @@ describe('Miteigentumsanteile (#94)', () => {
     expect(unitToForm({ id: 'u', propertyId: 'objekt-1', name: 'ETW', areaM2: 62, participates: true, mea: 124.5 }).mea).toBe('124,5')
   })
 })
+
+describe('Zahlen in deutscher und technischer Schreibweise (#105)', () => {
+  const base = { ...EMPTY_UNIT_FORM, name: 'ETW', areaM2: '62' }
+  test('Miteigentumsanteile „78.43“ sind 78,43 und nicht 7843', () => {
+    expect(buildUnitBody({ ...base, mea: '78.43' })).toMatchObject({ body: { mea: 78.43 } })
+    expect(buildUnitBody({ ...base, mea: '78,43' })).toMatchObject({ body: { mea: 78.43 } })
+    expect(buildUnitBody({ ...base, mea: '1.000' })).toMatchObject({ body: { mea: 1000 } })
+    expect(buildUnitBody({ ...base, mea: '1.000,5' })).toMatchObject({ body: { mea: 1000.5 } })
+  })
+  test('Wohnfläche „1.200“ sind tausendzweihundert und nicht 1,2', () => {
+    expect(buildUnitBody({ ...base, areaM2: '1.200' })).toMatchObject({ body: { areaM2: 1200 } })
+    expect(buildUnitBody({ ...base, areaM2: '62.5' })).toMatchObject({ body: { areaM2: 62.5 } })
+    expect(buildUnitBody({ ...base, areaM2: '62,55' })).toMatchObject({ body: { areaM2: 62.55 } })
+  })
+})
