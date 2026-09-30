@@ -94,3 +94,12 @@ test('Zähler: die Meldungen der Zähler-Seite tragen Code und Zähler', () => {
   assert.deepEqual(row?.notices.map((n) => [n.code, n.subject]), [['meter.negative', { kind: 'meter', id: 'm1' }]])
   assert.deepEqual(row?.warnings, row?.notices.map((n) => n.text))
 })
+
+test('Fehlt ein Einzelbetrag, ist das eine Warnung: der Anteil landet still beim Vermieter', () => {
+  const s = settle({
+    units: [unit('a'), unit('b')],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b')],
+    costItems: [item('einzeln', { key: 'amounts', tenancyAmounts: { 't-a': 30000 } })],
+  })
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['amounts.missing', 'warning']])
+})

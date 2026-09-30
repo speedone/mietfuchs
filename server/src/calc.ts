@@ -124,8 +124,6 @@ export function personsAt(tenancy: SnapshotTenancy, dateIso: string): number {
   return p
 }
 
-// ---------- Zähler & Verbrauch ----------
-
 // ---------- Hinweise (#112) ----------
 
 // Jede Meldung der Berechnung hat einen festen Code, und Stufe, Titel und Regel hängen am Code
@@ -149,7 +147,7 @@ const noticeKinds = {
   'external.amount-mismatch': { level: 'hint', title: 'Betrag passt nicht zum Anteil' },
   'amounts.exceed': { level: 'error', title: 'Einzelbeträge über dem Rechnungsbetrag' },
   'amounts.forfeited': { level: 'warning', title: 'Einzelbetrag ohne Mietverhältnis' },
-  'amounts.missing': { level: 'hint', title: 'Einzelbetrag fehlt' },
+  'amounts.missing': { level: 'warning', title: 'Einzelbetrag fehlt' },
   'amounts.self-hidden': { level: 'hint', title: 'Eigenanteil nicht ausgewiesen' },
   'custom.forfeited': { level: 'warning', title: 'Vereinbarter Anteil entfällt' },
   'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile' },
@@ -173,6 +171,8 @@ const meterSubject = (reading: SnapshotReading): NoticeSubject => ({ kind: 'mete
 const unitSubject = (units: { id: string }[]): NoticeSubject | undefined => (units[0] ? { kind: 'unit', id: units[0].id } : undefined)
 const tenancySubject = (tenancies: { id: string }[]): NoticeSubject | undefined =>
   tenancies[0] ? { kind: 'tenancy', id: tenancies[0].id } : undefined
+
+// ---------- Zähler & Verbrauch ----------
 
 type MeterSegment = { from: string, to: string, delta: number, days: number }
 

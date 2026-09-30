@@ -41,11 +41,11 @@
 | tv-signal.partial-year | warning | costItem | tv-signal |
 | tv-signal.ended | warning | costItem | tv-signal |
 | item.no-basis | warning | costItem | |
-| external.value-missing | warning | costItem | |
+| external.value-missing | warning | unit | |
 | external.amount-mismatch | hint | costItem | |
 | amounts.exceed | error | costItem | |
 | amounts.forfeited | warning | costItem | |
-| amounts.missing | hint | costItem | |
+| amounts.missing | warning | costItem | |
 | amounts.self-hidden | hint | costItem | |
 | custom.forfeited | warning | costItem | |
 | custom.none | warning | costItem | |
