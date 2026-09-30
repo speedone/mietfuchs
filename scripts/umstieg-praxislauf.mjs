@@ -535,8 +535,6 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   gleich(sicherungen, ['mietfuchs.sqlite.vor-0001_objekte'], 'Update: genau eine Sicherung')
 })
 
-// ---------- Lauf ----------
-
 fall(12, 'Alte db.json hineingelegt, nachdem schon gespeichert wurde (#89)', async () => {
   // Der Weg aus #89: Beim ersten Start fragt das Cockpit nach der Update-Prüfung, beide Antworten
   // speichern die Einstellungen, und danach wird die alte Datei hineingelegt. Der Umstieg
@@ -550,11 +548,14 @@ fall(12, 'Alte db.json hineingelegt, nachdem schon gespeichert wurde (#89)', asy
   await withServer(dataDir, async ({ base }) => {
     const bericht = await holen(base, '/healthz')
     gleich(bericht.database?.changeover?.state, 'stale', 'der unterbliebene Umstieg hat seinen eigenen Zustand')
-    enthaelt(bericht.database?.changeover?.message, 'Backup', 'die Meldung nennt den Weg über das Backup')
+    enthaelt(bericht.database?.changeover?.message, 'noch nicht übernommen', 'die Meldung sagt, dass die Daten noch nicht übernommen sind')
+    enthaelt(bericht.database?.changeover?.message, 'ZIP-Archiv', 'die Meldung nennt den gangbaren Weg über ein ZIP-Archiv')
     gleich(bericht.status, 'ok', 'der Server ist gesund, denn es ist kein Fehler')
     gleich(fs.existsSync(path.join(dataDir, 'db.json')), true, 'die Datei bleibt, wo sie ist')
   })
 })
+
+// ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete
 // `--nur 99` „Alle Prüfungen bestanden." und einen Rückgabewert von 0, obwohl es den Fall 99 gar
