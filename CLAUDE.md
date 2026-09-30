@@ -813,8 +813,11 @@ die ganze fachliche Komplexität:
   `settlement | flatRate | inclusive`, fehlend `settlement`. Ein Mietverhältnis mit Pauschale
   oder Inklusivmiete **bleibt in der Verteilbasis**, sein Anteil wird ihm nicht zugebucht und
   fällt dem Vermieter zu, und zwar **nicht als Eigenanteil** (abziehbar). Bleibt seine Abrechnung
-  leer, fehlt sie in `statements` und steht in `notSettled`. Die Pauschale wird als Staffel
-  „Vorauszahlung“ geführt, damit Mietkonto und Steuer ohne eigene Regel stimmen. Warnung nach
+  leer und gibt es keine Vorauszahlung, fehlt sie in `statements` und steht in `notSettled`.
+  **Die Pauschale hat eine eigene Staffel** (`flatRates`, Tabelle `flat_rates`): Das Mietkonto
+  führt sie im Soll, die Abrechnung rechnet sie nie an. In der Staffel der Vorauszahlung wurde
+  sie bei einem gemischten Modell (kalt pauschal, Heizung abgerechnet) gegen die Heizkosten
+  gutgeschrieben, gefunden in der Durchsicht. Warnung nach
   § 2 HeizkostenV außerhalb des selbstbewohnten Zweifamilienhauses. Die drei Listen der
   Kostenarten (Oberfläche, KI-Schema, Anlage V) hält categories.test.ts zusammen.
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung

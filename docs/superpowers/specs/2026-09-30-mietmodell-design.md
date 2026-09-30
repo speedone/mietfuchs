@@ -43,19 +43,19 @@ an allen drei Stellen:
 - **Abrechnung für den Mieter:**
   - Bei `settlement` für beide Arten wie bisher.
   - Ist eine Art nicht abzurechnen, stehen deren Zeilen nicht in der Abrechnung.
-  - Bleibt keine Zeile übrig, **erhält das Mietverhältnis keine Abrechnung**. Es fehlt dann in
+  - Bleibt keine Zeile übrig und gibt es keine Vorauszahlung, **erhält das Mietverhältnis keine
+    Abrechnung**. Es fehlt dann in
     `statements` und steht mit Namen und Modell in einer eigenen Liste `notSettled` des
     Ergebnisses, damit die Oberfläche es erklären kann statt es verschwinden zu lassen.
   - Nachzahlung oder Guthaben entstehen so nur aus Zeilen, die tatsächlich abgerechnet werden.
-- **Mietkonto und Steuer unverändert:**
-  - Eine Pauschale wird als Staffel „Vorauszahlung“ eingetragen, eine Inklusivmiete ganz in der
-    Kaltmiete.
-  - Das Soll des Mietkontos und die Einnahmen der Steuerübersicht stimmen damit ohne weitere
-    Regel.
-  - Die Oberfläche beschriftet die Staffel bei einer Pauschale als „Pauschale“.
+- **Die Pauschale hat eine eigene Staffel** (`flatRates`). Das Mietkonto führt sie im Soll,
+  deshalb stimmen Mietkonto und Einnahmen der Steuer ohne weitere Regel. Die Abrechnung rechnet
+  sie nie an. (Erster Entwurf: dieselbe Staffel wie die Vorauszahlung. Damit wurde sie bei einem
+  gemischten Modell gegen die abgerechneten Kosten gutgeschrieben, gefunden in der Durchsicht.)
+  Eine Inklusivmiete steht ganz in der Kaltmiete.
 - **Warnung nach § 2 HeizkostenV**, wenn für die Heizung `flatRate` oder `inclusive` gilt und
-  das Objekt die Ausnahme nicht erfüllt. Die Ausnahme verlangt höchstens zwei Wohnungen, von
-  denen eine selbstgenutzt ist.
+  das Objekt die Ausnahme nicht erfüllt. Die Ausnahme verlangt höchstens zwei Wohnungen im Objekt,
+  alle gezählt und nicht nur die beteiligten, von denen eine selbstgenutzt ist.
   - Wortlaut: „Für Heizung und Warmwasser gilt die Heizkostenverordnung vor der Vereinbarung
     (§ 2 HeizkostenV); eine Pauschale oder Warmmiete ist nur im Zweifamilienhaus mit
     selbstbewohnter Wohnung zulässig. Der Mieter kann eine verbrauchsabhängige Abrechnung

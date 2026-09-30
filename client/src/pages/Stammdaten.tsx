@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../un
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, costModelBody, prepaymentLabel } from '../tenancyModel'
+import { COST_MODEL_LABELS, costModelBody, showsFlatRates } from '../tenancyModel'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -26,6 +26,8 @@ type TenancyForm = {
   end: string
   baseRents: { from: string; amount: string }[]
   prepayments: { from: string; amount: string }[]
+  // Pauschale je Monat (#93), eigene Staffel
+  flatRates: { from: string; amount: string }[]
   // erweiterte Stammdaten (optional)
   email: string
   phone: string
@@ -46,6 +48,7 @@ const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
+  flatRates: [] as { from: string; amount: string }[],
 }
 
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
@@ -132,6 +135,19 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       }
       prepayments.push({ from, monthlyCents: cents })
     }
+    const flatRates: { from: string; monthlyCents: number }[] = []
+    if (showsFlatRates(tenForm.costModel, tenForm.heatingModel)) {
+      for (const row of tenForm.flatRates) {
+        if (!row.from && !row.amount.trim()) continue
+        const cents = parseEuro(row.amount)
+        const from = row.from || tenForm.start.slice(0, 7)
+        if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
+          setError('Bitte die Staffel der Pauschale prüfen (Monat und Betrag).')
+          return
+        }
+        flatRates.push({ from, monthlyCents: cents })
+      }
+    }
     let depositCents: number | null = null
     if (tenForm.deposit.trim()) {
       depositCents = parseEuro(tenForm.deposit)
@@ -164,6 +180,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
+      flatRates,
     })
     const editing = !!tenForm.id
     if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
@@ -356,6 +373,10 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                           notes: t.notes ?? '',
                           costModel: t.costModel ?? 'settlement',
                           heatingModel: t.heatingModel ?? 'settlement',
+                          flatRates: (t.flatRates ?? []).map((p) => ({
+                            from: p.from,
+                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+                          })),
                         })
                       }}
                     >
@@ -460,7 +481,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">{prepaymentLabel(tenForm.costModel, tenForm.heatingModel)}</div>
+              <div className="field-group-label">NK-Vorauszahlung je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <label className="field">
@@ -495,6 +516,31 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   </select>
                 </label>
               </div>
+              {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
+                <div className="field-group" style={{ marginTop: 10 }}>
+                  <div className="field-group-label">Pauschale je Monat — Staffel</div>
+                  <div className="muted" style={{ marginBottom: 6 }}>
+                    Die Pauschale steht im Mietkonto, wird aber nie abgerechnet. Eine Vorauszahlung für die
+                    abgerechnete Art gehört in die Staffel „NK-Vorauszahlung“ oben.
+                  </div>
+                  {(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]).map((p, i, alle) => (
+                    <div className="staffel-row" key={i}>
+                      <label className="field">
+                        gültig ab
+                        <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                      </label>
+                      <label className="field">
+                        Betrag €/Monat
+                        <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                      </label>
+                      {alle.length > 1
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) })}>🗑</button>
+                        : <span />}
+                    </div>
+                  ))}
+                  <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, flatRates: [...(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]), { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
+                </div>
+              )}
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="field grow">
                   E-Mail

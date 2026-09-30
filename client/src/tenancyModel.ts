@@ -9,11 +9,11 @@ export const COST_MODEL_LABELS: Record<CostModel, string> = {
   inclusive: 'in der Miete enthalten (Inklusiv-/Warmmiete)',
 }
 
-// Die Staffel der Vorauszahlung trägt bei einer Pauschale deren Betrag; das Mietkonto rechnet
-// damit ohne weitere Regel. Nur die Beschriftung wechselt.
-export function prepaymentLabel(costModel: CostModel | undefined, heatingModel: CostModel | undefined): string {
-  const pauschal = costModel === 'flatRate' || heatingModel === 'flatRate'
-  return pauschal ? 'Pauschale je Monat — Staffel' : 'NK-Vorauszahlung je Monat — Staffel'
+// Die Staffel der Pauschale erscheint nur, wenn eine der beiden Arten pauschal ist. Sie ist eine
+// eigene Staffel und nicht die der Vorauszahlung: Das Mietkonto führt sie im Soll, die
+// Abrechnung rechnet sie nie an.
+export function showsFlatRates(costModel: CostModel | undefined, heatingModel: CostModel | undefined): boolean {
+  return costModel === 'flatRate' || heatingModel === 'flatRate'
 }
 
 // „Abrechnung“ ist die Voreinstellung und wird als null gespeichert.

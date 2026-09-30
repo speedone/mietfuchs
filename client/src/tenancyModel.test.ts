@@ -1,11 +1,11 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, costModelBody, notSettledText, prepaymentLabel } from './tenancyModel'
+import { COST_MODEL_LABELS, costModelBody, notSettledText, showsFlatRates } from './tenancyModel'
 
-test('die Staffel heißt bei einer Pauschale „Pauschale“, sonst „Vorauszahlung“', () => {
-  expect(prepaymentLabel('flatRate', 'settlement')).toMatch(/Pauschale/)
-  expect(prepaymentLabel('settlement', 'settlement')).toMatch(/Vorauszahlung/)
-  expect(prepaymentLabel(undefined, undefined)).toMatch(/Vorauszahlung/)
+test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
+  expect(showsFlatRates('flatRate', 'settlement')).toBe(true)
+  expect(showsFlatRates('settlement', 'flatRate')).toBe(true)
+  expect(showsFlatRates('inclusive', undefined)).toBe(false)
 })
 
 test('„Abrechnung“ wird als null gespeichert, damit ohne Angabe dasselbe gilt wie vorher', () => {
