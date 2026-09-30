@@ -37,7 +37,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Hier beheben →“ führt zur Seite, auf der man es ändert. Darunter nennt die Abrechnung ihren
   Rechtsstand: das Datum, auf dem Mietfuchs' Regeln stehen, und die Regeln, die im Jahr gelten.
   Beim Abschließen wird er mit eingefroren, eine spätere Rechtsänderung erklärt eine versandte
-  Abrechnung also nicht rückwirkend anders. Der Wortlaut der Hinweise ist unverändert.
+  Abrechnung also nicht rückwirkend anders.
   ([#112](https://github.com/speedone/mietfuchs/issues/112))
 - **Mehrere Objekte in einer Installation.** Neben dem bisherigen Haus lassen sich weitere
   Objekte anlegen: weitere Mehrfamilienhäuser, vermietete Eigentumswohnungen,
@@ -83,7 +83,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Miteigentumsanteile „78.43“ wurden als 7843 gelesen**, eine Wohnfläche „1.200“ als 1,2. Das
   Wohnungsformular liest Zahlen jetzt in deutscher und technischer Schreibweise; bei der
   Gemeinschaftsabrechnung hätte der Fehler die Verteilung verschoben. Bitte prüfen Sie die
-  Miteigentumsanteile Ihrer Wohnungen, wenn Sie sie mit Punkt eingegeben haben.
+  Miteigentumsanteile Ihrer Wohnungen, wenn Sie sie mit Punkt eingegeben haben. Geldbeträge liest
+  Mietfuchs jetzt nach derselben Regel, „1.240“ € sind also 1.240 € und nicht mehr 1,24 €.
+  ([#105](https://github.com/speedone/mietfuchs/issues/105))
 - Kleinigkeiten aus den Durchsichten: Das Kostenformular beachtet die Teilnehmer beim Hinweis zur
   Gemeinschaftsabrechnung und bei der Liste der Einzelbeträge, die Summe der Anlage behält ihre
   Nachkommastellen, eine auf Wohnungen beschränkte Position zeigt das schon in der Liste, die

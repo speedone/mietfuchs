@@ -11,7 +11,7 @@ export function parseNumberDe(raw: string): number | null {
   if (t.includes(',')) {
     if (!/^-?\d{1,3}(\.\d{3})*,\d+$/.test(t) && !/^-?\d+,\d+$/.test(t)) return null
     normalized = t.replace(/\./g, '').replace(',', '.')
-  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) normalized = t.replace(/\./g, '')
+  } else if (/^-?[1-9]\d{0,2}(\.\d{3})+$/.test(t)) normalized = t.replace(/\./g, '')
   else normalized = t
   if (!/^-?\d+(\.\d+)?$/.test(normalized)) return null
   const n = Number(normalized)

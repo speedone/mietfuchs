@@ -512,7 +512,10 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
   Zähler, Ablesungen, Zahlungen (über das Mietverhältnis) und die vereinbarten Anteile. Bei
   `cost_items.direct_unit_id` steht dagegen **`SET NULL`**: Die Rechnung ist bezahlt worden und
   gehört weiter in die Abrechnung des Jahres. `CASCADE` löschte sie und veränderte damit die
-  Summe einer bereits abgerechneten Vergangenheit.
+  Summe einer bereits abgerechneten Vergangenheit. Später hinzugekommen und ebenfalls kaskadierend: die Pauschale
+  (`flat_rates`), Teilnehmer, Einzel- und Eigenbeträge (`cost_item_participants`,
+  `cost_item_amounts`, `cost_item_self_amounts`) und `unit_no_connection`; auf das Objekt verweisen
+  Wohnungen, Zähler, Kosten, Abschlüsse und frühere Abschlüsse mit `RESTRICT`.
 - **Prüfbedingungen je Feld entschieden.** Ohne Bedingung bleiben bewusst
   `cost_items.amount_cents` (eine Gutschrift ist negativ), `labor_35a_cents` (calc.ts meldet
   einen ungültigen Lohnanteil als Warnung und rechnet weiter; eine Bedingung nähme dem Nutzer
@@ -521,7 +524,8 @@ Start hinein (siehe Umstieg unten), und **die Routen lesen und schreiben sie**
 - **Zwei Indizes, beide aus snapshot.ts abgelesen**: `cost_items(property_id, year)` ist der
   einzige Filter, den der Schnappschuss wirklich setzt, und `closed_settlements(property_id,
   year)` ist eindeutig und damit zugleich die Zusicherung, dass es je Objekt und Jahr höchstens
-  eine abgeschlossene Abrechnung gibt (seit #92, vorher je Jahr). Alle
+  eine abgeschlossene Abrechnung gibt (seit #92, vorher je Jahr). Dazu kommt
+  `closed_settlement_history(property_id, year)` für die früheren Abschlüsse (#56). Alle
   übrigen Sammlungen gehen vollständig in den Schnappschuss; dort wäre ein Index auf Verdacht.
 - **Der eingefrorene Berechnungsstand bleibt JSON.** Er ist ein Archivstück, das wortgleich
   erhalten bleiben soll, auch wenn spätere Versionen anders rechnen. In Spalten zerlegt hinge er
