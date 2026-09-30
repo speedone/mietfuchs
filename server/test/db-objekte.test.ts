@@ -11,6 +11,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { applyMigrations, connect, loadMigrations, type Connection } from '../src/db/client.ts'
 import { backupBeforeMigrating, databaseFile, openDatabase } from '../src/db/open.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
+import { readStock } from '../src/db/read.ts'
+import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
+import { readStock as readStockAtBaseline } from '../src/legacy/read.ts'
+import { writeStock } from '../src/legacy/write.ts'
+import { snapshotFor, snapshotOf } from '../src/snapshot.ts'
+import { loadFixtures } from '../testing/fixtures.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-objekte-'))
 
@@ -180,3 +187,38 @@ test('Objekt: lässt sich die Sicherung nicht schreiben, meldet die Funktion das
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// ---------- Nachgerechnet: die Migration verändert keine Zahl ----------
+//
+// Je Fixture des Prüfkatalogs eine Datenbank auf Stand 0000, gerechnet vor und nach der Kette.
+// Vorher über den eingefrorenen Leser, also der ganze Bestand ohne Objekt; nachher über den Leser
+// von heute, eingegrenzt auf Objekt 1. Das Vorjahr und das Folgejahr gehören dazu, weil Staffeln
+// und Ablesungen über Jahresgrenzen wirken.
+
+const results = (snapshot: ReturnType<typeof snapshotOf>) => ({
+  settlement: computeSettlement(snapshot),
+  ledger: rentLedger(snapshot),
+  tax: taxReport(snapshot),
+  consumption: consumptionOverview(snapshot),
+})
+
+for (const fx of loadFixtures()) {
+  test(`Objekt: ${fx.name} rechnet nach dem Update centgenau wie vorher`, async () => {
+    const dir = tempDir()
+    try {
+      const connection = await connect(path.join(dir, 'db.sqlite'))
+      const migrations = await loadMigrations()
+      applyMigrations(connection, migrations.slice(0, 1))
+      await writeStock(connection.db, straightenForDatabase(migrateLegacy(fx.db())))
+      const vorher = await readStockAtBaseline(connection.db)
+      applyMigrations(connection, migrations)
+      const nachher = await readStock(connection.db)
+      for (const year of [fx.year - 1, fx.year, fx.year + 1]) {
+        assert.deepEqual(results(snapshotFor(nachher, 'objekt-1', year)), results(snapshotOf(vorher, year)), `Jahr ${year}`)
+      }
+      connection.close()
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+}
