@@ -8,6 +8,7 @@ import {
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
+  categoryNotice,
   type ItemForm,
 } from './costForm'
 
@@ -169,5 +170,14 @@ describe('Bearbeiten einer gespeicherten Position', () => {
     })
     const r = buildCostItemBody(f, UNITS, 2025)
     expect((r as { body: Record<string, unknown> }).body.customShares).toEqual(original)
+  })
+})
+
+describe('Kabelfernsehen (#107)', () => {
+  test('ab dem Abrechnungsjahr 2024 steht am Formular ein Hinweis, vorher nicht', () => {
+    expect(categoryNotice('Kabel/Antenne', 2023)).toBe('')
+    expect(categoryNotice('Kabel/Antenne', 2024)).toMatch(/30\.06\.2024/)
+    expect(categoryNotice('Kabel/Antenne', 2025)).toMatch(/nicht mehr umlagefähig/)
+    expect(categoryNotice('Grundsteuer', 2025)).toBe('')
   })
 })

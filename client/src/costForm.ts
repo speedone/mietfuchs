@@ -146,3 +146,13 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
     },
   }
 }
+
+// Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
+// Berechnung in der Abrechnung; hier steht sie schon beim Erfassen. Mit #108 kommen beide aus
+// dem Regelverzeichnis.
+export function categoryNotice(category: string, year: number): string {
+  if (category !== 'Kabel/Antenne' || year < 2024) return ''
+  return year === 2024
+    ? 'Kabelfernsehen (TV-Signal) ist nur bis zum 30.06.2024 umlagefähig. Umlegen Sie für 2024 höchstens das erste Halbjahr; den Rest bitte als „Nicht umlagefähig“ erfassen. Betriebsstrom und Wartung einer Antenne bleiben umlagefähig.'
+    : 'Kabelfernsehen (TV-Signal) ist seit dem 01.07.2024 nicht mehr umlagefähig; bitte als „Nicht umlagefähig“ erfassen. Umlagefähig bleiben Betriebsstrom und Wartung einer Antennenanlage.'
+}

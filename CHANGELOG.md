@@ -6,6 +6,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
+  jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
+  bis zum 30.06.2024 über die Nebenkosten umgelegt werden; Betriebsstrom und Wartung einer
+  Antennenanlage bleiben umlagefähig. Für das Abrechnungsjahr 2024 und später weisen die
+  Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
+  kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
+  Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.
+  ([#107](https://github.com/speedone/mietfuchs/issues/107))
+
 ## [0.8.0] – 2026-09-22
 
 ### Geändert
