@@ -1177,14 +1177,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
           warn('amounts.forfeited', `„${item.description}": ${forfeited.length === 1 ? 'ein Einzelbetrag' : `${forfeited.length} Einzelbeträge`} über ${fmtCents(betrag)} gehör${forfeited.length === 1 ? 't' : 'en'} zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfall${forfeited.length === 1 ? 't' : 'en'} — dieser Teil geht an den Vermieter.`, itemSubject(item))
         }
         // Nur wer die Position wirklich trägt; bei Pauschale fehlt nichts (Befund der Durchsicht).
-          const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id) && bookable(t))
+        const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id) && bookable(t))
         if (without.length > 0) {
           warn('amounts.missing', `„${item.description}": für ${without.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht.`, itemSubject(item))
         }
-        // Den Betrag des Messdienstes für eine selbstgenutzte Wohnung kann man (noch) nicht
-        // eintragen; er steckt im Rest beim Vermieter und fehlt damit im ausgewiesenen
-        // Eigenanteil, also im privaten, nicht abziehbaren Teil der Steuerübersicht. Das soll nicht
-        // still geschehen.
+        // Beträge selbstgenutzter Wohnungen (#104) sind ihr Eigenanteil. Fehlt einer, steckt er im
+        // Rest beim Vermieter und fehlt im privaten, nicht abziehbaren Teil der Steuerübersicht;
+        // das sagt die Meldung unten.
         const selfForfeited = Object.entries(selfGiven).filter(([id, c]) => c > 0 && !selfIds.has(id))
         // Zwei Gründe, und die Meldung nennt den richtigen: Die Wohnung ist nicht selbstgenutzt, oder
         // sie ist es, nimmt aber an dieser Position nicht teil (Befund der Durchsicht).
