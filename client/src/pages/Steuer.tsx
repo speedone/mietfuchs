@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
+import { useProperty, withProperty } from '../property'
+import { effectiveLandlord } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 
@@ -9,6 +11,10 @@ type Props = { settings: Settings | null }
 
 export default function Steuer({ settings }: Props) {
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
+  // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
+  const landlord = settings ? effectiveLandlord(property, settings) : null
   const [data, setData] = useState<TaxReport | null>(null)
   // Steuerlich maßgeblich ist das tatsächlich Zugeflossene; das vereinbarte Soll bleibt zum
   // Abgleich umschaltbar. Die Begründung steht in taxView.ts.
@@ -16,10 +22,10 @@ export default function Steuer({ settings }: Props) {
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
-    return api<TaxReport>(`/api/taxreport/${year}`)
+    return api<TaxReport>(withProperty(`/api/taxreport/${year}`, propertyId))
       .then((d) => { setData(d); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -89,8 +95,8 @@ export default function Steuer({ settings }: Props) {
 
           <div className="card">
             <div className="muted" style={{ marginBottom: 8 }}>
-              {settings?.landlordName && <>{settings.landlordName} · </>}
-              {settings?.houseName}{settings?.address ? ` · ${settings.address}` : ''}
+              {landlord?.landlordName && <>{landlord.landlordName} · </>}
+              {property?.name}{property?.address ? ` · ${property.address}` : ''}
             </div>
             <h2 style={{ marginBottom: 2 }}>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
             <div className="muted" style={{ marginBottom: 14 }}>

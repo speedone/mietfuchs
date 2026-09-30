@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
 import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 
 const UNITS: Unit[] = [
@@ -19,21 +20,25 @@ const UNITS: Unit[] = [
 const METERS: Meter[] = [{ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' }]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
+let gets: string[]
 
 beforeEach(() => {
   sent = []
+  gets = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
       sent.push({ url, method, body: JSON.parse(String(init?.body ?? '{}')) })
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
+    gets.push(url)
     const responses: Record<string, unknown> = {
+      '/api/properties': [{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
       '/api/costItems': [],
       '/api/meters': METERS,
       '/api/uploads': [],
     }
-    return new Response(JSON.stringify(responses[url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
+    return new Response(JSON.stringify(responses[url.split('?')[0] ?? url] ?? []), { status: 200, headers: { 'content-type': 'application/json' } })
   })
 })
 
@@ -45,7 +50,9 @@ afterEach(() => {
 const openForm = async () => {
   render(
     <YearProvider>
-      <Kosten units={UNITS} settings={null} />
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} />
+      </PropertyProvider>
     </YearProvider>,
   )
   // Auf die geladenen Zähler warten, sonst fehlt der Verbrauchsschlüssel in der Auswahl
@@ -104,4 +111,13 @@ test('Umlageschlüssel-Auswahl zeigt den gespeicherten Schlüssel auch ohne Wohn
   } finally {
     METERS.push({ id: 'm1', propertyId: 'objekt-1', name: 'Zähler EG', unitId: 'u2', type: 'sonstig', unit: 'm³' })
   }
+})
+
+test('Objekt: die Seite lädt und speichert im gewählten Objekt (#92)', async () => {
+  await openForm()
+  await waitFor(() => expect(gets).toContain('/api/costItems?property=objekt-1'))
+  expect(gets).toContain('/api/meters?property=objekt-1')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].url).toBe('/api/costItems?property=objekt-1')
 })

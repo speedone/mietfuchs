@@ -5,10 +5,12 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
 import { AiSettings } from '../components/AiSettings'
+import { useProperty } from '../property'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
 export default function Einstellungen({ settings, reload, update }: Props) {
+  const { properties } = useProperty()
   const toast = useToast()
   const confirm = useConfirm()
   const [form, setForm] = useState({
@@ -68,7 +70,10 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
       <div className="card">
         <h2>Vermieter &amp; Zahlung</h2>
-        <p className="muted">Erscheint im Kopf und in der Zahlungsaufforderung der gedruckten Abrechnung.</p>
+        <p className="muted">
+          Erscheint im Kopf und in der Zahlungsaufforderung der gedruckten Abrechnung.
+          {properties.length > 1 && ' Die Angaben gelten als Vorgabe für alle Objekte; in den Stammdaten kann ein Objekt abweichen.'}
+        </p>
         <div className="row">
           <label className="field grow">
             Name des Vermieters

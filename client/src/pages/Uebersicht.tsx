@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
@@ -12,18 +13,20 @@ type Props = { onNavigate: (tab: string) => void }
 
 export default function Uebersicht({ onNavigate }: Props) {
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
     return Promise.all([
-      api<CostItem[]>('/api/costItems'),
-      api<Settlement>(`/api/settlement/${year}`),
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)),
+      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
     ])
       .then(([c, s]) => { setCostItems(c); setSettlement(s); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
 

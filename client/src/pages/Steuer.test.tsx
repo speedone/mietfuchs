@@ -22,6 +22,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
 
 // Dasselbe Jahr, das der YearProvider von sich aus wählt. Eine feste Jahreszahl wäre eine
@@ -54,11 +55,14 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
 })
 
 const zeige = async (report: TaxReport, basis: Basis = 'ist') => {
-  vi.stubGlobal('fetch', async () =>
-    new Response(JSON.stringify(report), { status: 200, headers: { 'content-type': 'application/json' } }))
+  // Die Objekte sind hier gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92).
+  vi.stubGlobal('fetch', async (url: string) =>
+    new Response(JSON.stringify(url === '/api/properties' ? [] : report), { status: 200, headers: { 'content-type': 'application/json' } }))
   render(
     <YearProvider>
-      <Steuer settings={null} />
+      <PropertyProvider>
+        <Steuer settings={null} />
+      </PropertyProvider>
     </YearProvider>,
   )
   await waitFor(() => expect(screen.getByText(/Angesetzte Einnahmen/i)).toBeTruthy())

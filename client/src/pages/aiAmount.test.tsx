@@ -11,6 +11,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { Extraction, Unit } from '../types'
 import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
 
@@ -72,7 +73,9 @@ async function expectBothPositions() {
 test('Kosten: eine Position ohne Betrag wird mit leerem Feld angezeigt', async () => {
   const { container } = render(
     <YearProvider>
-      <Kosten units={UNITS} settings={null} />
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} />
+      </PropertyProvider>
     </YearProvider>,
   )
   upload(container)
@@ -82,7 +85,9 @@ test('Kosten: eine Position ohne Betrag wird mit leerem Feld angezeigt', async (
 test('Schnellerfassung: eine Position ohne Betrag wird mit leerem Feld angezeigt und rot bewertet', async () => {
   const { container } = render(
     <YearProvider>
-      <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      <PropertyProvider>
+        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      </PropertyProvider>
     </YearProvider>,
   )
   upload(container)
