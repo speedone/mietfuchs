@@ -129,16 +129,23 @@ Pflichtspalte hätte keinen Wert.
 
 Deshalb gilt für diesen Schritt:
 
-1. **Der Aufbau wird erzeugt**, nie von Hand geschrieben.
-2. **Die Daten kommen als Anweisungen in denselben Schritt**, vor die Kopien:
+1. **Der Aufbau wird erzeugt**, nie von Hand geschrieben, und zwar in **zwei Schritten**
+   (nachgemessen mit drizzle-kit 0.31):
+   - **0001** legt `properties` an und fügt `property_id` **ohne** Pflicht hinzu. drizzle-kit
+     schreibt dafür `ALTER TABLE … ADD`. Mit Pflicht schriebe es dasselbe `ADD … NOT NULL`,
+     und SQLite lehnt das bei Tabellen mit Inhalt ab.
+   - **0002** zieht die Pflicht nach. drizzle-kit baut dafür die vier Tabellen neu und kopiert
+     um. Der Neubau kopiert in rowid-Reihenfolge, ein Test hält fest, dass die Reihenfolge
+     bleibt.
+2. **Die Daten stehen am Ende von 0001:**
    - Objekt 1 anlegen, Name und Adresse aus der Zeile der Einstellungen. Fehlt die Zeile, was
      auf einem frischen Rechner die Regel ist, gelten die leeren Vorgaben.
-   - Die Kopien bekommen `'objekt-1'` für `property_id`.
+   - `UPDATE … SET property_id = 'objekt-1'` auf die vier Tabellen.
 
    Erlaubt ist das, weil ein Schritt geändert werden darf, solange er die Arbeitskopie nicht
    verlassen hat (server/drizzle/README.md). Das README bekommt dafür einen eigenen Absatz:
-   **Aufbau immer erzeugt, Daten dürfen ergänzt werden, und zwar nur vor der Veröffentlichung.**
-   Ein Test hält die Marke fest wie bei 0000.
+   **Aufbau immer erzeugt, Daten dürfen angehängt werden, und zwar nur vor der
+   Veröffentlichung.** Ein Test hält die Marken fest wie bei 0000.
 3. Ein Schritt läuft in einer Transaktion mit abschließendem `PRAGMA foreign_key_check`
    (`applyMigrations`). Ein fehlender Verweis rollt also zurück, statt festgeschrieben zu werden.
 
