@@ -337,22 +337,38 @@ function coveredDays(readings: SnapshotReading[], from: string, to: string): num
   )
 }
 
-// Wie viele Tage die Zähler einer Einheit zusammen abdecken. Zwei Fälle, und sie verlangen
-// Entgegengesetztes: **Nebeneinander** (Küche und Bad) muss jeder das ganze Jahr abdecken, es zählt
-// also der kürzeste; **nacheinander** (ein Tausch, als neuer Zähler angelegt statt als Wechsel)
-// decken sie es gemeinsam ab, es zählt die Summe. Unterschieden wird an den Zeiträumen: Überschneiden
-// sie sich nirgends, liefen die Zähler nacheinander (zweite Integrationsdurchsicht).
+// Wie viele Tage die Zähler einer Einheit zusammen abdecken. Zähler laufen **nebeneinander**
+// (Küche und Bad, jeder muss das ganze Jahr abdecken) oder **nacheinander** (ein Tausch, als neuer
+// Zähler angelegt statt als Wechsel; sie decken es gemeinsam ab), und oft beides zugleich. Deshalb
+// werden die Zähler zu Ketten sortiert: Ein Zähler hängt sich an eine Kette, deren letzter Zähler
+// endete, bevor er begann; sonst beginnt er eine neue. Jede Kette steht für eine Messstelle, und
+// jede muss das Jahr abdecken, es zählt also die kürzeste Kette (zweite Integrationsdurchsicht).
+// Ein Zähler, der vor dem Jahr endete, ist Geschichte und fällt weg; ein Zähler ohne jede Ablesung
+// zählt als Messstelle ohne Abdeckung, sonst gälte ein vergessenes Bad als gemessen.
 function unitCoveredDays(readingsPerMeter: SnapshotReading[][], from: string, to: string): number {
-  const spans = readingsPerMeter
-    .map((readings) => {
-      const segs = meterSegments(readings).segments
-      const first = segs[0]
-      const last = segs[segs.length - 1]
-      return first && last ? { from: first.from, to: last.to, days: coveredDays(readings, from, to) } : { from: '', to: '', days: 0 }
-    })
-    .sort((a, b) => compareText(a.from, b.from))
-  const disjoint = spans.every((s, i) => i === 0 || (spans[i - 1]?.to ?? '') <= s.from)
-  return disjoint && spans.length > 1 ? spans.reduce((a, s) => a + s.days, 0) : Math.min(...spans.map((s) => s.days))
+  const spans: { from: string, to: string, days: number }[] = []
+  for (const readings of readingsPerMeter) {
+    const segs = meterSegments(readings).segments
+    const first = segs[0]
+    const last = segs[segs.length - 1]
+    if (!first || !last) return 0
+    const days = coveredDays(readings, from, to)
+    if (days === 0 && compareText(last.to, from) < 0) continue
+    spans.push({ from: first.from, to: last.to, days })
+  }
+  if (spans.length === 0) return 0
+  spans.sort((a, b) => compareText(a.from, b.from) || compareText(a.to, b.to))
+  const chains: { to: string, days: number }[] = []
+  for (const sp of spans) {
+    const chain = chains.find((c) => compareText(c.to, sp.from) <= 0)
+    if (chain) {
+      chain.to = sp.to
+      chain.days += sp.days
+    } else {
+      chains.push({ to: sp.to, days: sp.days })
+    }
+  }
+  return Math.min(...chains.map((c) => c.days))
 }
 
 export type ConsumptionOverviewRow = {

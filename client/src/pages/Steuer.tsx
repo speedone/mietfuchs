@@ -297,7 +297,7 @@ export default function Steuer({ settings }: Props) {
                 {sharePct !== null && <> ({sharePct.toLocaleString('de-DE')} %)</>}.
                 Werbungskosten, die das gesamte Gebäude betreffen, sind nur anteilig nach Fläche
                 abziehbar; der auf selbstgenutzte Wohnungen entfallende Teil ist privat.
-                {data.selfUsedShareCents > 0 && (
+                {data.selfUsedShareCents !== 0 && (
                   <>
                     {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
                     auf selbstgenutzte Wohnungen — dieser Teil ist in den oben ausgewiesenen Werbungskosten
