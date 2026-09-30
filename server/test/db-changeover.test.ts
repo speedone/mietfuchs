@@ -406,6 +406,24 @@ test('Zwei Staffeleinträge zum selben Stichtag: übernommen wird der letzte, wi
   }
 })
 
+test('Ein vereinbarter Anteil auf eine gelöschte Wohnung: nur der Hinweis entfällt, der Umstieg gelingt', async () => {
+  // Das Geraderücken nimmt den Anteil heraus, und mit ihm die Meldung darüber. Die Regression
+  // nimmt diese Beschriftung aus; seit #112 steht dieselbe Meldung zusätzlich als Hinweis in
+  // `notices`, und fehlte dieses Feld in der Ausnahme, bräche der Umstieg an ihm ab, obwohl
+  // kein Cent wandert.
+  const dataDir = tempDir()
+  try {
+    const file = fullDb()
+    file.costItems.push(costItem({ id: 'c5', description: 'Aufzug', amountCents: 50000, key: 'custom', customShares: { u1: 60, weg: 40 } }))
+    writeFile(dataDir, file)
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'done', result.message)
+    })
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 // ---------- Jeder Abbruch einzeln ----------
 
 test('Abbruch: eine unlesbare db.json', async () => {

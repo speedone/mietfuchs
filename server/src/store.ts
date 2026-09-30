@@ -92,10 +92,13 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 // mit einem vorangestellten `selfUsedShareCents: 0`, und `snapshotFromDb` in snapshot.ts mit
 // `?? 0`, bevor die Steuerübersicht den Wert bekommt. `closed` gehört ohnehin nicht dazu, das
 // ergänzt erst das Lesen in index.ts.
-// `notSettled` (#93) ebenso optional: Eine vorher abgeschlossene Abrechnung kennt es nicht.
-export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled'> & {
+// `notSettled` (#93), `notices` und `legalBasis` (#112) ebenso optional: Eine vorher
+// abgeschlossene Abrechnung kennt sie nicht.
+export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis'> & {
   selfUsedShareCents?: number
   notSettled?: ComputedSettlement['notSettled']
+  notices?: ComputedSettlement['notices']
+  legalBasis?: ComputedSettlement['legalBasis']
 }
 
 // Die Gestalt der db.json: Fachdaten je Collection plus abgeschlossene Abrechnungen.
