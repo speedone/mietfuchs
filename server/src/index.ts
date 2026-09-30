@@ -483,7 +483,6 @@ app.put('/api/settlement/:year/close', async (req, res) => {
   res.json({ ok: true })
 })
 
-// Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
 // Frühere Abschlüsse eines Jahres (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
 // der zuletzt wiedergeöffnete zuerst. Der gültige Stand steht nicht darin, den liefert
 // GET /api/settlement/:year.
@@ -493,6 +492,7 @@ app.get('/api/settlement/:year/history', async (req, res) => {
   res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), year)))
 })
 
+// Wieder öffnen: Der Stand wandert in den Verlauf, es gilt wieder die laufende Berechnung (#56).
 app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year, newId()))

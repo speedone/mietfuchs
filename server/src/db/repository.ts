@@ -875,21 +875,23 @@ export async function setSentAt(db: Database, propertyId: string, year: number, 
   return true
 }
 
-// Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen. Erst
-// einfügen, dann löschen: Scheitert das Löschen, steht der Stand schlimmstenfalls zweimal da und
-// nie keinmal.
+// Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen, und zwar
+// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde das Jahr sonst zugleich
+// als abgeschlossen und im Verlauf da (Befund der Durchsicht).
 export async function reopenSettlement(db: Database, propertyId: string, year: number, historyId: string): Promise<boolean> {
   const eintrag = await findClosedSettlement(db, propertyId, year)
   if (!eintrag) return false
-  await db.insert(closedSettlementHistory).values({
-    id: historyId, propertyId, year, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
-    reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
+  await db.transaction(async (tx) => {
+    await tx.insert(closedSettlementHistory).values({
+      id: historyId, propertyId, year, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
+      reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
+    })
+    await tx.delete(closedSettlements).where(closedOf(propertyId, year))
   })
-  await db.delete(closedSettlements).where(closedOf(propertyId, year))
   return true
 }
 
-export type SettlementHistoryEntry = { closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
+export type SettlementHistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
 
 // Frühere Abschlüsse eines Jahres, der zuletzt wiedergeöffnete zuerst.
 export async function settlementHistory(db: Database, propertyId: string, year: number): Promise<SettlementHistoryEntry[]> {
@@ -898,7 +900,7 @@ export async function settlementHistory(db: Database, propertyId: string, year: 
     .from(closedSettlementHistory)
     .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.year, year)))
     .orderBy(desc(closedSettlementHistory.reopenedAt), desc(sql`rowid`))
-  return rows.map((r) => ({ closedAt: r.closedAt, sentAt: r.sentAt, reopenedAt: r.reopenedAt, settlement: r.settlement }))
+  return rows.map((r) => ({ id: r.id, closedAt: r.closedAt, sentAt: r.sentAt, reopenedAt: r.reopenedAt, settlement: r.settlement }))
 }
 
 // ---------- Was die Sonderrouten brauchen ----------

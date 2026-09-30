@@ -5,7 +5,7 @@
 
 import { fmtDate, fmtEuro } from './api'
 
-export type HistoryEntry = { closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
+export type HistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
 
 const saldo = (cents: number): string =>
   cents > 0 ? `Guthaben ${fmtEuro(cents)}` : cents < 0 ? `Nachzahlung ${fmtEuro(-cents)}` : 'ausgeglichen'
@@ -31,7 +31,7 @@ function linesOf(settlement: unknown): string[] {
 
 export function historyView(entries: HistoryEntry[]): { id: string, head: string, lines: string[] }[] {
   return entries.map((e) => ({
-    id: e.reopenedAt,
+    id: e.id,
     head: `Abgeschlossen am ${fmtDate(e.closedAt.slice(0, 10))}, ${e.sentAt ? `versandt am ${fmtDate(e.sentAt)}` : 'nicht versandt'}, wiedergeöffnet am ${fmtDate(e.reopenedAt.slice(0, 10))}`,
     lines: linesOf(e.settlement),
   }))

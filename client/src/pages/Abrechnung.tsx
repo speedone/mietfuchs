@@ -261,11 +261,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       {history.length > 0 && (
         <details className="settlement-history no-print">
           <summary>Frühere Abschlüsse dieses Jahres ({history.length})</summary>
-          <div className="muted">Beim Wiederöffnen bleibt der verschickte Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
+          <div className="muted">Beim Wiederöffnen bleibt der bisherige Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
           {historyView(history).map((h) => (
             <div key={h.id} className="settlement-history-entry">
               <strong>{h.head}</strong>
-              <ul>{h.lines.map((l) => <li key={l}>{l}</li>)}</ul>
+              <ul>{h.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
             </div>
           ))}
         </details>
