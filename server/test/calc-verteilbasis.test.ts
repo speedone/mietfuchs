@@ -223,3 +223,79 @@ test('Einzelbeträge: der §35a-Lohnanteil folgt den Beträgen', () => {
   }))
   assert.deepEqual([rowOf(s, 't1')?.labor35aCents, rowOf(s, 't2')?.labor35aCents], [3000, 4000])
 })
+
+// ---------- Invarianten über zufällige Bestände mit den neuen Angaben ----------
+// Dieselben Zusagen wie in calc.test.ts, jetzt mit Teilnehmern (auch leeren), Angaben einer
+// Gemeinschaft (auch unpassenden) und Einzelbeträgen (auch zu großen, verwaisten, fehlenden).
+
+type Rng = () => number
+function makeRng(seed: number): Rng {
+  let s = seed
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff
+    return s / 0x7fffffff
+  }
+}
+
+function randomSource(rnd: Rng): SnapshotSource {
+  const pick = <T>(arr: readonly T[]): T => {
+    const x = arr[Math.floor(rnd() * arr.length)]
+    if (x === undefined) throw new Error('leere Auswahl')
+    return x
+  }
+  const units: SnapshotUnit[] = []
+  for (let i = 0; i < 1 + Math.floor(rnd() * 4); i++) {
+    const usage = pick(['vermietet', 'vermietet', 'eigen', 'ausgenommen'] as const)
+    units.push({
+      id: `u${i}`, name: `W${i}`, areaM2: rnd() < 0.15 ? 0 : Math.round(rnd() * 120),
+      participates: usage === 'vermietet', selfUsed: usage === 'eigen',
+      selfPersons: usage === 'eigen' ? Math.floor(rnd() * 3) : undefined,
+      mea: rnd() < 0.2 ? undefined : Math.round(rnd() * 300),
+    })
+  }
+  const tenancies: SnapshotTenancy[] = []
+  for (const u of units) {
+    if (rnd() < 0.25) continue
+    const start = rnd() < 0.3 ? `2025-0${1 + Math.floor(rnd() * 9)}-01` : '2020-01-01'
+    const end = rnd() < 0.3 ? `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-28` : null
+    tenancies.push(tenancy(`t${tenancies.length}`, u.id, start, end))
+  }
+  const costItems: SnapshotCostItem[] = []
+  for (let i = 0; i < 1 + Math.floor(rnd() * 5); i++) {
+    const key = pick(['area', 'units', 'persons', 'external', 'amounts'] as const)
+    const amountCents = 1 + Math.floor(rnd() * 300000)
+    const c: SnapshotCostItem = { id: `c${i}`, year: 2025, category: 'Sonstige Betriebskosten', description: `P${i}`, amountCents, key }
+    const r = rnd()
+    if (r < 0.2) c.participantUnitIds = []
+    else if (r < 0.6) c.participantUnitIds = units.filter(() => rnd() < 0.5).map((u) => u.id)
+    if (key === 'external' && rnd() < 0.9) {
+      c.externalBasis = { measure: pick(['mea', 'area', 'units'] as const), total: 1 + Math.floor(rnd() * 10000), totalCents: Math.floor(rnd() * 5000000) }
+    }
+    if (key === 'amounts') {
+      const given: Record<string, number> = {}
+      for (const t of [...tenancies, tenancy('verwaist', 'weg')]) if (rnd() < 0.7) given[t.id] = Math.floor(rnd() * amountCents * 0.8)
+      c.tenancyAmounts = given
+    }
+    if (rnd() < 0.3) c.labor35aCents = Math.floor(rnd() * amountCents)
+    costItems.push(c)
+  }
+  return source({ units, tenancies, costItems })
+}
+
+test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, kein Anteil ist negativ', () => {
+  const rnd = makeRng(94)
+  for (let i = 0; i < 500; i++) {
+    const src = randomSource(rnd)
+    const s = settle(src)
+    const mieter = s.statements.reduce((a, st) => a + st.totalShareCents, 0)
+    assert.equal(mieter + s.landlord.totalCents, s.totalCostsCents, `Fall ${i}\n${JSON.stringify(src)}`)
+    for (const st of s.statements) {
+      for (const row of st.rows) {
+        assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}`)
+        assert.ok((row.labor35aCents ?? 0) <= row.shareCents, `Fall ${i}: §35a über dem Anteil`)
+      }
+    }
+    for (const row of s.landlord.rows) assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Vermieteranteil ${row.shareCents}\n${JSON.stringify(src)}`)
+    assert.ok(s.selfUsedShareCents <= s.landlord.totalCents, `Fall ${i}: Eigenanteil über dem Vermieteranteil`)
+  }
+})
