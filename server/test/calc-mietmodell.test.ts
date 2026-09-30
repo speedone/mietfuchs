@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, rentLedger, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, rentLedger, taxReport, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -158,4 +158,14 @@ test('§ 2 HeizkostenV: gezählt werden alle Wohnungen des Objekts, nicht nur di
     costItems: [item({ category: HEIZUNG, description: 'Heizung' })],
   })
   assert.equal(s.warnings.length, 1)
+})
+
+test('Steuer: die Pauschale steht als eigene Zeile im Soll, und die Aufstellung geht auf', () => {
+  // Befund der Integrationsdurchsicht: Das Soll enthielt die Pauschale, die Aufstellung nannte
+  // aber nur Kaltmiete und Vorauszahlungen, und 960 € standen ohne Zeile in der Summe.
+  const t = tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 60000 }], flatRates: [{ from: '2025-01', monthlyCents: 8000 }] })
+  const snapshot = snapshotOf({ units: [unit('a')], tenancies: [t], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)
+  const income = taxReport(snapshot).income
+  assert.equal(income.flatRateSollCents, 96000)
+  assert.equal(income.baseRentSollCents + income.prepaymentSollCents + income.flatRateSollCents, income.sollCents)
 })

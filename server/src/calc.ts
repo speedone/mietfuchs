@@ -464,6 +464,9 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
+  // Die Pauschale (#93) gehört zum Soll wie Kaltmiete und Vorauszahlung und bekommt ihre eigene
+  // Zeile; sonst stünde sie in der Summe, ohne dass die Aufstellung sie nennt.
+  const flatRateSollCents = ledger.rows.reduce((a, r) => a + r.flatRateYearCents, 0)
   const sollCents = ledger.totals.sollYearCents
 
   // **Zugeflossen ist, was da ist, und nicht, was eine Zeile hat** (§ 11 Abs. 1 Satz 1 EStG).
@@ -623,6 +626,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     income: {
       baseRentSollCents,
       prepaymentSollCents,
+      flatRateSollCents,
       prepaymentSettlementCents,
       prepaymentOverridden,
       sollCents,

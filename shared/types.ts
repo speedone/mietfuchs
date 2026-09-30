@@ -429,6 +429,7 @@ export type TaxReport = {
   income: {
     baseRentSollCents: number // Kaltmiete (netto), vereinbart
     prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
+    flatRateSollCents: number // Betriebskostenpauschalen, vereinbart (#93)
     // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener
     // Abrechnung ihr eingefrorener Stand. Das ist nicht dasselbe wie `prepaymentSollCents`, und
     // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten

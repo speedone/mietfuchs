@@ -9,6 +9,7 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
   income: {
     baseRentSollCents: 960000,
     prepaymentSollCents: 240000,
+    flatRateSollCents: 0,
     prepaymentSettlementCents: 240000,
     prepaymentOverridden: false,
     sollCents: 1200000,
