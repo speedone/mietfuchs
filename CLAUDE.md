@@ -829,6 +829,15 @@ mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbar
 nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
 nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet.
 
+**Rechenweg** (#114): Jede Zeile der Mieter trägt `steps` (`CalcStep` in shared/types.ts),
+erzeugt dort, wo die Zeile entsteht, aus denselben Zahlen, als fertiger Text. Der Restcent aus
+`largestRemainder` wird an der Zeile benannt, die ihn bekommt. Die Seite Abrechnung zeigt die
+Schritte aufklappbar ([CalcSteps.tsx](client/src/components/CalcSteps.tsx)), immer `no-print`.
+Eine vorher abgeschlossene Abrechnung hat keine Schritte; dann zeigt `stepsOf`
+([calcSteps.ts](client/src/calcSteps.ts)) nur, was die Zeile selbst hergibt, statt nachzurechnen,
+denn eine neue Rechnung muss nicht zum eingefrorenen Stand passen. Die Regression des Umstiegs
+nimmt `steps` aus wie `basisText`.
+
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
