@@ -156,6 +156,7 @@ const noticeKinds = {
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr' },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig' },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate' },
+  'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung' },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -1051,7 +1052,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
           const betrag = forfeited.reduce((a, [, c]) => a + c, 0)
           warn('amounts.forfeited', `„${item.description}": ${forfeited.length === 1 ? 'ein Einzelbetrag' : `${forfeited.length} Einzelbeträge`} über ${fmtCents(betrag)} gehör${forfeited.length === 1 ? 't' : 'en'} zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfall${forfeited.length === 1 ? 't' : 'en'} — dieser Teil geht an den Vermieter.`, itemSubject(item))
         }
-        const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id))
+        // Nur wer die Position wirklich trägt; bei Pauschale fehlt nichts (Befund der Durchsicht).
+          const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id) && bookable(t))
         if (without.length > 0) {
           warn('amounts.missing', `„${item.description}": für ${without.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht.`, itemSubject(item))
         }
@@ -1230,6 +1232,16 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     const neither = costModel !== 'settlement' && heatingModel !== 'settlement'
     // Eine leere Abrechnung entfällt nur ohne Vorauszahlung: Eine echte Vorauszahlung für die
     // abgerechnete Art muss abgerechnet werden, auch wenn im Jahr keine Kosten dieser Art anfielen.
+    // Eine Vorauszahlung, gegen die nichts abgerechnet wird, ist meist die frühere Eingabe einer
+    // Pauschale (vor #93 gab es kein Feld dafür). Ohne Hinweis würde sie hier still ganz erstattet
+    // oder, ohne Abrechnung, im Mietkonto weiter als Soll geführt (Befund der Durchsicht).
+    const prepaid = st ? st.prepaymentCents : computePrepaymentCents(t, year).cents
+    if (prepaid > 0 && (neither || (st && st.rows.length === 0))) {
+      warn('model.prepayment-unsettled', neither
+        ? `Für ${t.tenantName} (${t.unit.name}) wird nichts abgerechnet, im Mietkonto stehen für ${year} aber Vorauszahlungen von ${fmtCents(prepaid)}. Ist das in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung; sonst stimmt das Mietkonto nicht.`
+        : `Für ${t.tenantName} (${t.unit.name}) gibt es ${year} keine Kosten der abgerechneten Art, die Vorauszahlung von ${fmtCents(prepaid)} wird deshalb vollständig erstattet. Ist die eingetragene Vorauszahlung in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung.`,
+      { kind: 'tenancy', id: t.id })
+    }
     if (neither || (st && st.rows.length === 0 && st.prepaymentCents === 0)) {
       statements.delete(t.id)
       notSettled.push({ tenancyId: t.id, tenantName: t.tenantName, unitName: t.unit.name, costModel, heatingModel })

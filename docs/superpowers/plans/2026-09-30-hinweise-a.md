@@ -54,3 +54,4 @@
 | direct.unit-gone | warning | costItem | |
 | labor35a.invalid | warning | costItem | |
 | heating.flat-rate | warning | tenancy | heating-flat-rate |
+| model.prepayment-unsettled | warning | tenancy | |

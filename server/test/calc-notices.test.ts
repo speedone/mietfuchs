@@ -103,3 +103,30 @@ test('Fehlt ein Einzelbetrag, ist das eine Warnung: der Anteil landet still beim
   })
   assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['amounts.missing', 'warning']])
 })
+
+test('Vorauszahlung ohne Abzurechnendes: eine Warnung, statt still alles zu erstatten', () => {
+  // Befund der Integrationsdurchsicht: Wer nach dem Update „Pauschale“ wählt und die alte
+  // Vorauszahlung stehen lässt, bekam sie ohne Hinweis als Guthaben ausgewiesen.
+  const kalt = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })],
+    costItems: [item('g', {})],
+  })
+  assert.deepEqual(kalt.notices.map((n) => [n.code, n.subject]), [['model.prepayment-unsettled', { kind: 'tenancy', id: 't-a' }]])
+  assert.match(kalt.warnings[0] ?? '', /1\.200,00 €/)
+  const beides = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'inclusive', heatingModel: 'inclusive', prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })],
+    costItems: [item('g', {})],
+  })
+  assert.deepEqual(beides.notices.map((n) => n.code), ['model.prepayment-unsettled'])
+})
+
+test('Einzelbetrag fehlt bei einem Mieter mit Pauschale: kein Hinweis, denn er trägt die Position ohnehin nicht', () => {
+  const s = settle({
+    units: [unit('a'), unit('b')],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b', { costModel: 'flatRate' })],
+    costItems: [item('h', { key: 'amounts', tenancyAmounts: { 't-a': 30000 } })],
+  })
+  assert.ok(!s.notices.some((n) => n.code === 'amounts.missing'), s.warnings.join(' | '))
+})
