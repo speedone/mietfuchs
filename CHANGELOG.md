@@ -68,6 +68,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Einzelbeträge vom Messdienst: Der Betrag Ihrer eigenen Wohnung lässt sich jetzt eintragen.**
+  Vorher steckte er im Rest beim Vermieter, und die Steuerübersicht nannte den privaten, nicht
+  abziehbaren Anteil zu niedrig. Beim Schlüssel „Einzelbeträge je Mieter“ steht dafür unter den
+  Mietern ein Feld je selbstgenutzter Wohnung; der Betrag ist Ihr Eigenanteil. Bitte tragen Sie
+  ihn bei Abrechnungen eines Messdienstes nach, die auch Ihre Wohnung erfassen.
+  ([#104](https://github.com/speedone/mietfuchs/issues/104))
 - **Rechtliche Hinweise nach einer Recherche mit Quellen berichtigt** (Stand 30.09.2026). Beim
   Kabelfernsehen gilt die Übergangsregel nur für Anlagen, die vor dem 01.12.2021 errichtet
   wurden, und bei einer Breitband-Verteilanlage bleibt danach nur der Betriebsstrom umlagefähig.

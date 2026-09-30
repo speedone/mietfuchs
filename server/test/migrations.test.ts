@@ -55,6 +55,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0005_mietmodell': 'efb7a4bcd10936d2c7b81547dc6b165815edd8109b4e35a21985ea1fe0aa6ce4',
   '0006_mietmodell_bedingungen': 'e3e8edcdd6b7e1353f60285d2c172c632583a0434633569bb7c65471c797cf42',
   '0007_pauschale': 'a20f80e56b92f2f3f4abf5f5b1a5b300c9ab6d30a8c0abc53bc1070bbd6429b3',
+  '0008_eigenbetraege': '7bdddcbf821254935aab0edace93460b7c838470e651001e5f20d5c74d83874f',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

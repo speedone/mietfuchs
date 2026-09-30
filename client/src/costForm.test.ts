@@ -263,3 +263,14 @@ describe('Kabelfernsehen (#107)', () => {
     }
   })
 })
+
+describe('Eigenbeträge (#104)', () => {
+  test('der Betrag der eigenen Wohnung wird gespeichert, gelesen und in die Summe gezählt', () => {
+    const f = form({ key: 'amounts', amount: '3.000,00', tenancyAmounts: { t1: '1.240,00' }, selfAmounts: { u1: '1.600,00' } })
+    expect(buildCostItemBody(f, UNITS, 2025)).toMatchObject({ body: { tenancyAmounts: { t1: 124000 }, selfAmounts: { u1: 160000 } } })
+    expect(amountsSumText(f)).toMatch(/2\.840,00.*160,00/)
+    expect(buildCostItemBody(form({ key: 'amounts', amount: '1.000,00', tenancyAmounts: { t1: '600,00' }, selfAmounts: { u1: '500,00' } }), UNITS, 2025)).toHaveProperty('error')
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
+    expect(buildCostItemBody(form({ key: 'area', amount: '100,00', selfAmounts: { u1: '1,00' } }), UNITS, 2025)).toMatchObject({ body: { selfAmounts: null } })
+  })
+})

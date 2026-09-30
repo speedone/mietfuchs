@@ -152,6 +152,7 @@ const noticeKinds = {
   'amounts.forfeited': { level: 'warning', title: 'Einzelbetrag ohne Mietverhältnis', terms: ['individualAmounts'] },
   'amounts.missing': { level: 'warning', title: 'Einzelbetrag fehlt', terms: ['individualAmounts'] },
   'amounts.self-hidden': { level: 'hint', title: 'Eigenanteil nicht ausgewiesen', terms: ['individualAmounts', 'ownShare'] },
+  'amounts.self-forfeited': { level: 'warning', title: 'Eigenbetrag ohne selbstgenutzte Wohnung', terms: ['individualAmounts', 'ownShare'] },
   'custom.forfeited': { level: 'warning', title: 'Vereinbarter Anteil entfällt', terms: ['agreedShares', 'billingUnit'] },
   'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile', terms: ['agreedShares'] },
   'custom.over-100': { level: 'error', title: 'Vereinbarte Anteile über 100 %', terms: ['agreedShares'] },
@@ -1159,7 +1160,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       // selbst auf, deshalb hier kein Tagesanteil: Der Anteil ist genau der Betrag. Den Rest
       // (Leerstand, Eigennutzung, Rundung des Messdienstes) trägt der Vermieter.
       const given = item.tenancyAmounts ?? {}
-      const sum = Object.values(given).reduce((a, c) => a + Math.max(0, c), 0)
+      // Beträge selbstgenutzter Wohnungen (#104): nur für Wohnungen, die im Jahr selbstgenutzt zur
+      // Verteilbasis gehören; einer anderen Wohnung ein Eigenanteil wäre privat gebuchtes Geld,
+      // das in Wahrheit abziehbar ist.
+      const selfGiven = item.selfAmounts ?? {}
+      const selfIds = new Set(b.selfUnits.map((u) => u.id))
+      const selfSum = Object.entries(selfGiven).filter(([id]) => selfIds.has(id)).reduce((a, [, c]) => a + Math.max(0, c), 0)
+      const sum = Object.values(given).reduce((a, c) => a + Math.max(0, c), 0) + selfSum
       if (sum > item.amountCents) {
         warn('amounts.exceed', `„${item.description}": die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
@@ -1178,8 +1185,14 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         // eintragen; er steckt im Rest beim Vermieter und fehlt damit im ausgewiesenen
         // Eigenanteil, also im privaten, nicht abziehbaren Teil der Steuerübersicht. Das soll nicht
         // still geschehen.
-        if (b.selfUnits.length > 0) {
-          warn('amounts.self-hidden', `„${item.description}": der Anteil der selbstgenutzten Wohnung(en) ${b.selfUnits.map((u) => u.name).join(', ')} ist bei Einzelbeträgen nicht ausgewiesen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig.`, itemSubject(item))
+        const selfForfeited = Object.entries(selfGiven).filter(([id, c]) => c > 0 && !selfIds.has(id))
+        if (selfForfeited.length > 0) {
+          warn('amounts.self-forfeited', `„${item.description}": ein Eigenbetrag ist für ${selfForfeited.map(([id]) => unitById.get(id)?.name ?? 'eine gelöschte Wohnung').join(', ')} eingetragen, die in diesem Jahr nicht selbstgenutzt ist — er zählt nicht als Eigenanteil und bleibt beim Vermieter.`, itemSubject(item))
+        }
+        selfRaw = selfSum
+        const selfWithout = b.selfUnits.filter((u) => !Object.hasOwn(selfGiven, u.id))
+        if (selfWithout.length > 0) {
+          warn('amounts.self-hidden', `„${item.description}": der Anteil der selbstgenutzten Wohnung(en) ${selfWithout.map((u) => u.name).join(', ')} ist bei Einzelbeträgen nicht eingetragen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig.`, itemSubject(item))
         }
         for (const t of b.partTenancies) {
           const c = given[t.id]
