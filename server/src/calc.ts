@@ -2,6 +2,7 @@
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
   CostKey,
+  ExternalMeasure,
   MeterType,
   PersonEntry,
   RentLedger,
@@ -17,7 +18,7 @@ import type {
 // Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
-import type { Snapshot, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
+import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -653,6 +654,16 @@ function fmtNum(n: number): string {
   return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
+// Ein Betrag für den Rechenweg auf der Abrechnung (#94): mit zwei Stellen und einem gewöhnlichen
+// Leerzeichen vor dem Zeichen. `toLocaleString` mit `currency` setzte ein geschütztes, das in
+// den Zeilen nicht anders aussieht, beim Vergleichen und Kopieren aber stört.
+function fmtCents(cents: number): string {
+  return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+}
+
+// Die Maßstäbe einer Gemeinschaft, wie sie im Rechenweg heißen (#94).
+const MEASURE_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
+
 // ---------- Abrechnung ----------
 
 // Mietverhältnis, ergänzt um die im Jahr belegten Tage und die zugehörige Wohnung: das
@@ -718,24 +729,30 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // snapshot.ts). `consumptionInPeriod` schneidet den Zeitraum tagesanteilig heraus.
   const allMeters = snapshot.meters
   const allReadings = snapshot.readings
-  const meterTypes = [...new Set(allMeters.filter((m) => m.unitId).map((m) => m.type))]
-  const consumptionByType: Record<string, ConsumptionByTypeEntry | undefined> = {}
-  for (const type of meterTypes) {
-    const meters = allMeters.filter((m) => m.unitId && m.type === type) as (SnapshotMeter & { unitId: string })[]
-    const perUnit = new Map<string, number>()
-    let basis = 0
-    for (const m of meters) {
-      const readings = allReadings.filter((r) => r.meterId === m.id)
-      const c = consumptionInPeriod(readings, yFrom, yTo)
-      basis += c
-      perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+  // `only`: die Teilnehmer einer Position (#94); ohne sie alle Wohnungszähler wie bisher.
+  const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null) => {
+    const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
+    const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
+    const meterTypes = [...new Set(unitMeters.map((m) => m.type))]
+    for (const type of meterTypes) {
+      const meters = unitMeters.filter((m) => m.type === type) as (SnapshotMeter & { unitId: string })[]
+      const perUnit = new Map<string, number>()
+      let basis = 0
+      for (const m of meters) {
+        const readings = allReadings.filter((r) => r.meterId === m.id)
+        const c = consumptionInPeriod(readings, yFrom, yTo)
+        basis += c
+        perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+      }
+      // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
+      // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
+      // Wohnungen fällt damit ohnehin dem Vermieter zu.
+      const selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
+      byType[type] = { meters, basis, perUnit, selfConsumption }
     }
-    // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
-    // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
-    // Wohnungen fällt damit ohnehin dem Vermieter zu.
-    const selfConsumption = selfUnits.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
-    consumptionByType[type] = { meters, basis, perUnit, selfConsumption }
+    return byType
   }
+  const consumptionByType = consumptionFor(selfUnits, null)
 
   const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
@@ -810,7 +827,32 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     )
   }
 
+  // Die Verteilbasis einer Position (#94). **Ohne Teilnehmer ist sie genau die bisherige**, und
+  // zwar dasselbe Objekt, einmal berechnet: So kann die Umstellung keine Zahl verschieben, und
+  // die Golden-Tests bleiben der Beweis dafür. Mit Teilnehmern besteht sie nur aus ihnen, bei
+  // vermieteten wie bei selbstgenutzten Wohnungen, und beim Verbrauch zählen nur ihre Zähler.
+  const fullBasis = { basisUnits, selfUnits, basisArea, selfArea, partTenancies, basisPersonDays, selfPersonDays, consumptionByType }
+  const basisOf = (item: SnapshotCostItem): typeof fullBasis => {
+    if (!item.participantUnitIds) return fullBasis
+    const only = new Set(item.participantUnitIds)
+    const bUnits = basisUnits.filter((u) => only.has(u.id))
+    const sUnits = selfUnits.filter((u) => only.has(u.id))
+    const pTenancies = partTenancies.filter((t) => only.has(t.unitId))
+    const sPersonDays = sUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
+    return {
+      basisUnits: bUnits,
+      selfUnits: sUnits,
+      basisArea: bUnits.reduce((a, u) => a + (u.areaM2 || 0), 0),
+      selfArea: sUnits.reduce((a, u) => a + (u.areaM2 || 0), 0),
+      partTenancies: pTenancies,
+      basisPersonDays: pTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0) + sPersonDays,
+      selfPersonDays: sPersonDays,
+      consumptionByType: consumptionFor(sUnits, only),
+    }
+  }
+
   for (const item of items) {
+    const b = basisOf(item)
     totalCostsCents += item.amountCents
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
@@ -819,33 +861,97 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
     let selfRaw = 0
     const noBasis = (reason: string) => warnings.push(`„${item.description}": ${reason} — Betrag geht an den Vermieter.`)
+    // Tage im Rechenweg, nur bei einem Teiljahr.
+    const partOfYear = (t: TenancyWithUnit) => (t.days < diy ? ` · ${t.days}/${diy} Tage` : '')
+    // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
+    const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
     if (item.category === 'Nicht umlagefähig') {
       // keine Verteilung
-    } else if (item.key === 'area' && areaBasisMissing) {
-      noBasis('für keine Wohnung ist eine Wohnfläche hinterlegt')
-    } else if (item.key === 'units' && basisUnits.length === 0) {
-      noBasis('keine Wohnung gehört zur Abrechnungseinheit')
-    } else if (item.key === 'persons' && personsBasisMissing) {
+    } else if (withParticipants && item.participantUnitIds && item.participantUnitIds.length === 0) {
+      noBasis('keine Wohnung nimmt teil')
+    } else if (item.key === 'area' && !(b.basisArea > 0)) {
+      noBasis(b === fullBasis ? 'für keine Wohnung ist eine Wohnfläche hinterlegt' : 'für keine teilnehmende Wohnung ist eine Wohnfläche hinterlegt')
+    } else if (item.key === 'units' && b.basisUnits.length === 0) {
+      noBasis(b === fullBasis ? 'keine Wohnung gehört zur Abrechnungseinheit' : 'keine teilnehmende Wohnung gehört zur Abrechnungseinheit')
+    } else if (item.key === 'persons' && !(b.basisPersonDays > 0) && b.partTenancies.length > 0) {
       noBasis('für die vermieteten Wohnungen sind keine Personen hinterlegt')
-    } else if (item.key === 'area' && basisArea > 0) {
-      for (const t of partTenancies) {
-        const raw = item.amountCents * ((t.unit.areaM2 || 0) / basisArea) * (t.days / diy)
-        targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(basisArea)} m²${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+    } else if (item.key === 'area' && b.basisArea > 0) {
+      for (const t of b.partTenancies) {
+        const raw = item.amountCents * ((t.unit.areaM2 || 0) / b.basisArea) * (t.days / diy)
+        targets.push({ t, raw, basisText: `${fmtNum(t.unit.areaM2 || 0)} von ${fmtNum(b.basisArea)} m²${partOfYear(t)}` })
       }
-      selfRaw = item.amountCents * (selfArea / basisArea)
-    } else if (item.key === 'units' && basisUnits.length > 0) {
-      for (const t of partTenancies) {
-        const raw = (item.amountCents / basisUnits.length) * (t.days / diy)
-        targets.push({ t, raw, basisText: `1 von ${basisUnits.length} Einheiten${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
+      selfRaw = item.amountCents * (b.selfArea / b.basisArea)
+    } else if (item.key === 'units' && b.basisUnits.length > 0) {
+      for (const t of b.partTenancies) {
+        const raw = (item.amountCents / b.basisUnits.length) * (t.days / diy)
+        targets.push({ t, raw, basisText: `1 von ${b.basisUnits.length} Einheiten${partOfYear(t)}` })
       }
-      selfRaw = (item.amountCents / basisUnits.length) * selfUnits.length
-    } else if (item.key === 'persons' && basisPersonDays > 0) {
-      for (const t of partTenancies) {
+      selfRaw = (item.amountCents / b.basisUnits.length) * b.selfUnits.length
+    } else if (item.key === 'persons' && b.basisPersonDays > 0) {
+      for (const t of b.partTenancies) {
         const pd = personDaysInPeriod(t, yFrom, yTo)
-        const raw = item.amountCents * (pd / basisPersonDays)
-        targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(basisPersonDays)} Personentagen` })
+        const raw = item.amountCents * (pd / b.basisPersonDays)
+        targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(b.basisPersonDays)} Personentagen` })
       }
-      selfRaw = item.amountCents * (selfPersonDays / basisPersonDays)
+      selfRaw = item.amountCents * (b.selfPersonDays / b.basisPersonDays)
+    } else if (item.key === 'external') {
+      // Laut Gemeinschaftsabrechnung (#94). Der Betrag ist der eigene Anteil, also das, was der
+      // Vermieter laut Hausgeldabrechnung für seine Wohnungen zahlt; die Angaben der Gemeinschaft
+      // stehen daneben für den Rechenweg und die Plausibilität. Verteilt wird innerhalb des
+      // Objekts nach dem Wert jeder Wohnung im Maßstab der Gemeinschaft.
+      const eb = item.externalBasis
+      if (!eb || !(eb.total > 0)) {
+        noBasis('die Angaben aus der Abrechnung der Gemeinschaft fehlen (Maßstab, Summe in der Anlage, Gesamtkosten)')
+      } else {
+        const valueOf = (u: SnapshotUnit): number =>
+          eb.measure === 'mea' ? Math.max(0, Number(u.mea) || 0) : eb.measure === 'area' ? Math.max(0, u.areaM2 || 0) : 1
+        const own = b.basisUnits.reduce((a, u) => a + valueOf(u), 0)
+        if (!(own > 0)) {
+          noBasis(eb.measure === 'mea' ? 'für die Wohnungen sind keine Miteigentumsanteile hinterlegt' : 'für die Wohnungen ist keine Wohnfläche hinterlegt')
+        } else {
+          const missing = b.basisUnits.filter((u) => valueOf(u) === 0)
+          if (missing.length > 0) {
+            warnings.push(`„${item.description}": für ${missing.map((u) => u.name).join(', ')} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen.`)
+          }
+          // Ein Tippfehler in der Gesamtsumme soll auffallen, aber keine Zahl verschieben:
+          // Gezahlt ist der eingetragene Betrag, und der wird verteilt.
+          const expected = Math.round((eb.totalCents * own) / eb.total)
+          if (Math.abs(expected - item.amountCents) > 100) {
+            warnings.push(`„${item.description}": der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`)
+          }
+          const suffix = ` · Gesamtkosten der Anlage ${fmtCents(eb.totalCents)}`
+          for (const t of b.partTenancies) {
+            const raw = item.amountCents * (valueOf(t.unit) / own) * (t.days / diy)
+            targets.push({ t, raw, basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]}${suffix}${partOfYear(t)}` })
+          }
+          selfRaw = item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u), 0) / own)
+        }
+      }
+    } else if (item.key === 'amounts') {
+      // Einzelbeträge je Mietverhältnis (#94), etwa vom Messdienst. Der teilt beim Nutzerwechsel
+      // selbst auf, deshalb hier kein Tagesanteil: Der Anteil ist genau der Betrag. Den Rest
+      // (Leerstand, Eigennutzung, Rundung des Messdienstes) trägt der Vermieter.
+      const given = item.tenancyAmounts ?? {}
+      const sum = Object.values(given).reduce((a, c) => a + Math.max(0, c), 0)
+      if (sum > item.amountCents) {
+        warnings.push(`„${item.description}": die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.`)
+      } else {
+        const inYear = new Map(b.partTenancies.map((t) => [t.id, t]))
+        const forfeited = Object.entries(given).filter(([id, c]) => c > 0 && !inYear.has(id))
+        if (forfeited.length > 0) {
+          const betrag = forfeited.reduce((a, [, c]) => a + c, 0)
+          warnings.push(`„${item.description}": ${forfeited.length === 1 ? 'ein Einzelbetrag' : `${forfeited.length} Einzelbeträge`} über ${fmtCents(betrag)} gehör${forfeited.length === 1 ? 't' : 'en'} zu keinem Mietverhältnis dieses Jahres in der Abrechnungseinheit und entfall${forfeited.length === 1 ? 't' : 'en'} — dieser Teil geht an den Vermieter.`)
+        }
+        const without = b.partTenancies.filter((t) => !Object.hasOwn(given, t.id))
+        if (without.length > 0) {
+          warnings.push(`„${item.description}": für ${without.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht.`)
+        }
+        for (const t of b.partTenancies) {
+          const c = given[t.id]
+          if (c === undefined || c <= 0) continue
+          targets.push({ t, raw: c, basisText: 'laut Einzelabrechnung' })
+        }
+      }
     } else if (item.key === 'custom') {
       // Vereinbarter Schlüssel (§556a Abs. 1 Satz 1 BGB): feste Prozentanteile je Wohnung.
       // Die Anteile gelten absolut — summieren sie unter 100 %, bleibt der Rest beim
@@ -879,12 +985,12 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       // `item.meterType` ist optional (string | null | undefined); die Indizierung selbst
       // verhält sich für null/undefined wie für einen unbekannten Zählertyp (kein Treffer,
       // `data` bleibt undefined), deshalb hier nur eine Typ-Zusicherung, keine neue Prüfung.
-      const data = consumptionByType[item.meterType as MeterType]
+      const data = b.consumptionByType[item.meterType as MeterType]
       if (!data || data.basis <= 0) {
         warnings.push(`„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`)
       } else {
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
-        for (const t of partTenancies) {
+        for (const t of b.partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
           let c = 0
           for (const m of meters) {
