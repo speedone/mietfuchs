@@ -43,7 +43,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, baseRents, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, units,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
@@ -240,6 +240,7 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
     start,
     end: merged(body, 'end', current.end, asNullableText),
     prepayments: merged(body, 'prepayments', current.prepayments, (v) => readSchedule<PrepaymentEntry>(v, moneyEntry)),
+    flatRates: merged(body, 'flatRates', current.flatRates, (v) => (v === null ? undefined : readSchedule<PrepaymentEntry>(v, moneyEntry))),
     prepaymentOverrides: merged(body, 'prepaymentOverrides', current.prepaymentOverrides, readAmountsByYear),
     baseRents: merged(body, 'baseRents', current.baseRents, (v) => readSchedule<RentEntry>(v, moneyEntry)),
     email: merged(body, 'email', current.email, asOptionalText),
@@ -584,6 +585,11 @@ const paymentRow = (p: Payment) => ({
 async function writeTenancyChildren(db: Executor, t: Tenancy): Promise<void> {
   await db.delete(personHistory).where(eq(personHistory.tenancyId, t.id))
   await db.delete(prepayments).where(eq(prepayments.tenancyId, t.id))
+  await db.delete(flatRates).where(eq(flatRates.tenancyId, t.id))
+  const pauschalen = t.flatRates ?? []
+  if (pauschalen.length > 0) {
+    await db.insert(flatRates).values(pauschalen.map((e) => ({ tenancyId: t.id, from: e.from, monthlyCents: e.monthlyCents })))
+  }
   await db.delete(baseRents).where(eq(baseRents.tenancyId, t.id))
   await db.delete(prepaymentOverrides).where(eq(prepaymentOverrides.tenancyId, t.id))
   if (t.personHistory.length > 0) {

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, rentLedger, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -24,7 +24,7 @@ const HEIZUNG = 'Heizung und Warmwasser'
 test('Pauschale: keine Abrechnung, der Anteil bleibt in der Basis und geht an den Vermieter', () => {
   const s = settle({
     units: [unit('a'), unit('b')],
-    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate' }), tenancy('t-b', 'b')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [], flatRates: [{ from: '2025-01', monthlyCents: 8000 }] }), tenancy('t-b', 'b')],
     costItems: [item({})],
   })
   assert.equal(statementOf(s, 't-a'), undefined, 'kein Mieter mit Pauschale bekommt eine Abrechnung')
@@ -37,12 +37,17 @@ test('Pauschale: keine Abrechnung, der Anteil bleibt in der Basis und geht an de
 test('Gemischt: kalt pauschal, Heizung abgerechnet — die Abrechnung enthält nur die Heizung', () => {
   const s = settle({
     units: [unit('a')],
-    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate' })],
+    // 50 € Heizvorauszahlung und 80 € Pauschale je Monat, in zwei Staffeln.
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [{ from: '2025-01', monthlyCents: 5000 }], flatRates: [{ from: '2025-01', monthlyCents: 8000 }] })],
     costItems: [item({ id: 'g' }), item({ id: 'h', category: HEIZUNG, description: 'Heizung laut Techem', amountCents: 80000, key: 'amounts', tenancyAmounts: { 't-a': 60000 } })],
   })
   const st = statementOf(s, 't-a')
   assert.deepEqual(st?.rows.map((r) => r.costItemId), ['h'])
   assert.equal(st?.totalShareCents, 60000)
+  // Angerechnet wird nur die Heizvorauszahlung (600 €), nie die Pauschale: kein Guthaben
+  // aus der Pauschale gegen die abgerechneten Heizkosten.
+  assert.equal(st?.prepaymentCents, 60000)
+  assert.equal(st?.balanceCents, 0)
   assert.equal(s.landlord.totalCents, 120000)
   assert.deepEqual(s.notSettled, [])
 })
@@ -116,4 +121,41 @@ test('Invariante (#93): Summen gehen auf, und ein Modell ändert den Eigenanteil
     const rundung = costItems.length * Math.ceil((tenancies.length + 1) / 2)
     assert.ok(mehr >= 0 && mehr <= rundung, `Fall ${i}: Eigenanteil um ${mehr} Cent verschoben (Rundung höchstens ${rundung})`)
   }
+})
+
+test('Pauschale: das Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an', () => {
+  const t = tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 60000 }], flatRates: [{ from: '2025-01', monthlyCents: 8000 }] })
+  const snapshot = snapshotOf({ units: [unit('a')], tenancies: [t], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)
+  const row = rentLedger(snapshot).rows[0]
+  assert.equal(row?.flatRateYearCents, 96000)
+  assert.equal(row?.prepaymentYearCents, 0)
+  assert.equal(row?.sollYearCents, 60000 * 12 + 96000)
+})
+
+test('Gemischt ohne Kosten der abgerechneten Art: mit Vorauszahlung bleibt die Abrechnung, ohne verschwindet sie', () => {
+  // Mit echter Heizvorauszahlung muss sie abgerechnet werden (hier: voll zurück), auch wenn im
+  // Jahr keine Heizkosten erfasst sind; ohne Vorauszahlung wäre es eine leere Abrechnung.
+  const mitVorauszahlung = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate' })],
+    costItems: [item({})],
+  })
+  assert.equal(statementOf(mitVorauszahlung, 't-a')?.balanceCents, 120000)
+  const ohne = settle({
+    units: [unit('a')],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'flatRate', prepayments: [] })],
+    costItems: [item({})],
+  })
+  assert.equal(statementOf(ohne, 't-a'), undefined)
+  assert.equal(ohne.notSettled.length, 1)
+})
+
+test('§ 2 HeizkostenV: gezählt werden alle Wohnungen des Objekts, nicht nur die beteiligten', () => {
+  // Drei Wohnungen, eine davon außerhalb der Abrechnungseinheit: kein Zweifamilienhaus.
+  const s = settle({
+    units: [unit('a'), unit('eigen', { participates: false, selfUsed: true }), unit('gewerbe', { participates: false })],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'inclusive' })],
+    costItems: [item({ category: HEIZUNG, description: 'Heizung' })],
+  })
+  assert.equal(s.warnings.length, 1)
 })

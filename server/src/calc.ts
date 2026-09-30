@@ -349,6 +349,7 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
     .map((t) => {
       const baseSchedule: MonthlySchedule[] = Array.isArray(t.baseRents) ? t.baseRents : []
       const ppSchedule: MonthlySchedule[] = Array.isArray(t.prepayments) ? t.prepayments : []
+      const flatSchedule: MonthlySchedule[] = Array.isArray(t.flatRates) ? t.flatRates : []
 
       const months: RentMonth[] = []
       for (let m = 1; m <= 12; m++) {
@@ -357,11 +358,13 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         const active = t.start <= firstDay && !(t.end && t.end < firstDay)
         const baseRentCents = active ? rateAtMonth(baseSchedule, mm) : 0
         const prepaymentCents = active ? rateAtMonth(ppSchedule, mm) : 0
+        const flatRateCents = active ? rateAtMonth(flatSchedule, mm) : 0
         months.push({
           month: m,
           baseRentCents,
           prepaymentCents,
-          sollCents: baseRentCents + prepaymentCents,
+          flatRateCents,
+          sollCents: baseRentCents + prepaymentCents + flatRateCents,
           paidCents: 0,
           status: 'open',
         })
@@ -387,6 +390,7 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
       const sollYearCents = months.reduce((a, mo) => a + mo.sollCents, 0)
       const baseRentYearCents = months.reduce((a, mo) => a + mo.baseRentCents, 0)
       const prepaymentYearCents = months.reduce((a, mo) => a + mo.prepaymentCents, 0)
+      const flatRateYearCents = months.reduce((a, mo) => a + mo.flatRateCents, 0)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
@@ -395,6 +399,7 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         sollYearCents,
         baseRentYearCents,
         prepaymentYearCents,
+        flatRateYearCents,
         paidYearCents,
         balanceCents: paidYearCents - sollYearCents,
         openMonths: months.filter((mo) => mo.status !== 'paid').length,
@@ -1134,7 +1139,9 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     if (costModel === 'settlement' && heatingModel === 'settlement') continue
     const st = statements.get(t.id)
     const neither = costModel !== 'settlement' && heatingModel !== 'settlement'
-    if (neither || (st && st.rows.length === 0)) {
+    // Eine leere Abrechnung entfällt nur ohne Vorauszahlung: Eine echte Vorauszahlung für die
+    // abgerechnete Art muss abgerechnet werden, auch wenn im Jahr keine Kosten dieser Art anfielen.
+    if (neither || (st && st.rows.length === 0 && st.prepaymentCents === 0)) {
       statements.delete(t.id)
       notSettled.push({ tenancyId: t.id, tenantName: t.tenantName, unitName: t.unit.name, costModel, heatingModel })
     }
@@ -1145,7 +1152,10 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
   // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
   const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
-  const exempt = basisUnits.length <= 2 && selfUnits.length >= 1
+  // Das Gesetz zählt die Wohnungen im Gebäude, also alle des Objekts und nicht nur die
+  // beteiligten. Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs
+  // daran nicht (die Objektart steht nicht im Schnappschuss); dort bleibt die Warnung aus.
+  const exempt = snapshot.units.length <= 2 && selfUnits.length >= 1
   if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
     warnings.push(
       `Für ${heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +

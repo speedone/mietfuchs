@@ -73,6 +73,11 @@ export type Tenancy = {
   // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
   costModel?: CostModel
   heatingModel?: CostModel
+  // Die Pauschale je Monat (#93), eine eigene Staffel und nicht die der Vorauszahlung: Das
+  // Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. Stünde sie in der Staffel
+  // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten
+  // gutgeschrieben.
+  flatRates?: PrepaymentEntry[]
   tenantName: string
   persons: number // aktuelle Personenzahl (abgeleitet aus personHistory)
   personHistory: PersonEntry[]
@@ -111,7 +116,8 @@ export type RentMonth = {
   month: number // 1..12
   baseRentCents: number
   prepaymentCents: number
-  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung
+  flatRateCents: number // Pauschale (#93)
+  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale
   paidCents: number // dem Monat zugeordneter Zahlungseingang
   status: RentMonthStatus
 }
@@ -124,6 +130,7 @@ export type RentLedgerRow = {
   sollYearCents: number // Brutto-Soll des Jahres
   baseRentYearCents: number // davon Kaltmiete (Netto)
   prepaymentYearCents: number // davon NK-Vorauszahlung
+  flatRateYearCents: number // davon Pauschale (#93)
   paidYearCents: number
   balanceCents: number // paid − soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
   openMonths: number

@@ -22,7 +22,7 @@ import {
   sharesForUnit, updateEntity, updateProperty, type CollectionName,
 } from '../src/db/repository.ts'
 import {
-  baseRents, costItemAmounts, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
+  baseRents, costItemAmounts, flatRates, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
   prepayments, readings, tenancies, units,
 } from '../src/db/schema.ts'
 
@@ -465,6 +465,7 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
     { table: personHistory, feld: 'personHistory', eintrag: { from: '2024-01-01', persons: 3 } },
     { table: prepayments, feld: 'prepayments', eintrag: { from: '2024-03', monthlyCents: 15000 } },
     { table: baseRents, feld: 'baseRents', eintrag: { from: '2024-03', monthlyCents: 60000 } },
+    { table: flatRates, feld: 'flatRates', eintrag: { from: '2024-03', monthlyCents: 8000 } },
   ]
 
   await withDatabase(async (opened) => {
@@ -779,5 +780,20 @@ test('Nebenkostenmodell: kommt zurück, lässt sich zurücksetzen, und ein unbek
     const zurueck = await opened.write((db) => updateEntity(db, 'tenancies', 't1', { costModel: null, heatingModel: 'irgendwas' }))
     assert.equal(fieldOf(zurueck, 'costModel'), undefined, 'null heißt wieder die Abrechnung')
     assert.equal(fieldOf(zurueck, 'heatingModel'), undefined, 'ein unbekannter Wert wird nicht gespeichert')
+  })
+})
+
+test('Nebenkostenmodell: die Staffel der Pauschale kommt zurück und wird beim Ändern ganz ersetzt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 50, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', {
+      unitId: 'u1', tenantName: 'A', start: '2024-01-01', costModel: 'flatRate',
+      flatRates: [{ from: '2024-01', monthlyCents: 8000 }, { from: '2025-01', monthlyCents: 9000 }],
+    }))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'flatRates'), [
+      { from: '2024-01', monthlyCents: 8000 }, { from: '2025-01', monthlyCents: 9000 },
+    ])
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { flatRates: [{ from: '2024-01', monthlyCents: 7000 }] }))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'flatRates'), [{ from: '2024-01', monthlyCents: 7000 }])
   })
 })

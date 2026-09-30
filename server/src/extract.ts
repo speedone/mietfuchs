@@ -253,6 +253,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Hauswart": Hausmeister
 - "Aufzug": Aufzugswartung, TÜV Aufzug
 - "Kabel/Antenne": Kabelanschluss, Breitband
+- "Heizung und Warmwasser": Brennstoff (Heizöl, Gas, Pellets), Fernwärme, Wärmecontracting, Wartung der Heizung, Betriebsstrom der Heizung, Messdienst (Techem, ista, Brunata, Minol), Warmwasser. Reparaturen an der Heizung sind "Nicht umlagefähig"
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen`
 

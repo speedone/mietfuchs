@@ -221,6 +221,24 @@ export const prepayments = sqliteTable(
   ],
 )
 
+// Pauschale ab einem Monat ('YYYY-MM', #93). Eine eigene Tabelle und nicht die der Vorauszahlung:
+// Das Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. In derselben Staffel würde
+// sie bei einem gemischten Modell gegen die abgerechneten Kosten gutgeschrieben.
+export const flatRates = sqliteTable(
+  'flat_rates',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.from] }),
+    notNegative('flat_rates_monthly_not_negative', 'monthly_cents'),
+  ],
+)
+
 // Kaltmiete ab einem Monat ('YYYY-MM'). Gleiche Mechanik wie die Vorauszahlung, aber bewusst
 // eine eigene Tabelle: Ein gemeinsamer Tisch mit einer Spalte „welche Art" spart nichts und
 // zwänge jede Abfrage, die Art mitzufiltern.

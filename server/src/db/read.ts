@@ -25,7 +25,7 @@ import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemShares, costItems, meters, payments,
-  personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -130,11 +130,13 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   const rows = await db.select().from(tenancies).orderBy(INSERTION_ORDER)
   const personRows = await db.select().from(personHistory).orderBy(INSERTION_ORDER)
   const prepaymentRows = await db.select().from(prepayments).orderBy(INSERTION_ORDER)
+  const flatRateRows = await db.select().from(flatRates).orderBy(INSERTION_ORDER)
   const baseRentRows = await db.select().from(baseRents).orderBy(INSERTION_ORDER)
   const overrideRows = await db.select().from(prepaymentOverrides).orderBy(INSERTION_ORDER)
 
   const persons = groupBy(personRows, (r) => r.tenancyId, (r) => ({ from: r.from, persons: r.persons }))
   const prepaid = groupBy(prepaymentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
+  const flat = groupBy(flatRateRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   const rents = groupBy(baseRentRows, (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
   // Die Jahreskorrektur wird gleich zu einem Objekt (`Object.fromEntries`), deshalb Paare. Der
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
@@ -150,6 +152,8 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     start: t.start,
     end: t.end,
     prepayments: prepaid.get(t.id) ?? [],
+    // Nur mit Einträgen, wie die übrigen Angaben aus #93: Die db.json kennt das Feld nicht.
+    ...(flat.has(t.id) ? { flatRates: flat.get(t.id) } : {}),
     prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
     baseRents: rents.get(t.id) ?? [],
     email: orUndefined(t.email),

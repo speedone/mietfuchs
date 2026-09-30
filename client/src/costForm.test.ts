@@ -239,4 +239,11 @@ describe('Heizkostenart (#93)', () => {
     expect(matchCategory('Heizkostenabrechnung Techem')).toBe('Heizung und Warmwasser')
     expect(matchCategory('Frischwasser')).toBe('Wasser/Abwasser')
   })
+
+  test('Reparaturen an der Heizung bleiben nicht umlagefähig, und kein Treffer mitten im Wort', () => {
+    expect(matchCategory('Heizungsreparatur')).toBe('Nicht umlagefähig')
+    expect(matchCategory('Wärmedämmung Fassade')).toBe('Nicht umlagefähig')
+    expect(matchCategory('Distanzzuschlag')).toBe('Sonstige Betriebskosten')
+    expect(matchCategory('ista Energieabrechnung')).toBe('Heizung und Warmwasser')
+  })
 })
