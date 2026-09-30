@@ -352,8 +352,10 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       // ersetzt ist. **Ausdrücklich nicht gebaut ist die Brücke „dann steige eben noch einmal
       // um"**: Sie klänge hilfreich und wäre ein zweiter stiller Überschreiber, denn eine
       // hereinkopierte alte Datei verwürfe den neueren Stand der Datenbank, ohne zu fragen.
+      // Ein eigener Zustand und nicht `none` (#89): `none` ist auch jede frische Installation,
+      // und die Oberfläche blendet ihn aus. Hier soll der Nutzer die Meldung sehen.
       return {
-        state: 'none',
+        state: 'stale',
         message:
           `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen. ` +
           'Im Datenordner liegt trotzdem eine Datei db.json. Gelesen und geschrieben wird sie ' +

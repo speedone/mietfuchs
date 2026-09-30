@@ -14,8 +14,9 @@ import type { DatabaseState } from './types'
 export type HealthReport = { database?: DatabaseState }
 
 export type DatabaseHint = {
-  // 'done' ist eine gute Nachricht in einem Satz, 'failed' eine Erklärung.
-  kind: 'done' | 'failed'
+  // 'done' ist eine gute Nachricht in einem Satz, 'failed' eine Erklärung, 'stale' eine
+  // Feststellung mit einer Handlungsanweisung (#89), die nicht nach einem Fehler aussehen darf.
+  kind: 'done' | 'failed' | 'stale'
   message: string
   notes: string[]
 }

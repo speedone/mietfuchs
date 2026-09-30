@@ -270,7 +270,7 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
 
     writeFile(dataDir, fullDb())
     await changeoverIn(dataDir, async (result) => {
-      assert.equal(result.state, 'none')
+      assert.equal(result.state, 'stale', 'ein unterbliebener Umstieg mit Hinweis, nicht der stumme Normalfall (#89)')
       assert.match(result.message, /enthält bereits/)
       // **Und der Nutzer erfährt, dass da eine db.json liegt.** Ein gelungener Umstieg benennt
       // sie um, hier liegt also eine, die Mietfuchs nicht hinterlassen hat. Zwei Lagen führen

@@ -1477,6 +1477,8 @@ const server = app.listen(PORT, (err) => {
     if (changeover.protocol) console.log(`Protokoll des Umstiegs: ${changeover.protocol}`)
   } else if (changeover.state === 'failed') {
     console.error(changeover.message)
+  } else if (changeover.state === 'stale') {
+    console.log(`Hinweis: ${changeover.message}`)
   }
   if (STANDALONE) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet

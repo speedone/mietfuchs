@@ -326,10 +326,12 @@ export type OllamaStatus = {
 // genau diesen Eintrag**, weil sie dem Nutzer einmal sagen muss, was mit seinen Daten geschehen
 // ist. Beim Start aus einem Linux-Paket gibt es keine Konsole, auf der es sonst stünde.
 //
-//   'none'   Es gab nichts zu übernehmen (keine db.json oder die Datenbank ist schon gefüllt).
+//   'none'   Es gab nichts zu übernehmen (keine db.json, keine Datenbank). Der stumme Normalfall.
 //   'done'   Die Daten liegen jetzt in der Datenbank.
 //   'failed' Der Umstieg ist nicht gelungen; Mietfuchs arbeitet mit der db.json weiter.
-export type ChangeoverState = 'none' | 'done' | 'failed'
+//   'stale'  Unterblieben mit Hinweis (#89): Die Datenbank trägt schon Daten, und daneben liegt
+//            eine db.json. Weder Erfolg noch Fehler, sondern eine Feststellung mit einem Weg.
+export type ChangeoverState = 'none' | 'done' | 'failed' | 'stale'
 
 export type DatabaseState = {
   open: boolean

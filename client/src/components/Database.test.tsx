@@ -84,3 +84,11 @@ test('ohne Antwort bleibt der Hinweis aus, statt einen Fehler zu zeigen', async 
   await waitFor(() => expect(asked).toEqual(['/healthz']))
   expect(screen.queryByRole('status')).toBeNull()
 })
+
+test('eine alte db.json neben der gefüllten Datenbank erscheint als Hinweis, nicht als Fehler (#89)', async () => {
+  report = { database: state({ state: 'stale', message: 'Die Datenbank enthält bereits Daten (Einstellungen); der Umstieg ist schon gelaufen.', notes: [] }) }
+  const { container } = render(<DatabaseNotice />)
+  await waitFor(() => screen.getByText('Im Datenordner liegt noch eine alte Datei'))
+  expect(screen.getByText(/enthält bereits Daten/)).toBeTruthy()
+  expect(container.querySelector('.db-notice-problem')).toBeNull()
+})
