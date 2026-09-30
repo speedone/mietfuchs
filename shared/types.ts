@@ -478,7 +478,9 @@ export type SettlementDeviation = {
   currentBalanceCents: number | null
   // heute minus eingefroren; über null zugunsten des Mieters
   differenceCents: number
-  direction: 'tenant' | 'landlord'
+  // `added` und `removed`: nur auf einer Seite, also nichts nachgerechnet (etwa eine Wohnung, die
+  // das Objekt gewechselt hat). Eine Richtung wäre dort kein Befund.
+  direction: 'tenant' | 'landlord' | 'added' | 'removed'
 }
 export type SettlementComparison = {
   // false, wenn sich der eingefrorene Stand nicht lesen ließ; dann ist „keine Abweichung“ keine

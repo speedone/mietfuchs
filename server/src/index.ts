@@ -420,8 +420,7 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const heute = computeSettlement(snapshotFor(stock, property, year))
-    const deviation = compareWithFrozen(closed.settlement, heute, year, new Date().toISOString().slice(0, 10))
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year)), year, new Date().toISOString().slice(0, 10))
     return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
   res.json({ ...computeSettlement(snapshotFor(stock, property, year)), closed: null })

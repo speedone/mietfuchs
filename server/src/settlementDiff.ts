@@ -30,12 +30,20 @@ function readStatements(value: unknown): Saldo[] | null {
 }
 
 // `today` als JJJJ-MM-TT, hineingereicht, damit der Test nicht vom Kalender abhängt.
-export function compareWithFrozen(frozen: unknown, current: { statements: Saldo[] }, year: number, today: string): SettlementComparison {
+// `current` darf auch eine Funktion sein, die rechnet: Scheitert die heutige Berechnung, bleibt der
+// eingefrorene Stand trotzdem lesbar, und das Ergebnis heißt „nicht vergleichbar“.
+export function compareWithFrozen(frozen: unknown, currentOrCompute: { statements: Saldo[] } | (() => { statements: Saldo[] }), year: number, today: string): SettlementComparison {
   // § 556 Abs. 3 BGB: zwölf Monate nach Ende des Abrechnungszeitraums, hier des Kalenderjahres.
   const deadline = `${year + 1}-12-31`
   const deadlinePassed = today > deadline
   const before = readStatements(frozen)
   if (!before) return { comparable: false, deviations: [], deadline, deadlinePassed }
+  let current: { statements: Saldo[] }
+  try {
+    current = typeof currentOrCompute === 'function' ? currentOrCompute() : currentOrCompute
+  } catch {
+    return { comparable: false, deviations: [], deadline, deadlinePassed }
+  }
   const now = new Map(current.statements.map((s) => [s.tenancyId, s]))
   const then = new Map(before.map((s) => [s.tenancyId, s]))
   const ids = [...new Set([...then.keys(), ...now.keys()])]
@@ -55,7 +63,7 @@ export function compareWithFrozen(frozen: unknown, current: { statements: Saldo[
       frozenBalanceCents: a ? a.balanceCents : null,
       currentBalanceCents: b ? b.balanceCents : null,
       differenceCents: difference,
-      direction: difference > 0 ? 'tenant' : 'landlord',
+      direction: !a ? 'added' : !b ? 'removed' : difference > 0 ? 'tenant' : 'landlord',
     })
   }
   return { comparable: true, deviations, deadline, deadlinePassed }

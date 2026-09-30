@@ -261,9 +261,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
         if (!view) return null
         return (
           <div className="notice no-print notice-item">
-            <div className="notice-head"><strong>Die heutige Berechnung weicht vom abgeschlossenen Stand ab</strong></div>
+            <div className="notice-head"><strong>{view.title}</strong></div>
             <div>{view.intro}</div>
-            {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l}>{l}</li>)}</ul>}
+            {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
           </div>
         )
       })()}

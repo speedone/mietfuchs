@@ -23,9 +23,23 @@ test('Mehr Guthaben heute: zugunsten des Mieters; weniger: zugunsten des Vermiet
   assert.equal(r.deadlinePassed, true)
 })
 
-test('Ein Mietverhältnis, das nur auf einer Seite steht, ist ebenfalls eine Abweichung', () => {
-  const r = compareWithFrozen({ statements: [statement('a', 0)] }, { statements: [statement('a', 0), statement('neu', -500)] }, 2025, '2026-01-01')
-  assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.frozenBalanceCents, d.currentBalanceCents, d.direction]), [['neu', null, -500, 'landlord']])
+test('Ein Mietverhältnis, das nur auf einer Seite steht, bekommt keine Richtung, sondern „hinzugekommen“ oder „entfallen“', () => {
+  // Befund der Durchsicht: Wechselt eine Wohnung das Objekt oder wird ein Mietverhältnis gelöscht,
+  // ist nichts nachgerechnet worden, und ein Urteil über die Richtung wäre sinnlos.
+  const r = compareWithFrozen(
+    { statements: [statement('a', 0), statement('weg', -300)] },
+    { statements: [statement('a', 0), statement('neu', -500)] },
+    2025, '2026-01-01',
+  )
+  assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.frozenBalanceCents, d.currentBalanceCents, d.direction]), [
+    ['weg', -300, null, 'removed'],
+    ['neu', null, -500, 'added'],
+  ])
+})
+
+test('Die heutige Berechnung darf die Ansicht nicht verhindern: scheitert sie, ist der Stand nicht vergleichbar', () => {
+  const r = compareWithFrozen({ statements: [statement('a', 0)] }, () => { throw new Error('kaputt') }, 2025, '2026-01-01')
+  assert.equal(r.comparable, false)
 })
 
 test('Ein eingefrorener Stand, der sich nicht lesen lässt, ist nicht vergleichbar statt „keine Abweichung“', () => {
