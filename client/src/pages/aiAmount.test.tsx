@@ -8,7 +8,7 @@
 // Vorher rief die Seite `p.amountEur.toLocaleString(…)` unmittelbar auf: Die ganze Auswertung
 // des Belegs brach ab und wurde als Fehler angezeigt, obwohl alles andere brauchbar war.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Extraction, Unit } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
@@ -45,8 +45,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const upload = (container: HTMLElement) => {
-  const input = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+const upload = async (container: HTMLElement) => {
+  // Die Seite erscheint erst, wenn die Objekte geladen sind (#92).
+  const input = await waitFor(() => {
+    const found = container.querySelector('input[type="file"][multiple]')
+    if (!(found instanceof HTMLInputElement)) throw new Error('das Dateifeld ist noch nicht da')
+    return found
+  })
   fireEvent.change(input, { target: { files: [new File(['JPEG'], 'rechnung.jpg', { type: 'image/jpeg' })] } })
 }
 
@@ -78,7 +83,7 @@ test('Kosten: eine Position ohne Betrag wird mit leerem Feld angezeigt', async (
       </PropertyProvider>
     </YearProvider>,
   )
-  upload(container)
+  await upload(container)
   await expectBothPositions()
 })
 
@@ -90,7 +95,7 @@ test('Schnellerfassung: eine Position ohne Betrag wird mit leerem Feld angezeigt
       </PropertyProvider>
     </YearProvider>,
   )
-  upload(container)
+  await upload(container)
   await expectBothPositions()
   // Die Ampel sagt, was zu tun ist, statt die Position stillschweigend zu verschlucken
   expect(screen.getByText('Betrag fehlt oder ist 0')).toBeTruthy()

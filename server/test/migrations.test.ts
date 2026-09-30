@@ -43,6 +43,11 @@ test('jede Migration im Journal hat ihre Datei, und die Reihenfolge stimmt', asy
 // vorhandener wird nie geändert. Ändert ihn doch jemand, passt seine Marke nicht mehr.
 const VEROEFFENTLICHT: Record<string, string> = {
   '0000_ordinary_karnak': 'd37deabbc5753761291aa59754f1569d11591512821c1825c180b41da1109fe9',
+  // Mehrere Objekte (#92). Eingetragen vor dem Merge und nicht erst beim Release: Jeder Push auf
+  // main veröffentlicht das Image ghcr.io/speedone/mietfuchs:main, und ab dann haben Nutzer
+  // diese Schritte angewendet.
+  '0001_objekte': '6cffdd54299e361e826b45ccdda8da9b53ad265020f8cc3a601569cd4f44e100',
+  '0002_objekte_pflicht': '8ca3a8d3356eeb48e6287d7aad23d5d69f2f6a53cc239ae4f3185b671acd609f',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

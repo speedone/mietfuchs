@@ -66,6 +66,9 @@ const select = (label: RegExp) => screen.getByLabelText(label) as HTMLSelectElem
 
 test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', async () => {
   await openForm()
+  // Die Zähler kommen nach der Seite (#92: erst wenn das Objekt feststeht); ohne sie fehlt der
+  // Verbrauchsschlüssel in der Auswahl.
+  await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'meter')).toBe(true))
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
 
   const typeSelect = await waitFor(() => select(/Zählertyp/i))
@@ -120,4 +123,27 @@ test('Objekt: die Seite lädt und speichert im gewählten Objekt (#92)', async (
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].url).toBe('/api/costItems?property=objekt-1')
+})
+
+test('Objekt: mit zwei Objekten lädt die Seite erst, wenn das Objekt feststeht (#92)', async () => {
+  // Ohne Angabe antwortet der Server bei zwei Objekten mit 400. Ein Abruf, bevor die Objekte
+  // geladen sind, ergäbe bei jedem Start eine Fehlermeldung.
+  const zwei = [
+    { id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null },
+    { id: 'objekt-2', name: 'B', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null },
+  ]
+  vi.stubGlobal('fetch', async (url: string) => {
+    gets.push(url)
+    const body = url === '/api/properties' ? zwei : []
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await waitFor(() => expect(gets).toContain('/api/costItems?property=objekt-1'))
+  expect(gets.filter((u) => u === '/api/costItems' || u === '/api/meters')).toEqual([])
 })

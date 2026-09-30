@@ -35,7 +35,12 @@ afterEach(() => {
 })
 
 async function uploadAndCancel(container: HTMLElement) {
-  const input = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+  // Die Seite erscheint erst, wenn die Objekte geladen sind (#92).
+  const input = await waitFor(() => {
+    const found = container.querySelector('input[type="file"][multiple]')
+    if (!(found instanceof HTMLInputElement)) throw new Error('das Dateifeld ist noch nicht da')
+    return found
+  })
   fireEvent.change(input, { target: { files: [new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' })] } })
   fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
   expect(await screen.findByText('abgebrochen')).toBeTruthy()

@@ -51,9 +51,18 @@ export function withProperty(path: string, propertyId: string | null | undefined
 export function PropertyProvider({ children }: { children: ReactNode }) {
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(remembered)
+  // Ob die Liste einmal geantwortet hat. Bis dahin zeigt der Provider nichts: Eine Seite, die
+  // vorher lädt, fragte ohne Objekt, und bei mehreren Objekten antwortet der Server darauf mit
+  // 400. Auch eine gescheiterte Antwort zählt, sonst bliebe die Oberfläche leer, wo sie gerade
+  // erklären soll, dass die Datenbank nicht verfügbar ist.
+  const [loaded, setLoaded] = useState(false)
 
   const reload = useCallback(async () => {
-    setProperties(await api<Property[]>('/api/properties'))
+    try {
+      setProperties(await api<Property[]>('/api/properties'))
+    } finally {
+      setLoaded(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -66,7 +75,7 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const property = chooseProperty(properties, selectedId)
-  return <Ctx.Provider value={{ properties, property, setPropertyId, reload }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ properties, property, setPropertyId, reload }}>{loaded ? children : null}</Ctx.Provider>
 }
 
 export function useProperty(): PropertyCtx {
