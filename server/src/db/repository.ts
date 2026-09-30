@@ -672,8 +672,8 @@ type Collection<T extends CollectionEntity> = {
 
 async function writeUnitChildren(db: Executor, u: Unit): Promise<void> {
   await db.delete(unitNoConnection).where(eq(unitNoConnection.unitId, u.id))
-  const typen = u.noConnection ?? []
-  if (typen.length > 0) await db.insert(unitNoConnection).values(typen.map((meterType) => ({ unitId: u.id, meterType })))
+  const types = u.noConnection ?? []
+  if (types.length > 0) await db.insert(unitNoConnection).values(types.map((meterType) => ({ unitId: u.id, meterType })))
 }
 
 const unitCollection: Collection<Unit> = {

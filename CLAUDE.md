@@ -942,7 +942,7 @@ die ganze fachliche Komplexität:
   Hauptzähler und gehört nicht in den Eigenanteil. Ein Zähler **ohne Ablesung im Jahr** zählt
   nicht als Zähler (`coveredDays`). Und ein Hauptzähler, der **nicht das ganze Jahr** abdeckt,
   wird nicht zur Basis, sondern ergibt eine Warnung: Der Versorger liest selten zum 31.12. ab,
-  und ein Teiljahr gegen ganzjährige Wohnungszähler ließe den Mieter zu viel zahlen. Eine Einheit
+  und ein Teiljahr gegen ganzjährige Wohnungszähler ließe den Mieter zu viel zahlen. Einer Einheit
   mit `noConnection` für den Zählertyp (#117, Tabelle `unit_no_connection`) fehlt kein Zähler,
   etwa die vermietete Garage ohne Wasser. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
   entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht

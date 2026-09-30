@@ -622,10 +622,11 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               </label>
             )}
             {/* Ohne Anschluss (#117): Eine Garage ohne Wasser fehlt beim Verbrauchsschlüssel kein Zähler. */}
-            <div className="field grow">
-              <span>Kein Anschluss für</span>
+            <fieldset className="field grow no-connection">
+              <legend className="field-legend">Kein Anschluss für</legend>
               <div className="row" style={{ gap: 10 }}>
-                {(Object.keys(METER_TYPE_LABELS) as MeterType[]).map((t) => (
+                {/* Der Allgemeinstrom gehört dem Haus, nicht einer Einheit; hier nur, was eine Einheit hat. */}
+                {(['kaltwasser', 'waerme', 'sonstig'] as MeterType[]).map((t) => (
                   <label key={t} className="checkline">
                     <input
                       type="checkbox"
@@ -636,8 +637,8 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   </label>
                 ))}
               </div>
-              <small className="muted">Etwa eine Garage ohne Wasser. Mietfuchs sucht dann für diesen Zählertyp keinen Zähler an der Einheit.</small>
-            </div>
+              <small className="muted">Etwa eine Garage ohne Wasser. Mietfuchs sucht dann für diesen Zählertyp keinen Zähler an der Einheit. Die Angabe gilt für alle noch offenen Jahre.</small>
+            </fieldset>
             <label className="field grow">
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />

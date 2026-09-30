@@ -83,6 +83,8 @@ test('Eine vermietete Wohnung ohne Zähler: der Rest geht an den Vermieter, nich
   assert.equal(s.selfUsedShareCents, 0)
   assert.deepEqual(codes(s), ['meter.unit-without-meter'])
   assert.deepEqual(s.notices[0]?.subject, { kind: 'unit', id: 'b' })
+  // Die Meldung nennt den Ausweg (#117), statt nur zu sagen, dass sie dann nicht zutrifft.
+  assert.match(s.warnings[0] ?? '', /Kein Anschluss für/)
 })
 
 test('Zwischenzähler über dem Hauptzähler: Warnung, und es bleibt bei den Wohnungszählern', () => {
