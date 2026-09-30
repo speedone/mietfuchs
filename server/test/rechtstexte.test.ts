@@ -44,3 +44,33 @@ test('Lexikon: die belegten Berichtigungen stehen da', () => {
   assert.doesNotMatch(GLOSSARY.mainMeter.short, /trägt den Rest der Vermieter/)
   assert.match(GLOSSARY.mainMeter.short, /nach Fläche/)
 })
+
+test('Durchsicht: der Betriebsstrom bleibt nur bei Anlagen vor dem 01.12.2021, und die Gemeinschaftsantenne heißt so', () => {
+  const r = rule('tv-signal')
+  assert.match(r?.summary ?? '', /später errichteten Anlagen ist davon nichts umlagefähig/)
+  assert.match(GLOSSARY.cableTv.short, /bei neueren Anlagen auch das nicht/)
+  const source: SnapshotSource = {
+    units: [{ id: 'u', name: 'EG', areaM2: 50, participates: true }],
+    tenancies: [{ id: 't', unitId: 'u', tenantName: 'M', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }],
+    costItems: [{ id: 'k', year: 2025, category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }],
+    meters: [], readings: [], payments: [], closedSettlements: [],
+  }
+  const w = computeSettlement(snapshotOf(source, 2025)).warnings.join(' ')
+  assert.match(w, /vor dem 01\.12\.2021/)
+  assert.match(w, /Gemeinschaftsantenne/)
+  assert.doesNotMatch(w, /eigenen Antennenanlage/)
+})
+
+test('Durchsicht: die 15 % gelten, wenn nicht nach Verbrauch abgerechnet wird, nicht „bis dahin“', () => {
+  const source: SnapshotSource = {
+    units: [{ id: 'a', name: 'a', areaM2: 50, participates: true }, { id: 'b', name: 'b', areaM2: 50, participates: true }, { id: 'c', name: 'c', areaM2: 50, participates: true }],
+    tenancies: [{ id: 't', unitId: 'a', tenantName: 'M', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], heatingModel: 'inclusive' }],
+    costItems: [{ id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 12000, key: 'area' }],
+    meters: [], readings: [], payments: [], closedSettlements: [],
+  }
+  const w = computeSettlement(snapshotOf(source, 2025)).warnings.join(' ')
+  assert.doesNotMatch(w, /bis dahin/)
+  assert.match(w, /nicht nach Verbrauch ab, darf der Mieter seinen Anteil um 15 % kürzen/)
+  assert.match(GLOSSARY.heatingCostOrdinance.example, /Unabhängig davon darf er um 3 % kürzen/)
+  assert.match(GLOSSARY.mainMeter.short, /sofern der Hauptzähler das ganze Jahr abgelesen ist/)
+})

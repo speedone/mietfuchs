@@ -61,7 +61,7 @@ export const GLOSSARY = {
     short: 'Der Teil der Kosten, der auf Ihre selbstgenutzte oder unentgeltlich überlassene Wohnung entfällt; Sie tragen ihn selbst, und er ist privat, also nicht als Werbungskosten abziehbar. Für die darin enthaltenen Arbeitskosten können Sie als Bewohner selbst die Steuerermäßigung nach § 35a nutzen. Was Sie wegen Leerstand oder als Rundungsrest tragen, gehört nicht dazu und bleibt Werbungskosten.',
     example: 'Grundsteuer 1.000 € nach Fläche, Ihre Wohnung hat 80 von 200 m²: 400 € sind Eigenanteil, nur die übrigen 600 € gehören in die Anlage V.',
     norm: '§ 9 Abs. 1, § 12 Nr. 1, § 35a EStG',
-    needed: 'Wenn Sie selbst im Haus wohnen. Legen Sie Ihre Wohnung dann als selbstgenutzt an, sonst zahlen die Mieter Ihren Teil mit.',
+    needed: 'Wenn Sie selbst im Haus wohnen. Legen Sie Ihre Wohnung dann als selbstgenutzt an, sonst zahlen die Mieter Ihren Teil mit. Das gilt auch für eine Wohnung, die Sie unentgeltlich überlassen.',
   },
   vacancy: {
     title: 'Leerstand',
@@ -93,18 +93,18 @@ export const GLOSSARY = {
     title: 'Inklusivmiete',
     short: 'Die Nebenkosten stecken in der Miete und werden weder gesondert ausgewiesen noch abgerechnet; steckt auch die Heizung darin, spricht man von einer Bruttowarmmiete. Nicht zu verwechseln mit der „Warmmiete“ im Alltag, die meist Kaltmiete plus Vorauszahlungen mit Abrechnung meint.',
     example: '750 € Miete im Monat einschließlich aller Nebenkosten: Es gibt keine Abrechnung, die Kosten trägt der Vermieter aus den 9.000 € Jahresmiete.',
-    needed: 'Nur bei solchen Verträgen, häufig bei möblierten Zimmern oder Einliegerwohnungen. Für die Heizung gilt die Heizkostenverordnung trotzdem; eine Warmmiete ist nur im Haus mit höchstens zwei Wohnungen erlaubt, von denen Sie eine selbst bewohnen (siehe dort).',
+    needed: 'Nur bei solchen Verträgen, häufig bei möblierten Zimmern oder Einliegerwohnungen. Für die Heizung gilt die Heizkostenverordnung trotzdem; eine Warmmiete ist nur im Haus mit höchstens zwei Wohnungen wirksam, von denen Sie eine selbst bewohnen, oder in den Ausnahmen des § 11 (siehe dort).',
   },
   heatingCostOrdinance: {
     title: 'Heizkostenverordnung',
     short: 'Heizkosten müssen zu 50 bis 70 Prozent nach Verbrauch verteilt werden, der Rest nach Fläche oder umbautem Raum; beim Warmwasser der Rest nur nach Fläche. Die Verordnung geht einer anderen Vereinbarung im Mietvertrag vor.',
-    example: '3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird nicht nach Verbrauch abgerechnet, etwa nur nach Fläche, darf der Mieter seinen Anteil um 15 % kürzen; ab 2027 außerdem um 3 %, wenn die Zähler nicht fernablesbar sind.',
+    example: '3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird nicht nach Verbrauch abgerechnet, etwa nur nach Fläche, darf der Mieter seinen Anteil um 15 % kürzen. Unabhängig davon darf er um 3 % kürzen, wenn Zähler nicht fernablesbar sind, obwohl sie es sein müssten (neue Geräte seit Dezember 2021, alle übrigen ab 2027), oder wenn die vorgeschriebenen Verbrauchsinformationen fehlen.',
     norm: '§§ 1, 2, 7, 8, 11, 12 HeizkostenV',
     needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei einer Gastherme in der Wohnung mit eigenem Vertrag des Mieters. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen.',
   },
   cableTv: {
     title: 'Kabelfernsehen',
-    short: 'Die Gebühren für das TV-Signal eines Kabelanschlusses sind seit dem 01.07.2024 keine umlagefähigen Betriebskosten mehr, bei Anlagen ab dem 01.12.2021 waren sie es nie. Umlagefähig bleibt der Betriebsstrom, bei einer eigenen Antennenanlage auch ihre Prüfung und Einstellung durch eine Fachkraft.',
+    short: 'Die Gebühren für das TV-Signal eines Kabelanschlusses sind seit dem 01.07.2024 keine umlagefähigen Betriebskosten mehr, bei Anlagen ab dem 01.12.2021 waren sie es nie. Bei Anlagen, die vor dem 01.12.2021 errichtet wurden, bleibt der Betriebsstrom umlagefähig, bei einer Gemeinschaftsantenne des Hauses auch ihre Prüfung und Einstellung durch eine Fachkraft; bei neueren Anlagen auch das nicht.',
     example: 'Kabelgebühren 2024 von 240 € bei einer Anlage, die vor dem 01.12.2021 errichtet wurde: Umlegen dürfen Sie höchstens die 120 € für Januar bis Juni. Ab 2025 nichts mehr davon.',
     norm: '§ 2 Satz 1 Nr. 15 und Satz 2 BetrKV',
     needed: 'Nur wenn Ihr Haus einen Kabelanschluss über einen Sammelvertrag hat.',
@@ -118,7 +118,7 @@ export const GLOSSARY = {
   },
   mainMeter: {
     title: 'Hauptzähler und Zwischenzähler',
-    short: 'Der Hauptzähler misst das ganze Haus, ein Zwischenzähler eine einzelne Wohnung. Fehlt nur Ihrer eigenen Wohnung der Zwischenzähler, gilt für sie der Rest des Hauptzählers, samt Messdifferenz. Fehlt er einer vermieteten Wohnung, rechnen Sie besser nach Fläche ab; zur Abrechnung nach Verbrauch sind Sie dann nicht verpflichtet, und rechnen Sie trotzdem so, lässt Mietfuchs den Rest beim Vermieter.',
+    short: 'Der Hauptzähler misst das ganze Haus, ein Zwischenzähler eine einzelne Wohnung. Fehlt nur Ihrer eigenen Wohnung der Zwischenzähler, gilt für sie der Rest des Hauptzählers, samt Messdifferenz. Fehlt er einer vermieteten Wohnung, rechnen Sie besser nach Fläche ab; zur Abrechnung nach Verbrauch sind Sie dann nicht verpflichtet. Rechnen Sie trotzdem so, lässt Mietfuchs den Rest des Hauptzählers beim Vermieter, sofern der Hauptzähler das ganze Jahr abgelesen ist; sonst tragen die übrigen Wohnungen diesen Verbrauch mit, und Mietfuchs warnt.',
     example: 'Hauptzähler 200 m³, Zwischenzähler der Einliegerwohnung 40 m³, Ihre Wohnung ohne Zähler: Die übrigen 160 m³ gelten als Ihr Verbrauch. Bei 1.000 € Wasser trägt der Mieter der Einliegerwohnung 200 €, 800 € sind Ihr Eigenanteil.',
     needed: 'Wenn nicht jede Wohnung einen eigenen Zähler hat, etwa bei einer Einliegerwohnung. Lesen Sie den Hauptzähler dann zum 31.12. ab. Weicht die Summe der Wohnungszähler um mehr als etwa 20 % vom Hauptzähler ab, ist das Umlegen der Differenz nach der Rechtsprechung der Instanzgerichte angreifbar; klären Sie dann die Ursache.',
   },
@@ -169,7 +169,7 @@ export const GLOSSARY = {
   },
   labor35a: {
     title: 'Lohnanteil nach § 35a EStG',
-    short: 'Der Teil einer Rechnung, der auf Arbeit entfällt, einschließlich Maschinen- und Fahrtkosten und Umsatzsteuer, ohne Material. Weist die Abrechnung den Anteil des Mieters daran aus oder bescheinigen Sie ihn, kann er 20 Prozent davon unmittelbar von seiner Einkommensteuer abziehen, je Haushalt und Jahr höchstens 4.000 € für haushaltsnahe Dienstleistungen und 1.200 € für Handwerkerleistungen, über alle Rechnungen zusammen. Voraussetzung ist, dass unbar gezahlt wurde.',
+    short: 'Der Teil einer Rechnung, der auf Arbeit entfällt, einschließlich Maschinen- und Fahrtkosten und Umsatzsteuer, ohne Material. Weist die Abrechnung den Anteil des Mieters daran aus oder bescheinigen Sie ihn, kann er 20 Prozent davon unmittelbar von seiner Einkommensteuer abziehen, je Haushalt und Jahr höchstens 4.000 € für haushaltsnahe Dienstleistungen und 1.200 € für Handwerkerleistungen, über alle Rechnungen zusammen. Voraussetzung ist, dass die Rechnung unbar an den Handwerker oder Dienstleister bezahlt wurde.',
     example: 'Gartenpflege 1.000 €, davon Lohn 800 €: Trägt der Mieter 250 € der Rechnung, entfallen davon 200 € auf Lohn, und er kann 20 % davon abziehen, also 40 €.',
     norm: '§ 35a Abs. 2, 3 und 5 EStG; BMF-Schreiben vom 09.11.2016',
     needed: 'Nicht Pflicht, aber für Ihre Mieter bares Geld. Den Lohnanteil finden Sie auf der Rechnung des Handwerkers oder Dienstleisters.',
@@ -190,7 +190,7 @@ export const GLOSSARY = {
   legalBasis: {
     title: 'Rechtsstand',
     short: 'Das Datum, auf dem die Regeln in Mietfuchs stehen, und die Regeln, die im Abrechnungsjahr gelten; beim Abschließen wird er mit der Abrechnung eingefroren.',
-    example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
+    example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es bei Anlagen von vor dem 01.12.2021 noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
     needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde.',
   },
 } satisfies Record<string, Term>

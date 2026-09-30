@@ -34,8 +34,9 @@ export const RULES: readonly Rule[] = [
     summary:
       'Die Gebühren für das TV-Signal eines Kabelanschlusses und die Grundgebühren eines Breitbandanschlusses durften bis zum 30.06.2024 ' +
       'als Betriebskosten umgelegt werden, und zwar nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden. Seitdem nicht mehr. ' +
-      'Umlagefähig bleiben bei einer Gemeinschaftsantenne der Betriebsstrom sowie Prüfung und Einstellung durch eine Fachkraft, ' +
-      'bei einer Breitband-Verteilanlage nur der Betriebsstrom.',
+      'Bei Anlagen, die vor dem 01.12.2021 errichtet wurden, bleiben umlagefähig: bei einer Gemeinschaftsantenne des Hauses der ' +
+      'Betriebsstrom sowie Prüfung und Einstellung durch eine Fachkraft, bei einer Breitband-Verteilanlage nur der Betriebsstrom. ' +
+      'Bei später errichteten Anlagen ist davon nichts umlagefähig, ausgenommen eine reine Glasfaser-Verteilanlage (Betriebsstrom und Bereitstellungsentgelt).',
     validTo: '2024-06-30',
   },
   {
@@ -45,7 +46,7 @@ export const RULES: readonly Rule[] = [
     summary:
       'Heizung und Warmwasser müssen nach Verbrauch abgerechnet werden; die Heizkostenverordnung geht einer Pauschale oder Warmmiete vor. ' +
       'Die Vereinbarung wird dann nicht angewendet: Der Heizanteil gilt als Vorauszahlung, über die nach Verbrauch abzurechnen ist. ' +
-      'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf etwas anderes vereinbart werden. ' +
+      'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, und in den Fällen des § 11 darf etwas anderes vereinbart werden. ' +
       'Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen.',
   },
 ]
