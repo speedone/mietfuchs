@@ -292,3 +292,25 @@ describe('Eigenbeträge (#104)', () => {
     expect(selfAmountUnits(EIGEN, null).map((u) => u.id)).toEqual(['u1'])
   })
 })
+
+describe('Kleinigkeiten (#105)', () => {
+  test('Gutschrift mit Einzelbeträgen: ein klarer Satz statt einer falschen Summenwarnung', () => {
+    // Das Formular nimmt Beträge unter null ohnehin nicht an; eine Gutschrift kann aber über die
+    // KI-Auswertung hereinkommen, und dann stand hier eine unsinnige Summenwarnung.
+    const g = form({ key: 'amounts', amount: '-100,00', tenancyAmounts: { t1: '50,00' } })
+    expect(amountsSumText(g, UNITS)).toMatch(/Gutschrift/)
+  })
+
+  test('Teilnehmer: der Hinweis zur Gemeinschaftsabrechnung und die Mieterliste der Einzelbeträge beachten sie', () => {
+    const units = [unit('u1', { mea: 60 }), unit('u2', { mea: 40 })]
+    const f = form({ key: 'external', amount: '100,00', externalMeasure: 'mea', externalTotal: '1.000', externalTotalAmount: '2.000,00', participants: ['u1'] })
+    expect(externalHint(f, units)).toMatch(/60 von 1\.000 MEA/)
+    const t = (id: string, unitId: string) => ({ id, unitId, tenantName: id, persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+    expect(tenanciesForAmounts([t('a', 'u1'), t('b', 'u2')], units, 2025, ['u2']).map((x) => x.id)).toEqual(['b'])
+  })
+
+  test('die Summe der Anlage behält beim erneuten Speichern ihre Nachkommastellen', () => {
+    const f = itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'external', externalBasis: { measure: 'mea', total: 1000.125, totalCents: 1 } })
+    expect(f.externalTotal).toBe('1.000,125')
+  })
+})

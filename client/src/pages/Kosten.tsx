@@ -608,11 +608,11 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
                   der Messdienst selbst auf; der Rest trägt der Vermieter.
                 </div>
-                {tenanciesForAmounts(tenancies, units, year).length === 0 ? (
+                {tenanciesForAmounts(tenancies, units, year, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
                 ) : (
                   <div className="row">
-                    {tenanciesForAmounts(tenancies, units, year).map((t) => (
+                    {tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => (
                       <label key={t.id} className="field grow">
                         {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
                         <input

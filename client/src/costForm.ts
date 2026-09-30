@@ -4,6 +4,7 @@
 import type { CostItem, CostKey, ExternalMeasure, MeterType, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS } from './types'
 import { parseEuro } from './api'
+import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
 
 export type ItemForm = {
@@ -67,7 +68,7 @@ export function itemToForm(i: CostItem): ItemForm {
     ),
     participants: i.participantUnitIds ?? null,
     externalMeasure: i.externalBasis?.measure ?? 'mea',
-    externalTotal: i.externalBasis ? fmtPct(i.externalBasis.total) : '',
+    externalTotal: i.externalBasis ? i.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 }) : '',
     externalTotalAmount: i.externalBasis ? fmtCentsInput(i.externalBasis.totalCents) : '',
     tenancyAmounts: Object.fromEntries(Object.entries(i.tenancyAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
     selfAmounts: Object.fromEntries(Object.entries(i.selfAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
@@ -92,18 +93,18 @@ export const EXTERNAL_MEASURE_OPTIONS: { value: ExternalMeasure, label: string }
 // Eine Menge wie „10.000“ MEA oder „1.240“ m². Anders als bei Euro-Beträgen ist ein Punkt vor
 // genau drei Ziffern hier der Tausenderpunkt: Eine Summe von zehn Miteigentumsanteilen mit drei
 // Nachkommastellen gibt es nicht, zehntausend sind die Regel.
+// Ohne Rundung auf zwei Stellen (#105): Eine Summe der Anlage mit drei Nachkommastellen blieb
+// sonst beim erneuten Speichern nicht, was sie war.
 export function parseQuantity(raw: string): number | null {
-  const t = raw.trim().replace(/\s/g, '')
-  if (/^\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g, ''))
-  const hundredths = parseEuro(t)
-  return hundredths === null ? null : hundredths / 100
+  return parseNumberDe(raw)
 }
 const parseAmountNumber = parseQuantity
 
 // Die Mietverhältnisse, die einen Einzelbetrag bekommen können: im Jahr und in einer Wohnung, die
 // zur Abrechnung gehört.
-export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], year: number): Tenancy[] {
-  const vermietet = new Set(units.filter((u) => u.participates).map((u) => u.id))
+// Mit Teilnehmern (#105) nur deren Mietverhältnisse, wie in der Abrechnung.
+export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], year: number, participants: string[] | null = null): Tenancy[] {
+  const vermietet = new Set(units.filter((u) => u.participates && (participants === null || participants.includes(u.id))).map((u) => u.id))
   return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= `${year}-12-31` && (t.end === null || t.end >= `${year}-01-01`))
 }
 
@@ -114,7 +115,8 @@ export function externalHint(form: ItemForm, units: Unit[]): string {
   const totalCents = parseEuro(form.externalTotalAmount)
   if (total === null || !(total > 0) || totalCents === null) return ''
   const valueOf = (u: Unit) => (form.externalMeasure === 'mea' ? u.mea ?? 0 : form.externalMeasure === 'area' ? u.areaM2 : 1)
-  const own = basisUnitsOf(units).reduce((a, u) => a + valueOf(u), 0)
+  // Mit Teilnehmern (#105) nur deren Wohnungen, wie in der Abrechnung.
+  const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
   if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : ''
   const expected = Math.round((totalCents * own) / total)
   return `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
@@ -133,8 +135,12 @@ const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, strin
 }
 
 // Summe der Einzelbeträge und was davon der Vermieter trägt.
+const CREDIT_WITH_AMOUNTS = 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.'
+
 export function amountsSumText(form: ItemForm, units: Unit[]): string {
   const amount = parseEuro(form.amount) ?? 0
+  // Eine Gutschrift (#105): Einzelbeträge sind nie negativ, die Summenprüfung ergäbe Unsinn.
+  if (amount < 0) return CREDIT_WITH_AMOUNTS
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
   const tenants = sumOf(form.tenancyAmounts)
   const own = sumOf(visibleSelfAmounts(form, units))
