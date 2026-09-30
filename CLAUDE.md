@@ -715,8 +715,9 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   und der Verbrauch zwischen zwei Ablesungen interpoliert wird; ein unbefristetes
   Mietverhältnis reicht bis ins laufende Jahr, sonst bliebe gerade das Jahr ungeprüft, in dem
   der Vermieter arbeitet. Weicht ein Cent ab, wird nicht aktiviert, und die Meldung nennt Jahr
-  und Zahl. **Ausgenommen sind genau sechs Angaben** (`unitName`, `tenantName`, `description`,
-  `basisText`, `warnings` und `notices`, dieselben Meldungen in fester Gestalt), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
+  und Zahl. **Ausgenommen sind genau sieben Angaben** (`unitName`, `tenantName`, `description`,
+  `basisText`, `warnings`, `notices`, dieselben Meldungen in fester Gestalt, und `steps`, der
+  Rechenweg aus denselben Beschriftungen), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
   stehen benannt in regression.ts. Verglichen wird gegen den Bestand, wie Mietfuchs ihn **heute**
   rechnet, und nicht gegen den schon geradegerückten: Sonst prüfte die Regression das
   Geraderücken gegen sich selbst. Die eine Ausnahme davon ist der feste Monatsbetrag neben einer

@@ -1,6 +1,7 @@
 // Berechnungs-Engine für die Nebenkostenabrechnung.
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
+  CalcStep,
   CostKey,
   CostModel,
   LegalBasis,
@@ -747,6 +748,12 @@ function fmtNum(n: number): string {
 // Ein Betrag für den Rechenweg auf der Abrechnung (#94): mit zwei Stellen und einem gewöhnlichen
 // Leerzeichen vor dem Zeichen. `toLocaleString` mit `currency` setzte ein geschütztes, das in
 // den Zeilen nicht anders aussieht, beim Vergleichen und Kopieren aber stört.
+// Ein Zwischenwert des Rechenwegs (#114), mit bis zu vier Nachkommastellen: genug, um einen
+// Rundungsschritt zu sehen, und nicht so viele, dass niemand mehr mitliest.
+function fmtExact(n: number): string {
+  return n.toLocaleString('de-DE', { maximumFractionDigits: 4 })
+}
+
 function fmtCents(cents: number): string {
   return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
@@ -1315,6 +1322,25 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       if (!st) return
       distributed += shares[i]
       const labor35a = laborOf.get(i) ?? 0
+      // Der Rechenweg (#114): dieselben Zahlen, aus denen die Zeile entstand, als Text. Der
+      // Restcent wird dort benannt, wo er landet; sonst sähe der Mieter einen Cent, den ihm
+      // niemand erklärt.
+      const steps: CalcStep[] = [
+        { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
+        { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
+      ]
+      if (item.key === 'amounts') {
+        steps.push({ label: 'Einzelbetrag', value: `${fmtCents(Math.round(x.raw))} laut Einzelabrechnung`, term: 'individualAmounts' })
+      } else {
+        steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
+        if (item.amountCents !== 0) {
+          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtExact((x.raw / item.amountCents) * 100)} % = ${fmtExact(x.raw / 100)} €` })
+        }
+      }
+      steps.push(shares[i] !== Math.round(x.raw)
+        ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(shares[i])} (Restcent-Verfahren: rechnerisch ${fmtExact(x.raw / 100)} €, damit die Anteile zusammen genau den Rechnungsbetrag ergeben)`, term: 'largestRemainder' }
+        : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(shares[i]) })
+      if (labor35a > 0) steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: fmtCents(labor35a), term: 'labor35a' })
       st.rows.push({
         costItemId: item.id,
         category: item.category,
@@ -1325,6 +1351,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         basisText: x.basisText,
         shareCents: shares[i],
         labor35aCents: labor35a,
+        steps,
       })
       st.totalShareCents += shares[i]
       st.total35aCents += labor35a

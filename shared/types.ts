@@ -369,7 +369,14 @@ export type SettlementRow = {
   shareCents: number
   // §35a-Lohnanteil dieser Zeile. Auch ihn gibt es nur in den Zeilen der Mieter.
   labor35aCents?: number
+  // Der Rechenweg dieser Zeile (#114), mit den Zahlen der Abrechnung. Nur in den Zeilen der
+  // Mieter, und optional, weil eine vorher abgeschlossene Abrechnung ihn nicht kennt.
+  steps?: CalcStep[]
 }
+
+// Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
+// des Lexikons, der ihn erklärt.
+export type CalcStep = { label: string; value: string; term?: TermId }
 
 export type Statement = {
   tenancyId: string
