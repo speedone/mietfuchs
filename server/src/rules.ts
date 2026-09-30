@@ -30,19 +30,23 @@ export const RULES: readonly Rule[] = [
   {
     code: 'tv-signal',
     title: 'Kabelfernsehen über die Nebenkosten',
-    norm: '§ 2 Nr. 15 BetrKV a. F., § 230 Abs. 4 TKG',
+    norm: '§ 2 Satz 1 Nr. 15 und Satz 2 BetrKV',
     summary:
-      'Die Gebühren für das TV-Signal eines Kabelanschlusses durften bis zum 30.06.2024 als Betriebskosten umgelegt werden. ' +
-      'Seitdem nicht mehr (Wegfall des Nebenkostenprivilegs); Betriebsstrom und Wartung einer Antennenanlage bleiben umlagefähig.',
+      'Die Gebühren für das TV-Signal eines Kabelanschlusses und die Grundgebühren eines Breitbandanschlusses durften bis zum 30.06.2024 ' +
+      'als Betriebskosten umgelegt werden, und zwar nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden. Seitdem nicht mehr. ' +
+      'Umlagefähig bleiben bei einer Gemeinschaftsantenne der Betriebsstrom sowie Prüfung und Einstellung durch eine Fachkraft, ' +
+      'bei einer Breitband-Verteilanlage nur der Betriebsstrom.',
     validTo: '2024-06-30',
   },
   {
     code: 'heating-flat-rate',
     title: 'Pauschale oder Warmmiete bei Heizung und Warmwasser',
-    norm: '§ 2, § 12 HeizkostenV',
+    norm: '§§ 2, 12 Abs. 1 HeizkostenV; BGH, Urteil vom 19.07.2006, VIII ZR 212/05',
     summary:
-      'Heizung und Warmwasser müssen nach Verbrauch abgerechnet werden; die Heizkostenverordnung geht einer anderen Vereinbarung vor. ' +
-      'Ausgenommen ist nur das Zweifamilienhaus, in dem der Vermieter selbst wohnt. Sonst darf der Mieter um 15 % kürzen.',
+      'Heizung und Warmwasser müssen nach Verbrauch abgerechnet werden; die Heizkostenverordnung geht einer Pauschale oder Warmmiete vor. ' +
+      'Die Vereinbarung wird dann nicht angewendet: Der Heizanteil gilt als Vorauszahlung, über die nach Verbrauch abzurechnen ist. ' +
+      'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf etwas anderes vereinbart werden. ' +
+      'Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen.',
   },
 ]
 
