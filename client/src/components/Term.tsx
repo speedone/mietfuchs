@@ -7,12 +7,15 @@
 // die sonst das Feld fokussierte oder eine Auswahl öffnete.
 
 import { useId, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { GLOSSARY, type TermId } from '../../../shared/glossary.ts'
+import { GLOSSARY, type Term as GlossaryTerm, type TermId } from '../../../shared/glossary.ts'
 
 export default function Term({ id, children }: { id: TermId; children?: ReactNode }) {
   const [open, setOpen] = useState(false)
   const popId = useId()
-  const term = GLOSSARY[id]
+  // Lookup über `Object.hasOwn`, nicht blind: Eine abgeschlossene Abrechnung friert ihre
+  // Hinweise samt Begriffen ein, und ein später umbenannter Begriff darf die Seite dieses Jahres
+  // nicht zum Absturz bringen. Dann steht nur der Text da.
+  const term: GlossaryTerm | undefined = Object.hasOwn(GLOSSARY, id) ? GLOSSARY[id] : undefined
   const stop = (e: MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -25,6 +28,7 @@ export default function Term({ id, children }: { id: TermId; children?: ReactNod
       setOpen(false)
     }
   }
+  if (!term) return <>{children ?? id}</>
   return (
     <span className="term-wrap">
       <span
@@ -46,7 +50,7 @@ export default function Term({ id, children }: { id: TermId; children?: ReactNod
           <strong>{term.title}</strong>
           <span className="term-line">{term.short}</span>
           <span className="term-line"><em>Beispiel:</em> {term.example}</span>
-          {'norm' in term && <span className="term-line"><em>Rechtsgrundlage:</em> {term.norm}</span>}
+          {term.norm && <span className="term-line"><em>Rechtsgrundlage:</em> {term.norm}</span>}
           <span className="term-line"><em>Brauche ich das?</em> {term.needed}</span>
         </span>
       )}

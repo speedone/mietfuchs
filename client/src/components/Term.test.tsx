@@ -14,7 +14,7 @@ test('Antippen zeigt Erklärung, Beispiel, Rechtsgrundlage und „Brauche ich da
   fireEvent.click(trigger)
   expect(trigger.getAttribute('aria-expanded')).toBe('true')
   expect(screen.getByText(/85 von 1\.000 MEA/)).toBeTruthy()
-  expect(screen.getByText(/§ 16 Abs\. 1 WEG/)).toBeTruthy()
+  expect(screen.getByText(/§ 16 Abs\. 1 und 2 WEG/)).toBeTruthy()
   expect(screen.getByText(/Brauche ich das\?/)).toBeTruthy()
   fireEvent.keyDown(trigger, { key: 'Escape' })
   expect(screen.queryByText(/85 von 1\.000 MEA/)).toBeNull()
@@ -31,4 +31,12 @@ test('in einem Label bleibt das Eingabefeld beschriftet, und der Klick fokussier
   fireEvent.click(screen.getByRole('button', { name: 'MEA' }))
   expect(document.activeElement).not.toBe(input)
   expect(screen.getByText(/85 von 1\.000 MEA/)).toBeTruthy()
+})
+
+test('ein unbekannter Begriff stürzt nicht ab, sondern zeigt nur seinen Text', () => {
+  // Eine abgeschlossene Abrechnung friert ihre Hinweise samt Begriffen ein. Wird ein Begriff
+  // später umbenannt, muss die Seite dieses Jahres trotzdem erscheinen.
+  // @ts-expect-error: absichtlich ein Begriff, den es nicht gibt
+  render(<p><Term id="gibtEsNichtMehr" /></p>)
+  expect(screen.getByText('gibtEsNichtMehr')).toBeTruthy()
 })
