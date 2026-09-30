@@ -17,9 +17,9 @@ import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import {
-  closeSettlement, createEntity, findClosedSettlement, findEntity, invoiceFilesInUse,
-  listCollection, removeEntity, reopenSettlement, setSentAt, sharesForUnit, updateEntity,
-  type CollectionName,
+  closeSettlement, createEntity, createProperty, crossPropertyViolations, findClosedSettlement, findEntity,
+  invoiceFilesInUse, listCollection, listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt,
+  sharesForUnit, updateEntity, updateProperty, type CollectionName,
 } from '../src/db/repository.ts'
 import {
   baseRents, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
@@ -324,13 +324,13 @@ test('Abschließen: die Abrechnung lässt sich danach wiederfinden', async () =>
       id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
       settlement: { year: 2024, totalCostsCents: 12000 },
     }))
-    const gefunden = await opened.read((db) => findClosedSettlement(db, 2024))
+    const gefunden = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
     if (!gefunden) return assert.fail('die abgeschlossene Abrechnung ist nicht auffindbar')
     assert.equal(gefunden.year, 2024)
     assert.equal(gefunden.sentAt, null)
     // Wortgleich: Der eingefrorene Stand ist ein Archivstück und soll bleiben, wie er ist.
     assert.deepEqual(gefunden.settlement, { year: 2024, totalCostsCents: 12000 })
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 2023)), undefined)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2023)), undefined)
   })
 })
 
@@ -350,11 +350,11 @@ test('Das Versanddatum lässt sich nachtragen und wieder entfernen', async () =>
     await opened.write((db) => closeSettlement(db, {
       id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => setSentAt(db, 2024, '2025-02-01')), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, '2025-02-01')
-    assert.equal(await opened.write((db) => setSentAt(db, 2024, null)), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, null)
-    assert.equal(await opened.write((db) => setSentAt(db, 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, '2025-02-01')), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, '2025-02-01')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, null)), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, null)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
   })
 })
 
@@ -363,9 +363,9 @@ test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
     await opened.write((db) => closeSettlement(db, {
       id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), true)
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 2024)), undefined)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), false, 'ein zweites Mal meldet sich')
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), true)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)), undefined)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), false, 'ein zweites Mal meldet sich')
   })
 })
 
@@ -491,5 +491,159 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
       year: 2024, category: 'Müll', description: 'G', amountCents: 100, key: 'custom', customShares: { u1: 55 },
     }))
     assert.deepEqual(fieldOf(mitAnteilen, 'customShares'), { u1: 55 })
+  })
+})
+
+// ---------- Objekte (#92) ----------
+
+// Die Meldung samt der Kette ihrer Gründe; Drizzle hängt den echten Grund als `cause` an.
+const reasons = (err: unknown): string => {
+  const texte: string[] = []
+  let current: unknown = err
+  while (current instanceof Error) {
+    texte.push(current.message)
+    current = current.cause
+  }
+  return texte.join(' | ')
+}
+
+test('Objekt: anlegen, auflisten, ändern', async () => {
+  await withDatabase(async (opened) => {
+    const neu = await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt' }))
+    assert.deepEqual(neu, {
+      id: 'objekt-2', name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt',
+      landlordName: null, iban: null, paymentDeadlineDays: null,
+    })
+    assert.deepEqual((await opened.read(listProperties)).map((p) => p.id), ['objekt-1', 'objekt-2'])
+
+    // Nach Anwesenheit verschmolzen: null heißt „Vorgabe“, '' heißt „bewusst keine“.
+    await opened.write((db) => updateProperty(db, 'objekt-2', { iban: 'DE99', landlordName: '' }))
+    const geaendert = await opened.write((db) => updateProperty(db, 'objekt-2', { iban: null }))
+    assert.equal(geaendert?.iban, null)
+    assert.equal(geaendert?.landlordName, '')
+    assert.equal(geaendert?.name, 'Gartenweg 3', 'ein Teilstück lässt alles andere stehen')
+    assert.equal(await opened.write((db) => updateProperty(db, 'gibt-es-nicht', { name: 'X' })), null)
+  })
+})
+
+test('Objekt: eine unbekannte Art wird zum Mehrfamilienhaus, eine negative Frist abgewiesen', async () => {
+  await withDatabase(async (opened) => {
+    const p = await opened.write((db) => createProperty(db, 'objekt-2', { name: 'X', kind: 'burg' }))
+    assert.equal(p.kind, 'mfh')
+    await assert.rejects(
+      () => opened.write((db) => updateProperty(db, 'objekt-2', { paymentDeadlineDays: -1 })),
+      (err: unknown) => /CHECK|negativ/i.test(reasons(err)),
+    )
+  })
+})
+
+test('Objekt: gelöscht wird nur ein leeres, und nie das letzte', async () => {
+  await withDatabase(async (opened) => {
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-1')), { removed: false, reason: 'last' })
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3' }))
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'w1', { propertyId: 'objekt-2', name: 'EG', areaM2: 50, participates: true })
+      await createEntity(db, 'units', 'w2', { propertyId: 'objekt-2', name: 'OG', areaM2: 50, participates: true })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'Haus', unitId: null, type: 'kaltwasser', unit: 'm³' })
+    })
+    const belegt = await opened.write((db) => removeProperty(db, 'objekt-2'))
+    assert.equal(belegt.removed, false)
+    if (belegt.removed) return
+    assert.equal(belegt.reason, 'inUse')
+    assert.equal(belegt.inUse, '2 Wohnungen, 1 Zähler')
+
+    await opened.write(async (db) => {
+      await removeEntity(db, 'meters', 'm1')
+      await removeEntity(db, 'units', 'w1')
+      await removeEntity(db, 'units', 'w2')
+    })
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: true })
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: false, reason: 'missing' })
+  })
+})
+
+test('Objekt: ein Abschluss desselben Jahres im anderen Objekt bleibt unberührt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3' }))
+    await opened.write((db) => closeSettlement(db, {
+      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)), undefined)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-2', 2024, '2025-02-01')), false)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', 2024)), false)
+    const a = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
+    assert.equal(a?.sentAt, null, 'das Versanddatum von Objekt 1 ist nicht gesetzt worden')
+
+    // Und dasselbe Jahr lässt sich im zweiten Objekt eigens abschließen.
+    await opened.write((db) => closeSettlement(db, {
+      id: 's2', propertyId: 'objekt-2', year: 2024, closedAt: '2025-01-16T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)))?.id, 's2')
+  })
+})
+
+// Zwei Objekte mit je einer Wohnung, der Ausgang für die Grenzfälle.
+async function twoProperties(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await createProperty(db, 'objekt-2', { name: 'Gartenweg 3' })
+    await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A-EG', areaM2: 50, participates: true })
+    await createEntity(db, 'units', 'b', { propertyId: 'objekt-2', name: 'B-EG', areaM2: 50, participates: true })
+  })
+}
+
+test('Objekt: ein Zähler zeigt nicht auf die Wohnung eines anderen Objekts', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    await assert.rejects(
+      () => opened.write((db) => createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'X', unitId: 'a', type: 'kaltwasser', unit: 'm³' })),
+      (err: unknown) => {
+        assert.equal(Reflect.get(Object(err), 'status'), 400)
+        assert.match(String(err), /Gartenweg 3/)
+        return true
+      },
+    )
+    await opened.write((db) => createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'X', unitId: 'b', type: 'kaltwasser', unit: 'm³' }))
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'meters', 'm1', { unitId: 'a' })), /Objekt/)
+  })
+})
+
+test('Objekt: eine Kostenposition verteilt nicht auf Wohnungen eines anderen Objekts', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    const kosten = { propertyId: 'objekt-2', year: 2025, category: 'Sonstiges', description: 'X', amountCents: 100 }
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c1', { ...kosten, key: 'direct', directUnitId: 'a' })), /Objekt/)
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c2', { ...kosten, key: 'custom', customShares: { a: 50, b: 50 } })), /Objekt/)
+    await opened.write((db) => createEntity(db, 'costItems', 'c3', { ...kosten, key: 'direct', directUnitId: 'b' }))
+  })
+})
+
+test('Objekt: eine Wohnung wechselt das Objekt nur, solange nichts Objektgebundenes an ihr hängt', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    await opened.write(async (db) => {
+      await createEntity(db, 'tenancies', 't1', { unitId: 'a', tenantName: 'Meier', start: '2024-01-01' })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'EG', unitId: 'a', type: 'kaltwasser', unit: 'm³' })
+    })
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'units', 'a', { propertyId: 'objekt-2' })), /Zähler/)
+    await opened.write((db) => removeEntity(db, 'meters', 'm1'))
+    const gewandert = await opened.write((db) => updateEntity(db, 'units', 'a', { propertyId: 'objekt-2' }))
+    assert.equal(fieldOf(gewandert, 'propertyId'), 'objekt-2')
+    // Das Mietverhältnis erbt das Objekt und wandert damit ohne eigenes Zutun mit.
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'unitId'), 'a')
+  })
+})
+
+test('Objekt: die Prüfung über den ganzen Bestand findet Verweise über Objektgrenzen', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    assert.deepEqual(await opened.read(crossPropertyViolations), [])
+    // Am Repository vorbei, wie es ein von Hand bearbeitetes Backup täte.
+    await opened.write(async (db) => {
+      await db.insert(meters).values({ id: 'm1', propertyId: 'objekt-2', name: 'X', unitId: 'a', type: 'kaltwasser', unit: 'm³' })
+      await db.insert(costItems).values({ id: 'c1', propertyId: 'objekt-2', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'custom' })
+      await db.insert(costItemShares).values({ costItemId: 'c1', unitId: 'a', percent: 50 })
+    })
+    const befunde = await opened.read(crossPropertyViolations)
+    assert.equal(befunde.length, 2, befunde.join('\n'))
   })
 })

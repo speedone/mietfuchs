@@ -305,6 +305,14 @@ const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatab
 //
 // Ein Fehler wird hier nicht abgefangen: Express 5 reicht eine abgelehnte Zusage an die
 // Fehlerbehandlung weiter, und dort steht die Übersetzung an einer Stelle.
+// Übergang bis zu den Routen je Objekt (#92): das erste Objekt. Mit einem einzigen Objekt ist
+// das dasselbe wie heute.
+async function soleProperty(db: Database): Promise<string> {
+  const [property] = await readProperties(db)
+  if (!property) throw new Error('Es gibt kein Objekt.')
+  return property.id
+}
+
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
 // Die Sammlungen, die ein Objekt tragen; die übrigen erben es (#92).
 const ROOTS: CollectionName[] = ['units', 'costItems', 'meters']
@@ -340,7 +348,7 @@ for (const coll of COLLECTIONS) {
 app.get('/api/settlement/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const closed = await readData((db) => findClosedSettlement(db, year))
+  const closed = await readData(async (db) => findClosedSettlement(db, await soleProperty(db), year))
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
@@ -385,13 +393,10 @@ app.post('/api/settlement/:year/close', async (req, res) => {
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const schonDa = await writeData(async (db) => {
-    if (await findClosedSettlement(db, year)) return true
-    // Übergang bis zu den Routen je Objekt (#92, Task 6): das einzige Objekt.
-    const [property] = await readProperties(db)
-    if (!property) throw new Error('Es gibt kein Objekt.')
+    if (await findClosedSettlement(db, await soleProperty(db), year)) return true
     await closeSettlement(db, {
       id: newId(),
-      propertyId: property.id,
+      propertyId: await soleProperty(db),
       year,
       closedAt: new Date().toISOString(),
       sentAt,
@@ -408,7 +413,7 @@ app.put('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const gefunden = await writeData((db) => setSentAt(db, year, sentAt))
+  const gefunden = await writeData(async (db) => setSentAt(db, await soleProperty(db), year, sentAt))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
@@ -416,7 +421,7 @@ app.put('/api/settlement/:year/close', async (req, res) => {
 // Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
 app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
-  const gefunden = await writeData((db) => reopenSettlement(db, year))
+  const gefunden = await writeData(async (db) => reopenSettlement(db, await soleProperty(db), year))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
