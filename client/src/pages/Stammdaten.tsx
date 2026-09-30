@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
+import { COST_MODEL_LABELS, costModelBody, prepaymentLabel } from '../tenancyModel'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -34,12 +35,18 @@ type TenancyForm = {
   deposit: string
   depositStatus: DepositStatus
   notes: string
+  // Nebenkostenmodell (#93)
+  costModel: CostModel
+  heatingModel: CostModel
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
 // Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
-const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
+const EMPTY_TENANCY_EXTRA = {
+  email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
+  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
+}
 
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
   const toast = useToast()
@@ -156,6 +163,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       depositCents,
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
+      ...costModelBody(tenForm.costModel, tenForm.heatingModel),
     })
     const editing = !!tenForm.id
     if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
@@ -346,6 +354,8 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                           deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
                           depositStatus: t.depositStatus ?? 'offen',
                           notes: t.notes ?? '',
+                          costModel: t.costModel ?? 'settlement',
+                          heatingModel: t.heatingModel ?? 'settlement',
                         })
                       }}
                     >
@@ -450,7 +460,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">Vorauszahlung je Monat — Staffel</div>
+              <div className="field-group-label">{prepaymentLabel(tenForm.costModel, tenForm.heatingModel)}</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <label className="field">
@@ -470,7 +480,21 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <details className="extra-details" style={{ width: '100%' }}>
-              <summary>Weitere Angaben — Kontakt, Kaution, Vertrag (optional)</summary>
+              <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
+              <div className="row" style={{ marginTop: 10 }}>
+                <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
+                  Nebenkosten
+                  <select value={tenForm.costModel} onChange={(e) => setTenForm({ ...tenForm, costModel: e.target.value as CostModel })}>
+                    {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
+                  </select>
+                </label>
+                <label className="field grow" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
+                  Heizung und Warmwasser
+                  <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: e.target.value as CostModel })}>
+                    {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
+                  </select>
+                </label>
+              </div>
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="field grow">
                   E-Mail
