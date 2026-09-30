@@ -299,3 +299,26 @@ test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten
     assert.ok(s.selfUsedShareCents <= s.landlord.totalCents, `Fall ${i}: Eigenanteil über dem Vermieteranteil`)
   }
 })
+
+test('Einzelbeträge: mit einer selbstgenutzten Wohnung sagt die Abrechnung, dass ihr Anteil nicht ausgewiesen ist', () => {
+  // Der Betrag des Messdienstes für die eigene Wohnung lässt sich nicht eintragen, er steckt im
+  // Rest beim Vermieter. Der private Anteil der Steuerübersicht wäre sonst still zu niedrig.
+  const s = settle(source({
+    units: [unit('w'), unit('eigen', { participates: false, selfUsed: true })],
+    tenancies: [tenancy('t', 'w')],
+    costItems: [item({ key: 'amounts', amountCents: 10000, tenancyAmounts: { t: 6000 } })],
+  }))
+  assert.equal(s.warnings.length, 1)
+  assert.match(s.warnings[0] ?? '', /eigen.*selbstgenutzt|selbstgenutzt.*eigen/)
+})
+
+test('Teilnehmer: nach dem Löschen der letzten Teilnehmerwohnung verteilt die Berechnung nichts und sagt es', () => {
+  // Die leere Liste, wie sie nach der Kaskade aus der Datenbank kommt (participants_limited).
+  const s = settle(source({
+    units: [unit('b')],
+    tenancies: [tenancy('t-b', 'b')],
+    costItems: [item({ key: 'area', participantUnitIds: [] })],
+  }))
+  assert.equal(shareOf(s, 't-b'), 0)
+  assert.match(s.warnings[0] ?? '', /keine Wohnung nimmt teil/)
+})

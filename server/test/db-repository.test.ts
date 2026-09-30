@@ -754,3 +754,13 @@ test('Verteilbasis: geht die letzte Teilnehmerwohnung verloren, wird nicht „al
     assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'participantUnitIds'), [])
   })
 })
+
+test('Verteilbasis: eine ausdrücklich leere Teilnehmerliste bleibt leer', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    const c = await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'X', description: 'X', amountCents: 1000, key: 'area', participantUnitIds: [],
+    }))
+    assert.deepEqual(fieldOf(c, 'participantUnitIds'), [])
+  })
+})

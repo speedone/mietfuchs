@@ -946,6 +946,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         if (without.length > 0) {
           warnings.push(`„${item.description}": für ${without.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist kein Einzelbetrag eingetragen — bitte prüfen, sonst tragen sie diese Position nicht.`)
         }
+        // Den Betrag des Messdienstes für eine selbstgenutzte Wohnung kann man (noch) nicht
+        // eintragen; er steckt im Rest beim Vermieter und fehlt damit im ausgewiesenen
+        // Eigenanteil, also im privaten, nicht abziehbaren Teil der Steuerübersicht. Das soll nicht
+        // still geschehen.
+        if (b.selfUnits.length > 0) {
+          warnings.push(`„${item.description}": der Anteil der selbstgenutzten Wohnung(en) ${b.selfUnits.map((u) => u.name).join(', ')} ist bei Einzelbeträgen nicht ausgewiesen — er steckt im Vermieteranteil, und die Steuerübersicht nennt den privaten Anteil entsprechend zu niedrig.`)
+        }
         for (const t of b.partTenancies) {
           const c = given[t.id]
           if (c === undefined || c <= 0) continue
