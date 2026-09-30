@@ -745,15 +745,20 @@ function fmtNum(n: number): string {
   return n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 }
 
+// Zwischenwerte des Rechenwegs (#114). Der Prozentsatz mit bis zu sechs Stellen, damit Betrag ×
+// Prozent auch bei 30.000 € noch den gezeigten Wert ergibt; der genaue Betrag mit mindestens zwei
+// und höchstens vier, damit ein Rundungsschritt sichtbar bleibt und er neben den übrigen
+// Beträgen nicht ohne Cent dasteht.
+function fmtPercent(n: number): string {
+  return n.toLocaleString('de-DE', { maximumFractionDigits: 6 })
+}
+function fmtExactEuro(cents: number): string {
+  return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} €`
+}
+
 // Ein Betrag für den Rechenweg auf der Abrechnung (#94): mit zwei Stellen und einem gewöhnlichen
 // Leerzeichen vor dem Zeichen. `toLocaleString` mit `currency` setzte ein geschütztes, das in
 // den Zeilen nicht anders aussieht, beim Vergleichen und Kopieren aber stört.
-// Ein Zwischenwert des Rechenwegs (#114), mit bis zu vier Nachkommastellen: genug, um einen
-// Rundungsschritt zu sehen, und nicht so viele, dass niemand mehr mitliest.
-function fmtExact(n: number): string {
-  return n.toLocaleString('de-DE', { maximumFractionDigits: 4 })
-}
-
 function fmtCents(cents: number): string {
   return `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
@@ -770,7 +775,9 @@ type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
-type Target = { t: TenancyWithUnit, raw: number, basisText: string }
+// `ownShare`: bei der Gemeinschaftsabrechnung der Anteil innerhalb der eigenen Wohnungen, nach
+// dem wirklich gerechnet wird (#114); die Verteilbasis nennt dort die Summe der ganzen Anlage.
+type Target = { t: TenancyWithUnit, raw: number, basisText: string, ownShare?: string }
 
 // Verbrauch und Zähler eines Zählertyps, aufbereitet für die Verteilung. Der Wert ist bewusst
 // optional (nicht `Record<string, ConsumptionByTypeEntry>`): zu einer Kostenposition mit einem
@@ -1137,7 +1144,11 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
           const suffix = ` · Gesamtkosten der Anlage ${fmtCents(eb.totalCents)}`
           for (const t of b.partTenancies) {
             const raw = item.amountCents * (valueOf(t.unit) / own) * (t.days / diy)
-            targets.push({ t, raw, basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]}${suffix}${partOfYear(t)}` })
+            targets.push({
+              t, raw,
+              basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]}${suffix}${partOfYear(t)}`,
+              ownShare: `${fmtNum(valueOf(t.unit))} von ${fmtNum(own)} ${MEASURE_LABELS[eb.measure]}`,
+            })
           }
           selfRaw = item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u), 0) / own)
         }
@@ -1323,8 +1334,9 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       distributed += shares[i]
       const labor35a = laborOf.get(i) ?? 0
       // Der Rechenweg (#114): dieselben Zahlen, aus denen die Zeile entstand, als Text. Der
-      // Restcent wird dort benannt, wo er landet; sonst sähe der Mieter einen Cent, den ihm
-      // niemand erklärt.
+      // Restcent wird bei der Zeile benannt, die von der gewöhnlichen Rundung abweicht; sonst sähe
+      // der Mieter einen Cent, den ihm niemand erklärt. Das ist nicht immer die Zeile, die einen
+      // Cent dazubekommt: Liegen die Reste über einem halben Cent, ist es die, die einen verliert.
       const steps: CalcStep[] = [
         { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
         { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
@@ -1333,12 +1345,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         steps.push({ label: 'Einzelbetrag', value: `${fmtCents(Math.round(x.raw))} laut Einzelabrechnung`, term: 'individualAmounts' })
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
+        if (x.ownShare) steps.push({ label: 'Anteil an Ihren Wohnungen', value: x.ownShare, term: 'mea' })
         if (item.amountCents !== 0) {
-          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtExact((x.raw / item.amountCents) * 100)} % = ${fmtExact(x.raw / 100)} €` })
+          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
         }
       }
       steps.push(shares[i] !== Math.round(x.raw)
-        ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(shares[i])} (Restcent-Verfahren: rechnerisch ${fmtExact(x.raw / 100)} €, damit die Anteile zusammen genau den Rechnungsbetrag ergeben)`, term: 'largestRemainder' }
+        ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(shares[i])} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(x.raw)}; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)`, term: 'largestRemainder' }
         : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(shares[i]) })
       if (labor35a > 0) steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: fmtCents(labor35a), term: 'labor35a' })
       st.rows.push({

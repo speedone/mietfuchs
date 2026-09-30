@@ -378,8 +378,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <tbody>
                     {groups.map((g) => (
                       <Fragment key={g.category}>
-                        {g.rows.map((r, i) => (
-                          <CalcSteps key={i} row={r} colSpan={4}>
+                        {g.rows.map((r) => (
+                          <CalcSteps key={r.costItemId} row={r} colSpan={4}>
                             {(toggle) => (
                               <tr>
                                 <td>

@@ -32,13 +32,13 @@ test('Rechenweg nach Fläche: Betrag, Schlüssel, Anteil, Rechnung und Ergebnis'
     ['Rechnungsbetrag', '1.000,00 €'],
     ['Umlageschlüssel', 'Wohnfläche'],
     ['Anteil an der Verteilbasis', '60 von 180 m²'],
-    ['Rechnung', '1.000,00 € × 33,3333 % = 333,3333 €'],
+    ['Rechnung', '1.000,00 € × 33,333333 % = 333,3333 €'],
     ['Ergebnis, auf Cent gerundet', '333,33 €'],
   ])
   assert.equal(steps?.[2]?.term, 'distributionBasis')
 })
 
-test('Rechenweg: der Restcent wird benannt, wo er landet', () => {
+test('Rechenweg: weicht ein Anteil von der gewöhnlichen Rundung ab, steht der Restcent dabei', () => {
   const s = settle({
     units: [unit('a', 50), unit('b', 50), unit('c', 50)],
     tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c')],
@@ -69,4 +69,40 @@ test('Rechenweg mit Lohnanteil: der § 35a-Anteil steht als letzter Schritt dabe
   })
   const last = rowOf(s, 't-a', 'garten')?.steps?.at(-1)
   assert.deepEqual([last?.label, last?.value, last?.term], ['davon Lohnanteil nach § 35a EStG', '400,00 €', 'labor35a'])
+})
+
+test('Rechenweg bei der Gemeinschaftsabrechnung: der Anteil innerhalb der eigenen Wohnungen steht dabei', () => {
+  // Befund der Durchsicht: „60 von 1.000 MEA“ und danach „× 60 %“ ließ sich nicht nachrechnen,
+  // weil innerhalb der eigenen Wohnungen verteilt wird.
+  const s = settle({
+    units: [{ ...unit('a', 50), mea: 60 }, { ...unit('b', 50), mea: 40 }],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b')],
+    costItems: [item('v', { amountCents: 20000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 200000 } })],
+  })
+  const steps = rowOf(s, 't-a', 'v')?.steps?.map((x) => [x.label, x.value])
+  assert.deepEqual(steps?.find((x) => x[0] === 'Anteil an Ihren Wohnungen'), ['Anteil an Ihren Wohnungen', '60 von 100 MEA'])
+  assert.deepEqual(steps?.find((x) => x[0] === 'Rechnung'), ['Rechnung', '200,00 € × 60 % = 120,00 €'])
+})
+
+test('Rechenweg bei großen Beträgen: Prozent × Betrag ergibt den gezeigten Wert', () => {
+  const s = settle({
+    units: [unit('a', 50), unit('b', 50), unit('c', 50)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c')],
+    costItems: [item('g', { amountCents: 3000000 })],
+  })
+  assert.equal(rowOf(s, 't-a', 'g')?.steps?.find((x) => x.label === 'Rechnung')?.value, '30.000,00 € × 33,333333 % = 10.000,00 €')
+})
+
+test('Restcent über einem halben Cent: der Hinweis steht bei der Zeile, die von der gewöhnlichen Rundung abweicht', () => {
+  // 2,00 € auf drei gleiche Wohnungen: je 0,6667 €, gewöhnlich gerundet dreimal 0,67 € = 2,01 €.
+  // Eine Wohnung trägt 0,66 €; bei ihr steht der Hinweis, bei den anderen nicht.
+  const s = settle({
+    units: [unit('a', 50), unit('b', 50), unit('c', 50)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c')],
+    costItems: [item('g', { amountCents: 200 })],
+  })
+  const results = ['t-a', 't-b', 't-c'].map((t) => rowOf(s, t, 'g')?.steps?.at(-1))
+  const noted = results.filter((r) => r?.term === 'largestRemainder')
+  assert.equal(noted.length, 1)
+  assert.match(noted[0]?.value ?? '', /^0,66 €/)
 })
