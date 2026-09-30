@@ -261,3 +261,16 @@ test('Deckt der Zwischenzähler nur einen Teil der Mietzeit ab, ist der Rest nic
   assert.deepEqual(codes(s), ['meter.unit-partial'])
   assert.deepEqual(s.notices[0]?.subject, { kind: 'unit', id: 'el' })
 })
+
+test('Eine vermietete Garage ohne Wasseranschluss gilt nicht als Wohnung ohne Zähler (#117)', () => {
+  const garage = unit('garage', { areaM2: 0, noConnection: ['kaltwasser'] })
+  const s = settle({
+    units: [hauptwohnung, unit('el'), garage],
+    tenancies: [tenancy('t', 'el'), tenancy('t-g', 'garage')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.equal(share(s, 't'), 20000)
+  assert.equal(s.selfUsedShareCents, 80000, 'der Rest ist wieder Eigenanteil')
+  assert.deepEqual(codes(s), [])
+})

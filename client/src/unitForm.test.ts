@@ -107,3 +107,12 @@ describe('Zahlen: falsch gesetzte Punkte neben einem Komma sind kein Wert (Durch
     expect(buildUnitBody({ ...base, mea: '1.234,56' })).toMatchObject({ body: { mea: 1234.56 } })
   })
 })
+
+describe('Einheit ohne Anschluss (#117)', () => {
+  test('die angehakten Zählertypen gehen in den Rumpf und kommen aus der Wohnung zurück', () => {
+    const base = { ...EMPTY_UNIT_FORM, name: 'Garage', areaM2: '15' }
+    expect(buildUnitBody({ ...base, noConnection: ['kaltwasser'] })).toMatchObject({ body: { noConnection: ['kaltwasser'] } })
+    expect(buildUnitBody(base)).toMatchObject({ body: { noConnection: [] } })
+    expect(unitToForm({ id: 'g', propertyId: 'objekt-1', name: 'Garage', areaM2: 15, participates: true, noConnection: ['strom'] }).noConnection).toEqual(['strom'])
+  })
+})

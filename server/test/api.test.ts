@@ -3877,6 +3877,21 @@ test('Eigenbeträge (#104): gespeichert, gelesen, gerechnet, und nur im eigenen 
   })
 })
 
+test('Einheit ohne Anschluss (#117): gespeichert, gelesen, unbekannte Typen fallen weg, Löschen räumt ab', async () => {
+  const s = await startServer()
+  try {
+    const g = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Garage', areaM2: 15, participates: true, noConnection: ['kaltwasser', 'kaltwasser', 'erfunden'] }) })
+    assert.deepEqual(g.noConnection, ['kaltwasser'])
+    const g2 = await s.api<Unit>(`/api/units/${g.id}`, { method: 'PUT', body: JSON.stringify({ noConnection: ['kaltwasser', 'strom'] }) })
+    assert.deepEqual(g2.noConnection, ['kaltwasser', 'strom'])
+    const g3 = await s.api<Unit>(`/api/units/${g.id}`, { method: 'PUT', body: JSON.stringify({ name: 'Garage 1' }) })
+    assert.deepEqual(g3.noConnection, ['kaltwasser', 'strom'], 'ein Teilrumpf lässt die Angabe stehen')
+    await s.api(`/api/units/${g.id}`, { method: 'DELETE' })
+  } finally {
+    s.stop()
+  }
+})
+
 test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
   const s = await startServer()
   try {

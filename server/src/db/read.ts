@@ -24,7 +24,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, meters, payments,
+  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
@@ -106,6 +106,8 @@ export async function readProperties(db: Database): Promise<Property[]> {
 
 export async function readUnits(db: Database): Promise<Unit[]> {
   const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
+  const noConnectionRows = await db.select().from(unitNoConnection).orderBy(INSERTION_ORDER)
+  const noConnection = groupBy(noConnectionRows, (r) => r.unitId, (r) => r.meterType)
   return rows.map((u) => ({
     id: u.id,
     propertyId: u.propertyId,
@@ -117,6 +119,8 @@ export async function readUnits(db: Database): Promise<Unit[]> {
     // Nur, wenn es einen Wert gibt, wie die übrigen Angaben aus #94: Eine Wohnung aus einer
     // db.json hat das Feld gar nicht.
     ...(u.mea === null ? {} : { mea: u.mea }),
+    // Ebenso nur, wenn es Einträge gibt (#117).
+    ...(noConnection.has(u.id) ? { noConnection: noConnection.get(u.id) } : {}),
     rooms: orUndefined(u.rooms),
     floor: orUndefined(u.floor),
     notes: orUndefined(u.notes),

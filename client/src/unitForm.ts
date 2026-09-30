@@ -2,7 +2,7 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { Unit, UnitUsage } from './types'
+import type { MeterType, Unit, UnitUsage } from './types'
 import { usageOf } from './types'
 
 export type UnitForm = {
@@ -13,13 +13,15 @@ export type UnitForm = {
   selfPersons: string
   // Miteigentumsanteile (#94), für eine vermietete Eigentumswohnung
   mea: string
+  // Zählertypen ohne Anschluss (#117), etwa Wasser bei einer Garage
+  noConnection: MeterType[]
   rooms: string
   floor: string
   notes: string
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
-  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', rooms: '', floor: '', notes: '',
+  name: '', areaM2: '', usage: 'vermietet', selfPersons: '', mea: '', noConnection: [], rooms: '', floor: '', notes: '',
 }
 
 const numStr = (n: number | undefined | null) => (n != null ? String(n).replace('.', ',') : '')
@@ -32,6 +34,7 @@ export function unitToForm(u: Unit): UnitForm {
     usage: usageOf(u),
     selfPersons: numStr(u.selfPersons),
     mea: numStr(u.mea),
+    noConnection: u.noConnection ?? [],
     rooms: numStr(u.rooms),
     floor: u.floor ?? '',
     notes: u.notes ?? '',
@@ -67,6 +70,7 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       selfUsed: form.usage === 'eigen',
       selfPersons: form.usage === 'eigen' ? selfPersons : null,
       mea,
+      noConnection: form.noConnection,
       rooms,
       floor: form.floor.trim() || null,
       notes: form.notes.trim() || null,

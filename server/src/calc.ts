@@ -907,7 +907,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       // Gefragt wird ohne Teilnehmer jede Einheit des Objekts, auch außerhalb der
       // Abrechnungseinheit, denn der Hauptzähler misst sie alle.
       const candidates = only === null ? snapshot.units : basisOnes
-      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id))
+      // Ohne Anschluss für diesen Typ (#117) fehlt auch kein Zähler, etwa bei einer Garage ohne Wasser.
+      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id) && !(u.noConnection ?? []).includes(type as MeterType))
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []

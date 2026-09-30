@@ -71,6 +71,13 @@
       "when": 1790803152595,
       "tag": "0009_abschluss_verlauf",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790803881709,
+      "tag": "0010_ohne_anschluss",
+      "breakpoints": true
     }
   ]
 }
