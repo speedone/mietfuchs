@@ -14,12 +14,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import { LEGACY_JSON_NAME } from '../src/db/changeover.ts'
-import { connect, type Database } from '../src/db/client.ts'
+import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
+import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
+import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
-  Meter, MeterReadingExtraction, OllamaStatus, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
+  Meter, MeterReadingExtraction, OllamaStatus, Property, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
   UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
@@ -89,7 +91,8 @@ type StreamLine = {
 // KI-Einstellungen und um das, was die Oberfläche nur anzeigt. `ai` ist im Datenmodell optional,
 // weil eine db.json von vor #18 es nicht kennt; über die Route kommt es immer, der Server
 // ergänzt es beim Laden.
-type ClientSettings = Settings & {
+// Name und Adresse gehören seit #92 zum Objekt und kommen hier nicht mehr mit.
+type ClientSettings = Omit<Settings, 'houseName' | 'address'> & {
   ai: AiSettings
   fixedByEnv: string[]
   aiKeys: Record<AiSlotName, AiKeyInfo>
@@ -2207,24 +2210,24 @@ test('Wiederherstellen: die Einstellungen aus dem Archiv gelten sofort und über
   await withFilledDatabase(async (s) => {
     await s.api('/api/settings', {
       method: 'PUT',
-      body: JSON.stringify({ houseName: 'Haus im Backup', landlordName: 'Vermieter im Backup', iban: 'DE11' }),
+      body: JSON.stringify({ landlordName: 'Vermieter im Backup', iban: 'DE11' }),
     })
     const zip = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
     await s.api('/api/settings', {
       method: 'PUT',
-      body: JSON.stringify({ houseName: 'Haus danach', landlordName: 'Vermieter danach', iban: 'DE99' }),
+      body: JSON.stringify({ landlordName: 'Vermieter danach', iban: 'DE99' }),
     })
 
     assert.equal((await restore(s, zip)).status, 200)
     const sofort = await s.api<ClientSettings>('/api/settings')
-    assert.equal(sofort.houseName, 'Haus im Backup', 'ohne Neustart gilt noch der alte Stand')
+    assert.equal(sofort.landlordName, 'Vermieter im Backup', 'ohne Neustart gilt noch der alte Stand')
     assert.equal(sofort.iban, 'DE11', 'die IBAN steht im Kopf der gedruckten Abrechnung')
 
     // Eine beliebige andere Einstellung ändern, wie es ein Nutzer täte.
     await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ paymentDeadlineDays: 45 }) })
     const danach = await s.api<ClientSettings>('/api/settings')
     assert.equal(danach.paymentDeadlineDays, 45)
-    assert.equal(danach.houseName, 'Haus im Backup', 'der Stand von vor dem Wiederherstellen ist zurückgekehrt')
+    assert.equal(danach.landlordName, 'Vermieter im Backup', 'der Stand von vor dem Wiederherstellen ist zurückgekehrt')
     assert.equal(danach.iban, 'DE11', 'die alte IBAN ist zurückgekehrt')
   })
 })
@@ -2418,9 +2421,9 @@ test('Ein unbekanntes Feld wird nicht mitgespeichert', async () => {
     // durch bis zum Schreiben, und erst `settingsRow` lässt sie fallen. Dass sie dort und nicht
     // erst in der Antwort verschwinden, hält diese Zusicherung fest: Gelesen wird nach dem
     // Speichern aus der Datenbank.
-    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ houseName: 'Haus', lieblingsfarbe: 'blau' }) })
+    await s.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika', lieblingsfarbe: 'blau' }) })
     const einstellungen = await s.api<ClientSettings>('/api/settings')
-    assert.equal(einstellungen.houseName, 'Haus', 'das gültige Feld ist nicht angekommen')
+    assert.equal(einstellungen.landlordName, 'Erika', 'das gültige Feld ist nicht angekommen')
     assert.ok(!JSON.stringify(einstellungen).includes('lieblingsfarbe'), JSON.stringify(einstellungen))
     const inDerDatenbank = await storedSettings(s)
     assert.ok(!JSON.stringify(inDerDatenbank).includes('lieblingsfarbe'), JSON.stringify(inDerDatenbank))
@@ -2471,13 +2474,13 @@ test('Einstellungen landen in der Datenbank und überleben einen Neustart', asyn
   let dataDir: string
   try {
     dataDir = erster.dataDir
-    await erster.api('/api/settings', { method: 'PUT', body: JSON.stringify({ houseName: 'Haus am Park', paymentDeadlineDays: 45 }) })
-    assert.equal((await erster.api<ClientSettings>('/api/settings')).houseName, 'Haus am Park')
+    await erster.api('/api/settings', { method: 'PUT', body: JSON.stringify({ landlordName: 'Erika am Park', paymentDeadlineDays: 45 }) })
+    assert.equal((await erster.api<ClientSettings>('/api/settings')).landlordName, 'Erika am Park')
 
     const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
     try {
-      const zeilen = connection.rows('SELECT house_name, payment_deadline_days FROM settings')
-      assert.deepEqual(zeilen, [['Haus am Park', 45]], 'die Einstellungen stehen nicht in der Datenbank')
+      const zeilen = connection.rows('SELECT landlord_name, payment_deadline_days FROM settings')
+      assert.deepEqual(zeilen, [['Erika am Park', 45]], 'die Einstellungen stehen nicht in der Datenbank')
     } finally {
       connection.close()
     }
@@ -2489,7 +2492,7 @@ test('Einstellungen landen in der Datenbank und überleben einen Neustart', asyn
   const zweiter = await startServerIn(dataDir)
   try {
     const nachNeustart = await zweiter.api<ClientSettings>('/api/settings')
-    assert.equal(nachNeustart.houseName, 'Haus am Park', 'nach dem Neustart ist der Hausname weg')
+    assert.equal(nachNeustart.landlordName, 'Erika am Park', 'nach dem Neustart ist der Vermietername weg')
     assert.equal(nachNeustart.paymentDeadlineDays, 45)
   } finally {
     zweiter.stop()
@@ -3648,4 +3651,180 @@ test('Jeder Serverstart einer Prüfung setzt CI', () => {
   )
   // Und der Wächter muss überhaupt etwas gefunden haben, sonst prüft er nichts.
   assert.ok(quelle.includes(marke), 'kein einziger Serverstart gefunden; der Wächter wäre wirkungslos')
+})
+
+// ---------- Objekte (#92) ----------
+// Jeder Test mit zwei Objekten bekommt seinen eigenen Server: Ein zweites Objekt im geteilten
+// Server machte jede Anfrage ohne `property` der übrigen Tests zu einer 400.
+
+async function withProperties(fn: (s: Server, b: Property) => Promise<void>) {
+  const s = await startServer()
+  try {
+    const b = await s.api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name: 'Gartenweg 3', kind: 'etw' }) })
+    await fn(s, b)
+  } finally {
+    s.stop()
+  }
+}
+
+test('Objekt: ein frischer Server hat genau ein Objekt, und ohne Angabe gilt es', async () => {
+  const s = await startServer()
+  try {
+    const objekte = await s.api<Property[]>('/api/properties')
+    assert.deepEqual(objekte.map((p) => p.id), ['objekt-1'])
+    const unit = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 50, participates: true }) })
+    assert.equal(unit.propertyId, 'objekt-1')
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [unit.id])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Objekt: mit zwei Objekten verlangen die Datenrouten die Angabe, und sie grenzt ein', async () => {
+  await withProperties(async (s, b) => {
+    const ohne = await fetch(`${s.base}/api/units`)
+    assert.equal(ohne.status, 400)
+    assert.match((await jsonOf<{ error: string }>(ohne)).error, /Objekt/)
+    const ohneRumpf = await fetch(`${s.base}/api/units`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'X' }) })
+    assert.equal(ohneRumpf.status, 400)
+    assert.equal((await fetch(`${s.base}/api/settlement/2025`)).status, 400)
+    assert.equal((await fetch(`${s.base}/api/units?property=gibt-es-nicht`)).status, 404)
+
+    const a = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ propertyId: 'objekt-1', name: 'A-EG', areaM2: 50, participates: true }) })
+    const bw = await s.api<Unit>(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 70, participates: true }) })
+    assert.equal(bw.propertyId, b.id, 'die Angabe in der Adresse gilt auch beim Anlegen')
+    assert.deepEqual((await s.api<Unit[]>(`/api/units?property=${b.id}`)).map((u) => u.id), [bw.id])
+    assert.deepEqual((await s.api<Unit[]>('/api/units?property=objekt-1')).map((u) => u.id), [a.id])
+  })
+})
+
+test('Objekt: zwei Objekte rechnen und schließen getrennt ab, auch im selben Jahr', async () => {
+  await withProperties(async (s, b) => {
+    await s.api('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
+    await s.api(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 50, participates: true }) })
+    await s.api('/api/costItems?property=objekt-1', {
+      method: 'POST',
+      body: JSON.stringify({ year: 2025, category: 'Grundsteuer', description: 'Nur A', amountCents: 50000, key: 'area' }),
+    })
+    const inB = await s.api<{ totalCostsCents: number }>(`/api/settlement/2025?property=${b.id}`)
+    assert.equal(inB.totalCostsCents, 0, 'die Rechnung von A taucht in B nicht auf')
+    const inA = await s.api<{ totalCostsCents: number }>('/api/settlement/2025?property=objekt-1')
+    assert.equal(inA.totalCostsCents, 50000)
+
+    await s.api('/api/settlement/2025/close?property=objekt-1', { method: 'POST', body: JSON.stringify({}) })
+    assert.equal((await fetch(`${s.base}/api/settlement/2025/close?property=${b.id}`, { method: 'DELETE' })).status, 404)
+    const nochZu = await s.api<{ closed: unknown }>('/api/settlement/2025?property=objekt-1')
+    assert.notEqual(nochZu.closed, null, 'die Abrechnung von A ist noch abgeschlossen')
+    await s.api(`/api/settlement/2025/close?property=${b.id}`, { method: 'POST', body: JSON.stringify({}) })
+    for (const route of ['consumption', 'rentledger', 'taxreport']) {
+      assert.equal((await fetch(`${s.base}/api/${route}/2025?property=${b.id}`)).status, 200, route)
+    }
+  })
+})
+
+test('Objekt: gelöscht wird nur ein leeres, und nie das letzte', async () => {
+  await withProperties(async (s, b) => {
+    await s.api(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B-EG', areaM2: 50, participates: true }) })
+    const belegt = await fetch(`${s.base}/api/properties/${b.id}`, { method: 'DELETE' })
+    assert.equal(belegt.status, 409)
+    assert.match((await jsonOf<{ error: string }>(belegt)).error, /1 Wohnung/)
+    const [w] = await s.api<Unit[]>(`/api/units?property=${b.id}`)
+    await s.api(`/api/units/${w?.id}`, { method: 'DELETE' })
+    await s.api(`/api/properties/${b.id}`, { method: 'DELETE' })
+    const letztes = await fetch(`${s.base}/api/properties/objekt-1`, { method: 'DELETE' })
+    assert.equal(letztes.status, 409)
+    assert.equal((await fetch(`${s.base}/api/properties/gibt-es-nicht`, { method: 'DELETE' })).status, 404)
+  })
+})
+
+test('Objekt: ändern, und ein Verweis über die Objektgrenze wird mit 400 abgelehnt', async () => {
+  await withProperties(async (s, b) => {
+    const geaendert = await s.api<Property>(`/api/properties/${b.id}`, { method: 'PUT', body: JSON.stringify({ iban: 'DE99', address: 'Weg 3' }) })
+    assert.equal(geaendert.iban, 'DE99')
+    assert.equal(geaendert.name, 'Gartenweg 3')
+    const a = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'A-EG', areaM2: 50, participates: true }) })
+    const res = await fetch(`${s.base}/api/meters?property=${b.id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'X', unitId: a.id, type: 'kaltwasser', unit: 'm³' }),
+    })
+    assert.equal(res.status, 400)
+    assert.match((await jsonOf<{ error: string }>(res)).error, /Gartenweg 3/)
+  })
+})
+
+test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
+  const s = await startServer()
+  try {
+    const nachher = await s.api<Record<string, unknown>>('/api/settings', { method: 'PUT', body: JSON.stringify({ houseName: 'Alter Tab', address: 'Weg 1', landlordName: 'Erika' }) })
+    assert.equal('houseName' in nachher, false)
+    assert.equal('address' in nachher, false)
+    assert.equal(nachher.landlordName, 'Erika')
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    assert.equal(objekt?.name, '', 'der Name des Objekts kommt aus dem Objekt, nicht aus einem alten Tab')
+  } finally {
+    s.stop()
+  }
+})
+
+// Eine Datenbank, wie sie ein Nutzer von v0.8.0 im Backup hat: Stand 0000 mit Bestand.
+async function databaseOfV080(settlementYear: number): Promise<Buffer> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-v080-'))
+  try {
+    const file = path.join(dir, 'mietfuchs.sqlite')
+    const connection = await connect(file)
+    const migrations = await loadMigrations()
+    applyMigrations(connection, migrations.slice(0, 1))
+    await writeStock(connection.db, straightenForDatabase(migrateLegacy({
+      settings: { houseName: 'Lindenstraße 7', address: '12345 Stadt', landlordName: 'Erika', iban: 'DE01', paymentDeadlineDays: 30, ollamaUrl: '', ollamaModel: '' },
+      units: [{ id: 'u1', name: 'EG', areaM2: 60, participates: true }, { id: 'u2', name: 'OG', areaM2: 40, participates: true }],
+      tenancies: [],
+      costItems: [{ id: 'c1', year: settlementYear, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area' }],
+      meters: [], readings: [], payments: [], closedSettlements: [],
+    })))
+    connection.close()
+    return fs.readFileSync(file)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('Objekt: ein Backup von v0.8.0 kommt als Objekt 1 zurück, mit denselben Zahlen', async () => {
+  const s = await startServer()
+  try {
+    const zip = new AdmZip()
+    zip.addFile('mietfuchs.sqlite', await databaseOfV080(2025))
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const objekte = await s.api<Property[]>('/api/properties')
+    assert.deepEqual(objekte.map((p) => [p.id, p.name, p.address]), [['objekt-1', 'Lindenstraße 7', '12345 Stadt']])
+    const abrechnung = await s.api<{ totalCostsCents: number, landlord: { totalCents: number } }>('/api/settlement/2025')
+    assert.equal(abrechnung.totalCostsCents, 100000)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Objekt: ein Backup mit einem Verweis über die Objektgrenze wird abgelehnt, bevor etwas ersetzt ist', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-kreuz-'))
+  const s = await startServer()
+  try {
+    const file = path.join(dir, 'mietfuchs.sqlite')
+    const connection = await connect(file)
+    applyMigrations(connection, await loadMigrations())
+    connection.exec(`INSERT INTO properties (id, name, kind, address) VALUES ('objekt-2', 'Zwei', 'mfh', '')`)
+    connection.exec(`INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u1', 'objekt-1', 'EG', 50, 1)`)
+    connection.exec(`INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-2', 'X', 'u1', 'kaltwasser', 'm³')`)
+    connection.close()
+    const vorher = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'bleibt', areaM2: 1, participates: true }) })
+    const zip = new AdmZip()
+    zip.addFile('mietfuchs.sqlite', fs.readFileSync(file))
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 400)
+    assert.match(String(r.body.error), /Zähler/)
+    assert.deepEqual((await s.api<Unit[]>('/api/units')).map((u) => u.id), [vorher.id], 'die bisherigen Daten sind unverändert')
+  } finally {
+    s.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

@@ -9,7 +9,7 @@ import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/ty
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
-import { snapshotOf } from './snapshot.ts'
+import { narrowToProperty, snapshotFor } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -29,8 +29,9 @@ import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
-  closeSettlement, createEntity, findClosedSettlement, invoiceFilesInUse, listCollection,
-  removeEntity, reopenSettlement, setSentAt, updateEntity, writeSettings, type CollectionName,
+  closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
+  listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, updateEntity, updateProperty,
+  writeSettings, type CollectionName,
 } from './db/repository.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -186,7 +187,10 @@ function fixedByEnv(): string[] {
 // `aiExternal` sagt je Platz, ob die Adresse aus dem Haus zeigt und die Belege deshalb erst nach
 // einer Bestätigung dorthin gehen. So entscheidet allein der Server, was als extern gilt.
 function settingsForClient() {
-  const settings = effectiveSettings()
+  // Name und Adresse gehören seit #92 zum Objekt. Die Spalten stehen noch da, weil der
+  // eingefrorene Eingang sie schreibt und Migration 0001 sie abliest; ausgeliefert werden sie
+  // nicht mehr, sonst zeigte die Oberfläche zwei Wahrheiten.
+  const { houseName: _houseName, address: _address, ...settings } = effectiveSettings()
   const aiExternal = { text: isExternalUrl(settings.ai.text.url), images: settings.ai.images ? isExternalUrl(settings.ai.images.url) : false }
   return { ...settings, fixedByEnv: fixedByEnv(), aiKeys: keyInfo(), aiExternal }
 }
@@ -194,7 +198,9 @@ function settingsForClient() {
 app.get('/api/settings', (req, res) => res.json(settingsForClient()))
 app.put('/api/settings', async (req, res) => {
   const body = bodyObject(req)
-  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, ...changes } = body
+  // `houseName` und `address` schickt nur ein Tab von vor #92; sie gehören jetzt zum Objekt und
+  // werden hier verworfen, statt eine Spalte zu beschreiben, die niemand mehr liest.
+  const { fixedByEnv, aiKeys, aiExternal, ai, ollamaUrl, ollamaModel, houseName, address, ...changes } = body
   // Gearbeitet wird auf einer Kopie und nicht auf dem Zwischenspeicher: Scheitert das
   // Schreiben, soll der Stand im Arbeitsspeicher nicht schon verändert sein und etwas anzeigen,
   // das nirgends steht.
@@ -305,29 +311,53 @@ const writeData = <T>(work: (db: Database) => Promise<T>): Promise<T> => onDatab
 //
 // Ein Fehler wird hier nicht abgefangen: Express 5 reicht eine abgelehnte Zusage an die
 // Fehlerbehandlung weiter, und dort steht die Übersetzung an einer Stelle.
-// Übergang bis zu den Routen je Objekt (#92): das erste Objekt. Mit einem einzigen Objekt ist
-// das dasselbe wie heute.
-async function soleProperty(db: Database): Promise<string> {
-  const [property] = await readProperties(db)
-  if (!property) throw new Error('Es gibt kein Objekt.')
-  return property.id
-}
-
 const COLLECTIONS: CollectionName[] = ['units', 'tenancies', 'costItems', 'meters', 'readings', 'payments']
-// Die Sammlungen, die ein Objekt tragen; die übrigen erben es (#92).
+// Die Sammlungen, die ein Objekt tragen; die übrigen erben es über ihre Wurzel (#92).
 const ROOTS: CollectionName[] = ['units', 'costItems', 'meters']
 
+// ---------- Welches Objekt? (#92) ----------
+
+// Eine Ablehnung, deren Meldung für den Nutzer geschrieben ist; die Fehlerbehandlung unten gibt
+// sie unverändert weiter.
+class RouteProblem extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+// Das Objekt einer Anfrage: aus `?property=`, beim Anlegen einer Wurzel auch aus `propertyId`
+// im Rumpf.
+//
+// **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses.** Ein Tab von vor dem Update,
+// der Smoke-Test und jedes Skript arbeiten so unverändert weiter, und wer ein Haus hat, merkt
+// nichts. **Bei mehreren Objekten wird abgelehnt**, statt still alle zu liefern: Eine Liste über
+// zwei Häuser sähe auf der Seite Kosten plausibel aus und wäre falsch.
+async function propertyOf(db: Database, req: Request, fromBody = false): Promise<string> {
+  const query: unknown = req.query.property
+  const body: unknown = fromBody ? bodyObject(req).propertyId : undefined
+  const wanted = typeof query === 'string' && query !== '' ? query : typeof body === 'string' && body !== '' ? body : null
+  const alle = await listProperties(db)
+  if (wanted !== null) {
+    if (!alle.some((p) => p.id === wanted)) throw new RouteProblem(404, 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+    return wanted
+  }
+  const [einziges, ...weitere] = alle
+  if (einziges && weitere.length === 0) return einziges.id
+  throw new RouteProblem(400, 'Welches Objekt ist gemeint? Seit es mehrere Objekte gibt, braucht diese Anfrage die Angabe property.')
+}
+
 for (const coll of COLLECTIONS) {
+  // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
+  // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
   app.get(`/api/${coll}`, async (req, res) => {
-    res.json(await readData((db) => listCollection(db, coll)))
+    res.json(await readData(async (db) => narrowToProperty(await readStock(db), await propertyOf(db, req))[coll]))
   })
   app.post(`/api/${coll}`, async (req, res) => {
     const body = bodyObject(req)
     res.status(201).json(await writeData(async (db) => {
-      // Übergang bis zu den Routen je Objekt (#92, Task 6): ohne Angabe das einzige Objekt.
-      const withProperty = ROOTS.includes(coll) && body.propertyId === undefined
-        ? { ...body, propertyId: (await readProperties(db))[0]?.id }
-        : body
+      const withProperty = ROOTS.includes(coll) ? { ...body, propertyId: await propertyOf(db, req, true) } : body
       return createEntity(db, coll, newId(), withProperty)
     }))
   })
@@ -343,12 +373,42 @@ for (const coll of COLLECTIONS) {
   })
 }
 
+// ---------- Objekte (#92) ----------
+
+app.get('/api/properties', async (req, res) => {
+  res.json(await readData(listProperties))
+})
+app.post('/api/properties', async (req, res) => {
+  res.status(201).json(await writeData((db) => createProperty(db, newId(), bodyObject(req))))
+})
+app.put('/api/properties/:id', async (req, res) => {
+  const property = await writeData((db) => updateProperty(db, req.params.id, bodyObject(req)))
+  if (!property) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+  res.json(property)
+})
+app.delete('/api/properties/:id', async (req, res) => {
+  const result = await writeData((db) => removeProperty(db, req.params.id))
+  if (result.removed) return res.json({ ok: true })
+  if (result.reason !== 'inUse') {
+    return result.reason === 'missing'
+      ? res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+      : res.status(409).json({ error: 'Das letzte Objekt lässt sich nicht löschen: Jede Wohnung gehört zu einem Objekt.' })
+  }
+  res.status(409).json({
+    error: `Dieses Objekt enthält noch ${result.inUse}. Gelöscht wird nur ein leeres Objekt, damit keine ` +
+      `Abrechnung und keine bezahlte Rechnung verloren geht.`,
+  })
+})
+
 // ---------- Abrechnung ----------
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
 app.get('/api/settlement/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const closed = await readData(async (db) => findClosedSettlement(db, await soleProperty(db), year))
+  const { closed, stock, property } = await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    return { property, closed: await findClosedSettlement(db, property, year), stock: await readStock(db) }
+  })
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
@@ -359,7 +419,7 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } })
   }
-  res.json({ ...computeSettlement(snapshotOf(await readData(readStock), year)), closed: null })
+  res.json({ ...computeSettlement(snapshotFor(stock, property, year)), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -393,14 +453,15 @@ app.post('/api/settlement/:year/close', async (req, res) => {
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
   const schonDa = await writeData(async (db) => {
-    if (await findClosedSettlement(db, await soleProperty(db), year)) return true
+    const property = await propertyOf(db, req)
+    if (await findClosedSettlement(db, property, year)) return true
     await closeSettlement(db, {
       id: newId(),
-      propertyId: await soleProperty(db),
+      propertyId: property,
       year,
       closedAt: new Date().toISOString(),
       sentAt,
-      settlement: computeSettlement(snapshotOf(await readStock(db), year)),
+      settlement: computeSettlement(snapshotFor(await readStock(db), property, year)),
     })
     return false
   })
@@ -413,7 +474,7 @@ app.put('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const gefunden = await writeData(async (db) => setSentAt(db, await soleProperty(db), year, sentAt))
+  const gefunden = await writeData(async (db) => setSentAt(db, await propertyOf(db, req), year, sentAt))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
@@ -421,7 +482,7 @@ app.put('/api/settlement/:year/close', async (req, res) => {
 // Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
 app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
-  const gefunden = await writeData(async (db) => reopenSettlement(db, await soleProperty(db), year))
+  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
@@ -429,21 +490,21 @@ app.delete('/api/settlement/:year/close', async (req, res) => {
 app.get('/api/consumption/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(consumptionOverview(snapshotOf(await readData(readStock), year)))
+  res.json(await readData(async (db) => consumptionOverview(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(rentLedger(snapshotOf(await readData(readStock), year)))
+  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(taxReport(snapshotOf(await readData(readStock), year)))
+  res.json(await readData(async (db) => taxReport(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -1207,6 +1268,10 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
           : err.code === 'LIMIT_FIELD_VALUE' ? 'Ein Textfeld ist zu lang.'
             : `Hochladen fehlgeschlagen: ${err.message}`
     return res.status(400).json({ error: message })
+  }
+  // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError) {
+    return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
   // Drizzles oberste Meldung heraus, und die trägt das SQL **samt der eingesetzten Werte des

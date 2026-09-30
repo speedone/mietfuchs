@@ -170,25 +170,42 @@ export type SnapshotSource = {
 }
 
 // Ein Bestand, dessen Wurzeln ihr Objekt tragen (#92). db/read.ts `Stock` erfüllt ihn.
-export type PropertyScopedSource = Omit<SnapshotSource, 'units' | 'meters' | 'costItems' | 'closedSettlements'> & {
-  units: (SnapshotUnit & { propertyId: string })[]
-  meters: (SnapshotMeter & { propertyId: string })[]
-  costItems: (SnapshotCostItem & { propertyId: string })[]
-  closedSettlements: (SnapshotClosedSettlement & { year: number, propertyId: string })[]
-}
+//
+// Generisch über die Datensätze, damit `narrowToProperty` zurückgibt, was hineinging: Die
+// Routen listen damit vollständige Datensätze auf, der Schnappschuss liest nur seinen Ausschnitt.
+// Eine Regel für beide, und keine Behauptung über einen Typ.
+export type ScopedSource<
+  U extends SnapshotUnit & { propertyId: string } = SnapshotUnit & { propertyId: string },
+  T extends SnapshotTenancy = SnapshotTenancy,
+  C extends SnapshotCostItem & { propertyId: string } = SnapshotCostItem & { propertyId: string },
+  M extends SnapshotMeter & { propertyId: string } = SnapshotMeter & { propertyId: string },
+  R extends SnapshotReading = SnapshotReading,
+  P extends SnapshotPayment = SnapshotPayment,
+  X extends SnapshotClosedSettlement & { year: number, propertyId: string } = SnapshotClosedSettlement & { year: number, propertyId: string },
+> = { units: U[], tenancies: T[], costItems: C[], meters: M[], readings: R[], payments: P[], closedSettlements: X[] }
+
+export type PropertyScopedSource = ScopedSource
 
 // Grenzt einen Bestand auf ein Objekt ein, und das **nur hier**.
 //
 // Ein fehlender Filter ergibt keine Fehlermeldung, sondern eine Verteilung über zwei Häuser: Die
 // Verteilbasis bekäme die Wohnungen des anderen Objekts, und jeder Mieter trüge einen zu
-// kleinen, der Vermieter einen zu großen Anteil. Deshalb steht die Regel einmal, und
-// `snapshotFor` ist der Weg dorthin.
+// kleinen, der Vermieter einen zu großen Anteil. Deshalb steht die Regel einmal; die Routen
+// rechnen über `snapshotFor` und listen über diese Funktion.
 //
 // Die Wurzeln (Wohnungen, Zähler samt Hauptzähler, Kostenpositionen, Abschlüsse) tragen ihr
 // Objekt. Was erbt, folgt seiner Wurzel: Mietverhältnisse ihrer Wohnung, Zahlungen ihrem
 // Mietverhältnis, Ablesungen ihrem Zähler. Nach Jahr wird hier nichts eingegrenzt; das bleibt
 // die Sache von `snapshotOf`.
-export function narrowToProperty(source: PropertyScopedSource, propertyId: string): SnapshotSource {
+export function narrowToProperty<
+  U extends SnapshotUnit & { propertyId: string },
+  T extends SnapshotTenancy,
+  C extends SnapshotCostItem & { propertyId: string },
+  M extends SnapshotMeter & { propertyId: string },
+  R extends SnapshotReading,
+  P extends SnapshotPayment,
+  X extends SnapshotClosedSettlement & { year: number, propertyId: string },
+>(source: ScopedSource<U, T, C, M, R, P, X>, propertyId: string): ScopedSource<U, T, C, M, R, P, X> {
   const units = source.units.filter((u) => u.propertyId === propertyId)
   const unitIds = new Set(units.map((u) => u.id))
   const tenancies = source.tenancies.filter((t) => unitIds.has(t.unitId))
