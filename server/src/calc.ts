@@ -874,6 +874,19 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     }
   }
 
+  // Kabelfernsehen (#107): Seit dem 01.07.2024 sind die Gebühren für das TV-Signal nicht mehr als
+  // Betriebskosten umlagefähig (Wegfall des Nebenkostenprivilegs, § 2 Nr. 15 BetrKV a. F.,
+  // Übergangsfrist bis 30.06.2024). Betriebsstrom und Wartung einer Antenne bleiben umlagefähig.
+  // Welcher Teil einer Position was ist, weiß Mietfuchs nicht; es kürzt deshalb nicht selbst,
+  // sondern sagt es. Die Regel hängt am Abrechnungsjahr und wandert mit #108 ins Regelverzeichnis.
+  for (const item of items.filter((c) => c.category === 'Kabel/Antenne')) {
+    if (year === 2024) {
+      warnings.push(`„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr; Betriebsstrom und Wartung einer Antennenanlage bleiben umlagefähig. Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`)
+    } else if (year > 2024) {
+      warnings.push(`„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie nur noch Betriebsstrom und Wartung einer Antennenanlage; buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`)
+    }
+  }
+
   for (const item of items) {
     const b = basisOf(item)
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
