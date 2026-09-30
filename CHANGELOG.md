@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Abgeschlossene Jahre zeigen, wenn die heutige Berechnung abweicht.** Öffnen Sie die
+  Abrechnung eines abgeschlossenen Jahres, rechnet Mietfuchs im Hintergrund neu und nennt je
+  Mieter, ob sich der Saldo seit dem Abschluss verändert hat und zu wessen Gunsten. Zugunsten des
+  Mieters ist eine Korrektur möglich und in der Regel geboten; zugunsten des Vermieters sagt der
+  Hinweis, ob die Frist nach § 556 Abs. 3 BGB schon abgelaufen ist. Die verschickte Abrechnung
+  bleibt dabei unverändert.
+  ([#56](https://github.com/speedone/mietfuchs/issues/56))
 - **Rechenweg auf Klick.** Unter jeder Zeile der Abrechnung zeigt „Rechenweg“ Schritt für
   Schritt, wie Ihr Anteil zustande kommt: Rechnungsbetrag, Umlageschlüssel, Anteil an der
   Verteilbasis, die Rechnung selbst und das gerundete Ergebnis, bei Bedarf mit dem Hinweis, wohin
