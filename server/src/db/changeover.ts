@@ -92,6 +92,8 @@ export type ChangeoverResult = {
   notes: string[]
   // Der Pfad des Protokolls, sofern eines geschrieben wurde.
   protocol: string | null
+  // Siehe DatabaseState in shared/types.ts: der Bestand liegt noch ganz in der db.json (#89).
+  pending?: boolean
   // Die Datenbank, mit der weitergearbeitet wird. `null`, wenn sie sich nicht öffnen lässt;
   // dann arbeitet Mietfuchs ohne sie weiter.
   database: OpenedDatabase | null
@@ -381,6 +383,7 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
             `überschreiben. Brauchen Sie etwas daraus: ${way} Brauchen Sie sie nicht, können Sie ` +
             'die Datei löschen oder liegen lassen.',
         notes: [`In der Datenbank gefunden: ${filled}.`], protocol: null, database: opened,
+        ...(onlySettings ? { pending: true } : {}),
       }
     }
 

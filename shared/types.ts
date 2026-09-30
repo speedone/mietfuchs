@@ -344,6 +344,9 @@ export type DatabaseState = {
     message: string
     // Was sich dadurch für den Nutzer ändert, etwa am Mietkonto.
     notes: string[]
+    // Nur bei 'stale': Die Datenbank trägt nur Einstellungen, der Bestand liegt noch ganz in der
+    // db.json. Dann sperren die Datenrouten wie bei 'failed' (#89).
+    pending?: boolean
   }
 }
 

@@ -77,10 +77,19 @@ export const CHANGEOVER_PENDING =
   'Datenordner. An Ihren Daten ist nichts verändert: Sie stehen unverändert in der Datei ' +
   'db.json, und beim nächsten Start wird es erneut versucht.'
 
+// Unterblieben, weil in der Datenbank nur Einstellungen standen (#89): Dann ist die db.json der
+// ganze Bestand, und aus demselben Grund wie oben wird gesperrt, bis sie übernommen ist.
+export const CHANGEOVER_NOT_TAKEN =
+  'Ihre Daten aus der Datei db.json sind noch nicht übernommen, deshalb zeigt Mietfuchs sie gerade ' +
+  'nicht an; sonst entstünde neben ihnen ein zweiter, leerer Bestand. So übernehmen Sie sie: Packen ' +
+  'Sie die Datei db.json in ein ZIP-Archiv und stellen Sie es unter Einstellungen mit „Backup ' +
+  'wiederherstellen …“ wieder her.'
+
 // Der Grund, oder `null`, wenn die Datenbank den Bestand trägt.
 export function databaseUnavailable(database: DatabaseState): string | null {
   if (!database.open) return NO_DATABASE
   if (database.changeover.state === 'failed') return CHANGEOVER_PENDING
+  if (database.changeover.state === 'stale' && database.changeover.pending) return CHANGEOVER_NOT_TAKEN
   return null
 }
 
@@ -92,6 +101,7 @@ export function databaseUnavailable(database: DatabaseState): string | null {
 function checkDatabase(database: DatabaseState): Check {
   if (databaseUnavailable(database) === null) return { ok: true, detail: database.detail }
   if (!database.open) return { ok: false, detail: database.detail }
+  if (database.changeover.pending) return { ok: false, detail: `${database.detail}, aber die Daten aus der db.json sind noch nicht übernommen` }
   return { ok: false, detail: `${database.detail}, aber der Umstieg der Daten ist nicht gelungen` }
 }
 
