@@ -155,3 +155,94 @@ test('§ 2 HeizkostenV: ist die eigene Wohnung nicht angelegt, sagt die Warnung,
   })
   assert.doesNotMatch(dreiWohnungen.warnings[0] ?? '', /Wohnen Sie selbst im Haus/)
 })
+
+// ---------- Befunde der Durchsicht ----------
+
+test('Ein Zähler ohne Ablesung zählt nicht als Zähler', () => {
+  // Die eigene Wohnung hat einen angelegten, aber nie abgelesenen Zähler. Gälte er als Zähler,
+  // zahlte der Mieter wieder die ganze Rechnung.
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el'), meter('zh', 'haupt')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.equal(share(s, 't'), 20000)
+  assert.equal(s.selfUsedShareCents, 80000)
+})
+
+test('Ein Hauptzähler, der nicht das ganze Jahr abdeckt, wird nicht zur Basis, und das sagt eine Warnung', () => {
+  // Der Versorger liest am 15.10. ab. Der Hauptzähler deckt 2025 dann nur bis dahin ab, und mit
+  // ihm als Basis zahlte der Mieter 25 statt 20 Prozent.
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [
+      { meterId: 'hz', date: '2024-10-15', value: 0 }, { meterId: 'hz', date: '2025-10-15', value: 200 },
+      ...used('zz', 40),
+    ],
+  })
+  assert.ok(codes(s).includes('meter.main-partial'), codes(s).join(', '))
+  assert.match(s.warnings.join(' '), /31\.12\.2025|Jahresende/)
+})
+
+test('Eine leere Garage ohne Zähler nimmt der eigenen Wohnung nicht den Rest und warnt nicht', () => {
+  const s = settle({
+    units: [hauptwohnung, unit('el'), unit('garage', { areaM2: 0 })],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.equal(share(s, 't'), 20000)
+  assert.equal(s.selfUsedShareCents, 80000)
+  assert.deepEqual(codes(s), [])
+})
+
+test('Eine bewohnte Einheit außerhalb der Abrechnung ohne Zähler: der Rest ist nicht allein der Eigenanteil', () => {
+  // Der Hauptzähler misst auch das Büro. Sein Verbrauch gehört nicht in den Eigenanteil, denn
+  // der ist in der Steuer privat und nicht abziehbar.
+  const s = settle({
+    units: [hauptwohnung, unit('el'), unit('buero', { participates: false })],
+    tenancies: [tenancy('t', 'el'), tenancy('t-buero', 'buero')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.equal(share(s, 't'), 20000)
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.ok(codes(s).includes('meter.unit-without-meter'))
+  assert.match(s.warnings.join(' '), /Eigenanteil/)
+})
+
+test('Hauptzähler vorhanden, aber unter den Wohnungszählern: der Hinweis empfiehlt keinen Hauptzähler', () => {
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 30), ...used('zz', 40)],
+  })
+  assert.doesNotMatch(s.warnings.join(' '), /Mit einem Hauptzähler/)
+})
+
+test('Auf der Abrechnung steht, dass die Basis der Hauptzähler ist', () => {
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.match(s.statements[0]?.rows[0]?.basisText ?? '', /40 von 200 \(Hauptzähler\)/)
+})
+
+test('Alle Wohnungen haben Zähler, erfassen aber weit weniger als der Hauptzähler: ein Hinweis, keine andere Zahl', () => {
+  // Typisch, wenn die eigene Wohnung gar nicht angelegt ist. Die Zahl bleibt, denn eine
+  // gewöhnliche Messdifferenz lässt sich davon nicht unterscheiden.
+  const s = settle({
+    units: [unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('zz', 'el')],
+    readings: [...used('hz', 200), ...used('zz', 40)],
+  })
+  assert.equal(share(s, 't'), 100000)
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['meter.main-gap', 'hint']])
+})

@@ -155,6 +155,8 @@ const noticeKinds = {
   'meter.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst' },
   'meter.unit-without-meter': { level: 'warning', title: 'Wohnung ohne Zähler' },
   'meter.sub-exceeds-main': { level: 'warning', title: 'Wohnungszähler über dem Hauptzähler' },
+  'meter.main-partial': { level: 'warning', title: 'Hauptzähler deckt nicht das ganze Jahr ab' },
+  'meter.main-gap': { level: 'hint', title: 'Wohnungszähler erfassen wenig vom Hauptzähler' },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr' },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig' },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate' },
@@ -320,6 +322,16 @@ export function consumptionInPeriod(readings: SnapshotReading[], from: string, t
 }
 
 // Ein Eintrag der Jahresübersicht für die Zähler-Seite (Verbrauch je Zähler)
+// Tage im Zeitraum [from, to], die Segmente des Zählers abdecken (#116). Eine Ablesung gilt
+// zum Tagesende, ein Segment deckt also die Tage nach seiner ersten Ablesung bis einschließlich
+// seiner letzten. Eine Lücke, etwa ein Zählerwechsel ohne Endstand, deckt nichts ab.
+function coveredDays(readings: SnapshotReading[], from: string, to: string): number {
+  return meterSegments(readings).segments.reduce(
+    (a, seg) => a + rangeOverlapDays(new Date(toUTC(seg.from) + MS_DAY).toISOString().slice(0, 10), seg.to, from, to),
+    0,
+  )
+}
+
 export type ConsumptionOverviewRow = {
   meterId: string
   consumption: number
@@ -755,17 +767,21 @@ type Target = { t: TenancyWithUnit, raw: number, basisText: string }
 // Zählertyp ohne Zähler gibt es keinen Eintrag, und `data` unten ist dann `undefined` statt
 // eines für den Übersetzer immer vorhandenen Werts. Nur so bleibt die folgende Prüfung
 // `if (!data || data.basis <= 0)` sichtbar nötig statt totem Code.
-// `unmetered`: Wohnungen der Verteilung ohne Zähler dieses Typs (#116). `main`: Verbrauch der
-// Hauptzähler, wenn er als Basis gilt, sonst null; `mainBelowUnits`, wenn die Wohnungszähler
-// zusammen mehr zeigen als er.
+// Zum Hauptzähler (#116): `unmetered` sind bewohnte Einheiten ohne abgelesenen Zähler dieses
+// Typs. `main` ist sein Verbrauch, wenn er die Basis ist, sonst null. Die übrigen Felder sagen,
+// warum er es nicht ist, oder dass er weit mehr zeigt als die Wohnungszähler.
 type ConsumptionByTypeEntry = {
   meters: (SnapshotMeter & { unitId: string })[]
   basis: number
   perUnit: Map<string, number>
   selfConsumption: number
   unmetered: SnapshotUnit[]
+  limited: boolean
+  hasMain: boolean
   main: number | null
+  mainPartial: { meterId: string, days: number } | null
   mainBelowUnits: { main: number, units: number } | null
+  mainGap: { main: number, units: number } | null
 }
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
@@ -830,52 +846,79 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // snapshot.ts). `consumptionInPeriod` schneidet den Zeitraum tagesanteilig heraus.
   const allMeters = snapshot.meters
   const allReadings = snapshot.readings
+  // Bewohnt im Jahr: selbstgenutzt oder mit einem Mietverhältnis. Nur bei ihnen fehlt ein
+  // Zähler wirklich; eine leere Wohnung oder eine unvermietete Garage verbraucht nichts (#116).
+  const occupied = new Set([...snapshot.units.filter((u) => u.selfUsed).map((u) => u.id), ...tenancies.map((t) => t.unitId)])
+  const readingsOf = (meterId: string) => allReadings.filter((r) => r.meterId === meterId)
   // `only`: die Teilnehmer einer Position (#94); ohne sie alle Wohnungszähler wie bisher.
-  // `basisOnes`: die Wohnungen der Verteilbasis, gefragt, ob jede einen Zähler hat (#116).
+  // `basisOnes`: die Wohnungen der Verteilbasis.
   const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null, basisOnes: SnapshotUnit[]) => {
     const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
     const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
     // Hauptzähler: Zähler ohne Wohnung. Er misst das ganze Haus und taugt deshalb nicht als
     // Basis einer Position, die nur für einen Teil der Wohnungen gilt.
     const mainMeters = only === null ? allMeters.filter((m) => !m.unitId) : []
+    const selfIds = new Set(selfOnes.map((u) => u.id))
     const meterTypes = [...new Set(unitMeters.map((m) => m.type))]
     for (const type of meterTypes) {
       const meters = unitMeters.filter((m) => m.type === type) as (SnapshotMeter & { unitId: string })[]
       const perUnit = new Map<string, number>()
       let basis = 0
       for (const m of meters) {
-        const readings = allReadings.filter((r) => r.meterId === m.id)
+        const readings = readingsOf(m.id)
         const c = consumptionInPeriod(readings, yFrom, yTo)
         basis += c
-        perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        // Ein angelegter, aber im Jahr nie abgelesener Zähler ist kein Zähler: Sonst gälte die
+        // Wohnung als gemessen, und der Fehler aus #116 käme ohne Warnung zurück.
+        if (coveredDays(readings, yFrom, yTo) > 0) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
       }
       // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
       // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
       // Wohnungen fällt damit ohnehin dem Vermieter zu.
       let selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
-      // **Vorwegabzug über den Hauptzähler (#116).** Hat jede Wohnung einen Zähler, bleibt es
-      // bei ihrem Verhältnis, und die Messdifferenz zum Hauptzähler geht darin auf, wie bisher.
-      // Fehlt einer Wohnung der Zähler, ist ihr Verbrauch der Rest des Hauptzählers, und die
-      // Basis ist der Hauptzähler. Sonst zahlten die gemessenen Wohnungen ihren Verbrauch mit;
-      // bei der Einliegerwohnung mit Zwischenzähler war das die ganze Rechnung.
-      const unmetered = basisOnes.filter((u) => !perUnit.has(u.id))
+      // **Vorwegabzug über den Hauptzähler (#116).** Hat jede bewohnte Einheit einen Zähler,
+      // bleibt es bei ihrem Verhältnis, und die Messdifferenz zum Hauptzähler geht darin auf,
+      // wie bisher. Fehlt einer der Zähler, ist ihr Verbrauch der Rest des Hauptzählers, und die
+      // Basis ist der Hauptzähler; sonst zahlten die gemessenen Wohnungen ihren Verbrauch mit.
+      // Gefragt wird ohne Teilnehmer jede Einheit des Objekts, auch außerhalb der
+      // Abrechnungseinheit, denn der Hauptzähler misst sie alle.
+      const candidates = only === null ? snapshot.units : basisOnes
+      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id))
       const mainOfType = mainMeters.filter((m) => m.type === type)
-      const main = mainOfType.reduce((a, m) => a + consumptionInPeriod(allReadings.filter((r) => r.meterId === m.id), yFrom, yTo), 0)
+      const main = mainOfType.reduce((a, m) => a + consumptionInPeriod(readingsOf(m.id), yFrom, yTo), 0)
+      // Nur ein Hauptzähler über das ganze Jahr taugt als Basis. Der Versorger liest selten zum
+      // 31.12. ab, und ein Teiljahr gegen ganzjährige Wohnungszähler verschöbe die Anteile.
+      const partial = mainOfType
+        .map((m) => ({ meterId: m.id, days: coveredDays(readingsOf(m.id), yFrom, yTo) }))
+        .find((c) => c.days < diy) ?? null
       let mainBasis: number | null = null
+      let mainPartial: ConsumptionByTypeEntry['mainPartial'] = null
       let mainBelowUnits: ConsumptionByTypeEntry['mainBelowUnits'] = null
-      if (unmetered.length > 0 && mainOfType.length > 0 && main > 0) {
-        if (main < basis) {
+      let mainGap: ConsumptionByTypeEntry['mainGap'] = null
+      if (mainOfType.length > 0 && unmetered.length > 0) {
+        if (partial) {
+          mainPartial = partial
+        } else if (main < basis) {
           mainBelowUnits = { main, units: basis }
-        } else {
+        } else if (main > 0) {
           mainBasis = main
-          // Der Rest gehört zu den Wohnungen ohne Zähler. Sind das nur selbstgenutzte, ist er
-          // ihr Eigenanteil. Ist eine vermietete dabei, lässt er sich nicht aufteilen und bleibt
-          // beim Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung.
-          if (unmetered.every((u) => selfOnes.includes(u))) selfConsumption += main - basis
+          // Der Rest gehört zu den Einheiten ohne Zähler. Sind das nur selbstgenutzte, ist er ihr
+          // Eigenanteil. Ist eine andere dabei, lässt er sich nicht aufteilen und bleibt beim
+          // Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung.
+          if (unmetered.every((u) => selfIds.has(u.id))) selfConsumption += main - basis
           basis = main
         }
+      } else if (mainOfType.length > 0 && !partial && basis < main * 0.8) {
+        // Alle bewohnten Einheiten haben Zähler und erfassen doch weit weniger als der
+        // Hauptzähler. Typisch, wenn eine Wohnung gar nicht angelegt ist; von einer gewöhnlichen
+        // Messdifferenz lässt sich das nicht unterscheiden, also bleibt die Zahl, und es gibt
+        // einen Hinweis. Die Grenze von 20 Prozent ist eine Schwelle zum Hinsehen, keine Regel.
+        mainGap = { main, units: basis }
       }
-      byType[type] = { meters, basis, perUnit, selfConsumption, unmetered, main: mainBasis, mainBelowUnits }
+      byType[type] = {
+        meters, basis, perUnit, selfConsumption, unmetered, limited: only !== null,
+        hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap,
+      }
     }
     return byType
   }
@@ -1147,15 +1190,29 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         warn('meter.no-consumption', `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         const type = item.meterType ?? '—'
+        if (data.mainPartial) {
+          warn('meter.main-partial', `„${item.description}": der Hauptzähler deckt ${year} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum 31.12.${year - 1} und zum Jahresende (31.12.${year}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
+        }
         if (data.mainBelowUnits) {
           warn('meter.sub-exceeds-main', `„${item.description}": die Wohnungszähler zeigen zusammen ${fmtMeter(data.mainBelowUnits.units)}, mehr als der Hauptzähler (${fmtMeter(data.mainBelowUnits.main)}) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
         }
-        if (data.unmetered.length > 0 && !(data.main !== null && data.unmetered.every((u) => b.selfUnits.includes(u)))) {
+        if (data.mainGap) {
+          warn('meter.main-gap', `„${item.description}": die Wohnungszähler erfassen zusammen nur ${fmtMeter(data.mainGap.units)} von ${fmtMeter(data.mainGap.main)} des Hauptzählers. Gehört der Rest zu einer Wohnung, die nicht angelegt ist (etwa Ihrer eigenen), legen Sie sie unter Stammdaten an; dann gilt für sie der Rest des Hauptzählers. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
+        }
+        const selfCoversRest = data.main !== null && data.unmetered.every((u) => b.selfUnits.includes(u))
+        if (data.unmetered.length > 0 && !selfCoversRest) {
           const names = data.unmetered.map((u) => u.name).join(', ')
-          warn('meter.unit-without-meter', data.main === null
-            ? `„${item.description}": für ${names} gibt es keinen Zähler „${type}" — ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers.`
-            : `„${item.description}": für ${names} gibt es keinen Zähler „${type}" — der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf diese Wohnung(en) entfällt.`,
-          unitSubject(data.unmetered))
+          // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann trifft die Warnung
+          // nicht zu, und das steht dabei. Eine Kennzeichnung dafür fehlt noch.
+          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), trifft das nicht zu.'
+          const text = data.main !== null
+            ? `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
+            : data.hasMain
+              ? 'ihr Verbrauch lässt sich nicht bestimmen und steckt in den Anteilen der übrigen Wohnungen, bis der Hauptzähler verwendbar ist (siehe den Hinweis zum Hauptzähler).'
+              : data.limited
+                ? `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen teilnehmenden Wohnungen mitgetragen. Bitte die Teilnehmer der Position prüfen.${noConnection}`
+                : `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers.${noConnection}`
+          warn('meter.unit-without-meter', `„${item.description}": für ${names} gibt es keinen abgelesenen Zähler „${type}" — ${text}`, unitSubject(data.unmetered))
         }
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
         for (const t of b.partTenancies) {
@@ -1168,7 +1225,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
             c += consumptionInPeriod(readings, pFrom, pTo)
           }
           const raw = item.amountCents * (c / data.basis)
-          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (gemessen)` })
+          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
         }
       }
     } else if (item.key === 'direct') {

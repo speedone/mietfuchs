@@ -891,7 +891,14 @@ die ganze fachliche Komplexität:
   Mieter die ganze Rechnung (gemessen 1.000 € statt 200 €). Haben alle Wohnungen Zähler, bleibt
   es beim Verhältnis der Wohnungszähler, und die Messdifferenz geht darin auf; zeigen sie
   zusammen mehr als der Hauptzähler, ebenso, dann mit Warnung. Mit Teilnehmern (#94) gilt der
-  Hauptzähler nie, er misst das ganze Haus. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
+  Hauptzähler nie, er misst das ganze Haus. Vier Feinheiten aus der Durchsicht, jede mit Test:
+  Gefragt wird nur nach **bewohnten** Einheiten (selbstgenutzt oder mit Mietverhältnis im
+  Jahr), eine leere Garage verbraucht nichts; ohne Teilnehmer nach **allen** Einheiten des
+  Objekts, auch außerhalb der Abrechnungseinheit, denn deren Verbrauch steckt ebenfalls im
+  Hauptzähler und gehört nicht in den Eigenanteil. Ein Zähler **ohne Ablesung im Jahr** zählt
+  nicht als Zähler (`coveredDays`). Und ein Hauptzähler, der **nicht das ganze Jahr** abdeckt,
+  wird nicht zur Basis, sondern ergibt eine Warnung: Der Versorger liest selten zum 31.12. ab,
+  und ein Teiljahr gegen ganzjährige Wohnungszähler ließe den Mieter zu viel zahlen. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
   entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht
   abziehbar); `load()` migriert bewusst **nicht** automatisch, weil ein gesetztes Kennzeichen
   die Verteilung bereits abgerechneter Jahre verändern würde.
