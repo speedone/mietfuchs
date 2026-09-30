@@ -432,6 +432,10 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                   </td>
                   <td>
                     {KEY_LABELS[i.key]}
+                    {/* Eine Einschränkung auf Teilnehmer (#105) soll man in der Liste sehen, nicht erst im Formular. */}
+                    {i.participantUnitIds && (
+                      <div className="muted">nur {i.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ') || 'keine Wohnung'}</div>
+                    )}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
                     {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
                     {i.key === 'custom' && (

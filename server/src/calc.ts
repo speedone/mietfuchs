@@ -995,20 +995,25 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // Schlüssel stillschweigend auf — dann verteilt er allein auf die Mieter. Deshalb warnen,
   // sobald ein betroffener Schlüssel im Jahr überhaupt vorkommt.
   const usesKey = (key: CostKey) => items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig')
+  // Nimmt die Wohnung an einer Position dieses Schlüssels teil (#105)? Die Warnungen unten nennen
+  // nur solche Wohnungen; eine Garage ohne Fläche, die an keiner Flächenposition teilnimmt, fehlt
+  // in keiner Verteilung.
+  const inKeyBasis = (unitId: string, key: CostKey) =>
+    items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
   // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter — das meldet die
   // Position selbst. Die Meldungen je Wohnung wären dann widersprüchlich („verteilt nur auf
   // die Mieter", obwohl nichts verteilt wird) und entfallen. Ohne Mietverhältnis im Jahr
   // fehlen Personentage regulär (Leerstand) — das ist kein Datenmangel.
   const areaBasisMissing = !(basisArea > 0)
   const personsBasisMissing = !(basisPersonDays > 0) && partTenancies.length > 0
-  const selfNoPersons = selfUnits.filter((u) => selfPersonsOf(u) === 0)
+  const selfNoPersons = selfUnits.filter((u) => selfPersonsOf(u) === 0 && inKeyBasis(u.id, 'persons'))
   if (selfNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
     warn('basis.self-no-persons',
       `Für die selbstgenutzte(n) Wohnung(en) ${selfNoPersons.map((u) => u.name).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt nur auf die Mieter.`,
       unitSubject(selfNoPersons),
     )
   }
-  const selfNoArea = selfUnits.filter((u) => !(u.areaM2 > 0))
+  const selfNoArea = selfUnits.filter((u) => !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (selfNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
     warn('basis.self-no-area',
       `Für die selbstgenutzte(n) Wohnung(en) ${selfNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt nur auf die Mieter.`,
@@ -1018,14 +1023,14 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Fehlt ihr
   // Basiswert, verteilt der Schlüssel ihren Anteil still auf die anderen — bei einer
   // vermieteten Wohnung zahlen dann die übrigen Mieter mit. Für Mieter der teuerste Fall.
-  const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0))
+  const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
     warn('basis.unit-no-area',
       `Für die Wohnung(en) ${partNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
       unitSubject(partNoArea),
     )
   }
-  const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0))
+  const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0) && inKeyBasis(t.unitId, 'persons'))
   if (partNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
     warn('basis.tenancy-no-persons',
       `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,

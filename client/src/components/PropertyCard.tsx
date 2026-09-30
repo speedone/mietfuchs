@@ -21,9 +21,13 @@ export default function PropertyCard() {
   const [newName, setNewName] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  // Nur beim Wechsel des Objekts neu füllen (#105): Hinge es am Objekt selbst, verwürfe jedes
+  // Neuladen der Liste ungespeicherte Eingaben.
+  const propertyId = property?.id
   useEffect(() => {
     setForm(property ? propertyToForm(property) : null)
-  }, [property])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bewusst nur an der Kennung
+  }, [propertyId])
 
   if (!property || !form) return null
 
@@ -35,9 +39,13 @@ export default function PropertyCard() {
       return
     }
     setError('')
-    await api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify(body) })
-    await reload()
-    toast('Objekt gespeichert.')
+    try {
+      await api(`/api/properties/${property.id}`, { method: 'PUT', body: JSON.stringify(body) })
+      await reload()
+      toast('Objekt gespeichert.')
+    } catch (e) {
+      setError(String((e as Error).message))
+    }
   }
 
   async function create() {
@@ -47,11 +55,15 @@ export default function PropertyCard() {
       return
     }
     setError('')
-    const created = await api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name }) })
-    setNewName(null)
-    await reload()
-    setPropertyId(created.id)
-    toast(`Objekt „${name}“ angelegt. Die Seiten zeigen jetzt dieses Objekt; umschalten geht in der Seitenleiste.`)
+    try {
+      const created = await api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name }) })
+      setNewName(null)
+      await reload()
+      setPropertyId(created.id)
+      toast(`Objekt „${name}“ angelegt. Die Seiten zeigen jetzt dieses Objekt; umschalten geht in der Seitenleiste.`)
+    } catch (e) {
+      setError(String((e as Error).message))
+    }
   }
 
   async function remove() {

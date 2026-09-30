@@ -143,11 +143,17 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung" in die Basis.
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
     // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
-    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons')
+    // Auch die Gemeinschaftsabrechnung (#105): Sie verteilt über die Wohnungen der Einheit.
+    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons' || c.key === 'external')
     const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
     if (excluded.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
         detail: `Nicht beteiligt und damit ganz außen vor: ${excluded.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
+    } else if (yearItems.some((c) => c.key === 'external' && c.externalBasis?.measure === 'mea') && units.some((u) => usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))) {
+      // Ohne Miteigentumsanteile verteilt der Schlüssel der Gemeinschaft nicht (#105).
+      const ohne = units.filter((u) => usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))
+      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Anteile eintragen',
+        detail: `Für ${ohne.map((u) => u.name).join(', ')} fehlen die Miteigentumsanteile, die die Gemeinschaftsabrechnung braucht.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
       const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
       list.push({ title: 'Verteilbasis', level: 'gruen',

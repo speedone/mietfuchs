@@ -80,6 +80,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Miteigentumsanteile „78.43“ wurden als 7843 gelesen**, eine Wohnfläche „1.200“ als 1,2. Das
+  Wohnungsformular liest Zahlen jetzt in deutscher und technischer Schreibweise; bei der
+  Gemeinschaftsabrechnung hätte der Fehler die Verteilung verschoben. Bitte prüfen Sie die
+  Miteigentumsanteile Ihrer Wohnungen, wenn Sie sie mit Punkt eingegeben haben.
+- Kleinigkeiten aus den Durchsichten: Das Kostenformular beachtet die Teilnehmer beim Hinweis zur
+  Gemeinschaftsabrechnung und bei der Liste der Einzelbeträge, die Summe der Anlage behält ihre
+  Nachkommastellen, eine auf Wohnungen beschränkte Position zeigt das schon in der Liste, die
+  Warnungen zu fehlender Fläche oder Personenzahl nennen nur Wohnungen, die an einer solchen
+  Position teilnehmen, das Cockpit kennt die Gemeinschaftsabrechnung, und die Karte „Objekt“
+  verliert keine Eingaben mehr und meldet Fehler beim Speichern.
+  ([#105](https://github.com/speedone/mietfuchs/issues/105))
 - **Eine alte `db.json` neben einer schon gefüllten Datenbank bleibt nicht mehr stumm.** Wer
   Mietfuchs zuerst startet, etwas speichert und danach seine alte Datei in den Datenordner legt,
   sah bisher ein leeres Haus ohne Erklärung. Der Umstieg unterbleibt weiterhin mit Absicht, damit
