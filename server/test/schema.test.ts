@@ -212,6 +212,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       '__drizzle_migrations',
       'ai_slots',
       'base_rents',
+      'closed_settlement_history',
       'closed_settlements',
       'cost_item_amounts',
       'cost_item_participants',

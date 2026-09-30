@@ -31,7 +31,7 @@ import { databaseProblem } from './db/errors.ts'
 import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
   closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
-  listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, updateEntity, updateProperty,
+  listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   writeSettings, type CollectionName,
 } from './db/repository.ts'
 import {
@@ -484,9 +484,18 @@ app.put('/api/settlement/:year/close', async (req, res) => {
 })
 
 // Wieder öffnen (Snapshot verwerfen, es gilt wieder die Live-Berechnung)
+// Frühere Abschlüsse eines Jahres (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
+// der zuletzt wiedergeöffnete zuerst. Der gültige Stand steht nicht darin, den liefert
+// GET /api/settlement/:year.
+app.get('/api/settlement/:year/history', async (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), year)))
+})
+
 app.delete('/api/settlement/:year/close', async (req, res) => {
   const year = Number(req.params.year)
-  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year))
+  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), year, newId()))
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
