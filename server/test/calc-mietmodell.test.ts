@@ -169,3 +169,16 @@ test('Steuer: die Pauschale steht als eigene Zeile im Soll, und die Aufstellung 
   assert.equal(income.flatRateSollCents, 96000)
   assert.equal(income.baseRentSollCents + income.prepaymentSollCents + income.flatRateSollCents, income.sollCents)
 })
+
+test('Steuer (#96): die Übersicht zählt Mietverhältnisse mit Inklusivmiete und mit Pauschale, für Zeile 24 und Zeile 20 der Anlage V', () => {
+  const snapshot = snapshotOf({
+    units: [unit('a'), unit('b'), unit('c')],
+    tenancies: [
+      tenancy('t-a', 'a', { costModel: 'inclusive', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 70000 }] }),
+      tenancy('t-b', 'b', { costModel: 'flatRate', prepayments: [], flatRates: [{ from: '2025-01', monthlyCents: 8000 }], baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+      tenancy('t-c', 'c', { baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+    ],
+    costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }, 2025)
+  assert.deepEqual(taxReport(snapshot).costModels, { tenancies: 3, inclusive: 1, flatRate: 1 })
+})

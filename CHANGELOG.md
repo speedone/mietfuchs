@@ -8,6 +8,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Steuerübersicht: Hinweise zu den Zeilen 24 und 20 der Anlage V.** Ist eine Inklusivmiete
+  vereinbart, erinnert die Übersicht an das Kennzeichen „Nebenkosten nicht gesondert vereinbart“
+  in Zeile 24; eine Betriebskostenpauschale gehört zu den Umlagen in Zeile 20.
+  ([#96](https://github.com/speedone/mietfuchs/issues/96))
 - **Baujahr der Kabel- oder Antennenanlage am Objekt.** Wurde die Anlage ab dem 01.12.2021
   errichtet, waren die Gebühren für das TV-Signal nie umlagefähig, auch 2022 und 2023 nicht
   (§ 2 Satz 2 BetrKV). Tragen Sie das in den Stammdaten beim Objekt ein; die Abrechnung warnt dann

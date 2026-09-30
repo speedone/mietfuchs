@@ -26,6 +26,7 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
   selfUsedShareCents: 0,
   surplusSollCents: 1100000,
   surplusPaidCents: 900000,
+  costModels: { tenancies: 1, inclusive: 0, flatRate: 0 },
   ...rest,
 })
 

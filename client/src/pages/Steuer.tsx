@@ -269,6 +269,21 @@ export default function Steuer({ settings }: Props) {
                 umgekehrte: der Dauerauftrag, der die Januarmiete Ende Dezember bucht. Dort liegen
                 Fälligkeit und Zahlung beide im Zeitraum, und die Einnahme des alten Jahres ist zu
                 hoch. */}
+            {/* #96: Kopfzeilen der Anlage V, die am Mietmodell hängen. Belegt am Vordruck 2025 und der
+                Anleitung 2024; die Pauschale nennt die Anleitung nicht ausdrücklich. */}
+            {hints.includes('inclusiveLine24') && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Zeile 24 der Anlage V.</strong>{' '}
+                {data.costModels.inclusive === data.costModels.tenancies
+                  ? 'Bei einer Inklusivmiete sind die Nebenkosten nicht gesondert vereinbart. Tragen Sie dort eine 1 ein; die ganze Miete gehört dann in die Zeilen 13 bis 15, die Zeilen 20 und 21 bleiben leer.'
+                  : `Für ${data.costModels.inclusive} von ${data.costModels.tenancies} Mietverhältnissen ist eine Inklusivmiete vereinbart. Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.`}
+              </p>
+            )}
+            {hints.includes('flatRateLine20') && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Zeile 20 der Anlage V.</strong> Eine Betriebskostenpauschale ist eine Einnahme wie die Miete. Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen in Zeile 20; ausdrücklich nennt die Anleitung die Pauschale nicht.
+              </p>
+            )}
             {hints.includes('turnOfYear') && (
               <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
                 <strong>Am Jahreswechsel bitte prüfen.</strong> Mietfuchs ordnet jede Zahlung dem Jahr

@@ -611,6 +611,14 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   )
   const withSoll = ledger.rows.filter((r) => r.sollYearCents > 0)
   const tenanciesWithSoll = withSoll.length
+  // Für die Kopfzeilen der Anlage V (#96): Zeile 24 fragt, ob Nebenkosten nicht gesondert
+  // vereinbart sind (Inklusivmiete), und eine Pauschale gehört zu den Umlagen in Zeile 20.
+  const modelOf = new Map(snapshot.tenancies.map((t) => [t.id, t.costModel ?? 'settlement']))
+  const costModels = {
+    tenancies: ledger.rows.length,
+    inclusive: ledger.rows.filter((r) => modelOf.get(r.tenancyId) === 'inclusive').length,
+    flatRate: ledger.rows.filter((r) => modelOf.get(r.tenancyId) === 'flatRate').length,
+  }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
@@ -752,6 +760,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     selfUsedAreaM2,
     selfOccupiedExists,
     excludedExists,
+    costModels,
     selfUsedShareCents,
     surplusSollCents: sollCents - totalCents,
     surplusPaidCents: paidCents - totalCents,

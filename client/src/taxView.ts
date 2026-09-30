@@ -36,7 +36,7 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // pages/Steuer.test.tsx geht diese Liste durch und verlangt für jeden Eintrag eine Lage, in der
 // er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
 // nicht einträgt.
-export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear'] as const
+export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'flatRateLine20'] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
 
@@ -60,9 +60,17 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //
 //   `turnOfYear`         Der Vorbehalt zur Zehn-Tage-Regel, der nur auf der Ist-Grundlage etwas
 //                        bedeutet.
+//
+//   `inclusiveLine24`    Es gibt Mietverhältnisse mit Inklusivmiete (#96): Zeile 24 der Anlage V
+//                        („Nebenkosten nicht gesondert vereinbart“). Auf beiden Grundlagen.
+//
+//   `flatRateLine20`     Es gibt eine Betriebskostenpauschale (#96): Sie ist eine Umlage im Sinn
+//                        von Zeile 20. Auf beiden Grundlagen.
 
 export function taxHints(report: TaxReport, basis: Basis): TaxHint[] {
   const hints: TaxHint[] = []
+  if (report.costModels.inclusive > 0) hints.push('inclusiveLine24')
+  if (report.costModels.flatRate > 0) hints.push('flatRateLine20')
   if (basis === 'soll') {
     hints.push('sollIsNotTaxBasis')
     return hints
