@@ -62,3 +62,10 @@ test('Kabel: eine Anlage ab dem 01.12.2021 war nie umlagefähig, auch 2022 und 2
   assert.deepEqual(mit(2023, null), [])
   assert.deepEqual(mit(2025, true).map((x) => x.code), ['tv-signal.ended'])
 })
+
+test('Kabel, neue Anlage: 2021 betrifft nur die Zeit ab Errichtung, und die Glasfaser-Ausnahme nennt ihre Bedingung (#121)', () => {
+  const text = (year: number) => computeSettlement({ ...snapshotOf(bestand(year), year), property: { kind: 'mfh', cableBuiltBeforeDec2021: false } }).warnings.join(' ')
+  assert.match(text(2021), /ab der Errichtung/)
+  assert.doesNotMatch(text(2023), /ab der Errichtung/)
+  assert.match(text(2023), /Anbieter frei wählen/)
+})
