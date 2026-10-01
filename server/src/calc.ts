@@ -25,6 +25,7 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
+import type { TermId } from '../../shared/glossary.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -131,44 +132,45 @@ export function personsAt(tenancy: SnapshotTenancy, dateIso: string): number {
 // erscheinen, und wer eine Meldung ergänzt, muss sie hier eintragen: `warn` nimmt nur Codes aus
 // dieser Tabelle. Der Text bleibt an der Stelle, weil er die Einzelheiten des Falls nennt.
 // Die Stufen sind in shared/types.ts (`NoticeLevel`) fachlich bestimmt.
-type NoticeKind = { level: NoticeLevel, title: string, rule?: string }
+// `terms`: die Begriffe des Lexikons (#113), die den Hinweis erklären, mindestens einer.
+type NoticeKind = { level: NoticeLevel, title: string, rule?: string, terms: [TermId, ...TermId[]] }
 const noticeKinds = {
-  'meter.replacement-without-end': { level: 'warning', title: 'Zählerwechsel ohne Endstand' },
-  'meter.negative': { level: 'warning', title: 'Negativer Verbrauch' },
-  'meter.same-day': { level: 'warning', title: 'Mehrere Ablesungen am selben Tag' },
-  'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt' },
-  'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt' },
-  'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt' },
-  'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt' },
-  'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal' },
-  'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal' },
-  'item.no-basis': { level: 'warning', title: 'Position geht ganz an den Vermieter' },
-  'external.value-missing': { level: 'warning', title: 'Miteigentumsanteil oder Wohnfläche fehlt' },
-  'external.amount-mismatch': { level: 'hint', title: 'Betrag passt nicht zum Anteil' },
-  'amounts.exceed': { level: 'error', title: 'Einzelbeträge über dem Rechnungsbetrag' },
-  'amounts.forfeited': { level: 'warning', title: 'Einzelbetrag ohne Mietverhältnis' },
-  'amounts.missing': { level: 'warning', title: 'Einzelbetrag fehlt' },
-  'amounts.self-hidden': { level: 'hint', title: 'Eigenanteil nicht ausgewiesen' },
-  'custom.forfeited': { level: 'warning', title: 'Vereinbarter Anteil entfällt' },
-  'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile' },
-  'custom.over-100': { level: 'error', title: 'Vereinbarte Anteile über 100 %' },
-  'meter.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst' },
-  'meter.unit-without-meter': { level: 'warning', title: 'Wohnung ohne Zähler' },
-  'meter.sub-exceeds-main': { level: 'warning', title: 'Wohnungszähler über dem Hauptzähler' },
-  'meter.main-partial': { level: 'warning', title: 'Hauptzähler deckt nicht das ganze Jahr ab' },
-  'meter.main-gap': { level: 'hint', title: 'Wohnungszähler erfassen wenig vom Hauptzähler' },
-  'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab' },
-  'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr' },
-  'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig' },
-  'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate' },
-  'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung' },
+  'meter.replacement-without-end': { level: 'warning', title: 'Zählerwechsel ohne Endstand', terms: ['meterReading'] },
+  'meter.negative': { level: 'warning', title: 'Negativer Verbrauch', terms: ['meterReading'] },
+  'meter.same-day': { level: 'warning', title: 'Mehrere Ablesungen am selben Tag', terms: ['meterReading'] },
+  'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt', terms: ['ownShare', 'personDays'] },
+  'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
+  'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
+  'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
+  'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
+  'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
+  'item.no-basis': { level: 'warning', title: 'Position geht ganz an den Vermieter', terms: ['distributionBasis'] },
+  'external.value-missing': { level: 'warning', title: 'Miteigentumsanteil oder Wohnfläche fehlt', terms: ['mea', 'homeownersStatement'] },
+  'external.amount-mismatch': { level: 'hint', title: 'Betrag passt nicht zum Anteil', terms: ['homeownersStatement', 'mea'] },
+  'amounts.exceed': { level: 'error', title: 'Einzelbeträge über dem Rechnungsbetrag', terms: ['individualAmounts'] },
+  'amounts.forfeited': { level: 'warning', title: 'Einzelbetrag ohne Mietverhältnis', terms: ['individualAmounts'] },
+  'amounts.missing': { level: 'warning', title: 'Einzelbetrag fehlt', terms: ['individualAmounts'] },
+  'amounts.self-hidden': { level: 'hint', title: 'Eigenanteil nicht ausgewiesen', terms: ['individualAmounts', 'ownShare'] },
+  'custom.forfeited': { level: 'warning', title: 'Vereinbarter Anteil entfällt', terms: ['agreedShares', 'billingUnit'] },
+  'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile', terms: ['agreedShares'] },
+  'custom.over-100': { level: 'error', title: 'Vereinbarte Anteile über 100 %', terms: ['agreedShares'] },
+  'meter.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst', terms: ['consumptionKey'] },
+  'meter.unit-without-meter': { level: 'warning', title: 'Wohnung ohne Zähler', terms: ['mainMeter', 'consumptionKey'] },
+  'meter.sub-exceeds-main': { level: 'warning', title: 'Wohnungszähler über dem Hauptzähler', terms: ['mainMeter'] },
+  'meter.main-partial': { level: 'warning', title: 'Hauptzähler deckt nicht das ganze Jahr ab', terms: ['mainMeter', 'meterReading'] },
+  'meter.main-gap': { level: 'hint', title: 'Wohnungszähler erfassen wenig vom Hauptzähler', terms: ['mainMeter'] },
+  'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab', terms: ['mainMeter', 'meterReading'] },
+  'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
+  'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
+  'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
+  'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
 
 function makeNotice(code: NoticeCode, text: string, subject: NoticeSubject | undefined): Notice {
   const kind: NoticeKind = noticeKinds[code]
-  return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}) }
+  return { code, level: kind.level, title: kind.title, text, ...(subject ? { subject } : {}), ...(kind.rule ? { rule: kind.rule } : {}), terms: kind.terms }
 }
 const itemSubject = (item: { id: string }): NoticeSubject => ({ kind: 'costItem', id: item.id })
 const meterSubject = (reading: SnapshotReading): NoticeSubject => ({ kind: 'meter', id: reading.meterId })

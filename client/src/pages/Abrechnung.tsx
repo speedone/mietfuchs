@@ -8,6 +8,7 @@ import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
+import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = {
@@ -262,6 +263,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
             )}
             <div>{n.text}</div>
+            {n.terms && n.terms.length > 0 && (
+              <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
+            )}
             {target && onNavigate && (
               <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab)}>{target.label}</button>
             )}
@@ -559,7 +563,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </tr>
                   {data.selfUsedShareCents > 0 && (
                     <tr>
-                      <td colSpan={3} className="muted">davon Eigenanteil selbstgenutzter Wohnungen (steuerlich privat)</td>
+                      <td colSpan={3} className="muted">davon <Term id="ownShare">Eigenanteil</Term> selbstgenutzter Wohnungen (steuerlich privat)</td>
                       <td className="num muted">{fmtEuro(data.selfUsedShareCents)}</td>
                     </tr>
                   )}

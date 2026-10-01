@@ -805,6 +805,17 @@ Jede Abrechnung trägt ihren **Rechtsstand** (`legalBasis`: `RULES_AS_OF` und di
 Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert er mit ein. Wer
 eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 
+**Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
+Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es ist der **erste
+Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in
+client/tsconfig.json), der Server braucht nur den Typ `TermId`. Jeder Hinweis-Code in
+`noticeKinds` trägt mindestens einen Begriff (`terms`, als nicht leeres Tupel getippt, dazu
+[glossary.test.ts](server/test/glossary.test.ts)). In der Oberfläche zeigt
+[Term.tsx](client/src/components/Term.tsx) die Erklärung zum Aufklappen, und zwar als `span`
+mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbare Element und
+nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
+nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet.
+
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.

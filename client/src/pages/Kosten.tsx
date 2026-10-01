@@ -25,6 +25,7 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
+import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -523,11 +524,11 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
               <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
             </label>
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
-              davon §35a Lohn €
+              <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
             <label className="field grow">
-              Umlageschlüssel
+              <Term id="allocationKey">Umlageschlüssel</Term>
               <select value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value as CostKey })}>
                 {costKeyOptions(unitMeterTypes, form.key).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
@@ -547,7 +548,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             )}
             {form.key === 'custom' && (
               <div className="field-group">
-                <div className="field-group-label">Vereinbarte Anteile</div>
+                <div className="field-group-label"><Term id="agreedShares">Vereinbarte Anteile</Term></div>
                 <div className="muted" style={{ marginBottom: 8 }}>
                   Anteil je Wohnung in Prozent, wie im Mietvertrag vereinbart (§556a Abs. 1 BGB).
                   Was unter 100 % fehlt, trägt der Vermieter.
@@ -577,8 +578,8 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
               <div className="field-group">
                 <div className="field-group-label">Laut Gemeinschaftsabrechnung</div>
                 <div className="muted" style={{ marginBottom: 8 }}>
-                  Betrag oben ist Ihr Anteil laut Hausgeldabrechnung. Hier die Angaben der Gemeinschaft
-                  zu dieser Kostenart; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
+                  Betrag oben ist Ihr Anteil laut <Term id="homeownersStatement">Hausgeldabrechnung</Term>. Hier die Angaben der Gemeinschaft
+                  zu dieser Kostenart, meist nach <Term id="mea">Miteigentumsanteilen</Term>; sie erscheinen im Rechenweg der Abrechnung (§556a Abs. 3 BGB).
                 </div>
                 <div className="row">
                   <label className="field grow">
@@ -601,7 +602,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             )}
             {form.key === 'amounts' && (
               <div className="field-group">
-                <div className="field-group-label">Einzelbeträge je Mieter</div>
+                <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
                 <div className="muted" style={{ marginBottom: 8 }}>
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
                   der Messdienst selbst auf; der Rest trägt der Vermieter.
@@ -631,7 +632,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                 <summary>Weitere Optionen: nur bestimmte Wohnungen beteiligen</summary>
                 <div className="muted" style={{ marginBottom: 8 }}>
                   Etwa der Aufzug nur für ein Haus oder die Waschküche nur für ihre Nutzer. Nur die
-                  angehakten Wohnungen bilden die Verteilbasis.
+                  angehakten Wohnungen bilden die <Term id="distributionBasis">Verteilbasis</Term>.
                 </div>
                 <div className="row">
                   {basisUnits.map((u) => {
