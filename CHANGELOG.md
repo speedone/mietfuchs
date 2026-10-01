@@ -116,6 +116,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   schließt jetzt auch mit Esc, Enter übernimmt. Nach dem Wiederöffnen nennt die Seite das
   Versanddatum der früheren Fassung, statt die Frist nach § 556 Abs. 3 BGB scheinbar neu laufen zu
   lassen. ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **„Hier beheben →“ führt zum Eintrag, nicht nur zur Seite.** Ein Hinweis der Abrechnung öffnet
+  die betroffene Kostenposition, Wohnung oder das Mietverhältnis zum Bearbeiten, klappt die
+  Ablesungen des Zählers auf oder hebt die Zeile im Mietkonto hervor.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
   Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
   das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf

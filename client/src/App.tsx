@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import type { Settings, Tenancy, Unit } from './types'
+import type { NoticeSubject, Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
@@ -152,7 +152,12 @@ function writeDismissedNotices(ids: string[]): void {
 }
 
 function Shell() {
-  const [tab, setTab] = useState<Tab>('cockpit')
+  const [tab, setTabState] = useState<Tab>('cockpit')
+  // Der Eintrag, den „Hier beheben →“ auf der Zielseite öffnen soll (#142). Jeder andere
+  // Seitenwechsel löscht ihn, und die Seite meldet, wenn sie ihn geöffnet hat.
+  const [focus, setFocus] = useState<NoticeSubject | null>(null)
+  const setTab = useCallback((t: Tab, f: NoticeSubject | null = null) => { setFocus(f); setTabState(t) }, [])
+  const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
@@ -284,14 +289,14 @@ function Shell() {
         {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
-          <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} />
+          <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
         )}
-        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} />}
-        {tab === 'mietkonto' && <Mietkonto />}
-        {tab === 'zaehler' && <Zaehler units={units} />}
+        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
+        {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
+        {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege />}
         {tab === 'abrechnung' && (
-          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t) => setTab(t)} />
+          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'hilfe' && <Hilfe />}

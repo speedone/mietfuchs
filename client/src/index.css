@@ -138,6 +138,10 @@ h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); text-transform: uppe
   box-shadow: var(--shadow-1);
 }
 
+/* Der Eintrag, zu dem „Hier beheben →“ geführt hat (#142) */
+.card.focus-target { box-shadow: 0 0 0 2px var(--accent), var(--shadow-1); }
+tr.focus-target > td { background: var(--accent-soft); }
+
 /* Nach „Mietfuchs beenden": Die Seite bleibt im Browser stehen, ohne Seitenleiste (#45). */
 .stopped { display: flex; align-items: center; justify-content: center; min-height: 100vh; max-width: none; }
 .stopped .card { max-width: 420px; text-align: center; margin: 0; }

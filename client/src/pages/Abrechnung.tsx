@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import { isNotAllocable } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
@@ -24,8 +24,8 @@ type Props = {
   units: Unit[]
   tenancies: Tenancy[]
   reload: () => Promise<void>
-  // Für „Hier beheben →“ an einem Hinweis (#112)
-  onNavigate?: (tab: NoticeTab) => void
+  // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142)
+  onNavigate?: (tab: NoticeTab, focus?: NoticeSubject) => void
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
@@ -309,7 +309,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
             )}
             {target && onNavigate && (
-              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab)}>{target.label}</button>
+              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button>
             )}
           </div>
         )

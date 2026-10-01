@@ -8,12 +8,13 @@ import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import { scrollToFocus, useFocusTarget, type FocusProps } from '../focus'
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
 type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
 
-export default function Mietkonto() {
+export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const { year, setYear } = useYear()
   const { property } = useProperty()
   const propertyId = property?.id
@@ -24,6 +25,9 @@ export default function Mietkonto() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [form, setForm] = useState<PaymentForm | null>(null)
   const [error, setError] = useState('')
+  // „Hier beheben →“ aus der Abrechnung (#142): die Zeile des Mietverhältnisses hervorheben.
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  useFocusTarget(focus, 'rentLedger', ledger?.rows ?? null, (r) => r.tenancyId, (r) => { setFocusedId(r.tenancyId); scrollToFocus() }, onFocusDone)
 
   const load = useCallback(() => {
     return Promise.all([
@@ -201,7 +205,7 @@ export default function Mietkonto() {
         const noRent = r.sollYearCents === 0
         const standing = rowStanding(r)
         return (
-          <div className="card" key={r.tenancyId}>
+          <div className={focusedId === r.tenancyId ? 'card focus-target' : 'card'} key={r.tenancyId}>
             <div className="row" style={{ alignItems: 'baseline' }}>
               <h2 style={{ marginRight: 'auto' }}>{r.tenantName} <span className="muted" style={{ fontWeight: 400 }}>· {r.unitName}</span></h2>
               {standing.kind === 'arrears' ? (

@@ -32,9 +32,10 @@ import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
-type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
+type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
@@ -62,7 +63,7 @@ type QueueEntry = {
 
 const EMPTY = EMPTY_ITEM_FORM
 
-export default function Kosten({ units, settings, tenancies = [] }: Props) {
+export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   const { year, setYear } = useYear()
@@ -93,6 +94,8 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
     api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
+  // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
+  useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
   // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
   useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
