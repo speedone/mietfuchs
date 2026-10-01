@@ -4261,3 +4261,35 @@ test('Mieterwechsel (#150): über die Grenze eines Objekts wird mit 400 abgelehn
     assert.deepEqual(await s.api<Reading[]>(`/api/readings?property=${b.id}`), [])
   })
 })
+
+// ---------- Belegordner (#170) ----------
+
+async function uploadBelegFile(s: Server, content: string | Buffer, name: string, fields: Record<string, string> = {}): Promise<string> {
+  const fd = new FormData()
+  fd.append('file', new Blob([Buffer.from(content)], { type: name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg' }), name)
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+  const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
+  assert.equal(res.status, 200, await res.clone().text())
+  return fileOf(await jsonOf<UploadBody>(res))
+}
+
+test('Belegordner (#170): die Liste nennt Prüfsumme, Originalname und Hochladezeit; gleicher Inhalt ist erkennbar', async () => {
+  const s = await startServer()
+  try {
+    const vorher = Date.now()
+    const a = await uploadBelegFile(s, '%PDF-Grundsteuer', 'Grundsteuer 2025.pdf')
+    const b = await uploadBelegFile(s, '%PDF-Grundsteuer', 'Kopie.pdf')
+    const c = await uploadBelegFile(s, '%PDF-anders', 'Wasser.pdf')
+    const list = await s.api<UploadInfo[]>('/api/uploads')
+    const of = (file: string) => list.find((u) => u.file === file) ?? assert.fail(`${file} fehlt`)
+    assert.equal(of(a).sha256, of(b).sha256, 'gleicher Inhalt, gleiche Prüfsumme')
+    assert.notEqual(of(a).sha256, of(c).sha256)
+    assert.match(of(a).sha256, /^[0-9a-f]{64}$/)
+    assert.match(of(a).originalName, /^Grundsteuer.2025\.pdf$/)
+    assert.equal(of(a).mimeType, 'application/pdf')
+    const zeit = new Date(of(a).uploadedAt).getTime()
+    assert.ok(zeit >= vorher - 1000 && zeit <= Date.now() + 1000, `Hochladezeit ${of(a).uploadedAt}`)
+  } finally {
+    s.stop()
+  }
+})

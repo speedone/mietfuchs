@@ -39,6 +39,8 @@ const NAV: { section?: string; items: NavItem[] }[] = [
       { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥' },
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢' },
       { id: 'kosten', label: 'Kosten', icon: '🧾' },
+      // Der Belegordner (#170) gehört zum laufenden Sammeln: Dort landen neue Belege im Posteingang.
+      { id: 'belege', label: 'Belegordner', icon: '📁' },
       { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
     ],
   },
@@ -54,7 +56,6 @@ const NAV: { section?: string; items: NavItem[] }[] = [
     section: 'Einrichten · selten',
     items: [
       { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
-      { id: 'belege', label: 'Belegarchiv', icon: '📁' },
       { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
       { id: 'hilfe', label: 'Hilfe & Begriffe', icon: '❓' },
     ],

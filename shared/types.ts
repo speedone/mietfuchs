@@ -609,10 +609,17 @@ export type TaxReport = {
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
 }
 
+// Ein Beleg im Belegordner (#170). `mtime` ist die Zeit der Datei und nur noch für ältere Tabs
+// da; maßgeblich ist `uploadedAt` (siehe server/src/uploads.ts). `sha256` erkennt einen Beleg,
+// der mit gleichem Inhalt zweimal hochgeladen wurde, auch unter anderem Namen.
 export type UploadInfo = {
   file: string
   size: number
   mtime: string
+  originalName: string
+  mimeType: string
+  uploadedAt: string
+  sha256: string
 }
 
 // Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
