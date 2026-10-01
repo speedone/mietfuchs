@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Property, PropertyKind } from '../types'
-import { propertyBody, propertyToForm, type PropertyForm } from '../propertyForm'
+import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type CableAnswer } from '../propertyForm'
 import { PROPERTY_KIND_LABELS } from '../types'
+import Term from './Term'
 import { api } from '../api'
 import { useProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
@@ -102,6 +103,13 @@ export default function PropertyCard() {
           Art
           <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as PropertyKind })}>
             {(Object.keys(PROPERTY_KIND_LABELS) as PropertyKind[]).map((k) => <option key={k} value={k}>{PROPERTY_KIND_LABELS[k]}</option>)}
+          </select>
+        </label>
+        {/* #121: Bei einer Anlage ab dem 01.12.2021 war das TV-Signal nie umlagefähig. */}
+        <label className="field">
+          <span>Kabel- oder <Term id="cableTv">Antennenanlage</Term></span>
+          <select value={form.cable} onChange={(e) => setForm({ ...form, cable: e.target.value as CableAnswer })}>
+            {(Object.keys(CABLE_LABELS) as CableAnswer[]).map((k) => <option key={k} value={k}>{CABLE_LABELS[k]}</option>)}
           </select>
         </label>
       </div>

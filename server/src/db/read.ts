@@ -101,6 +101,7 @@ export async function readProperties(db: Database): Promise<Property[]> {
     landlordName: p.landlordName,
     iban: p.iban,
     paymentDeadlineDays: p.paymentDeadlineDays,
+    cableBuiltBeforeDec2021: p.cableBuiltBeforeDec2021,
   }))
 }
 

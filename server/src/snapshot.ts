@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { CostItem, Meter, Payment, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, Meter, Payment, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -155,7 +155,12 @@ export type Snapshot = {
   readings: SnapshotReading[]
   payments: SnapshotPayment[]
   closedSettlement: SnapshotClosedSettlement | null
+  // Was die Berechnung vom Objekt wissen muss (#121). Fehlt es, etwa beim Umstieg aus einer
+  // db.json, rechnet sie wie ohne die Angabe.
+  property?: SnapshotProperty | null
 }
+
+export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
 
 // Die Sammlungen, aus denen ein Schnappschuss entsteht, ohne die Frage, woher sie kommen. Die
 // JSON-Datei füllt sie über `snapshotFromDb` unten, die Datenbank über `snapshotFromStock` in
@@ -231,8 +236,13 @@ export function narrowToProperty<
 }
 
 // Der Schnappschuss eines Objekts in einem Jahr. Die Routen rechnen nur hierüber.
-export function snapshotFor(source: PropertyScopedSource, propertyId: string, year: number): Snapshot {
-  return { ...snapshotOf(narrowToProperty(source, propertyId), year), propertyId }
+export function snapshotFor(source: PropertyScopedSource & { properties?: (SnapshotProperty & { id: string })[] }, propertyId: string, year: number): Snapshot {
+  const found = source.properties?.find((p) => p.id === propertyId)
+  return {
+    ...snapshotOf(narrowToProperty(source, propertyId), year),
+    propertyId,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
+  }
 }
 
 // Baut den Schnappschuss eines Abrechnungsjahres aus dem Datenbestand.
