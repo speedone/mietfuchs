@@ -23,11 +23,16 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
   return settlement.notices.slice().sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level])
 }
 
-// Färbt die Hinweise das Cockpit gelb? Nur ein Fehler oder eine Warnung; ein Hinweis verlangt
-// nichts (#135: 0 m² bei einer Garage ist eine Angabe). Eine vor #112 abgeschlossene Abrechnung
-// kennt nur Texte, die gelten wie bisher als Warnungen.
+// Färbt die Hinweise das Cockpit gelb? Jeder Hinweis zählt als offener Punkt, auch einer der
+// Stufe `hint`: Die Abnahme hat gerade solche als nützlich bestätigt (etwa eine Summe der
+// Hausgeldabrechnung, die nicht zum Anteil passt). Ausgenommen sind nur die beiden Hinweise auf
+// eine bewusst eingetragene 0 (#135): Die 0 m² oder 0 Personen einer Garage oder eines
+// Stellplatzes sind eine Angabe des Nutzers und kein Versäumnis, und die Ampel „Mietverhältnisse
+// & Flächen“ nennt sie schon. Eine vor #112 abgeschlossene Abrechnung kennt nur Texte; die
+// zählen wie bisher.
+const DELIBERATE_ZERO = new Set(['basis.unit-no-area', 'basis.tenancy-no-persons'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
-  return noticesOf(settlement).some((n) => n.level === 'error' || n.level === 'warning')
+  return noticesOf(settlement).some((n) => !DELIBERATE_ZERO.has(n.code))
 }
 
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt

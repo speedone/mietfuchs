@@ -122,7 +122,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   erlaubt, mit einem kurzen Hinweis am Feld; negative und gebrochene Personenzahlen bleiben
   ausgeschlossen, und die Meldung sagt, was erlaubt ist. Die Abrechnung nennt eine Einheit mit 0 m²
   oder 0 Personen nur noch als Hinweis mit den betroffenen Positionen und nicht mehr als Warnung
-  „Wohnfläche fehlt“, und das Cockpit färbt sich deshalb nicht mehr gelb.
+  „Wohnfläche fehlt“; das Cockpit färbt sich allein deswegen nicht mehr gelb, alle übrigen
+  Hinweise der Berechnung zählen dort weiter als offener Punkt.
   ([#135](https://github.com/speedone/mietfuchs/issues/135))
 - **Die Cockpit-Ampel „Zählerstände“ sieht den Hauptzähler.** Bisher zählte sie nur Zähler mit
   Wohnung; fehlte der Endstand des Hauptzählers, blieb sie grün, obwohl er seit #116 die

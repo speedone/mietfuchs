@@ -55,12 +55,16 @@ describe('Hinweise (#112)', () => {
 // #135: 0 m² und 0 Personen sind Angaben (Garage, Stellplatz); ihr Hinweis soll die Cockpit-Ampel
 // nicht gelb färben. Gelb heißt: Es gibt einen Fehler oder eine Warnung.
 describe('Cockpit: verlangen die Hinweise etwas?', () => {
-  test('nur Hinweise: nein', () => {
-    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ level: 'hint' })] })).toBe(false)
+  test('ein Hinweis zur Gemeinschaftsabrechnung allein: ja, er ist ein offener Punkt', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'external.amount-mismatch', level: 'hint' })] })).toBe(true)
   })
-  test('eine Warnung oder ein Fehler: ja', () => {
-    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ level: 'hint' }), n({ level: 'warning' })] })).toBe(true)
-    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ level: 'error' })] })).toBe(true)
+  test('nur die beiden Hinweise auf eine bewusst eingetragene 0: nein', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [
+      n({ code: 'basis.unit-no-area', level: 'hint' }), n({ code: 'basis.tenancy-no-persons', level: 'hint' }),
+    ] })).toBe(false)
+  })
+  test('die 0 neben einem anderen Hinweis: ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.unit-no-area', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
   })
   test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
     expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)
