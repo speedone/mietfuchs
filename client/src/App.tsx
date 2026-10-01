@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import type { NoticeSubject, Settings, Tenancy, Unit } from './types'
+import type { NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty, useSwitchYear } from './property'
@@ -160,6 +160,8 @@ function Shell() {
   const setTab = useCallback((t: Tab, f: NoticeSubject | null = null) => { setFocus(f); setTabState(t) }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
+  // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
+  const [handoff, setHandoff] = useState<UploadInfo[] | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
   // sind, stehen noch die des vorigen hier.
@@ -177,6 +179,13 @@ function Shell() {
   const switchYear = useSwitchYear()
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
+  // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
+  const evaluateFromInbox = async (list: UploadInfo[]) => {
+    const target = list.find((u) => u.propertyId)?.propertyId
+    if (target && target !== property?.id && !(await switchProperty(target))) return
+    setHandoff(list)
+    setTab('schnellerfassung')
+  }
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
   // Das zuletzt gewählte Objekt, für den Reihenfolge-Schutz in reload (#145)
@@ -291,7 +300,10 @@ function Shell() {
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
-        {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />}
+        {tab === 'schnellerfassung' && (
+          <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)}
+            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} />
+        )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
@@ -299,7 +311,7 @@ function Shell() {
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege />}
+        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}

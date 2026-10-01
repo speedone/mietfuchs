@@ -4293,3 +4293,142 @@ test('Belegordner (#170): die Liste nennt Prüfsumme, Originalname und Hochladez
     s.stop()
   }
 })
+
+// Die Angaben zu einem Beleg, an den Routen vorbei: so, wie die Liste ihn beschreibt.
+async function listedUpload(s: Server, file: string): Promise<UploadInfo> {
+  return (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file) ?? assert.fail(`${file} fehlt in der Liste`)
+}
+
+const putUpload = (s: Server, file: string, body: unknown) =>
+  fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+
+test('Posteingang (#170): ein Beleg kommt mit Objekt, Jahr und seinem echten Namen in die Tabelle', async () => {
+  await withProperties(async (s, b) => {
+    const file = await uploadBelegFile(s, '%PDF-Posteingang', 'Grundsteuer (Bescheid) 2025.pdf', { propertyId: b.id, year: '2025' })
+    const u = await listedUpload(s, file)
+    assert.equal(u.propertyId, b.id)
+    assert.equal(u.year, 2025)
+    // Der Name auf der Platte ist gefiltert, der Originalname nicht.
+    assert.equal(u.originalName, 'Grundsteuer (Bescheid) 2025.pdf')
+    assert.equal(u.invoiceDate, null)
+    // Ohne Angaben landet er im Posteingang ohne Objekt und Jahr.
+    const lose = await uploadBelegFile(s, '%PDF-lose', 'lose.pdf')
+    assert.equal((await listedUpload(s, lose)).propertyId, null)
+  })
+})
+
+test('Posteingang (#170): ein unbekanntes Objekt oder Jahr wird abgelehnt, ohne Rest im Ordner', async () => {
+  const s = await startServer()
+  try {
+    for (const fields of [{ propertyId: 'gibt-es-nicht' }, { year: 'zwanzig' }, { year: '0' }]) {
+      const fd = new FormData()
+      fd.append('file', new Blob([Buffer.from('%PDF')], { type: 'application/pdf' }), 'x.pdf')
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+      const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
+      assert.ok(res.status === 400 || res.status === 404, `${JSON.stringify(fields)} → ${res.status}`)
+    }
+    assert.deepEqual(await s.api<UploadInfo[]>('/api/uploads'), [])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Posteingang (#170): Objekt, Jahr und Rechnungsdatum lassen sich ändern, auch bei einem Beleg ohne Zeile', async () => {
+  await withProperties(async (s, b) => {
+    const file = await uploadBelegFile(s, '%PDF-a', 'a.pdf')
+    const ok = await putUpload(s, file, { propertyId: b.id, year: 2024, invoiceDate: '2025-02-15' })
+    assert.equal(ok.status, 200)
+    const u = await listedUpload(s, file)
+    assert.deepEqual([u.propertyId, u.year, u.invoiceDate], [b.id, 2024, '2025-02-15'])
+    // Teilweise: nur das Jahr leeren
+    assert.equal((await putUpload(s, file, { year: null })).status, 200)
+    assert.deepEqual([(await listedUpload(s, file)).propertyId, (await listedUpload(s, file)).year], [b.id, null])
+
+    // Ein Beleg, zu dem die Datenbank nichts weiß (vor der Tabelle hochgeladen, aus einem alten Backup)
+    const alt = '1700000000000_alt.pdf'
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', alt), '%PDF-alt')
+    assert.equal((await listedUpload(s, alt)).propertyId, null)
+    assert.equal((await putUpload(s, alt, { propertyId: 'objekt-1' })).status, 200)
+    const altInfo = await listedUpload(s, alt)
+    assert.equal(altInfo.propertyId, 'objekt-1')
+    assert.equal(altInfo.uploadedAt, new Date(1700000000000).toISOString())
+
+    // Abgelehnt: unbekanntes Objekt, ein Jahr, das keines ist, ein Datum, das es nicht gibt, eine fehlende Datei
+    assert.equal((await putUpload(s, file, { propertyId: 'gibt-es-nicht' })).status, 404)
+    assert.equal((await putUpload(s, file, { year: 2024.5 })).status, 400)
+    assert.equal((await putUpload(s, file, { invoiceDate: '2025-02-31' })).status, 400)
+    assert.equal((await putUpload(s, 'fehlt.pdf', { year: 2024 })).status, 404)
+    assert.deepEqual([(await listedUpload(s, file)).propertyId, (await listedUpload(s, file)).invoiceDate], [b.id, '2025-02-15'])
+  })
+})
+
+test('Posteingang (#170): Löschen nimmt die Angaben mit; gelöscht wird nur, was an keiner Position irgendeines Objekts hängt', async () => {
+  await withProperties(async (s, b) => {
+    const file = await uploadBelegFile(s, '%PDF-b', 'b.pdf', { propertyId: 'objekt-1', year: '2025' })
+    // Verknüpft im **anderen** Objekt
+    const item = await s.api<CostItem>(`/api/costItems?property=${b.id}`, {
+      method: 'POST',
+      body: JSON.stringify({ year: 2025, category: 'Grundsteuer', description: 'GS', amountCents: 100, key: 'area', invoiceFile: file }),
+    })
+    const verweigert = await fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })
+    assert.equal(verweigert.status, 409)
+    await s.api(`/api/costItems/${item.id}`, { method: 'DELETE' })
+    assert.equal((await fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })).status, 200)
+    // Entsteht später eine Datei gleichen Namens, erbt sie nichts.
+    fs.writeFileSync(path.join(s.dataDir, 'uploads', file), '%PDF-neu')
+    assert.equal((await listedUpload(s, file)).propertyId, null)
+  })
+})
+
+test('Backup (#170): die Angaben zu Belegen kommen mit, auf die Millisekunde', async () => {
+  await withProperties(async (s, b) => {
+    const file = await uploadBelegFile(s, '%PDF-c', 'Wasser Stadtwerke.pdf', { propertyId: b.id, year: '2025' })
+    assert.equal((await putUpload(s, file, { invoiceDate: '2026-02-15' })).status, 200)
+    const vorher = await listedUpload(s, file)
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    // Danach ändern und löschen, damit das Wiederherstellen wirklich etwas zurückbringt
+    assert.equal((await putUpload(s, file, { year: 2020 })).status, 200)
+    assert.equal((await restore(s, backup)).status, 200)
+    const nachher = await listedUpload(s, file)
+    assert.deepEqual(
+      [nachher.propertyId, nachher.year, nachher.invoiceDate, nachher.originalName, nachher.uploadedAt, nachher.sha256],
+      [b.id, 2025, '2026-02-15', 'Wasser Stadtwerke.pdf', vorher.uploadedAt, vorher.sha256],
+    )
+  })
+})
+
+test('Backup (#170): ein Archiv ohne die Tabelle (nur db.json) bringt seine Belege ohne Angaben in den Posteingang', async () => {
+  const s = await startServer()
+  try {
+    const r = await restore(s, archive({ 'uploads/1700000000000_alt.pdf': '%PDF-alt' }))
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    const u = await listedUpload(s, '1700000000000_alt.pdf')
+    assert.deepEqual([u.propertyId, u.year, u.originalName, u.uploadedAt], [null, null, 'alt.pdf', new Date(1700000000000).toISOString()])
+    // Und die Tabelle ist da: Zuordnen geht.
+    assert.equal((await putUpload(s, u.file, { year: 2023 })).status, 200)
+  } finally {
+    s.stop()
+  }
+})
+
+test('KI-Auswertung (#170): ein Beleg aus dem Posteingang wird ausgewertet, ohne ein zweites Mal hochgeladen zu werden', async () => {
+  await withOllama(async (s, ollama) => {
+    const file = await uploadBelegFile(s, PDF, 'posteingang.pdf')
+    const fd = new FormData()
+    fd.append('existingFile', file)
+    fd.append('pdfText', LONG_TEXT)
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200)
+    const body = await jsonOf<UploadBody>(res)
+    assert.equal(body.file, file)
+    assert.ok(firstMessage(ollama).content.includes(LONG_TEXT))
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file], 'keine Kopie im Ordner')
+
+    // Ein Name außerhalb des Ordners oder eine fehlende Datei wird abgelehnt.
+    for (const name of ['../db.json', 'fehlt.pdf']) {
+      const bad = new FormData()
+      bad.append('existingFile', name)
+      assert.equal((await fetch(`${s.base}/api/extract`, { method: 'POST', body: bad })).status, 400, name)
+    }
+  })
+})

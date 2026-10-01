@@ -620,6 +620,13 @@ export type UploadInfo = {
   mimeType: string
   uploadedAt: string
   sha256: string
+  // Nur für einen Beleg im **Posteingang**, also an keiner Position: Objekt und Jahr, denen er
+  // zugedacht ist. Hängt er an einer Position, ergeben sie sich aus ihr; diese Felder sagen dann
+  // nichts mehr, damit es keine zweite Wahrheit gibt. `null` heißt „noch nicht zugeordnet“.
+  propertyId: string | null
+  year: number | null
+  // Rechnungsdatum, wie es die KI-Auswertung gelesen hat oder jemand eingetragen hat (JJJJ-MM-TT)
+  invoiceDate: string | null
 }
 
 // Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
