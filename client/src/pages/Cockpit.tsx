@@ -94,7 +94,11 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // Auch die selbstgenutzte Wohnung braucht eine Fläche — ohne sie fällt ihr Eigenanteil
     // beim Flächenschlüssel stillschweigend weg.
     const noArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
-    if (settlement.statements.length === 0) {
+    // Mietverhältnisse ohne Abrechnung (Pauschale, Inklusivmiete, #93) zählen mit: Es gibt sie,
+    // sie werden nur nicht abgerechnet.
+    const ohneAbrechnung = settlement.notSettled ?? []
+    const mietverhaeltnisse = settlement.statements.length + ohneAbrechnung.length
+    if (mietverhaeltnisse === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
         detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
@@ -102,7 +106,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
         detail: `Wohnfläche fehlt bei: ${noArea.map((u) => u.name).join(', ')}` })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
-        detail: `${settlement.statements.length} Mietverhältnis(se) · ${participating.length} beteiligte Wohnung(en) · vollständig` })
+        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · vollständig` })
     }
 
     // 2. Belege & Kosten erfasst
@@ -173,7 +177,11 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
     // 7. Abschluss & Versand
     const closed = settlement.closed
-    if (closed?.sentAt) {
+    if (settlement.statements.length === 0 && (settlement.notSettled ?? []).length > 0) {
+      // Nur Pauschale oder Inklusivmiete (#93): Es gibt keine Abrechnung, also auch keine Frist.
+      list.push({ title: 'Abgeschlossen & versendet', level: 'gruen',
+        detail: 'Keine Abrechnung nötig: Alle Mietverhältnisse haben eine Pauschale oder Inklusivmiete.' })
+    } else if (closed?.sentAt) {
       const ok = closed.sentAt <= `${year + 1}-12-31`
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
         detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach §556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })

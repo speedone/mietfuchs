@@ -16,6 +16,7 @@ import type {
   AiProviderKind,
   AiSlotName,
   CostKey,
+  CostModel,
   DepositStatus,
   ExternalMeasure,
   MeterType,
@@ -42,6 +43,7 @@ const exactly =
 
 export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
+export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
@@ -163,6 +165,9 @@ export const tenancies = sqliteTable(
     depositCents: integer('deposit_cents'),
     depositStatus: text('deposit_status', { enum: DEPOSIT_STATUS }),
     notes: text('notes'),
+    // Nebenkostenmodell (#93), getrennt für kalte Kosten und Heizung. NULL heißt Abrechnung.
+    costModel: text('cost_model', { enum: COST_MODELS }),
+    heatingModel: text('heating_model', { enum: COST_MODELS }),
   },
   (t) => [
     notNegative('tenancies_persons_not_negative', 'persons'),
@@ -170,6 +175,8 @@ export const tenancies = sqliteTable(
     // keinen Sinn.
     notNegative('tenancies_deposit_not_negative', 'deposit_cents'),
     oneOf('tenancies_deposit_status_known', 'deposit_status', DEPOSIT_STATUS),
+    oneOf('tenancies_cost_model_known', 'cost_model', COST_MODELS),
+    oneOf('tenancies_heating_model_known', 'heating_model', COST_MODELS),
   ],
 )
 
@@ -211,6 +218,24 @@ export const prepayments = sqliteTable(
     // Eine negative monatliche Vorauszahlung gibt es nicht: Der Mieter zahlt voraus, er bekommt
     // nicht monatlich etwas ausgezahlt.
     notNegative('prepayments_monthly_not_negative', 'monthly_cents'),
+  ],
+)
+
+// Pauschale ab einem Monat ('YYYY-MM', #93). Eine eigene Tabelle und nicht die der Vorauszahlung:
+// Das Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. In derselben Staffel würde
+// sie bei einem gemischten Modell gegen die abgerechneten Kosten gutgeschrieben.
+export const flatRates = sqliteTable(
+  'flat_rates',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.from] }),
+    notNegative('flat_rates_monthly_not_negative', 'monthly_cents'),
   ],
 )
 

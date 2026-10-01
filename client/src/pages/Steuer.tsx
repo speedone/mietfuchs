@@ -128,6 +128,12 @@ export default function Steuer({ settings }: Props) {
                   <td>Umlagen / Nebenkosten-Vorauszahlungen (vereinbart)</td>
                   <td className="num">{fmtEuro(data.income.prepaymentSollCents)}</td>
                 </tr>
+                {data.income.flatRateSollCents > 0 && (
+                  <tr>
+                    <td>Betriebskostenpauschalen (vereinbart)</td>
+                    <td className="num">{fmtEuro(data.income.flatRateSollCents)}</td>
+                  </tr>
+                )}
                 <tr className="subtotal">
                   <td><strong>Summe Soll (brutto)</strong></td>
                   <td className="num"><strong>{fmtEuro(data.income.sollCents)}</strong></td>

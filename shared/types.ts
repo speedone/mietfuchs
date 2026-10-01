@@ -63,9 +63,21 @@ export type PersonEntry = {
   persons: number
 }
 
+// Wie die Nebenkosten eines Mietverhältnisses geregelt sind (#93): Vorauszahlung mit Abrechnung,
+// Betriebskostenpauschale (§ 556 Abs. 2 BGB) oder Inklusivmiete.
+export type CostModel = 'settlement' | 'flatRate' | 'inclusive'
+
 export type Tenancy = {
   id: string
   unitId: string
+  // Getrennt für kalte Kosten und für Heizung und Warmwasser (#93); fehlend heißt `settlement`.
+  costModel?: CostModel
+  heatingModel?: CostModel
+  // Die Pauschale je Monat (#93), eine eigene Staffel und nicht die der Vorauszahlung: Das
+  // Mietkonto führt sie im Soll, die Abrechnung rechnet sie nie an. Stünde sie in der Staffel
+  // der Vorauszahlung, würde sie bei einem gemischten Modell gegen die abgerechneten Kosten
+  // gutgeschrieben.
+  flatRates?: PrepaymentEntry[]
   tenantName: string
   persons: number // aktuelle Personenzahl (abgeleitet aus personHistory)
   personHistory: PersonEntry[]
@@ -104,7 +116,8 @@ export type RentMonth = {
   month: number // 1..12
   baseRentCents: number
   prepaymentCents: number
-  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung
+  flatRateCents: number // Pauschale (#93)
+  sollCents: number // Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale
   paidCents: number // dem Monat zugeordneter Zahlungseingang
   status: RentMonthStatus
 }
@@ -117,6 +130,7 @@ export type RentLedgerRow = {
   sollYearCents: number // Brutto-Soll des Jahres
   baseRentYearCents: number // davon Kaltmiete (Netto)
   prepaymentYearCents: number // davon NK-Vorauszahlung
+  flatRateYearCents: number // davon Pauschale (#93)
   paidYearCents: number
   balanceCents: number // paid − soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
   openMonths: number
@@ -376,6 +390,14 @@ export type Statement = {
   balanceCents: number
 }
 
+export type NotSettled = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  costModel: CostModel
+  heatingModel: CostModel
+}
+
 export type Settlement = {
   year: number
   daysInYear: number
@@ -385,6 +407,9 @@ export type Settlement = {
   selfUsedShareCents: number
   totalCostsCents: number
   warnings: string[]
+  // Mietverhältnisse ohne Abrechnung (#93), mit ihrem Modell. Optional, weil eine vor #93
+  // abgeschlossene Abrechnung das Feld nicht kennt.
+  notSettled?: NotSettled[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
 }
@@ -404,6 +429,7 @@ export type TaxReport = {
   income: {
     baseRentSollCents: number // Kaltmiete (netto), vereinbart
     prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
+    flatRateSollCents: number // Betriebskostenpauschalen, vereinbart (#93)
     // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener
     // Abrechnung ihr eingefrorener Stand. Das ist nicht dasselbe wie `prepaymentSollCents`, und
     // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten

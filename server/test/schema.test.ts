@@ -72,10 +72,11 @@ type Matches<Row, Domain> = Equals<keyof Row, keyof Domain> extends true
 type _Units = Assert<Matches<typeof schema.units.$inferSelect, Unit>>
 
 // --- Mietverhältnisse ---
-// Die vier verschachtelten Listen stehen in eigenen Tabellen und haben deshalb keine Spalte.
+// Die fünf verschachtelten Listen stehen in eigenen Tabellen und haben deshalb keine Spalte.
 // Dass sie hier aufgezählt sind, ist Absicht: Wer eine davon wieder in die Zeile holt oder eine
-// fünfte hinzufügt, muss diese Zeile anfassen und stolpert über die Entscheidung.
-type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides'>
+// weitere hinzufügt, muss diese Zeile anfassen und stolpert über die Entscheidung. Die fünfte ist
+// die Pauschale (#93).
+type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates'>
 type _Tenancies = Assert<Matches<typeof schema.tenancies.$inferSelect, TenancyColumns>>
 
 type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSelect, 'tenancyId'>, PersonEntry>>
@@ -213,6 +214,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'cost_item_participants',
       'cost_item_shares',
       'cost_items',
+      'flat_rates',
       'meters',
       'payments',
       'person_history',

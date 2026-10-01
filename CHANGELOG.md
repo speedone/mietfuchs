@@ -32,6 +32,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Nur bestimmte Wohnungen beteiligen**: Unter „Weitere Optionen“ einer Kostenposition lässt
   sich festlegen, welche Wohnungen sie tragen, etwa der Aufzug nur für ein Haus.
   ([#94](https://github.com/speedone/mietfuchs/issues/94))
+- **Pauschale, Inklusivmiete und Warmmiete.** Am Mietverhältnis lässt sich unter „Weitere
+  Angaben“ festlegen, dass die Nebenkosten als Pauschale gezahlt werden oder in der Miete
+  enthalten sind, getrennt für Heizung und Warmwasser. Ein solcher Mieter bekommt keine
+  Abrechnung, sein Anteil bleibt beim Vermieter und zählt als Werbungskosten; die Seite
+  Abrechnung nennt ihn unter „Ohne Abrechnung“. Ist für die Heizung eine Pauschale vereinbart,
+  obwohl das Haus nicht das selbstbewohnte Zweifamilienhaus ist, weist Mietfuchs auf die
+  Heizkostenverordnung hin. ([#93](https://github.com/speedone/mietfuchs/issues/93))
+- **Kostenart „Heizung und Warmwasser“**, auch in der KI-Auswertung und in der
+  Steuerübersicht. ([#93](https://github.com/speedone/mietfuchs/issues/93))
 - **Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben**, als
   `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
   Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.
