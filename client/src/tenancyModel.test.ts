@@ -1,6 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
+import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
   expect(showsFlatRates('flatRate', 'settlement')).toBe(true)
@@ -50,4 +51,22 @@ test('Personen-Staffel: sortiert nach Datum, eine spätere Zeile ohne Datum ist 
     .toEqual({ personHistory: [{ from: '2025-01-01', persons: 2 }, { from: '2025-07-01', persons: 1 }] })
   expect(buildPersonHistory([{ from: '', persons: '1' }, { from: '', persons: '2' }], '2025-01-01')).toHaveProperty('error')
   expect(buildPersonHistory([], '2025-01-01')).toHaveProperty('error')
+})
+
+test('neues Mietverhältnis: vorgewählt wird die erste vermietbare Wohnung ohne laufendes Mietverhältnis (#142)', () => {
+  const units: Unit[] = [
+    { id: 'eigen', propertyId: 'p', name: 'EG', areaM2: 80, participates: false, selfUsed: true },
+    { id: 'belegt', propertyId: 'p', name: 'OG', areaM2: 60, participates: true },
+    { id: 'frei', propertyId: 'p', name: 'DG', areaM2: 40, participates: true },
+  ]
+  const ten = (unitId: string, end: string | null): Tenancy => ({ id: unitId, unitId, tenantName: 'X', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end, prepayments: [], prepaymentOverrides: {}, baseRents: [] })
+  const heute = '2026-10-01'
+  expect(defaultTenancyUnitId(units, [ten('belegt', null)], heute)).toBe('frei')
+  // ein beendetes Mietverhältnis belegt die Wohnung nicht mehr
+  expect(defaultTenancyUnitId(units, [ten('belegt', '2025-06-30')], heute)).toBe('belegt')
+  // alle vermietbaren belegt: die erste vermietbare, nie die selbstgenutzte
+  expect(defaultTenancyUnitId(units, [ten('belegt', null), ten('frei', null)], heute)).toBe('belegt')
+  // gar keine vermietbare: die erste Wohnung, wie bisher
+  expect(defaultTenancyUnitId([units[0] as Unit], [], heute)).toBe('eigen')
+  expect(defaultTenancyUnitId([], [], heute)).toBe('')
 })

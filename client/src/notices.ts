@@ -51,14 +51,15 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
 }
 
-// Wohin „Hier beheben →“ führt: zur Seite, nicht zum einzelnen Eintrag.
-export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string } | null {
+// Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an
+// die Zielseite weiter; die öffnet den Eintrag, sobald er geladen ist (useFocusTarget in focus.ts).
+export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string, focus: NoticeSubject } | null {
   if (!subject) return null
   // Eine Art, die diese Fassung nicht kennt (eingefrorene oder neuere Abrechnung), ergibt keinen
   // Knopf statt eines Absturzes.
   const target: { tab: NoticeTab, page: string } | undefined = Object.hasOwn(TARGETS, subject.kind) ? TARGETS[subject.kind] : undefined
   if (!target) return null
-  return { tab: target.tab, label: `Hier beheben → ${target.page}` }
+  return { tab: target.tab, label: `Hier beheben → ${target.page}`, focus: { kind: subject.kind, id: subject.id } }
 }
 
 // Der Rechtsstand als Kopfzeile und eine Zeile je Regel. Fehlt er, wurde die Abrechnung

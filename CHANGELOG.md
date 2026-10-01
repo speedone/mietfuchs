@@ -108,6 +108,36 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Abrechnung: was beim Mieter auf dem Papier steht.** „(manuell angepasst)“ an der
+  Vorauszahlung erscheint nur noch am Bildschirm. Statt „Abrechnung nach dem Abflussprinzip“, was
+  nicht zutraf, steht dort „Abgerechnet werden die Kosten des Abrechnungsjahres …“. Wechselt die
+  Personenzahl im Jahr, nennt die Kopfzeile den Bereich und die Personentage („1 bis 2 Personen
+  (457 Personentage)“) statt nur des letzten Stands; gerechnet wird unverändert. „✎ anpassen“
+  schließt jetzt auch mit Esc, Enter übernimmt. Nach dem Wiederöffnen nennt die Seite das
+  Versanddatum der früheren Fassung, statt die Frist nach § 556 Abs. 3 BGB scheinbar neu laufen zu
+  lassen. ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **„Hier beheben →“ führt zum Eintrag, nicht nur zur Seite.** Ein Hinweis der Abrechnung öffnet
+  die betroffene Kostenposition, Wohnung oder das Mietverhältnis zum Bearbeiten, klappt die
+  Ablesungen des Zählers auf oder hebt die Zeile im Mietkonto hervor.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Erfassen: Hinweis und Vorbelegungen.** Ist die Abrechnung des Jahres abgeschlossen, sagt die
+  Kostenseite das oben und dass Änderungen als Abweichung angezeigt werden; bearbeiten lässt sich
+  weiterhin. Im Formular der Kostenposition schlägt Wasser/Abwasser „nach Verbrauch“ (Kaltwasser)
+  vor, wenn jede beteiligte Wohnung einen Kaltwasserzähler hat oder keinen Wasseranschluss; die
+  Übernahme aus der KI-Belegauswertung schlägt weiter „nach Personenzahl“ vor. Eine neue Zahlung in einem früheren Jahr steht auf dem 31.12. dieses
+  Jahres statt auf heute. Ein neues Mietverhältnis wählt die erste vermietbare Wohnung ohne
+  laufendes Mietverhältnis vor statt einer selbstgenutzten.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Ein Jahr ohne Kosten kündigt kein Guthaben mehr an.** Cockpit und Übersicht zeigten für ein
+  Jahr ganz ohne Kosten die volle Vorauszahlung als voraussichtliches Guthaben und im Vergleich
+  zum Vorjahr überall „−100 %“. Jetzt steht dort „Noch keine Kosten … erfasst“, verglichen wird
+  erst, wenn das Jahr Kosten hat. ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Der Fuß der Seitenleiste steht am unteren Fensterrand.** „Design“, „Mietfuchs beenden“ und
+  der Satz zur lokalen Ablage lagen auf langen Seiten erst nach langem Scrollen im Bild; jetzt
+  bleibt die Seitenleiste stehen, ihr Fuß steht bei jeder Fensterhöhe unten, und nur die
+  Navigation darüber scrollt. Am Handy gibt es die Umschaltung des Designs wieder, als kleinen
+  Knopf „🌗“.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
   Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
   das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf
