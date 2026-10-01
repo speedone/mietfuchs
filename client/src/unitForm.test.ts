@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import type { Unit } from './types'
+import type { MeterType, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -142,5 +142,70 @@ describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
   })
   test('eine vor #135 abgeschlossene Abrechnung kennt die Einstufung nicht: jede 0 m² gilt als fehlend', () => {
     expect(zeroAreaUnits(units, undefined).missing.map((x) => x.name)).toEqual(['Garage', 'OG'])
+  })
+})
+
+// #142: Die Löschfrage nannte nur die Mietverhältnisse; mit der Wohnung gehen auch Zähler,
+// Ablesungen, Zahlungen und ihre Anteile an Kostenpositionen.
+describe('Löschfrage einer Wohnung', () => {
+  const none = { tenancies: 0, meters: 0, readings: 0, payments: 0, costItemLinks: 0, directCostItems: 0 }
+
+  test('nennt alles, was mitgelöscht wird, mit Anzahl', () => {
+    expect(unitDeleteMessage({ tenancies: 2, meters: 1, readings: 5, payments: 24, costItemLinks: 3, directCostItems: 0 })).toBe(
+      'Mit der Wohnung werden gelöscht: 2 Mietverhältnisse, 1 Zähler, 5 Ablesungen, 24 Zahlungen und 3 Angaben an Kostenpositionen ' +
+        '(vereinbarte Anteile, Teilnahmen, Einzelbeträge). Das lässt sich nicht rückgängig machen.',
+    )
+  })
+
+  test('Einzahl, und was nicht da ist, steht nicht da', () => {
+    expect(unitDeleteMessage({ ...none, tenancies: 1, payments: 1 })).toBe(
+      'Mit der Wohnung werden gelöscht: 1 Mietverhältnis und 1 Zahlung. Das lässt sich nicht rückgängig machen.',
+    )
+    expect(unitDeleteMessage(none)).toBe('An der Wohnung hängt nichts weiter. Das lässt sich nicht rückgängig machen.')
+  })
+
+  test('direkt zugeordnete Rechnungen bleiben und gehen an den Vermieter', () => {
+    expect(unitDeleteMessage({ ...none, directCostItems: 2 })).toBe(
+      'An der Wohnung hängt nichts weiter. 2 direkt zugeordnete Kostenpositionen bleiben erhalten; ihren Betrag trägt danach der Vermieter. ' +
+        'Das lässt sich nicht rückgängig machen.',
+    )
+  })
+
+  test('ohne Zählung (Server nicht erreichbar) die vollständige Liste ohne Zahlen', () => {
+    expect(unitDeleteMessage(null)).toBe(
+      'Mit der Wohnung werden auch ihre Mietverhältnisse, Zähler, Ablesungen und Zahlungen gelöscht, dazu ihre Anteile an ' +
+        'Kostenpositionen. Das lässt sich nicht rückgängig machen.',
+    )
+  })
+})
+
+// Anschlüsse einer Einheit, positiv gefragt (#142): angehakt heißt angeschlossen, gespeichert wird
+// unverändert nur die Ausnahme in `noConnection`.
+describe('Anschlüsse einer Einheit', () => {
+  test('angeboten werden nur die Zählerarten des Objekts, dazu jede schon gesetzte Ausnahme', () => {
+    const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
+    expect(connectionTypes([], [])).toEqual([])
+    expect(connectionTypes([m('kaltwasser'), m('kaltwasser')], [])).toEqual(['kaltwasser'])
+    expect(connectionTypes([m('kaltwasser')], ['waerme'])).toEqual(['kaltwasser', 'waerme'])
+    expect(connectionTypes([m('sonstig'), m('waerme'), m('kaltwasser', null)], [])).toEqual(['kaltwasser', 'waerme', 'sonstig'])
+    // Strom nur mit einem Stromzähler an einer Einheit; der Allgemeinstrom (Hauptzähler) gehört dem Haus.
+    expect(connectionTypes([m('strom', null)], [])).toEqual([])
+    expect(connectionTypes([m('strom', null)], ['strom'])).toEqual(['strom'])
+    expect(connectionTypes([m('strom', 'u1')], [])).toEqual(['strom'])
+  })
+
+  test('Häkchen entfernen setzt genau diese Ausnahme, Häkchen setzen nimmt sie zurück', () => {
+    const f = { ...EMPTY_UNIT_FORM, name: 'Garage', areaM2: '15' }
+    const ohneWasser = setConnected(f, 'kaltwasser', false)
+    expect(ohneWasser.noConnection).toEqual(['kaltwasser'])
+    expect(setConnected(ohneWasser, 'kaltwasser', false).noConnection).toEqual(['kaltwasser'])
+    expect(setConnected(ohneWasser, 'kaltwasser', true).noConnection).toEqual([])
+  })
+
+  test('die Zusammenfassung nennt eine Ausnahme, sonst nichts', () => {
+    expect(connectionSummary([])).toBe('')
+    expect(connectionSummary(['kaltwasser'])).toBe('ohne Wasseranschluss')
+    expect(connectionSummary(['kaltwasser', 'waerme'])).toBe('ohne Wasser- und Wärmeanschluss')
+    expect(connectionSummary(['sonstig'])).toBe('ohne Anschluss für Sonstiges')
   })
 })

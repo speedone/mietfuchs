@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -108,6 +108,16 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
+  // Die Zählerarten des Objekts, für die Frage nach den Anschlüssen einer Einheit (#142).
+  const [objectMeters, setObjectMeters] = useState<Meter[]>([])
+  useEffect(() => {
+    if (!propertyId) return
+    let alive = true
+    void api<Meter[]>(withProperty('/api/meters', propertyId))
+      .then((all) => { if (alive) setObjectMeters(all) })
+      .catch(() => { if (alive) setObjectMeters([]) })
+    return () => { alive = false }
+  }, [propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
   useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { setError(''); setUnitForm(unitToForm(u)) }, onFocusDone)
   useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { setError(''); setTenForm(tenancyToForm(t)) }, onFocusDone)
@@ -136,9 +146,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
 
   async function deleteUnit(u: Unit) {
+    // Was mitgelöscht wird, mit Anzahl (#142); ohne Antwort die vollständige Liste ohne Zahlen.
+    const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
     const ok = await confirm({
       title: `Wohnung „${u.name}" löschen?`,
-      message: 'Die Wohnung und alle zugehörigen Mietverhältnisse werden gelöscht. Das lässt sich nicht rückgängig machen.',
+      message: unitDeleteMessage(deps),
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -270,6 +282,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
 
   const participating = units.filter((u) => u.participates)
+  // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
+  const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
   return (
     <>
@@ -289,6 +303,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <tr>
                 <th>Name</th>
                 <th className="num">Wohnfläche</th>
+                {showsMea && <th className="num"><Term id="mea">MEA</Term></th>}
                 <th>Kostenverteilung</th>
                 <th className="no-print"></th>
               </tr>
@@ -305,6 +320,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                   </td>
                   <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
+                  {showsMea && <td className="num">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
                   <td>
                     {usageOf(u) === 'vermietet' && <span className="badge green">beteiligt</span>}
                     {usageOf(u) === 'eigen' && (
@@ -314,6 +330,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                     {usageOf(u) === 'ausgenommen' && (
                       <span className="badge gray" title="Bleibt vollständig außen vor">nicht beteiligt</span>
+                    )}
+                    {/* Eine Einheit ohne Anschluss (#117, #142) soll man in der Liste sehen. */}
+                    {connectionSummary(u.noConnection ?? []) && (
+                      <span className="badge gray" style={{ marginLeft: 6 }}>{connectionSummary(u.noConnection ?? [])}</span>
                     )}
                   </td>
                   <td className="actions no-print">
@@ -358,6 +378,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <tr key={t.id}>
                   <td>
                     {t.tenantName}
+                    {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
+                    {costModelBadge(t.costModel, t.heatingModel) && (
+                      <div style={{ marginTop: 2 }}>
+                        <span className="badge gray" style={{ whiteSpace: 'nowrap' }} title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
+                          {costModelBadge(t.costModel, t.heatingModel)}
+                        </span>
+                      </div>
+                    )}
                     {(t.email || t.phone) && (
                       <div className="muted" style={{ fontSize: 12 }}>{[t.email, t.phone].filter(Boolean).join(' · ')}</div>
                     )}
@@ -658,24 +686,6 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
               </label>
             )}
-            {/* Ohne Anschluss (#117): Eine Garage ohne Wasser fehlt beim Verbrauchsschlüssel kein Zähler. */}
-            <fieldset className="field grow no-connection">
-              <legend className="field-legend">Kein Anschluss für</legend>
-              <div className="row" style={{ gap: 10 }}>
-                {/* Der Allgemeinstrom gehört dem Haus, nicht einer Einheit; hier nur, was eine Einheit hat. */}
-                {(['kaltwasser', 'waerme', 'sonstig'] as MeterType[]).map((t) => (
-                  <label key={t} className="checkline">
-                    <input
-                      type="checkbox"
-                      checked={unitForm.noConnection.includes(t)}
-                      onChange={(e) => setUnitForm({ ...unitForm, noConnection: e.target.checked ? [...unitForm.noConnection, t] : unitForm.noConnection.filter((x) => x !== t) })}
-                    />
-                    {METER_TYPE_LABELS[t]}
-                  </label>
-                ))}
-              </div>
-              <small className="muted">Etwa eine Garage ohne Wasser. Mietfuchs sucht dann für diesen Zählertyp keinen Zähler an der Einheit. Die Angabe gilt für alle noch offenen Jahre.</small>
-            </fieldset>
             <label className="field grow">
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
@@ -689,7 +699,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </select>
               <small className="muted">
                 {unitForm.usage === 'vermietet' && 'Die Wohnung nimmt an der Verteilung teil, ihren Anteil trägt der Mieter.'}
-                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
+                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, etwa neben einer <Term id="granny">Einliegerwohnung</Term>, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
                 {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.</>}
               </small>
             </label>
@@ -703,6 +713,31 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               Notiz (optional)
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </label>
+            {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
+                Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
+            {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
+              <details className="extra-details" style={{ width: '100%' }}>
+                <summary>
+                  Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
+                </summary>
+                <fieldset className="field grow no-connection" style={{ marginTop: 10 }}>
+                  <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
+                  <div className="row" style={{ gap: 10 }}>
+                    {connectionTypes(objectMeters, unitForm.noConnection).map((t) => (
+                      <label key={t} className="checkline">
+                        <input
+                          type="checkbox"
+                          checked={!unitForm.noConnection.includes(t)}
+                          onChange={(e) => setUnitForm(setConnected(unitForm, t, e.target.checked))}
+                        />
+                        {METER_TYPE_LABELS[t]}
+                      </label>
+                    ))}
+                  </div>
+                  <small className="muted">Hat eine Einheit keinen Anschluss, etwa eine Garage ohne Wasser, das Häkchen entfernen. Dann fehlt ihr kein Zähler, und Verbrauchskosten dieser Art betreffen sie nicht. Die Angabe gilt für alle noch offenen Jahre.</small>
+                </fieldset>
+              </details>
+            )}
           </div>
         </Drawer>
       )}
@@ -842,7 +877,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
               <div className="row">
                 {meters.map((m) => (
                   <label className="field" key={m.id}>
-                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}, {m.unit})
+                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}{m.unit ? `, ${m.unit}` : ''})
                     <input
                       value={meterValues[m.id] ?? ''}
                       disabled={step > 2}

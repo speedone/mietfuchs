@@ -16,6 +16,11 @@ import {
   tenanciesForAmounts,
   categoryNotice,
   selfAmountUnits,
+  externalTotalLabel,
+  keyListText,
+  showsKeyFields,
+  withKey,
+  withCategory,
   type ItemForm,
 } from './costForm'
 
@@ -429,5 +434,76 @@ describe('Vorschlag des Schlüssels je Kostenart (#142)', () => {
     const s = suggestedKey('Wasser/Abwasser', zwei, [meter('a'), meter('b')])
     expect(costKeyOptions(['kaltwasser'], s.key)).toContain(s.key)
     expect(meterTypeOptions(['kaltwasser'], s.meterType)).toContain(s.meterType)
+  })
+})
+
+describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
+  test('Summe in der Anlage: gemeint sind die Anteile, nicht die Kosten, und zwar je Maßstab', () => {
+    expect(externalTotalLabel('mea')).toBe('Summe der Miteigentumsanteile in der Anlage (z. B. 1.000 MEA)')
+    expect(externalTotalLabel('area')).toBe('Summe der Wohnflächen in der Anlage (z. B. 1.240 m²)')
+    expect(externalTotalLabel('units')).toBe('Zahl der Einheiten in der Anlage (z. B. 24)')
+    // Die Meldung beim Speichern sagt dasselbe.
+    const r = buildCostItemBody(form({ key: 'external', amount: '100,00' }), UNITS, 2025)
+    expect(r).toEqual({ error: 'Bitte aus der Gemeinschaftsabrechnung die Summe der Anteile in der Anlage und die Kosten der Gemeinschaft eintragen.' })
+  })
+
+  test('Einzelbeträge: „den Rest trägt der Vermieter“, und ohne Rest steht kein Rest da', () => {
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
+      .toBe('Summe 700,00 € — den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
+    expect(amountsSumText(form({ key: 'amounts', amount: '700,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
+      .toBe('Summe 700,00 € — der Rechnungsbetrag ist vollständig verteilt')
+  })
+
+  test('Nicht umlagefähig: kein Schlüssel im Formular, in der Liste „trägt der Vermieter“', () => {
+    expect(showsKeyFields('Nicht umlagefähig')).toBe(false)
+    expect(showsKeyFields('Zuführung Erhaltungsrücklage')).toBe(false)
+    expect(showsKeyFields('Grundsteuer')).toBe(true)
+    const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'persons' })).toBe('— trägt der Vermieter')
+    expect(keyListText({ ...base, category: 'Grundsteuer', key: 'persons' })).toBe('nach Personenzahl')
+  })
+
+  test('Nicht umlagefähig: gespeichert wird kein Schlüssel mit Zuordnungen, sondern die neutrale Vorgabe', () => {
+    // Die Berechnung liest den Schlüssel einer nicht umlagefähigen Position nicht (calc.ts,
+    // `isNotAllocable`); eine Direktzuordnung ohne Wohnung darf das Speichern deshalb nicht aufhalten,
+    // und Anteile, Teilnehmer oder Einzelbeträge bleiben nicht als tote Angaben stehen.
+    const f = form({
+      category: 'Nicht umlagefähig', amount: '500,00', key: 'custom', customShares: { u1: '40' }, participants: ['u1'],
+      directUnitId: 'u1', meterType: 'kaltwasser', tenancyAmounts: { t1: '10,00' },
+    })
+    expect(buildCostItemBody(f, UNITS, 2025)).toMatchObject({
+      body: { key: 'area', directUnitId: null, meterType: null, customShares: null, participantUnitIds: null, externalBasis: null, tenancyAmounts: null, selfAmounts: null },
+    })
+    expect(buildCostItemBody(form({ category: 'Zuführung Erhaltungsrücklage', amount: '900,00', key: 'direct', directUnitId: '' }), UNITS, 2025))
+      .toMatchObject({ body: { key: 'area', directUnitId: null } })
+  })
+
+  test('Verbrauchsschlüssel: gibt es nur einen Zählertyp, ist er vorgewählt und gespeichert', () => {
+    expect(withKey(form(), 'meter', ['kaltwasser'])).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
+    // Bei zwei Typen wählt der Mensch.
+    expect(withKey(form(), 'meter', ['kaltwasser', 'waerme'])).toMatchObject({ key: 'meter', meterType: '' })
+    // Eine schon getroffene Wahl bleibt.
+    expect(withKey(form({ meterType: 'sonstig' }), 'meter', ['kaltwasser'])).toMatchObject({ meterType: 'sonstig' })
+    expect(withKey(form(), 'area', ['kaltwasser'])).toMatchObject({ key: 'area', meterType: '' })
+  })
+})
+
+describe('Kostenart wechseln (Durchsicht zu #142)', () => {
+  const unit = (id: string): Unit => ({ id, propertyId: 'p', name: id, areaM2: 50, participates: true })
+  const meter = (unitId: string): Meter => ({ id: `m-${unitId}`, propertyId: 'p', name: 'Zähler', unitId, type: 'kaltwasser', unit: 'm³' })
+  const units = [unit('a'), unit('b')]
+  const meters = [meter('a'), meter('b')]
+
+  test('eine neue Position bekommt den Vorschlag der Kostenart', () => {
+    expect(withCategory(form(), 'Wasser/Abwasser', units, meters)).toMatchObject({ category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser' })
+  })
+
+  test('eine bestehende behält ihren Schlüssel, außer sie wird aus „nicht umlagefähig“ umlagefähig', () => {
+    const bestehend = form({ id: 'c', category: 'Grundsteuer', key: 'persons' })
+    expect(withCategory(bestehend, 'Wasser/Abwasser', units, meters)).toMatchObject({ key: 'persons', meterType: '' })
+    // Die neutrale Vorgabe „area“ einer nicht umlagefähigen Position ist keine Wahl des Nutzers.
+    const verwaltung = form({ id: 'c', category: 'Nicht umlagefähig', key: 'area' })
+    expect(withCategory(verwaltung, 'Wasser/Abwasser', units, meters)).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
+    expect(withCategory(verwaltung, 'Zuführung Erhaltungsrücklage', units, meters)).toMatchObject({ key: 'area' })
   })
 })

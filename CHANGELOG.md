@@ -140,6 +140,39 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Jahres statt auf heute. Ein neues Mietverhältnis wählt die erste vermietbare Wohnung ohne
   laufendes Mietverhältnis vor statt einer selbstgenutzten.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Stammdaten: was die Listen zeigen und was die Löschfrage sagt.** Die Liste der
+  Mietverhältnisse kennzeichnet Pauschale und Inklusivmiete („Pauschale“, „inklusiv“, „kalt
+  pauschal · Heizung abgerechnet“), die Wohnungsliste zeigt die Miteigentumsanteile. Die Frage
+  vor dem Löschen einer Wohnung nennt mit Anzahl, was mitgelöscht wird: Mietverhältnisse, Zähler,
+  Ablesungen, Zahlungen und Angaben an Kostenpositionen; direkt zugeordnete Rechnungen bleiben.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Kostenposition: weniger Missverständliches.** „Nicht umlagefähig“ und „Zuführung
+  Erhaltungsrücklage“ zeigen keine Schlüsselauswahl mehr, die Liste sagt „— trägt der Vermieter“;
+  gerechnet wird unverändert; auch das Cockpit verlangt für sie keine Ablesungen und prüft ihretwegen
+  nicht die Verteilbasis. „Summe in der Anlage“ heißt je Maßstab „Summe der
+  Miteigentumsanteile in der Anlage (z. B. 1.000 MEA)“, „Summe der Wohnflächen …“ oder „Zahl der
+  Einheiten …“. Beim Verbrauchsschlüssel ist der Zählertyp vorgewählt, wenn es nur einen gibt.
+  Bei Einzelbeträgen heißt es „den Rest trägt der Vermieter“. Das Lexikon erklärt das Hausgeld
+  (Vorschuss). ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Lexikon: Einliegerwohnung.** Der Begriff erklärt, wie man sie in Mietfuchs anlegt
+  (eigene Wohnung selbstgenutzt, Hauszähler als Hauptzähler), was beim Eigenanteil, bei den
+  Heizkosten (§ 2 HeizkostenV) und in der Anlage V daraus folgt; Stammdaten und Zählerformular
+  verweisen darauf. ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Anschlüsse einer Einheit, positiv gefragt.** Statt „Kein Anschluss für“ fragt das
+  Wohnungsformular unter „Weitere Angaben — Anschlüsse“, welche Anschlüsse die Einheit hat;
+  angehakt heißt angeschlossen. Angeboten werden nur Zählerarten, die es im Objekt gibt, und eine
+  Ausnahme steht in der Zusammenfassung und in der Wohnungsliste („ohne Wasseranschluss“).
+  Gespeichert wird wie bisher nur die Ausnahme, bestehende Angaben gelten unverändert.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Zähler: Endstand, Datum und Einheit.** Fehlt beim Zählerwechsel der Endstand, steht in der
+  Tabelle „Endstand alt: fehlt“ statt einer Lücke. Die Meldungen zu Ablesungen nennen das Datum
+  deutsch („am 01.07.2025“). Die Einheit eines neuen Zählers folgt seiner Sparte: kWh für Wärme
+  und Strom, m³ für Wasser, bei Sonstigem leer statt „m³“.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Backup: Name und Datum der Belege.** Die Datei heißt `mietfuchs-backup-….zip` statt
+  `nebenkosten-backup-….zip`. Nach dem Wiederherstellen tragen Belege wieder ihr ursprüngliches
+  Datum statt des Tages der Wiederherstellung.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein Jahr ohne Kosten kündigt kein Guthaben mehr an.** Cockpit und Übersicht zeigten für ein
   Jahr ganz ohne Kosten die volle Vorauszahlung als voraussichtliches Guthaben und im Vergleich
   zum Vorjahr überall „−100 %“. Jetzt steht dort „Noch keine Kosten … erfasst“, verglichen wird
