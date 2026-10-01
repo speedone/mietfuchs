@@ -17,9 +17,9 @@ import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import {
-  closeSettlement, createEntity, findClosedSettlement, findEntity, invoiceFilesInUse,
-  listCollection, removeEntity, reopenSettlement, setSentAt, sharesForUnit, updateEntity,
-  type CollectionName,
+  closeSettlement, createEntity, createProperty, crossPropertyViolations, findClosedSettlement, findEntity,
+  invoiceFilesInUse, listCollection, listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt,
+  sharesForUnit, updateEntity, updateProperty, type CollectionName,
 } from '../src/db/repository.ts'
 import {
   baseRents, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
@@ -49,7 +49,7 @@ const fieldOf = (entity: unknown, key: string): unknown =>
 
 test('Anlegen: der Datensatz kommt so zurück, wie er in der Datenbank steht', async () => {
   await withDatabase(async (opened) => {
-    const u = await opened.write((db) => createEntity(db, 'units', 'u1', {
+    const u = await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1',
       name: 'EG links', areaM2: 80, participates: true, rooms: 3, floor: 'EG', notes: 'Notiz',
     }))
     assert.equal(u.id, 'u1')
@@ -64,7 +64,7 @@ test('Ändern verschmilzt: ein Teilstück lässt alles andere stehen', async () 
   // nur das Ende, sonst nichts. Ersetzte die Zeile, wären danach Name, IBAN, Kaution und alle
   // drei Staffeln weg, und niemand bekäme eine Fehlermeldung.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', {
       unitId: 'u1', tenantName: 'Müller', persons: 2, start: '2024-01-01', end: null,
       iban: 'DE02120300000000202051', depositCents: 180000,
@@ -91,7 +91,7 @@ test('Ändern: ein ausdrückliches null setzt zurück, ein fehlendes Feld nicht'
   // Der Unterschied zwischen Anwesenheit und Wert. In JSON gibt es kein `undefined`, die
   // Anwesenheit eines Schlüssels ist also die einzige Auskunft, die der Browser geben kann.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', {
       unitId: 'u1', tenantName: 'Müller', persons: 1, start: '2024-01-01', end: '2024-12-31',
     }))
@@ -110,7 +110,7 @@ test('Ändern lässt die Reihenfolge der Liste unverändert', async () => {
   // Änderung neu sortiert.
   await withDatabase(async (opened) => {
     for (const id of ['u1', 'u2', 'u3']) {
-      await opened.write((db) => createEntity(db, 'units', id, { name: id, areaM2: 50, participates: true }))
+      await opened.write((db) => createEntity(db, 'units', id, { propertyId: 'objekt-1', name: id, areaM2: 50, participates: true }))
     }
     await opened.write((db) => updateEntity(db, 'units', 'u1', { name: 'geändert' }))
     const liste = await opened.read((db) => listCollection(db, 'units'))
@@ -126,12 +126,12 @@ test('Ändern trägt in jeder Sammlung, nicht nur bei Wohnungen und Mietverhält
   // Test würde rot. Eine korrigierte Ablesung ist eine der häufigsten Eingaben überhaupt und
   // wandert unmittelbar in die verbrauchsabhängige Verteilung.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', start: '2024-01-01' }))
-    await opened.write((db) => createEntity(db, 'meters', 'm1', { name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }))
+    await opened.write((db) => createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' }))
     await opened.write((db) => createEntity(db, 'readings', 'r1', { meterId: 'm1', date: '2024-12-31', value: 100 }))
     await opened.write((db) => createEntity(db, 'payments', 'p1', { tenancyId: 't1', date: '2024-01-05', amountCents: 50000 }))
-    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1',
       year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'area',
     }))
 
@@ -157,9 +157,9 @@ test('Ändern einer Kostenposition schreibt auch die vereinbarten Anteile', asyn
   // verworfen. Das ist der Umlageschlüssel, bei dem der Vermieter die Verteilung von Hand
   // festlegt, eine Änderung dort bewegt also unmittelbar Geld.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
-    await opened.write((db) => createEntity(db, 'units', 'u2', { name: 'OG', areaM2: 60, participates: true }))
-    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1',
       year: 2024, category: 'Müllabfuhr', description: 'Abfall', amountCents: 12000, key: 'custom',
       customShares: { u1: 70, u2: 30 },
     }))
@@ -183,7 +183,7 @@ test('Die Jahreskorrektur nimmt nur vierstellige Jahreszahlen an', async () => {
   // Jahreskorrektur für das Jahr 0. Zwei Schlüssel, die auf dieselbe Zahl führen („2024" und
   // „2024.0"), ließen sogar den ganzen Vorgang am Primärschlüssel scheitern.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     const t = await opened.write((db) => createEntity(db, 'tenancies', 't1', {
       unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
       prepaymentOverrides: { '2024': 180000, '': 1, ' ': 2, '2024.0': 3, '1e3': 4, 'zweitausend': 5, '-5': 6 },
@@ -196,7 +196,7 @@ test('Ein unbekanntes Feld kommt gar nicht erst an', async () => {
   // #60: Über die db.json übernahm die Route jeden Schlüssel des Rumpfes, auch einen
   // erfundenen, und er blieb dort für immer stehen. Mit Spalten gibt es für ihn keinen Ort.
   await withDatabase(async (opened) => {
-    const u = await opened.write((db) => createEntity(db, 'units', 'u1', {
+    const u = await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1',
       name: 'EG', areaM2: 80, participates: true, fremdesFeld: 'bleibt haengen',
     }))
     assert.equal(fieldOf(u, 'fremdesFeld'), undefined, 'das erfundene Feld ist nicht angekommen')
@@ -218,10 +218,10 @@ test('Löschen einer Wohnung räumt mit, was an ihr hängt', async () => {
   // erledigen es die Fremdschlüssel in einem Schritt.
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
-      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
       await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
       await createEntity(db, 'payments', 'p1', { tenancyId: 't1', date: '2024-01-05', amountCents: 1000 })
-      await createEntity(db, 'meters', 'm1', { name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
       await createEntity(db, 'readings', 'r1', { meterId: 'm1', date: '2024-12-31', value: 100 })
     })
 
@@ -240,8 +240,8 @@ test('Löschen einer Wohnung lässt die Kostenposition stehen und nimmt ihr nur 
   // bereits abgerechneten Vergangenheit.
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
-      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
-      await createEntity(db, 'costItems', 'c1', {
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1',
         year: 2024, category: 'Müll', description: 'Gebühren', amountCents: 12000,
         key: 'direct', directUnitId: 'u1',
       })
@@ -260,9 +260,9 @@ test('Löschen einer Wohnung räumt auch die vereinbarten Anteile weg', async ()
   // `cost_item_shares.unit_id`.
   await withDatabase(async (opened) => {
     await opened.write(async (db) => {
-      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
-      await createEntity(db, 'units', 'u2', { name: 'OG', areaM2: 60, participates: true })
-      await createEntity(db, 'costItems', 'c1', {
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 60, participates: true })
+      await createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1',
         year: 2024, category: 'Müll', description: 'Gebühren', amountCents: 12000,
         key: 'custom', customShares: { u1: 60, u2: 40 },
       })
@@ -288,7 +288,7 @@ test('Ein Fehler mittendrin lässt nichts Halbes zurück', async () => {
   // Vorauszahlung: Die Prüfbedingung `prepayments_monthly_not_negative` lehnt sie ab, und zwar
   // erst, nachdem die Hauptzeile schon geschrieben ist.
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
     await assert.rejects(
       () => opened.write((db) => createEntity(db, 'tenancies', 't1', {
         unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01',
@@ -303,7 +303,7 @@ test('Ein Fehler mittendrin lässt nichts Halbes zurück', async () => {
 
 test('Ein Beleg, der noch an einer Kostenposition hängt, wird als benutzt gemeldet', async () => {
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', { propertyId: 'objekt-1',
       year: 2024, category: 'Müll', description: 'G', amountCents: 1, key: 'area', invoiceFile: 'beleg.pdf',
     }))
     const benutzt = await opened.read((db) => invoiceFilesInUse(db, ['beleg.pdf', 'frei.pdf']))
@@ -321,16 +321,16 @@ test('Ein Beleg, der noch an einer Kostenposition hängt, wird als benutzt gemel
 test('Abschließen: die Abrechnung lässt sich danach wiederfinden', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
+      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null,
       settlement: { year: 2024, totalCostsCents: 12000 },
     }))
-    const gefunden = await opened.read((db) => findClosedSettlement(db, 2024))
+    const gefunden = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
     if (!gefunden) return assert.fail('die abgeschlossene Abrechnung ist nicht auffindbar')
     assert.equal(gefunden.year, 2024)
     assert.equal(gefunden.sentAt, null)
     // Wortgleich: Der eingefrorene Stand ist ein Archivstück und soll bleiben, wie er ist.
     assert.deepEqual(gefunden.settlement, { year: 2024, totalCostsCents: 12000 })
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 2023)), undefined)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2023)), undefined)
   })
 })
 
@@ -338,7 +338,7 @@ test('Abschließen: ein zweites Mal für dasselbe Jahr lehnt die Datenbank ab', 
   // Der eindeutige Index auf `year` ist zugleich die Zusicherung, dass es je Jahr höchstens eine
   // abgeschlossene Abrechnung gibt. Ohne ihn entschiede die Reihenfolge beim Lesen, welche gilt.
   await withDatabase(async (opened) => {
-    const eintrag = { year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {} }
+    const eintrag = { propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {} }
     await opened.write((db) => closeSettlement(db, { ...eintrag, id: 's1' }))
     await assert.rejects(() => opened.write((db) => closeSettlement(db, { ...eintrag, id: 's2' })))
   })
@@ -348,24 +348,24 @@ test('Das Versanddatum lässt sich nachtragen und wieder entfernen', async () =>
   // An ihm hängt die Frist aus §556 BGB.
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => setSentAt(db, 2024, '2025-02-01')), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, '2025-02-01')
-    assert.equal(await opened.write((db) => setSentAt(db, 2024, null)), true)
-    assert.equal((await opened.read((db) => findClosedSettlement(db, 2024)))?.sentAt, null)
-    assert.equal(await opened.write((db) => setSentAt(db, 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, '2025-02-01')), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, '2025-02-01')
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2024, null)), true)
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)))?.sentAt, null)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-1', 2023, '2025-02-01')), false, 'ein Jahr ohne Abschluss meldet sich')
   })
 })
 
 test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => closeSettlement(db, {
-      id: 's1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), true)
-    assert.equal(await opened.read((db) => findClosedSettlement(db, 2024)), undefined)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 2024)), false, 'ein zweites Mal meldet sich')
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), true)
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)), undefined)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), false, 'ein zweites Mal meldet sich')
   })
 })
 
@@ -381,7 +381,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown> }[] = [
     {
       coll: 'units', table: units,
-      body: { name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, rooms: 3, floor: 'EG', notes: 'Notiz' },
+      body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, rooms: 3, floor: 'EG', notes: 'Notiz' },
     },
     {
       coll: 'tenancies', table: tenancies,
@@ -394,13 +394,13 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     {
       coll: 'costItems', table: costItems,
       body: {
-        year: 2024, category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
+        propertyId: 'objekt-1', year: 2024, category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
       },
     },
     {
       coll: 'meters', table: meters,
-      body: { name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC', unit: 'm³' },
+      body: { propertyId: 'objekt-1', name: 'Küche', unitId: 'u1', type: 'kaltwasser', meterNumber: 'ABC', unit: 'm³' },
     },
     {
       coll: 'readings', table: readings,
@@ -415,9 +415,9 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   await withDatabase(async (opened) => {
     // Die Datensätze, auf die die Fremdschlüssel zeigen.
     await opened.write(async (db) => {
-      await createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true })
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
       await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01' })
-      await createEntity(db, 'meters', 'm1', { name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'K', unitId: 'u1', type: 'kaltwasser', unit: 'm³' })
     })
 
     for (const { coll, table, body } of proben) {
@@ -457,7 +457,7 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
   ]
 
   await withDatabase(async (opened) => {
-    await opened.write((db) => createEntity(db, 'units', 'u1', { name: 'EG', areaM2: 80, participates: true }))
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }))
 
     for (const { table, feld, eintrag } of staffeln) {
       const gespeichert = await opened.write((db) => createEntity(db, 'tenancies', `t-${feld}`, {
@@ -487,9 +487,163 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
       unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024': 180000 },
     }))
     assert.deepEqual(fieldOf(mitKorrektur, 'prepaymentOverrides'), { '2024': 180000 })
-    const mitAnteilen = await opened.write((db) => createEntity(db, 'costItems', 'c-anteile', {
+    const mitAnteilen = await opened.write((db) => createEntity(db, 'costItems', 'c-anteile', { propertyId: 'objekt-1',
       year: 2024, category: 'Müll', description: 'G', amountCents: 100, key: 'custom', customShares: { u1: 55 },
     }))
     assert.deepEqual(fieldOf(mitAnteilen, 'customShares'), { u1: 55 })
+  })
+})
+
+// ---------- Objekte (#92) ----------
+
+// Die Meldung samt der Kette ihrer Gründe; Drizzle hängt den echten Grund als `cause` an.
+const reasons = (err: unknown): string => {
+  const texte: string[] = []
+  let current: unknown = err
+  while (current instanceof Error) {
+    texte.push(current.message)
+    current = current.cause
+  }
+  return texte.join(' | ')
+}
+
+test('Objekt: anlegen, auflisten, ändern', async () => {
+  await withDatabase(async (opened) => {
+    const neu = await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt' }))
+    assert.deepEqual(neu, {
+      id: 'objekt-2', name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt',
+      landlordName: null, iban: null, paymentDeadlineDays: null,
+    })
+    assert.deepEqual((await opened.read(listProperties)).map((p) => p.id), ['objekt-1', 'objekt-2'])
+
+    // Nach Anwesenheit verschmolzen: null heißt „Vorgabe“, '' heißt „bewusst keine“.
+    await opened.write((db) => updateProperty(db, 'objekt-2', { iban: 'DE99', landlordName: '' }))
+    const geaendert = await opened.write((db) => updateProperty(db, 'objekt-2', { iban: null }))
+    assert.equal(geaendert?.iban, null)
+    assert.equal(geaendert?.landlordName, '')
+    assert.equal(geaendert?.name, 'Gartenweg 3', 'ein Teilstück lässt alles andere stehen')
+    assert.equal(await opened.write((db) => updateProperty(db, 'gibt-es-nicht', { name: 'X' })), null)
+  })
+})
+
+test('Objekt: eine unbekannte Art wird zum Mehrfamilienhaus, eine negative Frist abgewiesen', async () => {
+  await withDatabase(async (opened) => {
+    const p = await opened.write((db) => createProperty(db, 'objekt-2', { name: 'X', kind: 'burg' }))
+    assert.equal(p.kind, 'mfh')
+    await assert.rejects(
+      () => opened.write((db) => updateProperty(db, 'objekt-2', { paymentDeadlineDays: -1 })),
+      (err: unknown) => /CHECK|negativ/i.test(reasons(err)),
+    )
+  })
+})
+
+test('Objekt: gelöscht wird nur ein leeres, und nie das letzte', async () => {
+  await withDatabase(async (opened) => {
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-1')), { removed: false, reason: 'last' })
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3' }))
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'w1', { propertyId: 'objekt-2', name: 'EG', areaM2: 50, participates: true })
+      await createEntity(db, 'units', 'w2', { propertyId: 'objekt-2', name: 'OG', areaM2: 50, participates: true })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'Haus', unitId: null, type: 'kaltwasser', unit: 'm³' })
+    })
+    const belegt = await opened.write((db) => removeProperty(db, 'objekt-2'))
+    assert.equal(belegt.removed, false)
+    if (belegt.removed) return
+    assert.equal(belegt.reason, 'inUse')
+    assert.equal(belegt.inUse, '2 Wohnungen, 1 Zähler')
+
+    await opened.write(async (db) => {
+      await removeEntity(db, 'meters', 'm1')
+      await removeEntity(db, 'units', 'w1')
+      await removeEntity(db, 'units', 'w2')
+    })
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: true })
+    assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: false, reason: 'missing' })
+  })
+})
+
+test('Objekt: ein Abschluss desselben Jahres im anderen Objekt bleibt unberührt', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3' }))
+    await opened.write((db) => closeSettlement(db, {
+      id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)), undefined)
+    assert.equal(await opened.write((db) => setSentAt(db, 'objekt-2', 2024, '2025-02-01')), false)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', 2024)), false)
+    const a = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
+    assert.equal(a?.sentAt, null, 'das Versanddatum von Objekt 1 ist nicht gesetzt worden')
+
+    // Und dasselbe Jahr lässt sich im zweiten Objekt eigens abschließen.
+    await opened.write((db) => closeSettlement(db, {
+      id: 's2', propertyId: 'objekt-2', year: 2024, closedAt: '2025-01-16T10:00:00.000Z', sentAt: null, settlement: {},
+    }))
+    assert.equal((await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)))?.id, 's2')
+  })
+})
+
+// Zwei Objekte mit je einer Wohnung, der Ausgang für die Grenzfälle.
+async function twoProperties(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await createProperty(db, 'objekt-2', { name: 'Gartenweg 3' })
+    await createEntity(db, 'units', 'a', { propertyId: 'objekt-1', name: 'A-EG', areaM2: 50, participates: true })
+    await createEntity(db, 'units', 'b', { propertyId: 'objekt-2', name: 'B-EG', areaM2: 50, participates: true })
+  })
+}
+
+test('Objekt: ein Zähler zeigt nicht auf die Wohnung eines anderen Objekts', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    await assert.rejects(
+      () => opened.write((db) => createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'X', unitId: 'a', type: 'kaltwasser', unit: 'm³' })),
+      (err: unknown) => {
+        assert.equal(Reflect.get(Object(err), 'status'), 400)
+        assert.match(String(err), /Gartenweg 3/)
+        return true
+      },
+    )
+    await opened.write((db) => createEntity(db, 'meters', 'm1', { propertyId: 'objekt-2', name: 'X', unitId: 'b', type: 'kaltwasser', unit: 'm³' }))
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'meters', 'm1', { unitId: 'a' })), /Objekt/)
+  })
+})
+
+test('Objekt: eine Kostenposition verteilt nicht auf Wohnungen eines anderen Objekts', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    const kosten = { propertyId: 'objekt-2', year: 2025, category: 'Sonstiges', description: 'X', amountCents: 100 }
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c1', { ...kosten, key: 'direct', directUnitId: 'a' })), /Objekt/)
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c2', { ...kosten, key: 'custom', customShares: { a: 50, b: 50 } })), /Objekt/)
+    await opened.write((db) => createEntity(db, 'costItems', 'c3', { ...kosten, key: 'direct', directUnitId: 'b' }))
+  })
+})
+
+test('Objekt: eine Wohnung wechselt das Objekt nur, solange nichts Objektgebundenes an ihr hängt', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    await opened.write(async (db) => {
+      await createEntity(db, 'tenancies', 't1', { unitId: 'a', tenantName: 'Meier', start: '2024-01-01' })
+      await createEntity(db, 'meters', 'm1', { propertyId: 'objekt-1', name: 'EG', unitId: 'a', type: 'kaltwasser', unit: 'm³' })
+    })
+    await assert.rejects(() => opened.write((db) => updateEntity(db, 'units', 'a', { propertyId: 'objekt-2' })), /Zähler/)
+    await opened.write((db) => removeEntity(db, 'meters', 'm1'))
+    const gewandert = await opened.write((db) => updateEntity(db, 'units', 'a', { propertyId: 'objekt-2' }))
+    assert.equal(fieldOf(gewandert, 'propertyId'), 'objekt-2')
+    // Das Mietverhältnis erbt das Objekt und wandert damit ohne eigenes Zutun mit.
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'tenancies', 't1')), 'unitId'), 'a')
+  })
+})
+
+test('Objekt: die Prüfung über den ganzen Bestand findet Verweise über Objektgrenzen', async () => {
+  await withDatabase(async (opened) => {
+    await twoProperties(opened)
+    assert.deepEqual(await opened.read(crossPropertyViolations), [])
+    // Am Repository vorbei, wie es ein von Hand bearbeitetes Backup täte.
+    await opened.write(async (db) => {
+      await db.insert(meters).values({ id: 'm1', propertyId: 'objekt-2', name: 'X', unitId: 'a', type: 'kaltwasser', unit: 'm³' })
+      await db.insert(costItems).values({ id: 'c1', propertyId: 'objekt-2', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'custom' })
+      await db.insert(costItemShares).values({ costItemId: 'c1', unitId: 'a', percent: 50 })
+    })
+    const befunde = await opened.read(crossPropertyViolations)
+    assert.equal(befunde.length, 2, befunde.join('\n'))
   })
 })

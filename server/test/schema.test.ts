@@ -116,9 +116,13 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // niemand einlöst. Geprüft wird deshalb der Rahmen ringsum vollständig, und für die Spalte
 // selbst, dass sie überhaupt da ist und wirklich `unknown` liefert. Wer ihr später einen
 // engeren Typ anschreibt, muss diese Zeile anfassen und sich die Frage dabei stellen.
+//
+// `ClosedSettlement` beschreibt die db.json und kennt kein Objekt; die Tabelle trägt es seit #92.
+// Geprüft wird deshalb gegen die Gestalt mit Objekt.
 type ClosedRow = typeof schema.closedSettlements.$inferSelect
-type _ClosedNames = Assert<Equals<keyof ClosedRow, keyof ClosedSettlement>>
-type _ClosedRahmen = Assert<Matches<Omit<ClosedRow, 'settlement'>, Omit<ClosedSettlement, 'settlement'>>>
+type ClosedWithProperty = ClosedSettlement & { propertyId: string }
+type _ClosedNames = Assert<Equals<keyof ClosedRow, keyof ClosedWithProperty>>
+type _ClosedRahmen = Assert<Matches<Omit<ClosedRow, 'settlement'>, Omit<ClosedWithProperty, 'settlement'>>>
 type _ClosedJson = Assert<Equals<ClosedRow['settlement'], unknown>>
 
 // --- Einstellungen ---
@@ -177,12 +181,12 @@ function rejects(connection: { exec: (sql: string) => void }, sql: string): stri
   }
 }
 
-const einWohnung = "INSERT INTO units (id, name, area_m2, participates) VALUES ('u1', 'Links', 72, 1)"
+const einWohnung = "INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u1', 'objekt-1', 'Links', 72, 1)"
 
 test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
   const { connection, applied, cleanup } = await freshDb()
   try {
-    assert.equal(applied, 1, 'genau ein Migrationsschritt')
+    assert.equal(applied, (await loadMigrations()).length, 'alle Migrationsschritte')
     const tables = connection
       .rows("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .map((row) => String(row[0]))
@@ -198,6 +202,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'person_history',
       'prepayment_overrides',
       'prepayments',
+      'properties',
       'readings',
       'settings',
       'sqlite_sequence',
@@ -226,7 +231,7 @@ test('ein zweiter Lauf wendet nichts noch einmal an', async () => {
 test('Primärschlüssel aus Text weisen eine leere Kennung ab', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    const fehler = rejects(connection, "INSERT INTO units (id, name, area_m2, participates) VALUES (NULL, 'Ohne', 50, 1)")
+    const fehler = rejects(connection, "INSERT INTO units (id, property_id, name, area_m2, participates) VALUES (NULL, 'objekt-1', 'Ohne', 50, 1)")
     assert.ok(fehler, 'eine Wohnung ohne Kennung muss abgewiesen werden')
     assert.match(fehler, /NOT NULL/i)
   } finally {
@@ -264,9 +269,9 @@ test('Löschen einer Wohnung räumt ab, was ohne sie sinnlos wäre', async () =>
     connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
     connection.exec("INSERT INTO payments (id, tenancy_id, date, amount_cents) VALUES ('p1', 't1', '2025-01-05', 85000)")
     connection.exec("INSERT INTO prepayments (tenancy_id, `from`, monthly_cents) VALUES ('t1', '2025-01', 20000)")
-    connection.exec("INSERT INTO meters (id, name, unit_id, type, unit) VALUES ('m1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
     connection.exec("INSERT INTO readings (id, meter_id, date, value) VALUES ('r1', 'm1', '2025-01-01', 100)")
-    connection.exec("INSERT INTO cost_items (id, year, category, description, amount_cents, key) VALUES ('c1', 2025, 'Gartenpflege', 'Garten', 60000, 'custom')")
+    connection.exec("INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'custom')")
     connection.exec("INSERT INTO cost_item_shares (cost_item_id, unit_id, percent) VALUES ('c1', 'u1', 50)")
 
     connection.exec("DELETE FROM units WHERE id = 'u1'")
@@ -292,7 +297,7 @@ test('Direktzuordnung überlebt das Löschen ihrer Wohnung, nur der Verweis fäl
   try {
     connection.exec(einWohnung)
     connection.exec(
-      "INSERT INTO cost_items (id, year, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 2025, 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
+      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, direct_unit_id) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Reparatur', 40000, 'direct', 'u1')",
     )
     connection.exec("DELETE FROM units WHERE id = 'u1'")
     const row = connection.rows("SELECT amount_cents, direct_unit_id FROM cost_items WHERE id = 'c1'")[0]
@@ -312,7 +317,7 @@ test('Prüfbedingungen: was nicht negativ sein darf, ist es auch nicht', async (
     connection.exec(einWohnung)
     connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
     assert.ok(
-      rejects(connection, "INSERT INTO units (id, name, area_m2, participates) VALUES ('u2', 'Minus', -10, 1)"),
+      rejects(connection, "INSERT INTO units (id, property_id, name, area_m2, participates) VALUES ('u2', 'objekt-1', 'Minus', -10, 1)"),
       'negative Wohnfläche',
     )
     assert.ok(
@@ -342,13 +347,13 @@ test('eine Gutschrift darf negativ sein, und ein gemeldeter §35a-Lohnanteil auc
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      "INSERT INTO cost_items (id, year, category, description, amount_cents, key) VALUES ('c1', 2025, 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
+      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'Sonstige Betriebskosten', 'Gutschrift', -5000, 'units')",
     )
     // calc.ts meldet einen Lohnanteil außerhalb von 0 bis zum Rechnungsbetrag als Warnung und
     // rechnet weiter. Verböte die Datenbank ihn, bekäme der Nutzer die erklärende Warnung nie
     // zu sehen, weil er den Beleg gar nicht erst speichern könnte.
     connection.exec(
-      "INSERT INTO cost_items (id, year, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 2025, 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
+      "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key, labor_35a_cents) VALUES ('c2', 'objekt-1', 2025, 'Gartenpflege', 'Garten', 60000, 'units', -3000)",
     )
     // Eine Rücklastschrift ist ein echter Vorgang.
     connection.exec(einWohnung)
@@ -366,12 +371,12 @@ test('Aufzählungen: ein unbekannter Umlageschlüssel kommt nicht hinein', async
     assert.ok(
       rejects(
         connection,
-        "INSERT INTO cost_items (id, year, category, description, amount_cents, key) VALUES ('c1', 2025, 'X', 'X', 100, 'ausgedacht')",
+        "INSERT INTO cost_items (id, property_id, year, category, description, amount_cents, key) VALUES ('c1', 'objekt-1', 2025, 'X', 'X', 100, 'ausgedacht')",
       ),
       'unbekannter Umlageschlüssel',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO meters (id, name, type, unit) VALUES ('m1', 'X', 'plasma', 'kWh')"),
+      rejects(connection, "INSERT INTO meters (id, property_id, name, type, unit) VALUES ('m1', 'objekt-1', 'X', 'plasma', 'kWh')"),
       'unbekannter Zählertyp',
     )
   } finally {
@@ -402,9 +407,9 @@ test('je Stichtag nur ein Staffeleintrag', async () => {
 test('je Jahr höchstens eine abgeschlossene Abrechnung', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    connection.exec("INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s1', 2025, '2026-03-01', '{}')")
+    connection.exec("INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{}')")
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s2', 2025, '2026-04-01', '{}')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2025, '2026-04-01', '{}')"),
       'zwei abgeschlossene Abrechnungen für 2025',
     )
   } finally {
@@ -419,17 +424,17 @@ test('der eingefrorene Berechnungsstand muss gültiges JSON sein', async () => {
   const { connection, cleanup } = await freshDb()
   try {
     connection.exec(
-      `INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s1', 2025, '2026-03-01', '{"year":2025,"statements":[]}')`,
+      `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s1', 'objekt-1', 2025, '2026-03-01', '{"year":2025,"statements":[]}')`,
     )
     assert.ok(
       rejects(
         connection,
-        `INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s2', 2024, '2026-03-01', '{"year":2024,"statem')`,
+        `INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s2', 'objekt-1', 2024, '2026-03-01', '{"year":2024,"statem')`,
       ),
       'eine abgeschnittene Abrechnung',
     )
     assert.ok(
-      rejects(connection, "INSERT INTO closed_settlements (id, year, closed_at, settlement) VALUES ('s3', 2023, '2026-03-01', 'kein JSON')"),
+      rejects(connection, "INSERT INTO closed_settlements (id, property_id, year, closed_at, settlement) VALUES ('s3', 'objekt-1', 2023, '2026-03-01', 'kein JSON')"),
       'gar kein JSON',
     )
   } finally {
@@ -499,7 +504,7 @@ test('eine spätere Migration, die eine Tabelle neu baut, verliert keine abhäng
   try {
     connection.exec(einWohnung)
     connection.exec("INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'Meier', 2, '2025-01-01')")
-    connection.exec("INSERT INTO meters (id, name, unit_id, type, unit) VALUES ('m1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
+    connection.exec("INSERT INTO meters (id, property_id, name, unit_id, type, unit) VALUES ('m1', 'objekt-1', 'Kaltwasser', 'u1', 'kaltwasser', 'm³')")
 
     applyMigrations(connection, [
       { tag: '0001_probe', hash: 'probe-tabelle-neu-bauen', folderMillis: Date.now(), statements: tabelleNeuBauen },
@@ -551,13 +556,14 @@ test('eine Migration, die einen Verweis ins Leere hinterlässt, wird zurückgero
     assert.throws(
       () =>
         applyMigrations(connection, [
-          { tag: '0001_kaputt', hash: 'probe-kaputter-verweis', folderMillis: Date.now(), statements: kaputt },
+          { tag: '9999_kaputt', hash: 'probe-kaputter-verweis', folderMillis: Date.now(), statements: kaputt },
         ]),
       /Fremdschlüssel/,
     )
     // Zurückgerollt: Die Wohnung ist noch da, und der Schritt gilt nicht als erledigt.
     assert.equal(Number(connection.rows('SELECT count(*) FROM units')[0]?.[0]), 1)
-    assert.equal(Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0]), 1, 'nur die erste Migration')
+    const alle = (await loadMigrations()).length
+    assert.equal(Number(connection.rows('SELECT count(*) FROM __drizzle_migrations')[0]?.[0]), alle, 'nur die echten Schritte, nicht der kaputte')
   } finally {
     cleanup()
   }
@@ -566,10 +572,10 @@ test('eine Migration, die einen Verweis ins Leere hinterlässt, wird zurückgero
 test('Drizzle liest und schreibt über den Proxy', async () => {
   const { connection, cleanup } = await freshDb()
   try {
-    await connection.db.insert(schema.units).values({ id: 'u1', name: 'Links', areaM2: 72.5, participates: true })
+    await connection.db.insert(schema.units).values({ id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true })
     const rows = await connection.db.select().from(schema.units)
     assert.deepEqual(rows, [
-      { id: 'u1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, rooms: null, floor: null, notes: null },
+      { id: 'u1', propertyId: 'objekt-1', name: 'Links', areaM2: 72.5, participates: true, selfUsed: null, selfPersons: null, rooms: null, floor: null, notes: null },
     ])
     // Wahrheitswerte kommen als 0 und 1 in die Datenbank und als boolean zurück.
     const eine = await connection.db.select().from(schema.units).get()

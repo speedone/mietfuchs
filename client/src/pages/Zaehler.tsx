@@ -3,6 +3,7 @@ import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { api, fmtDate } from '../api'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -23,6 +24,8 @@ function parseNum(s: string): number | null {
 
 export default function Zaehler({ units }: Props) {
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const toast = useToast()
   const confirm = useConfirm()
   const [meters, setMeters] = useState<Meter[]>([])
@@ -35,14 +38,14 @@ export default function Zaehler({ units }: Props) {
 
   const load = useCallback(async () => {
     const [m, r, c] = await Promise.all([
-      api<Meter[]>('/api/meters'),
-      api<Reading[]>('/api/readings'),
-      api<Consumption[]>(`/api/consumption/${year}`),
+      api<Meter[]>(withProperty('/api/meters', propertyId)),
+      api<Reading[]>(withProperty('/api/readings', propertyId)),
+      api<Consumption[]>(withProperty(`/api/consumption/${year}`, propertyId)),
     ])
     setMeters(m)
     setReadings(r)
     setConsumption(c)
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar.'))
@@ -64,7 +67,7 @@ export default function Zaehler({ units }: Props) {
     })
     const editing = !!meterForm.id
     if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
-    else await api('/api/meters', { method: 'POST', body })
+    else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
     const name = meterForm.name.trim()
     setMeterForm(null)
     await load()

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
+import { PropertyProvider, PropertySwitcher, useProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -134,18 +135,23 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
+  const { properties, property, setPropertyId, reload: reloadProperties } = useProperty()
   const update = useUpdateStatus(settings)
+  const propertyId = property?.id
 
+  // Wohnungen und Mietverhältnisse des gewählten Objekts (#92). Solange die Objekte noch nicht
+  // geladen sind, wird gewartet: Ohne Angabe gälte auf dem Server bei mehreren Objekten keins.
   const reload = useCallback(async () => {
     const [u, t, s] = await Promise.all([
-      api<Unit[]>('/api/units'),
-      api<Tenancy[]>('/api/tenancies'),
+      propertyId ? api<Unit[]>(withProperty('/api/units', propertyId)) : Promise.resolve([]),
+      propertyId ? api<Tenancy[]>(withProperty('/api/tenancies', propertyId)) : Promise.resolve([]),
       api<Settings>('/api/settings'),
+      reloadProperties(),
     ])
     setUnits(u)
     setTenancies(t)
     setSettings(s)
-  }, [])
+  }, [propertyId, reloadProperties])
 
   useEffect(() => {
     reload().catch((e) => console.error(e))
@@ -160,7 +166,7 @@ function Shell() {
           <FoxLogo size={30} />
           <div className="logo-text">
             Mietfuchs
-            <small>{settings?.houseName || 'Nebenkosten im Griff'}</small>
+            <small>{property?.name || 'Nebenkosten im Griff'}</small>
           </div>
         </div>
 
@@ -169,6 +175,8 @@ function Shell() {
         {update.status && hintVisible(update.status, settings) && (
           <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
         )}
+
+        <PropertySwitcher properties={properties} value={propertyId} onChange={setPropertyId} />
 
         <label className="year-switcher no-print">
           <span>Abrechnungsjahr</span>
@@ -227,9 +235,11 @@ function Shell() {
 export default function App() {
   return (
     <YearProvider>
-      <UIProvider>
-        <Shell />
-      </UIProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Shell />
+        </UIProvider>
+      </PropertyProvider>
     </YearProvider>
   )
 }

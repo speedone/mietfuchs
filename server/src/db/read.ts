@@ -18,14 +18,14 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
-  personHistory, prepaymentOverrides, prepayments, readings, settings, tenancies, units,
+  personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -35,6 +35,7 @@ import {
 // aus snapshot.ts heraus — dieselbe Funktion wie auf dem Weg über die Datei.
 export type StoredClosedSettlement = {
   id: string
+  propertyId: string
   year: number
   closedAt: string
   sentAt: string | null
@@ -47,6 +48,7 @@ export type StoredClosedSettlement = {
 // Der Bestand, wie er in der Datenbank liegt. Er erfüllt `SnapshotSource` (snapshot.ts), lässt
 // sich also unmittelbar zu einem Schnappschuss eines Jahres machen.
 export type Stock = SnapshotSource & {
+  properties: Property[]
   units: Unit[]
   tenancies: Tenancy[]
   costItems: CostItem[]
@@ -87,10 +89,26 @@ const INSERTION_ORDER = sql`rowid`
 // die Naht zwischen Zeile und Domänentyp je Sammlung an genau einer Stelle, und sie ist eine
 // benannte Funktion und keine Zusicherung (dasselbe Muster wie bei der KI-Auswertung, #63).
 
+export async function readProperties(db: Database): Promise<Property[]> {
+  const rows = await db.select().from(properties).orderBy(INSERTION_ORDER)
+  return rows.map((p) => ({
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    address: p.address,
+    // Hier bleibt `null` stehen und wird nicht zu `undefined`: Es heißt „die Vorgabe gilt“ und
+    // ist damit eine Auskunft, kein fehlendes Feld.
+    landlordName: p.landlordName,
+    iban: p.iban,
+    paymentDeadlineDays: p.paymentDeadlineDays,
+  }))
+}
+
 export async function readUnits(db: Database): Promise<Unit[]> {
   const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
   return rows.map((u) => ({
     id: u.id,
+    propertyId: u.propertyId,
     name: u.name,
     areaM2: u.areaM2,
     participates: u.participates,
@@ -150,6 +168,7 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
     const own = shares.get(c.id)
     return {
       id: c.id,
+      propertyId: c.propertyId,
       year: c.year,
       category: c.category,
       description: c.description,
@@ -171,6 +190,7 @@ export async function readMeters(db: Database): Promise<Meter[]> {
   const rows = await db.select().from(meters).orderBy(INSERTION_ORDER)
   return rows.map((m) => ({
     id: m.id,
+    propertyId: m.propertyId,
     name: m.name,
     unitId: m.unitId,
     type: m.type,
@@ -207,6 +227,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
   const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
   return rows.map((c) => ({
     id: c.id,
+    propertyId: c.propertyId,
     year: c.year,
     closedAt: c.closedAt,
     sentAt: c.sentAt,
@@ -222,6 +243,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
 // vergleicht (der Umstieg und sein Gleichstand).
 export async function readStock(db: Database): Promise<Stock> {
   return {
+    properties: await readProperties(db),
     units: await readUnits(db),
     tenancies: await readTenancies(db),
     costItems: await readCostItems(db),

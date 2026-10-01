@@ -8,13 +8,14 @@
 // Vorher rief die Seite `p.amountEur.toLocaleString(…)` unmittelbar auf: Die ganze Auswertung
 // des Belegs brach ab und wurde als Fehler angezeigt, obwohl alles andere brauchbar war.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Extraction, Unit } from '../types'
 import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
 
-const UNITS: Unit[] = [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }]
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 
 // Die zweite Position hat keinen Betrag, so wie der Server sie durchlässt (toExtraction in
 // server/src/extract.ts verwirft nur, was niemand gebrauchen kann).
@@ -44,8 +45,13 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const upload = (container: HTMLElement) => {
-  const input = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+const upload = async (container: HTMLElement) => {
+  // Die Seite erscheint erst, wenn die Objekte geladen sind (#92).
+  const input = await waitFor(() => {
+    const found = container.querySelector('input[type="file"][multiple]')
+    if (!(found instanceof HTMLInputElement)) throw new Error('das Dateifeld ist noch nicht da')
+    return found
+  })
   fireEvent.change(input, { target: { files: [new File(['JPEG'], 'rechnung.jpg', { type: 'image/jpeg' })] } })
 }
 
@@ -72,20 +78,24 @@ async function expectBothPositions() {
 test('Kosten: eine Position ohne Betrag wird mit leerem Feld angezeigt', async () => {
   const { container } = render(
     <YearProvider>
-      <Kosten units={UNITS} settings={null} />
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} />
+      </PropertyProvider>
     </YearProvider>,
   )
-  upload(container)
+  await upload(container)
   await expectBothPositions()
 })
 
 test('Schnellerfassung: eine Position ohne Betrag wird mit leerem Feld angezeigt und rot bewertet', async () => {
   const { container } = render(
     <YearProvider>
-      <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      <PropertyProvider>
+        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      </PropertyProvider>
     </YearProvider>,
   )
-  upload(container)
+  await upload(container)
   await expectBothPositions()
   // Die Ampel sagt, was zu tun ist, statt die Position stillschweigend zu verschlucken
   expect(screen.getByText('Betrag fehlt oder ist 0')).toBeTruthy()

@@ -4,6 +4,8 @@ import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } 
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
+import PropertyCard from '../components/PropertyCard'
+import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -42,21 +44,12 @@ const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', i
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const [house, setHouse] = useState({ houseName: '', address: '' })
+  const { property } = useProperty()
+  const propertyId = property?.id
   const [unitForm, setUnitForm] = useState<UnitForm | null>(null)
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (settings) setHouse({ houseName: settings.houseName, address: settings.address })
-  }, [settings])
-
-  async function saveHouse() {
-    await api('/api/settings', { method: 'PUT', body: JSON.stringify(house) })
-    await reload()
-    toast('Hausdaten gespeichert.')
-  }
 
   async function saveUnit() {
     if (!unitForm) return
@@ -69,7 +62,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
     const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
     if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
-    else await api('/api/units', { method: 'POST', body })
+    else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
     setUnitForm(null)
     await reload()
     toast(editing ? `„${unitForm.name.trim()}" übernommen.` : `Wohnung „${unitForm.name.trim()}" angelegt.`)
@@ -190,22 +183,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
   return (
     <>
-      <PageHeader title="Stammdaten" subtitle="Haus, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
+      <PageHeader title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
 
-      <div className="card">
-        <h2>Haus</h2>
-        <div className="row">
-          <label className="field grow">
-            Bezeichnung
-            <input value={house.houseName} onChange={(e) => setHouse({ ...house, houseName: e.target.value })} placeholder="z. B. Mehrfamilienhaus Musterstraße" />
-          </label>
-          <label className="field grow">
-            Adresse
-            <input value={house.address} onChange={(e) => setHouse({ ...house, address: e.target.value })} placeholder="Straße Nr., PLZ Ort" />
-          </label>
-          <button className="btn" onClick={saveHouse}>Speichern</button>
-        </div>
-      </div>
+      <PropertyCard />
 
       <div className="card">
         <h2>Wohnungen</h2>
@@ -632,12 +612,14 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // Zähler der Wohnung + Hauptzähler (Dokumentation) laden
+  // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
+  const { property } = useProperty()
+  const propertyId = property?.id
   useEffect(() => {
-    void api<Meter[]>('/api/meters')
+    void api<Meter[]>(withProperty('/api/meters', propertyId))
       .then((all) => setMeters(all.filter((m) => m.unitId === tenancy.unitId || m.unitId === null)))
       .catch(() => setMeters([]))
-  }, [tenancy.unitId])
+  }, [tenancy.unitId, propertyId])
 
   // Einzug des Nachmieters: standardmäßig der Tag nach dem Auszug
   function defaultStart(end: string): string {

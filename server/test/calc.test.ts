@@ -17,9 +17,11 @@ import {
   taxReport,
 } from '../src/calc.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
-import { snapshotFromDb } from '../src/snapshot.ts'
+import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, type SnapshotSource } from '../src/snapshot.ts'
 import type { ClosedSettlement, Db } from '../src/store.ts'
-import type { CostItem, CostKey, Meter, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, Unit, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -1820,5 +1822,75 @@ test('Invariante: der Eigenanteil steckt im Vermieteranteil', () => {
       `Fall ${i}: Eigenanteil ${s.selfUsedShareCents} > Vermieteranteil ${s.landlord.totalCents}\n${JSON.stringify(db)}`,
     )
     assert.ok(s.selfUsedShareCents >= 0, `Fall ${i}: negativer Eigenanteil`)
+  }
+})
+
+// ---------- Mehrere Objekte (#92) ----------
+// Ein Bestand mit zwei Objekten muss je Objekt genau das rechnen, was ein Bestand ergäbe, der nur
+// aus diesem Objekt besteht. Das ist der Fehler, der sonst still bliebe: Ein Filter fehlt, und
+// eine Rechnung wird über zwei Häuser verteilt. Keine Ausnahme, keine Warnung, nur falsche Zahlen.
+
+// Alle Kennungen eines zufälligen Bestands mit einem Präfix, samt der Verweise darauf. So lassen
+// sich zwei Bestände zusammenlegen, ohne dass eine Kennung doppelt vorkommt.
+function prefixed(db: Db, p: string): Db {
+  const id = (x: string) => `${p}-${x}`
+  return {
+    ...db,
+    units: db.units.map((u) => ({ ...u, id: id(u.id) })),
+    tenancies: db.tenancies.map((t) => ({ ...t, id: id(t.id), unitId: id(t.unitId) })),
+    meters: db.meters.map((m) => ({ ...m, id: id(m.id), unitId: m.unitId === null ? null : id(m.unitId) })),
+    readings: db.readings.map((r) => ({ ...r, id: id(r.id), meterId: id(r.meterId) })),
+    payments: db.payments.map((x) => ({ ...x, id: id(x.id), tenancyId: id(x.tenancyId) })),
+    costItems: db.costItems.map((c) => ({
+      ...c,
+      id: id(c.id),
+      ...(c.directUnitId ? { directUnitId: id(c.directUnitId) } : {}),
+      ...(c.customShares ? { customShares: Object.fromEntries(Object.entries(c.customShares).map(([k, v]) => [id(k), v])) } : {}),
+    })),
+  }
+}
+
+// Die Sammlungen eines Bestands, wie der Schnappschuss sie liest, mit einem Objekt an den Wurzeln.
+function scopedSource(db: Db, propertyId: string): PropertyScopedSource {
+  return {
+    units: db.units.map((u) => ({ ...u, propertyId })),
+    tenancies: db.tenancies,
+    costItems: db.costItems.map((c) => ({ ...c, propertyId })),
+    meters: db.meters.map((m) => ({ ...m, propertyId })),
+    readings: db.readings,
+    payments: db.payments,
+    closedSettlements: [],
+  }
+}
+
+const sourceOf = (db: Db): SnapshotSource => ({ ...scopedSource(db, 'x'), closedSettlements: [] })
+
+function merged(a: PropertyScopedSource, b: PropertyScopedSource): PropertyScopedSource {
+  return {
+    units: [...a.units, ...b.units],
+    tenancies: [...a.tenancies, ...b.tenancies],
+    costItems: [...a.costItems, ...b.costItems],
+    meters: [...a.meters, ...b.meters],
+    readings: [...a.readings, ...b.readings],
+    payments: [...a.payments, ...b.payments],
+    closedSettlements: [...a.closedSettlements, ...b.closedSettlements],
+  }
+}
+
+test('Invariante: mit zwei Objekten rechnet jedes, als wäre es allein', () => {
+  const rnd = makeRng(92)
+  for (let i = 0; i < 200; i++) {
+    const a = prefixed(randomDb(rnd), 'A')
+    const b = prefixed(randomDb(rnd), 'B')
+    const beide = merged(scopedSource(a, 'objekt-a'), scopedSource(b, 'objekt-b'))
+    for (const [allein, propertyId] of [[a, 'objekt-a'], [b, 'objekt-b']] as const) {
+      const imVerbund = snapshotFor(beide, propertyId, 2025)
+      const fuerSich = snapshotOf(sourceOf(allein), 2025)
+      const fall = `Fall ${i}, ${propertyId}`
+      assert.deepEqual(computeSettlement(imVerbund), computeSettlement(fuerSich), `${fall}: Abrechnung`)
+      assert.deepEqual(rentLedger(imVerbund), rentLedger(fuerSich), `${fall}: Mietkonto`)
+      assert.deepEqual(taxReport(imVerbund), taxReport(fuerSich), `${fall}: Steuer`)
+      assert.deepEqual(consumptionOverview(imVerbund), consumptionOverview(fuerSich), `${fall}: Verbrauch`)
+    }
   }
 })

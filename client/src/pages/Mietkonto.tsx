@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import { showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -13,6 +14,8 @@ type PaymentForm = { tenancyId: string; date: string; amount: string; note: stri
 
 export default function Mietkonto() {
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const toast = useToast()
   const confirm = useConfirm()
   const [ledger, setLedger] = useState<RentLedger | null>(null)
@@ -23,13 +26,13 @@ export default function Mietkonto() {
 
   const load = useCallback(() => {
     return Promise.all([
-      api<RentLedger>(`/api/rentledger/${year}`),
-      api<Tenancy[]>('/api/tenancies'),
-      api<Payment[]>('/api/payments'),
+      api<RentLedger>(withProperty(`/api/rentledger/${year}`, propertyId)),
+      api<Tenancy[]>(withProperty('/api/tenancies', propertyId)),
+      api<Payment[]>(withProperty('/api/payments', propertyId)),
     ])
       .then(([l, t, p]) => { setLedger(l); setTenancies(t); setPayments(p); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
 

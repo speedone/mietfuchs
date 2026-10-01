@@ -26,14 +26,17 @@ import os from 'node:os'
 import path from 'node:path'
 import { getTableColumns } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
-import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { Payment, Reading, Settings, Tenancy } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../src/calc.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { snapshotFromDb, snapshotOf } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
-import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { readStock } from '../src/db/read.ts'
+import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
+import { readStock, type Stock } from '../src/db/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
+import { openDatabaseWithStock } from '../testing/database.ts'
 import {
   costItems as costItemsTable, meters as metersTable, payments as paymentsTable,
   readings as readingsTable, tenancies as tenanciesTable, units as unitsTable,
@@ -150,14 +153,30 @@ function fullDb(): Db {
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-stock-'))
 
-// Eine offene Datenbank auf einem Wegwerf-Ordner, sauber geschlossen und gelöscht.
-async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Promise<void> {
+// Eine Datenbank auf dem Stand von Migration 0000 auf einem Wegwerf-Ordner, sauber geschlossen
+// und gelöscht.
+//
+// Auf 0000, weil `legacy/write.ts` genau dorthin schreibt: Es ist der Schreiber des Umstiegs, und
+// der importiert auf den Ausgangsstand und lässt erst danach die übrige Kette laufen (#92).
+// `readBack` tut dasselbe, bevor es liest: Was dann herauskommt, ist der Bestand, wie er nach
+// dem Update in der Datenbank eines Vermieters stünde.
+type BaselineDatabase = { db: Database, readBack: () => Promise<Stock> }
+
+async function withDatabase(work: (opened: BaselineDatabase) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const connection = await connect(path.join(dataDir, 'test.sqlite'))
   try {
-    await work(opened)
+    const migrations = await loadMigrations()
+    applyMigrations(connection, migrations.slice(0, 1))
+    await work({
+      db: connection.db,
+      readBack: async () => {
+        applyMigrations(connection, migrations)
+        return readStock(connection.db)
+      },
+    })
   } finally {
-    opened.close()
+    connection.close()
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 }
@@ -179,7 +198,7 @@ test('Rundreise: aus der Datenbank kommt dieselbe Abrechnung wie aus der Datei',
     const file = fullDb()
     const gerade = straightenForDatabase(file)
     await writeStock(opened.db, gerade)
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     for (const year of [2023, 2024, 2025]) {
       assert.deepEqual(
         resultsOfSnapshot(snapshotOf(stock, year)),
@@ -197,7 +216,7 @@ test('Rundreise: der eingefrorene Berechnungsstand kommt wortgleich zurück', as
   await withDatabase(async (opened) => {
     const gerade = straightenForDatabase(fullDb())
     await writeStock(opened.db, gerade)
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     assert.equal(stock.closedSettlements.length, 1)
     assert.deepEqual(stock.closedSettlements[0].settlement, gerade.closedSettlements[0].settlement)
     assert.equal(stock.closedSettlements[0].sentAt, '2024-03-05T09:00:00.000Z')
@@ -233,7 +252,7 @@ test('Rundreise: die Einstellungen samt KI-Plätzen kommen zurück', async () =>
     gerade.settings.ai.consent = { images: { url: 'https://api.openai.com/v1', model: 'gpt-4o', date: '2025-01-01' } }
     gerade.settings.ai.timeoutSeconds = 600
     await writeStock(opened.db, gerade)
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     assert.deepEqual(stock.settings, gerade.settings)
   })
 })
@@ -252,7 +271,7 @@ test('Rundreise: die Reihenfolge der Datei bleibt erhalten', async () => {
     ]
     const gerade = straightenForDatabase(file)
     await writeStock(opened.db, gerade)
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     assert.deepEqual(stock.readings.map((r) => r.value), [100, 111, 122, 160])
     assert.deepEqual(stock.units.map((u) => u.id), ['u1', 'u2', 'u3'])
     assert.deepEqual(stock.costItems.map((c) => c.id), ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'])
@@ -330,7 +349,9 @@ test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // dann fehl und sagt, welches Feld in `everyFieldDb` fehlt.
   const stock = straightenForDatabase(everyFieldDb())
   for (const { what, table, rows } of collectionsWithTable(stock)) {
-    for (const column of Object.keys(getTableColumns(table))) {
+    // `propertyId` kennt die db.json nicht, erst Migration 0001 setzt es (#92). Dass es danach an
+    // jeder Wurzel steht, prüft der Test „Objekt: nach dem Update …“ unten.
+    for (const column of Object.keys(getTableColumns(table)).filter((c) => c !== 'propertyId')) {
       const belegt = rows.some((row) => row !== null && typeof row === 'object' && Reflect.get(row, column) !== undefined)
       assert.ok(belegt, `${what}: „${column}" ist in everyFieldDb nicht belegt, der Test bewacht das Feld deshalb nicht`)
     }
@@ -344,11 +365,13 @@ test('Rundreise: jedes Feld des Datenmodells kommt zurück', async () => {
   await withDatabase(async (opened) => {
     const gerade = straightenForDatabase(everyFieldDb())
     await writeStock(opened.db, gerade)
-    const stock = await readStock(opened.db)
-    assert.deepStrictEqual(stock.units, gerade.units, 'Wohnungen')
+    const stock = await opened.readBack()
+    // Mit Objekt 1, das die Migration hinzugefügt hat; sonst genau das, was hineinging.
+    const inObjekt1 = <T>(rows: T[]) => rows.map((row) => ({ ...row, propertyId: 'objekt-1' }))
+    assert.deepStrictEqual(stock.units, inObjekt1(gerade.units), 'Wohnungen')
     assert.deepStrictEqual(stock.tenancies, gerade.tenancies, 'Mietverhältnisse')
-    assert.deepStrictEqual(stock.costItems, gerade.costItems, 'Kostenpositionen')
-    assert.deepStrictEqual(stock.meters, gerade.meters, 'Zähler')
+    assert.deepStrictEqual(stock.costItems, inObjekt1(gerade.costItems), 'Kostenpositionen')
+    assert.deepStrictEqual(stock.meters, inObjekt1(gerade.meters), 'Zähler')
     assert.deepStrictEqual(stock.readings, gerade.readings, 'Ablesungen')
     assert.deepStrictEqual(stock.payments, gerade.payments, 'Zahlungen')
   })
@@ -363,7 +386,7 @@ test('Schreiben: ein leerer Bestand legt nur die Einstellungen an', async () => 
     const counts = await writeStock(opened.db, leer)
     assert.equal(counts.units, 0)
     assert.equal(counts.readings, 0)
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     assert.deepEqual(stock.units, [])
     assert.equal(stock.settings.houseName, 'Haus')
   })
@@ -413,8 +436,28 @@ test('Schreiben: ein Fehler mittendrin lässt nichts halb Geschriebenes zurück'
         return true
       },
     )
-    const stock = await readStock(opened.db)
+    const stock = await opened.readBack()
     assert.deepEqual(stock.units, [], 'die Wohnungen von vorher sind mit zurückgerollt')
     assert.deepEqual(stock.costItems, [])
   })
+})
+
+// ---------- Objekte (#92) ----------
+
+test('Objekt: nach dem Update trägt jede Wurzel des Bestands Objekt 1', async () => {
+  const dataDir = tempDir()
+  const opened = await openDatabaseWithStock(dataDir, straightenForDatabase(fullDb()))
+  try {
+    const stock = await opened.read(readStock)
+    assert.deepEqual(stock.properties.map((p) => ({ id: p.id, name: p.name, address: p.address, kind: p.kind })), [
+      { id: 'objekt-1', name: 'Haus', address: 'Weg 1', kind: 'mfh' },
+    ])
+    for (const [name, list] of [['units', stock.units], ['meters', stock.meters], ['costItems', stock.costItems], ['closedSettlements', stock.closedSettlements]] as const) {
+      assert.ok(list.length > 0, `${name} ist im Prüfbestand nicht leer`)
+      for (const entry of list) assert.equal(entry.propertyId, 'objekt-1', `${name} ${entry.id}`)
+    }
+  } finally {
+    opened.close()
+    fs.rmSync(dataDir, { recursive: true, force: true })
+  }
 })

@@ -7,8 +7,28 @@
 //   'ausgenommen'→ beides false — gehört nicht zur Abrechnungseinheit, bleibt außen vor
 export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
 
+// Die Art eines Objekts (#92): Mehrfamilienhaus, vermietete Eigentumswohnung, Einfamilienhaus,
+// Sonstiges (etwa ein Garagenhof).
+export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'sonstiges'
+
+// Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und
+// abgeschlossene Abrechnungen gehören zu genau einem; Mietverhältnisse, Zahlungen und
+// Ablesungen erben es.
+export type Property = {
+  id: string
+  name: string
+  kind: PropertyKind
+  address: string
+  // Abweichend von den Einstellungen, etwa beim Haus der Eltern. `null` heißt „die Vorgabe aus
+  // den Einstellungen gilt“, eine leere Zeichenkette „bewusst keine“.
+  landlordName: string | null
+  iban: string | null
+  paymentDeadlineDays: number | null
+}
+
 export type Unit = {
   id: string
+  propertyId: string
   name: string
   areaM2: number
   participates: boolean
@@ -113,8 +133,10 @@ export type MeterType = 'kaltwasser' | 'strom' | 'waerme' | 'sonstig'
 
 export type Meter = {
   id: string
+  // Eigens und nicht über die Wohnung: Ein Hauptzähler hat keine.
+  propertyId: string
   name: string
-  unitId: string | null // null = Hauptzähler (ganzes Haus)
+  unitId: string | null // null = Hauptzähler (ganzes Objekt)
   type: MeterType
   meterNumber?: string
   unit: string // Maßeinheit, z. B. m³
@@ -134,6 +156,7 @@ export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custo
 
 export type CostItem = {
   id: string
+  propertyId: string
   year: number
   category: string
   description: string

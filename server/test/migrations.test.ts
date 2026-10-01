@@ -43,6 +43,11 @@ test('jede Migration im Journal hat ihre Datei, und die Reihenfolge stimmt', asy
 // vorhandener wird nie geändert. Ändert ihn doch jemand, passt seine Marke nicht mehr.
 const VEROEFFENTLICHT: Record<string, string> = {
   '0000_ordinary_karnak': 'd37deabbc5753761291aa59754f1569d11591512821c1825c180b41da1109fe9',
+  // Mehrere Objekte (#92). Eingetragen vor dem Merge und nicht erst beim Release: Jeder Push auf
+  // main veröffentlicht das Image ghcr.io/speedone/mietfuchs:main, und ab dann haben Nutzer
+  // diese Schritte angewendet.
+  '0001_objekte': '6cffdd54299e361e826b45ccdda8da9b53ad265020f8cc3a601569cd4f44e100',
+  '0002_objekte_pflicht': '51304780eb2e8ad1f0333f6b18dd329a60ec001ee82f32d4adb7350bbd3d7f45',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {
@@ -116,4 +121,19 @@ test('undefined an die Datenbank ist ein Fehler mit Ansage, kein stilles NULL', 
   assert.equal(toSqlValue('Meier'), 'Meier')
   assert.equal(toSqlValue(true), 1)
   assert.equal(toSqlValue(false), 0)
+})
+
+// Beim Neubau einer Tabelle schreibt drizzle-kit eine Prüfbedingung, die eine Spalte mit dem
+// Tabellennamen anspricht, mit dem Namen des Zwischenstands (`"__new_closed_settlements"."settlement"`).
+// Das SQLite unter Node und im Linux-Bun schreibt den Verweis beim Umbenennen mit; das SQLite des
+// Systems unter macOS nicht, und dort scheiterte der Schritt mit „no such column“: Die
+// Programmdatei startete nach dem Update ohne Datenbank (#92, gefunden auf dem macOS-Runner).
+// Prüfbedingungen sprechen ihre Spalten deshalb unqualifiziert an, und dieser Test hält es für
+// jeden Schritt fest.
+test('kein Migrationsschritt verweist auf einen Zwischenstand beim Neubau', async () => {
+  for (const m of await loadMigrations()) {
+    for (const statement of m.statements) {
+      assert.doesNotMatch(statement, /"__new_[a-z_]+"\./, `${m.tag}: Verweis auf eine Spalte des Zwischenstands`)
+    }
+  }
 })
