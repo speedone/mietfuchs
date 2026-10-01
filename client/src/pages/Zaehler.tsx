@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
+import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
 import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
@@ -15,14 +16,6 @@ type Props = { units: Unit[] }
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
 
 type MeterForm = { id?: string; name: string; unitId: string; type: MeterType; meterNumber: string; unit: string }
-type ReadingForm = { date: string; value: string; replacement: boolean; oldEndValue: string; note: string }
-
-const EMPTY_READING: ReadingForm = { date: '', value: '', replacement: false, oldEndValue: '', note: '' }
-
-function parseNum(s: string): number | null {
-  const n = Number(s.trim().replace(/\./g, (m, i, str) => (str.includes(',') ? '' : m)).replace(',', '.'))
-  return Number.isFinite(n) ? n : null
-}
 
 export default function Zaehler({ units }: Props) {
   const { year, setYear } = useYear()
@@ -104,25 +97,14 @@ export default function Zaehler({ units }: Props) {
   }
 
   async function saveReading(meterId: string) {
-    const value = parseNum(readingForm.value)
-    const oldEnd = readingForm.replacement ? parseNum(readingForm.oldEndValue) : null
-    if (!readingForm.date || value === null || (readingForm.replacement && oldEnd === null)) {
-      setError('Bitte Datum und Zählerstand prüfen (bei Zählerwechsel auch den Endstand des alten Geräts).')
+    const built = buildReadingBody(readingForm, meterId)
+    if ('error' in built) {
+      setError(built.error)
       return
     }
     setError('')
     try {
-      await api('/api/readings', {
-        method: 'POST',
-        body: JSON.stringify({
-          meterId,
-          date: readingForm.date,
-          value,
-          replacement: readingForm.replacement || undefined,
-          oldEndValue: readingForm.replacement ? oldEnd : undefined,
-          note: readingForm.note.trim() || undefined,
-        }),
-      })
+      await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
     } catch (e) {
       setError(errorText(e))
       return

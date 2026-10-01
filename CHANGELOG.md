@@ -96,6 +96,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite
+  der Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
+  Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als
+  0, damit der Hinweis „Endstand fehlt“ erscheint, statt dass ein falscher Verbrauch Kosten
+  zwischen Mietern verschiebt. Zählerstände werden außerdem wie alle Mengen gelesen: „1.234“ ist
+  1.234 und nicht 1,234. Prüfen Sie bitte Ablesungen mit Zählerwechsel und dem Endstand 0.
+  ([#149](https://github.com/speedone/mietfuchs/issues/149))
 - **Ein Objektwechsel speichert nichts mehr ins falsche Haus.** Wechselten Sie das Objekt,
   während ein Formular offen war, landete der Eintrag still im anderen Objekt, etwa eine Zahlung
   beim Mieter des vorigen Hauses, wo sie die Steuerübersicht verändert. Jetzt fragt Mietfuchs vor
