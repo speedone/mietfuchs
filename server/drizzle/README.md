@@ -46,6 +46,13 @@ Regel oben unverändert. Jeder Schritt läuft in einer eigenen Transaktion mit a
 Prüfung der Fremdschlüssel (`applyMigrations` in client.ts). Ein Datenanteil, der einen Verweis
 ins Leere hinterließe, rollt also zurück, statt festgeschrieben zu werden.
 
+**Neue Spalten und geänderte Bedingungen nie in einem Schritt** (#94, Paar 0003/0004). Baut
+drizzle-kit (0.31) eine Tabelle neu, weil sich eine Prüfbedingung ändert, und kommen im selben
+Schritt Spalten hinzu, kopiert es beim Umkopieren auch die neuen Spalten aus der alten Tabelle,
+in der es sie noch nicht gibt: „no such column“. Deshalb zuerst die Spalten ohne neue Bedingungen
+erzeugen, danach die Bedingungen in einem zweiten Schritt. Die Tests merken das sofort, weil jede
+Datenbank im Test durch die ganze Kette läuft.
+
 Vor dem Anwenden ausstehender Schritte legt der Server eine Kopie des bisherigen Stands als
 `mietfuchs.sqlite.vor-<Schritt>` daneben (`backupBeforeMigrating` in open.ts).
 

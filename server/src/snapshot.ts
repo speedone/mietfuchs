@@ -23,7 +23,7 @@ import type { Db } from './store.ts'
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
 // Kennzeichen der Beteiligung samt der Personenzahl des eigenen Haushalts. Zimmerzahl, Etage
 // und Notiz sind reine Stammdaten und haben auf die Verteilung keinen Einfluss.
-export type SnapshotUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'selfPersons'>
+export type SnapshotUnit = Pick<Unit, 'id' | 'name' | 'areaM2' | 'participates' | 'selfUsed' | 'selfPersons' | 'mea'>
 
 // Gelesen werden Kennung, Wohnung, Mietername, Zeitraum und die drei Staffeln samt der
 // Jahreskorrektur der Vorauszahlung. `persons` bleibt dabei, weil es der Rückfall ist, wenn
@@ -65,6 +65,9 @@ export type SnapshotCostItem = Pick<
   | 'directUnitId'
   | 'meterType'
   | 'customShares'
+  | 'participantUnitIds'
+  | 'externalBasis'
+  | 'tenancyAmounts'
   | 'labor35aCents'
 >
 

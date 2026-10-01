@@ -24,7 +24,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
+  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemShares, costItems, meters, payments,
   personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
@@ -114,6 +114,9 @@ export async function readUnits(db: Database): Promise<Unit[]> {
     participates: u.participates,
     selfUsed: orUndefined(u.selfUsed),
     selfPersons: orUndefined(u.selfPersons),
+    // Nur, wenn es einen Wert gibt, wie die übrigen Angaben aus #94: Eine Wohnung aus einer
+    // db.json hat das Feld gar nicht.
+    ...(u.mea === null ? {} : { mea: u.mea }),
     rooms: orUndefined(u.rooms),
     floor: orUndefined(u.floor),
     notes: orUndefined(u.notes),
@@ -164,8 +167,14 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
+  const participantRows = await db.select().from(costItemParticipants).orderBy(INSERTION_ORDER)
+  const participants = groupBy(participantRows, (r) => r.costItemId, (r) => r.unitId)
+  const amountRows = await db.select().from(costItemAmounts).orderBy(INSERTION_ORDER)
+  const amounts = groupBy(amountRows, (r) => r.costItemId, (r): [string, number] => [r.tenancyId, r.amountCents])
   return rows.map((c) => {
     const own = shares.get(c.id)
+    const teilnehmer = participants.get(c.id)
+    const betraege = amounts.get(c.id)
     return {
       id: c.id,
       propertyId: c.propertyId,
@@ -180,6 +189,12 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
       // Das Feld nur, wenn es Anteile gibt: Eine Position ohne vereinbarte Anteile hat es
       // auch in der Datei nicht.
       ...(own ? { customShares: Object.fromEntries(own) } : {}),
+      // Dieselbe Haltung bei den Angaben aus #94: nur, wenn es sie gibt.
+      ...(c.participantsLimited ? { participantUnitIds: teilnehmer ?? [] } : {}),
+      ...(betraege ? { tenancyAmounts: Object.fromEntries(betraege) } : {}),
+      ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
+        ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }
+        : {}),
       labor35aCents: orUndefined(c.labor35aCents),
       invoiceFile: orUndefined(c.invoiceFile),
     }

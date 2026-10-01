@@ -656,8 +656,10 @@ Kostenposition (#94), nicht in weitere Ebenen.
   Filter ergäbe keine Fehlermeldung, sondern eine Verteilung über zwei Häuser. Die Routen rechnen
   über `snapshotFor` und listen über dieselbe Funktion; eine Invariante in calc.test.ts prüft an
   zufälligen Beständen mit zwei Objekten, dass jedes rechnet, als wäre es allein.
-- **Kein Verweis über Objektgrenzen**: Zähler, Direktzuordnung und vereinbarte Anteile dürfen
-  nicht auf eine Wohnung eines anderen Objekts zeigen (`sameProperty`, `CrossPropertyError`
+- **Kein Verweis über Objektgrenzen**: Zähler, Direktzuordnung, vereinbarte Anteile, Teilnehmer
+  und Einzelbeträge (#94) dürfen nicht auf eine Wohnung oder ein Mietverhältnis eines anderen
+  Objekts zeigen; das gilt auch, wenn eine Wohnung das Objekt oder ein Mietverhältnis die Wohnung
+  wechselt (`guardUnit`, `guardTenancy`) (`sameProperty`, `CrossPropertyError`
   mit 400). Zusammengesetzte Fremdschlüssel scheiden aus, weil `direct_unit_id` mit `ON DELETE
   SET NULL` alle Spalten des Schlüssels leeren würde, auch das Pflichtfeld. Das Wiederherstellen
   fragt denselben Befund über den ganzen Bestand ab (`crossPropertyViolations`).
@@ -794,7 +796,18 @@ die ganze fachliche Komplexität:
 - **Umlageschlüssel** (`item.key`): `area` (Wohnfläche), `persons` (personentagesgenau),
   `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung),
   `custom` (vereinbarte Prozentanteile je Wohnung in `item.customShares`, absolut gerechnet —
-  was unter 100 % fehlt, trägt der Vermieter).
+  was unter 100 % fehlt, trägt der Vermieter), `external` (laut Gemeinschaftsabrechnung, #94)
+  und `amounts` (Einzelbeträge je Mietverhältnis, #94).
+- **Verteilbasis je Position** (#94): `participantUnitIds` grenzt die Basis auf Teilnehmer ein
+  (Fläche, Einheiten, Personen, Verbrauch, `external`, `amounts`); ohne Teilnehmer ist sie
+  **dasselbe Objekt** wie bisher (`fullBasis` in calc.ts), damit die Umstellung keine Zahl
+  verschiebt. Bei `external` **trägt die Position den eigenen Anteil** laut Hausgeldabrechnung,
+  nicht die Summe der Anlage, sonst stünde die Summe als Vermieteranteil und Werbungskosten da;
+  `externalBasis` (Maßstab, Summe, Gesamtkosten) steht daneben für den Rechenweg und eine
+  Plausibilitätswarnung. Verteilt wird nach `mea`, Fläche oder 1 je Wohnung. Bei `amounts` ist
+  der Anteil genau der Betrag des Mietverhältnisses, ohne Tagesanteil (der Messdienst teilt beim
+  Wechsel selbst), der Rest beim Vermieter; eine Summe über dem Rechnungsbetrag wird nicht
+  verteilt. Tests in calc-verteilbasis.test.ts samt eigener Invariante.
 - **Staffeln statt Neuanlage**: Personenzahl (`personHistory`) und Vorauszahlung
   (`prepayments`, `from: YYYY-MM`) werden als „ab Datum gilt Wert" geführt. Tatsächlich
   gezahlte Vorauszahlungen pro Jahr können via `prepaymentOverrides` überschrieben werden

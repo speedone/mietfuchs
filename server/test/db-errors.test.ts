@@ -19,7 +19,7 @@ import path from 'node:path'
 import { connect } from '../src/db/client.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { databaseProblem } from '../src/db/errors.ts'
-import { closedSettlements, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
+import { closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fehler-'))
 
@@ -94,6 +94,29 @@ test('Ein Datensatz, den es schon gibt, wird erklärt', async () => {
     const text = await messageOfFailure(opened, () =>
       opened.write((db) => db.insert(units).values({ propertyId: 'objekt-1', id: 'u1', name: 'noch einmal', areaM2: 10, participates: true })))
     assert.match(text, /gibt es (schon|bereits)/, text)
+  })
+})
+
+test('Eine Summe der Anlage von null wird erklärt, und zwar mit dem Feld (#94)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.insert(costItems).values({
+        id: 'c-null', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        externalMeasure: 'mea', externalTotal: 0, externalTotalCents: 100,
+      })))
+    assert.match(text, /größer als null/, text)
+    assert.match(text, /Summe in der Anlage/, text)
+  })
+})
+
+test('Unvollständige Angaben einer Gemeinschaft werden erklärt (#94)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.insert(costItems).values({
+        id: 'c-halb', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        externalMeasure: 'mea', externalTotal: 10000,
+      })))
+    assert.match(text, /unvollständig|vollständig/, text)
   })
 })
 
@@ -199,7 +222,7 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
       // Tabelle selbst. Sie steht in errors.ts mit eigener Meldung da. Jede **weitere** Ausnahme
       // muss hier bewusst eingetragen werden, und genau das ist der Zweck dieses Tests.
       if (name === 'settings_single_row') continue
-      assert.match(name, /_(not_negative|known|is_json)$/, `„${name}" folgt keiner der bekannten Endungen`)
+      assert.match(name, /_(not_negative|known|is_json|positive|complete)$/, `„${name}" folgt keiner der bekannten Endungen`)
     }
   } finally {
     connection.close()

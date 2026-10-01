@@ -22,7 +22,7 @@ import {
   sharesForUnit, updateEntity, updateProperty, type CollectionName,
 } from '../src/db/repository.ts'
 import {
-  baseRents, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
+  baseRents, costItemAmounts, costItemParticipants, costItemShares, costItems, meters, payments, personHistory, prepaymentOverrides,
   prepayments, readings, tenancies, units,
 } from '../src/db/schema.ts'
 
@@ -371,6 +371,8 @@ test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
 
 // ---------- Der Wächter über die Verschmelzung ----------
 
+const EXTERNAL_COLUMNS = new Set(['externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited'])
+
 test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   // **Der Test, der diese Datei am Leben hält.** Die Verschmelzung liest Feld für Feld; wer eine
   // Spalte hinzufügt und sie hier vergisst, verliert sie beim Speichern still. Die Erwartung
@@ -381,7 +383,7 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
   const proben: { coll: CollectionName, table: SQLiteTable, body: Record<string, unknown> }[] = [
     {
       coll: 'units', table: units,
-      body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, rooms: 3, floor: 'EG', notes: 'Notiz' },
+      body: { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, selfUsed: true, selfPersons: 2, mea: 124, rooms: 3, floor: 'EG', notes: 'Notiz' },
     },
     {
       coll: 'tenancies', table: tenancies,
@@ -395,6 +397,8 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
       coll: 'costItems', table: costItems,
       body: {
         propertyId: 'objekt-1', year: 2024, category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
+        // Drei Spalten, ein Wert im Modell (#94); verglichen wird er unten eigens.
+        externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 },
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
       },
     },
@@ -423,8 +427,14 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     for (const { coll, table, body } of proben) {
       const id = `probe-${coll}`
       const gespeichert = await opened.write((db) => createEntity(db, coll, id, body))
+      if (coll === 'costItems') {
+        assert.deepEqual(fieldOf(gespeichert, 'externalBasis'), body.externalBasis, 'costItems: die Angaben der Gemeinschaft sind verlorengegangen')
+      }
       for (const spalte of Object.keys(getTableColumns(table))) {
         if (spalte === 'id') continue
+        // Die drei Spalten der Angaben einer Gemeinschaft stehen im Modell als ein Wert
+        // `externalBasis`; dass jede davon ankommt, prüft der Vergleich darunter.
+        if (coll === 'costItems' && EXTERNAL_COLUMNS.has(spalte)) continue
         assert.ok(
           Object.hasOwn(body, spalte),
           `${coll}: Die Probe belegt die Spalte „${spalte}" nicht, der Test bewacht sie deshalb nicht`,
@@ -480,6 +490,8 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
     for (const [table, erwartet] of [
       [prepaymentOverrides, ['tenancyId', 'year', 'amountCents']],
       [costItemShares, ['costItemId', 'unitId', 'percent']],
+      [costItemParticipants, ['costItemId', 'unitId']],
+      [costItemAmounts, ['costItemId', 'tenancyId', 'amountCents']],
     ] as const) {
       assert.deepEqual(Object.keys(getTableColumns(table)).sort(), [...erwartet].sort())
     }
@@ -491,6 +503,12 @@ test('Die Verschmelzung erreicht auch jede Spalte der Untertabellen', async () =
       year: 2024, category: 'Müll', description: 'G', amountCents: 100, key: 'custom', customShares: { u1: 55 },
     }))
     assert.deepEqual(fieldOf(mitAnteilen, 'customShares'), { u1: 55 })
+    const mitTeilnehmernUndBetraegen = await opened.write((db) => createEntity(db, 'costItems', 'c-94', { propertyId: 'objekt-1',
+      year: 2024, category: 'Heizung', description: 'H', amountCents: 100, key: 'amounts',
+      participantUnitIds: ['u1'], tenancyAmounts: { 't-korrektur': 60 },
+    }))
+    assert.deepEqual(fieldOf(mitTeilnehmernUndBetraegen, 'participantUnitIds'), ['u1'])
+    assert.deepEqual(fieldOf(mitTeilnehmernUndBetraegen, 'tenancyAmounts'), { 't-korrektur': 60 })
   })
 })
 
@@ -645,5 +663,104 @@ test('Objekt: die Prüfung über den ganzen Bestand findet Verweise über Objekt
     })
     const befunde = await opened.read(crossPropertyViolations)
     assert.equal(befunde.length, 2, befunde.join('\n'))
+  })
+})
+
+// ---------- Verteilbasis erweitern (#94) ----------
+
+async function withTwoUnitsAndTenancies(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true, mea: 124 })
+    await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 60, participates: true })
+    await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', start: '2024-01-01' })
+    await createEntity(db, 'tenancies', 't2', { unitId: 'u2', tenantName: 'B', start: '2024-01-01' })
+  })
+}
+
+test('Verteilbasis: Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge kommen zurück und lassen sich ändern', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'units', 'u1')), 'mea'), 124)
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'Aufzug', description: 'Aufzug', amountCents: 50000, key: 'area',
+      participantUnitIds: ['u2'],
+      externalBasis: { measure: 'mea', total: 10000, totalCents: 4000000 },
+      tenancyAmounts: { t1: 300, t2: 700 },
+    }))
+    const gelesen = await opened.read((db) => findEntity(db, 'costItems', 'c1'))
+    assert.deepEqual(fieldOf(gelesen, 'participantUnitIds'), ['u2'])
+    assert.deepEqual(fieldOf(gelesen, 'externalBasis'), { measure: 'mea', total: 10000, totalCents: 4000000 })
+    assert.deepEqual(fieldOf(gelesen, 'tenancyAmounts'), { t1: 300, t2: 700 })
+
+    // Nach Anwesenheit verschmolzen: null heißt „alle“ bzw. „keine Angabe“.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c1', { participantUnitIds: null, tenancyAmounts: { t2: 900 } }))
+    const danach = await opened.read((db) => findEntity(db, 'costItems', 'c1'))
+    assert.equal(fieldOf(danach, 'participantUnitIds'), undefined)
+    assert.deepEqual(fieldOf(danach, 'tenancyAmounts'), { t2: 900 })
+    assert.deepEqual(fieldOf(danach, 'externalBasis'), { measure: 'mea', total: 10000, totalCents: 4000000 }, 'ein Teilstück lässt den Rest stehen')
+    await opened.write((db) => updateEntity(db, 'costItems', 'c1', { externalBasis: null }))
+    assert.equal(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'externalBasis'), undefined)
+  })
+})
+
+test('Verteilbasis: gelöschte Wohnung und gelöschtes Mietverhältnis nehmen ihren Eintrag mit', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'Heizung', description: 'Heizung', amountCents: 1000, key: 'amounts',
+      participantUnitIds: ['u1', 'u2'], tenancyAmounts: { t1: 300, t2: 700 },
+    }))
+    await opened.write((db) => removeEntity(db, 'tenancies', 't2'))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'tenancyAmounts'), { t1: 300 })
+    await opened.write((db) => removeEntity(db, 'units', 'u2'))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'participantUnitIds'), ['u1'])
+  })
+})
+
+test('Verteilbasis: ein negativer Einzelbetrag und eine Summe der Anlage von null werden abgewiesen', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    const kosten = { propertyId: 'objekt-1', year: 2024, category: 'X', description: 'X', amountCents: 1000 }
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c1', { ...kosten, key: 'amounts', tenancyAmounts: { t1: -5 } })))
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c2', { ...kosten, key: 'external', externalBasis: { measure: 'mea', total: 0, totalCents: 1 } })))
+  })
+})
+
+test('Verteilbasis: Teilnehmer und Einzelbeträge bleiben im Objekt der Position', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    await opened.write(async (db) => {
+      await createProperty(db, 'objekt-2', { name: 'Gartenweg 3' })
+      await createEntity(db, 'units', 'b', { propertyId: 'objekt-2', name: 'B-EG', areaM2: 50, participates: true })
+      await createEntity(db, 'tenancies', 'tb', { unitId: 'b', tenantName: 'C', start: '2024-01-01' })
+    })
+    const kosten = { propertyId: 'objekt-1', year: 2024, category: 'X', description: 'X', amountCents: 1000 }
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c1', { ...kosten, key: 'area', participantUnitIds: ['u1', 'b'] })), /Objekt/)
+    await assert.rejects(() => opened.write((db) => createEntity(db, 'costItems', 'c2', { ...kosten, key: 'amounts', tenancyAmounts: { tb: 100 } })), /Objekt/)
+  })
+})
+
+test('Verteilbasis: geht die letzte Teilnehmerwohnung verloren, wird nicht „alle Wohnungen“ daraus', async () => {
+  // Ohne eigene Kennzeichnung sähe eine Position, deren einzige Teilnehmerwohnung gelöscht
+  // wurde, genauso aus wie eine ohne Teilnehmer, und der Aufzug von Haus A verteilte sich still
+  // auf alle Wohnungen. Richtig ist die leere Liste: Die Berechnung meldet sie.
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'Aufzug', description: 'Aufzug', amountCents: 1000, key: 'area',
+      participantUnitIds: ['u2'],
+    }))
+    await opened.write((db) => removeEntity(db, 'units', 'u2'))
+    assert.deepEqual(fieldOf(await opened.read((db) => findEntity(db, 'costItems', 'c1')), 'participantUnitIds'), [])
+  })
+})
+
+test('Verteilbasis: eine ausdrücklich leere Teilnehmerliste bleibt leer', async () => {
+  await withDatabase(async (opened) => {
+    await withTwoUnitsAndTenancies(opened)
+    const c = await opened.write((db) => createEntity(db, 'costItems', 'c1', {
+      propertyId: 'objekt-1', year: 2024, category: 'X', description: 'X', amountCents: 1000, key: 'area', participantUnitIds: [],
+    }))
+    assert.deepEqual(fieldOf(c, 'participantUnitIds'), [])
   })
 })
