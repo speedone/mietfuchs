@@ -1589,8 +1589,14 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
-    // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet
-    st.suggestedMonthlyCents = Math.round(st.totalShareCents / 12 / 100) * 100
+    // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet.
+    // Die Kosten fallen künftig für zwölf Monate an; wer erst im Jahr einzog, hat einen Anteil für
+    // weniger Tage, der deshalb auf das volle Jahr hochgerechnet wird (#134). Endet das
+    // Mietverhältnis im Jahr, gibt es keine künftige Vorauszahlung und keinen Vorschlag; 0 heißt
+    // für die Oberfläche „nichts anzeigen“.
+    st.suggestedMonthlyCents = st.periodEnd < yTo || st.days <= 0
+      ? 0
+      : Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100
   }
   return result
 }

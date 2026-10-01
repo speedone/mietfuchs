@@ -64,12 +64,24 @@ ta = 60.000 − 59.507 =    +493 ct →   4,93 € Guthaben
 tb = 72.000 − 60.493 = +11.507 ct → 115,07 € Guthaben
 ```
 
-Vorschlag neue Vorauszahlung (ein Zwölftel auf volle Euro) — beide landen bei 50,00 €, weil
-der jeweilige Halbjahresanteil hochgerechnet fast dasselbe ergibt:
+Vorschlag neue Vorauszahlung, **bis #134** (ein Zwölftel des Teiljahresanteils auf volle
+Euro) — beide landen bei 50,00 €, also beim halben Monatsbetrag der Wohnung:
 
 ```
 ta = 59.507 / 12 = 4.958,9 ct → 49,59 € → 50,00 €
 tb = 60.493 / 12 = 5.041,1 ct → 50,41 € → 50,00 €
 ```
+
+**Geändert mit #134:** Die Kosten fallen künftig für zwölf Monate an. Der Anteil eines
+Teiljahres wird deshalb erst auf das volle Jahr hochgerechnet (Tage des Jahres / Tage im Jahr),
+dann durch 12 geteilt. Der Vormieter ist ausgezogen, für ihn gibt es keine künftige
+Vorauszahlung und also keinen Vorschlag (0, die Oberfläche zeigt dann nichts):
+
+```
+ta = ausgezogen am 30.06.                               → kein Vorschlag (0)
+tb = 60.493 × 365/184 / 12 = 9.999,98 ct → 100,00 €
+```
+
+Das passt zur Wohnung: 1.200,00 € Grundsteuer im Jahr sind 100,00 € im Monat.
 
 Personentage: 2 × 181 = 362 bzw. 2 × 184 = 368; zusammen 730 = 2 × 365.

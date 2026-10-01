@@ -824,6 +824,30 @@ test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () 
   assert.equal(a.suggestedMonthlyCents, 12100)
 })
 
+// #134: Die Kosten fallen künftig für zwölf Monate an. Wer erst im Jahr einzog, hat einen Anteil
+// für weniger Tage; ein Zwölftel davon wäre zu wenig und führte im Folgejahr zur Nachzahlung.
+const teiljahr = (start: string, end: string | null): Db => ({
+  ...emptyDb(),
+  units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
+  tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start, end, personHistory: [{ from: start, persons: 1 }] })],
+  // 2025 hat 365 Tage, ab 01.03. sind es 306; ein Anteil von 730,56 € wie im Issue entsteht aus
+  // 871,42 € × 306/365 (Flächenschlüssel, einzige Wohnung, also Tagesanteil).
+  costItems: [{ id: 'c', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 87142, key: 'area' }],
+})
+
+test('Vorschlag neue Vorauszahlung bei Einzug im Jahr: auf das volle Jahr hochgerechnet', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2025-03-01', null), 2025)), 't')
+  assert.equal(st.totalShareCents, 73056)
+  // 730,56 € × 365/306 / 12 = 72,62 € → 73 €, nicht 61 €
+  assert.equal(st.suggestedMonthlyCents, 7300)
+})
+
+test('Vorschlag neue Vorauszahlung bei Auszug im Jahr: keiner', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2020-01-01', '2025-08-31'), 2025)), 't')
+  assert.ok(st.totalShareCents > 0)
+  assert.equal(st.suggestedMonthlyCents, 0)
+})
+
 test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', () => {
   const db: Db = {
     ...emptyDb(),

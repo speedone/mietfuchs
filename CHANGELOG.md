@@ -109,6 +109,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
   wissen nur Sie. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
   ([#133](https://github.com/speedone/mietfuchs/issues/133))
+- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
+  einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
+  ein ganzes Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil
+  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, steht kein Vorschlag
+  mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+  ([#134](https://github.com/speedone/mietfuchs/issues/134))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften

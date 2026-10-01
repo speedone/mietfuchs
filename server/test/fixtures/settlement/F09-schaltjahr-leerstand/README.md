@@ -68,14 +68,15 @@ t1 = 60.000 − 60.000 =     0 ct → punktgenau gedeckt
 t2 = 36.000 − 30.055 = +5.945 ct → 59,45 € Guthaben
 ```
 
-Vorschlag neue Vorauszahlung:
+Vorschlag neue Vorauszahlung (§ 560 Abs. 4 BGB): Die Kosten fallen künftig für zwölf Monate
+an, deshalb wird der Anteil eines Teiljahres zuerst auf das volle Jahr hochgerechnet (Tage des
+Jahres / Tage des Mietverhältnisses im Jahr), dann durch 12 geteilt und auf volle Euro gerundet
+(#134):
 
 ```
-t1 = 60.000 / 12 = 5.000,0 ct → 50,00 €
-t2 = 30.055 / 12 = 2.504,6 ct → 25,05 € → 25,00 €
+t1 = 60.000 × 366/366 / 12 = 5.000,0 ct → 50,00 €
+t2 = 30.055 × 366/275 / 12 = 3.333,4 ct → 33,33 € → 33,00 €
 ```
 
-Hinweis: Der Vorschlag für t2 rechnet den **Teiljahresbetrag** auf zwölf Monate herunter und
-liegt damit unter dem, was ein volles Jahr kosten würde. Das ist das heutige Verhalten. Die
-in #7 abgestimmte Hochrechnung aufs volle Jahr (§ 560 Abs. 4 BGB) ändert diese Erwartung in
-einem eigenen PR auf 33,00 €.
+Bis #134 stand hier für t2 der Teiljahresanteil geteilt durch zwölf (25,00 €), zu wenig für
+ein volles Jahr; der Mieter hätte im Folgejahr nachgezahlt.
