@@ -11,6 +11,7 @@ import { deviationView } from '../deviation'
 import { historyView, type HistoryEntry } from '../settlementHistory'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
+import { closeSettlementTitle } from '../propertyView'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
 import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
@@ -28,7 +29,7 @@ type Props = {
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
   const { year, setYear } = useYear()
-  const { property } = useProperty()
+  const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
   const landlord = settings ? effectiveLandlord(property, settings) : null
@@ -121,7 +122,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
     const ok = await confirm({
-      title: `Abrechnung ${year} abschließen?`,
+      // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
+      title: closeSettlementTitle(year, properties, property),
       message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
       confirmLabel: 'Abschließen',
     })
