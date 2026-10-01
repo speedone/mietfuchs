@@ -4137,7 +4137,7 @@ test('Mieterwechsel (#150): scheitert der dritte Schritt, ist nichts gespeichert
     // Ein doppelt abgeschickter Wechsel trifft ein schon beendetes Mietverhältnis und legt nichts an.
     const dritter = await postChange(s, tenancy.id, { end: '2025-06-30', readings, newTenancy: newTenancyBody(15000) })
     assert.equal(dritter.status, 409)
-    assert.match(await errorFrom(dritter), /bereits/)
+    assert.match(await errorFrom(dritter), /bereits zum 30\.06\.2025 beendet/, "das Datum steht deutsch da")
     assert.equal((await s.api<Reading[]>('/api/readings?property=objekt-1')).length, 2)
     assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).length, 2)
   } finally {

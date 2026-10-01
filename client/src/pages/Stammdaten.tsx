@@ -697,7 +697,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           tenancy={wizardFor}
           unit={units.find((u) => u.id === wizardFor.unitId)}
           onClose={() => setWizardFor(null)}
-          onDone={async () => { setWizardFor(null); await reload() }}
+          onDone={async () => { await reload(); setWizardFor(null) }}
         />
       )}
     </>
@@ -724,6 +724,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
   // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(true)
 
@@ -773,7 +774,14 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
       setBusy(false)
       return
     }
-    await onDone()
+    // Gespeichert ist der Wechsel jetzt. Scheitert nur das Neuladen der Ansicht, darf der Fehler
+    // nicht verloren gehen, und der Wechsel darf nicht noch einmal angeboten werden.
+    try {
+      await onDone()
+    } catch {
+      setSaved(true)
+      setBusy(false)
+    }
   }
 
   const unitMeters = meters.filter((m) => m.unitId !== null)
@@ -783,7 +791,14 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
     <div className="card" style={{ borderColor: 'var(--accent)' }}>
       <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
       {error && <div className="error">{error}</div>}
+      {saved && (
+        <div className="notice">
+          Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.{' '}
+          <button className="btn ghost" onClick={onClose}>Schließen</button>
+        </div>
+      )}
 
+      {!saved && <>
       <div className="wizard-step">
         <strong>1. Auszug</strong>
         <div className="row" style={{ marginTop: 8 }}>
@@ -879,6 +894,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
       {step < 3 && (
         <button className="btn ghost" onClick={onClose}>Abbrechen</button>
       )}
+      </>}
     </div>
   )
 }

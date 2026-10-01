@@ -125,7 +125,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beendet und die Ablesungen standen da; ein zweiter Versuch legte sie doppelt an. Jetzt geht der
   Wechsel in einem Schritt, die Meldung bleibt im Assistenten stehen, und ein doppelt abgeschickter
   Wechsel legt nichts zweimal an. Zählerstände liest der Assistent wie die Zähler-Seite („1.234“
-  ist 1.234). ([#150](https://github.com/speedone/mietfuchs/issues/150))
+  ist 1234). Eine unlesbare Kaltmiete oder Vorauszahlung und ein negativer Zählerstand werden
+  jetzt im Assistenten gemeldet, statt still wegzufallen. ([#150](https://github.com/speedone/mietfuchs/issues/150))
 - **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite der
   Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
   Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als

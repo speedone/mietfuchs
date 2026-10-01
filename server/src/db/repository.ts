@@ -874,6 +874,8 @@ export class TenantChangeError extends Error {
 export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+// „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
+const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
 const isIsoDate = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
 
@@ -892,7 +894,7 @@ export async function changeTenant(
   }
   if (current.end !== null) {
     throw new TenantChangeError(409,
-      `Das Mietverhältnis „${current.tenantName}“ ist bereits zum ${current.end} beendet. Der Mieterwechsel ist ` +
+      `Das Mietverhältnis „${current.tenantName}“ ist bereits zum ${isoToGerman(current.end)} beendet. Der Mieterwechsel ist ` +
         'vermutlich schon gespeichert; bitte laden Sie die Seite neu.')
   }
 

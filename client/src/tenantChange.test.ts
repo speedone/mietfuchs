@@ -40,6 +40,11 @@ describe('Mieterwechsel (#150)', () => {
     expect(buildTenantChange(input({}, { start: '2025-06-30' }))).toEqual({ error: 'Der Einzug des neuen Mieters muss nach dem Auszug liegen.' })
     expect(buildTenantChange(input({}, { name: '' }))).toHaveProperty('error')
     expect(buildTenantChange(input({}, { prepayment: 'abc' }))).toEqual({ error: 'Die Vorauszahlung bitte als Betrag angeben, z. B. 150,00.' })
+    expect(buildTenantChange(input({}, { baseRent: 'viel' }))).toEqual({ error: 'Die Kaltmiete bitte als Betrag angeben, z. B. 800,00.' })
+    for (const persons of ['', 'zwei', '-1', '1,5']) {
+      expect(buildTenantChange(input({}, { persons })), persons).toEqual({ error: expect.stringMatching(/Personenzahl/) })
+    }
+    expect(buildTenantChange(input({ meterValues: { m1: '-3' } }))).toEqual({ error: 'Zählerstand für „KW EG“ ist keine gültige Zahl.' })
   })
 
   test('leere Beträge heißen keine Staffel', () => {
