@@ -2021,3 +2021,31 @@ test('Invariante: mit zwei Objekten rechnet jedes, als wäre es allein', () => {
     }
   }
 })
+
+// Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate ab dem laufenden sind noch
+// nicht fällig und kein Rückstand. Dieselbe Regel wie beim Hinweis auf einen Rückstand.
+test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und kein Rückstand', () => {
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
+    tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start: '2020-01-01', end: null, baseRents: [{ from: '2020-01', monthlyCents: 100000 }], prepayments: [] })],
+    payments: [{ id: 'p', tenancyId: 't', date: '2026-09-03', amountCents: 900000 }],
+  }
+  const snapshot = snapshotFromDb(db, 2026)
+  const heute = rentLedger(snapshot, { asOf: '2026-10-15' })
+  const row = heute.rows[0]
+  if (!row) return assert.fail('keine Zeile')
+  assert.deepEqual(row.months.map((m) => m.status), [...Array(9).fill('paid'), 'notDue', 'notDue', 'notDue'])
+  assert.equal(row.arrearsCents, 0)
+  assert.equal(row.openMonths, 0)
+  assert.equal(heute.totals.openCents, 0)
+  // Ein fälliger Monat ohne Zahlung bleibt offen: Stichtag November, Oktober fehlt.
+  const spaeter = rentLedger(snapshot, { asOf: '2026-11-15' })
+  assert.equal(spaeter.rows[0]?.arrearsCents, 100000)
+  assert.equal(spaeter.totals.openCents, 100000)
+  // Ohne Stichtag ist das ganze Jahr fällig, wie bisher.
+  assert.equal(rentLedger(snapshot).totals.openCents, 300000)
+  // Das Soll und damit die Steuerübersicht hängen nicht am Stichtag.
+  assert.equal(heute.totals.sollYearCents, 1200000)
+  assert.equal(taxReport(snapshot).income.sollCents, 1200000)
+})

@@ -41,6 +41,10 @@ test('die Erhaltungsrücklage ist eine eigene Kostenart und nicht umlagefähig, 
   assert.notEqual(matchCategory('Dachreparatur aus der Rücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Zuführung zur Rücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Zuführung zur Rücklage aus dem Hausgeld'), RESERVE_CATEGORY)
+  // Zweite Browserabnahme: Eine Entnahme aus der Rücklage ist eine bezahlte Erhaltungsmaßnahme, also
+  // nicht umlagefähig (und Werbungskosten), nicht „Sonstige Betriebskosten“.
+  assert.equal(matchCategory('Entnahme aus der Erhaltungsrücklage'), 'Nicht umlagefähig')
+  assert.equal(matchCategory('Dachreparatur aus der Rücklage'), 'Nicht umlagefähig')
   for (const text of ['Entnahme aus der Instandhaltungsrücklage', 'Dachreparatur aus der Rücklage', 'Zuführung zur Rücklage', 'Instandhaltungsrücklage', 'Zuführung zur Rücklage aus dem Hausgeld']) {
     assert.equal(matchCategory(text) === RESERVE_CATEGORY, looksLikeReserveContribution(text), text)
   }

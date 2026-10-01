@@ -456,8 +456,22 @@ function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
-export function rentLedger(snapshot: Snapshot): RentLedger {
+// **Fällig ist nur, was vor dem Monat des Stichtags liegt** (#133). Die Miete ist bis zum dritten
+// Werktag fällig (§ 556b Abs. 1 BGB), und eine Überweisung braucht ein paar Tage, bis sie gebucht
+// ist; den laufenden Monat erst ab einem bestimmten Tag mitzuzählen, hinge an Wochenenden und
+// Feiertagen. Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts. Ohne
+// Stichtag (Steuer, Regression, Tests) gilt das ganze Jahr als fällig. Die Berechnung fragt nie
+// selbst nach „heute“; die Routen reichen den Tag hinein.
+export function dueMonthsOf(year: number, asOf: string | undefined): number {
+  if (!asOf || asOf.slice(0, 4) > String(year)) return 12
+  return asOf.slice(0, 4) < String(year) ? 0 : Number(asOf.slice(5, 7)) - 1
+}
+
+// `asOf` wie bei der Abrechnung: Monate ab dem des Stichtags sind „noch nicht fällig“ und kein
+// Rückstand (zweite Browserabnahme). Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
+export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
   const year = snapshot.year
+  const dueMonths = dueMonthsOf(year, options.asOf)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
@@ -505,13 +519,14 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         const applied = Math.max(0, Math.min(remaining, mo.sollCents))
         mo.paidCents = applied
         remaining -= applied
-        mo.status = applied >= mo.sollCents ? 'paid' : applied > 0 ? 'partial' : 'open'
+        mo.status = applied >= mo.sollCents ? 'paid' : mo.month > dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
       }
 
       const sollYearCents = months.reduce((a, mo) => a + mo.sollCents, 0)
       const baseRentYearCents = months.reduce((a, mo) => a + mo.baseRentCents, 0)
       const prepaymentYearCents = months.reduce((a, mo) => a + mo.prepaymentCents, 0)
       const flatRateYearCents = months.reduce((a, mo) => a + mo.flatRateCents, 0)
+      const dueSollCents = months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
@@ -523,7 +538,9 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         flatRateYearCents,
         paidYearCents,
         balanceCents: paidYearCents - sollYearCents,
-        openMonths: months.filter((mo) => mo.status !== 'paid').length,
+        dueSollCents,
+        arrearsCents: Math.max(0, dueSollCents - paidYearCents),
+        openMonths: months.filter((mo) => mo.status === 'open' || mo.status === 'partial').length,
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
@@ -535,7 +552,7 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
       paidYearCents: rows.reduce((a, r) => a + r.paidYearCents, 0),
-      openCents: rows.reduce((a, r) => a + (r.balanceCents < 0 ? -r.balanceCents : 0), 0),
+      openCents: rows.reduce((a, r) => a + r.arrearsCents, 0),
     },
   }
 }
@@ -1268,6 +1285,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
   const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, text: string }[] }[] = []
   const heatingCovered = new Set<string>()
+  // Eine Einheit ohne Wärmeanschluss (#117) oder eine Garage-artige (0 m², niemand wohnt dort) ist
+  // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
+  // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
+  const outsideHeating = (u: SnapshotUnit) => isGarageLike(u) || (u.noConnection ?? []).includes('waerme')
 
   for (const item of items) {
     const b = basisOf(item)
@@ -1617,7 +1638,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Bei Pauschale und Warmmiete gibt es keine Abrechnung, die er kürzen könnte; das meldet
     // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
     if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
-      const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 ? [{ x, share: shares[i] }] : []))
+      const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
       if (heatingByConsumption(item.key)) {
         // Gedeckt nur durch eine Position mit positivem Betrag, aus der die Wohnung wirklich etwas
         // trägt: Bei einem Zähler ohne Ablesungen geht der Betrag an den Vermieter.
@@ -1654,7 +1675,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
   // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
-  const heating = heatingFindings(items, snapshot.units, heatingCovered)
+  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered)
   for (const { item, rows } of heatingCuts) {
     const affected = heating.withoutConsumption.get(item.id)
     const cuts = rows.filter((r) => affected?.has(r.unitId)).map((r) => r.text)
@@ -1734,18 +1755,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
   // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
   // Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts.
-  const dueMonths = !options.asOf || options.asOf.slice(0, 4) > String(year)
-    ? 12
-    : options.asOf.slice(0, 4) < String(year) ? 0 : Number(options.asOf.slice(5, 7)) - 1
+  const dueMonths = dueMonthsOf(year, options.asOf)
   const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
   if (ledgerInUse && dueMonths > 0) {
-    const ledgerRows = new Map(rentLedger(snapshot).rows.map((r) => [r.tenancyId, r]))
+    const ledgerRows = new Map(rentLedger(snapshot, { asOf: options.asOf }).rows.map((r) => [r.tenancyId, r]))
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
       const row = ledgerRows.get(st.tenancyId)
       if (!row) continue
-      const dueCents = row.months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
-      const openCents = dueCents - row.paidYearCents
+      const openCents = row.arrearsCents
       if (openCents <= 0) continue
       // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
       // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
@@ -1763,11 +1781,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
-  // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor, ausgenommen ist nur das Gebäude
-  // mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt. Gemeldet wird nur,
+  // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor; nur im Gebäude mit höchstens zwei
+  // Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Gemeldet wird nur,
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
   // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
-  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
+  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement' && !outsideHeating(t.unit))
   // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
   if (heatingFlat.length > 0 && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY)) {
     warn('heating.flat-rate',

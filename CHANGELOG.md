@@ -168,6 +168,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   für die Warnung zur Warmmiete. Mieter mit Pauschale oder Warmmiete bekommen keine
   Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in diesem Fall nicht mehr
   „Ablesungen nicht erforderlich“.
+  Eine Einheit ohne Wärmeanschluss oder eine Garage ohne Fläche und Bewohner bekommt weder die
+  Warnung zur Warmmiete noch einen Kürzungsbetrag.
   ([#140](https://github.com/speedone/mietfuchs/issues/140))
 - **Zuführung zur Erhaltungsrücklage zählte als Werbungskosten.** Bei einer vermieteten
   Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
@@ -179,6 +181,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht umlagefähig“ und zur
   Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff „Erhaltungsrücklage“.
   Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.
+  Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltung, schlägt Mietfuchs als „Nicht
+  umlagefähig“ vor.
   ([#143](https://github.com/speedone/mietfuchs/issues/143))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
@@ -193,12 +197,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
   wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Im laufenden Jahr zählen nur die Monate
   vor dem aktuellen. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
+  Dieselbe Regel gilt jetzt im Mietkonto: Im laufenden Jahr stehen die kommenden Monate als „noch
+  nicht fällig“ da und zählen nicht zu den offenen Rückständen.
   ([#133](https://github.com/speedone/mietfuchs/issues/133))
 - **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr einzog.**
   Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für ein ganzes
   Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil zuerst auf das
   volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12., steht kein Vorschlag
   mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+  Bei Einzug im Jahr sagt die Abrechnung auch, dass der Anteil auf ein volles Jahr hochgerechnet
+  ist.
   ([#134](https://github.com/speedone/mietfuchs/issues/134))
 - **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
   Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen

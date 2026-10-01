@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { stepsOf, totalColumnLabel, totalNote } from './calcSteps'
+import { stepsOf, suggestionBasis, totalColumnLabel, totalNote } from './calcSteps'
 import type { SettlementRow } from './types'
 import { fmtEuro } from './api'
 
@@ -37,5 +37,14 @@ describe('Gemeinschaftsabrechnung auf der Abrechnung (#144)', () => {
   })
   test('eine vorher abgeschlossene Zeile ohne Schritte nennt den Betrag nicht „Rechnungsbetrag“', () => {
     expect(stepsOf(zeile('external')).steps[0]?.label).toBe('Anteil an der Gemeinschaft')
+  })
+})
+
+describe('Vorschlag nach § 560 Abs. 4 BGB (#134, zweite Browserabnahme)', () => {
+  test('ganzes Jahr: ein Zwölftel der Jahreskosten', () => {
+    expect(suggestionBasis({ days: 365 }, 365)).toBe('ein Zwölftel Ihrer Jahreskosten, gerundet')
+  })
+  test('Einzug im Jahr: auf ein volles Jahr hochgerechnet', () => {
+    expect(suggestionBasis({ days: 306 }, 365)).toBe('Ihr Anteil für 306 Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet')
   })
 })

@@ -35,3 +35,15 @@ export function showDecemberNote(row: RentLedgerRow, year: number, today: Date):
   if (!dezember) return false
   return dezember.sollCents > 0 && dezember.status !== 'paid'
 }
+
+// Der Stand einer Zeile, wie ihn die Karte nennt (#133, zweite Browserabnahme). Ein Rückstand ist
+// nur, was fällig ist (`arrearsCents`, im laufenden Jahr die Monate vor dem aktuellen). Fehlt
+// danach noch Geld für das Jahr, sind das die künftigen Monate: „bisher bezahlt“, kein Rückstand.
+export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid', cents: number }
+
+export function rowStanding(row: RentLedgerRow): RowStanding {
+  if (row.arrearsCents > 0) return { kind: 'arrears', cents: row.arrearsCents }
+  if (row.balanceCents > 0) return { kind: 'credit', cents: row.balanceCents }
+  if (row.balanceCents < 0) return { kind: 'paidSoFar', cents: -row.balanceCents }
+  return { kind: 'paid', cents: 0 }
+}

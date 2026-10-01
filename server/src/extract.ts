@@ -227,7 +227,8 @@ Wichtige Regeln:
   Gebäude-, Wohngebäude- oder Haftpflichtversicherung → "Sach- und Haftpflichtversicherung".
   Nur wenn wirklich nichts passt → "Sonstige Betriebskosten".
 - Kosten für Instandhaltung, Reparaturen oder Verwaltung sind "Nicht umlagefähig".
-  Die Zuführung zur Erhaltungs- oder Instandhaltungsrücklage ist "Zuführung Erhaltungsrücklage".
+  Die Zuführung zur Erhaltungs- oder Instandhaltungsrücklage ist "Zuführung Erhaltungsrücklage",
+  eine Entnahme aus der Rücklage (daraus bezahlte Erhaltung) ist "Nicht umlagefähig".
 - Beträge in Euro mit Dezimalpunkt, so wie sie auf der Rechnung stehen. Rechne nichts um.
 - Stehen die Positionsbeträge ohne Umsatzsteuer da und taucht die Steuer erst in der Summe auf
   (häufig bei Handwerkern und Schornsteinfegern), setze positionsAreNet auf true. Die Positionen
@@ -258,7 +259,7 @@ const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesit
 - "Heizung und Warmwasser": Brennstoff (Heizöl, Gas, Pellets), Fernwärme, Wärmecontracting, Wartung der Heizung, Betriebsstrom der Heizung, Messdienst (Techem, ista, Brunata, Minol), Warmwasser. Reparaturen an der Heizung sind "Nicht umlagefähig"
 - "Sonstige Betriebskosten": andere LAUFENDE Betriebskosten (z. B. Dachrinnenreinigung, Wartung Rauchmelder)
 - "Nicht umlagefähig": Reparaturen, Instandhaltung, Verwaltung, Mahn-/Bankgebühren, einmalige Anschaffungen
-- "Zuführung Erhaltungsrücklage": Zuführung zur Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung`
+- "Zuführung Erhaltungsrücklage": Zuführung zur Erhaltungs- oder Instandhaltungsrücklage in der Hausgeldabrechnung einer Eigentumswohnung. Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltungsmaßnahme, ist "Nicht umlagefähig"`
 
 async function classifyPositions(settings: AiCapableSettings, vendor: string | undefined, positions: RawPosition[], options: AskOptions): Promise<RawPosition[]> {
   const schema = {

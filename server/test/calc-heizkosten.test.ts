@@ -215,3 +215,34 @@ for (const [name, garage] of [
     assert.equal(notesOf(s, 'heating.may-agree-otherwise').length, 1)
   })
 }
+
+// ---------- Zweite Browserabnahme zu #140 ----------
+
+test('Garage ohne Wärmeanschluss mit Inklusivmiete: keine Warnung zur Warmmiete (#140)', () => {
+  const s = settle({
+    units: [unit('w1', 70), unit('w2', 70), unit('w3', 70), unit('g', 0, { noConnection: ['waerme'] })],
+    tenancies: [tenancy('A', 'w1'), tenancy('B', 'w2'), tenancy('C', 'w3'), tenancy('G', 'g', { costModel: 'inclusive', heatingModel: 'inclusive', prepayments: [] })],
+    costItems: [heizung({ key: 'meter', meterType: 'waerme' })],
+  })
+  assert.deepEqual(notesOf(s, 'heating.flat-rate'), [])
+})
+
+test('Garage-artige Einheit (0 m², 0 Personen) mit Warmmiete: keine Warnung zur Warmmiete (#140)', () => {
+  const s = settle({
+    units: [unit('w1', 70), unit('w2', 70), unit('w3', 70), unit('g', 0)],
+    tenancies: [tenancy('A', 'w1'), tenancy('G', 'g', { heatingModel: 'flatRate', prepayments: [], persons: 0, personHistory: [{ from: '2025-01-01', persons: 0 }] })],
+    costItems: [heizung({ key: 'meter', meterType: 'waerme' })],
+  })
+  assert.deepEqual(notesOf(s, 'heating.flat-rate'), [])
+})
+
+test('Einheit ohne Wärmeanschluss bekommt keinen Kürzungsbetrag (#140)', () => {
+  const s = settle({
+    units: [unit('w1', 70), unit('w2', 70), unit('w3', 70), unit('g', 15, { noConnection: ['waerme'] })],
+    tenancies: [tenancy('A', 'w1'), tenancy('B', 'w2'), tenancy('C', 'w3'), tenancy('G', 'g')],
+    costItems: [heizung({ key: 'units', amountCents: 400000 })],
+  })
+  const text = heatingNotices(s)[0]?.text ?? ''
+  assert.ok(text.includes('A (w1)'), text)
+  assert.ok(!text.includes('G (g)'), text)
+})

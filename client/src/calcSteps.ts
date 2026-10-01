@@ -28,3 +28,12 @@ export function totalColumnLabel(rows: SettlementRow[]): string {
 export function totalNote(row: SettlementRow): string {
   return row.key === 'external' ? 'Anteil an der Gemeinschaft' : ''
 }
+
+// Wie der Vorschlag für die neue Vorauszahlung (§ 560 Abs. 4 BGB) entsteht (#134). Bei Einzug im
+// Jahr ist der Anteil zuerst auf ein volles Jahr hochgerechnet; der Satz sagt das, sonst ergäbe ein
+// Zwölftel der angezeigten Kosten nicht den angezeigten Betrag (zweite Browserabnahme).
+export function suggestionBasis(st: { days: number }, daysInYear: number): string {
+  return st.days < daysInYear
+    ? `Ihr Anteil für ${st.days} Tage, auf ein volles Jahr hochgerechnet, davon ein Zwölftel, gerundet`
+    : 'ein Zwölftel Ihrer Jahreskosten, gerundet'
+}

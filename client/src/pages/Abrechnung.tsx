@@ -13,7 +13,7 @@ import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LAB
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
-import { totalColumnLabel, totalNote } from '../calcSteps'
+import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 
@@ -535,7 +535,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <p>
                       Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß
                       §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
-                      (ein Zwölftel Ihrer Jahreskosten, gerundet).
+                      ({suggestionBasis(st, data.daysInYear)}).
                     </p>
                   )}
                   {st.total35aCents > 0 && (

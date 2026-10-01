@@ -3,7 +3,7 @@ import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
-import { showDecemberNote } from '../ledgerView'
+import { rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -199,14 +199,17 @@ export default function Mietkonto() {
 
       {ledger?.rows.map((r) => {
         const noRent = r.sollYearCents === 0
+        const standing = rowStanding(r)
         return (
           <div className="card" key={r.tenancyId}>
             <div className="row" style={{ alignItems: 'baseline' }}>
               <h2 style={{ marginRight: 'auto' }}>{r.tenantName} <span className="muted" style={{ fontWeight: 400 }}>· {r.unitName}</span></h2>
-              {r.balanceCents < 0 ? (
-                <span className="badge red">{fmtEuro(-r.balanceCents)} offen</span>
-              ) : r.balanceCents > 0 ? (
-                <span className="badge green">{fmtEuro(r.balanceCents)} Guthaben</span>
+              {standing.kind === 'arrears' ? (
+                <span className="badge red">{fmtEuro(standing.cents)} offen</span>
+              ) : standing.kind === 'credit' ? (
+                <span className="badge green">{fmtEuro(standing.cents)} Guthaben</span>
+              ) : standing.kind === 'paidSoFar' ? (
+                <span className="badge green">bisher bezahlt</span>
               ) : !noRent ? (
                 <span className="badge green">vollständig bezahlt</span>
               ) : null}
@@ -226,7 +229,7 @@ export default function Mietkonto() {
                       <div
                         key={mo.month}
                         className={`rent-month ${cls}`}
-                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)} · gezahlt ${fmtEuro(mo.paidCents)}`}
+                        title={mo.sollCents === 0 ? 'kein Mietverhältnis' : `Soll ${fmtEuro(mo.sollCents)} · gezahlt ${fmtEuro(mo.paidCents)}${mo.status === 'notDue' ? ' · noch nicht fällig' : ''}`}
                         onClick={() => bookMonth(r.tenancyId, mo)}
                       >
                         <div className="m">{MONTHS[mo.month - 1]}</div>
@@ -236,7 +239,7 @@ export default function Mietkonto() {
                   })}
                 </div>
                 <p className="muted" style={{ margin: '2px 0 10px' }}>
-                  Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor.
+                  Klick auf einen roten/gelben Monat bucht den offenen Restbetrag vor; gestrichelte Monate sind noch nicht fällig.
                 </p>
                 {/* **Der überraschende Dezember** (#70). Die Bedingung steht in ledgerView.ts,
                     damit sie einen Test hat: Der erste Entwurf stand hier und war zweimal falsch,
@@ -273,9 +276,9 @@ export default function Mietkonto() {
                       <td className="num">{fmtEuro(r.paidYearCents)}</td>
                     </tr>
                     <tr>
-                      <td>{r.balanceCents < 0 ? 'offener Rückstand' : 'Guthaben/Überzahlung'}</td>
-                      <td className="num" style={{ color: r.balanceCents < 0 ? 'var(--red)' : 'var(--green)' }}>
-                        {fmtEuro(Math.abs(r.balanceCents))}
+                      <td>{standing.kind === 'arrears' ? 'offener Rückstand (fällig)' : standing.kind === 'paidSoFar' ? 'noch nicht fällig' : 'Guthaben/Überzahlung'}</td>
+                      <td className="num" style={{ color: standing.kind === 'arrears' ? 'var(--red)' : standing.kind === 'paidSoFar' ? 'var(--muted)' : 'var(--green)' }}>
+                        {fmtEuro(standing.cents)}
                       </td>
                     </tr>
                   </tbody>
