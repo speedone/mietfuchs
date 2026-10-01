@@ -19,8 +19,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+// Dieselbe Regel wie der Update-Hinweis, und zwar dieselbe Funktion statt einer Abschrift: Eine
+// Version, die das Skript annähme und update.ts nicht läse (etwa rc.01), meldete sich in der
+// Programmdatei als unvergleichbar, und ihr Nutzer bekäme nie wieder einen Hinweis. Node führt
+// die .ts-Datei unmittelbar aus; sie importiert nur Typen.
+import { parseVersion } from '../server/src/update.ts'
 
-const SEMVER = /^(\d+\.\d+\.\d+)(-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 const FOLDERS = ['.', 'server', 'client']
 
 function fail(message) {
@@ -36,9 +40,9 @@ const root = rootIndex >= 0
 const tag = args[0] ?? process.env.GITHUB_REF_NAME
 if (!tag) fail('kein Tag angegeben und GITHUB_REF_NAME ist leer.')
 
-const wanted = SEMVER.exec(tag.replace(/^v/, ''))
-if (!wanted) fail(`„${tag}“ ist keine Version wie v0.9.0 oder v0.9.0-rc.2.`)
-const version = wanted[0]
+const wanted = parseVersion(tag)
+if (!wanted || tag.trim() !== tag) fail(`„${tag}“ ist keine Version wie v0.9.0 oder v0.9.0-rc.2.`)
+const version = tag.replace(/^v/, '')
 
 const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'))
 const manifests = FOLDERS.map((dir) => path.join(root, dir, 'package.json'))
@@ -46,8 +50,8 @@ const current = manifests.map((file) => read(file).version)
 if (new Set(current).size !== 1) {
   fail(`die package.json-Dateien tragen verschiedene Versionen (${FOLDERS.map((d, i) => `${d}: ${current[i]}`).join(', ')}).`)
 }
-const base = SEMVER.exec(current[0])?.[1]
-if (base !== wanted[1]) {
+const base = parseVersion(current[0])?.core.join('.')
+if (base !== wanted.core.join('.')) {
   fail(`der Tag ${tag} passt nicht zu package.json ${current[0]}. Abweichen darf nur das Vorab-Suffix; ` +
     'erst die Version im Repo anheben und dann taggen.')
 }

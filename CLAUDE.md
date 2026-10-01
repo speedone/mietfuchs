@@ -115,11 +115,17 @@ aus, und jeder Nutzer mit eingeschalteter Update-Prüfung bekäme ihn angeboten.
 braucht nichts dergleichen, `docker/metadata-action` mit `latest=auto` vergibt `latest` bei einer
 Vorabversion von sich aus nicht. **Die Version kommt beim Tag aus dem Tag** (#166): Vor dem Bauen schreibt
 [scripts/set-version.mjs](scripts/set-version.mjs) sie in die drei package.json-Dateien (samt
-Lockfiles), in release.yml in jedem Job, der baut oder prüft, und in docker.yml; sonst meldete
-sich `v0.9.0-rc.2` als 0.9.0. Abweichen darf nur das Vorab-Suffix, eine andere Basis im Tag
-bricht den Lauf ab, statt still eine andere Version zu bauen. Die Linux-Pakete tragen den
-Kandidaten als `0.9.0~rc.2` (Arch `0.9.0rc.2`) und sortieren ihn so vor die fertige Version
-(`version_schema: semver` in nfpm.yaml).
+Lockfiles), in release.yml im Bau der Programmdateien und in den Jobs, die sie prüfen
+(Programmdateien, Distributionen, Pakete; der Smoke-Test erwartet die Version aus
+`server/package.json`), und in docker.yml; sonst meldete sich `v0.9.0-rc.2` als 0.9.0. Die
+lange KI-Antwort braucht den Schritt nicht, sie startet aus dem Quellcode, und Server und
+Smoke-Test lesen dort dieselbe Datei. Abweichen darf nur das Vorab-Suffix, eine andere Basis im
+Tag bricht den Lauf ab, statt still eine andere Version zu bauen; was als Version gilt, prüft
+das Skript mit `parseVersion` aus update.ts. Die Linux-Pakete tragen den Kandidaten in ihren
+Paketdaten als `0.9.0~rc.2` (Arch `0.9.0rc.2`) und sortieren ihn so vor die fertige Version
+(`version_schema: semver` in nfpm.yaml). **Im Dateinamen steht kein „~“**: package-linux.mjs
+macht daraus einen Punkt, wie GitHub es beim Hochladen ohnehin täte, sonst fände ein erneutes
+Anhängen ans Release die Datei unter ihrem alten Namen nicht wieder.
 
 **Artefakt-Tests** (#22): Vor dem Anhängen startet jede Programmdatei auf einem GitHub-Runner
 ihres Systems (Linux, Windows und macOS jeweils x64 und ARM64), die Linux-Dateien zusätzlich in

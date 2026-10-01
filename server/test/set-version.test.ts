@@ -82,7 +82,9 @@ test('set-version: verschieden versionierte Pakete brechen ab', () => {
 })
 
 test('set-version: was keine Version ist, bricht ab', () => {
-  for (const tag of ['main', 'v0.9', 'v0.9.0-', 'v0.9.0-rc..1']) {
+  // Dieselbe Regel wie im Update-Hinweis (server/src/update.ts): keine führende Null, auch
+  // nicht in einem Teil der Vorabversion. Sonst entstünde eine Version, die der Hinweis nicht liest.
+  for (const tag of ['main', 'v0.9', 'v0.9.0-', 'v0.9.0-rc..1', 'v0.9.0-rc.01', 'v00.9.0']) {
     const root = fakeRepo()
     assert.notEqual(run(root, tag).status, 0, tag)
     assert.equal(read<Manifest>(root, 'server', 'package.json').version, '0.9.0')

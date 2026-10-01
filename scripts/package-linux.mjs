@@ -67,6 +67,18 @@ function nfpmRunner() {
   throw new Error('Weder nFPM noch Docker gefunden. nFPM installieren (https://nfpm.goreleaser.com) oder Docker starten.')
 }
 
+// Ein Release-Kandidat heißt in .deb und .rpm 0.9.0~rc.3 (packaging/nfpm.yaml), und nFPM nimmt
+// das in den Dateinamen. GitHub macht beim Hochladen aus „~“ einen Punkt; ein erneutes „Ans
+// Release anhängen“ fände die Datei unter ihrem alten Namen dann nicht wieder und legte eine
+// zweite daneben. Deshalb heißt die Datei gleich so, wie GitHub sie nennen würde. Die Version
+// in den Paketdaten bleibt 0.9.0~rc.3, nach ihr sortiert die Paketverwaltung.
+function withoutTilde() {
+  for (const file of fs.readdirSync(outDir)) {
+    if (!file.includes('~') || !/\.(deb|rpm|pkg\.tar\.zst)$/.test(file)) continue
+    fs.renameSync(path.join(outDir, file), path.join(outDir, file.replaceAll('~', '.')))
+  }
+}
+
 const run = nfpmRunner()
 fs.mkdirSync(stageDir, { recursive: true })
 
@@ -84,6 +96,7 @@ try {
       console.log(`\n→ ${format} für ${arch} …`)
       run({ PKG_ARCH: arch, PKG_VERSION: version }, ['package', '--config', 'packaging/nfpm.yaml', '--packager', format, '--target', 'dist-bin'])
     }
+    withoutTilde()
   }
 } finally {
   // Auch nach einem Fehler weg: Sonst bliebe eine Kopie der Programmdatei von gut 100 MB liegen.
