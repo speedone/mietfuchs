@@ -1,8 +1,8 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { CostItem, CostKey, ExternalMeasure, MeterType, Tenancy, Unit } from './types'
-import { CATEGORIES, KEY_LABELS } from './types'
+import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
+import { CATEGORIES, KEY_LABELS, defaultKeyFor } from './types'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -193,6 +193,24 @@ export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): Co
     (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
       true,
   )
+}
+
+// Der Schlüssel, den das Formular einer Kostenposition für eine Kostenart vorschlägt (#142).
+// Wasser/Abwasser nach Verbrauch (§ 556a Abs. 1 Satz 2 BGB), aber nur, wenn **jede beteiligte
+// Wohnung** einen Kaltwasserzähler hat oder ausdrücklich keinen Wasseranschluss: Fehlt einer
+// vermieteten Wohnung der Zähler, zahlte beim Verbrauchsschlüssel ein anderer Mieter oder der
+// Vermieter ihren Anteil (siehe calc.ts, #116). Ein Hauptzähler deckt das nicht sicher ab; die
+// einfachste sichere Regel ist deshalb, ihn nicht mitzuzählen. Der Vorschlag steht in beiden
+// Auswahllisten: Gibt es einen Kaltwasserzähler an einer Wohnung, bietet sie `meter` und
+// `kaltwasser` an.
+export function suggestedKey(category: string, units: Unit[], meters: Meter[]): { key: CostKey, meterType: MeterType | '' } {
+  if (category === 'Wasser/Abwasser') {
+    const metered = new Set(meters.filter((m) => m.type === 'kaltwasser' && m.unitId).map((m) => m.unitId))
+    const participating = units.filter((u) => u.participates)
+    const covered = participating.every((u) => metered.has(u.id) || (u.noConnection ?? []).includes('kaltwasser'))
+    if (participating.length > 0 && metered.size > 0 && covered) return { key: 'meter', meterType: 'kaltwasser' }
+  }
+  return { key: defaultKeyFor(category), meterType: '' }
 }
 
 // Summe der vereinbarten Anteile in Prozent (unlesbare Eingaben zählen als 0)

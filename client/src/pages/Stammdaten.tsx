@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../un
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -13,13 +13,14 @@ import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import { useFocusTarget, type FocusProps } from '../focus'
 
 type Props = {
   units: Unit[]
   tenancies: Tenancy[]
   settings: Settings | null
   reload: () => Promise<void>
-}
+} & FocusProps
 
 type TenancyForm = {
   id?: string
@@ -55,7 +56,50 @@ const EMPTY_TENANCY_EXTRA = {
   flatRates: [] as { from: string; amount: string }[],
 }
 
-export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
+// Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
+const localToday = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Formular aus einem gespeicherten Mietverhältnis füllen; auch „Hier beheben →“ öffnet es so (#142).
+function tenancyToForm(t: Tenancy): TenancyForm {
+  return {
+    id: t.id,
+    unitId: t.unitId,
+    tenantName: t.tenantName,
+    personHistory: (t.personHistory ?? [{ from: t.start, persons: t.persons }]).map((p) => ({
+      from: p.from,
+      persons: String(p.persons),
+    })),
+    start: t.start,
+    end: t.end ?? '',
+    baseRents: (t.baseRents ?? []).map((p) => ({
+      from: p.from,
+      amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+    })),
+    prepayments: t.prepayments.map((p) => ({
+      from: p.from,
+      amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+    })),
+    email: t.email ?? '',
+    phone: t.phone ?? '',
+    correspondenceAddress: t.correspondenceAddress ?? '',
+    iban: t.iban ?? '',
+    contractDate: t.contractDate ?? '',
+    deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+    depositStatus: t.depositStatus ?? 'offen',
+    notes: t.notes ?? '',
+    costModel: t.costModel ?? 'settlement',
+    heatingModel: t.heatingModel ?? 'settlement',
+    flatRates: (t.flatRates ?? []).map((p) => ({
+      from: p.from,
+      amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+    })),
+  }
+}
+
+export default function Stammdaten({ units, tenancies, settings, reload, focus, onFocusDone }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { property } = useProperty()
@@ -64,6 +108,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   const [tenForm, setTenForm] = useState<TenancyForm | null>(null)
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
+  // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
+  useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { setError(''); setUnitForm(unitToForm(u)) }, onFocusDone)
+  useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { setError(''); setTenForm(tenancyToForm(t)) }, onFocusDone)
 
   async function saveUnit() {
     if (!unitForm) return
@@ -366,39 +413,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                       aria-label="Mietverhältnis bearbeiten"
                       onClick={() => {
                         setError('')
-                        setTenForm({
-                          id: t.id,
-                          unitId: t.unitId,
-                          tenantName: t.tenantName,
-                          personHistory: (t.personHistory ?? [{ from: t.start, persons: t.persons }]).map((p) => ({
-                            from: p.from,
-                            persons: String(p.persons),
-                          })),
-                          start: t.start,
-                          end: t.end ?? '',
-                          baseRents: (t.baseRents ?? []).map((p) => ({
-                            from: p.from,
-                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-                          })),
-                          prepayments: t.prepayments.map((p) => ({
-                            from: p.from,
-                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-                          })),
-                          email: t.email ?? '',
-                          phone: t.phone ?? '',
-                          correspondenceAddress: t.correspondenceAddress ?? '',
-                          iban: t.iban ?? '',
-                          contractDate: t.contractDate ?? '',
-                          deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
-                          depositStatus: t.depositStatus ?? 'offen',
-                          notes: t.notes ?? '',
-                          costModel: t.costModel ?? 'settlement',
-                          heatingModel: t.heatingModel ?? 'settlement',
-                          flatRates: (t.flatRates ?? []).map((p) => ({
-                            from: p.from,
-                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
-                          })),
-                        })
+                        setTenForm(tenancyToForm(t))
                       }}
                     >
                       ✎
@@ -413,7 +428,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
         <button
           className="btn secondary"
           style={{ marginTop: 14 }}
-          onClick={() => { setError(''); setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
+          onClick={() => { setError(''); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
           disabled={units.length === 0}
         >
           + Mietverhältnis hinzufügen
