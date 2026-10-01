@@ -54,12 +54,12 @@ Quelle: https://www.gesetze-im-internet.de/heizkostenv/BJNR002610981.html
 
 ### CO2KostAufG
 
-- **Geändert** durch Art. 5 des Gebäudemodernisierungsgesetzes vom 23.07.2026 (BGBl. 2026 I Nr. 226), in Kraft seit 29.07.2026. **P**
-  Quelle: https://www.gesetze-im-internet.de/co2kostaufg/ (XML-Fassung vom 29.07.2026)
+- **Geändert** durch Art. 5 des Gesetzes zur Änderung des Gebäudeenergiegesetzes, zur Änderung des Gebäude-Elektromobilitätsinfrastruktur-Gesetzes und zur Änderung weiterer Vorschriften im Wärmebereich vom 23.07.2026 (BGBl. 2026 I Nr. 226), in Kraft seit 29.07.2026. **P**
+  Quellen: https://www.recht.bund.de/eli/bund/bgbl-1/2026/226 und https://www.gesetze-im-internet.de/co2kostaufg/ (XML-Fassung vom 29.07.2026)
   - **§ 5a (neu):** Gilt bei Einbau und Betrieb einer Heizung nach § 43 GModG im Bestandsgebäude. Vermieter und Mieter tragen je hälftig:
     - die Gas-Netzentgelte ab 01.01.2028,
-    - die CO2-Kosten, abweichend vom Stufenmodell,
-    - ab 01.01.2029 die Kosten der verpflichtend beizumischenden Brennstoffe.
+    - die CO2-Kosten ab 01.01.2028, abweichend vom Stufenmodell (§ 5a Abs. 3 Nr. 2),
+    - ab 01.01.2029 die Kosten der verpflichtend beizumischenden Brennstoffe, höchstens für einen Anteil von 30 % am insgesamt verbrauchten Brennstoff (§ 5a Abs. 3 Nr. 3).
 
     Abs. 2: Versorgt sich der Mieter selbst, ermittelt er das selbst. **P**
   - **§ 5b:** Neubauten. **§ 5c:** Evaluierung. **§ 5d:** Härtefälle. **§ 3 Abs. 1 Nr. 6:** Der Anteil der Brennstoffe nach § 43 muss auf der Rechnung stehen. **P** (§§ 5b bis 5d nur im Überblick gelesen)
@@ -75,7 +75,7 @@ Quelle: https://www.gesetze-im-internet.de/heizkostenv/BJNR002610981.html
 
 - **BEHG § 10 Abs. 2:** 2025 Festpreis 55 €/t, 2026 Korridor 55 bis 65 €/t. Stand Art. 2 G v. 27.02.2025 (BGBl. I Nr. 70). **P**
   Quelle: https://www.gesetze-im-internet.de/behg/
-- **2026 tatsächlich:** Alle Versteigerungen gingen zum Höchstpreis von 65 €/t weg. Laut DEHSt-Bericht August 2026 sind es mehr als 170,7 Mio. Zertifikate. **P**
+- **2026 tatsächlich:** Die Versteigerungen gingen alle zum Höchstpreis von 65 €/t weg und endeten am 09.09.2026; seither werden Zertifikate zum Festpreis von 68 €/t abgegeben. Laut DEHSt-Bericht August 2026 wurden mehr als 170,7 Mio. Zertifikate versteigert. **P**
   Quelle: https://www.dehst.de/SharedDocs/downloads/DE/nehs/verkaufsberichte-nehs/2026/2026-08-veraeusserungsbericht.pdf
 - **ETS 2:** auf 2028 verschoben, laut DEHSt-Meldung zur Einigung vom 05.11.2025. Rechtsgrundlage ist laut BT-Drs. 21/7869 die Verordnung (EU) 2026/667 vom 11.03.2026. **P** für die deutsche Darstellung; den Text der EU-Verordnung selbst nicht gelesen.
 - **BT-Drs. 21/7869 gibt es.** Es ist der Gesetzentwurf der Bundesregierung „Entwurf eines Dritten Gesetzes zur Änderung des Brennstoffemissionshandelsgesetzes“ vom 07.09.2026. **P**
@@ -83,7 +83,7 @@ Quelle: https://www.gesetze-im-internet.de/heizkostenv/BJNR002610981.html
   - Er schreibt den Korridor 55 bis 65 €/t auch für 2027 fest und verschiebt das Ende der Pflichten nach dem BEHG auf 2028.
   - Das CO2KostAufG ändert er nicht.
   - Ob er beschlossen ist: **offen**.
-- **UBA-Wert 2027:** noch nicht veröffentlicht, fällig Mitte Dezember 2026. Schließen die Versteigerungen bis November weiter bei 65 €, ergäben sich 65 €/t. Das ist eine **Prognose**, nicht belegt.
+- **UBA-Wert 2027:** noch nicht veröffentlicht, fällig Mitte Dezember 2026. Maßgeblich sind nach § 4 CO2KostAufG die Versteigerungen vom 01.07. bis 30.11.2026; da sie alle zu 65 €/t abgeschlossen wurden und am 09.09.2026 endeten, liegt ein Wert von 65 €/t nahe. Das ist eine **Prognose**, nicht belegt.
 - **Auswirkung:** nichts heute (#97).
 
 ### Emissionsfaktoren (EBeV 2030, Anlage 2)
@@ -94,11 +94,13 @@ Quelle: https://www.gesetze-im-internet.de/heizkostenv/BJNR002610981.html
 
 ### Gebäudemodernisierungsgesetz (bisher GEG)
 
+Amtlicher Titel des Änderungsgesetzes: Gesetz zur Änderung des Gebäudeenergiegesetzes, zur Änderung des Gebäude-Elektromobilitätsinfrastruktur-Gesetzes und zur Änderung weiterer Vorschriften im Wärmebereich vom 23.07.2026, https://www.recht.bund.de/eli/bund/bgbl-1/2026/226 **P**
+
 - **Befund:** verkündet am 28.07.2026 (BGBl. 2026 I Nr. 226), erste Teile in Kraft seit 29.07.2026. Die Kurzbezeichnung des GEG ist jetzt „GModG“. **P** (gesetze-im-internet); die Daten des Ablaufs laut https://www.gmodg.bund.de/ **S**
 - **§ 43 GModG:** Neue Gas- und Ölheizungen im Bestand müssen anteilig Biobrennstoff nutzen, ab 2029 10 %, ab 2030 15 %. **P**
 - **§ 71o GEG** entfällt. Der Mieterschutz steht jetzt in §§ 5a bis 5d CO2KostAufG und im neuen § 559f BGB, der die Modernisierungsumlage einer Wärmepumpe an die Jahresarbeitszahl bindet. **P**
 - **§ 60a GModG:** Betriebsprüfung von Wärmepumpen; das Ergebnis ist dem Mieter auf Verlangen vorzulegen. **P**
-- Die verkündete Fassung im BGBl. selbst ist nicht gelesen (recht.bund.de war nicht erreichbar). **offen**
+- Titel und Fundstelle der verkündeten Fassung sind geprüft (recht.bund.de, ELI oben); ihren Wortlaut Artikel für Artikel habe ich nicht gelesen. **offen**
 - **Auswirkung:**
   - nichts für Betriebskosten. Mietfuchs rechnet keine Modernisierungsumlage.
   - Für Abrechnungen ab 2028 kommt die hälftige Teilung nach § 5a CO2KostAufG hinzu (#97).
@@ -106,7 +108,8 @@ Quelle: https://www.gesetze-im-internet.de/heizkostenv/BJNR002610981.html
 ## 2. BGB §§ 556 ff. und WEG
 
 - **§ 556 BGB:** seit 01.01.2025 unverändert. Abs. 4 lautet: „Der Vermieter hat dem Mieter auf Verlangen Einsicht in die der Abrechnung zugrundeliegenden Belege zu gewähren. Der Vermieter ist berechtigt, die Belege elektronisch bereitzustellen.“ **P**
-  - Herkunft: Viertes Bürokratieentlastungsgesetz vom 23.10.2024 (BGBl. I Nr. 323), laut https://dejure.org/gesetze/BGB/556.html. **S**
+  - Herkunft: Viertes Bürokratieentlastungsgesetz vom 23.10.2024 (BGBl. 2024 I Nr. 323), in Kraft seit 01.01.2025. **P**
+    Quelle: https://www.recht.bund.de/eli/bund/bgbl-1/2024/323
   - Quelle: https://www.gesetze-im-internet.de/bgb/__556.html
   - **Auswirkung:** erklärt, später. Gehört zur Belegmappe in #170.
 - **§§ 556a, 556b, 556c, 560 BGB:** 2025/2026 unverändert. **P** (Wortlaut), **S** (Fassungsliste dejure)
@@ -171,11 +174,11 @@ Die Hinweise zu den Zeilen 20, 21 und 24 in `client/src/pages/Steuer.tsx` und `c
   Quelle: https://www.bundesgerichtshof.de/SharedDocs/Entscheidungen/DE/Zivilsenate/VIII_ZS/2024/VIII_ZR___6-24.pdf
   - a) Die Einwendungsfrist des § 556 Abs. 3 Satz 5 und 6 gilt auch für den Einwand, das Wirtschaftlichkeitsgebot sei verletzt.
   - b) Fehlende Vergleichsangebote allein verletzen das Gebot nicht. Es kommt auf objektiv überhöhte, nicht marktgerechte Preise an.
-  - c) Kann der Vermieter die Frist unverschuldet nicht einhalten, muss er im Regelfall binnen drei Monaten nach Wegfall des Hindernisses nachfordern (Rn. 62). Hat er gegen den Messbescheid oder den Einheitswert- bzw. Grundsteuerwertbescheid Einspruch eingelegt, besteht das Hindernis fort, bis über den Einspruch entschieden ist; bis dahin darf er abwarten (Rn. 66 f.).
+  - c) Kann der Vermieter die Frist unverschuldet nicht einhalten, muss er im Regelfall binnen drei Monaten nach Wegfall des Hindernisses nachfordern (Rn. 62). Hat er gegen den Grundsteuer-, den Mess- oder den Einheitswert- bzw. Grundsteuerwertbescheid Einspruch eingelegt, besteht das Hindernis fort, bis über den Einspruch entschieden ist; bis dahin darf er mit der Grundsteuer warten (Rn. 66 f.).
   - **Achtung:** Die Recherche vom 30.09.2026 (#109) führte „BGH VIII ZR 6/24“ unter „nicht belegt“, und zwar als angebliches Urteil zu Pflichtangaben. Das Aktenzeichen gibt es, das Urteil betrifft aber Wirtschaftlichkeit, Einwendungsfrist und Grundsteuer. Zu Pflichtangaben bleibt es unbelegt.
   - **Auswirkung:** erklärt (umgesetzt), Lexikon „Abrechnungsfrist“. Nach der Grundsteuerreform 2025 sind verspätete und angefochtene Bescheide häufig.
 - **20.05.2026, VIII ZR 46/25 und VIII ZR 47/25** (Pressemitteilung 090/2026). **P**
-  Quelle: https://www.bundesgerichtshof.de/SharedDocs/Pressemitteilungen/DE/2026/2026090.html
+  Quellen: https://www.bundesgerichtshof.de/SharedDocs/Pressemitteilungen/DE/2026/2026090.html, Urteile: https://www.bundesgerichtshof.de/SharedDocs/Entscheidungen/DE/Zivilsenate/VIII_ZS/2025/VIII_ZR__46-25.pdf und https://www.bundesgerichtshof.de/SharedDocs/Entscheidungen/DE/Zivilsenate/VIII_ZS/2025/VIII_ZR__47-25.pdf
   - § 556c BGB ist weder unmittelbar noch entsprechend anwendbar, wenn der Mieter bisher mit eigenen Einzelöfen geheizt hat und der Vermieter auf gewerbliche Wärmelieferung umstellt. Die Kosten sind dann ohne Vereinbarung nicht ohne Weiteres umlagefähig.
   - **Auswirkung:** erklärt, später (#97/#99). Mietfuchs kennt die Wärmelieferung nicht als eigene Art.
 - **Weitere Entscheidungen**, alle **nichts** für Mietfuchs: VIII ZB 82/25 (Streitwert einer Klage auf Belegeinsicht), VIII ZR 250/23 (Verkehrssicherung), VIII ZR 50/23, VIII ZR 125/23 und VIII ZR 56/25 (Mietpreisbremse), VIII ZR 228/23 (Untervermietung). Fundstellen in der Pressemitteilungsliste des BGH. **S** (nur aus der Liste übernommen, nicht einzeln gelesen)
@@ -188,6 +191,7 @@ Die Hinweise zu den Zeilen 20, 21 und 24 in `client/src/pages/Steuer.tsx` und `c
 Alle Leitsätze in der Datenbank des BGH gelesen. **P**
 
 - **11.04.2025, V ZR 96/24:** Entnahmen aus der Erhaltungsrücklage gehen nicht in die Verteilung und nicht in die Abrechnungsspitze ein.
+  Quelle: https://www.bundesgerichtshof.de/SharedDocs/Entscheidungen/DE/Zivilsenate/V_ZS/2024/V_ZR__96-24.pdf
   **Auswirkung:** erklärt, später (#96).
 - **14.02.2025, V ZR 128/23 und V ZR 236/23** (Pressemitteilung 033/2025): Die Gemeinschaft darf den Schlüssel per Beschluss ändern, zum Beispiel auf beheizte Wohnfläche. Über § 556a Abs. 3 BGB ändert sich dann auch der Schlüssel gegenüber dem Mieter.
   **Auswirkung:** nichts. Mietfuchs übernimmt die Beträge der Gemeinschaft bereits so, wie sie abgerechnet hat.
@@ -220,12 +224,13 @@ Auf bundesfinanzhof.de gelesen. **P**
 ## 6. Umgesetzt auf diesem Zweig
 
 - **`server/src/rules.ts`:**
-  - neue Regel `heating-remote-reading`, `validFrom: '2027-01-01'`, Rechtsgrundlage § 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV;
+  - neue Regel `heating-remote-reading`, `validFrom: '2027-01-01'`, Rechtsgrundlage § 5 Abs. 2, 3 und 5, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV;
   - `RULES_AS_OF = '2026-10-02'`.
 - **`server/src/calc.ts`:**
   - neuer Hinweis `heating.remote-reading`, Stufe `hint`, ohne Betrag.
-  - Er erscheint einmal je Abrechnung, sobald die Regel im Jahr gilt und ein Mieter über eine Heizposition abgerechnet wird; er hängt an der ersten solchen Position.
-  - Nicht bei Warmmiete oder Pauschale.
+  - Er erscheint einmal je Abrechnung, sobald die Regel im Jahr gilt und ein Mieter über eine Heizposition abgerechnet wird, auch über eine Direktzuordnung auf eine vermietete Wohnung (etwa das Ergebnis des Messdienstes); er hängt an der ersten solchen Position.
+  - Nicht bei Warmmiete oder Pauschale und nicht bei einer Direktzuordnung auf eine leere Wohnung.
+  - Der Text sagt „spätestens seit dem 01.01.2027“, nennt die Pflicht für Geräte, die nach dem 01.12.2021 eingebaut wurden, und die Verbrauchsinformation seit 2022. Er nennt die Ausnahmen nach § 5 Abs. 3 Satz 2 und § 11 und schließt die Gastherme mit eigenem Gasvertrag des Mieters aus.
   - Ab 2027 steht die Regel mit im Rechtsstand der Abrechnung.
 - **`shared/glossary.ts`:**
   - „Heizkostenverordnung“: Nachrüstfrist 31.12.2026 und der Hinweis ab 2027.
@@ -255,3 +260,64 @@ Auf bundesfinanzhof.de gelesen. **P**
 6. **HeizkostenV:** Evaluationsbericht nach § 5 Abs. 8 und eine mögliche Novelle zur EED/EPBD. **CO2KostAufG:** Erfahrungsbericht nach § 10.
 7. **BGH VIII. Zivilsenat:** Entscheidungsdatenbank für Betriebs- und Heizkosten nachsehen, denn Leitsatzentscheidungen wie VIII ZR 6/24 erscheinen ohne Pressemitteilung.
 8. **Nachfolger des BMF-Schreibens zu § 35a.**
+
+## Anhang: vorbereitete Kommentare (nicht gepostet)
+
+### #110
+
+> Geprüft am 02.10.2026, Ergebnis: Für die Berechnung ändert sich nichts. Neu sind ein Hinweis und zwei Lexikontexte. Quellen und Befunde stehen in `docs/superpowers/specs/2026-10-02-rechtsdurchsicht-2026.md`.
+>
+> - [x] **BetrKV** unverändert. **HeizkostenV** unverändert. Nicht fernablesbare Geräte müssen bis 31.12.2026 nachgerüstet sein (§ 5 Abs. 3); Geräte, die nach dem 01.12.2021 eingebaut wurden, schon seit dem Einbau (§ 5 Abs. 2). Neu im Regelverzeichnis: `heating-remote-reading` ab 01.01.2027 mit einem Hinweis ohne Betrag, auch bei Direktzuordnung auf eine vermietete Wohnung. **CO2KostAufG** geändert durch Art. 5 des Gesetzes vom 23.07.2026 (BGBl. 2026 I Nr. 226, §§ 5a bis 5d, Wirkung ab 2028), siehe #97.
+> - [x] **BGB §§ 556 ff. und WEG:** keine Änderung. § 556 Abs. 4 (elektronische Belege) gilt seit 01.01.2025. Mietpreisbremse bis 2029. Mietrecht II ist nur ein Entwurf.
+> - [x] **EStG:** § 35a mit 15 % / 900 € ab VZ 2027 nur im Entwurf (BR-Drs. 507/26, BT-Drs. 21/8235), deshalb nicht übernommen. § 11 unverändert. Anlage V 2025: Zeilen 20, 21 und 24 passen, Zeile 6 trägt das Aktenzeichen laut Grundsteuermessbescheid.
+> - [x] **BGH:** VIII ZR 6/24 vom 20.05.2026. Wer gegen den Grundsteuer-, Grundsteuerwert- oder Messbescheid Einspruch eingelegt hat, darf mit der Grundsteuer warten, bis entschieden ist, und fordert sie im Regelfall binnen drei Monaten danach. Steht jetzt im Lexikon. **Berichtigung zu #109:** Das Aktenzeichen gibt es, es betrifft aber keine Pflichtangaben. VIII ZR 46/25 und 47/25 betreffen § 556c. **BFH:** nichts Neues für Mietfuchs.
+> - [x] **CO2-Stufen und Emissionsfaktoren** unverändert. Preis 2026 nach § 4 CO2KostAufG 60 €/t. Die Versteigerungen endeten am 09.09.2026 bei 65 €/t, der Wert für 2027 steht noch aus.
+> - [x] Regelverzeichnis, Test an der Grenze, Changelog; `RULES_AS_OF` = 2026-10-02.
+> - [x] **Offene Fragen aus #109:** Frist für fernablesbare Geräte, Wärmepumpen und Zeile 6 sind beantwortet. Wohnfläche im CO2KostAufG und Abrechnungseinheit bleiben offen.
+>
+> Für Dezember vormerken: Verkündung des Einkommensteuerreformgesetzes 2027, BT-Drs. 21/7869 und der UBA-Wert 2027, Vordruck Anlage V 2026, Mietrecht II, BGBl. 2026 I Nr. 139 und 212, Evaluationsberichte nach § 5 Abs. 8 HeizkostenV und § 10 CO2KostAufG.
+
+### #97
+
+> Durchsicht vom 02.10.2026 (#110):
+>
+> - Das CO2KostAufG wurde durch Art. 5 des Gesetzes zur Änderung des Gebäudeenergiegesetzes, zur Änderung des Gebäude-Elektromobilitätsinfrastruktur-Gesetzes und zur Änderung weiterer Vorschriften im Wärmebereich vom 23.07.2026 geändert (BGBl. 2026 I Nr. 226, https://www.recht.bund.de/eli/bund/bgbl-1/2026/226, in Kraft 29.07.2026).
+> - Neu ist § 5a. Bei Heizungen nach § 43 GModG tragen Vermieter und Mieter je die Hälfte:
+>   - der Gas-Netzentgelte ab 01.01.2028,
+>   - der CO2-Kosten ab 01.01.2028, abweichend vom Stufenmodell,
+>   - ab 01.01.2029 der Pflicht-Biobrennstoffe, höchstens für 30 % des insgesamt verbrauchten Brennstoffs.
+> - § 5a Abs. 2 regelt den Selbstversorger, § 5d einen Härtefall, § 3 Abs. 1 Nr. 6 eine neue Rechnungsangabe.
+> - Stufenmodell und EBeV-Faktoren sind unverändert.
+> - Preis nach § 4: 2026 60 €/t, ab 2027 der Durchschnitt der Versteigerungen vom 01.07. bis 30.11. des Vorjahres. Die Versteigerungen 2026 lagen durchweg bei 65 €/t und endeten am 09.09.2026, seither gilt der Festpreis von 68 €/t. BT-Drs. 21/7869 (Korridor 2027) ist nicht beschlossen.
+> - Ein Merkmal „fernablesbar“ am Zähler würde die 3-%-Kürzung nach § 12 Abs. 1 Satz 2 HeizkostenV bezifferbar machen. Bis dahin gibt es nur den Hinweis `heating.remote-reading` ab 2027.
+> - BGH VIII ZR 46/25 und 47/25 (20.05.2026): § 556c greift nicht, wenn der Mieter vorher mit Einzelöfen geheizt hat.
+
+### #99
+
+> Durchsicht vom 02.10.2026 (#110):
+>
+> - Spätestens seit 01.01.2027 müssen alle Erfassungsgeräte fernablesbar sein (§ 5 Abs. 3 HeizkostenV), nach dem 01.12.2021 eingebaute schon seit dem Einbau (§ 5 Abs. 2).
+> - Bei fernablesbaren Geräten steht den Mietern seit 2022 die monatliche Verbrauchsinformation zu (§ 6a). Fehlt eines davon, darf der Mieter um 3 % kürzen.
+> - Ausgenommen sind Einzelfälle nach § 5 Abs. 3 Satz 2 (technisch unmöglich, unangemessen aufwendig, unbillige Härte) und die Fälle des § 11.
+> - Die eigene Heizkostenabrechnung braucht deshalb das Merkmal am Zähler und eine bezifferte Kürzung; der Hinweis ohne Betrag kann dann entfallen.
+> - Wärmepumpen: Nachrüstung bis 30.09.2025 (§ 12 Abs. 3). Keine Novelle der HeizkostenV gefunden.
+> - Wärmelieferung: BGH VIII ZR 46/25 und 47/25.
+
+### #96
+
+> Durchsicht vom 02.10.2026 (#110):
+>
+> - Anlage V 2025, gelesen nach einer Drittkopie des amtlichen Vordrucks:
+>   - Zeile 6 „Aktenzeichen laut Grundsteuermessbescheid“, schon seit 2024.
+>   - Zeilen 11/12 Flächen, Zeile 20 Umlagen, Zeile 21 Nachzahlungen und Erstattungen nach Zufluss, Zeile 24 (Kennzahl 13) „nicht gesondert vereinbart“.
+>   - Zeilen 55 bis 72 Erhaltungsaufwand einschließlich Entnahmen aus der Erhaltungsrücklage, Zeilen 76 bis 78 „ohne Erhaltungsrücklage“.
+> - Der Vordruck 2026 ist noch nicht veröffentlicht. Die Zeilennummern sollten je Jahr zugeordnet werden.
+> - BGH V ZR 96/24 (11.04.2025): Rücklagenentnahmen gehören nicht in die Abrechnungsspitze.
+
+### #163
+
+> Durchsicht vom 02.10.2026 (#110): kein neues BFH-Urteil 2025/2026 zur Aufteilung bei Eigennutzung, § 21 Abs. 2 EStG unverändert. Anlage V 2025: Zeile 11 Gesamtwohnfläche, Zeile 12 eigengenutzte bzw. unentgeltlich überlassene Fläche.
+
+### #170
+
+> Durchsicht vom 02.10.2026 (#110): § 556 Abs. 4 Satz 2 BGB erlaubt seit 01.01.2025, die Belege elektronisch bereitzustellen (Viertes Bürokratieentlastungsgesetz, BGBl. 2024 I Nr. 323; nach einer Sekundärquelle nur für Wohnraum). Die Belegmappe für Mieter erfüllt das unmittelbar. BGH VIII ZB 82/25 betrifft nur den Streitwert einer Klage auf Belegeinsicht.
