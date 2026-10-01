@@ -3,7 +3,7 @@ import type { Settings, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { useProperty, withProperty } from '../property'
-import { effectiveLandlord } from '../landlord'
+import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
@@ -96,8 +96,7 @@ export default function Steuer({ settings }: Props) {
 
           <div className="card">
             <div className="muted" style={{ marginBottom: 8 }}>
-              {landlord?.landlordName && <>{landlord.landlordName} · </>}
-              {property?.name}{property?.address ? ` · ${property.address}` : ''}
+              {letterhead(landlord?.landlordName, property)}
             </div>
             <h2 style={{ marginBottom: 2 }}>Steuerübersicht {year} — Einkünfte aus Vermietung und Verpachtung</h2>
             <div className="muted" style={{ marginBottom: 14 }}>
@@ -121,10 +120,18 @@ export default function Steuer({ settings }: Props) {
             <h3>Einnahmen</h3>
             <Table>
               <tbody>
+                {/* Die Inklusivmiete enthält die Nebenkosten und steht deshalb nicht unter „ohne
+                    Umlagen“, sondern eigens (#142). Die Summe bleibt dieselbe. */}
                 <tr>
                   <td>Mieteinnahmen ohne Umlagen (Kaltmiete, vereinbart)</td>
-                  <td className="num">{fmtEuro(data.income.baseRentSollCents)}</td>
+                  <td className="num">{fmtEuro(data.income.baseRentSollCents - data.income.inclusiveRentSollCents)}</td>
                 </tr>
+                {data.income.inclusiveRentSollCents !== 0 && (
+                  <tr>
+                    <td>Inklusivmieten (ganz oder teilweise), Nebenkosten eingeschlossen (vereinbart)</td>
+                    <td className="num">{fmtEuro(data.income.inclusiveRentSollCents)}</td>
+                  </tr>
+                )}
                 <tr>
                   <td>Umlagen / Nebenkosten-Vorauszahlungen (vereinbart)</td>
                   <td className="num">{fmtEuro(data.income.prepaymentSollCents)}</td>
@@ -303,7 +310,7 @@ export default function Steuer({ settings }: Props) {
             )}
             {hints.includes('inclusiveLine24Mixed') && (
               <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
-                <strong>Zeile 24 der Anlage V.</strong> Für einen Teil der Mietverhältnisse, oder nur für die kalten Nebenkosten oder nur für die Heizung, ist eine Inklusivmiete vereinbart. Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.
+                <strong>Zeile 24 der Anlage V.</strong> Eine Inklusivmiete gilt hier nur für einen Teil der Mietverhältnisse oder nur für einen Teil der Nebenkosten (nur kalt oder nur die Heizung). Die Zeile fragt für das ganze Objekt, ob Nebenkosten gesondert vereinbart sind; bei gemischten Verträgen klären Sie den Eintrag am besten mit Ihrem Steuerberater.
               </p>
             )}
             {hints.includes('flatRateLine20') && (
