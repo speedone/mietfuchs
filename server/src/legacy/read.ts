@@ -31,7 +31,8 @@
 // beim Import bewegt dagegen genau eine Seite und fällt weiterhin auf.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Payment, Reading, Settings, Tenancy } from '../../../shared/types.ts'
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../store.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'

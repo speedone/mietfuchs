@@ -3,6 +3,7 @@ import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
 import { usageOf } from '../types'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { UpdateConsent } from '../components/Update'
 
@@ -33,6 +34,8 @@ const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, settings, reload, onNavigate }: Props) {
   const { year } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const [settlement, setSettlement] = useState<Settlement | null>(null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
@@ -41,14 +44,14 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(`/api/settlement/${year}`),
-      api<CostItem[]>('/api/costItems'),
-      api<Meter[]>('/api/meters'),
-      api<Consumption[]>(`/api/consumption/${year}`),
+      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)),
+      api<Meter[]>(withProperty('/api/meters', propertyId)),
+      api<Consumption[]>(withProperty(`/api/consumption/${year}`, propertyId)),
     ])
       .then(([s, c, m, k]) => { setSettlement(s); setCostItems(c); setMeters(m); setConsumption(k); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
 

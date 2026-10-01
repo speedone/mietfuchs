@@ -3,6 +3,8 @@ import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } fro
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
+import { effectiveLandlord } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -10,6 +12,10 @@ type Props = { settings: Settings | null; units: Unit[]; tenancies: Tenancy[]; r
 
 export default function Abrechnung({ settings, tenancies, reload }: Props) {
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
+  // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
+  const landlord = settings ? effectiveLandlord(property, settings) : null
   const toast = useToast()
   const confirm = useConfirm()
   const [data, setData] = useState<Settlement | null>(null)
@@ -25,12 +31,12 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(`/api/settlement/${year}`),
-      api<CostItem[]>('/api/costItems'),
+      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)),
     ])
       .then(([d, c]) => { setData(d); setCostItems(c); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year])
+  }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -82,7 +88,7 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    await api(`/api/settlement/${year}/close`, { method: 'POST', body: JSON.stringify({}) })
+    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })
     await load()
     toast(`Abrechnung ${year} abgeschlossen.`)
   }
@@ -94,12 +100,12 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/settlement/${year}/close`, { method: 'DELETE' })
+    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })
     await load()
     toast(`Abrechnung ${year} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
-    await api(`/api/settlement/${year}/close`, { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })
+    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })
     await load()
   }
   const isClosed = !!data?.closed
@@ -281,8 +287,8 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               <div className="muted" style={{ marginBottom: 8 }}>
-                {settings?.landlordName && <>{settings.landlordName} · </>}
-                {settings?.houseName} · {settings?.address}
+                {landlord?.landlordName && <>{landlord.landlordName} · </>}
+                {property?.name} · {property?.address}
               </div>
               <div className="statement-head">
                 <div>
@@ -401,9 +407,9 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
                     {st.balanceCents < 0 ? (
                       <>
                         Es ergibt sich eine <strong>Nachzahlung von {fmtEuro(-st.balanceCents)}</strong>.
-                        Bitte überweisen Sie den Betrag innerhalb von {settings?.paymentDeadlineDays || 30} Tagen
+                        Bitte überweisen Sie den Betrag innerhalb von {landlord?.paymentDeadlineDays || 30} Tagen
                         nach Zugang dieser Abrechnung
-                        {settings?.iban ? <> auf das Konto <strong>{settings.iban}</strong>{settings?.landlordName ? ` (${settings.landlordName})` : ''}</> : null}.
+                        {landlord?.iban ? <> auf das Konto <strong>{landlord.iban}</strong>{landlord.landlordName ? ` (${landlord.landlordName})` : ''}</> : null}.
                       </>
                     ) : (
                       <>

@@ -21,7 +21,8 @@ const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-d
 // Gibt die Kontrolle ab, so wie es jede Anweisung einer Transaktion mit asynchronem Rumpf tut.
 const yieldControl = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5))
 
-const unit = (id: string) => ({ id, name: id, areaM2: 50, participates: true })
+// Objekt 1 legt die Migration an (#92); jede Wohnung gehört zu einem Objekt.
+const unit = (id: string) => ({ id, propertyId: 'objekt-1', name: id, areaM2: 50, participates: true })
 
 // Drizzle verpackt jeden Fehler von SQLite in einen eigenen („Failed query: …“) und hängt den
 // echten Grund als `cause` daran. Wer nur die oberste Meldung liest, erfährt nie, woran es lag.
@@ -451,7 +452,7 @@ test('Lesen sieht nichts Halbes aus einem laufenden Schreibvorgang', async () =>
     // Ein Schreibvorgang, der mittendrin wartet und danach zurückrollt.
     const schreiben = opened.write(async (db) => {
       await db.transaction(async (tx) => {
-        await tx.insert(units).values({ id: 'u1', name: 'EG', areaM2: 80, participates: true })
+        await tx.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
         await angehalten
         throw new Error('wird zurückgerollt')
       })
@@ -483,7 +484,7 @@ test('ein Lesevorgang im Schreibvorgang läuft durch, statt sich zu melden', asy
   const opened = await openDatabase({ dataDir })
   try {
     const gelesen = await opened.write(async (db) => {
-      await db.insert(units).values({ id: 'u1', name: 'EG', areaM2: 80, participates: true })
+      await db.insert(units).values({ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
       return opened.read((innen) => innen.select().from(units))
     })
     assert.deepEqual(gelesen.map((u) => u.id), ['u1'])

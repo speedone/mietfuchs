@@ -18,6 +18,7 @@ import type {
   CostKey,
   DepositStatus,
   MeterType,
+  PropertyKind,
   Settings,
 } from '../../../shared/types.ts'
 
@@ -64,12 +65,53 @@ const notNegative = (name: string, column: string) => check(name, sql.raw(`"${co
 const oneOf = (name: string, column: string, values: readonly string[]) =>
   check(name, sql.raw(`"${column}" IN (${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`))
 
+// ---------- Objekte ----------
+
+// Die Arten eines Objekts (#92). Sie steuern später Voreinstellungen und Oberfläche (#94); in
+// Teil 1 werden sie nur gespeichert und angezeigt.
+export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'sonstiges'] as const)
+
+// Ein Objekt ist zugleich die Abrechnungseinheit: ein Mehrfamilienhaus, eine vermietete
+// Eigentumswohnung, ein Einfamilienhaus. Mehrere Gebäude, die gemeinsam abrechnen, sind *ein*
+// Objekt (BGH VIII ZR 73/10); eine Rechnung für mehrere Objekte wird vorverteilt (#95).
+//
+// Vermieter, Bankverbindung und Zahlungsfrist dürfen je Objekt abweichen, etwa beim Haus der
+// Eltern oder einer Erbengemeinschaft. `null` heißt „die Vorgabe aus den Einstellungen gilt“,
+// eine leere Zeichenkette dagegen „bewusst keine“.
+export const properties = sqliteTable(
+  'properties',
+  {
+    id: text('id').primaryKey().notNull(),
+    name: text('name').notNull(),
+    kind: text('kind', { enum: PROPERTY_KINDS }).notNull(),
+    address: text('address').notNull(),
+    landlordName: text('landlord_name'),
+    iban: text('iban'),
+    paymentDeadlineDays: integer('payment_deadline_days'),
+  },
+  () => [
+    oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
+    // Wie `settings_deadline_not_negative`: Eine negative Frist datierte die Fälligkeit vor die
+    // Abrechnung.
+    notNegative('properties_deadline_not_negative', 'payment_deadline_days'),
+  ],
+)
+
+// Wurzeln eines Objekts sind Wohnungen, Zähler (auch Hauptzähler ohne Wohnung), Kostenpositionen
+// und abgeschlossene Abrechnungen. Alles Übrige erbt das Objekt über sie; eine zweite Spalte
+// wäre eine zweite Wahrheit, die auseinanderlaufen kann.
+//
+// `RESTRICT` und nicht `CASCADE`: Ein Objekt mit Inhalt darf nicht verschwinden, schon gar nicht
+// samt Mietverhältnissen, Zahlungen und bezahlten Rechnungen. Gelöscht wird nur ein leeres.
+const propertyRef = () => text('property_id').notNull().references(() => properties.id, { onDelete: 'restrict' })
+
 // ---------- Wohnungen ----------
 
 export const units = sqliteTable(
   'units',
   {
     id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
     name: text('name').notNull(),
     areaM2: real('area_m2').notNull(),
     participates: integer('participates', { mode: 'boolean' }).notNull(),
@@ -219,6 +261,7 @@ export const costItems = sqliteTable(
   'cost_items',
   {
     id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
     year: integer('year').notNull(),
     category: text('category').notNull(),
     description: text('description').notNull(),
@@ -242,8 +285,8 @@ export const costItems = sqliteTable(
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
-    // Abrechnungsjahres (siehe snapshot.ts). Alle anderen Sammlungen gehen vollständig hinein.
-    index('cost_items_year_idx').on(t.year),
+    // Abrechnungsjahres (siehe snapshot.ts), seit #92 innerhalb eines Objekts.
+    index('cost_items_property_year_idx').on(t.propertyId, t.year),
     // Ein unbekannter Umlageschlüssel verteilte gar nichts, und die Position fiele still dem
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
@@ -291,6 +334,8 @@ export const meters = sqliteTable(
   'meters',
   {
     id: text('id').primaryKey().notNull(),
+    // Eigens und nicht über die Wohnung: Ein Hauptzähler hat keine.
+    propertyId: propertyRef(),
     name: text('name').notNull(),
     // null heißt Hauptzähler für das ganze Haus. Deshalb ohne `notNull`, aber mit
     // Fremdschlüssel: Zeigt er auf eine Wohnung, muss es sie geben. Beim Löschen der Wohnung
@@ -353,6 +398,7 @@ export const closedSettlements = sqliteTable(
   'closed_settlements',
   {
     id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
     year: integer('year').notNull(),
     closedAt: text('closed_at').notNull(),
     // Datum des Versands, für die Frist nach §556 Abs. 3 BGB. null = noch nicht versandt.
@@ -366,10 +412,10 @@ export const closedSettlements = sqliteTable(
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
   (t) => [
-    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Jahr gibt es höchstens
-    // eine abgeschlossene Abrechnung. Heute nimmt `find()` stillschweigend die erste, wenn
-    // doch zwei dastehen.
-    uniqueIndex('closed_settlements_year_idx').on(t.year),
+    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Objekt und Jahr gibt
+    // es höchstens eine abgeschlossene Abrechnung. Vor #92 galt das je Jahr; mit zwei Objekten
+    // sperrte das eine sonst das andere.
+    uniqueIndex('closed_settlements_property_year_idx').on(t.propertyId, t.year),
     // Dass der Inhalt überhaupt JSON ist, kann die Datenbank prüfen, und nur das prüft sie hier.
     // Ob die Abrechnung darin fachlich stimmt, weiß sie nicht und soll sie nicht wissen; das ist
     // gerade der Sinn eines Archivstücks. Eine abgeschnittene oder verstümmelte Zeichenkette
@@ -378,7 +424,10 @@ export const closedSettlements = sqliteTable(
     // Diese Bedingung muss jetzt stehen oder nie: SQLite kann eine Prüfbedingung nicht
     // nachträglich hinzufügen, das ginge nur über einen Neubau der ganzen Tabelle. Solange
     // niemand Daten darin hat, kostet sie nichts.
-    check('closed_settlements_settlement_is_json', sql`json_valid(${t.settlement})`),
+    // Unqualifiziert (`"settlement"` statt `"closed_settlements"."settlement"`): Beim Neubau der
+    // Tabelle stünde sonst der Name des Zwischenstands darin, und das SQLite von macOS lehnt den
+    // Verweis nach dem Umbenennen ab (migrations.test.ts).
+    check('closed_settlements_settlement_is_json', sql.raw('json_valid("settlement")')),
   ],
 )
 

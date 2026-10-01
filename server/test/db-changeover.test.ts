@@ -16,19 +16,24 @@ import { eq } from 'drizzle-orm'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { Payment, Reading, Settings, Tenancy } from '../../shared/types.ts'
+// Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
+import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { rentLedger } from '../src/calc.ts'
 import { snapshotOf } from '../src/snapshot.ts'
 import type { Db } from '../src/store.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
+import { openDatabaseWithStock } from '../testing/database.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { connect, loadMigrations, type Migration } from '../src/db/client.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
 import { closedSettlements, costItems, units } from '../src/db/schema.ts'
+// Die Umstiegsdatei steht beim Import auf Migration 0000, also schreibt der Griff mit deren Aufbau.
+import { units as unitsAtBaseline } from '../src/legacy/schema.ts'
 
 // ---------- Bausteine ----------
 
@@ -154,12 +159,12 @@ test('Die Kette der Migrationen läuft über den übernommenen Bestand, nicht da
         // Vor dem Import steht der Stand nach 0000 und keiner weiter: Die Buchführung führt genau
         // die veröffentlichten Schritte.
         beforeImport: async (db) => {
-          const zeilen = await db.select().from(units)
+          const zeilen = await db.select().from(unitsAtBaseline)
           assert.deepEqual(zeilen, [], 'vor dem Import steht schon etwas in der Tabelle')
         },
         // Unmittelbar nach dem Import steht der rohe Name da; die Kette ist noch nicht gelaufen.
         afterImport: async (db) => {
-          const namen = (await db.select().from(units)).map((u) => u.name)
+          const namen = (await db.select().from(unitsAtBaseline)).map((u) => u.name)
           assert.deepEqual(namen, ['EG', 'OG'], 'die Kette ist schon vor der Regression gelaufen')
         },
       },
@@ -260,10 +265,8 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
   // ein zweiter Umstieg ein Überschreiben.
   const dataDir = tempDir()
   try {
-    const vorhanden = await openDatabase({ dataDir })
     const anderer = straightenForDatabase({ ...fullDb(), units: [unit({ id: 'schon-da', name: 'Bestand' })], tenancies: [], costItems: [], meters: [], readings: [], payments: [] })
-    await writeStock(vorhanden.db, anderer)
-    vorhanden.close()
+    ;(await openDatabaseWithStock(dataDir, anderer)).close()
 
     writeFile(dataDir, fullDb())
     await changeoverIn(dataDir, async (result) => {
@@ -471,7 +474,7 @@ test('Abbruch: ein Fehler beim Einfügen lässt nichts halb Geschriebenes zurüc
       },
       // Eine Wohnung mit derselben Kennung liegt schon in der Datei für den Umstieg: Das
       // Einfügen scheitert am Primärschlüssel, mitten im Vorgang.
-      { beforeImport: async (db) => { await db.insert(units).values({ id: 'u1', name: 'doppelt', areaM2: 1, participates: false }) } },
+      { beforeImport: async (db) => { await db.insert(unitsAtBaseline).values({ id: 'u1', name: 'doppelt', areaM2: 1, participates: false }) } },
     )
     assert.deepEqual((await stockOf(dataDir)).units, [], 'die richtige Datenbank ist unberührt')
     assert.equal(fs.existsSync(path.join(dataDir, TEMP_NAME)), false, 'die Datei für den Umstieg ist aufgeräumt')

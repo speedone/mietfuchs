@@ -7,10 +7,11 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Unit } from '../types'
 import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
 
-const UNITS: Unit[] = [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }]
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 
 let calls: string[]
 
@@ -34,7 +35,12 @@ afterEach(() => {
 })
 
 async function uploadAndCancel(container: HTMLElement) {
-  const input = container.querySelector('input[type="file"][multiple]') as HTMLInputElement
+  // Die Seite erscheint erst, wenn die Objekte geladen sind (#92).
+  const input = await waitFor(() => {
+    const found = container.querySelector('input[type="file"][multiple]')
+    if (!(found instanceof HTMLInputElement)) throw new Error('das Dateifeld ist noch nicht da')
+    return found
+  })
   fireEvent.change(input, { target: { files: [new File(['JPEG'], 'foto.jpg', { type: 'image/jpeg' })] } })
   fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
   expect(await screen.findByText('abgebrochen')).toBeTruthy()
@@ -45,7 +51,9 @@ async function uploadAndCancel(container: HTMLElement) {
 test('Kosten: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
     <YearProvider>
-      <Kosten units={UNITS} settings={null} />
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} />
+      </PropertyProvider>
     </YearProvider>,
   )
   await uploadAndCancel(container)
@@ -54,7 +62,9 @@ test('Kosten: „Abbrechen“ stoppt die Auswertung', async () => {
 test('Schnellerfassung: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
     <YearProvider>
-      <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      <PropertyProvider>
+        <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
+      </PropertyProvider>
     </YearProvider>,
   )
   await uploadAndCancel(container)

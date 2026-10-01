@@ -103,12 +103,19 @@ export type ClosedSettlement = {
   settlement: StoredSettlement
 }
 
+// Die db.json kennt keine Objekte (#92): Sie beschreibt immer genau ein Haus, und erst der
+// Migrationsschritt 0001 hängt es an „Objekt 1“. Ihre Wohnungen, Zähler und Kostenpositionen
+// tragen deshalb kein `propertyId`.
+export type LegacyUnit = Omit<Unit, 'propertyId'>
+export type LegacyMeter = Omit<Meter, 'propertyId'>
+export type LegacyCostItem = Omit<CostItem, 'propertyId'>
+
 export type Db = {
   settings: Settings
-  units: Unit[]
+  units: LegacyUnit[]
   tenancies: Tenancy[]
-  costItems: CostItem[]
-  meters: Meter[]
+  costItems: LegacyCostItem[]
+  meters: LegacyMeter[]
   readings: Reading[]
   // Gebuchte Mietzahlungen (Geldeingänge) fürs Mietkonto
   payments: Payment[]

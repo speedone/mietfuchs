@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, UploadInfo } from '../types'
+import type { CostItem, UploadInfo, Property } from '../types'
+import { withProperty } from '../property'
 import { api, fmtEuro } from '../api'
 import { invoiceLabel } from '../pdfPreview'
 import PageHeader from '../components/PageHeader'
@@ -21,7 +22,14 @@ export default function Belege() {
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
-    return Promise.all([api<UploadInfo[]>('/api/uploads'), api<CostItem[]>('/api/costItems')])
+    // Das Belegarchiv gilt für die ganze Installation (#92). Welche Belege an einer Kostenposition
+    // hängen, wird deshalb über alle Objekte gefragt, je Objekt einzeln: Die Routen grenzen immer
+    // auf ein Objekt ein, eine zweite Regel „alle“ gibt es dort bewusst nicht.
+    const allItems = () =>
+      api<Property[]>('/api/properties')
+        .then((list) => Promise.all(list.map((p) => api<CostItem[]>(withProperty('/api/costItems', p.id)))))
+        .then((lists) => lists.flat())
+    return Promise.all([api<UploadInfo[]>('/api/uploads'), allItems()])
       .then(([u, c]) => { setUploads(u.sort((a, b) => b.mtime.localeCompare(a.mtime))); setCostItems(c); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [])

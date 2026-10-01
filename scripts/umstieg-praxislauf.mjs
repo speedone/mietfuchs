@@ -280,8 +280,10 @@ fall(2, 'db.json aus 0.2, ganz ohne KI-Felder', async () => {
   await withServer(dataDir, async ({ base }) => {
     await umstiegGelungen(base, '0.2')
     await fachlichePruefung(base, '0.2')
+    // Seit #92 trägt das Objekt den Namen des Hauses; Migration 0001 hat ihn übernommen.
+    const [objekt] = await holen(base, '/api/properties')
+    gleich(objekt?.name, 'Haus am Weg', '0.2: der Hausname ist übernommen')
     const s = await holen(base, '/api/settings')
-    gleich(s.houseName, 'Haus am Weg', '0.2: der Hausname ist übernommen')
     gleich(s.iban, 'DE02 1234', '0.2: die IBAN ist übernommen')
     gleich(s.paymentDeadlineDays, 30, '0.2: die Zahlungsfrist ist übernommen')
     gleich(s.ai?.text?.provider, 'ollama', '0.2: ein KI-Platz ist entstanden')
@@ -456,8 +458,8 @@ fall(8, 'Backup vom heutigen main-Stand: db.json und veraltete Datenbank', async
     gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
     const units = await holen(base, '/api/units')
     gleich(units.map((u) => u.name).sort(), ['Dachgeschoss', 'EG', 'OG'], 'Wiederherstellen: die db.json hat gewonnen')
-    const s2 = await holen(base, '/api/settings')
-    gleich(s2.houseName, 'Haus aus der Datei', 'Wiederherstellen: die Einstellungen gelten sofort')
+    const [objekt] = await holen(base, '/api/properties')
+    gleich(objekt?.name, 'Haus aus der Datei', 'Wiederherstellen: der Stand der Datei gilt sofort, bis in den Namen des Objekts')
   })
 })
 
@@ -498,6 +500,39 @@ fall(10, 'Zweiter Start, der Umstieg ist schon gelaufen', async () => {
     gleich(bericht.status, 'ok', 'zweiter Start: der Server ist gesund')
     await fachlichePruefung(base, 'zweiter Start')
   })
+})
+
+fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
+  // Der häufigste Weg nach diesem Release: Die Datenbank steht auf Migration 0000 mit Bestand,
+  // gebaut mit demselben eingefrorenen Schreiber wie beim Umstieg, und die neue Version startet
+  // darauf. Erwartet: Objekt 1 benannt wie das Haus, dieselben Zahlen, eine Sicherung daneben.
+  const { applyMigrations, connect, loadMigrations } = await import('../server/src/db/client.ts')
+  const { migrateLegacy, straightenForDatabase } = await import('../server/src/legacy/migrate.ts')
+  const { writeStock } = await import('../server/src/legacy/write.ts')
+  const dataDir = tempDir()
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  const [baseline] = await loadMigrations()
+  applyMigrations(connection, [baseline])
+  const bestand = bestandHeute()
+  await writeStock(connection.db, straightenForDatabase(migrateLegacy(bestand)))
+  connection.close()
+
+  await withServer(dataDir, async ({ base }) => {
+    const objekte = await holen(base, '/api/properties')
+    gleich(objekte.map((o) => [o.id, o.name, o.address]), [['objekt-1', bestand.settings.houseName, bestand.settings.address]],
+      'Update: der Bestand steht in Objekt 1, benannt wie das Haus')
+    await fachlichePruefung(base, 'Update')
+    const einstellungen = await holen(base, '/api/settings')
+    gleich('houseName' in einstellungen, false, 'Update: der Hausname kommt aus dem Objekt, nicht mehr aus den Einstellungen')
+  })
+  dateienImOrdner(dataDir, 'Update', { 'mietfuchs.sqlite.vor-0001_objekte': true })
+
+  // Ein zweiter Start hat nichts nachzuholen und legt keine weitere Sicherung an.
+  await withServer(dataDir, async ({ base }) => {
+    await fachlichePruefung(base, 'Update, zweiter Start')
+  })
+  const sicherungen = fs.readdirSync(dataDir).filter((n) => n.includes('.vor-0'))
+  gleich(sicherungen, ['mietfuchs.sqlite.vor-0001_objekte'], 'Update: genau eine Sicherung')
 })
 
 // ---------- Lauf ----------

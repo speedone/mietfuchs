@@ -20,7 +20,8 @@
 import fs from 'node:fs'
 import { sql } from 'drizzle-orm'
 import { APP_VERSION } from '../version.ts'
-import { connect, loadMigrations } from './client.ts'
+import { applyMigrations, connect, loadMigrations } from './client.ts'
+import { crossPropertyViolations } from './repository.ts'
 import { germanDate, integrityProblem, messageOf, unknownSteps, type OpenedDatabase } from './open.ts'
 
 // Die Namen im Archiv. Die Datenbank heißt darin wie im Datenordner, damit jemand, der das ZIP
@@ -107,6 +108,30 @@ export async function archiveDatabaseProblem(file: string): Promise<string | nul
         `Version (${APP_VERSION}) nicht kennt, die jüngste vom ${germanDate(fremd.newestMillis)}. ` +
         `Deshalb wurde nichts übernommen; Ihre bisherigen Daten sind unverändert. Bitte spielen ` +
         `Sie dieses Backup mit der neueren Fassung von Mietfuchs ein.`
+      )
+    }
+
+    // Die Datei auf den heutigen Stand heben, bevor sie ersetzt (#92). Sie ist eine Zwischenkopie
+    // und wird gleich die Arbeitsdatei; ein Archiv von vor den Objekten bekommt so hier schon
+    // sein Objekt 1, und die Prüfung darunter hat einen Aufbau, den sie fragen kann. Scheitert
+    // das, ist an den bisherigen Daten nichts geschehen.
+    try {
+      applyMigrations(connection, await loadMigrations())
+    } catch (err) {
+      return (
+        `Die Datenbank in diesem Archiv ließ sich nicht auf den Stand dieser Version bringen, ` +
+        `deshalb wurde nichts davon übernommen. Ihre bisherigen Daten sind unverändert. ` +
+        `Technischer Befund: ${messageOf(err)}`
+      )
+    }
+    // Ein Verweis über die Grenze eines Objekts ginge in keiner Abrechnung auf. Über die
+    // Oberfläche entsteht er nicht; in einem Archiv kann er stehen, etwa von Hand bearbeitet.
+    const kreuz = await crossPropertyViolations(connection.db)
+    if (kreuz.length > 0) {
+      return (
+        `Die Datenbank in diesem Archiv enthält Verweise zwischen verschiedenen Objekten, die in ` +
+        `keiner Abrechnung aufgingen, deshalb wurde nichts davon übernommen. Ihre bisherigen Daten ` +
+        `sind unverändert. ${kreuz.slice(0, 3).join(' ')}`
       )
     }
     return null

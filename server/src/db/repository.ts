@@ -32,19 +32,19 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
-import { eq, inArray } from 'drizzle-orm'
-import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
+import { and, count, eq, inArray, ne } from 'drizzle-orm'
+import type { CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
 import {
-  readClosedSettlements, readCostItems, readMeters, readPayments, readReadings, readTenancies,
+  readClosedSettlements, readCostItems, readMeters, readPayments, readProperties, readReadings, readTenancies,
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
   aiSlots, baseRents, closedSettlements, COST_KEYS, costItemShares, costItems, DEPOSIT_STATUS,
-  METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, readings,
-  settings, tenancies, units,
+  METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  readings, settings, tenancies, units,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -177,9 +177,14 @@ const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown)
 //
 // Die Gegenrichtung zu den Lesern in read.ts, und wie sie eine benannte Funktion je Sammlung.
 
+// Das Objekt einer Wurzel. Gesetzt wird es beim Anlegen von der Route; ob ein Wechsel erlaubt
+// ist und ob ein Verweis dabei über die Objektgrenze zeigte, entscheidet `sameProperty` unten.
+const mergedProperty = (body: unknown, current: string): string => merged(body, 'propertyId', current, (v) => asText(v, current))
+
 function mergeUnit(current: Unit, body: unknown): Unit {
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     areaM2: merged(body, 'areaM2', current.areaM2, (v) => asNumber(v, 0)),
     // `typeof v === 'boolean'` und nicht `!!v`: In JavaScript wäre die Zeichenkette „false" wahr.
@@ -222,6 +227,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const shares = merged(body, 'customShares', current.customShares, (v) => (v === null ? null : readShares(v)))
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     year: merged(body, 'year', current.year, (v) => asNumber(v, current.year)),
     category: merged(body, 'category', current.category, (v) => asText(v, '')),
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
@@ -243,6 +249,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
 function mergeMeter(current: Meter, body: unknown): Meter {
   return {
     id: current.id,
+    propertyId: mergedProperty(body, current.propertyId),
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     // `null` heißt Hauptzähler für das ganze Haus; eine leere Kennung liest die Abrechnung
     // schon heute genauso (`m.unitId && …`).
@@ -278,25 +285,183 @@ function mergePayment(current: Payment, body: unknown): Payment {
 // Ein frisch angelegter Datensatz ist ein leerer, in den derselbe Rumpf verschmolzen wird. Damit
 // gibt es Anlegen und Ändern nur einmal, und ein Feld, das beim Anlegen anders behandelt würde
 // als beim Ändern, kann gar nicht erst entstehen.
-const emptyUnit = (id: string): Unit => ({ id, name: '', areaM2: 0, participates: false })
+// Ein leeres Objekt (`''`) gibt es nicht; ohne `propertyId` im Rumpf scheitert das Anlegen am
+// Fremdschlüssel. Die Route setzt es deshalb immer (index.ts, `propertyOf`).
+const emptyUnit = (id: string): Unit => ({ id, propertyId: '', name: '', areaM2: 0, participates: false })
 const emptyTenancy = (id: string): Tenancy => ({
   id, unitId: '', tenantName: '', persons: 1, personHistory: [], start: '', end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const emptyCostItem = (id: string): CostItem => ({
-  id, year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
+  id, propertyId: '', year: new Date().getUTCFullYear(), category: '', description: '', amountCents: 0, key: 'area',
   directUnitId: null, meterType: null,
 })
-const emptyMeter = (id: string): Meter => ({ id, name: '', unitId: null, type: 'sonstig', unit: '' })
+const emptyMeter = (id: string): Meter => ({ id, propertyId: '', name: '', unitId: null, type: 'sonstig', unit: '' })
 const emptyReading = (id: string): Reading => ({ id, meterId: '', date: '', value: 0 })
 const emptyPayment = (id: string): Payment => ({ id, tenancyId: '', date: '', amountCents: 0 })
+
+// ---------- Die Grenze zwischen den Objekten (#92) ----------
+//
+// Ein Zähler, eine Direktzuordnung oder ein vereinbarter Anteil darf nicht auf die Wohnung eines
+// anderen Objekts zeigen: Die Berechnung sähe sie nicht (`narrowToProperty`), und die Rechnung
+// fiele still dem Vermieter zu oder verschwände aus dem falschen Haus. Zusammengesetzte
+// Fremdschlüssel scheiden als Zusicherung aus, weil `direct_unit_id` mit `ON DELETE SET NULL`
+// alle Spalten des Schlüssels leeren würde, auch das Pflichtfeld `property_id`. Deshalb steht
+// die Prüfung hier, vor jedem Schreiben, und `crossPropertyViolations` fragt denselben Befund
+// über den ganzen Bestand ab (Wiederherstellen eines Backups).
+
+export class CrossPropertyError extends Error {
+  status = 400
+}
+
+async function propertyName(db: Executor, propertyId: string): Promise<string> {
+  const rows = await db.select({ name: properties.name }).from(properties).where(eq(properties.id, propertyId))
+  const name = rows[0]?.name
+  return name ? `„${name}“` : 'ohne Namen'
+}
+
+// Wirft, wenn eine der Wohnungen zu einem anderen Objekt gehört. `what` beschreibt den
+// Datensatz, der verweist, für die Meldung.
+async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
+  if (unitIds.length === 0) return
+  const fremd = await db
+    .select({ name: units.name, propertyId: units.propertyId })
+    .from(units)
+    .where(and(inArray(units.id, unitIds), ne(units.propertyId, propertyId)))
+  const erste = fremd[0]
+  if (!erste) return
+  throw new CrossPropertyError(
+    `${what} gehört zu Objekt ${await propertyName(db, propertyId)}, die Wohnung „${erste.name}“ aber zu ` +
+      `${await propertyName(db, erste.propertyId)}. Ein Verweis über die Grenze eines Objekts ginge in keiner ` +
+      `Abrechnung auf. Bitte wählen Sie eine Wohnung desselben Objekts.`,
+  )
+}
+
+const noGuard = async (): Promise<void> => {}
+
+async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Promise<void> {
+  await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+}
+
+async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem): Promise<void> {
+  const ziele = [...(after.directUnitId ? [after.directUnitId] : []), ...Object.keys(after.customShares ?? {})]
+  await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
+}
+
+// Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
+// Mietverhältnis nimmt sie mit, denn es erbt das Objekt über sie; ein Zähler, eine
+// Direktzuordnung oder ein vereinbarter Anteil gehören dagegen zum alten Objekt.
+async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
+  if (!before || before.propertyId === after.propertyId) return
+  const haengt: string[] = []
+  const zaehler = await db.select({ n: count() }).from(meters).where(eq(meters.unitId, after.id))
+  if ((zaehler[0]?.n ?? 0) > 0) haengt.push('Zähler')
+  const direkt = await db.select({ n: count() }).from(costItems).where(eq(costItems.directUnitId, after.id))
+  if ((direkt[0]?.n ?? 0) > 0) haengt.push('direkt zugeordnete Kostenpositionen')
+  const anteile = await db.select({ n: count() }).from(costItemShares).where(eq(costItemShares.unitId, after.id))
+  if ((anteile[0]?.n ?? 0) > 0) haengt.push('vereinbarte Anteile')
+  if (haengt.length === 0) return
+  throw new CrossPropertyError(
+    `Die Wohnung „${after.name}“ kann nicht in ein anderes Objekt wechseln, weil noch ${haengt.join(', ')} ` +
+      `an ihr hängen, die zum bisherigen Objekt gehören. Bitte lösen Sie diese Verweise zuerst.`,
+  )
+}
+
+// Verweise über Objektgrenzen im ganzen Bestand, als lesbare Sätze. Leer heißt in Ordnung.
+export async function crossPropertyViolations(db: Database): Promise<string[]> {
+  const befunde: string[] = []
+  const zaehler = await db
+    .select({ id: meters.id, name: meters.name })
+    .from(meters)
+    .innerJoin(units, eq(meters.unitId, units.id))
+    .where(ne(meters.propertyId, units.propertyId))
+  for (const z of zaehler) befunde.push(`Der Zähler „${z.name}“ gehört zu einem anderen Objekt als seine Wohnung.`)
+  const direkt = await db
+    .select({ description: costItems.description })
+    .from(costItems)
+    .innerJoin(units, eq(costItems.directUnitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of direkt) befunde.push(`Die Kostenposition „${c.description}“ ist einer Wohnung eines anderen Objekts zugeordnet.`)
+  const anteile = await db
+    .select({ description: costItems.description })
+    .from(costItemShares)
+    .innerJoin(costItems, eq(costItemShares.costItemId, costItems.id))
+    .innerJoin(units, eq(costItemShares.unitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of anteile) befunde.push(`Die Kostenposition „${c.description}“ hat einen Anteil an einer Wohnung eines anderen Objekts.`)
+  return befunde
+}
+
+// ---------- Die Objekte selbst (#92) ----------
+
+function mergeProperty(current: Property, body: unknown): Property {
+  // `null` ist bei den drei abweichenden Angaben ein ausdrücklicher Wert („die Vorgabe gilt“),
+  // deshalb dieselbe Lesart wie beim offenen Mietverhältnis.
+  const nullableNumber = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  return {
+    id: current.id,
+    name: merged(body, 'name', current.name, (v) => asText(v, '')),
+    kind: merged(body, 'kind', current.kind, (v) => oneOfOrUndefined(PROPERTY_KINDS, v) ?? current.kind),
+    address: merged(body, 'address', current.address, (v) => asText(v, '')),
+    landlordName: merged(body, 'landlordName', current.landlordName, asNullableText),
+    iban: merged(body, 'iban', current.iban, asNullableText),
+    paymentDeadlineDays: merged(body, 'paymentDeadlineDays', current.paymentDeadlineDays, nullableNumber),
+  }
+}
+
+const emptyProperty = (id: string): Property => ({
+  id, name: '', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
+})
+
+export const listProperties = readProperties
+
+async function findProperty(db: Database, id: string): Promise<Property | undefined> {
+  return (await readProperties(db)).find((p) => p.id === id)
+}
+
+export async function createProperty(db: Database, id: string, body: unknown): Promise<Property> {
+  await db.insert(properties).values(mergeProperty(emptyProperty(id), body))
+  const gespeichert = await findProperty(db, id)
+  if (!gespeichert) throw new Error('Das Objekt ist nach dem Anlegen nicht auffindbar.')
+  return gespeichert
+}
+
+export async function updateProperty(db: Database, id: string, body: unknown): Promise<Property | null> {
+  const current = await findProperty(db, id)
+  if (!current) return null
+  const { id: _id, ...rest } = mergeProperty(current, body)
+  await db.update(properties).set(rest).where(eq(properties.id, id))
+  return (await findProperty(db, id)) ?? null
+}
+
+export type PropertyRemoval = { removed: true } | { removed: false, reason: 'missing' | 'last' } | { removed: false, reason: 'inUse', inUse: string }
+
+// Gelöscht wird nur ein leeres Objekt, und nie das letzte: Eine neue Wohnung braucht eines.
+// Was noch darin steht, nennt die Antwort, damit die Oberfläche es sagen kann.
+export async function removeProperty(db: Database, id: string): Promise<PropertyRemoval> {
+  const alle = await readProperties(db)
+  if (!alle.some((p) => p.id === id)) return { removed: false, reason: 'missing' }
+  if (alle.length === 1) return { removed: false, reason: 'last' }
+  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements) =>
+    (await db.select({ n: count() }).from(table).where(eq(table.propertyId, id)))[0]?.n ?? 0
+  const teile = [
+    [await zahl(units), 'Wohnung', 'Wohnungen'],
+    [await zahl(meters), 'Zähler', 'Zähler'],
+    [await zahl(costItems), 'Kostenposition', 'Kostenpositionen'],
+    [await zahl(closedSettlements), 'abgeschlossene Abrechnung', 'abgeschlossene Abrechnungen'],
+  ] as const
+  const inUse = teile.filter(([n]) => n > 0).map(([n, eins, viele]) => `${n} ${n === 1 ? eins : viele}`)
+  if (inUse.length > 0) return { removed: false, reason: 'inUse', inUse: inUse.join(', ') }
+  await db.delete(properties).where(eq(properties.id, id))
+  return { removed: true }
+}
 
 // ---------- Die Zeilen ----------
 
 const orNull = <T>(value: T | undefined): T | null => value ?? null
 
 const unitRow = (u: Unit) => ({
-  id: u.id, name: u.name, areaM2: u.areaM2, participates: u.participates,
+  id: u.id, propertyId: u.propertyId, name: u.name, areaM2: u.areaM2, participates: u.participates,
   selfUsed: orNull(u.selfUsed), selfPersons: orNull(u.selfPersons), rooms: orNull(u.rooms),
   floor: orNull(u.floor), notes: orNull(u.notes),
 })
@@ -307,12 +472,12 @@ const tenancyRow = (t: Tenancy) => ({
   depositStatus: orNull(t.depositStatus), notes: orNull(t.notes),
 })
 const costItemRow = (c: CostItem) => ({
-  id: c.id, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
+  id: c.id, propertyId: c.propertyId, year: c.year, category: c.category, description: c.description, vendor: orNull(c.vendor),
   amountCents: c.amountCents, key: c.key, directUnitId: c.directUnitId ?? null,
   meterType: c.meterType ?? null, labor35aCents: orNull(c.labor35aCents), invoiceFile: orNull(c.invoiceFile),
 })
 const meterRow = (m: Meter) => ({
-  id: m.id, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
+  id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -364,6 +529,9 @@ async function writeCostItemShares(db: Executor, c: CostItem): Promise<void> {
 // vom Übersetzer gesagt, was ihr noch fehlt.
 type Collection<T extends CollectionEntity> = {
   read: (db: Database) => Promise<T[]>
+  // Hält die Grenze zwischen den Objekten (#92), vor dem Schreiben. `before` ist beim Anlegen
+  // `null`. Eigens und nicht in `merge`, weil die Prüfung die Datenbank fragen muss.
+  guard: (db: Executor, before: T | null, after: T) => Promise<void>
   empty: (id: string) => T
   merge: (current: T, body: unknown) => T
   insert: (db: Executor, entity: T) => Promise<void>
@@ -372,6 +540,7 @@ type Collection<T extends CollectionEntity> = {
 }
 
 const unitCollection: Collection<Unit> = {
+  guard: guardUnit,
   read: readUnits,
   empty: emptyUnit,
   merge: mergeUnit,
@@ -381,6 +550,7 @@ const unitCollection: Collection<Unit> = {
 }
 
 const tenancyCollection: Collection<Tenancy> = {
+  guard: noGuard,
   read: readTenancies,
   empty: emptyTenancy,
   merge: mergeTenancy,
@@ -396,6 +566,7 @@ const tenancyCollection: Collection<Tenancy> = {
 }
 
 const costItemCollection: Collection<CostItem> = {
+  guard: guardCostItem,
   read: readCostItems,
   empty: emptyCostItem,
   merge: mergeCostItem,
@@ -411,6 +582,7 @@ const costItemCollection: Collection<CostItem> = {
 }
 
 const meterCollection: Collection<Meter> = {
+  guard: guardMeter,
   read: readMeters,
   empty: emptyMeter,
   merge: mergeMeter,
@@ -420,6 +592,7 @@ const meterCollection: Collection<Meter> = {
 }
 
 const readingCollection: Collection<Reading> = {
+  guard: noGuard,
   read: readReadings,
   empty: emptyReading,
   merge: mergeReading,
@@ -429,6 +602,7 @@ const readingCollection: Collection<Reading> = {
 }
 
 const paymentCollection: Collection<Payment> = {
+  guard: noGuard,
   read: readPayments,
   empty: emptyPayment,
   merge: mergePayment,
@@ -477,7 +651,11 @@ export async function findEntity(db: Database, coll: CollectionName, id: string)
 
 export async function createEntity(db: Database, coll: CollectionName, id: string, body: unknown): Promise<CollectionEntity> {
   await withCollection<Promise<void>>(coll, async (c) => {
-    await db.transaction(async (tx) => c.insert(tx, c.merge(c.empty(id), body)))
+    const entity = c.merge(c.empty(id), body)
+    await db.transaction(async (tx) => {
+      await c.guard(tx, null, entity)
+      await c.insert(tx, entity)
+    })
   })
   const gespeichert = await findEntity(db, coll, id)
   if (!gespeichert) throw new Error('Der Datensatz ist nach dem Anlegen nicht auffindbar.')
@@ -489,7 +667,11 @@ export async function updateEntity(db: Database, coll: CollectionName, id: strin
   const geschrieben = await withCollection<Promise<boolean>>(coll, async (c) => {
     const current = (await c.read(db)).find((eintrag) => eintrag.id === id)
     if (!current) return false
-    await db.transaction(async (tx) => c.replace(tx, c.merge(current, body)))
+    const entity = c.merge(current, body)
+    await db.transaction(async (tx) => {
+      await c.guard(tx, current, entity)
+      await c.replace(tx, entity)
+    })
     return true
   })
   if (!geschrieben) return null
@@ -540,28 +722,33 @@ export async function writeSettings(db: Database, settingsToStore: MigratedSetti
 // Schema: Er ist ein Archivstück, das wortgleich erhalten bleiben soll, auch wenn spätere
 // Versionen anders rechnen.
 
-export async function findClosedSettlement(db: Database, year: number): Promise<StoredClosedSettlement | undefined> {
-  return (await readClosedSettlements(db)).find((eintrag) => eintrag.year === year)
+// Immer je Objekt und Jahr (#92): Vorher genügte das Jahr, und mit einem zweiten Objekt hätten
+// Versanddatum und Wiederöffnen die Abrechnung des falschen Hauses getroffen.
+export async function findClosedSettlement(db: Database, propertyId: string, year: number): Promise<StoredClosedSettlement | undefined> {
+  return (await readClosedSettlements(db)).find((eintrag) => eintrag.propertyId === propertyId && eintrag.year === year)
 }
+
+const closedOf = (propertyId: string, year: number) =>
+  and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.year, year))
 
 export async function closeSettlement(
   db: Database,
-  entry: { id: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
+  entry: { id: string, propertyId: string, year: number, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedSettlements).values(entry)
 }
 
 // `false`, wenn es für das Jahr keine abgeschlossene Abrechnung gibt; die Route macht daraus
 // ihre 404.
-export async function setSentAt(db: Database, year: number, sentAt: string | null): Promise<boolean> {
-  if (!(await findClosedSettlement(db, year))) return false
-  await db.update(closedSettlements).set({ sentAt }).where(eq(closedSettlements.year, year))
+export async function setSentAt(db: Database, propertyId: string, year: number, sentAt: string | null): Promise<boolean> {
+  if (!(await findClosedSettlement(db, propertyId, year))) return false
+  await db.update(closedSettlements).set({ sentAt }).where(closedOf(propertyId, year))
   return true
 }
 
-export async function reopenSettlement(db: Database, year: number): Promise<boolean> {
-  if (!(await findClosedSettlement(db, year))) return false
-  await db.delete(closedSettlements).where(eq(closedSettlements.year, year))
+export async function reopenSettlement(db: Database, propertyId: string, year: number): Promise<boolean> {
+  if (!(await findClosedSettlement(db, propertyId, year))) return false
+  await db.delete(closedSettlements).where(closedOf(propertyId, year))
   return true
 }
 

@@ -28,9 +28,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { snapshotOf } from '../src/snapshot.ts'
-import { openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { writeStock } from '../src/legacy/write.ts'
+import { openDatabaseWithStock } from '../testing/database.ts'
 import { actualOfSnapshot, loadFixtures } from '../testing/fixtures.ts'
 
 const fixtures = loadFixtures()
@@ -40,9 +39,9 @@ assert.ok(fixtures.length > 0, 'keine Fixtures gefunden — der Gleichstand wär
 for (const fx of fixtures) {
   test(`Gleichstand ${fx.name}: durch die Datenbank dieselbe Abrechnung`, async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-gleichstand-'))
-    const opened = await openDatabase({ dataDir })
+    // Auf dem Weg des Umstiegs: Bestand auf Migration 0000, dann die Kette (#92).
+    const opened = await openDatabaseWithStock(dataDir, straightenForDatabase(migrateLegacy(fx.db())))
     try {
-      await opened.write((db) => writeStock(db, straightenForDatabase(migrateLegacy(fx.db()))))
       const stock = await opened.read(readStock)
       assert.deepStrictEqual(actualOfSnapshot(snapshotOf(stock, fx.year)), fx.expected)
     } finally {

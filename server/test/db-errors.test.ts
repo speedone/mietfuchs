@@ -29,7 +29,7 @@ async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Pr
   const opened = await openDatabase({ dataDir })
   try {
     await opened.write(async (db) => {
-      await db.insert(units).values({ id: 'u1', name: 'EG', areaM2: 50, participates: true })
+      await db.insert(units).values({ propertyId: 'objekt-1', id: 'u1', name: 'EG', areaM2: 50, participates: true })
       await db.insert(tenancies).values({ id: 't1', unitId: 'u1', tenantName: 'Müller', persons: 1, start: '2024-01-01' })
     })
     await work(opened)
@@ -81,8 +81,8 @@ test('Eine zweite abgeschlossene Abrechnung für dasselbe Jahr wird erklärt', a
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write(async (db) => {
-        await db.insert(closedSettlements).values({ id: 's1', year: 2024, closedAt: '2025-01-01', settlement: {} })
-        await db.insert(closedSettlements).values({ id: 's2', year: 2024, closedAt: '2025-01-02', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's1', year: 2024, closedAt: '2025-01-01', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's2', year: 2024, closedAt: '2025-01-02', settlement: {} })
       }))
     assert.match(text, /Jahr/, text)
     assert.match(text, /abgeschlossen/, text)
@@ -92,7 +92,7 @@ test('Eine zweite abgeschlossene Abrechnung für dasselbe Jahr wird erklärt', a
 test('Ein Datensatz, den es schon gibt, wird erklärt', async () => {
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
-      opened.write((db) => db.insert(units).values({ id: 'u1', name: 'noch einmal', areaM2: 10, participates: true })))
+      opened.write((db) => db.insert(units).values({ propertyId: 'objekt-1', id: 'u1', name: 'noch einmal', areaM2: 10, participates: true })))
     assert.match(text, /gibt es (schon|bereits)/, text)
   })
 })
@@ -100,7 +100,7 @@ test('Ein Datensatz, den es schon gibt, wird erklärt', async () => {
 test('Ein negativer Wert wird erklärt, und zwar mit dem Feld', async () => {
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
-      opened.write((db) => db.insert(units).values({ id: 'u2', name: 'X', areaM2: -5, participates: true })))
+      opened.write((db) => db.insert(units).values({ propertyId: 'objekt-1', id: 'u2', name: 'X', areaM2: -5, participates: true })))
     assert.match(text, /negativ/, text)
     assert.match(text, /Wohnfläche|area/, text)
   })

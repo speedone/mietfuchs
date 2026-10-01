@@ -37,7 +37,7 @@ describe('Rundlauf mit dem Datenmodell', () => {
 
   test('Wohnung → Formular → Rumpf erhält die Nutzungsart', () => {
     for (const [expected, extra] of cases) {
-      const u: Unit = { id: 'u1', name: 'W', areaM2: 80, participates: false, ...extra }
+      const u: Unit = { id: 'u1', propertyId: 'objekt-1', name: 'W', areaM2: 80, participates: false, ...extra }
       const f = unitToForm(u)
       expect(f.usage).toBe(expected)
       const b = body(f)
@@ -47,11 +47,11 @@ describe('Rundlauf mit dem Datenmodell', () => {
 
   test('Altbestand ohne selfUsed gilt als nicht beteiligt, nicht als Eigennutzung', () => {
     // Wichtig für die Migration: die Nutzungsart darf sich nicht von selbst ändern.
-    expect(unitToForm({ id: 'u1', name: 'W', areaM2: 80, participates: false }).usage).toBe('ausgenommen')
+    expect(unitToForm({ id: 'u1', propertyId: 'objekt-1', name: 'W', areaM2: 80, participates: false }).usage).toBe('ausgenommen')
   })
 
   test('deutsche Dezimaltrennung bleibt erhalten', () => {
-    const f = unitToForm({ id: 'u1', name: 'W', areaM2: 80.5, participates: true, rooms: 2.5 })
+    const f = unitToForm({ id: 'u1', propertyId: 'objekt-1', name: 'W', areaM2: 80.5, participates: true, rooms: 2.5 })
     expect(f.areaM2).toBe('80,5')
     expect(f.rooms).toBe('2,5')
     expect(body(f).areaM2).toBe(80.5)

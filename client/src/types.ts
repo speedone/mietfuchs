@@ -1,8 +1,16 @@
 // Oberflächenseite des Datenmodells: Beschriftungen und Helfer. Die Typen selbst stehen in
 // shared/types.ts und werden hier weitergereicht, damit die Importe im Client unverändert
 // bleiben (#48).
-import type { CostKey, DepositStatus, MeterType, Unit, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, DepositStatus, MeterType, PropertyKind, Unit, UnitUsage } from '../../shared/types.ts'
 export type * from '../../shared/types.ts'
+
+// Die Arten eines Objekts (#92), wie sie die Oberfläche nennt.
+export const PROPERTY_KIND_LABELS: Record<PropertyKind, string> = {
+  mfh: 'Mehrfamilienhaus',
+  etw: 'Eigentumswohnung',
+  efh: 'Einfamilienhaus',
+  sonstiges: 'Sonstiges (z. B. Garagen)',
+}
 
 export const UNIT_USAGE_LABELS: Record<UnitUsage, string> = {
   vermietet: 'vermietet — Anteil trägt der Mieter',

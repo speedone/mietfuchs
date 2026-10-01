@@ -7,6 +7,7 @@ import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
@@ -82,6 +83,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
@@ -97,13 +100,14 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
 
   const loadData = () =>
     Promise.all([
-      api<CostItem[]>('/api/costItems').then(setExistingItems),
-      api<Meter[]>('/api/meters').then(setMeters),
-      api<Reading[]>('/api/readings').then(setReadings),
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
+      api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
+      api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
     ])
   useEffect(() => {
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
-  }, [])
+    // Neu laden, wenn das Objekt wechselt (#92).
+  }, [propertyId])
   // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
   useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
@@ -296,7 +300,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     const amount = parseEuro(p.amount)
     if (amount == null || amount <= 0) return false
     const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-    await api('/api/costItems', {
+    await api(withProperty('/api/costItems', propertyId), {
       method: 'POST',
       body: JSON.stringify({
         year: entry.detectedYear ?? year,

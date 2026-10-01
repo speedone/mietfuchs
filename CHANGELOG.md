@@ -6,6 +6,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Neu
+
+- **Mehrere Objekte in einer Installation.** Neben dem bisherigen Haus lassen sich weitere
+  Objekte anlegen: weitere Mehrfamilienhäuser, vermietete Eigentumswohnungen,
+  Einfamilienhäuser oder etwa ein Garagenhof. Jedes Objekt hat seine eigenen Wohnungen, Zähler
+  und Kosten und damit eine eigene Abrechnung, ein eigenes Mietkonto und eine eigene
+  Steuerübersicht. Das Objekt wählen Sie in der Seitenleiste über dem Abrechnungsjahr. Solange
+  Sie nur ein Objekt haben, erscheint dort nichts, und für Sie ändert sich nichts: Nach dem
+  Update steht Ihr bisheriger Bestand in „Objekt 1“, benannt wie bisher Ihr Haus, und jede
+  Abrechnung ergibt auf den Cent dieselben Zahlen. Weitere Objekte legen Sie in den Stammdaten
+  an. Dort kann ein Objekt auch einen abweichenden Vermieter, eine andere Bankverbindung oder
+  Zahlungsfrist haben, etwa das Haus der Eltern oder einer Erbengemeinschaft; sonst gelten die
+  Angaben aus den Einstellungen. ([#92](https://github.com/speedone/mietfuchs/issues/92))
+- **Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben**, als
+  `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
+  Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.
+  ([#92](https://github.com/speedone/mietfuchs/issues/92))
+
 ## [0.8.0] – 2026-09-22
 
 ### Geändert

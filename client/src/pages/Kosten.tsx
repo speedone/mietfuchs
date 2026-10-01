@@ -16,6 +16,7 @@ import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
+import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -49,6 +50,8 @@ export default function Kosten({ units, settings }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   const { year, setYear } = useYear()
+  const { property } = useProperty()
+  const propertyId = property?.id
   const toast = useToast()
   const confirm = useConfirm()
   const [items, setItems] = useState<CostItem[]>([])
@@ -65,11 +68,12 @@ export default function Kosten({ units, settings }: Props) {
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
 
-  const load = () => api<CostItem[]>('/api/costItems').then(setItems)
+  const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
-    api<Meter[]>('/api/meters').then(setMeters).catch(() => {})
-  }, [])
+    api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
+    // Neu laden, wenn das Objekt wechselt (#92).
+  }, [propertyId])
   // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
   useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
@@ -130,7 +134,7 @@ export default function Kosten({ units, settings }: Props) {
     const body = JSON.stringify(built.body)
     const editing = !!form.id
     if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
-    else await api('/api/costItems', { method: 'POST', body })
+    else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
     const desc = form.description.trim()
     setForm(null)
     await load()
@@ -221,7 +225,7 @@ export default function Kosten({ units, settings }: Props) {
       const amount = parseEuro(p.amount)
       if (amount === null) continue
       const labor35a = p.labor35a.trim() ? parseEuro(p.labor35a) : 0
-      await api('/api/costItems', {
+      await api(withProperty('/api/costItems', propertyId), {
         method: 'POST',
         body: JSON.stringify({
           year,

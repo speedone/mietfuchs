@@ -22,7 +22,7 @@ import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { connect, loadMigrations } from '../src/db/client.ts'
 import { databaseFile, openDatabase } from '../src/db/open.ts'
 import { readStock } from '../src/db/read.ts'
-import { writeStock } from '../src/legacy/write.ts'
+import { openDatabaseWithStock } from '../testing/database.ts'
 import { archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot } from '../src/db/backup.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-backup-'))
@@ -46,9 +46,8 @@ const someDb = (): Db => ({
 // Eine gefüllte Datenbank auf einem Wegwerf-Ordner.
 async function withFilledDatabase(work: (opened: Awaited<ReturnType<typeof openDatabase>>, dataDir: string) => Promise<void>): Promise<void> {
   const dataDir = tempDir()
-  const opened = await openDatabase({ dataDir })
+  const opened = await openDatabaseWithStock(dataDir, straightenForDatabase(someDb()))
   try {
-    await writeStock(opened.db, straightenForDatabase(someDb()))
     await work(opened, dataDir)
   } finally {
     opened.close()
