@@ -131,6 +131,26 @@ function Stopped() {
   )
 }
 
+// Geschlossene Hinweise „noch keine Wohnungen“ (#157), gemerkt je Browser wie das gewählte
+// Objekt. Ohne Speicher (privates Fenster) erscheint ein geschlossener Hinweis beim nächsten
+// Öffnen wieder, was nichts kaputt macht.
+const DISMISSED_KEY = 'mietfuchs.property.dismissedNotices'
+function readDismissedNotices(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? '[]')
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function writeDismissedNotices(ids: string[]): void {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(ids))
+  } catch {
+    // Ohne Speicher gilt das Schließen nur bis zum Neuladen.
+  }
+}
+
 function Shell() {
   const [tab, setTab] = useState<Tab>('cockpit')
   const [stopped, setStopped] = useState(false)
@@ -138,13 +158,16 @@ function Shell() {
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
   // sind, stehen noch die des vorigen hier.
   const [unitsFor, setUnitsFor] = useState<string | null>(null)
-  // Objekte, deren Hinweis „noch leer“ geschlossen wurde, für diese Sitzung
-  const [dismissedNotices, setDismissedNotices] = useState<string[]>([])
+  // Wohnungen je Objekt beim letzten Laden (#157): Der Hinweis im leeren Objekt sagt nur dann
+  // „Ihre Daten … sind unverändert“, wenn das vorige Objekt beim Wechsel Wohnungen hatte.
+  const [unitCounts, setUnitCounts] = useState<Record<string, number>>({})
+  // Objekte, deren Hinweis „noch keine Wohnungen“ geschlossen wurde, gemerkt je Browser
+  const [dismissedNotices, setDismissedNotices] = useState<string[]>(readDismissedNotices)
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
-  const { properties, property, previousId, reload: reloadProperties } = useProperty()
+  const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
@@ -166,6 +189,7 @@ function Shell() {
     if (currentProperty.current !== propertyId) return
     setUnits(u)
     setUnitsFor(propertyId ?? null)
+    if (propertyId) setUnitCounts((c) => ({ ...c, [propertyId]: u.length }))
     setTenancies(t)
     setSettings(s)
   }, [propertyId, reloadProperties])
@@ -174,10 +198,18 @@ function Shell() {
     reload().catch((e) => console.error(e))
   }, [reload])
 
+  const clearNoticeFocus = useCallback(() => setFocusNoticeFor(null), [setFocusNoticeFor])
+
   if (stopped) return <Stopped />
 
   const emptyNotice = emptyPropertyNotice({
-    properties, property, previousId, unitsFor, unitCount: units.length, dismissed: dismissedNotices,
+    properties, property, previousId, unitsFor, unitCount: units.length,
+    previousUnitCount: previousId ? unitCounts[previousId] ?? null : null, dismissed: dismissedNotices,
+  })
+  const dismissNotice = (id: string) => setDismissedNotices((d) => {
+    const next = [...d, id]
+    writeDismissedNotices(next)
+    return next
   })
 
   return (
@@ -235,9 +267,12 @@ function Shell() {
           <PropertyNotice
             current={emptyNotice.current}
             previous={emptyNotice.previous}
+            previousHadUnits={emptyNotice.previousHadUnits}
+            focus={focusNoticeFor === propertyId}
+            onFocused={clearNoticeFocus}
             onBack={() => void switchProperty(emptyNotice.previous.id)}
-            onSetUp={() => setTab('stammdaten')}
-            onDismiss={() => propertyId && setDismissedNotices((d) => [...d, propertyId])}
+            onSetUp={tab === 'stammdaten' ? undefined : () => setTab('stammdaten')}
+            onDismiss={() => propertyId && dismissNotice(propertyId)}
           />
         )}
         {/* Je Objekt neu aufgestellt (#145): Formulare und Zwischenstände einer Seite gehören zu

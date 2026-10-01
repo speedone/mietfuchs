@@ -2,7 +2,7 @@
 import { expect, test } from 'vitest'
 import type { Property } from './types'
 import abrechnungSource from './pages/Abrechnung.tsx?raw'
-import { closeSettlementTitle, createButtonLabel, emptyPropertyNotice, newPropertyBody, propertyHeading } from './propertyView'
+import { closeSettlementTitle, createButtonLabel, emptyPropertyNotice, emptyUnitsText, newPropertyBody, propertyHeading } from './propertyView'
 
 const objekt = (id: string, name: string): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
@@ -29,8 +29,12 @@ test('der Knopf sagt, dass gewechselt wird, und wohin', () => {
 })
 
 test('Hinweis nach dem Wechsel: nur in einem Objekt ohne Wohnungen, mit dem vorigen Objekt', () => {
-  const base = { properties: [A, B], property: B, previousId: 'objekt-1', unitsFor: 'objekt-2', unitCount: 0, dismissed: [] as string[] }
-  expect(emptyPropertyNotice(base)).toEqual({ current: 'Haus B', previous: A })
+  const base = { properties: [A, B], property: B, previousId: 'objekt-1', unitsFor: 'objekt-2', unitCount: 0, previousUnitCount: 2, dismissed: [] as string[] }
+  expect(emptyPropertyNotice(base)).toEqual({ current: 'Haus B', previous: A, previousHadUnits: true })
+  // „Ihre Daten … sind unverändert“ nur, wenn dort welche standen; unbekannt (nach dem Neuladen
+  // der Seite) oder leer heißt der neutrale Satz.
+  expect(emptyPropertyNotice({ ...base, previousUnitCount: 0 })).toMatchObject({ previousHadUnits: false })
+  expect(emptyPropertyNotice({ ...base, previousUnitCount: null })).toMatchObject({ previousHadUnits: false })
   // Sobald es Wohnungen gibt, ist der Hinweis weg.
   expect(emptyPropertyNotice({ ...base, unitCount: 1 })).toBeNull()
   // Die Wohnungen eines anderen Objekts (noch nicht neu geladen) sagen nichts über dieses.
@@ -54,4 +58,11 @@ test('die Seite Abrechnung fragt mit diesem Titel', () => {
   // Die Abrechnung bräuchte für den Knopf einen vollständigen Rechenstand; geprüft wird deshalb
   // am Quelltext, dass der Abschlussdialog den Titel von hier nimmt.
   expect(abrechnungSource).toMatch(/title: closeSettlementTitle\(year, properties, property\)/)
+})
+
+test('leere Wohnungsliste: bei einer Eigentumswohnung nur die eigene Wohnung anlegen', () => {
+  expect(emptyUnitsText('mfh')).toMatch(/alle Wohnungen des Hauses/)
+  const etw = emptyUnitsText('etw')
+  expect(etw).not.toMatch(/alle Wohnungen des Hauses/)
+  expect(etw).toMatch(/nur die eigene Wohnung/)
 })

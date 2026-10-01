@@ -41,21 +41,36 @@ export function createButtonLabel(name: string): string {
 // war. `unitsFor` ist das Objekt, zu dem die geladenen Wohnungen gehören: Bis die Wohnungen des
 // neuen Objekts da sind, stehen noch die des vorigen in der Oberfläche, und deren Zahl sagt nichts
 // über dieses. Geschlossen wird je Objekt.
+//
+// `previousUnitCount` ist die Zahl der Wohnungen, die das vorige Objekt beim Wechsel hatte, `null`
+// heißt unbekannt (nach dem Neuladen der Seite). „Ihre Daten … sind unverändert“ steht nur da, wo
+// es Daten gab; sonst wäre der Satz eine Beruhigung ohne Grundlage.
 export function emptyPropertyNotice(args: {
   properties: Property[]
   property: Property | null
   previousId: string | null
   unitsFor: string | null
   unitCount: number
+  previousUnitCount: number | null
   dismissed: readonly string[]
-}): { current: string; previous: Property } | null {
-  const { properties, property, previousId, unitsFor, unitCount, dismissed } = args
+}): { current: string; previous: Property; previousHadUnits: boolean } | null {
+  const { properties, property, previousId, unitsFor, unitCount, previousUnitCount, dismissed } = args
   if (!property || properties.length < 2) return null
   if (unitsFor !== property.id || unitCount > 0) return null
   if (dismissed.includes(property.id)) return null
   const previous = properties.find((p) => p.id === previousId && p.id !== property.id)
   if (!previous) return null
-  return { current: propertyName(property), previous }
+  return { current: propertyName(property), previous, previousHadUnits: (previousUnitCount ?? 0) > 0 }
+}
+
+// Die leere Wohnungsliste in den Stammdaten. Bei einer Eigentumswohnung legt man nur die eigene an
+// (#142, Fall 3): Die übrigen Wohnungen des Hauses gehören anderen Eigentümern, ihr Anteil an den
+// Kosten steht schon in der Hausgeldabrechnung.
+export function emptyUnitsText(kind: PropertyKind): string {
+  if (kind === 'etw') {
+    return 'Noch keine Wohnung angelegt. Lege hier nur die eigene Wohnung an, nicht die übrigen Wohnungen des Hauses: Deren Anteil an den Kosten steht schon in der Hausgeldabrechnung.'
+  }
+  return 'Noch keine Wohnungen angelegt. Lege alle Wohnungen des Hauses an — auch die selbstgenutzte.'
 }
 
 // ---------- Der Abschlussdialog der Abrechnung ----------

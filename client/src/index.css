@@ -401,9 +401,14 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600;
   overflow-wrap: anywhere;
 }
-.page-property-label { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 500; opacity: 0.85; }
+.page-property-label { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 500; }
+/* Im Dunkelmodus liegt --accent auf --accent-soft unter 3:1; #a5b4fc kommt auf rund 7:1. */
+:root[data-theme='dark'] .page-property,
+:root[data-theme='dark'] .property-notice { color: #a5b4fc; }
 /* Hinweis nach dem Wechsel in ein leeres Objekt (#157) */
 .property-notice { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; font-size: 14px; }
+.property-notice-title { font-size: 15px; margin: 0 0 4px; color: inherit; }
+.property-notice-title:focus { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
 .property-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- Editier-Drawer (von rechts) ---------- */

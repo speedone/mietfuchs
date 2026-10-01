@@ -20,7 +20,7 @@ import { createButtonLabel, EMPTY_NEW_PROPERTY, newPropertyBody, type NewPropert
 // Art als drittem Feld. Die Knöpfe für weitere Objekte stehen klein darunter.
 
 export default function PropertyCard() {
-  const { properties, property, reload } = useProperty()
+  const { properties, property, reload, setFocusNoticeFor } = useProperty()
   const switchProperty = useSwitchProperty()
   const toast = useToast()
   const confirm = useConfirm()
@@ -29,8 +29,10 @@ export default function PropertyCard() {
   const [draft, setDraft] = useState<NewPropertyForm | null>(null)
   const [draftError, setDraftError] = useState('')
   const [creating, setCreating] = useState(false)
-  // Angelegt, aber die Liste fehlt: Ein zweiter Klick legte es doppelt an.
-  const [stuck, setStuck] = useState(false)
+  // Angelegt, aber die Liste fehlt (#157): Ein zweiter Klick legte es doppelt an. Gesperrt bleibt,
+  // bis das angelegte Objekt in der Liste steht, auch über Schließen und neu Öffnen hinweg.
+  const [stuckId, setStuckId] = useState<string | null>(null)
+  const stuck = stuckId !== null && !properties.some((p) => p.id === stuckId)
   const [error, setError] = useState('')
 
   // Nur beim Wechsel des Objekts neu füllen (#105): Hinge es am Objekt selbst, verwürfe jedes
@@ -67,7 +69,6 @@ export default function PropertyCard() {
   function openDraft() {
     setDraft(EMPTY_NEW_PROPERTY)
     setDraftError('')
-    setStuck(false)
   }
 
   async function create() {
@@ -94,7 +95,7 @@ export default function PropertyCard() {
       // Angelegt ist es, nur die Liste fehlt. Ein zweiter Klick legte es doppelt an, deshalb bleibt
       // der Knopf gesperrt, und die Meldung sagt, wie es weitergeht.
       setCreating(false)
-      setStuck(true)
+      setStuckId(created.id)
       setDraftError(`„${created.name}“ ist angelegt, die Liste der Objekte ließ sich aber nicht laden. Bitte laden Sie die Seite neu; das Objekt steht dann im Umschalter. ${errorText(e)}`)
       return
     }
@@ -106,6 +107,7 @@ export default function PropertyCard() {
       setCreating(false)
     })
     if (await switchProperty(created.id, created.name)) {
+      setFocusNoticeFor(created.id)
       toast(`Objekt „${created.name}“ angelegt. Sie arbeiten jetzt darin; Ihre übrigen Objekte sind unverändert.`)
     } else {
       toast(`Objekt „${created.name}“ angelegt. Umschalten geht in der Seitenleiste unter „Objekt“.`)
@@ -215,7 +217,7 @@ export default function PropertyCard() {
             </p>
             <label className="field">
               Name (Pflicht)
-              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
+              <input required aria-required="true" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="z. B. Eigentumswohnung Gartenweg" />
             </label>
             <label className="field">
               Art

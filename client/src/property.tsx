@@ -17,6 +17,10 @@ type PropertyCtx = {
   setPropertyId: (id: string) => void
   // Das vorher gewählte Objekt (#157), für „Zurück zu …“ nach dem Wechsel in ein leeres Objekt.
   previousId: string | null
+  // Ein eben über den Dialog angelegtes Objekt (#157): Der Hinweis „noch keine Wohnungen“ nimmt
+  // dann den Fokus, damit ein Screenreader den Wechsel ansagt. Nach dem Fokussieren `null`.
+  focusNoticeFor: string | null
+  setFocusNoticeFor: (id: string | null) => void
   reload: () => Promise<void>
   // Ob gerade ein Formular offen ist (#145), siehe useOpenForm.
   hasOpenForm: () => boolean
@@ -84,6 +88,7 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
   // Gemerkt wie die Wahl selbst, damit der Hinweis „Ihre Daten in … sind unverändert“ auch nach
   // einem Neuladen der Seite das richtige Objekt nennt.
   const [previousId, setPreviousId] = useState<string | null>(() => remembered(PREVIOUS_KEY))
+  const [focusNoticeFor, setFocusNoticeFor] = useState<string | null>(null)
   // Ob die Liste einmal geantwortet hat. Bis dahin zeigt der Provider nichts: Eine Seite, die
   // vorher lädt, fragte ohne Objekt, und bei mehreren Objekten antwortet der Server darauf mit
   // 400. Auch eine gescheiterte Antwort zählt, sonst bliebe die Oberfläche leer, wo sie gerade
@@ -119,7 +124,7 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
 
   return (
     <OpenFormsCtx.Provider value={openForms}>
-      <Ctx.Provider value={{ properties, property, setPropertyId, previousId, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
+      <Ctx.Provider value={{ properties, property, setPropertyId, previousId, focusNoticeFor, setFocusNoticeFor, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
     </OpenFormsCtx.Provider>
   )
 }
