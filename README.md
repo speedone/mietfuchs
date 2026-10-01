@@ -12,15 +12,19 @@ Keine Cloud, kein Konto, keine Abogebühren.**
 Mietfuchs nimmt dir die jährliche Betriebskostenabrechnung ab: Kosten und Belege erfassen
 (optional per lokaler KI-Auswertung), Zählerstände pflegen — und am Jahresende eine fertige,
 centgenau verteilte Abrechnung je Mieter ausdrucken, inklusive Mietkonto und Steuer-Übersicht
-für die Anlage V. Alle Daten bleiben in einer lokalen Datei auf deinem Rechner.
+für die Anlage V. Ob ein Mehrfamilienhaus, mehrere Häuser, eine vermietete Eigentumswohnung oder
+das eigene Haus mit Einliegerwohnung: Alle Daten bleiben in einer lokalen Datenbank auf deinem
+Rechner.
 
 ### Highlights
 
 - 🔒 **100 % lokal** — keine Cloud, kein Tracking, kein externer Dienst (außer der Update-Prüfung, wenn du sie erlaubst); Backup = Ordner kopieren
-- 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch oder direkt
-- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB)
-- 💶 **Mietkonto** — Soll/Ist je Monat, offene Rückstände auf einen Blick
-- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen, Werbungskosten und Überschuss aufs Jahr
+- 🏘️ **Mehrere Objekte** in einer Installation — Häuser und Eigentumswohnungen, jedes rechnet für sich
+- 🧮 **Centgenaue Verteilung** nach Wohnfläche, Personenzahl, Wohneinheiten, Verbrauch, direkt, vereinbarten Anteilen, laut Hausgeldabrechnung oder mit Einzelbeträgen
+- 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB) — der Rechenweg jeder Zeile lässt sich aufklappen
+- 💡 **Hinweise statt Rätselraten** — Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
+- 💶 **Mietkonto** — Soll/Ist je Monat, fällige Rückstände auf einen Blick
+- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr
 - 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
 - 🐳 **In Minuten startklar** — `npm run dev` oder `docker compose up`
 
@@ -158,31 +162,44 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
 
 ## Funktionsweise
 
-1. **Stammdaten**: Haus, alle Wohnungen (auch die selbstgenutzte — sie wird als „nicht an der
-   Kostenverteilung beteiligt" markiert) und Mietverhältnisse. Personenzahl und Vorauszahlung
-   werden als **Staffel** geführt („ab X gilt Y") — Geburt, Auszug einzelner Personen oder
-   Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis.
+1. **Stammdaten**: Objekte (ab dem zweiten erscheint ein Umschalter), je Objekt alle
+   Wohnungen — auch die selbstgenutzte, sie zählt in die Verteilbasis und ihr Anteil bleibt beim
+   Vermieter — und die Mietverhältnisse. Eine Garage oder ein Stellplatz bekommt 0 m² und wird an
+   0 Personen vermietet. Personenzahl, Vorauszahlung, Kaltmiete und Pauschale werden als
+   **Staffel** geführt („ab X gilt Y") — Geburt, Auszug einzelner Personen oder
+   Vorauszahlungs-Erhöhungen brauchen kein neues Mietverhältnis. Je Mietverhältnis lässt sich das
+   **Nebenkostenmodell** wählen: Abrechnung, Pauschale oder Inklusivmiete, getrennt für kalte
+   Betriebskosten und Heizung. Am Objekt steht auch das Baujahr der Kabel- oder Antennenanlage,
+   denn davon hängt ab, ob ihre Kosten nach 2024 noch umlagefähig sind.
 2. **Kosten & Belege**: Rechnungen pro Abrechnungsjahr erfassen — manuell oder per
    KI-Belegauswertung. Eine Rechnung kann in mehrere Positionen mit unterschiedlichen
    Umlageschlüsseln zerlegt werden (z. B. Wasserrechnung: Grundgebühr + Verbrauch).
-   Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt).
+   Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt). Eine
+   Gutschrift wird mit Minus eingetragen. Die Zuführung zur Erhaltungsrücklage einer
+   Eigentümergemeinschaft hat eine eigene Kostenart, weil sie steuerlich erst bei Verwendung zählt.
 3. **Zähler**: Zähler (Haupt- und Wohnungszähler) mit Ablesungen — Jahresablesung,
    Zwischenablesung beim Mieterwechsel (exakte Aufteilung), Zählerwechsel (Endstand alt +
    Startstand neu) mit Plausibilitätswarnung bei negativem Verbrauch.
 4. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
-   Vorauszahlungen, Saldo, Zahlungsaufforderung (IBAN/Frist aus den Einstellungen),
+   Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
+   oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
+   Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
+   etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
 5. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
-   teilweise / offen*, dazu Brutto/Netto-Aufschlüsselung und offene Rückstände je Mieter.
-6. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung — Einnahmen (Kaltmiete +
-   Umlagen, wahlweise als vereinbartes Soll oder tatsächlich gezahlt/Zuflussprinzip),
+   teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
+   Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
+   Rückstand, weist die Abrechnung darauf hin, denn angerechnet wird, was tatsächlich gezahlt wurde.
+6. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
+   nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
    Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Bei gemischt genutztem Gebäude
-   wird der vermietete Flächenanteil ausgewiesen (Hinweis, dass der selbstgenutzte Teil nicht
-   abziehbar ist). Druckbar als PDF. Erweiterte Stammdaten (Kontakt, Kaution, Vertragsdatum,
-   Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
+   werden Gesamtfläche und selbstgenutzte Fläche ausgewiesen, mit dem Hinweis, dass der
+   selbstgenutzte Teil nicht abziehbar ist; bei Inklusivmiete und Pauschale gibt es Hinweise zu
+   den Zeilen 24 und 20. Druckbar als PDF. Erweiterte Stammdaten (Kontakt,
+   Kaution, Vertragsdatum, Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
 
 ### Umlageschlüssel
 
@@ -190,18 +207,28 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
 - **Personenzahl** (personentagesgenau, inkl. Personen-Staffel)
 - **Wohneinheiten**
 - **Verbrauch (Zähler)** — Anteil = Verbrauch der Wohnung ÷ Summe aller Wohnungszähler;
-  nur wählbar, wenn Wohnungszähler existieren
+  nur wählbar, wenn Wohnungszähler existieren. Fehlt einer Wohnung der Zähler (etwa der
+  selbstgenutzten neben einer Einliegerwohnung mit Zwischenzähler), wird der Hauptzähler zur
+  Basis; den Rest einer vermieteten Wohnung ohne Zähler trägt dann der Vermieter, mit Warnung.
+  Eine Einheit ohne Anschluss (etwa die Garage ohne Wasser) gilt nicht als Wohnung ohne Zähler.
 - **Direktzuordnung** an eine Wohnung
+- **Vereinbarte Anteile** in Prozent je Wohnung
+- **Laut Gemeinschaftsabrechnung** — bei der Eigentumswohnung den eigenen Anteil aus der
+  Hausgeldabrechnung übernehmen, nach Miteigentumsanteilen, Fläche oder je Einheit
+- **Einzelbeträge** je Mietverhältnis, etwa aus der fertigen Abrechnung eines Messdienstes
 
-Korrekturen der tatsächlich gezahlten Vorauszahlungen (z. B. ausgefallene Zahlung) direkt
-in der Abrechnung über „✎ anpassen".
+Je Position lässt sich die Verteilbasis auf bestimmte Wohnungen eingrenzen (z. B. Aufzug nur für
+die oberen Etagen). Korrekturen der tatsächlich gezahlten Vorauszahlungen (z. B. ausgefallene
+Zahlung) direkt in der Abrechnung über „✎ anpassen".
 
-Verteilt wird nur auf Wohnungen, die als „beteiligt" markiert sind. Zeiträume ohne Mieter
-(Leerstand) sowie Positionen der Kategorie „Nicht umlagefähig" trägt der Vermieter. Alle
+Zeiträume ohne Mieter (Leerstand), der Anteil selbstgenutzter Wohnungen und von Mietverhältnissen
+mit Pauschale oder Inklusivmiete sowie Positionen „Nicht umlagefähig" trägt der Vermieter. Alle
 Beträge werden intern in Cent gerechnet und centgenau verteilt (Hare-Verfahren).
 
-Die Abrechnung folgt dem **Abflussprinzip**: Eine Kostenposition gehört zu dem Jahr, dem sie
-beim Erfassen zugeordnet wird (in der Regel das Zahlungsjahr).
+Eine Kostenposition gehört zu dem Abrechnungsjahr, dem sie beim Erfassen zugeordnet wird. Eine
+eigene Heizkostenabrechnung nach der Heizkostenverordnung erstellt Mietfuchs noch nicht; die
+fertige Abrechnung eines Messdienstes lässt sich über Einzelbeträge übernehmen, und verteilst du
+Heizkosten ohne Verbrauchsanteil, nennt ein Hinweis das Kürzungsrecht des Mieters.
 
 ## KI-Belegauswertung
 
@@ -398,6 +425,10 @@ mitlaufendes Abbild**: Was du danach erfasst, steht nur noch in der Datenbank. D
 also deine Sicherung, nicht diese Datei. Am Backup ändert sich nichts, es ist weiterhin dieser
 Ordner; das Backup über die Oberfläche nimmt die Datenbank mit, und beim Wiederherstellen kommt
 sie mit zurück.
+
+**Vor jedem Update der Datenbank legt Mietfuchs selbst eine Sicherung an**
+(`mietfuchs.sqlite.vor-…` im Datenordner) und sagt es nach dem Start in der Oberfläche. Wie du
+damit zur vorigen Version zurückkommst, steht in [MIGRATION.md](MIGRATION.md#zurück-zu-einer-älteren-version).
 
 **Wiederherstellen erwartet das Backup-Archiv**, also die ZIP-Datei, und keine einzelne Datei.
 Alte Archive ohne Datenbank gehen weiterhin: Mietfuchs baut sie dann aus den wiederhergestellten
