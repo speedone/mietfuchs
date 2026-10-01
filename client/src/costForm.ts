@@ -202,10 +202,21 @@ export type BuildResult = { error: string } | { body: Record<string, unknown> }
 export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
   const amount = parseEuro(form.amount)
   const labor35a = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
-  if (!form.description.trim() || amount === null || amount <= 0) {
-    return { error: 'Bitte Beschreibung und gültigen Betrag angeben.' }
+  // Eine Gutschrift hat einen negativen Betrag (#139); Berechnung und Datenbank kennen sie. Nur 0
+  // ist keine Kostenposition. Die Meldung nennt den Grund, statt „gültig“ offen zu lassen.
+  if (!form.description.trim()) return { error: 'Bitte eine Beschreibung angeben.' }
+  if (amount === null) {
+    return { error: 'Bitte den Betrag als Euro-Betrag angeben, z. B. 54,00 (eine Gutschrift mit Minus: -54,00).' }
   }
-  if (labor35a === null || labor35a < 0 || labor35a > amount) {
+  if (amount === 0) return { error: 'Ein Betrag von 0 € ist keine Kostenposition. Bitte den Rechnungsbetrag eintragen.' }
+  // § 35a EStG bescheinigt gezahlte Lohnkosten. Bei einer Gutschrift bescheinigte die Berechnung
+  // ohnehin nichts (calc.ts meldet den Lohnanteil als ungültig), die Steuerübersicht zählte ihn
+  // aber mit.
+  if (amount < 0 && labor35a !== 0) {
+    return { error: 'Bei einer Gutschrift gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.' }
+  }
+  if (amount < 0 && form.key === 'amounts') return { error: CREDIT_WITH_AMOUNTS }
+  if (labor35a === null || labor35a < 0 || (amount > 0 && labor35a > amount)) {
     return { error: 'Der §35a-Lohnanteil muss eine gültige Zahl zwischen 0 und dem Gesamtbetrag sein.' }
   }
   if (form.key === 'direct' && !form.directUnitId) {

@@ -528,6 +528,8 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             <label className="field grow">
               Betrag €
               <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
+              {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
+              <small className="muted">Eine Gutschrift mit Minus eintragen, z. B. -54,00.</small>
             </label>
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>

@@ -96,6 +96,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Gutschriften lassen sich im Kostenformular erfassen.** Ein negativer Betrag wie „-54,00“
+  wird angenommen, auch mit dem typografischen Minus „−“, etwa aus einem kopierten Text. Ein
+  Betrag von 0 € wird weiterhin abgelehnt, und die Meldung sagt jetzt, was am Betrag nicht
+  stimmt. Eine Gutschrift trägt keinen §35a-Lohnanteil und lässt sich nicht nach Einzelbeträgen
+  verteilen; das Formular sagt beides.
+  ([#139](https://github.com/speedone/mietfuchs/issues/139))
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))

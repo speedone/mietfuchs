@@ -3,7 +3,10 @@
 // Dezimalpunkt in technischer Schreibweise. Vorher las das Wohnungsformular „78.43“ Miteigentumsanteile als
 // 7843 und „1.200“ m² als 1,2; beides verschiebt eine Verteilung.
 export function parseNumberDe(raw: string): number | null {
-  const t = raw.trim().replace(/\s/g, '')
+  // Das typografische Minus (U+2212) kommt aus kopierten Texten und von manchen Tastaturen und
+  // meint dasselbe wie „-“ (#139). Wo ein negativer Wert fachlich falsch ist, lehnt ihn der
+  // Aufrufer oder die Prüfbedingung der Datenbank ab, gleich mit welchem Zeichen er kam.
+  const t = raw.trim().replace(/\s/g, '').replace(/\u2212/g, '-')
   if (!t) return null
   let normalized: string
   // Mit Komma dürfen Punkte nur als Tausendertrenner stehen; „78.43,5“ oder „1,234.56“ sind
