@@ -756,7 +756,17 @@ app.post('/api/ai/cancel/:id', (req, res) => {
 // Posteingang. Antwortet selbst und gibt `null` zurück, wenn es keinen gibt.
 async function documentOf(req: Request, res: Response): Promise<DocumentSource | null> {
   const fresh = uploadedFile(req)
-  if (fresh) return (await recordOrRefuse(req, res, fresh)) ? fresh : null
+  if (fresh) {
+    if (!(await recordOrRefuse(req, res, fresh))) return null
+    // Hat der Browser während des Speicherns schon aufgegeben, hört niemand mehr zu, und der
+    // Abbruch in aiResponse käme nie an (Durchsicht): dann gleich aufräumen statt auszuwerten.
+    if (res.destroyed || req.socket.destroyed) {
+      fs.rmSync(fresh.path, { force: true })
+      await writeData((db) => forgetUpload(db, fresh.filename)).catch(() => undefined)
+      return null
+    }
+    return fresh
+  }
   const existing = existingDocument(req)
   if (existing === undefined) res.status(400).json({ error: 'Keine Datei' })
   else if (existing === null) res.status(400).json({ error: NO_EXISTING })
@@ -828,7 +838,7 @@ app.get('/api/uploads', async (req, res) => {
 app.put('/api/uploads/:file', async (req, res) => {
   const name = path.basename(req.params.file)
   const full = path.join(UPLOAD_DIR, name)
-  if (name !== req.params.file || !fs.existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  if (name !== req.params.file || !fs.existsSync(full) || !fs.statSync(full).isFile()) return res.status(404).json({ error: 'Datei nicht gefunden' })
   const body = bodyObject(req)
   const changes: Placement = {}
   if (Object.hasOwn(body, 'year')) {

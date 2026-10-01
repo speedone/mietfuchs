@@ -4462,3 +4462,17 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
     assert.equal((await fetch(`${s.base}/api/receipts/tax/2025`)).status, 400)
   })
 })
+
+test('Posteingang (#170): PUT nimmt nur einen Beleg im Ordner, keinen Verzeichnisnamen', async () => {
+  // Durchsicht: „..“ besteht `basename` und `existsSync` und legte eine Zeile an.
+  const s = await startServer()
+  try {
+    // Kodiert, sonst kürzt schon fetch den Pfad weg
+    for (const name of ['%2E%2E', '%2E']) {
+      const res = await fetch(`${s.base}/api/uploads/${name}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: 2024 }) })
+      assert.equal(res.status, 404, name)
+    }
+  } finally {
+    s.stop()
+  }
+})

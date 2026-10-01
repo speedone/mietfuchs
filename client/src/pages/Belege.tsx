@@ -154,9 +154,9 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
             {individual > 0 && (
               <p className="notice">
                 Belege zu „Einzelbeträge je Mieter“, etwa die Abrechnung eines Messdienstes, nennen meist die Beträge und Verbrauchswerte
-                aller Wohnungen, oft mit Namen. Ein Mieter darf sie einsehen, soweit er sie zur Prüfung seiner Abrechnung braucht
-                (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Geben Sie die Mappe mit diesen Belegen deshalb nur dem Mieter, der danach fragt,
-                und schwärzen Sie, was er dafür nicht braucht, etwa Namen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
+                aller Wohnungen, oft mit Namen. Ein Mieter darf auch sie einsehen, ohne ein besonderes Interesse darzulegen
+                (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Weil sie Daten anderer Mieter enthalten, legen Sie sie am besten nur dem bei,
+                der danach fragt, und prüfen vorher, ob Namen darauf stehen müssen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
               </p>
             )}
             <button className="btn" onClick={() => void create()} disabled={busy || plan.entries.length === 0}>
