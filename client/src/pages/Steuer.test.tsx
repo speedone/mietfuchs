@@ -34,6 +34,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   year: JAHR,
   income: {
     baseRentSollCents: 960000,
+    inclusiveRentSollCents: 0,
     prepaymentSollCents: 240000,
     flatRateSollCents: 0,
     prepaymentSettlementCents: 240000,
@@ -220,4 +221,25 @@ test('Eine saldiert negative Rücklage heißt nicht „Zuführung“ (#143, Inte
   await zeige(REPORT({ reserveContributionCents: -30000 }))
   expect(screen.getByText(/Erhaltungsrücklage, saldiert/i)).toBeTruthy()
   expect(screen.queryByText(/^Zuführung zur Erhaltungsrücklage/i)).toBeNull()
+})
+
+// ---------- #142: Inklusivmiete und Zeile 24 ----------
+
+test('Die Inklusivmiete steht nicht unter „ohne Umlagen (Kaltmiete)“, sondern eigens; die Summe bleibt (#142)', async () => {
+  await zeige(REPORT({}, { baseRentSollCents: 960000, inclusiveRentSollCents: 840000 }))
+  const kalt = screen.getByText(/Mieteinnahmen ohne Umlagen/i).closest('tr')
+  expect(kalt?.textContent).toMatch(/1\.200,00/)
+  // Auch eine Miete, die nur kalt oder nur warm inklusiv ist, steht hier (Durchsicht).
+  const inklusiv = screen.getByText(/Inklusivmieten \(ganz oder teilweise/i).closest('tr')
+  expect(inklusiv?.textContent).toMatch(/8\.400,00/)
+  expect(screen.getByText(/Summe Soll/i).closest('tr')?.textContent).toMatch(/12\.000,00/)
+  cleanup()
+  await zeige(REPORT())
+  expect(screen.queryByText(/Inklusivmieten/i)).toBeNull()
+})
+
+test('Der Hinweis zu Zeile 24 bei gemischten Verträgen liest sich als ein Satz (#142)', async () => {
+  await zeige(REPORT({ costModels: { tenancies: 2, inclusive: 1, partlyInclusive: 0, flatRate: 0 } }))
+  expect(screen.getByText(/Eine Inklusivmiete gilt hier nur für einen Teil der Mietverhältnisse oder nur für einen Teil der Nebenkosten/)).toBeTruthy()
+  expect(screen.queryByText(/Für einen Teil der Mietverhältnisse, oder/)).toBeNull()
 })

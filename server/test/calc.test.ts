@@ -25,6 +25,7 @@ import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
+import { assertLandlordParts } from '../testing/landlordParts.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -1856,6 +1857,8 @@ test('Invariante: Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, je P
       const { tenants, landlord } = rowsOfItem(s, item.id)
       assert.equal(tenants.reduce((a, r) => a + r.shareCents, 0) + landlord, item.amountCents, `Fall ${i}, ${item.id}\n${JSON.stringify(db)}`)
     }
+    // Die Zerlegung des Vermieteranteils in seine Gründe (#142) geht auf.
+    assertLandlordParts(s, db.tenancies.length, `Fall ${i}\n${JSON.stringify(db)}`)
   }
 })
 

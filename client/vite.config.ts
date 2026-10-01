@@ -26,6 +26,11 @@ export default defineConfig({
     // gebraucht, die es per `@vitest-environment jsdom` selbst anfordern.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    // Ganzseiten-Tests mit jsdom brauchen unter Last (paralleler Testlauf, voller Rechner) mehr
+    // als die voreingestellten 5 Sekunden; gemessen scheiterten so intakeReading, propertyCreate
+    // und propertySwitch, ohne dass etwas falsch war. Ein Test, der wirklich hängt, fällt auch nach
+    // 20 Sekunden auf.
+    testTimeout: 20000,
   },
   server: {
     // Ohne `workspaces`-Feld in der package.json endet Vites Suche am Projektordner, und ein

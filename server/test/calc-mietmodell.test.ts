@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, rentLedger, taxReport, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { assertLandlordParts } from '../testing/landlordParts.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [{ from: '2025-01-01', persons: 1 }], start: '2025-01-01', end: null,
@@ -110,6 +111,7 @@ test('Invariante (#93): Summen gehen auf, und ein Modell ändert den Eigenanteil
     const mieter = s.statements.reduce((a, st) => a + st.totalShareCents, 0)
     assert.equal(mieter + s.landlord.totalCents, s.totalCostsCents, `Fall ${i}`)
     for (const row of s.landlord.rows) assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Vermieteranteil`)
+    assertLandlordParts(s, tenancies.length, `Fall ${i}`)
     const ohneModelle = settle({ units, tenancies: tenancies.map((t) => ({ ...t, costModel: undefined, heatingModel: undefined })), costItems })
     // Der ausgewiesene Eigenanteil ist je Position auf das begrenzt, was beim Vermieter gebucht
     // ist. Ohne Pauschale kann diese Grenze einen Cent unter dem gerundeten Eigenanteil liegen,
@@ -199,4 +201,25 @@ test('Steuer (#96): ohne Heizposition im Jahr zählt das Heizmodell nicht (die M
   assert.deepEqual(ohne, { tenancies: 1, inclusive: 1, partlyInclusive: 0, flatRate: 0 })
   const mit = taxReport(snapshotOf({ units: [unit('a')], tenancies: [t], costItems: [item({ category: HEIZUNG, description: 'Heizung' })], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)).costModels
   assert.deepEqual(mit, { tenancies: 1, inclusive: 0, partlyInclusive: 1, flatRate: 0 })
+})
+
+test('Steuer (#142): die Inklusivmiete steht als eigener Teil der Mieteinnahmen, die Summe bleibt', () => {
+  // Sie enthält die Nebenkosten und gehört deshalb nicht unter „ohne Umlagen (Kaltmiete)“.
+  // Gezählt wird jede Miete, die Nebenkosten einschließt, kalt oder warm; die Heizung nur, wenn es
+  // im Jahr eine Heizposition gibt (wie bei `costModels`).
+  const snapshot = (costItems: SnapshotCostItem[]) => snapshotOf({
+    units: [unit('a'), unit('b'), unit('c'), unit('d')],
+    tenancies: [
+      tenancy('t-a', 'a', { costModel: 'inclusive', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 70000 }] }),
+      tenancy('t-b', 'b', { heatingModel: 'inclusive', baseRents: [{ from: '2025-01', monthlyCents: 60000 }] }),
+      tenancy('t-c', 'c', { costModel: 'flatRate', prepayments: [], flatRates: [{ from: '2025-01', monthlyCents: 8000 }], baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+      tenancy('t-d', 'd', { baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+    ],
+    costItems, meters: [], readings: [], payments: [], closedSettlements: [],
+  }, 2025)
+  const ohneHeizung = taxReport(snapshot([])).income
+  assert.equal(ohneHeizung.inclusiveRentSollCents, 840000)
+  assert.equal(ohneHeizung.baseRentSollCents, 840000 + 720000 + 600000 + 600000, 'die Kaltmiete-Summe bleibt, wie sie war')
+  const mitHeizung = taxReport(snapshot([item({ category: HEIZUNG, description: 'Heizung' })])).income
+  assert.equal(mitHeizung.inclusiveRentSollCents, 840000 + 720000)
 })

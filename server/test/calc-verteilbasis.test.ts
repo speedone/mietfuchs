@@ -8,6 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { assertLandlordParts } from '../testing/landlordParts.ts'
 
 const tenancy = (id: string, unitId: string, start = '2025-01-01', end: string | null = null): SnapshotTenancy => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [{ from: start, persons: 1 }], start, end,
@@ -305,6 +306,8 @@ test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten
       }
     }
     for (const row of s.landlord.rows) assert.ok(ok(row.costItemId, row.shareCents), `Fall ${i}: Vermieteranteil ${row.shareCents} gegen das Vorzeichen\n${JSON.stringify(src)}`)
+    // Die Zerlegung des Vermieteranteils in seine Gründe (#142) geht auf.
+    assertLandlordParts(s, src.tenancies.length, `Fall ${i}`)
     let sum = 0
     for (const c of src.costItems) {
       const one = settle({ ...src, costItems: [c] })

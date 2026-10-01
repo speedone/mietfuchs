@@ -7,6 +7,8 @@ import type {
   LegalBasis,
   NotSettled,
   ExternalMeasure,
+  LandlordPart,
+  LandlordReason,
   MeterType,
   Notice,
   NoticeLevel,
@@ -672,6 +674,13 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     flatRate: models.filter((m) => m.cold === 'flatRate' || m.heat === 'flatRate').length,
   }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
+  // Der Teil der Kaltmiete, der Nebenkosten einschließt (#142): Inklusivmiete kalt oder warm, nach
+  // denselben Modellen wie `costModels`. Die Übersicht nennt ihn eigens, denn „ohne Umlagen“ ist er
+  // gerade nicht. Eine Auskunft über die Summe darüber, keine neue Zahl.
+  const inclusiveRentSollCents = ledger.rows.reduce((a, r, i) => {
+    const m = models[i]
+    return m && (m.cold === 'inclusive' || m.heat === 'inclusive') ? a + r.baseRentYearCents : a
+  }, 0)
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
   // werden ihr **entnommen** statt neu hergeleitet: Eine zweite Auslegung der Staffel oder eine
@@ -813,6 +822,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     year,
     income: {
       baseRentSollCents,
+      inclusiveRentSollCents,
       prepaymentSollCents,
       flatRateSollCents,
       prepaymentSettlementCents,
@@ -954,6 +964,37 @@ export const looksLikeReserveContribution = (text: string): boolean =>
 // client/src/types.ts; categories.test.ts hält beide zusammen.
 export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY]
 export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEGORIES.includes(category)
+
+// Die Zerlegung des Vermieteranteils einer verteilten Position in ihre Gründe (#142). Sie
+// beschreibt den Betrag und verändert ihn nicht: Jeder Grund bekommt höchstens, was vom
+// Vermieteranteil noch übrig ist, und nur mit dessen Vorzeichen; was am Ende bleibt, ist
+// Rundung. Die Reihenfolge ist fest, damit dieselben Daten immer dieselbe Zeile ergeben.
+function landlordPartsOf(
+  item: SnapshotCostItem,
+  landlordCents: number,
+  p: { selfCents: number, notBooked: { reason: LandlordReason | CostModel, cents: number }[], customUnassignedRaw: number, outsideRaw: number, mainRestRaw: number, unassignedRaw: number },
+): LandlordPart[] {
+  const parts: LandlordPart[] = []
+  let left = landlordCents
+  const take = (reason: LandlordReason, cents: number) => {
+    if (cents === 0 || left === 0 || Math.sign(cents) !== Math.sign(left)) return
+    const c = Math.sign(left) * Math.min(Math.abs(cents), Math.abs(left))
+    const known = parts.find((x) => x.reason === reason)
+    if (known) known.cents += c
+    else parts.push({ reason, cents: c })
+    left -= c
+  }
+  take('selfUse', p.selfCents)
+  for (const reason of ['flatRate', 'inclusive', 'outsideUnit'] as const) {
+    take(reason, p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.cents, 0))
+  }
+  take('outsideUnit', Math.round(p.outsideRaw))
+  take('customRest', Math.round(p.customUnassignedRaw))
+  take('mainMeterRest', Math.round(p.mainRestRaw))
+  take(item.key === 'amounts' ? 'amountsRest' : 'vacancy', Math.round(p.unassignedRaw))
+  take('rounding', left)
+  return parts
+}
 
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
 // für die kalten Kosten. Ohne Angabe die Abrechnung.
@@ -1266,15 +1307,24 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Eine Anlage ab dem 01.12.2021 fiel nie unter die Regel (#121, § 2 Satz 2 BetrKV): dann in jedem
   // Jahr ab 2021 dieselbe Warnung, ohne Übergangszeit.
   const newSystem = snapshot.property?.cableBuiltBeforeDec2021 === false && year >= 2021
-  for (const item of items.filter((c) => c.category === 'Kabel/Antenne')) {
+  // Die Warnungen nennen den Betrag, der trotzdem bei den Mietern gelandet ist (#142, Zielbild
+  // aus #91). Den kennt erst die Verteilung; geschrieben werden sie deshalb danach, aber an dieser
+  // Stelle der Hinweise, damit ihre Reihenfolge bleibt.
+  const tvAt = notices.length
+  const tenantCentsOf = new Map<string, number>()
+  const tvNotices = () => items.filter((c) => c.category === 'Kabel/Antenne').flatMap((item): Notice[] => {
+    const cents = tenantCentsOf.get(item.id) ?? 0
+    // Nur ein wirklich umgelegter Betrag; eine Gutschrift hat den Mietern nichts aufgebürdet.
+    const charged = cents > 0 ? ` Auf die Mieter umgelegt sind in dieser Abrechnung ${fmtCents(cents)}.` : ''
     if (newSystem) {
-      warn('tv-signal.new-system', `„${item.description}": Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV). Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === 2021 ? ' Für 2021 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.' : ''}`, itemSubject(item))
+      return [makeNotice('tv-signal.new-system', `„${item.description}": Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === 2021 ? ' Für 2021 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.' : ''}`, itemSubject(item))]
     } else if (tvSignal === 'partial') {
-      warn('tv-signal.partial-year', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))
+      return [makeNotice('tv-signal.partial-year', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))]
     } else if (tvSignal === 'none') {
-      warn('tv-signal.ended', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))
+      return [makeNotice('tv-signal.ended', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs).${charged} Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))]
     }
-  }
+    return []
+  })
 
   // § 2 HeizkostenV (#93, #140), siehe shared/heating.ts: Im Gebäude mit höchstens zwei Wohnungen,
   // von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Eine Garage oder
@@ -1308,7 +1358,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Anteil, der auf selbstgenutzte Wohnungen entfällt (Teil des Vermieteranteils) — für
     // die Steuerübersicht separat ausgewiesen, weil er privat und damit nicht abziehbar ist.
     let selfRaw = 0
-    const noBasis = (reason: string) => warn('item.no-basis', `„${item.description}": ${reason} — Betrag geht an den Vermieter.`, itemSubject(item))
+    // Für die Zerlegung des Vermieteranteils (#142): Geht die Position ganz an den Vermieter, steht
+    // hier der eine Grund dafür. Sonst ergibt sich die Zerlegung erst aus der Verteilung.
+    let forced: LandlordReason | null = isNotAllocable(item.category) ? 'notAllocable' : null
+    // Bei vereinbarten Anteilen, was unter 100 % fehlt; was auf Wohnungen außerhalb der
+    // Abrechnungseinheit entfällt (verfallene Anteile, Zähler solcher Wohnungen); beim Hauptzähler
+    // der Verbrauch, den kein Wohnungszähler misst.
+    let customUnassignedRaw = 0
+    let outsideRaw = 0
+    let mainRestRaw = 0
+    const noBasis = (reason: string) => {
+      forced = 'noBasis'
+      warn('item.no-basis', `„${item.description}": ${reason} — Betrag geht an den Vermieter.`, itemSubject(item))
+    }
     // Tage im Rechenweg, nur bei einem Teiljahr.
     const partOfYear = (t: TenancyWithUnit) => (t.days < diy ? ` · ${t.days}/${diy} Tage` : '')
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
@@ -1406,6 +1468,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const selfSum = Object.entries(selfGiven).filter(([id]) => selfIds.has(id)).reduce((a, [, c]) => a + Math.max(0, c), 0)
       const sum = Object.values(given).reduce((a, c) => a + Math.max(0, c), 0) + selfSum
       if (sum > item.amountCents) {
+        forced = 'noBasis'
         warn('amounts.exceed', `„${item.description}": die Einzelbeträge ergeben zusammen ${fmtCents(sum)} und übersteigen den Rechnungsbetrag ${fmtCents(item.amountCents)} — es wird nichts verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         const inYear = new Map(b.partTenancies.map((t) => [t.id, t]))
@@ -1461,9 +1524,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('custom.forfeited', `„${item.description}": der vereinbarte Anteil für ${forfeited.join(', ')} entfällt — die Wohnung gehört nicht zur Abrechnungseinheit. Dieser Teil geht an den Vermieter.`, itemSubject(item))
       }
       if (pctSum <= 0) {
+        forced = 'noBasis'
         warn('custom.none', `„${item.description}": keine vereinbarten Anteile hinterlegt — Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (pctSum > 100.0001) {
         // Nicht verteilen: mehr als die Rechnung hergibt wäre auch beim §35a-Anteil zu hoch.
+        forced = 'noBasis'
         warn('custom.over-100', `„${item.description}": die vereinbarten Anteile ergeben ${fmtNum(Math.round(pctSum * 100) / 100)} % — über 100 % wird nicht verteilt, der Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         for (const t of partTenancies) {
@@ -1473,6 +1538,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           targets.push({ t, raw, basisText: `${fmtNum(pct)} % vereinbart${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
         }
         selfRaw = selfUnits.reduce((a, u) => a + item.amountCents * (pctOf(u.id) / 100), 0)
+        // Ein Anteil für eine Wohnung, die es gibt, die aber außerhalb liegt, ist dort vereinbart
+        // und verfällt; einer für eine gelöschte Wohnung zählt zum Nicht-Vereinbarten (so steht er
+        // auch nach dem Geraderücken da, das ihn streicht).
+        const outsidePct = Object.keys(item.customShares ?? {})
+          .filter((id) => pctOf(id) > 0 && unitById.has(id) && !basisUnits.some((u) => u.id === id))
+          .reduce((a, id) => a + pctOf(id), 0)
+        outsideRaw = item.amountCents * (outsidePct / 100)
+        customUnassignedRaw = item.amountCents * ((100 - pctSum - outsidePct) / 100)
       }
     } else if (item.key === 'meter') {
       // `item.meterType` ist optional (string | null | undefined); die Indizierung selbst
@@ -1480,9 +1553,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // `data` bleibt undefined), deshalb hier nur eine Typ-Zusicherung, keine neue Prüfung.
       const data = b.consumptionByType[item.meterType as MeterType]
       if (!data || data.basis <= 0) {
+        forced = 'noBasis'
         warn('meter.no-consumption', `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         const type = item.meterType ?? '—'
+        // Für die Zerlegung des Vermieteranteils (#142): Verbrauch der Zähler von Wohnungen
+        // außerhalb der Abrechnungseinheit, und beim Hauptzähler, was keine Wohnung misst.
+        const inBasis = new Set(b.basisUnits.map((u) => u.id))
+        const yearOf = (m: SnapshotMeter) => consumptionInPeriod(readingsOf(m.id), yFrom, yTo)
+        const measured = data.meters.reduce((a, m) => a + yearOf(m), 0)
+        outsideRaw = item.amountCents * (data.meters.filter((m) => !inBasis.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) / data.basis)
+        if (data.main !== null) mainRestRaw = item.amountCents * ((data.basis - measured) / data.basis)
         if (data.mainPartial) {
           warn('meter.main-partial', `„${item.description}": der Hauptzähler deckt ${year} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum 31.12.${year - 1} und zum Jahresende (31.12.${year}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
         }
@@ -1532,11 +1613,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Typ-Zusicherung, keine neue Prüfung.
       const target = unitById.get(item.directUnitId as string)
       if (!target) {
+        forced = 'noBasis'
         warn('direct.unit-gone', `„${item.description}": die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter.`, itemSubject(item))
       } else if (!target.participates && !target.selfUsed) {
         // Leerstand und Eigennutzung sind reguläre Fälle; eine Wohnung außerhalb der
         // Abrechnungseinheit ist dagegen ein Datenfehler.
         noBasis(`die direkt zugeordnete Wohnung ${target.name} gehört nicht zur Abrechnungseinheit`)
+        forced = 'outsideUnit'
       }
       for (const t of tenancies.filter((t) => t.unitId === item.directUnitId)) {
         const raw = item.amountCents * (t.days / diy)
@@ -1672,17 +1755,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         })
       }
     }
+    tenantCentsOf.set(item.id, distributed)
     const landlordCents = item.amountCents - distributed
     // Der Eigenanteil ist ein Teil des Vermieteranteils dieser Position — deshalb an dem
     // begrenzen, was tatsächlich beim Vermieter gebucht wurde. Sonst könnte der separat
     // ausgewiesene Betrag durch Rundung über dem Vermieteranteil liegen.
+    let selfCents = 0
     if (selfRaw > 0 && landlordCents > 0) {
-      selfUsedShareCents += Math.min(Math.round(selfRaw), landlordCents)
+      selfCents = Math.min(Math.round(selfRaw), landlordCents)
     } else if (selfRaw < 0 && landlordCents < 0) {
       // Eine Gutschrift senkt den Eigenanteil ebenso (#129), höchstens um den Teil, den der
       // Vermieter von ihr trägt; sonst stünde der private Anteil der Steuer zu hoch da.
-      selfUsedShareCents += Math.max(Math.round(selfRaw), landlordCents)
+      selfCents = Math.max(Math.round(selfRaw), landlordCents)
     }
+    selfUsedShareCents += selfCents
     if (landlordCents !== 0) {
       landlordRows.push({
         costItemId: item.id,
@@ -1691,9 +1777,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         totalCents: item.amountCents,
         keyLabel: KEY_LABELS[item.key] || item.key,
         shareCents: landlordCents,
+        landlordParts: forced
+          ? [{ reason: forced, cents: landlordCents }]
+          : landlordPartsOf(item, landlordCents, {
+            selfCents,
+            // Anteile, die einem Mietverhältnis zustehen, ihm aber nicht zugebucht werden: wegen
+            // Pauschale oder Inklusivmiete, oder weil seine Wohnung außerhalb der
+            // Abrechnungseinheit liegt (dann hat es keine Abrechnung).
+            notBooked: targets.flatMap((x, i) => bookable(x.t) ? [] : [{ reason: statements.has(x.t.id) ? modelFor(x.t, item) : 'outsideUnit', cents: shares[i] }]),
+            customUnassignedRaw,
+            outsideRaw,
+            mainRestRaw,
+            // Was die Rohanteile sonst nicht ausschöpfen: Leerstand, bei Einzelbeträgen der Rest.
+            unassignedRaw: item.amountCents - targets.reduce((a, x) => a + x.raw, 0) - selfRaw - customUnassignedRaw - outsideRaw - mainRestRaw,
+          }),
       })
     }
   }
+
+  notices.splice(tvAt, 0, ...tvNotices())
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
   // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
