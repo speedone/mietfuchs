@@ -13,6 +13,7 @@ import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LAB
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
+import { totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 
@@ -419,7 +420,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <thead>
                     <tr>
                       <th>Kostenart</th>
-                      <th className="num">Gesamtkosten</th>
+                      <th className="num">{totalColumnLabel(st.rows)}</th>
                       <th>Verteilung</th>
                       <th className="num">Ihr Anteil</th>
                     </tr>
@@ -435,7 +436,10 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                                   {r.category}
                                   {r.description !== r.category && <div className="muted">{r.description}</div>}
                                 </td>
-                                <td className="num">{fmtEuro(r.totalCents)}</td>
+                                <td className="num">
+                                  {fmtEuro(r.totalCents)}
+                                  {totalNote(r) && <div className="muted">{totalNote(r)}</div>}
+                                </td>
                                 <td>
                                   {r.keyLabel}
                                   {r.basisText && <div className="muted">{r.basisText}</div>}

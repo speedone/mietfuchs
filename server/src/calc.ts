@@ -857,9 +857,12 @@ type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
-// `ownShare`: bei der Gemeinschaftsabrechnung der Anteil innerhalb der eigenen Wohnungen, nach
-// dem wirklich gerechnet wird (#114); die Verteilbasis nennt dort die Summe der ganzen Anlage.
-type Target = { t: TenancyWithUnit, raw: number, basisText: string, ownShare?: string }
+// `community`: bei der Gemeinschaftsabrechnung die Schritte davor (#114, #144). Erst der Anteil an
+// der Gemeinschaft (Anteil × Kosten der Gemeinschaft), dann, ob der Betrag davon abweicht, dann
+// der Anteil der Wohnung innerhalb der Wohnungen des Vermieters, nach dem wirklich verteilt wird;
+// `ownShare` fehlt, wenn er nur eine hat.
+type CommunitySteps = { costsCents: number, share: string, term: TermId, appliedCents: number | null, ownShare: string | null }
+type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps }
 
 // Verbrauch und Zähler eines Zählertyps, aufbereitet für die Verteilung. Der Wert ist bewusst
 // optional (nicht `Record<string, ConsumptionByTypeEntry>`): zu einer Kostenposition mit einem
@@ -1307,13 +1310,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (Math.abs(expected - item.amountCents) > 100) {
             warn('external.amount-mismatch', `„${item.description}": der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
           }
-          const suffix = ` · Gesamtkosten der Anlage ${fmtCents(eb.totalCents)}`
+          // „Kosten der Gemeinschaft“ und nicht „Gesamtkosten der Anlage“ (#144): Die Spalte
+          // Gesamtkosten zeigt hier den Anteil des Vermieters, und zweimal „Gesamtkosten“ mit zwei
+          // Zahlen war doppeldeutig. Weicht der Betrag ab, steht das auch im Druck; der Rechenweg
+          // erscheint dort nicht, und der Mieter sähe sonst eine Rechnung, die nicht aufgeht.
+          const applied = Math.abs(expected - item.amountCents) > 100 ? ' · angesetzt laut Hausgeldabrechnung' : ''
+          const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
+          const label = MEASURE_LABELS[eb.measure]
           for (const t of b.partTenancies) {
             const raw = item.amountCents * (valueOf(t.unit) / own) * (t.days / diy)
             targets.push({
               t, raw,
-              basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]}${suffix}${partOfYear(t)}`,
-              ownShare: `${fmtNum(valueOf(t.unit))} von ${fmtNum(own)} ${MEASURE_LABELS[eb.measure]}`,
+              basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${label}${suffix}${partOfYear(t)}`,
+              community: {
+                costsCents: eb.totalCents,
+                share: `${fmtNum(own)} von ${fmtNum(eb.total)} ${label} × ${fmtCents(eb.totalCents)} = ${fmtCents(expected)}`,
+                term: eb.measure === 'mea' ? 'mea' : 'distributionBasis',
+                appliedCents: expected !== item.amountCents ? item.amountCents : null,
+                ownShare: valueOf(t.unit) !== own ? `${fmtNum(valueOf(t.unit))} von ${fmtNum(own)} ${label}` : null,
+              },
             })
           }
           selfRaw = item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u), 0) / own)
@@ -1522,15 +1537,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Restcent wird bei der Zeile benannt, die von der gewöhnlichen Rundung abweicht; sonst sähe
       // der Mieter einen Cent, den ihm niemand erklärt. Das ist nicht immer die Zeile, die einen
       // Cent dazubekommt: Liegen die Reste über einem halben Cent, ist es die, die einen verliert.
+      const c = x.community
       const steps: CalcStep[] = [
-        { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
+        c
+          ? { label: 'Kosten der Gemeinschaft', value: fmtCents(c.costsCents), term: 'homeownersStatement' }
+          : { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
         { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
       ]
-      if (item.key === 'amounts') {
+      if (c) {
+        // Laut Gemeinschaftsabrechnung (#144): erst der Schritt der Gemeinschaft, dann die
+        // Verteilung im Objekt. Die Verteilbasis der ganzen Anlage steht nicht noch einmal da.
+        steps.push({ label: 'Anteil an der Gemeinschaft', value: c.share, term: c.term })
+        if (c.appliedCents !== null) steps.push({ label: 'Angesetzt laut Hausgeldabrechnung', value: fmtCents(c.appliedCents), term: 'homeownersStatement' })
+        if (c.ownShare) steps.push({ label: 'Anteil Ihrer Wohnung daran', value: c.ownShare, term: c.term })
+        if (item.amountCents !== 0) {
+          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
+        }
+      } else if (item.key === 'amounts') {
         steps.push({ label: 'Einzelbetrag', value: `${fmtCents(Math.round(x.raw))} laut Einzelabrechnung`, term: 'individualAmounts' })
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
-        if (x.ownShare) steps.push({ label: 'Anteil an Ihren Wohnungen', value: x.ownShare, term: 'mea' })
         if (item.amountCents !== 0) {
           steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
         }

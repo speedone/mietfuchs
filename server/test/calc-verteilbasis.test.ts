@@ -86,7 +86,7 @@ test('Gemeinschaft: eine Eigentumswohnung, ganzjährig vermietet, bekommt ihren 
     costItems: [item({ key: 'external', amountCents: 62000, externalBasis: weg })],
   }))
   assert.equal(shareOf(s, 't'), 62000)
-  assert.equal(rowOf(s, 't')?.basisText, '124 von 10.000 MEA · Gesamtkosten der Anlage 50.000,00 €')
+  assert.equal(rowOf(s, 't')?.basisText, '124 von 10.000 MEA · Kosten der Gemeinschaft 50.000,00 €')
   assert.deepEqual(s.warnings, [])
 })
 
@@ -140,14 +140,14 @@ test('Gemeinschaft: nach Fläche und nach Einheiten', () => {
     tenancies: [tenancy('t', 'w')],
     costItems: [item({ key: 'external', amountCents: 5000, externalBasis: { measure: 'area', total: 1240, totalCents: 100000 } })],
   }))
-  assert.equal(rowOf(nachFlaeche, 't')?.basisText, '62 von 1.240 m² · Gesamtkosten der Anlage 1.000,00 €')
+  assert.equal(rowOf(nachFlaeche, 't')?.basisText, '62 von 1.240 m² · Kosten der Gemeinschaft 1.000,00 €')
   assert.deepEqual(nachFlaeche.warnings, [])
   const nachEinheiten = settle(source({
     units: [unit('w')],
     tenancies: [tenancy('t', 'w')],
     costItems: [item({ key: 'external', amountCents: 2500, externalBasis: { measure: 'units', total: 40, totalCents: 100000 } })],
   }))
-  assert.equal(rowOf(nachEinheiten, 't')?.basisText, '1 von 40 Einheiten · Gesamtkosten der Anlage 1.000,00 €')
+  assert.equal(rowOf(nachEinheiten, 't')?.basisText, '1 von 40 Einheiten · Kosten der Gemeinschaft 1.000,00 €')
 })
 
 test('Gemeinschaft: ohne Miteigentumsanteile oder ohne Angaben geht der Betrag an den Vermieter', () => {

@@ -80,8 +80,39 @@ test('Rechenweg bei der Gemeinschaftsabrechnung: der Anteil innerhalb der eigene
     costItems: [item('v', { amountCents: 20000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 200000 } })],
   })
   const steps = rowOf(s, 't-a', 'v')?.steps?.map((x) => [x.label, x.value])
-  assert.deepEqual(steps?.find((x) => x[0] === 'Anteil an Ihren Wohnungen'), ['Anteil an Ihren Wohnungen', '60 von 100 MEA'])
+  // #144: verständlich für den Mieter statt „Anteil an Ihren Wohnungen“
+  assert.deepEqual(steps?.find((x) => x[0] === 'Anteil Ihrer Wohnung daran'), ['Anteil Ihrer Wohnung daran', '60 von 100 MEA'])
+  assert.ok(!steps?.some((x) => x[0] === 'Anteil an Ihren Wohnungen'))
   assert.deepEqual(steps?.find((x) => x[0] === 'Rechnung'), ['Rechnung', '200,00 € × 60 % = 120,00 €'])
+})
+
+// #144: Der Schritt aus der Gemeinschaftsabrechnung steht ausdrücklich da. Nachgestellt wie im
+// Issue: Hausmeister, Anlage 6.000 €, 85,4 von 1.000 MEA, eigener Anteil 512,40 €.
+const hausmeister = (amountCents: number) => settle({
+  units: [{ ...unit('w', 70), mea: 85.4 }],
+  tenancies: [tenancy('t', 'w')],
+  costItems: [item('h', { category: 'Hauswart', description: 'Hausmeister', amountCents, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 600000 } })],
+})
+
+test('Rechenweg laut Gemeinschaftsabrechnung: Anteil an der Gemeinschaft, dann die Verteilung im Objekt (#144)', () => {
+  const steps = rowOf(hausmeister(51240), 't', 'h')?.steps?.map((x) => [x.label, x.value])
+  assert.deepEqual(steps?.slice(0, 3), [
+    ['Kosten der Gemeinschaft', '6.000,00 €'],
+    ['Umlageschlüssel', 'Laut Gemeinschaftsabrechnung'],
+    ['Anteil an der Gemeinschaft', '85,4 von 1.000 MEA × 6.000,00 € = 512,40 €'],
+  ])
+  // Eine einzige Wohnung im Objekt: kein Schritt „85,4 von 85,4 MEA“.
+  assert.ok(!steps?.some((x) => x[0] === 'Anteil Ihrer Wohnung daran'), JSON.stringify(steps))
+  assert.ok(!steps?.some((x) => x[0] === 'Angesetzt laut Hausgeldabrechnung'))
+  assert.deepEqual(steps?.at(-1), ['Ergebnis, auf Cent gerundet', '512,40 €'])
+  assert.equal(rowOf(hausmeister(51240), 't', 'h')?.basisText, '85,4 von 1.000 MEA · Kosten der Gemeinschaft 6.000,00 €')
+})
+
+test('Rechenweg laut Gemeinschaftsabrechnung: weicht der Betrag ab, steht der angesetzte dabei, auch im Druck (#144)', () => {
+  const row = rowOf(hausmeister(20496), 't', 'h')
+  const steps = row?.steps?.map((x) => [x.label, x.value])
+  assert.deepEqual(steps?.find((x) => x[0] === 'Angesetzt laut Hausgeldabrechnung'), ['Angesetzt laut Hausgeldabrechnung', '204,96 €'])
+  assert.equal(row?.basisText, '85,4 von 1.000 MEA · Kosten der Gemeinschaft 6.000,00 € · angesetzt laut Hausgeldabrechnung')
 })
 
 test('Rechenweg bei großen Beträgen: Prozent × Betrag ergibt den gezeigten Wert', () => {

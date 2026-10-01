@@ -111,15 +111,34 @@ export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], year: n
 // Der rechnerische Anteil laut Gemeinschaftsabrechnung, zum Vergleich mit dem eingetragenen
 // Betrag. Leer, solange die Angaben dafür fehlen.
 export function externalHint(form: ItemForm, units: Unit[]): string {
+  const share = externalShare(form, units)
+  if (share === null) return ''
+  if (typeof share === 'string') return share
+  const { own, total, expected, amount } = share
+  const text = `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
+  if (amount === null || !isMismatch(expected, amount)) return text
+  return `${text} — weicht um ${fmtCentsInput(Math.abs(expected - amount))} € vom Betrag ab. Bitte die Angaben aus der Gemeinschaftsabrechnung prüfen; verteilt wird der eingetragene Betrag.`
+}
+
+// Weicht der rechnerische Anteil vom eingetragenen Betrag ab (#144)? Dann markiert das Formular
+// ihn. Dieselbe Toleranz wie die Warnung `external.amount-mismatch` in server/src/calc.ts: mehr
+// als 1,00 €, denn die Gemeinschaft rundet je Position und Wohnung.
+export function externalMismatch(form: ItemForm, units: Unit[]): boolean {
+  const share = externalShare(form, units)
+  return share !== null && typeof share !== 'string' && share.amount !== null && isMismatch(share.expected, share.amount)
+}
+const isMismatch = (expected: number, amount: number) => Math.abs(expected - amount) > 100
+
+// Der rechnerische Anteil, eine Erklärung, warum es keinen gibt, oder `null`, solange Angaben fehlen.
+function externalShare(form: ItemForm, units: Unit[]): { own: number, total: number, expected: number, amount: number | null } | string | null {
   const total = parseAmountNumber(form.externalTotal)
   const totalCents = parseEuro(form.externalTotalAmount)
-  if (total === null || !(total > 0) || totalCents === null) return ''
+  if (total === null || !(total > 0) || totalCents === null) return null
   const valueOf = (u: Unit) => (form.externalMeasure === 'mea' ? u.mea ?? 0 : form.externalMeasure === 'area' ? u.areaM2 : 1)
   // Mit Teilnehmern (#105) nur deren Wohnungen, wie in der Abrechnung.
   const own = basisUnitsOf(units).filter((u) => form.participants === null || form.participants.includes(u.id)).reduce((a, u) => a + valueOf(u), 0)
-  if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : ''
-  const expected = Math.round((totalCents * own) / total)
-  return `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
+  if (!(own > 0)) return form.externalMeasure === 'mea' ? 'Für die Wohnungen sind noch keine Miteigentumsanteile hinterlegt (Stammdaten).' : null
+  return { own, total, expected: Math.round((totalCents * own) / total), amount: parseEuro(form.amount) }
 }
 
 // Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf

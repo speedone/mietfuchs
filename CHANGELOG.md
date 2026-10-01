@@ -136,6 +136,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))
+- **Rechenweg „laut Gemeinschaftsabrechnung“ rechnet den Anteil vor.** Er beginnt jetzt mit den
+  Kosten der Gemeinschaft und dem Schritt „Anteil an der Gemeinschaft: 85,4 von 1.000 MEA ×
+  6.000,00 € = 512,40 €“, nennt einen davon abweichenden angesetzten Betrag und erst dann die
+  Verteilung auf die Wohnungen des Vermieters („Anteil Ihrer Wohnung daran“ statt „Anteil an Ihren
+  Wohnungen“). Auf der Abrechnung heißt die Spalte bei solchen Positionen „Gesamtkosten bzw.
+  Anteil an der Gemeinschaft“, die Zeile sagt, welches von beiden sie zeigt, und die Verteilung
+  nennt „Kosten der Gemeinschaft“ statt „Gesamtkosten der Anlage“; weicht der Betrag ab, steht
+  „angesetzt laut Hausgeldabrechnung“ auch im Druck. Im Kostenformular ist der rechnerische Anteil
+  markiert, wenn er um mehr als 1 € vom Betrag abweicht.
+  ([#144](https://github.com/speedone/mietfuchs/issues/144))
 - **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Werden
   Heizung und Warmwasser nicht nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
   des Messdienstes noch laut Gemeinschaftsabrechnung), nennt die Abrechnung je Mieter den Betrag,

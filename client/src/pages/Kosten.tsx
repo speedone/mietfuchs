@@ -11,6 +11,7 @@ import {
   meterTypeOptions,
   amountsSumText,
   externalHint,
+  externalMismatch,
   tenanciesForAmounts,
   EXTERNAL_MEASURE_OPTIONS,
   PARTICIPANT_KEYS,
@@ -646,11 +647,16 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} placeholder="z. B. 10.000" inputMode="decimal" />
                   </label>
                   <label className="field grow">
-                    Gesamtkosten der Anlage €
+                    Kosten der Gemeinschaft (ganze Anlage) €
                     <input value={form.externalTotalAmount} onChange={(e) => setForm({ ...form, externalTotalAmount: e.target.value })} placeholder="z. B. 50.000,00" inputMode="decimal" />
                   </label>
                 </div>
-                {externalHint(form, units) && <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>}
+                {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
+                {externalHint(form, units) && (
+                  externalMismatch(form, units)
+                    ? <div className="notice" style={{ marginTop: 6 }}><strong>{externalHint(form, units)}</strong></div>
+                    : <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>
+                )}
               </div>
             )}
             {form.key === 'amounts' && (

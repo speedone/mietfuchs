@@ -11,6 +11,7 @@ import {
   meterTypeOptions,
   amountsSumText,
   externalHint,
+  externalMismatch,
   tenanciesForAmounts,
   categoryNotice,
   selfAmountUnits,
@@ -250,6 +251,17 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     const text = externalHint(form({ key: 'external', amount: '620,00', externalMeasure: 'mea', externalTotal: '10000', externalTotalAmount: '50.000,00' }), wohnungen)
     expect(text).toMatch(/124 von 10\.000 MEA/)
     expect(text).toMatch(/620,00/)
+  })
+
+  test('Gemeinschaft: weicht der rechnerische Anteil um mehr als 1 € vom Betrag ab, ist er markiert (#144)', () => {
+    const wohnungen = [unit('u1', { mea: 124 })]
+    const angaben = { key: 'external' as const, externalMeasure: 'mea' as const, externalTotal: '10000', externalTotalAmount: '50.000,00' }
+    // Toleranz wie die Warnung external.amount-mismatch in calc.ts: bis 1,00 € passt es.
+    expect(externalMismatch(form({ ...angaben, amount: '620,00' }), wohnungen)).toBe(false)
+    expect(externalMismatch(form({ ...angaben, amount: '621,00' }), wohnungen)).toBe(false)
+    expect(externalMismatch(form({ ...angaben, amount: '621,01' }), wohnungen)).toBe(true)
+    expect(externalHint(form({ ...angaben, amount: '400,00' }), wohnungen)).toMatch(/weicht um 220,00 € vom Betrag ab/)
+    expect(externalHint(form({ ...angaben, amount: '620,00' }), wohnungen)).not.toMatch(/weicht/)
   })
 
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {
