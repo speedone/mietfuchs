@@ -818,3 +818,5 @@ fieldset.no-connection { border: 0; padding: 0; margin: 0; min-width: 0; }
 .receipt-inbox-head h2 { margin: 0; }
 .receipt-inbox-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .receipt-inbox-controls select { max-width: 100%; }
+.receipt-packs details { margin-top: 12px; }
+.receipt-packs summary { cursor: pointer; font-weight: 600; }
