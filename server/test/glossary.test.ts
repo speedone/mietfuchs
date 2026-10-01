@@ -62,3 +62,13 @@ test('Hausgeld (Vorschuss): eigener Begriff, abgegrenzt von Abrechnung und Rück
   assert.equal(300 * 12, 3600)
   assert.equal(3600 - 900, 2700)
 })
+
+test('Einheit ohne Anschluss: eigener Begriff mit nachgerechnetem Beispiel (#142)', () => {
+  const t = GLOSSARY.noConnection
+  assert.equal(t.title, 'Einheit ohne Anschluss')
+  assert.match(t.short, /Garage/)
+  // 600 € Wasser nach Verbrauch, zwei Wohnungen mit 40 und 20 m³, die Garage ohne Wasser: 400 € und 200 €.
+  assert.match(t.example, /600 €.*40.*20 m³.*400 €.*200 €/s)
+  assert.equal(600 * 40 / 60, 400)
+  assert.equal(600 * 20 / 60, 200)
+})

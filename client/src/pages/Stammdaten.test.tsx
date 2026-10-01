@@ -2,7 +2,7 @@
 // Stammdaten aus der Browser-Abnahme (#142): Was die Listen zeigen und was die Löschfrage sagt.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import type { PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
+import type { Meter, PropertyKind, Tenancy, Unit, UnitDependents } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
@@ -22,12 +22,21 @@ const tenancy = (id: string, tenantName: string, patch: Partial<Tenancy> = {}): 
 const DEPS: UnitDependents = { tenancies: 2, meters: 1, readings: 4, payments: 12, costItemLinks: 0, directCostItems: 0 }
 
 let kind: PropertyKind = 'mfh'
+let meters: Meter[] = []
+let sent: { url: string; method: string; body: Record<string, unknown> }[] = []
 
 beforeEach(() => {
   kind = 'mfh'
-  vi.stubGlobal('fetch', async (url: string) => {
+  meters = []
+  sent = []
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0] ?? url
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if ((init?.method ?? 'GET') !== 'GET') {
+      sent.push({ url, method: init?.method ?? '', body: JSON.parse(String(init?.body ?? '{}')) })
+      return json({ ok: true })
+    }
+    if (path === '/api/meters') return json(meters)
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === '/api/units/u1/dependents') return json(DEPS)
     return json([])
@@ -99,4 +108,73 @@ test('Wohnung löschen: die Frage nennt, was mitgelöscht wird, mit Anzahl', asy
   fireEvent.click(first)
   const dialog = await screen.findByRole('dialog', undefined, SLOW)
   expect(within(dialog).getByText(/2 Mietverhältnisse, 1 Zähler, 4 Ablesungen und 12 Zahlungen/)).toBeTruthy()
+})
+
+// #142 (B12): „Kein Anschluss für“ mit Kästchen las sich verkehrt herum. Jetzt positiv: angehakt
+// heißt angeschlossen; gespeichert wird weiter nur die Ausnahme.
+const meter = (type: Meter['type'], unitId: string | null = 'u2'): Meter => ({ id: `m-${type}`, propertyId: 'objekt-1', name: type, unitId, type, unit: 'm³' })
+
+const openUnit = async (units: Unit[] = UNITS) => {
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={units} tenancies={[]} settings={null} reload={async () => {}} />
+        </UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  const [first] = await screen.findAllByRole('button', { name: /Wohnung bearbeiten/i }, SLOW)
+  if (!first) throw new Error('kein Bearbeiten-Knopf')
+  fireEvent.click(first)
+  return screen.findByRole('dialog', undefined, SLOW)
+}
+
+test('Anschlüsse: ohne Zähler im Objekt und ohne Ausnahme gibt es den Block nicht', async () => {
+  const dialog = await openUnit()
+  expect(within(dialog).queryByText(/Anschlüsse dieser Einheit/)).toBeNull()
+})
+
+test('Anschlüsse: mit einem Kaltwasserzähler nur Kaltwasser, angehakt; Häkchen entfernen speichert die Ausnahme', async () => {
+  meters = [meter('kaltwasser')]
+  const dialog = await openUnit()
+  const box = await within(dialog).findByRole('checkbox', { name: 'Kaltwasser' }, SLOW) as HTMLInputElement
+  expect(within(dialog).queryByRole('checkbox', { name: 'Wärme' })).toBeNull()
+  expect(within(dialog).queryByRole('checkbox', { name: 'Sonstiges' })).toBeNull()
+  expect(box.checked).toBe(true)
+  expect(within(dialog).getByText(/Hat eine Einheit keinen Anschluss/)).toBeTruthy()
+  fireEvent.click(box)
+  expect(box.checked).toBe(false)
+  // Die Zusammenfassung des zugeklappten Bereichs macht die Ausnahme sichtbar.
+  expect(within(dialog).getByText(/ohne Wasseranschluss/)).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Übernehmen$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ noConnection: ['kaltwasser'] })
+})
+
+test('Anschlüsse: eine gesetzte Ausnahme ohne Zähler dieser Art bleibt sichtbar und lässt sich zurücknehmen', async () => {
+  const dialog = await openUnit([{ ...UNITS[0]!, noConnection: ['waerme'] }, UNITS[1]!])
+  const box = within(dialog).getByRole('checkbox', { name: 'Wärme' }) as HTMLInputElement
+  expect(box.checked).toBe(false)
+  expect(within(dialog).getByText(/ohne Wärmeanschluss/)).toBeTruthy()
+  fireEvent.click(box)
+  expect(box.checked).toBe(true)
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Übernehmen$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ noConnection: [] })
+})
+
+test('Wohnungsliste: eine Ausnahme steht als Kennzeichen an der Wohnung', async () => {
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={[UNITS[0]!, { ...UNITS[1]!, noConnection: ['kaltwasser'] }]} tenancies={[]} settings={null} reload={async () => {}} />
+        </UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await screen.findByText('OG', undefined, SLOW)
+  expect(rowOf('OG').getByText('ohne Wasseranschluss')).toBeTruthy()
+  expect(rowOf('EG').queryByText(/ohne/)).toBeNull()
 })

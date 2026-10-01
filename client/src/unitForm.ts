@@ -117,3 +117,36 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
     : ''
   return `${head}${direct} ${IRREVERSIBLE}`
 }
+
+// Anschlüsse einer Einheit (#142). Gefragt wird positiv: angehakt heißt angeschlossen, und das ist
+// der Normalfall. Gespeichert wird unverändert nur die Ausnahme (`noConnection`, #117), damit
+// bestehende Daten ohne Umbau gelten.
+//
+// Angeboten werden nur Zählerarten, für die es im Objekt Zähler gibt: Ohne Zähler einer Art fragt
+// die Berechnung nie nach dem Anschluss, und die Frage verwirrte nur. Eine schon gesetzte
+// Ausnahme bleibt immer sichtbar, sonst stünde etwas Gespeichertes unsichtbar und unlöschbar im
+// Formular. Der Allgemeinstrom gehört dem Haus und nicht einer Einheit; ihn bietet das Formular
+// nur an, wenn er schon als Ausnahme gesetzt ist.
+const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'waerme', 'sonstig', 'strom']
+export function connectionTypes(objectMeterTypes: MeterType[], noConnection: MeterType[]): MeterType[] {
+  const present = new Set<MeterType>(objectMeterTypes.filter((t) => t !== 'strom'))
+  return CONNECTION_ORDER.filter((t) => present.has(t) || noConnection.includes(t))
+}
+
+export function setConnected(form: UnitForm, type: MeterType, connected: boolean): UnitForm {
+  const rest = form.noConnection.filter((t) => t !== type)
+  return { ...form, noConnection: connected ? rest : [...rest, type] }
+}
+
+// Die Ausnahme in Worten, für die Zusammenfassung im Formular und das Kennzeichen in der Liste.
+const CONNECTION_WORDS: Record<MeterType, string> = { kaltwasser: 'Wasser', waerme: 'Wärme', strom: 'Strom', sonstig: '' }
+export function connectionSummary(noConnection: MeterType[]): string {
+  const sorted = CONNECTION_ORDER.filter((t) => noConnection.includes(t))
+  if (sorted.length === 0) return ''
+  const named = sorted.filter((t) => t !== 'sonstig').map((t) => CONNECTION_WORDS[t])
+  const parts: string[] = []
+  if (named.length === 1) parts.push(`ohne ${named[0]}anschluss`)
+  else if (named.length > 1) parts.push(`ohne ${named.slice(0, -1).map((w) => `${w}-`).join(', ')} und ${named[named.length - 1]}anschluss`)
+  if (sorted.includes('sonstig')) parts.push('ohne Anschluss für Sonstiges')
+  return parts.join(', ')
+}

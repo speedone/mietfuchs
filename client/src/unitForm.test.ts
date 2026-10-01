@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitDeleteMessage, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -176,5 +176,34 @@ describe('Löschfrage einer Wohnung', () => {
       'Mit der Wohnung werden auch ihre Mietverhältnisse, Zähler, Ablesungen und Zahlungen gelöscht, dazu ihre Anteile an ' +
         'Kostenpositionen. Das lässt sich nicht rückgängig machen.',
     )
+  })
+})
+
+// Anschlüsse einer Einheit, positiv gefragt (#142): angehakt heißt angeschlossen, gespeichert wird
+// unverändert nur die Ausnahme in `noConnection`.
+describe('Anschlüsse einer Einheit', () => {
+  test('angeboten werden nur die Zählerarten des Objekts, dazu jede schon gesetzte Ausnahme', () => {
+    expect(connectionTypes([], [])).toEqual([])
+    expect(connectionTypes(['kaltwasser', 'kaltwasser'], [])).toEqual(['kaltwasser'])
+    expect(connectionTypes(['kaltwasser'], ['waerme'])).toEqual(['kaltwasser', 'waerme'])
+    expect(connectionTypes(['sonstig', 'waerme', 'kaltwasser'], [])).toEqual(['kaltwasser', 'waerme', 'sonstig'])
+    // Der Allgemeinstrom gehört dem Haus und nicht einer Einheit; nur eine gesetzte Ausnahme bleibt sichtbar.
+    expect(connectionTypes(['strom'], [])).toEqual([])
+    expect(connectionTypes(['strom'], ['strom'])).toEqual(['strom'])
+  })
+
+  test('Häkchen entfernen setzt genau diese Ausnahme, Häkchen setzen nimmt sie zurück', () => {
+    const f = { ...EMPTY_UNIT_FORM, name: 'Garage', areaM2: '15' }
+    const ohneWasser = setConnected(f, 'kaltwasser', false)
+    expect(ohneWasser.noConnection).toEqual(['kaltwasser'])
+    expect(setConnected(ohneWasser, 'kaltwasser', false).noConnection).toEqual(['kaltwasser'])
+    expect(setConnected(ohneWasser, 'kaltwasser', true).noConnection).toEqual([])
+  })
+
+  test('die Zusammenfassung nennt eine Ausnahme, sonst nichts', () => {
+    expect(connectionSummary([])).toBe('')
+    expect(connectionSummary(['kaltwasser'])).toBe('ohne Wasseranschluss')
+    expect(connectionSummary(['kaltwasser', 'waerme'])).toBe('ohne Wasser- und Wärmeanschluss')
+    expect(connectionSummary(['sonstig'])).toBe('ohne Anschluss für Sonstiges')
   })
 })

@@ -153,6 +153,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Einheiten …“. Beim Verbrauchsschlüssel ist der Zählertyp vorgewählt, wenn es nur einen gibt.
   Bei Einzelbeträgen heißt es „den Rest trägt der Vermieter“. Das Lexikon erklärt das Hausgeld
   (Vorschuss). ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Anschlüsse einer Einheit, positiv gefragt.** Statt „Kein Anschluss für“ fragt das
+  Wohnungsformular unter „Weitere Angaben — Anschlüsse“, welche Anschlüsse die Einheit hat;
+  angehakt heißt angeschlossen. Angeboten werden nur Zählerarten, die es im Objekt gibt, und eine
+  Ausnahme steht in der Zusammenfassung und in der Wohnungsliste („ohne Wasseranschluss“).
+  Gespeichert wird wie bisher nur die Ausnahme, bestehende Angaben gelten unverändert.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Zähler: Endstand, Datum und Einheit.** Fehlt beim Zählerwechsel der Endstand, steht in der
   Tabelle „Endstand alt: fehlt“ statt einer Lücke. Die Meldungen zu Ablesungen nennen das Datum
   deutsch („am 01.07.2025“). Die Einheit eines neuen Zählers folgt seiner Sparte: kWh für Wärme
