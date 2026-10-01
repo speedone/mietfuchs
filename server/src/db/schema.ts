@@ -17,6 +17,7 @@ import type {
   AiSlotName,
   CostKey,
   DepositStatus,
+  ExternalMeasure,
   MeterType,
   PropertyKind,
   Settings,
@@ -39,7 +40,8 @@ const exactly =
   <L extends readonly T[]>(values: L & ([T] extends [L[number]] ? unknown : never)): L =>
     values
 
-export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom'] as const)
+export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts'] as const)
+export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
@@ -118,6 +120,7 @@ export const units = sqliteTable(
     // Selbstgenutzt: kein Mietverhältnis, aber Teil der Verteilbasis.
     selfUsed: integer('self_used', { mode: 'boolean' }),
     selfPersons: integer('self_persons'),
+    mea: real('mea'),
     rooms: integer('rooms'),
     floor: text('floor'),
     notes: text('notes'),
@@ -130,6 +133,7 @@ export const units = sqliteTable(
     // Gleicher Grund, gleiche Abwehr in calc.ts (`selfPersonsOf`).
     notNegative('units_self_persons_not_negative', 'self_persons'),
     notNegative('units_rooms_not_negative', 'rooms'),
+    notNegative('units_mea_not_negative', 'mea'),
   ],
 )
 
@@ -282,6 +286,17 @@ export const costItems = sqliteTable(
     meterType: text('meter_type', { enum: METER_TYPES }),
     labor35aCents: integer('labor_35a_cents'),
     invoiceFile: text('invoice_file'),
+    // Die Angaben der Gemeinschaft zum Schlüssel „laut Gemeinschaftsabrechnung“ (#94), drei
+    // Spalten für einen Wert: alle drei oder keine.
+    externalMeasure: text('external_measure', { enum: EXTERNAL_MEASURES }),
+    externalTotal: real('external_total'),
+    // Ohne Vorzeichenbedingung, aus demselben Grund wie `amount_cents`: eine Gutschrift.
+    externalTotalCents: integer('external_total_cents'),
+    // Ob die Position Teilnehmer hat (#94), eigens gespeichert: Ohne diese Spalte sähe eine
+    // Position, deren letzte Teilnehmerwohnung gelöscht wurde, aus wie eine ohne Teilnehmer, und
+    // ihre Kosten verteilten sich still auf alle Wohnungen. So bleibt es eine leere Liste, und die
+    // Berechnung meldet sie.
+    participantsLimited: integer('participants_limited', { mode: 'boolean' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -291,6 +306,13 @@ export const costItems = sqliteTable(
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
     oneOf('cost_items_meter_type_known', 'meter_type', METER_TYPES),
+    oneOf('cost_items_external_measure_known', 'external_measure', EXTERNAL_MEASURES),
+    // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
+    check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
+    check(
+      'cost_items_external_complete',
+      sql.raw('("external_measure" IS NULL) = ("external_total" IS NULL) AND ("external_measure" IS NULL) = ("external_total_cents" IS NULL)'),
+    ),
     // Hier steht bewusst **keine** Bedingung auf `amount_cents`. Eine Gutschrift ist ein
     // negativer Betrag, und calc.test.ts hält den Fall ausdrücklich fest (Position
     // „Gutschrift" über -5000 Cent, die keine Warnung auslösen darf).
@@ -325,6 +347,44 @@ export const costItemShares = sqliteTable(
     // Fall, den die Verteilung selbst behandelt, und eine Grenze hier verböte Daten, die das
     // Fachliche zulässt.
     notNegative('cost_item_shares_percent_not_negative', 'percent'),
+  ],
+)
+
+// Die Teilnehmer einer Kostenposition (#94): Nur diese Wohnungen bilden ihre Verteilbasis. Keine
+// Zeile heißt alle Wohnungen des Objekts. Dasselbe Muster wie `cost_item_shares`, und aus
+// demselben Grund keine JSON-Spalte: Die Einträge sind Fremdschlüssel, und eine gelöschte
+// Wohnung fällt über `ON DELETE CASCADE` heraus.
+export const costItemParticipants = sqliteTable(
+  'cost_item_participants',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.costItemId, t.unitId] })],
+)
+
+// Einzelbeträge je Mietverhältnis (#94), etwa aus der Abrechnung eines Messdienstes. Ein
+// gelöschtes Mietverhältnis nimmt seinen Betrag mit; der Rest fällt dem Vermieter zu, wie bei
+// jedem verschwundenen Verteilziel.
+export const costItemAmounts = sqliteTable(
+  'cost_item_amounts',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    amountCents: integer('amount_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.costItemId, t.tenancyId] }),
+    // Ein negativer Einzelbetrag machte den Anteil des Vermieters größer als die Rechnung.
+    notNegative('cost_item_amounts_not_negative', 'amount_cents'),
   ],
 )
 

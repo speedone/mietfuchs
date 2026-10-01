@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { CostItem, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, CostKey, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
 import { systemLocation, writable } from './paths.ts'
@@ -106,9 +106,16 @@ export type ClosedSettlement = {
 // Die db.json kennt keine Objekte (#92): Sie beschreibt immer genau ein Haus, und erst der
 // Migrationsschritt 0001 hängt es an „Objekt 1“. Ihre Wohnungen, Zähler und Kostenpositionen
 // tragen deshalb kein `propertyId`.
-export type LegacyUnit = Omit<Unit, 'propertyId'>
+//
+// Ebenso kennt sie nichts aus #94: keine Miteigentumsanteile, keine Teilnehmer, keine Angaben
+// einer Gemeinschaft, keine Einzelbeträge und die beiden neuen Umlageschlüssel nicht. Der
+// Validator weist sie mit der eingefrorenen Liste aus legacy/schema.ts ab.
+export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
+export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
 export type LegacyMeter = Omit<Meter, 'propertyId'>
-export type LegacyCostItem = Omit<CostItem, 'propertyId'>
+export type LegacyCostItem = Omit<CostItem, 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts'> & {
+  key: LegacyCostKey
+}
 
 export type Db = {
   settings: Settings

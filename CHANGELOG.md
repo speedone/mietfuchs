@@ -19,6 +19,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   an. Dort kann ein Objekt auch einen abweichenden Vermieter, eine andere Bankverbindung oder
   Zahlungsfrist haben, etwa das Haus der Eltern oder einer Erbengemeinschaft; sonst gelten die
   Angaben aus den Einstellungen. ([#92](https://github.com/speedone/mietfuchs/issues/92))
+- **Vermietete Eigentumswohnungen: Umlage laut Gemeinschaftsabrechnung.** Tragen Sie als Betrag
+  Ihren Anteil aus der Hausgeldabrechnung ein und daneben Maßstab (etwa Miteigentumsanteile),
+  Summe in der Anlage und Gesamtkosten. Die Abrechnung zeigt dem Mieter den Rechenweg
+  („124 von 10.000 MEA · Gesamtkosten der Anlage 50.000,00 €“), und passt Ihr Betrag nicht zu
+  den Angaben, weist Mietfuchs darauf hin. Die Miteigentumsanteile einer Wohnung stehen in den
+  Stammdaten. ([#94](https://github.com/speedone/mietfuchs/issues/94))
+- **Einzelbeträge je Mieter**, etwa aus der Heizkostenabrechnung von Techem, ista, Brunata oder
+  Minol: Jeder Mieter trägt genau seinen Betrag, auch bei einem Wechsel unterm Jahr, und den Rest
+  trägt der Vermieter. Fehlt für einen Mieter ein Betrag, sagt die Abrechnung es.
+  ([#94](https://github.com/speedone/mietfuchs/issues/94))
+- **Nur bestimmte Wohnungen beteiligen**: Unter „Weitere Optionen“ einer Kostenposition lässt
+  sich festlegen, welche Wohnungen sie tragen, etwa der Aufzug nur für ein Haus.
+  ([#94](https://github.com/speedone/mietfuchs/issues/94))
 - **Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben**, als
   `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
   Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.

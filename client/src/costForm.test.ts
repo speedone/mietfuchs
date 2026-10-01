@@ -8,6 +8,9 @@ import {
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
+  amountsSumText,
+  externalHint,
+  tenanciesForAmounts,
   type ItemForm,
 } from './costForm'
 
@@ -169,5 +172,63 @@ describe('Bearbeiten einer gespeicherten Position', () => {
     })
     const r = buildCostItemBody(f, UNITS, 2025)
     expect((r as { body: Record<string, unknown> }).body.customShares).toEqual(original)
+  })
+})
+
+// ---------- Verteilbasis erweitern (#94) ----------
+
+describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
+  const t = (id: string, unitId: string, start = '2025-01-01', end: string | null = null) => ({
+    id, unitId, tenantName: id, persons: 1, personHistory: [], start, end, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+  })
+
+  test('die beiden neuen Schlüssel werden angeboten', () => {
+    expect(costKeyOptions([], 'area')).toEqual(expect.arrayContaining(['external', 'amounts']))
+  })
+
+  test('Teilnehmer: alle angehakt heißt null, damit neue Wohnungen dazugehören; bei Direktzuordnung nie', () => {
+    const alle = buildCostItemBody(form({ key: 'area', participants: ['u1', 'u2'] }), UNITS, 2025)
+    expect(alle).toMatchObject({ body: { participantUnitIds: null } })
+    const eine = buildCostItemBody(form({ key: 'area', participants: ['u2'] }), UNITS, 2025)
+    expect(eine).toMatchObject({ body: { participantUnitIds: ['u2'] } })
+    expect(buildCostItemBody(form({ key: 'area', participants: [] }), UNITS, 2025)).toHaveProperty('error')
+    const direkt = buildCostItemBody(form({ key: 'direct', directUnitId: 'u1', participants: ['u2'] }), UNITS, 2025)
+    expect(direkt).toMatchObject({ body: { participantUnitIds: null } })
+  })
+
+  test('Gemeinschaft: die Angaben kommen als ein Wert in den Rumpf, ohne sie gibt es einen Fehler', () => {
+    const r = buildCostItemBody(form({ key: 'external', amount: '620,00', externalMeasure: 'mea', externalTotal: '10.000', externalTotalAmount: '50.000,00' }), UNITS, 2025)
+    expect(r).toMatchObject({ body: { key: 'external', externalBasis: { measure: 'mea', total: 10000, totalCents: 5000000 }, tenancyAmounts: null } })
+    expect(buildCostItemBody(form({ key: 'external', externalTotal: '', externalTotalAmount: '50.000,00' }), UNITS, 2025)).toHaveProperty('error')
+    expect(buildCostItemBody(form({ key: 'area', externalTotal: '10000', externalTotalAmount: '1,00' }), UNITS, 2025)).toMatchObject({ body: { externalBasis: null } })
+  })
+
+  test('Gemeinschaft: der rechnerische Anteil steht zum Vergleich unter dem Betrag', () => {
+    const wohnungen = [unit('u1', { mea: 124 })]
+    const text = externalHint(form({ key: 'external', amount: '620,00', externalMeasure: 'mea', externalTotal: '10000', externalTotalAmount: '50.000,00' }), wohnungen)
+    expect(text).toMatch(/124 von 10\.000 MEA/)
+    expect(text).toMatch(/620,00/)
+  })
+
+  test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {
+    const mieter = [t('t1', 'u1', '2025-01-01', '2025-06-30'), t('t2', 'u1', '2025-07-01'), t('alt', 'u2', '2020-01-01', '2024-12-31')]
+    expect(tenanciesForAmounts(mieter, UNITS, 2025).map((x) => x.id)).toEqual(['t1', 't2'])
+    const ok = buildCostItemBody(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00', alt: '' } }), UNITS, 2025)
+    expect(ok).toMatchObject({ body: { key: 'amounts', tenancyAmounts: { t1: 30000, t2: 40000 }, externalBasis: null } })
+    expect(buildCostItemBody(form({ key: 'amounts', amount: '100,00', tenancyAmounts: { t1: '120,00' } }), UNITS, 2025)).toHaveProperty('error')
+    expect(buildCostItemBody(form({ key: 'amounts', amount: '100,00', tenancyAmounts: { t1: 'viel' } }), UNITS, 2025)).toHaveProperty('error')
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }))).toMatch(/700,00.*100,00 .*Vermieter/)
+  })
+
+  test('eine gespeicherte Position füllt die neuen Felder', () => {
+    const f = itemToForm({
+      id: 'c', propertyId: 'objekt-1', year: 2025, category: 'Heizung', description: 'H', amountCents: 80000, key: 'amounts',
+      participantUnitIds: ['u1'], tenancyAmounts: { t1: 30000 },
+      externalBasis: { measure: 'area', total: 1240, totalCents: 100000 },
+    })
+    expect(f.participants).toEqual(['u1'])
+    expect(f.tenancyAmounts).toEqual({ t1: '300,00' })
+    expect([f.externalMeasure, f.externalTotal, f.externalTotalAmount]).toEqual(['area', '1.240', '1.000,00'])
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'area' }).participants).toBeNull()
   })
 })

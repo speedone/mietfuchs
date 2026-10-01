@@ -147,3 +147,27 @@ test('Objekt: mit zwei Objekten lädt die Seite erst, wenn das Objekt feststeht 
   await waitFor(() => expect(gets).toContain('/api/costItems?property=objekt-1'))
   expect(gets.filter((u) => u === '/api/costItems' || u === '/api/meters')).toEqual([])
 })
+
+test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Eingetragene', async () => {
+  const mieter = [
+    { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
+  ]
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Kosten units={UNITS} settings={null} tenancies={mieter} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Heizung laut Techem' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '800,00' } })
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'amounts' } })
+  expect(select(/Umlageschlüssel/i).value).toBe('amounts')
+  fireEvent.change(screen.getByLabelText(/Meier \(OG links\)/), { target: { value: '312,40' } })
+  expect(screen.getByText(/487,60 € trägt der Vermieter/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ key: 'amounts', tenancyAmounts: { t1: 31240 }, externalBasis: null })
+})

@@ -33,6 +33,9 @@ function rootCause(err: unknown): string {
 // eine erfundene Übersetzung wäre schlechter als der echte Name.
 const FIELD_NAMES: Record<string, string> = {
   area_m2: 'Wohnfläche',
+  mea: 'Miteigentumsanteile',
+  external_total: 'Summe in der Anlage',
+  external_measure: 'Maßstab der Gemeinschaft',
   persons: 'Personenzahl',
   self_persons: 'Personen im eigenen Haushalt',
   rooms: 'Zimmerzahl',
@@ -58,7 +61,7 @@ const FIELD_NAMES: Record<string, string> = {
 const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}"`
 
 // Der Feldname aus dem Namen einer Prüfbedingung. Die Namen sind durchgehend
-// `<tabelle>_<feld>_not_negative` beziehungsweise `<tabelle>_<feld>_known`, und ein Test hält
+// `<tabelle>_<feld>_not_negative`, `_known`, `_positive` oder `_complete`, und ein Test hält
 // fest, dass das für jede Bedingung im Schema gilt: Die Meldung wird daraus abgeleitet, statt
 // einen Katalog zu pflegen, den beim nächsten Feld jemand vergisst.
 function fieldOfConstraint(name: string, suffix: string): string {
@@ -106,6 +109,14 @@ function checkMessage(name: string): string {
     const feld = fieldOfConstraint(name, '_known')
     const beispiel = name === 'cost_items_key_known' ? ` Zulässig sind: ${COST_KEYS.join(', ')}.` : ''
     return `Für ${feld} ist ein Wert angekommen, den Mietfuchs nicht kennt.${beispiel} Bitte wählen Sie einen aus der Liste.`
+  }
+  // Zwei Endungen aus #94. `_positive`: eine Zahl, durch die geteilt wird. `_complete`: mehrere
+  // Spalten, die nur zusammen einen Wert ergeben.
+  if (name.endsWith('_positive')) {
+    return `Für ${fieldOfConstraint(name, '_positive')} muss eine Zahl größer als null stehen, sonst lässt sich der Anteil nicht berechnen.`
+  }
+  if (name.endsWith('_complete')) {
+    return 'Die Angaben aus der Abrechnung der Gemeinschaft sind unvollständig: Maßstab, Summe in der Anlage und Gesamtkosten gehören zusammen. Bitte tragen Sie alle drei ein oder keine.'
   }
   if (name.endsWith('_is_json')) {
     // Anders als die beiden oben ist das **kein** Fehler in einer Eingabe. Der eingefrorene

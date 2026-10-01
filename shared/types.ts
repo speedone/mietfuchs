@@ -37,6 +37,9 @@ export type Unit = {
   // Mieter umgelegt werden; siehe UnitUsage.
   selfUsed?: boolean
   selfPersons?: number // Personen im eigenen Haushalt — nur für den Personenschlüssel
+  // Miteigentumsanteile (#94), für den Schlüssel „laut Gemeinschaftsabrechnung“ bei einer
+  // vermieteten Eigentumswohnung.
+  mea?: number
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
   floor?: string // Etage, z. B. „EG", „1. OG"
@@ -152,7 +155,19 @@ export type Reading = {
   note?: string
 }
 
-export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom'
+export type CostKey = 'area' | 'persons' | 'units' | 'direct' | 'meter' | 'custom' | 'external' | 'amounts'
+
+// Der Maßstab einer Gemeinschaft (#94): Miteigentumsanteile, Fläche oder Einheiten.
+export type ExternalMeasure = 'mea' | 'area' | 'units'
+
+// Die Angaben aus der Abrechnung der Gemeinschaft zu einer Kostenart: Summe des Maßstabs in der
+// Anlage und Gesamtkosten. Sie stehen neben dem Betrag der Kostenposition, der der eigene Anteil
+// ist, und dienen dem Rechenweg auf der Abrechnung und der Plausibilitätsprüfung.
+export type ExternalBasis = {
+  measure: ExternalMeasure
+  total: number
+  totalCents: number
+}
 
 export type CostItem = {
   id: string
@@ -169,6 +184,13 @@ export type CostItem = {
   // Vereinbarter Schlüssel: Wohnungs-ID → Prozentanteil. Die Anteile gelten absolut;
   // summieren sie unter 100 %, bleibt der Rest beim Vermieter.
   customShares?: Record<string, number> | null
+  // Nur diese Wohnungen bilden die Verteilbasis (#94); fehlend oder null heißt alle.
+  participantUnitIds?: string[] | null
+  // Schlüssel „laut Gemeinschaftsabrechnung“ (#94).
+  externalBasis?: ExternalBasis | null
+  // Schlüssel „Einzelbeträge je Mietverhältnis“ (#94): Mietverhältnis-ID → Betrag in Cent, etwa
+  // aus der Abrechnung eines Messdienstes.
+  tenancyAmounts?: Record<string, number> | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
 }

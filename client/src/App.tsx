@@ -216,7 +216,7 @@ function Shell() {
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} />
         )}
-        {tab === 'kosten' && <Kosten units={units} settings={settings} />}
+        {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} />}
         {tab === 'mietkonto' && <Mietkonto />}
         {tab === 'zaehler' && <Zaehler units={units} />}
         {tab === 'belege' && <Belege />}
