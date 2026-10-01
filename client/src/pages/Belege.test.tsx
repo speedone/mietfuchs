@@ -34,6 +34,12 @@ const ITEMS: Record<string, CostItem[]> = {
 
 let sent: { url: string; method: string; body: unknown }[]
 
+// Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
+const SETTLEMENT = {
+  year: YEAR, statements: [{ rows: [{ costItemId: 'w1' }, { costItemId: 'gs' }, { costItemId: 'w2' }] }],
+  landlord: { rows: [], totalCents: 0 },
+}
+
 beforeEach(() => {
   localStorage.clear()
   sent = []
@@ -50,6 +56,7 @@ beforeEach(() => {
     if (u.pathname === '/api/properties') body = PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf')]
     else if (u.pathname === '/api/costItems') body = ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []
+    else if (u.pathname.startsWith('/api/settlement/')) body = SETTLEMENT
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
 })
@@ -181,4 +188,30 @@ test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
   fireEvent.click(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }))
   expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
+})
+
+test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts und Jahres', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const link = screen.getByRole('link', { name: /Belege für die Steuer/ }) as HTMLAnchorElement
+  expect(link.getAttribute('href')).toBe(`/api/receipts/tax/${YEAR}?property=p1`)
+})
+
+test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was fehlt', async () => {
+  const make = vi.fn(async () => undefined)
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} makeTenantFolder={make} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.click(screen.getByText(/Belegmappe für Mieter/))
+  const summary = await screen.findByText(/2 Belege zu 3 umgelegten Positionen/)
+  expect(summary.textContent).toMatch(/1 Position ohne Beleg/)
+  fireEvent.click(screen.getByRole('button', { name: 'PDF erstellen' }))
+  await waitFor(() => expect(make).toHaveBeenCalled())
+  const [plan] = make.mock.calls[0] as unknown as [{ documents: { upload: UploadInfo }[] }]
+  expect(plan.documents.map((d) => d.upload.file)).toEqual(['2_wasser.pdf', '1_gs.pdf'])
 })

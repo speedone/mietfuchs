@@ -4432,3 +4432,33 @@ test('KI-Auswertung (#170): ein Beleg aus dem Posteingang wird ausgewertet, ohne
     }
   })
 })
+
+test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der Anlage V, nur dieses Objekt', async () => {
+  await withProperties(async (s, b) => {
+    const gs = await uploadBelegFile(s, '%PDF-gs', 'Grundsteuer.pdf')
+    const verw = await uploadBelegFile(s, '%PDF-verw', 'Verwaltung.pdf')
+    const fremd = await uploadBelegFile(s, '%PDF-fremd', 'Fremd.pdf')
+    const post = (property: string, body: Record<string, unknown>) =>
+      s.api<CostItem>(`/api/costItems?property=${property}`, { method: 'POST', body: JSON.stringify({ year: 2025, key: 'area', amountCents: 10000, ...body }) })
+    await post('objekt-1', { category: 'Grundsteuer', description: 'GS', invoiceFile: gs })
+    await post('objekt-1', { category: 'Nicht umlagefähig', description: 'Verwaltung', invoiceFile: verw })
+    await post('objekt-1', { category: 'Grundsteuer', description: 'Vorjahr', year: 2024, invoiceFile: verw })
+    await post(b.id, { category: 'Grundsteuer', description: 'GS B', invoiceFile: fremd })
+
+    const res = await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('content-type'), 'application/zip')
+    assert.match(res.headers.get('content-disposition') ?? '', /attachment; filename="belege-steuer-2025-.*\.zip"/)
+    const zip = new AdmZip(Buffer.from(await res.arrayBuffer()))
+    const namen = zip.getEntries().map((e) => e.entryName).sort()
+    assert.deepEqual(namen, [
+      '1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf',
+      '4 Verwaltung & Instandhaltung/Nicht umlagefähig - Verwaltung.pdf',
+      'Übersicht.csv',
+    ])
+    assert.equal(zip.readAsText('1 Grundsteuer & öffentliche Abgaben/Grundsteuer - Grundsteuer.pdf'), '%PDF-gs')
+    assert.equal((await fetch(`${s.base}/api/receipts/tax/kein-jahr?property=objekt-1`)).status, 400)
+    // Ohne Objekt bei mehreren Objekten: abgelehnt statt still beide
+    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025`)).status, 400)
+  })
+})
