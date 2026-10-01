@@ -91,18 +91,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Steuerübersicht. ([#93](https://github.com/speedone/mietfuchs/issues/93))
 - **Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben**, als
   `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
-  Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.
+  Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt. Wie Sie
+  damit zu einer älteren Version zurückkehren, steht in [MIGRATION.md](MIGRATION.md) unter „Zurück
+  zu einer älteren Version“.
   ([#92](https://github.com/speedone/mietfuchs/issues/92))
 
 ### Behoben
 
-- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite
-  der Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
+- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite der
+  Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
   Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als
   0, damit der Hinweis „Endstand fehlt“ erscheint, statt dass ein falscher Verbrauch Kosten
   zwischen Mietern verschiebt. Zählerstände werden außerdem wie alle Mengen gelesen: „1.234“ ist
-  1.234 und nicht 1,234, auf der Zähler-Seite wie in der Schnellerfassung; einen vom Foto
-  gelesenen Stand zeigt die Schnellerfassung in deutscher Schreibweise an. Prüfen Sie bitte Ablesungen mit Zählerwechsel und dem Endstand 0.
+  1.234 und nicht 1,234, auf der Zähler-Seite wie in der Schnellerfassung; einen vom Foto gelesenen
+  Stand zeigt die Schnellerfassung in deutscher Schreibweise an. Prüfen Sie bitte Ablesungen mit
+  Zählerwechsel und dem Endstand 0.
   ([#149](https://github.com/speedone/mietfuchs/issues/149))
 - **Ein Objektwechsel speichert nichts mehr ins falsche Haus.** Wechselten Sie das Objekt,
   während ein Formular offen war, landete der Eintrag still im anderen Objekt, etwa eine Zahlung
@@ -191,11 +194,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Im laufenden Jahr zählen nur die Monate
   vor dem aktuellen. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
   ([#133](https://github.com/speedone/mietfuchs/issues/133))
-- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
-  einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
-  ein ganzes Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil
-  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12.,
-  steht kein Vorschlag mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr einzog.**
+  Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für ein ganzes
+  Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil zuerst auf das
+  volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12., steht kein Vorschlag
+  mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
   ([#134](https://github.com/speedone/mietfuchs/issues/134))
 - **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
   Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen
@@ -268,12 +271,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Außerdem erklärt die Warnung zur Warmmiete, wie Mietfuchs die Ausnahme für das
   Zweifamilienhaus mit selbstbewohnter Wohnung erkennt.
   ([#116](https://github.com/speedone/mietfuchs/issues/116))
-- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
-  jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
-  bis zum 30.06.2024 über die Nebenkosten umgelegt werden, und nur bei Anlagen, die vor dem
-  01.12.2021 errichtet wurden; danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig,
-  bei einer Gemeinschaftsantenne auch Prüfung und Einstellung. Für das Abrechnungsjahr 2024 und später weisen die
-  Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
+- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es jetzt.**
+  Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch bis zum
+  30.06.2024 über die Nebenkosten umgelegt werden, und nur bei Anlagen, die vor dem 01.12.2021
+  errichtet wurden; danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig, bei einer
+  Gemeinschaftsantenne auch Prüfung und Einstellung. Für das Abrechnungsjahr 2024 und später weisen
+  die Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
   kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
   Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.
   ([#107](https://github.com/speedone/mietfuchs/issues/107))
