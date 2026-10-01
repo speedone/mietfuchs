@@ -120,3 +120,25 @@ test('Kosten: dieselbe Regel beim Übernehmen aus der Auswertung', async () => {
   await waitFor(() => expect(posted).toHaveLength(1))
   expect(posted[0]).toMatchObject({ description: 'Rückerstattung', amountCents: -2000 })
 })
+
+test('„Alle grünen übernehmen“ lässt eine gelbe Gutschrift stehen, statt sie mit dem Beleg verschwinden zu lassen', async () => {
+  const year = new Date().getFullYear() - 1
+  extraction = {
+    vendor: 'Stadtwerke', invoiceDate: `${year}-03-01`,
+    positions: [
+      { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 100 },
+      { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 80 },
+      { description: 'Gutschrift Vorjahr', category: 'Wasser/Abwasser', amountEur: -30 },
+    ],
+  }
+  await evaluate()
+  fireEvent.click(screen.getByRole('button', { name: /Alle grünen übernehmen/ }))
+  await waitFor(() => expect(posted).toHaveLength(2))
+  expect(posted.map((p) => p.description)).toEqual(['Frischwasser', 'Abwasser'])
+  // Der Beleg bleibt offen: Die Gutschrift steht noch da, angehakt, die übernommenen nicht mehr.
+  await waitFor(() => expect(checkboxOf('Frischwasser').checked).toBe(false))
+  expect(checkboxOf('Abwasser').checked).toBe(false)
+  expect(checkboxOf('Gutschrift Vorjahr').checked).toBe(true)
+  expect(screen.getByRole('button', { name: /Diese übernehmen/ })).toBeTruthy()
+  expect(screen.getByText(/noch zu prüfen: „Gutschrift Vorjahr“/)).toBeTruthy()
+})

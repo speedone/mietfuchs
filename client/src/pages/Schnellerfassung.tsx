@@ -101,6 +101,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const [readings, setReadings] = useState<Reading[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
+  // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
+  const [pending, setPending] = useState('')
 
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
@@ -364,10 +366,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
     const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(p) !== null) : []
     if (blocked.length > 0) {
+      setPending('')
       setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
       return
     }
     setError('')
+    setPending('')
     const done: number[] = []
     try {
       if (entry.kind === 'rechnung') {
@@ -387,6 +391,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // Übernimmt alle grünen, angehakten Vorschläge über sämtliche Einträge hinweg
   async function adoptAllGreen() {
     setError('')
+    setPending('')
+    const left: string[] = []
     for (const entry of queue) {
       const es = scored.get(entry.id)
       if (!es || entry.status !== 'fertig') continue
@@ -408,8 +414,18 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         await loadData()
         return
       }
-      if (any) patchEntry(entry.id, { status: 'übernommen' })
+      // Bleiben angehakte Positionen übrig, die nicht grün sind (etwa eine Gutschrift, die immer
+      // gelb ist), gilt der Beleg nicht als übernommen; sonst verschwänden sie mit ihm still (#139).
+      // Die übernommenen werden abgehakt, damit „Diese übernehmen“ sie nicht doppelt anlegt.
+      const rest = entry.kind === 'rechnung'
+        ? (entry.positions ?? []).filter((p, i) => p.checked && !done.includes(i)).map((p) => `„${p.description}“`)
+        : []
+      if (rest.length > 0) {
+        for (const i of done) updatePos(entry.id, i, { checked: false })
+        left.push(...rest)
+      } else if (any) patchEntry(entry.id, { status: 'übernommen' })
     }
+    if (left.length > 0) setPending(`Übernommen ist, was grün war. Angehakt und noch zu prüfen: ${left.join(', ')}. Bitte ansehen und mit „Diese übernehmen“ übernehmen.`)
     await loadData()
   }
 
@@ -430,6 +446,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
       </p>
       {error && <div className="error">{error}</div>}
+      {pending && <div className="warn">{pending}</div>}
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'center' }}>

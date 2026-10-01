@@ -116,8 +116,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   stimmt. Eine Gutschrift trägt keinen §35a-Lohnanteil und lässt sich nicht nach Einzelbeträgen
   verteilen; das Formular sagt beides. Dieselbe Regel gilt beim Übernehmen ausgewerteter Belege in
   der Schnellerfassung und bei den Kosten: Eine Gutschrift wird übernommen und ist in der Vorschau
-  als solche markiert; eine Position mit 0 € fällt nicht mehr still weg, sondern ist als nicht
-  übernehmbar gekennzeichnet und nicht vorab angehakt.
+  gelb als Gutschrift markiert; eine Position mit 0 € fällt nicht mehr still weg, sondern ist als
+  nicht übernehmbar gekennzeichnet und nicht vorab angehakt. „Alle grünen übernehmen“ übernimmt
+  nur die grünen Positionen; bleiben angehakte gelbe oder rote übrig, etwa eine Gutschrift, bleibt
+  der Beleg offen, und ein Hinweis nennt, was noch zu prüfen ist.
   ([#139](https://github.com/speedone/mietfuchs/issues/139))
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
