@@ -242,6 +242,9 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .rent-month.partial { background: var(--amber-soft); border-color: var(--amber-soft); color: var(--amber); cursor: pointer; }
 .rent-month.open { background: var(--red-soft); border-color: var(--red-soft); color: var(--red); cursor: pointer; }
 .rent-month.none { color: var(--muted); opacity: 0.5; }
+/* noch nicht fällig (#133): neutral, aber buchbar (Vorauszahlung) */
+.rent-month.notDue { color: var(--muted); border-style: dashed; cursor: pointer; }
+.rent-month.notDue:hover { outline: 2px solid var(--accent); }
 .rent-month.partial:hover, .rent-month.open:hover { outline: 2px solid var(--accent); }
 @media (max-width: 720px) { .rent-grid { grid-template-columns: repeat(6, 1fr); } }
 /* Sechs Monate mit Betrag passen auf dem Handy nicht in die Karte (#137), vier schon. */

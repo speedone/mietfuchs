@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import { isNotAllocable } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
@@ -12,6 +13,7 @@ import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LAB
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
+import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 
@@ -418,7 +420,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <thead>
                     <tr>
                       <th>Kostenart</th>
-                      <th className="num">Gesamtkosten</th>
+                      <th className="num">{totalColumnLabel(st.rows)}</th>
                       <th>Verteilung</th>
                       <th className="num">Ihr Anteil</th>
                     </tr>
@@ -434,7 +436,10 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                                   {r.category}
                                   {r.description !== r.category && <div className="muted">{r.description}</div>}
                                 </td>
-                                <td className="num">{fmtEuro(r.totalCents)}</td>
+                                <td className="num">
+                                  {fmtEuro(r.totalCents)}
+                                  {totalNote(r) && <div className="muted">{totalNote(r)}</div>}
+                                </td>
                                 <td>
                                   {r.keyLabel}
                                   {r.basisText && <div className="muted">{r.basisText}</div>}
@@ -530,7 +535,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <p>
                       Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß
                       §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
-                      (ein Zwölftel Ihrer Jahreskosten, gerundet).
+                      ({suggestionBasis(st, data.daysInYear)}).
                     </p>
                   )}
                   {st.total35aCents > 0 && (
@@ -605,7 +610,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <tr key={i}>
                       <td>{r.category}<div className="muted">{r.description}</div></td>
                       <td className="num">{fmtEuro(r.totalCents)}</td>
-                      <td className="muted">{r.category === 'Nicht umlagefähig' ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
+                      <td className="muted">{isNotAllocable(r.category) ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
                       <td className="num">{fmtEuro(r.shareCents)}</td>
                     </tr>
                   ))}

@@ -132,6 +132,30 @@ alles, was Sie hineinschrieben, stünde danach als zweiter Bestand neben Ihrem e
 
 ---
 
+## Zurück zu einer älteren Version
+
+Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben, im Datenordner als
+`mietfuchs.sqlite.vor-<Schritt>`. Mit ihr kommen Sie zurück:
+
+1. Mietfuchs beenden.
+2. `mietfuchs.sqlite` beiseitelegen, also umbenennen oder in einen anderen Ordner verschieben,
+   **nicht löschen**: Darin steht alles, was Sie nach dem Update eingetragen haben.
+3. Die Sicherung des **ersten** Schritts, den die neue Version angewandt hat, in
+   `mietfuchs.sqlite` umbenennen. Beim Update auf die Version mit mehreren Objekten ist das
+   `mietfuchs.sqlite.vor-0001_objekte`. Liegen mehrere Sicherungen da, ist es die mit der
+   kleinsten Nummer aus diesem Update.
+4. Die ältere Version starten.
+
+Was Sie seit dem Update eingegeben haben, fehlt dann. Umgekehrt ist nichts zu befürchten: Eine
+ältere Version erkennt eine Datenbank aus einer neueren, arbeitet nicht mit ihr, sondern sagt es
+in der Oberfläche, und verändert sie dabei nicht.
+
+Zurück zu einer Version vor der Datenbank (v0.7.x) geht es anders: Dort benennen Sie
+`db.json.abgeloest` wieder in `db.json` um und legen `mietfuchs.sqlite` beiseite. Was Sie seit dem
+Umstieg eingegeben haben, fehlt dann.
+
+---
+
 ## Backup
 
 Am Backup ändert sich nichts: **diesen Ordner kopieren.** Wer lieber auf den Knopf drückt, bekommt

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
-import { usageOf } from '../types'
+import { isNotAllocable, usageOf } from '../types'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
-import { meterReadiness } from '../meterCheck'
+import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
 import { noticesNeedAttention } from '../notices'
 import { zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
@@ -126,7 +126,13 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
     const meterTypes = new Set(yearItems.filter((c) => c.key === 'meter').map((c) => c.meterType))
-    if (meterTypes.size === 0) {
+    const heatingIds = new Set(heatingWithoutConsumption(settlement))
+    const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
+    if (meterTypes.size === 0 && heatingWithout.length > 0) {
+      // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
+      list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
+        detail: `${heatingWithout.map((c) => `„${c.description}“`).join(', ')} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um 15 % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
+    } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
     } else {
@@ -151,7 +157,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // denen die Anteile fehlen; wie in der Berechnung nur die Teilnehmer (Durchsicht zu #105).
     const meaIds = new Set(
       yearItems
-        .filter((c) => c.key === 'external' && c.externalBasis?.measure === 'mea' && c.category !== 'Nicht umlagefähig')
+        .filter((c) => c.key === 'external' && c.externalBasis?.measure === 'mea' && !isNotAllocable(c.category))
         .flatMap((c) => c.participantUnitIds ?? units.filter((u) => usageOf(u) !== 'ausgenommen').map((u) => u.id)),
     )
     const meaMissing = units.filter((u) => meaIds.has(u.id) && usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))

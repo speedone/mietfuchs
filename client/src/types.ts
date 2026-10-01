@@ -54,7 +54,14 @@ export const CATEGORIES = [
   'Heizung und Warmwasser',
   'Sonstige Betriebskosten',
   'Nicht umlagefähig',
+  // #143: nicht umlagefähig und steuerlich erst bei Verwendung abziehbar
+  'Zuführung Erhaltungsrücklage',
 ]
+
+// Kostenarten, die nie auf Mieter verteilt werden; dieselbe Menge wie NOT_ALLOCABLE_CATEGORIES in
+// server/src/calc.ts (categories.test.ts hält beide zusammen).
+export const NOT_ALLOCABLE: readonly string[] = ['Nicht umlagefähig', 'Zuführung Erhaltungsrücklage']
+export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE.includes(category)
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'nach Wohnfläche',
@@ -73,6 +80,13 @@ export function matchCategory(raw: string): string {
   if (CATEGORIES.includes(raw)) return raw
   const s = raw.toLowerCase()
   if (/müll|abfall|restabfall|biotonne|wertstoff/.test(s)) return 'Müllabfuhr'
+  // Vor „Instandhaltung“: Die Instandhaltungsrücklage ist die Zuführung zur Erhaltungsrücklage (#143).
+  // Eine Entnahme oder eine Zahlung „aus der Rücklage“ ist keine Zuführung; dieselbe Regel wie
+  // `looksLikeReserveContribution` in server/src/calc.ts.
+  if (/r(ü|ue|u)cklage/.test(s) && (/zuf(ü|ue|u)hrung/.test(s) || !/entnahme|\baus\s+(der|dem)\b/.test(s))) return 'Zuführung Erhaltungsrücklage'
+  // Eine Entnahme oder Zahlung aus der Rücklage ist eine bezahlte Erhaltungsmaßnahme: nicht
+  // umlagefähig, aber Werbungskosten (zweite Browserabnahme).
+  if (/r(ü|ue|u)cklage/.test(s)) return 'Nicht umlagefähig'
   // Reparaturen, Instandhaltung und Dämmung zuerst: „Heizungsreparatur“ ist nicht umlagefähig und
   // darf nicht über „heiz“ zur Heizkostenart werden.
   if (/instandhalt|reparatur|dämmung|verwaltung|nicht umlage/.test(s)) return 'Nicht umlagefähig'

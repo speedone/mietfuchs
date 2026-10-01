@@ -26,6 +26,7 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
+import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -168,6 +169,9 @@ const noticeKinds = {
   'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab', terms: ['mainMeter', 'meterReading'] },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
+  'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
+  'heating.consumption-share': { level: 'hint', title: 'Verbrauchsanteil der Heizkosten außerhalb 50 bis 70 %', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
+  'heating.may-agree-otherwise': { level: 'hint', title: 'Heizkosten nicht nach Verbrauch verteilt (Zweifamilienhaus)', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
@@ -452,8 +456,22 @@ function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
 // Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
 // Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
 // Status („bezahlt / teilweise / offen") wider, bis zu welchem Monat das Konto gedeckt ist.
-export function rentLedger(snapshot: Snapshot): RentLedger {
+// **Fällig ist nur, was vor dem Monat des Stichtags liegt** (#133). Die Miete ist bis zum dritten
+// Werktag fällig (§ 556b Abs. 1 BGB), und eine Überweisung braucht ein paar Tage, bis sie gebucht
+// ist; den laufenden Monat erst ab einem bestimmten Tag mitzuzählen, hinge an Wochenenden und
+// Feiertagen. Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts. Ohne
+// Stichtag (Steuer, Regression, Tests) gilt das ganze Jahr als fällig. Die Berechnung fragt nie
+// selbst nach „heute“; die Routen reichen den Tag hinein.
+export function dueMonthsOf(year: number, asOf: string | undefined): number {
+  if (!asOf || asOf.slice(0, 4) > String(year)) return 12
+  return asOf.slice(0, 4) < String(year) ? 0 : Number(asOf.slice(5, 7)) - 1
+}
+
+// `asOf` wie bei der Abrechnung: Monate ab dem des Stichtags sind „noch nicht fällig“ und kein
+// Rückstand (zweite Browserabnahme). Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
+export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
   const year = snapshot.year
+  const dueMonths = dueMonthsOf(year, options.asOf)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
@@ -501,13 +519,14 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         const applied = Math.max(0, Math.min(remaining, mo.sollCents))
         mo.paidCents = applied
         remaining -= applied
-        mo.status = applied >= mo.sollCents ? 'paid' : applied > 0 ? 'partial' : 'open'
+        mo.status = applied >= mo.sollCents ? 'paid' : mo.month > dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
       }
 
       const sollYearCents = months.reduce((a, mo) => a + mo.sollCents, 0)
       const baseRentYearCents = months.reduce((a, mo) => a + mo.baseRentCents, 0)
       const prepaymentYearCents = months.reduce((a, mo) => a + mo.prepaymentCents, 0)
       const flatRateYearCents = months.reduce((a, mo) => a + mo.flatRateCents, 0)
+      const dueSollCents = months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
@@ -519,7 +538,9 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
         flatRateYearCents,
         paidYearCents,
         balanceCents: paidYearCents - sollYearCents,
-        openMonths: months.filter((mo) => mo.status !== 'paid').length,
+        dueSollCents,
+        arrearsCents: Math.max(0, dueSollCents - paidYearCents),
+        openMonths: months.filter((mo) => mo.status === 'open' || mo.status === 'partial').length,
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
@@ -531,9 +552,21 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
       paidYearCents: rows.reduce((a, r) => a + r.paidYearCents, 0),
-      openCents: rows.reduce((a, r) => a + (r.balanceCents < 0 ? -r.balanceCents : 0), 0),
+      openCents: rows.reduce((a, r) => a + r.arrearsCents, 0),
     },
   }
+}
+
+// ---------- §35a-Lohnanteil ----------
+
+// Gilt der §35a-Lohnanteil einer Position (#148)? Er muss zwischen 0 und dem Rechnungsbetrag
+// liegen; an einer Gutschrift gibt es deshalb keinen. Fehlt er, ist er 0. Ein ungültiger ergibt
+// `null`: Die Abrechnung warnt dann (`labor35a.invalid`) und bescheinigt nichts, und die
+// Steuerübersicht zählt ihn nicht. Einmal formuliert, damit beide nie Verschiedenes nennen.
+export function validLabor35aCents(item: { amountCents: number, labor35aCents?: number | null }): number | null {
+  const labor = item.labor35aCents ?? 0
+  if (labor === 0) return 0
+  return !Number.isFinite(labor) || labor < 0 || labor > item.amountCents ? null : labor
 }
 
 // ---------- Steuer-Export (Anlage V) ----------
@@ -542,7 +575,8 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
 // Gruppen statt fester Zeilennummern (die sich jährlich ändern können). Unbekannte Kategorien
 // fallen auf „Sonstige Werbungskosten".
 // Ausgeführt für categories.test.ts, das die drei Listen der Kostenarten zusammenhält.
-export const ANLAGE_V_GROUP: Record<string, string> = {
+// `null` heißt: keine Werbungskosten dieses Jahres, sondern gesondert ausgewiesen (#143).
+export const ANLAGE_V_GROUP: Record<string, string | null> = {
   Grundsteuer: 'Grundsteuer & öffentliche Abgaben',
   'Wasser/Abwasser': 'Laufende Betriebskosten',
   Niederschlagswasser: 'Laufende Betriebskosten',
@@ -560,6 +594,9 @@ export const ANLAGE_V_GROUP: Record<string, string> = {
   'Sach- und Haftpflichtversicherung': 'Versicherungen',
   'Sonstige Betriebskosten': 'Sonstige Werbungskosten',
   'Nicht umlagefähig': 'Verwaltung & Instandhaltung',
+  // #143: Die Zuführung zur Erhaltungsrücklage ist erst Werbungskosten, wenn und soweit die
+  // Gemeinschaft sie für Erhaltungsmaßnahmen verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
+  'Zuführung Erhaltungsrücklage': null,
 }
 // Anzeigereihenfolge der Gruppen in der Auswertung
 const ANLAGE_V_GROUP_ORDER = [
@@ -670,8 +707,15 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
   const items = snapshot.costItems.filter((c) => c.year === year)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
+  // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
+  // Bewusst nach `Object.hasOwn` gefragt und nicht mit `??`: `null` ist hier eine Angabe.
+  let reserveContributionCents = 0
   for (const item of items) {
-    const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
+    const group = Object.hasOwn(ANLAGE_V_GROUP, item.category) ? ANLAGE_V_GROUP[item.category] : 'Sonstige Werbungskosten'
+    if (group === null) {
+      reserveContributionCents += item.amountCents
+      continue
+    }
     let cats = byGroup.get(group)
     if (!cats) {
       cats = new Map()
@@ -679,7 +723,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     }
     const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0 }
     prev.amountCents += item.amountCents
-    prev.labor35aCents += item.labor35aCents ?? 0
+    // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
+    prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
@@ -699,6 +744,13 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     })
   const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
+  // Positionen „Nicht umlagefähig“, die nach Rücklage aussehen (#143). Gerechnet wird wie
+  // erfasst; die Steuerübersicht rät nur, die Kostenart zu ändern. Der Hinweis gehört hierher und
+  // nicht unter die Hinweise der Abrechnung: Auf die Abrechnung wirkt die Kostenart nicht, beide
+  // sind nicht umlagefähig, und dort bliebe er im Cockpit ein offener Punkt ohne Folge.
+  const reserveSuspects = items
+    .filter((c) => c.category === 'Nicht umlagefähig' && looksLikeReserveContribution(c.description))
+    .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
 
   // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
   //
@@ -771,6 +823,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, labor35aCents },
+    reserveContributionCents,
+    reserveSuspects,
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
@@ -835,9 +889,12 @@ type TenancyWithUnit = SnapshotTenancy & { days: number, unit: SnapshotUnit }
 
 // Ziel einer Kostenverteilung: das Mietverhältnis, sein (float) Rohanteil in Cent und der Text,
 // der die Berechnungsgrundlage auf der Abrechnung beschreibt.
-// `ownShare`: bei der Gemeinschaftsabrechnung der Anteil innerhalb der eigenen Wohnungen, nach
-// dem wirklich gerechnet wird (#114); die Verteilbasis nennt dort die Summe der ganzen Anlage.
-type Target = { t: TenancyWithUnit, raw: number, basisText: string, ownShare?: string }
+// `community`: bei der Gemeinschaftsabrechnung die Schritte davor (#114, #144). Erst der Anteil an
+// der Gemeinschaft (Anteil × Kosten der Gemeinschaft), dann, ob der Betrag davon abweicht, dann
+// der Anteil der Wohnung innerhalb der Wohnungen des Vermieters, nach dem wirklich verteilt wird;
+// `ownShare` fehlt, wenn er nur eine hat.
+type CommunitySteps = { costsCents: number, share: string, term: TermId, appliedCents: number | null, ownShare: string | null }
+type Target = { t: TenancyWithUnit, raw: number, basisText: string, community?: CommunitySteps }
 
 // Verbrauch und Zähler eines Zählertyps, aufbereitet für die Verteilung. Der Wert ist bewusst
 // optional (nicht `Record<string, ConsumptionByTypeEntry>`): zu einer Kostenposition mit einem
@@ -874,9 +931,29 @@ export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'not
   legalBasis: LegalBasis
 }
 
-// Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93). Dieselbe Zeichenkette
-// steht in CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
-export const HEATING_CATEGORY = 'Heizung und Warmwasser'
+// Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93), steht mit der Ausnahme
+// des § 2 HeizkostenV in shared/heating.ts; hier weitergereicht für die bisherigen Importe.
+export { HEATING_CATEGORY }
+
+// Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung (#143): nicht umlagefähig wie
+// „Nicht umlagefähig“, aber steuerlich anders (siehe ANLAGE_V_GROUP).
+export const RESERVE_CATEGORY = 'Zuführung Erhaltungsrücklage'
+// Woran eine Beschreibung nach Rücklage aussieht: Rücklage, Instandhaltungs- und
+// Erhaltungsrücklage, auch ohne Umlaut geschrieben.
+// Eine Entnahme oder eine Zahlung „aus der Rücklage“ ist keine Zuführung (Durchsicht): Sie ist in
+// dem Jahr Werbungskosten, in dem die Gemeinschaft das Geld ausgibt. Dieselbe Regel steht in
+// matchCategory (client/src/types.ts); categories.test.ts prüft beide an denselben Texten.
+const RESERVE_PATTERN = /r(ü|ue|u)cklage/i
+const RESERVE_WITHDRAWAL = /entnahme|\baus\s+(der|dem)\b/i
+// Wer „Zuführung“ schreibt, meint sie, auch „aus dem Hausgeld“.
+const RESERVE_CONTRIBUTION = /zuf(ü|ue|u)hrung/i
+export const looksLikeReserveContribution = (text: string): boolean =>
+  RESERVE_PATTERN.test(text) && (RESERVE_CONTRIBUTION.test(text) || !RESERVE_WITHDRAWAL.test(text))
+
+// Kostenarten, die nie auf Mieter verteilt werden. Dieselbe Menge steht als NOT_ALLOCABLE in
+// client/src/types.ts; categories.test.ts hält beide zusammen.
+export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY]
+export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEGORIES.includes(category)
 
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
 // für die kalten Kosten. Ohne Angabe die Abrechnung.
@@ -1074,12 +1151,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Fehlende Angaben an der selbstgenutzten Wohnung heben ihren Eigenanteil beim jeweiligen
   // Schlüssel stillschweigend auf — dann verteilt er allein auf die Mieter. Deshalb warnen,
   // sobald ein betroffener Schlüssel im Jahr überhaupt vorkommt.
-  const usesKey = (key: CostKey) => items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig')
+  const usesKey = (key: CostKey) => items.some((c) => c.key === key && !isNotAllocable(c.category))
   // Nimmt die Wohnung an einer Position dieses Schlüssels teil (#105)? Die Warnungen unten nennen
   // nur solche Wohnungen; eine Garage ohne Fläche, die an keiner Flächenposition teilnimmt, fehlt
   // in keiner Verteilung.
   const inKeyBasis = (unitId: string, key: CostKey) =>
-    items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
+    items.some((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
   // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter — das meldet die
   // Position selbst. Die Meldungen je Wohnung wären dann widersprüchlich („verteilt nur auf
   // die Mieter", obwohl nichts verteilt wird) und entfallen. Ohne Mietverhältnis im Jahr
@@ -1112,7 +1189,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
   const positionsOf = (key: CostKey, unitIds: string[]) => {
     const names = [...new Set(items
-      .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
+      .filter((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
       .map((c) => `„${c.description}“`))]
     return names.join(', ')
   }
@@ -1199,6 +1276,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
+  // § 2 HeizkostenV (#93, #140), siehe shared/heating.ts: Im Gebäude mit höchstens zwei Wohnungen,
+  // von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Eine Garage oder
+  // ein Stellplatz ist keine Wohnung.
+  // Wohnung im Sinne des § 2 ist, was Fläche hat oder bewohnt ist. Eine Einheit ohne Fläche und
+  // ohne Bewohner (Garage, Stellplatz, auch leer oder außerhalb der Abrechnungseinheit) zählt nicht;
+  // eine bewohnte mit vergessener Fläche zählt (letzte Durchsicht). Bewusst anders als bei
+  // `basis.unit-no-area`: Dort warnt auch ein Leerstand mit 0 m², weil Geld wandern kann; hier geht
+  // es nur darum, ob das Gebäude mehr als zwei Wohnungen hat.
+  const inhabited = (u: SnapshotUnit) => u.selfUsed && !u.participates
+    ? selfPersonsOf(u) > 0
+    : tenancies.some((t) => t.unitId === u.id && personDaysInPeriod(t, yFrom, yTo) > 0)
+  const heatingAgreeable = mayAgreeOtherwise(snapshot.units, (u) => u.areaM2 > 0 || inhabited(u))
+  // Heizpositionen ohne Verbrauchsanteil (#140): Die Kürzungsbeträge entstehen in der Verteilung,
+  // gemeldet wird erst danach, denn ob eine Wohnung nach Verbrauch gedeckt ist, steht erst fest,
+  // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
+  const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, text: string }[] }[] = []
+  const heatingCovered = new Set<string>()
+  // Eine Einheit ohne Wärmeanschluss (#117) oder eine Garage-artige (0 m², niemand wohnt dort) ist
+  // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
+  // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
+  const outsideHeating = (u: SnapshotUnit) => isGarageLike(u) || (u.noConnection ?? []).includes('waerme')
+
   for (const item of items) {
     const b = basisOf(item)
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
@@ -1214,7 +1313,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const partOfYear = (t: TenancyWithUnit) => (t.days < diy ? ` · ${t.days}/${diy} Tage` : '')
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
     const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
-    if (item.category === 'Nicht umlagefähig') {
+    if (isNotAllocable(item.category)) {
       // keine Verteilung
     } else if (withParticipants && item.participantUnitIds && item.participantUnitIds.length === 0) {
       noBasis('keine Wohnung nimmt teil')
@@ -1270,13 +1369,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           if (Math.abs(expected - item.amountCents) > 100) {
             warn('external.amount-mismatch', `„${item.description}": der Betrag ${fmtCents(item.amountCents)} passt nicht zum rechnerischen Anteil ${fmtCents(expected)} (${fmtNum(own)} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]} aus ${fmtCents(eb.totalCents)}) — bitte die Angaben aus der Gemeinschaftsabrechnung prüfen. Verteilt wird der eingetragene Betrag.`, itemSubject(item))
           }
-          const suffix = ` · Gesamtkosten der Anlage ${fmtCents(eb.totalCents)}`
+          // „Kosten der Gemeinschaft“ und nicht „Gesamtkosten der Anlage“ (#144): Die Spalte
+          // Gesamtkosten zeigt hier den Anteil des Vermieters, und zweimal „Gesamtkosten“ mit zwei
+          // Zahlen war doppeldeutig. Weicht der Betrag ab, steht das auch im Druck; der Rechenweg
+          // erscheint dort nicht, und der Mieter sähe sonst eine Rechnung, die nicht aufgeht.
+          const applied = Math.abs(expected - item.amountCents) > 100 ? ' · angesetzt laut Hausgeldabrechnung' : ''
+          const suffix = ` · Kosten der Gemeinschaft ${fmtCents(eb.totalCents)}${applied}`
+          const label = MEASURE_LABELS[eb.measure]
           for (const t of b.partTenancies) {
             const raw = item.amountCents * (valueOf(t.unit) / own) * (t.days / diy)
             targets.push({
               t, raw,
-              basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${MEASURE_LABELS[eb.measure]}${suffix}${partOfYear(t)}`,
-              ownShare: `${fmtNum(valueOf(t.unit))} von ${fmtNum(own)} ${MEASURE_LABELS[eb.measure]}`,
+              basisText: `${fmtNum(valueOf(t.unit))} von ${fmtNum(eb.total)} ${label}${suffix}${partOfYear(t)}`,
+              community: {
+                costsCents: eb.totalCents,
+                share: `${fmtNum(own)} von ${fmtNum(eb.total)} ${label} × ${fmtCents(eb.totalCents)} = ${fmtCents(expected)}`,
+                term: eb.measure === 'mea' ? 'mea' : 'distributionBasis',
+                appliedCents: expected !== item.amountCents ? item.amountCents : null,
+                ownShare: valueOf(t.unit) !== own ? `${fmtNum(valueOf(t.unit))} von ${fmtNum(own)} ${label}` : null,
+              },
             })
           }
           selfRaw = item.amountCents * (b.selfUnits.reduce((a, u) => a + valueOf(u), 0) / own)
@@ -1453,9 +1564,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // ganz, stimmt die Summe centgenau; bei Leerstand und Eigennutzung bleibt der
     // entsprechende Teil beim Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser
     // Berechnung, keine Vorgabe des §35a EStG.
-    const labor = item.labor35aCents ?? 0
+    const labor = validLabor35aCents(item)
     const laborOf = new Map<number, number>()
-    if (labor !== 0 && (labor < 0 || labor > item.amountCents)) {
+    if (labor === null) {
       warn('labor35a.invalid', `„${item.description}": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
       const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
@@ -1485,15 +1596,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Restcent wird bei der Zeile benannt, die von der gewöhnlichen Rundung abweicht; sonst sähe
       // der Mieter einen Cent, den ihm niemand erklärt. Das ist nicht immer die Zeile, die einen
       // Cent dazubekommt: Liegen die Reste über einem halben Cent, ist es die, die einen verliert.
+      const c = x.community
       const steps: CalcStep[] = [
-        { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
+        c
+          ? { label: 'Kosten der Gemeinschaft', value: fmtCents(c.costsCents), term: 'homeownersStatement' }
+          : { label: 'Rechnungsbetrag', value: fmtCents(item.amountCents) },
         { label: 'Umlageschlüssel', value: KEY_LABELS[item.key] || item.key, term: 'allocationKey' },
       ]
-      if (item.key === 'amounts') {
+      if (c) {
+        // Laut Gemeinschaftsabrechnung (#144): erst der Schritt der Gemeinschaft, dann die
+        // Verteilung im Objekt. Die Verteilbasis der ganzen Anlage steht nicht noch einmal da.
+        steps.push({ label: 'Anteil an der Gemeinschaft', value: c.share, term: c.term })
+        if (c.appliedCents !== null) steps.push({ label: 'Angesetzt laut Hausgeldabrechnung', value: fmtCents(c.appliedCents), term: 'homeownersStatement' })
+        if (c.ownShare) steps.push({ label: 'Anteil Ihrer Wohnung daran', value: c.ownShare, term: c.term })
+        if (item.amountCents !== 0) {
+          steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
+        }
+      } else if (item.key === 'amounts') {
         steps.push({ label: 'Einzelbetrag', value: `${fmtCents(Math.round(x.raw))} laut Einzelabrechnung`, term: 'individualAmounts' })
       } else {
         steps.push({ label: 'Anteil an der Verteilbasis', value: x.basisText, term: 'distributionBasis' })
-        if (x.ownShare) steps.push({ label: 'Anteil an Ihren Wohnungen', value: x.ownShare, term: 'mea' })
         if (item.amountCents !== 0) {
           steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
         }
@@ -1517,6 +1639,39 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       st.totalShareCents += shares[i]
       st.total35aCents += labor35a
     })
+    // Heizung und Warmwasser ohne Verbrauchsanteil (#140): Die Verordnung verlangt 50 bis 70 % nach
+    // Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV), sonst darf der Mieter seinen Anteil um 15 %
+    // kürzen (§ 12 Abs. 1). Gerechnet wird wie erfasst, unterstützen und warnen statt verweigern
+    // (#91); beziffert wird die Kürzung je Mieter, der über die Heizung eine Abrechnung bekommt.
+    // Bei Pauschale und Warmmiete gibt es keine Abrechnung, die er kürzen könnte; das meldet
+    // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
+    if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
+      const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
+      if (heatingByConsumption(item.key)) {
+        // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
+        // (letzte Durchsicht). Nach Zählern: Die Wohnung nimmt teil und hat einen Zähler des Typs,
+        // der im Jahr abgelesen ist; ein Verbrauch von 0 ist dann gemessen und keine Lücke. Ohne
+        // Ablesungen geht der Betrag an den Vermieter, das deckt nichts. Als Einzelbeträge: Für ein
+        // Mietverhältnis der Wohnung ist ein Betrag eingetragen, auch 0. Sonst (Gemeinschaft): ein
+        // positiver Anteil.
+        if (item.amountCents > 0 && item.key === 'meter') {
+          const readMeters = allMeters.filter((m) => m.unitId && m.type === item.meterType && coveredDays(readingsOf(m.id), yFrom, yTo) > 0)
+          if (targets.length > 0) {
+            for (const m of readMeters) if (m.unitId && (!item.participantUnitIds || item.participantUnitIds.includes(m.unitId))) heatingCovered.add(m.unitId)
+          }
+        } else if (item.amountCents > 0 && item.key === 'amounts') {
+          const given = item.tenancyAmounts ?? {}
+          for (const t of b.partTenancies) if (Object.hasOwn(given, t.id)) heatingCovered.add(t.unitId)
+        } else if (item.amountCents > 0) {
+          for (const { x } of received) heatingCovered.add(x.t.unitId)
+        }
+      } else {
+        heatingCuts.push({
+          item,
+          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, text: `${x.t.tenantName} (${x.t.unit.name}) ${fmtCents(Math.round((share * 15) / 100))}` })),
+        })
+      }
+    }
     const landlordCents = item.amountCents - distributed
     // Der Eigenanteil ist ein Teil des Vermieteranteils dieser Position — deshalb an dem
     // begrenzen, was tatsächlich beim Vermieter gebucht wurde. Sonst könnte der separat
@@ -1538,6 +1693,39 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         shareCents: landlordCents,
       })
     }
+  }
+
+  // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
+  // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
+  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered)
+  for (const { item, rows } of heatingCuts) {
+    const affected = heating.withoutConsumption.get(item.id)
+    const cuts = rows.filter((r) => affected?.has(r.unitId)).map((r) => r.text)
+    if (cuts.length === 0) continue
+    if (!heatingAgreeable) {
+      warn('heating.not-by-consumption',
+        `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+          `Sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${cuts.join(', ')}. ` +
+          'Verteilen Sie 50 bis 70 % nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.',
+        itemSubject(item))
+    } else {
+      // § 2: Hier darf anderes vereinbart werden, und ob es vereinbart ist, weiß Mietfuchs nicht.
+      // Deshalb ein Hinweis ohne Betrag statt Schweigen.
+      warn('heating.may-agree-otherwise',
+        `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2 HeizkostenV). ` +
+          'Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind 50 bis 70 % nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).',
+        itemSubject(item))
+    }
+  }
+
+  // Verbrauchsanteil außerhalb von 50 bis 70 % (#140, Durchsicht): ein Hinweis ohne Betrag, denn
+  // nach Verbrauch abgerechnet wird ja; ob die Aufteilung der Positionen stimmt, prüft der Vermieter.
+  for (const g of heating.shareOutside) {
+    const names = g.itemIds.map((id) => `„${items.find((c) => c.id === id)?.description ?? id}“`).join(', ')
+    const pct = Math.round((g.consumptionCents * 1000) / g.totalCents) / 10
+    warn('heating.consumption-share',
+      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
+      itemSubject({ id: g.itemIds[0] ?? '' }))
   }
 
   // Ohne Abrechnung (#93): wer für keine der beiden Arten abgerechnet wird, oder wessen Abrechnung
@@ -1589,18 +1777,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
   // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
   // Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts.
-  const dueMonths = !options.asOf || options.asOf.slice(0, 4) > String(year)
-    ? 12
-    : options.asOf.slice(0, 4) < String(year) ? 0 : Number(options.asOf.slice(5, 7)) - 1
+  const dueMonths = dueMonthsOf(year, options.asOf)
   const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
   if (ledgerInUse && dueMonths > 0) {
-    const ledgerRows = new Map(rentLedger(snapshot).rows.map((r) => [r.tenancyId, r]))
+    const ledgerRows = new Map(rentLedger(snapshot, { asOf: options.asOf }).rows.map((r) => [r.tenancyId, r]))
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
       const row = ledgerRows.get(st.tenancyId)
       if (!row) continue
-      const dueCents = row.months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
-      const openCents = dueCents - row.paidYearCents
+      const openCents = row.arrearsCents
       if (openCents <= 0) continue
       // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
       // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
@@ -1618,16 +1803,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
-  // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor, ausgenommen ist nur das Gebäude
-  // mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt. Gemeldet wird nur,
+  // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor; nur im Gebäude mit höchstens zwei
+  // Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Gemeldet wird nur,
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
   // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
-  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
-  // Das Gesetz zählt die Wohnungen im Gebäude, also alle des Objekts und nicht nur die
-  // beteiligten. Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs
-  // daran nicht (nur die Zahl der Wohnungen, nicht die der Anlage); dort bleibt die Warnung aus.
-  const exempt = snapshot.units.length <= 2 && selfUnits.length >= 1
-  if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
+  const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement' && !outsideHeating(t.unit))
+  // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
+  if (heatingFlat.length > 0 && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY)) {
     warn('heating.flat-rate',
       `Für ${heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
         'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. ' +
@@ -1687,7 +1869,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const end = tenancyEnd.get(st.tenancyId)
     st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0
       ? 0
-      : Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100
+      // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
+      : Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
   }
   return result
 }

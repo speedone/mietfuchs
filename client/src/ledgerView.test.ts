@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { showDecemberNote } from './ledgerView'
+import { bookingDate, rowStanding, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -12,7 +12,7 @@ const row = (dezember: RentMonth): RentLedgerRow => ({
   tenancyId: 't1', tenantName: 'Müller', unitName: 'OG',
   months: [...Array.from({ length: 11 }, (_, i) => month(i + 1, 100000, 'paid')), dezember],
   sollYearCents: 1200000, baseRentYearCents: 1200000, prepaymentYearCents: 0, flatRateYearCents: 0,
-  paidYearCents: 1100000, balanceCents: -100000, openMonths: 1,
+  paidYearCents: 1100000, balanceCents: -100000, dueSollCents: 1200000, arrearsCents: 100000, openMonths: 1,
 })
 
 const heute = new Date('2026-09-22T00:00:00Z')
@@ -45,5 +45,29 @@ describe('Mietkonto: der Hinweis zum offenen Dezember (#70)', () => {
     // trotzdem ein `undefined`, und darauf eine Eigenschaft zu lesen beendete die Seite.
     const ohne: RentLedgerRow = { ...row(month(12, 100000, 'open')), months: [] }
     expect(showDecemberNote(ohne, 2025, heute)).toBe(false)
+  })
+})
+
+describe('Mietkonto: Stand einer Zeile im laufenden Jahr (#133, zweite Browserabnahme)', () => {
+  const zeile = (over: Partial<RentLedgerRow>): RentLedgerRow => ({ ...row(month(12, 100000, 'notDue')), ...over })
+  it('künftige Monate sind kein Rückstand: „bisher bezahlt“', () => {
+    expect(rowStanding(zeile({ paidYearCents: 900000, balanceCents: -300000, dueSollCents: 900000, arrearsCents: 0 }))).toEqual({ kind: 'paidSoFar', cents: 300000 })
+  })
+  it('ein fälliger offener Monat ist ein Rückstand', () => {
+    expect(rowStanding(zeile({ paidYearCents: 800000, balanceCents: -400000, dueSollCents: 900000, arrearsCents: 100000 }))).toEqual({ kind: 'arrears', cents: 100000 })
+  })
+  it('Überzahlung und ganz bezahlt', () => {
+    expect(rowStanding(zeile({ paidYearCents: 1300000, balanceCents: 100000, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'credit', cents: 100000 })
+    expect(rowStanding(zeile({ paidYearCents: 1200000, balanceCents: 0, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'paid', cents: 0 })
+  })
+})
+
+describe('Mietkonto: Buchungsdatum beim Klick auf einen Monat (#133, letzte Durchsicht)', () => {
+  const heute = new Date(2026, 9, 1)
+  it('ein fälliger Monat: der Erste des Monats', () => {
+    expect(bookingDate(2026, month(9, 100000, 'open'), heute)).toBe('2026-09-01')
+  })
+  it('ein noch nicht fälliger Monat: heute, denn gezahlt wird heute (Zuflussprinzip)', () => {
+    expect(bookingDate(2026, month(12, 100000, 'notDue'), heute)).toBe('2026-10-01')
   })
 })

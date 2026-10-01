@@ -19,7 +19,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { TaxReport } from '../types'
+import type { Property, PropertyKind, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
@@ -45,6 +45,8 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
     ...income,
   },
   expenses: { groups: [], totalCents: 0, labor35aCents: 0 },
+  reserveContributionCents: 0,
+  reserveSuspects: [],
   totalAreaM2: 200,
   selfUsedAreaM2: 0,
   selfOccupiedExists: false,
@@ -56,10 +58,14 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   ...over,
 })
 
-const zeige = async (report: TaxReport, basis: Basis = 'ist') => {
-  // Die Objekte sind hier gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92).
+const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind) => {
+  // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
+  // die Art des Objekts entscheidet über den Satz zum Hausgeld (#143).
+  const properties: Property[] = kind
+    ? [{ id: 'p', name: 'Objekt', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }]
+    : []
   vi.stubGlobal('fetch', async (url: string) =>
-    new Response(JSON.stringify(url === '/api/properties' ? [] : report), { status: 200, headers: { 'content-type': 'application/json' } }))
+    new Response(JSON.stringify(url === '/api/properties' ? properties : report), { status: 200, headers: { 'content-type': 'application/json' } }))
   render(
     <YearProvider>
       <PropertyProvider>
@@ -82,7 +88,7 @@ afterEach(() => {
 
 // `Record<TaxHint, …>` ist hier die eigentliche Zusicherung: Es zwingt den Übersetzer, für jeden
 // Hinweis eine Lage zu verlangen. Ohne das wäre die Schleife unten nur eine hübsche Form.
-type Lage = { report: TaxReport; basis?: Basis; text: RegExp }
+type Lage = { report: TaxReport; basis?: Basis; kind?: PropertyKind; text: RegExp }
 
 const LAGEN: Record<TaxHint, Lage> = {
   // Muss auch im Druck stehen: Ein ausgedrucktes Blatt auf Soll-Basis ginge sonst ohne jeden
@@ -114,13 +120,27 @@ const LAGEN: Record<TaxHint, Lage> = {
     report: REPORT({ costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 1 } }),
     text: /Zeile 20 der Anlage V/i,
   },
+  // #143: Die Zuführung zur Erhaltungsrücklage steht neben den Werbungskosten, nicht darin.
+  reserveContribution: {
+    report: REPORT({ reserveContributionCents: 90000 }),
+    text: /erst abziehbar, wenn und soweit die Gemeinschaft/i,
+  },
+  reserveSuspected: {
+    report: REPORT({ reserveSuspects: [{ costItemId: 'v', description: 'Instandhaltungsrücklage 2025', amountCents: 90000 }] }),
+    text: /sieht nach einer Zuführung zur Erhaltungsrücklage aus/i,
+  },
+  etwHousingMoney: {
+    report: REPORT(),
+    kind: 'etw',
+    text: /Hausgeld-Vorschüsse/i,
+  },
 }
 
 for (const hint of TAX_HINTS) {
   test(`Der Hinweis ${hint} steht auf der Seite`, async () => {
     const lage = LAGEN[hint]
-    await zeige(lage.report, lage.basis)
-    expect(screen.getByText(lage.text)).toBeTruthy()
+    await zeige(lage.report, lage.basis, lage.kind)
+    await waitFor(() => expect(screen.getByText(lage.text)).toBeTruthy())
   })
 }
 
@@ -179,4 +199,25 @@ test('Der Vorbehalt zum Flächenanteil erscheint nur, wenn es auch einen Anteil 
   cleanup()
   await zeige(REPORT({ selfOccupiedExists: true, selfUsedAreaM2: 50, excludedExists: true }))
   expect(screen.getByText(/rechnet über das/i)).toBeTruthy()
+})
+
+test('Die Rücklage nennt ihren Betrag und bleibt aus den Werbungskosten (#143)', async () => {
+  await zeige(REPORT({ reserveContributionCents: 90000 }))
+  const kasten = screen.getByText(/Zuführung zur Erhaltungsrücklage/i).closest('div')
+  expect(kasten?.textContent).toMatch(/900,00/)
+  expect(kasten?.textContent).toMatch(/IX R 19\/24/)
+  cleanup()
+  await zeige(REPORT())
+  expect(screen.queryByText(/erst abziehbar, wenn und soweit die Gemeinschaft/i)).toBeNull()
+})
+
+test('Der Satz zum Hausgeld steht nur bei einer Eigentumswohnung (#143)', async () => {
+  await zeige(REPORT(), 'ist', 'mfh')
+  expect(screen.queryByText(/Hausgeld-Vorschüsse/i)).toBeNull()
+})
+
+test('Eine saldiert negative Rücklage heißt nicht „Zuführung“ (#143, Integrationsdurchsicht)', async () => {
+  await zeige(REPORT({ reserveContributionCents: -30000 }))
+  expect(screen.getByText(/Erhaltungsrücklage, saldiert/i)).toBeTruthy()
+  expect(screen.queryByText(/^Zuführung zur Erhaltungsrücklage/i)).toBeNull()
 })
