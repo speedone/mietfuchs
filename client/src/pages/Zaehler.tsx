@@ -204,8 +204,8 @@ export default function Zaehler({ units }: Props) {
                     open={openMeterId === m.id}
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
-                    onToggle={() => { setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
-                    onEdit={() => setMeterForm({ id: m.id, name: m.name, unitId: m.unitId ?? '', type: m.type, meterNumber: m.meterNumber ?? '', unit: m.unit })}
+                    onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
+                    onEdit={() => { setError(''); setMeterForm({ id: m.id, name: m.name, unitId: m.unitId ?? '', type: m.type, meterNumber: m.meterNumber ?? '', unit: m.unit }) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
@@ -228,13 +228,13 @@ export default function Zaehler({ units }: Props) {
           open
           title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
           subtitle={meterForm.id ? meterForm.name : undefined}
-          onClose={() => setMeterForm(null)}
+          onClose={() => { setError(''); setMeterForm(null) }}
           onSubmit={saveMeter}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setMeterForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setMeterForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }

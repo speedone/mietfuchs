@@ -111,7 +111,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   und der Grund stand nur in der Browser-Konsole. Jetzt erscheint er im Dialog, und Ihre Eingaben
   bleiben stehen. Dasselbe gilt beim Löschen, beim Abschließen und Wiederöffnen einer Abrechnung,
   bei der Korrektur der gezahlten Vorauszahlung, den Einstellungen und beim Übernehmen
-  ausgewerteter Belege.
+  ausgewerteter Belege. Eine Meldung verschwindet, sobald Sie ein Formular öffnen oder schließen,
+  und steht nicht mehr an einer Stelle, zu der sie nicht gehört.
   ([#146](https://github.com/speedone/mietfuchs/issues/146))
 - **Gutschriften lassen sich im Kostenformular erfassen.** Ein negativer Betrag wie „-54,00“
   wird angenommen, auch mit dem typografischen Minus „−“, etwa aus einem kopierten Text. Ein

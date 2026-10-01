@@ -542,13 +542,13 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           open
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
           subtitle={form.id ? form.description : undefined}
-          onClose={() => setForm(null)}
+          onClose={() => { setError(''); setForm(null) }}
           onSubmit={saveItem}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
             </>
           }

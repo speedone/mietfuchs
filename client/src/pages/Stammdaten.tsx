@@ -268,7 +268,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm(unitToForm(u))}>✎</button>
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { setError(''); setUnitForm(unitToForm(u)) }}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
@@ -423,14 +423,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           open
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
-          onClose={() => setTenForm(null)}
+          onClose={() => { setError(''); setTenForm(null) }}
           onSubmit={saveTenancy}
           width={480}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setTenForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setTenForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }
@@ -609,13 +609,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           open
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
-          onClose={() => setUnitForm(null)}
+          onClose={() => { setError(''); setUnitForm(null) }}
           onSubmit={saveUnit}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setUnitForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setUnitForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }

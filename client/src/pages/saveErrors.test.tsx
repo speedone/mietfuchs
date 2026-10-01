@@ -144,3 +144,62 @@ test('Kosten: die Ablehnung beim Löschen ist zu sehen', async () => {
   await waitFor(() => expect(sent).toHaveLength(1))
   await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
 })
+
+// Alte Meldungen (#146): Eine Meldung gehört zu dem Vorgang, der sie ausgelöst hat. Wer danach ein
+// Formular öffnet oder schließt, soll sie nicht mehr an der falschen Stelle lesen.
+test('Stammdaten: ein Löschfehler oben erscheint nicht im danach geöffneten Formular', async () => {
+  shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung löschen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Löschen$/i }))
+  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Wohnung bearbeiten/i }))
+  await screen.findByRole('button', { name: /^Übernehmen$/i })
+  expect(screen.queryByText(MSG)).toBeNull()
+})
+
+test('Stammdaten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
+  shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Wohnung hinzufügen/i }))
+  fireEvent.change(screen.getByLabelText(/^Name/i), { target: { value: 'DG' } })
+  fireEvent.change(screen.getByLabelText(/^Wohnfläche/i), { target: { value: '50' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  await expectShownInDialog()
+  fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByText(MSG)).toBeNull()
+})
+
+test('Zähler: ein Löschfehler oben erscheint nicht im danach geöffneten Formular', async () => {
+  shell(<Zaehler units={UNITS} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler löschen/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Löschen$/i }))
+  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
+  fireEvent.click(screen.getByRole('button', { name: /Zähler bearbeiten/i }))
+  await screen.findByRole('button', { name: /^Übernehmen$/i })
+  expect(screen.queryByText(MSG)).toBeNull()
+})
+
+test('Mietkonto: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
+  shell(<Mietkonto />)
+  const add = await screen.findByRole('button', { name: /Zahlung erfassen/i })
+  await waitFor(() => expect((add as HTMLButtonElement).disabled).toBe(false))
+  fireEvent.click(add)
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '11,11' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Speichern$/i }))
+  await expectShownInDialog()
+  fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByText(MSG)).toBeNull()
+})
+
+test('Kosten: ein Fehler im Formular steht nach „Abbrechen“ nicht oben auf der Seite', async () => {
+  shell(<Kosten units={UNITS} settings={null} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/i }))
+  fireEvent.change(screen.getByLabelText(/Beschreibung/i), { target: { value: 'Wasser' } })
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '100,00' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await expectShownInDialog()
+  fireEvent.click(screen.getByRole('button', { name: /^Abbrechen$/i }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  expect(screen.queryByText(MSG)).toBeNull()
+})
