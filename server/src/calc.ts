@@ -611,6 +611,25 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   )
   const withSoll = ledger.rows.filter((r) => r.sollYearCents > 0)
   const tenanciesWithSoll = withSoll.length
+  // Für die Kopfzeilen der Anlage V (#96): Zeile 24 fragt, ob Nebenkosten nicht gesondert
+  // vereinbart sind (Inklusivmiete), und eine Pauschale gehört zu den Umlagen in Zeile 20.
+  // Heizung und Warmwasser gehören zu den Nebenkosten: „ganz inklusiv“ heißt deshalb kalt und warm
+  // inklusiv, und eine Pauschale zählt bei kalt oder warm (Durchsicht).
+  // Steht im Jahr keine Heizposition, rechnen die Mieter die Heizung selbst mit dem Versorger ab,
+  // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
+  const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
+  const heatingBilled = snapshot.costItems.some((c) => c.year === year && c.category === HEATING_CATEGORY)
+  const models = ledger.rows.map((r) => {
+    const t = tenancyById.get(r.tenancyId)
+    const cold = t?.costModel ?? 'settlement'
+    return { cold, heat: heatingBilled ? t?.heatingModel ?? 'settlement' : cold }
+  })
+  const costModels = {
+    tenancies: models.length,
+    inclusive: models.filter((m) => m.cold === 'inclusive' && m.heat === 'inclusive').length,
+    partlyInclusive: models.filter((m) => (m.cold === 'inclusive') !== (m.heat === 'inclusive')).length,
+    flatRate: models.filter((m) => m.cold === 'flatRate' || m.heat === 'flatRate').length,
+  }
   const tenanciesWithoutPayment = withSoll.filter((r) => !paidTenancies.has(r.tenancyId)).length
 
   // Die Abrechnung desselben Jahres, einmal gerechnet. Aus ihr kommen zwei Angaben, und beide
@@ -752,6 +771,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     selfUsedAreaM2,
     selfOccupiedExists,
     excludedExists,
+    costModels,
     selfUsedShareCents,
     surplusSollCents: sollCents - totalCents,
     surplusPaidCents: paidCents - totalCents,

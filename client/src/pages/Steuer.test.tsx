@@ -52,6 +52,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   selfUsedShareCents: 0,
   surplusSollCents: 1200000,
   surplusPaidCents: 1200000,
+  costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
   ...over,
 })
 
@@ -99,6 +100,19 @@ const LAGEN: Record<TaxHint, Lage> = {
   turnOfYear: {
     report: REPORT(),
     text: /Am Jahreswechsel bitte prüfen/i,
+  },
+  // #96: Die beiden Kopfzeilen der Anlage V, die am Mietmodell hängen.
+  inclusiveLine24: {
+    report: REPORT({ costModels: { tenancies: 1, inclusive: 1, partlyInclusive: 0, flatRate: 0 } }),
+    text: /Tragen Sie dort eine 1 ein/i,
+  },
+  inclusiveLine24Mixed: {
+    report: REPORT({ costModels: { tenancies: 2, inclusive: 1, partlyInclusive: 0, flatRate: 0 } }),
+    text: /bei gemischten Verträgen/i,
+  },
+  flatRateLine20: {
+    report: REPORT({ costModels: { tenancies: 2, inclusive: 0, partlyInclusive: 0, flatRate: 1 } }),
+    text: /Zeile 20 der Anlage V/i,
   },
 }
 

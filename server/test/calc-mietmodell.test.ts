@@ -169,3 +169,34 @@ test('Steuer: die Pauschale steht als eigene Zeile im Soll, und die Aufstellung 
   assert.equal(income.flatRateSollCents, 96000)
   assert.equal(income.baseRentSollCents + income.prepaymentSollCents + income.flatRateSollCents, income.sollCents)
 })
+
+test('Steuer (#96): die Übersicht zählt Mietverhältnisse mit Inklusivmiete und mit Pauschale, für Zeile 24 und Zeile 20 der Anlage V', () => {
+  const snapshot = snapshotOf({
+    units: [unit('a'), unit('b'), unit('c')],
+    tenancies: [
+      tenancy('t-a', 'a', { costModel: 'inclusive', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 70000 }] }),
+      tenancy('t-b', 'b', { costModel: 'flatRate', prepayments: [], flatRates: [{ from: '2025-01', monthlyCents: 8000 }], baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+      tenancy('t-c', 'c', { baseRents: [{ from: '2025-01', monthlyCents: 50000 }] }),
+    ],
+    costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }, 2025)
+  // Ohne Heizposition im Jahr zählt nur das Modell der kalten Nebenkosten.
+  assert.deepEqual(taxReport(snapshot).costModels, { tenancies: 3, inclusive: 1, partlyInclusive: 0, flatRate: 1 })
+})
+
+test('Steuer (#96): ganz inklusiv heißt kalt und warm inklusiv; eine Pauschale zählt bei kalt oder warm (Durchsicht)', () => {
+  const row = (over: Partial<SnapshotTenancy>) => tenancy('t', 'a', { prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 70000 }], ...over })
+  const count = (over: Partial<SnapshotTenancy>) =>
+    taxReport(snapshotOf({ units: [unit('a')], tenancies: [row(over)], costItems: [item({ category: HEIZUNG, description: 'Heizung' })], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)).costModels
+  assert.deepEqual(count({ costModel: 'inclusive', heatingModel: 'inclusive' }), { tenancies: 1, inclusive: 1, partlyInclusive: 0, flatRate: 0 })
+  assert.deepEqual(count({ costModel: 'inclusive' }), { tenancies: 1, inclusive: 0, partlyInclusive: 1, flatRate: 0 })
+  assert.deepEqual(count({ heatingModel: 'flatRate', flatRates: [{ from: '2025-01', monthlyCents: 5000 }] }), { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 1 })
+})
+
+test('Steuer (#96): ohne Heizposition im Jahr zählt das Heizmodell nicht (die Mieter rechnen selbst mit dem Versorger ab)', () => {
+  const t = tenancy('t', 'a', { costModel: 'inclusive', prepayments: [], baseRents: [{ from: '2025-01', monthlyCents: 70000 }] })
+  const ohne = taxReport(snapshotOf({ units: [unit('a')], tenancies: [t], costItems: [item({})], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)).costModels
+  assert.deepEqual(ohne, { tenancies: 1, inclusive: 1, partlyInclusive: 0, flatRate: 0 })
+  const mit = taxReport(snapshotOf({ units: [unit('a')], tenancies: [t], costItems: [item({ category: HEIZUNG, description: 'Heizung' })], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)).costModels
+  assert.deepEqual(mit, { tenancies: 1, inclusive: 0, partlyInclusive: 1, flatRate: 0 })
+})
