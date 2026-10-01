@@ -1279,7 +1279,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // § 2 HeizkostenV (#93, #140), siehe shared/heating.ts: Im Gebäude mit höchstens zwei Wohnungen,
   // von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Eine Garage oder
   // ein Stellplatz ist keine Wohnung.
-  const heatingAgreeable = mayAgreeOtherwise(snapshot.units)
+  // Wohnung im Sinne des § 2 ist, was Fläche hat oder bewohnt ist. Eine Einheit ohne Fläche und
+  // ohne Bewohner (Garage, Stellplatz, auch leer oder außerhalb der Abrechnungseinheit) zählt nicht;
+  // eine bewohnte mit vergessener Fläche zählt (letzte Durchsicht). Bewusst anders als bei
+  // `basis.unit-no-area`: Dort warnt auch ein Leerstand mit 0 m², weil Geld wandern kann; hier geht
+  // es nur darum, ob das Gebäude mehr als zwei Wohnungen hat.
+  const inhabited = (u: SnapshotUnit) => u.selfUsed && !u.participates
+    ? selfPersonsOf(u) > 0
+    : tenancies.some((t) => t.unitId === u.id && personDaysInPeriod(t, yFrom, yTo) > 0)
+  const heatingAgreeable = mayAgreeOtherwise(snapshot.units, (u) => u.areaM2 > 0 || inhabited(u))
   // Heizpositionen ohne Verbrauchsanteil (#140): Die Kürzungsbeträge entstehen in der Verteilung,
   // gemeldet wird erst danach, denn ob eine Wohnung nach Verbrauch gedeckt ist, steht erst fest,
   // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
@@ -1640,9 +1648,23 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
       const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
       if (heatingByConsumption(item.key)) {
-        // Gedeckt nur durch eine Position mit positivem Betrag, aus der die Wohnung wirklich etwas
-        // trägt: Bei einem Zähler ohne Ablesungen geht der Betrag an den Vermieter.
-        if (item.amountCents > 0) for (const { x } of received) heatingCovered.add(x.t.unitId)
+        // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
+        // (letzte Durchsicht). Nach Zählern: Die Wohnung nimmt teil und hat einen Zähler des Typs,
+        // der im Jahr abgelesen ist; ein Verbrauch von 0 ist dann gemessen und keine Lücke. Ohne
+        // Ablesungen geht der Betrag an den Vermieter, das deckt nichts. Als Einzelbeträge: Für ein
+        // Mietverhältnis der Wohnung ist ein Betrag eingetragen, auch 0. Sonst (Gemeinschaft): ein
+        // positiver Anteil.
+        if (item.amountCents > 0 && item.key === 'meter') {
+          const readMeters = allMeters.filter((m) => m.unitId && m.type === item.meterType && coveredDays(readingsOf(m.id), yFrom, yTo) > 0)
+          if (targets.length > 0) {
+            for (const m of readMeters) if (m.unitId && (!item.participantUnitIds || item.participantUnitIds.includes(m.unitId))) heatingCovered.add(m.unitId)
+          }
+        } else if (item.amountCents > 0 && item.key === 'amounts') {
+          const given = item.tenancyAmounts ?? {}
+          for (const t of b.partTenancies) if (Object.hasOwn(given, t.id)) heatingCovered.add(t.unitId)
+        } else if (item.amountCents > 0) {
+          for (const { x } of received) heatingCovered.add(x.t.unitId)
+        }
       } else {
         heatingCuts.push({
           item,

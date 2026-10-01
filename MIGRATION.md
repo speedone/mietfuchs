@@ -150,6 +150,10 @@ Was Sie seit dem Update eingegeben haben, fehlt dann. Umgekehrt ist nichts zu be
 ältere Version erkennt eine Datenbank aus einer neueren, arbeitet nicht mit ihr, sondern sagt es
 in der Oberfläche, und verändert sie dabei nicht.
 
+Zurück zu einer Version vor der Datenbank (v0.7.x) geht es anders: Dort benennen Sie
+`db.json.abgeloest` wieder in `db.json` um und legen `mietfuchs.sqlite` beiseite. Was Sie seit dem
+Umstieg eingegeben haben, fehlt dann.
+
 ---
 
 ## Backup

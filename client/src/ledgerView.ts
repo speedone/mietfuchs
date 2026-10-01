@@ -5,7 +5,7 @@
 // gefunden, die nicht stimmten. Eine ungeprüfte Bedingung in einer Komponente ist keine
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
-import type { RentLedgerRow } from './types'
+import type { RentLedgerRow, RentMonth } from './types'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -46,4 +46,12 @@ export function rowStanding(row: RentLedgerRow): RowStanding {
   if (row.balanceCents > 0) return { kind: 'credit', cents: row.balanceCents }
   if (row.balanceCents < 0) return { kind: 'paidSoFar', cents: -row.balanceCents }
   return { kind: 'paid', cents: 0 }
+}
+
+// Das Datum, mit dem ein Klick auf einen Monat die Zahlung vorbelegt. Ein fälliger Monat: der Erste
+// des Monats. Ein noch nicht fälliger (#133): heute, denn wer ihn jetzt bucht, hat heute gezahlt,
+// und für die Steuer zählt der Tag des Zuflusses (letzte Durchsicht). Örtlich, wie showDecemberNote.
+export function bookingDate(year: number, mo: RentMonth, today: Date): string {
+  if (mo.status !== 'notDue') return `${year}-${String(mo.month).padStart(2, '0')}-01`
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }

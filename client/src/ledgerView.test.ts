@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { rowStanding, showDecemberNote } from './ledgerView'
+import { bookingDate, rowStanding, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -59,5 +59,15 @@ describe('Mietkonto: Stand einer Zeile im laufenden Jahr (#133, zweite Browserab
   it('Überzahlung und ganz bezahlt', () => {
     expect(rowStanding(zeile({ paidYearCents: 1300000, balanceCents: 100000, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'credit', cents: 100000 })
     expect(rowStanding(zeile({ paidYearCents: 1200000, balanceCents: 0, dueSollCents: 1200000, arrearsCents: 0 }))).toEqual({ kind: 'paid', cents: 0 })
+  })
+})
+
+describe('Mietkonto: Buchungsdatum beim Klick auf einen Monat (#133, letzte Durchsicht)', () => {
+  const heute = new Date(2026, 9, 1)
+  it('ein fälliger Monat: der Erste des Monats', () => {
+    expect(bookingDate(2026, month(9, 100000, 'open'), heute)).toBe('2026-09-01')
+  })
+  it('ein noch nicht fälliger Monat: heute, denn gezahlt wird heute (Zuflussprinzip)', () => {
+    expect(bookingDate(2026, month(12, 100000, 'notDue'), heute)).toBe('2026-10-01')
   })
 })

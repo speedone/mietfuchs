@@ -3,7 +3,7 @@ import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
-import { rowStanding, showDecemberNote } from '../ledgerView'
+import { bookingDate, rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -86,7 +86,7 @@ export default function Mietkonto() {
     setError('')
     setForm({
       tenancyId,
-      date: `${year}-${String(mo.month).padStart(2, '0')}-01`,
+      date: bookingDate(year, mo, new Date()),
       amount: (open / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
       note: '',
     })

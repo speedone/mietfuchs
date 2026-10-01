@@ -163,8 +163,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   dann außerhalb von 50 bis 70 Prozent, gibt es einen Hinweis ohne Betrag. Eine Direktzuordnung
   (etwa die Wartung einer Gastherme) zählt nicht als Verteilung. Im Haus mit höchstens zwei
   Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2); dort gibt
-  es statt des Betrags einen Hinweis, und eine Einheit ohne Fläche (Garage, Stellplatz) zählt dabei
-  nicht als Wohnung, auch nicht
+  es statt des Betrags einen Hinweis, und eine Einheit ohne Fläche und ohne Bewohner (Garage,
+  Stellplatz) zählt dabei nicht als Wohnung, auch nicht
   für die Warnung zur Warmmiete. Mieter mit Pauschale oder Warmmiete bekommen keine
   Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in diesem Fall nicht mehr
   „Ablesungen nicht erforderlich“.

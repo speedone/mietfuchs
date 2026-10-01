@@ -186,20 +186,29 @@ test('1c: eine Verbrauchsposition ohne Ablesungen deckt keine Wohnung (#140)', (
   assert.equal(heatingNotices(s).length, 1)
 })
 
-test('Mischfall: eine Gutschrift auf die Grundkosten verschiebt den Verbrauchsanteil nicht (#140)', () => {
-  // 1.800 € nach Zählern, 1.200 € Grundkosten, dazu 600 € Gutschrift nach Fläche: gemessen werden
-  // die positiven Positionen, 60 %. Mit der Gutschrift verrechnet wären es 75 %.
+test('Mischfall: der Verbrauchsanteil rechnet mit verrechneten Gutschriften (#140, letzte Durchsicht)', () => {
+  // 1.800 € nach Zählern, 1.200 € Grundkosten, dazu 600 € Gutschrift nach Fläche: verteilt werden
+  // tatsächlich 1.800 von 2.400 €, also 75 % nach Verbrauch. Ein Kürzungsrecht entsteht nicht.
   const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
     heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 180000 }),
     heizung({ id: 'gk', amountCents: 120000 }),
     heizung({ id: 'g', description: 'Gutschrift', amountCents: -60000 }),
   ] })
-  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
+  const n = notesOf(s, 'heating.consumption-share')
+  assert.equal(n.length, 1)
+  assert.match(n[0]?.text ?? '', /75 %/)
   assert.deepEqual(heatingNotices(s), [])
+  // Ist eine Nettosumme nicht positiv, gibt es keinen Prozentsatz.
+  const negativ = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
+    heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 180000 }),
+    heizung({ id: 'gk', amountCents: 120000 }),
+    heizung({ id: 'g', description: 'Gutschrift', amountCents: -400000 }),
+  ] })
+  assert.deepEqual(notesOf(negativ, 'heating.consumption-share'), [])
 })
 
-// § 2 HeizkostenV: Eine Wohnung hat Fläche. Eine Einheit mit 0 m² zählt nie mit, gleich ob leer,
-// außerhalb der Abrechnungseinheit oder selbstgenutzt ohne Personenangabe.
+// § 2 HeizkostenV: Eine Einheit ohne Fläche und ohne Bewohner zählt nicht als Wohnung, gleich ob
+// leer, außerhalb der Abrechnungseinheit oder selbstgenutzt ohne Personenangabe.
 for (const [name, garage] of [
   ['3b leer', unit('g', 0)],
   ['3c außerhalb der Abrechnungseinheit', unit('g', 0, { participates: false, selfUsed: false })],
@@ -245,4 +254,41 @@ test('Einheit ohne Wärmeanschluss bekommt keinen Kürzungsbetrag (#140)', () =>
   const text = heatingNotices(s)[0]?.text ?? ''
   assert.ok(text.includes('A (w1)'), text)
   assert.ok(!text.includes('G (g)'), text)
+})
+
+// ---------- Letzte Durchsicht zu #140 ----------
+
+test('§ 2 HeizkostenV: eine bewohnte Wohnung mit vergessener Fläche zählt als Wohnung (#140)', () => {
+  // Dreifamilienhaus: eigene Wohnung, w1 mit 80 m², w2 mit 2 Personen und 0 m² (Fläche vergessen).
+  // Das ist kein Zweifamilienhaus; die Verordnung geht vor.
+  const s = settle({
+    units: [unit('eigen', 100, { participates: false, selfUsed: true, selfPersons: 2 }), unit('w1', 80), unit('w2', 0)],
+    tenancies: [tenancy('A', 'w1'), tenancy('B', 'w2', { persons: 2, personHistory: [{ from: '2025-01-01', persons: 2 }] })],
+    costItems: [heizung({ key: 'persons', amountCents: 300000 })],
+  })
+  assert.equal(heatingNotices(s).length, 1)
+  assert.deepEqual(notesOf(s, 'heating.may-agree-otherwise'), [])
+  const pauschal = settle({
+    units: [unit('eigen', 100, { participates: false, selfUsed: true, selfPersons: 2 }), unit('w1', 80), unit('w2', 0)],
+    tenancies: [tenancy('A', 'w1', { heatingModel: 'flatRate', prepayments: [] }), tenancy('B', 'w2', { persons: 2, personHistory: [{ from: '2025-01-01', persons: 2 }] })],
+    costItems: [heizung({ key: 'persons', amountCents: 300000 })],
+  })
+  assert.equal(notesOf(pauschal, 'heating.flat-rate').length, 1)
+})
+
+test('Verbrauch 0 an einem abgelesenen Wärmezähler ist gedeckt, kein Kürzungsrecht (#140)', () => {
+  const nullStand = ablesungen.map((r) => (r.meterId === 'wc' ? { ...r, value: 500 } : r))
+  const s = settle({ ...drei, meters: waermezaehler, readings: nullStand, costItems: [
+    heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 350000 }),
+    heizung({ id: 'gk', amountCents: 150000 }),
+  ] })
+  assert.deepEqual(heatingNotices(s), [])
+})
+
+test('Einzelbetrag 0 aus der Messdienstabrechnung ist gedeckt, kein Kürzungsrecht (#140)', () => {
+  const s = settle({ ...drei, costItems: [
+    heizung({ id: 'md', key: 'amounts', amountCents: 300000, tenancyAmounts: { A: 150000, B: 150000, C: 0 } }),
+    heizung({ id: 'w', description: 'Wartung', key: 'area', amountCents: 30000 }),
+  ] })
+  assert.deepEqual(heatingNotices(s), [])
 })

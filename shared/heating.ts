@@ -14,13 +14,14 @@ type HeatingItem = { id: string; category: string; key: CostKey; amountCents: nu
 // § 2 HeizkostenV: Außer bei Gebäuden mit nicht mehr als zwei Wohnungen, von denen eine der
 // Vermieter selbst bewohnt, geht die Verordnung einer Vereinbarung vor. Dort darf also anderes
 // vereinbart werden; ohne eine solche Vereinbarung gilt sie auch dort.
-// Gezählt werden die Wohnungen des Objekts, nicht nur die beteiligten. **Eine Wohnung hat
-// Fläche**: Eine Einheit mit 0 m² zählt nie mit, gleich ob vermietet, leer, außerhalb der
-// Abrechnungseinheit oder selbstgenutzt (Garage, Stellplatz, Lager; Integrationsdurchsicht).
+// Gezählt werden die Wohnungen des Objekts, nicht nur die beteiligten. Was eine Wohnung ist, sagt
+// `isDwelling` (calc.ts): Fläche oder Bewohner. Eine Einheit ohne beides (Garage, Stellplatz, Lager,
+// auch leer oder außerhalb der Abrechnungseinheit) zählt nicht; eine bewohnte mit vergessener
+// Fläche zählt, sonst würde aus einem Dreifamilienhaus ein Zweifamilienhaus.
 // Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs daran nicht (nur die
 // Zahl der angelegten Wohnungen, nicht die der Anlage).
-export function mayAgreeOtherwise(units: readonly (HeatingUnit & { areaM2: number })[]): boolean {
-  const dwellings = units.filter((u) => u.areaM2 > 0)
+export function mayAgreeOtherwise<U extends HeatingUnit>(units: readonly U[], isDwelling: (u: U) => boolean): boolean {
+  const dwellings = units.filter(isDwelling)
   return dwellings.length <= 2 && dwellings.some((u) => u.selfUsed === true && !u.participates)
 }
 
@@ -42,9 +43,11 @@ export function heatingByConsumption(key: CostKey): boolean {
 //   erst die Verteilung, deshalb bestimmt es calc.ts. Eine Gutschrift nach Wärmezähler oder eine
 //   Verbrauchsposition ohne Ablesungen deckt nichts (Integrationsdurchsicht).
 // - `shareOutside`: Wohnungsgruppen mit beidem, bei denen der Anteil nach Zählern außerhalb von 50
-//   bis 70 % der Heizkosten liegt. Nur Positionen mit positivem Betrag: Eine Gutschrift verschiebt
-//   den Anteil nicht, den die Verordnung meint. Nur für Positionen nach Zählern, denn
-//   Einzelbeträge und die Gemeinschaftsabrechnung enthalten ihre Grundkosten schon.
+//   bis 70 % der Heizkosten liegt. Gerechnet wird **netto**, also mit verrechneten Gutschriften:
+//   Die Verordnung meint die tatsächlich verteilten Kosten (letzte Durchsicht). Ist eine der beiden
+//   Nettosummen nicht positiv, gibt es keinen sinnvollen Prozentsatz und keinen Hinweis. Nur für
+//   Positionen nach Zählern, denn Einzelbeträge und die Gemeinschaftsabrechnung enthalten ihre
+//   Grundkosten schon.
 export type HeatingFindings = {
   withoutConsumption: Map<string, Set<string>>
   shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }[]
@@ -61,7 +64,7 @@ export function heatingFindings(items: readonly HeatingItem[], units: readonly H
   // Gruppen: Wohnungen mit derselben Menge an Positionen haben denselben Anteil.
   const groups = new Map<string, { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }>()
   for (const u of units) {
-    const own = heating.filter((c) => c.amountCents > 0 && takesPart(c, u.id))
+    const own = heating.filter((c) => takesPart(c, u.id))
     const metered = own.filter((c) => c.key === 'meter')
     const other = own.filter((c) => !heatingByConsumption(c.key))
     if (metered.length === 0 || other.length === 0 || own.some((c) => c.key === 'amounts' || c.key === 'external')) continue
@@ -76,6 +79,6 @@ export function heatingFindings(items: readonly HeatingItem[], units: readonly H
     groups.set(key, g)
   }
   const shareOutside = [...groups.values()].filter((g) =>
-    g.totalCents > 0 && (g.consumptionCents * 100 < g.totalCents * 50 || g.consumptionCents * 100 > g.totalCents * 70))
+    g.totalCents > 0 && g.consumptionCents > 0 && (g.consumptionCents * 100 < g.totalCents * 50 || g.consumptionCents * 100 > g.totalCents * 70))
   return { withoutConsumption, shareOutside }
 }
