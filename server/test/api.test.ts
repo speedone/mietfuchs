@@ -57,6 +57,8 @@ type HealthReport = {
     // Was beim Start mit den vorhandenen Daten geschehen ist. Aus diesem Eintrag erfährt es
     // auch die Oberfläche; beim Start aus einem Linux-Paket gibt es keine Konsole.
     changeover: { state: string, message: string, notes: string[] }
+    // Hat dieser Start Schritte nachgeholt, die Sicherung davor (#154), sonst null.
+    migrated: { steps: number, backup: string } | null
   }
 }
 
@@ -381,6 +383,11 @@ test('Start: eine vorhandene db.json wandert beim ersten Start in die Datenbank'
     const report = await s.api<HealthReport>('/healthz')
     assert.equal(report.database?.changeover.state, 'done', JSON.stringify(report.database))
     assert.match(String(report.database?.changeover.message), /Datenbank/)
+    // Der Umstieg wendet zwar die ganze Kette an, aber auf eine neue Datei; eine Sicherung
+    // davor gibt es nicht, der Rückweg ist die abgelöste db.json (#154). Also auch keine
+    // zweite Meldung neben der des Umstiegs.
+    assert.equal(report.database?.migrated, null)
+    assert.deepEqual(fs.readdirSync(dataDir).filter((name) => name.includes('.vor-')), [])
     // Die db.json heißt danach anders, und das Protokoll liegt daneben. Ihr Inhalt bleibt der
     // Rückweg, aber unter einem Namen, den niemand für den laufenden Stand hält: Seit die Routen
     // die Datenbank schreiben, läge sie sonst tot im Ordner und sähe doch aus wie vorher.
@@ -3983,5 +3990,59 @@ test('Objekt: ein Backup mit einem Verweis über die Objektgrenze wird abgelehnt
   } finally {
     s.stop()
     fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------- Sicherung vor dem Update anzeigen (#154) ----------
+
+// Eine Datenbank auf dem Stand von v0.8.0 (nur Schritt 0000) in einem Wegwerf-Ordner.
+async function dataDirAtBaseline(): Promise<string> {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-'))
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  try {
+    applyMigrations(connection, (await loadMigrations()).slice(0, 1))
+  } finally {
+    connection.close()
+  }
+  return dataDir
+}
+
+test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, beim nächsten Start nicht mehr', async () => {
+  const dataDir = await dataDirAtBaseline()
+  const schritte = (await loadMigrations()).length - 1
+  const erster = await startServerIn(dataDir)
+  try {
+    const report = await erster.api<HealthReport>('/healthz')
+    // Nur der Name: Die Oberfläche sagt „im Datenordner“, einen Pfad braucht sie nicht.
+    assert.deepEqual(report.database?.migrated, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' })
+    assert.ok(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')), 'die genannte Sicherung fehlt')
+  } finally {
+    erster.child.kill()
+    await waitForExit(erster.child)
+  }
+  // Der zweite Start hat nichts nachzuholen, und dann gibt es auch nichts zu sagen.
+  const zweiter = await startServerIn(dataDir)
+  try {
+    const report = await zweiter.api<HealthReport>('/healthz')
+    assert.equal(report.database?.migrated, null, JSON.stringify(report.database))
+  } finally {
+    zweiter.stop()
+  }
+})
+
+test('Update: nach dem Wiederherstellen nennt /healthz keine Sicherung, die zu diesem Stand nicht gehört', async () => {
+  // Das Archiv von v0.8.0 wird auf einer Zwischenkopie migriert, ohne Sicherung davor; der
+  // bisherige Stand liegt als mietfuchs.sqlite.vor-restore daneben.
+  const dataDir = await dataDirAtBaseline()
+  const s = await startServerIn(dataDir)
+  try {
+    assert.notEqual((await s.api<HealthReport>('/healthz')).database?.migrated, null)
+    const zip = new AdmZip()
+    zip.addFile('mietfuchs.sqlite', await databaseOfV080(2025))
+    const r = await restore(s, zip.toBuffer())
+    assert.equal(r.status, 200, JSON.stringify(r.body))
+    assert.equal((await s.api<HealthReport>('/healthz')).database?.migrated, null)
+  } finally {
+    s.stop()
   }
 })

@@ -145,6 +145,8 @@ test('Objekt: vor dem Update liegt eine Sicherung des alten Stands daneben, und 
 
     const opened = await openDatabase({ dataDir: dir })
     opened.close()
+    // Das Ergebnis nennt die Sicherung, damit die Oberfläche davon erzählen kann (#154).
+    assert.equal(opened.backup, path.join(dir, 'mietfuchs.sqlite.vor-0001_objekte'))
     const sicherungen = fs.readdirSync(dir).filter((name) => name.includes('.vor-'))
     assert.deepEqual(sicherungen, ['mietfuchs.sqlite.vor-0001_objekte'])
 
@@ -154,8 +156,10 @@ test('Objekt: vor dem Update liegt eine Sicherung des alten Stands daneben, und 
     assert.deepEqual(column(alt, 'SELECT house_name FROM settings'), ['Musterstraße 1'])
     alt.close()
 
-    // Ein zweiter Start hat nichts nachzuholen und legt nichts an.
-    ;(await openDatabase({ dataDir: dir })).close()
+    // Ein zweiter Start hat nichts nachzuholen und legt nichts an, und er nennt auch keine.
+    const zweiter = await openDatabase({ dataDir: dir })
+    zweiter.close()
+    assert.equal(zweiter.backup, null)
     assert.equal(fs.readdirSync(dir).filter((name) => name.includes('.vor-')).length, 1)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
@@ -165,8 +169,12 @@ test('Objekt: vor dem Update liegt eine Sicherung des alten Stands daneben, und 
 test('Objekt: eine frische Datenbank bekommt keine Sicherung', async () => {
   const dir = tempDir()
   try {
-    ;(await openDatabase({ dataDir: dir })).close()
+    const opened = await openDatabase({ dataDir: dir })
+    opened.close()
     assert.deepEqual(fs.readdirSync(dir).filter((name) => name.includes('.vor-')), [])
+    // Angewandt hat sie alle Schritte, eine Sicherung nennt sie trotzdem nicht: Es gab keine.
+    assert.ok(opened.migrations > 0)
+    assert.equal(opened.backup, null)
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

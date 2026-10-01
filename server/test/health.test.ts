@@ -62,7 +62,7 @@ test('Healthcheck: unlesbare db.json ist ein Fehler', () => {
 // lesen, ist ein Start ohne sie ein Start ohne Daten, und genau das soll der Bericht sagen.
 
 const dbState = (dir: string, state: Partial<DatabaseState> & Pick<DatabaseState, 'open' | 'changeover'>): DatabaseState => ({
-  file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet', ...state,
+  file: path.join(dir, 'mietfuchs.sqlite'), migrations: 1, detail: 'geöffnet', migrated: null, ...state,
 })
 
 test('Healthcheck: eine Datenbank, die sich nicht öffnen ließ, ist ein Fehler', () => {
@@ -168,7 +168,7 @@ test('Unterbliebener Umstieg mit nur Einstellungen in der Datenbank sperrt die D
   // Die db.json ist dann der ganze Bestand. Was der Vermieter in das leere Haus schriebe, stünde
   // als zweiter Bestand daneben (Befund der zweiten Integrationsdurchsicht).
   const { databaseUnavailable } = await import('../src/health.ts')
-  const db = (changeover: DatabaseState['changeover']): DatabaseState => ({ open: true, file: 'x', migrations: 1, detail: 'geöffnet', changeover })
+  const db = (changeover: DatabaseState['changeover']): DatabaseState => ({ open: true, file: 'x', migrations: 1, detail: 'geöffnet', changeover, migrated: null })
   assert.match(databaseUnavailable(db({ state: 'stale', message: 'm', notes: [], pending: true })) ?? '', /noch nicht übernommen/)
   assert.equal(databaseUnavailable(db({ state: 'stale', message: 'm', notes: [] })), null, 'mit echtem Bestand bleibt die Datenbank benutzbar')
 })

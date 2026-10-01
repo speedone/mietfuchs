@@ -1432,8 +1432,12 @@ try {
 // auf der die Meldung sonst stünde.
 function databaseState(): DatabaseState {
   const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes, ...(changeover.pending ? { pending: true } : {}) }
-  if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie }
-  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie }
+  if (database) {
+    // Die Sicherung nur mit Namen: Sie liegt immer im Datenordner, und die Oberfläche sagt es so.
+    const migrated = database.backup ? { steps: database.migrations, backup: path.basename(database.backup) } : null
+    return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie, migrated }
+  }
+  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie, migrated: null }
 }
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist

@@ -451,6 +451,11 @@ export type OpenedDatabase = {
   // Wie viele Änderungen am Aufbau dieser Start nachgeholt hat. Beim ersten Start sind es alle,
   // danach in aller Regel keine.
   migrations: number
+  // Die Sicherung, die dieser Start vor dem Nachholen angelegt hat (oder von einem früheren,
+  // gescheiterten Versuch vorgefunden), sonst null. Eine frisch angelegte Datenbank bekommt
+  // keine, und deshalb steht hier auch dann null, wenn `migrations` alle Schritte zählt: Die
+  // Oberfläche erzählt davon (#154) und darf keine Datei nennen, die es nicht gibt.
+  backup: string | null
   // Was zwar zu sagen, aber kein Grund zum Abbruch ist. Der Aufrufer gibt sie aus.
   warnings: string[]
   // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane.
@@ -559,8 +564,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 
     // Vor einem Update eine Sicherung des bisherigen Stands (#92). Scheitert sie, wird nicht
     // migriert: Nichts anfassen, was man nicht zurückholen kann.
+    let backup: string | null
     try {
-      backupBeforeMigrating(connection, file, migrations)
+      backup = backupBeforeMigrating(connection, file, migrations)
     } catch (err) {
       return fail(
         `Vor dem Update der Datenbank ${file} ließ sich keine Sicherung anlegen. Mietfuchs ändert ` +
@@ -591,6 +597,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       db: connection.db,
       file,
       migrations: applied,
+      // Nur wenn wirklich etwas nachgeholt wurde; ohne ausstehenden Schritt gibt
+      // backupBeforeMigrating ohnehin null zurück, das hier hält die Zusage aber an einer Stelle.
+      backup: applied > 0 ? backup : null,
       warnings,
       write: (work) => lane.write(() => work(connection.db)),
       read: (work) => lane.read(() => work(connection.db)),
