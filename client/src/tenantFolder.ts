@@ -163,7 +163,7 @@ function drawCover(lib: PdfLib, pages: PDFPage[], rows: CoverRow[], fonts: { reg
   const { rgb } = lib
   const { regular, bold } = fonts
   const width = A4[0] - 2 * MARGIN
-  const cols = { nr: MARGIN, position: MARGIN + 24, amount: MARGIN + width - 170, beleg: MARGIN + width - 110, page: MARGIN + width - 30 }
+  const cols = { nr: MARGIN, position: MARGIN + 24, amount: MARGIN + width - 235, beleg: MARGIN + width - 170, page: MARGIN + width - 25 }
   let index = 0
   pages.forEach((page, p) => {
     let y = A4[1] - MARGIN

@@ -712,8 +712,8 @@ Kostenposition (#94), nicht in weitere Ebenen.
 - **Die Routen nehmen `?property=`**, beim Anlegen einer Wurzel auch `propertyId` im Rumpf
   (`propertyOf` in index.ts). **Fehlt die Angabe und gibt es genau ein Objekt, gilt dieses**, so
   arbeiten alte Tabs, Smoke-Test und Praxislauf unverändert; bei mehreren antwortet die Route mit
-  400, statt still alle zu liefern. Belege und Backup bleiben installationsweit; das Belegarchiv
-  fragt die Kostenpositionen deshalb je Objekt ab.
+  400, statt still alle zu liefern. Belege und Backup bleiben installationsweit; der Belegordner
+  fragt die Kostenpositionen deshalb je Objekt ab (siehe Belegordner).
 - **Einstellungen**: Name und Adresse gehören zum Objekt. Die Spalten `house_name` und `address`
   stehen noch in `settings`, weil der eingefrorene Eingang sie schreibt und Migration 0001 sie
   abliest; ausgeliefert und angenommen werden sie nicht mehr. Vermieter, IBAN und Zahlungsfrist
@@ -729,6 +729,46 @@ Kostenposition (#94), nicht in weitere Ebenen.
   und nach dem Wechsel in ein Objekt ohne Wohnungen steht oben ein Hinweis mit „Zurück zu …“
   (#157, Logik in client/src/propertyView.ts, das vorige Objekt merkt der Provider): Ein leeres
   neues Objekt sah sonst aus wie ein verlorener Bestand.
+
+**Belegordner** (#170, [client/src/pages/Belege.tsx](client/src/pages/Belege.tsx), Logik in
+[client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,
+Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
+[docs/superpowers/specs/2026-10-02-belegordner-design.md](docs/superpowers/specs/2026-10-02-belegordner-design.md).
+
+- **Die Datei ist der Beleg, die Tabelle `uploads` nur eine Beschreibung dazu**
+  ([server/src/db/uploads.ts](server/src/db/uploads.ts), Migration 0012): Originalname, Art,
+  Größe, SHA-256, genaue Hochladezeit, Rechnungsdatum. **Eine fehlende Zeile ist kein Fehler**:
+  Alles von vor der Tabelle und jeder Beleg aus einem alten Backup wird aus der Datei beschrieben
+  ([server/src/uploads.ts](server/src/uploads.ts), `describeFile`; Hochladezeit aus dem
+  Zeitstempel im Namen, nicht aus der Dateizeit, die ein ZIP verfälscht). Deshalb auch kein
+  Fremdschlüssel von `cost_items.invoice_file` dorthin. `GET /api/uploads` liefert die Liste auch
+  ohne Datenbank, nur ohne Posteingang.
+- **Objekt und Jahr nur für den Posteingang**, also für Belege an keiner Position; für verknüpfte
+  ergeben sie sich aus den Positionen (keine zweite Wahrheit). `property_id` mit `SET NULL`.
+  Hochladen nimmt `propertyId` und `year` als Formularfelder (`/api/upload`, `/api/extract`,
+  `/api/intake`); ein unbekanntes Objekt oder ungültiges Jahr wird abgelehnt und die Datei
+  entfernt, ein Fehler der Datenbank dagegen verhindert das Hochladen nicht.
+- **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: Die KI-Routen nehmen statt
+  `file` das Feld `existingFile` (nur ein Name im Belegordner, `path.basename`), und ein Abbruch
+  löscht ihn nicht. Die Schnellerfassung bekommt die Belege über `handoff` aus App.tsx.
+- **Löschen** nimmt die Zeile mit und bleibt gesperrt, solange irgendeine Position irgendeines
+  Objekts auf den Beleg zeigt (`invoiceFilesInUse` fragt ohne Objekt).
+- **Backup und Umstieg**: Die Tabelle steckt im Schnappschuss der Datenbank und kommt so mit; ein
+  Archiv ohne sie (nur `db.json`, oder Datenbank einer älteren Version) ergibt eine leere Tabelle,
+  der eingefrorene Eingang kennt sie nicht. Praxislauf Fall 13 prüft das über zwei Starts.
+- **Belegabdeckung** wird am Betrag gemessen, eine Gutschrift mit ihrem Betrag, Positionen über
+  0 € zählen nicht. Die Cockpit-Zeile „Belege vollständig“ wird **höchstens gelb**: Ein fehlender
+  Beleg ändert keine Zahl der Abrechnung.
+- **Belegmappe für Mieter** ([client/src/tenantFolder.ts](client/src/tenantFolder.ts)) entsteht im
+  Browser mit **pdf-lib** (reines JavaScript, erst bei Bedarf geladen); was pdf-lib nicht kopieren
+  kann, kommt über pdf.js als Seitenbilder hinein. Sie enthält die Positionen der Mieterzeilen der
+  Abrechnung in deren Reihenfolge, ohne nicht Umlagefähiges. **Belege zu Einzelbeträgen je Mieter
+  nur auf ausdrückliche Wahl**, weil sie Daten anderer Mieter tragen; Begründung mit Quellen im
+  Design-Text. Die Standardschrift kann nur WinAnsi, `winAnsiSafe` ersetzt den Rest.
+- **Belege für die Steuer** ([server/src/taxReceipts.ts](server/src/taxReceipts.ts)) baut der
+  Server mit adm-zip: Ordner je Gruppe aus `ANLAGE_V_GROUP` in derselben Reihenfolge wie die
+  Steuerübersicht, Erhaltungsrücklage gesondert, dazu `Übersicht.csv` (mit BOM, Semikolon) mit
+  jeder Position, auch ohne Beleg.
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
@@ -812,8 +852,9 @@ nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/prop
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
 `/api/ai/consent` sowie `/api/ollama/status` für ältere Tabs (alles siehe
 KI-Belegauswertung), `/api/update` und `POST /api/update/check`
-(Update-Hinweis, siehe unten), `/api/uploads` (Belegarchiv: Liste +
-Löschen unverknüpfter Dateien), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
+(Update-Hinweis, siehe unten), `/api/uploads` (Belegordner: Liste mit Angaben, `PUT` für Objekt,
+Jahr und Rechnungsdatum im Posteingang, Löschen unverknüpfter Dateien, siehe Belegordner),
+`/api/receipts/tax/:year` (Belege für die Steuer als ZIP), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
 Wiederherstellen prüft die `db.json` im Archiv erst mit dem Validator und lehnt sie ab, bevor
 irgendetwas überschrieben wird, siehe Die Datenbank. Es setzt dabei **keinen vorhandenen Stand
 voraus**: Auf einem frischen Rechner gibt es noch keine `db.json`, denn die entsteht erst beim
@@ -1264,7 +1305,7 @@ PDFs öffnet der Server nicht selbst: Der Browser liest sie vor dem Hochladen mi
 ([client/src/pdfIntake.ts](client/src/pdfIntake.ts)) und schickt die Textebene im Feld
 `pdfText` mit, bei Scans ohne brauchbare Textebene (unter 80 Zeichen) bis zu vier Seiten als
 JPEG im Feld `pages`. Die Seitenbilder bleiben im Arbeitsspeicher (gemischter multer-Speicher
-in index.ts) und landen nicht im Belegarchiv. So braucht der Server kein natives Modul:
+in index.ts) und landen nicht im Belegordner. So braucht der Server kein natives Modul:
 `pdf-to-img` scheiterte in der Bun-Programmdatei, weil pdf.js dort `@napi-rs/canvas` nicht
 findet (#21). Intern laufen Bilder als `{ mimeType, data }`.
 
