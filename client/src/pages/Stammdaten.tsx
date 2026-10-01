@@ -5,8 +5,9 @@ import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../un
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
+import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
 import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
@@ -696,7 +697,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           tenancy={wizardFor}
           unit={units.find((u) => u.id === wizardFor.unitId)}
           onClose={() => setWizardFor(null)}
-          onDone={async () => { setWizardFor(null); await reload() }}
+          onDone={async () => { await reload(); setWizardFor(null) }}
         />
       )}
     </>
@@ -705,13 +706,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
 // ---------- Mieterwechsel-Assistent ----------
 // Geführter Ablauf: Auszugsdatum → Zwischenablesung der Zähler → neuer Mieter (oder Leerstand).
-// Alle Schritte werden erst beim Abschluss gemeinsam gespeichert — Abbrechen ändert nichts.
-
-function parseMeterValue(s: string): number | null {
-  if (!s.trim()) return null
-  const n = Number(s.trim().replace(/\./g, (m, i, str) => (str.includes(',') ? '' : m)).replace(',', '.'))
-  return Number.isFinite(n) ? n : null
-}
+// Alle Schritte werden erst beim Abschluss gespeichert, und zwar in einer Anfrage, die der Server
+// ganz oder gar nicht ausführt (#150). Abbrechen ändert nichts; scheitert das Speichern, auch nicht.
+// Die Regeln stehen in tenantChange.ts.
 
 function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   tenancy: Tenancy
@@ -724,9 +721,10 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [endDate, setEndDate] = useState('')
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
   const [vacancy, setVacancy] = useState(false)
-  const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', baseRent: '', prepayment: '' })
+  const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
   // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(true)
 
@@ -739,16 +737,10 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
       .catch(() => setMeters([]))
   }, [tenancy.unitId, propertyId])
 
-  // Einzug des Nachmieters: standardmäßig der Tag nach dem Auszug
-  function defaultStart(end: string): string {
-    const d = new Date(`${end}T00:00:00Z`)
-    d.setUTCDate(d.getUTCDate() + 1)
-    return d.toISOString().slice(0, 10)
-  }
-
   function goToStep2() {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < tenancy.start) {
-      setError('Bitte ein gültiges Auszugsdatum nach dem Einzug angeben.')
+    const problem = endProblem(endDate, tenancy)
+    if (problem) {
+      setError(problem)
       return
     }
     setError('')
@@ -757,67 +749,37 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   }
 
   function goToStep3() {
-    for (const m of meters) {
-      const v = meterValues[m.id]
-      if (v?.trim() && parseMeterValue(v) === null) {
-        setError(`Zählerstand für „${m.name}" ist keine gültige Zahl.`)
-        return
-      }
+    const problem = meterProblem(meters, meterValues)
+    if (problem) {
+      setError(problem)
+      return
     }
     setError('')
     setStep(3)
   }
 
   async function commit() {
-    let newTenancyBody: string | null = null
-    if (!vacancy) {
-      const persons = parsePersons(newTenant.persons)
-      const prepayment = parseEuro(newTenant.prepayment)
-      const baseRent = parseEuro(newTenant.baseRent)
-      if (!newTenant.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newTenant.start) || persons === null) {
-        setError(`Bitte Name, Einzugsdatum und Personenzahl des neuen Mieters prüfen. ${PERSONS_HINT}`)
-        return
-      }
-      if (newTenant.start <= endDate) {
-        setError('Der Einzug des neuen Mieters muss nach dem Auszug liegen.')
-        return
-      }
-      newTenancyBody = JSON.stringify({
-        unitId: tenancy.unitId,
-        tenantName: newTenant.name.trim(),
-        persons,
-        personHistory: [{ from: newTenant.start, persons }],
-        start: newTenant.start,
-        end: null,
-        baseRents: baseRent !== null ? [{ from: newTenant.start.slice(0, 7), monthlyCents: baseRent }] : [],
-        prepayments: prepayment !== null ? [{ from: newTenant.start.slice(0, 7), monthlyCents: prepayment }] : [],
-        prepaymentOverrides: {},
-      })
+    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant })
+    if ('error' in change) {
+      setError(change.error)
+      return
     }
     setError('')
     setBusy(true)
     try {
-      // 1. Altes Mietverhältnis beenden
-      await api(`/api/tenancies/${tenancy.id}`, { method: 'PUT', body: JSON.stringify({ end: endDate }) })
-      // 2. Zwischenablesungen erfassen (nur ausgefüllte Zähler)
-      for (const m of meters) {
-        const v = parseMeterValue(meterValues[m.id] ?? '')
-        if (v === null) continue
-        await api('/api/readings', {
-          method: 'POST',
-          body: JSON.stringify({
-            meterId: m.id,
-            date: endDate,
-            value: v,
-            note: `Zwischenablesung Mieterwechsel ${tenancy.tenantName}`,
-          }),
-        })
-      }
-      // 3. Neues Mietverhältnis anlegen
-      if (newTenancyBody) await api('/api/tenancies', { method: 'POST', body: newTenancyBody })
-      await onDone()
+      await api(withProperty(`/api/tenancies/${tenancy.id}/change`, propertyId), { method: 'POST', body: JSON.stringify(change.body) })
     } catch (e) {
-      setError(String((e as Error).message))
+      // Gespeichert ist dann nichts; die Meldung bleibt im Assistenten stehen (#146).
+      setError(errorText(e))
+      setBusy(false)
+      return
+    }
+    // Gespeichert ist der Wechsel jetzt. Scheitert nur das Neuladen der Ansicht, darf der Fehler
+    // nicht verloren gehen, und der Wechsel darf nicht noch einmal angeboten werden.
+    try {
+      await onDone()
+    } catch {
+      setSaved(true)
       setBusy(false)
     }
   }
@@ -829,7 +791,14 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
     <div className="card" style={{ borderColor: 'var(--accent)' }}>
       <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
       {error && <div className="error">{error}</div>}
+      {saved && (
+        <div className="notice">
+          Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden, bitte Seite neu laden.{' '}
+          <button className="btn ghost" onClick={onClose}>Schließen</button>
+        </div>
+      )}
 
+      {!saved && <>
       <div className="wizard-step">
         <strong>1. Auszug</strong>
         <div className="row" style={{ marginTop: 8 }}>
@@ -925,6 +894,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
       {step < 3 && (
         <button className="btn ghost" onClick={onClose}>Abbrechen</button>
       )}
+      </>}
     </div>
   )
 }
