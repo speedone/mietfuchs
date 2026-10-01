@@ -46,9 +46,11 @@ export type UnitBuildResult = { error: string } | { body: Record<string, unknown
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
 export function buildUnitBody(form: UnitForm): UnitBuildResult {
+  // 0 m² ist erlaubt (#135): Eine Garage, ein Stellplatz oder ein Lager zählt beim
+  // Flächenschlüssel dann nicht mit. Ein leeres Feld ist keine Angabe und bleibt ein Fehler.
   const area = parseNumberDe(form.areaM2) ?? NaN
-  if (!form.name.trim() || !Number.isFinite(area) || area <= 0) {
-    return { error: 'Bitte Name und gültige Wohnfläche angeben.' }
+  if (!form.name.trim() || !Number.isFinite(area) || area < 0) {
+    return { error: 'Bitte Name und gültige Wohnfläche angeben (0 m² für Garage, Stellplatz oder Lager).' }
   }
   const rooms = form.rooms.trim() ? (parseNumberDe(form.rooms) ?? NaN) : null
   if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {

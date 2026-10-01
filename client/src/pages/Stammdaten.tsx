@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../un
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, costModelBody, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -99,21 +99,12 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       setError('Bitte Mieter, Wohnung und Einzugsdatum prüfen.')
       return
     }
-    const personHistory: { from: string; persons: number }[] = []
-    for (const [i, row] of tenForm.personHistory.entries()) {
-      const persons = Number(row.persons)
-      const from = row.from || (i === 0 ? tenForm.start : '')
-      if (!Number.isInteger(persons) || persons < 1 || !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
-        setError('Bitte Personen-Staffel prüfen (Datum und ganze Personenzahl).')
-        return
-      }
-      personHistory.push({ from, persons })
-    }
-    if (personHistory.length === 0) {
-      setError('Mindestens eine Personenzahl angeben.')
+    const persons = buildPersonHistory(tenForm.personHistory, tenForm.start)
+    if ('error' in persons) {
+      setError(persons.error)
       return
     }
-    personHistory.sort((a, b) => a.from.localeCompare(b.from))
+    const { personHistory } = persons
     const baseRents: { from: string; monthlyCents: number }[] = []
     for (const row of tenForm.baseRents) {
       if (!row.from && !row.amount.trim()) continue // leere Zeile überspringen
@@ -452,13 +443,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                   </label>
                   <label className="field">
                     Personen
-                    <input value={p.persons} onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
+                    <input value={p.persons} inputMode="numeric" onChange={(e) => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.map((x, k) => (k === i ? { ...x, persons: e.target.value } : x)) })} />
                   </label>
                   {tenForm.personHistory.length > 1
                     ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, personHistory: tenForm.personHistory.filter((_, k) => k !== i) })}>🗑</button>
                     : <span />}
                 </div>
               ))}
+              <small className="muted">0 Personen für Garage, Stellplatz oder Lager; das Mietverhältnis zählt dann beim Personenschlüssel nicht mit.</small>
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, personHistory: [...tenForm.personHistory, { from: '', persons: '' }] })}>+ Änderung ab Datum …</button>
             </div>
 
@@ -611,6 +603,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             <label className="field grow">
               Wohnfläche (m²)
               <input value={unitForm.areaM2} onChange={(e) => setUnitForm({ ...unitForm, areaM2: e.target.value })} placeholder="z. B. 85,5" />
+              <small className="muted">0 für Garage, Stellplatz oder Lager; sie zählt dann beim Flächenschlüssel nicht mit.</small>
             </label>
             <label className="field grow">
               Zimmer
@@ -749,11 +742,11 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   async function commit() {
     let newTenancyBody: string | null = null
     if (!vacancy) {
-      const persons = Number(newTenant.persons)
+      const persons = parsePersons(newTenant.persons)
       const prepayment = parseEuro(newTenant.prepayment)
       const baseRent = parseEuro(newTenant.baseRent)
-      if (!newTenant.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newTenant.start) || !Number.isInteger(persons) || persons < 1) {
-        setError('Bitte Name, Einzugsdatum und Personenzahl des neuen Mieters prüfen.')
+      if (!newTenant.name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(newTenant.start) || persons === null) {
+        setError(`Bitte Name, Einzugsdatum und Personenzahl des neuen Mieters prüfen. ${PERSONS_HINT}`)
         return
       }
       if (newTenant.start <= endDate) {

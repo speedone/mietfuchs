@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, costModelBody, notSettledText, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
   expect(showsFlatRates('flatRate', 'settlement')).toBe(true)
@@ -18,4 +18,36 @@ test('der Hinweis „Ohne Abrechnung“ nennt das Modell in Worten', () => {
   expect(notSettledText({ tenancyId: 't', tenantName: 'A', unitName: 'EG', costModel: 'inclusive', heatingModel: 'inclusive' }))
     .toBe('A (EG): Nebenkosten in der Miete enthalten, Heizung in der Miete enthalten')
   expect(Object.keys(COST_MODEL_LABELS)).toEqual(['settlement', 'flatRate', 'inclusive'])
+})
+
+// #135: Eine vermietete Garage hat keine Bewohner. 0 Personen muss gehen, sonst steht sie mit einer
+// erfundenen Person in der Verteilbasis des Personenschlüssels.
+test('Personenzahl: 0 und ganze Zahlen sind erlaubt, negativ, gebrochen und leer nicht', () => {
+  expect(parsePersons('0')).toBe(0)
+  expect(parsePersons('3')).toBe(3)
+  expect(parsePersons(' 2 ')).toBe(2)
+  expect(parsePersons('')).toBeNull()
+  expect(parsePersons('  ')).toBeNull()
+  expect(parsePersons('-1')).toBeNull()
+  expect(parsePersons('1,5')).toBeNull()
+  expect(parsePersons('1.5')).toBeNull()
+  expect(parsePersons('zwei')).toBeNull()
+})
+
+test('Personen-Staffel: 0 Personen wird übernommen, die erste Zeile ohne Datum gilt ab Einzug', () => {
+  expect(buildPersonHistory([{ from: '', persons: '0' }], '2025-03-01')).toEqual({ personHistory: [{ from: '2025-03-01', persons: 0 }] })
+})
+
+test('Personen-Staffel: die Meldung nennt, was erlaubt ist', () => {
+  const result = buildPersonHistory([{ from: '', persons: '-1' }], '2025-03-01')
+  if (!('error' in result)) return expect.fail('negative Personenzahl angenommen')
+  expect(result.error).toMatch(/0/)
+  expect(result.error).toMatch(/ganze Zahl/)
+})
+
+test('Personen-Staffel: sortiert nach Datum, eine spätere Zeile ohne Datum ist ein Fehler', () => {
+  expect(buildPersonHistory([{ from: '2025-07-01', persons: '1' }, { from: '2025-01-01', persons: '2' }], '2025-01-01'))
+    .toEqual({ personHistory: [{ from: '2025-01-01', persons: 2 }, { from: '2025-07-01', persons: 1 }] })
+  expect(buildPersonHistory([{ from: '', persons: '1' }, { from: '', persons: '2' }], '2025-01-01')).toHaveProperty('error')
+  expect(buildPersonHistory([], '2025-01-01')).toHaveProperty('error')
 })

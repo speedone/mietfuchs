@@ -115,6 +115,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, steht kein Vorschlag
   mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
   ([#134](https://github.com/speedone/mietfuchs/issues/134))
+- **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
+  Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen
+  Werten in der Verteilbasis von Flächen- und Personenschlüssel. Jetzt sind 0 m² und 0 Personen
+  erlaubt, mit einem kurzen Hinweis am Feld; negative und gebrochene Personenzahlen bleiben
+  ausgeschlossen, und die Meldung sagt, was erlaubt ist.
+  ([#135](https://github.com/speedone/mietfuchs/issues/135))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften
