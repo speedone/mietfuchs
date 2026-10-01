@@ -51,9 +51,15 @@ function assert(condition, text, details) {
 async function request(urlPath, init) {
   const res = await fetch(`${BASE}${urlPath}`, init)
   const type = res.headers.get('content-type') ?? ''
+  // JSON oder Bytes, je nach Antwort. Was darin steht, prüfen die Zusicherungen und nicht der
+  // Übersetzer, deshalb `any` statt des `unknown`, das `res.json()` liefert.
+  /** @type {any} */
   const body = type.includes('json') ? await res.json() : Buffer.from(await res.arrayBuffer())
   return { status: res.status, type, body }
 }
+// Nach `listen` auf einem TCP-Port ist die Adresse immer ein AddressInfo; der Typ von `address()`
+// kennt daneben noch die Zeichenkette einer Unix-Socket-Adresse und `null` vor dem Start.
+const listeningPort = (server) => /** @type {import('node:net').AddressInfo} */ (server.address()).port
 const json = (method, body) => ({ method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
 // ---------- Nachgebautes Ollama ----------
@@ -100,7 +106,7 @@ function startFakeOllama() {
   // Nur lokal erreichbar: Container laufen in der CI mit --network host und sehen 127.0.0.1 ebenso
   return new Promise((resolve) =>
     server.listen(0, '127.0.0.1', () =>
-      resolve({ port: server.address().port, requests, pulled, control, stop: () => server.close() }),
+      resolve({ port: listeningPort(server), requests, pulled, control, stop: () => server.close() }),
     ),
   )
 }
@@ -116,6 +122,10 @@ const until = async (condition, ms) => {
 
 // Wie der Browser: Auswertung als Strom (Accept: application/x-ndjson). Liefert, wann die Header
 // kamen, alle Zeilen und die Gesamtdauer.
+/**
+ * @param {string} longText
+ * @param {{ fileName?: string, requestId?: string, signal?: AbortSignal }} [options]
+ */
 async function extractAsStream(longText, { fileName = 'strom.pdf', requestId, signal } = {}) {
   const fd = new FormData()
   fd.append('file', new Blob([Buffer.from('%PDF-1.4\n%Mietfuchs-Prüfung\n')], { type: 'application/pdf' }), fileName)
@@ -291,7 +301,7 @@ function startFakeOpenAi(key) {
     })
   })
   return new Promise((resolve) =>
-    server.listen(0, '127.0.0.1', () => resolve({ port: server.address().port, requests, stop: () => server.close() })),
+    server.listen(0, '127.0.0.1', () => resolve({ port: listeningPort(server), requests, stop: () => server.close() })),
   )
 }
 
