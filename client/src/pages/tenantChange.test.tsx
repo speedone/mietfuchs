@@ -17,6 +17,11 @@ const TENANCIES: Tenancy[] = [
 ]
 const MSG = 'Die Angaben verletzen eine Regel der Datenbank: Ein Betrag darf nicht negativ sein.'
 
+// Die Seite rendert ganz; unter Last auf einem geteilten Rechner braucht das mehr als die
+// voreingestellten fünf Sekunden je Test und die eine Sekunde je Suche.
+vi.setConfig({ testTimeout: 20000 })
+const SLOW = { timeout: 5000 }
+
 let sent: { url: string; method: string; body: unknown }[]
 let changeStatus: number
 
@@ -52,23 +57,23 @@ const runWizard = async (reload: () => Promise<void>) => {
       </PropertyProvider>
     </YearProvider>,
   )
-  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
   fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })
   fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/Wasser EG/i), { target: { value: '1.234' } })
+  fireEvent.change(await screen.findByLabelText(/Wasser EG/i, {}, SLOW), { target: { value: '1.234' } })
   fireEvent.click(screen.getByRole('button', { name: /^Weiter$/i }))
-  fireEvent.change(await screen.findByLabelText(/^Mieter$/i), { target: { value: 'Schmidt' } })
+  fireEvent.change(await screen.findByLabelText(/^Mieter$/i, {}, SLOW), { target: { value: 'Schmidt' } })
   fireEvent.change(screen.getByLabelText(/Vorauszahlung/i), { target: { value: '150' } })
   fireEvent.click(screen.getByRole('button', { name: /Mieterwechsel durchführen/i }))
 }
 
 test('Mieterwechsel: eine einzige Anfrage, und die Ablehnung bleibt im Assistenten stehen', async () => {
   await runWizard(async () => {})
-  await waitFor(() => expect(sent).toHaveLength(1))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]?.method).toBe('POST')
   expect(sent[0]?.url).toBe('/api/tenancies/t1/change?property=objekt-1')
   expect(sent[0]?.body).toMatchObject({ end: '2025-06-30', readings: [{ meterId: 'm1', value: 1234 }], newTenancy: { tenantName: 'Schmidt', start: '2025-07-01' } })
-  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy())
+  await waitFor(() => expect(screen.getByText(MSG)).toBeTruthy(), SLOW)
   // busy ist zurückgesetzt: Der Knopf lässt sich nach dem Beheben wieder drücken.
   const knopf = screen.getByRole('button', { name: /Mieterwechsel durchführen/i }) as HTMLButtonElement
   expect(knopf.disabled).toBe(false)
@@ -78,7 +83,7 @@ test('Mieterwechsel: eine einzige Anfrage, und die Ablehnung bleibt im Assistent
 test('Mieterwechsel: gespeichert, aber die Ansicht lädt nicht neu — Hinweis statt Verlust, kein zweiter Wechsel', async () => {
   changeStatus = 200
   await runWizard(async () => { throw new Error('Netzwerk weg') })
-  await waitFor(() => expect(screen.getByText(/Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden/)).toBeTruthy())
+  await waitFor(() => expect(screen.getByText(/Der Mieterwechsel ist gespeichert; die Ansicht ließ sich nicht neu laden/)).toBeTruthy(), SLOW)
   expect(screen.queryByRole('button', { name: /Mieterwechsel durchführen/i })).toBeNull()
   expect(sent).toHaveLength(1)
 })
