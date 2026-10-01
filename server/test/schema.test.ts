@@ -95,8 +95,9 @@ type _OverrideAmount = Assert<Equals<OverrideRow['amountCents'], Tenancy['prepay
 // --- Kostenpositionen ---
 // Die drei Angaben aus #94 liegen woanders: Teilnehmer und Einzelbeträge in eigenen Tabellen,
 // die Angaben der Gemeinschaft als drei Spalten statt eines Objekts. An ihrer Stelle stehen
-// deshalb die drei Spalten im Vergleich.
-type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'externalBasis'> & {
+// deshalb die drei Spalten im Vergleich. Die Eigenbeträge (#104) stehen ebenfalls in einer
+// eigenen Tabelle.
+type CostItemColumns = Omit<CostItem, 'customShares' | 'participantUnitIds' | 'tenancyAmounts' | 'selfAmounts' | 'externalBasis'> & {
   externalMeasure?: ExternalBasis['measure']
   externalTotal?: ExternalBasis['total']
   externalTotalCents?: ExternalBasis['totalCents']
@@ -108,6 +109,8 @@ type _CostItems = Assert<Matches<typeof schema.costItems.$inferSelect, CostItemC
 type ParticipantRow = typeof schema.costItemParticipants.$inferSelect
 type _ParticipantUnit = Assert<Equals<ParticipantRow['unitId'], Unit['id']>>
 type AmountRow = typeof schema.costItemAmounts.$inferSelect
+type SelfAmountRow = typeof schema.costItemSelfAmounts.$inferSelect
+type _SelfAmountUnit = Assert<Equals<SelfAmountRow['unitId'], Unit['id']>>
 type _AmountCents = Assert<Equals<AmountRow['amountCents'], number>>
 
 // `customShares` ist `Record<Wohnungs-Kennung, Prozent>`. Auch hier prüft der Namensvergleich
@@ -212,6 +215,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'closed_settlements',
       'cost_item_amounts',
       'cost_item_participants',
+      'cost_item_self_amounts',
       'cost_item_shares',
       'cost_items',
       'flat_rates',

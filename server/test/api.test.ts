@@ -3803,6 +3803,28 @@ test('Objekt: Teilnehmer und Einzelbeträge halten die Objektgrenze auch beim Um
   })
 })
 
+test('Eigenbeträge (#104): gespeichert, gelesen, gerechnet, und nur im eigenen Objekt', async () => {
+  await withProperties(async (s, b) => {
+    const eigen = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'Haupt', areaM2: 100, participates: false, selfUsed: true }) })
+    const el = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'Einlieger', areaM2: 50, participates: true }) })
+    const fremd = await s.api<Unit>(`/api/units?property=${b.id}`, { method: 'POST', body: JSON.stringify({ name: 'B', areaM2: 50, participates: false, selfUsed: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      unitId: el.id, tenantName: 'Meier', persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    const k = await s.api<{ id: string, selfAmounts?: Record<string, number> }>('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      year: 2025, category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 300000, key: 'amounts',
+      tenancyAmounts: { [t.id]: 124000 }, selfAmounts: { [eigen.id]: 160000 },
+    }) })
+    assert.deepEqual(k.selfAmounts, { [eigen.id]: 160000 })
+    const abrechnung = await s.api<{ selfUsedShareCents: number }>('/api/settlement/2025?property=objekt-1')
+    assert.equal(abrechnung.selfUsedShareCents, 160000)
+    const quer = await fetch(`${s.base}/api/costItems/${k.id}?property=objekt-1`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selfAmounts: { [fremd.id]: 100 } }),
+    })
+    assert.equal(quer.status, 400, 'ein Eigenbetrag für eine Wohnung eines anderen Objekts')
+  })
+})
+
 test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
   const s = await startServer()
   try {
