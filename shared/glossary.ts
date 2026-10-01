@@ -56,6 +56,13 @@ export const GLOSSARY = {
     example: 'Haus mit drei Wohnungen und einem Laden: Die drei Wohnungen bilden die Abrechnungseinheit. Von 1.200 € Grundsteuer ziehen Sie zuerst den Anteil des Ladens ab, etwa 300 €; nur die übrigen 900 € verteilen sich auf die Wohnungen.',
     needed: 'Nur wenn nicht alle Einheiten gemeinsam abgerechnet werden. Sonst gehört jede Wohnung dazu. Nehmen Sie eine Einheit heraus, gehört auch ihr Anteil an gemeinsamen Rechnungen heraus, sonst tragen ihn die Mieter mit.',
   },
+  granny: {
+    title: 'Einliegerwohnung',
+    short: 'Eine kleinere zweite Wohnung in einem Haus, das Sie selbst bewohnen; Sie rechnen die Nebenkosten nur mit dieser einen Mietpartei ab, Ihren eigenen Anteil tragen Sie selbst.',
+    example: 'Ihre Wohnung hat 120 m², die Einliegerwohnung 45 m², zusammen 165 m². Von 600 € Grundsteuer nach Wohnfläche trägt die Mieterin 600 € × 45/165 = 163,64 €, die übrigen 436,36 € sind Ihr Eigenanteil.',
+    norm: '§ 556a Abs. 1 BGB, § 2 HeizkostenV',
+    needed: 'Wenn Sie im eigenen Haus eine Einliegerwohnung vermieten. Legen Sie ein Objekt an, Ihre eigene Wohnung als selbstgenutzt mit Fläche und Personen, die Einliegerwohnung als vermietet. Hat nur die Einliegerwohnung einen Zwischenzähler, legen Sie den Zähler des Hauses als Hauptzähler ohne Wohnung an: Dann zahlt die Mieterin ihren gemessenen Verbrauch, und der Rest ist Ihr Eigenanteil. Dieser Eigenanteil ist privat und steuerlich nicht abziehbar; in die Anlage V gehören die Kosten des Gebäudes nur zu dem Teil, der auf die vermietete Fläche entfällt. Bei den Heizkosten dürfen Sie in einem Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, mit der Mieterin etwas anderes vereinbaren als die Heizkostenverordnung, etwa eine Warmmiete; ohne eine solche Vereinbarung gilt sie.',
+  },
   ownShare: {
     title: 'Eigenanteil',
     short: 'Der Teil der Kosten, der auf Ihre selbstgenutzte oder unentgeltlich überlassene Wohnung entfällt; Sie tragen ihn selbst, und er ist privat, also nicht als Werbungskosten abziehbar. Für die darin enthaltenen Arbeitskosten können Sie als Bewohner selbst die Steuerermäßigung nach § 35a nutzen. Was Sie wegen Leerstand oder als Rundungsrest tragen, gehört nicht dazu und bleibt Werbungskosten.',
@@ -160,12 +167,25 @@ export const GLOSSARY = {
     norm: '§ 16 Abs. 1 und 2 WEG, § 556a Abs. 3 BGB',
     needed: 'Nur bei einer vermieteten Eigentumswohnung. Ohne andere Vereinbarung gilt der Maßstab der Gemeinschaft auch gegenüber dem Mieter, sofern er nicht unbillig ist. Haben Sie mehrere Wohnungen in derselben Anlage, verteilt Mietfuchs den Betrag „laut Gemeinschaftsabrechnung“ auf sie nach Miteigentumsanteilen oder Fläche, nicht nach ihrem Verbrauch; für Heizkosten übernehmen Sie dann besser die Beträge je Wohnung aus der Heizkostenabrechnung als Einzelbeträge.',
   },
+  noConnection: {
+    title: 'Einheit ohne Anschluss',
+    short: 'Eine Einheit, die für eine Zählerart gar keinen Anschluss hat, etwa eine Garage ohne Wasser; ihr fehlt dann kein Zähler, und Verbrauchskosten dieser Art betreffen sie nicht.',
+    example: 'Wasser 600 € nach Verbrauch, zwei Wohnungen mit 40 und 20 m³ gemessen, dazu eine vermietete Garage ohne Wasser: Die Wohnungen tragen 400 € und 200 €, die Garage nichts, und Mietfuchs warnt nicht vor einem fehlenden Zähler.',
+    needed: 'Nur wenn eine Einheit eines Objekts mit Zählern keinen Anschluss dieser Art hat. Im Normalfall bleiben alle Häkchen gesetzt.',
+  },
   homeownersStatement: {
     title: 'Hausgeldabrechnung',
     short: 'Die Jahresabrechnung der Eigentümergemeinschaft; aus ihr übernehmen Sie für die Nebenkostenabrechnung nur die umlagefähigen Kosten.',
     example: 'Hausgeld 3.600 € im Jahr, davon 1.900 € umlagefähig (Versicherung, Müll, Allgemeinstrom, Hausmeister). Verwaltergebühr 360 € und Reparaturen 440 € tragen Sie selbst und setzen sie als Werbungskosten an. Die Zuführung zur Rücklage von 900 € tragen Sie ebenfalls selbst, abziehbar ist sie aber erst, wenn die Gemeinschaft sie ausgibt (siehe Erhaltungsrücklage). Die Grundsteuer steht nicht darin, sie kommt mit eigenem Bescheid an Sie.',
     norm: '§ 28 WEG, § 556a Abs. 3 BGB',
     needed: 'Nur bei einer vermieteten Eigentumswohnung.',
+  },
+  homeownersFee: {
+    title: 'Hausgeld (Vorschuss)',
+    short: 'Der monatliche Vorschuss, den Sie als Eigentümer an die Gemeinschaft zahlen, festgelegt im Wirtschaftsplan; er ist eine Vorauszahlung und noch keine Abrechnung. Erst die Hausgeldabrechnung nach Ende des Jahres sagt, welche Kosten wirklich angefallen sind, und ein Teil des Vorschusses ist meist die Zuführung zur Erhaltungsrücklage.',
+    example: 'Hausgeld 300 € im Monat, also 3.600 € im Jahr, davon 900 € Zuführung zur Erhaltungsrücklage: Im Jahr der Zahlung sind 2.700 € als Werbungskosten abziehbar, die 900 € erst, wenn die Gemeinschaft sie für eine Erhaltungsmaßnahme ausgibt. Eine Nachzahlung aus der Hausgeldabrechnung zählt im Jahr, in dem Sie sie bezahlen.',
+    norm: '§ 28 WEG; § 11 Abs. 2 EStG',
+    needed: 'Nur bei einer vermieteten Eigentumswohnung. Für die Nebenkostenabrechnung Ihres Mieters zählt nicht der Vorschuss, sondern die Hausgeldabrechnung: Aus ihr übernehmen Sie die umlagefähigen Kosten. Für die Steuer zählt dagegen, wann das Geld abfließt, also der gezahlte Vorschuss im Jahr der Zahlung, ohne den Anteil der Erhaltungsrücklage. Mietfuchs führt Kosten nach dem Jahr der Abrechnung; weichen Zahlungsjahr und Abrechnungsjahr ab, gleichen Sie das für die Anlage V bitte selbst ab.',
   },
   reserveFund: {
     title: 'Erhaltungsrücklage',

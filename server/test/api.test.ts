@@ -22,8 +22,8 @@ import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
-  Meter, MeterReadingExtraction, OllamaStatus, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
-  UploadInfo,
+  Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
+  UpdateStatus, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
 import type { MigratedSettings } from '../src/ai/settings.ts'
@@ -1951,6 +1951,30 @@ test('Backup: herunterladen und zurückspielen bringt Daten und Belege zurück',
   })
 })
 
+test('Backup: die Datei heißt nach dem Programm, nicht nach seinem alten Namen (#142)', async () => {
+  await withData(async (s) => {
+    const res = await fetch(`${s.base}/api/backup`)
+    await res.arrayBuffer()
+    assert.match(res.headers.get('content-disposition') ?? '', /filename="mietfuchs-backup-\d{4}-\d{2}-\d{2}\.zip"/)
+  })
+})
+
+test('Backup: Belege behalten beim Wiederherstellen ihr Datum (#142)', async () => {
+  // Vorher trug jeder Beleg danach das Datum der Wiederherstellung, und im Belegarchiv sah eine
+  // Rechnung von 2023 aus wie gestern hochgeladen.
+  await withData(async (s, { file }) => {
+    const before = new Date('2023-03-14T10:20:30Z')
+    fs.utimesSync(path.join(s.dataDir, 'uploads', file), before, before)
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    fs.rmSync(path.join(s.dataDir, 'uploads', file))
+    assert.equal((await restore(s, backup)).status, 200)
+    const listed = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file)
+    if (!listed) return assert.fail('Beleg fehlt nach dem Wiederherstellen')
+    // Ein ZIP speichert die Zeit auf zwei Sekunden genau.
+    assert.ok(Math.abs(new Date(listed.mtime).getTime() - before.getTime()) <= 2000, `Datum ${listed.mtime}`)
+  })
+})
+
 test('Backup: ein Archiv ohne db.json oder mit kaputter db.json ändert nichts', async () => {
   await withData(async (s, { unit }) => {
     for (const zip of [archive({ 'uploads/a.pdf': 'x' }, null), archive({}, '{ kaputt')]) {
@@ -2602,6 +2626,7 @@ test('Ohne Datenbank antwortet die Route, statt Daten vorzutäuschen', async () 
       ['POST', '/api/units', JSON.stringify({ name: 'EG', areaM2: 80, participates: true })],
       ['PUT', '/api/units/egal', JSON.stringify({ name: 'EG' })],
       ['DELETE', '/api/units/egal', undefined],
+      ['GET', '/api/units/egal/dependents', undefined],
       ['GET', '/api/settlement/2024', undefined],
       ['GET', '/api/consumption/2024', undefined],
       ['GET', '/api/rentledger/2024', undefined],
@@ -3730,6 +3755,51 @@ test('Jeder Serverstart einer Prüfung setzt CI', () => {
   )
   // Und der Wächter muss überhaupt etwas gefunden haben, sonst prüft er nichts.
   assert.ok(quelle.includes(marke), 'kein einziger Serverstart gefunden; der Wächter wäre wirkungslos')
+})
+
+// ---------- Was mit einer Wohnung gelöscht wird (#142) ----------
+// Die Löschfrage nannte nur die Mietverhältnisse. Die Fremdschlüssel nehmen aber mehr mit, und
+// ein Vermieter, der das nicht weiß, löscht mit der Garage seine Ablesungen und Zahlungen.
+
+test('Wohnung löschen: die Antwort zählt, was mitgelöscht wird, und die Zahlen stimmen danach', async () => {
+  const s = await startServer()
+  try {
+    const post = <T>(route: string, body: unknown) => s.api<T>(route, { method: 'POST', body: JSON.stringify(body) })
+    const eg = await post<Unit>('/api/units', { name: 'EG', areaM2: 80, participates: true })
+    const og = await post<Unit>('/api/units', { name: 'OG', areaM2: 60, participates: true })
+    const neu = (unitId: string, tenantName: string) => post<Tenancy>('/api/tenancies', {
+      unitId, tenantName, persons: 1, personHistory: [], start: '2025-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    })
+    const a = await neu(eg.id, 'A')
+    await neu(eg.id, 'B')
+    const c = await neu(og.id, 'C')
+    const zaehler = await post<Meter>('/api/meters', { name: 'KW EG', unitId: eg.id, type: 'kaltwasser', unit: 'm³' })
+    await post<Meter>('/api/meters', { name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' })
+    for (const [date, value] of [['2024-12-31', 1], ['2025-12-31', 50]] as const) await post('/api/readings', { meterId: zaehler.id, date, value })
+    for (const date of ['2025-01-03', '2025-02-03', '2025-03-03']) await post('/api/payments', { tenancyId: a.id, date, amountCents: 50000 })
+    await post('/api/payments', { tenancyId: c.id, date: '2025-01-03', amountCents: 40000 })
+    await post('/api/costItems', { year: 2025, category: 'Grundsteuer', description: 'Anteile', amountCents: 10000, key: 'custom', customShares: { [eg.id]: 50, [og.id]: 50 } })
+    await post('/api/costItems', { year: 2025, category: 'Aufzug', description: 'Aufzug', amountCents: 10000, key: 'area', participantUnitIds: [eg.id] })
+    await post('/api/costItems', { year: 2025, category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 10000, key: 'amounts', tenancyAmounts: { [a.id]: 3000, [c.id]: 4000 } })
+    await post('/api/costItems', { year: 2025, category: 'Hauswart', description: 'Direkt', amountCents: 10000, key: 'direct', directUnitId: eg.id })
+
+    const deps = await s.api<UnitDependents>(`/api/units/${eg.id}/dependents`)
+    assert.deepEqual(deps, { tenancies: 2, meters: 1, readings: 2, payments: 3, costItemLinks: 3, directCostItems: 1 })
+    // Die andere Wohnung hat nur ihr Eigenes.
+    assert.deepEqual(await s.api<UnitDependents>(`/api/units/${og.id}/dependents`), { tenancies: 1, meters: 0, readings: 0, payments: 1, costItemLinks: 2, directCostItems: 0 })
+    assert.equal((await fetch(`${s.base}/api/units/gibt-es-nicht/dependents`)).status, 404)
+
+    // Die Zählung ist kein Versprechen ins Blaue: Nach dem Löschen fehlt genau das Gezählte.
+    await s.api(`/api/units/${eg.id}`, { method: 'DELETE' })
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies')).length, 1)
+    assert.deepEqual((await s.api<Meter[]>('/api/meters')).map((m) => m.name), ['Haupt'])
+    assert.equal((await s.api<Reading[]>('/api/readings')).length, 0)
+    assert.equal((await s.api<Payment[]>('/api/payments')).length, 1)
+    const direkt = (await s.api<CostItem[]>('/api/costItems')).find((i) => i.description === 'Direkt')
+    assert.equal(direkt?.directUnitId ?? null, null, 'die direkt zugeordnete Rechnung bleibt, ohne Wohnung')
+  } finally {
+    s.stop()
+  }
 })
 
 // ---------- Objekte (#92) ----------
