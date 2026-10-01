@@ -3,6 +3,7 @@ import { api } from './api'
 import { useConfirm } from './components/feedback'
 import type { Property } from './types'
 import { propertyHeading } from './propertyView'
+import { useYear } from './year'
 
 // Das gewählte Objekt (#92), nach dem Muster des Abrechnungsjahres (year.tsx): Die ganze
 // Oberfläche ist immer „in“ einem Objekt, und der Umschalter in der Seitenleiste verstellt
@@ -165,6 +166,30 @@ export function useSwitchProperty(): (id: string, name?: string) => Promise<bool
     setPropertyId(id)
     return true
   }, [properties, property, setPropertyId, hasOpenForm, confirm])
+}
+
+// Der eine Weg, das Abrechnungsjahr zu wechseln (Durchsicht zu #141), mit derselben Rückfrage wie
+// beim Objekt: Ein offenes Formular legt im gewählten Jahr an, und die Vorlagenliste „Aus dem
+// Vorjahr übernehmen“ gehört zu ihrem Jahr. Nach dem Wechsel stellt App.tsx die Seiten neu auf.
+// Außerhalb des Providers (Tests einzelner Teile) wird ohne Rückfrage gewechselt.
+export function useSwitchYear(): (year: number) => Promise<boolean> {
+  const { year, setYear } = useYear()
+  const ctx = useContext(Ctx)
+  const confirm = useConfirm()
+  return useCallback(async (next: number) => {
+    if (next === year) return true
+    if (ctx?.hasOpenForm()) {
+      const ok = await confirm({
+        title: 'Offene Eingaben verwerfen?',
+        message: `Sie haben für ${year} ein Formular offen oder Eingaben noch nicht übernommen. Beim Wechsel zu ${next} wird das geschlossen, ohne zu speichern.`,
+        confirmLabel: 'Jahr wechseln',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return false
+    }
+    setYear(next)
+    return true
+  }, [year, setYear, ctx, confirm])
 }
 
 // Der Umschalter in der Seitenleiste. Bei höchstens einem Objekt gibt es nichts zu wählen und

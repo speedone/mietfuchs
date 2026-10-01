@@ -9,7 +9,7 @@
 // docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
 import type { CostItem, CostKey, ExternalMeasure, MeterType } from './types.ts'
 
-export type AllocatedItem = Pick<CostItem, 'year' | 'category' | 'key'> &
+export type AllocatedItem = Pick<CostItem, 'year' | 'category' | 'key' | 'description'> &
   Partial<Pick<CostItem, 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis'>>
 
 // Der Schlüssel einer Position mit genau den Angaben, die zu ihm gehören. Ein Zählertyp, der an
@@ -80,12 +80,38 @@ export function previousYearItems<T extends AllocatedItem>(items: readonly T[], 
   return items.filter((i) => i.year === year - 1 && i.category === category)
 }
 
+// Kostenarten, unter denen ganz verschiedene Rechnungen stehen (Befund der Durchsicht): Die Wartung
+// der Hebeanlage und die Reinigung der Dachrinne sind beide „Sonstige Betriebskosten“, haben aber
+// nichts miteinander zu tun. Dort gilt nur eine Position mit derselben Beschreibung als Vorjahr.
+export const BROAD_CATEGORIES: readonly string[] = ['Sonstige Betriebskosten']
+
+// Die Jahreszahl des Vorjahres als ganzes Wort: „Grundsteuer 2025“ wird „Grundsteuer 2026“, eine
+// Rechnungsnummer 120250 bleibt. Ohne Lookbehind, das ältere Browser nicht kennen.
+export function replaceYear(text: string, from: number, to: number): string {
+  return text.replace(new RegExp(`(^|\\D)${from}(?=\\D|$)`, 'g'), (_m, before: string) => `${before}${to}`)
+}
+
+const normalized = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+
+// Die Vorjahrespositionen, mit denen eine Position verglichen wird. Gibt es im Vorjahr eine mit
+// derselben Beschreibung (Jahreszahl ersetzt, ohne Groß- und Kleinschreibung), nur diese; sonst
+// alle der Kostenart, außer bei einer breiten Kostenart, wo es dann keine gibt.
+export function comparablePrevious<T extends AllocatedItem>(items: readonly T[], category: string, year: number, description?: string): T[] {
+  const prior = previousYearItems(items, category, year)
+  if (description?.trim()) {
+    const wanted = normalized(description)
+    const same = prior.filter((p) => normalized(replaceYear(p.description, year - 1, year)) === wanted)
+    if (same.length > 0) return same
+  }
+  return BROAD_CATEGORIES.includes(category) ? [] : prior
+}
+
 // Der Schlüssel, den eine neue Position dieser Kostenart vorgeschlagen bekommt, oder `null`.
 // Widersprechen sich die Positionen des Vorjahres, gibt es keinen Vorschlag: Welcher gemeint ist,
 // weiß nur der Vermieter. Sonst gilt die zuletzt angelegte (Reihenfolge der Liste), damit eine
 // geänderte Summe der Anlage mitkommt.
-export function previousAllocation(items: readonly AllocatedItem[], category: string, year: number): Allocation | null {
-  const found = previousYearItems(items, category, year).map((i) => allocationOf(i))
+export function previousAllocation(items: readonly AllocatedItem[], category: string, year: number, description?: string): Allocation | null {
+  const found = comparablePrevious(items, category, year, description).map((i) => allocationOf(i))
   const last = found.at(-1)
   if (!last) return null
   return found.every((a) => sameAllocation(a, last)) ? last : null

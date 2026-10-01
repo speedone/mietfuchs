@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { allocationOf, previousAllocation, sameAllocation, type AllocatedItem } from '../../shared/allocation.ts'
 
-const item = (over: Partial<AllocatedItem> & Pick<AllocatedItem, 'year' | 'category'>): AllocatedItem => ({ key: 'area', ...over })
+const item = (over: Partial<AllocatedItem> & Pick<AllocatedItem, 'year' | 'category'>): AllocatedItem => ({ key: 'area', description: over.category, ...over })
 
 test('Schlüssel: nur die Angaben, die zum Schlüssel gehören, zählen', () => {
   // Ein stehengebliebener Zählertyp an einer Flächenposition ist kein anderer Schlüssel.
@@ -68,4 +68,14 @@ test('Vorjahr: widersprechen sich die Positionen, gibt es keinen Vorschlag', () 
     item({ year: 2025, category: 'Hauswart', key: 'external', externalBasis: { measure: 'mea', total: 1010, totalCents: 2 } }),
   ]
   assert.deepEqual(previousAllocation(ext, 'Hauswart', 2026)?.externalBasis, { measure: 'mea', total: 1010 })
+})
+
+test('Durchsicht: breite Kostenart nur über die Beschreibung, mit ersetzter Jahreszahl', () => {
+  const items = [item({ year: 2025, category: 'Sonstige Betriebskosten', key: 'direct', directUnitId: 'u1', description: 'Wartung Hebeanlage 2025' })]
+  assert.equal(previousAllocation(items, 'Sonstige Betriebskosten', 2026), null)
+  assert.equal(previousAllocation(items, 'Sonstige Betriebskosten', 2026, 'Reinigung Dachrinne'), null)
+  assert.equal(previousAllocation(items, 'Sonstige Betriebskosten', 2026, ' wartung hebeanlage 2026 ')?.directUnitId, 'u1')
+  // Eine gewöhnliche Kostenart mit einer Position braucht keine passende Beschreibung.
+  const muell = [item({ year: 2025, category: 'Müllabfuhr', key: 'units', description: 'Abfall' })]
+  assert.equal(previousAllocation(muell, 'Müllabfuhr', 2026, 'Müll 2026')?.key, 'units')
 })

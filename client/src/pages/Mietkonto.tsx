@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useProperty, withProperty, useSwitchYear } from '../property'
 import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -15,7 +15,9 @@ const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 
 type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
 
 export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -128,7 +130,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         <div className="row">
           <label className="field">
             Jahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}

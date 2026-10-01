@@ -5,7 +5,7 @@ import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingFor
 import { defaultMeterUnit, emptyMeterForm, oldEndText, withMeterType, type MeterForm } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -18,7 +18,9 @@ type Props = { units: Unit[] } & FocusProps
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -154,7 +156,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           <h2 style={{ margin: 0 }} className="grow">Zähler</h2>
           <label className="field">
             Verbrauchsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}

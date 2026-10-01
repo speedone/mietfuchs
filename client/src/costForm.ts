@@ -3,7 +3,7 @@
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
 import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, PropertyKind, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
-import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, previousAllocation, previousYearItems, sameAllocation, type Allocation } from '../../shared/allocation.ts'
+import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -261,7 +261,8 @@ const etwByStatement = (category: string, ctx?: KeyContext): boolean =>
 // einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year) : null
+  // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
   if (etwByStatement(category, ctx)) {
     const last = ctx ? lastExternalBasis(ctx.items) : null
@@ -288,6 +289,7 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
   return allocationOf({
     year: 0,
     category: form.category,
+    description: form.description,
     key: form.key,
     meterType: form.meterType || null,
     directUnitId: form.directUnitId || null,
@@ -303,27 +305,46 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
 export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
   if (isNotAllocable(form.category)) return ''
   const basis = basisUnitsOf(units).map((u) => u.id)
-  const before = previousYearItems(ctx.items, form.category, ctx.year).map((i) => allocationOf(i, basis))
+  const before = comparablePrevious(ctx.items, form.category, ctx.year, form.description).map((i) => allocationOf(i, basis))
   const first = before[0]
   const now = formAllocation(form, units)
   if (!first || before.some((a) => sameAllocation(a, now))) return ''
   const how = first.key === now.key ? `ebenfalls ${KEY_LABELS[first.key]}, aber mit anderen Angaben` : KEY_LABELS[first.key]
-  return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Einen vereinbarten Umlageschlüssel ändern Sie nicht einseitig von Jahr zu Jahr; ist die Änderung so vereinbart, ist nichts zu tun.`
+  // Ohne Rechtsauskunft im Einzelnen (die steht im Lexikon und in der Abrechnung): Eine Änderung
+  // ist möglich, aber nicht beliebig (Durchsicht).
+  return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
 }
 
 // KI-Übernahme (#141): der Schlüssel einer ausgewerteten Position. Einen gemerkten Schlüssel mit
 // Einzelbeträgen übernimmt die Zeile nicht, denn die Beträge je Mieter sind Zahlen des Jahres und
 // stehen dort nicht zur Eingabe.
 export type AiPositionKey = { key: CostKey; allocation: Allocation | null }
-export function aiPositionDefaults(category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): AiPositionKey {
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year) : null
-  if (remembered && remembered.key !== 'amounts') return { key: remembered.key, allocation: remembered }
+// Ein gemerkter Schlüssel, dem inzwischen etwas fehlt (alle Teilnehmer gelöscht, die Wohnung der
+// Direktzuordnung weg), gilt in der KI-Zeile nicht: Sie hat kein Feld, das ihn ergänzen ließe
+// (Durchsicht). Dann gilt die feste Vorgabe.
+function stillComplete(a: Allocation, units: Unit[]): boolean {
+  const known = new Set(units.map((u) => u.id))
+  if (a.participantUnitIds && !a.participantUnitIds.some((id) => known.has(id))) return false
+  if (a.key === 'direct' && !(a.directUnitId && known.has(a.directUnitId))) return false
+  return true
+}
+
+export function aiPositionDefaults(category: string, units: Unit[], meters: Meter[], ctx?: KeyContext, description?: string): AiPositionKey {
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, description) : null
+  if (remembered && remembered.key !== 'amounts' && stillComplete(remembered, units)) return { key: remembered.key, allocation: remembered }
   // Bei einer Eigentumswohnung nur, wenn die Summe der Anteile schon einmal erfasst ist: Ein Feld
   // dafür hat die Zeile nicht, sie bliebe sonst unübernehmbar.
   const last = ctx && etwByStatement(category, ctx) ? lastExternalBasis(ctx.items) : null
-  if (last) return { key: 'external', allocation: allocationOf({ year: 0, category, key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
+  if (last) return { key: 'external', allocation: allocationOf({ year: 0, category, description: '', key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
   // Wie bisher nur der Schlüssel; die Auswahl der Zeile bietet die drei einfachen an.
   return { key: defaultKeyFor(category), allocation: null }
+}
+
+// Eine KI-Zeile, deren gemerkter Schlüssel nur bestimmte Wohnungen trifft (Teilnehmer oder
+// Direktzuordnung), ist nie vorab angehakt: Passt der Beleg nicht zu der Position des Vorjahres,
+// zahlte sonst eine einzelne Wohnung, ohne dass jemand hingesehen hat (Durchsicht).
+export function aiPositionPreselect(d: AiPositionKey): boolean {
+  return !(d.allocation && (d.allocation.participantUnitIds || d.allocation.key === 'direct'))
 }
 
 export type AiPosition = AiPositionKey & { description: string; category: string; amount: string; labor35a: string; externalTotalAmount: string }

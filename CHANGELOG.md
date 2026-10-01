@@ -24,11 +24,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ersetzt), Rechnungssteller und dem Umlageschlüssel samt Teilnehmern, Anteilen, Zählertyp und
   Maßstab. Sie tragen je Zeile nur den neuen Betrag ein, bei einer Hausgeldabrechnung dazu die
   Kosten der Gemeinschaft; angelegt wird erst auf Knopfdruck, ohne Beleg und nie mit dem Betrag
-  des Vorjahres. Positionen mit Einzelbeträgen je Mieter öffnen Sie dafür im Formular.
+  des Vorjahres. Positionen mit Einzelbeträgen je Mieter öffnen Sie dafür im Formular. Was im Jahr
+  schon erfasst ist, wird nur nach Rückfrage noch einmal angelegt.
+- **Der Wechsel des Abrechnungsjahres fragt nach, wenn ein Formular offen ist**, wie schon der
+  Wechsel des Objekts; sonst gingen Eingaben verloren oder landeten im falschen Jahr.
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
 - **Der Umlageschlüssel wird je Kostenart gemerkt.** Eine neue Position bekommt den Schlüssel,
   den dieselbe Kostenart im Vorjahr hatte, im Formular wie bei der KI-Auswertung auf der Seite
-  Kosten und in der Schnellerfassung. Weicht eine Position davon ab, weisen Formular und
+  Kosten und in der Schnellerfassung; bei „Sonstige Betriebskosten“ nur von der Position mit
+  derselben Beschreibung. Eine KI-Zeile, deren gemerkter Schlüssel nur einzelne Wohnungen trifft,
+  ist hervorgehoben und nicht vorab angehakt. Weicht eine Position davon ab, weisen Formular und
   Abrechnung darauf hin, mit dem neuen Begriff „Wechsel des Umlageschlüssels“ (§ 556a Abs. 2
   und 3 BGB) im Lexikon. Bei einer Eigentumswohnung schlägt Mietfuchs ohne Vorjahr „laut
   Gemeinschaftsabrechnung“ vor (außer bei der Grundsteuer), und die Summe der

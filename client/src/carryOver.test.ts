@@ -2,7 +2,7 @@
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
 import { describe, expect, test } from 'vitest'
 import type { CostItem, Unit } from './types'
-import { carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
+import { carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
 
 const UNITS: Unit[] = [
   { id: 'u1', propertyId: 'p', name: 'EG', areaM2: 50, participates: true },
@@ -54,6 +54,19 @@ describe('Vorlagen aus dem Vorjahr', () => {
   test('Einzelbeträge lassen sich nicht in einer Zeile übernehmen', () => {
     expect(rowOf(rows, 'Heizung ista').inline).toBe(false)
     expect(rowOf(rows, 'Hauswart').inline).toBe(true)
+  })
+
+  test('Durchsicht: eine schon erfasste Zeile wird durch einen Betrag nicht angehakt', () => {
+    const muell = rowOf(rows, 'Müll 2025')
+    expect(withCarryAmount(muell, '400,00', true).checked).toBe(false)
+  })
+
+  test('Durchsicht: vereinbarte Anteile mit Summe, Direktzuordnung mit Wohnung', () => {
+    const anteile = carryKeyDetails(item({ year: 2025, category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 40 } }), UNITS)
+    expect(anteile).toEqual({ text: 'EG: 40 % · OG: 40 % (zusammen 80 %)', warn: true })
+    expect(carryKeyDetails(item({ year: 2025, category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 60 } }), UNITS)).toEqual({ text: 'EG: 40 % · OG: 60 %', warn: false })
+    expect(carryKeyDetails(item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: 'u2' }), UNITS)).toEqual({ text: 'direkt OG', warn: false })
+    expect(carryKeyDetails(item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: null }), UNITS)).toEqual({ text: 'Wohnung fehlt', warn: true })
   })
 
   test('ein eingetragener Betrag hakt die Zeile an, ein geleerter ab', () => {

@@ -6,10 +6,10 @@ import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
-import { aiPositionBody, aiPositionDefaults, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
+import { aiPositionBody, aiPositionDefaults, aiPositionPreselect, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
 import AiKeyCell from '../components/AiKeyCell'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
 
@@ -79,7 +79,9 @@ function yearFrom(periodStart?: string | null, invoiceDate?: string): number | n
 export default function Schnellerfassung({ units, settings, onNavigate }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const [queue, setQueue] = useState<QueueEntry[]>([])
@@ -197,14 +199,14 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               amount,
               labor35a,
               externalTotalAmount: '',
-              ...aiPositionDefaults(category, units, meters, ctx),
+              ...aiPositionDefaults(category, units, meters, ctx, p.description),
               matchedByDesc,
               checked: false,
             }
           }).map((p) => ({
             ...p,
             // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-            checked: !isNotAllocable(p.category) && aiPositionProblem(p, units, targetYear) === null,
+            checked: !isNotAllocable(p.category) && aiPositionPreselect(p) && aiPositionProblem(p, units, targetYear) === null,
           }))
           patchEntry(next.id, {
             status: 'fertig',
@@ -285,7 +287,11 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             priorYearDeviationPct: devPct,
           })
           const problem = positionProblem(entry, p)
-          return problem === null ? score : { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
+          if (problem !== null) return { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
+          // Gemerkter Schlüssel nur für einzelne Wohnungen (Durchsicht zu #141): nie grün, damit
+          // „Alle grünen übernehmen“ ihn nicht ungeprüft übernimmt.
+          if (!aiPositionPreselect(p) && score.level === 'gruen') return { level: 'gelb' as const, reasons: [...score.reasons, 'Schlüssel aus dem Vorjahr nur für einzelne Wohnungen, bitte prüfen'] }
+          return score
         })
         map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
       } else if (entry.kind === 'zaehler' && entry.reading) {
@@ -443,7 +449,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         <div className="row" style={{ alignItems: 'center' }}>
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
@@ -557,7 +563,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                           </td>
                           <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                           <td>
-                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year)), matchedByDesc: false })}>
+                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year), p.description), matchedByDesc: false })}>
                               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                             </select>
                           </td>

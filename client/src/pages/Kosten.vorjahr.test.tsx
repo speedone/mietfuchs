@@ -2,10 +2,11 @@
 // Kosten-Seite mit Vorjahr (#141): der gemerkte Schlüssel im Formular und „Aus dem Vorjahr
 // übernehmen“. Geprüft wird, was gespeichert wird, und dass die Auswahl den gespeicherten Wert zeigt.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Unit } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
 import Kosten from './Kosten'
 
 const UNITS: Unit[] = [
@@ -18,6 +19,11 @@ const PREV = YEAR - 1
 const ITEMS: CostItem[] = [
   { id: 'a', propertyId: 'objekt-1', year: PREV, category: 'Müllabfuhr', description: `Müllabfuhr ${PREV}`, vendor: 'Stadtwerke', amountCents: 36000, key: 'units', participantUnitIds: ['u1'], invoiceFile: 'muell.pdf' },
   { id: 'b', propertyId: 'objekt-1', year: PREV, category: 'Hauswart', description: 'Hauswart laut Hausgeldabrechnung', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } },
+  // Durchsicht: schon im Jahr erfasst, vereinbarte Anteile, Direktzuordnung
+  { id: 'c', propertyId: 'objekt-1', year: PREV, category: 'Grundsteuer', description: `Grundsteuer ${PREV}`, amountCents: 60000, key: 'area' },
+  { id: 'c2', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR}`, amountCents: 61000, key: 'area' },
+  { id: 'd', propertyId: 'objekt-1', year: PREV, category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'custom', customShares: { u1: 30, u2: 50 } },
+  { id: 'e', propertyId: 'objekt-1', year: PREV, category: 'Schornsteinfeger', description: 'Kamin', amountCents: 9000, key: 'direct', directUnitId: 'u2' },
 ]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -47,7 +53,9 @@ const renderPage = async () => {
   render(
     <YearProvider>
       <PropertyProvider>
-        <Kosten units={UNITS} settings={null} />
+        <UIProvider>
+          <Kosten units={UNITS} settings={null} />
+        </UIProvider>
       </PropertyProvider>
     </YearProvider>,
   )
@@ -104,4 +112,70 @@ test('Aus dem Vorjahr übernehmen: nur mit Betrag, ohne Beleg, mit Schlüssel un
   })
   expect(sent[1]?.body).toMatchObject({ key: 'external', amountCents: 50000, externalBasis: { measure: 'mea', total: 1000, totalCents: 5000000 } })
   expect(sent.every((s) => s.url === '/api/costItems?property=objekt-1')).toBe(true)
+})
+
+// ---------- Durchsicht ----------
+
+const openCarry = async () => {
+  await renderPage()
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) }))
+}
+const anlegenButton = () => screen.getByRole('button', { name: new RegExp(`für ${YEAR} anlegen`) }) as HTMLButtonElement
+
+test('Durchsicht (1): ein Doppelklick legt nur einmal an', async () => {
+  await openCarry()
+  fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`), { target: { value: '380,00' } })
+  fireEvent.click(anlegenButton())
+  fireEvent.click(anlegenButton())
+  await waitFor(() => expect(screen.queryByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`)).toBeNull())
+  expect(sent).toHaveLength(1)
+})
+
+test('Durchsicht (1): über das Formular angelegt, dann der Knopf: nur einmal', async () => {
+  await openCarry()
+  fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`), { target: { value: '380,00' } })
+  fireEvent.click(screen.getAllByRole('button', { name: 'Im Formular öffnen' })[0] as HTMLElement)
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  // Die Zeile ist aus der Liste verschwunden; der Knopf legt nichts mehr an.
+  await waitFor(() => expect(screen.queryByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`)).toBeNull())
+  expect(anlegenButton().disabled).toBe(true)
+  fireEvent.click(anlegenButton())
+  await new Promise((r) => setTimeout(r, 50))
+  expect(sent).toHaveLength(1)
+})
+
+test('Durchsicht (1): schon erfasst wird nicht angehakt, und angehakt wird vor dem Anlegen gefragt', async () => {
+  await openCarry()
+  fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Grundsteuer ${YEAR}`), { target: { value: '620,00' } })
+  const box = screen.getByLabelText(`Grundsteuer ${YEAR} übernehmen`) as HTMLInputElement
+  expect(box.checked).toBe(false)
+  fireEvent.click(box)
+  fireEvent.click(anlegenButton())
+  await waitFor(() => expect(within(screen.getByRole('dialog')).getAllByText(/schon erfasst/i).length).toBeGreaterThan(0))
+  fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(sent).toHaveLength(0)
+  fireEvent.click(anlegenButton())
+  fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Trotzdem anlegen' })))
+  await waitFor(() => expect(sent).toHaveLength(1))
+})
+
+test('Durchsicht (5): vereinbarte Anteile mit Summe, Direktzuordnung mit Wohnung', async () => {
+  await openCarry()
+  expect(screen.getByText('EG: 30 % · OG: 50 % (zusammen 80 %)')).toBeTruthy()
+  expect(screen.getByText('direkt OG')).toBeTruthy()
+})
+
+test('Durchsicht (3): ein Jahreswechsel mit Eingaben in der Liste fragt nach', async () => {
+  await openCarry()
+  fireEvent.change(screen.getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`), { target: { value: '380,00' } })
+  fireEvent.change(select(/Abrechnungsjahr/i), { target: { value: String(PREV) } })
+  fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Abbrechen' })))
+  await new Promise((r) => setTimeout(r, 50))
+  expect(select(/Abrechnungsjahr/i).value).toBe(String(YEAR))
+  expect((screen.getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`) as HTMLInputElement).value).toBe('380,00')
+  fireEvent.change(select(/Abrechnungsjahr/i), { target: { value: String(PREV) } })
+  fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Jahr wechseln' })))
+  await waitFor(() => expect(select(/Abrechnungsjahr/i).value).toBe(String(PREV)))
 })
