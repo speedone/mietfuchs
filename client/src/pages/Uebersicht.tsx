@@ -42,9 +42,12 @@ export default function Uebersicht({ onNavigate }: Props) {
 
   const cur = useMemo(() => byCategory(year), [byCategory, year])
   const prev = useMemo(() => byCategory(year - 1), [byCategory, year])
+  // Ohne Kosten im Jahr gibt es nichts zu vergleichen (#142): Jede Kostenart des Vorjahres stünde
+  // sonst mit „−100 %“ da, und das hieße nur, dass noch nichts erfasst ist.
+  const hasCosts = cur.size > 0
   const categories = useMemo(
-    () => [...new Set([...cur.keys(), ...prev.keys()])].sort((a, b) => (cur.get(b) ?? 0) - (cur.get(a) ?? 0)),
-    [cur, prev],
+    () => (hasCosts ? [...new Set([...cur.keys(), ...prev.keys()])].sort((a, b) => (cur.get(b) ?? 0) - (cur.get(a) ?? 0)) : []),
+    [cur, prev, hasCosts],
   )
   const maxCents = Math.max(1, ...categories.map((c) => Math.max(cur.get(c) ?? 0, prev.get(c) ?? 0)))
   const hasPrev = prev.size > 0
@@ -125,7 +128,8 @@ export default function Uebersicht({ onNavigate }: Props) {
             <div className="v">{fmtEuro(settlement.landlord.totalCents)}</div>
             <div className="l">Vermieteranteil</div>
           </div>
-          {settlement.statements.map((st) => (
+          {/* Ohne Kosten erstattete die Berechnung die volle Vorauszahlung (#142); das ist kein Ergebnis. */}
+          {hasCosts && settlement.statements.map((st) => (
             <div className="kpi" key={st.tenancyId}>
               <div className="v" style={{ color: st.balanceCents >= 0 ? 'var(--green)' : 'var(--red)' }}>
                 {fmtEuro(Math.abs(st.balanceCents))}
@@ -137,7 +141,7 @@ export default function Uebersicht({ onNavigate }: Props) {
       )}
 
       <div className="card">
-        <h2>Kostenarten {year}{hasPrev ? ` im Vergleich zu ${year - 1}` : ''}</h2>
+        <h2>Kostenarten {year}{hasCosts && hasPrev ? ` im Vergleich zu ${year - 1}` : ''}</h2>
         {categories.length === 0 ? (
           <div className="empty">
             Für {year} sind noch keine Kosten erfasst —{' '}

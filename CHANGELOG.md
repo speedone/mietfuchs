@@ -127,6 +127,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Jahres statt auf heute. Ein neues Mietverhältnis wählt die erste vermietbare Wohnung ohne
   laufendes Mietverhältnis vor statt einer selbstgenutzten.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Ein Jahr ohne Kosten kündigt kein Guthaben mehr an.** Cockpit und Übersicht zeigten für ein
+  Jahr ganz ohne Kosten die volle Vorauszahlung als voraussichtliches Guthaben und im Vergleich
+  zum Vorjahr überall „−100 %“. Jetzt steht dort „Noch keine Kosten … erfasst“, verglichen wird
+  erst, wenn das Jahr Kosten hat. ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
   Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
   das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf
