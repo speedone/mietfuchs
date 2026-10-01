@@ -33,7 +33,7 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
+import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -538,6 +538,31 @@ export async function updateProperty(db: Database, id: string, body: unknown): P
   const { id: _id, ...rest } = mergeProperty(current, body)
   await db.update(properties).set(rest).where(eq(properties.id, id))
   return (await findProperty(db, id)) ?? null
+}
+
+// Was das Löschen einer Wohnung mitnähme (#142), damit die Löschfrage es nennen kann. Gezählt wird
+// entlang derselben Fremdschlüssel, die beim Löschen kaskadieren (db/schema.ts): Mietverhältnisse
+// und über sie Zahlungen und Einzelbeträge, Zähler und über sie Ablesungen, dazu die vereinbarten
+// Anteile, Teilnahmen und Eigenbeträge der Wohnung. Direkt zugeordnete Rechnungen bleiben
+// (`SET NULL`) und stehen deshalb getrennt da. `null`, wenn es die Wohnung nicht gibt.
+export async function unitDependents(db: Executor, unitId: string): Promise<UnitDependents | null> {
+  const unit = await db.select({ id: units.id }).from(units).where(eq(units.id, unitId))
+  if (unit.length === 0) return null
+  const n = async (rows: Promise<{ n: number }[]>) => (await rows)[0]?.n ?? 0
+  const ihreMietverhaeltnisse = db.select({ id: tenancies.id }).from(tenancies).where(eq(tenancies.unitId, unitId))
+  const ihreZaehler = db.select({ id: meters.id }).from(meters).where(eq(meters.unitId, unitId))
+  const verweise = await n(db.select({ n: count() }).from(costItemShares).where(eq(costItemShares.unitId, unitId))) +
+    await n(db.select({ n: count() }).from(costItemParticipants).where(eq(costItemParticipants.unitId, unitId))) +
+    await n(db.select({ n: count() }).from(costItemSelfAmounts).where(eq(costItemSelfAmounts.unitId, unitId))) +
+    await n(db.select({ n: count() }).from(costItemAmounts).where(inArray(costItemAmounts.tenancyId, ihreMietverhaeltnisse)))
+  return {
+    tenancies: await n(db.select({ n: count() }).from(tenancies).where(eq(tenancies.unitId, unitId))),
+    meters: await n(db.select({ n: count() }).from(meters).where(eq(meters.unitId, unitId))),
+    readings: await n(db.select({ n: count() }).from(readings).where(inArray(readings.meterId, ihreZaehler))),
+    payments: await n(db.select({ n: count() }).from(payments).where(inArray(payments.tenancyId, ihreMietverhaeltnisse))),
+    costItemLinks: verweise,
+    directCostItems: await n(db.select({ n: count() }).from(costItems).where(eq(costItems.directUnitId, unitId))),
+  }
 }
 
 export type PropertyRemoval = { removed: true } | { removed: false, reason: 'missing' | 'last' } | { removed: false, reason: 'inUse', inUse: string }

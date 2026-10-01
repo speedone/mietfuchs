@@ -33,6 +33,17 @@ export function notSettledText(n: NotSettled): string {
   return `${n.tenantName} (${n.unitName}): ${teile.join(', ')}`
 }
 
+// Das Kennzeichen in der Liste der Mietverhältnisse (#142): nichts, solange beides abgerechnet
+// wird, denn das ist der Normalfall. Sind beide Arten gleich, ein Wort, sonst beide getrennt.
+const SHORT: Record<CostModel, string> = { settlement: 'abgerechnet', flatRate: 'pauschal', inclusive: 'inklusiv' }
+export function costModelBadge(costModel: CostModel | null | undefined, heatingModel: CostModel | null | undefined): string | null {
+  const cold = costModel ?? 'settlement'
+  const heat = heatingModel ?? 'settlement'
+  if (cold === 'settlement' && heat === 'settlement') return null
+  if (cold === heat) return cold === 'flatRate' ? 'Pauschale' : 'inklusiv'
+  return `kalt ${SHORT[cold]} · Heizung ${SHORT[heat]}`
+}
+
 // Personenzahl aus dem Formular (#135): eine ganze Zahl ab 0. Null ist eine Angabe, etwa bei einer
 // vermieteten Garage oder einem Stellplatz, die dann beim Personenschlüssel nicht mitzählen; ein
 // leeres Feld ist dagegen keine, sonst würde aus einer vergessenen Eingabe still eine 0.

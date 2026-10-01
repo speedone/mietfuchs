@@ -19,6 +19,11 @@ import {
   selfAmountUnits,
   amountProblem,
   suggestedKey,
+  externalTotalLabel,
+  keyListText,
+  showsKeyFields,
+  withKey,
+  withCategory,
   type ItemForm,
 } from '../costForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -296,7 +301,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             vendor: entry.vendor,
             amountCents: amount,
             labor35aCents: labor35a || undefined,
-            key: p.key,
+            // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
+            key: isNotAllocable(p.category) ? 'area' : p.key,
             invoiceFile: entry.serverFile,
           }),
         })
@@ -441,11 +447,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                           </select>
                         </td>
                         <td>
+                          {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
+                          {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
                           <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
                             {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
                               <option key={k} value={k}>{KEY_LABELS[k]}</option>
                             ))}
                           </select>
+                          )}
                         </td>
                         <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                         <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
@@ -500,7 +509,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {!i.invoiceFile && i.vendor && <div className="muted">{i.vendor}</div>}
                   </td>
                   <td>
-                    {KEY_LABELS[i.key]}
+                    {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
+                    {keyListText(i)}
+                    {showsKeyFields(i.category) && <>
                     {/* Eine Einschränkung auf Teilnehmer (#105) soll man in der Liste sehen, nicht erst im Formular. */}
                     {i.participantUnitIds && (
                       <div className="muted">nur {i.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ') || 'keine Wohnung'}</div>
@@ -514,6 +525,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                           .join(' · ') || '— keine Anteile'}
                       </div>
                     )}
+                    </>}
                   </td>
                   <td className="num">
                     {fmtEuro(i.amountCents)}
@@ -581,7 +593,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, ...(form.id ? {} : suggestedKey(e.target.value, units, meters)) })}>
+              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
@@ -603,9 +615,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
+            {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
+            {!showsKeyFields(form.category) && (
+              <div className="field grow muted">
+                <span><Term id="notAllocable">Nicht umlagefähig</Term>: Diese Position trägt der Vermieter allein; ein Umlageschlüssel entfällt.</span>
+              </div>
+            )}
+            {showsKeyFields(form.category) && <>
             <label className="field grow">
               <Term id="allocationKey">Umlageschlüssel</Term>
-              <select value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value as CostKey })}>
+              <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes))}>
                 {costKeyOptions(unitMeterTypes, form.key).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
@@ -665,8 +684,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     </select>
                   </label>
                   <label className="field grow">
-                    Summe in der Anlage
-                    <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} placeholder="z. B. 10.000" inputMode="decimal" />
+                    {externalTotalLabel(form.externalMeasure)}
+                    <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} inputMode="decimal" />
                   </label>
                   <label className="field grow">
                     Kosten der Gemeinschaft (ganze Anlage) €
@@ -686,7 +705,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <div className="field-group-label"><Term id="individualAmounts">Einzelbeträge</Term> je Mieter</div>
                 <div className="muted" style={{ marginBottom: 8 }}>
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
-                  der Messdienst selbst auf; der Rest trägt der Vermieter.
+                  der Messdienst selbst auf; den Rest trägt der Vermieter.
                 </div>
                 {tenanciesForAmounts(tenancies, units, year, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
@@ -762,6 +781,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 </select>
               </label>
             )}
+            </>}
             <div className="field-group">
               <div className="field-group-label">Beleg (Rechnungskopie)</div>
               {form.invoiceFile ? (

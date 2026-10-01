@@ -72,23 +72,56 @@ test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', asy
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
 
   const typeSelect = await waitFor(() => select(/Zählertyp/i))
-  // Das Feld darf nichts vorbelegen, was in der Liste nicht steht: sichtbar ist „— wählen —".
-  expect(typeSelect.value).toBe('')
+  // Das Feld belegt nichts vor, was in der Liste nicht steht. Gibt es nur einen Typ, ist er
+  // vorgewählt (#142), und zwar im Zustand: gespeichert wird, was zu sehen ist.
   expect([...typeSelect.options].map((o) => o.value)).toEqual(['', 'sonstig'])
   // Beschriftet als Substantiv wie die Nachbarn (Kaltwasser, Wärme), nicht als Adjektiv (#138).
   expect([...typeSelect.options].map((o) => o.text)).toEqual(['— wählen —', 'Sonstiges'])
-
-  // Ohne Auswahl wird nicht gespeichert, sondern nach dem Zählertyp gefragt.
-  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
-  await waitFor(() => expect(screen.getByText(/bitte einen Zählertyp wählen/i)).toBeTruthy())
-  expect(sent).toHaveLength(0)
-
-  // Nach der Auswahl wird genau der angezeigte Typ gespeichert.
-  fireEvent.change(typeSelect, { target: { value: 'sonstig' } })
   expect(typeSelect.value).toBe('sonstig')
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ key: 'meter', meterType: 'sonstig' })
+})
+
+test('Zählertyp: bei zwei Typen wählt der Mensch, und ohne Wahl wird nicht gespeichert', async () => {
+  METERS.push({ id: 'm2', propertyId: 'objekt-1', name: 'Wärme OG', unitId: 'u3', type: 'waerme', unit: 'kWh' })
+  try {
+    await openForm()
+    await waitFor(() => expect([...select(/Umlageschlüssel/i).options].some((o) => o.value === 'meter')).toBe(true))
+    fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'meter' } })
+    const typeSelect = await waitFor(() => select(/Zählertyp/i))
+    expect(typeSelect.value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+    await waitFor(() => expect(screen.getByText(/bitte einen Zählertyp wählen/i)).toBeTruthy())
+    expect(sent).toHaveLength(0)
+    fireEvent.change(typeSelect, { target: { value: 'waerme' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0].body).toMatchObject({ key: 'meter', meterType: 'waerme' })
+  } finally {
+    METERS.length = 1
+  }
+})
+
+test('Nicht umlagefähig (#142): keine Schlüsselauswahl, gespeichert wird die neutrale Vorgabe', async () => {
+  await openForm()
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'custom' } })
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  expect(screen.queryByLabelText(/Umlageschlüssel/i)).toBeNull()
+  expect(screen.queryByText(/Vereinbarte Anteile/i)).toBeNull()
+  expect(screen.getByText(/trägt der Vermieter allein/i)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Nicht umlagefähig', key: 'area', customShares: null })
+})
+
+test('Gemeinschaftsabrechnung (#142): die Summe heißt nach dem Maßstab, nicht nach den Kosten', async () => {
+  await openForm()
+  fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'external' } })
+  expect(screen.getByLabelText(/Summe der Miteigentumsanteile in der Anlage \(z\. B\. 1\.000 MEA\)/)).toBeTruthy()
+  fireEvent.change(select(/Maßstab/i), { target: { value: 'area' } })
+  expect(screen.getByLabelText(/Summe der Wohnflächen in der Anlage/)).toBeTruthy()
+  expect(screen.queryByText(/^Summe in der Anlage$/)).toBeNull()
 })
 
 test('Vereinbarte Anteile: Eingabe, Hinweis auf den Vermieter-Rest und Speichern', async () => {

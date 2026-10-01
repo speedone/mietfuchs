@@ -207,6 +207,14 @@ function fmtMeter(n: number): string {
   return n.toLocaleString('de-DE', { maximumFractionDigits: 3 })
 }
 
+// Ein Datum in den Meldungen der Zähler deutsch, wie überall in der Oberfläche (#142): Der
+// Vermieter liest „am 01.07.2025“ und nicht „am 2025-07-01“. Aus der Zeichenkette gebaut und nicht
+// über `Date`, damit keine Zeitzone einen Tag verschiebt.
+function fmtDay(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso
+}
+
 export function meterSegments(readings: SnapshotReading[]): { segments: MeterSegment[], notices: Notice[], warnings: string[] } {
   const sorted = readings.slice().sort((a, b) => compareText(a.date, b.date))
   const segments: MeterSegment[] = []
@@ -244,7 +252,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     // Vorgänger fehlt nichts, es gibt keinen Zeitraum, über den das alte Gerät gelaufen wäre.
     if (r1.replacement && r1.oldEndValue == null) {
       warn('meter.replacement-without-end',
-        `Zählerwechsel am ${r1.date} ohne Endstand des alten Geräts — der Verbrauch bis zum ` +
+        `Zählerwechsel am ${fmtDay(r1.date)} ohne Endstand des alten Geräts — der Verbrauch bis zum ` +
           'Wechsel lässt sich nicht bestimmen und wird nicht verteilt. Bitte den Endstand nachtragen.',
         meterSubject(r1),
       )
@@ -302,7 +310,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     }
 
     if (delta < 0) {
-      warn('meter.negative', `Negativer Verbrauch zwischen ${r0.date} und ${r1.date} (${delta}) — Ablesung prüfen oder Zählerwechsel markieren.`, meterSubject(r1))
+      warn('meter.negative', `Negativer Verbrauch zwischen dem ${fmtDay(r0.date)} und dem ${fmtDay(r1.date)} (${fmtMeter(delta)}) — Ablesung prüfen oder Zählerwechsel markieren.`, meterSubject(r1))
     }
     segments.push({ from: r0.date, to: r1.date, delta, days })
   }
@@ -310,7 +318,7 @@ export function meterSegments(readings: SnapshotReading[]): { segments: MeterSeg
     // Heben sich mehrere Sprünge desselben Tages auf, fehlt nichts.
     if (lost === 0) continue
     warn('meter.same-day',
-      `Mehrere Ablesungen am ${date}: Die Stände unterscheiden sich um ${fmtMeter(Math.abs(lost))}, ` +
+      `Mehrere Ablesungen am ${fmtDay(date)}: Die Stände unterscheiden sich um ${fmtMeter(Math.abs(lost))}, ` +
         'und diese Menge wird nicht verteilt, weil zwischen ihnen kein Tag liegt. ' +
         'Bitte eine der Ablesungen prüfen.',
       sorted[0] && meterSubject(sorted[0]),

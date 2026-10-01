@@ -615,6 +615,20 @@ export type UploadInfo = {
   mtime: string
 }
 
+// Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
+// erledigen die Fremdschlüssel (db/schema.ts); hier steht nur, wie viel sie träfe.
+// `costItemLinks`: vereinbarte Anteile, Teilnahmen und Einzel- oder Eigenbeträge an
+// Kostenpositionen, die mit der Wohnung entfallen. `directCostItems`: direkt zugeordnete
+// Rechnungen; sie bleiben (`ON DELETE SET NULL`) und gehen danach an den Vermieter.
+export type UnitDependents = {
+  tenancies: number
+  meters: number
+  readings: number
+  payments: number
+  costItemLinks: number
+  directCostItems: number
+}
+
 // Was die Oberfläche aus einer KI-Belegauswertung bekommt: das Ergebnis, nicht die rohe Antwort
 // des Modells. Die beschreibt `RawExtraction` in server/src/invoiceAmounts.ts, und dort ist alles
 // `unknown`; `toExtraction` in server/src/extract.ts ist die eine Stelle, an der daraus diese
