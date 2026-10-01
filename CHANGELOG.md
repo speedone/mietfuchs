@@ -121,6 +121,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   erlaubt, mit einem kurzen Hinweis am Feld; negative und gebrochene Personenzahlen bleiben
   ausgeschlossen, und die Meldung sagt, was erlaubt ist.
   ([#135](https://github.com/speedone/mietfuchs/issues/135))
+- **Die Cockpit-Ampel „Zählerstände“ sieht den Hauptzähler.** Bisher zählte sie nur Zähler mit
+  Wohnung; fehlte der Endstand des Hauptzählers, blieb sie grün, obwohl er seit #116 die
+  Verteilbasis sein kann und die Abrechnung dann nicht stimmt.
+  ([#136](https://github.com/speedone/mietfuchs/issues/136))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften

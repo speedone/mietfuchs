@@ -5,6 +5,7 @@ import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
+import { meterReadiness } from '../meterCheck'
 import { UpdateConsent } from '../components/Update'
 
 type Props = {
@@ -124,11 +125,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
     } else {
-      const relevant = meters.filter((m) => m.unitId && meterTypes.has(m.type))
-      const incomplete = relevant.filter((m) => {
-        const c = consumption.find((x) => x.meterId === m.id)
-        return !c || c.readingCount < 2 || c.warnings.length > 0
-      })
+      const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
         list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', cta: 'Stände erfassen',
           detail: `Anfang/Ende fehlt oder unplausibel bei: ${incomplete.map((m) => m.name).join(', ')}` })
