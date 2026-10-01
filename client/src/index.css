@@ -805,3 +805,11 @@ fieldset.no-connection { border: 0; padding: 0; margin: 0; min-width: 0; }
 .receipt-hint { color: var(--amber); font-size: 13px; }
 .receipt-missing { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .receipt-missing > li { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; }
+.receipt-coverage { display: grid; gap: 8px; }
+.receipt-coverage-row { display: grid; grid-template-columns: minmax(0, auto) minmax(80px, 1fr) auto auto; gap: 10px; align-items: center; }
+.receipt-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.receipt-attach select { max-width: 260px; }
+@media (max-width: 640px) {
+  .receipt-coverage-row { grid-template-columns: 1fr auto; }
+  .receipt-coverage-row .progress { grid-column: 1 / -1; }
+}

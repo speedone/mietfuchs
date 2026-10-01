@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
+import { coverageCheck } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
@@ -126,6 +127,11 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Belege erfasst', level: 'gruen',
         detail: `${yearItems.length} Position(en) · Summe ${fmtEuro(itemsSum)}${invoiceFileCount ? ` · ${invoiceFileCount} Belegdatei(en)` : ''}` })
     }
+
+    // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
+    const belege = coverageCheck(yearItems)
+    list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
+      ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
     // Nicht umlagefähige Positionen zählen nicht mit (#142, cockpitChecks.ts).
