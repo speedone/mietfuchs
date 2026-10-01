@@ -28,8 +28,11 @@ afterEach(() => {
 
 test('der Design-Knopf ist auch ohne den Text daneben benannt, und der Text lässt sich für sich ausblenden', async () => {
   render(<App />)
-  const knopf = await screen.findByRole('button', { name: /^Design wechseln/ }, { timeout: 5000 })
-  expect(knopf.getAttribute('aria-label')).toMatch(/^Design wechseln \(jetzt: .+\)$/)
+  // Der zugängliche Name beginnt mit dem sichtbaren Text (WCAG 2.5.3, Beschriftung im Namen):
+  // Wer per Sprachsteuerung „Design: System“ sagt, trifft den Knopf. Am Handy steht nur „🌗“;
+  // der Name sagt dann, was er tut.
+  const knopf = await screen.findByRole('button', { name: /^Design: System – wechseln/ }, { timeout: 5000 })
   const text = knopf.querySelector('.theme-label')
-  expect(text?.textContent).toMatch(/^Design: /)
+  expect(text?.textContent).toBe('Design: System')
+  expect(knopf.getAttribute('aria-label')?.startsWith(text?.textContent ?? '?')).toBe(true)
 })

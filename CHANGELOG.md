@@ -122,8 +122,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Erfassen: Hinweis und Vorbelegungen.** Ist die Abrechnung des Jahres abgeschlossen, sagt die
   Kostenseite das oben und dass Änderungen als Abweichung angezeigt werden; bearbeiten lässt sich
-  weiterhin. Wasser/Abwasser schlägt „nach Verbrauch“ (Kaltwasser) vor, sobald Wohnungen
-  Kaltwasserzähler haben. Eine neue Zahlung in einem früheren Jahr steht auf dem 31.12. dieses
+  weiterhin. Im Formular der Kostenposition schlägt Wasser/Abwasser „nach Verbrauch“ (Kaltwasser)
+  vor, wenn jede beteiligte Wohnung einen Kaltwasserzähler hat oder keinen Wasseranschluss; die
+  Übernahme aus der KI-Belegauswertung schlägt weiter „nach Personenzahl“ vor. Eine neue Zahlung in einem früheren Jahr steht auf dem 31.12. dieses
   Jahres statt auf heute. Ein neues Mietverhältnis wählt die erste vermietbare Wohnung ohne
   laufendes Mietverhältnis vor statt einer selbstgenutzten.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))

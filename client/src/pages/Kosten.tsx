@@ -332,7 +332,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <div className="notice">
           Die Abrechnung {year} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
           ändern die eingefrorene Abrechnung nicht; die Abrechnungsseite zeigt sie als Abweichung zur heutigen
-          Berechnung. Bearbeiten bleibt möglich, etwa für eine Berichtigung nach dem Wiederöffnen.
+          Berechnung. Bearbeiten bleibt möglich.
         </div>
       )}
 
@@ -581,7 +581,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, ...(form.id ? {} : suggestedKey(e.target.value, unitMeterTypes)) })}>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, ...(form.id ? {} : suggestedKey(e.target.value, units, meters)) })}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>

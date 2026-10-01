@@ -88,6 +88,8 @@ body {
   /* Schmal und dunkel, damit die eigene Scrollleiste die Leiste nicht zerschneidet */
   scrollbar-width: thin;
   scrollbar-color: #3a4160 transparent;
+  /* Ein per Tab fokussierter Eintrag rollt nicht unter den stehenden Fuß (gut 90 px hoch) */
+  scroll-padding-bottom: 100px;
 }
 .sidebar .logo {
   display: flex;

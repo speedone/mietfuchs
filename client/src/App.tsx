@@ -255,8 +255,9 @@ function Shell() {
         ))}
 
         <div className="foot">
-          {/* Der Name steht am Knopf selbst: Am Handy bleibt nur „🌗“ sichtbar (#142). */}
-          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design wechseln (jetzt: ${THEME_LABELS[choice]})`}>
+          {/* Der Name steht am Knopf selbst: Am Handy bleibt nur „🌗“ sichtbar (#142). Er beginnt
+              mit dem sichtbaren Text, damit Sprachsteuerung den Knopf am Rechner findet. */}
+          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design: ${THEME_LABELS[choice]} – wechseln (System / Hell / Dunkel)`}>
             🌗 <span className="theme-label">Design: {THEME_LABELS[choice]}</span>
           </button>
           {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}

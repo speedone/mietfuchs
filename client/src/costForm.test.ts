@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { CostKey, MeterType, Unit } from './types'
+import type { CostKey, Meter, MeterType, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
@@ -395,22 +395,38 @@ describe('Kabelanlage am Objekt (#121)', () => {
 })
 
 describe('Vorschlag des Schlüssels je Kostenart (#142)', () => {
-  test('Wasser/Abwasser mit Kaltwasserzählern an Wohnungen: nach Verbrauch, Zählertyp Kaltwasser', () => {
-    expect(suggestedKey('Wasser/Abwasser', ['kaltwasser'])).toEqual({ key: 'meter', meterType: 'kaltwasser' })
+  const unit = (id: string, over: Partial<Unit> = {}): Unit => ({ id, propertyId: 'p', name: id, areaM2: 50, participates: true, ...over })
+  const meter = (unitId: string | null, type: MeterType = 'kaltwasser'): Meter => ({ id: `m-${unitId}`, propertyId: 'p', name: 'Zähler', unitId, type, unit: 'm³' })
+  const zwei = [unit('a'), unit('b')]
+
+  test('Wasser/Abwasser, jede beteiligte Wohnung hat einen Kaltwasserzähler: nach Verbrauch, Zählertyp Kaltwasser', () => {
+    expect(suggestedKey('Wasser/Abwasser', zwei, [meter('a'), meter('b')])).toEqual({ key: 'meter', meterType: 'kaltwasser' })
   })
 
-  test('ohne Kaltwasserzähler an Wohnungen bleibt es bei der Personenzahl', () => {
-    expect(suggestedKey('Wasser/Abwasser', [])).toEqual({ key: 'persons', meterType: '' })
-    expect(suggestedKey('Wasser/Abwasser', ['strom'])).toEqual({ key: 'persons', meterType: '' })
+  test('nur eine von zwei Wohnungen hat einen Zähler: kein Verbrauchsvorschlag, sonst zahlte einer die Lücke', () => {
+    expect(suggestedKey('Wasser/Abwasser', zwei, [meter('a')])).toEqual({ key: 'persons', meterType: '' })
+    // ein Hauptzähler allein ändert daran nichts
+    expect(suggestedKey('Wasser/Abwasser', zwei, [meter('a'), meter(null)])).toEqual({ key: 'persons', meterType: '' })
+  })
+
+  test('eine Wohnung ohne Wasseranschluss braucht keinen Zähler; selbstgenutzte und nicht beteiligte zählen nicht mit', () => {
+    const units = [unit('a'), unit('garage', { noConnection: ['kaltwasser'] }), unit('eigen', { participates: false, selfUsed: true }), unit('aus', { participates: false })]
+    expect(suggestedKey('Wasser/Abwasser', units, [meter('a')])).toEqual({ key: 'meter', meterType: 'kaltwasser' })
+  })
+
+  test('ohne Kaltwasserzähler oder ohne beteiligte Wohnung bleibt es bei der Personenzahl', () => {
+    expect(suggestedKey('Wasser/Abwasser', zwei, [])).toEqual({ key: 'persons', meterType: '' })
+    expect(suggestedKey('Wasser/Abwasser', zwei, [meter('a', 'strom'), meter('b', 'strom')])).toEqual({ key: 'persons', meterType: '' })
+    expect(suggestedKey('Wasser/Abwasser', [], [])).toEqual({ key: 'persons', meterType: '' })
   })
 
   test('andere Kostenarten unverändert', () => {
-    expect(suggestedKey('Müllabfuhr', ['kaltwasser'])).toEqual({ key: 'persons', meterType: '' })
-    expect(suggestedKey('Grundsteuer', ['kaltwasser'])).toEqual({ key: 'area', meterType: '' })
+    expect(suggestedKey('Müllabfuhr', zwei, [meter('a'), meter('b')])).toEqual({ key: 'persons', meterType: '' })
+    expect(suggestedKey('Grundsteuer', zwei, [meter('a'), meter('b')])).toEqual({ key: 'area', meterType: '' })
   })
 
   test('der Vorschlag steht in beiden Auswahllisten, angezeigt wird also, was gespeichert wird', () => {
-    const s = suggestedKey('Wasser/Abwasser', ['kaltwasser'])
+    const s = suggestedKey('Wasser/Abwasser', zwei, [meter('a'), meter('b')])
     expect(costKeyOptions(['kaltwasser'], s.key)).toContain(s.key)
     expect(meterTypeOptions(['kaltwasser'], s.meterType)).toContain(s.meterType)
   })

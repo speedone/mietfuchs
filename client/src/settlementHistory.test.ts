@@ -51,14 +51,20 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
     expect(v.text).not.toContain('02.05.2026')
   })
 
-  test('wieder abgeschlossen ohne neues Versanddatum: auch dann bleibt der frühere Versand stehen', () => {
-    expect(deadlineView(2025, null, [frueher('2026-01-12')], heute).text).toContain('am 12.01.2026')
-  })
-
   test('Frist abgelaufen, aber rechtzeitig versandt: kein Fehler, sondern der Hinweis auf die Berichtigung', () => {
     const v = deadlineView(2024, null, [frueher('2025-06-01')], heute)
     expect(v.level).toBe('notice')
     expect(v.text).toContain('am 01.06.2025')
     expect(v.text).toContain('abgelaufen')
+    // § 556 Abs. 3 Satz 3 BGB lässt eine Ausnahme zu, wenn der Vermieter die Verspätung nicht zu vertreten hat.
+    expect(v.text).toContain('kann in der Regel keine höhere Nachzahlung mehr fordern')
+  })
+
+  test('schon der frühere Versand lag nach Fristende: jede Nachforderung ist in der Regel ausgeschlossen', () => {
+    const v = deadlineView(2024, null, [frueher('2026-02-01')], heute)
+    expect(v.level).toBe('error')
+    expect(v.text).toContain('am 01.02.2026')
+    expect(v.text).toContain('Nachforderungen sind in der Regel ausgeschlossen')
+    expect(v.text).not.toContain('höhere Nachzahlung')
   })
 })
