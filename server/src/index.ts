@@ -41,7 +41,8 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
-import { createChecksums, describeFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
+import { createChecksums, describeFile, mimeTypeOf, originalNameOf, uploadedAtOf } from './uploads.ts'
+import { planTaxArchive } from './taxReceipts.ts'
 import { forgetUpload, placeUpload, recordUpload, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -865,6 +866,30 @@ app.delete('/api/uploads/:file', async (req, res) => {
   // Die Angaben gehen mit. Scheitert das, bleibt eine Zeile ohne Datei, und die zeigt niemand an.
   await writeData((db) => forgetUpload(db, name)).catch((err: unknown) => console.warn(`Angaben zu ${name} nicht entfernt: ${messageOf(err)}`))
   res.json({ ok: true })
+})
+
+// ---------- Belege für die Steuer (#170) ----------
+// Ein ZIP aller Belege eines Objekts und Jahres nach den Gruppen der Anlage V, samt Übersicht.
+// Aufbau und Begründung in taxReceipts.ts.
+app.get('/api/receipts/tax/:year', async (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  const { items, property, rows } = await readData(async (db) => {
+    const propertyId = await propertyOf(db, req)
+    const stock = narrowToProperty(await readStock(db), propertyId)
+    const property = (await listProperties(db)).find((p) => p.id === propertyId)
+    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db) }
+  })
+  const names = new Map<string, string>()
+  for (const name of fs.readdirSync(UPLOAD_DIR)) names.set(name, rows.get(name)?.originalName ?? originalNameOf(name))
+  const plan = planTaxArchive(items, names)
+  const zip = new AdmZip()
+  for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
+  zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
+  const label = (property?.name || 'objekt').normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
+  res.set('Content-Type', 'application/zip')
+  res.set('Content-Disposition', `attachment; filename="belege-steuer-${year}-${label.replace(/[^\x20-\x7e]/g, '_')}.zip"; filename*=UTF-8''${encodeURIComponent(`belege-steuer-${year}-${label}.zip`)}`)
+  res.send(zip.toBuffer())
 })
 
 // ---------- Backup & Wiederherstellen ----------

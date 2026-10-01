@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, UploadInfo, Property } from '../types'
+import type { CostItem, UploadInfo, Property, Settlement } from '../types'
 import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
-import { renderThumbnail } from '../pdfPreview'
+import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
+import { buildTenantFolderPdf, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -30,14 +31,152 @@ function Thumb({ upload, render }: { upload: UploadInfo; render: typeof renderTh
   )
 }
 
+// ---------- Mappen packen (#170) ----------
+
+type FolderMeta = { title: string; subtitle: string; fileName: string }
+
+// Eine Seite als JPEG-Bytes, aus einer Daten-Adresse oder einer Bilddatei, die pdf-lib nicht
+// unmittelbar nimmt (etwa WebP): über ein Canvas.
+async function jpegBytes(src: string): Promise<Uint8Array> {
+  if (src.startsWith('data:image/jpeg')) return Uint8Array.from(atob(src.split(',')[1] ?? ''), (c) => c.charCodeAt(0))
+  const img = new Image()
+  img.src = src
+  await img.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  canvas.getContext('2d')?.drawImage(img, 0, 0)
+  const blob = await new Promise<Blob>((ok, fail) => canvas.toBlob((b) => (b ? ok(b) : fail(new Error('Bild nicht lesbar'))), 'image/jpeg', 0.85))
+  return new Uint8Array(await blob.arrayBuffer())
+}
+
+// Die Mappe erzeugen und herunterladen. Alles im Browser: Die Belege liegen ohnehin hier, und
+// der Server braucht dafür kein Werkzeug, das in der Programmdatei fehlen könnte.
+async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): Promise<void> {
+  const bytes = await buildTenantFolderPdf(plan, {
+    title: meta.title,
+    subtitle: meta.subtitle,
+    load: async (u) => new Uint8Array(await (await fetch(`/uploads/${encodeURIComponent(u.file)}`)).arrayBuffer()),
+    rasterize: async (u) => Promise.all((await renderInvoicePages(u.file)).map(jpegBytes)),
+  })
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = meta.fileName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10000)
+}
+
+const fileLabel = (s: string) => s.normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
+
+function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make }: {
+  propertyId: string
+  propertyName: string
+  year: number
+  uploads: UploadInfo[]
+  costItems: CostItem[]
+  make: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [settlement, setSettlement] = useState<Settlement | null>(null)
+  const [includeIndividual, setIncludeIndividual] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState('')
+  const toast = useToast()
+
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    setSettlement(null)
+    api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId))
+      .then((st) => { if (live) setSettlement(st) }, (e) => { if (live) setProblem(errorText(e)) })
+    return () => { live = false }
+  }, [open, year, propertyId])
+
+  const plan = useMemo(
+    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.year === year), uploads, { includeIndividual }) : null),
+    [settlement, costItems, uploads, includeIndividual, propertyId, year],
+  )
+  const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
+  const individual = plan?.entries.filter((e) => e.item.key === 'amounts' && e.upload).length ?? 0
+
+  async function create() {
+    if (!plan) return
+    setBusy(true)
+    setProblem('')
+    try {
+      await make(plan, {
+        title: `Belegmappe ${year}`,
+        subtitle: propertyName,
+        fileName: `belegmappe-${year}-${fileLabel(propertyName)}.pdf`,
+      })
+      toast('Die Belegmappe ist erstellt.')
+    } catch (e) {
+      setProblem(`Die Mappe ließ sich nicht erstellen: ${errorText(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card no-print receipt-packs">
+      <h2>Mappen packen · {year}</h2>
+      <div className="row receipt-filters">
+        <a className="btn" href={withProperty(`/api/receipts/tax/${year}`, propertyId)} download>🧾 Belege für die Steuer (ZIP)</a>
+        <span className="muted">Alle Belege des Jahres nach den Gruppen der Anlage V, auch die nicht umlagefähigen, mit einer Übersicht.</span>
+      </div>
+      <details onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+        <summary>📎 Belegmappe für Mieter (PDF)</summary>
+        <p className="muted">
+          Für die Belegeinsicht: die Belege der umgelegten Positionen in der Reihenfolge der Abrechnung, mit einem Deckblatt
+          „Position → Beleg, Seite“. Seit 2025 dürfen Sie die Belege elektronisch bereitstellen (§ 556 Abs. 4 BGB).
+        </p>
+        {problem && <div className="error">{problem}</div>}
+        {!plan ? (
+          !problem && <div className="muted">Lädt die Abrechnung …</div>
+        ) : (
+          <>
+            <p>
+              {plan.documents.length} Beleg{plan.documents.length === 1 ? '' : 'e'} zu {plan.entries.length} umgelegten Position{plan.entries.length === 1 ? '' : 'en'}
+              {count('none') > 0 && <> · {count('none')} Position{count('none') === 1 ? '' : 'en'} ohne Beleg</>}
+              {count('missing') > 0 && <> · bei {count('missing')} fehlt die Datei</>}
+            </p>
+            {individual > 0 && (
+              <label className="field checkline">
+                <input type="checkbox" checked={includeIndividual} onChange={(e) => setIncludeIndividual(e.target.checked)} />
+                Belege mit Einzelbeträgen je Mieter beilegen ({individual})
+              </label>
+            )}
+            {individual > 0 && (
+              <p className="notice">
+                Belege zu „Einzelbeträge je Mieter“, etwa die Abrechnung eines Messdienstes, nennen meist die Beträge und Verbrauchswerte
+                aller Wohnungen, oft mit Namen. Ein Mieter darf sie einsehen, soweit er sie zur Prüfung seiner Abrechnung braucht
+                (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Geben Sie die Mappe mit diesen Belegen deshalb nur dem Mieter, der danach fragt,
+                und schwärzen Sie, was er dafür nicht braucht, etwa Namen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
+              </p>
+            )}
+            <button className="btn" onClick={() => void create()} disabled={busy || plan.entries.length === 0}>
+              {busy ? 'Wird erstellt …' : 'PDF erstellen'}
+            </button>
+          </>
+        )}
+      </details>
+    </div>
+  )
+}
+
 type Props = {
   // Für Tests: ohne pdf.js
   renderThumb?: typeof renderThumbnail
   // Belege aus dem Posteingang per KI auswerten: übergibt sie der Schnellerfassung (App.tsx)
   onEvaluate?: (uploads: UploadInfo[]) => void
+  // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
+  makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<void>
 }
 
-export default function Belege({ renderThumb = renderThumbnail, onEvaluate }: Props) {
+export default function Belege({ renderThumb = renderThumbnail, onEvaluate, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { year: currentYear } = useYear()
@@ -86,6 +225,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate }: Pr
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
   const showProperty = filter.propertyId === 'all' && properties.length > 1
+  // Mappen gibt es je Objekt und Jahr; bei einem einzigen Objekt ist es dieses.
+  const packProperty = filter.propertyId !== 'all' ? filter.propertyId : properties.length === 1 ? properties[0]?.id ?? null : null
   // Die Jahre der Auswahl: die üblichen, dazu jedes Jahr, in dem es Positionen gibt
   const yearOptions = useMemo(
     () => [...new Set([...YEAR_OPTIONS, currentYear, ...costItems.map((c) => c.year)])].sort((a, b) => b - a),
@@ -334,6 +475,17 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate }: Pr
             )
           })}
         </div>
+      )}
+
+      {packProperty && filter.year !== 'all' && (
+        <FolderPacks
+          propertyId={packProperty}
+          propertyName={propertyName(packProperty)}
+          year={filter.year}
+          uploads={uploads}
+          costItems={costItems}
+          make={makeTenantFolder}
+        />
       )}
 
       {folder.groups.length === 0 ? (
