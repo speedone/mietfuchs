@@ -229,7 +229,8 @@ test('Die Inklusivmiete steht nicht unter „ohne Umlagen (Kaltmiete)“, sonder
   await zeige(REPORT({}, { baseRentSollCents: 960000, inclusiveRentSollCents: 840000 }))
   const kalt = screen.getByText(/Mieteinnahmen ohne Umlagen/i).closest('tr')
   expect(kalt?.textContent).toMatch(/1\.200,00/)
-  const inklusiv = screen.getByText(/Inklusivmieten/i).closest('tr')
+  // Auch eine Miete, die nur kalt oder nur warm inklusiv ist, steht hier (Durchsicht).
+  const inklusiv = screen.getByText(/Inklusivmieten \(ganz oder teilweise/i).closest('tr')
   expect(inklusiv?.textContent).toMatch(/8\.400,00/)
   expect(screen.getByText(/Summe Soll/i).closest('tr')?.textContent).toMatch(/12\.000,00/)
   cleanup()

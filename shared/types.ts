@@ -411,10 +411,11 @@ export type SettlementRow = {
 //   `vacancy`       Leerstand: Zeit oder Wohnung ohne Mietverhältnis
 //   `flatRate`      Mietverhältnis mit Betriebskostenpauschale für diese Kostenart
 //   `inclusive`     Mietverhältnis mit Inklusivmiete für diese Kostenart
-//   `outsideUnit`   Wohnung außerhalb der Abrechnungseinheit
+//   `outsideUnit`   Wohnung außerhalb der Abrechnungseinheit (ihr Mietverhältnis, ihr Zähler, ihr
+//                   vereinbarter Anteil)
 //   `amountsRest`   bei Einzelbeträgen der Rest, den kein Mietverhältnis trägt
 //   `customRest`    bei vereinbarten Anteilen, was unter 100 % fehlt
-//   `mainMeterRest` beim Verbrauch der Rest des Hauptzählers, den keine Wohnung zugewiesen bekommt
+//   `mainMeterRest` beim Verbrauch der Teil des Hauptzählers, den kein Wohnungszähler misst
 //   `rounding`      Rundungsrest
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'

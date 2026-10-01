@@ -972,7 +972,7 @@ export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEG
 function landlordPartsOf(
   item: SnapshotCostItem,
   landlordCents: number,
-  p: { selfCents: number, notBooked: { reason: LandlordReason | CostModel, cents: number }[], customUnassignedRaw: number, unassignedRaw: number, byMainMeter: boolean },
+  p: { selfCents: number, notBooked: { reason: LandlordReason | CostModel, cents: number }[], customUnassignedRaw: number, outsideRaw: number, mainRestRaw: number, unassignedRaw: number },
 ): LandlordPart[] {
   const parts: LandlordPart[] = []
   let left = landlordCents
@@ -988,8 +988,10 @@ function landlordPartsOf(
   for (const reason of ['flatRate', 'inclusive', 'outsideUnit'] as const) {
     take(reason, p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.cents, 0))
   }
+  take('outsideUnit', Math.round(p.outsideRaw))
   take('customRest', Math.round(p.customUnassignedRaw))
-  take(item.key === 'amounts' ? 'amountsRest' : p.byMainMeter ? 'mainMeterRest' : 'vacancy', Math.round(p.unassignedRaw))
+  take('mainMeterRest', Math.round(p.mainRestRaw))
+  take(item.key === 'amounts' ? 'amountsRest' : 'vacancy', Math.round(p.unassignedRaw))
   take('rounding', left)
   return parts
 }
@@ -1312,7 +1314,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const tenantCentsOf = new Map<string, number>()
   const tvNotices = () => items.filter((c) => c.category === 'Kabel/Antenne').flatMap((item): Notice[] => {
     const cents = tenantCentsOf.get(item.id) ?? 0
-    const charged = cents !== 0 ? ` Auf die Mieter umgelegt sind in dieser Abrechnung ${fmtCents(cents)}.` : ''
+    // Nur ein wirklich umgelegter Betrag; eine Gutschrift hat den Mietern nichts aufgebürdet.
+    const charged = cents > 0 ? ` Auf die Mieter umgelegt sind in dieser Abrechnung ${fmtCents(cents)}.` : ''
     if (newSystem) {
       return [makeNotice('tv-signal.new-system', `„${item.description}": Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === 2021 ? ' Für 2021 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.' : ''}`, itemSubject(item))]
     } else if (tvSignal === 'partial') {
@@ -1358,9 +1361,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Für die Zerlegung des Vermieteranteils (#142): Geht die Position ganz an den Vermieter, steht
     // hier der eine Grund dafür. Sonst ergibt sich die Zerlegung erst aus der Verteilung.
     let forced: LandlordReason | null = isNotAllocable(item.category) ? 'notAllocable' : null
-    // Bei vereinbarten Anteilen, was unter 100 % fehlt; beim Verbrauch, ob nach Hauptzähler.
+    // Bei vereinbarten Anteilen, was unter 100 % fehlt; was auf Wohnungen außerhalb der
+    // Abrechnungseinheit entfällt (verfallene Anteile, Zähler solcher Wohnungen); beim Hauptzähler
+    // der Verbrauch, den kein Wohnungszähler misst.
     let customUnassignedRaw = 0
-    let byMainMeter = false
+    let outsideRaw = 0
+    let mainRestRaw = 0
     const noBasis = (reason: string) => {
       forced = 'noBasis'
       warn('item.no-basis', `„${item.description}": ${reason} — Betrag geht an den Vermieter.`, itemSubject(item))
@@ -1532,7 +1538,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           targets.push({ t, raw, basisText: `${fmtNum(pct)} % vereinbart${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
         }
         selfRaw = selfUnits.reduce((a, u) => a + item.amountCents * (pctOf(u.id) / 100), 0)
-        customUnassignedRaw = item.amountCents * ((100 - pctSum) / 100)
+        // Ein Anteil für eine Wohnung, die es gibt, die aber außerhalb liegt, ist dort vereinbart
+        // und verfällt; einer für eine gelöschte Wohnung zählt zum Nicht-Vereinbarten (so steht er
+        // auch nach dem Geraderücken da, das ihn streicht).
+        const outsidePct = Object.keys(item.customShares ?? {})
+          .filter((id) => pctOf(id) > 0 && unitById.has(id) && !basisUnits.some((u) => u.id === id))
+          .reduce((a, id) => a + pctOf(id), 0)
+        outsideRaw = item.amountCents * (outsidePct / 100)
+        customUnassignedRaw = item.amountCents * ((100 - pctSum - outsidePct) / 100)
       }
     } else if (item.key === 'meter') {
       // `item.meterType` ist optional (string | null | undefined); die Indizierung selbst
@@ -1544,7 +1557,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('meter.no-consumption', `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
         const type = item.meterType ?? '—'
-        byMainMeter = data.main !== null
+        // Für die Zerlegung des Vermieteranteils (#142): Verbrauch der Zähler von Wohnungen
+        // außerhalb der Abrechnungseinheit, und beim Hauptzähler, was keine Wohnung misst.
+        const inBasis = new Set(b.basisUnits.map((u) => u.id))
+        const yearOf = (m: SnapshotMeter) => consumptionInPeriod(readingsOf(m.id), yFrom, yTo)
+        const measured = data.meters.reduce((a, m) => a + yearOf(m), 0)
+        outsideRaw = item.amountCents * (data.meters.filter((m) => !inBasis.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) / data.basis)
+        if (data.main !== null) mainRestRaw = item.amountCents * ((data.basis - measured) / data.basis)
         if (data.mainPartial) {
           warn('meter.main-partial', `„${item.description}": der Hauptzähler deckt ${year} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum 31.12.${year - 1} und zum Jahresende (31.12.${year}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
         }
@@ -1767,10 +1786,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             // Abrechnungseinheit liegt (dann hat es keine Abrechnung).
             notBooked: targets.flatMap((x, i) => bookable(x.t) ? [] : [{ reason: statements.has(x.t.id) ? modelFor(x.t, item) : 'outsideUnit', cents: shares[i] }]),
             customUnassignedRaw,
-            // Was die Rohanteile nicht ausschöpfen, ohne den Eigenanteil: Leerstand, bei
-            // Einzelbeträgen der Rest, beim Hauptzähler dessen Rest.
-            unassignedRaw: item.amountCents - targets.reduce((a, x) => a + x.raw, 0) - selfRaw - customUnassignedRaw,
-            byMainMeter,
+            outsideRaw,
+            mainRestRaw,
+            // Was die Rohanteile sonst nicht ausschöpfen: Leerstand, bei Einzelbeträgen der Rest.
+            unassignedRaw: item.amountCents - targets.reduce((a, x) => a + x.raw, 0) - selfRaw - customUnassignedRaw - outsideRaw - mainRestRaw,
           }),
       })
     }

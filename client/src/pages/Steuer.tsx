@@ -128,7 +128,7 @@ export default function Steuer({ settings }: Props) {
                 </tr>
                 {data.income.inclusiveRentSollCents !== 0 && (
                   <tr>
-                    <td>Inklusivmieten, Nebenkosten eingeschlossen (vereinbart)</td>
+                    <td>Inklusivmieten (ganz oder teilweise), Nebenkosten eingeschlossen (vereinbart)</td>
                     <td className="num">{fmtEuro(data.income.inclusiveRentSollCents)}</td>
                   </tr>
                 )}

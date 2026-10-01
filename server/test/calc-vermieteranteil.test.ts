@@ -139,3 +139,42 @@ test('Vermieteranteil: eine Gutschrift zerlegt sich mit ihrem Vorzeichen', () =>
   const s = settle({ units: [unit('a'), unit('b')], tenancies: [tenancy('t-a', 'a')], costItems: [item({ amountCents: -10000 })] })
   assert.deepEqual(partsOf(s), [{ reason: 'vacancy', cents: -5000 }])
 })
+
+// Befunde der Durchsicht: Leerstand, Wohnungen außerhalb und der Rest des Hauptzählers getrennt.
+const meter = (id: string, unitId: string | null): SnapshotMeter => ({ id, unitId, type: 'kaltwasser' })
+const used = (meterId: string, amount: number): SnapshotReading[] => [
+  { meterId, date: '2024-12-31', value: 0 }, { meterId, date: '2025-12-31', value: amount },
+]
+const water = item({ category: 'Wasser/Abwasser', description: 'Wasser', key: 'meter', meterType: 'kaltwasser' })
+
+test('Vermieteranteil, Verbrauch: der Zähler einer Wohnung außerhalb der Abrechnungseinheit ist kein Leerstand', () => {
+  const s = settle({
+    units: [unit('a'), unit('gewerbe', { participates: false })],
+    tenancies: [tenancy('t-a', 'a', { start: '2024-01-01' }), tenancy('t-g', 'gewerbe', { start: '2024-01-01' })],
+    costItems: [water],
+    meters: [meter('za', 'a'), meter('zg', 'gewerbe')],
+    readings: [...used('za', 40), ...used('zg', 60)],
+  })
+  assert.deepEqual(partsOf(s), [{ reason: 'outsideUnit', cents: 60000 }])
+})
+
+test('Vermieteranteil, Hauptzähler: gemessener Verbrauch einer leeren Wohnung ist Leerstand, nur der ungemessene Rest gehört zum Hauptzähler', () => {
+  // Hauptzähler 100 m³, A vermietet 30, B leer 20, C vermietet ohne Zähler; 1.000 € Wasser.
+  const s = settle({
+    units: [unit('a'), unit('b'), unit('c')],
+    tenancies: [tenancy('t-a', 'a', { start: '2024-01-01' }), tenancy('t-c', 'c', { start: '2024-01-01' })],
+    costItems: [water],
+    meters: [meter('hz', null), meter('za', 'a'), meter('zb', 'b')],
+    readings: [...used('hz', 100), ...used('za', 30), ...used('zb', 20)],
+  })
+  assert.deepEqual(partsOf(s), [{ reason: 'mainMeterRest', cents: 50000 }, { reason: 'vacancy', cents: 20000 }])
+})
+
+test('Vermieteranteil, vereinbarte Anteile: der verfallene Anteil einer Wohnung außerhalb ist kein „nicht vereinbarter Anteil“', () => {
+  const s = settle({
+    units: [unit('a'), unit('g', { participates: false })],
+    tenancies: [tenancy('t-a', 'a')],
+    costItems: [item({ key: 'custom', customShares: { a: 70, g: 30 } })],
+  })
+  assert.deepEqual(partsOf(s), [{ reason: 'outsideUnit', cents: 30000 }])
+})

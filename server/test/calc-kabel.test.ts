@@ -96,3 +96,11 @@ test('Kabel nach 2024: ohne umgelegten Betrag kein Satz über einen Betrag, und 
   const kabel = n.find((x) => x.code === 'tv-signal.ended')
   assert.doesNotMatch(kabel?.text ?? '', /umgelegt sind in dieser Abrechnung/)
 })
+
+test('Kabel nach 2024: eine Gutschrift bekommt keinen Satz über einen umgelegten Betrag', () => {
+  const src = bestand(2025)
+  src.costItems = [{ id: 'k', year: 2025, category: 'Kabel/Antenne', description: 'Kabel Gutschrift', amountCents: -3000, key: 'units' }]
+  const n = computeSettlement(snapshotOf(src, 2025)).notices
+  assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended'])
+  assert.doesNotMatch(n[0]?.text ?? '', /umgelegt sind in dieser Abrechnung/)
+})
