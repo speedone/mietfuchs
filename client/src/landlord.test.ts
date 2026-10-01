@@ -2,7 +2,7 @@
 // `null` heißt „die Vorgabe aus den Einstellungen gilt“. Eine leere Angabe am Objekt ist dagegen
 // eine Angabe, etwa für ein Haus, dessen Miete bar gezahlt wird.
 import { expect, test } from 'vitest'
-import { effectiveLandlord } from './landlord'
+import { effectiveLandlord, letterhead } from './landlord'
 import type { Property } from './types'
 
 const vorgabe = { landlordName: 'Erika Muster', iban: 'DE01', paymentDeadlineDays: 30 }
@@ -18,4 +18,11 @@ test('ohne Abweichung gilt die Vorgabe', () => {
 test('was am Objekt steht, geht vor, auch eine leere Angabe', () => {
   expect(effectiveLandlord(objekt({ landlordName: 'Erbengemeinschaft Muster', iban: '', paymentDeadlineDays: 14 }), vorgabe))
     .toEqual({ landlordName: 'Erbengemeinschaft Muster', iban: '', paymentDeadlineDays: 14 })
+})
+
+test('Kopfzeile (#142): Trenner nur zwischen vorhandenen Angaben', () => {
+  expect(letterhead('', { name: 'Haus Birke', address: '' })).toBe('Haus Birke')
+  expect(letterhead('Erika Muster', { name: 'Haus Birke', address: '  ' })).toBe('Erika Muster · Haus Birke')
+  expect(letterhead('Erika Muster', { name: 'Haus Birke', address: 'Birkenweg 1, 12345 Ort' })).toBe('Erika Muster · Haus Birke · Birkenweg 1, 12345 Ort')
+  expect(letterhead(null, null)).toBe('')
 })
