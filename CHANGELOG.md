@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Rechenweg auf Klick.** Unter jeder Zeile der Abrechnung zeigt „Rechenweg“ Schritt für
+  Schritt, wie Ihr Anteil zustande kommt: Rechnungsbetrag, Umlageschlüssel, Anteil an der
+  Verteilbasis, die Rechnung selbst und das gerundete Ergebnis, bei Bedarf mit dem Hinweis, wohin
+  ein Restcent gegangen ist, und dem Lohnanteil nach § 35a. So können Sie jede Zahl nachvollziehen
+  und einem Mieter erklären. Auf dem Ausdruck für den Mieter erscheint der Rechenweg nicht.
+  ([#114](https://github.com/speedone/mietfuchs/issues/114))
 - **Fachbegriffe erklären sich selbst.** In den Formularen sind Begriffe wie Umlageschlüssel,
   Miteigentumsanteile, Pauschale oder Eigenanteil gestrichelt unterstrichen; ein Antippen zeigt,
   was sie bedeuten, ein Beispiel mit Zahlen, die Rechtsgrundlage und ob Sie das überhaupt
