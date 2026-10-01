@@ -276,3 +276,48 @@ test('Eine vermietete Garage ohne Wasseranschluss gilt nicht als Wohnung ohne Z�
   assert.equal(s.selfUsedShareCents, 80000, 'der Rest ist wieder Eigenanteil')
   assert.deepEqual(codes(s), [])
 })
+
+test('Zwei Zähler nacheinander (Tausch als neuer Zähler) gelten zusammen als lückenlos (zweite Integrationsdurchsicht)', () => {
+  // Der alte Zähler lief bis Ende Juni, der neue ab dann. Mit dem kürzeren der beiden als Maßstab
+  // galt die Wohnung als lückenhaft, und der Rest des Hauptzählers war kein Eigenanteil mehr.
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('alt', 'el'), meter('neu', 'el')],
+    readings: [
+      ...used('hz', 200),
+      { meterId: 'alt', date: '2024-12-31', value: 0 }, { meterId: 'alt', date: '2025-06-30', value: 20 },
+      { meterId: 'neu', date: '2025-06-30', value: 0 }, { meterId: 'neu', date: '2025-12-31', value: 20 },
+    ],
+  })
+  assert.deepEqual(codes(s), [])
+  assert.equal(share(s, 't'), 20000)
+  assert.equal(s.selfUsedShareCents, 80000)
+})
+
+test('Durchsicht: ein zweiter Zähler ohne Ablesung neben einem ganzjährigen ist eine Lücke, kein Ersatz', () => {
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('kueche', 'el'), meter('bad', 'el')],
+    readings: [...used('hz', 200), ...used('kueche', 40), { meterId: 'bad', date: '2024-12-31', value: 0 }],
+  })
+  assert.equal(s.selfUsedShareCents, 0, 'das Bad des Mieters wäre sonst Eigenanteil des Vermieters')
+  assert.deepEqual(codes(s), ['meter.unit-partial'])
+})
+
+test('Durchsicht: Küche ganzjährig, Bad im Jahr getauscht, dazu ein Zähler aus früheren Jahren: lückenlos', () => {
+  const s = settle({
+    units: [hauptwohnung, unit('el')],
+    tenancies: [tenancy('t', 'el')],
+    meters: [meter('hz', null), meter('kueche', 'el'), meter('badAlt', 'el'), meter('badNeu', 'el'), meter('uralt', 'el')],
+    readings: [
+      ...used('hz', 200), ...used('kueche', 20),
+      { meterId: 'badAlt', date: '2024-12-31', value: 0 }, { meterId: 'badAlt', date: '2025-06-30', value: 10 },
+      { meterId: 'badNeu', date: '2025-06-30', value: 0 }, { meterId: 'badNeu', date: '2025-12-31', value: 10 },
+      { meterId: 'uralt', date: '2019-12-31', value: 0 }, { meterId: 'uralt', date: '2021-12-31', value: 50 },
+    ],
+  })
+  assert.deepEqual(codes(s), [])
+  assert.equal(s.selfUsedShareCents, 80000)
+})

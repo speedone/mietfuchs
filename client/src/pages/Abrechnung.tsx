@@ -599,7 +599,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <td colSpan={3}>Summe Vermieteranteil</td>
                     <td className="num">{fmtEuro(data.landlord.totalCents)}</td>
                   </tr>
-                  {data.selfUsedShareCents > 0 && (
+                  {data.selfUsedShareCents !== 0 && (
                     <tr>
                       <td colSpan={3} className="muted">davon <Term id="ownShare">Eigenanteil</Term> selbstgenutzter Wohnungen (steuerlich privat)</td>
                       <td className="num muted">{fmtEuro(data.selfUsedShareCents)}</td>
