@@ -5,6 +5,7 @@ import { api, fmtEuro } from '../api'
 import { invoiceLabel } from '../pdfPreview'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 const fmtSize = (b: number) =>
   b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('de-DE', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} kB`
@@ -116,7 +117,7 @@ export default function Belege() {
         {uploads.length === 0 ? (
           <div className="empty">Noch keine Belege hochgeladen.</div>
         ) : (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Beleg</th>
@@ -161,7 +162,7 @@ export default function Belege() {
                 )
               })}
             </tbody>
-          </table>
+          </Table>
         )}
       </div>
     </>

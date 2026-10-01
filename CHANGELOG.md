@@ -96,6 +96,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
+  und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
+  Breite Tabellen scrollen jetzt innerhalb ihrer Karte, das Monatsraster im Mietkonto zeigt vier
+  Monate je Zeile, und die Navigation oben ist nach denselben Gruppen geordnet wie am Rechner. Der
+  Ausdruck bleibt unverändert.
+  ([#137](https://github.com/speedone/mietfuchs/issues/137))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften

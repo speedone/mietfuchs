@@ -7,6 +7,7 @@ import { showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
@@ -234,7 +235,7 @@ export default function Mietkonto() {
                     und erscheinen dann unter den Zahlungseingängen {year + 1}.
                   </p>
                 )}
-                <table>
+                <Table>
                   <tbody>
                     <tr>
                       <td>Kaltmiete (netto)</td>
@@ -265,7 +266,7 @@ export default function Mietkonto() {
                       </td>
                     </tr>
                   </tbody>
-                </table>
+                </Table>
               </>
             )}
           </div>
@@ -277,7 +278,7 @@ export default function Mietkonto() {
         {yearPayments.length === 0 ? (
           <div className="empty">Noch keine Zahlungen für {year} erfasst.</div>
         ) : (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Datum</th>
@@ -300,7 +301,7 @@ export default function Mietkonto() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </div>
     </>

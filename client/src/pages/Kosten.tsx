@@ -29,6 +29,7 @@ import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
@@ -350,7 +351,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     streng genommen nicht dazu.
                   </div>
                 )}
-                <table style={{ marginTop: 8 }}>
+                <Table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>
                       <th><span className="sr-only">Übernehmen</span></th>
@@ -383,7 +384,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </Table>
                 <div className="row" style={{ marginTop: 10 }}>
                   <button className="btn" onClick={() => void adoptPositions(entry)} disabled={entry.positions.every((p) => !p.checked)}>
                     Ausgewählte Positionen für {year} übernehmen
@@ -399,7 +400,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
         <h2>Kostenpositionen {year}</h2>
         {yearItems.length === 0 && <div className="empty">Noch keine Kosten für {year} erfasst.</div>}
         {yearItems.length > 0 && (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Kostenart</th>
@@ -483,7 +484,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                 <td className="no-print"></td>
               </tr>
             </tfoot>
-          </table>
+          </Table>
         )}
 
         <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm({ ...EMPTY }) }}>
