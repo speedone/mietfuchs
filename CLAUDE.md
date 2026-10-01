@@ -696,7 +696,10 @@ Kostenposition (#94), nicht in weitere Ebenen.
   auf 0000 schreiben, dann die Kette.
 - **Oberfläche**: `PropertyProvider` (client/src/property.tsx) nach dem Muster des
   `YearProvider`; der Umschalter erscheint erst ab dem zweiten Objekt. Seiten hängen das Objekt
-  mit `withProperty` an ihre Abrufe.
+  mit `withProperty` an ihre Abrufe. Ab zwei Objekten nennt `PageHeader` das gewählte Objekt,
+  und nach dem Wechsel in ein Objekt ohne Wohnungen steht oben ein Hinweis mit „Zurück zu …“
+  (#157, Logik in client/src/propertyView.ts, das vorige Objekt merkt der Provider): Ein leeres
+  neues Objekt sah sonst aus wie ein verlorener Bestand.
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl

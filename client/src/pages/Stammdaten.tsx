@@ -8,6 +8,7 @@ import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
+import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
@@ -233,7 +234,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
 
       <div className="card">
         <h2>Wohnungen</h2>
-        {units.length === 0 && <div className="empty">Noch keine Wohnungen angelegt. Lege alle Wohnungen des Hauses an — auch die selbstgenutzte.</div>}
+        {units.length === 0 && <div className="empty">{emptyUnitsText(property?.kind ?? 'mfh')}</div>}
         {units.length > 0 && (
           <Table>
             <thead>
