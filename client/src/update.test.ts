@@ -135,6 +135,6 @@ describe('Stand in den Einstellungen (#166)', () => {
 
   test('eine fertige Version bleibt die aktuelle', () => {
     const text = statusText(status({ current: '0.5.0', latest: '0.5.0', available: false, checkedAt: null }))
-    expect(text).toBe('Du nutzt die aktuelle Version 0.5.0.')
+    expect(text).toBe('Sie nutzen die aktuelle Version 0.5.0.')
   })
 })

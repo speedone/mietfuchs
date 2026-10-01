@@ -79,14 +79,14 @@ export function UpdateConsent({ onAnswered }: { onAnswered: () => unknown }) {
         <h2 id="update-consent-title">Bei neuen Versionen Bescheid geben?</h2>
         <p>
           Mietfuchs kann beim Öffnen bei GitHub nachsehen, ob eine neue Version erschienen ist.
-          GitHub sieht dabei nur deine IP-Adresse und die installierte Versionsnummer. Deine
+          GitHub sieht dabei nur Ihre IP-Adresse und die installierte Versionsnummer. Ihre
           Daten bleiben auf diesem Rechner.
         </p>
         <div className="row">
           <button className="btn" disabled={busy} onClick={() => void answer('on')}>Ja, Bescheid geben</button>
           <button className="btn secondary" disabled={busy} onClick={() => void answer('off')}>Nein, danke</button>
         </div>
-        <p className="muted">Du kannst das jederzeit in den Einstellungen ändern.</p>
+        <p className="muted">Sie können das jederzeit in den Einstellungen ändern.</p>
       </div>
     </section>
   )
@@ -118,8 +118,8 @@ export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
         <FoxLogo size={18} />
         <span>Version {status.latest} ist da</span>
       </div>
-      <p>Du nutzt {status.current}.</p>
-      <button className="update-go" onClick={onShowGuide}>So aktualisierst du</button>
+      <p>Sie nutzen {status.current}.</p>
+      <button className="update-go" onClick={onShowGuide}>So aktualisieren Sie</button>
       <div className="update-hint-links">
         {status.releaseUrl && (
           <a href={status.releaseUrl} target="_blank" rel="noreferrer">Was ist neu?</a>
@@ -179,7 +179,7 @@ export function UpdateSettings({ settings, update, reload }: SettingsProps) {
         Beim Öffnen nach neuen Versionen schauen
       </label>
       <p className="muted">
-        Dafür fragt Mietfuchs bei GitHub nach. GitHub sieht dabei nur deine IP-Adresse und die
+        Dafür fragt Mietfuchs bei GitHub nach. GitHub sieht dabei nur Ihre IP-Adresse und die
         installierte Versionsnummer.
       </p>
 
@@ -227,7 +227,7 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die neue <code>{fileName}</code> mit dem Knopf oben herunterladen.</li>
           {quitStep}
-          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit deinen Daten.</li>
+          <li>Die neue Datei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit Ihren Daten.</li>
           <li>Mietfuchs wie gewohnt starten. Meldet sich Windows wie beim ersten Mal, hilft <em>Weitere Informationen</em> und dann <em>Trotzdem ausführen</em>.</li>
         </ol>
       )}
@@ -235,8 +235,8 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
         <ol className="update-steps">
           <li>Die Zip-Datei mit dem Knopf oben herunterladen und mit einem Doppelklick entpacken.</li>
           {quitStep}
-          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit deinen Daten.</li>
-          <li>Mietfuchs starten. Beim ersten Start blockiert macOS die neue Datei wie bei der Erstinstallation. Wie du sie freigibst, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
+          <li>Die entpackte Programmdatei im selben Ordner wie bisher ablegen und die alte damit ersetzen. Dort liegt auch der Ordner <code>data</code> mit Ihren Daten.</li>
+          <li>Mietfuchs starten. Beim ersten Start blockiert macOS die neue Datei wie bei der Erstinstallation. Wie Sie sie freigeben, steht im <a href={README} target="_blank" rel="noreferrer">README</a>.</li>
         </ol>
       )}
       {guide.system === 'linux' && (
@@ -249,15 +249,15 @@ function Download({ guide, status }: { guide: Extract<UpdateGuide, { kind: 'down
       )}
       {guide.system === 'package' && (
         <ol className="update-steps">
-          <li>Auf der Release-Seite das Paket für deine Distribution laden: <code>.deb</code> für Debian, Ubuntu und Mint, <code>.rpm</code> für Fedora, openSUSE und RHEL, <code>.pkg.tar.zst</code> für Arch.</li>
+          <li>Auf der Release-Seite das Paket für Ihre Distribution laden: <code>.deb</code> für Debian, Ubuntu und Mint, <code>.rpm</code> für Fedora, openSUSE und RHEL, <code>.pkg.tar.zst</code> für Arch.</li>
           {quitStep}
           <li>Mit demselben Befehl installieren wie beim ersten Mal, etwa <code>sudo apt install ./mietfuchs_{status.latest}_amd64.deb</code>. Er ersetzt die installierte Fassung.</li>
-          <li>Mietfuchs wie gewohnt starten. Deine Daten bleiben, wo sie sind.</li>
+          <li>Mietfuchs wie gewohnt starten. Ihre Daten bleiben, wo sie sind.</li>
         </ol>
       )}
       {guide.system === null && (
         <p>
-          Auf der Release-Seite die Datei für dein System wählen. Danach wie beim ersten Mal
+          Auf der Release-Seite die Datei für Ihr System wählen. Danach wie beim ersten Mal
           entpacken, falls nötig, und die alte Programmdatei im selben Ordner wie bisher ersetzen,
           damit der Ordner <code>data</code> daneben bleibt.
         </p>

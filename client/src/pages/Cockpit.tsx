@@ -269,7 +269,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       {fresh ? (
         <div className="card">
           <div className="empty">
-            <p>Noch nichts für {year} erfasst. So fängst du an:</p>
+            <p>Noch nichts für {year} erfasst. So fangen Sie an:</p>
             <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
               <button className="btn secondary" onClick={() => onNavigate('stammdaten')}>🏠 Stammdaten anlegen</button>
               <button className="btn" onClick={() => onNavigate('schnellerfassung')}>📥 Belege zur Schnellerfassung</button>

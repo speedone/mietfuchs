@@ -59,7 +59,7 @@ export default function DatabaseNotice() {
         <section className={`card db-notice${hint.kind === 'failed' ? ' db-notice-problem' : ''}`} role="status">
           <span className="db-notice-icon" aria-hidden="true">{hint.kind === 'failed' ? '⚠️' : hint.kind === 'stale' ? 'ℹ️' : '🗄️'}</span>
           <div className="db-notice-body">
-            <h2>{hint.kind === 'done' ? 'Deine Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
+            <h2>{hint.kind === 'done' ? 'Ihre Daten sind umgezogen' : hint.kind === 'stale' ? 'Im Datenordner liegt noch eine alte Datei' : 'Der Umstieg der Daten ist nicht gelungen'}</h2>
             <p>{hint.message}</p>
             {hint.notes.map((note) => <p key={note} className="muted">{note}</p>)}
           </div>
