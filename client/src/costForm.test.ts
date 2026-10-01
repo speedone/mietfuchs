@@ -114,6 +114,13 @@ describe('Validierung', () => {
     expect(r).toEqual({ error: 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.' })
   })
 
+  test('amountProblem: an einer Zuführung zur Erhaltungsrücklage gibt es keinen §35a-Lohnanteil (#143)', () => {
+    expect(amountProblem(90000, 20000, 'Zuführung Erhaltungsrücklage')).toMatch(/Erhaltungsrücklage/)
+    expect(amountProblem(90000, 0, 'Zuführung Erhaltungsrücklage')).toBeNull()
+    expect(amountProblem(90000, 20000, 'Gartenpflege')).toBeNull()
+    expect(buildCostItemBody(form({ category: 'Zuführung Erhaltungsrücklage', amount: '900,00', labor35a: '200,00' }), UNITS, 2025)).toHaveProperty('error')
+  })
+
   test('amountProblem (#139): dieselbe Prüfung wie das Formular, für übernommene Positionen', () => {
     expect(amountProblem(-5400, 0)).toBeNull()
     expect(amountProblem(10000, 4000)).toBeNull()

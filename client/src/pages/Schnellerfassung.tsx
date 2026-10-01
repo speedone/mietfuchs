@@ -27,8 +27,8 @@ type InvoicePosition = {
 
 // Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular. Eine Gutschrift
 // geht durch, 0 € und ein unlesbarer Betrag nicht.
-const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
+const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a' | 'category'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
 
 type ReadingCandidate = {
   meterNumber: string
@@ -204,7 +204,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               key: defaultKeyFor(category),
               matchedByDesc,
               // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-              checked: !isNotAllocable(category) && positionProblem({ amount, labor35a }) === null,
+              checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
             }
           })
           patchEntry(next.id, {

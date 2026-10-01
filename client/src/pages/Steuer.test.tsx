@@ -215,3 +215,9 @@ test('Der Satz zum Hausgeld steht nur bei einer Eigentumswohnung (#143)', async 
   await zeige(REPORT(), 'ist', 'mfh')
   expect(screen.queryByText(/Hausgeld-Vorschüsse/i)).toBeNull()
 })
+
+test('Eine saldiert negative Rücklage heißt nicht „Zuführung“ (#143, Integrationsdurchsicht)', async () => {
+  await zeige(REPORT({ reserveContributionCents: -30000 }))
+  expect(screen.getByText(/Erhaltungsrücklage, saldiert/i)).toBeTruthy()
+  expect(screen.queryByText(/^Zuführung zur Erhaltungsrücklage/i)).toBeNull()
+})

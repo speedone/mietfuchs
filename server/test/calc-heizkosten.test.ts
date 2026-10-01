@@ -84,9 +84,15 @@ test('Pauschale oder Warmmiete: kein Kürzungsbetrag, denn über die Heizung wir
 // ---------- Durchsicht zu #140 ----------
 
 const notesOf = (s: ComputedSettlement, code: string) => s.notices.filter((n) => n.code === code)
+// Wärmezähler mit Ablesungen: Eine Verbrauchsposition deckt eine Wohnung erst, wenn sie aus ihr
+// wirklich einen Anteil bekommt (Integrationsdurchsicht).
+const zaehlerHaus = {
+  meters: ['w1', 'w2', 'w3', 'w4'].map((u) => ({ id: `z-${u}`, unitId: u, type: 'waerme' as const })),
+  readings: ['w1', 'w2', 'w3', 'w4'].flatMap((u, i) => [{ meterId: `z-${u}`, date: '2024-12-31', value: 0 }, { meterId: `z-${u}`, date: '2025-12-31', value: 10 + i }]),
+}
 
 test('Mischfall 70/30: Verbrauch 70 %, Grundkosten 30 % nach Fläche, kein Kürzungsrecht und kein Hinweis (#140)', () => {
-  const s = settle({ ...haus, costItems: [
+  const s = settle({ ...haus, ...zaehlerHaus, costItems: [
     heizung({ id: 'grund', description: 'Grundkosten', amountCents: 162000 }),
     heizung({ id: 'verbrauch', description: 'Verbrauchskosten', amountCents: 378000, key: 'meter', meterType: 'waerme' }),
   ] })
@@ -95,7 +101,7 @@ test('Mischfall 70/30: Verbrauch 70 %, Grundkosten 30 % nach Fläche, kein Kürz
 })
 
 test('Mischfall 30/70: Verbrauchsanteil unter 50 %, Hinweis ohne Betrag (#140)', () => {
-  const s = settle({ ...haus, costItems: [
+  const s = settle({ ...haus, ...zaehlerHaus, costItems: [
     heizung({ id: 'grund', description: 'Grundkosten', amountCents: 378000 }),
     heizung({ id: 'verbrauch', description: 'Verbrauchskosten', amountCents: 162000, key: 'meter', meterType: 'waerme' }),
   ] })
@@ -115,7 +121,7 @@ test('Ratschlag: nicht zu 100 % nach Verbrauch raten (#140)', () => {
 })
 
 test('Teilnehmer: nur Wohnungen ohne eigene Verbrauchsposition bekommen einen Kürzungsbetrag (#140)', () => {
-  const s = settle({ ...haus, costItems: [
+  const s = settle({ ...haus, ...zaehlerHaus, costItems: [
     heizung({ id: 'grund', description: 'Grundkosten', amountCents: 162000 }),
     heizung({ id: 'verbrauch', description: 'Verbrauch vorne', amountCents: 378000, key: 'meter', meterType: 'waerme', participantUnitIds: ['w1', 'w2'] }),
   ] })
@@ -153,3 +159,59 @@ test('§ 2 HeizkostenV: eine Garage zählt nicht als Wohnung, für beide Heizhin
   const pauschal = settle({ ...garage, tenancies: [tenancy('A', 'oben', { heatingModel: 'flatRate', prepayments: [] }), mieter], costItems: [heizung()] })
   assert.deepEqual(notesOf(pauschal, 'heating.flat-rate'), [], 'Warmmiete im Zweifamilienhaus mit Garage ist zulässig vereinbar')
 })
+
+// ---------- Integrationsdurchsicht Geld zu #140 ----------
+
+const drei = {
+  units: [unit('a', 60), unit('b', 60), unit('c', 60)],
+  tenancies: [tenancy('A', 'a'), tenancy('B', 'b'), tenancy('C', 'c')],
+}
+const waermezaehler = ['a', 'b', 'c'].map((u) => ({ id: `w${u}`, unitId: u, type: 'waerme' as const }))
+const ablesungen = waermezaehler.flatMap((m, i) => [{ meterId: m.id, date: '2024-12-31', value: 0 }, { meterId: m.id, date: '2025-12-31', value: 10 + i }])
+
+test('1b: eine Gutschrift nach Wärmezähler macht die Heizung nicht verbrauchsabhängig (#140)', () => {
+  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
+    heizung({ amountCents: 300000 }),
+    heizung({ id: 'g', description: 'Gutschrift Versorger', amountCents: -5000, key: 'meter', meterType: 'waerme' }),
+  ] })
+  const text = heatingNotices(s)[0]?.text ?? ''
+  assert.ok(text.includes('A (a) 150,00 €'), text)
+})
+
+test('1c: eine Verbrauchsposition ohne Ablesungen deckt keine Wohnung (#140)', () => {
+  const s = settle({ ...drei, costItems: [
+    heizung({ amountCents: 300000 }),
+    heizung({ id: 'v', description: 'Verbrauch', amountCents: 100, key: 'meter', meterType: 'waerme' }),
+  ] })
+  assert.equal(heatingNotices(s).length, 1)
+})
+
+test('Mischfall: eine Gutschrift auf die Grundkosten verschiebt den Verbrauchsanteil nicht (#140)', () => {
+  // 1.800 € nach Zählern, 1.200 € Grundkosten, dazu 600 € Gutschrift nach Fläche: gemessen werden
+  // die positiven Positionen, 60 %. Mit der Gutschrift verrechnet wären es 75 %.
+  const s = settle({ ...drei, meters: waermezaehler, readings: ablesungen, costItems: [
+    heizung({ id: 'v', key: 'meter', meterType: 'waerme', amountCents: 180000 }),
+    heizung({ id: 'gk', amountCents: 120000 }),
+    heizung({ id: 'g', description: 'Gutschrift', amountCents: -60000 }),
+  ] })
+  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
+  assert.deepEqual(heatingNotices(s), [])
+})
+
+// § 2 HeizkostenV: Eine Wohnung hat Fläche. Eine Einheit mit 0 m² zählt nie mit, gleich ob leer,
+// außerhalb der Abrechnungseinheit oder selbstgenutzt ohne Personenangabe.
+for (const [name, garage] of [
+  ['3b leer', unit('g', 0)],
+  ['3c außerhalb der Abrechnungseinheit', unit('g', 0, { participates: false, selfUsed: false })],
+  ['3d selbstgenutzt ohne Personenangabe', unit('g', 0, { participates: false, selfUsed: true })],
+] as const) {
+  test(`§ 2 HeizkostenV: Garage (${name}) zählt nicht als Wohnung (#140)`, () => {
+    const s = settle({
+      units: [unit('m', 80), unit('e', 100, { participates: false, selfUsed: true, selfPersons: 2 }), garage],
+      tenancies: [tenancy('A', 'm')],
+      costItems: [heizung()],
+    })
+    assert.deepEqual(heatingNotices(s), [])
+    assert.equal(notesOf(s, 'heating.may-agree-otherwise').length, 1)
+  })
+}

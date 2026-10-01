@@ -220,13 +220,18 @@ export type BuildResult = { error: string } | { body: Record<string, unknown> }
 // Gutschrift dort nicht anders behandelt wird als hier. `null` bei einem Betrag heißt unlesbar.
 // Eine Gutschrift hat einen negativen Betrag; Berechnung und Datenbank kennen sie. Nur 0 ist
 // keine Kostenposition. Die Meldung nennt den Grund, statt „gültig“ offen zu lassen.
-export function amountProblem(amount: number | null, labor35a: number | null): string | null {
+export function amountProblem(amount: number | null, labor35a: number | null, category?: string): string | null {
   if (amount === null) return 'Bitte den Betrag als Euro-Betrag angeben, z. B. 54,00 (eine Gutschrift mit Minus: -54,00).'
   if (amount === 0) return 'Ein Betrag von 0 € ist keine Kostenposition. Bitte den Rechnungsbetrag eintragen.'
   // § 35a EStG bescheinigt gezahlte Lohnkosten. Bei einer Gutschrift bescheinigte die Berechnung
   // ohnehin nichts (calc.ts meldet den Lohnanteil als ungültig), die Steuerübersicht zählte ihn
   // aber mit.
   if (amount < 0 && labor35a !== 0) return 'Bei einer Gutschrift gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.'
+  // Die Zuführung zur Erhaltungsrücklage ist keine bezahlte Arbeit, sondern angespartes Geld
+  // (#143); einen Lohnanteil gibt es erst an der Rechnung, die die Gemeinschaft daraus bezahlt.
+  if (category === 'Zuführung Erhaltungsrücklage' && labor35a !== 0) {
+    return 'An der Zuführung zur Erhaltungsrücklage gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.'
+  }
   if (labor35a === null || labor35a < 0 || (amount > 0 && labor35a > amount)) {
     return 'Der §35a-Lohnanteil muss eine gültige Zahl zwischen 0 und dem Gesamtbetrag sein.'
   }
@@ -240,7 +245,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
   const amount = parseEuro(form.amount)
   const labor35a = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
   if (!form.description.trim()) return { error: 'Bitte eine Beschreibung angeben.' }
-  const problem = amountProblem(amount, labor35a)
+  const problem = amountProblem(amount, labor35a, form.category)
   if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
   if (amount < 0 && form.key === 'amounts') return { error: CREDIT_WITH_AMOUNTS }
   if (form.key === 'direct' && !form.directUnitId) {

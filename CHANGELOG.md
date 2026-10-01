@@ -152,14 +152,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#144](https://github.com/speedone/mietfuchs/issues/144))
 - **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Wird für eine
   Wohnung keine Heizposition nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
-  des Messdienstes noch laut Gemeinschaftsabrechnung), nennt die Abrechnung je Mieter den Betrag,
+  des Messdienstes noch laut Gemeinschaftsabrechnung; eine Gutschrift oder eine Verbrauchsposition
+  ohne Ablesungen zählt dabei nicht), nennt die Abrechnung je Mieter den Betrag,
   um den er seinen Anteil kürzen darf: 15 Prozent (§ 12 Abs. 1 HeizkostenV), denn die Verordnung
   verlangt 50 bis 70 Prozent nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1). Grundkosten nach Fläche
   neben einer Verbrauchsposition sind der Regelfall und kein Mangel; liegt der Anteil nach Zählern
   dann außerhalb von 50 bis 70 Prozent, gibt es einen Hinweis ohne Betrag. Eine Direktzuordnung
   (etwa die Wartung einer Gastherme) zählt nicht als Verteilung. Im Haus mit höchstens zwei
   Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2); dort gibt
-  es statt des Betrags einen Hinweis, und eine Garage zählt dabei nicht als Wohnung, auch nicht
+  es statt des Betrags einen Hinweis, und eine Einheit ohne Fläche (Garage, Stellplatz) zählt dabei
+  nicht als Wohnung, auch nicht
   für die Warnung zur Warmmiete. Mieter mit Pauschale oder Warmmiete bekommen keine
   Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in diesem Fall nicht mehr
   „Ablesungen nicht erforderlich“.
@@ -168,11 +170,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
   Erhaltungsmaßnahmen ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Dafür gibt es jetzt die
   Kostenart „Zuführung Erhaltungsrücklage“: nicht umlagefähig wie bisher, in der Steuerübersicht
-  aber neben den Werbungskosten ausgewiesen. Heißt eine Position „Nicht umlagefähig“ nach einer
-  Zuführung zur Rücklage (nicht nach einer Entnahme), weist die Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem,
-  dass abgeflossen das gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht
-  umlagefähig“ und zur Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff
-  „Erhaltungsrücklage“. Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.
+  aber neben den Werbungskosten ausgewiesen, und ohne §35a-Lohnanteil. Heißt eine Position „Nicht
+  umlagefähig“ nach einer Zuführung zur Rücklage (nicht nach einer Entnahme), weist die
+  Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem, dass abgeflossen das
+  gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht umlagefähig“ und zur
+  Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff „Erhaltungsrücklage“.
+  Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.
   ([#143](https://github.com/speedone/mietfuchs/issues/143))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.

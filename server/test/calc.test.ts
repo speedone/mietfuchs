@@ -852,6 +852,14 @@ test('Vorschlag neue Vorauszahlung bei Einzug im Jahr: auf das volle Jahr hochge
   assert.equal(st.suggestedMonthlyCents, 7300)
 })
 
+test('Vorschlag neue Vorauszahlung: nie negativ, auch wenn Gutschriften überwiegen (Integrationsdurchsicht)', () => {
+  const db = teiljahr('2020-01-01', null)
+  db.costItems = [{ id: 'g', year: 2025, category: 'Grundsteuer', description: 'Erstattung', amountCents: -60000, key: 'area' }]
+  const st = statementOf(computeSettlement(snapshotFromDb(db, 2025)), 't')
+  assert.equal(st.totalShareCents, -60000)
+  assert.equal(st.suggestedMonthlyCents, 0)
+})
+
 test('Vorschlag neue Vorauszahlung bei Auszug im Jahr: keiner', () => {
   const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2020-01-01', '2025-08-31'), 2025)), 't')
   assert.ok(st.totalShareCents > 0)

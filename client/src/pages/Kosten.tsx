@@ -39,8 +39,8 @@ type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
 // Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
-const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
+const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a' | 'category'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -240,7 +240,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             amount,
             labor35a,
             key: defaultKeyFor(category),
-            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a }) === null,
+            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })

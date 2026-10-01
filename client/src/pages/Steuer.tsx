@@ -233,7 +233,10 @@ export default function Steuer({ settings }: Props) {
                 Druck, damit der Betrag beim Steuerberater nicht als vergessen gilt. */}
             {hints.includes('reserveContribution') && (
               <div className="notice" style={{ marginTop: 10 }}>
-                <strong>Zuführung zur Erhaltungsrücklage: {fmtEuro(data.reserveContributionCents)}</strong>, nicht in den
+                <strong>{data.reserveContributionCents < 0
+                  // Saldiert negativ, etwa durch eine Rückzahlung oder Korrektur: dann ist es keine Zuführung.
+                  ? 'Erhaltungsrücklage, saldiert (Rückzahlung oder Korrektur)'
+                  : 'Zuführung zur Erhaltungsrücklage'}: {fmtEuro(data.reserveContributionCents)}</strong>, nicht in den
                 Werbungskosten enthalten. Sie ist erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
                 Erhaltungsmaßnahmen ausgibt; erst dann steht fest, ob es Erhaltungsaufwand oder Herstellungskosten sind
                 (BFH, Urteil vom 14.01.2025, IX R 19/24). Die Ausgaben aus der Rücklage nennt die Hausgeldabrechnung des

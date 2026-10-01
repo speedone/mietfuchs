@@ -26,7 +26,7 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
-import { HEATING_CATEGORY, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
+import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -1262,10 +1262,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // § 2 HeizkostenV (#93, #140), siehe shared/heating.ts: Im Gebäude mit höchstens zwei Wohnungen,
   // von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden. Eine Garage oder
   // ein Stellplatz ist keine Wohnung.
-  const heatingAgreeable = mayAgreeOtherwise(snapshot.units, (u) => !isGarageLike(u))
-  // Welche Wohnung bei welcher Heizposition ohne Verbrauchsanteil dasteht, und wo der Anteil nach
-  // Zählern außerhalb von 50 bis 70 % liegt (#140, Durchsicht).
-  const heating = heatingFindings(items, snapshot.units)
+  const heatingAgreeable = mayAgreeOtherwise(snapshot.units)
+  // Heizpositionen ohne Verbrauchsanteil (#140): Die Kürzungsbeträge entstehen in der Verteilung,
+  // gemeldet wird erst danach, denn ob eine Wohnung nach Verbrauch gedeckt ist, steht erst fest,
+  // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
+  const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, text: string }[] }[] = []
+  const heatingCovered = new Set<string>()
 
   for (const item of items) {
     const b = basisOf(item)
@@ -1614,27 +1616,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // (#91); beziffert wird die Kürzung je Mieter, der über die Heizung eine Abrechnung bekommt.
     // Bei Pauschale und Warmmiete gibt es keine Abrechnung, die er kürzen könnte; das meldet
     // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
-    // Nur Wohnungen, für die im Jahr **keine** Heizposition nach Verbrauch verteilt wird: Eine
-    // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
-    const withoutConsumption = heating.withoutConsumption.get(item.id)
-    if (withoutConsumption) {
-      const cuts = targets.flatMap((x, i) =>
-        bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && withoutConsumption.has(x.t.unitId)
-          ? [`${x.t.tenantName} (${x.t.unit.name}) ${fmtCents(Math.round((shares[i] * 15) / 100))}`]
-          : [])
-      if (cuts.length > 0 && !heatingAgreeable) {
-        warn('heating.not-by-consumption',
-          `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
-            `Sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${cuts.join(', ')}. ` +
-            'Verteilen Sie 50 bis 70 % nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.',
-          itemSubject(item))
-      } else if (cuts.length > 0) {
-        // § 2: Hier darf anderes vereinbart werden, und ob es vereinbart ist, weiß Mietfuchs nicht.
-        // Deshalb ein Hinweis ohne Betrag statt Schweigen.
-        warn('heating.may-agree-otherwise',
-          `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2 HeizkostenV). ` +
-            'Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind 50 bis 70 % nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).',
-          itemSubject(item))
+    if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
+      const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 ? [{ x, share: shares[i] }] : []))
+      if (heatingByConsumption(item.key)) {
+        // Gedeckt nur durch eine Position mit positivem Betrag, aus der die Wohnung wirklich etwas
+        // trägt: Bei einem Zähler ohne Ablesungen geht der Betrag an den Vermieter.
+        if (item.amountCents > 0) for (const { x } of received) heatingCovered.add(x.t.unitId)
+      } else {
+        heatingCuts.push({
+          item,
+          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, text: `${x.t.tenantName} (${x.t.unit.name}) ${fmtCents(Math.round((share * 15) / 100))}` })),
+        })
       }
     }
     const landlordCents = item.amountCents - distributed
@@ -1657,6 +1649,29 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         keyLabel: KEY_LABELS[item.key] || item.key,
         shareCents: landlordCents,
       })
+    }
+  }
+
+  // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
+  // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
+  const heating = heatingFindings(items, snapshot.units, heatingCovered)
+  for (const { item, rows } of heatingCuts) {
+    const affected = heating.withoutConsumption.get(item.id)
+    const cuts = rows.filter((r) => affected?.has(r.unitId)).map((r) => r.text)
+    if (cuts.length === 0) continue
+    if (!heatingAgreeable) {
+      warn('heating.not-by-consumption',
+        `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+          `Sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${cuts.join(', ')}. ` +
+          'Verteilen Sie 50 bis 70 % nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.',
+        itemSubject(item))
+    } else {
+      // § 2: Hier darf anderes vereinbart werden, und ob es vereinbart ist, weiß Mietfuchs nicht.
+      // Deshalb ein Hinweis ohne Betrag statt Schweigen.
+      warn('heating.may-agree-otherwise',
+        `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2 HeizkostenV). ` +
+          'Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind 50 bis 70 % nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).',
+        itemSubject(item))
     }
   }
 
@@ -1814,7 +1829,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const end = tenancyEnd.get(st.tenancyId)
     st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0
       ? 0
-      : Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100
+      // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
+      : Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
   }
   return result
 }
