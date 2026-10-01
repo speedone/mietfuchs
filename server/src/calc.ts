@@ -26,6 +26,7 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
+import { HEATING_CATEGORY, heatingByConsumption, heatingOrdinanceExempt } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -168,6 +169,7 @@ const noticeKinds = {
   'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab', terms: ['mainMeter', 'meterReading'] },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
+  'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
@@ -894,9 +896,9 @@ export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'not
   legalBasis: LegalBasis
 }
 
-// Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93). Dieselbe Zeichenkette
-// steht in CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
-export const HEATING_CATEGORY = 'Heizung und Warmwasser'
+// Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93), steht mit der Ausnahme
+// des § 2 HeizkostenV in shared/heating.ts; hier weitergereicht für die bisherigen Importe.
+export { HEATING_CATEGORY }
 
 // Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung (#143): nicht umlagefähig wie
 // „Nicht umlagefähig“, aber steuerlich anders (siehe ANLAGE_V_GROUP).
@@ -1231,6 +1233,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
+  // § 2 HeizkostenV (#93, #140), siehe shared/heating.ts.
+  const heatingExempt = heatingOrdinanceExempt(snapshot.units)
+
   for (const item of items) {
     const b = basisOf(item)
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
@@ -1549,6 +1554,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       st.totalShareCents += shares[i]
       st.total35aCents += labor35a
     })
+    // Heizung und Warmwasser ohne Verbrauchsanteil (#140): Die Verordnung verlangt 50 bis 70 % nach
+    // Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV), sonst darf der Mieter seinen Anteil um 15 %
+    // kürzen (§ 12 Abs. 1). Gerechnet wird wie erfasst, unterstützen und warnen statt verweigern
+    // (#91); beziffert wird die Kürzung je Mieter, der über die Heizung eine Abrechnung bekommt.
+    // Bei Pauschale und Warmmiete gibt es keine Abrechnung, die er kürzen könnte; das meldet
+    // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
+    if (item.category === HEATING_CATEGORY && !heatingByConsumption(item.key) && !heatingExempt) {
+      const cuts = targets.flatMap((x, i) =>
+        bookable(x.t) && statements.has(x.t.id) && shares[i] > 0
+          ? [`${x.t.tenantName} (${x.t.unit.name}) ${fmtCents(Math.round((shares[i] * 15) / 100))}`]
+          : [])
+      if (cuts.length > 0) {
+        warn('heating.not-by-consumption',
+          `„${item.description}": Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+            `Sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${cuts.join(', ')}. ` +
+            'Rechnen Sie nach Verbrauch ab (Schlüssel „nach Verbrauch“ mit Wärmezählern) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.',
+          itemSubject(item))
+      }
+    }
     const landlordCents = item.amountCents - distributed
     // Der Eigenanteil ist ein Teil des Vermieteranteils dieser Position — deshalb an dem
     // begrenzen, was tatsächlich beim Vermieter gebucht wurde. Sonst könnte der separat
@@ -1655,11 +1679,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
   // der Rechenweg nach BGH VIII ZR 212/05 nicht geprüft ist (#93).
   const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
-  // Das Gesetz zählt die Wohnungen im Gebäude, also alle des Objekts und nicht nur die
-  // beteiligten. Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs
-  // daran nicht (nur die Zahl der Wohnungen, nicht die der Anlage); dort bleibt die Warnung aus.
-  const exempt = snapshot.units.length <= 2 && selfUnits.length >= 1
-  if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
+  // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
+  if (heatingFlat.length > 0 && !heatingExempt && items.some((c) => c.category === HEATING_CATEGORY)) {
     warn('heating.flat-rate',
       `Für ${heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
         'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. ' +

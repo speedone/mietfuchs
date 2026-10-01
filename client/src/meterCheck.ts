@@ -1,5 +1,6 @@
 // Die Ampel „Zählerstände“ im Cockpit, ohne DOM prüfbar.
-import type { Meter, MeterType } from './types'
+import type { CostItem, Meter, MeterType, Unit } from './types'
+import { heatingNotByConsumption } from '../../shared/heating.ts'
 
 // Verbrauchsangaben des Servers je Zähler (gleiche Form wie auf der Zähler-Seite)
 export type MeterConsumption = { meterId: string; readingCount: number; warnings: string[] }
@@ -19,4 +20,12 @@ export function meterReadiness(
     return !c || c.readingCount < 2 || c.warnings.length > 0
   })
   return { relevant, incomplete }
+}
+
+// Positionen „Heizung und Warmwasser“ ohne Verbrauchsschlüssel (#140), außer in der Ausnahme des
+// § 2 HeizkostenV. Für sie sind Ablesungen sehr wohl nötig: Die Verordnung verlangt eine
+// Verteilung nach Verbrauch, sonst darf der Mieter um 15 % kürzen. Die Regel steht in
+// shared/heating.ts, dieselbe wie in der Berechnung.
+export function heatingWithoutConsumption(items: CostItem[], units: Unit[]): CostItem[] {
+  return heatingNotByConsumption(items, units)
 }

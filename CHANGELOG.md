@@ -136,6 +136,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))
+- **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Werden
+  Heizung und Warmwasser nicht nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
+  des Messdienstes noch laut Gemeinschaftsabrechnung), nennt die Abrechnung je Mieter den Betrag,
+  um den er seinen Anteil kürzen darf: 15 Prozent (§ 12 Abs. 1 HeizkostenV), denn die Verordnung
+  verlangt 50 bis 70 Prozent nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1). Ausgenommen ist das Haus mit
+  höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen (§ 2); Mieter mit Pauschale oder
+  Warmmiete bekommen keine Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in
+  diesem Fall nicht mehr „Ablesungen nicht erforderlich“.
+  ([#140](https://github.com/speedone/mietfuchs/issues/140))
 - **Zuführung zur Erhaltungsrücklage zählte als Werbungskosten.** Bei einer vermieteten
   Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
   Erhaltungsmaßnahmen ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Dafür gibt es jetzt die

@@ -79,10 +79,9 @@ bleibt eine Probe auf einem echten Desktop.
 und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `main`). Damit
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
-`client/dist` **und `shared`**. Der Ordner mit dem gemeinsamen Datenmodell wird heute nur für
-Typen gebraucht, die beim Ausführen verschwinden; sobald dort ein Helfer für die Laufzeit läge,
-startete das Image ohne ihn nicht mehr, und kein Prüflauf bemerkte es, weil alle gegen den Start
-aus dem Quellcode laufen.
+`client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
+Laufzeit (`shared/heating.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
+gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
 Mindestversion 24.15 aus `engines`. Zwei Gründe liegen dort übereinander. Ab **24.12** gilt das
@@ -833,8 +832,10 @@ Jahres); weil die abgeschlossene Abrechnung wortgleich eingefroren wird, friert 
 eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
-Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es ist der **erste
-Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in
+Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
+Laufzeitanteil in `shared/`**; seit #140 lädt auch der Server einen, nämlich
+[shared/heating.ts](shared/heating.ts) (Heizkostenart, Ausnahme des § 2 HeizkostenV und was als
+Verteilung nach Verbrauch gilt, gemeinsam für Berechnung und Cockpit); der Client bündelt ihn (dafür `allowImportingTsExtensions` in
 client/tsconfig.json), der Server braucht nur den Typ `TermId`. Jeder Hinweis-Code in
 `noticeKinds` trägt mindestens einen Begriff (`terms`, als nicht leeres Tupel getippt, dazu
 [glossary.test.ts](server/test/glossary.test.ts)). In der Oberfläche zeigt
