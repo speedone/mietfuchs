@@ -756,6 +756,12 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   gescheitert eine Erklärung samt der Zusage, dass unverändert weitergearbeitet wird. Unterbleibt der Umstieg, weil die Datenbank schon Daten trägt und
   daneben eine `db.json` liegt, ist das der Zustand `stale` (#89): kein Fehler, sondern ein
   Hinweis mit dem Weg über das Backup. `none` bleibt der stumme Normalfall.
+  Nach einem Update nennt `database.migrated` die Sicherung, die `backupBeforeMigrating` vor dem
+  Nachholen angelegt hat (`{ steps, backup }`, nur der Dateiname, denn sie liegt immer im
+  Datenordner), und die Oberfläche zeigt einmal einen Hinweis mit dem Rückweg aus MIGRATION.md
+  (#154). `null` ist es bei einer frisch angelegten Datenbank, nach dem Umstieg aus der
+  `db.json` (Rückweg ist dort `db.json.abgeloest`) und nach dem Wiederherstellen eines Backups
+  (dort `mietfuchs.sqlite.vor-restore`); eine Meldung nennte sonst eine Datei, die es nicht gibt.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
