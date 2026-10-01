@@ -215,7 +215,7 @@ npm --prefix client test -- costForm
 
 Es gibt **keinen Linter**; `npm run typecheck` prüft per `tsc` vier Teile: Server, Client, die
 Vite-Konfiguration ([client/tsconfig.node.json](client/tsconfig.node.json), mit Node- statt
-DOM-Typen) und die Skripte in `scripts/` ([scripts/tsconfig.json](scripts/tsconfig.json), #64).
+DOM-Typen) und die Skripte in `scripts/` und `server/scripts/` ([scripts/tsconfig.json](scripts/tsconfig.json), #64).
 `npm run build` schließt die Prüfung des Clients samt Vite-Konfiguration mit ein und baut
 zusätzlich das Frontend.
 
@@ -230,7 +230,8 @@ nicht gibt). Eine Folge davon: Eine Variable in `server/src`, die mit `null` beg
 ihren Typ ausdrücklich (`let x: number | null = null`), sonst bleibt sie ohne `noImplicitAny`
 vom Typ `null`, und dieser Lauf wird rot. Wo ein Skript unbekanntes JSON liest, steht ein
 benanntes `/** @type {any} */` statt einer Typbeschreibung der Antwort; was darin steht, prüfen
-die Zusicherungen des Skripts. Ein neues Skript `scripts/*.mjs` ist ohne weiteres Zutun dabei.
+die Zusicherungen des Skripts. Ein neues Skript `scripts/*.mjs` oder `server/scripts/*.mjs` ist
+ohne weiteres Zutun dabei.
 
 **Tests, drei Ebenen** — beim Erweitern der Verteilung oder der Formulare jeweils mitdenken:
 
@@ -1379,7 +1380,7 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
 - **`npm run typecheck` ist die einzige Prüfung.** Es gibt keinen Linter, und weil der Server
   ohne Build-Schritt läuft, merkt niemand sonst einen Typfehler. Vor jedem Commit also einmal
   laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein). Sie umfasst auch
-  `client/vite.config.ts` und `scripts/*.mjs` (siehe Commands).
+  `client/vite.config.ts`, `scripts/*.mjs` und `server/scripts/*.mjs` (siehe Commands).
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).
 - **Zielbild ist jede gelebte Form privater Vermietung** (#91): mehrere Mehrfamilienhäuser,
