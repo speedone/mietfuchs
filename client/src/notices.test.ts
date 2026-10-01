@@ -15,15 +15,20 @@ describe('Hinweise (#112)', () => {
   })
 
   test('der Knopf führt zur Seite, auf der man es behebt', () => {
-    expect(noticeTarget({ kind: 'costItem', id: 'k' })).toEqual({ tab: 'kosten', label: 'Hier beheben → Kosten' })
+    expect(noticeTarget({ kind: 'costItem', id: 'k' })).toEqual({ tab: 'kosten', label: 'Hier beheben → Kosten', focus: { kind: 'costItem', id: 'k' } })
     expect(noticeTarget({ kind: 'unit', id: 'u' })?.tab).toBe('stammdaten')
     expect(noticeTarget({ kind: 'tenancy', id: 't' })?.tab).toBe('stammdaten')
     expect(noticeTarget({ kind: 'meter', id: 'm' })?.tab).toBe('zaehler')
     expect(noticeTarget(undefined)).toBeNull()
   })
 
+  test('„Hier beheben →“ nimmt den Eintrag mit, nicht nur die Seite (#142)', () => {
+    expect(noticeTarget({ kind: 'tenancy', id: 't7' })?.focus).toEqual({ kind: 'tenancy', id: 't7' })
+    expect(noticeTarget({ kind: 'meter', id: 'm3' })?.focus).toEqual({ kind: 'meter', id: 'm3' })
+  })
+
   test('ein Rückstand führt ins Mietkonto (#133)', () => {
-    expect(noticeTarget({ kind: 'rentLedger', id: 't' })).toEqual({ tab: 'mietkonto', label: 'Hier beheben → Mietkonto' })
+    expect(noticeTarget({ kind: 'rentLedger', id: 't' })).toEqual({ tab: 'mietkonto', label: 'Hier beheben → Mietkonto', focus: { kind: 'rentLedger', id: 't' } })
   })
 
   test('eine unbekannte Art aus einer eingefrorenen oder neueren Abrechnung ergibt keinen Knopf statt eines Absturzes', () => {

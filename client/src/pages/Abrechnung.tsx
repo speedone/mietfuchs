@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import { isNotAllocable } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
@@ -8,7 +8,8 @@ import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
-import { historyView, type HistoryEntry } from '../settlementHistory'
+import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
+import { costBasisText, personsText } from '../statementView'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
 import { closeSettlementTitle } from '../propertyView'
@@ -23,8 +24,8 @@ type Props = {
   units: Unit[]
   tenancies: Tenancy[]
   reload: () => Promise<void>
-  // Für „Hier beheben →“ an einem Hinweis (#112)
-  onNavigate?: (tab: NoticeTab) => void
+  // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142)
+  onNavigate?: (tab: NoticeTab, focus?: NoticeSubject) => void
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
@@ -186,9 +187,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
-  // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen.
-  const deadline = new Date(Date.UTC(year + 1, 11, 31))
-  const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000)
+  // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
+  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView).
+  const deadlineInfo = deadlineView(year, data?.closed?.sentAt ?? null, history, new Date())
 
   return (
     <>
@@ -268,19 +269,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       )}
 
       {data && data.totalCostsCents > 0 && (
-        data.closed?.sentAt ? (
-          <div className="ok no-print">
-            Abrechnung {year} am <strong>{fmtDate(data.closed.sentAt)}</strong> versendet — die Frist nach §556 BGB (31.12.{year + 1}) ist {data.closed.sentAt <= `${year + 1}-12-31` ? 'gewahrt' : 'überschritten'}.
-          </div>
-        ) : (
-          <div className={daysLeft < 0 ? 'error no-print' : daysLeft < 90 ? 'notice no-print' : 'ok no-print'}>
-            {daysLeft >= 0 ? (
-              <>Abrechnungsfrist (§556 BGB): Die Abrechnung {year} muss dem Mieter bis zum <strong>31.12.{year + 1}</strong> zugehen — noch {daysLeft} Tage.</>
-            ) : (
-              <>Die Abrechnungsfrist für {year} ist am 31.12.{year + 1} abgelaufen — Nachforderungen sind in der Regel ausgeschlossen (Guthaben des Mieters bleiben fällig).</>
-            )}
-          </div>
-        )
+        <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
       {history.length > 0 && (
         <details className="settlement-history no-print">
@@ -320,7 +309,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               <div className="notice-terms">Begriffe: {n.terms.map((t, k) => <Fragment key={t}>{k > 0 && ', '}<Term id={t} /></Fragment>)}</div>
             )}
             {target && onNavigate && (
-              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab)}>{target.label}</button>
+              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab, target.focus)}>{target.label}</button>
             )}
           </div>
         )
@@ -401,7 +390,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                 <div>
                   <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {year}</h2>
                   <div className="muted">
-                    {st.tenantName} · {st.unitName} · {st.persons} Person(en) ·
+                    {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({st.days} Tage)
                   </div>
                 </div>
@@ -471,14 +460,21 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <tr>
                       <td colSpan={3} style={{ fontWeight: 400 }}>
                         abzüglich geleisteter Vorauszahlungen
-                        {st.prepaymentOverridden && <span className="muted"> (manuell angepasst)</span>}
+                        {/* Ein Vermerk für den Vermieter, nicht für den Mieter (#142): nur am Bildschirm. */}
+                        {st.prepaymentOverridden && <span className="muted no-print"> (manuell angepasst)</span>}
                         {!isClosed && <span className="no-print">
                           {' '}
                           {ppEdit?.tenancyId === st.tenancyId ? (
                             <>
+                              {/* Esc verwirft, Enter übernimmt (#142), wie im Drawer. */}
                               <input
+                                aria-label="Gezahlte Vorauszahlung €"
                                 value={ppEdit.value}
                                 onChange={(e) => setPpEdit({ tenancyId: st.tenancyId, value: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') { e.preventDefault(); setPpEdit(null) }
+                                  else if (e.key === 'Enter') { e.preventDefault(); const c = parseEuro(ppEdit.value); if (c !== null) void savePpOverride(st.tenancyId, c) }
+                                }}
                                 style={{ width: 100, textAlign: 'right', padding: '3px 6px' }}
                                 autoFocus
                               />{' '}
@@ -567,7 +563,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                 </>
               )}
               <p className="muted" style={{ marginTop: 14 }}>
-                Abrechnung nach dem Abflussprinzip (im Abrechnungsjahr gezahlte Rechnungen).
+                {costBasisText(year)}
                 {printAttachments && stFiles.length > 0
                   ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
                   : ' Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.'}

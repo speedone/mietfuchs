@@ -10,14 +10,15 @@ import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import { scrollToFocus, useFocusTarget, type FocusProps } from '../focus'
 
-type Props = { units: Unit[] }
+type Props = { units: Unit[] } & FocusProps
 
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
 
 type MeterForm = { id?: string; name: string; unitId: string; type: MeterType; meterNumber: string; unit: string }
 
-export default function Zaehler({ units }: Props) {
+export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const { year, setYear } = useYear()
   const { property } = useProperty()
   const propertyId = property?.id
@@ -30,6 +31,10 @@ export default function Zaehler({ units }: Props) {
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
+  // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
+  // denn dort liegt, was ein Hinweis zu einem Zähler meint.
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  useFocusTarget(focus, 'meter', meters, (m) => m.id, (m) => { setOpenMeterId(m.id); setFocusedId(m.id); scrollToFocus() }, onFocusDone)
   // Eine angefangene Ablesung hängt am Zähler dieses Objekts (#145).
   useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
 
@@ -184,6 +189,7 @@ export default function Zaehler({ units }: Props) {
                     meter={m}
                     cons={c}
                     open={openMeterId === m.id}
+                    focused={focusedId === m.id}
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
                     onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
@@ -259,6 +265,7 @@ export default function Zaehler({ units }: Props) {
 
 function FragmentRow(props: {
   meter: Meter
+  focused?: boolean
   cons?: Consumption
   open: boolean
   readings: Reading[]
@@ -271,10 +278,10 @@ function FragmentRow(props: {
   onSaveReading: () => void
   onDeleteReading: (r: Reading) => void
 }) {
-  const { meter: m, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, onDeleteReading } = props
+  const { meter: m, focused, cons, open, readings, unitName, onToggle, onEdit, onDelete, readingForm, setReadingForm, onSaveReading, onDeleteReading } = props
   return (
     <>
-      <tr>
+      <tr className={focused ? 'focus-target' : undefined}>
         <td>
           {m.name}
           {m.meterNumber && <div className="muted">Nr. {m.meterNumber}</div>}
