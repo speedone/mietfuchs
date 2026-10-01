@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Settings, UpdateStatus } from './types'
-import { canQuit, consentPending, hintVisible, updateGuide } from './update'
+import { canQuit, consentPending, hintVisible, isPrerelease, statusText, updateGuide } from './update'
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   houseName: '', address: '', landlordName: '', iban: '', paymentDeadlineDays: 30,
@@ -112,5 +112,29 @@ describe('Beenden aus der Oberfläche (#45)', () => {
     expect(canQuit(status({ mode: 'docker' }))).toBe(false)
     expect(canQuit(status({ mode: 'npm' }))).toBe(false)
     expect(canQuit(null)).toBe(false)
+  })
+})
+
+describe('Stand in den Einstellungen (#166)', () => {
+  test('erkennt eine Vorabversion am Bindestrich nach den drei Zahlen', () => {
+    expect(isPrerelease('0.9.0-rc.2')).toBe(true)
+    expect(isPrerelease('0.9.0')).toBe(false)
+    expect(isPrerelease('unbekannt')).toBe(false)
+  })
+
+  test('eine laufende Vorabversion heißt nicht „aktuelle Version“', () => {
+    const text = statusText(status({ current: '0.9.0-rc.2', latest: '0.8.0', available: false, checkedAt: null }))
+    expect(text).toBe('Sie nutzen die Vorabversion 0.9.0-rc.2. Neueste veröffentlichte Version: 0.8.0.')
+  })
+
+  test('erscheint die fertige Version, gilt der gewöhnliche Hinweis', () => {
+    const text = statusText(status({ current: '0.9.0-rc.2', latest: '0.9.0', available: true, checkedAt: null }))
+    expect(text).toBe('Version 0.9.0 ist erschienen, installiert ist 0.9.0-rc.2.')
+    expect(hintVisible(status({ current: '0.9.0-rc.2', latest: '0.9.0', available: true }), settings())).toBe(true)
+  })
+
+  test('eine fertige Version bleibt die aktuelle', () => {
+    const text = statusText(status({ current: '0.5.0', latest: '0.5.0', available: false, checkedAt: null }))
+    expect(text).toBe('Du nutzt die aktuelle Version 0.5.0.')
   })
 })

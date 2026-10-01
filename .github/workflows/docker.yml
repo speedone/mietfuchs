@@ -79,6 +79,14 @@ jobs:
         with:
           node-version: 24
 
+      # Bei einem Tag kommt die Version aus dem Tag in die package.json-Dateien (#166). Der
+      # Build-Kontext ist dieses Checkout, die Änderung gelangt also in jedes Image unten, und
+      # das Prüfskript liest dieselbe Datei. Ein Kandidat wie v0.9.0-rc.2 meldet sich damit als
+      # solcher; eine andere Basis im Tag bricht ab (siehe scripts/set-version.mjs).
+      - name: Version aus dem Tag übernehmen
+        if: github.ref_type == 'tag'
+        run: node scripts/set-version.mjs
+
       - name: Zum Prüfen bauen (amd64)
         uses: docker/build-push-action@v7
         with:

@@ -10,6 +10,15 @@ name: mietfuchs
 arch: ${PKG_ARCH}
 platform: linux
 version: ${PKG_VERSION}
+# Ein Release-Kandidat kommt als 0.9.0-rc.2 an (scripts/set-version.mjs, #166). `semver` zerlegt
+# ihn in Version und Vorabversion, und nFPM schreibt sie je Format so, dass der Kandidat vor der
+# fertigen 0.9.0 einsortiert wird: .deb und .rpm als 0.9.0~rc.2, Arch als 0.9.0rc.2. Nachgeprüft
+# mit dpkg --compare-versions, rpm.vercmp und vercmp, auch rc.2 vor rc.10. Ohne diese Zerlegung
+# nähme dpkg „0.9.0-rc.2“ als Version 0.9.0 mit Revision rc.2, und die fertige 0.9.0 sähe älter
+# aus als der Kandidat; die Paketverwaltung böte sie dann nie als Aktualisierung an. `semver` ist
+# die Voreinstellung und steht trotzdem hier, damit eine geänderte Voreinstellung das nicht still
+# umwirft.
+version_schema: semver
 section: utils
 priority: optional
 maintainer: speedone <speedone@users.noreply.github.com>
