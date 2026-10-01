@@ -26,11 +26,12 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Färbt die Hinweise das Cockpit gelb? Jeder Hinweis zählt als offener Punkt, auch einer der
 // Stufe `hint`: Die Abnahme hat gerade solche als nützlich bestätigt (etwa eine Summe der
 // Hausgeldabrechnung, die nicht zum Anteil passt). Ausgenommen sind nur die beiden Hinweise auf
-// eine bewusst eingetragene 0 (#135): Die 0 m² oder 0 Personen einer Garage oder eines
-// Stellplatzes sind eine Angabe des Nutzers und kein Versäumnis, und die Ampel „Mietverhältnisse
-// & Flächen“ nennt sie schon. Eine vor #112 abgeschlossene Abrechnung kennt nur Texte; die
+// eine bewusst eingetragene 0 (#135): Die 0 m² oder 0 Personen einer Einheit ohne Fläche und
+// Bewohner (Garage, Stellplatz) sind eine Angabe des Nutzers und kein Versäumnis, und die Ampel
+// „Mietverhältnisse & Flächen“ nennt sie schon. Eine vergessene Fläche oder Personenzahl
+// (`basis.unit-no-area`, `basis.tenancy-no-persons`) zählt dagegen. Eine vor #112 abgeschlossene Abrechnung kennt nur Texte; die
 // zählen wie bisher.
-const DELIBERATE_ZERO = new Set(['basis.unit-no-area', 'basis.tenancy-no-persons'])
+const DELIBERATE_ZERO = new Set(['basis.unit-zero', 'basis.tenancy-zero'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !DELIBERATE_ZERO.has(n.code))
 }

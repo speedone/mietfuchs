@@ -60,11 +60,15 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
   })
   test('nur die beiden Hinweise auf eine bewusst eingetragene 0: nein', () => {
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [
-      n({ code: 'basis.unit-no-area', level: 'hint' }), n({ code: 'basis.tenancy-no-persons', level: 'hint' }),
+      n({ code: 'basis.unit-zero', level: 'hint' }), n({ code: 'basis.tenancy-zero', level: 'hint' }),
     ] })).toBe(false)
   })
+  test('eine vergessene Wohnfläche (bewohnte Wohnung mit 0 m²): ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.tenancy-no-persons', level: 'warning' })] })).toBe(true)
+  })
   test('die 0 neben einem anderen Hinweis: ja', () => {
-    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.unit-no-area', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.unit-zero', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
   })
   test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
     expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)

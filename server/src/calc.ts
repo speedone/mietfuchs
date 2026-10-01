@@ -141,8 +141,11 @@ const noticeKinds = {
   'meter.same-day': { level: 'warning', title: 'Mehrere Ablesungen am selben Tag', terms: ['meterReading'] },
   'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt', terms: ['ownShare', 'personDays'] },
   'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
-  'basis.unit-no-area': { level: 'hint', title: 'Wohnfläche 0 m²', terms: ['distributionBasis'] },
-  'basis.tenancy-no-persons': { level: 'hint', title: '0 Personen', terms: ['personDays'] },
+  'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
+  'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
+  // Bewusst eingetragene 0 bei einer Einheit ohne Fläche und Bewohner (Garage, Stellplatz, #135)
+  'basis.unit-zero': { level: 'hint', title: 'Einheit ohne Fläche', terms: ['distributionBasis'] },
+  'basis.tenancy-zero': { level: 'hint', title: 'Mietverhältnis ohne Personen', terms: ['personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
@@ -918,6 +921,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return days > 0 && unit ? [{ ...t, days, unit }] : []
   })
   const partTenancies = tenancies.filter((t) => t.unit.participates)
+  // Garage-artig (#135): weder Fläche noch Bewohner im Jahr. Dann ist eine 0 eine Angabe (Garage,
+  // Stellplatz, Lager) und keine vergessene Zahl; siehe die Hinweise zur Verteilbasis unten.
+  const isGarageLike = (u: SnapshotUnit): boolean => {
+    if (u.areaM2 > 0) return false
+    const days = u.selfUsed
+      ? selfPersonsOf(u) * diy
+      : tenancies.filter((t) => t.unitId === u.id).reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0)
+    return !(days > 0)
+  }
   // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
   const selfPersonDays = selfUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
   const basisPersonDays =
@@ -1084,12 +1096,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     )
   }
   // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Ohne
-  // Basiswert verteilt der Schlüssel ihren Anteil auf die anderen. **Seit #135 ist 0 eine Angabe
-  // und keine Lücke**: Das Formular lässt 0 m² und 0 Personen für Garage, Stellplatz oder Lager
-  // ausdrücklich zu. Deshalb ein Hinweis statt einer Warnung, neutral gefasst und mit den
-  // betroffenen Positionen, damit ein Versehen trotzdem auffällt. Unterscheiden lässt sich ein
-  // vergessener Wert nicht: Die Datenbank führt die Fläche als Pflichtfeld, und der Umstieg
-  // macht aus einer fehlenden Fläche 0 m² (legacy/validate.ts).
+  // Basiswert verteilt der Schlüssel ihren Anteil auf die anderen, bei einer vermieteten Wohnung
+  // zahlen dann die übrigen Mieter mit.
+  // **Seit #135 kann 0 eine Angabe sein**: Das Formular lässt 0 m² und 0 Personen für Garage,
+  // Stellplatz oder Lager ausdrücklich zu. In der Datenbank ist eine vergessene Fläche aber
+  // ebenfalls 0 (Pflichtfeld, und der Umstieg macht aus einer fehlenden Fläche 0 m²). Unterschieden
+  // wird deshalb am Gegenstück (`isGarageLike`): Hat eine Einheit weder Fläche noch Bewohner im
+  // Jahr, ist sie Garage-artig, und beide Nullen sind ein Hinweis (`basis.unit-zero`,
+  // `basis.tenancy-zero`). Wohnt dort jemand, ist 0 m² eine vergessene Fläche; hat sie Fläche, sind
+  // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
+  // Eine leerstehende Wohnung ohne Fläche ist von einer Garage nicht zu unterscheiden und gilt
+  // deshalb als Garage-artig.
   const positionsOf = (key: CostKey, unitIds: string[]) => {
     const names = [...new Set(items
       .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
@@ -1098,21 +1115,39 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
-    const one = partNoArea.length === 1
-    warn('basis.unit-no-area',
-      `Für ${partNoArea.map((u) => u.name).join(', ')} sind 0 m² eingetragen; bei ${positionsOf('area', partNoArea.map((u) => u.id))} ${one ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
-        'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.',
-      unitSubject(partNoArea),
-    )
+    const forgotten = partNoArea.filter((u) => !isGarageLike(u))
+    const zero = partNoArea.filter((u) => isGarageLike(u))
+    if (forgotten.length > 0) {
+      warn('basis.unit-no-area',
+        `Für die Wohnung(en) ${forgotten.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
+        unitSubject(forgotten),
+      )
+    }
+    if (zero.length > 0) {
+      warn('basis.unit-zero',
+        `Für ${zero.map((u) => u.name).join(', ')} sind 0 m² eingetragen und niemand wohnt dort; bei ${positionsOf('area', zero.map((u) => u.id))} ${zero.length === 1 ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
+          'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.',
+        unitSubject(zero),
+      )
+    }
   }
   const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0) && inKeyBasis(t.unitId, 'persons'))
   if (partNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
-    const one = partNoPersons.length === 1
-    warn('basis.tenancy-no-persons',
-      `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} sind 0 Personen eingetragen; bei ${positionsOf('persons', partNoPersons.map((t) => t.unitId))} ${one ? 'trägt das Mietverhältnis nichts, sein' : 'tragen die Mietverhältnisse nichts, ihr'} Anteil verteilt sich auf die übrigen. ` +
-        'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.',
-      tenancySubject(partNoPersons),
-    )
+    const forgotten = partNoPersons.filter((t) => t.unit.areaM2 > 0)
+    const zero = partNoPersons.filter((t) => !(t.unit.areaM2 > 0))
+    if (forgotten.length > 0) {
+      warn('basis.tenancy-no-persons',
+        `Für ${forgotten.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
+        tenancySubject(forgotten),
+      )
+    }
+    if (zero.length > 0) {
+      warn('basis.tenancy-zero',
+        `Für ${zero.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} sind 0 Personen und 0 m² eingetragen; bei ${positionsOf('persons', zero.map((t) => t.unitId))} ${zero.length === 1 ? 'trägt das Mietverhältnis nichts, sein' : 'tragen die Mietverhältnisse nichts, ihr'} Anteil verteilt sich auf die übrigen. ` +
+          'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.',
+        tenancySubject(zero),
+      )
+    }
   }
 
   // Die Verteilbasis einer Position (#94). **Ohne Teilnehmer ist sie genau die bisherige**, und
@@ -1220,7 +1255,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         if (!(own > 0)) {
           noBasis(eb.measure === 'mea' ? 'für die Wohnungen sind keine Miteigentumsanteile hinterlegt' : 'für die Wohnungen ist keine Wohnfläche hinterlegt')
         } else {
-          const missing = b.basisUnits.filter((u) => valueOf(u) === 0)
+          // Eine Garage-artige Einheit ohne Fläche (#135) fehlt beim Maßstab Fläche nicht, sie hat
+          // bewusst keine; bei Miteigentumsanteilen bleibt jede fehlende Angabe eine Lücke.
+          const missing = b.basisUnits.filter((u) => valueOf(u) === 0 && !(eb.measure === 'area' && isGarageLike(u)))
           if (missing.length > 0) {
             warn('external.value-missing', `„${item.description}": für ${missing.map((u) => u.name).join(', ')} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen.`, unitSubject(missing))
           }

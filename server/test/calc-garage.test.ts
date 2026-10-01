@@ -44,6 +44,42 @@ test('Garage mit 0 m² neben einer Wohnung: zählt beim Flächenschlüssel nicht
   assert.equal(garage?.totalShareCents, 0)
   const wohnung = s.statements.find((x) => x.tenancyId === 'tw')
   assert.equal(wohnung?.totalShareCents, 200000)
+  // Die 0 ist eine Angabe: je ein Hinweis, keine Warnung (Durchsicht zu #135).
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-zero', 'hint'], ['basis.tenancy-zero', 'hint']])
+})
+
+test('Vermietete Wohnung mit 2 Personen und 0 m²: die Fläche ist vergessen, das bleibt eine Warnung', () => {
+  const s = settle({
+    units: [unit('eg', 80), unit('og', 0)],
+    tenancies: [tenancy('t1', 'eg', 2), tenancy('t2', 'og', 2)],
+    costItems: [item('fläche', 'area')],
+  })
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
+})
+
+test('0 Personen in einer Wohnung mit Fläche: die Personenzahl ist vergessen, das bleibt eine Warnung', () => {
+  const s = settle({
+    units: [unit('eg', 80), unit('og', 60)],
+    tenancies: [tenancy('t1', 'eg', 2), tenancy('t2', 'og', 0)],
+    costItems: [item('personen', 'persons')],
+  })
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.tenancy-no-persons', 'warning']])
+})
+
+test('Gemeinschaftsabrechnung nach Fläche: eine Garage ohne Fläche und Bewohner ist kein Alarm, eine Wohnung mit Bewohnern schon', () => {
+  const external = (id: string): SnapshotCostItem => ({ ...item(id, 'external'), externalBasis: { measure: 'area', total: 500, totalCents: 500000 } })
+  const garage = settle({
+    units: [unit('wohnung', 100), unit('garage', 0)],
+    tenancies: [tenancy('tw', 'wohnung', 2), tenancy('tg', 'garage', 0)],
+    costItems: [external('hausgeld')],
+  })
+  assert.ok(!garage.notices.some((n) => n.code === 'external.value-missing'), garage.warnings.join(' | '))
+  const vergessen = settle({
+    units: [unit('wohnung', 100), unit('og', 0)],
+    tenancies: [tenancy('tw', 'wohnung', 2), tenancy('to', 'og', 1)],
+    costItems: [external('hausgeld')],
+  })
+  assert.ok(vergessen.notices.some((n) => n.code === 'external.value-missing' && n.level === 'warning'), vergessen.warnings.join(' | '))
 })
 
 test('Alle Einheiten mit 0 m² und 0 Personen: keine Division durch null, die Kosten trägt der Vermieter', () => {

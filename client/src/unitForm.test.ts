@@ -134,8 +134,13 @@ describe('Wohnfläche 0 m² für Garage, Stellplatz oder Lager (#135)', () => {
 
 describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
   const u = (name: string, areaM2: number, over: Partial<Unit> = {}): Unit => ({ id: name, propertyId: 'p', name, areaM2, participates: true, ...over })
-  test('nennt beteiligte und selbstgenutzte Einheiten mit 0 m², nicht die ausgenommenen', () => {
-    expect(zeroAreaUnits([u('EG', 80), u('Garage', 0), u('Eigen', 0, { participates: false, selfUsed: true }), u('Lager', 0, { participates: false })]).map((x) => x.name))
-      .toEqual(['Garage', 'Eigen'])
+  const units = [u('EG', 80), u('Garage', 0), u('OG', 0), u('Eigen', 0, { participates: false, selfUsed: true, selfPersons: 2 }), u('Lager', 0, { participates: false })]
+  // Personentage je Wohnung aus der Abrechnung: in OG wohnt jemand, in der Garage niemand.
+  const statements = [{ unitId: 'EG', personDays: 730 }, { unitId: 'Garage', personDays: 0 }, { unitId: 'OG', personDays: 365 }]
+  test('Garage-artig ist nur, wer weder Fläche noch Bewohner hat; das ist eine Angabe', () => {
+    expect(zeroAreaUnits(units, statements).zero.map((x) => x.name)).toEqual(['Garage'])
+  })
+  test('0 m² bei Bewohnern ist eine vergessene Fläche, auch bei der eigenen Wohnung', () => {
+    expect(zeroAreaUnits(units, statements).missing.map((x) => x.name)).toEqual(['OG', 'Eigen'])
   })
 })

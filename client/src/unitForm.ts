@@ -80,8 +80,18 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
   }
 }
 
-// Einheiten der Abrechnung mit 0 m² (#135). Seit 0 m² eine Angabe ist (Garage, Stellplatz,
-// Lager), nennt das Cockpit sie nur noch, statt sie als fehlend gelb zu melden.
-export function zeroAreaUnits(units: Unit[]): Unit[] {
-  return units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+// Einheiten der Abrechnung mit 0 m² (#135), nach derselben Unterscheidung wie calc.ts
+// (`isGarageLike`): Wer weder Fläche noch Bewohner hat, ist Garage-artig, und die 0 ist eine
+// Angabe (`zero`). Wohnt dort jemand, ist die Fläche vergessen (`missing`), und das Cockpit meldet
+// es gelb wie vor #135. Die Personentage kommen aus der Abrechnung, bei der eigenen Wohnung aus
+// der Personenzahl des eigenen Haushalts.
+export function zeroAreaUnits(
+  units: Unit[],
+  statements: { unitId: string, personDays: number }[],
+): { zero: Unit[], missing: Unit[] } {
+  const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+  const inhabited = (u: Unit) => (usageOf(u) === 'eigen'
+    ? (u.selfPersons ?? 0) > 0
+    : statements.some((st) => st.unitId === u.id && st.personDays > 0))
+  return { zero: withoutArea.filter((u) => !inhabited(u)), missing: withoutArea.filter(inhabited) }
 }
