@@ -909,7 +909,14 @@ einmal in [shared/allocation.ts](shared/allocation.ts), weil Vorschlag (client/s
 `withCategory`/`newItemForm`/`aiPositionDefaults` mit `KeyContext`) und Hinweis
 (`key.changed-from-previous-year` in calc.ts, Stufe `hint`) dasselbe meinen müssen; sonst löste
 der Vorschlag selbst den Hinweis aus. Widersprechen sich die Vorjahrespositionen, gibt es keinen
-Vorschlag. Der Schnappschuss trägt dafür `previousCostItems` (optional wie `property`, gefüllt in
+Vorschlag. Bei einer breiten Kostenart (`BROAD_CATEGORIES`, heute „Sonstige Betriebskosten“) zählt
+nur die Vorjahresposition mit derselben Beschreibung (Jahreszahl ersetzt), sonst bekäme die
+Dachrinne die Direktzuordnung der Hebeanlage (`comparablePrevious`, für Vorschlag und Hinweis
+dieselbe). Eine KI-Zeile mit gemerkten Teilnehmern oder Direktzuordnung ist nie vorab angehakt
+und in der Schnellerfassung nie grün. Für Heizung und Warmwasser nennt der Hinweis § 6 Abs. 4
+HeizkostenV statt § 556a Abs. 2 BGB. Das Abrechnungsjahr wechselt nur über `useSwitchYear`
+(property.tsx), das wie `useSwitchProperty` bei offenem Formular fragt; App.tsx stellt die
+Seiten je Objekt **und Jahr** neu auf. Der Schnappschuss trägt dafür `previousCostItems` (optional wie `property`, gefüllt in
 `snapshotOf`); verteilt wird davon nichts. **„Aus dem Vorjahr übernehmen“ lebt nur im Browser**
 ([client/src/carryOver.ts](client/src/carryOver.ts)): keine Entwürfe in der Datenbank, denn eine
 Position ohne Betrag wäre dort eine 0 oder ein Kennzeichen, das jede Rechnung kennen müsste.

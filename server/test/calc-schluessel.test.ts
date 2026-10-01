@@ -111,3 +111,47 @@ test('Durchsicht: Teilnehmer, die heute alle Wohnungen sind, gelten als alle (Wo
   ])
   assert.equal(found.length, 0)
 })
+
+// ---------- Durchsicht (2) ----------
+
+test('Durchsicht: bei „Sonstige Betriebskosten“ zählt nur dieselbe Beschreibung (Hebeanlage → Dachrinne)', () => {
+  const hebe = item({ id: 'hebe', year: 2025, key: 'direct', directUnitId: 'u1', category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025' })
+  // Eine neue, andere Position derselben breiten Kostenart ist kein Wechsel des Schlüssels.
+  assert.equal(changed([hebe, item({ id: 'rinne', year: 2026, key: 'area', category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' })]).length, 0)
+  // Dieselbe Position mit neuer Jahreszahl schon.
+  const found = changed([hebe, item({ id: 'hebe-neu', year: 2026, key: 'area', category: 'Sonstige Betriebskosten', description: 'Wartung  hebeanlage 2026' })])
+  assert.equal(found.length, 1)
+  assert.deepEqual(found[0]?.subject, { kind: 'costItem', id: 'hebe-neu' })
+})
+
+test('Durchsicht: mehrere Positionen einer Kostenart im Vorjahr, verglichen wird mit der gleichnamigen', () => {
+  const items = [
+    item({ id: 'w', year: 2025, key: 'persons', category: 'Wasser/Abwasser', description: 'Frischwasser' }),
+    item({ id: 'n', year: 2025, key: 'area', category: 'Wasser/Abwasser', description: 'Niederschlag' }),
+  ]
+  // „Frischwasser“ jetzt nach Fläche: Wechsel, obwohl „Niederschlag“ im Vorjahr nach Fläche lief.
+  assert.equal(changed([...items, item({ id: 'w26', year: 2026, key: 'area', category: 'Wasser/Abwasser', description: 'Frischwasser' })]).length, 1)
+})
+
+test('Durchsicht (Recht): § 556a Abs. 3 nur ohne andere Vereinbarung und mit Rückfall bei unbilligem Maßstab', () => {
+  const text = changed([item({ id: 'alt', year: 2025, key: 'persons' }), item({ id: 'neu', year: 2026, key: 'area' })])[0]?.text ?? ''
+  assert.match(text, /nichts anderes vereinbart/)
+  assert.match(text, /billigem Ermessen/)
+})
+
+test('Durchsicht (Recht): bei Heizung und Warmwasser gilt § 6 Abs. 4 HeizkostenV', () => {
+  const heiz = (id: string, year: number, key: 'area' | 'meter') =>
+    item({ id, year, key, category: 'Heizung und Warmwasser', description: 'Heizung', ...(key === 'meter' ? { meterType: 'waerme' as const } : {}) })
+  const text = changed([heiz('alt', 2025, 'area'), heiz('neu', 2026, 'meter')])[0]?.text ?? ''
+  assert.match(text, /§ 6 Abs\. 4 HeizkostenV/)
+  assert.match(text, /Beginn eines Abrechnungszeitraums/)
+  assert.doesNotMatch(text, /§ 556a Abs\. 2/)
+})
+
+test('Durchsicht (Recht): das Lexikon sagt „bleibt es bei den Personen“ und nennt den Rückfall nach Abs. 3', () => {
+  const t = GLOSSARY.keyChange
+  assert.match(t.example, /bleibt es bei den Personen/)
+  assert.doesNotMatch(t.example, /für dieses Jahr/)
+  assert.match(t.needed, /billigem Ermessen/)
+  assert.match(t.needed, /HeizkostenV/)
+})

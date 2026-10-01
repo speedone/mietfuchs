@@ -8,7 +8,11 @@
 // Rechnung kennen müsste (siehe docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
 // Gespeichert wird nur, was durch `buildCostItemBody` geht, also dieselbe Prüfung wie im Formular.
 import type { CostItem, Tenancy, Unit } from './types'
-import { buildCostItemBody, itemToForm, type BuildResult, type ItemForm } from './costForm'
+import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
+import { replaceYear } from '../../shared/allocation.ts'
+
+// Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
+export { replaceYear }
 
 export type CarryRow = {
   source: CostItem
@@ -23,14 +27,6 @@ export type CarryRow = {
   already: boolean
   // Einzelbeträge je Mieter lassen sich nicht in einer Zeile eintragen, nur im Formular.
   inline: boolean
-}
-
-// Die Jahreszahl des Vorjahres als ganzes Wort: „Grundsteuer 2025“ wird „Grundsteuer 2026“, eine
-// Rechnungsnummer 120250 bleibt.
-export function replaceYear(text: string, from: number, to: number): string {
-  // Ohne Lookbehind, das ältere Browser nicht kennen (pdf.js läuft aus demselben Grund in der
-  // legacy-Fassung).
-  return text.replace(new RegExp(`(^|\\D)${from}(?=\\D|$)`, 'g'), (_m, before: string) => `${before}${to}`)
 }
 
 // Steht im Jahr schon eine Position derselben Kostenart mit dieser Beschreibung? Die Seite fragt
@@ -58,8 +54,30 @@ export function carryOverRows(items: readonly CostItem[], year: number): CarryRo
 }
 
 // Ein Betrag hakt die Zeile an, ein geleertes Feld ab; abhaken lässt sie sich jederzeit von Hand.
-export function withCarryAmount(row: CarryRow, amount: string): CarryRow {
-  return { ...row, amount, checked: amount.trim() !== '' }
+// Eine Zeile, die im Jahr schon erfasst ist, hakt der Betrag nicht an (Durchsicht): Sie anzulegen
+// hieße, dieselbe Rechnung zweimal zu verteilen; wer das will, hakt sie selbst an und wird gefragt.
+export function withCarryAmount(row: CarryRow, amount: string, already = false): CarryRow {
+  return { ...row, amount, checked: !already && amount.trim() !== '' }
+}
+
+// Was die Liste beim Schlüssel zusätzlich zeigt (Durchsicht): die vereinbarten Anteile samt
+// Summe, wenn sie nicht 100 % ergeben, und die Wohnung der Direktzuordnung. `warn` markiert, was
+// geprüft werden sollte: Was unter 100 % fehlt, trägt der Vermieter; ohne Wohnung lässt sich die
+// Zeile nicht anlegen.
+export function carryKeyDetails(item: CostItem, units: Unit[]): { text: string, warn: boolean } | null {
+  const name = (id: string) => units.find((u) => u.id === id)?.name ?? '?'
+  if (item.key === 'custom') {
+    const shares = Object.entries(item.customShares ?? {})
+    const sum = shares.reduce((a, [, p]) => a + p, 0)
+    const list = shares.map(([id, p]) => `${name(id)}: ${fmtPct(p)} %`).join(' · ')
+    const off = Math.abs(sum - 100) > 0.0001
+    return { text: off ? `${list} (zusammen ${fmtPct(sum)} %)` : list, warn: off }
+  }
+  if (item.key === 'direct') {
+    const unit = item.directUnitId ? units.find((u) => u.id === item.directUnitId) : undefined
+    return unit ? { text: `direkt ${unit.name}`, warn: false } : { text: 'Wohnung fehlt', warn: true }
+  }
+  return null
 }
 
 // Das Formular einer Vorlage, auch für „Im Formular öffnen“: Schlüssel und Angaben des Vorjahres,

@@ -30,7 +30,7 @@ import type {
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
-import { allocationOf, previousYearItems, sameAllocation, sameUnits } from '../../shared/allocation.ts'
+import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -1078,7 +1078,8 @@ const KEY_PHRASES: Record<CostKey, string> = {
 // keine Änderung. Wortlaut des § 556a BGB nachgelesen auf gesetze-im-internet.de.
 function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number, basisUnitIds: readonly string[]): string | null {
   if (isNotAllocable(item.category)) return null
-  const before = previousYearItems(previous, item.category, year).map((i) => allocationOf(i, basisUnitIds))
+  // Bei einer breiten Kostenart nur die Position mit derselben Beschreibung (Befund der Durchsicht).
+  const before = comparablePrevious(previous, item.category, year, item.description).map((i) => allocationOf(i, basisUnitIds))
   const now = allocationOf(item, basisUnitIds)
   const first = before[0]
   if (!first || before.some((a) => sameAllocation(a, now))) return null
@@ -1093,8 +1094,14 @@ function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostIt
             : now.key === 'custom' ? 'anderen vereinbarten Anteilen'
               : 'einem anderen Maßstab der Gemeinschaft'
     } als ${prevYear}.`
-  return `${what} Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter oder durch Ihre Erklärung in Textform vor Beginn des Abrechnungszeitraums, und dann nur hin zu einer Verteilung nach Verbrauch oder Verursachung (§ 556a Abs. 2 BGB). ` +
-    'Bei einer vermieteten Eigentumswohnung gilt der jeweilige Maßstab der Gemeinschaft (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
+  // Wortlaut nachgelesen auf gesetze-im-internet.de: § 556a BGB und § 6 Abs. 4 HeizkostenV. Für
+  // Heizung und Warmwasser geht die Verordnung vor und erlaubt die Änderung in weiteren Fällen.
+  if (item.category === HEATING_CATEGORY) {
+    return `${what} Für Heizung und Warmwasser gilt die Heizkostenverordnung: Den Abrechnungsmaßstab darf der Gebäudeeigentümer durch Erklärung gegenüber den Nutzern für künftige Abrechnungszeiträume ändern, bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, und nur mit Wirkung zum Beginn eines Abrechnungszeitraums (§ 6 Abs. 4 HeizkostenV). ` +
+      'Ist die Änderung so erklärt oder vereinbart, ist nichts zu tun.'
+  }
+  return `${what} Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder durch Ihre Erklärung in Textform, nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung (§ 556a Abs. 2 BGB). ` +
+    'Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
 }
 
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {

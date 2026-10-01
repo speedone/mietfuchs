@@ -3,7 +3,7 @@ import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tena
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -29,7 +29,9 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -202,7 +204,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
         <div className="row">
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}

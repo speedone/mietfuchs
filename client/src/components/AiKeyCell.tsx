@@ -23,9 +23,11 @@ export default function AiKeyCell({ position: p, units, onChange }: Props) {
       <select aria-label="Umlageschlüssel" value={p.key} onChange={(e) => onChange({ key: e.target.value as CostKey, allocation: null })}>
         {aiKeyOptions(p.key).map((k) => <option key={k} value={k}>{KEY_LABELS[k]}</option>)}
       </select>
-      {a?.participantUnitIds && <div className="muted">nur {names(a.participantUnitIds)}</div>}
+      {/* Hervorgehoben (Durchsicht): Diese Zeile trifft nur einzelne Wohnungen und ist deshalb
+          nicht vorab angehakt. */}
+      {a?.participantUnitIds && <div><span className="chip gelb">nur {names(a.participantUnitIds)}</span></div>}
       {a?.meterType && <div className="muted">{METER_TYPE_LABELS[a.meterType]}</div>}
-      {a?.directUnitId && <div className="muted">{names([a.directUnitId])}</div>}
+      {a?.key === 'direct' && a.directUnitId && <div><span className="chip gelb">direkt {names([a.directUnitId])}</span></div>}
       {p.key === 'external' && (
         <input
           aria-label="Kosten der Gemeinschaft (ganze Anlage) €"
