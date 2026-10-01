@@ -239,6 +239,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 <option value="">Haus (Hauptzähler)</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
+              <small className="muted">Bei einer <Term id="granny">Einliegerwohnung</Term> mit eigenem Zwischenzähler: den Zähler des Hauses als Hauptzähler anlegen, den Zwischenzähler an der Wohnung.</small>
             </label>
             <label className="field grow">
               Sparte

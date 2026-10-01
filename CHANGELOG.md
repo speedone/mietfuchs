@@ -153,6 +153,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Einheiten …“. Beim Verbrauchsschlüssel ist der Zählertyp vorgewählt, wenn es nur einen gibt.
   Bei Einzelbeträgen heißt es „den Rest trägt der Vermieter“. Das Lexikon erklärt das Hausgeld
   (Vorschuss). ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Lexikon: Einliegerwohnung.** Der Begriff erklärt, wie man sie in Mietfuchs anlegt
+  (eigene Wohnung selbstgenutzt, Hauszähler als Hauptzähler), was beim Eigenanteil, bei den
+  Heizkosten (§ 2 HeizkostenV) und in der Anlage V daraus folgt; Stammdaten und Zählerformular
+  verweisen darauf. ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Anschlüsse einer Einheit, positiv gefragt.** Statt „Kein Anschluss für“ fragt das
   Wohnungsformular unter „Weitere Angaben — Anschlüsse“, welche Anschlüsse die Einheit hat;
   angehakt heißt angeschlossen. Angeboten werden nur Zählerarten, die es im Objekt gibt, und eine

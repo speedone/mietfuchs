@@ -722,7 +722,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               </select>
               <small className="muted">
                 {unitForm.usage === 'vermietet' && 'Die Wohnung nimmt an der Verteilung teil, ihren Anteil trägt der Mieter.'}
-                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
+                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, etwa neben einer <Term id="granny">Einliegerwohnung</Term>, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
                 {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.</>}
               </small>
             </label>

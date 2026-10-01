@@ -92,3 +92,9 @@ test('Neuer Wärmezähler: die Einheit folgt der Sparte und wird so gespeichert 
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0]).toMatchObject({ type: 'waerme', unit: 'kWh' })
 })
+
+test('Zählerformular: der Hinweis zum Hauptzähler verweist auf die Einliegerwohnung (#142)', async () => {
+  renderPage()
+  fireEvent.click(await screen.findByRole('button', { name: /Zähler hinzufügen/ }, { timeout: 5000 }))
+  expect(screen.getByRole('button', { name: 'Einliegerwohnung' })).toBeTruthy()
+})

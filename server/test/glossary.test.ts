@@ -72,3 +72,17 @@ test('Einheit ohne Anschluss: eigener Begriff mit nachgerechnetem Beispiel (#142
   assert.equal(600 * 40 / 60, 400)
   assert.equal(600 * 20 / 60, 200)
 })
+
+test('Einliegerwohnung: Anlage in Mietfuchs, Folgen und ein nachgerechnetes Beispiel (#142)', () => {
+  const t = GLOSSARY.granny
+  assert.equal(t.title, 'Einliegerwohnung')
+  assert.match(t.norm, /§ 2 HeizkostenV/)
+  assert.match(t.needed, /selbstgenutzt/)
+  assert.match(t.needed, /Hauptzähler/)
+  assert.match(t.needed, /Eigenanteil/)
+  // 120 m² eigen + 45 m² vermietet = 165 m², Grundsteuer 600 €: 45/165 = 163,64 €, der Rest 436,36 €.
+  assert.match(t.example, /120 m².*45 m².*165 m².*600 €.*163,64 €.*436,36 €/s)
+  assert.equal(120 + 45, 165)
+  assert.equal(Math.round((60000 * 45) / 165), 16364)
+  assert.equal(60000 - 16364, 43636)
+})

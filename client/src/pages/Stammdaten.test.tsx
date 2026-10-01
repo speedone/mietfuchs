@@ -178,3 +178,8 @@ test('Wohnungsliste: eine Ausnahme steht als Kennzeichen an der Wohnung', async 
   expect(rowOf('OG').getByText('ohne Wasseranschluss')).toBeTruthy()
   expect(rowOf('EG').queryByText(/ohne/)).toBeNull()
 })
+
+test('Nutzung „Eigennutzung“: der Hilfetext verweist auf den Begriff Einliegerwohnung (#142)', async () => {
+  const dialog = await openUnit([{ ...UNITS[0]!, participates: false, selfUsed: true }, UNITS[1]!])
+  expect(within(dialog).getByRole('button', { name: 'Einliegerwohnung' })).toBeTruthy()
+})
