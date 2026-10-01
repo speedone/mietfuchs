@@ -148,7 +148,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Kostenposition: weniger Missverständliches.** „Nicht umlagefähig“ und „Zuführung
   Erhaltungsrücklage“ zeigen keine Schlüsselauswahl mehr, die Liste sagt „— trägt der Vermieter“;
-  gerechnet wird unverändert. „Summe in der Anlage“ heißt je Maßstab „Summe der
+  gerechnet wird unverändert; auch das Cockpit verlangt für sie keine Ablesungen und prüft ihretwegen
+  nicht die Verteilbasis. „Summe in der Anlage“ heißt je Maßstab „Summe der
   Miteigentumsanteile in der Anlage (z. B. 1.000 MEA)“, „Summe der Wohnflächen …“ oder „Zahl der
   Einheiten …“. Beim Verbrauchsschlüssel ist der Zählertyp vorgewählt, wenn es nur einen gibt.
   Bei Einzelbeträgen heißt es „den Rest trägt der Vermieter“. Das Lexikon erklärt das Hausgeld
