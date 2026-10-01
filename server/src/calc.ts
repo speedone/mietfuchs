@@ -1076,10 +1076,10 @@ const KEY_PHRASES: Record<CostKey, string> = {
 // Text des Hinweises, sonst `null`. „Derselbe Schlüssel“ heißt dasselbe wie für den Vorschlag der
 // Oberfläche (shared/allocation.ts); entspricht die Position einer der Vorjahrespositionen, ist sie
 // keine Änderung. Wortlaut des § 556a BGB nachgelesen auf gesetze-im-internet.de.
-function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number): string | null {
+function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number, basisUnitIds: readonly string[]): string | null {
   if (isNotAllocable(item.category)) return null
-  const before = previousYearItems(previous, item.category, year).map(allocationOf)
-  const now = allocationOf(item)
+  const before = previousYearItems(previous, item.category, year).map((i) => allocationOf(i, basisUnitIds))
+  const now = allocationOf(item, basisUnitIds)
   const first = before[0]
   if (!first || before.some((a) => sameAllocation(a, now))) return null
   const prevYear = year - 1
@@ -1443,6 +1443,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // zwar dasselbe Objekt, einmal berechnet: So kann die Umstellung keine Zahl verschieben, und
   // die Golden-Tests bleiben der Beweis dafür. Mit Teilnehmern besteht sie nur aus ihnen, bei
   // vermieteten wie bei selbstgenutzten Wohnungen, und beim Verbrauch zählen nur ihre Zähler.
+  // Für den Vergleich mit dem Vorjahr (#141): die Wohnungen der Abrechnungseinheit heute.
+  const basisUnitIds = basisUnits.map((u) => u.id)
   const fullBasis = { basisUnits, selfUnits, basisArea, selfArea, partTenancies, basisPersonDays, occupantPersonDays, selfPersonDays, vacancies, vacancyPersonDays, consumptionByType }
   const basisOf = (item: SnapshotCostItem): typeof fullBasis => {
     if (!item.participantUnitIds) return fullBasis
@@ -1527,7 +1529,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
-    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], year)
+    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], year, basisUnitIds)
     if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.

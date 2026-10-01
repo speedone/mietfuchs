@@ -181,3 +181,12 @@ test('KI-Zeile: die Auswahl führt den gespeicherten Schlüssel, damit angezeigt
   expect(aiKeyOptions('persons')).toEqual(['area', 'persons', 'units'])
   expect(aiKeyOptions('external')).toEqual(['area', 'persons', 'units', 'external'])
 })
+
+test('Durchsicht: Teilnehmer des Vorjahres, die heute alle Wohnungen sind, lösen keinen Hinweis aus', () => {
+  const zwei = [unit('u1'), unit('u2')]
+  const memory = [item({ year: 2025, category: 'Aufzug', key: 'area', participantUnitIds: ['u1', 'u2', 'weg'] })]
+  const f = withCategory({ ...EMPTY_ITEM_FORM }, 'Aufzug', zwei, METERS, ctx(memory))
+  expect(keyChangeNotice(f, zwei, ctx(memory))).toBe('')
+  // Und ausdrücklich „alle“ ebenso.
+  expect(keyChangeNotice({ ...f, participants: null }, zwei, ctx(memory))).toBe('')
+})

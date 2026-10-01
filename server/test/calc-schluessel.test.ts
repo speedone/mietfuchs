@@ -101,3 +101,13 @@ test('Objekte: das Vorjahr eines anderen Objekts zählt nicht (#92)', () => {
   const sameHouse = { ...scoped, costItems: scoped.costItems.map((c) => ({ ...c, propertyId: 'a' })) }
   assert.equal(computeSettlement(snapshotFor(sameHouse, 'a', 2026)).notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 1)
 })
+
+test('Durchsicht: Teilnehmer, die heute alle Wohnungen sind, gelten als alle (Wohnung inzwischen weg)', () => {
+  // Im Vorjahr nur u1 und u2 von drei Wohnungen; die dritte gibt es nicht mehr. Der Vorschlag
+  // speichert dann „alle“, und das ist derselbe Schlüssel.
+  const found = changed([
+    item({ id: 'alt', year: 2025, key: 'area', participantUnitIds: ['u1', 'u2'] }),
+    item({ id: 'neu', year: 2026, key: 'area', participantUnitIds: null }),
+  ])
+  assert.equal(found.length, 0)
+})
