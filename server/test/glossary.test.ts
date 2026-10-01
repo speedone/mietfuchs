@@ -39,3 +39,10 @@ test('Erhaltungsrücklage: eigener Begriff, und die Hilfetexte führen nicht meh
   assert.equal(1900 + 360 + 900 + 440, 3600, 'Summe des Hausgeld-Beispiels')
   assert.match(GLOSSARY.notAllocable.needed, /Zuführung Erhaltungsrücklage/)
 })
+
+test('Gemeinschaftsabrechnung mit mehreren eigenen Wohnungen: das Lexikon empfiehlt für Heizkosten Einzelbeträge (#140, Durchsicht)', () => {
+  // Laut Gemeinschaftsabrechnung verteilt Mietfuchs innerhalb der eigenen Wohnungen nach MEA oder
+  // Fläche, nicht nach deren Verbrauch.
+  assert.match(GLOSSARY.mea.needed, /mehrere Wohnungen/)
+  assert.match(GLOSSARY.mea.needed, /Einzelbeträge/)
+})
