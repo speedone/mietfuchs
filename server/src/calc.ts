@@ -907,7 +907,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       // Gefragt wird ohne Teilnehmer jede Einheit des Objekts, auch außerhalb der
       // Abrechnungseinheit, denn der Hauptzähler misst sie alle.
       const candidates = only === null ? snapshot.units : basisOnes
-      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id))
+      // Ohne Anschluss für diesen Typ (#117) fehlt auch kein Zähler, etwa bei einer Garage ohne Wasser.
+      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id) && !(u.noConnection ?? []).includes(type as MeterType))
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
@@ -1267,9 +1268,9 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         const onlySelfUnmetered = data.main !== null && data.unmetered.every((u) => b.selfUnits.includes(u))
         if (data.unmetered.length > 0 && !onlySelfUnmetered) {
           const names = data.unmetered.map((u) => u.name).join(', ')
-          // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann trifft die Warnung
-          // nicht zu, und das steht dabei. Eine Kennzeichnung dafür fehlt noch.
-          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), trifft das nicht zu.'
+          // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann nennt die Meldung den
+          // Ausweg, die Kennzeichnung an der Einheit (#117).
+          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), kreuzen Sie in den Stammdaten der Einheit „Kein Anschluss für“ an.'
           const text = data.main !== null
             ? `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
             : data.hasMain

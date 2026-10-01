@@ -69,7 +69,8 @@ type Matches<Row, Domain> = Equals<keyof Row, keyof Domain> extends true
   : { spaltenFehlen: Exclude<keyof Domain, keyof Row>; spaltenZuViel: Exclude<keyof Row, keyof Domain> }
 
 // --- Wohnungen ---
-type _Units = Assert<Matches<typeof schema.units.$inferSelect, Unit>>
+// Die Zählertypen ohne Anschluss (#117) stehen in einer eigenen Tabelle.
+type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noConnection'>>>
 
 // --- Mietverhältnisse ---
 // Die fünf verschachtelten Listen stehen in eigenen Tabellen und haben deshalb keine Spalte.
@@ -230,6 +231,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'settings',
       'sqlite_sequence',
       'tenancies',
+      'unit_no_connection',
       'units',
     ])
   } finally {

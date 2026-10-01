@@ -705,3 +705,7 @@ tr.calc-steps td { background: var(--bg); }
 .settlement-history summary { cursor: pointer; }
 .settlement-history-entry { margin-top: 8px; }
 .settlement-history-entry ul { margin: 4px 0 0 18px; padding: 0; }
+
+/* Kein Anschluss für (#117): wie ein Feld beschriftet, als Gruppe für Screenreader */
+fieldset.no-connection { border: 0; padding: 0; margin: 0; min-width: 0; }
+.field-legend { font-size: 13px; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 6px; }

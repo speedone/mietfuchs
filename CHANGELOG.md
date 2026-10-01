@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Einheit ohne Anschluss.** An einer Wohnung oder Garage lässt sich angeben, für welche
+  Zählertypen es keinen Anschluss gibt, etwa kein Wasser in der Garage. Beim Verbrauchsschlüssel
+  gilt sie dann nicht als Wohnung ohne Zähler: Es gibt keine unzutreffende Warnung mehr, und der
+  Rest des Hauptzählers zählt wieder als Eigenanteil, wenn nur Ihre eigene Wohnung keinen Zähler
+  hat.
+  ([#117](https://github.com/speedone/mietfuchs/issues/117))
 - **Wiederöffnen verliert den verschickten Stand nicht mehr.** Öffnen Sie eine abgeschlossene
   Abrechnung wieder, bleibt der bisherige Stand unter „Frühere Abschlüsse dieses Jahres“ erhalten,
   mit Abschluss-, Versand- und Öffnungsdatum und den Salden je Mieter. So lässt sich eine
