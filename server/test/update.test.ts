@@ -45,12 +45,25 @@ const errorOf = (status: UpdateStatus): string => {
 // ---------- Versionen ----------
 
 test('parseVersion: liest v-Präfix und reine Zahlen, alles andere ist ungültig', () => {
-  assert.deepEqual(parseVersion('v0.4.0'), [0, 4, 0])
-  assert.deepEqual(parseVersion('1.12.3'), [1, 12, 3])
-  assert.equal(parseVersion('0.5.0-rc.1'), null) // Vorabversionen zählen nicht
+  assert.deepEqual(parseVersion('v0.4.0'), { core: [0, 4, 0], pre: [] })
+  assert.deepEqual(parseVersion('1.12.3'), { core: [1, 12, 3], pre: [] })
   assert.equal(parseVersion('unbekannt'), null)
   assert.equal(parseVersion(''), null)
   assert.equal(parseVersion(undefined), null)
+  assert.equal(parseVersion('0.9'), null)
+  assert.equal(parseVersion('01.2.3'), null) // führende Null verbietet SemVer
+})
+
+test('parseVersion: liest Vorabversionen nach SemVer (#166)', () => {
+  assert.deepEqual(parseVersion('v0.9.0-rc.2'), { core: [0, 9, 0], pre: ['rc', 2] })
+  assert.deepEqual(parseVersion('1.0.0-alpha'), { core: [1, 0, 0], pre: ['alpha'] })
+  assert.deepEqual(parseVersion('1.0.0-x-y.7.0a'), { core: [1, 0, 0], pre: ['x-y', 7, '0a'] })
+  // Bauangaben hinter „+“ zählen für die Reihenfolge nicht (SemVer §10)
+  assert.deepEqual(parseVersion('1.0.0-rc.1+build.5'), { core: [1, 0, 0], pre: ['rc', 1] })
+  assert.equal(parseVersion('1.0.0-'), null)
+  assert.equal(parseVersion('1.0.0-rc..1'), null)
+  assert.equal(parseVersion('1.0.0-rc.01'), null) // numerischer Teil mit führender Null
+  assert.equal(parseVersion('1.0.0-rc_1'), null)
 })
 
 test('isNewer: vergleicht numerisch, nicht als Text', () => {
@@ -59,6 +72,29 @@ test('isNewer: vergleicht numerisch, nicht als Text', () => {
   assert.equal(isNewer('1.0.0', '0.99.99'), true)
   assert.equal(isNewer('0.4.0', '0.4.0'), false)
   assert.equal(isNewer('0.3.9', '0.4.0'), false)
+})
+
+test('isNewer: Vorabversionen liegen vor der fertigen Version gleicher Nummer (#166)', () => {
+  // Der Fall aus dem Issue: Wer den Kandidaten fährt, bekommt die fertige 0.9.0 angeboten.
+  assert.equal(isNewer('0.9.0', '0.9.0-rc.2'), true)
+  assert.equal(isNewer('0.9.0-rc.2', '0.9.0'), false)
+  // Teile aus Ziffern zählen als Zahl: rc.10 kommt nach rc.2, als Text wäre es umgekehrt.
+  assert.equal(isNewer('0.9.0-rc.10', '0.9.0-rc.2'), true)
+  assert.equal(isNewer('0.9.0-rc.2', '0.9.0-rc.10'), false)
+  // Die fertige Vorgängerversion liegt vor jedem Kandidaten der nächsten
+  assert.equal(isNewer('0.9.0-rc.1', '0.8.0'), true)
+  assert.equal(isNewer('0.8.0', '0.9.0-rc.1'), false)
+  assert.equal(isNewer('0.9.0-rc.2', '0.9.0-rc.2'), false)
+})
+
+test('isNewer: die Beispielreihe aus SemVer 2.0.0 §11', () => {
+  const order = ['1.0.0-alpha', '1.0.0-alpha.1', '1.0.0-alpha.beta', '1.0.0-beta', '1.0.0-beta.2',
+    '1.0.0-beta.11', '1.0.0-rc.1', '1.0.0']
+  for (let i = 0; i < order.length; i++) {
+    for (let j = 0; j < order.length; j++) {
+      assert.equal(isNewer(order[j], order[i]), j > i, `${order[j]} neuer als ${order[i]}?`)
+    }
+  }
 })
 
 test('isNewer: ohne bekannte eigene oder fremde Version gibt es keinen Hinweis', () => {
@@ -194,6 +230,35 @@ test('Vorabversion oder Entwurf gilt nicht als Update', async () => {
     respond = serve(releaseWith('v0.5.0', extra))
     const s = await makeChecker().check({ consent: 'on' })
     assert.equal(s.available, false)
+  }
+})
+
+test('Läuft ein Release-Kandidat, ist die fertige Version gleicher Nummer ein Update (#166)', async () => {
+  respond = serve(releaseWith('v0.9.0'))
+  const s = await makeChecker({ currentVersion: '0.9.0-rc.2' }).check({ consent: 'on' })
+  assert.equal(s.current, '0.9.0-rc.2')
+  assert.equal(s.latest, '0.9.0')
+  assert.equal(s.available, true)
+  assert.equal(s.downloadUrl, 'https://github.com/speedone/mietfuchs/releases/download/v0.9.0/mietfuchs-win.exe')
+})
+
+test('Läuft ein Release-Kandidat, ist die ältere fertige Version kein Update (#166)', async () => {
+  respond = serve(releaseWith('v0.8.0'))
+  const s = await makeChecker({ currentVersion: '0.9.0-rc.2' }).check({ consent: 'on' })
+  assert.equal(s.latest, '0.8.0')
+  assert.equal(s.available, false)
+  assert.equal(s.error, null)
+})
+
+test('Ein Tag mit Vorabversion wird auch ohne Kennzeichen nicht angeboten', async () => {
+  // release.yml kennzeichnet einen solchen Tag als Vorabversion, und /releases/latest liefert
+  // ihn dann nicht. Fehlte das Kennzeichen doch einmal, bliebe es trotzdem beim Alten.
+  for (const current of ['0.8.0', '0.9.0-rc.1']) {
+    respond = serve(releaseWith('v0.9.0-rc.2', { prerelease: false }))
+    const s = await makeChecker({ currentVersion: current }).check({ consent: 'on' })
+    assert.equal(s.available, false)
+    assert.equal(s.latest, null)
+    assert.equal(s.error, null)
   }
 })
 

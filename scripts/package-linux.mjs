@@ -23,6 +23,8 @@ const stageDir = path.join(outDir, 'stage')
 // Die Paketversion kommt aus der Root-package.json, die Programmdatei meldet die aus
 // server/package.json. Laufen beide auseinander, trüge ein Paket die falsche Nummer: `rpm -i`
 // bricht mit „already installed“ ab, und der Nutzer käme nicht an die neue Fassung.
+// Bei einem Release-Kandidaten steht in beiden die Nummer aus dem Tag (scripts/set-version.mjs,
+// #166), etwa 0.9.0-rc.2; wie sie in die Pakete kommt, steht in packaging/nfpm.yaml.
 const versionOf = (dir) => JSON.parse(fs.readFileSync(path.join(root, dir, 'package.json'), 'utf8')).version
 const version = versionOf('.')
 const serverVersion = versionOf('server')

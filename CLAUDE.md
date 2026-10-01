@@ -113,7 +113,13 @@ eine Sicherung und kein Verfahren: `prerelease` kennt bei softprops keine Automa
 Zeile erschiene ein Release-Kandidat als vollwertiges Release, `releases/latest` lieferte ihn
 aus, und jeder Nutzer mit eingeschalteter Update-Prüfung bekäme ihn angeboten. Das Docker-Image
 braucht nichts dergleichen, `docker/metadata-action` mit `latest=auto` vergibt `latest` bei einer
-Vorabversion von sich aus nicht.
+Vorabversion von sich aus nicht. **Die Version kommt beim Tag aus dem Tag** (#166): Vor dem Bauen schreibt
+[scripts/set-version.mjs](scripts/set-version.mjs) sie in die drei package.json-Dateien (samt
+Lockfiles), in release.yml in jedem Job, der baut oder prüft, und in docker.yml; sonst meldete
+sich `v0.9.0-rc.2` als 0.9.0. Abweichen darf nur das Vorab-Suffix, eine andere Basis im Tag
+bricht den Lauf ab, statt still eine andere Version zu bauen. Die Linux-Pakete tragen den
+Kandidaten als `0.9.0~rc.2` (Arch `0.9.0rc.2`) und sortieren ihn so vor die fertige Version
+(`version_schema: semver` in nfpm.yaml).
 
 **Artefakt-Tests** (#22): Vor dem Anhängen startet jede Programmdatei auf einem GitHub-Runner
 ihres Systems (Linux, Windows und macOS jeweils x64 und ARM64), die Linux-Dateien zusätzlich in
@@ -1246,7 +1252,11 @@ dazukommt, ist offen (Issue #20). Die eigene Version liest
 Bun beim Kompilieren einbettet. Die Betriebsart ergibt sich aus `globalThis.Bun`
 (Programmdatei, an einem Systemort `package`, siehe Linux-Pakete) bzw. `NKA_RUNTIME=docker`
 (setzt das Dockerfile), sonst `npm`.
-`NKA_UPDATE_URL` lenkt die Abfrage auf einen nachgebauten Server.
+`NKA_UPDATE_URL` lenkt die Abfrage auf einen nachgebauten Server. Verglichen wird nach SemVer
+mit Vorabversionen (#166): `0.9.0-rc.2` liegt vor `0.9.0`, `rc.2` vor `rc.10`. Ein Tag mit
+Vorabversion wird nie angeboten, auch ohne das Kennzeichen `prerelease`; läuft dagegen selbst
+ein Kandidat, ist die fertige Version gleicher Nummer ein Update, und die Oberfläche nennt ihn
+„Vorabversion“ statt „aktuelle Version“.
 
 **Client** ([client/src/](client/src/)): React ohne Router — `App.tsx` schaltet per State
 zwischen den Seiten (`pages/`: Cockpit, Schnellerfassung, Zaehler, Kosten, Mietkonto,
