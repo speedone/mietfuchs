@@ -921,14 +921,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return days > 0 && unit ? [{ ...t, days, unit }] : []
   })
   const partTenancies = tenancies.filter((t) => t.unit.participates)
-  // Garage-artig (#135): weder Fläche noch Bewohner im Jahr. Dann ist eine 0 eine Angabe (Garage,
-  // Stellplatz, Lager) und keine vergessene Zahl; siehe die Hinweise zur Verteilbasis unten.
+  // Garage-artig (#135): keine Fläche, und im Jahr ausdrücklich mit 0 Personen genutzt, also
+  // mindestens ein Mietverhältnis und keines mit Personen (bei Eigennutzung ausdrücklich 0 eigene
+  // Personen). Dann ist eine 0 eine Angabe (Garage, Stellplatz, Lager) und keine vergessene Zahl;
+  // siehe die Hinweise zur Verteilbasis unten. **Leerstand zählt nicht dazu**: Ohne Mietverhältnis
+  // lässt sich eine Garage von einer Wohnung mit vergessener Fläche nicht unterscheiden, und im
+  // zweiten Fall wanderte der Anteil des Leerstands still zu den Mietern. Eine leere Garage warnt
+  // dann eben; das ist der billigere Irrtum.
   const isGarageLike = (u: SnapshotUnit): boolean => {
     if (u.areaM2 > 0) return false
-    const days = u.selfUsed
-      ? selfPersonsOf(u) * diy
-      : tenancies.filter((t) => t.unitId === u.id).reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0)
-    return !(days > 0)
+    if (u.selfUsed) return u.selfPersons === 0
+    const own = tenancies.filter((t) => t.unitId === u.id)
+    return own.length > 0 && own.every((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0))
   }
   // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
   const selfPersonDays = selfUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
@@ -1105,8 +1109,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Jahr, ist sie Garage-artig, und beide Nullen sind ein Hinweis (`basis.unit-zero`,
   // `basis.tenancy-zero`). Wohnt dort jemand, ist 0 m² eine vergessene Fläche; hat sie Fläche, sind
   // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
-  // Eine leerstehende Wohnung ohne Fläche ist von einer Garage nicht zu unterscheiden und gilt
-  // deshalb als Garage-artig.
   const positionsOf = (key: CostKey, unitIds: string[]) => {
     const names = [...new Set(items
       .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
@@ -1125,7 +1127,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     if (zero.length > 0) {
       warn('basis.unit-zero',
-        `Für ${zero.map((u) => u.name).join(', ')} sind 0 m² eingetragen und niemand wohnt dort; bei ${positionsOf('area', zero.map((u) => u.id))} ${zero.length === 1 ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
+        `Für ${zero.map((u) => u.name).join(', ')} sind 0 m² und 0 Personen eingetragen; bei ${positionsOf('area', zero.map((u) => u.id))} ${zero.length === 1 ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
           'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.',
         unitSubject(zero),
       )

@@ -112,7 +112,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
         detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · ` +
-          (zeroArea.length > 0 ? `ohne Fläche und Bewohner: ${zeroArea.map((u) => u.name).join(', ')}` : 'vollständig') })
+          (zeroArea.length > 0 ? `0 m² und 0 Personen: ${zeroArea.map((u) => u.name).join(', ')}` : 'vollständig') })
     }
 
     // 2. Belege & Kosten erfasst

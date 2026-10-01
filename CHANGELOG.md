@@ -120,10 +120,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen
   Werten in der Verteilbasis von Flächen- und Personenschlüssel. Jetzt sind 0 m² und 0 Personen
   erlaubt, mit einem kurzen Hinweis am Feld; negative und gebrochene Personenzahlen bleiben
-  ausgeschlossen, und die Meldung sagt, was erlaubt ist. Hat eine Einheit weder Fläche noch Bewohner,
-  nennt die Abrechnung das nur als Hinweis mit den betroffenen Positionen, und das Cockpit färbt
-  sich allein deswegen nicht gelb. Eine bewohnte Wohnung mit 0 m² oder eine Wohnung mit Fläche
-  und 0 Personen meldet sie weiter als Warnung, denn dann ist die Angabe vermutlich vergessen.
+  ausgeschlossen, und die Meldung sagt, was erlaubt ist. Ist eine Einheit mit 0 m²
+  ausdrücklich an 0 Personen vermietet, nennt die Abrechnung das nur als Hinweis mit den
+  betroffenen Positionen, und das Cockpit färbt sich allein deswegen nicht gelb. Eine bewohnte
+  Wohnung mit 0 m², eine leerstehende ohne Fläche oder eine Wohnung mit Fläche und 0 Personen
+  meldet sie weiter als Warnung, denn dann ist die Angabe vermutlich vergessen.
   ([#135](https://github.com/speedone/mietfuchs/issues/135))
 - **Die Cockpit-Ampel „Zählerstände“ sieht den Hauptzähler.** Bisher zählte sie nur Zähler mit
   Wohnung; fehlte der Endstand des Hauptzählers, blieb sie grün, obwohl er seit #116 die

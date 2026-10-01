@@ -1212,9 +1212,10 @@ test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 0)
-  // Ohne Mietverhältnis keine Personentage: Von einer Garage ist das nicht zu unterscheiden, also ein Hinweis.
-  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-zero', 'hint']])
-  assert.deepEqual(s.warnings, ['Für DG sind 0 m² eingetragen und niemand wohnt dort; bei „Grundsteuer“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.'])
+  // Ohne jedes Mietverhältnis ist 0 m² keine Angabe, sonst wanderte der Anteil des Leerstands still
+  // zu den Mietern; eine leere Garage warnt dann eben, das ist der billigere Irrtum (#135).
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
+  assert.deepEqual(s.warnings, ['Für die Wohnung(en) DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
 
 test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, sondern eine Meldung', () => {

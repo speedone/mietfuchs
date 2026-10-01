@@ -81,17 +81,21 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
 }
 
 // Einheiten der Abrechnung mit 0 m² (#135), nach derselben Unterscheidung wie calc.ts
-// (`isGarageLike`): Wer weder Fläche noch Bewohner hat, ist Garage-artig, und die 0 ist eine
-// Angabe (`zero`). Wohnt dort jemand, ist die Fläche vergessen (`missing`), und das Cockpit meldet
-// es gelb wie vor #135. Die Personentage kommen aus der Abrechnung, bei der eigenen Wohnung aus
-// der Personenzahl des eigenen Haushalts.
+// (`isGarageLike`): Garage-artig (`zero`) ist eine Einheit ohne Fläche, die im Jahr ausdrücklich
+// mit 0 Personen genutzt wird, also mindestens ein Mietverhältnis hat und keines mit Personen (bei
+// Eigennutzung ausdrücklich 0 eigene Personen). Dann ist die 0 eine Angabe. Alles andere mit 0 m²,
+// auch Leerstand ohne Mietverhältnis, ist eine vergessene Fläche (`missing`), und das Cockpit
+// meldet es gelb wie vor #135; sonst wanderte der Anteil des Leerstands still zu den Mietern.
+// Die Personentage kommen aus der Abrechnung, ein Eintrag je Mietverhältnis.
 export function zeroAreaUnits(
   units: Unit[],
   statements: { unitId: string, personDays: number }[],
 ): { zero: Unit[], missing: Unit[] } {
   const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
-  const inhabited = (u: Unit) => (usageOf(u) === 'eigen'
-    ? (u.selfPersons ?? 0) > 0
-    : statements.some((st) => st.unitId === u.id && st.personDays > 0))
-  return { zero: withoutArea.filter((u) => !inhabited(u)), missing: withoutArea.filter(inhabited) }
+  const garageLike = (u: Unit) => {
+    if (usageOf(u) === 'eigen') return u.selfPersons === 0
+    const own = statements.filter((st) => st.unitId === u.id)
+    return own.length > 0 && own.every((st) => !(st.personDays > 0))
+  }
+  return { zero: withoutArea.filter(garageLike), missing: withoutArea.filter((u) => !garageLike(u)) }
 }
