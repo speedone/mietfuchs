@@ -51,3 +51,27 @@ export function updateGuide(st: UpdateStatus): UpdateGuide {
   if (st.mode === 'docker') return { kind: 'command', lines: ['docker compose pull', 'docker compose up -d'] }
   return { kind: 'command', lines: ['git pull', 'npm install', 'npm run build'] }
 }
+
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
+
+// Ein Release-Kandidat (`0.9.0-rc.2`) trägt hinter den drei Zahlen einen Bindestrich. Die
+// Reihenfolge nach SemVer kennt der Server (server/src/update.ts); hier geht es nur um den Satz.
+export const isPrerelease = (version: string): boolean => /^\d+\.\d+\.\d+-/.test(version)
+
+// Der Stand in der Karte der Einstellungen. Bei einer Vorabversion wäre „aktuelle Version“
+// falsch (#166): Sie ist noch nicht veröffentlicht, und neben ihr steht die letzte fertige.
+export function statusText(s: UpdateStatus): string {
+  if (!s.enabled) return `Installiert ist Version ${s.current}.`
+  const lastChecked = s.checkedAt ? ` Zuletzt geprüft: ${fmtDateTime(s.checkedAt)}.` : ''
+  if (s.error) {
+    const lastKnown = s.available ? ` Zuletzt bekannt: Version ${s.latest} ist erschienen.` : ''
+    return `Installiert ist Version ${s.current}. Die letzte Prüfung ist fehlgeschlagen: ${s.error}${lastKnown}`
+  }
+  if (s.available) return `Version ${s.latest} ist erschienen, installiert ist ${s.current}.${lastChecked}`
+  if (s.latest && isPrerelease(s.current)) {
+    return `Sie nutzen die Vorabversion ${s.current}. Neueste veröffentlichte Version: ${s.latest}.${lastChecked}`
+  }
+  if (s.latest) return `Du nutzt die aktuelle Version ${s.current}.${lastChecked}`
+  return `Installiert ist Version ${s.current}.`
+}

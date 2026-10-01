@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, UpdateStatus } from '../types'
 import { api } from '../api'
-import { updateGuide, type UpdateGuide } from '../update'
+import { statusText, updateGuide, type UpdateGuide } from '../update'
 import { useToast } from './feedback'
 import FoxLogo from './Logo'
 
@@ -131,9 +131,6 @@ export function UpdateHint({ status, onDismissed, onShowGuide }: HintProps) {
 }
 
 // ---------- Karte in den Einstellungen ----------
-
-const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
 
 type SettingsProps = {
   settings: Settings
@@ -306,16 +303,4 @@ function Commands({ lines, status }: { lines: string[]; status: UpdateStatus }) 
       )}
     </>
   )
-}
-
-function statusText(s: UpdateStatus): string {
-  if (!s.enabled) return `Installiert ist Version ${s.current}.`
-  const lastChecked = s.checkedAt ? ` Zuletzt geprüft: ${fmtDateTime(s.checkedAt)}.` : ''
-  if (s.error) {
-    const lastKnown = s.available ? ` Zuletzt bekannt: Version ${s.latest} ist erschienen.` : ''
-    return `Installiert ist Version ${s.current}. Die letzte Prüfung ist fehlgeschlagen: ${s.error}${lastKnown}`
-  }
-  if (s.available) return `Version ${s.latest} ist erschienen, installiert ist ${s.current}.${lastChecked}`
-  if (s.latest) return `Du nutzt die aktuelle Version ${s.current}.${lastChecked}`
-  return `Installiert ist Version ${s.current}.`
 }
