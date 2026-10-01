@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -61,7 +61,7 @@ describe('Rundlauf mit dem Datenmodell', () => {
 describe('Validierung', () => {
   test('Name und Wohnfläche sind Pflicht', () => {
     expect(buildUnitBody(form({ name: ' ' }))).toHaveProperty('error')
-    expect(buildUnitBody(form({ areaM2: '0' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('error') // 0 m² ist seit #135 erlaubt, leer nicht
     expect(buildUnitBody(form({ areaM2: 'viel' }))).toHaveProperty('error')
   })
 
@@ -114,5 +114,33 @@ describe('Einheit ohne Anschluss (#117)', () => {
     expect(buildUnitBody({ ...base, noConnection: ['kaltwasser'] })).toMatchObject({ body: { noConnection: ['kaltwasser'] } })
     expect(buildUnitBody(base)).toMatchObject({ body: { noConnection: [] } })
     expect(unitToForm({ id: 'g', propertyId: 'objekt-1', name: 'Garage', areaM2: 15, participates: true, noConnection: ['strom'] }).noConnection).toEqual(['strom'])
+  })
+})
+
+describe('Wohnfläche 0 m² für Garage, Stellplatz oder Lager (#135)', () => {
+  test('0 m² ist erlaubt und wird als 0 gespeichert', () => {
+    expect(body(form({ name: 'Garage', areaM2: '0' })).areaM2).toBe(0)
+  })
+
+  test('negative Fläche bleibt verboten', () => {
+    expect(buildUnitBody(form({ areaM2: '-5' }))).toHaveProperty('error')
+  })
+
+  test('eine leere Fläche bleibt verboten, sie ist keine Angabe von 0 m²', () => {
+    expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('error')
+    expect(buildUnitBody(form({ areaM2: 'abc' }))).toHaveProperty('error')
+  })
+})
+
+describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
+  // Ob eine Einheit Garage-artig ist, entscheidet der Server (`garageLikeUnitIds` der Abrechnung,
+  // isGarageLike in calc.ts); das Cockpit übernimmt es, damit es keine zweite Regel gibt.
+  const u = (name: string, areaM2: number, over: Partial<Unit> = {}): Unit => ({ id: name, propertyId: 'p', name, areaM2, participates: true, ...over })
+  const units = [u('EG', 80), u('Garage', 0), u('OG', 0), u('Lager', 0, { participates: false })]
+  test('Garage 0 m² mit Inklusivmiete und 0 Personen: laut Server Garage-artig, also grün', () => {
+    expect(zeroAreaUnits(units, ['Garage'])).toEqual({ zero: [units[1]], missing: [units[2]] })
+  })
+  test('eine vor #135 abgeschlossene Abrechnung kennt die Einstufung nicht: jede 0 m² gilt als fehlend', () => {
+    expect(zeroAreaUnits(units, undefined).missing.map((x) => x.name)).toEqual(['Garage', 'OG'])
   })
 })

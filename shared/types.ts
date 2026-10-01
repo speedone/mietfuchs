@@ -429,7 +429,8 @@ export type NotSettled = {
 // verletzt; `hint`, etwas zum Prüfen ohne sicheren Fehler; `info` ist reine Auskunft.
 export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
 // Wo man den Hinweis behebt. Daraus wird der Knopf „Hier beheben →“.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter'; id: string }
+// `rentLedger` (#133): das Mietkonto eines Mietverhältnisses, `id` ist die Kennung des Mietverhältnisses.
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger'; id: string }
 export type Notice = {
   code: string
   level: NoticeLevel
@@ -466,6 +467,10 @@ export type Settlement = {
   // Mietverhältnisse ohne Abrechnung (#93), mit ihrem Modell. Optional, weil eine vor #93
   // abgeschlossene Abrechnung das Feld nicht kennt.
   notSettled?: NotSettled[]
+  // Einheiten ohne Fläche, die ausdrücklich mit 0 Personen genutzt werden (Garage, Stellplatz,
+  // #135). Der Server entscheidet das (isGarageLike in calc.ts), das Cockpit übernimmt es.
+  // Optional, weil eine vorher abgeschlossene Abrechnung das Feld nicht kennt.
+  garageLikeUnitIds?: string[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
   // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders

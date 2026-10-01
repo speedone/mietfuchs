@@ -23,24 +23,41 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
   return settlement.notices.slice().sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level])
 }
 
+// Färbt die Hinweise das Cockpit gelb? Jeder Hinweis zählt als offener Punkt, auch einer der
+// Stufe `hint`: Die Abnahme hat gerade solche als nützlich bestätigt (etwa eine Summe der
+// Hausgeldabrechnung, die nicht zum Anteil passt). Ausgenommen sind nur die beiden Hinweise auf
+// eine bewusst eingetragene 0 (#135): Die 0 m² oder 0 Personen einer Einheit ohne Fläche und
+// Bewohner (Garage, Stellplatz) sind eine Angabe des Nutzers und kein Versäumnis, und die Ampel
+// „Mietverhältnisse & Flächen“ nennt sie schon. Eine vergessene Fläche oder Personenzahl
+// (`basis.unit-no-area`, `basis.tenancy-no-persons`) zählt dagegen. Eine vor #112 abgeschlossene Abrechnung kennt nur Texte; die
+// zählen wie bisher.
+const DELIBERATE_ZERO = new Set(['basis.unit-zero', 'basis.tenancy-zero'])
+export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
+  return noticesOf(settlement).some((n) => !DELIBERATE_ZERO.has(n.code))
+}
+
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt
 // nichts, und eine eigene Farbe für „reine Auskunft“ wäre eine mehr, die man lernen muss.
 export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
   tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
   meter: { tab: 'zaehler', page: 'Zähler' },
+  rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite, nicht zum einzelnen Eintrag.
 export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string } | null {
   if (!subject) return null
-  const target = TARGETS[subject.kind]
+  // Eine Art, die diese Fassung nicht kennt (eingefrorene oder neuere Abrechnung), ergibt keinen
+  // Knopf statt eines Absturzes.
+  const target: { tab: NoticeTab, page: string } | undefined = Object.hasOwn(TARGETS, subject.kind) ? TARGETS[subject.kind] : undefined
+  if (!target) return null
   return { tab: target.tab, label: `Hier beheben → ${target.page}` }
 }
 

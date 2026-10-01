@@ -18,7 +18,7 @@
         "prepaymentCents": 60000,
         "prepaymentOverridden": false,
         "balanceCents": 493,
-        "suggestedMonthlyCents": 5000,
+        "suggestedMonthlyCents": 0,
         "rows": [
           {
             "costItemId": "c1",
@@ -42,7 +42,7 @@
         "prepaymentCents": 72000,
         "prepaymentOverridden": false,
         "balanceCents": 11507,
-        "suggestedMonthlyCents": 5000,
+        "suggestedMonthlyCents": 10000,
         "rows": [
           {
             "costItemId": "c1",

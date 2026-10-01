@@ -32,3 +32,32 @@ export function notSettledText(n: NotSettled): string {
   if (n.heatingModel !== 'settlement') teile.push(`Heizung ${WORDS[n.heatingModel]}`)
   return `${n.tenantName} (${n.unitName}): ${teile.join(', ')}`
 }
+
+// Personenzahl aus dem Formular (#135): eine ganze Zahl ab 0. Null ist eine Angabe, etwa bei einer
+// vermieteten Garage oder einem Stellplatz, die dann beim Personenschlüssel nicht mitzählen; ein
+// leeres Feld ist dagegen keine, sonst würde aus einer vergessenen Eingabe still eine 0.
+export function parsePersons(text: string): number | null {
+  const t = text.trim()
+  if (!/^\d+$/.test(t)) return null
+  return Number(t)
+}
+
+export const PERSONS_HINT = 'Personen bitte als ganze Zahl ab 0 angeben; 0 für Garage, Stellplatz oder Lager.'
+
+// Die Personen-Staffel aus den Formularzeilen. Eine erste Zeile ohne Datum gilt ab Einzug.
+export function buildPersonHistory(
+  rows: { from: string, persons: string }[],
+  start: string,
+): { error: string } | { personHistory: { from: string, persons: number }[] } {
+  if (rows.length === 0) return { error: 'Mindestens eine Personenzahl angeben.' }
+  const personHistory: { from: string, persons: number }[] = []
+  for (const [i, row] of rows.entries()) {
+    const persons = parsePersons(row.persons)
+    const from = row.from || (i === 0 ? start : '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return { error: 'Bitte Personen-Staffel prüfen: Jede weitere Zeile braucht ein Datum.' }
+    if (persons === null) return { error: `Bitte Personen-Staffel prüfen: ${PERSONS_HINT}` }
+    personHistory.push({ from, persons })
+  }
+  personHistory.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
+  return { personHistory }
+}

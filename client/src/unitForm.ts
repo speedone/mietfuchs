@@ -46,9 +46,11 @@ export type UnitBuildResult = { error: string } | { body: Record<string, unknown
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
 export function buildUnitBody(form: UnitForm): UnitBuildResult {
+  // 0 m² ist erlaubt (#135): Eine Garage, ein Stellplatz oder ein Lager zählt beim
+  // Flächenschlüssel dann nicht mit. Ein leeres Feld ist keine Angabe und bleibt ein Fehler.
   const area = parseNumberDe(form.areaM2) ?? NaN
-  if (!form.name.trim() || !Number.isFinite(area) || area <= 0) {
-    return { error: 'Bitte Name und gültige Wohnfläche angeben.' }
+  if (!form.name.trim() || !Number.isFinite(area) || area < 0) {
+    return { error: 'Bitte Name und gültige Wohnfläche angeben (0 m² für Garage, Stellplatz oder Lager).' }
   }
   const rooms = form.rooms.trim() ? (parseNumberDe(form.rooms) ?? NaN) : null
   if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {
@@ -76,4 +78,16 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
       notes: form.notes.trim() || null,
     },
   }
+}
+
+// Einheiten der Abrechnung mit 0 m² (#135). Ob eine davon Garage-artig ist (ausdrücklich mit
+// 0 Personen genutzt, die 0 also eine Angabe), entscheidet allein der Server (`isGarageLike` in
+// calc.ts) und liefert es als `garageLikeUnitIds` der Abrechnung. Eine zweite Regel hier liefe
+// auseinander; die frühere las die Personen aus `statements` und übersah deshalb die Garage mit
+// Inklusivmiete. Kennt die Abrechnung das Feld nicht (vor #135 abgeschlossen), gilt jede 0 m² als
+// fehlend wie damals.
+export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undefined): { zero: Unit[], missing: Unit[] } {
+  const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+  const garage = new Set(garageLikeUnitIds ?? [])
+  return { zero: withoutArea.filter((u) => garage.has(u.id)), missing: withoutArea.filter((u) => !garage.has(u.id)) }
 }

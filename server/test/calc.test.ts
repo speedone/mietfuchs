@@ -824,6 +824,36 @@ test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () 
   assert.equal(a.suggestedMonthlyCents, 12100)
 })
 
+// #134: Die Kosten fallen künftig für zwölf Monate an. Wer erst im Jahr einzog, hat einen Anteil
+// für weniger Tage; ein Zwölftel davon wäre zu wenig und führte im Folgejahr zur Nachzahlung.
+const teiljahr = (start: string, end: string | null): Db => ({
+  ...emptyDb(),
+  units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
+  tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start, end, personHistory: [{ from: start, persons: 1 }] })],
+  // 2025 hat 365 Tage, ab 01.03. sind es 306; ein Anteil von 730,56 € wie im Issue entsteht aus
+  // 871,42 € × 306/365 (Flächenschlüssel, einzige Wohnung, also Tagesanteil).
+  costItems: [{ id: 'c', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 87142, key: 'area' }],
+})
+
+test('Vorschlag neue Vorauszahlung bei Einzug im Jahr: auf das volle Jahr hochgerechnet', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2025-03-01', null), 2025)), 't')
+  assert.equal(st.totalShareCents, 73056)
+  // 730,56 € × 365/306 / 12 = 72,62 € → 73 €, nicht 61 €
+  assert.equal(st.suggestedMonthlyCents, 7300)
+})
+
+test('Vorschlag neue Vorauszahlung bei Auszug im Jahr: keiner', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2020-01-01', '2025-08-31'), 2025)), 't')
+  assert.ok(st.totalShareCents > 0)
+  assert.equal(st.suggestedMonthlyCents, 0)
+})
+
+test('Vorschlag neue Vorauszahlung bei Auszug zum 31.12.: keiner, es gibt keine künftige Vorauszahlung', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2020-01-01', '2025-12-31'), 2025)), 't')
+  assert.ok(st.totalShareCents > 0)
+  assert.equal(st.suggestedMonthlyCents, 0)
+})
+
 test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', () => {
   const db: Db = {
     ...emptyDb(),
@@ -1159,6 +1189,8 @@ test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im 
   // So rechnet es heute: OG links trägt alles — genau das muss auffallen
   assert.equal(statementOf(s, 't2').totalShareCents, 150000)
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  // Durchsicht zu #135: Wohnt dort jemand, ist 0 m² eine vergessene Fläche und keine Garage.
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
 })
 
 test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt die vermieteten Wohnungen', () => {
@@ -1180,6 +1212,9 @@ test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 0)
+  // Ohne jedes Mietverhältnis ist 0 m² keine Angabe, sonst wanderte der Anteil des Leerstands still
+  // zu den Mietern; eine leere Garage warnt dann eben, das ist der billigere Irrtum (#135).
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-no-area', 'warning']])
   assert.deepEqual(s.warnings, ['Für die Wohnung(en) DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
 })
 
@@ -1199,6 +1234,7 @@ test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 30000)
   assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.tenancy-no-persons', 'warning']])
 })
 
 test('Direktzuordnung auf eine ganzjährig leerstehende Wohnung: regulärer Fall, keine Meldung', () => {
