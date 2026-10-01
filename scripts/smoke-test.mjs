@@ -25,6 +25,9 @@ const opt = (name, fallback) => {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const BASE = opt('url', 'http://127.0.0.1:3001').replace(/\/+$/, '')
 const MODE = opt('mode', 'npm')
+// Erwartet wird die Version aus server/package.json. Bei einem Tag-Lauf steht dort die aus dem
+// Tag, etwa 0.9.0-rc.2: Jeder Prüfjob trägt sie vorher mit scripts/set-version.mjs ein, wie der
+// Bau (#166). Ohne das schlüge jede Prüfung eines Release-Kandidaten fehl.
 const VERSION = opt('version', JSON.parse(fs.readFileSync(path.join(root, 'server', 'package.json'), 'utf8')).version)
 // Adresse, unter der die geprüfte Instanz das nachgebaute Ollama erreicht (bei Docker mit
 // --network host ebenfalls 127.0.0.1)
