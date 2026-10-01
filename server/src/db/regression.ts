@@ -9,7 +9,7 @@
 // ---------- Was verglichen wird und was nicht ----------
 //
 // Verglichen wird alles: jede Zahl, jeder Zustand („bezahlt", „teilweise", „offen"), jeder
-// Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau sechs Angaben**, und jede
+// Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau sieben Angaben**, und jede
 // einzelne ist eine, die das Geraderücken ausdrücklich verändern darf, ohne dass ein Cent
 // wandert (siehe `straightenForDatabase` in legacy/migrate.ts und die Tests in validate.test.ts):
 //
@@ -26,8 +26,13 @@
 //   notices                             Dieselben Meldungen in fester Gestalt (#112), also mit
 //                                       demselben Grund wie `warnings`. Fehlte das Feld hier,
 //                                       bräche der Umstieg an einer Beschriftung ab.
+//   steps                               Der Rechenweg einer Zeile (#114): Texte aus denselben
+//                                       Zahlen und Beschriftungen, die daneben verglichen
+//                                       werden. Ohne die Ausnahme meldete die Regression bei
+//                                       einem abweichenden Cent zuerst diesen Text und nicht
+//                                       die Zahl.
 //
-// Ändert sich sonst nichts und eine dieser sechs Angaben doch, ist das kein Abbruch, steht aber
+// Ändert sich sonst nichts und eine dieser sieben Angaben doch, ist das kein Abbruch, steht aber
 // im Protokoll. Alles andere ist einer.
 
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../calc.ts'
@@ -171,10 +176,10 @@ export function firstDifference(before: unknown, after: unknown, path = ''): Dif
   return { path, before, after }
 }
 
-// Die sechs Angaben von oben. Sie werden vor dem zweiten Vergleich herausgenommen, nicht vor dem
+// Die sieben Angaben von oben. Sie werden vor dem zweiten Vergleich herausgenommen, nicht vor dem
 // ersten: Erst wird alles verglichen, und nur wenn dabei etwas auffällt, wird gefragt, ob es
 // eine von ihnen war.
-const LABEL_FIELDS = new Set(['unitName', 'tenantName', 'description', 'basisText', 'warnings', 'notices'])
+const LABEL_FIELDS = new Set(['unitName', 'tenantName', 'description', 'basisText', 'warnings', 'notices', 'steps'])
 
 function withoutLabels(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutLabels)
@@ -204,7 +209,7 @@ export type RegressionResult = {
   // nicht zu aktivieren, und eine Liste von hundert Folgefehlern hilft niemandem.
   deviation: Deviation | null
   years: number[]
-  // Ob eine der sechs Beschriftungen anders ist. Kein Abbruch, aber es gehört ins Protokoll.
+  // Ob eine der sieben Beschriftungen anders ist. Kein Abbruch, aber es gehört ins Protokoll.
   labelsChanged: boolean
 }
 

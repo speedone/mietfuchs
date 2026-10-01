@@ -9,6 +9,7 @@ import { notSettledText } from '../tenancyModel'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
+import CalcSteps from '../components/CalcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = {
@@ -377,19 +378,24 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <tbody>
                     {groups.map((g) => (
                       <Fragment key={g.category}>
-                        {g.rows.map((r, i) => (
-                          <tr key={i}>
-                            <td>
-                              {r.category}
-                              {r.description !== r.category && <div className="muted">{r.description}</div>}
-                            </td>
-                            <td className="num">{fmtEuro(r.totalCents)}</td>
-                            <td>
-                              {r.keyLabel}
-                              {r.basisText && <div className="muted">{r.basisText}</div>}
-                            </td>
-                            <td className="num">{fmtEuro(r.shareCents)}</td>
-                          </tr>
+                        {g.rows.map((r) => (
+                          <CalcSteps key={r.costItemId} row={r} colSpan={4}>
+                            {(toggle) => (
+                              <tr>
+                                <td>
+                                  {r.category}
+                                  {r.description !== r.category && <div className="muted">{r.description}</div>}
+                                </td>
+                                <td className="num">{fmtEuro(r.totalCents)}</td>
+                                <td>
+                                  {r.keyLabel}
+                                  {r.basisText && <div className="muted">{r.basisText}</div>}
+                                  {toggle}
+                                </td>
+                                <td className="num">{fmtEuro(r.shareCents)}</td>
+                              </tr>
+                            )}
+                          </CalcSteps>
                         ))}
                         {g.rows.length > 1 && (
                           <tr className="subtotal">

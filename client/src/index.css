@@ -689,3 +689,10 @@ td.actions { white-space: nowrap; text-align: right; }
    waagerechtem Scrollbalken. Im Formular darf es schmaler werden als sein Inhalt. */
 .drawer-body .field { min-width: 0; }
 .drawer-body .field select { max-width: 100%; }
+
+/* Rechenweg auf Klick (#114): klein unter der Verteilung, die Schritte als nummerierte Liste */
+.calc-toggle { margin-top: 4px; padding: 2px 8px; font-size: 12px; }
+tr.calc-steps td { background: var(--bg); }
+.calc-steps-list { margin: 4px 0 4px 20px; padding: 0; font-size: 13px; }
+.calc-steps-list li { margin: 2px 0; }
+.calc-step-label { color: var(--muted); }

@@ -278,6 +278,18 @@ der Abschnitt „Unveröffentlicht" wird beim Release zur Version.
   CI-Jobs „Tests und Build (Node 24.15)“ und „(Node 24)“ müssen grün sein. Kein Löschen, kein
   Force-Push. Admins können im Notfall umgehen. Benennt man diese Jobs um, das Ruleset
   mitziehen, sonst wartet jeder PR auf einen Check, den es nicht mehr gibt.
+- **Durchsicht vor jedem PR und vor jedem Merge.** Jeder Zweig bekommt vor dem PR eine
+  Durchsicht mit frischem Kontext; ihre Befunde werden mit einem Test behoben, der vorher rot
+  war, und stehen in der PR-Beschreibung. **Bauen mehrere PRs aufeinander auf, gibt es vor dem
+  Merge zusätzlich eine Integrationsdurchsicht des Endstands** (`main..Spitze`), denn jede
+  Einzeldurchsicht sieht nur ihren Zweig gegen seinen Vorgänger und nie das Zusammenspiel. Sie
+  hat zwei Blickwinkel: Geld (die Features gemeinsam in der Berechnung, Invarianten über alle
+  zugleich) und Daten (Migrationskette auf einer Datenbank der letzten Version, Umstieg,
+  Backup, Routen je Objekt, Doku). Dazu laufen auf der Spitze der Praxislauf
+  (`node scripts/umstieg-praxislauf.mjs`) und der volle Prüfumfang (Label `full-check` an der
+  obersten PR). Befunde werden auf dem Zweig behoben, zu dem sie gehören, und die darüber
+  nachgezogen. Gemergt wird der Reihe nach, jede PR erst nach dem Umstellen auf `main` und
+  grüner CI.
 - Eine Behebung referenziert ihr Issue mit **`Refs #N`** im PR-Text bzw. in der
   Commit-Nachricht. Das erzeugt die Verknüpfung im Issue-Verlauf. **Nicht** `Fixes`/`Closes #N`:
   diese Schlüsselwörter schließen das Issue schon beim Merge nach `main`, also bevor Nutzer den
@@ -703,8 +715,9 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   und der Verbrauch zwischen zwei Ablesungen interpoliert wird; ein unbefristetes
   Mietverhältnis reicht bis ins laufende Jahr, sonst bliebe gerade das Jahr ungeprüft, in dem
   der Vermieter arbeitet. Weicht ein Cent ab, wird nicht aktiviert, und die Meldung nennt Jahr
-  und Zahl. **Ausgenommen sind genau sechs Angaben** (`unitName`, `tenantName`, `description`,
-  `basisText`, `warnings` und `notices`, dieselben Meldungen in fester Gestalt), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
+  und Zahl. **Ausgenommen sind genau sieben Angaben** (`unitName`, `tenantName`, `description`,
+  `basisText`, `warnings`, `notices`, dieselben Meldungen in fester Gestalt, und `steps`, der
+  Rechenweg aus denselben Beschriftungen), jede eine, die das Geraderücken ausdrücklich verändern darf; sie
   stehen benannt in regression.ts. Verglichen wird gegen den Bestand, wie Mietfuchs ihn **heute**
   rechnet, und nicht gegen den schon geradegerückten: Sonst prüfte die Regression das
   Geraderücken gegen sich selbst. Die eine Ausnahme davon ist der feste Monatsbetrag neben einer
@@ -815,6 +828,15 @@ client/tsconfig.json), der Server braucht nur den Typ `TermId`. Jeder Hinweis-Co
 mit `role="button"`: In einem `<label>` wäre ein `<button>` das erste bedienbare Element und
 nähme dem Eingabefeld die Beschriftung. Die Seite „Hilfe & Begriffe“ listet alle. Rechtsaussagen
 nur, wo sie im Gesetz stehen; Beispiele werden nachgerechnet.
+
+**Rechenweg** (#114): Jede Zeile der Mieter trägt `steps` (`CalcStep` in shared/types.ts),
+erzeugt dort, wo die Zeile entsteht, aus denselben Zahlen, als fertiger Text. Der Restcent aus
+`largestRemainder` wird an der Zeile benannt, die ihn bekommt. Die Seite Abrechnung zeigt die
+Schritte aufklappbar ([CalcSteps.tsx](client/src/components/CalcSteps.tsx)), immer `no-print`.
+Eine vorher abgeschlossene Abrechnung hat keine Schritte; dann zeigt `stepsOf`
+([calcSteps.ts](client/src/calcSteps.ts)) nur, was die Zeile selbst hergibt, statt nachzurechnen,
+denn eine neue Rechnung muss nicht zum eingefrorenen Stand passen. Die Regression des Umstiegs
+nimmt `steps` aus wie `basisText`.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
