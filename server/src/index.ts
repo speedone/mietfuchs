@@ -30,9 +30,9 @@ import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
-  closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
-  writeSettings, type CollectionName,
+  TenantChangeError, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -373,6 +373,14 @@ for (const coll of COLLECTIONS) {
     res.json({ ok: true })
   })
 }
+
+// Der Mieterwechsel in einem Schritt (#150): altes Mietverhältnis beenden, Zwischenablesungen,
+// Nachmieter, alles in einer Transaktion. Begründung und Prüfungen in db/repository.ts.
+app.post('/api/tenancies/:id/change', async (req, res) => {
+  const result = await writeData(async (db) => changeTenant(db, await propertyOf(db, req), req.params.id, bodyObject(req), newId))
+  if (!result) return res.status(404).json({ error: 'Dieses Mietverhältnis gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(result)
+})
 
 // ---------- Objekte (#92) ----------
 
@@ -1287,7 +1295,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
     return res.status(400).json({ error: message })
   }
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof TenantChangeError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

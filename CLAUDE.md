@@ -774,7 +774,9 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
 Sie gehen durch [server/src/db/repository.ts](server/src/db/repository.ts); das Kaskadieren beim
 Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten grenzen mit
-`?property=` auf ein Objekt ein (siehe Objekte). Daneben Spezialrouten: `/api/properties`
+`?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
+Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
+nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
 (Objekte anlegen, ändern, nur leere löschen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe

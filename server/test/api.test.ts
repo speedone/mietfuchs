@@ -22,7 +22,7 @@ import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
-  Meter, MeterReadingExtraction, OllamaStatus, Property, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
+  Meter, MeterReadingExtraction, OllamaStatus, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UpdateStatus,
   UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
@@ -4048,4 +4048,146 @@ test('Update: nach dem Wiederherstellen nennt /healthz keine Sicherung, die zu d
   } finally {
     s.stop()
   }
+})
+
+// ---------- Mieterwechsel in einem Schritt (#150) ----------
+//
+// Der Assistent schickte drei Anfragen nacheinander: altes Mietverhältnis beenden,
+// Zwischenablesungen anlegen, neues Mietverhältnis anlegen. Lehnte der Server den dritten Schritt
+// ab, waren die ersten beiden schon gespeichert, und ein zweiter Versuch legte die Ablesungen
+// doppelt an. Jetzt gibt es eine Route, die alles in einer Transaktion schreibt.
+
+type TenantChangeAnswer = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
+
+// Ein Objekt mit einer Wohnung, einem offenen Mietverhältnis, einem Wohnungs- und einem
+// Hauptzähler.
+async function changeStock(s: Server, propertyId = 'objekt-1') {
+  const unit = await s.api<Unit>(`/api/units?property=${propertyId}`, { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+  const tenancy = await s.api<Tenancy>(`/api/tenancies?property=${propertyId}`, { method: 'POST', body: JSON.stringify({
+    unitId: unit.id, tenantName: 'Alt', persons: 2, personHistory: [{ from: '2024-01-01', persons: 2 }], start: '2024-01-01', end: null,
+    prepayments: [{ from: '2024-01', monthlyCents: 12000 }], prepaymentOverrides: {}, baseRents: [],
+  }) })
+  const wasser = await s.api<Meter>(`/api/meters?property=${propertyId}`, { method: 'POST', body: JSON.stringify({ name: 'KW EG', unitId: unit.id, type: 'kaltwasser', unit: 'm³' }) })
+  const haupt = await s.api<Meter>(`/api/meters?property=${propertyId}`, { method: 'POST', body: JSON.stringify({ name: 'Haupt', unitId: null, type: 'kaltwasser', unit: 'm³' }) })
+  return { unit, tenancy, wasser, haupt }
+}
+
+const newTenancyBody = (prepaymentCents: number) => ({
+  tenantName: 'Neu', persons: 3, personHistory: [{ from: '2025-07-01', persons: 3 }], start: '2025-07-01',
+  baseRents: [{ from: '2025-07', monthlyCents: 80000 }], prepayments: [{ from: '2025-07', monthlyCents: prepaymentCents }],
+  prepaymentOverrides: {}, costModel: 'flatRate',
+})
+
+const postChange = (s: Server, tenancyId: string, body: unknown, propertyId = 'objekt-1') =>
+  fetch(`${s.base}/api/tenancies/${tenancyId}/change?property=${propertyId}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })
+
+test('Mieterwechsel (#150): beendet, liest ab und legt den Nachmieter an, alles in einem Schritt', async () => {
+  const s = await startServer()
+  try {
+    const { unit, tenancy, wasser, haupt } = await changeStock(s)
+    const res = await postChange(s, tenancy.id, {
+      end: '2025-06-30', readings: [{ meterId: wasser.id, value: 123.5 }, { meterId: haupt.id, value: 980 }], newTenancy: newTenancyBody(15000),
+    })
+    assert.equal(res.status, 200, await res.clone().text())
+    const answer = await jsonOf<TenantChangeAnswer>(res)
+    assert.equal(answer.ended.end, '2025-06-30')
+    assert.equal(answer.newTenancy?.unitId, unit.id)
+    assert.equal(answer.newTenancy?.end, null)
+    assert.equal(answer.newTenancy?.costModel, 'flatRate')
+    assert.deepEqual(answer.newTenancy?.prepayments, [{ from: '2025-07', monthlyCents: 15000 }])
+    assert.equal(answer.readings.length, 2)
+
+    const tenancies = await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')
+    assert.equal(tenancies.find((t) => t.id === tenancy.id)?.end, '2025-06-30')
+    assert.deepEqual(tenancies.map((t) => t.tenantName), ['Alt', 'Neu'])
+    const readings = await s.api<Reading[]>('/api/readings?property=objekt-1')
+    assert.deepEqual(readings.map((r) => [r.meterId, r.date, r.value]).sort(), [[haupt.id, '2025-06-30', 980], [wasser.id, '2025-06-30', 123.5]].sort())
+    assert.ok(readings.every((r) => /Mieterwechsel Alt/.test(r.note ?? '')), 'die Ablesung trägt keinen Vermerk')
+
+    // Leerstand: ohne neues Mietverhältnis
+    const leer = await postChange(s, answer.newTenancy?.id ?? assert.fail('kein Nachmieter'), { end: '2026-03-31', readings: [], newTenancy: null })
+    assert.equal(leer.status, 200)
+    assert.equal((await jsonOf<TenantChangeAnswer>(leer)).newTenancy, null)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Mieterwechsel (#150): scheitert der dritte Schritt, ist nichts gespeichert, und ein zweiter Versuch legt nichts doppelt an', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy, wasser, haupt } = await changeStock(s)
+    const readings = [{ meterId: wasser.id, value: 123.5 }, { meterId: haupt.id, value: 980 }]
+    const res = await postChange(s, tenancy.id, { end: '2025-06-30', readings, newTenancy: newTenancyBody(-100) })
+    assert.equal(res.status, 400)
+    const fehler = await errorFrom(res)
+    assert.doesNotMatch(fehler, /Failed query|insert into|params:/, 'SQL in der Meldung')
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((t) => t.id === tenancy.id)?.end, null, 'das alte Mietverhältnis wurde trotzdem beendet')
+    assert.deepEqual(await s.api<Reading[]>('/api/readings?property=objekt-1'), [], 'Zwischenablesungen blieben stehen')
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).length, 1)
+
+    // Der zweite Versuch mit richtiger Vorauszahlung: jede Ablesung genau einmal.
+    const zweiter = await postChange(s, tenancy.id, { end: '2025-06-30', readings, newTenancy: newTenancyBody(15000) })
+    assert.equal(zweiter.status, 200, await zweiter.clone().text())
+    assert.equal((await s.api<Reading[]>('/api/readings?property=objekt-1')).length, 2)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).length, 2)
+
+    // Ein doppelt abgeschickter Wechsel trifft ein schon beendetes Mietverhältnis und legt nichts an.
+    const dritter = await postChange(s, tenancy.id, { end: '2025-06-30', readings, newTenancy: newTenancyBody(15000) })
+    assert.equal(dritter.status, 409)
+    assert.match(await errorFrom(dritter), /bereits/)
+    assert.equal((await s.api<Reading[]>('/api/readings?property=objekt-1')).length, 2)
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).length, 2)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Mieterwechsel (#150): unsinnige Angaben werden mit einem Satz abgelehnt, ohne etwas zu speichern', async () => {
+  const s = await startServer()
+  try {
+    const { tenancy, wasser } = await changeStock(s)
+    const faelle: Array<[string, unknown]> = [
+      ['Auszug vor Einzug', { end: '2023-12-31', readings: [], newTenancy: null }],
+      ['kein Datum', { end: 'gestern', readings: [], newTenancy: null }],
+      ['Nachmieter vor dem Auszug', { end: '2025-06-30', readings: [], newTenancy: { ...newTenancyBody(15000), start: '2025-06-30' } }],
+      ['Stand keine Zahl', { end: '2025-06-30', readings: [{ meterId: wasser.id, value: 'viel' }], newTenancy: null }],
+      ['unbekannter Zähler', { end: '2025-06-30', readings: [{ meterId: 'gibt-es-nicht', value: 1 }], newTenancy: null }],
+      ['derselbe Zähler zweimal', { end: '2025-06-30', readings: [{ meterId: wasser.id, value: 1 }, { meterId: wasser.id, value: 2 }], newTenancy: null }],
+    ]
+    for (const [fall, body] of faelle) {
+      const res = await postChange(s, tenancy.id, body)
+      assert.equal(res.status, 400, fall)
+      assert.ok((await errorFrom(res)).length > 10, fall)
+    }
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((t) => t.id === tenancy.id)?.end, null)
+    assert.deepEqual(await s.api<Reading[]>('/api/readings?property=objekt-1'), [])
+    assert.equal((await postChange(s, 'gibt-es-nicht', { end: '2025-06-30', readings: [], newTenancy: null })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Mieterwechsel (#150): über die Grenze eines Objekts wird mit 400 abgelehnt und nichts gespeichert', async () => {
+  await withProperties(async (s, b) => {
+    const a = await changeStock(s, 'objekt-1')
+    const fremd = await changeStock(s, b.id)
+    // Das Mietverhältnis gehört zu Objekt A, die Anfrage nennt B.
+    const falschesObjekt = await postChange(s, a.tenancy.id, { end: '2025-06-30', readings: [], newTenancy: null }, b.id)
+    assert.equal(falschesObjekt.status, 400)
+    // Ein Zähler aus Objekt B.
+    const fremderZaehler = await postChange(s, a.tenancy.id, { end: '2025-06-30', readings: [{ meterId: fremd.wasser.id, value: 1 }], newTenancy: null })
+    assert.equal(fremderZaehler.status, 400)
+    assert.match(await errorFrom(fremderZaehler), /Zähler/)
+    // Der Nachmieter soll in eine Wohnung aus Objekt B.
+    const fremdeWohnung = await postChange(s, a.tenancy.id, { end: '2025-06-30', readings: [], newTenancy: { ...newTenancyBody(15000), unitId: fremd.unit.id } })
+    assert.equal(fremdeWohnung.status, 400)
+
+    assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((t) => t.id === a.tenancy.id)?.end, null)
+    assert.equal((await s.api<Tenancy[]>(`/api/tenancies?property=${b.id}`)).length, 1)
+    assert.deepEqual(await s.api<Reading[]>('/api/readings?property=objekt-1'), [])
+    assert.deepEqual(await s.api<Reading[]>(`/api/readings?property=${b.id}`), [])
+  })
 })
