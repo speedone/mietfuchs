@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, UploadInfo, Property } from '../types'
 import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
-import { api, fmtEuro, fmtDate } from '../api'
+import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderThumbnail } from '../pdfPreview'
-import { buildFolder, duplicateHints, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
+import { buildFolder, coverage, duplicateHints, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -84,6 +84,44 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
     () => [...new Set([...YEAR_OPTIONS, currentYear, ...costItems.map((c) => c.year)])].sort((a, b) => b - a),
     [costItems, currentYear],
   )
+
+  // Belegabdeckung (#170): je Objekt der Auswahl, bei „alle Objekte“ also eine Zeile je Objekt
+  const coverageRows = useMemo(() => {
+    const ids = filter.propertyId === 'all' ? (properties.length > 0 ? properties.map((p) => p.id) : [...new Set(costItems.map((c) => c.propertyId))]) : [filter.propertyId]
+    return ids
+      .map((id) => ({ id, cov: coverage(costItems, { propertyId: properties.length > 1 ? id : 'all', year: filter.year }, present) }))
+      .filter((r) => r.cov.positions > 0)
+  }, [costItems, filter, present, properties])
+
+  // „Nachreichen“: einen Beleg an eine Position hängen, neu hochgeladen oder aus den Belegen, die
+  // an keiner Position hängen. Hochgeladen wird mit Objekt und Jahr der Position, damit der Beleg
+  // dort im Posteingang steht, falls das Verknüpfen danach scheitert.
+  async function attach(c: CostItem, invoiceFile: string) {
+    await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile }) })
+  }
+  async function uploadFor(c: CostItem, f: File) {
+    const fd = new FormData()
+    fd.append('file', f)
+    fd.append('propertyId', c.propertyId)
+    fd.append('year', String(c.year))
+    try {
+      const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
+      await attach(c, res.file)
+      await load()
+      toast(`Beleg an „${c.description}“ angehängt.`)
+    } catch (e) {
+      setError(`Der Beleg wurde nicht angehängt: ${errorText(e)}`)
+    }
+  }
+  async function attachExisting(c: CostItem, file: string) {
+    try {
+      await attach(c, file)
+      await load()
+      toast(`Beleg an „${c.description}“ angehängt.`)
+    } catch (e) {
+      setError(`Der Beleg wurde nicht angehängt: ${errorText(e)}`)
+    }
+  }
 
   async function deleteFile(f: UploadInfo) {
     const ok = await confirm({
@@ -173,6 +211,22 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
         </div>
       </div>
 
+      {coverageRows.length > 0 && (
+        <div className="card receipt-coverage">
+          {coverageRows.map(({ id, cov }) => {
+            const ohne = cov.positions - cov.covered
+            return (
+              <div key={id} className="receipt-coverage-row">
+                <span>Belegabdeckung {filter.year === 'all' ? '' : `${filter.year} `}{coverageRows.length > 1 || showProperty ? `· ${propertyName(id)}` : ''}</span>
+                <span className="progress" aria-hidden="true"><span className="progress-fill" style={{ width: `${cov.percent}%`, display: 'block' }} /></span>
+                <strong>{cov.percent} %</strong>
+                <span className="muted">{ohne === 0 ? 'alle Positionen belegt' : `${ohne} Position${ohne > 1 ? 'en' : ''} ohne Beleg`}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {folder.groups.length === 0 ? (
         <div className="card"><div className="empty">{query.trim() ? 'Nichts gefunden.' : 'Für diese Auswahl sind keine Kosten erfasst.'}</div></div>
       ) : (
@@ -192,8 +246,25 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
                 <ul className="receipt-missing">
                   {g.missing.map((c) => (
                     <li key={c.id}>
-                      <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)}</span>
-                      <span className="muted">ohne Beleg</span>
+                      <span>– {c.description}{showProperty ? ` (${propertyName(c.propertyId)})` : ''} · {fmtEuro(c.amountCents)} <span className="muted">ohne Beleg</span></span>
+                      <span className="receipt-attach">
+                        <label className="btn small">
+                          Beleg nachreichen
+                          <input
+                            type="file"
+                            className="sr-only"
+                            accept="application/pdf,image/*"
+                            aria-label={`Beleg für ${c.description} hochladen`}
+                            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
+                          />
+                        </label>
+                        {folder.unlinked.length > 0 && (
+                          <select aria-label={`Vorhandenen Beleg für ${c.description} zuordnen`} value="" onChange={(e) => { if (e.target.value) void attachExisting(c, e.target.value) }}>
+                            <option value="">oder vorhandenen zuordnen …</option>
+                            {folder.unlinked.map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
+                          </select>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>

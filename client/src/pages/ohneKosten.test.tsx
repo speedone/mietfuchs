@@ -83,3 +83,15 @@ test('Kostenvergleich mit Kosten im Jahr: der Vergleich steht wie bisher', async
   await screen.findByText(/Auffällige Abweichung/, {}, SLOW)
   expect(screen.getAllByText(/\+100\s*%/).length).toBeGreaterThan(0)
 })
+
+test('Cockpit: fehlende Belege ergeben „Belege vollständig“ in Gelb, nie in Rot (#170)', async () => {
+  costItems = [
+    { id: 'k3', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', invoiceFile: '1_gs.pdf' },
+    { id: 'k4', propertyId: 'objekt-1', year: YEAR, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
+  ]
+  wrap(<Cockpit units={UNITS} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  const titel = await screen.findByText('Belege vollständig', {}, SLOW)
+  const zeile = titel.closest('.check-row')
+  expect(zeile?.className).toMatch(/\bgelb\b/)
+  expect(zeile?.textContent).toMatch(/1 von 2 Positionen ohne Beleg · 76 % der Kosten belegt/)
+})
