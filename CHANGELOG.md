@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Hinweise sagen, wie ernst sie sind und wo man sie behebt.** Auf der Seite Abrechnung steht
+  jeder Hinweis jetzt mit Stufe (Fehler, Warnung, Hinweis) und kurzem Titel, und ein Knopf
+  „Hier beheben →“ führt zur Seite, auf der man es ändert. Darunter nennt die Abrechnung ihren
+  Rechtsstand: das Datum, auf dem Mietfuchs' Regeln stehen, und die Regeln, die im Jahr gelten.
+  Beim Abschließen wird er mit eingefroren, eine spätere Rechtsänderung erklärt eine versandte
+  Abrechnung also nicht rückwirkend anders. Der Wortlaut der Hinweise ist unverändert.
+  ([#112](https://github.com/speedone/mietfuchs/issues/112))
 - **Mehrere Objekte in einer Installation.** Neben dem bisherigen Haus lassen sich weitere
   Objekte anlegen: weitere Mehrfamilienhäuser, vermietete Eigentumswohnungen,
   Einfamilienhäuser oder etwa ein Garagenhof. Jedes Objekt hat seine eigenen Wohnungen, Zähler
@@ -45,6 +52,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
   Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.
   ([#92](https://github.com/speedone/mietfuchs/issues/92))
+
+### Behoben
+
+- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
+  jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
+  bis zum 30.06.2024 über die Nebenkosten umgelegt werden; Betriebsstrom und Wartung einer
+  Antennenanlage bleiben umlagefähig. Für das Abrechnungsjahr 2024 und später weisen die
+  Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
+  kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
+  Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.
+  ([#107](https://github.com/speedone/mietfuchs/issues/107))
 
 ## [0.8.0] – 2026-09-22
 

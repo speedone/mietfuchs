@@ -221,7 +221,7 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} />}
         {tab === 'belege' && <Belege />}
         {tab === 'abrechnung' && (
-          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} />
+          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t) => setTab(t)} />
         )}
         {tab === 'steuer' && <Steuer settings={settings} />}
         {tab === 'einstellungen' && settings && (

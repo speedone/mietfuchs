@@ -18,6 +18,7 @@ import { applyMigrations, connect, loadMigrations, type Database } from '../src/
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
+import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
@@ -849,6 +850,25 @@ test('Versanddatum: ohne Angabe abgeschlossen, mit Datum nachgetragen, leer wied
   assert.equal((await closedOf(srv, 2040))?.sentAt, null)
 
   await srv.api('/api/settlement/2040/close', { method: 'DELETE' })
+})
+
+test('Abschließen friert Hinweise und Rechtsstand mit ein (#112)', async () => {
+  // Gespeichert und nicht beim Lesen neu gerechnet: Eine spätere Änderung am Regelverzeichnis
+  // darf eine versandte Abrechnung nicht rückwirkend anders erklären.
+  await srv.api('/api/settlement/2044/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    const gespeichert = (await closedOf(srv, 2044))?.settlement
+    if (!gespeichert || typeof gespeichert !== 'object') return assert.fail('keine eingefrorene Abrechnung')
+    const stand = Reflect.get(gespeichert, 'legalBasis')
+    assert.equal(Reflect.get(stand, 'asOf'), RULES_AS_OF)
+    assert.ok(Array.isArray(Reflect.get(stand, 'rules')))
+    assert.ok(Array.isArray(Reflect.get(gespeichert, 'notices')))
+    const geliefert = await srv.api<{ legalBasis?: { asOf: string }, notices?: unknown[] }>('/api/settlement/2044')
+    assert.equal(geliefert.legalBasis?.asOf, RULES_AS_OF)
+    assert.ok(Array.isArray(geliefert.notices))
+  } finally {
+    await srv.api('/api/settlement/2044/close', { method: 'DELETE' })
+  }
 })
 
 test('Abschließen: ein zweites Mal für dasselbe Jahr wird abgelehnt, und zwar mit einem Satz', async () => {

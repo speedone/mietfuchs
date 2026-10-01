@@ -55,7 +55,7 @@ test('Gemischt: kalt pauschal, Heizung abgerechnet — die Abrechnung enthält n
 test('Inklusivmiete: keine Abrechnung, auch nicht für die Heizung', () => {
   const s = settle({
     units: [unit('a'), unit('eigen', { participates: false, selfUsed: true })],
-    tenancies: [tenancy('t-a', 'a', { costModel: 'inclusive', heatingModel: 'inclusive' })],
+    tenancies: [tenancy('t-a', 'a', { costModel: 'inclusive', heatingModel: 'inclusive', prepayments: [] })],
     costItems: [item({ category: HEIZUNG, description: 'Heizöl', key: 'area' })],
   })
   assert.equal(statementOf(s, 't-a'), undefined)
@@ -67,13 +67,13 @@ test('Inklusivmiete: keine Abrechnung, auch nicht für die Heizung', () => {
 test('Warmmiete außerhalb der Ausnahme: Warnung nach § 2 HeizkostenV, nur wenn es eine Heizposition gibt', () => {
   const ohneHeizung = settle({
     units: [unit('a'), unit('b'), unit('c')],
-    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate' })],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate', prepayments: [] })],
     costItems: [item({})],
   })
   assert.deepEqual(ohneHeizung.warnings, [])
   const mitHeizung = settle({
     units: [unit('a'), unit('b'), unit('c')],
-    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate' })],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'flatRate', prepayments: [] })],
     costItems: [item({ category: HEIZUNG, description: 'Heizung' })],
   })
   assert.equal(mitHeizung.warnings.length, 1)
@@ -154,7 +154,7 @@ test('§ 2 HeizkostenV: gezählt werden alle Wohnungen des Objekts, nicht nur di
   // Drei Wohnungen, eine davon außerhalb der Abrechnungseinheit: kein Zweifamilienhaus.
   const s = settle({
     units: [unit('a'), unit('eigen', { participates: false, selfUsed: true }), unit('gewerbe', { participates: false })],
-    tenancies: [tenancy('t-a', 'a', { heatingModel: 'inclusive' })],
+    tenancies: [tenancy('t-a', 'a', { heatingModel: 'inclusive', prepayments: [] })],
     costItems: [item({ category: HEIZUNG, description: 'Heizung' })],
   })
   assert.equal(s.warnings.length, 1)

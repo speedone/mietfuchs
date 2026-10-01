@@ -569,7 +569,8 @@ test('Geraderücken: ein vereinbarter Anteil ins Leere bewegt keine Zahl, nur di
   const nachher = straightResultsOf(krumm)
   const vorher = resultsOf(krumm)
   assert.deepEqual(straightened(krumm).costItems[4].customShares, { u1: 60 })
-  assert.deepEqual({ ...nachher.settlement, warnings: [] }, { ...vorher.settlement, warnings: [] })
+  // `notices` sind dieselben Meldungen in fester Gestalt (#112) und entfallen aus demselben Grund.
+  assert.deepEqual({ ...nachher.settlement, warnings: [], notices: [] }, { ...vorher.settlement, warnings: [], notices: [] })
   assert.deepEqual(nachher.ledger, vorher.ledger)
   assert.deepEqual(nachher.tax, vorher.tax)
   // Der eine Unterschied, und er ist benannt: Die Warnung über den verfallenen Anteil entfällt,
