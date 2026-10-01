@@ -65,12 +65,12 @@ export const RULES: readonly Rule[] = [
     // https://www.gesetze-im-internet.de/heizkostenv/ (Stand Art. 3 G v. 16.10.2023 I Nr. 280).
     code: 'heating-remote-reading',
     title: 'Fernablesbare Zähler und monatliche Verbrauchsinformation',
-    norm: '§ 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV',
+    norm: '§ 5 Abs. 2, 3 und 5, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV',
     summary:
-      'Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: neu eingebaute seit dem 01.12.2021, alle übrigen ab dem 01.01.2027 (Nachrüstfrist bis 31.12.2026). ' +
+      'Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: die nach dem 01.12.2021 eingebauten sofort, alle übrigen ab dem 01.01.2027 (Nachrüstfrist bis 31.12.2026). ' +
       'Sind fernablesbare Geräte eingebaut, stehen den Mietern monatliche Verbrauchsinformationen zu. ' +
       'Fehlt das eine oder das andere, darf der Mieter seinen Anteil an den Heizkosten um 3 % kürzen. ' +
-      'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist oder einen unangemessenen Aufwand bedeutet.',
+      'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist, einen unangemessenen Aufwand bedeutet oder in sonstiger Weise eine unbillige Härte wäre.',
     validFrom: '2027-01-01',
   },
 ]

@@ -1870,9 +1870,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // (#91); beziffert wird die Kürzung je Mieter, der über die Heizung eine Abrechnung bekommt.
     // Bei Pauschale und Warmmiete gibt es keine Abrechnung, die er kürzen könnte; das meldet
     // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
+    // Mieter, die über diese Heizposition abgerechnet werden. Auch eine Direktzuordnung zählt für
+    // den Hinweis zur Fernablesbarkeit (#110), etwa ein Ergebnis des Messdienstes, das direkt bei
+    // der vermieteten Wohnung eingetragen ist; Kürzungen nach § 12 Abs. 1 Satz 1 rechnet sie nicht.
+    const heatingReceived = item.category === HEATING_CATEGORY
+      ? targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
+      : []
+    if (heatingReceived.length > 0) heatingBilledItem ??= item
     if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
-      const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
-      if (received.length > 0) heatingBilledItem ??= item
+      const received = heatingReceived
       if (heatingByConsumption(item.key)) {
         // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
         // (letzte Durchsicht). Nach Zählern: Die Wohnung nimmt teil und hat einen Zähler des Typs,
@@ -1945,9 +1951,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // einer bezifferten Kürzung. Ein Feld dafür am Zähler gehört zur Heizkostenabrechnung (#97, #99).
   if (heatingBilledItem && ruleCoverage('heating-remote-reading', yFrom, yTo) !== 'none') {
     warn('heating.remote-reading',
-      'Seit dem 01.01.2027 müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 2 und 3 HeizkostenV); ' +
-        'sind sie es, stehen den Mietern monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). ' +
-        'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst; ausgenommen ist nur, wo die Nachrüstung technisch nicht möglich oder unverhältnismäßig ist. ' +
+      'Spätestens seit dem 01.01.2027 müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 3 HeizkostenV); ' +
+        'Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen es schon seit ihrem Einbau sein (§ 5 Abs. 2). Bei fernablesbaren Geräten stehen den Mietern schon seit 2022 monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). ' +
+        'Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). ' +
+        'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst. Ausgenommen sind Einzelfälle, in denen die Nachrüstung technisch nicht möglich ist, unangemessen aufwendig wäre oder sonst eine unbillige Härte bedeutete (§ 5 Abs. 3 Satz 2), sowie die Fälle des § 11 HeizkostenV. ' +
+        'Das gilt nicht für eine Gastherme in der Wohnung mit eigenem Gasvertrag des Mieters. ' +
         'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).',
       itemSubject(heatingBilledItem))
   }
