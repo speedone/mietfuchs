@@ -12,6 +12,7 @@ import {
   externalHint,
   tenanciesForAmounts,
   categoryNotice,
+  selfAmountUnits,
   type ItemForm,
 } from './costForm'
 
@@ -218,7 +219,7 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     expect(ok).toMatchObject({ body: { key: 'amounts', tenancyAmounts: { t1: 30000, t2: 40000 }, externalBasis: null } })
     expect(buildCostItemBody(form({ key: 'amounts', amount: '100,00', tenancyAmounts: { t1: '120,00' } }), UNITS, 2025)).toHaveProperty('error')
     expect(buildCostItemBody(form({ key: 'amounts', amount: '100,00', tenancyAmounts: { t1: 'viel' } }), UNITS, 2025)).toHaveProperty('error')
-    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }))).toMatch(/700,00.*100,00 .*Vermieter/)
+    expect(amountsSumText(form({ key: 'amounts', amount: '800,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS)).toMatch(/700,00.*100,00 .*Vermieter/)
   })
 
   test('eine gespeicherte Position füllt die neuen Felder', () => {
@@ -261,5 +262,33 @@ describe('Kabelfernsehen (#107)', () => {
       expect(categoryNotice('Kabel/Antenne', y)).toMatch(/vor dem 01\.12\.2021/)
       expect(categoryNotice('Kabel/Antenne', y)).not.toMatch(/Wartung einer Antenne/)
     }
+  })
+})
+
+describe('Eigenbeträge (#104)', () => {
+  const EIGEN = [unit('u1', { participates: false, selfUsed: true }), unit('u2')]
+
+  test('der Betrag der eigenen Wohnung wird gespeichert, gelesen und in die Summe gezählt', () => {
+    const f = form({ key: 'amounts', amount: '3.000,00', tenancyAmounts: { t1: '1.240,00' }, selfAmounts: { u1: '1.600,00' } })
+    expect(buildCostItemBody(f, EIGEN, 2025)).toMatchObject({ body: { tenancyAmounts: { t1: 124000 }, selfAmounts: { u1: 160000 } } })
+    expect(amountsSumText(f, EIGEN)).toMatch(/2\.840,00.*160,00/)
+    expect(buildCostItemBody(form({ key: 'amounts', amount: '1.000,00', tenancyAmounts: { t1: '600,00' }, selfAmounts: { u1: '500,00' } }), EIGEN, 2025)).toHaveProperty('error')
+    expect(itemToForm({ id: 'c', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 1, key: 'amounts', selfAmounts: { u1: 160000 } }).selfAmounts).toEqual({ u1: '1.600,00' })
+    expect(buildCostItemBody(form({ key: 'area', amount: '100,00', selfAmounts: { u1: '1,00' } }), EIGEN, 2025)).toMatchObject({ body: { selfAmounts: null } })
+  })
+
+  test('ein Eigenbetrag, dessen Feld nicht mehr erscheint, zählt nicht und wird nicht gespeichert', () => {
+    // Befund der Durchsicht: Wohnung u2 war selbstgenutzt und ist jetzt vermietet. Ihr alter
+    // Betrag stand unsichtbar im Formular, blockierte das Speichern und ließ sich nicht löschen.
+    const f = form({ key: 'amounts', amount: '1.000,00', tenancyAmounts: { t1: '400,00', t2: '600,00' }, selfAmounts: { u2: '600,00' } })
+    const r = buildCostItemBody(f, EIGEN, 2025)
+    expect(r).not.toHaveProperty('error')
+    expect(r).toMatchObject({ body: { selfAmounts: {} } })
+    expect(amountsSumText(f, EIGEN)).not.toMatch(/eigene Wohnung/)
+    // Dasselbe, wenn die eigene Wohnung an der Position nicht teilnimmt.
+    const g = form({ key: 'amounts', amount: '1.000,00', participants: ['u2'], tenancyAmounts: { t1: '1.000,00' }, selfAmounts: { u1: '100,00' } })
+    expect(buildCostItemBody(g, EIGEN, 2025)).toMatchObject({ body: { selfAmounts: {} } })
+    expect(selfAmountUnits(EIGEN, ['u2'])).toEqual([])
+    expect(selfAmountUnits(EIGEN, null).map((u) => u.id)).toEqual(['u1'])
   })
 })

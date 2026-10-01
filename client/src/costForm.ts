@@ -27,6 +27,8 @@ export type ItemForm = {
   externalTotalAmount: string
   // Einzelbeträge je Mietverhältnis (#94): Mietverhältnis-ID → Betrags-Eingabe
   tenancyAmounts: Record<string, string>
+  // Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrags-Eingabe
+  selfAmounts: Record<string, string>
   invoiceFile?: string
 }
 
@@ -45,6 +47,7 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   externalTotal: '',
   externalTotalAmount: '',
   tenancyAmounts: {},
+  selfAmounts: {},
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -67,6 +70,7 @@ export function itemToForm(i: CostItem): ItemForm {
     externalTotal: i.externalBasis ? fmtPct(i.externalBasis.total) : '',
     externalTotalAmount: i.externalBasis ? fmtCentsInput(i.externalBasis.totalCents) : '',
     tenancyAmounts: Object.fromEntries(Object.entries(i.tenancyAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
+    selfAmounts: Object.fromEntries(Object.entries(i.selfAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
     invoiceFile: i.invoiceFile ?? undefined,
   }
 }
@@ -116,12 +120,28 @@ export function externalHint(form: ItemForm, units: Unit[]): string {
   return `Rechnerischer Anteil: ${fmtPct(own)} von ${fmtPct(total)} ${MEASURE_LABELS[form.externalMeasure]} = ${fmtCentsInput(expected)} €`
 }
 
+// Die Wohnungen, für die ein Eigenbetrag (#104) gilt: selbstgenutzt und, wenn die Position auf
+// Teilnehmer beschränkt ist, unter ihnen. Genau für sie zeigt das Formular ein Feld. Ein Betrag für
+// eine andere Wohnung, etwa eine, die inzwischen vermietet ist, stünde sonst unsichtbar im Formular,
+// zählte in die Summe und ließe sich nicht mehr löschen (Befund der Durchsicht).
+export function selfAmountUnits(units: Unit[], participants: string[] | null): Unit[] {
+  return basisUnitsOf(units).filter((u) => usageOf(u) === 'eigen' && (participants === null || participants.includes(u.id)))
+}
+const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, string> => {
+  const ids = new Set(selfAmountUnits(units, form.participants).map((u) => u.id))
+  return Object.fromEntries(Object.entries(form.selfAmounts).filter(([id]) => ids.has(id)))
+}
+
 // Summe der Einzelbeträge und was davon der Vermieter trägt.
-export function amountsSumText(form: ItemForm): string {
+export function amountsSumText(form: ItemForm, units: Unit[]): string {
   const amount = parseEuro(form.amount) ?? 0
-  const sum = Object.values(form.tenancyAmounts).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
+  const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
+  const tenants = sumOf(form.tenancyAmounts)
+  const own = sumOf(visibleSelfAmounts(form, units))
+  const sum = tenants + own
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
-  return `Summe ${fmtCentsInput(sum)} € — ${fmtCentsInput(amount - sum)} € trägt der Vermieter (Leerstand, Eigennutzung)`
+  const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
+  return `Summe ${fmtCentsInput(sum)} €${ownText} — ${fmtCentsInput(amount - sum)} € trägt der Vermieter (Leerstand, Rundung)`
 }
 
 // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
@@ -219,15 +239,22 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
   }
 
   let tenancyAmounts: Record<string, number> | null = null
+  let selfAmounts: Record<string, number> | null = null
   if (form.key === 'amounts') {
-    tenancyAmounts = {}
-    for (const [id, raw] of Object.entries(form.tenancyAmounts)) {
-      if (!raw.trim()) continue
-      const cents = parseEuro(raw)
-      if (cents === null || cents < 0) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }
-      tenancyAmounts[id] = cents
+    const read = (m: Record<string, string>): Record<string, number> | null => {
+      const out: Record<string, number> = {}
+      for (const [id, raw] of Object.entries(m)) {
+        if (!raw.trim()) continue
+        const cents = parseEuro(raw)
+        if (cents === null || cents < 0) return null
+        out[id] = cents
+      }
+      return out
     }
-    const sum = Object.values(tenancyAmounts).reduce((a, c) => a + c, 0)
+    tenancyAmounts = read(form.tenancyAmounts)
+    selfAmounts = read(visibleSelfAmounts(form, units))
+    if (!tenancyAmounts || !selfAmounts) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }
+    const sum = [...Object.values(tenancyAmounts), ...Object.values(selfAmounts)].reduce((a, c) => a + c, 0)
     if (sum > amount) return { error: 'Die Einzelbeträge ergeben zusammen mehr als der Rechnungsbetrag.' }
   }
 
@@ -246,6 +273,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
       participantUnitIds,
       externalBasis,
       tenancyAmounts,
+      selfAmounts,
       invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
     },
   }

@@ -209,6 +209,9 @@ export type CostItem = {
   // Schlüssel „Einzelbeträge je Mietverhältnis“ (#94): Mietverhältnis-ID → Betrag in Cent, etwa
   // aus der Abrechnung eines Messdienstes.
   tenancyAmounts?: Record<string, number> | null
+  // Dazu die Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrag in Cent. Sie sind der
+  // Eigenanteil des Vermieters und in der Steuer privat.
+  selfAmounts?: Record<string, number> | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
 }

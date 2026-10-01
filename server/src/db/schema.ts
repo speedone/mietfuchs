@@ -413,6 +413,26 @@ export const costItemAmounts = sqliteTable(
   ],
 )
 
+// Beträge selbstgenutzter Wohnungen (#104), etwa aus derselben Abrechnung des Messdienstes. Sie
+// sind der Eigenanteil des Vermieters. Eine gelöschte Wohnung nimmt ihren Betrag mit, wie bei den
+// Einzelbeträgen der Mietverhältnisse.
+export const costItemSelfAmounts = sqliteTable(
+  'cost_item_self_amounts',
+  {
+    costItemId: text('cost_item_id')
+      .notNull()
+      .references(() => costItems.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    amountCents: integer('amount_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.costItemId, t.unitId] }),
+    notNegative('cost_item_self_amounts_not_negative', 'amount_cents'),
+  ],
+)
+
 // ---------- Zähler und Ablesungen ----------
 
 export const meters = sqliteTable(

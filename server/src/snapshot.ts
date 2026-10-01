@@ -71,6 +71,7 @@ export type SnapshotCostItem = Pick<
   | 'participantUnitIds'
   | 'externalBasis'
   | 'tenancyAmounts'
+  | 'selfAmounts'
   | 'labor35aCents'
 >
 

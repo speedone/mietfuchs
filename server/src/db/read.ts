@@ -24,7 +24,7 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemShares, costItems, meters, payments,
+  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, meters, payments,
   flatRates, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
@@ -178,10 +178,13 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
   const participants = groupBy(participantRows, (r) => r.costItemId, (r) => r.unitId)
   const amountRows = await db.select().from(costItemAmounts).orderBy(INSERTION_ORDER)
   const amounts = groupBy(amountRows, (r) => r.costItemId, (r): [string, number] => [r.tenancyId, r.amountCents])
+  const selfAmountRows = await db.select().from(costItemSelfAmounts).orderBy(INSERTION_ORDER)
+  const selfAmounts = groupBy(selfAmountRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.amountCents])
   return rows.map((c) => {
     const own = shares.get(c.id)
     const teilnehmer = participants.get(c.id)
     const betraege = amounts.get(c.id)
+    const eigen = selfAmounts.get(c.id)
     return {
       id: c.id,
       propertyId: c.propertyId,
@@ -199,6 +202,7 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
       // Dieselbe Haltung bei den Angaben aus #94: nur, wenn es sie gibt.
       ...(c.participantsLimited ? { participantUnitIds: teilnehmer ?? [] } : {}),
       ...(betraege ? { tenancyAmounts: Object.fromEntries(betraege) } : {}),
+      ...(eigen ? { selfAmounts: Object.fromEntries(eigen) } : {}),
       ...(c.externalMeasure !== null && c.externalTotal !== null && c.externalTotalCents !== null
         ? { externalBasis: { measure: c.externalMeasure, total: c.externalTotal, totalCents: c.externalTotalCents } }
         : {}),

@@ -42,7 +42,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, baseRents, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, baseRents, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, units,
 } from './schema.ts'
@@ -262,6 +262,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const participants = merged(body, 'participantUnitIds', current.participantUnitIds, (v) => (v === null ? null : readParticipants(v)))
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
+  const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -281,6 +282,7 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(participants === undefined ? {} : { participantUnitIds: participants }),
     ...(external === undefined ? {} : { externalBasis: external }),
     ...(amounts === undefined ? {} : { tenancyAmounts: amounts }),
+    ...(selfAmounts === undefined ? {} : { selfAmounts }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
   }
@@ -394,6 +396,7 @@ async function guardCostItem(db: Executor, _before: CostItem | null, after: Cost
     ...Object.keys(after.customShares ?? {}),
     ...(after.participantUnitIds ?? []),
     ...ihreWohnungen,
+    ...Object.keys(after.selfAmounts ?? {}),
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
 }
@@ -414,6 +417,8 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   // anfangs nicht, und die Position verlor den Teilnehmer dann still.
   const teilnahme = await db.select({ n: count() }).from(costItemParticipants).where(eq(costItemParticipants.unitId, after.id))
   if ((teilnahme[0]?.n ?? 0) > 0) haengt.push('Teilnahmen an Kostenpositionen')
+  const eigenbetraege = await db.select({ n: count() }).from(costItemSelfAmounts).where(eq(costItemSelfAmounts.unitId, after.id))
+  if ((eigenbetraege[0]?.n ?? 0) > 0) haengt.push('Eigenbeträge von Kostenpositionen')
   const betraege = await db
     .select({ n: count() })
     .from(costItemAmounts)
@@ -479,6 +484,13 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(tenancies.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of betraege) befunde.push(`Die Kostenposition „${c.description}“ hat einen Einzelbetrag für ein Mietverhältnis eines anderen Objekts.`)
+  const eigen = await db
+    .select({ description: costItems.description })
+    .from(costItemSelfAmounts)
+    .innerJoin(costItems, eq(costItemSelfAmounts.costItemId, costItems.id))
+    .innerJoin(units, eq(costItemSelfAmounts.unitId, units.id))
+    .where(ne(costItems.propertyId, units.propertyId))
+  for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
   return befunde
 }
 
@@ -624,6 +636,11 @@ async function writeCostItemShares(db: Executor, c: CostItem): Promise<void> {
   const betraege = Object.entries(c.tenancyAmounts ?? {})
   if (betraege.length > 0) {
     await db.insert(costItemAmounts).values(betraege.map(([tenancyId, amountCents]) => ({ costItemId: c.id, tenancyId, amountCents })))
+  }
+  await db.delete(costItemSelfAmounts).where(eq(costItemSelfAmounts.costItemId, c.id))
+  const eigen = Object.entries(c.selfAmounts ?? {})
+  if (eigen.length > 0) {
+    await db.insert(costItemSelfAmounts).values(eigen.map(([unitId, amountCents]) => ({ costItemId: c.id, unitId, amountCents })))
   }
 }
 
