@@ -111,3 +111,12 @@ test('Datenbank: 0 m² und 0 Personen werden angenommen', async () => {
     fs.rmSync(dataDir, { recursive: true, force: true })
   }
 })
+
+test('Einstufung Garage-artig: auch mit Inklusivmiete, ohne Flächenposition; nicht bei Leerstand oder Bewohnern', () => {
+  const s = settle({
+    units: [unit('wohnung', 80), unit('garage', 0), unit('leer', 0), unit('og', 0)],
+    tenancies: [tenancy('tw', 'wohnung', 2), { ...tenancy('tg', 'garage', 0), costModel: 'inclusive', heatingModel: 'inclusive' }, tenancy('to', 'og', 1)],
+    costItems: [item('personen', 'persons')],
+  })
+  assert.deepEqual(s.garageLikeUnitIds, ['garage'])
+})

@@ -133,20 +133,14 @@ describe('Wohnfläche 0 m² für Garage, Stellplatz oder Lager (#135)', () => {
 })
 
 describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
+  // Ob eine Einheit Garage-artig ist, entscheidet der Server (`garageLikeUnitIds` der Abrechnung,
+  // isGarageLike in calc.ts); das Cockpit übernimmt es, damit es keine zweite Regel gibt.
   const u = (name: string, areaM2: number, over: Partial<Unit> = {}): Unit => ({ id: name, propertyId: 'p', name, areaM2, participates: true, ...over })
-  const units = [
-    u('EG', 80), u('Garage', 0), u('OG', 0), u('Leer', 0),
-    u('Eigen', 0, { participates: false, selfUsed: true, selfPersons: 2 }),
-    u('Abstell', 0, { participates: false, selfUsed: true, selfPersons: 0 }),
-    u('Lager', 0, { participates: false }),
-  ]
-  // Personentage je Mietverhältnis aus der Abrechnung: in OG wohnt jemand, die Garage ist mit
-  // 0 Personen vermietet, die Wohnung „Leer“ hat kein Mietverhältnis.
-  const statements = [{ unitId: 'EG', personDays: 730 }, { unitId: 'Garage', personDays: 0 }, { unitId: 'OG', personDays: 365 }]
-  test('Garage-artig ist nur, wer ausdrücklich mit 0 Personen genutzt wird und keine Fläche hat', () => {
-    expect(zeroAreaUnits(units, statements).zero.map((x) => x.name)).toEqual(['Garage', 'Abstell'])
+  const units = [u('EG', 80), u('Garage', 0), u('OG', 0), u('Lager', 0, { participates: false })]
+  test('Garage 0 m² mit Inklusivmiete und 0 Personen: laut Server Garage-artig, also grün', () => {
+    expect(zeroAreaUnits(units, ['Garage'])).toEqual({ zero: [units[1]], missing: [units[2]] })
   })
-  test('0 m² bei Bewohnern oder ganz ohne Mietverhältnis ist eine vergessene Fläche', () => {
-    expect(zeroAreaUnits(units, statements).missing.map((x) => x.name)).toEqual(['OG', 'Leer', 'Eigen'])
+  test('eine vor #135 abgeschlossene Abrechnung kennt die Einstufung nicht: jede 0 m² gilt als fehlend', () => {
+    expect(zeroAreaUnits(units, undefined).missing.map((x) => x.name)).toEqual(['Garage', 'OG'])
   })
 })

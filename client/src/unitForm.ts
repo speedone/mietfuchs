@@ -80,22 +80,14 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
   }
 }
 
-// Einheiten der Abrechnung mit 0 m² (#135), nach derselben Unterscheidung wie calc.ts
-// (`isGarageLike`): Garage-artig (`zero`) ist eine Einheit ohne Fläche, die im Jahr ausdrücklich
-// mit 0 Personen genutzt wird, also mindestens ein Mietverhältnis hat und keines mit Personen (bei
-// Eigennutzung ausdrücklich 0 eigene Personen). Dann ist die 0 eine Angabe. Alles andere mit 0 m²,
-// auch Leerstand ohne Mietverhältnis, ist eine vergessene Fläche (`missing`), und das Cockpit
-// meldet es gelb wie vor #135; sonst wanderte der Anteil des Leerstands still zu den Mietern.
-// Die Personentage kommen aus der Abrechnung, ein Eintrag je Mietverhältnis.
-export function zeroAreaUnits(
-  units: Unit[],
-  statements: { unitId: string, personDays: number }[],
-): { zero: Unit[], missing: Unit[] } {
+// Einheiten der Abrechnung mit 0 m² (#135). Ob eine davon Garage-artig ist (ausdrücklich mit
+// 0 Personen genutzt, die 0 also eine Angabe), entscheidet allein der Server (`isGarageLike` in
+// calc.ts) und liefert es als `garageLikeUnitIds` der Abrechnung. Eine zweite Regel hier liefe
+// auseinander; die frühere las die Personen aus `statements` und übersah deshalb die Garage mit
+// Inklusivmiete. Kennt die Abrechnung das Feld nicht (vor #135 abgeschlossen), gilt jede 0 m² als
+// fehlend wie damals.
+export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undefined): { zero: Unit[], missing: Unit[] } {
   const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
-  const garageLike = (u: Unit) => {
-    if (usageOf(u) === 'eigen') return u.selfPersons === 0
-    const own = statements.filter((st) => st.unitId === u.id)
-    return own.length > 0 && own.every((st) => !(st.personDays > 0))
-  }
-  return { zero: withoutArea.filter(garageLike), missing: withoutArea.filter((u) => !garageLike(u)) }
+  const garage = new Set(garageLikeUnitIds ?? [])
+  return { zero: withoutArea.filter((u) => garage.has(u.id)), missing: withoutArea.filter((u) => !garage.has(u.id)) }
 }

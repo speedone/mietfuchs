@@ -98,7 +98,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // beim Flächenschlüssel stillschweigend weg.
     // 0 m² ohne Bewohner ist seit #135 eine Angabe (Garage, Stellplatz, Lager) und wird nur
     // genannt; 0 m² bei einer bewohnten Wohnung ist eine vergessene Fläche.
-    const { zero: zeroArea, missing: noArea } = zeroAreaUnits(units, settlement.statements)
+    const { zero: zeroArea, missing: noArea } = zeroAreaUnits(units, settlement.garageLikeUnitIds)
     // Mietverhältnisse ohne Abrechnung (Pauschale, Inklusivmiete, #93) zählen mit: Es gibt sie,
     // sie werden nur nicht abgerechnet.
     const ohneAbrechnung = settlement.notSettled ?? []

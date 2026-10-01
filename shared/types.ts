@@ -467,6 +467,10 @@ export type Settlement = {
   // Mietverhältnisse ohne Abrechnung (#93), mit ihrem Modell. Optional, weil eine vor #93
   // abgeschlossene Abrechnung das Feld nicht kennt.
   notSettled?: NotSettled[]
+  // Einheiten ohne Fläche, die ausdrücklich mit 0 Personen genutzt werden (Garage, Stellplatz,
+  // #135). Der Server entscheidet das (isGarageLike in calc.ts), das Cockpit übernimmt es.
+  // Optional, weil eine vorher abgeschlossene Abrechnung das Feld nicht kennt.
+  garageLikeUnitIds?: string[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
   // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders

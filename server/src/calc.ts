@@ -867,8 +867,9 @@ type ConsumptionByTypeEntry = {
 // `closed` — das ergänzt erst die Route GET /api/settlement/:year.
 // Frisch gerechnet sind die Felder immer da, die am `Settlement` für alte eingefrorene
 // Abrechnungen optional sind.
-export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'notices' | 'legalBasis'> & {
+export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
   notSettled: NotSettled[]
+  garageLikeUnitIds: string[]
   notices: Notice[]
   legalBasis: LegalBasis
 }
@@ -1648,6 +1649,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     daysInYear: diy,
     statements: [...statements.values()],
     notSettled,
+    // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt
+    // sie aus seinen eigenen Daten nachzubauen (#135). Alle Mietverhältnisse zählen, auch die mit
+    // Inklusivmiete oder Pauschale, die in `statements` fehlen.
+    garageLikeUnitIds: snapshot.units.filter((u) => (u.participates || u.selfUsed) && isGarageLike(u)).map((u) => u.id),
     landlord: {
       rows: landlordRows,
       totalCents: landlordRows.reduce((a, r) => a + r.shareCents, 0),
