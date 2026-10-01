@@ -5,6 +5,7 @@ import { useYear, YEAR_OPTIONS } from '../year'
 import { useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import PageHeader from '../components/PageHeader'
+import Table from '../components/Table'
 import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
 
 type Props = { settings: Settings | null }
@@ -118,7 +119,7 @@ export default function Steuer({ settings }: Props) {
             )}
 
             <h3>Einnahmen</h3>
-            <table>
+            <Table>
               <tbody>
                 <tr>
                   <td>Mieteinnahmen ohne Umlagen (Kaltmiete, vereinbart)</td>
@@ -155,7 +156,7 @@ export default function Steuer({ settings }: Props) {
                   <td className="num">{fmtEuro(incomeCents)}</td>
                 </tr>
               </tfoot>
-            </table>
+            </Table>
 
             {hints.includes('paymentsMissing') && (
               <div className="notice" style={{ marginTop: 10 }}>
@@ -192,7 +193,7 @@ export default function Steuer({ settings }: Props) {
             {data.expenses.groups.length === 0 ? (
               <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
             ) : (
-              <table>
+              <Table>
                 <thead>
                   <tr>
                     <th>Position</th>
@@ -225,11 +226,11 @@ export default function Steuer({ settings }: Props) {
                     <td className="num">{fmtEuro(data.expenses.totalCents)}</td>
                   </tr>
                 </tfoot>
-              </table>
+              </Table>
             )}
 
             <h3 style={{ marginTop: 18 }}>Ergebnis</h3>
-            <table>
+            <Table>
               <tbody>
                 <tr>
                   <td>Einnahmen ({basis === 'soll' ? 'Soll' : 'Ist'})</td>
@@ -246,7 +247,7 @@ export default function Steuer({ settings }: Props) {
                   </td>
                 </tr>
               </tbody>
-            </table>
+            </Table>
 
             {data.expenses.labor35aCents > 0 && (
               <p className="muted" style={{ marginTop: 14 }}>

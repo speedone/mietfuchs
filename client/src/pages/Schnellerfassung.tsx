@@ -9,6 +9,7 @@ import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type Traf
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
+import Table from '../components/Table'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
@@ -480,7 +481,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                     streng genommen nicht dazu.
                   </div>
                 )}
-                <table style={{ marginTop: 8 }}>
+                <Table style={{ marginTop: 8 }}>
                   <thead>
                     <tr>
                       <th><span className="sr-only">Übernehmen</span></th>
@@ -520,7 +521,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                       )
                     })}
                   </tbody>
-                </table>
+                </Table>
                 {/* Begründungen der nicht-grünen Positionen */}
                 {es?.posScores.some((s) => s.level !== 'gruen') && (
                   <div style={{ marginTop: 6 }}>

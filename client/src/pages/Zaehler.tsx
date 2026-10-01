@@ -8,6 +8,7 @@ import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 type Props = { units: Unit[] }
 
@@ -154,7 +155,7 @@ export default function Zaehler({ units }: Props) {
           </div>
         )}
         {meters.length > 0 && (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Zähler</th>
@@ -189,7 +190,7 @@ export default function Zaehler({ units }: Props) {
                 )
               })}
             </tbody>
-          </table>
+          </Table>
         )}
 
         <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setMeterForm({ name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: 'm³' }) }}>
@@ -290,7 +291,7 @@ function FragmentRow(props: {
         <tr>
           <td colSpan={5} style={{ background: 'var(--bg)', borderRadius: 8 }}>
             {readings.length > 0 && (
-              <table style={{ marginBottom: 10 }}>
+              <Table style={{ marginBottom: 10 }}>
                 <thead>
                   <tr>
                     <th>Datum</th>
@@ -314,7 +315,7 @@ function FragmentRow(props: {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </Table>
             )}
             <div className="row">
               <label className="field">

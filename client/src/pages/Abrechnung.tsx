@@ -13,6 +13,7 @@ import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import CalcSteps from '../components/CalcSteps'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 type Props = {
   settings: Settings | null
@@ -398,7 +399,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               {st.rows.length === 0 ? (
                 <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
               ) : (
-                <table style={{ marginTop: 14 }}>
+                <Table style={{ marginTop: 14 }}>
                   <thead>
                     <tr>
                       <th>Kostenart</th>
@@ -491,7 +492,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                       </td>
                     </tr>
                   </tfoot>
-                </table>
+                </Table>
               )}
               {st.rows.length > 0 && (
                 <>
@@ -525,7 +526,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                         Dienstleistungen/Handwerkerleistungen enthalten, die Sie ggf. steuerlich
                         geltend machen können:
                       </p>
-                      <table>
+                      <Table>
                         <tbody>
                           {st.rows.filter((r) => (r.labor35aCents ?? 0) > 0).map((r, i) => (
                             <tr key={i}>
@@ -538,7 +539,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                             <td className="num" style={{ fontWeight: 700 }}>{fmtEuro(st.total35aCents)}</td>
                           </tr>
                         </tbody>
-                      </table>
+                      </Table>
                     </div>
                   )}
                 </>
@@ -575,7 +576,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           {data.landlord.rows.length > 0 && (
             <div className="card no-print">
               <h2>Vermieteranteil (nicht umgelegt)</h2>
-              <table>
+              <Table>
                 <thead>
                   <tr>
                     <th>Kostenart</th>
@@ -606,7 +607,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     </tr>
                   )}
                 </tfoot>
-              </table>
+              </Table>
             </div>
           )}
         </>

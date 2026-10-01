@@ -4,6 +4,7 @@ import { api, fmtEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
+import Table from '../components/Table'
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig.
 // Mieter dürfen Belege einsehen — größere Sprünge sollte man erklären können.
@@ -143,7 +144,7 @@ export default function Uebersicht({ onNavigate }: Props) {
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('kosten') }}>jetzt Belege erfassen</a>.
           </div>
         ) : (
-          <table className="chart-table">
+          <Table className="chart-table">
             <thead>
               <tr>
                 <th>Kostenart</th>
@@ -183,14 +184,14 @@ export default function Uebersicht({ onNavigate }: Props) {
                 <td />
               </tr>
             </tfoot>
-          </table>
+          </Table>
         )}
       </div>
 
       {years.length > 1 && (
         <div className="card">
           <h2>Gesamtkosten im Jahresverlauf</h2>
-          <table className="chart-table">
+          <Table className="chart-table">
             <tbody>
               {years.map(([y, v]) => (
                 <tr key={y}>
@@ -202,7 +203,7 @@ export default function Uebersicht({ onNavigate }: Props) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </div>
       )}
     </>

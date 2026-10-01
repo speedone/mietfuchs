@@ -10,6 +10,7 @@ import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
+import Table from '../components/Table'
 
 type Props = {
   units: Unit[]
@@ -217,7 +218,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
         <h2>Wohnungen</h2>
         {units.length === 0 && <div className="empty">Noch keine Wohnungen angelegt. Lege alle Wohnungen des Hauses an — auch die selbstgenutzte.</div>}
         {units.length > 0 && (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Name</th>
@@ -256,7 +257,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
         <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setUnitForm({ ...EMPTY_UNIT }) }}>+ Wohnung hinzufügen</button>
         {units.length > 0 && participating.length === 0 && (
@@ -274,7 +275,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
         </p>
         {tenancies.length === 0 && <div className="empty">Noch keine Mietverhältnisse angelegt.</div>}
         {tenancies.length > 0 && (
-          <table>
+          <Table>
             <thead>
               <tr>
                 <th>Mieter</th>
@@ -388,7 +389,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
         <button
           className="btn secondary"
