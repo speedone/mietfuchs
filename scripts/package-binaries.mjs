@@ -75,7 +75,7 @@ const archive = (kind, out) => {
       run('tar', ['-czf', `${file}.tar.gz`, '-C', outDir, out])
     }
   } catch (err) {
-    if (err.code !== 'ENOENT') throw err
+    if (/** @type {NodeJS.ErrnoException} */ (err).code !== 'ENOENT') throw err
     console.warn(`   ! ${kind} nicht gefunden — ${out} bleibt unverpackt`)
   }
 }

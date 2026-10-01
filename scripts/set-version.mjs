@@ -27,6 +27,7 @@ import { parseVersion } from '../server/src/update.ts'
 
 const FOLDERS = ['.', 'server', 'client']
 
+/** @returns {never} */
 function fail(message) {
   console.error(`Version aus dem Tag: ${message}`)
   process.exit(1)

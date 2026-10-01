@@ -21,7 +21,7 @@ npm test           # alle Tests: Server (node:test) + Client (vitest)
 npm run test:server # nur Engine- und API-Tests
 npm run test:client # nur Formularlogik- und Komponententests
 npm run build      # baut das Frontend nach client/dist (tsc --noEmit + vite build)
-npm run typecheck  # nur Typprüfung: Server + Client (tsc --noEmit), ohne Build
+npm run typecheck  # nur Typprüfung: Server, Skripte, Client, vite.config.ts (tsc), ohne Build
 npm --prefix server run db:generate # neue Migration aus server/src/db/schema.ts erzeugen
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
@@ -213,8 +213,24 @@ npm --prefix server test -- --test-name-pattern "Flächenschlüssel"
 npm --prefix client test -- costForm
 ```
 
-Es gibt **keinen Linter**; `npm run typecheck` prüft Server und Client per `tsc --noEmit`,
-`npm run build` schließt dieselbe Prüfung für den Client mit ein und baut zusätzlich das Frontend.
+Es gibt **keinen Linter**; `npm run typecheck` prüft per `tsc` vier Teile: Server, Client, die
+Vite-Konfiguration ([client/tsconfig.node.json](client/tsconfig.node.json), mit Node- statt
+DOM-Typen) und die Skripte in `scripts/` ([scripts/tsconfig.json](scripts/tsconfig.json), #64).
+`npm run build` schließt die Prüfung des Clients samt Vite-Konfiguration mit ein und baut
+zusätzlich das Frontend.
+
+**Die Skripte bleiben JavaScript** und werden mit `checkJs` geprüft, mit dem Compiler und den
+Node-Typen des Servers. Eine einzige Einstellung weicht vom Server ab, `noImplicitAny` ist aus:
+Mit ihr verlangte der Übersetzer rund 140 JSDoc-Angaben an Parametern, und gewonnen wäre wenig,
+denn bei Skripten zählen Tippfehler, verschwundene Importe und geänderte Node-Schnittstellen,
+und die findet er auch so. Alles andere muss dem Server gleichen, weil die Skripte aus
+`server/src` importieren und der Übersetzer diese Dateien im selben Lauf mit den Einstellungen
+der Skripte noch einmal prüft (mit `strict: false` meldete er dort Fehler, die es im Server
+nicht gibt). Eine Folge davon: Eine Variable in `server/src`, die mit `null` beginnt, bekommt
+ihren Typ ausdrücklich (`let x: number | null = null`), sonst bleibt sie ohne `noImplicitAny`
+vom Typ `null`, und dieser Lauf wird rot. Wo ein Skript unbekanntes JSON liest, steht ein
+benanntes `/** @type {any} */` statt einer Typbeschreibung der Antwort; was darin steht, prüfen
+die Zusicherungen des Skripts. Ein neues Skript `scripts/*.mjs` ist ohne weiteres Zutun dabei.
 
 **Tests, drei Ebenen** — beim Erweitern der Verteilung oder der Formulare jeweils mitdenken:
 
@@ -1362,7 +1378,8 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   Datei.
 - **`npm run typecheck` ist die einzige Prüfung.** Es gibt keinen Linter, und weil der Server
   ohne Build-Schritt läuft, merkt niemand sonst einen Typfehler. Vor jedem Commit also einmal
-  laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein).
+  laufen lassen (`npm run build` schließt dieselbe Prüfung für den Client ein). Sie umfasst auch
+  `client/vite.config.ts` und `scripts/*.mjs` (siehe Commands).
 - Der Server nutzt bewusst **`NKA_PORT`** statt `PORT` (generische `PORT`-Variablen von
   Preview-Tools kollidieren sonst mit Vite).
 - **Zielbild ist jede gelebte Form privater Vermietung** (#91): mehrere Mehrfamilienhäuser,

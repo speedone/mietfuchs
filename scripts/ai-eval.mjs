@@ -227,6 +227,7 @@ function report(markdown) {
 // Version, Downloadgröße und Speicher im Betrieb laut Ollama; was fehlt, bleibt null
 async function ollamaInfo(ollamaUrl, model) {
   if (!ollamaUrl) return {}
+  /** @returns {Promise<any>} JSON von Ollama, dessen Felder unten einzeln abgefragt werden */
   const get = async (path) => {
     try {
       return await (await fetch(`${ollamaUrl}${path}`)).json()
