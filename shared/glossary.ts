@@ -44,6 +44,15 @@ export const GLOSSARY = {
     norm: '§ 556a Abs. 1 BGB',
     needed: 'Ja, für jede Kostenposition. Ist im Mietvertrag nichts vereinbart, gilt die Wohnfläche; für gemessenen Verbrauch der Verbrauch, für Heizung die Heizkostenverordnung und bei einer Eigentumswohnung der Schlüssel der Gemeinschaft.',
   },
+  // #141: Der Hinweis „Umlageschlüssel anders als im Vorjahr“ verweist hierher. Wortlaut des
+  // § 556a BGB nachgelesen auf gesetze-im-internet.de am 01.10.2026.
+  keyChange: {
+    title: 'Wechsel des Umlageschlüssels',
+    short: 'Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder einseitig durch Ihre Erklärung in Textform, aber nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung.',
+    example: 'Müllabfuhr 900 € bisher nach Personen: Ein Haushalt mit 4 von 6 Personen trug 600 €. Nach Wohnfläche mit 60 von 180 m² wären es 300 €. Ohne Zustimmung bleibt es für dieses Jahr bei den Personen, denn ein Wechsel zur Fläche ist keiner hin zum Verbrauch.',
+    norm: '§ 556a Abs. 2 und Abs. 3 BGB',
+    needed: 'Nur wenn Sie einen Schlüssel anders wählen als im Vorjahr. Bei einer vermieteten Eigentumswohnung gilt, wenn nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; ändert die Gemeinschaft ihn, ändert er sich auch gegenüber dem Mieter.',
+  },
   distributionBasis: {
     title: 'Verteilbasis',
     short: 'Die Gesamtmenge, durch die geteilt wird, etwa die Summe aller Wohnflächen; jede Wohnung trägt ihren Teil davon.',
