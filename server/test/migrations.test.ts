@@ -51,6 +51,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Verteilbasis erweitern (#94).
   '0003_verteilbasis': '6ab375fd88adf1f65f20fc928422b40dcfd7d4fa4cd111013aec412c0eb86428',
   '0004_verteilbasis_bedingungen': '186b5b46f6785fdaf01d406f9c3040fb1ee8374ab00c1e3ab36e1e03f56955a1',
+  // Nebenkostenmodell am Mietverhältnis (#93).
+  '0005_mietmodell': 'efb7a4bcd10936d2c7b81547dc6b165815edd8109b4e35a21985ea1fe0aa6ce4',
+  '0006_mietmodell_bedingungen': 'e3e8edcdd6b7e1353f60285d2c172c632583a0434633569bb7c65471c797cf42',
+  '0007_pauschale': 'a20f80e56b92f2f3f4abf5f5b1a5b300c9ab6d30a8c0abc53bc1070bbd6429b3',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

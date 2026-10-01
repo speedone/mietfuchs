@@ -3,7 +3,7 @@ import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
 import { showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
-  month: m, baseRentCents: sollCents, prepaymentCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
+  month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
 })
 
 // Eine Zeile mit zwölf Monaten, deren Dezember sich vorgeben lässt. Über den Typ gebaut, damit
@@ -11,7 +11,7 @@ const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth
 const row = (dezember: RentMonth): RentLedgerRow => ({
   tenancyId: 't1', tenantName: 'Müller', unitName: 'OG',
   months: [...Array.from({ length: 11 }, (_, i) => month(i + 1, 100000, 'paid')), dezember],
-  sollYearCents: 1200000, baseRentYearCents: 1200000, prepaymentYearCents: 0,
+  sollYearCents: 1200000, baseRentYearCents: 1200000, prepaymentYearCents: 0, flatRateYearCents: 0,
   paidYearCents: 1100000, balanceCents: -100000, openMonths: 1,
 })
 

@@ -244,6 +244,12 @@ export default function Mietkonto() {
                       <td>NK-Vorauszahlung</td>
                       <td className="num">{fmtEuro(r.prepaymentYearCents)}</td>
                     </tr>
+                    {r.flatRateYearCents > 0 && (
+                      <tr>
+                        <td>NK-Pauschale (ohne Abrechnung)</td>
+                        <td className="num">{fmtEuro(r.flatRateYearCents)}</td>
+                      </tr>
+                    )}
                     <tr>
                       <td><strong>Soll {year} (brutto)</strong></td>
                       <td className="num"><strong>{fmtEuro(r.sollYearCents)}</strong></td>

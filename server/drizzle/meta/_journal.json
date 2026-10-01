@@ -36,6 +36,27 @@
       "when": 1790792827436,
       "tag": "0004_verteilbasis_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790793105607,
+      "tag": "0005_mietmodell",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790793114489,
+      "tag": "0006_mietmodell_bedingungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790794262058,
+      "tag": "0007_pauschale",
+      "breakpoints": true
     }
   ]
 }

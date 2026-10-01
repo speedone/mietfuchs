@@ -35,6 +35,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   income: {
     baseRentSollCents: 960000,
     prepaymentSollCents: 240000,
+    flatRateSollCents: 0,
     prepaymentSettlementCents: 240000,
     prepaymentOverridden: false,
     sollCents: 1200000,

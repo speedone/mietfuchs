@@ -5,6 +5,7 @@ import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
+import { notSettledText } from '../tenancyModel'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -264,8 +265,23 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
             </div>
           </div>
 
-          {data.statements.length === 0 && (
+          {data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
             <div className="card"><div className="empty">Keine Mietverhältnisse im Jahr {year} — bitte Stammdaten prüfen.</div></div>
+          )}
+
+          {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
+              sie werden genannt statt still zu fehlen. */}
+          {(data.notSettled ?? []).length > 0 && (
+            <div className="card no-print">
+              <h2>Ohne Abrechnung</h2>
+              <p className="muted">
+                Für diese Mietverhältnisse ist eine Pauschale oder Inklusivmiete vereinbart. Ihr Anteil an den Kosten
+                bleibt beim Vermieter und zählt als Werbungskosten.
+              </p>
+              <ul>
+                {(data.notSettled ?? []).map((n) => <li key={n.tenancyId}>{notSettledText(n)}</li>)}
+              </ul>
+            </div>
           )}
 
           {data.statements.map((st) => {

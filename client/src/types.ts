@@ -51,6 +51,7 @@ export const CATEGORIES = [
   'Hauswart',
   'Aufzug',
   'Kabel/Antenne',
+  'Heizung und Warmwasser',
   'Sonstige Betriebskosten',
   'Nicht umlagefähig',
 ]
@@ -72,6 +73,12 @@ export function matchCategory(raw: string): string {
   if (CATEGORIES.includes(raw)) return raw
   const s = raw.toLowerCase()
   if (/müll|abfall|restabfall|biotonne|wertstoff/.test(s)) return 'Müllabfuhr'
+  // Reparaturen, Instandhaltung und Dämmung zuerst: „Heizungsreparatur“ ist nicht umlagefähig und
+  // darf nicht über „heiz“ zur Heizkostenart werden.
+  if (/instandhalt|reparatur|dämmung|verwaltung|nicht umlage/.test(s)) return 'Nicht umlagefähig'
+  // Vor „Wasser“, sonst fiele „Warmwasser“ unter Wasser/Abwasser (#93). Die Messdienste mit
+  // Wortgrenze, sonst träfe „ista“ auch „Distanz“.
+  if (/heiz|warmwasser|wärme|pellet|\b(techem|ista|brunata|minol)\b/.test(s)) return 'Heizung und Warmwasser'
   if (/niederschlag|regenwasser|oberflächenwasser/.test(s)) return 'Niederschlagswasser'
   if (/wasser|abwasser|kanal/.test(s)) return 'Wasser/Abwasser'
   if (/grundsteuer|grundbesitz/.test(s)) return 'Grundsteuer'
@@ -84,7 +91,6 @@ export function matchCategory(raw: string): string {
   if (/hauswart|hausmeister/.test(s)) return 'Hauswart'
   if (/aufzug|lift/.test(s)) return 'Aufzug'
   if (/kabel|antenne|breitband/.test(s)) return 'Kabel/Antenne'
-  if (/instandhalt|reparatur|verwaltung|nicht umlage/.test(s)) return 'Nicht umlagefähig'
   return 'Sonstige Betriebskosten'
 }
 

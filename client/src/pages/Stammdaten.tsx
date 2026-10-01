@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
+import { COST_MODEL_LABELS, costModelBody, showsFlatRates } from '../tenancyModel'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -25,6 +26,8 @@ type TenancyForm = {
   end: string
   baseRents: { from: string; amount: string }[]
   prepayments: { from: string; amount: string }[]
+  // Pauschale je Monat (#93), eigene Staffel
+  flatRates: { from: string; amount: string }[]
   // erweiterte Stammdaten (optional)
   email: string
   phone: string
@@ -34,12 +37,19 @@ type TenancyForm = {
   deposit: string
   depositStatus: DepositStatus
   notes: string
+  // Nebenkostenmodell (#93)
+  costModel: CostModel
+  heatingModel: CostModel
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
 // Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
-const EMPTY_TENANCY_EXTRA = { email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '' }
+const EMPTY_TENANCY_EXTRA = {
+  email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
+  costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
+  flatRates: [] as { from: string; amount: string }[],
+}
 
 export default function Stammdaten({ units, tenancies, settings, reload }: Props) {
   const toast = useToast()
@@ -125,6 +135,19 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       }
       prepayments.push({ from, monthlyCents: cents })
     }
+    const flatRates: { from: string; monthlyCents: number }[] = []
+    if (showsFlatRates(tenForm.costModel, tenForm.heatingModel)) {
+      for (const row of tenForm.flatRates) {
+        if (!row.from && !row.amount.trim()) continue
+        const cents = parseEuro(row.amount)
+        const from = row.from || tenForm.start.slice(0, 7)
+        if (cents === null || !/^\d{4}-\d{2}$/.test(from)) {
+          setError('Bitte die Staffel der Pauschale prüfen (Monat und Betrag).')
+          return
+        }
+        flatRates.push({ from, monthlyCents: cents })
+      }
+    }
     let depositCents: number | null = null
     if (tenForm.deposit.trim()) {
       depositCents = parseEuro(tenForm.deposit)
@@ -156,6 +179,8 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       depositCents,
       depositStatus: depositCents !== null ? tenForm.depositStatus : null,
       notes: tenForm.notes.trim() || null,
+      ...costModelBody(tenForm.costModel, tenForm.heatingModel),
+      flatRates,
     })
     const editing = !!tenForm.id
     if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
@@ -346,6 +371,12 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                           deposit: t.depositCents != null ? (t.depositCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
                           depositStatus: t.depositStatus ?? 'offen',
                           notes: t.notes ?? '',
+                          costModel: t.costModel ?? 'settlement',
+                          heatingModel: t.heatingModel ?? 'settlement',
+                          flatRates: (t.flatRates ?? []).map((p) => ({
+                            from: p.from,
+                            amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+                          })),
                         })
                       }}
                     >
@@ -450,7 +481,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">Vorauszahlung je Monat — Staffel</div>
+              <div className="field-group-label">NK-Vorauszahlung je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <label className="field">
@@ -470,7 +501,46 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <details className="extra-details" style={{ width: '100%' }}>
-              <summary>Weitere Angaben — Kontakt, Kaution, Vertrag (optional)</summary>
+              <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
+              <div className="row" style={{ marginTop: 10 }}>
+                <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
+                  Nebenkosten
+                  <select value={tenForm.costModel} onChange={(e) => setTenForm({ ...tenForm, costModel: e.target.value as CostModel })}>
+                    {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
+                  </select>
+                </label>
+                <label className="field grow" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
+                  Heizung und Warmwasser
+                  <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: e.target.value as CostModel })}>
+                    {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
+                  </select>
+                </label>
+              </div>
+              {showsFlatRates(tenForm.costModel, tenForm.heatingModel) && (
+                <div className="field-group" style={{ marginTop: 10 }}>
+                  <div className="field-group-label">Pauschale je Monat — Staffel</div>
+                  <div className="muted" style={{ marginBottom: 6 }}>
+                    Die Pauschale steht im Mietkonto, wird aber nie abgerechnet. Eine Vorauszahlung für die
+                    abgerechnete Art gehört in die Staffel „NK-Vorauszahlung“ oben.
+                  </div>
+                  {(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]).map((p, i, alle) => (
+                    <div className="staffel-row" key={i}>
+                      <label className="field">
+                        gültig ab
+                        <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                      </label>
+                      <label className="field">
+                        Betrag €/Monat
+                        <input value={p.amount} placeholder="z. B. 90,00" onChange={(e) => setTenForm({ ...tenForm, flatRates: alle.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                      </label>
+                      {alle.length > 1
+                        ? <button className="icon-btn danger" title="Zeile entfernen" aria-label="Zeile entfernen" onClick={() => setTenForm({ ...tenForm, flatRates: alle.filter((_, k) => k !== i) })}>🗑</button>
+                        : <span />}
+                    </div>
+                  ))}
+                  <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, flatRates: [...(tenForm.flatRates.length > 0 ? tenForm.flatRates : [{ from: '', amount: '' }]), { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
+                </div>
+              )}
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="field grow">
                   E-Mail

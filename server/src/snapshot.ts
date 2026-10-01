@@ -40,6 +40,9 @@ export type SnapshotTenancy = Pick<
   | 'prepayments'
   | 'prepaymentOverrides'
   | 'baseRents'
+  | 'costModel'
+  | 'heatingModel'
+  | 'flatRates'
 > & {
   // Das Altformat der Vorauszahlung: ein fester Monatsbetrag statt einer Staffel. Im
   // Datenmodell gibt es das Feld nicht mehr, `load()` in store.ts wandelt es bei jedem
