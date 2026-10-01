@@ -162,7 +162,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
         </div>
         {meters.length === 0 && (
           <div className="empty">
-            Noch keine Zähler angelegt. Lege z. B. den Hauptwasserzähler an, um die Jahresstände zu
+            Noch keine Zähler angelegt. Legen Sie z. B. den Hauptwasserzähler an, um die Jahresstände zu
             dokumentieren — oder Wohnungszähler, um nach Verbrauch abzurechnen.
           </div>
         )}

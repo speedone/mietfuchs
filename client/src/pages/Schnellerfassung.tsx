@@ -440,8 +440,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     <>
       <h1>📥 Schnellerfassung</h1>
       <p className="sub">
-        Wirf alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
-        prüft es und sortiert nach Ampel. Grün übernimmst du mit einem Klick.{' '}
+        Werfen Sie alles rein — Rechnungen <em>und</em> Zählerfotos. Das Tool erkennt automatisch, was es ist,
+        prüft es und sortiert nach Ampel. Grün übernehmen Sie mit einem Klick.{' '}
         {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
       </p>
       {error && <div className="error">{error}</div>}
