@@ -209,6 +209,14 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .notice { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 16px; }
 .error { background: var(--red-soft); color: var(--red); border: 1px solid var(--error-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
 .ok { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+.hint { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }
+/* Hinweise der Abrechnung (#112): Stufe und Titel über dem Text, der Knopf darunter */
+.notice-item .notice-head { margin-bottom: 4px; }
+.notice-item .notice-level { text-transform: uppercase; font-size: 11px; letter-spacing: 0.04em; opacity: 0.85; }
+.notice-item .notice-action { margin-top: 8px; padding: 4px 10px; font-size: 12.5px; }
+.legal-basis { font-size: 12.5px; color: var(--muted); margin: 4px 0 16px; }
+.legal-basis summary { cursor: pointer; }
+.legal-basis ul { margin: 6px 0 0 18px; padding: 0; }
 
 /* ---------- Schnellerfassung: Ampel-Triage ---------- */
 .warn { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--notice-border); border-radius: 8px; padding: 10px 14px; font-size: 13.5px; margin: 10px 0; }

@@ -9,7 +9,7 @@
 // ---------- Was verglichen wird und was nicht ----------
 //
 // Verglichen wird alles: jede Zahl, jeder Zustand („bezahlt", „teilweise", „offen"), jeder
-// Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau fünf Angaben**, und jede
+// Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau sechs Angaben**, und jede
 // einzelne ist eine, die das Geraderücken ausdrücklich verändern darf, ohne dass ein Cent
 // wandert (siehe `straightenForDatabase` in legacy/migrate.ts und die Tests in validate.test.ts):
 //
@@ -23,8 +23,11 @@
 //   warnings                            Der vereinbarte Anteil einer gelöschten Wohnung entfällt
 //                                       beim Übernehmen, und mit ihm die Warnung darüber.
 //                                       Verteilt wurde er ohnehin nie.
+//   notices                             Dieselben Meldungen in fester Gestalt (#112), also mit
+//                                       demselben Grund wie `warnings`. Fehlte das Feld hier,
+//                                       bräche der Umstieg an einer Beschriftung ab.
 //
-// Ändert sich sonst nichts und eine dieser fünf Angaben doch, ist das kein Abbruch, steht aber
+// Ändert sich sonst nichts und eine dieser sechs Angaben doch, ist das kein Abbruch, steht aber
 // im Protokoll. Alles andere ist einer.
 
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from '../calc.ts'
@@ -168,10 +171,10 @@ export function firstDifference(before: unknown, after: unknown, path = ''): Dif
   return { path, before, after }
 }
 
-// Die fünf Angaben von oben. Sie werden vor dem zweiten Vergleich herausgenommen, nicht vor dem
+// Die sechs Angaben von oben. Sie werden vor dem zweiten Vergleich herausgenommen, nicht vor dem
 // ersten: Erst wird alles verglichen, und nur wenn dabei etwas auffällt, wird gefragt, ob es
 // eine von ihnen war.
-const LABEL_FIELDS = new Set(['unitName', 'tenantName', 'description', 'basisText', 'warnings'])
+const LABEL_FIELDS = new Set(['unitName', 'tenantName', 'description', 'basisText', 'warnings', 'notices'])
 
 function withoutLabels(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(withoutLabels)
@@ -201,7 +204,7 @@ export type RegressionResult = {
   // nicht zu aktivieren, und eine Liste von hundert Folgefehlern hilft niemandem.
   deviation: Deviation | null
   years: number[]
-  // Ob eine der fünf Beschriftungen anders ist. Kein Abbruch, aber es gehört ins Protokoll.
+  // Ob eine der sechs Beschriftungen anders ist. Kein Abbruch, aber es gehört ins Protokoll.
   labelsChanged: boolean
 }
 

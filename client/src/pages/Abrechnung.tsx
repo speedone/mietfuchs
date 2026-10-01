@@ -6,12 +6,20 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
+import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
-type Props = { settings: Settings | null; units: Unit[]; tenancies: Tenancy[]; reload: () => Promise<void> }
+type Props = {
+  settings: Settings | null
+  units: Unit[]
+  tenancies: Tenancy[]
+  reload: () => Promise<void>
+  // Für „Hier beheben →“ an einem Hinweis (#112)
+  onNavigate?: (tab: NoticeTab) => void
+}
 
-export default function Abrechnung({ settings, tenancies, reload }: Props) {
+export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
   const { year, setYear } = useYear()
   const { property } = useProperty()
   const propertyId = property?.id
@@ -244,9 +252,35 @@ export default function Abrechnung({ settings, tenancies, reload }: Props) {
           </div>
         )
       )}
-      {data?.warnings.map((w, i) => (
-        <div key={i} className="notice no-print">{w}</div>
-      ))}
+      {data && noticesOf(data).map((n, i) => {
+        const target = noticeTarget(n.subject)
+        return (
+          <div key={i} className={`${noticeClass(n.level)} no-print notice-item`}>
+            {n.title && (
+              <div className="notice-head">
+                <span className="notice-level">{NOTICE_LEVEL_LABELS[n.level]}</span> <strong>{n.title}</strong>
+              </div>
+            )}
+            <div>{n.text}</div>
+            {target && onNavigate && (
+              <button type="button" className="btn secondary notice-action" onClick={() => onNavigate(target.tab)}>{target.label}</button>
+            )}
+          </div>
+        )
+      })}
+      {data && (() => {
+        const basis = legalBasisLines(data.legalBasis)
+        return (
+          <details className="legal-basis no-print">
+            <summary>{basis.head}</summary>
+            {basis.rules.length > 0 ? (
+              <ul>{basis.rules.map((r) => <li key={r}>{r}</li>)}</ul>
+            ) : (
+              data.legalBasis && <p>Für dieses Jahr wendet Mietfuchs keine besondere Rechtsregel an.</p>
+            )}
+          </details>
+        )
+      })()}
 
       {data && (
         <>

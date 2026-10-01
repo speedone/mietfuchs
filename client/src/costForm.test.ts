@@ -11,6 +11,7 @@ import {
   amountsSumText,
   externalHint,
   tenanciesForAmounts,
+  categoryNotice,
   type ItemForm,
 } from './costForm'
 
@@ -245,5 +246,14 @@ describe('Heizkostenart (#93)', () => {
     expect(matchCategory('Wärmedämmung Fassade')).toBe('Nicht umlagefähig')
     expect(matchCategory('Distanzzuschlag')).toBe('Sonstige Betriebskosten')
     expect(matchCategory('ista Energieabrechnung')).toBe('Heizung und Warmwasser')
+  })
+})
+
+describe('Kabelfernsehen (#107)', () => {
+  test('ab dem Abrechnungsjahr 2024 steht am Formular ein Hinweis, vorher nicht', () => {
+    expect(categoryNotice('Kabel/Antenne', 2023)).toBe('')
+    expect(categoryNotice('Kabel/Antenne', 2024)).toMatch(/30\.06\.2024/)
+    expect(categoryNotice('Kabel/Antenne', 2025)).toMatch(/nicht mehr umlagefähig/)
+    expect(categoryNotice('Grundsteuer', 2025)).toBe('')
   })
 })

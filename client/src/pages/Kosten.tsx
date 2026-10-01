@@ -14,6 +14,7 @@ import {
   tenanciesForAmounts,
   EXTERNAL_MEASURE_OPTIONS,
   PARTICIPANT_KEYS,
+  categoryNotice,
   type ItemForm,
 } from '../costForm'
 import { api, fmtEuro, parseEuro } from '../api'
@@ -501,6 +502,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           }
         >
           {error && <div className="error">{error}</div>}
+          {categoryNotice(form.category, year) && <div className="notice">{categoryNotice(form.category, year)}</div>}
           <div className="row">
             <label className="field grow">
               Kostenart

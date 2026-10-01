@@ -398,6 +398,30 @@ export type NotSettled = {
   heatingModel: CostModel
 }
 
+// Ein Hinweis der Berechnung (#112), in fester Gestalt statt als loser Satz. Die Stufe ist
+// fachlich bestimmt: `error` heißt, die Angaben widersprechen sich und eine Position wird gar
+// nicht verteilt; `warning`, Geld landet anders als vermutlich gewollt oder eine Rechtsregel ist
+// verletzt; `hint`, etwas zum Prüfen ohne sicheren Fehler; `info` ist reine Auskunft.
+export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
+// Wo man den Hinweis behebt. Daraus wird der Knopf „Hier beheben →“.
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter'; id: string }
+export type Notice = {
+  code: string
+  level: NoticeLevel
+  title: string
+  text: string
+  subject?: NoticeSubject
+  // Code im Regelverzeichnis, wenn der Hinweis auf einer Rechtsregel beruht
+  rule?: string
+}
+// Eine Regel, wie sie in einer Abrechnung als Rechtsstand steht: ohne Kurzfassung, denn die
+// gehört zur Erklärung und nicht zum Archivstück.
+export type AppliedRule = { code: string; title: string; norm: string; validFrom?: string; validTo?: string }
+// Datum des Regelverzeichnisses und die Regeln, die im Abrechnungsjahr gelten. Wird mit der
+// Abrechnung eingefroren, damit eine spätere Rechtsänderung eine versandte Abrechnung nicht
+// rückwirkend anders erklärt.
+export type LegalBasis = { asOf: string; rules: AppliedRule[] }
+
 export type Settlement = {
   year: number
   daysInYear: number
@@ -406,7 +430,11 @@ export type Settlement = {
   // im Vermieteranteil enthaltener Eigenanteil selbstgenutzter Wohnungen
   selfUsedShareCents: number
   totalCostsCents: number
+  // die Texte der Hinweise, für ältere Tabs und für Abrechnungen, die vor #112 abgeschlossen wurden
   warnings: string[]
+  // Optional, weil eine vor #112 abgeschlossene Abrechnung beide Felder nicht kennt.
+  notices?: Notice[]
+  legalBasis?: LegalBasis
   // Mietverhältnisse ohne Abrechnung (#93), mit ihrem Modell. Optional, weil eine vor #93
   // abgeschlossene Abrechnung das Feld nicht kennt.
   notSettled?: NotSettled[]
