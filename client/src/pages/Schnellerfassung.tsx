@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
@@ -204,7 +204,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               key: defaultKeyFor(category),
               matchedByDesc,
               // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-              checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
+              checked: !isNotAllocable(category) && positionProblem({ amount, labor35a }) === null,
             }
           })
           patchEntry(next.id, {

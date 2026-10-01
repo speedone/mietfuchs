@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
-import { usageOf } from '../types'
+import { isNotAllocable, usageOf } from '../types'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
@@ -151,7 +151,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // denen die Anteile fehlen; wie in der Berechnung nur die Teilnehmer (Durchsicht zu #105).
     const meaIds = new Set(
       yearItems
-        .filter((c) => c.key === 'external' && c.externalBasis?.measure === 'mea' && c.category !== 'Nicht umlagefähig')
+        .filter((c) => c.key === 'external' && c.externalBasis?.measure === 'mea' && !isNotAllocable(c.category))
         .flatMap((c) => c.participantUnitIds ?? units.filter((u) => usageOf(u) !== 'ausgenommen').map((u) => u.id)),
     )
     const meaMissing = units.filter((u) => meaIds.has(u.id) && usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))

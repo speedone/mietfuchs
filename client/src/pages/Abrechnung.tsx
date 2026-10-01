@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import { isNotAllocable } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
@@ -605,7 +606,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <tr key={i}>
                       <td>{r.category}<div className="muted">{r.description}</div></td>
                       <td className="num">{fmtEuro(r.totalCents)}</td>
-                      <td className="muted">{r.category === 'Nicht umlagefähig' ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
+                      <td className="muted">{isNotAllocable(r.category) ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
                       <td className="num">{fmtEuro(r.shareCents)}</td>
                     </tr>
                   ))}

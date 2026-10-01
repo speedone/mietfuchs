@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settings, Tenancy, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory, usageOf } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -239,7 +239,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             amount,
             labor35a,
             key: defaultKeyFor(category),
-            checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
+            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a }) === null,
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
@@ -470,7 +470,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                 <tr key={i.id}>
                   <td>
                     {i.category}
-                    {i.category === 'Nicht umlagefähig' && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
+                    {isNotAllocable(i.category) && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
                   </td>
                   <td>
                     {i.description}

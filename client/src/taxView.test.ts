@@ -19,6 +19,8 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
     ...income,
   },
   expenses: { groups: [], totalCents: 0, labor35aCents: 0 },
+  reserveContributionCents: 0,
+  reserveSuspects: [],
   totalAreaM2: 100,
   selfUsedAreaM2: 0,
   selfOccupiedExists: false,
@@ -140,5 +142,24 @@ describe('Anlage V, Zeilen 24 und 20 (#96)', () => {
     expect(taxHints(cm({ partlyInclusive: 2 }), 'ist')).not.toContain('inclusiveLine24')
     expect(taxHints(cm({ flatRate: 1 }), 'soll')).toContain('flatRateLine20')
     expect(taxHints(cm({}), 'ist')).not.toContain('inclusiveLine24Mixed')
+  })
+})
+
+describe('Erhaltungsrücklage (#143)', () => {
+  it('weist die Zuführung aus, sobald es eine gibt', () => {
+    expect(taxHints(report({}), 'ist')).not.toContain('reserveContribution')
+    expect(taxHints(report({}, { reserveContributionCents: 90000 }), 'ist')).toContain('reserveContribution')
+    expect(taxHints(report({}, { reserveContributionCents: 90000 }), 'soll')).toContain('reserveContribution')
+  })
+  it('meldet eine Position, die nach Rücklage aussieht', () => {
+    const r = report({}, { reserveSuspects: [{ costItemId: 'v', description: 'Rücklage', amountCents: 90000 }] })
+    expect(taxHints(r, 'ist')).toContain('reserveSuspected')
+    expect(taxHints(report({}), 'ist')).not.toContain('reserveSuspected')
+  })
+  it('nennt den Abfluss des Hausgelds nur bei einer Eigentumswohnung', () => {
+    expect(taxHints(report({}), 'ist', 'etw')).toContain('etwHousingMoney')
+    expect(taxHints(report({}), 'soll', 'etw')).toContain('etwHousingMoney')
+    expect(taxHints(report({}), 'ist', 'mfh')).not.toContain('etwHousingMoney')
+    expect(taxHints(report({}), 'ist')).not.toContain('etwHousingMoney')
   })
 })

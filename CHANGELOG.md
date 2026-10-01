@@ -136,6 +136,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))
+- **Zuführung zur Erhaltungsrücklage zählte als Werbungskosten.** Bei einer vermieteten
+  Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
+  Erhaltungsmaßnahmen ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Dafür gibt es jetzt die
+  Kostenart „Zuführung Erhaltungsrücklage“: nicht umlagefähig wie bisher, in der Steuerübersicht
+  aber neben den Werbungskosten ausgewiesen. Heißt eine Position „Nicht umlagefähig“ nach einer
+  Rücklage, weist die Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem,
+  dass abgeflossen das gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht
+  umlagefähig“ und zur Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff
+  „Erhaltungsrücklage“. Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.
+  ([#143](https://github.com/speedone/mietfuchs/issues/143))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
   Breite Tabellen scrollen jetzt innerhalb ihrer Karte, das Monatsraster im Mietkonto zeigt vier

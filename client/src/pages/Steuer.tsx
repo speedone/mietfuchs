@@ -45,7 +45,7 @@ export default function Steuer({ settings }: Props) {
   const sharePct = data && data.totalAreaM2 > 0
     ? Math.round((data.selfUsedAreaM2 / data.totalAreaM2) * 1000) / 10
     : null
-  const hints = data ? taxHints(data, basis) : []
+  const hints = data ? taxHints(data, basis, property?.kind) : []
   const note = data ? prepaymentNote(data) : null
 
   return (
@@ -229,6 +229,27 @@ export default function Steuer({ settings }: Props) {
               </Table>
             )}
 
+            {/* #143: Die Zuführung zur Erhaltungsrücklage steht neben den Werbungskosten. Auch im
+                Druck, damit der Betrag beim Steuerberater nicht als vergessen gilt. */}
+            {hints.includes('reserveContribution') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                <strong>Zuführung zur Erhaltungsrücklage: {fmtEuro(data.reserveContributionCents)}</strong>, nicht in den
+                Werbungskosten enthalten. Sie ist erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
+                Erhaltungsmaßnahmen ausgibt; erst dann steht fest, ob es Erhaltungsaufwand oder Herstellungskosten sind
+                (BFH, Urteil vom 14.01.2025, IX R 19/24). Die Ausgaben aus der Rücklage nennt die Hausgeldabrechnung des
+                Jahres, in dem die Gemeinschaft sie bezahlt.
+              </div>
+            )}
+            {hints.includes('reserveSuspected') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                {data.reserveSuspects.map((r) => `„${r.description}“ (${fmtEuro(r.amountCents)})`).join(', ')}{' '}
+                {data.reserveSuspects.length === 1 ? 'sieht' : 'sehen'} nach einer Zuführung zur Erhaltungsrücklage aus und
+                {data.reserveSuspects.length === 1 ? ' steht' : ' stehen'} oben in den Werbungskosten. Ist es die Zuführung,
+                stellen Sie unter <em>Kosten</em> die Kostenart „Zuführung Erhaltungsrücklage“ ein: Abziehbar ist sie erst,
+                wenn die Gemeinschaft das Geld ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24).
+              </div>
+            )}
+
             <h3 style={{ marginTop: 18 }}>Ergebnis</h3>
             <Table>
               <tbody>
@@ -285,6 +306,15 @@ export default function Steuer({ settings }: Props) {
             {hints.includes('flatRateLine20') && (
               <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
                 <strong>Zeile 20 der Anlage V.</strong> Eine Betriebskostenpauschale ist eine Einnahme wie die Miete. Nach dem Wortlaut gehört sie zu den laufend vereinnahmten Umlagen in Zeile 20; ausdrücklich nennt die Anleitung die Pauschale nicht.
+              </p>
+            )}
+            {hints.includes('etwHousingMoney') && (
+              <p className="muted" style={{ marginTop: 14, fontSize: 12 }}>
+                <strong>Eigentumswohnung: abgeflossen ist das gezahlte Hausgeld.</strong> Werbungskosten sind im Jahr
+                der Zahlung anzusetzen (§ 11 Abs. 2 EStG). Das sind die Hausgeld-Vorschüsse dieses Jahres und eine
+                Nachzahlung aus der Abrechnung des Vorjahres, nicht die Beträge der Hausgeldabrechnung dieses Jahres.
+                Mietfuchs setzt die Kosten mit dem Jahr der Kostenposition an; gleichen Sie die Zahlen deshalb mit Ihren
+                Kontoauszügen ab.
               </p>
             )}
             {hints.includes('turnOfYear') && (

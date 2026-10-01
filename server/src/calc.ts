@@ -542,7 +542,8 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
 // Gruppen statt fester Zeilennummern (die sich jährlich ändern können). Unbekannte Kategorien
 // fallen auf „Sonstige Werbungskosten".
 // Ausgeführt für categories.test.ts, das die drei Listen der Kostenarten zusammenhält.
-export const ANLAGE_V_GROUP: Record<string, string> = {
+// `null` heißt: keine Werbungskosten dieses Jahres, sondern gesondert ausgewiesen (#143).
+export const ANLAGE_V_GROUP: Record<string, string | null> = {
   Grundsteuer: 'Grundsteuer & öffentliche Abgaben',
   'Wasser/Abwasser': 'Laufende Betriebskosten',
   Niederschlagswasser: 'Laufende Betriebskosten',
@@ -560,6 +561,9 @@ export const ANLAGE_V_GROUP: Record<string, string> = {
   'Sach- und Haftpflichtversicherung': 'Versicherungen',
   'Sonstige Betriebskosten': 'Sonstige Werbungskosten',
   'Nicht umlagefähig': 'Verwaltung & Instandhaltung',
+  // #143: Die Zuführung zur Erhaltungsrücklage ist erst Werbungskosten, wenn und soweit die
+  // Gemeinschaft sie für Erhaltungsmaßnahmen verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
+  'Zuführung Erhaltungsrücklage': null,
 }
 // Anzeigereihenfolge der Gruppen in der Auswertung
 const ANLAGE_V_GROUP_ORDER = [
@@ -670,8 +674,15 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
   const items = snapshot.costItems.filter((c) => c.year === year)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
+  // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
+  // Bewusst nach `Object.hasOwn` gefragt und nicht mit `??`: `null` ist hier eine Angabe.
+  let reserveContributionCents = 0
   for (const item of items) {
-    const group = ANLAGE_V_GROUP[item.category] ?? 'Sonstige Werbungskosten'
+    const group = Object.hasOwn(ANLAGE_V_GROUP, item.category) ? ANLAGE_V_GROUP[item.category] : 'Sonstige Werbungskosten'
+    if (group === null) {
+      reserveContributionCents += item.amountCents
+      continue
+    }
     let cats = byGroup.get(group)
     if (!cats) {
       cats = new Map()
@@ -699,6 +710,13 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     })
   const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
+  // Positionen „Nicht umlagefähig“, die nach Rücklage aussehen (#143). Gerechnet wird wie
+  // erfasst; die Steuerübersicht rät nur, die Kostenart zu ändern. Der Hinweis gehört hierher und
+  // nicht unter die Hinweise der Abrechnung: Auf die Abrechnung wirkt die Kostenart nicht, beide
+  // sind nicht umlagefähig, und dort bliebe er im Cockpit ein offener Punkt ohne Folge.
+  const reserveSuspects = items
+    .filter((c) => c.category === 'Nicht umlagefähig' && RESERVE_PATTERN.test(c.description))
+    .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
 
   // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
   //
@@ -771,6 +789,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, labor35aCents },
+    reserveContributionCents,
+    reserveSuspects,
     totalAreaM2: totalArea,
     selfUsedAreaM2,
     selfOccupiedExists,
@@ -877,6 +897,18 @@ export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'not
 // Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93). Dieselbe Zeichenkette
 // steht in CATEGORIES (client/src/types.ts) und im Kategorie-Schema der KI-Auswertung.
 export const HEATING_CATEGORY = 'Heizung und Warmwasser'
+
+// Die Zuführung zur Erhaltungsrücklage einer Eigentumswohnung (#143): nicht umlagefähig wie
+// „Nicht umlagefähig“, aber steuerlich anders (siehe ANLAGE_V_GROUP).
+export const RESERVE_CATEGORY = 'Zuführung Erhaltungsrücklage'
+// Woran eine Beschreibung nach Rücklage aussieht: Rücklage, Instandhaltungs- und
+// Erhaltungsrücklage, auch ohne Umlaut geschrieben.
+const RESERVE_PATTERN = /r(ü|ue|u)cklage/i
+
+// Kostenarten, die nie auf Mieter verteilt werden. Dieselbe Menge steht als NOT_ALLOCABLE in
+// client/src/types.ts; categories.test.ts hält beide zusammen.
+export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY]
+export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEGORIES.includes(category)
 
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
 // für die kalten Kosten. Ohne Angabe die Abrechnung.
@@ -1074,12 +1106,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Fehlende Angaben an der selbstgenutzten Wohnung heben ihren Eigenanteil beim jeweiligen
   // Schlüssel stillschweigend auf — dann verteilt er allein auf die Mieter. Deshalb warnen,
   // sobald ein betroffener Schlüssel im Jahr überhaupt vorkommt.
-  const usesKey = (key: CostKey) => items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig')
+  const usesKey = (key: CostKey) => items.some((c) => c.key === key && !isNotAllocable(c.category))
   // Nimmt die Wohnung an einer Position dieses Schlüssels teil (#105)? Die Warnungen unten nennen
   // nur solche Wohnungen; eine Garage ohne Fläche, die an keiner Flächenposition teilnimmt, fehlt
   // in keiner Verteilung.
   const inKeyBasis = (unitId: string, key: CostKey) =>
-    items.some((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
+    items.some((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || c.participantUnitIds.includes(unitId)))
   // Fehlt die Basis ganz, geht jede Position des Schlüssels an den Vermieter — das meldet die
   // Position selbst. Die Meldungen je Wohnung wären dann widersprüchlich („verteilt nur auf
   // die Mieter", obwohl nichts verteilt wird) und entfallen. Ohne Mietverhältnis im Jahr
@@ -1112,7 +1144,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
   const positionsOf = (key: CostKey, unitIds: string[]) => {
     const names = [...new Set(items
-      .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
+      .filter((c) => c.key === key && !isNotAllocable(c.category) && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
       .map((c) => `„${c.description}“`))]
     return names.join(', ')
   }
@@ -1214,7 +1246,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const partOfYear = (t: TenancyWithUnit) => (t.days < diy ? ` · ${t.days}/${diy} Tage` : '')
     // Teilnehmer wirken bei den Schlüsseln, deren Basis aus Wohnungen entsteht (#94).
     const withParticipants = ['area', 'units', 'persons', 'meter', 'external', 'amounts'].includes(item.key)
-    if (item.category === 'Nicht umlagefähig') {
+    if (isNotAllocable(item.category)) {
       // keine Verteilung
     } else if (withParticipants && item.participantUnitIds && item.participantUnitIds.length === 0) {
       noBasis('keine Wohnung nimmt teil')
