@@ -8,6 +8,7 @@ import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
+import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
@@ -417,7 +418,10 @@ app.get('/api/settlement/:year', async (req, res) => {
   // Ausbreiten genügt, dass es ein Objekt ist.
   if (closed) {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
-    return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt } })
+    // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
+    // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year)), year, new Date().toISOString().slice(0, 10))
+    return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
   res.json({ ...computeSettlement(snapshotFor(stock, property, year)), closed: null })
 })

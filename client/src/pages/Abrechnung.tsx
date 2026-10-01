@@ -6,6 +6,7 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
+import { deviationView } from '../deviation'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -254,6 +255,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           </div>
         )
       )}
+      {data?.closed && (() => {
+        // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.
+        const view = deviationView(data.deviation)
+        if (!view) return null
+        return (
+          <div className="notice no-print notice-item">
+            <div className="notice-head"><strong>{view.title}</strong></div>
+            <div>{view.intro}</div>
+            {view.lines.length > 0 && <ul className="deviation-list">{view.lines.map((l) => <li key={l.id}>{l.text}</li>)}</ul>}
+          </div>
+        )
+      })()}
       {data && noticesOf(data).map((n, i) => {
         const target = noticeTarget(n.subject)
         return (
