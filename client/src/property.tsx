@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { api } from './api'
 import { useConfirm } from './components/feedback'
 import type { Property } from './types'
+import { propertyHeading } from './propertyView'
 
 // Das gewählte Objekt (#92), nach dem Muster des Abrechnungsjahres (year.tsx): Die ganze
 // Oberfläche ist immer „in“ einem Objekt, und der Umschalter in der Seitenleiste verstellt
@@ -14,6 +15,8 @@ type PropertyCtx = {
   properties: Property[]
   property: Property | null
   setPropertyId: (id: string) => void
+  // Das vorher gewählte Objekt (#157), für „Zurück zu …“ nach dem Wechsel in ein leeres Objekt.
+  previousId: string | null
   reload: () => Promise<void>
   // Ob gerade ein Formular offen ist (#145), siehe useOpenForm.
   hasOpenForm: () => boolean
@@ -23,16 +26,17 @@ const Ctx = createContext<PropertyCtx | null>(null)
 
 // Gemerkt je Browser, eine Annehmlichkeit: Ohne Speicher (privates Fenster) gilt das erste Objekt.
 const STORAGE_KEY = 'mietfuchs.property'
-const remembered = (): string | null => {
+const PREVIOUS_KEY = 'mietfuchs.property.previous'
+const remembered = (key = STORAGE_KEY): string | null => {
   try {
-    return localStorage.getItem(STORAGE_KEY)
+    return localStorage.getItem(key)
   } catch {
     return null
   }
 }
-const remember = (id: string): void => {
+const remember = (id: string, key = STORAGE_KEY): void => {
   try {
-    localStorage.setItem(STORAGE_KEY, id)
+    localStorage.setItem(key, id)
   } catch {
     // Ohne Speicher gilt beim nächsten Öffnen wieder das erste Objekt.
   }
@@ -76,7 +80,10 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
   const openForms = useRef(new Set<symbol>()).current
   const hasOpenForm = useCallback(() => openForms.size > 0, [openForms])
   const [properties, setProperties] = useState<Property[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(remembered)
+  const [selectedId, setSelectedId] = useState<string | null>(() => remembered())
+  // Gemerkt wie die Wahl selbst, damit der Hinweis „Ihre Daten in … sind unverändert“ auch nach
+  // einem Neuladen der Seite das richtige Objekt nennt.
+  const [previousId, setPreviousId] = useState<string | null>(() => remembered(PREVIOUS_KEY))
   // Ob die Liste einmal geantwortet hat. Bis dahin zeigt der Provider nichts: Eine Seite, die
   // vorher lädt, fragte ohne Objekt, und bei mehreren Objekten antwortet der Server darauf mit
   // 400. Auch eine gescheiterte Antwort zählt, sonst bliebe die Oberfläche leer, wo sie gerade
@@ -95,15 +102,24 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
     reload().catch((e) => console.error(e))
   }, [reload])
 
+  const property = chooseProperty(properties, selectedId)
+  // Das tatsächlich gewählte Objekt, nicht die gemerkte Kennung: Die kann auf ein gelöschtes zeigen.
+  const currentId = useRef<string | null>(null)
+  currentId.current = property?.id ?? null
+
   const setPropertyId = useCallback((id: string) => {
+    const before = currentId.current
+    if (before && before !== id) {
+      remember(before, PREVIOUS_KEY)
+      setPreviousId(before)
+    }
     remember(id)
     setSelectedId(id)
   }, [])
 
-  const property = chooseProperty(properties, selectedId)
   return (
     <OpenFormsCtx.Provider value={openForms}>
-      <Ctx.Provider value={{ properties, property, setPropertyId, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
+      <Ctx.Provider value={{ properties, property, setPropertyId, previousId, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
     </OpenFormsCtx.Provider>
   )
 }
@@ -112,6 +128,13 @@ export function useProperty(): PropertyCtx {
   const c = useContext(Ctx)
   if (!c) throw new Error('useProperty() muss innerhalb von <PropertyProvider> stehen')
   return c
+}
+
+// Der Name des gewählten Objekts für den Seitenkopf, ab zwei Objekten (#157). Außerhalb des
+// Providers (Tests einzelner Seiten) ohne Namen, statt zu werfen wie useProperty.
+export function usePropertyHeading(): string | null {
+  const c = useContext(Ctx)
+  return c ? propertyHeading(c.properties, c.property) : null
 }
 
 // Der eine Weg, das Objekt zu wechseln (#145), für den Umschalter wie für „Weiteres Objekt
@@ -148,9 +171,9 @@ export function PropertySwitcher({ properties, value, onChange }: {
 }) {
   if (properties.length <= 1) return null
   return (
-    <label className="year-switcher no-print">
+    <label className="year-switcher property-switcher no-print">
       <span>Objekt</span>
-      <select aria-label="Objekt wählen" value={value} onChange={(e) => onChange(e.target.value)}>
+      <select aria-label="Objekt wählen" title={properties.find((p) => p.id === value)?.name} value={value} onChange={(e) => onChange(e.target.value)}>
         {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
       </select>
     </label>

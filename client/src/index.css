@@ -321,6 +321,8 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   font: inherit; font-size: 15px; font-weight: 600; padding: 7px 10px; border-radius: 8px;
   background: #262b4a; color: #fff; border: 1px solid #343b5c; cursor: pointer;
 }
+/* Objektnamen sind länger als Jahreszahlen (#157); etwas kleiner, damit mehr davon sichtbar bleibt */
+.sidebar .property-switcher select { font-size: 13.5px; }
 .sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
 
@@ -346,6 +348,9 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   .sidebar .nav-section { width: 100%; padding: 8px 4px 2px; }
   .sidebar .year-switcher { flex-direction: row; align-items: center; gap: 8px; padding: 4px; }
   .sidebar .year-switcher span { display: none; }
+  /* Das Objekt behält seine Beschriftung (#157): Ohne sie ist der Name im Auswahlfeld nicht als
+     Umschalter zu erkennen. Das Jahr erklärt sich durch die Zahl. */
+  .sidebar .property-switcher span { display: inline; }
   .sidebar .year-switcher select { padding: 5px 8px; font-size: 13px; }
   main { padding: 18px 14px 60px; }
   h1 { font-size: 20px; }
@@ -389,6 +394,17 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .page-head-text h1 { margin-bottom: 4px; }
 .page-head-text .sub { margin: 0; }
 .page-head-actions { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+/* Das gewählte Objekt über dem Titel, ab zwei Objekten (#157) */
+.page-property {
+  display: inline-flex; align-items: baseline; gap: 6px; max-width: 100%;
+  margin-bottom: 6px; padding: 2px 10px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.page-property-label { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 500; opacity: 0.85; }
+/* Hinweis nach dem Wechsel in ein leeres Objekt (#157) */
+.property-notice { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; font-size: 14px; }
+.property-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ---------- Editier-Drawer (von rechts) ---------- */
 .drawer-backdrop {

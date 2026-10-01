@@ -7,6 +7,8 @@ import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
 import DatabaseNotice from './components/Database'
+import PropertyNotice from './components/PropertyNotice'
+import { emptyPropertyNotice } from './propertyView'
 import { canQuit, hintVisible } from './update'
 import Cockpit from './pages/Cockpit'
 import Uebersicht from './pages/Uebersicht'
@@ -133,11 +135,16 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('cockpit')
   const [stopped, setStopped] = useState(false)
   const [units, setUnits] = useState<Unit[]>([])
+  // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
+  // sind, stehen noch die des vorigen hier.
+  const [unitsFor, setUnitsFor] = useState<string | null>(null)
+  // Objekte, deren Hinweis „noch leer“ geschlossen wurde, für diese Sitzung
+  const [dismissedNotices, setDismissedNotices] = useState<string[]>([])
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
-  const { properties, property, reload: reloadProperties } = useProperty()
+  const { properties, property, previousId, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
@@ -158,6 +165,7 @@ function Shell() {
     // ankommen. Sie gilt dann nicht mehr, sonst stünden Wohnungen von B unter A.
     if (currentProperty.current !== propertyId) return
     setUnits(u)
+    setUnitsFor(propertyId ?? null)
     setTenancies(t)
     setSettings(s)
   }, [propertyId, reloadProperties])
@@ -167,6 +175,10 @@ function Shell() {
   }, [reload])
 
   if (stopped) return <Stopped />
+
+  const emptyNotice = emptyPropertyNotice({
+    properties, property, previousId, unitsFor, unitCount: units.length, dismissed: dismissedNotices,
+  })
 
   return (
     <>
@@ -217,6 +229,17 @@ function Shell() {
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
         <DatabaseNotice />
+        {/* Nach dem Wechsel in ein leeres Objekt (#157), ebenfalls auf jeder Seite: Leere Seiten
+            sähen sonst aus, als wären die Daten weg. */}
+        {emptyNotice && (
+          <PropertyNotice
+            current={emptyNotice.current}
+            previous={emptyNotice.previous}
+            onBack={() => void switchProperty(emptyNotice.previous.id)}
+            onSetUp={() => setTab('stammdaten')}
+            onDismiss={() => propertyId && setDismissedNotices((d) => [...d, propertyId])}
+          />
+        )}
         {/* Je Objekt neu aufgestellt (#145): Formulare und Zwischenstände einer Seite gehören zu
             dem Objekt, in dem sie entstanden sind. */}
         <Fragment key={propertyId ?? ''}>
