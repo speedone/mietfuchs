@@ -23,3 +23,27 @@ test('Rechenweg klappt auf und zu, und alles davon ist vom Druck ausgenommen', (
   fireEvent.click(knopf)
   expect(screen.queryByText('1.000,00 €')).toBeNull()
 })
+
+// #142: Mit aufgeklapptem Begriff stand die Erklärung mitten in der Zeile, zwischen Beschriftung
+// und Wert, und der Rest („: 40 von 180“) rutschte darunter. Jetzt steht sie unter der ganzen Zeile.
+test('der aufgeklappte Begriff steht unter der Zeile, Beschriftung und Wert bleiben zusammen', () => {
+  render(
+    <table><tbody><CalcSteps colSpan={4} row={{
+      costItemId: 'k', category: 'Grundsteuer', description: 'Grundsteuer', totalCents: 90000, keyLabel: 'Wohnfläche', shareCents: 20000,
+      steps: [{ label: 'Anteil an der Verteilbasis', value: '40 von 180 m²', term: 'distributionBasis' }],
+    }}>{(toggle) => <tr><td>{toggle}</td></tr>}</CalcSteps></tbody></table>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: /Rechenweg/ }))
+  const begriff = screen.getByRole('button', { name: 'Anteil an der Verteilbasis' })
+  fireEvent.click(begriff)
+  const note = screen.getByRole('note')
+  const zeile = note.closest('li')
+  if (!zeile) return expect.fail('die Erklärung steht nicht in der Zeile ihres Schritts')
+  const text = zeile.textContent ?? ''
+  expect(text.startsWith('Anteil an der Verteilbasis: 40 von 180 m²')).toBe(true)
+  expect(text.endsWith(note.textContent ?? '')).toBe(true)
+  expect(begriff.getAttribute('aria-controls')).toBe(note.id)
+  // Esc schließt die Erklärung weiterhin.
+  fireEvent.keyDown(begriff, { key: 'Escape' })
+  expect(screen.queryByRole('note')).toBeNull()
+})

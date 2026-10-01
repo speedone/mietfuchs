@@ -95,3 +95,21 @@ test('nach dem Wiederöffnen bleibt der frühere Versand sichtbar, die Frist lä
   await screen.findByText(new RegExp(`frühere Fassung der Abrechnung ${YEAR} wurde am 12\\.01\\.${YEAR + 1} versendet`), {}, SLOW)
   expect(screen.queryByText(/^Abrechnungsfrist/)).toBeNull()
 })
+
+test('Vermieteranteil: die Spalte „Grund“ nennt die tatsächlichen Gründe der Zeile', async () => {
+  settlement.landlord = {
+    rows: [{ costItemId: 'k2', category: 'Müllabfuhr', description: 'Müll', totalCents: 40000, keyLabel: 'Wohnfläche', shareCents: 20000, landlordParts: [{ reason: 'flatRate', cents: 20000 }] }],
+    totalCents: 20000,
+  }
+  show()
+  const zeile = (await screen.findByText('Müll', {}, SLOW)).closest('tr')
+  expect(zeile?.textContent).toMatch(/Betriebskostenpauschale/)
+  expect(zeile?.textContent).not.toMatch(/Eigennutzung \/ Leerstand/)
+})
+
+test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
+  show()
+  await screen.findByText(/manuell angepasst/, {}, SLOW)
+  const kopf = document.querySelector('.card.statement > .muted')
+  expect(kopf?.textContent?.trim()).toBe('A')
+})

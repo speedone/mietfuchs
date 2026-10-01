@@ -398,7 +398,29 @@ export type SettlementRow = {
   // Der Rechenweg dieser Zeile (#114), mit den Zahlen der Abrechnung. Nur in den Zeilen der
   // Mieter, und optional, weil eine vorher abgeschlossene Abrechnung ihn nicht kennt.
   steps?: CalcStep[]
+  // Woraus der Vermieteranteil dieser Position besteht (#142), zusammen genau `shareCents`. Nur
+  // in den Zeilen des Vermieteranteils, und optional, weil eine vorher abgeschlossene Abrechnung
+  // sie nicht kennt; die Oberfläche nennt die Gründe dann pauschal wie zuvor.
+  landlordParts?: LandlordPart[]
 }
+
+// Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
+//   `notAllocable`  die Kostenart ist nicht umlagefähig
+//   `noBasis`       die Position ließ sich nicht verteilen (siehe die Hinweise der Abrechnung)
+//   `selfUse`       Anteil selbstgenutzter Wohnungen (der Eigenanteil)
+//   `vacancy`       Leerstand: Zeit oder Wohnung ohne Mietverhältnis
+//   `flatRate`      Mietverhältnis mit Betriebskostenpauschale für diese Kostenart
+//   `inclusive`     Mietverhältnis mit Inklusivmiete für diese Kostenart
+//   `outsideUnit`   Wohnung außerhalb der Abrechnungseinheit (ihr Mietverhältnis, ihr Zähler, ihr
+//                   vereinbarter Anteil)
+//   `amountsRest`   bei Einzelbeträgen der Rest, den kein Mietverhältnis trägt
+//   `customRest`    bei vereinbarten Anteilen, was unter 100 % fehlt
+//   `mainMeterRest` beim Verbrauch der Teil des Hauptzählers, den kein Wohnungszähler misst
+//   `rounding`      Rundungsrest
+export type LandlordReason =
+  | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
+  | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'rounding'
+export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
 // des Lexikons, der ihn erklärt.
@@ -529,6 +551,9 @@ export type TaxReport = {
   year: number
   income: {
     baseRentSollCents: number // Kaltmiete (netto), vereinbart
+    // davon Mieten, die Nebenkosten einschließen (Inklusivmiete kalt oder warm, #142). Sie stehen in
+    // `baseRentSollCents` mit drin; die Übersicht nennt sie eigens, weil sie nicht „ohne Umlagen“ sind.
+    inclusiveRentSollCents: number
     prepaymentSollCents: number // NK-Vorauszahlungen, vereinbart
     flatRateSollCents: number // Betriebskostenpauschalen, vereinbart (#93)
     // Was die Abrechnung desselben Jahres bei den Vorauszahlungen ansetzt, bei abgeschlossener

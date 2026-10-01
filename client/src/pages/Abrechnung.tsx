@@ -1,11 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
-import { isNotAllocable } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
-import { effectiveLandlord } from '../landlord'
+import { effectiveLandlord, letterhead } from '../landlord'
+import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
 import { deadlineView, historyView, type HistoryEntry } from '../settlementHistory'
@@ -383,8 +383,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             return (
             <div key={st.tenancyId} className={`card statement ${printId === st.tenancyId ? 'print-target' : ''}`}>
               <div className="muted" style={{ marginBottom: 8 }}>
-                {landlord?.landlordName && <>{landlord.landlordName} · </>}
-                {property?.name} · {property?.address}
+                {letterhead(landlord?.landlordName, property)}
               </div>
               <div className="statement-head">
                 <div>
@@ -608,7 +607,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     <tr key={i}>
                       <td>{r.category}<div className="muted">{r.description}</div></td>
                       <td className="num">{fmtEuro(r.totalCents)}</td>
-                      <td className="muted">{isNotAllocable(r.category) ? 'nicht umlagefähig' : 'Eigennutzung / Leerstand / Rundung / keine Verteilbasis'}</td>
+                      <td className="muted">{landlordReasonText(r)}</td>
                       <td className="num">{fmtEuro(r.shareCents)}</td>
                     </tr>
                   ))}

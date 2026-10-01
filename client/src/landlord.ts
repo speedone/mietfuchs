@@ -14,3 +14,13 @@ export function effectiveLandlord(
     paymentDeadlineDays: property?.paymentDeadlineDays ?? settings.paymentDeadlineDays,
   }
 }
+
+// Die Kopfzeile über Abrechnung und Steuerübersicht: Vermieter, Objekt und Adresse, getrennt mit
+// „·“. Der Trenner steht nur zwischen Angaben, die es gibt (#142); ohne Adresse endete die Zeile
+// sonst mit „Haus Birke ·“.
+export function letterhead(landlordName: string | null | undefined, property: Pick<Property, 'name' | 'address'> | null | undefined): string {
+  return [landlordName, property?.name, property?.address]
+    .map((x) => (x ?? '').trim())
+    .filter((x) => x !== '')
+    .join(' · ')
+}

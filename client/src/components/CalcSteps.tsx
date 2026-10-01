@@ -3,10 +3,10 @@
 // Schritten. Beides trägt `no-print`: Der Ausdruck ist das Dokument für den Mieter und bleibt,
 // wie er ist.
 
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { stepsOf } from '../calcSteps'
-import type { SettlementRow } from '../types'
-import Term from './Term'
+import type { CalcStep, SettlementRow } from '../types'
+import Term, { TermExplanation } from './Term'
 
 export default function CalcSteps({ row, colSpan, children }: { row: SettlementRow; colSpan: number; children: (toggle: ReactNode) => ReactNode }) {
   const [open, setOpen] = useState(false)
@@ -23,11 +23,7 @@ export default function CalcSteps({ row, colSpan, children }: { row: SettlementR
         <tr className="calc-steps no-print">
           <td colSpan={colSpan}>
             <ol className="calc-steps-list">
-              {steps.map((s, i) => (
-                <li key={i}>
-                  <span className="calc-step-label">{s.term ? <Term id={s.term}>{s.label}</Term> : s.label}:</span> {s.value}
-                </li>
-              ))}
+              {steps.map((s, i) => <Step key={i} step={s} />)}
             </ol>
             {!complete && (
               <div className="muted">Diese Abrechnung wurde abgeschlossen, bevor Mietfuchs den ausführlichen Rechenweg festhielt; zu sehen ist, was sie selbst enthält.</div>
@@ -36,5 +32,21 @@ export default function CalcSteps({ row, colSpan, children }: { row: SettlementR
         </tr>
       )}
     </>
+  )
+}
+
+// Ein Schritt. Die Erklärung seines Begriffs steht unter der ganzen Zeile und nicht hinter dem
+// Begriff (#142): Dort stand sie zwischen Beschriftung und Wert, und der Rest der Zeile
+// („: 40 von 180“) rutschte unter den Kasten.
+function Step({ step }: { step: CalcStep }) {
+  const [open, setOpen] = useState(false)
+  const popId = useId()
+  return (
+    <li>
+      <span className="calc-step-label">
+        {step.term ? <Term id={step.term} control={{ open, onOpenChange: setOpen, popId }}>{step.label}</Term> : step.label}:
+      </span> {step.value}
+      {open && step.term && <TermExplanation id={step.term} popId={popId} />}
+    </li>
   )
 }
