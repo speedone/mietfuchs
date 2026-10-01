@@ -143,11 +143,25 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung" in die Basis.
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
     // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
-    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons')
+    // Auch die Gemeinschaftsabrechnung (#105): Sie verteilt über die Wohnungen der Einheit.
+    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons' || c.key === 'external')
+    // Wohnungen, die an einer Position „laut Gemeinschaftsabrechnung“ nach MEA teilnehmen, und
+    // denen die Anteile fehlen; wie in der Berechnung nur die Teilnehmer (Durchsicht zu #105).
+    const meaIds = new Set(
+      yearItems
+        .filter((c) => c.key === 'external' && c.externalBasis?.measure === 'mea' && c.category !== 'Nicht umlagefähig')
+        .flatMap((c) => c.participantUnitIds ?? units.filter((u) => usageOf(u) !== 'ausgenommen').map((u) => u.id)),
+    )
+    const meaMissing = units.filter((u) => meaIds.has(u.id) && usageOf(u) !== 'ausgenommen' && !(u.mea && u.mea > 0))
     const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
     if (excluded.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
         detail: `Nicht beteiligt und damit ganz außen vor: ${excluded.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
+    } else if (meaMissing.length > 0) {
+      // Ohne Miteigentumsanteile verteilt der Schlüssel der Gemeinschaft nicht (#105).
+      const ohne = meaMissing
+      list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Anteile eintragen',
+        detail: `Für ${ohne.map((u) => u.name).join(', ')} fehlen die Miteigentumsanteile, die die Gemeinschaftsabrechnung braucht.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
       const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
       list.push({ title: 'Verteilbasis', level: 'gruen',

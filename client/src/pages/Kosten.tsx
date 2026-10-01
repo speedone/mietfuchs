@@ -134,7 +134,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
 
   async function saveItem() {
     if (!form) return
-    const built = buildCostItemBody(form, units, year)
+    const built = buildCostItemBody(form, units, year, tenancies)
     if ('error' in built) {
       setError(built.error)
       return
@@ -432,6 +432,10 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                   </td>
                   <td>
                     {KEY_LABELS[i.key]}
+                    {/* Eine Einschränkung auf Teilnehmer (#105) soll man in der Liste sehen, nicht erst im Formular. */}
+                    {i.participantUnitIds && (
+                      <div className="muted">nur {i.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ') || 'keine Wohnung'}</div>
+                    )}
                     {i.key === 'direct' && <div className="muted">{units.find((u) => u.id === i.directUnitId)?.name}</div>}
                     {i.key === 'meter' && <div className="muted">{i.meterType ? METER_TYPE_LABELS[i.meterType] : '— kein Zählertyp'}</div>}
                     {i.key === 'custom' && (
@@ -608,11 +612,11 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                   Die Beträge aus der Einzelabrechnung, etwa vom Messdienst. Bei einem Mieterwechsel teilt
                   der Messdienst selbst auf; der Rest trägt der Vermieter.
                 </div>
-                {tenanciesForAmounts(tenancies, units, year).length === 0 ? (
+                {tenanciesForAmounts(tenancies, units, year, form.participants).length === 0 ? (
                   <div className="muted">In diesem Jahr gibt es kein Mietverhältnis in diesem Objekt.</div>
                 ) : (
                   <div className="row">
-                    {tenanciesForAmounts(tenancies, units, year).map((t) => (
+                    {tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => (
                       <label key={t.id} className="field grow">
                         {t.tenantName} ({units.find((u) => u.id === t.unitId)?.name ?? '—'})
                         <input
@@ -640,7 +644,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     ))}
                   </div>
                 )}
-                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units)}</div>
+                <div className="muted" style={{ marginTop: 6 }}>{amountsSumText(form, units, tenancies, year)}</div>
               </div>
             )}
             {PARTICIPANT_KEYS.includes(form.key) && basisUnits.length > 1 && (

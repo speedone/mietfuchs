@@ -1,3 +1,4 @@
+import { parseNumberDe } from './numbers'
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers =
     init?.body && !(init.body instanceof FormData)
@@ -20,12 +21,13 @@ export const fmtArea = (m2: number) =>
   `${m2.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m²`
 
 // Akzeptiert deutsche ("1.234,56") und technische ("1234.56") Schreibweise
+// Geld liest derselbe Leser wie Mengen (numbers.ts): „1.240“ sind 1.240 € und nicht 1,24 €, und
+// ein Tippfehler wie „78.43,5“ wird abgelehnt statt still falsch gelesen. Vorher galt für Geld eine
+// eigene, lockerere Regel, und bei Einzelbeträgen landete ein falsch gelesener Betrag unbemerkt
+// beim Vermieter (zweite Integrationsdurchsicht zu #105).
 export function parseEuro(s: string): number | null {
-  const t = s.trim().replace(/€|\s/g, '')
-  if (!t) return null
-  const norm = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  const n = Number(norm)
-  return Number.isFinite(n) ? Math.round(n * 100) : null
+  const n = parseNumberDe(s.replace(/€/g, ''))
+  return n === null ? null : Math.round(n * 100)
 }
 
 export const fmtDate = (iso: string) => {
