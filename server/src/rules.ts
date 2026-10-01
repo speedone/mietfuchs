@@ -56,7 +56,7 @@ export const RULES: readonly Rule[] = [
     summary:
       'Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ' +
       'Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen. ' +
-      'Ausgenommen ist das Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt.',
+      'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
   },
 ]
 

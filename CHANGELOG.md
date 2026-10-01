@@ -150,14 +150,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „angesetzt laut Hausgeldabrechnung“ auch im Druck. Im Kostenformular ist der rechnerische Anteil
   markiert, wenn er um mehr als 1 € vom Betrag abweicht.
   ([#144](https://github.com/speedone/mietfuchs/issues/144))
-- **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Werden
-  Heizung und Warmwasser nicht nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
+- **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Wird für eine
+  Wohnung keine Heizposition nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
   des Messdienstes noch laut Gemeinschaftsabrechnung), nennt die Abrechnung je Mieter den Betrag,
   um den er seinen Anteil kürzen darf: 15 Prozent (§ 12 Abs. 1 HeizkostenV), denn die Verordnung
-  verlangt 50 bis 70 Prozent nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1). Ausgenommen ist das Haus mit
-  höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen (§ 2); Mieter mit Pauschale oder
-  Warmmiete bekommen keine Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in
-  diesem Fall nicht mehr „Ablesungen nicht erforderlich“.
+  verlangt 50 bis 70 Prozent nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1). Grundkosten nach Fläche
+  neben einer Verbrauchsposition sind der Regelfall und kein Mangel; liegt der Anteil nach Zählern
+  dann außerhalb von 50 bis 70 Prozent, gibt es einen Hinweis ohne Betrag. Eine Direktzuordnung
+  (etwa die Wartung einer Gastherme) zählt nicht als Verteilung. Im Haus mit höchstens zwei
+  Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2); dort gibt
+  es statt des Betrags einen Hinweis, und eine Garage zählt dabei nicht als Wohnung, auch nicht
+  für die Warnung zur Warmmiete. Mieter mit Pauschale oder Warmmiete bekommen keine
+  Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in diesem Fall nicht mehr
+  „Ablesungen nicht erforderlich“.
   ([#140](https://github.com/speedone/mietfuchs/issues/140))
 - **Zuführung zur Erhaltungsrücklage zählte als Werbungskosten.** Bei einer vermieteten
   Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für

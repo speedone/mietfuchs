@@ -80,3 +80,76 @@ test('Pauschale oder Warmmiete: kein Kürzungsbetrag, denn über die Heizung wir
   const nurPauschal = settle({ units: [unit('w1', 100), unit('w2', 100), unit('w3', 100)], tenancies: [tenancy('A', 'w1', { heatingModel: 'flatRate', prepayments: [] })], costItems: [heizung()] })
   assert.deepEqual(heatingNotices(nurPauschal), [])
 })
+
+// ---------- Durchsicht zu #140 ----------
+
+const notesOf = (s: ComputedSettlement, code: string) => s.notices.filter((n) => n.code === code)
+
+test('Mischfall 70/30: Verbrauch 70 %, Grundkosten 30 % nach Fläche, kein Kürzungsrecht und kein Hinweis (#140)', () => {
+  const s = settle({ ...haus, costItems: [
+    heizung({ id: 'grund', description: 'Grundkosten', amountCents: 162000 }),
+    heizung({ id: 'verbrauch', description: 'Verbrauchskosten', amountCents: 378000, key: 'meter', meterType: 'waerme' }),
+  ] })
+  assert.deepEqual(heatingNotices(s), [])
+  assert.deepEqual(notesOf(s, 'heating.consumption-share'), [])
+})
+
+test('Mischfall 30/70: Verbrauchsanteil unter 50 %, Hinweis ohne Betrag (#140)', () => {
+  const s = settle({ ...haus, costItems: [
+    heizung({ id: 'grund', description: 'Grundkosten', amountCents: 378000 }),
+    heizung({ id: 'verbrauch', description: 'Verbrauchskosten', amountCents: 162000, key: 'meter', meterType: 'waerme' }),
+  ] })
+  assert.deepEqual(heatingNotices(s), [], 'kein Kürzungsrecht, verbrauchsabhängig wird abgerechnet')
+  const n = notesOf(s, 'heating.consumption-share')
+  assert.equal(n.length, 1)
+  assert.equal(n[0]?.level, 'hint')
+  assert.match(n[0]?.text ?? '', /30 %/)
+  assert.match(n[0]?.text ?? '', /§ 7 Abs\. 1, § 8 Abs\. 1 HeizkostenV/)
+  assert.doesNotMatch(n[0]?.text ?? '', /€/)
+})
+
+test('Ratschlag: nicht zu 100 % nach Verbrauch raten (#140)', () => {
+  const text = heatingNotices(settle({ ...haus, costItems: [heizung()] }))[0]?.text ?? ''
+  assert.match(text, /50 bis 70 % nach Verbrauch/)
+  assert.doesNotMatch(text, /Rechnen Sie nach Verbrauch ab/)
+})
+
+test('Teilnehmer: nur Wohnungen ohne eigene Verbrauchsposition bekommen einen Kürzungsbetrag (#140)', () => {
+  const s = settle({ ...haus, costItems: [
+    heizung({ id: 'grund', description: 'Grundkosten', amountCents: 162000 }),
+    heizung({ id: 'verbrauch', description: 'Verbrauch vorne', amountCents: 378000, key: 'meter', meterType: 'waerme', participantUnitIds: ['w1', 'w2'] }),
+  ] })
+  const text = heatingNotices(s)[0]?.text ?? ''
+  assert.ok(text.includes('C (w3)') && text.includes('D (w4)'), text)
+  assert.ok(!text.includes('A (w1)') && !text.includes('B (w2)'), text)
+})
+
+test('Direktzuordnung (Wartung der Gastherme einer Wohnung) ist keine Verteilung: kein Hinweis (#140)', () => {
+  const s = settle({ ...haus, costItems: [heizung({ key: 'direct', directUnitId: 'w1', amountCents: 12000, description: 'Wartung Gastherme' })] })
+  assert.deepEqual(heatingNotices(s), [])
+  assert.deepEqual(notesOf(s, 'heating.may-agree-otherwise'), [])
+})
+
+test('§ 2 HeizkostenV: im Zweifamilienhaus mit eigener Wohnung ein Hinweis ohne Betrag statt Schweigen (#140)', () => {
+  const s = settle({
+    units: [unit('oben', 80), unit('unten', 80, { participates: false, selfUsed: true })],
+    tenancies: [tenancy('A', 'oben')],
+    costItems: [heizung()],
+  })
+  const n = notesOf(s, 'heating.may-agree-otherwise')
+  assert.equal(n.length, 1)
+  assert.equal(n[0]?.level, 'hint')
+  assert.match(n[0]?.text ?? '', /sofern im Mietvertrag nichts anderes vereinbart ist/)
+  assert.match(n[0]?.text ?? '', /darf anderes vereinbart werden/)
+  assert.doesNotMatch(n[0]?.text ?? '', /€/)
+})
+
+test('§ 2 HeizkostenV: eine Garage zählt nicht als Wohnung, für beide Heizhinweise (#140)', () => {
+  const garage = { units: [unit('oben', 80), unit('unten', 80, { participates: false, selfUsed: true }), unit('garage', 0)] }
+  const mieter = tenancy('G', 'garage', { persons: 0, personHistory: [{ from: '2025-01-01', persons: 0 }] })
+  const s = settle({ ...garage, tenancies: [tenancy('A', 'oben'), mieter], costItems: [heizung()] })
+  assert.deepEqual(heatingNotices(s), [])
+  assert.equal(notesOf(s, 'heating.may-agree-otherwise').length, 1)
+  const pauschal = settle({ ...garage, tenancies: [tenancy('A', 'oben', { heatingModel: 'flatRate', prepayments: [] }), mieter], costItems: [heizung()] })
+  assert.deepEqual(notesOf(pauschal, 'heating.flat-rate'), [], 'Warmmiete im Zweifamilienhaus mit Garage ist zulässig vereinbar')
+})

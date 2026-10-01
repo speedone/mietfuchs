@@ -833,10 +833,12 @@ eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 
 **Begriffslexikon** (#113): [shared/glossary.ts](shared/glossary.ts) hält jeden Fachbegriff mit
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
-Laufzeitanteil in `shared/`**; seit #140 lädt auch der Server einen, nämlich
-[shared/heating.ts](shared/heating.ts) (Heizkostenart, Ausnahme des § 2 HeizkostenV und was als
-Verteilung nach Verbrauch gilt, gemeinsam für Berechnung und Cockpit); der Client bündelt ihn (dafür `allowImportingTsExtensions` in
-client/tsconfig.json), der Server braucht nur den Typ `TermId`. Jeder Hinweis-Code in
+Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in
+client/tsconfig.json), der Server braucht nur den Typ `TermId`. Seit #140 lädt auch der Server
+einen Laufzeitanteil, [shared/heating.ts](shared/heating.ts): Heizkostenart, § 2 HeizkostenV
+(eine Garage zählt nicht als Wohnung) und welche Wohnung bei welcher Heizposition ohne
+Verbrauchsanteil dasteht. Das Cockpit wendet die Regel nicht selbst an, sondern liest den Hinweis
+`heating.not-by-consumption` der Abrechnung (client/src/meterCheck.ts). Jeder Hinweis-Code in
 `noticeKinds` trägt mindestens einen Begriff (`terms`, als nicht leeres Tupel getippt, dazu
 [glossary.test.ts](server/test/glossary.test.ts)). In der Oberfläche zeigt
 [Term.tsx](client/src/components/Term.tsx) die Erklärung zum Aufklappen, und zwar als `span`

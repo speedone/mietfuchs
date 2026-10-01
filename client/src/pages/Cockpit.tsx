@@ -126,7 +126,8 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
     const meterTypes = new Set(yearItems.filter((c) => c.key === 'meter').map((c) => c.meterType))
-    const heatingWithout = heatingWithoutConsumption(yearItems, units)
+    const heatingIds = new Set(heatingWithoutConsumption(settlement))
+    const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
