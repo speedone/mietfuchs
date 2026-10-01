@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
-import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { showDecemberNote } from '../ledgerView'
@@ -45,10 +45,16 @@ export default function Mietkonto() {
       return
     }
     setError('')
-    await api('/api/payments', {
-      method: 'POST',
-      body: JSON.stringify({ tenancyId: form.tenancyId, date: form.date, amountCents: cents, note: form.note.trim() || undefined }),
-    })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      await api('/api/payments', {
+        method: 'POST',
+        body: JSON.stringify({ tenancyId: form.tenancyId, date: form.date, amountCents: cents, note: form.note.trim() || undefined }),
+      })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setForm(null)
     await load()
     toast(`Zahlung über ${fmtEuro(cents)} erfasst.`)
@@ -62,7 +68,13 @@ export default function Mietkonto() {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/payments/${p.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/payments/${p.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast('Zahlung gelöscht.')
   }
@@ -71,6 +83,7 @@ export default function Mietkonto() {
   function bookMonth(tenancyId: string, mo: RentMonth) {
     const open = mo.sollCents - mo.paidCents
     if (open <= 0) return
+    setError('')
     setForm({
       tenancyId,
       date: `${year}-${String(mo.month).padStart(2, '0')}-01`,
@@ -142,13 +155,13 @@ export default function Mietkonto() {
         <Drawer
           open
           title="Zahlung erfassen"
-          onClose={() => setForm(null)}
+          onClose={() => { setError(''); setForm(null) }}
           onSubmit={savePayment}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={savePayment}>Speichern</button>
             </>
           }

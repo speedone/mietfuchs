@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { api, fmtDate } from '../api'
+import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
+import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -15,14 +16,6 @@ type Props = { units: Unit[] }
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
 
 type MeterForm = { id?: string; name: string; unitId: string; type: MeterType; meterNumber: string; unit: string }
-type ReadingForm = { date: string; value: string; replacement: boolean; oldEndValue: string; note: string }
-
-const EMPTY_READING: ReadingForm = { date: '', value: '', replacement: false, oldEndValue: '', note: '' }
-
-function parseNum(s: string): number | null {
-  const n = Number(s.trim().replace(/\./g, (m, i, str) => (str.includes(',') ? '' : m)).replace(',', '.'))
-  return Number.isFinite(n) ? n : null
-}
 
 export default function Zaehler({ units }: Props) {
   const { year, setYear } = useYear()
@@ -37,6 +30,8 @@ export default function Zaehler({ units }: Props) {
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
+  // Eine angefangene Ablesung hängt am Zähler dieses Objekts (#145).
+  useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
 
   const load = useCallback(async () => {
     const [m, r, c] = await Promise.all([
@@ -68,8 +63,14 @@ export default function Zaehler({ units }: Props) {
       unit: meterForm.unit.trim() || 'm³',
     })
     const editing = !!meterForm.id
-    if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const name = meterForm.name.trim()
     setMeterForm(null)
     await load()
@@ -84,30 +85,30 @@ export default function Zaehler({ units }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/meters/${m.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/meters/${m.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast(`Zähler „${m.name}" gelöscht.`)
   }
 
   async function saveReading(meterId: string) {
-    const value = parseNum(readingForm.value)
-    const oldEnd = readingForm.replacement ? parseNum(readingForm.oldEndValue) : null
-    if (!readingForm.date || value === null || (readingForm.replacement && oldEnd === null)) {
-      setError('Bitte Datum und Zählerstand prüfen (bei Zählerwechsel auch den Endstand des alten Geräts).')
+    const built = buildReadingBody(readingForm, meterId)
+    if ('error' in built) {
+      setError(built.error)
       return
     }
     setError('')
-    await api('/api/readings', {
-      method: 'POST',
-      body: JSON.stringify({
-        meterId,
-        date: readingForm.date,
-        value,
-        replacement: readingForm.replacement || undefined,
-        oldEndValue: readingForm.replacement ? oldEnd : undefined,
-        note: readingForm.note.trim() || undefined,
-      }),
-    })
+    try {
+      await api('/api/readings', { method: 'POST', body: JSON.stringify(built.body) })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setReadingForm({ ...EMPTY_READING })
     await load()
     toast('Ablesung gespeichert.')
@@ -121,7 +122,13 @@ export default function Zaehler({ units }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/readings/${r.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/readings/${r.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast('Ablesung gelöscht.')
   }
@@ -179,8 +186,8 @@ export default function Zaehler({ units }: Props) {
                     open={openMeterId === m.id}
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
-                    onToggle={() => { setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
-                    onEdit={() => setMeterForm({ id: m.id, name: m.name, unitId: m.unitId ?? '', type: m.type, meterNumber: m.meterNumber ?? '', unit: m.unit })}
+                    onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
+                    onEdit={() => { setError(''); setMeterForm({ id: m.id, name: m.name, unitId: m.unitId ?? '', type: m.type, meterNumber: m.meterNumber ?? '', unit: m.unit }) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
@@ -203,13 +210,13 @@ export default function Zaehler({ units }: Props) {
           open
           title={meterForm.id ? 'Zähler bearbeiten' : 'Neuer Zähler'}
           subtitle={meterForm.id ? meterForm.name : undefined}
-          onClose={() => setMeterForm(null)}
+          onClose={() => { setError(''); setMeterForm(null) }}
           onSubmit={saveMeter}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setMeterForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setMeterForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveMeter}>{meterForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }

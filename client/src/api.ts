@@ -12,6 +12,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+// Der Satz zu einem gescheiterten Abruf, für die Oberfläche (#146). api() wirft die Meldung des
+// Servers als Error; alles andere (Netz weg) kommt ebenfalls lesbar heraus.
+export const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
+
 export const fmtEuro = (cents: number) =>
   (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
 

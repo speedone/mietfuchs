@@ -75,6 +75,8 @@ test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', asy
   // Das Feld darf nichts vorbelegen, was in der Liste nicht steht: sichtbar ist „— wählen —".
   expect(typeSelect.value).toBe('')
   expect([...typeSelect.options].map((o) => o.value)).toEqual(['', 'sonstig'])
+  // Beschriftet als Substantiv wie die Nachbarn (Kaltwasser, Wärme), nicht als Adjektiv (#138).
+  expect([...typeSelect.options].map((o) => o.text)).toEqual(['— wählen —', 'Sonstiges'])
 
   // Ohne Auswahl wird nicht gespeichert, sondern nach dem Zählertyp gefragt.
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
@@ -170,4 +172,13 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   expect(sent[0].body).toMatchObject({ key: 'amounts', tenancyAmounts: { t1: 31240 }, externalBasis: null })
+})
+
+test('Gutschrift (#139): der Hinweis am Betragsfeld steht da, und „−54,00“ wird gespeichert', async () => {
+  await openForm()
+  expect(screen.getByText(/Gutschrift mit Minus/i)).toBeTruthy()
+  fireEvent.change(screen.getByLabelText(/^Betrag/i), { target: { value: '−54,00' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ amountCents: -5400 })
 })

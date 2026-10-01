@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { PropertyProvider, PropertySwitcher, useProperty, withProperty } from './property'
+import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -137,9 +137,13 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
-  const { properties, property, setPropertyId, reload: reloadProperties } = useProperty()
+  const { properties, property, reload: reloadProperties } = useProperty()
+  const switchProperty = useSwitchProperty()
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
+  // Das zuletzt gewählte Objekt, für den Reihenfolge-Schutz in reload (#145)
+  const currentProperty = useRef(propertyId)
+  currentProperty.current = propertyId
 
   // Wohnungen und Mietverhältnisse des gewählten Objekts (#92). Solange die Objekte noch nicht
   // geladen sind, wird gewartet: Ohne Angabe gälte auf dem Server bei mehreren Objekten keins.
@@ -150,6 +154,9 @@ function Shell() {
       api<Settings>('/api/settings'),
       reloadProperties(),
     ])
+    // Wechselt das Objekt schnell hin und her (A → B → A), kann die Antwort für B nach der für A
+    // ankommen. Sie gilt dann nicht mehr, sonst stünden Wohnungen von B unter A.
+    if (currentProperty.current !== propertyId) return
     setUnits(u)
     setTenancies(t)
     setSettings(s)
@@ -178,7 +185,7 @@ function Shell() {
           <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
         )}
 
-        <PropertySwitcher properties={properties} value={propertyId} onChange={setPropertyId} />
+        <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
 
         <label className="year-switcher no-print">
           <span>Abrechnungsjahr</span>
@@ -210,6 +217,9 @@ function Shell() {
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
         <DatabaseNotice />
+        {/* Je Objekt neu aufgestellt (#145): Formulare und Zwischenstände einer Seite gehören zu
+            dem Objekt, in dem sie entstanden sind. */}
+        <Fragment key={propertyId ?? ''}>
         {tab === 'cockpit' && (
           <Cockpit units={units} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
@@ -230,6 +240,7 @@ function Shell() {
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}
+        </Fragment>
       </main>
     </>
   )

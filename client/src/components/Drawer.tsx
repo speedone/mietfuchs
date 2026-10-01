@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useOpenForm } from '../property'
 
 type Props = {
   open: boolean
@@ -19,6 +20,8 @@ type Props = {
 // wird das erste Eingabefeld fokussiert und der Seiten-Scroll gesperrt.
 export default function Drawer({ open, title, subtitle, onClose, footer, children, onSubmit, width = 460 }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
+  // Ein offener Drawer ist ein offenes Formular: Der Objektwechsel fragt dann nach (#145).
+  useOpenForm(open)
 
   // Callbacks über Refs stabil halten, damit die Effects nicht bei jedem Render (Tastendruck)
   // neu laufen — sonst würde der Fokus ständig aufs erste Feld zurückspringen.

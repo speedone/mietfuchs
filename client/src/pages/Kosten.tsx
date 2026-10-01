@@ -16,14 +16,15 @@ import {
   PARTICIPANT_KEYS,
   categoryNotice,
   selfAmountUnits,
+  amountProblem,
   type ItemForm,
 } from '../costForm'
-import { api, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -35,6 +36,10 @@ import Table from '../components/Table'
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
+
+// Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
+const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -71,6 +76,9 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
 
   // KI-Auswertung: Warteschlange für einen oder mehrere Belege
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
+  // ein Zählerstand hängt an einem seiner Zähler (#145).
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [dragOver, setDragOver] = useState(false)
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
@@ -104,8 +112,12 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
   async function uploadInvoice(f: File) {
     const fd = new FormData()
     fd.append('file', f)
-    const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
-    setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
+    try {
+      const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
+      setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
+    } catch (e) {
+      setError(`Der Beleg wurde nicht hochgeladen: ${errorText(e)}`)
+    }
   }
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
@@ -143,8 +155,14 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!form.id
-    if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const desc = form.description.trim()
     setForm(null)
     await load()
@@ -159,7 +177,13 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast(`„${i.description}" gelöscht.`)
   }
@@ -206,15 +230,16 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           }
           // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
           // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Ohne Betrag
-          // ist die Position auch nicht vorgewählt, sonst fiele sie beim Übernehmen still weg.
+          // ist die Position auch nicht vorgewählt, ebenso bei 0 € (#139).
           const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
+          const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
           return {
             description: p.description,
             category,
             amount,
-            labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+            labor35a,
             key: defaultKeyFor(category),
-            checked: category !== 'Nicht umlagefähig' && amount !== '',
+            checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
@@ -230,24 +255,44 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
   }, [queue])
 
   async function adoptPositions(entry: QueueEntry) {
-    const chosen = entry.positions.filter((p) => p.checked)
-    for (const p of chosen) {
+    // Erst prüfen, dann übernehmen (#139), mit derselben Regel wie das Formular: Eine Gutschrift
+    // geht durch, eine angehakte Position mit 0 € oder ohne Betrag wird genannt statt still
+    // ausgelassen.
+    const blocked = entry.positions.filter((p) => p.checked && positionProblem(p) !== null)
+    if (blocked.length > 0) {
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      return
+    }
+    setError('')
+    const done: number[] = []
+    for (const [index, p] of entry.positions.entries()) {
+      if (!p.checked) continue
       const amount = parseEuro(p.amount)
       if (amount === null) continue
       const labor35a = p.labor35a.trim() ? parseEuro(p.labor35a) : 0
-      await api(withProperty('/api/costItems', propertyId), {
-        method: 'POST',
-        body: JSON.stringify({
-          year,
-          category: p.category,
-          description: p.description,
-          vendor: entry.vendor,
-          amountCents: amount,
-          labor35aCents: labor35a || undefined,
-          key: p.key,
-          invoiceFile: entry.serverFile,
-        }),
-      })
+      try {
+        await api(withProperty('/api/costItems', propertyId), {
+          method: 'POST',
+          body: JSON.stringify({
+            year,
+            category: p.category,
+            description: p.description,
+            vendor: entry.vendor,
+            amountCents: amount,
+            labor35aCents: labor35a || undefined,
+            key: p.key,
+            invoiceFile: entry.serverFile,
+          }),
+        })
+        done.push(index)
+      } catch (e) {
+        // Was bis hierher übernommen ist, steht in der Liste und wird abgehakt, damit ein zweiter
+        // Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
+        for (const i of done) updatePos(entry.id, i, { checked: false })
+        setError(`„${p.description}“ wurde nicht übernommen: ${errorText(e)}`)
+        await load()
+        return
+      }
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await load()
@@ -497,13 +542,13 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           open
           title={form.id ? 'Kostenposition bearbeiten' : 'Neue Kostenposition'}
           subtitle={form.id ? form.description : undefined}
-          onClose={() => setForm(null)}
+          onClose={() => { setError(''); setForm(null) }}
           onSubmit={saveItem}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveItem}>{form.id ? 'Übernehmen' : 'Hinzufügen'}</button>
             </>
           }
@@ -528,6 +573,8 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             <label className="field grow">
               Betrag €
               <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
+              {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
+              <small className="muted">Eine Gutschrift mit Minus eintragen, z. B. -54,00.</small>
             </label>
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>

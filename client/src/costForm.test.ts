@@ -3,6 +3,7 @@ import type { CostKey, MeterType, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
+  amountProblem,
   buildCostItemBody,
   costKeyOptions,
   customSharesSumText,
@@ -80,6 +81,45 @@ describe('Validierung', () => {
   test('§35a-Lohnanteil darf den Gesamtbetrag nicht übersteigen', () => {
     expect(buildCostItemBody(form({ labor35a: '150,00' }), UNITS, 2025)).toHaveProperty('error')
     expect(buildCostItemBody(form({ labor35a: '40,00' }), UNITS, 2025)).toHaveProperty('body')
+  })
+
+  test('Gutschrift (#139): ein negativer Betrag wird angenommen, mit „-“ und mit typografischem „−“', () => {
+    for (const amount of ['-54,00', '-54', '−54,00', '− 54,00']) {
+      const r = buildCostItemBody(form({ amount }), UNITS, 2025)
+      expect(r, amount).toHaveProperty('body')
+      expect((r as { body: Record<string, unknown> }).body.amountCents, amount).toBe(-5400)
+    }
+  })
+
+  test('Betrag (#139): die Meldung nennt den Grund', () => {
+    expect(buildCostItemBody(form({ description: '  ' }), UNITS, 2025)).toEqual({ error: 'Bitte eine Beschreibung angeben.' })
+    expect((buildCostItemBody(form({ amount: '0' }), UNITS, 2025) as { error: string }).error).toMatch(/0 €/)
+    expect((buildCostItemBody(form({ amount: '0,00' }), UNITS, 2025) as { error: string }).error).toMatch(/0 €/)
+    expect((buildCostItemBody(form({ amount: '' }), UNITS, 2025) as { error: string }).error).toMatch(/Betrag/)
+    expect((buildCostItemBody(form({ amount: 'abc' }), UNITS, 2025) as { error: string }).error).toMatch(/Gutschrift mit Minus/)
+  })
+
+  test('Gutschrift (#139): kein §35a-Lohnanteil, und die Meldung sagt warum', () => {
+    // Bescheinigt werden nach § 35a EStG gezahlte Lohnkosten. Die Berechnung bescheinigte bei
+    // einer Gutschrift ohnehin nichts (calc.ts warnt), die Steuerübersicht zählte den Lohnanteil
+    // aber mit. Deshalb schon beim Erfassen ablehnen.
+    const r = buildCostItemBody(form({ amount: '-54,00', labor35a: '10,00' }), UNITS, 2025)
+    expect(r).toEqual({ error: 'Bei einer Gutschrift gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.' })
+    expect(buildCostItemBody(form({ amount: '-54,00', labor35a: '0' }), UNITS, 2025)).toHaveProperty('body')
+  })
+
+  test('Gutschrift (#139): nicht nach Einzelbeträgen', () => {
+    const r = buildCostItemBody(form({ amount: '-54,00', key: 'amounts' }), UNITS, 2025)
+    expect(r).toEqual({ error: 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.' })
+  })
+
+  test('amountProblem (#139): dieselbe Prüfung wie das Formular, für übernommene Positionen', () => {
+    expect(amountProblem(-5400, 0)).toBeNull()
+    expect(amountProblem(10000, 4000)).toBeNull()
+    expect(amountProblem(0, 0)).toMatch(/0 €/)
+    expect(amountProblem(null, 0)).toMatch(/Gutschrift mit Minus/)
+    expect(amountProblem(-5400, 1000)).toMatch(/Gutschrift gibt es keinen §35a-Lohnanteil/)
+    expect(amountProblem(10000, 15000)).toMatch(/§35a-Lohnanteil/)
   })
 
   test('§35a-Lohnanteil darf nicht negativ sein', () => {

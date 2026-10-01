@@ -96,6 +96,46 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite
+  der Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
+  Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als
+  0, damit der Hinweis „Endstand fehlt“ erscheint, statt dass ein falscher Verbrauch Kosten
+  zwischen Mietern verschiebt. Zählerstände werden außerdem wie alle Mengen gelesen: „1.234“ ist
+  1.234 und nicht 1,234, auf der Zähler-Seite wie in der Schnellerfassung; einen vom Foto
+  gelesenen Stand zeigt die Schnellerfassung in deutscher Schreibweise an. Prüfen Sie bitte Ablesungen mit Zählerwechsel und dem Endstand 0.
+  ([#149](https://github.com/speedone/mietfuchs/issues/149))
+- **Ein Objektwechsel speichert nichts mehr ins falsche Haus.** Wechselten Sie das Objekt,
+  während ein Formular offen war, landete der Eintrag still im anderen Objekt, etwa eine Zahlung
+  beim Mieter des vorigen Hauses, wo sie die Steuerübersicht verändert. Jetzt fragt Mietfuchs vor
+  dem Wechsel nach. Wechseln Sie, wird das Formular ohne Speichern geschlossen; brechen Sie ab,
+  bleiben Objekt, Formular und Eingaben, wie sie waren; ebenso mit Esc. Dasselbe gilt für
+  angefangene Ablesungen, den Mieterwechsel, noch nicht übernommene Belegauswertungen,
+  ungespeicherte Änderungen an der Objektkarte und in den Einstellungen sowie für den Wechsel
+  nach „Weiteres Objekt anlegen“. Wer schnell hin und her wechselt, sieht keine Wohnungen des
+  anderen Objekts mehr.
+  ([#145](https://github.com/speedone/mietfuchs/issues/145))
+- **Lehnt Mietfuchs das Speichern ab, steht jetzt da, warum.** Bei Kosten, Zählern und
+  Ablesungen, Zahlungen, Wohnungen und Mietverhältnissen blieb der Dialog bisher wortlos offen,
+  und der Grund stand nur in der Browser-Konsole. Jetzt erscheint er im Dialog, und Ihre Eingaben
+  bleiben stehen. Dasselbe gilt beim Löschen, beim Abschließen und Wiederöffnen einer Abrechnung,
+  bei der Korrektur der gezahlten Vorauszahlung, den Einstellungen und beim Übernehmen
+  ausgewerteter Belege. Eine Meldung verschwindet, sobald Sie ein Formular öffnen oder schließen,
+  und steht nicht mehr an einer Stelle, zu der sie nicht gehört.
+  ([#146](https://github.com/speedone/mietfuchs/issues/146))
+- **Gutschriften lassen sich im Kostenformular erfassen.** Ein negativer Betrag wie „-54,00“
+  wird angenommen, auch mit dem typografischen Minus „−“, etwa aus einem kopierten Text. Ein
+  Betrag von 0 € wird weiterhin abgelehnt, und die Meldung sagt jetzt, was am Betrag nicht
+  stimmt. Eine Gutschrift trägt keinen §35a-Lohnanteil und lässt sich nicht nach Einzelbeträgen
+  verteilen; das Formular sagt beides. Dieselbe Regel gilt beim Übernehmen ausgewerteter Belege in
+  der Schnellerfassung und bei den Kosten: Eine Gutschrift wird übernommen und ist in der Vorschau
+  gelb als Gutschrift markiert; eine Position mit 0 € fällt nicht mehr still weg, sondern ist als
+  nicht übernehmbar gekennzeichnet und nicht vorab angehakt. „Alle grünen übernehmen“ übernimmt
+  nur die grünen Positionen; bleiben angehakte gelbe oder rote übrig, etwa eine Gutschrift, bleibt
+  der Beleg offen, und ein Hinweis nennt, was noch zu prüfen ist.
+  ([#139](https://github.com/speedone/mietfuchs/issues/139))
+- **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
+  jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
+  ([#138](https://github.com/speedone/mietfuchs/issues/138))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
   Breite Tabellen scrollen jetzt innerhalb ihrer Karte, das Monatsraster im Mietkonto zeigt vier

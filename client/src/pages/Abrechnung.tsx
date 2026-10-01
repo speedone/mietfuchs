@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
-import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
@@ -36,6 +36,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string } | null>(null)
+  // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
+  useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
@@ -62,8 +64,21 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   useEffect(() => { void load() }, [load])
 
   // Druckoptionen direkt in den Einstellungen merken
+  // Ein Speichern, das der Server ablehnt (#146), meldet sich oben auf der Seite, statt nur in
+  // der Konsole zu stehen. Ergibt true, wenn es geklappt hat.
+  async function attempt(request: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await request()
+      setError('')
+      return true
+    } catch (e) {
+      setError(errorText(e))
+      return false
+    }
+  }
+
   async function saveSetting(patch: Partial<Settings>) {
-    await api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })
+    if (!(await attempt(() => api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) })))) return
     await reload()
   }
 
@@ -109,7 +124,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
     await load()
     toast(`Abrechnung ${year} abgeschlossen.`)
   }
@@ -120,12 +135,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       confirmLabel: 'Wieder öffnen',
     })
     if (!ok) return
-    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })))) return
     await load()
     toast(`Abrechnung ${year} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
-    await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
     await load()
   }
   const isClosed = !!data?.closed
@@ -136,7 +151,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     const overrides = { ...(ten?.prepaymentOverrides ?? {}) }
     if (cents === null) delete overrides[String(year)]
     else overrides[String(year)] = cents
-    await api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })
+    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
     setPpEdit(null)
     await Promise.all([load(), reload()])
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')

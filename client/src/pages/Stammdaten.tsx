@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
-import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -73,8 +73,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
-    if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setUnitForm(null)
     await reload()
     toast(editing ? `„${unitForm.name.trim()}" übernommen.` : `Wohnung „${unitForm.name.trim()}" angelegt.`)
@@ -88,7 +94,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       danger: true,
     })
     if (!ok) return
-    await api(`/api/units/${u.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/units/${u.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await reload()
     toast(`Wohnung „${u.name}" gelöscht.`)
   }
@@ -176,8 +188,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       flatRates,
     })
     const editing = !!tenForm.id
-    if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
-    else await api('/api/tenancies', { method: 'POST', body })
+    try {
+      if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
+      else await api('/api/tenancies', { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const name = tenForm.tenantName.trim()
     setTenForm(null)
     await reload()
@@ -192,7 +209,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       danger: true,
     })
     if (!ok) return
-    await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await reload()
     toast(`Mietverhältnis „${t.tenantName}" gelöscht.`)
   }
@@ -202,6 +225,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   return (
     <>
       <PageHeader title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
+
+      {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
+      {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
 
@@ -242,7 +268,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                     )}
                   </td>
                   <td className="actions no-print">
-                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => setUnitForm(unitToForm(u))}>✎</button>
+                    <button className="icon-btn" title="Bearbeiten" aria-label="Wohnung bearbeiten" onClick={() => { setError(''); setUnitForm(unitToForm(u)) }}>✎</button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Wohnung löschen" onClick={() => deleteUnit(u)}>🗑</button>
                   </td>
                 </tr>
@@ -397,14 +423,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           open
           title={tenForm.id ? 'Mietverhältnis bearbeiten' : 'Neues Mietverhältnis'}
           subtitle={tenForm.id ? tenForm.tenantName : undefined}
-          onClose={() => setTenForm(null)}
+          onClose={() => { setError(''); setTenForm(null) }}
           onSubmit={saveTenancy}
           width={480}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setTenForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setTenForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveTenancy}>{tenForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }
@@ -583,13 +609,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
           open
           title={unitForm.id ? 'Wohnung bearbeiten' : 'Neue Wohnung'}
           subtitle={unitForm.id ? unitForm.name : undefined}
-          onClose={() => setUnitForm(null)}
+          onClose={() => { setError(''); setUnitForm(null) }}
           onSubmit={saveUnit}
           footer={
             <>
               <span className="drawer-hint">Strg+S speichert · Esc schließt</span>
               <span className="spacer" />
-              <button className="btn ghost" onClick={() => setUnitForm(null)}>Abbrechen</button>
+              <button className="btn ghost" onClick={() => { setError(''); setUnitForm(null) }}>Abbrechen</button>
               <button className="btn" onClick={saveUnit}>{unitForm.id ? 'Übernehmen' : 'Anlegen'}</button>
             </>
           }
@@ -700,6 +726,8 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', baseRent: '', prepayment: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
+  useOpenForm(true)
 
   // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
   const { property } = useProperty()
