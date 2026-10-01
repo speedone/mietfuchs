@@ -462,6 +462,34 @@ export type Settlement = {
   notSettled?: NotSettled[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
+  // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders
+  // ergäbe. Der eingefrorene Stand bleibt davon unberührt.
+  deviation?: SettlementComparison
+}
+
+// Abweichung eines Mietverhältnisses zwischen eingefrorenem und heutigem Saldo (#56). Salden wie
+// in der Abrechnung: über null Guthaben des Mieters, unter null Nachzahlung. `null` heißt, das
+// Mietverhältnis steht nur auf einer der beiden Seiten.
+export type SettlementDeviation = {
+  tenancyId: string
+  tenantName: string
+  unitName: string
+  frozenBalanceCents: number | null
+  currentBalanceCents: number | null
+  // heute minus eingefroren; über null zugunsten des Mieters
+  differenceCents: number
+  // `added` und `removed`: nur auf einer Seite, also nichts nachgerechnet (etwa eine Wohnung, die
+  // das Objekt gewechselt hat). Eine Richtung wäre dort kein Befund.
+  direction: 'tenant' | 'landlord' | 'added' | 'removed'
+}
+export type SettlementComparison = {
+  // false, wenn sich der eingefrorene Stand nicht lesen ließ; dann ist „keine Abweichung“ keine
+  // Auskunft, und die Oberfläche sagt das.
+  comparable: boolean
+  deviations: SettlementDeviation[]
+  // Ende der Abrechnungsfrist nach § 556 Abs. 3 BGB und ob es vorbei ist
+  deadline: string
+  deadlinePassed: boolean
 }
 
 // ---------- Steuer-Export (Anlage V) ----------

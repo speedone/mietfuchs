@@ -777,7 +777,10 @@ angelegt hat. Beides spricht seit Aufgabe 7a auch die Datenbank, siehe Backup un
 Wiederherstellen) sowie
 `/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
-/api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; ebenso nimmt
+/api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; daneben rechnet sie neu und
+liefert in `deviation` je Mieter, was die heutige Berechnung anders ergäbe (#56,
+[server/src/settlementDiff.ts](server/src/settlementDiff.ts)); ein unlesbarer alter Stand heißt
+„nicht vergleichbar“ und nicht „keine Abweichung“; ebenso nimmt
 `taxReport` den Eigenanteil aus dem Snapshot, damit Steuerübersicht und versendete Abrechnung
 nicht auseinanderlaufen.
 

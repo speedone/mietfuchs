@@ -871,6 +871,30 @@ test('Abschließen friert Hinweise und Rechtsstand mit ein (#112)', async () => 
   }
 })
 
+test('Abgeschlossenes Jahr: weicht die heutige Berechnung ab, sagt die Antwort es je Mieter (#56)', async () => {
+  const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Abw', areaM2: 50, participates: true }) })
+  const t = await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({
+    unitId: u.id, tenantName: 'Abweichung', persons: 1, personHistory: [], start: '2047-01-01', end: '2047-12-31',
+    prepayments: [{ from: '2047-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+  }) })
+  const k = await srv.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2047, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'direct', directUnitId: u.id }) })
+  await srv.api('/api/settlement/2047/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    const vorher = await srv.api<Settlement>('/api/settlement/2047')
+    assert.deepEqual(vorher.deviation?.deviations, [], 'direkt nach dem Abschluss weicht nichts ab')
+    assert.equal(vorher.deviation?.comparable, true)
+    await srv.api(`/api/costItems/${k.id}`, { method: 'PUT', body: JSON.stringify({ amountCents: 40000 }) })
+    const nachher = await srv.api<Settlement>('/api/settlement/2047')
+    const d = nachher.deviation?.deviations.find((x) => x.tenancyId === t.id)
+    assert.deepEqual([d?.differenceCents, d?.direction], [10000, 'tenant'])
+    assert.equal(nachher.deviation?.deadline, '2048-12-31')
+    const eingefroren = nachher.statements.find((st) => st.tenancyId === t.id)
+    assert.equal(eingefroren?.totalShareCents, 50000, 'der eingefrorene Stand bleibt, wie er war')
+  } finally {
+    await srv.api('/api/settlement/2047/close', { method: 'DELETE' })
+  }
+})
+
 test('Abschließen: ein zweites Mal für dasselbe Jahr wird abgelehnt, und zwar mit einem Satz', async () => {
   // Die Route fragt vor dem Einfrieren, ob es für das Jahr schon eine abgeschlossene Abrechnung
   // gibt. Fiele diese Frage weg, käme statt einer Erklärung der Verstoß gegen den eindeutigen
