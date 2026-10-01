@@ -6,7 +6,7 @@ import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
-import { amountProblem } from '../costForm'
+import { amountProblem, parseQuantity } from '../costForm'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -70,14 +70,12 @@ type QueueEntry = {
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
-// Zählerstände: deutsche und technische Schreibweise zu Zahl
-function parseNum(s: string): number | null {
-  const t = s.trim()
-  if (!t) return null
-  const norm = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  const n = Number(norm)
-  return Number.isFinite(n) ? n : null
-}
+// Zählerstände lesen wie jede Menge (#149): „1.234“ ist 1234 und nicht 1,234. Ein leeres Feld ist
+// kein Wert.
+const parseNum = (s: string): number | null => parseQuantity(s)
+// Und so ins Feld schreiben, dass dasselbe wieder herauskommt: Als „1.234“ stünde 1,234 m³ da und
+// würde als 1234 gelesen.
+const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 6 })
 
 // Jahr aus den Extraktionsdaten ableiten: bevorzugt der Leistungszeitraum, sonst das Rechnungsdatum
 function yearFrom(periodStart?: string | null, invoiceDate?: string): number | null {
@@ -170,12 +168,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           })
           const reading: ReadingCandidate = {
             meterNumber: r.meterNumber ?? '',
-            value: value != null ? String(value) : '',
+            value: value != null ? quantityInput(value) : '',
             date: r.dateOnImage || exifDate || todayISO(),
             hasDate: !!(r.dateOnImage || exifDate),
             matchedMeterId,
             replacement: sc.replacementGuess,
-            oldEndValue: sc.suggestedOldEndValue != null ? String(sc.suggestedOldEndValue) : '',
+            oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',
             checked: sc.level !== 'rot',
           }
           patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
@@ -651,7 +649,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                   )}
                   <div className="row" style={{ marginTop: 10 }}>
                     <div className="grow" />
-                    <button className="btn" onClick={() => void adoptEntry(entry)} disabled={!entry.reading.matchedMeterId || !parseNum(entry.reading.value)}>
+                    <button className="btn" onClick={() => void adoptEntry(entry)} disabled={!entry.reading.matchedMeterId || parseNum(entry.reading.value) === null}>
                       Ablesung übernehmen
                     </button>
                   </div>

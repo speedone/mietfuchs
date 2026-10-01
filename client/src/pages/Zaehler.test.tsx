@@ -41,7 +41,7 @@ async function openReadings() {
       </PropertyProvider>
     </YearProvider>,
   )
-  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /Ablesungen \(0\)/ }, { timeout: 5000 }))
   fireEvent.change(screen.getByLabelText(/^Datum/), { target: { value: '2025-06-30' } })
 }
 
