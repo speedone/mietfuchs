@@ -429,7 +429,8 @@ export type NotSettled = {
 // verletzt; `hint`, etwas zum Prüfen ohne sicheren Fehler; `info` ist reine Auskunft.
 export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
 // Wo man den Hinweis behebt. Daraus wird der Knopf „Hier beheben →“.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter'; id: string }
+// `rentLedger` (#133): das Mietkonto eines Mietverhältnisses, `id` ist die Kennung des Mietverhältnisses.
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger'; id: string }
 export type Notice = {
   code: string
   level: NoticeLevel

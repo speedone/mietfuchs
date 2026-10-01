@@ -36,18 +36,22 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
   tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
   meter: { tab: 'zaehler', page: 'Zähler' },
+  rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite, nicht zum einzelnen Eintrag.
 export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeTab, label: string } | null {
   if (!subject) return null
-  const target = TARGETS[subject.kind]
+  // Eine Art, die diese Fassung nicht kennt (eingefrorene oder neuere Abrechnung), ergibt keinen
+  // Knopf statt eines Absturzes.
+  const target: { tab: NoticeTab, page: string } | undefined = Object.hasOwn(TARGETS, subject.kind) ? TARGETS[subject.kind] : undefined
+  if (!target) return null
   return { tab: target.tab, label: `Hier beheben → ${target.page}` }
 }
 

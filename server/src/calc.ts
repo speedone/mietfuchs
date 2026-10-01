@@ -1543,11 +1543,18 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
       const row = ledgerRows.get(st.tenancyId)
       if (!row || row.balanceCents >= 0) continue
+      // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
+      // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
+      // man erst im Mietkonto.
+      const alsoInSoll = row.baseRentYearCents > 0 && row.flatRateYearCents > 0
+        ? 'stehen auch Kaltmiete und Pauschale'
+        : row.baseRentYearCents > 0 ? 'steht auch die Kaltmiete' : row.flatRateYearCents > 0 ? 'steht auch die Pauschale' : ''
       warn('prepayment.arrears',
-        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(-row.balanceCents)} offen, die Abrechnung rechnet trotzdem die volle Vorauszahlung von ${fmtCents(st.prepaymentCents)} an. ` +
-          'Angesetzt werden muss, was tatsächlich gezahlt wurde. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
+        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(-row.balanceCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
+          `Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto${alsoInSoll ? `: Im Soll ${alsoInSoll}, der Rückstand kann ebenso sie betreffen` : ''}. ` +
+          'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
           'hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.',
-        { kind: 'tenancy', id: st.tenancyId })
+        { kind: 'rentLedger', id: st.tenancyId })
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
-import type { Notice } from './types'
+import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
 
@@ -20,6 +20,15 @@ describe('Hinweise (#112)', () => {
     expect(noticeTarget({ kind: 'tenancy', id: 't' })?.tab).toBe('stammdaten')
     expect(noticeTarget({ kind: 'meter', id: 'm' })?.tab).toBe('zaehler')
     expect(noticeTarget(undefined)).toBeNull()
+  })
+
+  test('ein Rückstand führt ins Mietkonto (#133)', () => {
+    expect(noticeTarget({ kind: 'rentLedger', id: 't' })).toEqual({ tab: 'mietkonto', label: 'Hier beheben → Mietkonto' })
+  })
+
+  test('eine unbekannte Art aus einer eingefrorenen oder neueren Abrechnung ergibt keinen Knopf statt eines Absturzes', () => {
+    const fremd: NoticeSubject = JSON.parse('{ "kind": "gibtEsNicht", "id": "x" }')
+    expect(noticeTarget(fremd)).toBeNull()
   })
 
   test('Stufen haben ein Wort und eine Farbe', () => {

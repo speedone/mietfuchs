@@ -33,7 +33,9 @@ test('Rückstand im Mietkonto ohne Jahreskorrektur: Hinweis mit offenem Betrag, 
   assert.equal(found.length, 1, `Hinweise: ${s.notices.map((n) => n.code).join(', ')}`)
   const [n] = found
   assert.equal(n.level, 'warning')
-  assert.deepEqual(n.subject, { kind: 'tenancy', id: 't' })
+  // Der Knopf führt ins Mietkonto, dort steht der Rückstand und lässt sich eine Zahlung nachtragen.
+  assert.deepEqual(n.subject, { kind: 'rentLedger', id: 't' })
+  assert.match(n.text, /Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto/)
   assert.match(n.text, /530,00/)
   assert.match(n.text, /800,00/)
   assert.ok(n.terms?.includes('prepayment'))
@@ -73,4 +75,22 @@ test('Pauschale statt Abrechnung: kein Hinweis, es wird keine Vorauszahlung ange
     payments: paidMarchToNovember(),
   })
   assert.equal(arrears(s).length, 0)
+})
+
+test('Gemischtes Modell (kalt pauschal, Heizung abgerechnet): der Text behauptet nicht, die Vorauszahlung fehle', () => {
+  const s = settle({
+    tenancies: [tenancy({
+      costModel: 'flatRate', flatRates: [{ from: '2025-03', monthlyCents: 5000 }],
+      baseRents: [{ from: '2025-03', monthlyCents: 40000 }],
+    })],
+    costItems: [{ id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 73056, key: 'area' }],
+    // Soll 400 + 80 + 50 = 530 € je Monat von März bis Dezember; gezahlt neun Mal 530 €.
+    payments: paidMarchToNovember(),
+  })
+  const [n] = arrears(s)
+  if (!n) return assert.fail(`kein Hinweis: ${s.notices.map((x) => x.code).join(', ')}`)
+  assert.equal(n.text,
+    'Im Mietkonto 2025 von Mieter (EG) sind 530,00 € offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (800,00 €); maßgeblich ist aber, was tatsächlich gezahlt wurde. ' +
+    'Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto: Im Soll stehen auch Kaltmiete und Pauschale, der Rückstand kann ebenso sie betreffen. ' +
+    'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.')
 })
