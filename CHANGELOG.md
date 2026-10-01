@@ -96,6 +96,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
+  jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
+  ([#138](https://github.com/speedone/mietfuchs/issues/138))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
   Breite Tabellen scrollen jetzt innerhalb ihrer Karte, das Monatsraster im Mietkonto zeigt vier

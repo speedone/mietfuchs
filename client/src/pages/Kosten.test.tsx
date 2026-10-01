@@ -75,6 +75,8 @@ test('Zählertyp: angezeigter Wert und gespeicherter Wert stimmen überein', asy
   // Das Feld darf nichts vorbelegen, was in der Liste nicht steht: sichtbar ist „— wählen —".
   expect(typeSelect.value).toBe('')
   expect([...typeSelect.options].map((o) => o.value)).toEqual(['', 'sonstig'])
+  // Beschriftet als Substantiv wie die Nachbarn (Kaltwasser, Wärme), nicht als Adjektiv (#138).
+  expect([...typeSelect.options].map((o) => o.text)).toEqual(['— wählen —', 'Sonstiges'])
 
   // Ohne Auswahl wird nicht gespeichert, sondern nach dem Zählertyp gefragt.
   fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))

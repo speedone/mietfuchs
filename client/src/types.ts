@@ -34,7 +34,7 @@ export const METER_TYPE_LABELS: Record<MeterType, string> = {
   kaltwasser: 'Kaltwasser',
   strom: 'Strom (Allgemein)',
   waerme: 'Wärme',
-  sonstig: 'Sonstig',
+  sonstig: 'Sonstiges',
 }
 
 export const CATEGORIES = [
