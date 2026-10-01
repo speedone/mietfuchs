@@ -109,13 +109,13 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   const [wizardFor, setWizardFor] = useState<Tenancy | null>(null)
   const [error, setError] = useState('')
   // Die Zählerarten des Objekts, für die Frage nach den Anschlüssen einer Einheit (#142).
-  const [meterTypes, setMeterTypes] = useState<MeterType[]>([])
+  const [objectMeters, setObjectMeters] = useState<Meter[]>([])
   useEffect(() => {
     if (!propertyId) return
     let alive = true
     void api<Meter[]>(withProperty('/api/meters', propertyId))
-      .then((all) => { if (alive) setMeterTypes([...new Set(all.map((m) => m.type))]) })
-      .catch(() => { if (alive) setMeterTypes([]) })
+      .then((all) => { if (alive) setObjectMeters(all) })
+      .catch(() => { if (alive) setObjectMeters([]) })
     return () => { alive = false }
   }, [propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
@@ -715,7 +715,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
             </label>
             {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
                 Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
-            {connectionTypes(meterTypes, unitForm.noConnection).length > 0 && (
+            {connectionTypes(objectMeters, unitForm.noConnection).length > 0 && (
               <details className="extra-details" style={{ width: '100%' }}>
                 <summary>
                   Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
@@ -723,7 +723,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <fieldset className="field grow no-connection" style={{ marginTop: 10 }}>
                   <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
                   <div className="row" style={{ gap: 10 }}>
-                    {connectionTypes(meterTypes, unitForm.noConnection).map((t) => (
+                    {connectionTypes(objectMeters, unitForm.noConnection).map((t) => (
                       <label key={t} className="checkline">
                         <input
                           type="checkbox"

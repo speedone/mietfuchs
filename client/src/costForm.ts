@@ -243,6 +243,15 @@ export function suggestedKey(category: string, units: Unit[], meters: Meter[]): 
   return { key: defaultKeyFor(category), meterType: '' }
 }
 
+// Kostenart wechseln. Eine neue Position bekommt den Vorschlag der Kostenart; eine bestehende
+// behält ihren Schlüssel, denn er ist eine Wahl des Nutzers. Ausnahme (Durchsicht zu #142): Wird
+// eine nicht umlagefähige Position umlagefähig, ist ihr gespeicherter Schlüssel nur die neutrale
+// Vorgabe und keine Wahl; dann gilt der Vorschlag wie bei einer neuen.
+export function withCategory(form: ItemForm, category: string, units: Unit[], meters: Meter[]): ItemForm {
+  const suggest = !form.id || (isNotAllocable(form.category) && !isNotAllocable(category))
+  return { ...form, category, ...(suggest ? suggestedKey(category, units, meters) : {}) }
+}
+
 // Summe der vereinbarten Anteile in Prozent (unlesbare Eingaben zählen als 0)
 export function customSharesSum(form: ItemForm, units: Unit[]): number {
   return basisUnitsOf(units).reduce((a, u) => {

@@ -24,3 +24,8 @@ test('Zählerwechsel: ein fehlender Endstand heißt „fehlt“, eine 0 bleibt e
   expect(oldEndText(0)).toBe('0')
   expect(oldEndText(1234.5)).toBe('1.234,5')
 })
+
+test('ein bestehender Zähler behält beim Wechsel der Sparte seine Einheit (Durchsicht zu #142)', () => {
+  const vorhanden = { id: 'm1', name: 'Zähler', unitId: '', type: 'kaltwasser' as const, meterNumber: '', unit: 'm³' }
+  expect(withMeterType(vorhanden, 'waerme')).toMatchObject({ type: 'waerme', unit: 'm³' })
+})

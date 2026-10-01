@@ -23,6 +23,7 @@ import {
   keyListText,
   showsKeyFields,
   withKey,
+  withCategory,
   type ItemForm,
 } from '../costForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -592,7 +593,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, ...(form.id ? {} : suggestedKey(e.target.value, units, meters)) })}>
+              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>

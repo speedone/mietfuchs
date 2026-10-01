@@ -2,7 +2,7 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { MeterType, Unit, UnitDependents, UnitUsage } from './types'
+import type { Meter, MeterType, Unit, UnitDependents, UnitUsage } from './types'
 import { usageOf } from './types'
 
 export type UnitForm = {
@@ -125,11 +125,12 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
 // Angeboten werden nur Zählerarten, für die es im Objekt Zähler gibt: Ohne Zähler einer Art fragt
 // die Berechnung nie nach dem Anschluss, und die Frage verwirrte nur. Eine schon gesetzte
 // Ausnahme bleibt immer sichtbar, sonst stünde etwas Gespeichertes unsichtbar und unlöschbar im
-// Formular. Der Allgemeinstrom gehört dem Haus und nicht einer Einheit; ihn bietet das Formular
-// nur an, wenn er schon als Ausnahme gesetzt ist.
+// Formular. Strom bietet das Formular nur an, wenn das Objekt einen Stromzähler an einer Einheit
+// hat oder er schon als Ausnahme gesetzt ist: Ein Stromzähler ohne Einheit ist der Allgemeinstrom
+// des Hauses und sagt nichts über den Anschluss einer Einheit.
 const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'waerme', 'sonstig', 'strom']
-export function connectionTypes(objectMeterTypes: MeterType[], noConnection: MeterType[]): MeterType[] {
-  const present = new Set<MeterType>(objectMeterTypes.filter((t) => t !== 'strom'))
+export function connectionTypes(objectMeters: Pick<Meter, 'type' | 'unitId'>[], noConnection: MeterType[]): MeterType[] {
+  const present = new Set<MeterType>(objectMeters.filter((m) => m.type !== 'strom' || m.unitId).map((m) => m.type))
   return CONNECTION_ORDER.filter((t) => present.has(t) || noConnection.includes(t))
 }
 

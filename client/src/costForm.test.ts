@@ -20,6 +20,7 @@ import {
   keyListText,
   showsKeyFields,
   withKey,
+  withCategory,
   type ItemForm,
 } from './costForm'
 
@@ -484,5 +485,25 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     // Eine schon getroffene Wahl bleibt.
     expect(withKey(form({ meterType: 'sonstig' }), 'meter', ['kaltwasser'])).toMatchObject({ meterType: 'sonstig' })
     expect(withKey(form(), 'area', ['kaltwasser'])).toMatchObject({ key: 'area', meterType: '' })
+  })
+})
+
+describe('Kostenart wechseln (Durchsicht zu #142)', () => {
+  const unit = (id: string): Unit => ({ id, propertyId: 'p', name: id, areaM2: 50, participates: true })
+  const meter = (unitId: string): Meter => ({ id: `m-${unitId}`, propertyId: 'p', name: 'Zähler', unitId, type: 'kaltwasser', unit: 'm³' })
+  const units = [unit('a'), unit('b')]
+  const meters = [meter('a'), meter('b')]
+
+  test('eine neue Position bekommt den Vorschlag der Kostenart', () => {
+    expect(withCategory(form(), 'Wasser/Abwasser', units, meters)).toMatchObject({ category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser' })
+  })
+
+  test('eine bestehende behält ihren Schlüssel, außer sie wird aus „nicht umlagefähig“ umlagefähig', () => {
+    const bestehend = form({ id: 'c', category: 'Grundsteuer', key: 'persons' })
+    expect(withCategory(bestehend, 'Wasser/Abwasser', units, meters)).toMatchObject({ key: 'persons', meterType: '' })
+    // Die neutrale Vorgabe „area“ einer nicht umlagefähigen Position ist keine Wahl des Nutzers.
+    const verwaltung = form({ id: 'c', category: 'Nicht umlagefähig', key: 'area' })
+    expect(withCategory(verwaltung, 'Wasser/Abwasser', units, meters)).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
+    expect(withCategory(verwaltung, 'Zuführung Erhaltungsrücklage', units, meters)).toMatchObject({ key: 'area' })
   })
 })

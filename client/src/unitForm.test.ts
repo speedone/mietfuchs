@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import type { Unit } from './types'
+import type { MeterType, Unit } from './types'
 import { usageOf } from './types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
 
@@ -183,13 +183,15 @@ describe('Löschfrage einer Wohnung', () => {
 // unverändert nur die Ausnahme in `noConnection`.
 describe('Anschlüsse einer Einheit', () => {
   test('angeboten werden nur die Zählerarten des Objekts, dazu jede schon gesetzte Ausnahme', () => {
+    const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
     expect(connectionTypes([], [])).toEqual([])
-    expect(connectionTypes(['kaltwasser', 'kaltwasser'], [])).toEqual(['kaltwasser'])
-    expect(connectionTypes(['kaltwasser'], ['waerme'])).toEqual(['kaltwasser', 'waerme'])
-    expect(connectionTypes(['sonstig', 'waerme', 'kaltwasser'], [])).toEqual(['kaltwasser', 'waerme', 'sonstig'])
-    // Der Allgemeinstrom gehört dem Haus und nicht einer Einheit; nur eine gesetzte Ausnahme bleibt sichtbar.
-    expect(connectionTypes(['strom'], [])).toEqual([])
-    expect(connectionTypes(['strom'], ['strom'])).toEqual(['strom'])
+    expect(connectionTypes([m('kaltwasser'), m('kaltwasser')], [])).toEqual(['kaltwasser'])
+    expect(connectionTypes([m('kaltwasser')], ['waerme'])).toEqual(['kaltwasser', 'waerme'])
+    expect(connectionTypes([m('sonstig'), m('waerme'), m('kaltwasser', null)], [])).toEqual(['kaltwasser', 'waerme', 'sonstig'])
+    // Strom nur mit einem Stromzähler an einer Einheit; der Allgemeinstrom (Hauptzähler) gehört dem Haus.
+    expect(connectionTypes([m('strom', null)], [])).toEqual([])
+    expect(connectionTypes([m('strom', null)], ['strom'])).toEqual(['strom'])
+    expect(connectionTypes([m('strom', 'u1')], [])).toEqual(['strom'])
   })
 
   test('Häkchen entfernen setzt genau diese Ausnahme, Häkchen setzen nimmt sie zurück', () => {
