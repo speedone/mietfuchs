@@ -843,6 +843,128 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
   })
 }
 
+// ---------- Der Mieterwechsel (#150) ----------
+//
+// **Alles oder nichts.** Der Assistent in Stammdaten.tsx schickte drei Anfragen nacheinander:
+// altes Mietverhältnis beenden, Zwischenablesungen anlegen, Nachmieter anlegen. Lehnte der
+// Server den dritten Schritt ab (etwa eine negative Vorauszahlung an der Prüfbedingung), standen
+// die ersten beiden schon da, und ein zweiter Versuch legte die Ablesungen doppelt an. Hier läuft
+// der ganze Wechsel in einer Transaktion, und zwar durch dieselben Verschmelzungen, Wächter und
+// Einfügungen wie die einzelnen Routen: Ein Mietverhältnis, das beim Wechsel anders gelesen
+// würde als beim gewöhnlichen Anlegen, wäre ein zweiter Weg mit eigenen Regeln.
+//
+// **Geprüft wird vorher, was die Datenbank nicht prüfen kann**: dass der Auszug nach dem Einzug
+// und der Einzug des Nachmieters nach dem Auszug liegt, dass jeder Stand eine Zahl ist und dass
+// jeder Zähler zur Wohnung gehört oder der Hauptzähler desselben Objekts ist. Der Nachmieter zieht
+// immer in dieselbe Wohnung; eine andere Kennung im Rumpf ist ein Fehler und kein Umzug.
+//
+// **Nur ein offenes Mietverhältnis wird gewechselt.** Ein zweimal abgeschickter Wechsel trifft
+// sonst ein schon beendetes und legt Ablesungen und Nachmieter ein zweites Mal an.
+
+// Eine Ablehnung mit einer Meldung für den Nutzer; die Fehlerbehandlung in index.ts gibt sie
+// unverändert weiter.
+export class TenantChangeError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+// „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
+const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
+const isIsoDate = (value: unknown): value is string =>
+  typeof value === 'string' && ISO_DATE.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+
+// `null`, wenn es das Mietverhältnis nicht gibt; die Route macht daraus ihre 404.
+export async function changeTenant(
+  db: Database, propertyId: string, tenancyId: string, body: unknown, nextId: () => string,
+): Promise<TenantChange | null> {
+  const current = (await readTenancies(db)).find((t) => t.id === tenancyId)
+  if (!current) return null
+  const wohnung = (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, current.unitId)))[0]
+  if (wohnung?.propertyId !== propertyId) {
+    throw new CrossPropertyError(
+      `Das Mietverhältnis „${current.tenantName}“ gehört nicht zu Objekt ${await propertyName(db, propertyId)}. ` +
+        'Bitte laden Sie die Seite neu.',
+    )
+  }
+  if (current.end !== null) {
+    throw new TenantChangeError(409,
+      `Das Mietverhältnis „${current.tenantName}“ ist bereits zum ${isoToGerman(current.end)} beendet. Der Mieterwechsel ist ` +
+        'vermutlich schon gespeichert; bitte laden Sie die Seite neu.')
+  }
+
+  const end = raw(body, 'end')
+  if (!isIsoDate(end) || end < current.start) {
+    throw new TenantChangeError(400, 'Bitte ein gültiges Auszugsdatum angeben, das nicht vor dem Einzug liegt.')
+  }
+
+  // Die Zwischenablesungen: je Zähler höchstens eine, nur Zähler der Wohnung und Hauptzähler.
+  const zaehler = (await readMeters(db)).filter((m) => m.propertyId === propertyId)
+  const angaben = raw(body, 'readings') ?? []
+  if (!Array.isArray(angaben)) throw new TenantChangeError(400, 'Die Zwischenablesungen fehlen oder sind unlesbar.')
+  const gesehen = new Set<string>()
+  const ablesungen: Reading[] = []
+  for (const angabe of angaben) {
+    const meterId = raw(angabe, 'meterId')
+    const meter = zaehler.find((m) => m.id === meterId)
+    if (!meter || (meter.unitId !== null && meter.unitId !== current.unitId)) {
+      throw new TenantChangeError(400,
+        'Ein Zähler der Zwischenablesung gehört nicht zu dieser Wohnung oder zu diesem Objekt. Bitte laden Sie die Seite neu.')
+    }
+    const value = asOptionalNumber(raw(angabe, 'value'))
+    if (value === undefined) throw new TenantChangeError(400, `Der Zählerstand für „${meter.name}“ ist keine gültige Zahl.`)
+    if (gesehen.has(meter.id)) throw new TenantChangeError(400, `Für den Zähler „${meter.name}“ stehen zwei Stände da.`)
+    gesehen.add(meter.id)
+    ablesungen.push(mergeReading(emptyReading(nextId()), {
+      meterId: meter.id, date: end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`,
+    }))
+  }
+
+  // Der Nachmieter, oder Leerstand.
+  const nachmieterRumpf = raw(body, 'newTenancy')
+  let nachmieter: Tenancy | null = null
+  if (nachmieterRumpf !== null && nachmieterRumpf !== undefined) {
+    if (!isObject(nachmieterRumpf)) throw new TenantChangeError(400, 'Die Angaben zum neuen Mietverhältnis sind unlesbar.')
+    if (has(nachmieterRumpf, 'unitId') && raw(nachmieterRumpf, 'unitId') !== current.unitId) {
+      throw new CrossPropertyError('Beim Mieterwechsel zieht der neue Mieter in dieselbe Wohnung. Bitte laden Sie die Seite neu.')
+    }
+    nachmieter = mergeTenancy(emptyTenancy(nextId()), { ...Object(nachmieterRumpf), unitId: current.unitId, end: null })
+    if (!isIsoDate(nachmieter.start) || nachmieter.start <= end) {
+      throw new TenantChangeError(400, 'Der Einzug des neuen Mieters muss ein gültiges Datum nach dem Auszug sein.')
+    }
+  }
+
+  const beendet = mergeTenancy(current, { end })
+  await db.transaction(async (tx) => {
+    await guardTenancy(tx, current, beendet)
+    await tenancyCollection.replace(tx, beendet)
+    for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)
+    if (nachmieter) {
+      await guardTenancy(tx, null, nachmieter)
+      await tenancyCollection.insert(tx, nachmieter)
+    }
+  })
+
+  // Zurück kommt, was in der Datenbank steht, wie beim Anlegen.
+  const mietverhaeltnisse = await readTenancies(db)
+  const gelesen = (id: string): Tenancy => {
+    const t = mietverhaeltnisse.find((eintrag) => eintrag.id === id)
+    if (!t) throw new Error('Das Mietverhältnis ist nach dem Mieterwechsel nicht auffindbar.')
+    return t
+  }
+  const neueIds = new Set(ablesungen.map((r) => r.id))
+  return {
+    ended: gelesen(current.id),
+    newTenancy: nachmieter ? gelesen(nachmieter.id) : null,
+    readings: (await readReadings(db)).filter((r) => neueIds.has(r.id)),
+  }
+}
+
 // ---------- Die Einstellungen ----------
 
 // Sie sind genau eine Zeile, dazu bis zu zwei für die KI-Plätze; die Prüfbedingung des Schemas
