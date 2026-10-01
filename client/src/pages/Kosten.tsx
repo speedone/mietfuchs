@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory, usageOf } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -17,15 +17,22 @@ import {
   PARTICIPANT_KEYS,
   categoryNotice,
   selfAmountUnits,
-  amountProblem,
-  suggestedKey,
+  aiPositionBody,
+  aiPositionDefaults,
+  aiPositionProblem,
+  keyChangeNotice,
+  newItemForm,
   externalTotalLabel,
   keyListText,
   showsKeyFields,
   withKey,
   withCategory,
+  type AiPosition,
   type ItemForm,
+  type KeyContext,
 } from '../costForm'
+import { alreadyCarried, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
+import AiKeyCell from '../components/AiKeyCell'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
@@ -43,11 +50,8 @@ import { useFocusTarget, type FocusProps } from '../focus'
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
 
-type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
-
-// Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
-const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a' | 'category'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
+// Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
+type ExtractPos = AiPosition & { checked: boolean }
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -67,7 +71,6 @@ type QueueEntry = {
   startedAt?: number
 }
 
-const EMPTY = EMPTY_ITEM_FORM
 
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
@@ -84,6 +87,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // KI-Auswertung: Warteschlange für einen oder mehrere Belege
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
+  // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
+  const [carry, setCarry] = useState<CarryRow[] | null>(null)
+  useOpenForm(carry?.some((r) => r.amount.trim() !== '') ?? false)
   // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
   // ein Zählerstand hängt an einem seiner Zähler (#145).
   useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
@@ -142,6 +149,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
+  // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
+  // Objekts, das Jahr und die Art des Objekts.
+  const keyCtx: KeyContext = useMemo(() => ({ items, year, propertyKind: property?.kind ?? null }), [items, year, property?.kind])
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
   // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
@@ -165,6 +175,47 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     for (const g of withInvoice) if (!g.label) g.label = g.items.map((i) => i.category).find(Boolean) || 'Beleg'
     return [...withInvoice, ...withoutInvoice]
   }, [yearItems])
+
+  // Die Vorlagen gehören zum gewählten Jahr und Objekt; wechselt eines davon, schließt die Liste.
+  useEffect(() => { setCarry(null) }, [year, propertyId])
+  const previousCount = useMemo(() => items.filter((i) => i.year === year - 1).length, [items, year])
+
+  function updateCarry(index: number, patch: Partial<CarryRow>) {
+    setCarry((rows) => rows && rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  }
+
+  // Erst alle angehakten Zeilen prüfen, dann anlegen (#139): Eine Zeile ohne Betrag wird genannt,
+  // statt still zu fehlen. Angelegte Zeilen verschwinden aus der Liste; scheitert eine, bleibt der
+  // Rest stehen, damit ein zweiter Versuch nichts doppelt anlegt.
+  async function adoptCarry() {
+    if (!carry) return
+    const chosen = carry.map((row, index) => ({ row, index })).filter(({ row }) => row.checked)
+    const blocked = chosen.flatMap(({ row }) => {
+      const built = carryOverBody(row, units, year, tenancies)
+      return 'error' in built ? [`„${row.description}“: ${built.error}`] : []
+    })
+    if (blocked.length > 0) {
+      setError(`Nicht übernommen: ${blocked.join(' ')}`)
+      return
+    }
+    setError('')
+    const done = new Set<number>()
+    for (const { row, index } of chosen) {
+      const built = carryOverBody(row, units, year, tenancies)
+      if ('error' in built) continue
+      try {
+        await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+        done.add(index)
+      } catch (e) {
+        setError(`„${row.description}“ wurde nicht übernommen: ${errorText(e)}`)
+        break
+      }
+    }
+    const rest = carry.filter((_, i) => !done.has(i))
+    setCarry(rest.length > 0 ? rest : null)
+    await load()
+    if (done.size > 0) toast(`${done.size} ${done.size === 1 ? 'Position' : 'Positionen'} aus ${year - 1} für ${year} angelegt.`)
+  }
 
   async function saveItem() {
     if (!form) return
@@ -259,10 +310,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             category,
             amount,
             labor35a,
-            key: defaultKeyFor(category),
-            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
+            externalTotalAmount: '',
+            ...aiPositionDefaults(category, units, meters, keyCtx),
           }
-        })
+        }).map((p) => ({ ...p, checked: !isNotAllocable(p.category) && aiPositionProblem(p, units, year) === null }))
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
@@ -279,33 +330,21 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // Erst prüfen, dann übernehmen (#139), mit derselben Regel wie das Formular: Eine Gutschrift
     // geht durch, eine angehakte Position mit 0 € oder ohne Betrag wird genannt statt still
     // ausgelassen.
-    const blocked = entry.positions.filter((p) => p.checked && positionProblem(p) !== null)
+    const blocked = entry.positions.filter((p) => p.checked && aiPositionProblem(p, units, year) !== null)
     if (blocked.length > 0) {
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${aiPositionProblem(p, units, year)}`).join(' ')}`)
       return
     }
     setError('')
     const done: number[] = []
     for (const [index, p] of entry.positions.entries()) {
       if (!p.checked) continue
-      const amount = parseEuro(p.amount)
-      if (amount === null) continue
-      const labor35a = p.labor35a.trim() ? parseEuro(p.labor35a) : 0
+      // Über dieselbe Prüfung wie das Formular (#141), samt gemerktem Schlüssel; nicht umlagefähig
+      // ergibt dort die neutrale Vorgabe (#142).
+      const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, year)
+      if ('error' in built) continue
       try {
-        await api(withProperty('/api/costItems', propertyId), {
-          method: 'POST',
-          body: JSON.stringify({
-            year,
-            category: p.category,
-            description: p.description,
-            vendor: entry.vendor,
-            amountCents: amount,
-            labor35aCents: labor35a || undefined,
-            // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
-            key: isNotAllocable(p.category) ? 'area' : p.key,
-            invoiceFile: entry.serverFile,
-          }),
-        })
+        await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
         done.push(index)
       } catch (e) {
         // Was bis hierher übernommen ist, steht in der Liste und wird abgehakt, damit ein zweiter
@@ -331,7 +370,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <PageHeader
         title="Kosten & Belege"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
-        actions={<button className="btn" onClick={() => { setError(''); setForm({ ...EMPTY }) }}>+ Kostenposition</button>}
+        actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
       />
       {error && !form && <div className="error">{error}</div>}
       {closedAt && (
@@ -352,6 +391,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               ))}
             </select>
           </label>
+          {previousCount > 0 && !carry && (
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, year)) }}>
+              Aus {year - 1} übernehmen …
+            </button>
+          )}
           <div className="grow" />
           <div>
             <div className="muted">Erfasste Kosten {year}</div>
@@ -359,6 +403,84 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </div>
         </div>
       </div>
+
+
+      {carry && (
+        <div className="card no-print">
+          <h2>Positionen aus {year - 1} für {year} übernehmen</h2>
+          <p className="muted">
+            Übernommen werden Kostenart, Beschreibung, Rechnungssteller und der Umlageschlüssel samt
+            Angaben. Tragen Sie je Zeile den Betrag {year} ein; eine Zeile mit Betrag ist angehakt.
+            Angelegt wird erst mit dem Knopf unten, ohne Beleg.
+          </p>
+          <Table>
+            <thead>
+              <tr>
+                <th><span className="sr-only">Übernehmen</span></th>
+                <th>Kostenart</th>
+                <th>Beschreibung</th>
+                <th>Umlageschlüssel</th>
+                <th className="num">Betrag {year} €</th>
+                <th className="num">§35a Lohn €</th>
+                <th><span className="sr-only">Formular</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {carry.map((r, i) => (
+                <tr key={r.source.id}>
+                  <td>
+                    <input type="checkbox" aria-label={`${r.description} übernehmen`} checked={r.checked} disabled={!r.inline}
+                      onChange={(e) => updateCarry(i, { checked: e.target.checked })} />
+                  </td>
+                  <td>
+                    {r.source.category}
+                    {alreadyCarried(items, r, year) && <div><span className="badge gray">schon für {year} erfasst</span></div>}
+                  </td>
+                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%' }} /></td>
+                  <td>
+                    {keyListText(r.source)}
+                    {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
+                      <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
+                    )}
+                    {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
+                    {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
+                      <input
+                        aria-label={`Kosten der Gemeinschaft ${year} für ${r.description}`}
+                        value={r.externalTotalAmount}
+                        onChange={(e) => updateCarry(i, { externalTotalAmount: e.target.value })}
+                        placeholder="Kosten der Gemeinschaft €"
+                        inputMode="decimal"
+                        style={{ width: 170, marginTop: 4 }}
+                      />
+                    )}
+                    {!r.inline && <div className="muted">Einzelbeträge je Mieter bitte im Formular eintragen.</div>}
+                  </td>
+                  <td className="num">
+                    {r.inline && (
+                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value))}
+                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
+                    )}
+                    {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
+                    <div className="muted">{year - 1}: {fmtEuro(r.source.amountCents)}</div>
+                  </td>
+                  <td className="num">
+                    {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
+                  </td>
+                  <td>
+                    <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)) }}>Im Formular öffnen</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn" onClick={() => void adoptCarry()} disabled={carry.every((r) => !r.checked)}>
+              {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {year} anlegen
+            </button>
+            <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
+          </div>
+        </div>
+      )}
 
       <div className="card no-print">
         <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
@@ -442,20 +564,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
-                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, key: defaultKeyFor(e.target.value) })}>
+                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, ...aiPositionDefaults(e.target.value, units, meters, keyCtx) })}>
                             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                           </select>
                         </td>
-                        <td>
-                          {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
-                          {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
-                          <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
-                            {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
-                              <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                            ))}
-                          </select>
-                          )}
-                        </td>
+                        <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
                         <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                         <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
                       </tr>
@@ -567,7 +680,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm({ ...EMPTY }) }}>
+        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
           + Kostenposition manuell erfassen
         </button>
       </div>
@@ -593,7 +706,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters))}>
+              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters, keyCtx))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
@@ -624,12 +737,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {showsKeyFields(form.category) && <>
             <label className="field grow">
               <Term id="allocationKey">Umlageschlüssel</Term>
-              <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes))}>
+              <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes, keyCtx))}>
                 {costKeyOptions(unitMeterTypes, form.key).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
               </select>
             </label>
+            {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
+            {keyChangeNotice(form, units, keyCtx) && (
+              <div className="notice">
+                {keyChangeNotice(form, units, keyCtx)} Mehr dazu: <Term id="keyChange" />.
+              </div>
+            )}
             {form.key === 'meter' && (
               <label className="field grow">
                 Zählertyp
