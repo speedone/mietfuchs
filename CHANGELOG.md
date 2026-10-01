@@ -68,6 +68,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Rechtliche Hinweise nach einer Recherche mit Quellen berichtigt** (Stand 30.09.2026). Beim
+  Kabelfernsehen gilt die Übergangsregel nur für Anlagen, die vor dem 01.12.2021 errichtet
+  wurden, und bei einer Breitband-Verteilanlage bleibt danach nur der Betriebsstrom umlagefähig.
+  Bei einer Pauschale oder Warmmiete für Heizung und Warmwasser erklärt die Warnung jetzt, dass
+  der Heizanteil als Vorauszahlung zu behandeln und nach Verbrauch abzurechnen ist (BGH VIII ZR
+  212/05). Im Lexikon wurden die Einträge zur Heizkostenverordnung, zu § 35a, zum Eigenanteil, zum
+  Verbrauchsschlüssel und zum Hauptzähler genauer.
+  ([#109](https://github.com/speedone/mietfuchs/issues/109))
 - Im Formular für Kostenpositionen ragte das Auswahlfeld „Umlageschlüssel“ über den Rand des
   Seitenfensters, weil seine längste Option breiter ist als das Fenster.
 - **Einliegerwohnung mit Zwischenzähler: Der Mieter zahlte das Wasser des Vermieters mit.**
@@ -83,8 +91,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#116](https://github.com/speedone/mietfuchs/issues/116))
 - **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
   jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
-  bis zum 30.06.2024 über die Nebenkosten umgelegt werden; Betriebsstrom und Wartung einer
-  Antennenanlage bleiben umlagefähig. Für das Abrechnungsjahr 2024 und später weisen die
+  bis zum 30.06.2024 über die Nebenkosten umgelegt werden, und nur bei Anlagen, die vor dem
+  01.12.2021 errichtet wurden; danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig,
+  bei einer Gemeinschaftsantenne auch Prüfung und Einstellung. Für das Abrechnungsjahr 2024 und später weisen die
   Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
   kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
   Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.

@@ -78,7 +78,7 @@ test('Rechtsstand: Datum des Verzeichnisses und die Regeln, die im Jahr gelten',
   assert.ok(lb(2023).rules.some((r) => r.code === 'tv-signal'))
   assert.ok(!lb(2025).rules.some((r) => r.code === 'tv-signal'))
   const tv = lb(2024).rules.find((r) => r.code === 'tv-signal')
-  assert.deepEqual(tv, { code: 'tv-signal', title: 'Kabelfernsehen über die Nebenkosten', norm: '§ 2 Nr. 15 BetrKV a. F., § 230 Abs. 4 TKG', validTo: '2024-06-30' })
+  assert.deepEqual(tv, { code: 'tv-signal', title: 'Kabelfernsehen über die Nebenkosten', norm: '§ 2 Satz 1 Nr. 15 und Satz 2 BetrKV', validTo: '2024-06-30' })
 })
 
 test('Zähler: die Meldungen der Zähler-Seite tragen Code und Zähler', () => {

@@ -255,5 +255,11 @@ describe('Kabelfernsehen (#107)', () => {
     expect(categoryNotice('Kabel/Antenne', 2024)).toMatch(/30\.06\.2024/)
     expect(categoryNotice('Kabel/Antenne', 2025)).toMatch(/nicht mehr umlagefähig/)
     expect(categoryNotice('Grundsteuer', 2025)).toBe('')
+    // Derselbe Rechtsstand wie die Warnung der Abrechnung (#109): Betriebsstrom nur bei Anlagen vor
+    // dem 01.12.2021, Prüfung und Einstellung nur bei einer Gemeinschaftsantenne.
+    for (const y of [2024, 2025]) {
+      expect(categoryNotice('Kabel/Antenne', y)).toMatch(/vor dem 01\.12\.2021/)
+      expect(categoryNotice('Kabel/Antenne', y)).not.toMatch(/Wartung einer Antenne/)
+    }
   })
 })

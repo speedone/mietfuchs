@@ -257,6 +257,6 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number): 
 export function categoryNotice(category: string, year: number): string {
   if (category !== 'Kabel/Antenne' || year < 2024) return ''
   return year === 2024
-    ? 'Kabelfernsehen (TV-Signal) ist nur bis zum 30.06.2024 umlagefähig. Umlegen Sie für 2024 höchstens das erste Halbjahr; den Rest bitte als „Nicht umlagefähig“ erfassen. Betriebsstrom und Wartung einer Antenne bleiben umlagefähig.'
-    : 'Kabelfernsehen (TV-Signal) ist seit dem 01.07.2024 nicht mehr umlagefähig; bitte als „Nicht umlagefähig“ erfassen. Umlagefähig bleiben Betriebsstrom und Wartung einer Antennenanlage.'
+    ? 'Kabelfernsehen (TV-Signal) ist nur bis zum 30.06.2024 umlagefähig, und nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde. Umlegen Sie für 2024 höchstens das erste Halbjahr; den Rest bitte als „Nicht umlagefähig“ erfassen. Danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'
+    : 'Kabelfernsehen (TV-Signal) ist seit dem 01.07.2024 nicht mehr umlagefähig; bitte als „Nicht umlagefähig“ erfassen. Umlagefähig bleibt nur der Betriebsstrom einer Anlage, die vor dem 01.12.2021 errichtet wurde, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'
 }
