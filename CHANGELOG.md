@@ -6,6 +6,26 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Neu
+
+- **Hinweis zur Fernablesbarkeit ab dem Abrechnungsjahr 2027.** Nicht fernablesbare Zähler und
+  Heizkostenverteiler müssen bis zum 31.12.2026 nachgerüstet oder getauscht sein (§ 5 Abs. 3
+  HeizkostenV); fehlt das oder fehlen die monatlichen Verbrauchsinformationen, darf der Mieter
+  seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). Ab 2027 erinnert die
+  Abrechnung einmal daran, sobald ein Mieter über die Heizung abgerechnet wird. Einen Betrag
+  nennt sie nicht, weil Mietfuchs nicht weiß, welche Geräte eingebaut sind. Die Regel steht im
+  Regelverzeichnis mit „gilt ab 01.01.2027“, der Rechtsstand ist der 02.10.2026.
+  ([#110](https://github.com/speedone/mietfuchs/issues/110))
+
+### Geändert
+
+- **Lexikon: Abrechnungsfrist bei verspätetem oder angefochtenem Grundsteuerbescheid.** Fehlt der
+  Bescheid ohne Ihr Verschulden oder haben Sie Einspruch eingelegt, dürfen Sie die Grundsteuer
+  nachberechnen, bis über den Einspruch entschieden ist, im Regelfall innerhalb von drei Monaten
+  danach (BGH, Urteil vom 20.05.2026, VIII ZR 6/24). Bei der Heizkostenverordnung nennt das
+  Lexikon die Nachrüstfrist für fernablesbare Geräte zum 31.12.2026.
+  ([#110](https://github.com/speedone/mietfuchs/issues/110))
+
 ## [0.9.0] – 2026-10-02
 
 ### Neu
