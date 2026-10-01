@@ -750,7 +750,9 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   Linux-Paket gibt es keine. Der Weg dafür ist `database.changeover` in `/healthz`
   ([client/src/components/Database.tsx](client/src/components/Database.tsx), Logik in
   [client/src/database.ts](client/src/database.ts)). Gelungen ist ein Satz mit einem Knopf,
-  gescheitert eine Erklärung samt der Zusage, dass unverändert weitergearbeitet wird.
+  gescheitert eine Erklärung samt der Zusage, dass unverändert weitergearbeitet wird. Unterbleibt der Umstieg, weil die Datenbank schon Daten trägt und
+  daneben eine `db.json` liegt, ist das der Zustand `stale` (#89): kein Fehler, sondern ein
+  Hinweis mit dem Weg über das Backup. `none` bleibt der stumme Normalfall.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
