@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, Extraction, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit } from '../types'
+import type { CostItem, Extraction, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
 import { CATEGORIES, METER_TYPE_LABELS, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
@@ -15,7 +15,16 @@ import Table from '../components/Table'
 import DuplicateNotices from '../components/DuplicateNotices'
 import { useConfirm } from '../components/feedback'
 
-type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string, focus?: NoticeSubject) => void }
+type Props = {
+  units: Unit[]
+  settings: Settings | null
+  // Mit Ziel: die Position auf der Seite öffnen, etwa zum Pflegen im Formular
+  onNavigate: (tab: string, focus?: NoticeSubject) => void
+  // Belege aus dem Posteingang des Belegordners (#170), die ausgewertet werden sollen. Sie liegen
+  // schon im Ordner und gehen nur mit ihrem Namen an den Server.
+  handoff?: UploadInfo[]
+  onHandoffTaken?: () => void
+}
 
 // Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann), samt
 // Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141)
@@ -86,7 +95,7 @@ function yearFrom(periodStart?: string | null, invoiceDate?: string): number | n
   return Number.isInteger(y) && y > 1990 && y < 2100 ? y : null
 }
 
-export default function Schnellerfassung({ units, settings, onNavigate }: Props) {
+export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
   const { year } = useYear()
@@ -109,6 +118,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const confirm = useConfirm()
 
   const filesRef = useRef(new Map<number, File>())
+  // Einträge aus dem Posteingang: Name des Belegs im Ordner je Eintrag (#170)
+  const existingRef = useRef(new Map<number, string>())
   const nextIdRef = useRef(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
@@ -150,6 +161,33 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     if (entries.length) setQueue((q) => [...q, ...entries])
   }
 
+  // Übernahme aus dem Posteingang (#170). Der Browser holt die Datei aus dem Ordner, denn ein PDF
+  // liest er vor der Auswertung selbst (pdfIntake.ts); an den Server geht danach nur ihr Name.
+  // Je Übergabe genau einmal, auch wenn React den Effekt zweimal ausführt (StrictMode)
+  const takenRef = useRef<UploadInfo[] | null>(null)
+  useEffect(() => {
+    if (!handoff || handoff.length === 0 || takenRef.current === handoff) return
+    takenRef.current = handoff
+    onHandoffTaken?.()
+    void (async () => {
+      const entries: QueueEntry[] = []
+      for (const u of handoff) {
+        try {
+          const res = await fetch(`/uploads/${encodeURIComponent(u.file)}`)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const blob = await res.blob()
+          const id = nextIdRef.current++
+          filesRef.current.set(id, new File([blob], u.originalName || u.file, { type: u.mimeType || blob.type }))
+          existingRef.current.set(id, u.file)
+          entries.push({ id, fileName: u.originalName || u.file, status: 'wartend' })
+        } catch (e) {
+          setError(`„${u.originalName || u.file}“ ließ sich nicht aus dem Belegordner holen: ${String((e as Error).message)}`)
+        }
+      }
+      if (entries.length) setQueue((q) => [...q, ...entries])
+    })()
+  }, [handoff])
+
   // Sequenzielle Abarbeitung: ein lokales Modell verarbeitet sinnvoll nur eine Anfrage gleichzeitig
   useEffect(() => {
     if (queue.some((x) => x.status === 'läuft')) return
@@ -164,6 +202,15 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         const exifDate = await readExifDate(file)
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
         const fd = await buildUpload(file, undefined, settings?.ai?.pageImageEdge ?? undefined)
+        const existing = existingRef.current.get(next.id)
+        if (existing) {
+          // Schon im Belegordner: nur der Name, sonst läge er danach doppelt dort (#170)
+          fd.delete('file')
+          fd.append('existingFile', existing)
+        } else if (propertyId) {
+          // Bleibt der Beleg ohne Übernahme liegen, steht er im Posteingang dieses Objekts
+          fd.append('propertyId', propertyId)
+        }
         const res = await aiRequest<IntakeResult>('/api/intake', fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),
@@ -257,6 +304,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         else patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
       } finally {
         filesRef.current.delete(next.id)
+        existingRef.current.delete(next.id)
         abortRef.current.delete(next.id)
       }
     })()

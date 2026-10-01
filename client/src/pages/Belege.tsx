@@ -4,7 +4,7 @@ import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderThumbnail } from '../pdfPreview'
-import { buildFolder, coverage, duplicateHints, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
+import { buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -33,9 +33,11 @@ function Thumb({ upload, render }: { upload: UploadInfo; render: typeof renderTh
 type Props = {
   // Für Tests: ohne pdf.js
   renderThumb?: typeof renderThumbnail
+  // Belege aus dem Posteingang per KI auswerten: übergibt sie der Schnellerfassung (App.tsx)
+  onEvaluate?: (uploads: UploadInfo[]) => void
 }
 
-export default function Belege({ renderThumb = renderThumbnail }: Props) {
+export default function Belege({ renderThumb = renderThumbnail, onEvaluate }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { year: currentYear } = useYear()
@@ -75,7 +77,12 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
     year: filterYear === 'all' ? 'all' : Number(filterYear),
   }), [shownProperty, filterYear, properties.length])
   const folder = useMemo(() => buildFolder(uploads, costItems, filter, query), [uploads, costItems, filter, query])
-  const hints = useMemo(() => duplicateHints(receiptCards(uploads, costItems)), [uploads, costItems])
+  const allCards = useMemo(() => receiptCards(uploads, costItems), [uploads, costItems])
+  const hints = useMemo(() => duplicateHints(allCards), [allCards])
+  // Die Suche gilt auch im Posteingang
+  const inbox = useMemo(() => inboxOf(allCards.filter((c) => matchesQuery(c, query)), filter), [allCards, filter, query])
+  const [dragOver, setDragOver] = useState(false)
+  const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
   const showProperty = filter.propertyId === 'all' && properties.length > 1
@@ -123,6 +130,53 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
     }
   }
 
+  // ---------- Posteingang (#170) ----------
+
+  // Mehrere Belege auf einmal, nacheinander hochgeladen. Sie bekommen Objekt und Jahr der
+  // Auswahl mit; bei „alle“ bleiben sie ohne, bis jemand sie zuordnet.
+  async function uploadToInbox(files: File[]) {
+    const ok = files.filter((f) => /^(application\/pdf|image\/)/.test(f.type))
+    if (ok.length < files.length) setError('Nur PDFs und Bilder lassen sich als Beleg hochladen; die übrigen Dateien wurden übergangen.')
+    let done = 0
+    for (const f of ok) {
+      setUploading(ok.length - done)
+      const fd = new FormData()
+      fd.append('file', f)
+      if (filter.propertyId !== 'all') fd.append('propertyId', filter.propertyId)
+      else if (properties.length === 1 && properties[0]) fd.append('propertyId', properties[0].id)
+      if (filter.year !== 'all') fd.append('year', String(filter.year))
+      try {
+        await api('/api/upload', { method: 'POST', body: fd })
+        done++
+      } catch (e) {
+        setError(`„${f.name}“ wurde nicht hochgeladen: ${errorText(e)}`)
+      }
+    }
+    setUploading(0)
+    await load()
+    if (done > 0) toast(done === 1 ? 'Ein Beleg liegt im Posteingang.' : `${done} Belege liegen im Posteingang.`)
+  }
+
+  async function place(u: UploadInfo, changes: { propertyId?: string | null; year?: number | null }) {
+    try {
+      await api(`/api/uploads/${encodeURIComponent(u.file)}`, { method: 'PUT', body: JSON.stringify(changes) })
+      await load()
+    } catch (e) {
+      setError(`Die Zuordnung wurde nicht gespeichert: ${errorText(e)}`)
+    }
+  }
+
+  // Die Positionen, denen ein Beleg aus dem Posteingang zugeordnet werden kann: die ohne Beleg im
+  // Objekt und Jahr, denen er zugedacht ist, sonst in denen der Auswahl.
+  const candidatesFor = (u: UploadInfo): CostItem[] => {
+    const propertyId = u.propertyId ?? (filter.propertyId === 'all' ? null : filter.propertyId)
+    const year = u.year ?? (filter.year === 'all' ? null : filter.year)
+    return costItems
+      .filter((c) => (propertyId === null || c.propertyId === propertyId) && (year === null || c.year === year))
+      .filter((c) => !c.invoiceFile || !present.has(c.invoiceFile))
+      .sort((a, b) => b.year - a.year || a.category.localeCompare(b.category, 'de') || a.description.localeCompare(b.description, 'de'))
+  }
+
   async function deleteFile(f: UploadInfo) {
     const ok = await confirm({
       title: 'Beleg endgültig löschen?',
@@ -162,8 +216,34 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
               ))}
             </ul>
           ) : (
-            <span className="badge gray">nicht zugeordnet</span>
+            <div className="receipt-inbox-controls">
+              {properties.length > 1 && (
+                <select aria-label={`Objekt für ${receiptName(upload)}`} value={upload.propertyId && properties.some((p) => p.id === upload.propertyId) ? upload.propertyId : ''}
+                  onChange={(e) => void place(upload, { propertyId: e.target.value || null })}>
+                  <option value="">ohne Objekt</option>
+                  {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
+                </select>
+              )}
+              <select aria-label={`Jahr für ${receiptName(upload)}`} value={upload.year === null ? '' : String(upload.year)}
+                onChange={(e) => void place(upload, { year: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">ohne Jahr</option>
+                {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
+              </select>
+              {candidatesFor(upload).length > 0 && (
+                <select aria-label={`${receiptName(upload)} einer Position zuordnen`} value=""
+                  onChange={(e) => { const c = costItems.find((x) => x.id === e.target.value); if (c) void attachExisting(c, upload.file) }}>
+                  <option value="">einer Position zuordnen …</option>
+                  {candidatesFor(upload).map((c) => (
+                    <option key={c.id} value={c.id}>{c.year} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
+                  ))}
+                </select>
+              )}
+              {onEvaluate && (
+                <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
+              )}
+            </div>
           )}
+          {upload.invoiceDate && <div className="muted">Rechnungsdatum {fmtDate(upload.invoiceDate)}</div>}
           {dup && <div className="receipt-hint">⚠ {dup}</div>}
         </div>
         {card.items.length === 0 && (
@@ -177,7 +257,7 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
     <>
       <PageHeader
         title="Belegordner"
-        subtitle="Ihre Belege wie im Ordner aus Papier: je Objekt und Jahr, mit einem Register je Kostenart. Belege, die an keiner Position hängen, stehen unten."
+        subtitle="Ihre Belege wie im Ordner aus Papier: je Objekt und Jahr, mit einem Register je Kostenart. Neue Belege kommen in den Posteingang."
       />
       {error && <div className="error">{error}</div>}
 
@@ -209,6 +289,35 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
             />
           </label>
         </div>
+      </div>
+
+      <div
+        className={`card receipt-inbox no-print${dragOver ? ' drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => { e.preventDefault(); setDragOver(false); void uploadToInbox([...e.dataTransfer.files]) }}
+      >
+        <div className="receipt-inbox-head">
+          <h2>📥 Posteingang ({inbox.here.length})</h2>
+          <label className="btn">
+            {uploading > 0 ? `Lädt hoch … (${uploading})` : 'Belege hochladen'}
+            <input
+              type="file"
+              multiple
+              className="sr-only"
+              accept="application/pdf,image/*"
+              aria-label="Belege in den Posteingang hochladen"
+              disabled={uploading > 0}
+              onChange={(e) => { const files = [...(e.target.files ?? [])]; e.target.value = ''; if (files.length) void uploadToInbox(files) }}
+            />
+          </label>
+        </div>
+        <p className="muted">
+          Belege, die an keiner Kostenposition hängen. Ziehen Sie neue Belege hierher oder laden Sie mehrere auf einmal hoch;
+          danach ordnen Sie jeden einer Position zu oder lassen ihn per KI auswerten.
+          {inbox.elsewhere > 0 && ` ${inbox.elsewhere} weitere ${inbox.elsewhere === 1 ? 'ist' : 'sind'} einem anderen Objekt oder Jahr zugedacht.`}
+        </p>
+        {inbox.here.length > 0 && <ul className="receipt-list">{inbox.here.map(renderCard)}</ul>}
       </div>
 
       {coverageRows.length > 0 && (
@@ -258,10 +367,10 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
                             onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadFor(c, f) }}
                           />
                         </label>
-                        {folder.unlinked.length > 0 && (
+                        {inboxFor(allCards, c).length > 0 && (
                           <select aria-label={`Vorhandenen Beleg für ${c.description} zuordnen`} value="" onChange={(e) => { if (e.target.value) void attachExisting(c, e.target.value) }}>
-                            <option value="">oder vorhandenen zuordnen …</option>
-                            {folder.unlinked.map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
+                            <option value="">oder aus dem Posteingang …</option>
+                            {inboxFor(allCards, c).map((u) => <option key={u.upload.file} value={u.upload.file}>{receiptName(u.upload)}</option>)}
                           </select>
                         )}
                       </span>
@@ -274,15 +383,6 @@ export default function Belege({ renderThumb = renderThumbnail }: Props) {
         })
       )}
 
-      {folder.unlinked.length > 0 && (
-        <div className="card">
-          <h2>Nicht zugeordnet ({folder.unlinked.length})</h2>
-          <p className="muted">
-            Diese Belege hängen an keiner Kostenposition. Auf der Seite „Kosten“ lassen sie sich einer Position zuordnen, oder Sie löschen sie hier.
-          </p>
-          <ul className="receipt-list">{folder.unlinked.map(renderCard)}</ul>
-        </div>
-      )}
     </>
   )
 }

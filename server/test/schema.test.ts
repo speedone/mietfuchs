@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, CostItem, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -173,6 +173,11 @@ type AiSlotColumns = AiSlot & {
 }
 type _AiSlots = Assert<Matches<typeof schema.aiSlots.$inferSelect, AiSlotColumns>>
 
+// --- Angaben zu Belegen (#170) ---
+// `mtime` ist die Zeit der Datei und steht nicht in der Datenbank; sie liest die Route von der
+// Platte.
+type _Uploads = Assert<Matches<typeof schema.uploads.$inferSelect, Omit<UploadInfo, 'mtime'>>>
+
 // ---------- Ebene 2: die Zusicherungen an einer echten Datenbank ----------
 
 async function freshDb() {
@@ -233,6 +238,7 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'tenancies',
       'unit_no_connection',
       'units',
+      'uploads',
     ])
   } finally {
     cleanup()

@@ -162,6 +162,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   async function uploadInvoice(f: File) {
     const fd = new FormData()
     fd.append('file', f)
+    // Wird die Position nicht gespeichert, steht der Beleg im Posteingang dieses Objekts und
+    // Jahres (#170) statt ohne Zuordnung.
+    if (property?.id) fd.append('propertyId', property.id)
+    fd.append('year', String(year))
     try {
       const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
       setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
