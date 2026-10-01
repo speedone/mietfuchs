@@ -86,6 +86,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
+  nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
+  Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften
+  ändert sich deshalb der private Anteil in der Steuerübersicht; abgeschlossene Abrechnungen
+  behalten ihren eingefrorenen Stand.
+  ([#129](https://github.com/speedone/mietfuchs/issues/129))
+- Ein Zählertausch, der als neuer Zähler angelegt wurde statt als Wechsel, gilt beim Hauptzähler
+  nicht mehr als Lücke in der Messung, auch wenn daneben ein zweiter Zähler weiterläuft oder ein
+  Zähler aus früheren Jahren noch angelegt ist.
 - **Miteigentumsanteile „78.43“ wurden als 7843 gelesen**, eine Wohnfläche „1.200“ als 1,2. Das
   Wohnungsformular liest Zahlen jetzt in deutscher und technischer Schreibweise; bei der
   Gemeinschaftsabrechnung hätte der Fehler die Verteilung verschoben. Bitte prüfen Sie die
