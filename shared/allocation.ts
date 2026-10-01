@@ -25,17 +25,28 @@ export type Allocation = {
   externalBasis: { measure: ExternalMeasure, total: number } | null
 }
 
-// Bei diesen Schlüsseln wirken Teilnehmer (#94), wie PARTICIPANT_KEYS in client/src/costForm.ts.
-const WITH_PARTICIPANTS: readonly CostKey[] = ['area', 'units', 'persons', 'meter', 'external', 'amounts']
+// Bei diesen Schlüsseln wirken Teilnehmer (#94); das Formular (client/src/costForm.ts) nimmt die
+// Liste von hier.
+export const PARTICIPANT_KEYS: readonly CostKey[] = ['area', 'units', 'persons', 'meter', 'external', 'amounts']
 
-export function allocationOf(item: AllocatedItem): Allocation {
+// Mit `basisUnitIds` (die Wohnungen der Abrechnungseinheit heute) zählen Teilnehmer und Anteile
+// nur, soweit es die Wohnung dort noch gibt, und Teilnehmer, die heute alle Wohnungen sind, heißen
+// „alle“, wie beim Speichern. Sonst hielte der Vergleich eine Position, die den Schlüssel des
+// Vorjahres übernommen hat, für geändert, nur weil eine Wohnung inzwischen gelöscht oder
+// herausgenommen ist (Befund der Durchsicht).
+export function allocationOf(item: AllocatedItem, basisUnitIds?: readonly string[]): Allocation {
   const k = item.key
+  const inBasis = (id: string) => !basisUnitIds || basisUnitIds.includes(id)
+  const raw = PARTICIPANT_KEYS.includes(k) ? item.participantUnitIds ?? null : null
+  const kept = raw ? raw.filter(inBasis) : null
+  const participantUnitIds = kept && basisUnitIds && basisUnitIds.every((id) => kept.includes(id)) ? null : kept
+  const shares = k === 'custom' ? item.customShares ?? null : null
   return {
     key: k,
     meterType: k === 'meter' ? item.meterType ?? null : null,
     directUnitId: k === 'direct' ? item.directUnitId ?? null : null,
-    customShares: k === 'custom' ? item.customShares ?? null : null,
-    participantUnitIds: WITH_PARTICIPANTS.includes(k) ? item.participantUnitIds ?? null : null,
+    customShares: shares ? Object.fromEntries(Object.entries(shares).filter(([id]) => inBasis(id))) : null,
+    participantUnitIds,
     externalBasis: k === 'external' && item.externalBasis ? { measure: item.externalBasis.measure, total: item.externalBasis.total } : null,
   }
 }
@@ -74,7 +85,7 @@ export function previousYearItems<T extends AllocatedItem>(items: readonly T[], 
 // weiß nur der Vermieter. Sonst gilt die zuletzt angelegte (Reihenfolge der Liste), damit eine
 // geänderte Summe der Anlage mitkommt.
 export function previousAllocation(items: readonly AllocatedItem[], category: string, year: number): Allocation | null {
-  const found = previousYearItems(items, category, year).map(allocationOf)
+  const found = previousYearItems(items, category, year).map((i) => allocationOf(i))
   const last = found.at(-1)
   if (!last) return null
   return found.every((a) => sameAllocation(a, last)) ? last : null

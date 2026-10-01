@@ -436,7 +436,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {r.source.category}
                     {alreadyCarried(items, r, year) && <div><span className="badge gray">schon für {year} erfasst</span></div>}
                   </td>
-                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%' }} /></td>
+                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
                   <td>
                     {keyListText(r.source)}
                     {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
@@ -564,7 +564,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
-                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, ...aiPositionDefaults(e.target.value, units, meters, keyCtx) })}>
+                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx) })}>
                             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                           </select>
                         </td>

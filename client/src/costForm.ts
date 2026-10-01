@@ -3,7 +3,7 @@
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
 import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, PropertyKind, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
-import { allocationOf, previousAllocation, previousYearItems, sameAllocation, type Allocation } from '../../shared/allocation.ts'
+import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, previousAllocation, previousYearItems, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -82,7 +82,8 @@ const fmtCentsInput = (c: number) => (c / 100).toLocaleString('de-DE', { minimum
 
 // Bei diesen Schlüsseln wirken Teilnehmer (#94); bei Direktzuordnung und vereinbarten Anteilen
 // ist die Auswahl ohnehin je Wohnung.
-export const PARTICIPANT_KEYS: CostKey[] = ['area', 'units', 'persons', 'meter', 'external', 'amounts']
+// Die Liste steht in shared/allocation.ts, weil auch der Vergleich mit dem Vorjahr (#141) sie braucht.
+export const PARTICIPANT_KEYS: readonly CostKey[] = SHARED_PARTICIPANT_KEYS
 
 const MEASURE_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
 
@@ -293,7 +294,7 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
     customShares: shares,
     participantUnitIds: participants,
     externalBasis: total !== null ? { measure: form.externalMeasure, total, totalCents: 0 } : { measure: form.externalMeasure, total: 0, totalCents: 0 },
-  })
+  }, all)
 }
 
 // Hinweis im Formular, wenn die Position anders verteilt als dieselbe Kostenart im Vorjahr; dieselbe
@@ -301,7 +302,8 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
 // nichts zu sagen ist.
 export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
   if (isNotAllocable(form.category)) return ''
-  const before = previousYearItems(ctx.items, form.category, ctx.year).map(allocationOf)
+  const basis = basisUnitsOf(units).map((u) => u.id)
+  const before = previousYearItems(ctx.items, form.category, ctx.year).map((i) => allocationOf(i, basis))
   const first = before[0]
   const now = formAllocation(form, units)
   if (!first || before.some((a) => sameAllocation(a, now))) return ''
