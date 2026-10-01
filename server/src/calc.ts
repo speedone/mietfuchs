@@ -538,6 +538,18 @@ export function rentLedger(snapshot: Snapshot): RentLedger {
   }
 }
 
+// ---------- §35a-Lohnanteil ----------
+
+// Gilt der §35a-Lohnanteil einer Position (#148)? Er muss zwischen 0 und dem Rechnungsbetrag
+// liegen; an einer Gutschrift gibt es deshalb keinen. Fehlt er, ist er 0. Ein ungültiger ergibt
+// `null`: Die Abrechnung warnt dann (`labor35a.invalid`) und bescheinigt nichts, und die
+// Steuerübersicht zählt ihn nicht. Einmal formuliert, damit beide nie Verschiedenes nennen.
+export function validLabor35aCents(item: { amountCents: number, labor35aCents?: number | null }): number | null {
+  const labor = item.labor35aCents ?? 0
+  if (labor === 0) return 0
+  return !Number.isFinite(labor) || labor < 0 || labor > item.amountCents ? null : labor
+}
+
 // ---------- Steuer-Export (Anlage V) ----------
 
 // Betriebskostenarten den Anlage-V-nahen Positionsgruppen zuordnen. Bewusst beschreibende
@@ -692,7 +704,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     }
     const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0 }
     prev.amountCents += item.amountCents
-    prev.labor35aCents += item.labor35aCents ?? 0
+    // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
+    prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
   }
   const groups: TaxExpenseGroup[] = [...byGroup.entries()]
@@ -1505,9 +1518,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // ganz, stimmt die Summe centgenau; bei Leerstand und Eigennutzung bleibt der
     // entsprechende Teil beim Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser
     // Berechnung, keine Vorgabe des §35a EStG.
-    const labor = item.labor35aCents ?? 0
+    const labor = validLabor35aCents(item)
     const laborOf = new Map<number, number>()
-    if (labor !== 0 && (labor < 0 || labor > item.amountCents)) {
+    if (labor === null) {
       warn('labor35a.invalid', `„${item.description}": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
       const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))

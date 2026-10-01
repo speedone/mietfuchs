@@ -136,6 +136,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))
+- **Steuerübersicht zählte ungültige §35a-Lohnanteile mit.** Einen Lohnanteil unter 0, über dem
+  Rechnungsbetrag oder an einer Gutschrift bescheinigt die Abrechnung nicht und warnt; die
+  Steuerübersicht addierte ihn trotzdem. Beide wenden jetzt dieselbe Regel an.
+  ([#148](https://github.com/speedone/mietfuchs/issues/148))
 - **Rechenweg „laut Gemeinschaftsabrechnung“ rechnet den Anteil vor.** Er beginnt jetzt mit den
   Kosten der Gemeinschaft und dem Schritt „Anteil an der Gemeinschaft: 85,4 von 1.000 MEA ×
   6.000,00 € = 512,40 €“, nennt einen davon abweichenden angesetzten Betrag und erst dann die
