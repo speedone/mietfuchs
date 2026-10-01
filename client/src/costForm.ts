@@ -1,8 +1,9 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
+import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, PropertyKind, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
+import { allocationOf, previousAllocation, previousYearItems, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -204,10 +205,147 @@ export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType 
 // wenn es nur einen gab. Dann wird er jetzt vorgewählt, und zwar im Zustand und nicht nur in der
 // Anzeige, sodass gespeichert wird, was zu sehen ist; er steht ja in der Auswahl. Bei mehreren
 // Typen wählt weiter der Mensch, und eine schon getroffene Wahl bleibt.
-export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[]): ItemForm {
+// Mit `ctx` (#141) übernimmt der Wechsel auf „laut Gemeinschaftsabrechnung“ Maßstab und Summe der
+// Anteile der zuletzt erfassten Position dieses Schlüssels, wenn das Feld noch leer ist: Die Summe
+// der Miteigentumsanteile ist eine Angabe über die Anlage und steht nicht an jeder Position neu an.
+export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[], ctx?: KeyContext): ItemForm {
   const [only, ...more] = unitMeterTypes
   const meterType = key === 'meter' && !form.meterType && only && more.length === 0 ? only : form.meterType
-  return { ...form, key, meterType }
+  const last = key === 'external' && ctx && !form.externalTotal.trim() ? lastExternalBasis(ctx.items) : null
+  return { ...form, key, meterType, ...(last ? externalFields(last) : {}) }
+}
+
+// ---------- Schlüssel merken (#141) ----------
+
+// Woraus der Vorschlag für eine neue Position entsteht: die Positionen des Objekts (alle Jahre),
+// das Abrechnungsjahr und die Art des Objekts.
+export type KeyContext = { items: readonly CostItem[]; year: number; propertyKind?: PropertyKind | null }
+
+const fmtQuantity = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 6 })
+const externalFields = (b: { measure: ExternalMeasure, total: number }): Pick<ItemForm, 'externalMeasure' | 'externalTotal'> =>
+  ({ externalMeasure: b.measure, externalTotal: fmtQuantity(b.total) })
+
+// Maßstab und Summe der Anteile der zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ im
+// Objekt, jüngstes Jahr zuerst, sonst die zuletzt angelegte. Bis die Summe am Objekt steht (siehe
+// docs/superpowers/specs/2026-10-02-schluessel-merken-design.md), ist das ihre Quelle.
+export function lastExternalBasis(items: readonly CostItem[]): { measure: ExternalMeasure, total: number } | null {
+  let found: CostItem | null = null
+  for (const i of items) if (i.key === 'external' && i.externalBasis && (!found || i.year >= found.year)) found = i
+  return found?.externalBasis ? { measure: found.externalBasis.measure, total: found.externalBasis.total } : null
+}
+
+// Einen gemerkten Schlüssel ins Formular legen. Teilnehmer, Anteile und Wohnung nur, soweit es die
+// Wohnung noch gibt; der Betrag und die Kosten der Gemeinschaft bleiben, wie sie sind.
+export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): ItemForm {
+  const known = new Set(units.map((u) => u.id))
+  return {
+    ...form,
+    key: a.key,
+    meterType: a.meterType ?? '',
+    directUnitId: a.directUnitId && known.has(a.directUnitId) ? a.directUnitId : '',
+    customShares: Object.fromEntries(Object.entries(a.customShares ?? {}).filter(([id]) => known.has(id)).map(([id, pct]) => [id, fmtPct(pct)])),
+    participants: a.participantUnitIds ? a.participantUnitIds.filter((id) => known.has(id)) : null,
+    ...(a.externalBasis ? externalFields(a.externalBasis) : {}),
+  }
+}
+
+// Bei einer Eigentumswohnung verteilt die Gemeinschaft (#102); die Grundsteuer setzt dagegen die
+// Gemeinde dem Eigentümer unmittelbar fest, sie steht nicht in der Hausgeldabrechnung.
+const etwByStatement = (category: string, ctx?: KeyContext): boolean =>
+  ctx?.propertyKind === 'etw' && !isNotAllocable(category) && category !== 'Grundsteuer'
+
+// Der Vorschlag für eine neue Position: der Schlüssel derselben Kostenart im Vorjahr, sonst bei
+// einer Eigentumswohnung „laut Gemeinschaftsabrechnung“, sonst `suggestedKey`.
+// Die Angaben zum Schlüssel werden dabei zurückgesetzt: Sonst blieben die gemerkten Teilnehmer der
+// einen Kostenart an der nächsten hängen, ohne dass jemand sie gewählt hätte.
+function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
+  const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year) : null
+  if (remembered) return applyAllocation(form, remembered, units)
+  if (etwByStatement(category, ctx)) {
+    const last = ctx ? lastExternalBasis(ctx.items) : null
+    return { ...form, key: 'external', meterType: '', ...(last ? externalFields(last) : {}) }
+  }
+  return { ...form, ...suggestedKey(category, units, meters) }
+}
+
+// Das Formular einer neuen Position, mit dem Vorschlag schon für die erste Kostenart.
+export function newItemForm(units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
+  return withCategory({ ...EMPTY_ITEM_FORM }, EMPTY_ITEM_FORM.category, units, meters, ctx)
+}
+
+// Der Schlüssel, den das Formular gerade zeigt, in der Gestalt aus shared/allocation.ts. Alle
+// Wohnungen angehakt heißt alle, wie beim Speichern (buildCostItemBody).
+function formAllocation(form: ItemForm, units: Unit[]): Allocation {
+  const all = basisUnitsOf(units).map((u) => u.id)
+  const participants = form.participants && !all.every((id) => form.participants?.includes(id)) ? form.participants : null
+  const shares = Object.fromEntries(Object.entries(form.customShares).flatMap(([id, raw]) => {
+    const h = parseEuro(raw.trim() || '0')
+    return h !== null && h > 0 ? [[id, h / 100]] : []
+  }))
+  const total = parseAmountNumber(form.externalTotal)
+  return allocationOf({
+    year: 0,
+    category: form.category,
+    key: form.key,
+    meterType: form.meterType || null,
+    directUnitId: form.directUnitId || null,
+    customShares: shares,
+    participantUnitIds: participants,
+    externalBasis: total !== null ? { measure: form.externalMeasure, total, totalCents: 0 } : { measure: form.externalMeasure, total: 0, totalCents: 0 },
+  })
+}
+
+// Hinweis im Formular, wenn die Position anders verteilt als dieselbe Kostenart im Vorjahr; dieselbe
+// Frage stellt die Abrechnung (`key.changed-from-previous-year` in server/src/calc.ts). Leer, wenn
+// nichts zu sagen ist.
+export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
+  if (isNotAllocable(form.category)) return ''
+  const before = previousYearItems(ctx.items, form.category, ctx.year).map(allocationOf)
+  const first = before[0]
+  const now = formAllocation(form, units)
+  if (!first || before.some((a) => sameAllocation(a, now))) return ''
+  const how = first.key === now.key ? `ebenfalls ${KEY_LABELS[first.key]}, aber mit anderen Angaben` : KEY_LABELS[first.key]
+  return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Einen vereinbarten Umlageschlüssel ändern Sie nicht einseitig von Jahr zu Jahr; ist die Änderung so vereinbart, ist nichts zu tun.`
+}
+
+// KI-Übernahme (#141): der Schlüssel einer ausgewerteten Position. Einen gemerkten Schlüssel mit
+// Einzelbeträgen übernimmt die Zeile nicht, denn die Beträge je Mieter sind Zahlen des Jahres und
+// stehen dort nicht zur Eingabe.
+export type AiPositionKey = { key: CostKey; allocation: Allocation | null }
+export function aiPositionDefaults(category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): AiPositionKey {
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year) : null
+  if (remembered && remembered.key !== 'amounts') return { key: remembered.key, allocation: remembered }
+  // Bei einer Eigentumswohnung nur, wenn die Summe der Anteile schon einmal erfasst ist: Ein Feld
+  // dafür hat die Zeile nicht, sie bliebe sonst unübernehmbar.
+  const last = ctx && etwByStatement(category, ctx) ? lastExternalBasis(ctx.items) : null
+  if (last) return { key: 'external', allocation: allocationOf({ year: 0, category, key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
+  // Wie bisher nur der Schlüssel; die Auswahl der Zeile bietet die drei einfachen an.
+  return { key: defaultKeyFor(category), allocation: null }
+}
+
+export type AiPosition = AiPositionKey & { description: string; category: string; amount: string; labor35a: string; externalTotalAmount: string }
+
+// Die Auswahl der Zeile: die drei einfachen Schlüssel und der gespeicherte, damit angezeigt wird,
+// was gespeichert wird (Kosten.test.tsx).
+export function aiKeyOptions(stored: CostKey): CostKey[] {
+  const simple: CostKey[] = ['area', 'persons', 'units']
+  return simple.includes(stored) ? simple : [...simple, stored]
+}
+
+function aiPositionForm(p: AiPosition, extra: { vendor?: string; invoiceFile?: string }, units: Unit[]): ItemForm {
+  const base: ItemForm = { ...EMPTY_ITEM_FORM, category: p.category, description: p.description, vendor: extra.vendor ?? '', amount: p.amount, labor35a: p.labor35a, invoiceFile: extra.invoiceFile }
+  const withAlloc = p.allocation && p.allocation.key === p.key ? applyAllocation(base, p.allocation, units) : { ...base, key: p.key }
+  return { ...withAlloc, externalTotalAmount: p.externalTotalAmount }
+}
+
+// Der Rumpf einer übernommenen Position, über dieselbe Prüfung wie im Formular.
+export function aiPositionBody(p: AiPosition, extra: { vendor?: string; invoiceFile?: string }, units: Unit[], year: number): BuildResult {
+  return buildCostItemBody(aiPositionForm(p, extra, units), units, year)
+}
+export function aiPositionProblem(p: AiPosition, units: Unit[], year: number): string | null {
+  const built = aiPositionBody(p, {}, units, year)
+  return 'error' in built ? built.error : null
 }
 
 // Bei nicht umlagefähigen Kostenarten gibt es nichts zu verteilen (#142): Die Berechnung trägt sie
@@ -247,9 +385,10 @@ export function suggestedKey(category: string, units: Unit[], meters: Meter[]): 
 // behält ihren Schlüssel, denn er ist eine Wahl des Nutzers. Ausnahme (Durchsicht zu #142): Wird
 // eine nicht umlagefähige Position umlagefähig, ist ihr gespeicherter Schlüssel nur die neutrale
 // Vorgabe und keine Wahl; dann gilt der Vorschlag wie bei einer neuen.
-export function withCategory(form: ItemForm, category: string, units: Unit[], meters: Meter[]): ItemForm {
+// Mit `ctx` (#141) gilt für eine neue Position der Schlüssel derselben Kostenart im Vorjahr.
+export function withCategory(form: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const suggest = !form.id || (isNotAllocable(form.category) && !isNotAllocable(category))
-  return { ...form, category, ...(suggest ? suggestedKey(category, units, meters) : {}) }
+  return suggest ? proposal({ ...form, category }, category, units, meters, ctx) : { ...form, category }
 }
 
 // Summe der vereinbarten Anteile in Prozent (unlesbare Eingaben zählen als 0)

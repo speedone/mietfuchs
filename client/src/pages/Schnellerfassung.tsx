@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory } from '../types'
+import type { CostItem, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
+import { CATEGORIES, METER_TYPE_LABELS, isNotAllocable, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
-import { amountProblem, parseQuantity } from '../costForm'
+import { aiPositionBody, aiPositionDefaults, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
+import AiKeyCell from '../components/AiKeyCell'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -14,21 +15,12 @@ import Table from '../components/Table'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
-// Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann)
-type InvoicePosition = {
-  description: string
-  category: string
-  amount: string
-  labor35a: string
-  key: CostKey
+// Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann), samt
+// Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141)
+type InvoicePosition = AiPosition & {
   matchedByDesc: boolean
   checked: boolean
 }
-
-// Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular. Eine Gutschrift
-// geht durch, 0 € und ein unlesbarer Betrag nicht.
-const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a' | 'category'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
 
 type ReadingCandidate = {
   meterNumber: string
@@ -179,6 +171,9 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
         } else {
           const ex = res.extraction
+          // Der gemerkte Schlüssel (#141) kommt aus dem Vorjahr des Jahres, dem der Beleg zugeht.
+          const targetYear = yearFrom(ex.periodStart, ex.invoiceDate) ?? year
+          const ctx = keyCtx(targetYear)
           const positions: InvoicePosition[] = (ex.positions || []).map((p) => {
             // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls über die
             // Beschreibung. matchedByDesc merkt sich, ob die Kategorie nur so zustande kam (→ gelb).
@@ -201,12 +196,16 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               category,
               amount,
               labor35a,
-              key: defaultKeyFor(category),
+              externalTotalAmount: '',
+              ...aiPositionDefaults(category, units, meters, ctx),
               matchedByDesc,
-              // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-              checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
+              checked: false,
             }
-          })
+          }).map((p) => ({
+            ...p,
+            // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
+            checked: !isNotAllocable(p.category) && aiPositionProblem(p, units, targetYear) === null,
+          }))
           patchEntry(next.id, {
             status: 'fertig',
             kind: 'rechnung',
@@ -229,6 +228,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       }
     })()
   }, [queue, meters, readings])
+
+  // Woraus eine Position ihren Schlüssel vorgeschlagen bekommt (#141), je Jahr des Belegs.
+  const keyCtx = (target: number): KeyContext => ({ items: existingItems, year: target, propertyKind: property?.kind ?? null })
+  // Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular, samt
+  // gemerktem Schlüssel. Eine Gutschrift geht durch, 0 € und ein unlesbarer Betrag nicht.
+  const positionProblem = (entry: QueueEntry, p: InvoicePosition): string | null => aiPositionProblem(p, units, entry.detectedYear ?? year)
 
   function updatePos(entryId: number, idx: number, patch: Partial<InvoicePosition>) {
     setQueue((q) =>
@@ -279,7 +284,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             existingItems,
             priorYearDeviationPct: devPct,
           })
-          const problem = positionProblem(p)
+          const problem = positionProblem(entry, p)
           return problem === null ? score : { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
         })
         map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
@@ -313,24 +318,11 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
 
   // ---------- Übernehmen ----------
   async function postPosition(entry: QueueEntry, p: InvoicePosition) {
-    const amount = parseEuro(p.amount)
-    // Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
-    if (amount === null || positionProblem(p) !== null) return false
-    const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-    await api(withProperty('/api/costItems', propertyId), {
-      method: 'POST',
-      body: JSON.stringify({
-        year: entry.detectedYear ?? year,
-        category: p.category,
-        description: p.description,
-        vendor: entry.vendor,
-        amountCents: amount,
-        labor35aCents: labor || undefined,
-        // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
-        key: isNotAllocable(p.category) ? 'area' : p.key,
-        invoiceFile: entry.serverFile,
-      }),
-    })
+    // Über dieselbe Prüfung wie das Formular (#141); nicht umlagefähig ergibt dort die neutrale
+    // Vorgabe (#142). Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
+    const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, entry.detectedYear ?? year)
+    if ('error' in built) return false
+    await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
     return true
   }
   async function postReading(entry: QueueEntry) {
@@ -363,10 +355,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   async function adoptEntry(entry: QueueEntry) {
     // Erst prüfen, dann übernehmen (#139): Eine angehakte Position, die sich nicht übernehmen
     // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
-    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(p) !== null) : []
+    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(entry, p) !== null) : []
     if (blocked.length > 0) {
       setPending('')
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(entry, p)}`).join(' ')}`)
       return
     }
     setError('')
@@ -565,20 +557,11 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                           </td>
                           <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                           <td>
-                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, key: defaultKeyFor(e.target.value), matchedByDesc: false })}>
+                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year)), matchedByDesc: false })}>
                               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                             </select>
                           </td>
-                          <td>
-                            {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
-                            {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
-                            <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
-                              {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
-                                <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                              ))}
-                            </select>
-                            )}
-                          </td>
+                          <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
                           <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                           <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
                         </tr>
