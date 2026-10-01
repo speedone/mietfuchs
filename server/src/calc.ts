@@ -732,7 +732,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // nicht unter die Hinweise der Abrechnung: Auf die Abrechnung wirkt die Kostenart nicht, beide
   // sind nicht umlagefähig, und dort bliebe er im Cockpit ein offener Punkt ohne Folge.
   const reserveSuspects = items
-    .filter((c) => c.category === 'Nicht umlagefähig' && RESERVE_PATTERN.test(c.description))
+    .filter((c) => c.category === 'Nicht umlagefähig' && looksLikeReserveContribution(c.description))
     .map((c) => ({ costItemId: c.id, description: c.description, amountCents: c.amountCents }))
 
   // ---------- Gemischte Nutzung: gemessen wird das Private (#68) ----------
@@ -923,7 +923,15 @@ export { HEATING_CATEGORY }
 export const RESERVE_CATEGORY = 'Zuführung Erhaltungsrücklage'
 // Woran eine Beschreibung nach Rücklage aussieht: Rücklage, Instandhaltungs- und
 // Erhaltungsrücklage, auch ohne Umlaut geschrieben.
+// Eine Entnahme oder eine Zahlung „aus der Rücklage“ ist keine Zuführung (Durchsicht): Sie ist in
+// dem Jahr Werbungskosten, in dem die Gemeinschaft das Geld ausgibt. Dieselbe Regel steht in
+// matchCategory (client/src/types.ts); categories.test.ts prüft beide an denselben Texten.
 const RESERVE_PATTERN = /r(ü|ue|u)cklage/i
+const RESERVE_WITHDRAWAL = /entnahme|\baus\s+(der|dem)\b/i
+// Wer „Zuführung“ schreibt, meint sie, auch „aus dem Hausgeld“.
+const RESERVE_CONTRIBUTION = /zuf(ü|ue|u)hrung/i
+export const looksLikeReserveContribution = (text: string): boolean =>
+  RESERVE_PATTERN.test(text) && (RESERVE_CONTRIBUTION.test(text) || !RESERVE_WITHDRAWAL.test(text))
 
 // Kostenarten, die nie auf Mieter verteilt werden. Dieselbe Menge steht als NOT_ALLOCABLE in
 // client/src/types.ts; categories.test.ts hält beide zusammen.

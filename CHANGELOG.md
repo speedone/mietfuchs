@@ -169,7 +169,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Erhaltungsmaßnahmen ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Dafür gibt es jetzt die
   Kostenart „Zuführung Erhaltungsrücklage“: nicht umlagefähig wie bisher, in der Steuerübersicht
   aber neben den Werbungskosten ausgewiesen. Heißt eine Position „Nicht umlagefähig“ nach einer
-  Rücklage, weist die Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem,
+  Zuführung zur Rücklage (nicht nach einer Entnahme), weist die Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem,
   dass abgeflossen das gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht
   umlagefähig“ und zur Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff
   „Erhaltungsrücklage“. Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.

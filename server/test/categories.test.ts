@@ -8,7 +8,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { CATEGORIES, NOT_ALLOCABLE as CLIENT_NOT_ALLOCABLE, matchCategory } from '../../client/src/types.ts'
-import { ANLAGE_V_GROUP, HEATING_CATEGORY, NOT_ALLOCABLE_CATEGORIES, RESERVE_CATEGORY, isNotAllocable } from '../src/calc.ts'
+import { ANLAGE_V_GROUP, HEATING_CATEGORY, NOT_ALLOCABLE_CATEGORIES, RESERVE_CATEGORY, isNotAllocable, looksLikeReserveContribution } from '../src/calc.ts'
 import { EXTRACT_CATEGORIES } from '../src/extract.ts'
 
 const sorted = (list: Iterable<string>) => [...list].sort()
@@ -36,4 +36,12 @@ test('die Erhaltungsrücklage ist eine eigene Kostenart und nicht umlagefähig, 
   assert.equal(matchCategory('Instandhaltungsrücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Zuführung Erhaltungsrücklage'), RESERVE_CATEGORY)
   assert.equal(matchCategory('Instandhaltung Treppenhaus'), 'Nicht umlagefähig')
+  // Durchsicht: Eine Entnahme ist keine Zuführung.
+  assert.notEqual(matchCategory('Entnahme aus der Instandhaltungsrücklage'), RESERVE_CATEGORY)
+  assert.notEqual(matchCategory('Dachreparatur aus der Rücklage'), RESERVE_CATEGORY)
+  assert.equal(matchCategory('Zuführung zur Rücklage'), RESERVE_CATEGORY)
+  assert.equal(matchCategory('Zuführung zur Rücklage aus dem Hausgeld'), RESERVE_CATEGORY)
+  for (const text of ['Entnahme aus der Instandhaltungsrücklage', 'Dachreparatur aus der Rücklage', 'Zuführung zur Rücklage', 'Instandhaltungsrücklage', 'Zuführung zur Rücklage aus dem Hausgeld']) {
+    assert.equal(matchCategory(text) === RESERVE_CATEGORY, looksLikeReserveContribution(text), text)
+  }
 })

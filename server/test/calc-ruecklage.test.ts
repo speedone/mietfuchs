@@ -56,3 +56,11 @@ test('Rücklage: ohne die Kostenart ist der Bericht unverändert (#143)', () => 
   assert.deepEqual(r.reserveSuspects, [])
   assert.equal(r.expenses.totalCents, 392100)
 })
+
+test('Rücklage: eine Entnahme aus der Rücklage ist keine Zuführung (#143, Durchsicht)', () => {
+  const entnahme = item({ id: 'e', category: 'Nicht umlagefähig', description: 'Entnahme aus der Erhaltungsrücklage für das Dach', amountCents: 50000 })
+  const bezahlt = item({ id: 'b', category: 'Nicht umlagefähig', description: 'Fassade, bezahlt aus der Rücklage', amountCents: 30000 })
+  const zufuehrung = item({ id: 'z', category: 'Nicht umlagefähig', description: 'Zuführung zur Rücklage', amountCents: 90000 })
+  const r = taxReport(snapshotOf(source([entnahme, bezahlt, zufuehrung]), 2025))
+  assert.deepEqual(r.reserveSuspects.map((x) => x.costItemId), ['z'])
+})

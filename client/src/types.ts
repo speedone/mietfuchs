@@ -81,7 +81,9 @@ export function matchCategory(raw: string): string {
   const s = raw.toLowerCase()
   if (/müll|abfall|restabfall|biotonne|wertstoff/.test(s)) return 'Müllabfuhr'
   // Vor „Instandhaltung“: Die Instandhaltungsrücklage ist die Zuführung zur Erhaltungsrücklage (#143).
-  if (/r(ü|ue|u)cklage/.test(s)) return 'Zuführung Erhaltungsrücklage'
+  // Eine Entnahme oder eine Zahlung „aus der Rücklage“ ist keine Zuführung; dieselbe Regel wie
+  // `looksLikeReserveContribution` in server/src/calc.ts.
+  if (/r(ü|ue|u)cklage/.test(s) && (/zuf(ü|ue|u)hrung/.test(s) || !/entnahme|\baus\s+(der|dem)\b/.test(s))) return 'Zuführung Erhaltungsrücklage'
   // Reparaturen, Instandhaltung und Dämmung zuerst: „Heizungsreparatur“ ist nicht umlagefähig und
   // darf nicht über „heiz“ zur Heizkostenart werden.
   if (/instandhalt|reparatur|dämmung|verwaltung|nicht umlage/.test(s)) return 'Nicht umlagefähig'
