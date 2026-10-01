@@ -883,7 +883,22 @@ die ganze fachliche Komplexität:
   Grund für die Basis-Zugehörigkeit: Kosten einer Rechnung über das ganze Haus dürfen nur
   anteilig auf die Mieter umgelegt werden. Beim `meter`-Schlüssel bilden **alle**
   Wohnungszähler die Basis, unabhängig vom Kennzeichen — ein Zählerstand belegt Verbrauch
-  innerhalb der abgerechneten Menge. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
+  innerhalb der abgerechneten Menge. **Fehlt einer Wohnung der Verteilbasis der Zähler, wird
+  der Hauptzähler (Zähler ohne Wohnung) zur Basis** (#116, Vorwegabzug): Ihr Verbrauch ist der
+  Rest nach Abzug der Wohnungszähler, bei selbstgenutzten Wohnungen als Eigenanteil, bei einer
+  vermieteten ohne Zähler beim Vermieter und mit Warnung, denn aufteilen ließe er sich nur mit
+  einer erfundenen Regel. Vorher zahlte bei einer Einliegerwohnung mit Zwischenzähler der
+  Mieter die ganze Rechnung (gemessen 1.000 € statt 200 €). Haben alle Wohnungen Zähler, bleibt
+  es beim Verhältnis der Wohnungszähler, und die Messdifferenz geht darin auf; zeigen sie
+  zusammen mehr als der Hauptzähler, ebenso, dann mit Warnung. Mit Teilnehmern (#94) gilt der
+  Hauptzähler nie, er misst das ganze Haus. Vier Feinheiten aus der Durchsicht, jede mit Test:
+  Gefragt wird nur nach **bewohnten** Einheiten (selbstgenutzt oder mit Mietverhältnis im
+  Jahr), eine leere Garage verbraucht nichts; ohne Teilnehmer nach **allen** Einheiten des
+  Objekts, auch außerhalb der Abrechnungseinheit, denn deren Verbrauch steckt ebenfalls im
+  Hauptzähler und gehört nicht in den Eigenanteil. Ein Zähler **ohne Ablesung im Jahr** zählt
+  nicht als Zähler (`coveredDays`). Und ein Hauptzähler, der **nicht das ganze Jahr** abdeckt,
+  wird nicht zur Basis, sondern ergibt eine Warnung: Der Versorger liest selten zum 31.12. ab,
+  und ein Teiljahr gegen ganzjährige Wohnungszähler ließe den Mieter zu viel zahlen. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
   entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht
   abziehbar); `load()` migriert bewusst **nicht** automatisch, weil ein gesetztes Kennzeichen
   die Verteilung bereits abgerechneter Jahre verändern würde.
@@ -1244,11 +1259,13 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   rechtlich angreifbar ist, wird unterstützt, mit Warnung und beziffertem Kürzungsbetrag, statt
   verweigert; abgelehnt wird nur, was keine Kürzung heilt. Nicht dazu gehört die Verwaltung für
   Dritte (Mandanten, Erlaubnis nach § 34c GewO). Der Weg dorthin steht in den Teil-Issues #92 bis
-  #99, jedes einzeln auslieferbar. Stand heute: mehrere Objekte (#92); Heizung und Warmwasser
-  nach HeizkostenV deckt Mietfuchs noch nicht ab, das kommt mit #94, #97 und #99. **Wer ein Haus
-  vermietet, merkt von der Breite nichts**: Jede neue Angabe hat eine Voreinstellung, die das
-  bisherige Verhalten ergibt, es gibt keine neuen Pflichtfelder, und die Golden-Tests bleiben
-  centgenau grün.
+  #99, jedes einzeln auslieferbar. Stand heute: mehrere Objekte (#92), erweiterte Verteilbasis
+  (#94) und das Mietmodell mit Pauschale und Inklusivmiete (#93); eine eigene Heizkostenabrechnung
+  nach HeizkostenV fehlt noch (#97, #99), eine fertige des Messdienstes lässt sich über
+  Einzelbeträge übernehmen. **Wer ein Haus vermietet, merkt von der Breite nichts**: Jede neue
+  Angabe hat eine Voreinstellung, die das bisherige Verhalten ergibt, es gibt keine neuen
+  Pflichtfelder, und die Golden-Tests bleiben centgenau grün. Die eine bewusste Ausnahme ist eine
+  Behebung und keine Erweiterung: der Hauptzähler bei einer Wohnung ohne Zähler (#116).
 - **Maßstab für Erweiterungen** (siehe [CONTRIBUTING.md](CONTRIBUTING.md)): Mietfuchs muss für
   Vermieter ohne technische Vorkenntnisse nutzbar und einfach einzurichten bleiben. Die Technik
   darunter darf wachsen (Datenbank, Serverbetrieb), solange Skripte, Installer und

@@ -153,6 +153,11 @@ const noticeKinds = {
   'custom.none': { level: 'warning', title: 'Keine vereinbarten Anteile' },
   'custom.over-100': { level: 'error', title: 'Vereinbarte Anteile über 100 %' },
   'meter.no-consumption': { level: 'warning', title: 'Kein Verbrauch erfasst' },
+  'meter.unit-without-meter': { level: 'warning', title: 'Wohnung ohne Zähler' },
+  'meter.sub-exceeds-main': { level: 'warning', title: 'Wohnungszähler über dem Hauptzähler' },
+  'meter.main-partial': { level: 'warning', title: 'Hauptzähler deckt nicht das ganze Jahr ab' },
+  'meter.main-gap': { level: 'hint', title: 'Wohnungszähler erfassen wenig vom Hauptzähler' },
+  'meter.unit-partial': { level: 'warning', title: 'Zähler deckt nicht die ganze Zeit ab' },
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr' },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig' },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate' },
@@ -318,6 +323,16 @@ export function consumptionInPeriod(readings: SnapshotReading[], from: string, t
 }
 
 // Ein Eintrag der Jahresübersicht für die Zähler-Seite (Verbrauch je Zähler)
+// Tage im Zeitraum [from, to], die Segmente des Zählers abdecken (#116). Eine Ablesung gilt
+// zum Tagesende, ein Segment deckt also die Tage nach seiner ersten Ablesung bis einschließlich
+// seiner letzten. Eine Lücke, etwa ein Zählerwechsel ohne Endstand, deckt nichts ab.
+function coveredDays(readings: SnapshotReading[], from: string, to: string): number {
+  return meterSegments(readings).segments.reduce(
+    (a, seg) => a + rangeOverlapDays(new Date(toUTC(seg.from) + MS_DAY).toISOString().slice(0, 10), seg.to, from, to),
+    0,
+  )
+}
+
 export type ConsumptionOverviewRow = {
   meterId: string
   consumption: number
@@ -753,7 +768,24 @@ type Target = { t: TenancyWithUnit, raw: number, basisText: string }
 // Zählertyp ohne Zähler gibt es keinen Eintrag, und `data` unten ist dann `undefined` statt
 // eines für den Übersetzer immer vorhandenen Werts. Nur so bleibt die folgende Prüfung
 // `if (!data || data.basis <= 0)` sichtbar nötig statt totem Code.
-type ConsumptionByTypeEntry = { meters: (SnapshotMeter & { unitId: string })[], basis: number, perUnit: Map<string, number>, selfConsumption: number }
+// Zum Hauptzähler (#116): `unmetered` sind bewohnte Einheiten ohne abgelesenen Zähler dieses
+// Typs. `main` ist sein Verbrauch, wenn er die Basis ist, sonst null. Die übrigen Felder sagen,
+// warum er es nicht ist, oder dass er weit mehr zeigt als die Wohnungszähler.
+type ConsumptionByTypeEntry = {
+  meters: (SnapshotMeter & { unitId: string })[]
+  basis: number
+  perUnit: Map<string, number>
+  selfConsumption: number
+  unmetered: SnapshotUnit[]
+  limited: boolean
+  hasMain: boolean
+  main: number | null
+  mainPartial: { meterId: string, days: number } | null
+  mainBelowUnits: { main: number, units: number } | null
+  mainGap: { main: number, units: number } | null
+  // Bewohnte Einheiten, deren Zähler nur einen Teil ihrer Zeit abdecken (Befund der Durchsicht).
+  partial: { unit: SnapshotUnit, covered: number, needed: number }[]
+}
 
 // Das tatsächliche Ergebnis von computeSettlement: wie Settlement aus shared/types.ts, aber ohne
 // `closed` — das ergänzt erst die Route GET /api/settlement/:year.
@@ -817,30 +849,94 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // snapshot.ts). `consumptionInPeriod` schneidet den Zeitraum tagesanteilig heraus.
   const allMeters = snapshot.meters
   const allReadings = snapshot.readings
+  // Bewohnt im Jahr: selbstgenutzt oder mit einem Mietverhältnis. Nur bei ihnen fehlt ein
+  // Zähler wirklich; eine leere Wohnung oder eine unvermietete Garage verbraucht nichts (#116).
+  const occupied = new Set([...snapshot.units.filter((u) => u.selfUsed).map((u) => u.id), ...tenancies.map((t) => t.unitId)])
+  const readingsOf = (meterId: string) => allReadings.filter((r) => r.meterId === meterId)
+  // Wie viele Tage des Jahres ein Zähler der Einheit abdecken muss: das ganze Jahr bei einer
+  // selbstgenutzten, sonst die Tage ihrer Mietverhältnisse.
+  const neededDays = (u: SnapshotUnit) =>
+    u.selfUsed ? diy : Math.min(diy, tenancies.filter((t) => t.unitId === u.id).reduce((a, t) => a + t.days, 0))
   // `only`: die Teilnehmer einer Position (#94); ohne sie alle Wohnungszähler wie bisher.
-  const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null) => {
+  // `basisOnes`: die Wohnungen der Verteilbasis.
+  const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null, basisOnes: SnapshotUnit[]) => {
     const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
     const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
+    // Hauptzähler: Zähler ohne Wohnung. Er misst das ganze Haus und taugt deshalb nicht als
+    // Basis einer Position, die nur für einen Teil der Wohnungen gilt.
+    const mainMeters = only === null ? allMeters.filter((m) => !m.unitId) : []
+    const selfIds = new Set(selfOnes.map((u) => u.id))
     const meterTypes = [...new Set(unitMeters.map((m) => m.type))]
     for (const type of meterTypes) {
       const meters = unitMeters.filter((m) => m.type === type) as (SnapshotMeter & { unitId: string })[]
       const perUnit = new Map<string, number>()
       let basis = 0
       for (const m of meters) {
-        const readings = allReadings.filter((r) => r.meterId === m.id)
+        const readings = readingsOf(m.id)
         const c = consumptionInPeriod(readings, yFrom, yTo)
         basis += c
-        perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        // Ein angelegter, aber im Jahr nie abgelesener Zähler ist kein Zähler: Sonst gälte die
+        // Wohnung als gemessen, und der Fehler aus #116 käme ohne Warnung zurück.
+        if (coveredDays(readings, yFrom, yTo) > 0) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
       }
       // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
       // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
       // Wohnungen fällt damit ohnehin dem Vermieter zu.
-      const selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
-      byType[type] = { meters, basis, perUnit, selfConsumption }
+      let selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
+      // **Vorwegabzug über den Hauptzähler (#116).** Hat jede bewohnte Einheit einen Zähler,
+      // bleibt es bei ihrem Verhältnis, und die Messdifferenz zum Hauptzähler geht darin auf,
+      // wie bisher. Fehlt einer der Zähler, ist ihr Verbrauch der Rest des Hauptzählers, und die
+      // Basis ist der Hauptzähler; sonst zahlten die gemessenen Wohnungen ihren Verbrauch mit.
+      // Gefragt wird ohne Teilnehmer jede Einheit des Objekts, auch außerhalb der
+      // Abrechnungseinheit, denn der Hauptzähler misst sie alle.
+      const candidates = only === null ? snapshot.units : basisOnes
+      const unmetered = candidates.filter((u) => occupied.has(u.id) && !perUnit.has(u.id))
+      // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
+      const partial = candidates.flatMap((u) => {
+        if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
+        const covered = Math.min(...meters.filter((m) => m.unitId === u.id).map((m) => coveredDays(readingsOf(m.id), yFrom, yTo)))
+        const needed = neededDays(u)
+        return covered < needed ? [{ unit: u, covered, needed }] : []
+      })
+      const mainOfType = mainMeters.filter((m) => m.type === type)
+      const main = mainOfType.reduce((a, m) => a + consumptionInPeriod(readingsOf(m.id), yFrom, yTo), 0)
+      // Nur ein Hauptzähler über das ganze Jahr taugt als Basis. Der Versorger liest selten zum
+      // 31.12. ab, und ein Teiljahr gegen ganzjährige Wohnungszähler verschöbe die Anteile.
+      const mainShort = mainOfType
+        .map((m) => ({ meterId: m.id, days: coveredDays(readingsOf(m.id), yFrom, yTo) }))
+        .find((c) => c.days < diy) ?? null
+      let mainBasis: number | null = null
+      let mainPartial: ConsumptionByTypeEntry['mainPartial'] = null
+      let mainBelowUnits: ConsumptionByTypeEntry['mainBelowUnits'] = null
+      let mainGap: ConsumptionByTypeEntry['mainGap'] = null
+      if (mainOfType.length > 0 && unmetered.length > 0) {
+        if (mainShort) {
+          mainPartial = mainShort
+        } else if (main < basis) {
+          mainBelowUnits = { main, units: basis }
+        } else if (main > 0) {
+          mainBasis = main
+          // Der Rest gehört zu den Einheiten ohne Zähler. Sind das nur selbstgenutzte, ist er ihr
+          // Eigenanteil. Ist eine andere dabei, lässt er sich nicht aufteilen und bleibt beim
+          // Vermieter, ohne Eigenanteil zu sein; das sagt eine Warnung.
+          if (unmetered.every((u) => selfIds.has(u.id)) && partial.length === 0) selfConsumption += main - basis
+          basis = main
+        }
+      } else if (mainOfType.length > 0 && !mainShort && basis < main * 0.8) {
+        // Alle bewohnten Einheiten haben Zähler und erfassen doch weit weniger als der
+        // Hauptzähler. Typisch, wenn eine Wohnung gar nicht angelegt ist; von einer gewöhnlichen
+        // Messdifferenz lässt sich das nicht unterscheiden, also bleibt die Zahl, und es gibt
+        // einen Hinweis. Die Grenze von 20 Prozent ist eine Schwelle zum Hinsehen, keine Regel.
+        mainGap = { main, units: basis }
+      }
+      byType[type] = {
+        meters, basis, perUnit, selfConsumption, unmetered, limited: only !== null,
+        hasMain: mainOfType.length > 0, main: mainBasis, mainPartial, mainBelowUnits, mainGap, partial,
+      }
     }
     return byType
   }
-  const consumptionByType = consumptionFor(selfUnits, null)
+  const consumptionByType = consumptionFor(selfUnits, null, basisUnits)
 
   const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
@@ -940,7 +1036,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       partTenancies: pTenancies,
       basisPersonDays: pTenancies.reduce((a, t) => a + personDaysInPeriod(t, yFrom, yTo), 0) + sPersonDays,
       selfPersonDays: sPersonDays,
-      consumptionByType: consumptionFor(sUnits, only),
+      consumptionByType: consumptionFor(sUnits, only, bUnits),
     }
   }
 
@@ -1107,6 +1203,36 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       if (!data || data.basis <= 0) {
         warn('meter.no-consumption', `„${item.description}": kein Verbrauch für Zählertyp „${item.meterType ?? '—'}" erfasst — Betrag geht an den Vermieter.`, itemSubject(item))
       } else {
+        const type = item.meterType ?? '—'
+        if (data.mainPartial) {
+          warn('meter.main-partial', `„${item.description}": der Hauptzähler deckt ${year} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum 31.12.${year - 1} und zum Jahresende (31.12.${year}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
+        }
+        if (data.mainBelowUnits) {
+          warn('meter.sub-exceeds-main', `„${item.description}": die Wohnungszähler zeigen zusammen ${fmtMeter(data.mainBelowUnits.units)}, mehr als der Hauptzähler (${fmtMeter(data.mainBelowUnits.main)}) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
+        }
+        if (data.mainGap) {
+          warn('meter.main-gap', `„${item.description}": die Wohnungszähler erfassen zusammen nur ${fmtMeter(data.mainGap.units)} von ${fmtMeter(data.mainGap.main)} des Hauptzählers. Gehört der Rest zu einer Wohnung, die nicht angelegt ist (etwa Ihrer eigenen), legen Sie sie unter Stammdaten an; dann gilt für sie der Rest des Hauptzählers. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
+        }
+        if (data.main !== null && data.partial.length > 0) {
+          warn('meter.unit-partial', `„${item.description}": der Zähler von ${data.partial.map((p) => `${p.unit.name} (${p.covered} von ${p.needed} Tagen)`).join(', ')} deckt nicht die ganze Zeit ab, in der dort gewohnt wurde — der Verbrauch der Lücke steckt im Rest des Hauptzählers, der deshalb beim Vermieter bleibt und nicht als Eigenanteil gilt. Bitte die fehlenden Ablesungen nachtragen.`, unitSubject(data.partial.map((p) => p.unit)))
+        }
+        // Fehlt der Zähler nur bei selbstgenutzten Wohnungen, gibt es nichts zu melden; bleibt der
+        // Rest wegen einer Lücke trotzdem beim Vermieter, sagt das die Meldung davor.
+        const onlySelfUnmetered = data.main !== null && data.unmetered.every((u) => b.selfUnits.includes(u))
+        if (data.unmetered.length > 0 && !onlySelfUnmetered) {
+          const names = data.unmetered.map((u) => u.name).join(', ')
+          // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann trifft die Warnung
+          // nicht zu, und das steht dabei. Eine Kennzeichnung dafür fehlt noch.
+          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), trifft das nicht zu.'
+          const text = data.main !== null
+            ? `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
+            : data.hasMain
+              ? 'ihr Verbrauch lässt sich nicht bestimmen und steckt in den Anteilen der übrigen Wohnungen, bis der Hauptzähler verwendbar ist (siehe den Hinweis zum Hauptzähler).'
+              : data.limited
+                ? `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen teilnehmenden Wohnungen mitgetragen. Bitte die Teilnehmer der Position prüfen.${noConnection}`
+                : `ihr Verbrauch lässt sich nicht bestimmen und wird von den übrigen Wohnungen mitgetragen. Mit einem Hauptzähler (Zähler ohne Wohnung) gilt für sie der Rest des Hauptzählers.${noConnection}`
+          warn('meter.unit-without-meter', `„${item.description}": für ${names} gibt es keinen abgelesenen Zähler „${type}" — ${text}`, unitSubject(data.unmetered))
+        }
         selfRaw = item.amountCents * (data.selfConsumption / data.basis)
         for (const t of b.partTenancies) {
           const meters = data.meters.filter((m) => m.unitId === t.unitId)
@@ -1118,7 +1244,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
             c += consumptionInPeriod(readings, pFrom, pTo)
           }
           const raw = item.amountCents * (c / data.basis)
-          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (gemessen)` })
+          targets.push({ t, raw, basisText: `${fmtNum(Math.round(c * 100) / 100)} von ${fmtNum(Math.round(data.basis * 100) / 100)} (${data.main !== null ? 'Hauptzähler' : 'gemessen'})` })
         }
       }
     } else if (item.key === 'direct') {
@@ -1261,7 +1387,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     warn('heating.flat-rate',
       `Für ${heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
         'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Zweifamilienhaus mit selbstbewohnter Wohnung. ' +
-        'Der Mieter kann eine verbrauchsabhängige Abrechnung verlangen und bis dahin um 15 % kürzen (§ 12).',
+        'Der Mieter kann eine verbrauchsabhängige Abrechnung verlangen und bis dahin um 15 % kürzen (§ 12).' +
+        // Die Einliegerwohnung (#116): Wer nur die vermietete Wohnung anlegt, hat womöglich
+        // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
+        // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.
+        (snapshot.units.length === 1 && selfUnits.length === 0
+          ? ' Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt.'
+          : ''),
       tenancySubject(heatingFlat),
     )
   }
