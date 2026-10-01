@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { NoticeSubject, Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
+import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty, useSwitchYear } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -171,7 +171,9 @@ function Shell() {
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   const update = useUpdateStatus(settings)
@@ -238,7 +240,7 @@ function Shell() {
 
         <label className="year-switcher no-print">
           <span>Abrechnungsjahr</span>
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
             {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
@@ -282,9 +284,9 @@ function Shell() {
             onDismiss={() => propertyId && dismissNotice(propertyId)}
           />
         )}
-        {/* Je Objekt neu aufgestellt (#145): Formulare und Zwischenstände einer Seite gehören zu
-            dem Objekt, in dem sie entstanden sind. */}
-        <Fragment key={propertyId ?? ''}>
+        {/* Je Objekt und Jahr neu aufgestellt (#145, Durchsicht zu #141): Formulare und
+            Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
+        <Fragment key={`${propertyId ?? ''}:${year}`}>
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}

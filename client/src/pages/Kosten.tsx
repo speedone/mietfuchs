@@ -19,6 +19,7 @@ import {
   selfAmountUnits,
   aiPositionBody,
   aiPositionDefaults,
+  aiPositionPreselect,
   aiPositionProblem,
   keyChangeNotice,
   newItemForm,
@@ -31,14 +32,14 @@ import {
   type ItemForm,
   type KeyContext,
 } from '../costForm'
-import { alreadyCarried, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
+import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import AiKeyCell from '../components/AiKeyCell'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, useSwitchYear, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -78,7 +79,9 @@ type QueueEntry = {
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -190,10 +193,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Erst alle angehakten Zeilen prüfen, dann anlegen (#139): Eine Zeile ohne Betrag wird genannt,
   // statt still zu fehlen. Angelegte Zeilen verschwinden aus der Liste; scheitert eine, bleibt der
   // Rest stehen, damit ein zweiter Versuch nichts doppelt anlegt.
+  // Gesperrt, solange ein Durchgang läuft (Durchsicht): Ein Doppelklick legte sonst alles zweimal
+  // an, denn der zweite Klick kommt, bevor die Liste neu gezeichnet ist. Deshalb ein Ref und nicht
+  // nur der gesperrte Knopf.
+  const carryBusy = useRef(false)
+  const [carrySaving, setCarrySaving] = useState(false)
   async function adoptCarry() {
-    if (!carry) return
-    const chosen = carry.map((row, index) => ({ row, index })).filter(({ row }) => row.checked)
-    const blocked = chosen.flatMap(({ row }) => {
+    if (!carry || carryBusy.current) return
+    carryBusy.current = true
+    setCarrySaving(true)
+    try {
+      await adoptCarryRows(carry)
+    } finally {
+      carryBusy.current = false
+      setCarrySaving(false)
+    }
+  }
+  async function adoptCarryRows(rows: CarryRow[]) {
+    const chosen = rows.filter((row) => row.checked)
+    const blocked = chosen.flatMap((row) => {
       const built = carryOverBody(row, units, year, tenancies)
       return 'error' in built ? [`„${row.description}“: ${built.error}`] : []
     })
@@ -201,24 +219,48 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       setError(`Nicht übernommen: ${blocked.join(' ')}`)
       return
     }
+    // Schon im Jahr erfasst und trotzdem angehakt: ausdrücklich nachfragen (Durchsicht), sonst
+    // stünde dieselbe Rechnung zweimal in der Abrechnung.
+    const twice = chosen.filter((row) => alreadyCarried(items, row, year))
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst',
+        message: `${twice.map((r) => `„${r.description}“`).join(', ')} ${twice.length === 1 ? 'ist' : 'sind'} für ${year} schon erfasst. Legen Sie ${twice.length === 1 ? 'die Position' : 'die Positionen'} trotzdem noch einmal an, wird dieselbe Rechnung zweimal verteilt.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
     setError('')
-    const done = new Set<number>()
-    for (const { row, index } of chosen) {
+    const done = new Set<string>()
+    for (const row of chosen) {
       const built = carryOverBody(row, units, year, tenancies)
       if ('error' in built) continue
       try {
         await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
-        done.add(index)
+        done.add(row.source.id)
       } catch (e) {
         setError(`„${row.description}“ wurde nicht übernommen: ${errorText(e)}`)
         break
       }
     }
-    const rest = carry.filter((_, i) => !done.has(i))
-    setCarry(rest.length > 0 ? rest : null)
+    removeCarried(done)
     await load()
     if (done.size > 0) toast(`${done.size} ${done.size === 1 ? 'Position' : 'Positionen'} aus ${year - 1} für ${year} angelegt.`)
   }
+  // Angelegte Zeilen verschwinden aus der Liste, gleich auf welchem Weg (Knopf oder Formular).
+  function removeCarried(ids: Set<string>) {
+    if (ids.size === 0) return
+    setCarry((rows) => {
+      if (!rows) return rows
+      const rest = rows.filter((r) => !ids.has(r.source.id))
+      return rest.length > 0 ? rest : null
+    })
+  }
+  // Die Zeile, aus der das offene Formular stammt („Im Formular öffnen“): Nach dem Speichern
+  // verschwindet sie aus der Liste, sonst legte der Knopf sie ein zweites Mal an (Durchsicht).
+  const [formCarryId, setFormCarryId] = useState<string | null>(null)
+  useEffect(() => { if (!form) setFormCarryId(null) }, [form])
 
   async function saveItem() {
     if (!form) return
@@ -239,6 +281,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       return
     }
     const desc = form.description.trim()
+    if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
     setForm(null)
     await load()
     toast(editing ? `„${desc}" übernommen.` : `„${desc}" hinzugefügt.`)
@@ -314,9 +357,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             amount,
             labor35a,
             externalTotalAmount: '',
-            ...aiPositionDefaults(category, units, meters, keyCtx),
+            ...aiPositionDefaults(category, units, meters, keyCtx, p.description),
           }
-        }).map((p) => ({ ...p, checked: !isNotAllocable(p.category) && aiPositionProblem(p, units, year) === null }))
+        }).map((p) => ({ ...p, checked: !isNotAllocable(p.category) && aiPositionPreselect(p) && aiPositionProblem(p, units, year) === null }))
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
@@ -388,7 +431,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <div className="row">
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
@@ -446,6 +489,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                       <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
                     )}
                     {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
+                    {/* Durchsicht: Anteile samt Summe, Wohnung der Direktzuordnung */}
+                    {showsKeyFields(r.source.category) && (() => {
+                      const d = carryKeyDetails(r.source, units)
+                      return d && <div className={d.warn ? '' : 'muted'}>{d.warn ? <span className="badge red">{d.text}</span> : d.text}</div>
+                    })()}
                     {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
                       <div className="muted">
                         {r.source.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 })} {EXTERNAL_UNIT_LABELS[r.source.externalBasis.measure]} in der Anlage; Kosten der Gemeinschaft {year} €:
@@ -465,7 +513,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td className="num">
                     {r.inline && (
-                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value))}
+                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, year)))}
                         placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
                     )}
                     {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
@@ -475,14 +523,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
                   </td>
                   <td>
-                    <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)) }}>Im Formular öffnen</button>
+                    <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </Table>
           <div className="row" style={{ marginTop: 10 }}>
-            <button className="btn" onClick={() => void adoptCarry()} disabled={carry.every((r) => !r.checked)}>
+            <button className="btn" onClick={() => void adoptCarry()} disabled={carrySaving || carry.every((r) => !r.checked)}>
               {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {year} anlegen
             </button>
             <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
@@ -572,7 +620,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
-                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx) })}>
+                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx, p.description) })}>
                             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                           </select>
                         </td>

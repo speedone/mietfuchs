@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useProperty, withProperty, useSwitchYear } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
@@ -11,7 +11,9 @@ import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHint
 type Props = { settings: Settings | null }
 
 export default function Steuer({ settings }: Props) {
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -59,7 +61,7 @@ export default function Steuer({ settings }: Props) {
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <label className="field">
             Jahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </label>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useProperty, withProperty, useSwitchYear } from '../property'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 
@@ -13,7 +13,9 @@ const NOTABLE_CHANGE_PCT = 25
 type Props = { onNavigate: (tab: string) => void }
 
 export default function Uebersicht({ onNavigate }: Props) {
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const [costItems, setCostItems] = useState<CostItem[]>([])
@@ -88,7 +90,7 @@ export default function Uebersicht({ onNavigate }: Props) {
         <div className="row">
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}

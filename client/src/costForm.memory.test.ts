@@ -8,6 +8,7 @@ import {
   aiKeyOptions,
   aiPositionBody,
   aiPositionDefaults,
+  aiPositionPreselect,
   aiPositionProblem,
   buildCostItemBody,
   keyChangeNotice,
@@ -39,11 +40,11 @@ describe('Vorschlag aus dem Vorjahr', () => {
     const items = [
       item({ year: 2025, category: 'Wasser/Abwasser', key: 'meter', meterType: 'kaltwasser' }),
       item({ year: 2025, category: 'Gartenpflege', key: 'custom', customShares: { u1: 40, u2: 60 } }),
-      item({ year: 2025, category: 'Sonstige Betriebskosten', key: 'direct', directUnitId: 'u3' }),
+      item({ year: 2025, category: 'Schornsteinfeger', key: 'direct', directUnitId: 'u3' }),
     ]
     expect(withCategory({ ...EMPTY_ITEM_FORM }, 'Wasser/Abwasser', UNITS, METERS, ctx(items))).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
     expect(withCategory({ ...EMPTY_ITEM_FORM }, 'Gartenpflege', UNITS, METERS, ctx(items)).customShares).toEqual({ u1: '40', u2: '60' })
-    expect(withCategory({ ...EMPTY_ITEM_FORM }, 'Sonstige Betriebskosten', UNITS, METERS, ctx(items)).directUnitId).toBe('u3')
+    expect(withCategory({ ...EMPTY_ITEM_FORM }, 'Schornsteinfeger', UNITS, METERS, ctx(items)).directUnitId).toBe('u3')
   })
 
   test('Gemeinschaftsabrechnung: Maßstab und Summe der Anteile ja, die Kosten der Gemeinschaft nein', () => {
@@ -66,9 +67,14 @@ describe('Vorschlag aus dem Vorjahr', () => {
     expect(withCategory(aufzug, 'Gartenpflege', UNITS, METERS, ctx(items)).participants).toBeNull()
   })
 
-  test('Teilnehmer einer inzwischen gelöschten Wohnung fallen heraus', () => {
-    const items = [item({ year: 2025, category: 'Aufzug', key: 'area', participantUnitIds: ['u1', 'weg'] })]
-    expect(withCategory({ ...EMPTY_ITEM_FORM }, 'Aufzug', UNITS, METERS, ctx(items)).participants).toEqual(['u1'])
+  // Durchsicht (7): So sieht es in der Datenbank aus, wenn der einzige Teilnehmer gelöscht ist.
+  // Die Kaskade entfernt seine Zeile, das Kennzeichen „nur Teilnehmer“ bleibt: eine leere Liste.
+  // Das Formular übernimmt sie und lässt so nicht speichern, statt still auf alle zu verteilen.
+  test('einziger Teilnehmer gelöscht: leere Liste, und das Formular sperrt das Speichern', () => {
+    const items = [item({ year: 2025, category: 'Aufzug', key: 'area', participantUnitIds: [] })]
+    const f = withCategory({ ...EMPTY_ITEM_FORM, description: 'Aufzug', amount: '100,00' }, 'Aufzug', UNITS, METERS, ctx(items))
+    expect(f.participants).toEqual([])
+    expect(buildCostItemBody(f, UNITS, 2026)).toEqual({ error: 'Bitte mindestens eine teilnehmende Wohnung wählen.' })
   })
 
   test('das neue Formular schlägt schon für die erste Kostenart vor', () => {
@@ -189,4 +195,38 @@ test('Durchsicht: Teilnehmer des Vorjahres, die heute alle Wohnungen sind, löse
   expect(keyChangeNotice(f, zwei, ctx(memory))).toBe('')
   // Und ausdrücklich „alle“ ebenso.
   expect(keyChangeNotice({ ...f, participants: null }, zwei, ctx(memory))).toBe('')
+})
+
+describe('Durchsicht: breite Kostenart, KI-Zeilen mit Einschränkung, unvollständiger Schlüssel', () => {
+  const hebe = item({ year: 2025, category: 'Sonstige Betriebskosten', key: 'direct', directUnitId: 'u1', description: 'Wartung Hebeanlage 2025' })
+  test('Hebeanlage → Dachrinne: kein gemerkter Schlüssel, kein Hinweis', () => {
+    const f = withCategory({ ...EMPTY_ITEM_FORM, description: 'Reinigung Dachrinne' }, 'Sonstige Betriebskosten', UNITS, METERS, ctx([hebe]))
+    expect(f.key).toBe('area')
+    expect(keyChangeNotice(f, UNITS, ctx([hebe]))).toBe('')
+    expect(aiPositionDefaults('Sonstige Betriebskosten', UNITS, METERS, ctx([hebe]), 'Reinigung Dachrinne')).toEqual({ key: 'area', allocation: null })
+  })
+  test('dieselbe Beschreibung mit neuer Jahreszahl: gemerkter Schlüssel', () => {
+    const f = withCategory({ ...EMPTY_ITEM_FORM, description: 'Wartung Hebeanlage 2026' }, 'Sonstige Betriebskosten', UNITS, METERS, ctx([hebe]))
+    expect(f).toMatchObject({ key: 'direct', directUnitId: 'u1' })
+    expect(aiPositionDefaults('Sonstige Betriebskosten', UNITS, METERS, ctx([hebe]), 'Wartung Hebeanlage 2026').key).toBe('direct')
+  })
+  test('eingeschränkter gemerkter Schlüssel: KI-Zeile nie vorab angehakt', () => {
+    const items = [item({ year: 2025, category: 'Aufzug', key: 'area', participantUnitIds: ['u1'] }), hebe]
+    expect(aiPositionPreselect(aiPositionDefaults('Aufzug', UNITS, METERS, ctx(items)))).toBe(false)
+    expect(aiPositionPreselect(aiPositionDefaults('Sonstige Betriebskosten', UNITS, METERS, ctx(items), 'Wartung Hebeanlage 2026'))).toBe(false)
+    expect(aiPositionPreselect(aiPositionDefaults('Müllabfuhr', UNITS, METERS, ctx(items)))).toBe(true)
+  })
+  test('nicht mehr vollständiger gemerkter Schlüssel: die feste Vorgabe', () => {
+    const leer = [item({ year: 2025, category: 'Aufzug', key: 'area', participantUnitIds: [] })]
+    expect(aiPositionDefaults('Aufzug', UNITS, METERS, ctx(leer))).toEqual({ key: 'area', allocation: null })
+    const weg = [item({ year: 2025, category: 'Gartenpflege', key: 'direct', directUnitId: null })]
+    expect(aiPositionDefaults('Gartenpflege', UNITS, METERS, ctx(weg))).toEqual({ key: 'area', allocation: null })
+    const fremd = [item({ year: 2025, category: 'Gartenpflege', key: 'direct', directUnitId: 'gibt-es-nicht' })]
+    expect(aiPositionDefaults('Gartenpflege', UNITS, METERS, ctx(fremd))).toEqual({ key: 'area', allocation: null })
+  })
+  test('Formularhinweis behauptet nicht, dass sich ein Schlüssel nie ändern ließe', () => {
+    const text = keyChangeNotice({ ...EMPTY_ITEM_FORM, category: 'Müllabfuhr', key: 'area' }, UNITS, ctx([item({ year: 2025, category: 'Müllabfuhr', key: 'persons' })]))
+    expect(text).not.toMatch(/nicht einseitig von Jahr zu Jahr/)
+    expect(text).toMatch(/Zustimmung|Erklärung/)
+  })
 })
