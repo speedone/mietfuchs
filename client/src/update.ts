@@ -72,6 +72,6 @@ export function statusText(s: UpdateStatus): string {
   if (s.latest && isPrerelease(s.current)) {
     return `Sie nutzen die Vorabversion ${s.current}. Neueste veröffentlichte Version: ${s.latest}.${lastChecked}`
   }
-  if (s.latest) return `Du nutzt die aktuelle Version ${s.current}.${lastChecked}`
+  if (s.latest) return `Sie nutzen die aktuelle Version ${s.current}.${lastChecked}`
   return `Installiert ist Version ${s.current}.`
 }

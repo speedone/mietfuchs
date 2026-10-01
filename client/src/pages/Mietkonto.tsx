@@ -198,7 +198,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
       )}
 
       {ledger?.rows.length === 0 && (
-        <div className="card"><div className="empty">Für {year} gibt es keine Mietverhältnisse. Lege sie unter Stammdaten an und hinterlege die Kaltmiete.</div></div>
+        <div className="card"><div className="empty">Für {year} gibt es keine Mietverhältnisse. Legen Sie sie unter Stammdaten an und hinterlegen Sie die Kaltmiete.</div></div>
       )}
 
       {ledger?.rows.map((r) => {

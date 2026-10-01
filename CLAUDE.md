@@ -1288,6 +1288,10 @@ schlägt fehl, wenn jemand auf die moderne Fassung zurückwechselt.
   `rentLedger`, `buildCostItemBody`). Deutsch bleiben Kommentare, Oberflächentexte,
   Fehlermeldungen, Testnamen, Commit-Nachrichten und gespeicherte Fachwerte (`'vermietet'`,
   `'kaltwasser'`, die Kostenarten). Seitenkomponenten heißen wie die Seite (`Kosten.tsx`).
+- **Nutzertexte siezen; README und Entwicklerdoku duzen** (#142). Das gilt für Oberfläche,
+  Lexikon, Meldungen des Servers, Konsole und Startmenü, auch für MIGRATION.md, die sich an
+  Vermieter richtet. Die Prompts an das Modell sind davon ausgenommen. Ein Wächter
+  ([anrede.test.ts](server/test/anrede.test.ts)) sucht im Quelltext nach Du-Formen.
 - **Geld immer in Cent als Integer.** Eingabe-Parsing (deutsche + technische Schreibweise) über
   `parseEuro`; Ausgabe über `fmtEuro`.
 - **Datums-Logik** rechnet in UTC mit inklusiven Grenzen — beim Anfassen von calc.ts die

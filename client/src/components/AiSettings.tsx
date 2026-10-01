@@ -163,7 +163,7 @@ export function AiSettings({ settings, reload }: Props) {
     const ok = await confirm({
       title: `„${model}“ laden?`,
       message: sizeGb
-        ? `Der Download ist rund ${sizeGb.toLocaleString('de-DE')} GB groß und läuft über Ollama. Solange er läuft, kannst du weiterarbeiten.`
+        ? `Der Download ist rund ${sizeGb.toLocaleString('de-DE')} GB groß und läuft über Ollama. Solange er läuft, können Sie weiterarbeiten.`
         : 'Die Größe ist unbekannt, Modelle sind meist mehrere Gigabyte groß. Der Download läuft über Ollama.',
       confirmLabel: 'Laden',
     })
@@ -207,7 +207,7 @@ export function AiSettings({ settings, reload }: Props) {
       <h2>KI-Belegauswertung</h2>
       <p className="muted">
         Optional. Ein Sprachmodell liest hochgeladene Belege und schlägt Beträge und Kostenarten
-        vor. Übernommen wird erst, was du geprüft hast. Am einfachsten läuft das mit Ollama auf
+        vor. Übernommen wird erst, was Sie geprüft haben. Am einfachsten läuft das mit Ollama auf
         diesem Rechner; Dienste im Internet sind schneller, dafür verlassen die Belege das Haus.
       </p>
 
