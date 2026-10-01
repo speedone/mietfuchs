@@ -29,25 +29,35 @@ const ledger = (propertyId: string) => ({
 })
 
 let sent: { url: string; body: Record<string, unknown> }[]
+// Hält die Antwort auf /api/units eines Objekts zurück, bis der Test sie freigibt (Reihenfolge).
+let unitsGate: Record<string, Promise<void>> = {}
 
 beforeEach(() => {
   sent = []
+  unitsGate = {}
   try { localStorage.clear() } catch { /* ohne Speicher nichts zu räumen */ }
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }))
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     if ((init?.method ?? 'GET') !== 'GET') {
       sent.push({ url, body: JSON.parse(String(init?.body ?? '{}')) })
+      if (url === '/api/properties') return json(objekt('objekt-3', 'Haus C'))
       return json({ id: 'neu' })
     }
     const [path, query = ''] = url.split('?')
     const property = new URLSearchParams(query).get('property') ?? ''
     if (path === '/api/properties') return json(PROPERTIES)
     if (path === '/api/settings') return json({ landlordName: '', iban: '', paymentDeadlineDays: 30 })
-    if (path === '/api/units') return json(UNITS[property] ?? [])
+    if (path === '/api/units') {
+      await unitsGate[property]
+      return json(UNITS[property] ?? [])
+    }
     if (path === '/api/tenancies') return json(TENANCIES[property] ?? [])
     if (path?.startsWith('/api/rentledger/')) return json(ledger(property))
     if (path === '/api/meters') return json(property === 'objekt-1' ? [{ id: 'm-a', propertyId: 'objekt-1', name: 'Wasser DG', unitId: 'u-a', type: 'kaltwasser', unit: 'm³' }] : [])
+    // Das Cockpit (Startseite) bekommt keine Antwort: Für diese Tests zählt es nicht, und eine
+    // halbe Abrechnung brächte es zum Absturz, der die ganze Oberfläche mitnähme.
+    if (path?.startsWith('/api/settlement/')) return new Promise<Response>(() => {})
     if (path === '/healthz') return json({ ok: true })
     if (path === '/api/update') return json({ current: '0.8.0' })
     return json([])
@@ -129,4 +139,87 @@ test('Ablesung: ein angefangener Zählerstand zählt als offenes Formular', asyn
   fireEvent.click(await screen.findByRole('button', { name: /Objekt wechseln/ }))
   await waitFor(() => expect(screen.queryByRole('button', { name: /Ablesung speichern/ })).toBeNull())
   expect(sent).toEqual([])
+})
+
+test('Esc in der Rückfrage bricht nur den Wechsel ab, der Dialog darunter bleibt mit der Eingabe', async () => {
+  await openPaymentInA()
+  switchTo('objekt-2')
+  await screen.findByRole('button', { name: /Objekt wechseln/ })
+  fireEvent.keyDown(document, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
+  expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1')
+  expect((screen.getByLabelText(/^Betrag/) as HTMLInputElement).value).toBe('11,11')
+})
+
+test('Objektkarte: eine ungespeicherte Änderung zählt als offenes Formular', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
+  fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
+  switchTo('objekt-2')
+  expect(await screen.findByRole('button', { name: /Objekt wechseln/ })).toBeTruthy()
+})
+
+test('Objektkarte: ein neues Objekt anlegen geht über dieselbe Rückfrage', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
+  fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
+  fireEvent.click(screen.getByRole('button', { name: /Weiteres Objekt anlegen/ }))
+  fireEvent.change(screen.getByLabelText('Name des neuen Objekts'), { target: { value: 'Haus C' } })
+  PROPERTIES.push(objekt('objekt-3', 'Haus C'))
+  try {
+    fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
+    const ask = (await screen.findByRole('button', { name: /Objekt wechseln/ })).closest('.dialog') as HTMLElement
+    fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
+    // Angelegt ist es, gewechselt wird nicht, und die IBAN steht noch da.
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull())
+    expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1')
+    expect((screen.getByLabelText(/^IBAN/) as HTMLInputElement).value).toBe('DE02120300000000202051')
+  } finally {
+    PROPERTIES.pop()
+  }
+})
+
+test('Einstellungen: ungespeicherte Vermieterdaten zählen als offenes Formular', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Einstellungen/ }))
+  fireEvent.change(await screen.findByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
+  switchTo('objekt-2')
+  expect(await screen.findByRole('button', { name: /Objekt wechseln/ })).toBeTruthy()
+})
+
+test('schnell A → B → A: eine späte Antwort für B überschreibt A nicht', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Stammdaten/ }))
+  expect((await screen.findAllByText('DG')).length).toBeGreaterThan(0)
+  let release = () => {}
+  unitsGate['objekt-2'] = new Promise<void>((resolve) => { release = resolve })
+  switchTo('objekt-2')
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
+  switchTo('objekt-1')
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-1'))
+  await screen.findAllByText('DG')
+  release()
+  // Die Antwort für B kommt zuletzt an und darf nicht mehr gelten.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(screen.queryByText('EG')).toBeNull()
+  expect(screen.getAllByText('DG').length).toBeGreaterThan(0)
+})
+
+test('KI-Einstellungen: eine ungespeicherte Änderung zählt als offenes Formular', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Einstellungen/ }))
+  fireEvent.change(await screen.findByLabelText(/Zeitlimit je Schritt/), { target: { value: '120' } })
+  switchTo('objekt-2')
+  expect(await screen.findByRole('button', { name: /Objekt wechseln/ })).toBeTruthy()
+})
+
+test('Einstellungen ohne Änderung: kein offenes Formular', async () => {
+  render(<App />)
+  fireEvent.click(await screen.findByRole('button', { name: /Einstellungen/ }))
+  await screen.findByLabelText(/Zeitlimit je Schritt/)
+  switchTo('objekt-2')
+  await waitFor(() => expect((screen.getByLabelText('Objekt wählen') as HTMLSelectElement).value).toBe('objekt-2'))
+  expect(screen.queryByRole('button', { name: /Objekt wechseln/ })).toBeNull()
 })

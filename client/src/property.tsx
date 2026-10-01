@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { useConfirm } from './components/feedback'
 import type { Property } from './types'
 
 // Das gewählte Objekt (#92), nach dem Muster des Abrechnungsjahres (year.tsx): Die ganze
@@ -111,6 +112,31 @@ export function useProperty(): PropertyCtx {
   const c = useContext(Ctx)
   if (!c) throw new Error('useProperty() muss innerhalb von <PropertyProvider> stehen')
   return c
+}
+
+// Der eine Weg, das Objekt zu wechseln (#145), für den Umschalter wie für „Weiteres Objekt
+// anlegen“. Ist ein Formular offen, wird erst gefragt; wer ablehnt, bleibt im bisherigen Objekt,
+// mit Formular und Eingaben. Nach dem Wechsel stellt App.tsx die Seiten neu auf, offene Formulare
+// sind dann zu und können nichts mehr ins vorige Objekt speichern. Ergibt, ob gewechselt wurde.
+// `name` ist für ein eben angelegtes Objekt, das in der Liste noch fehlen kann.
+export function useSwitchProperty(): (id: string, name?: string) => Promise<boolean> {
+  const { properties, property, setPropertyId, hasOpenForm } = useProperty()
+  const confirm = useConfirm()
+  return useCallback(async (id: string, name?: string) => {
+    if (id === property?.id) return true
+    if (hasOpenForm()) {
+      const targetName = name ?? properties.find((p) => p.id === id)?.name
+      const ok = await confirm({
+        title: 'Offene Eingaben verwerfen?',
+        message: `Sie haben in „${property?.name || 'Ohne Namen'}“ ein Formular offen oder eine Belegauswertung noch nicht übernommen. Beim Wechsel zu „${targetName || 'Ohne Namen'}“ wird das geschlossen, ohne zu speichern.`,
+        confirmLabel: 'Objekt wechseln',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return false
+    }
+    setPropertyId(id)
+    return true
+  }, [properties, property, setPropertyId, hasOpenForm, confirm])
 }
 
 // Der Umschalter in der Seitenleiste. Bei höchstens einem Objekt gibt es nichts zu wählen und

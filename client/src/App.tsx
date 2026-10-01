@@ -1,8 +1,8 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { PropertyProvider, PropertySwitcher, useProperty, withProperty } from './property'
+import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -137,28 +137,13 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
-  const { properties, property, setPropertyId, reload: reloadProperties, hasOpenForm } = useProperty()
-  const confirm = useConfirm()
+  const { properties, property, reload: reloadProperties } = useProperty()
+  const switchProperty = useSwitchProperty()
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
-
-  // Objektwechsel (#145): Ist ein Formular offen, wird erst gefragt. Wer ablehnt, bleibt im
-  // bisherigen Objekt, mit Formular und Eingaben. Nach dem Wechsel stehen die Seiten neu auf
-  // (key unten), offene Formulare sind dann zu und können nichts mehr ins vorige Objekt speichern.
-  const switchProperty = useCallback(async (id: string) => {
-    if (id === propertyId) return
-    if (hasOpenForm()) {
-      const target = properties.find((p) => p.id === id)
-      const ok = await confirm({
-        title: 'Offene Eingaben verwerfen?',
-        message: `Sie haben in „${property?.name || 'Ohne Namen'}“ ein Formular offen oder eine Belegauswertung noch nicht übernommen. Beim Wechsel zu „${target?.name || 'Ohne Namen'}“ wird das geschlossen, ohne zu speichern.`,
-        confirmLabel: 'Objekt wechseln',
-        cancelLabel: 'Abbrechen',
-      })
-      if (!ok) return
-    }
-    setPropertyId(id)
-  }, [propertyId, hasOpenForm, properties, property, confirm, setPropertyId])
+  // Das zuletzt gewählte Objekt, für den Reihenfolge-Schutz in reload (#145)
+  const currentProperty = useRef(propertyId)
+  currentProperty.current = propertyId
 
   // Wohnungen und Mietverhältnisse des gewählten Objekts (#92). Solange die Objekte noch nicht
   // geladen sind, wird gewartet: Ohne Angabe gälte auf dem Server bei mehreren Objekten keins.
@@ -169,6 +154,9 @@ function Shell() {
       api<Settings>('/api/settings'),
       reloadProperties(),
     ])
+    // Wechselt das Objekt schnell hin und her (A → B → A), kann die Antwort für B nach der für A
+    // ankommen. Sie gilt dann nicht mehr, sonst stünden Wohnungen von B unter A.
+    if (currentProperty.current !== propertyId) return
     setUnits(u)
     setTenancies(t)
     setSettings(s)

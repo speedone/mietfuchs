@@ -5,7 +5,7 @@ import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
 import { AiSettings } from '../components/AiSettings'
-import { useProperty } from '../property'
+import { useOpenForm, useProperty } from '../property'
 
 type Props = { settings: Settings; reload: () => Promise<void>; update: UpdateState }
 
@@ -18,6 +18,13 @@ export default function Einstellungen({ settings, reload, update }: Props) {
     iban: settings.iban ?? '',
     paymentDeadlineDays: String(settings.paymentDeadlineDays ?? 30),
   })
+  // Ungespeicherte Vermieterdaten: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
+  // vorher (#145).
+  useOpenForm(
+    form.landlordName !== (settings.landlordName ?? '') ||
+      form.iban !== (settings.iban ?? '') ||
+      form.paymentDeadlineDays !== String(settings.paymentDeadlineDays ?? 30),
+  )
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
   const [saveError, setSaveError] = useState('')

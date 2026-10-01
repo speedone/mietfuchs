@@ -100,8 +100,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   während ein Formular offen war, landete der Eintrag still im anderen Objekt, etwa eine Zahlung
   beim Mieter des vorigen Hauses, wo sie die Steuerübersicht verändert. Jetzt fragt Mietfuchs vor
   dem Wechsel nach. Wechseln Sie, wird das Formular ohne Speichern geschlossen; brechen Sie ab,
-  bleiben Objekt, Formular und Eingaben, wie sie waren. Dasselbe gilt für angefangene
-  Ablesungen, den Mieterwechsel und noch nicht übernommene Belegauswertungen.
+  bleiben Objekt, Formular und Eingaben, wie sie waren; ebenso mit Esc. Dasselbe gilt für
+  angefangene Ablesungen, den Mieterwechsel, noch nicht übernommene Belegauswertungen,
+  ungespeicherte Änderungen an der Objektkarte und in den Einstellungen sowie für den Wechsel
+  nach „Weiteres Objekt anlegen“. Wer schnell hin und her wechselt, sieht keine Wohnungen des
+  anderen Objekts mehr.
   ([#145](https://github.com/speedone/mietfuchs/issues/145))
 - **Lehnt Mietfuchs das Speichern ab, steht jetzt da, warum.** Bei Kosten, Zählern und
   Ablesungen, Zahlungen, Wohnungen und Mietverhältnissen blieb der Dialog bisher wortlos offen,
