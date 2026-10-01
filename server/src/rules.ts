@@ -24,7 +24,7 @@ export type Rule = {
   validTo?: string
 }
 
-export const RULES_AS_OF = '2026-10-01'
+export const RULES_AS_OF = '2026-10-02'
 
 export const RULES: readonly Rule[] = [
   {
@@ -57,6 +57,21 @@ export const RULES: readonly Rule[] = [
       'Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ' +
       'Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen. ' +
       'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
+  },
+  {
+    // Durchsicht vom 02.10.2026 (#110): Die Nachrüstfrist des § 5 Abs. 3 endet am 31.12.2026. Für
+    // Geräte, die nach dem 01.12.2021 eingebaut wurden, gilt die Pflicht schon seit dem Einbau;
+    // ab 2027 gilt sie für alle, deshalb beginnt die Regel hier. Wortlaut geprüft auf
+    // https://www.gesetze-im-internet.de/heizkostenv/ (Stand Art. 3 G v. 16.10.2023 I Nr. 280).
+    code: 'heating-remote-reading',
+    title: 'Fernablesbare Zähler und monatliche Verbrauchsinformation',
+    norm: '§ 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV',
+    summary:
+      'Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: neu eingebaute seit dem 01.12.2021, alle übrigen ab dem 01.01.2027 (Nachrüstfrist bis 31.12.2026). ' +
+      'Sind fernablesbare Geräte eingebaut, stehen den Mietern monatliche Verbrauchsinformationen zu. ' +
+      'Fehlt das eine oder das andere, darf der Mieter seinen Anteil an den Heizkosten um 3 % kürzen. ' +
+      'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist oder einen unangemessenen Aufwand bedeutet.',
+    validFrom: '2027-01-01',
   },
 ]
 

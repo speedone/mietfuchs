@@ -216,6 +216,7 @@ const noticeKinds = {
   'heating.consumption-share': { level: 'hint', title: 'Verbrauchsanteil der Heizkosten außerhalb 50 bis 70 %', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.may-agree-otherwise': { level: 'hint', title: 'Heizkosten nicht nach Verbrauch verteilt (Zweifamilienhaus)', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
+  'heating.remote-reading': { level: 'hint', title: 'Zähler der Heizung fernablesbar?', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
 } satisfies Record<string, NoticeKind>
@@ -1473,6 +1474,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
   const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, text: string }[] }[] = []
   const heatingCovered = new Set<string>()
+  // Die erste Heizposition, über die ein Mieter abgerechnet wird; an ihr hängt der Hinweis zur
+  // Fernablesbarkeit (heating-remote-reading), einmal je Abrechnung.
+  let heatingBilledItem: SnapshotCostItem | undefined
   // Eine Einheit ohne Wärmeanschluss (#117) oder eine Garage-artige (0 m², niemand wohnt dort) ist
   // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
   // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
@@ -1868,6 +1872,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // `heating.flat-rate`. Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
     if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
       const received = targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
+      if (received.length > 0) heatingBilledItem ??= item
       if (heatingByConsumption(item.key)) {
         // Gedeckt nur durch eine Position mit positivem Betrag, die wirklich nach Verbrauch verteilt
         // (letzte Durchsicht). Nach Zählern: Die Wohnung nimmt teil und hat einen Zähler des Typs,
@@ -1934,6 +1939,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
 
   notices.splice(tvAt, 0, ...tvNotices())
+
+  // Fernablesbarkeit (#110): Ab dem Abrechnungsjahr 2027 müssen alle Erfassungsgeräte fernablesbar
+  // sein. Welche Geräte eingebaut sind, weiß Mietfuchs nicht; deshalb ein Hinweis ohne Betrag statt
+  // einer bezifferten Kürzung. Ein Feld dafür am Zähler gehört zur Heizkostenabrechnung (#97, #99).
+  if (heatingBilledItem && ruleCoverage('heating-remote-reading', yFrom, yTo) !== 'none') {
+    warn('heating.remote-reading',
+      'Seit dem 01.01.2027 müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 2 und 3 HeizkostenV); ' +
+        'sind sie es, stehen den Mietern monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). ' +
+        'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst; ausgenommen ist nur, wo die Nachrüstung technisch nicht möglich oder unverhältnismäßig ist. ' +
+        'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).',
+      itemSubject(heatingBilledItem))
+  }
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
   // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
