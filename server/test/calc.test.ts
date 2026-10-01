@@ -1182,7 +1182,9 @@ test('Vermietete Wohnung ohne Wohnfläche: Meldung nennt die Wohnung, einmal im 
   const s = computeSettlement(snapshotFromDb(db, 2025))
   // So rechnet es heute: OG links trägt alles — genau das muss auffallen
   assert.equal(statementOf(s, 't2').totalShareCents, 150000)
-  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für OG rechts sind 0 m² eingetragen; bei „Grundsteuer“, „Gebäudeversicherung“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.'])
+  // #135: 0 m² ist eine Angabe (Garage, Stellplatz), keine Lücke, deshalb ein Hinweis und keine Warnung.
+  assert.equal(s.notices[0].level, 'hint')
 })
 
 test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt die vermieteten Wohnungen', () => {
@@ -1193,7 +1195,7 @@ test('Vermietete Wohnungen ohne Fläche, Eigennutzung mit Fläche: Meldung nennt
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 90000)
-  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG links, OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für OG links, OG rechts sind 0 m² eingetragen; bei „Grundsteuer“ tragen sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.'])
 })
 
 test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren Anteil mit', () => {
@@ -1204,7 +1206,7 @@ test('Leerstehende Wohnung ohne Fläche: Meldung, sonst tragen die Mieter ihren 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 0)
-  assert.deepEqual(s.warnings, ['Für die Wohnung(en) DG ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für DG sind 0 m² eingetragen; bei „Grundsteuer“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.'])
 })
 
 test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, sondern eine Meldung', () => {
@@ -1213,7 +1215,7 @@ test('Fehlt das Feld areaM2 bei einer vermieteten Wohnung ganz: keine Ausnahme, 
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 90000, key: 'area' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't3').totalShareCents, 0)
-  assert.deepEqual(s.warnings, ['Für die Wohnung(en) OG rechts ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für OG rechts sind 0 m² eingetragen; bei „Grundsteuer“ trägt sie nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.'])
 })
 
 test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
@@ -1222,7 +1224,8 @@ test('Mietverhältnis ohne Personen: Meldung nennt Mieter und Wohnung', () => {
   db.costItems.push({ id: 'c1', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'persons' })
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(statementOf(s, 't2').totalShareCents, 30000)
-  assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.'])
+  assert.deepEqual(s.warnings, ['Für Familie B (OG rechts) sind 0 Personen eingetragen; bei „Müll“ trägt das Mietverhältnis nichts, sein Anteil verteilt sich auf die übrigen. Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.'])
+  assert.equal(s.notices[0].level, 'hint')
 })
 
 test('Direktzuordnung auf eine ganzjährig leerstehende Wohnung: regulärer Fall, keine Meldung', () => {

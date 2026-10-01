@@ -6,6 +6,8 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { meterReadiness } from '../meterCheck'
+import { noticesNeedAttention } from '../notices'
+import { zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
 
 type Props = {
@@ -94,7 +96,8 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // 1. Mietverhältnisse & Flächen
     // Auch die selbstgenutzte Wohnung braucht eine Fläche — ohne sie fällt ihr Eigenanteil
     // beim Flächenschlüssel stillschweigend weg.
-    const noArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+    // 0 m² ist seit #135 eine Angabe (Garage, Stellplatz, Lager) und wird nur genannt.
+    const noArea = zeroAreaUnits(units)
     // Mietverhältnisse ohne Abrechnung (Pauschale, Inklusivmiete, #93) zählen mit: Es gibt sie,
     // sie werden nur nicht abgerechnet.
     const ohneAbrechnung = settlement.notSettled ?? []
@@ -102,12 +105,10 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     if (mietverhaeltnisse === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
         detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
-    } else if (noArea.length > 0) {
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', cta: 'Wohnfläche ergänzen',
-        detail: `Wohnfläche fehlt bei: ${noArea.map((u) => u.name).join(', ')}` })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
-        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · vollständig` })
+        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · ` +
+          (noArea.length > 0 ? `0 m² bei: ${noArea.map((u) => u.name).join(', ')}` : 'vollständig') })
     }
 
     // 2. Belege & Kosten erfasst
@@ -182,7 +183,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
-      list.push({ title: 'Hinweise der Berechnung', level: 'gelb', tab: 'abrechnung', cta: 'Abrechnung ansehen',
+      list.push({ title: 'Hinweise der Berechnung', level: noticesNeedAttention(settlement) ? 'gelb' : 'gruen', tab: 'abrechnung', cta: 'Abrechnung ansehen',
         detail: settlement.warnings.join(' · ') })
     }
 

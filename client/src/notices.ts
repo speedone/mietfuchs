@@ -23,6 +23,13 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
   return settlement.notices.slice().sort((a, b) => SEVERITY[a.level] - SEVERITY[b.level])
 }
 
+// Färbt die Hinweise das Cockpit gelb? Nur ein Fehler oder eine Warnung; ein Hinweis verlangt
+// nichts (#135: 0 m² bei einer Garage ist eine Angabe). Eine vor #112 abgeschlossene Abrechnung
+// kennt nur Texte, die gelten wie bisher als Warnungen.
+export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
+  return noticesOf(settlement).some((n) => n.level === 'error' || n.level === 'warning')
+}
+
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt
 // nichts, und eine eigene Farbe für „reine Auskunft“ wäre eine mehr, die man lernen muss.
 export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {

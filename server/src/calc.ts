@@ -141,8 +141,8 @@ const noticeKinds = {
   'meter.same-day': { level: 'warning', title: 'Mehrere Ablesungen am selben Tag', terms: ['meterReading'] },
   'basis.self-no-persons': { level: 'warning', title: 'Personenzahl der eigenen Wohnung fehlt', terms: ['ownShare', 'personDays'] },
   'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
-  'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
-  'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
+  'basis.unit-no-area': { level: 'hint', title: 'Wohnfläche 0 m²', terms: ['distributionBasis'] },
+  'basis.tenancy-no-persons': { level: 'hint', title: '0 Personen', terms: ['personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
@@ -1077,20 +1077,34 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       unitSubject(selfNoArea),
     )
   }
-  // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Fehlt ihr
-  // Basiswert, verteilt der Schlüssel ihren Anteil still auf die anderen — bei einer
-  // vermieteten Wohnung zahlen dann die übrigen Mieter mit. Für Mieter der teuerste Fall.
+  // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Ohne
+  // Basiswert verteilt der Schlüssel ihren Anteil auf die anderen. **Seit #135 ist 0 eine Angabe
+  // und keine Lücke**: Das Formular lässt 0 m² und 0 Personen für Garage, Stellplatz oder Lager
+  // ausdrücklich zu. Deshalb ein Hinweis statt einer Warnung, neutral gefasst und mit den
+  // betroffenen Positionen, damit ein Versehen trotzdem auffällt. Unterscheiden lässt sich ein
+  // vergessener Wert nicht: Die Datenbank führt die Fläche als Pflichtfeld, und der Umstieg
+  // macht aus einer fehlenden Fläche 0 m² (legacy/validate.ts).
+  const positionsOf = (key: CostKey, unitIds: string[]) => {
+    const names = [...new Set(items
+      .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
+      .map((c) => `„${c.description}“`))]
+    return names.join(', ')
+  }
   const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
+    const one = partNoArea.length === 1
     warn('basis.unit-no-area',
-      `Für die Wohnung(en) ${partNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
+      `Für ${partNoArea.map((u) => u.name).join(', ')} sind 0 m² eingetragen; bei ${positionsOf('area', partNoArea.map((u) => u.id))} ${one ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
+        'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.',
       unitSubject(partNoArea),
     )
   }
   const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0) && inKeyBasis(t.unitId, 'persons'))
   if (partNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
+    const one = partNoPersons.length === 1
     warn('basis.tenancy-no-persons',
-      `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
+      `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} sind 0 Personen eingetragen; bei ${positionsOf('persons', partNoPersons.map((t) => t.unitId))} ${one ? 'trägt das Mietverhältnis nichts, sein' : 'tragen die Mietverhältnisse nichts, ihr'} Anteil verteilt sich auf die übrigen. ` +
+        'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.',
       tenancySubject(partNoPersons),
     )
   }

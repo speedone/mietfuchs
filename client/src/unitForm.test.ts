@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -129,5 +129,13 @@ describe('Wohnfläche 0 m² für Garage, Stellplatz oder Lager (#135)', () => {
   test('eine leere Fläche bleibt verboten, sie ist keine Angabe von 0 m²', () => {
     expect(buildUnitBody(form({ areaM2: '' }))).toHaveProperty('error')
     expect(buildUnitBody(form({ areaM2: 'abc' }))).toHaveProperty('error')
+  })
+})
+
+describe('Cockpit: Wohnungen mit 0 m² (#135)', () => {
+  const u = (name: string, areaM2: number, over: Partial<Unit> = {}): Unit => ({ id: name, propertyId: 'p', name, areaM2, participates: true, ...over })
+  test('nennt beteiligte und selbstgenutzte Einheiten mit 0 m², nicht die ausgenommenen', () => {
+    expect(zeroAreaUnits([u('EG', 80), u('Garage', 0), u('Eigen', 0, { participates: false, selfUsed: true }), u('Lager', 0, { participates: false })]).map((x) => x.name))
+      .toEqual(['Garage', 'Eigen'])
   })
 })

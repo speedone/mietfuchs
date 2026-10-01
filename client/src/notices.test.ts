@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import { legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
 import type { Notice } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
@@ -40,5 +40,21 @@ describe('Hinweise (#112)', () => {
     })
     expect(legalBasisLines(undefined).head).toMatch(/nicht erfasst/)
     expect(legalBasisLines(undefined).rules).toEqual([])
+  })
+})
+
+// #135: 0 m² und 0 Personen sind Angaben (Garage, Stellplatz); ihr Hinweis soll die Cockpit-Ampel
+// nicht gelb färben. Gelb heißt: Es gibt einen Fehler oder eine Warnung.
+describe('Cockpit: verlangen die Hinweise etwas?', () => {
+  test('nur Hinweise: nein', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ level: 'hint' })] })).toBe(false)
+  })
+  test('eine Warnung oder ein Fehler: ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ level: 'hint' }), n({ level: 'warning' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ level: 'error' })] })).toBe(true)
+  })
+  test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
+    expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: [] })).toBe(false)
   })
 })

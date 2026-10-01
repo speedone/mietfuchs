@@ -79,3 +79,9 @@ export function buildUnitBody(form: UnitForm): UnitBuildResult {
     },
   }
 }
+
+// Einheiten der Abrechnung mit 0 m² (#135). Seit 0 m² eine Angabe ist (Garage, Stellplatz,
+// Lager), nennt das Cockpit sie nur noch, statt sie als fehlend gelb zu melden.
+export function zeroAreaUnits(units: Unit[]): Unit[] {
+  return units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+}
