@@ -120,6 +120,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die betroffene Kostenposition, Wohnung oder das Mietverhältnis zum Bearbeiten, klappt die
   Ablesungen des Zählers auf oder hebt die Zeile im Mietkonto hervor.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Abrechnung und Steuer: Gründe, Beträge und Beschriftungen.** Die Spalte „Grund“ beim
+  Vermieteranteil nennt je Position die tatsächlichen Gründe (etwa Eigennutzung, Leerstand,
+  Betriebskostenpauschale, Inklusivmiete, Rest nach Einzelbeträgen, Rundungsrest), bei mehreren
+  mit Betrag; vorher stand dort immer „Eigennutzung / Leerstand / Rundung / keine Verteilbasis“,
+  und so bleibt es bei einer vorher abgeschlossenen Abrechnung. Die Warnung zum Kabelfernsehen
+  nach 2024 nennt den Betrag, der auf die Mieter umgelegt ist. Ein aufgeklappter Begriff im
+  Rechenweg steht unter der Zeile, statt den Wert darunter zu schieben. Die Kopfzeile endet ohne
+  Adresse nicht mehr mit „·“. In der Steuerübersicht stehen Inklusivmieten in einer eigenen Zeile
+  statt unter „ohne Umlagen (Kaltmiete)“, und der Hinweis zu Zeile 24 bei gemischten Verträgen
+  liest sich als ein Satz. Keine Zahl ändert sich.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Erfassen: Hinweis und Vorbelegungen.** Ist die Abrechnung des Jahres abgeschlossen, sagt die
   Kostenseite das oben und dass Änderungen als Abweichung angezeigt werden; bearbeiten lässt sich
   weiterhin. Im Formular der Kostenposition schlägt Wasser/Abwasser „nach Verbrauch“ (Kaltwasser)

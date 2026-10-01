@@ -69,3 +69,30 @@ test('Kabel, neue Anlage: 2021 betrifft nur die Zeit ab Errichtung, und die Glas
   assert.doesNotMatch(text(2023), /ab der Errichtung/)
   assert.match(text(2023), /Anbieter frei wählen/)
 })
+
+// #142, Zielbild aus #91: Ein Hinweis auf etwas, das nicht umgelegt werden darf, nennt den Betrag,
+// der trotzdem bei den Mietern gelandet ist.
+test('Kabel nach 2024: die Warnung nennt den auf die Mieter umgelegten Betrag', () => {
+  const src = bestand(2025)
+  // Zwei Einheiten, eine leer: umgelegt sind 60 €, die andere Hälfte trägt der Vermieter.
+  src.units.push({ id: 'leer', name: 'OG', areaM2: 50, participates: true })
+  const n = computeSettlement(snapshotOf(src, 2025)).notices
+  assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended'])
+  assert.match(n[0]?.text ?? '', /Auf die Mieter umgelegt sind in dieser Abrechnung 60,00\s€/)
+})
+
+test('Kabel, neue Anlage: auch diese Warnung nennt den umgelegten Betrag', () => {
+  const n = computeSettlement({ ...snapshotOf(bestand(2025), 2025), property: { kind: 'mfh', cableBuiltBeforeDec2021: false } }).notices
+  assert.match(n[0]?.text ?? '', /Auf die Mieter umgelegt sind in dieser Abrechnung 120,00\s€/)
+})
+
+test('Kabel nach 2024: ohne umgelegten Betrag kein Satz über einen Betrag, und die Reihenfolge der Hinweise bleibt', () => {
+  const src = bestand(2025)
+  src.tenancies = src.tenancies.map((t) => ({ ...t, costModel: 'flatRate' }))
+  // Eine Wasserposition ohne Ablesungen ergibt einen Hinweis aus der Verteilung.
+  src.costItems.push({ id: 'z', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 1000, key: 'meter', meterType: 'kaltwasser' })
+  const n = computeSettlement(snapshotOf(src, 2025)).notices
+  assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended', 'meter.no-consumption'])
+  const kabel = n.find((x) => x.code === 'tv-signal.ended')
+  assert.doesNotMatch(kabel?.text ?? '', /umgelegt sind in dieser Abrechnung/)
+})
