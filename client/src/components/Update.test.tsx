@@ -118,7 +118,7 @@ test('Hinweis führt bei jeder Betriebsart zur Anleitung, nicht direkt zum Downl
     render(<UpdateHint status={status({ mode })} onDismissed={vi.fn()} onShowGuide={showGuide} />)
     expect(screen.getByText('Version 0.5.0 ist da')).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Herunterladen' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'So aktualisierst du' }))
+    fireEvent.click(screen.getByRole('button', { name: 'So aktualisieren Sie' }))
     expect(showGuide).toHaveBeenCalled()
     const whatsNew = screen.getByRole('link', { name: 'Was ist neu?' })
     expect(whatsNew.getAttribute('href')).toBe('https://github.com/speedone/mietfuchs/releases/tag/v0.5.0')

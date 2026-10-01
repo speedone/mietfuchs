@@ -106,6 +106,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zu einer älteren Version“.
   ([#92](https://github.com/speedone/mietfuchs/issues/92))
 
+### Geändert
+
+- **Mietfuchs siezt jetzt durchgängig.** Cockpit, Schnellerfassung, Kosten, KI-Einstellungen,
+  Update-Hinweis und einige leere Listen duzten, während Lexikon, Nutzungshilfe, Steuerübersicht
+  und die Meldungen des Servers siezten.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
+
 ### Behoben
 
 - **Abrechnung: was beim Mieter auf dem Papier steht.** „(manuell angepasst)“ an der
