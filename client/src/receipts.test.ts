@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { CostItem, UploadInfo } from './types'
-import { buildFolder, coverage, coverageCheck, duplicateHints, matchesQuery, receiptCards } from './receipts'
+import { buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
   mimeType: file.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg', uploadedAt: '2026-01-02T10:00:00.000Z',
-  sha256: `sha-${file}`, ...extra,
+  sha256: `sha-${file}`, propertyId: null, year: null, invoiceDate: null, ...extra,
 })
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
@@ -178,5 +178,29 @@ describe('Belegabdeckung', () => {
     expect(gelb.detail).toMatch(/50 %/)
     expect(coverageCheck([item('b')]).level).toBe('gelb')
     expect(coverageCheck([]).level).toBe('leer')
+  })
+})
+
+describe('Posteingang', () => {
+  const cards = receiptCards([
+    upload('1_ohne.pdf'),
+    upload('2_hier.pdf', { propertyId: 'p1', year: 2025 }),
+    upload('3_anderes-jahr.pdf', { propertyId: 'p1', year: 2024 }),
+    upload('4_anderes-objekt.pdf', { propertyId: 'p2' }),
+    upload('5_verknuepft.pdf', { propertyId: 'p2', year: 2020 }),
+  ], [item('a', { invoiceFile: '5_verknuepft.pdf' })])
+
+  it('zeigt, was Objekt und Jahr der Auswahl zugedacht ist, dazu alles ohne Zuordnung', () => {
+    const box = inboxOf(cards, { propertyId: 'p1', year: 2025 })
+    expect(box.here.map((c) => c.upload.file)).toEqual(['1_ohne.pdf', '2_hier.pdf'])
+    expect(box.elsewhere).toBe(2)
+  })
+
+  it('ein verknüpfter Beleg steht nie im Posteingang, auch wenn seine Zeile noch ein Objekt nennt', () => {
+    expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).here.map((c) => c.upload.file)).not.toContain('5_verknuepft.pdf')
+  })
+
+  it('für eine Position kommen nur Belege ihres Objekts und Jahres oder ohne Zuordnung in Frage', () => {
+    expect(inboxFor(cards, item('x', { propertyId: 'p1', year: 2024 })).map((c) => c.upload.file)).toEqual(['1_ohne.pdf', '3_anderes-jahr.pdf'])
   })
 })

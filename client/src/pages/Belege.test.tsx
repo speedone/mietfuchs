@@ -18,7 +18,7 @@ const YEAR = new Date().getFullYear() - 1
 
 const up = (file: string, sha = file): UploadInfo => ({
   file, size: 2048, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''), mimeType: 'application/pdf',
-  uploadedAt: '2026-01-02T10:00:00.000Z', sha256: sha,
+  uploadedAt: '2026-01-02T10:00:00.000Z', sha256: sha, propertyId: null, year: null, invoiceDate: null,
 })
 
 const ITEMS: Record<string, CostItem[]> = {
@@ -133,4 +133,52 @@ test('„nachreichen“: ein vorhandener, nicht zugeordneter Beleg lässt sich a
   expect(auswahl.value).toBe('')
   fireEvent.change(auswahl, { target: { value: '4_lose.pdf' } })
   await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
+})
+
+test('Posteingang: mehrere Belege auf einmal hochladen, mit Objekt und Jahr der Auswahl', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const input = screen.getByLabelText('Belege in den Posteingang hochladen') as HTMLInputElement
+  expect(input.multiple).toBe(true)
+  fireEvent.change(input, { target: { files: [new File(['%PDF'], 'eins.pdf', { type: 'application/pdf' }), new File(['jpg'], 'zwei.jpg', { type: 'image/jpeg' })] } })
+  await waitFor(() => expect(sent.filter((r) => r.url === '/api/upload').length).toBe(2))
+  expect(sent.map((r) => r.body)).toEqual([
+    { file: 'eins.pdf', propertyId: 'p1', year: String(YEAR) },
+    { file: 'zwei.jpg', propertyId: 'p1', year: String(YEAR) },
+  ])
+})
+
+test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert und lassen sich ändern', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const objekt = screen.getByLabelText('Objekt für lose.pdf') as HTMLSelectElement
+  const jahr = screen.getByLabelText('Jahr für lose.pdf') as HTMLSelectElement
+  // Gespeichert ist „ohne“, und genau das steht da.
+  expect(objekt.value).toBe('')
+  expect(objekt.selectedOptions[0].textContent).toBe('ohne Objekt')
+  expect(jahr.value).toBe('')
+  fireEvent.change(objekt, { target: { value: 'p2' } })
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/uploads/4_lose.pdf', method: 'PUT', body: { propertyId: 'p2' } }]))
+  fireEvent.change(jahr, { target: { value: String(YEAR) } })
+  await waitFor(() => expect(sent[1]).toEqual({ url: '/api/uploads/4_lose.pdf', method: 'PUT', body: { year: YEAR } }))
+})
+
+test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
+  const onEvaluate = vi.fn()
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await screen.findByText('Wasser/Abwasser')
+  const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
+  expect(zuordnen.value).toBe('')
+  // Nur Positionen ohne Beleg stehen zur Wahl
+  expect([...zuordnen.options].map((o) => o.value)).toEqual(['', 'w2'])
+  fireEvent.change(zuordnen, { target: { value: 'w2' } })
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/w2', method: 'PUT', body: { invoiceFile: '4_lose.pdf' } }]))
+  fireEvent.click(screen.getByRole('button', { name: 'lose.pdf per KI auswerten' }))
+  expect(onEvaluate).toHaveBeenCalledWith([expect.objectContaining({ file: '4_lose.pdf' })])
 })

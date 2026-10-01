@@ -79,9 +79,13 @@ export const sha256Of = (content: Buffer): string => createHash('sha256').update
 // Was der Belegordner über eine Datei ohne Eintrag in der Datenbank erfährt. Objekt und Jahr
 // fehlen: Ein solcher Beleg liegt, solange er an keiner Position hängt, unzugeordnet im
 // Posteingang.
-export function describeFile(dir: string, file: string, checksums: Checksums): UploadInfo {
+//
+// Mit `row` (der Zeile aus der Datenbank) gilt, was dort steht, und die Datei wird nicht gelesen;
+// Größe und Zeit der Datei kommen immer von der Platte.
+export function describeFile(dir: string, file: string, checksums: Checksums, row?: Omit<UploadInfo, 'mtime'>): UploadInfo {
   const full = path.join(dir, file)
   const st = fs.statSync(full)
+  if (row) return { ...row, file, size: st.size, mtime: st.mtime.toISOString() }
   return {
     file,
     size: st.size,
@@ -90,5 +94,8 @@ export function describeFile(dir: string, file: string, checksums: Checksums): U
     mimeType: mimeTypeOf(file),
     uploadedAt: uploadedAtOf(file, st.mtime),
     sha256: checksums.of(full),
+    propertyId: null,
+    year: null,
+    invoiceDate: null,
   }
 }

@@ -210,3 +210,26 @@ export function coverageCheck(yearItems: CostItem[]): { level: 'gruen' | 'gelb' 
     detail: `${ohne} von ${cov.positions} Positionen ohne Beleg · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
   }
 }
+
+// ---------- Posteingang (#170) ----------
+//
+// „Unverknüpft“ ist ein Arbeitsschritt und kein Fehlerzustand: Ein Beleg kommt an, liegt im
+// Posteingang und wird von dort einer Position zugeordnet oder per KI ausgewertet. Objekt und
+// Jahr trägt er nur dort; sie sagen, wohin er gedacht ist.
+
+const fitsPlacement = (u: UploadInfo, propertyId: string | 'all', year: number | 'all'): boolean =>
+  (propertyId === 'all' || u.propertyId === null || u.propertyId === propertyId) &&
+  (year === 'all' || u.year === null || u.year === year)
+
+// Die Belege des Posteingangs für die Auswahl, und wie viele anderen Objekten oder Jahren
+// zugedacht sind. Ein Beleg ohne Zuordnung steht überall, denn er wartet auf genau die.
+export function inboxOf(cards: ReceiptCard[], filter: FolderFilter): { here: ReceiptCard[]; elsewhere: number } {
+  const unlinked = cards.filter((c) => c.items.length === 0)
+  const here = unlinked.filter((c) => fitsPlacement(c.upload, filter.propertyId, filter.year))
+  return { here, elsewhere: unlinked.length - here.length }
+}
+
+// Welche Belege des Posteingangs für eine Position in Frage kommen.
+export function inboxFor(cards: ReceiptCard[], c: CostItem): ReceiptCard[] {
+  return cards.filter((card) => card.items.length === 0 && fitsPlacement(card.upload, c.propertyId, c.year))
+}

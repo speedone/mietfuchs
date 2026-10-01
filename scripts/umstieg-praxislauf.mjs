@@ -572,6 +572,49 @@ fall(12, 'Alte db.json hineingelegt, nachdem schon gespeichert wurde (#89)', asy
   })
 })
 
+fall(13, 'Backup mit Belegen im Posteingang und ihren Angaben (#170)', async () => {
+  // Seit #170 stehen zu jedem Beleg Originalname, genaue Hochladezeit, Prüfsumme und, solange er
+  // an keiner Position hängt, Objekt und Jahr in der Tabelle `uploads`. Das Backup ist ein
+  // Schnappschuss der Datenbank, die Angaben müssen also mitkommen, und zwar auf die
+  // Millisekunde: Die Zeit der Datei im ZIP taugt dafür nicht (zwei Sekunden, Ortszeit).
+  const dataDir = tempDir()
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(bestandHeute()))
+  await withServer(dataDir, async ({ base }) => {
+    await umstiegGelungen(base, 'Archiv bauen')
+    // Nach dem Umstieg liegt nichts in der Tabelle, und die Liste antwortet trotzdem.
+    gleich((await holen(base, '/api/uploads')).length, 0, 'nach dem Umstieg ist der Belegordner leer')
+    const form = new FormData()
+    form.append('file', new Blob(['%PDF-Posteingang'], { type: 'application/pdf' }), 'Grundsteuer (Bescheid) 2024.pdf')
+    form.append('propertyId', 'objekt-1')
+    form.append('year', '2024')
+    const hoch = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
+    gleich(hoch.status, 200, 'ein Beleg kommt in den Posteingang')
+    const { file } = await jsonOf(hoch)
+    const vorher = (await holen(base, '/api/uploads')).find((u) => u.file === file)
+    gleich([vorher?.propertyId, vorher?.year, vorher?.originalName], ['objekt-1', 2024, 'Grundsteuer (Bescheid) 2024.pdf'], 'der Posteingang kennt Objekt, Jahr und echten Namen')
+    const zip = await backupHolen(base)
+
+    // Danach ändern, damit das Zurückspielen sichtbar wird
+    const put = await fetch(`${base}/api/uploads/${encodeURIComponent(file)}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: 2020 }),
+    })
+    gleich(put.status, 200, 'das Jahr lässt sich ändern')
+    const antwort = await backupEinspielen(base, zip)
+    gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
+    const nachher = (await holen(base, '/api/uploads')).find((u) => u.file === file)
+    gleich(
+      [nachher?.year, nachher?.originalName, nachher?.uploadedAt, nachher?.sha256],
+      [2024, vorher?.originalName, vorher?.uploadedAt, vorher?.sha256],
+      'Wiederherstellen: Jahr, Name, Hochladezeit und Prüfsumme sind die des Archivs',
+    )
+  })
+  // Und ein zweiter Start ändert daran nichts.
+  await withServer(dataDir, async ({ base }) => {
+    const u = (await holen(base, '/api/uploads'))[0]
+    gleich([u?.propertyId, u?.year], ['objekt-1', 2024], 'zweiter Start: der Posteingang steht unverändert da')
+  })
+})
+
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete
