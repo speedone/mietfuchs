@@ -512,8 +512,12 @@ test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt da
   assert.deepEqual(gerade.tenancies[1].prepayments, [{ from: krumm.tenancies[1].start.slice(0, 7), monthlyCents: 12000 }])
   assert.equal('prepaymentMonthlyCents' in gerade.tenancies[1], false)
 
-  // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin.
-  assert.deepEqual(nachher.settlement, vorher.settlement, 'Abrechnung')
+  // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin. Ausgenommen ist der
+  // Wortlaut des Hinweises auf einen Rückstand (#133): Er nennt den offenen Betrag des
+  // Mietkontos und bewegt sich deshalb mit ihm; dieselben Hinweise erscheinen vorher wie nachher.
+  const ohneWortlaut = (s: typeof vorher.settlement) => ({ ...s, notices: s.notices.map((n) => n.code), warnings: [] })
+  assert.deepEqual(ohneWortlaut(nachher.settlement), ohneWortlaut(vorher.settlement), 'Abrechnung')
+  assert.ok(vorher.settlement.notices.some((n) => n.code === 'prepayment.arrears'), 'der Bestand zeigt einen Rückstand')
   assert.deepEqual(nachher.consumption, vorher.consumption, 'Verbrauch')
 
   // Das Mietkonto bewegt sich, und zwar um genau die Vorauszahlung.

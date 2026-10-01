@@ -167,6 +167,7 @@ const noticeKinds = {
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
+  'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -1504,6 +1505,35 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     if (neither || (st && st.rows.length === 0 && st.prepaymentCents === 0)) {
       statements.delete(t.id)
       notSettled.push({ tenancyId: t.id, tenantName: t.tenantName, unitName: t.unit.name, costModel, heatingModel })
+    }
+  }
+
+  // Rückstand im Mietkonto (#133): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
+  // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (siehe
+  // computePrepaymentCents); zeigt das Mietkonto einen Rückstand, ging womöglich ein Guthaben
+  // hinaus, das es nicht gibt. Umgerechnet wird nicht: Ob eine Teilzahlung die Kaltmiete oder die
+  // Vorauszahlung betraf, weiß nur der Vermieter. Der Rückstand kommt aus `rentLedger` selbst,
+  // damit Abrechnung und Mietkonto nie Verschiedenes sagen.
+  // **Ohne eine einzige Zahlung des Objekts im Jahr bleibt der Hinweis aus.** Wer keine Zahlungen
+  // erfasst, führt das Mietkonto nicht, und dann stünde dort für jedes Mietverhältnis die ganze
+  // Jahresmiete als Rückstand; der Hinweis erschiene bei jedem dieser Nutzer an jeder Abrechnung
+  // und würde bald überlesen, auch dort, wo er zählt. Gefragt wird nach dem Objekt und nicht nach
+  // dem Mietverhältnis, denn wer das Mietkonto führt und für einen Mieter nichts gebucht hat, hat
+  // genau den Fall, um den es geht.
+  // Gemeldet wird nur, wo eine Vorauszahlung angerechnet wird: Bei Pauschale und Inklusivmiete
+  // fällt die Abrechnung oben weg oder rechnet nichts an.
+  const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
+  if (ledgerInUse) {
+    const ledgerRows = new Map(rentLedger(snapshot).rows.map((r) => [r.tenancyId, r]))
+    for (const st of statements.values()) {
+      if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
+      const row = ledgerRows.get(st.tenancyId)
+      if (!row || row.balanceCents >= 0) continue
+      warn('prepayment.arrears',
+        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(-row.balanceCents)} offen, die Abrechnung rechnet trotzdem die volle Vorauszahlung von ${fmtCents(st.prepaymentCents)} an. ` +
+          'Angesetzt werden muss, was tatsächlich gezahlt wurde. Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
+          'hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.',
+        { kind: 'tenancy', id: st.tenancyId })
     }
   }
 

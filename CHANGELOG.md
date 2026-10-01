@@ -102,6 +102,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Monate je Zeile, und die Navigation oben ist nach denselben Gruppen geordnet wie am Rechner. Der
   Ausdruck bleibt unverändert.
   ([#137](https://github.com/speedone/mietfuchs/issues/137))
+- **Die Abrechnung weist auf einen Rückstand im Mietkonto hin.** Zahlt ein Mieter einen Monat
+  nicht, rechnete die Abrechnung trotzdem die volle Vorauszahlung an und sagte nichts dazu; wer
+  nicht an die Korrektur dachte, verschickte ein zu hohes Guthaben. Jetzt erscheint eine Warnung
+  mit dem offenen Betrag, solange für das Jahr keine gezahlte Vorauszahlung eingetragen ist.
+  Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
+  wissen nur Sie. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
+  ([#133](https://github.com/speedone/mietfuchs/issues/133))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften
