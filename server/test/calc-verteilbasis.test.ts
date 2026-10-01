@@ -86,7 +86,7 @@ test('Gemeinschaft: eine Eigentumswohnung, ganzjährig vermietet, bekommt ihren 
     costItems: [item({ key: 'external', amountCents: 62000, externalBasis: weg })],
   }))
   assert.equal(shareOf(s, 't'), 62000)
-  assert.equal(rowOf(s, 't')?.basisText, '124 von 10.000 MEA · Gesamtkosten der Anlage 50.000,00 €')
+  assert.equal(rowOf(s, 't')?.basisText, '124 von 10.000 MEA · Kosten der Gemeinschaft 50.000,00 €')
   assert.deepEqual(s.warnings, [])
 })
 
@@ -140,14 +140,14 @@ test('Gemeinschaft: nach Fläche und nach Einheiten', () => {
     tenancies: [tenancy('t', 'w')],
     costItems: [item({ key: 'external', amountCents: 5000, externalBasis: { measure: 'area', total: 1240, totalCents: 100000 } })],
   }))
-  assert.equal(rowOf(nachFlaeche, 't')?.basisText, '62 von 1.240 m² · Gesamtkosten der Anlage 1.000,00 €')
+  assert.equal(rowOf(nachFlaeche, 't')?.basisText, '62 von 1.240 m² · Kosten der Gemeinschaft 1.000,00 €')
   assert.deepEqual(nachFlaeche.warnings, [])
   const nachEinheiten = settle(source({
     units: [unit('w')],
     tenancies: [tenancy('t', 'w')],
     costItems: [item({ key: 'external', amountCents: 2500, externalBasis: { measure: 'units', total: 40, totalCents: 100000 } })],
   }))
-  assert.equal(rowOf(nachEinheiten, 't')?.basisText, '1 von 40 Einheiten · Gesamtkosten der Anlage 1.000,00 €')
+  assert.equal(rowOf(nachEinheiten, 't')?.basisText, '1 von 40 Einheiten · Kosten der Gemeinschaft 1.000,00 €')
 })
 
 test('Gemeinschaft: ohne Miteigentumsanteile oder ohne Angaben geht der Betrag an den Vermieter', () => {
@@ -263,8 +263,11 @@ function randomSource(rnd: Rng): SnapshotSource {
   const costItems: SnapshotCostItem[] = []
   for (let i = 0; i < 1 + Math.floor(rnd() * 5); i++) {
     const key = pick(['area', 'units', 'persons', 'external', 'amounts'] as const)
-    const amountCents = 1 + Math.floor(rnd() * 300000)
-    const c: SnapshotCostItem = { id: `c${i}`, year: 2025, category: 'Sonstige Betriebskosten', description: `P${i}`, amountCents, key }
+    const base = 1 + Math.floor(rnd() * 300000)
+    // Gutschriften außer bei Einzelbeträgen, und auch Heizung (Integrationsdurchsicht Geld)
+    const amountCents = key !== 'amounts' && rnd() < 0.15 ? -base : base
+    const category = rnd() < 0.3 ? 'Heizung und Warmwasser' : 'Sonstige Betriebskosten'
+    const c: SnapshotCostItem = { id: `c${i}`, year: 2025, category, description: `P${i}`, amountCents, key }
     const r = rnd()
     if (r < 0.2) c.participantUnitIds = []
     else if (r < 0.6) c.participantUnitIds = units.filter(() => rnd() < 0.5).map((u) => u.id)
@@ -273,7 +276,7 @@ function randomSource(rnd: Rng): SnapshotSource {
     }
     if (key === 'amounts') {
       const given: Record<string, number> = {}
-      for (const t of [...tenancies, tenancy('verwaist', 'weg')]) if (rnd() < 0.7) given[t.id] = Math.floor(rnd() * amountCents * 0.8)
+      for (const t of [...tenancies, tenancy('verwaist', 'weg')]) if (rnd() < 0.7) given[t.id] = Math.floor(rnd() * base * 0.8)
       c.tenancyAmounts = given
     }
     if (rnd() < 0.3) c.labor35aCents = Math.floor(rnd() * amountCents)
@@ -282,21 +285,35 @@ function randomSource(rnd: Rng): SnapshotSource {
   return source({ units, tenancies, costItems })
 }
 
-test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, kein Anteil ist negativ', () => {
+// Vorher „kein Anteil ist negativ“ und „Eigenanteil ≤ Vermieteranteil“ über die Summe. Mit
+// Gutschriften im Generator gilt: Ein Anteil hat das Vorzeichen seiner Position (oder ist 0), und
+// der Eigenanteil steckt je Position im Vermieteranteil, mit gleichem Vorzeichen
+// (Integrationsdurchsicht Geld).
+test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, Vorzeichen wie die Position', () => {
   const rnd = makeRng(94)
   for (let i = 0; i < 500; i++) {
     const src = randomSource(rnd)
     const s = settle(src)
     const mieter = s.statements.reduce((a, st) => a + st.totalShareCents, 0)
     assert.equal(mieter + s.landlord.totalCents, s.totalCostsCents, `Fall ${i}\n${JSON.stringify(src)}`)
+    const sign = new Map(src.costItems.map((c) => [c.id, Math.sign(c.amountCents)]))
+    const ok = (id: string, cents: number) => cents === 0 || Math.sign(cents) === sign.get(id)
     for (const st of s.statements) {
       for (const row of st.rows) {
-        assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}`)
-        assert.ok((row.labor35aCents ?? 0) <= row.shareCents, `Fall ${i}: §35a über dem Anteil`)
+        assert.ok(ok(row.costItemId, row.shareCents), `Fall ${i}: Anteil ${row.shareCents} gegen das Vorzeichen der Position`)
+        assert.ok((row.labor35aCents ?? 0) <= Math.max(0, row.shareCents), `Fall ${i}: §35a über dem Anteil`)
       }
     }
-    for (const row of s.landlord.rows) assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Vermieteranteil ${row.shareCents}\n${JSON.stringify(src)}`)
-    assert.ok(s.selfUsedShareCents <= s.landlord.totalCents, `Fall ${i}: Eigenanteil über dem Vermieteranteil`)
+    for (const row of s.landlord.rows) assert.ok(ok(row.costItemId, row.shareCents), `Fall ${i}: Vermieteranteil ${row.shareCents} gegen das Vorzeichen\n${JSON.stringify(src)}`)
+    let sum = 0
+    for (const c of src.costItems) {
+      const one = settle({ ...src, costItems: [c] })
+      const landlord = one.landlord.rows.reduce((a, r) => a + r.shareCents, 0)
+      sum += one.selfUsedShareCents
+      assert.ok(one.selfUsedShareCents === 0 || Math.sign(one.selfUsedShareCents) === Math.sign(landlord), `Fall ${i}, ${c.id}: Eigenanteil gegen das Vorzeichen`)
+      assert.ok(Math.abs(one.selfUsedShareCents) <= Math.abs(landlord), `Fall ${i}, ${c.id}: Eigenanteil über dem Vermieteranteil\n${JSON.stringify(src)}`)
+    }
+    assert.equal(s.selfUsedShareCents, sum, `Fall ${i}: Eigenanteil ≠ Summe je Position`)
   }
 })
 

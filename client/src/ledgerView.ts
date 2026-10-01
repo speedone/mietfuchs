@@ -5,7 +5,7 @@
 // gefunden, die nicht stimmten. Eine ungeprüfte Bedingung in einer Komponente ist keine
 // Formalie, sondern die Stelle, an der so etwas sitzt.
 
-import type { RentLedgerRow } from './types'
+import type { RentLedgerRow, RentMonth } from './types'
 
 // **Der überraschende Dezember.** Eine Zahlung zählt zu dem Jahr, in dem sie eingegangen ist.
 // Geht die Dezembermiete erst im Januar ein, bleibt der Dezember im Mietkonto offen, obwohl der
@@ -34,4 +34,24 @@ export function showDecemberNote(row: RentLedgerRow, year: number, today: Date):
   const dezember = row.months[11]
   if (!dezember) return false
   return dezember.sollCents > 0 && dezember.status !== 'paid'
+}
+
+// Der Stand einer Zeile, wie ihn die Karte nennt (#133, zweite Browserabnahme). Ein Rückstand ist
+// nur, was fällig ist (`arrearsCents`, im laufenden Jahr die Monate vor dem aktuellen). Fehlt
+// danach noch Geld für das Jahr, sind das die künftigen Monate: „bisher bezahlt“, kein Rückstand.
+export type RowStanding = { kind: 'arrears' | 'credit' | 'paidSoFar' | 'paid', cents: number }
+
+export function rowStanding(row: RentLedgerRow): RowStanding {
+  if (row.arrearsCents > 0) return { kind: 'arrears', cents: row.arrearsCents }
+  if (row.balanceCents > 0) return { kind: 'credit', cents: row.balanceCents }
+  if (row.balanceCents < 0) return { kind: 'paidSoFar', cents: -row.balanceCents }
+  return { kind: 'paid', cents: 0 }
+}
+
+// Das Datum, mit dem ein Klick auf einen Monat die Zahlung vorbelegt. Ein fälliger Monat: der Erste
+// des Monats. Ein noch nicht fälliger (#133): heute, denn wer ihn jetzt bucht, hat heute gezahlt,
+// und für die Steuer zählt der Tag des Zuflusses (letzte Durchsicht). Örtlich, wie showDecemberNote.
+export function bookingDate(year: number, mo: RentMonth, today: Date): string {
+  if (mo.status !== 'notDue') return `${year}-${String(mo.month).padStart(2, '0')}-01`
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }

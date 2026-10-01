@@ -1,5 +1,5 @@
 // Die Ampel „Zählerstände“ im Cockpit, ohne DOM prüfbar.
-import type { Meter, MeterType } from './types'
+import type { Meter, MeterType, Notice } from './types'
 
 // Verbrauchsangaben des Servers je Zähler (gleiche Form wie auf der Zähler-Seite)
 export type MeterConsumption = { meterId: string; readingCount: number; warnings: string[] }
@@ -19,4 +19,16 @@ export function meterReadiness(
     return !c || c.readingCount < 2 || c.warnings.length > 0
   })
   return { relevant, incomplete }
+}
+
+// Positionen „Heizung und Warmwasser“, bei denen ein Mieter mangels Verbrauchsanteil kürzen darf
+// (#140). Für sie sind Ablesungen sehr wohl nötig. Gelesen wird der Hinweis der Berechnung und
+// nicht noch einmal die Regel angewendet: Sie hängt an Teilnehmern, Mischfällen und der Frage, was
+// nach § 2 HeizkostenV als Wohnung zählt (shared/heating.ts), und zweimal hingeschrieben sagten
+// Cockpit und Abrechnung irgendwann Verschiedenes. Eine Abrechnung ohne Hinweise (vor #112
+// abgeschlossen) ergibt eine leere Liste.
+export function heatingWithoutConsumption(settlement: { notices?: Notice[] }): string[] {
+  return (settlement.notices ?? [])
+    .filter((n) => n.code === 'heating.not-by-consumption' && n.subject?.kind === 'costItem')
+    .map((n) => n.subject?.id ?? '')
 }

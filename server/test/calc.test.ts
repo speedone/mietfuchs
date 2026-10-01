@@ -13,13 +13,16 @@ import {
   overlapDays,
   daysInYear,
   personDaysInPeriod,
+  isNotAllocable,
   rentLedger,
+  RESERVE_CATEGORY,
   taxReport,
+  validLabor35aCents,
 } from '../src/calc.ts'
 import type { ComputedSettlement } from '../src/calc.ts'
 import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, type SnapshotSource } from '../src/snapshot.ts'
 import type { ClosedSettlement, Db } from '../src/store.ts'
-import type { CostKey, MeterType, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 
@@ -850,6 +853,14 @@ test('Vorschlag neue Vorauszahlung bei Einzug im Jahr: auf das volle Jahr hochge
   assert.equal(st.totalShareCents, 73056)
   // 730,56 € × 365/306 / 12 = 72,62 € → 73 €, nicht 61 €
   assert.equal(st.suggestedMonthlyCents, 7300)
+})
+
+test('Vorschlag neue Vorauszahlung: nie negativ, auch wenn Gutschriften überwiegen (Integrationsdurchsicht)', () => {
+  const db = teiljahr('2020-01-01', null)
+  db.costItems = [{ id: 'g', year: 2025, category: 'Grundsteuer', description: 'Erstattung', amountCents: -60000, key: 'area' }]
+  const st = statementOf(computeSettlement(snapshotFromDb(db, 2025)), 't')
+  assert.equal(st.totalShareCents, -60000)
+  assert.equal(st.suggestedMonthlyCents, 0)
 })
 
 test('Vorschlag neue Vorauszahlung bei Auszug im Jahr: keiner', () => {
@@ -1734,31 +1745,44 @@ function makeRng(seed: number): Rng {
   }
 }
 
+// Der Bestand deckt ab, was Geld bewegt (Integrationsdurchsicht Geld): Gutschriften, Heizung und Erhaltungsrücklage, die Garage mit 0 m² und 0
+// Personen, Pauschale und Inklusivmiete, Zahlungen und den Hauptzähler.
 function randomDb(rnd: Rng): Db {
   const pick = <T>(arr: T[]): T => arr[Math.floor(rnd() * arr.length)]
   const unitCount = 1 + Math.floor(rnd() * 4)
   const units: Unit[] = []
+  const garages = new Set<string>()
   for (let i = 0; i < unitCount; i++) {
     const usage = pick<UnitUsage>(['vermietet', 'vermietet', 'eigen', 'ausgenommen'])
+    const garage = usage === 'vermietet' && rnd() < 0.15
+    if (garage) garages.add(`u${i}`)
     units.push({
       id: `u${i}`,
       name: `W${i}`,
-      areaM2: rnd() < 0.15 ? 0 : Math.round(rnd() * 120),
+      areaM2: garage ? 0 : rnd() < 0.15 ? 0 : Math.round(rnd() * 120),
       participates: usage === 'vermietet',
       selfUsed: usage === 'eigen',
       selfPersons: usage === 'eigen' ? Math.floor(rnd() * 4) : undefined,
     })
   }
   const tenancies: Tenancy[] = []
+  const models: CostModel[] = ['settlement', 'settlement', 'settlement', 'flatRate', 'inclusive']
   for (const u of units) {
     // auch nicht vermietete Wohnungen können ein beendetes Mietverhältnis haben
     if (rnd() < 0.2) continue
     const start = rnd() < 0.3 ? `2025-${String(1 + Math.floor(rnd() * 9)).padStart(2, '0')}-01` : '2020-01-01'
     const end = rnd() < 0.3 ? `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-28` : null
+    const persons = garages.has(u.id) ? 0 : 1 + Math.floor(rnd() * 4)
+    const costModel = pick(models)
+    const heatingModel = pick(models)
     tenancies.push(tenancy({
       id: `t${tenancies.length}`, unitId: u.id, tenantName: `M${tenancies.length}`,
-      start, end, persons: 1 + Math.floor(rnd() * 4),
-      personHistory: [{ from: start, persons: 1 + Math.floor(rnd() * 4) }],
+      start, end, persons,
+      personHistory: [{ from: start, persons }],
+      prepayments: [{ from: '2020-01', monthlyCents: Math.floor(rnd() * 30000) }],
+      ...(costModel !== 'settlement' ? { costModel } : {}),
+      ...(heatingModel !== 'settlement' ? { heatingModel } : {}),
+      ...(costModel === 'flatRate' || heatingModel === 'flatRate' ? { flatRates: [{ from: '2020-01', monthlyCents: Math.floor(rnd() * 15000) }] } : {}),
     }))
   }
   const meters: Meter[] = []
@@ -1766,35 +1790,58 @@ function randomDb(rnd: Rng): Db {
   for (const u of units) {
     if (rnd() < 0.5) continue
     const id = `m${meters.length}`
-    meters.push({ id, unitId: u.id, type: pick<MeterType>(['kaltwasser', 'sonstig']), name: id, unit: 'm³' })
+    meters.push({ id, unitId: u.id, type: pick<MeterType>(['kaltwasser', 'sonstig', 'waerme']), name: id, unit: 'm³' })
     readings.push({ id: `${id}a`, meterId: id, date: '2024-12-31', value: 0 })
     readings.push({ id: `${id}b`, meterId: id, date: '2025-12-31', value: Math.round(rnd() * 100) })
+  }
+  // Ein Hauptzähler, manchmal nur für einen Teil des Jahres abgelesen.
+  if (rnd() < 0.3) {
+    const id = `m${meters.length}`
+    meters.push({ id, unitId: null, type: 'kaltwasser', name: id, unit: 'm³' })
+    readings.push({ id: `${id}a`, meterId: id, date: rnd() < 0.8 ? '2024-12-31' : '2025-06-30', value: 0 })
+    readings.push({ id: `${id}b`, meterId: id, date: '2025-12-31', value: Math.round(rnd() * 400) })
+  }
+  const payments: Payment[] = []
+  for (const t of tenancies) {
+    const n = Math.floor(rnd() * 4)
+    for (let k = 0; k < n; k++) {
+      payments.push({ id: `p${payments.length}`, tenancyId: t.id, date: `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-0${1 + Math.floor(rnd() * 9)}`, amountCents: Math.floor(rnd() * 200000) - 10000 })
+    }
   }
   const costItems: CostItem[] = []
   const itemCount = 1 + Math.floor(rnd() * 5)
   for (let i = 0; i < itemCount; i++) {
+    // Einzelbeträge kennt die db.json nicht (LegacyCostKey); sie prüft randomSource in
+    // calc-verteilbasis.test.ts.
     const key = pick<LegacyCostKey>(['area', 'persons', 'units', 'meter', 'direct', 'custom'])
+    const amount = 1 + Math.floor(rnd() * 500000)
     const item: CostItem = {
       id: `c${i}`, year: 2025,
-      category: pick(['Grundsteuer', 'Wasser/Abwasser', 'Gartenpflege', 'Nicht umlagefähig']),
+      category: pick(['Grundsteuer', 'Wasser/Abwasser', 'Gartenpflege', 'Nicht umlagefähig', 'Heizung und Warmwasser', RESERVE_CATEGORY]),
       description: `P${i}`,
-      amountCents: 1 + Math.floor(rnd() * 500000),
+      amountCents: rnd() < 0.15 ? -amount : amount,
       key,
     }
-    if (key === 'meter') item.meterType = pick<MeterType | undefined>(['kaltwasser', 'sonstig', undefined])
+    if (key === 'meter') item.meterType = pick<MeterType | undefined>(['kaltwasser', 'sonstig', 'waerme', undefined])
     if (key === 'direct') item.directUnitId = pick([...units.map((u) => u.id), 'weg'])
     if (key === 'custom') {
       const shares: Record<string, number> = {}
       for (const u of units) if (rnd() < 0.6) shares[u.id] = Math.round(rnd() * 6000) / 100
       item.customShares = shares
     }
-    if (rnd() < 0.3) item.labor35aCents = Math.floor(rnd() * item.amountCents)
+    if (rnd() < 0.3) item.labor35aCents = Math.floor(rnd() * item.amountCents * (rnd() < 0.1 ? 1.5 : 1))
     costItems.push(item)
   }
-  return { ...emptyDb(), units, tenancies, meters, readings, costItems }
+  return { ...emptyDb(), units, tenancies, meters, readings, payments, costItems }
 }
 
-test('Invariante: Mieteranteile + Vermieteranteil ergeben immer die Gesamtkosten', () => {
+// Was eine Position im Ergebnis ergibt: die Zeilen der Mieter und die des Vermieters.
+const rowsOfItem = (s: ComputedSettlement, id: string) => ({
+  tenants: s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === id)),
+  landlord: s.landlord.rows.filter((r) => r.costItemId === id).reduce((a, r) => a + r.shareCents, 0),
+})
+
+test('Invariante: Mieteranteile + Vermieteranteil ergeben die Gesamtkosten, je Position und insgesamt', () => {
   const rnd = makeRng(20260918)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
@@ -1805,20 +1852,32 @@ test('Invariante: Mieteranteile + Vermieteranteil ergeben immer die Gesamtkosten
       s.totalCostsCents,
       `Fall ${i}: ${tenantsCents} + ${s.landlord.totalCents} ≠ ${s.totalCostsCents}\n${JSON.stringify(db)}`,
     )
+    for (const item of db.costItems) {
+      const { tenants, landlord } = rowsOfItem(s, item.id)
+      assert.equal(tenants.reduce((a, r) => a + r.shareCents, 0) + landlord, item.amountCents, `Fall ${i}, ${item.id}\n${JSON.stringify(db)}`)
+    }
   }
 })
 
-test('Invariante: kein Mieter trägt einen negativen Anteil', () => {
+// Vorher „kein Mieter trägt einen negativen Anteil“. Seit der Generator Gutschriften erzeugt, ist
+// das die falsche Frage: Eine Gutschrift gehört anteilig dem Mieter. Richtig ist, dass ein Anteil
+// das Vorzeichen seiner Position hat (oder 0), und dass nicht umlagefähige Kostenarten nie in einer
+// Zeile der Mieter stehen.
+test('Invariante: ein Anteil hat das Vorzeichen seiner Position, nicht Umlagefähiges trägt kein Mieter', () => {
   const rnd = makeRng(4711)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
+    const byId = new Map(db.costItems.map((c) => [c.id, c]))
     for (const st of computeSettlement(snapshotFromDb(db, 2025)).statements) {
       for (const row of st.rows) {
-        assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Anteil ${row.shareCents}\n${JSON.stringify(db)}`)
+        const item = byId.get(row.costItemId)
+        if (!item) return assert.fail(`Fall ${i}: Zeile ohne Position ${row.costItemId}`)
+        assert.ok(row.shareCents === 0 || Math.sign(row.shareCents) === Math.sign(item.amountCents), `Fall ${i}: Anteil ${row.shareCents} an Position ${item.amountCents}\n${JSON.stringify(db)}`)
+        assert.ok(!isNotAllocable(item.category), `Fall ${i}: ${item.category} in einer Mieterzeile`)
         // Die Zeilen der Mieter führen den Lohnanteil immer mit (im Typ ist er optional, weil
         // die Zeilen des Vermieteranteils ihn nicht haben). Das gehört mit zur Invariante.
         assert.ok(
-          typeof row.labor35aCents === 'number' && row.labor35aCents >= 0 && row.labor35aCents <= row.shareCents,
+          typeof row.labor35aCents === 'number' && row.labor35aCents >= 0 && row.labor35aCents <= Math.max(0, row.shareCents),
           `Fall ${i}: §35a-Anteil ${row.labor35aCents} außerhalb von 0…${row.shareCents}`,
         )
       }
@@ -1832,8 +1891,8 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
     const db = randomDb(rnd)
     const s = computeSettlement(snapshotFromDb(db, 2025))
     for (const item of db.costItems.filter((c) => c.year === 2025)) {
-      // Der Lohnanteil ist optional — eine Position ohne ihn ist hier nichts zu prüfen.
-      const itemLabor = item.labor35aCents ?? 0
+      // Nur ein gültiger Lohnanteil wird bescheinigt (#148); ein ungültiger ergibt eine Warnung.
+      const itemLabor = validLabor35aCents(item) ?? 0
       if (itemLabor <= 0) continue
       const rows = s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === item.id))
       const costCents = rows.reduce((a, r) => a + r.shareCents, 0)
@@ -1858,16 +1917,38 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
   }
 })
 
-test('Invariante: der Eigenanteil steckt im Vermieteranteil', () => {
+// Vorher über die Summe gefasst (0 ≤ Eigenanteil ≤ Vermieteranteil). Mit Gutschriften gilt das
+// nur noch je Position: Eine Gutschrift senkt den Eigenanteil (#129) und kann die Summe unter 0
+// drücken. Je Position wird gerechnet, indem der Bestand nur diese Position trägt; die Summe der
+// Eigenanteile je Position ist dann der Eigenanteil der ganzen Abrechnung.
+test('Invariante: der Eigenanteil steckt je Position im Vermieteranteil, mit gleichem Vorzeichen', () => {
   const rnd = makeRng(1234567)
   for (let i = 0; i < 500; i++) {
     const db = randomDb(rnd)
     const s = computeSettlement(snapshotFromDb(db, 2025))
-    assert.ok(
-      s.selfUsedShareCents <= s.landlord.totalCents,
-      `Fall ${i}: Eigenanteil ${s.selfUsedShareCents} > Vermieteranteil ${s.landlord.totalCents}\n${JSON.stringify(db)}`,
-    )
-    assert.ok(s.selfUsedShareCents >= 0, `Fall ${i}: negativer Eigenanteil`)
+    let sum = 0
+    for (const item of db.costItems) {
+      const one = computeSettlement(snapshotFromDb({ ...db, costItems: [item] }, 2025))
+      const self = one.selfUsedShareCents
+      const landlord = rowsOfItem(one, item.id).landlord
+      sum += self
+      assert.ok(self === 0 || Math.sign(self) === Math.sign(landlord), `Fall ${i}, ${item.id}: Eigenanteil ${self}, Vermieteranteil ${landlord}\n${JSON.stringify(db)}`)
+      assert.ok(Math.abs(self) <= Math.abs(landlord), `Fall ${i}, ${item.id}: Eigenanteil ${self} > Vermieteranteil ${landlord}\n${JSON.stringify(db)}`)
+    }
+    assert.equal(s.selfUsedShareCents, sum, `Fall ${i}: Eigenanteil der Abrechnung ≠ Summe je Position`)
+  }
+})
+
+test('Invariante: Steuer — Werbungskosten + Rücklage = Kostensumme, §35a = gültige Lohnanteile ohne Rücklage', () => {
+  const rnd = makeRng(1432025)
+  for (let i = 0; i < 300; i++) {
+    const db = randomDb(rnd)
+    const r = taxReport(snapshotFromDb(db, 2025))
+    const items = db.costItems.filter((c) => c.year === 2025)
+    assert.equal(r.expenses.totalCents + r.reserveContributionCents, items.reduce((a, c) => a + c.amountCents, 0), `Fall ${i}\n${JSON.stringify(db)}`)
+    assert.equal(r.reserveContributionCents, items.filter((c) => c.category === RESERVE_CATEGORY).reduce((a, c) => a + c.amountCents, 0), `Fall ${i}`)
+    const labor = items.filter((c) => c.category !== RESERVE_CATEGORY).reduce((a, c) => a + (validLabor35aCents(c) ?? 0), 0)
+    assert.equal(r.expenses.labor35aCents, labor, `Fall ${i}\n${JSON.stringify(db)}`)
   }
 })
 
@@ -1939,4 +2020,32 @@ test('Invariante: mit zwei Objekten rechnet jedes, als wäre es allein', () => {
       assert.deepEqual(consumptionOverview(imVerbund), consumptionOverview(fuerSich), `${fall}: Verbrauch`)
     }
   }
+})
+
+// Mietkonto im laufenden Jahr (Refs #133, zweite Browserabnahme): Monate ab dem laufenden sind noch
+// nicht fällig und kein Rückstand. Dieselbe Regel wie beim Hinweis auf einen Rückstand.
+test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und kein Rückstand', () => {
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'a', name: 'EG', areaM2: 50, participates: true }],
+    tenancies: [tenancy({ id: 't', unitId: 'a', tenantName: 'M', start: '2020-01-01', end: null, baseRents: [{ from: '2020-01', monthlyCents: 100000 }], prepayments: [] })],
+    payments: [{ id: 'p', tenancyId: 't', date: '2026-09-03', amountCents: 900000 }],
+  }
+  const snapshot = snapshotFromDb(db, 2026)
+  const heute = rentLedger(snapshot, { asOf: '2026-10-15' })
+  const row = heute.rows[0]
+  if (!row) return assert.fail('keine Zeile')
+  assert.deepEqual(row.months.map((m) => m.status), [...Array(9).fill('paid'), 'notDue', 'notDue', 'notDue'])
+  assert.equal(row.arrearsCents, 0)
+  assert.equal(row.openMonths, 0)
+  assert.equal(heute.totals.openCents, 0)
+  // Ein fälliger Monat ohne Zahlung bleibt offen: Stichtag November, Oktober fehlt.
+  const spaeter = rentLedger(snapshot, { asOf: '2026-11-15' })
+  assert.equal(spaeter.rows[0]?.arrearsCents, 100000)
+  assert.equal(spaeter.totals.openCents, 100000)
+  // Ohne Stichtag ist das ganze Jahr fällig, wie bisher.
+  assert.equal(rentLedger(snapshot).totals.openCents, 300000)
+  // Das Soll und damit die Steuerübersicht hängen nicht am Stichtag.
+  assert.equal(heute.totals.sollYearCents, 1200000)
+  assert.equal(taxReport(snapshot).income.sollCents, 1200000)
 })

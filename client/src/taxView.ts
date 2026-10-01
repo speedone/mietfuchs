@@ -18,7 +18,7 @@
 // der Seite, etwa der Kasten zur gemischten Nutzung: Dort entscheidet der Server mit
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
-import type { TaxReport } from './types'
+import type { PropertyKind, TaxReport } from './types'
 
 export type Basis = 'soll' | 'ist'
 
@@ -36,7 +36,10 @@ export const DEFAULT_BASIS: Basis = 'ist'
 // pages/Steuer.test.tsx geht diese Liste durch und verlangt für jeden Eintrag eine Lage, in der
 // er erscheint; wer hier einen hinzufügt, bekommt dort einen Übersetzungsfehler, solange er ihn
 // nicht einträgt.
-export const TAX_HINTS = ['sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20'] as const
+export const TAX_HINTS = [
+  'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
+  'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
+] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
 
@@ -69,9 +72,27 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //
 //   `flatRateLine20`     Es gibt eine Betriebskostenpauschale (#96). Nach dem Wortlaut gehört sie
 //                        zu den Umlagen in Zeile 20; ausdrücklich sagt das die Anleitung nicht.
+//
+//   `reserveContribution` Es ist eine Zuführung zur Erhaltungsrücklage erfasst (#143). Sie steht
+//                        nicht in den Werbungskosten, sondern daneben: abziehbar erst, wenn und
+//                        soweit die Gemeinschaft sie verausgabt (BFH, Urteil vom 14.01.2025,
+//                        IX R 19/24). Auf beiden Grundlagen, denn sie betrifft die Ausgaben.
+//
+//   `reserveSuspected`   Eine Position „Nicht umlagefähig“ heißt nach Rücklage (#143). Sie steht
+//                        weiter in den Werbungskosten; der Hinweis rät zur eigenen Kostenart.
+//                        Hier und nicht unter den Hinweisen der Abrechnung: Dort wirkt die
+//                        Kostenart nicht, beide sind nicht umlagefähig.
+//
+//   `etwHousingMoney`    Das Objekt ist eine Eigentumswohnung (#143). Abgeflossen sind die
+//                        Hausgeld-Vorschüsse des Jahres und eine Nachzahlung aus dem Vorjahr, nicht
+//                        die Beträge der Hausgeldabrechnung (§ 11 Abs. 2 Satz 1 EStG). Rechnen
+//                        lässt sich das erst mit erfassten Hausgeldzahlungen (#96).
 
-export function taxHints(report: TaxReport, basis: Basis): TaxHint[] {
+export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
   const hints: TaxHint[] = []
+  if (report.reserveContributionCents !== 0) hints.push('reserveContribution')
+  if (report.reserveSuspects.length > 0) hints.push('reserveSuspected')
+  if (propertyKind === 'etw') hints.push('etwHousingMoney')
   const { tenancies, inclusive, partlyInclusive, flatRate } = report.costModels
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
   else if (inclusive > 0 || partlyInclusive > 0) hints.push('inclusiveLine24Mixed')

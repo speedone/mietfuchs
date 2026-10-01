@@ -91,18 +91,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Steuerübersicht. ([#93](https://github.com/speedone/mietfuchs/issues/93))
 - **Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben**, als
   `mietfuchs.sqlite.vor-<Schritt>` im Datenordner. Lässt sie sich nicht anlegen, etwa weil die
-  Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt.
+  Platte voll ist, bleibt die Datenbank unverändert und Mietfuchs sagt, woran es liegt. Wie Sie
+  damit zu einer älteren Version zurückkehren, steht in [MIGRATION.md](MIGRATION.md) unter „Zurück
+  zu einer älteren Version“.
   ([#92](https://github.com/speedone/mietfuchs/issues/92))
 
 ### Behoben
 
-- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite
-  der Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
+- **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite der
+  Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
   Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als
   0, damit der Hinweis „Endstand fehlt“ erscheint, statt dass ein falscher Verbrauch Kosten
   zwischen Mietern verschiebt. Zählerstände werden außerdem wie alle Mengen gelesen: „1.234“ ist
-  1.234 und nicht 1,234, auf der Zähler-Seite wie in der Schnellerfassung; einen vom Foto
-  gelesenen Stand zeigt die Schnellerfassung in deutscher Schreibweise an. Prüfen Sie bitte Ablesungen mit Zählerwechsel und dem Endstand 0.
+  1.234 und nicht 1,234, auf der Zähler-Seite wie in der Schnellerfassung; einen vom Foto gelesenen
+  Stand zeigt die Schnellerfassung in deutscher Schreibweise an. Prüfen Sie bitte Ablesungen mit
+  Zählerwechsel und dem Endstand 0.
   ([#149](https://github.com/speedone/mietfuchs/issues/149))
 - **Ein Objektwechsel speichert nichts mehr ins falsche Haus.** Wechselten Sie das Objekt,
   während ein Formular offen war, landete der Eintrag still im anderen Objekt, etwa eine Zahlung
@@ -136,6 +139,51 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **„Sonstiges“ statt „Sonstig“.** Die Zählerart und die Kästchen „Kein Anschluss für“ heißen
   jetzt „Sonstiges“, passend zu Kaltwasser und Wärme. Gespeichert wird unverändert derselbe Wert.
   ([#138](https://github.com/speedone/mietfuchs/issues/138))
+- **Steuerübersicht zählte ungültige §35a-Lohnanteile mit.** Einen Lohnanteil unter 0, über dem
+  Rechnungsbetrag oder an einer Gutschrift bescheinigt die Abrechnung nicht und warnt; die
+  Steuerübersicht addierte ihn trotzdem. Beide wenden jetzt dieselbe Regel an.
+  ([#148](https://github.com/speedone/mietfuchs/issues/148))
+- **Rechenweg „laut Gemeinschaftsabrechnung“ rechnet den Anteil vor.** Er beginnt jetzt mit den
+  Kosten der Gemeinschaft und dem Schritt „Anteil an der Gemeinschaft: 85,4 von 1.000 MEA ×
+  6.000,00 € = 512,40 €“, nennt einen davon abweichenden angesetzten Betrag und erst dann die
+  Verteilung auf die Wohnungen des Vermieters („Anteil Ihrer Wohnung daran“ statt „Anteil an Ihren
+  Wohnungen“). Auf der Abrechnung heißt die Spalte bei solchen Positionen „Gesamtkosten bzw.
+  Anteil an der Gemeinschaft“, die Zeile sagt, welches von beiden sie zeigt, und die Verteilung
+  nennt „Kosten der Gemeinschaft“ statt „Gesamtkosten der Anlage“; weicht der Betrag ab, steht
+  „angesetzt laut Hausgeldabrechnung“ auch im Druck. Im Kostenformular ist der rechnerische Anteil
+  markiert, wenn er um mehr als 1 € vom Betrag abweicht.
+  ([#144](https://github.com/speedone/mietfuchs/issues/144))
+- **Heizkosten nur nach Fläche verteilt: jetzt mit Hinweis auf § 12 HeizkostenV.** Wird für eine
+  Wohnung keine Heizposition nach Verbrauch verteilt (weder nach Zählern noch als Einzelbeträge
+  des Messdienstes noch laut Gemeinschaftsabrechnung; eine Gutschrift oder eine Verbrauchsposition
+  ohne Ablesungen zählt dabei nicht), nennt die Abrechnung je Mieter den Betrag,
+  um den er seinen Anteil kürzen darf: 15 Prozent (§ 12 Abs. 1 HeizkostenV), denn die Verordnung
+  verlangt 50 bis 70 Prozent nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1). Grundkosten nach Fläche
+  neben einer Verbrauchsposition sind der Regelfall und kein Mangel; liegt der Anteil nach Zählern
+  dann außerhalb von 50 bis 70 Prozent, gibt es einen Hinweis ohne Betrag. Eine Direktzuordnung
+  (etwa die Wartung einer Gastherme) zählt nicht als Verteilung. Im Haus mit höchstens zwei
+  Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2); dort gibt
+  es statt des Betrags einen Hinweis, und eine Einheit ohne Fläche und ohne Bewohner (Garage,
+  Stellplatz) zählt dabei nicht als Wohnung, auch nicht
+  für die Warnung zur Warmmiete. Mieter mit Pauschale oder Warmmiete bekommen keine
+  Heizkostenabrechnung und deshalb keinen Betrag. Das Cockpit meldet in diesem Fall nicht mehr
+  „Ablesungen nicht erforderlich“.
+  Eine Einheit ohne Wärmeanschluss oder eine Garage ohne Fläche und Bewohner bekommt weder die
+  Warnung zur Warmmiete noch einen Kürzungsbetrag.
+  ([#140](https://github.com/speedone/mietfuchs/issues/140))
+- **Zuführung zur Erhaltungsrücklage zählte als Werbungskosten.** Bei einer vermieteten
+  Eigentumswohnung ist sie erst abziehbar, wenn und soweit die Gemeinschaft das Geld für
+  Erhaltungsmaßnahmen ausgibt (BFH, Urteil vom 14.01.2025, IX R 19/24). Dafür gibt es jetzt die
+  Kostenart „Zuführung Erhaltungsrücklage“: nicht umlagefähig wie bisher, in der Steuerübersicht
+  aber neben den Werbungskosten ausgewiesen, und ohne §35a-Lohnanteil. Heißt eine Position „Nicht
+  umlagefähig“ nach einer Zuführung zur Rücklage (nicht nach einer Entnahme), weist die
+  Steuerübersicht darauf hin; bei einer Eigentumswohnung erklärt sie zudem, dass abgeflossen das
+  gezahlte Hausgeld ist (§ 11 Abs. 2 EStG). Die Hilfe zu „Nicht umlagefähig“ und zur
+  Hausgeldabrechnung ist richtiggestellt, das Lexikon kennt den Begriff „Erhaltungsrücklage“.
+  Bereits erfasste Rücklagen bitte auf die neue Kostenart umstellen.
+  Eine Entnahme aus der Rücklage, also eine daraus bezahlte Erhaltung, schlägt Mietfuchs als „Nicht
+  umlagefähig“ vor.
+  ([#143](https://github.com/speedone/mietfuchs/issues/143))
 - **Auf dem Handy passt jede Seite auf den Bildschirm.** Stammdaten, Zähler, Kosten, Abrechnung
   und Mietkonto waren breiter als ein Handy und ließen sich nur mit waagerechtem Wischen lesen.
   Breite Tabellen scrollen jetzt innerhalb ihrer Karte, das Monatsraster im Mietkonto zeigt vier
@@ -149,12 +197,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
   wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Im laufenden Jahr zählen nur die Monate
   vor dem aktuellen. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
+  Dieselbe Regel gilt jetzt im Mietkonto: Im laufenden Jahr stehen die kommenden Monate als „noch
+  nicht fällig“ da und zählen nicht zu den offenen Rückständen.
   ([#133](https://github.com/speedone/mietfuchs/issues/133))
-- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
-  einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
-  ein ganzes Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil
-  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12.,
-  steht kein Vorschlag mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr einzog.**
+  Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für ein ganzes
+  Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil zuerst auf das
+  volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12., steht kein Vorschlag
+  mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+  Bei Einzug im Jahr sagt die Abrechnung auch, dass der Anteil auf ein volles Jahr hochgerechnet
+  ist.
   ([#134](https://github.com/speedone/mietfuchs/issues/134))
 - **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
   Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen
@@ -227,12 +279,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Außerdem erklärt die Warnung zur Warmmiete, wie Mietfuchs die Ausnahme für das
   Zweifamilienhaus mit selbstbewohnter Wohnung erkennt.
   ([#116](https://github.com/speedone/mietfuchs/issues/116))
-- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es
-  jetzt.** Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch
-  bis zum 30.06.2024 über die Nebenkosten umgelegt werden, und nur bei Anlagen, die vor dem
-  01.12.2021 errichtet wurden; danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig,
-  bei einer Gemeinschaftsantenne auch Prüfung und Einstellung. Für das Abrechnungsjahr 2024 und später weisen die
-  Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
+- **Kabelfernsehen ist seit dem 1. Juli 2024 nicht mehr umlagefähig, und Mietfuchs sagt es jetzt.**
+  Mit dem Wegfall des Nebenkostenprivilegs dürfen die Gebühren für das TV-Signal nur noch bis zum
+  30.06.2024 über die Nebenkosten umgelegt werden, und nur bei Anlagen, die vor dem 01.12.2021
+  errichtet wurden; danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig, bei einer
+  Gemeinschaftsantenne auch Prüfung und Einstellung. Für das Abrechnungsjahr 2024 und später weisen
+  die Abrechnung und das Kostenformular bei der Kostenart „Kabel/Antenne“ darauf hin. Mietfuchs
   kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
   Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.
   ([#107](https://github.com/speedone/mietfuchs/issues/107))

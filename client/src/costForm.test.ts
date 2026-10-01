@@ -11,6 +11,7 @@ import {
   meterTypeOptions,
   amountsSumText,
   externalHint,
+  externalMismatch,
   tenanciesForAmounts,
   categoryNotice,
   selfAmountUnits,
@@ -111,6 +112,13 @@ describe('Validierung', () => {
   test('Gutschrift (#139): nicht nach Einzelbeträgen', () => {
     const r = buildCostItemBody(form({ amount: '-54,00', key: 'amounts' }), UNITS, 2025)
     expect(r).toEqual({ error: 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.' })
+  })
+
+  test('amountProblem: an einer Zuführung zur Erhaltungsrücklage gibt es keinen §35a-Lohnanteil (#143)', () => {
+    expect(amountProblem(90000, 20000, 'Zuführung Erhaltungsrücklage')).toMatch(/Erhaltungsrücklage/)
+    expect(amountProblem(90000, 0, 'Zuführung Erhaltungsrücklage')).toBeNull()
+    expect(amountProblem(90000, 20000, 'Gartenpflege')).toBeNull()
+    expect(buildCostItemBody(form({ category: 'Zuführung Erhaltungsrücklage', amount: '900,00', labor35a: '200,00' }), UNITS, 2025)).toHaveProperty('error')
   })
 
   test('amountProblem (#139): dieselbe Prüfung wie das Formular, für übernommene Positionen', () => {
@@ -250,6 +258,17 @@ describe('Teilnehmer, Gemeinschaftsabrechnung und Einzelbeträge (#94)', () => {
     const text = externalHint(form({ key: 'external', amount: '620,00', externalMeasure: 'mea', externalTotal: '10000', externalTotalAmount: '50.000,00' }), wohnungen)
     expect(text).toMatch(/124 von 10\.000 MEA/)
     expect(text).toMatch(/620,00/)
+  })
+
+  test('Gemeinschaft: weicht der rechnerische Anteil um mehr als 1 € vom Betrag ab, ist er markiert (#144)', () => {
+    const wohnungen = [unit('u1', { mea: 124 })]
+    const angaben = { key: 'external' as const, externalMeasure: 'mea' as const, externalTotal: '10000', externalTotalAmount: '50.000,00' }
+    // Toleranz wie die Warnung external.amount-mismatch in calc.ts: bis 1,00 € passt es.
+    expect(externalMismatch(form({ ...angaben, amount: '620,00' }), wohnungen)).toBe(false)
+    expect(externalMismatch(form({ ...angaben, amount: '621,00' }), wohnungen)).toBe(false)
+    expect(externalMismatch(form({ ...angaben, amount: '621,01' }), wohnungen)).toBe(true)
+    expect(externalHint(form({ ...angaben, amount: '400,00' }), wohnungen)).toMatch(/weicht um 220,00 € vom Betrag ab/)
+    expect(externalHint(form({ ...angaben, amount: '620,00' }), wohnungen)).not.toMatch(/weicht/)
   })
 
   test('Einzelbeträge: je Mietverhältnis des Jahres, die Summe darf den Betrag nicht übersteigen', () => {

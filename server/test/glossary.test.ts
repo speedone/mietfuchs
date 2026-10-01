@@ -25,3 +25,24 @@ test('Hinweise: jeder Code verweist auf mindestens einen Begriff des Lexikons', 
     for (const t of terms) assert.ok(Object.hasOwn(GLOSSARY, t), `${code}: unbekannter Begriff ${t}`)
   }
 })
+
+test('Erhaltungsrücklage: eigener Begriff, und die Hilfetexte führen nicht mehr in die Werbungskosten (#143)', () => {
+  const t = GLOSSARY.reserveFund
+  assert.match(t.norm, /IX R 19\/24/)
+  assert.match(t.short, /erst/)
+  // Beispiel nachgerechnet: 3.600 € Hausgeld − 900 € Rücklage = 2.700 € sofort abziehbar.
+  assert.match(t.example, /3\.600 €.*900 €.*2\.700 €/s)
+  assert.equal(3600 - 900, 2700)
+  // Die Hausgeldabrechnung nannte die Rücklage ohne steuerlichen Zusatz neben den abziehbaren
+  // Posten; das Beispiel muss sie jetzt ausdrücklich als erst bei Verwendung abziehbar nennen.
+  assert.match(GLOSSARY.homeownersStatement.example, /Rücklage[^.]*erst/)
+  assert.equal(1900 + 360 + 900 + 440, 3600, 'Summe des Hausgeld-Beispiels')
+  assert.match(GLOSSARY.notAllocable.needed, /Zuführung Erhaltungsrücklage/)
+})
+
+test('Gemeinschaftsabrechnung mit mehreren eigenen Wohnungen: das Lexikon empfiehlt für Heizkosten Einzelbeträge (#140, Durchsicht)', () => {
+  // Laut Gemeinschaftsabrechnung verteilt Mietfuchs innerhalb der eigenen Wohnungen nach MEA oder
+  // Fläche, nicht nach deren Verbrauch.
+  assert.match(GLOSSARY.mea.needed, /mehrere Wohnungen/)
+  assert.match(GLOSSARY.mea.needed, /Einzelbeträge/)
+})

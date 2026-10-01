@@ -2,6 +2,7 @@
 // jeden Zählerstand deterministisch als grün (sicher), gelb (prüfen) oder rot (fehlt was).
 // Bewusst reine Logik ohne React/Netzwerk — damit testbar und vom Modell unabhängig.
 import type { CostItem, Meter, Reading } from './types'
+import { isNotAllocable } from './types'
 
 export type TrafficLight = 'gruen' | 'gelb' | 'rot'
 
@@ -42,7 +43,7 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
   if (ctx.amountCents === 0) s.bump('rot', 'Betrag fehlt oder ist 0')
   // Eine Gutschrift (#139) wird übernommen, aber nie ungesehen: Sie senkt die Kosten des Jahres.
   if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift — senkt die Kosten des Jahres')
-  if (ctx.category === 'Nicht umlagefähig') s.bump('rot', 'nicht umlagefähig — trägt der Vermieter')
+  if (isNotAllocable(ctx.category)) s.bump('rot', 'nicht umlagefähig — trägt der Vermieter')
   if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar — bitte zuordnen')
   if (ctx.detectedYear == null) s.bump('rot', 'Rechnungsjahr nicht erkannt')
 

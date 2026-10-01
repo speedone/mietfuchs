@@ -26,12 +26,14 @@ ENV NKA_RUNTIME=docker
 # Die Verzeichnisstruktur muss erhalten bleiben: server liefert ../../client/dist aus.
 COPY --from=build /app/server ./server
 COPY --from=build /app/client/dist ./client/dist
-# Das gemeinsame Datenmodell (#48). Heute importiert der Server daraus ausschließlich Typen, die
-# beim Ausführen verschwinden, das Image liefe also auch ohne diesen Ordner. Das ist eine Falle:
-# Sobald dort ein Helfer liegt, der zur Laufzeit gebraucht wird, startet das Image nicht mehr, und
-# kein Test bemerkt es, weil alle Prüfläufe gegen den Start aus dem Quellcode laufen, wo der
-# Ordner ohnehin da ist. Eine Zeile nimmt die Falle ganz weg.
+# Das gemeinsame Datenmodell (#48). Seit #140 lädt der Server daraus auch Code zur Laufzeit
+# (shared/heating.ts); ohne den Ordner startet das Image nicht. Die Prüfläufe aus dem Quellcode
+# bemerken das nicht, weil der Ordner dort ohnehin da ist, nur die Prüfung des Images selbst.
 COPY --from=build /app/shared ./shared
+# Die Wurzel-package.json mit "type": "module": Sie gilt für shared/, das keine eigene hat. Ohne sie
+# läse Node shared/*.ts über einen Notpfad mit der Warnung MODULE_TYPELESS_PACKAGE_JSON (siehe
+# CLAUDE.md, Datenmodell).
+COPY --from=build /app/package.json ./package.json
 
 EXPOSE 3001
 # Persistente Daten (mietfuchs.sqlite + uploads/) als Volume — beim Start anhängen:

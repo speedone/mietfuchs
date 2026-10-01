@@ -24,7 +24,7 @@ export type Rule = {
   validTo?: string
 }
 
-export const RULES_AS_OF = '2026-09-30'
+export const RULES_AS_OF = '2026-10-01'
 
 export const RULES: readonly Rule[] = [
   {
@@ -48,6 +48,15 @@ export const RULES: readonly Rule[] = [
       'Die Vereinbarung wird dann nicht angewendet: Der Heizanteil gilt als Vorauszahlung, über die nach Verbrauch abzurechnen ist. ' +
       'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, und in den Fällen des § 11 darf etwas anderes vereinbart werden. ' +
       'Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen.',
+  },
+  {
+    code: 'heating-consumption',
+    title: 'Heizung und Warmwasser nach Verbrauch',
+    norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV',
+    summary:
+      'Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ' +
+      'Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen. ' +
+      'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
   },
 ]
 

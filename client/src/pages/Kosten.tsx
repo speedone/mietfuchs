@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settings, Tenancy, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory, usageOf } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -11,6 +11,7 @@ import {
   meterTypeOptions,
   amountsSumText,
   externalHint,
+  externalMismatch,
   tenanciesForAmounts,
   EXTERNAL_MEASURE_OPTIONS,
   PARTICIPANT_KEYS,
@@ -38,8 +39,8 @@ type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
 
 // Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
-const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
+const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a' | 'category'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -239,7 +240,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
             amount,
             labor35a,
             key: defaultKeyFor(category),
-            checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
+            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
@@ -470,7 +471,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                 <tr key={i.id}>
                   <td>
                     {i.category}
-                    {i.category === 'Nicht umlagefähig' && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
+                    {isNotAllocable(i.category) && <span className="badge gray" style={{ marginLeft: 6 }}>Vermieter</span>}
                   </td>
                   <td>
                     {i.description}
@@ -646,11 +647,16 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
                     <input value={form.externalTotal} onChange={(e) => setForm({ ...form, externalTotal: e.target.value })} placeholder="z. B. 10.000" inputMode="decimal" />
                   </label>
                   <label className="field grow">
-                    Gesamtkosten der Anlage €
+                    Kosten der Gemeinschaft (ganze Anlage) €
                     <input value={form.externalTotalAmount} onChange={(e) => setForm({ ...form, externalTotalAmount: e.target.value })} placeholder="z. B. 50.000,00" inputMode="decimal" />
                   </label>
                 </div>
-                {externalHint(form, units) && <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>}
+                {/* #144: weicht der rechnerische Anteil vom Betrag ab, steht er markiert da */}
+                {externalHint(form, units) && (
+                  externalMismatch(form, units)
+                    ? <div className="notice" style={{ marginTop: 6 }}><strong>{externalHint(form, units)}</strong></div>
+                    : <div className="muted" style={{ marginTop: 6 }}>{externalHint(form, units)}</div>
+                )}
               </div>
             )}
             {form.key === 'amounts' && (

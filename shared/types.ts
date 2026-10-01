@@ -120,7 +120,8 @@ export type Payment = {
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
 
-export type RentMonthStatus = 'paid' | 'partial' | 'open'
+// `notDue`: im laufenden Jahr ab dem aktuellen Monat, noch nicht fällig und kein Rückstand (#133).
+export type RentMonthStatus = 'paid' | 'partial' | 'open' | 'notDue'
 
 export type RentMonth = {
   month: number // 1..12
@@ -142,8 +143,12 @@ export type RentLedgerRow = {
   prepaymentYearCents: number // davon NK-Vorauszahlung
   flatRateYearCents: number // davon Pauschale (#93)
   paidYearCents: number
-  balanceCents: number // paid − soll: >0 Guthaben/Überzahlung, <0 offener Rückstand
-  openMonths: number
+  balanceCents: number // paid − soll des ganzen Jahres: >0 Guthaben/Überzahlung
+  // Soll der fälligen Monate und was davon offen ist (#133): im laufenden Jahr nur die Monate vor
+  // dem aktuellen, sonst das ganze Jahr.
+  dueSollCents: number
+  arrearsCents: number
+  openMonths: number // fällige Monate, die nicht bezahlt sind
 }
 
 export type RentLedger = {
@@ -545,6 +550,12 @@ export type TaxReport = {
     totalCents: number
     labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
   }
+  // Zuführung zur Erhaltungsrücklage des Jahres (#143), nicht in den Werbungskosten: abziehbar
+  // erst, wenn und soweit die Gemeinschaft sie verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
+  reserveContributionCents: number
+  // Positionen „Nicht umlagefähig“, deren Beschreibung nach Rücklage aussieht; sie stehen weiter
+  // in den Werbungskosten, die Seite rät zur eigenen Kostenart.
+  reserveSuspects: { costItemId: string; description: string; amountCents: number }[]
   // Gesamtfläche des Gebäudes und der selbstgenutzte Teil davon, in Quadratmetern. Genau die
   // beiden Zahlen fragt die Anlage V im Kopf ab. Gemessen wird das **Private** und nicht das
   // Vermietete: Nur das ist eindeutig, denn ob eine Wohnung außerhalb der Abrechnungseinheit
