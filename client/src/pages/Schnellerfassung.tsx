@@ -6,6 +6,7 @@ import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
+import { amountProblem } from '../costForm'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
@@ -23,6 +24,11 @@ type InvoicePosition = {
   matchedByDesc: boolean
   checked: boolean
 }
+
+// Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular. Eine Gutschrift
+// geht durch, 0 € und ein unlesbarer Betrag nicht.
+const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
 
 type ReadingCandidate = {
   meterNumber: string
@@ -185,17 +191,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                 matchedByDesc = true
               }
             }
+            // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
+            // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
+            // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
+            const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
+            const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
             return {
               description: p.description,
               category,
-              // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
-              // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
-              // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
-              amount: p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? '',
-              labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+              amount,
+              labor35a,
               key: defaultKeyFor(category),
               matchedByDesc,
-              checked: category !== 'Nicht umlagefähig',
+              // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
+              checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
             }
           })
           patchEntry(next.id, {
@@ -253,12 +262,13 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         let sum = 0
         const posScores = entry.positions.map((p) => {
           const amountCents = parseEuro(p.amount) ?? 0
-          sum += amountCents > 0 ? amountCents : 0
+          // Eine Gutschrift auf der Rechnung mindert auch deren Summe.
+          sum += amountCents
           const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
           const prior = priorTotalsByCat.get(p.category) ?? 0
           const current = (existingTargetByCat.get(p.category) ?? 0) + amountCents
           const devPct = prior > 0 ? ((current - prior) / prior) * 100 : null
-          return scorePosition({
+          const score = scorePosition({
             category: p.category,
             amountCents,
             labor35aCents: labor,
@@ -269,6 +279,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             existingItems,
             priorYearDeviationPct: devPct,
           })
+          const problem = positionProblem(p)
+          return problem === null ? score : { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
         })
         map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
       } else if (entry.kind === 'zaehler' && entry.reading) {
@@ -302,7 +314,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // ---------- Übernehmen ----------
   async function postPosition(entry: QueueEntry, p: InvoicePosition) {
     const amount = parseEuro(p.amount)
-    if (amount == null || amount <= 0) return false
+    // Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
+    if (amount === null || positionProblem(p) !== null) return false
     const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
     await api(withProperty('/api/costItems', propertyId), {
       method: 'POST',
@@ -347,6 +360,13 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
 
   // Übernimmt einen kompletten Eintrag (alle angehakten Positionen / den Zählerstand)
   async function adoptEntry(entry: QueueEntry) {
+    // Erst prüfen, dann übernehmen (#139): Eine angehakte Position, die sich nicht übernehmen
+    // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
+    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(p) !== null) : []
+    if (blocked.length > 0) {
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      return
+    }
     setError('')
     const done: number[] = []
     try {

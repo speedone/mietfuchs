@@ -3,6 +3,7 @@ import type { CostKey, MeterType, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
+  amountProblem,
   buildCostItemBody,
   costKeyOptions,
   customSharesSumText,
@@ -110,6 +111,15 @@ describe('Validierung', () => {
   test('Gutschrift (#139): nicht nach Einzelbeträgen', () => {
     const r = buildCostItemBody(form({ amount: '-54,00', key: 'amounts' }), UNITS, 2025)
     expect(r).toEqual({ error: 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.' })
+  })
+
+  test('amountProblem (#139): dieselbe Prüfung wie das Formular, für übernommene Positionen', () => {
+    expect(amountProblem(-5400, 0)).toBeNull()
+    expect(amountProblem(10000, 4000)).toBeNull()
+    expect(amountProblem(0, 0)).toMatch(/0 €/)
+    expect(amountProblem(null, 0)).toMatch(/Gutschrift mit Minus/)
+    expect(amountProblem(-5400, 1000)).toMatch(/Gutschrift gibt es keinen §35a-Lohnanteil/)
+    expect(amountProblem(10000, 15000)).toMatch(/§35a-Lohnanteil/)
   })
 
   test('§35a-Lohnanteil darf nicht negativ sein', () => {

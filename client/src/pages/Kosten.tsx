@@ -16,6 +16,7 @@ import {
   PARTICIPANT_KEYS,
   categoryNotice,
   selfAmountUnits,
+  amountProblem,
   type ItemForm,
 } from '../costForm'
 import { api, errorText, fmtEuro, parseEuro } from '../api'
@@ -35,6 +36,10 @@ import Table from '../components/Table'
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 
 type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
+
+// Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
+const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -225,15 +230,16 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           }
           // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
           // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Ohne Betrag
-          // ist die Position auch nicht vorgewählt, sonst fiele sie beim Übernehmen still weg.
+          // ist die Position auch nicht vorgewählt, ebenso bei 0 € (#139).
           const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
+          const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
           return {
             description: p.description,
             category,
             amount,
-            labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+            labor35a,
             key: defaultKeyFor(category),
-            checked: category !== 'Nicht umlagefähig' && amount !== '',
+            checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
           }
         })
         patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
@@ -249,6 +255,14 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
   }, [queue])
 
   async function adoptPositions(entry: QueueEntry) {
+    // Erst prüfen, dann übernehmen (#139), mit derselben Regel wie das Formular: Eine Gutschrift
+    // geht durch, eine angehakte Position mit 0 € oder ohne Betrag wird genannt statt still
+    // ausgelassen.
+    const blocked = entry.positions.filter((p) => p.checked && positionProblem(p) !== null)
+    if (blocked.length > 0) {
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      return
+    }
     setError('')
     const done: number[] = []
     for (const [index, p] of entry.positions.entries()) {
