@@ -557,7 +557,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                           </td>
                           <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                           <td>
-                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year)), matchedByDesc: false })}>
+                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year)), matchedByDesc: false })}>
                               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                             </select>
                           </td>
