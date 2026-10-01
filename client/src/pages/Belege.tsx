@@ -145,8 +145,10 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
             </p>
             {individual > 0 && (
               <label className="field checkline">
-                <input type="checkbox" checked={includeIndividual} onChange={(e) => setIncludeIndividual(e.target.checked)} />
-                Belege mit Einzelbeträgen je Mieter beilegen ({individual})
+                <span>
+                  <input type="checkbox" checked={includeIndividual} onChange={(e) => setIncludeIndividual(e.target.checked)} />{' '}
+                  Belege mit Einzelbeträgen je Mieter beilegen ({individual})
+                </span>
               </label>
             )}
             {individual > 0 && (
@@ -353,7 +355,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
           {card.items.length > 0 ? (
             <ul className="receipt-items">
               {card.items.map((c) => (
-                <li key={c.id}>→ {c.description} {c.year} · {fmtEuro(c.amountCents)}</li>
+                <li key={c.id}>→ {c.description}{filter.year === c.year ? '' : ` (${c.year})`} · {fmtEuro(c.amountCents)}</li>
               ))}
             </ul>
           ) : (
