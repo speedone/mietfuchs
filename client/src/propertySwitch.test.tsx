@@ -166,10 +166,12 @@ test('Objektkarte: ein neues Objekt anlegen geht über dieselbe Rückfrage', asy
   fireEvent.click(await screen.findByLabelText(/Für dieses Objekt abweichend/))
   fireEvent.change(screen.getByLabelText(/^IBAN/), { target: { value: 'DE02120300000000202051' } })
   fireEvent.click(screen.getByRole('button', { name: /Weiteres Objekt anlegen/ }))
-  fireEvent.change(screen.getByLabelText('Name des neuen Objekts'), { target: { value: 'Haus C' } })
+  // Der Dialog selbst (#157) zählt beim eigenen Wechsel nicht, die IBAN auf der Karte schon.
+  const dialog = screen.getByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Haus C' } })
   PROPERTIES.push(objekt('objekt-3', 'Haus C'))
   try {
-    fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/ }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen und zu „Haus C“ wechseln' }))
     const ask = (await screen.findByRole('button', { name: /Objekt wechseln/ })).closest('.dialog') as HTMLElement
     fireEvent.click(within(ask).getByRole('button', { name: /^Abbrechen$/ }))
     // Angelegt ist es, gewechselt wird nicht, und die IBAN steht noch da.
