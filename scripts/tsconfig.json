@@ -1,4 +1,5 @@
-// Typprüfung der Skripte (#64), aufgerufen über `npm run typecheck` mit dem Compiler des Servers.
+// Typprüfung der Skripte in scripts/ und server/scripts/ (#64), aufgerufen über
+// `npm run typecheck` mit dem Compiler des Servers.
 //
 // Geprüft wird das JavaScript, wie es dasteht (`checkJs`), ohne es nach TypeScript zu bringen:
 // Die Skripte laufen nur beim Bauen und Prüfen, und was hier zählt, ist ein Tippfehler, ein
@@ -33,5 +34,5 @@
     "types": ["node"]
   },
   // Die beiden Deklarationen braucht server/src/db/client.ts, das ein Skript importiert.
-  "include": ["*.mjs", "../server/src/globals.d.ts", "../server/src/db/bun-sqlite.d.ts"]
+  "include": ["*.mjs", "../server/scripts/*.mjs", "../server/src/globals.d.ts", "../server/src/db/bun-sqlite.d.ts"]
 }
