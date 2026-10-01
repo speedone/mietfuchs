@@ -39,12 +39,16 @@ export function UIProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!dialog) return
+    // Am Fenster in der Einfangphase und ohne Weitergabe (#145): Ein Drawer darunter lauscht am
+    // Dokument und schlösse sonst bei Esc mit, samt den Eingaben, die die Rückfrage gerade
+    // schützen soll; Strg+S speicherte ihn hinter der Rückfrage.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close(false)
-      else if (e.key === 'Enter') close(true)
+      if (e.key === 'Escape') { e.stopPropagation(); close(false) }
+      else if (e.key === 'Enter') { e.stopPropagation(); close(true) }
+      else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [dialog, close])
 
   return (

@@ -10,6 +10,9 @@ describe('Geldbeträge lesen wie Mengen (zweite Integrationsdurchsicht zu #105)'
     expect(parseEuro('12,5')).toBe(1250)
     expect(parseEuro('€ 480,00')).toBe(48000)
     expect(parseEuro('-100,00')).toBe(-10000)
+    // Das typografische Minus (U+2212) kommt aus kopierten Texten und von manchen Tastaturen (#139)
+    expect(parseEuro('−100,00')).toBe(-10000)
+    expect(parseEuro('− 1.240,50 €')).toBe(-124050)
   })
   test('Tippfehler werden abgelehnt statt still falsch gelesen', () => {
     expect(parseEuro('78.43,5')).toBeNull()

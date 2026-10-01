@@ -4,7 +4,7 @@ import { propertyBody, propertyToForm, type PropertyForm, CABLE_LABELS, type Cab
 import { PROPERTY_KIND_LABELS } from '../types'
 import Term from './Term'
 import { api } from '../api'
-import { useProperty } from '../property'
+import { useOpenForm, useProperty, useSwitchProperty } from '../property'
 import { useConfirm, useToast } from './feedback'
 
 // Die Karte „Objekt“ in den Stammdaten (#92): Name, Adresse und Art des gewählten Objekts,
@@ -15,7 +15,8 @@ import { useConfirm, useToast } from './feedback'
 // Art als drittem Feld. Die Knöpfe für weitere Objekte stehen klein darunter.
 
 export default function PropertyCard() {
-  const { properties, property, setPropertyId, reload } = useProperty()
+  const { properties, property, reload } = useProperty()
+  const switchProperty = useSwitchProperty()
   const toast = useToast()
   const confirm = useConfirm()
   const [form, setForm] = useState<PropertyForm | null>(null)
@@ -29,6 +30,10 @@ export default function PropertyCard() {
     setForm(property ? propertyToForm(property) : null)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- bewusst nur an der Kennung
   }, [propertyId])
+
+  // Ungespeicherte Änderungen an der Karte gehören zu diesem Objekt (#145); ein Wechsel fragt dann.
+  const dirty = !!property && !!form && JSON.stringify(form) !== JSON.stringify(propertyToForm(property))
+  useOpenForm(dirty)
 
   if (!property || !form) return null
 
@@ -60,8 +65,12 @@ export default function PropertyCard() {
       const created = await api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name }) })
       setNewName(null)
       await reload()
-      setPropertyId(created.id)
-      toast(`Objekt „${name}“ angelegt. Die Seiten zeigen jetzt dieses Objekt; umschalten geht in der Seitenleiste.`)
+      // Derselbe Weg wie der Umschalter (#145): Mit ungespeicherten Änderungen wird erst gefragt.
+      if (await switchProperty(created.id, created.name)) {
+        toast(`Objekt „${name}“ angelegt. Die Seiten zeigen jetzt dieses Objekt; umschalten geht in der Seitenleiste.`)
+      } else {
+        toast(`Objekt „${name}“ angelegt. Umschalten geht in der Seitenleiste.`)
+      }
     } catch (e) {
       setError(String((e as Error).message))
     }

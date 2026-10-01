@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
+import { useConfirm } from './components/feedback'
 import type { Property } from './types'
 
 // Das gewählte Objekt (#92), nach dem Muster des Abrechnungsjahres (year.tsx): Die ganze
@@ -14,6 +15,8 @@ type PropertyCtx = {
   property: Property | null
   setPropertyId: (id: string) => void
   reload: () => Promise<void>
+  // Ob gerade ein Formular offen ist (#145), siehe useOpenForm.
+  hasOpenForm: () => boolean
 }
 
 const Ctx = createContext<PropertyCtx | null>(null)
@@ -48,7 +51,30 @@ export function withProperty(path: string, propertyId: string | null | undefined
   return `${path}${path.includes('?') ? '&' : '?'}property=${encodeURIComponent(propertyId)}`
 }
 
+// Offene Formulare (#145). Ein Formular hält Verweise in das Objekt, in dem es geöffnet wurde (das
+// Mietverhältnis einer Zahlung, die Wohnung eines Mietverhältnisses), oder legt im gerade
+// gewählten Objekt an. Wechselte das Objekt darunter, landete der Eintrag still im falschen Haus.
+// Deshalb melden sich offene Formulare hier an, und der Umschalter fragt vor dem Wechsel nach;
+// nach dem Wechsel stellt die Oberfläche die Seiten neu auf (App.tsx), offene Formulare sind
+// dann zu. Eine Anmeldung ist eine Marke in einer Menge und kein Zustand: Sie soll nichts neu
+// zeichnen, gefragt wird erst im Augenblick des Wechsels.
+const OpenFormsCtx = createContext<Set<symbol> | null>(null)
+
+// Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst; Formulare ohne
+// Drawer rufen es selbst auf. Außerhalb des Providers (Tests einzelner Teile) geschieht nichts.
+export function useOpenForm(open: boolean): void {
+  const forms = useContext(OpenFormsCtx)
+  useEffect(() => {
+    if (!open || !forms) return
+    const mark = Symbol('Formular')
+    forms.add(mark)
+    return () => { forms.delete(mark) }
+  }, [open, forms])
+}
+
 export function PropertyProvider({ children }: { children: ReactNode }) {
+  const openForms = useRef(new Set<symbol>()).current
+  const hasOpenForm = useCallback(() => openForms.size > 0, [openForms])
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(remembered)
   // Ob die Liste einmal geantwortet hat. Bis dahin zeigt der Provider nichts: Eine Seite, die
@@ -75,13 +101,42 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const property = chooseProperty(properties, selectedId)
-  return <Ctx.Provider value={{ properties, property, setPropertyId, reload }}>{loaded ? children : null}</Ctx.Provider>
+  return (
+    <OpenFormsCtx.Provider value={openForms}>
+      <Ctx.Provider value={{ properties, property, setPropertyId, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
+    </OpenFormsCtx.Provider>
+  )
 }
 
 export function useProperty(): PropertyCtx {
   const c = useContext(Ctx)
   if (!c) throw new Error('useProperty() muss innerhalb von <PropertyProvider> stehen')
   return c
+}
+
+// Der eine Weg, das Objekt zu wechseln (#145), für den Umschalter wie für „Weiteres Objekt
+// anlegen“. Ist ein Formular offen, wird erst gefragt; wer ablehnt, bleibt im bisherigen Objekt,
+// mit Formular und Eingaben. Nach dem Wechsel stellt App.tsx die Seiten neu auf, offene Formulare
+// sind dann zu und können nichts mehr ins vorige Objekt speichern. Ergibt, ob gewechselt wurde.
+// `name` ist für ein eben angelegtes Objekt, das in der Liste noch fehlen kann.
+export function useSwitchProperty(): (id: string, name?: string) => Promise<boolean> {
+  const { properties, property, setPropertyId, hasOpenForm } = useProperty()
+  const confirm = useConfirm()
+  return useCallback(async (id: string, name?: string) => {
+    if (id === property?.id) return true
+    if (hasOpenForm()) {
+      const targetName = name ?? properties.find((p) => p.id === id)?.name
+      const ok = await confirm({
+        title: 'Offene Eingaben verwerfen?',
+        message: `Sie haben in „${property?.name || 'Ohne Namen'}“ ein Formular offen oder eine Belegauswertung noch nicht übernommen. Beim Wechsel zu „${targetName || 'Ohne Namen'}“ wird das geschlossen, ohne zu speichern.`,
+        confirmLabel: 'Objekt wechseln',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return false
+    }
+    setPropertyId(id)
+    return true
+  }, [properties, property, setPropertyId, hasOpenForm, confirm])
 }
 
 // Der Umschalter in der Seitenleiste. Bei höchstens einem Objekt gibt es nichts zu wählen und

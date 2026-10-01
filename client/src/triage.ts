@@ -26,7 +26,7 @@ function scorer() {
 
 export type PositionCtx = {
   category: string // bereits über matchCategory zugeordnete Kategorie
-  amountCents: number // geparster Betrag (<= 0 = ungültig/fehlt)
+  amountCents: number // geparster Betrag (0 = ungültig/fehlt, negativ = Gutschrift)
   labor35aCents: number
   matchedByDesc: boolean // Kategorie kam nur über den Beschreibungs-Fallback
   vendor: string
@@ -39,14 +39,16 @@ export type PositionCtx = {
 export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons: string[] } {
   const s = scorer()
 
-  if (ctx.amountCents <= 0) s.bump('rot', 'Betrag fehlt oder ist 0')
+  if (ctx.amountCents === 0) s.bump('rot', 'Betrag fehlt oder ist 0')
+  // Eine Gutschrift (#139) wird übernommen, aber nie ungesehen: Sie senkt die Kosten des Jahres.
+  if (ctx.amountCents < 0) s.bump('gelb', 'Gutschrift — senkt die Kosten des Jahres')
   if (ctx.category === 'Nicht umlagefähig') s.bump('rot', 'nicht umlagefähig — trägt der Vermieter')
   if (ctx.category === 'Sonstige Betriebskosten') s.bump('rot', 'Kategorie unklar — bitte zuordnen')
   if (ctx.detectedYear == null) s.bump('rot', 'Rechnungsjahr nicht erkannt')
 
   const vendor = ctx.vendor.trim().toLowerCase()
   const year = ctx.detectedYear ?? ctx.targetYear
-  if (vendor && ctx.amountCents > 0) {
+  if (vendor && ctx.amountCents !== 0) {
     const dupe = ctx.existingItems.some(
       (it) => it.year === year && it.amountCents === ctx.amountCents && (it.vendor ?? '').trim().toLowerCase() === vendor,
     )
@@ -54,7 +56,7 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
   }
 
   if (ctx.matchedByDesc) s.bump('gelb', 'Kategorie nur über die Beschreibung erraten')
-  if (ctx.labor35aCents > ctx.amountCents) s.bump('gelb', '§35a-Lohnanteil größer als der Betrag')
+  if (ctx.amountCents > 0 && ctx.labor35aCents > ctx.amountCents) s.bump('gelb', '§35a-Lohnanteil größer als der Betrag')
   if (ctx.detectedYear != null && ctx.detectedYear !== ctx.targetYear) {
     s.bump('gelb', `Rechnungsjahr ${ctx.detectedYear} ≠ Zieljahr ${ctx.targetYear}`)
   }

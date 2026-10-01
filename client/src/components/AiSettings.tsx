@@ -16,6 +16,7 @@ import {
 } from '../aiForm'
 import { INTAKE_EDGE } from '../pdf'
 import { useToast, useConfirm } from './feedback'
+import { useOpenForm } from '../property'
 
 const README = 'https://github.com/speedone/mietfuchs#ki-belegauswertung'
 const errorText = (e: unknown) => String((e as Error)?.message ?? e)
@@ -38,19 +39,25 @@ function EnvHint({ path }: { path: string }) {
 
 type Props = { settings: Settings; reload: () => Promise<void> }
 
+const advancedFrom = (settings: Settings) => ({
+  timeoutSeconds: String(settings.ai?.timeoutSeconds ?? ''),
+  numCtx: String(settings.ai?.numCtx ?? ''),
+  maxOutputTokens: String(settings.ai?.maxOutputTokens ?? ''),
+  pageImageEdge: String(settings.ai?.pageImageEdge ?? ''),
+  reasoningEffort: settings.ai?.reasoningEffort ?? '',
+})
+
 export function AiSettings({ settings, reload }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const [presets, setPresets] = useState<AiPreset[]>([])
   const [form, setForm] = useState<AiSettingsValues>(() => aiFormFrom(settings))
   // Zahlenfelder und Denkaufwand als Text, damit ein leeres Feld „Standard“ heißen kann
-  const [advanced, setAdvanced] = useState(() => ({
-    timeoutSeconds: String(settings.ai?.timeoutSeconds ?? ''),
-    numCtx: String(settings.ai?.numCtx ?? ''),
-    maxOutputTokens: String(settings.ai?.maxOutputTokens ?? ''),
-    pageImageEdge: String(settings.ai?.pageImageEdge ?? ''),
-    reasoningEffort: settings.ai?.reasoningEffort ?? '',
-  }))
+  const [advanced, setAdvanced] = useState(() => advancedFrom(settings))
+  // Ungespeicherte Änderungen: Ein Objektwechsel stellt die Seiten neu auf und fragt deshalb
+  // vorher (#145). Verglichen wird mit dem gespeicherten Stand, Leerzeichen zählen nicht.
+  const trimmed = (a: Record<string, string>) => JSON.stringify(Object.values(a).map((v) => v.trim()))
+  useOpenForm(JSON.stringify(form) !== JSON.stringify(aiFormFrom(settings)) || trimmed(advanced) !== trimmed(advancedFrom(settings)))
   const [status, setStatus] = useState<Partial<Record<AiSlotName, { of: string; value: AiStatus }>>>({})
   const [checking, setChecking] = useState<Partial<Record<AiSlotName, boolean>>>({})
   const [saving, setSaving] = useState(false)

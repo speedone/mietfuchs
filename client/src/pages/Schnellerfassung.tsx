@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
-import { api, fmtEuro, fmtDate, parseEuro } from '../api'
+import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
+import { amountProblem, parseQuantity } from '../costForm'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
 
@@ -23,6 +24,11 @@ type InvoicePosition = {
   matchedByDesc: boolean
   checked: boolean
 }
+
+// Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular. Eine Gutschrift
+// geht durch, 0 € und ein unlesbarer Betrag nicht.
+const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a'>): string | null =>
+  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0)
 
 type ReadingCandidate = {
   meterNumber: string
@@ -64,14 +70,12 @@ type QueueEntry = {
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
-// Zählerstände: deutsche und technische Schreibweise zu Zahl
-function parseNum(s: string): number | null {
-  const t = s.trim()
-  if (!t) return null
-  const norm = t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t
-  const n = Number(norm)
-  return Number.isFinite(n) ? n : null
-}
+// Zählerstände lesen wie jede Menge (#149): „1.234“ ist 1234 und nicht 1,234. Ein leeres Feld ist
+// kein Wert.
+const parseNum = (s: string): number | null => parseQuantity(s)
+// Und so ins Feld schreiben, dass dasselbe wieder herauskommt: Als „1.234“ stünde 1,234 m³ da und
+// würde als 1234 gelesen.
+const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 6 })
 
 // Jahr aus den Extraktionsdaten ableiten: bevorzugt der Leistungszeitraum, sonst das Rechnungsdatum
 function yearFrom(periodStart?: string | null, invoiceDate?: string): number | null {
@@ -87,11 +91,16 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const { property } = useProperty()
   const propertyId = property?.id
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
+  // ein Zählerstand hängt an einem seiner Zähler (#145).
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
+  // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
+  const [pending, setPending] = useState('')
 
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
@@ -159,12 +168,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           })
           const reading: ReadingCandidate = {
             meterNumber: r.meterNumber ?? '',
-            value: value != null ? String(value) : '',
+            value: value != null ? quantityInput(value) : '',
             date: r.dateOnImage || exifDate || todayISO(),
             hasDate: !!(r.dateOnImage || exifDate),
             matchedMeterId,
             replacement: sc.replacementGuess,
-            oldEndValue: sc.suggestedOldEndValue != null ? String(sc.suggestedOldEndValue) : '',
+            oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',
             checked: sc.level !== 'rot',
           }
           patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
@@ -182,17 +191,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                 matchedByDesc = true
               }
             }
+            // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
+            // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
+            // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
+            const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
+            const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
             return {
               description: p.description,
               category,
-              // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
-              // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
-              // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
-              amount: p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? '',
-              labor35a: p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : '',
+              amount,
+              labor35a,
               key: defaultKeyFor(category),
               matchedByDesc,
-              checked: category !== 'Nicht umlagefähig',
+              // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
+              checked: category !== 'Nicht umlagefähig' && positionProblem({ amount, labor35a }) === null,
             }
           })
           patchEntry(next.id, {
@@ -250,12 +262,13 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         let sum = 0
         const posScores = entry.positions.map((p) => {
           const amountCents = parseEuro(p.amount) ?? 0
-          sum += amountCents > 0 ? amountCents : 0
+          // Eine Gutschrift auf der Rechnung mindert auch deren Summe.
+          sum += amountCents
           const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
           const prior = priorTotalsByCat.get(p.category) ?? 0
           const current = (existingTargetByCat.get(p.category) ?? 0) + amountCents
           const devPct = prior > 0 ? ((current - prior) / prior) * 100 : null
-          return scorePosition({
+          const score = scorePosition({
             category: p.category,
             amountCents,
             labor35aCents: labor,
@@ -266,6 +279,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
             existingItems,
             priorYearDeviationPct: devPct,
           })
+          const problem = positionProblem(p)
+          return problem === null ? score : { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
         })
         map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
       } else if (entry.kind === 'zaehler' && entry.reading) {
@@ -299,7 +314,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // ---------- Übernehmen ----------
   async function postPosition(entry: QueueEntry, p: InvoicePosition) {
     const amount = parseEuro(p.amount)
-    if (amount == null || amount <= 0) return false
+    // Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
+    if (amount === null || positionProblem(p) !== null) return false
     const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
     await api(withProperty('/api/costItems', propertyId), {
       method: 'POST',
@@ -335,12 +351,36 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     return true
   }
 
+  // Lehnt der Server eine Übernahme ab (#146), bricht sie ab und sagt warum. Was schon übernommen
+  // ist, wird abgehakt, damit ein zweiter Versuch es nicht doppelt anlegt.
+  function adoptFailed(entry: QueueEntry, done: number[], e: unknown) {
+    for (const i of done) updatePos(entry.id, i, { checked: false })
+    setError(`Nicht übernommen: ${errorText(e)}`)
+  }
+
   // Übernimmt einen kompletten Eintrag (alle angehakten Positionen / den Zählerstand)
   async function adoptEntry(entry: QueueEntry) {
-    if (entry.kind === 'rechnung') {
-      for (const p of entry.positions ?? []) if (p.checked) await postPosition(entry, p)
-    } else if (entry.kind === 'zaehler') {
-      if (entry.reading?.checked) await postReading(entry)
+    // Erst prüfen, dann übernehmen (#139): Eine angehakte Position, die sich nicht übernehmen
+    // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
+    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(p) !== null) : []
+    if (blocked.length > 0) {
+      setPending('')
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      return
+    }
+    setError('')
+    setPending('')
+    const done: number[] = []
+    try {
+      if (entry.kind === 'rechnung') {
+        for (const [i, p] of (entry.positions ?? []).entries()) if (p.checked && (await postPosition(entry, p))) done.push(i)
+      } else if (entry.kind === 'zaehler') {
+        if (entry.reading?.checked) await postReading(entry)
+      }
+    } catch (e) {
+      adoptFailed(entry, done, e)
+      await loadData()
+      return
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await loadData()
@@ -349,22 +389,41 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // Übernimmt alle grünen, angehakten Vorschläge über sämtliche Einträge hinweg
   async function adoptAllGreen() {
     setError('')
+    setPending('')
+    const left: string[] = []
     for (const entry of queue) {
       const es = scored.get(entry.id)
       if (!es || entry.status !== 'fertig') continue
+      const done: number[] = []
       let any = false
-      if (entry.kind === 'rechnung' && entry.positions) {
-        for (let i = 0; i < entry.positions.length; i++) {
-          const p = entry.positions[i]
-          if (p.checked && es.posScores[i]?.level === 'gruen') {
-            if (await postPosition(entry, p)) any = true
+      try {
+        if (entry.kind === 'rechnung' && entry.positions) {
+          for (let i = 0; i < entry.positions.length; i++) {
+            const p = entry.positions[i]
+            if (p.checked && es.posScores[i]?.level === 'gruen') {
+              if (await postPosition(entry, p)) { any = true; done.push(i) }
+            }
           }
+        } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
+          if (await postReading(entry)) any = true
         }
-      } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
-        if (await postReading(entry)) any = true
+      } catch (e) {
+        adoptFailed(entry, done, e)
+        await loadData()
+        return
       }
-      if (any) patchEntry(entry.id, { status: 'übernommen' })
+      // Bleiben angehakte Positionen übrig, die nicht grün sind (etwa eine Gutschrift, die immer
+      // gelb ist), gilt der Beleg nicht als übernommen; sonst verschwänden sie mit ihm still (#139).
+      // Die übernommenen werden abgehakt, damit „Diese übernehmen“ sie nicht doppelt anlegt.
+      const rest = entry.kind === 'rechnung'
+        ? (entry.positions ?? []).filter((p, i) => p.checked && !done.includes(i)).map((p) => `„${p.description}“`)
+        : []
+      if (rest.length > 0) {
+        for (const i of done) updatePos(entry.id, i, { checked: false })
+        left.push(...rest)
+      } else if (any) patchEntry(entry.id, { status: 'übernommen' })
     }
+    if (left.length > 0) setPending(`Übernommen ist, was grün war. Angehakt und noch zu prüfen: ${left.join(', ')}. Bitte ansehen und mit „Diese übernehmen“ übernehmen.`)
     await loadData()
   }
 
@@ -385,6 +444,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         {ai.notice ?? `Alles bleibt lokal (${ai.model}).`}
       </p>
       {error && <div className="error">{error}</div>}
+      {pending && <div className="warn">{pending}</div>}
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'center' }}>
@@ -589,7 +649,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                   )}
                   <div className="row" style={{ marginTop: 10 }}>
                     <div className="grow" />
-                    <button className="btn" onClick={() => void adoptEntry(entry)} disabled={!entry.reading.matchedMeterId || !parseNum(entry.reading.value)}>
+                    <button className="btn" onClick={() => void adoptEntry(entry)} disabled={!entry.reading.matchedMeterId || parseNum(entry.reading.value) === null}>
                       Ablesung übernehmen
                     </button>
                   </div>

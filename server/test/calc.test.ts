@@ -815,6 +815,16 @@ test('§35a: eine Position ohne Lohnanteil löst keine §35a-Meldung aus, auch m
   assert.deepEqual(computeSettlement(snapshotFromDb(db, 2025)).warnings, [])
 })
 
+test('§35a bei einer Gutschrift (#139): ein Lohnanteil wird nicht bescheinigt, sondern gemeldet', () => {
+  // Das Kostenformular lehnt ihn ab; hereinkommen kann er noch über die API. Dann bescheinigt die
+  // Berechnung nichts und sagt es, statt den Lohnanteil gegen den negativen Betrag zu verteilen.
+  const db = makeDb()
+  db.costItems.push({ id: 'c1', year: 2025, category: 'Gartenpflege', description: 'Gutschrift Garten', amountCents: -5400, key: 'units', labor35aCents: 1000 })
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(s.statements.map((x) => x.total35aCents), [0, 0])
+  assert.deepEqual(s.warnings, ['„Gutschrift Garten": der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.'])
+})
+
 test('Vorschlag neue Vorauszahlung: ein Zwölftel, auf volle Euro gerundet', () => {
   const db = makeDb()
   db.costItems.push({ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 290050, key: 'units' })
