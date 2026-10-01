@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, matchCategory } from '../types'
-import { api, fmtEuro, fmtDate, parseEuro } from '../api'
+import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
@@ -335,12 +335,27 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     return true
   }
 
+  // Lehnt der Server eine Übernahme ab (#146), bricht sie ab und sagt warum. Was schon übernommen
+  // ist, wird abgehakt, damit ein zweiter Versuch es nicht doppelt anlegt.
+  function adoptFailed(entry: QueueEntry, done: number[], e: unknown) {
+    for (const i of done) updatePos(entry.id, i, { checked: false })
+    setError(`Nicht übernommen: ${errorText(e)}`)
+  }
+
   // Übernimmt einen kompletten Eintrag (alle angehakten Positionen / den Zählerstand)
   async function adoptEntry(entry: QueueEntry) {
-    if (entry.kind === 'rechnung') {
-      for (const p of entry.positions ?? []) if (p.checked) await postPosition(entry, p)
-    } else if (entry.kind === 'zaehler') {
-      if (entry.reading?.checked) await postReading(entry)
+    setError('')
+    const done: number[] = []
+    try {
+      if (entry.kind === 'rechnung') {
+        for (const [i, p] of (entry.positions ?? []).entries()) if (p.checked && (await postPosition(entry, p))) done.push(i)
+      } else if (entry.kind === 'zaehler') {
+        if (entry.reading?.checked) await postReading(entry)
+      }
+    } catch (e) {
+      adoptFailed(entry, done, e)
+      await loadData()
+      return
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await loadData()
@@ -352,16 +367,23 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     for (const entry of queue) {
       const es = scored.get(entry.id)
       if (!es || entry.status !== 'fertig') continue
+      const done: number[] = []
       let any = false
-      if (entry.kind === 'rechnung' && entry.positions) {
-        for (let i = 0; i < entry.positions.length; i++) {
-          const p = entry.positions[i]
-          if (p.checked && es.posScores[i]?.level === 'gruen') {
-            if (await postPosition(entry, p)) any = true
+      try {
+        if (entry.kind === 'rechnung' && entry.positions) {
+          for (let i = 0; i < entry.positions.length; i++) {
+            const p = entry.positions[i]
+            if (p.checked && es.posScores[i]?.level === 'gruen') {
+              if (await postPosition(entry, p)) { any = true; done.push(i) }
+            }
           }
+        } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
+          if (await postReading(entry)) any = true
         }
-      } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
-        if (await postReading(entry)) any = true
+      } catch (e) {
+        adoptFailed(entry, done, e)
+        await loadData()
+        return
       }
       if (any) patchEntry(entry.id, { status: 'übernommen' })
     }

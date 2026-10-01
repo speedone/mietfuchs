@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
-import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
@@ -73,8 +73,14 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!unitForm.id
-    if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/units/${unitForm.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/units', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setUnitForm(null)
     await reload()
     toast(editing ? `„${unitForm.name.trim()}" übernommen.` : `Wohnung „${unitForm.name.trim()}" angelegt.`)
@@ -88,7 +94,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       danger: true,
     })
     if (!ok) return
-    await api(`/api/units/${u.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/units/${u.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await reload()
     toast(`Wohnung „${u.name}" gelöscht.`)
   }
@@ -176,8 +188,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       flatRates,
     })
     const editing = !!tenForm.id
-    if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
-    else await api('/api/tenancies', { method: 'POST', body })
+    try {
+      if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
+      else await api('/api/tenancies', { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const name = tenForm.tenantName.trim()
     setTenForm(null)
     await reload()
@@ -192,7 +209,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
       danger: true,
     })
     if (!ok) return
-    await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/tenancies/${t.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await reload()
     toast(`Mietverhältnis „${t.tenantName}" gelöscht.`)
   }
@@ -202,6 +225,9 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
   return (
     <>
       <PageHeader title="Stammdaten" subtitle="Objekt, Wohnungen und Mietverhältnisse — die Grundlage jeder Abrechnung." />
+
+      {/* Fehler beim Löschen (#146); die der Formulare stehen in ihrem Dialog. */}
+      {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
 

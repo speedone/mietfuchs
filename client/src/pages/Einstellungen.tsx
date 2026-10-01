@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Settings } from '../types'
-import { api } from '../api'
+import { api, errorText } from '../api'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import { UpdateSettings, type UpdateState } from '../components/Update'
@@ -20,6 +20,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   })
   const [restoring, setRestoring] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   async function restore(file: File) {
     const ok = await confirm({
@@ -53,13 +54,20 @@ export default function Einstellungen({ settings, reload, update }: Props) {
   }
 
   async function save() {
-    await api('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify({
-        ...form,
-        paymentDeadlineDays: Math.max(1, Number(form.paymentDeadlineDays) || 30),
-      }),
-    })
+    // Lehnt der Server ab (#146), steht sein Satz unter den Feldern.
+    try {
+      await api('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...form,
+          paymentDeadlineDays: Math.max(1, Number(form.paymentDeadlineDays) || 30),
+        }),
+      })
+    } catch (e) {
+      setSaveError(errorText(e))
+      return
+    }
+    setSaveError('')
     await reload()
     toast('Einstellungen gespeichert.')
   }
@@ -89,6 +97,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
           </label>
           <button className="btn" onClick={save}>Speichern</button>
         </div>
+        {saveError && <div className="error">{saveError}</div>}
       </div>
 
       <AiSettings settings={settings} reload={reload} />

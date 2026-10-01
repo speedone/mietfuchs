@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
-import { api, fmtDate, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { showDecemberNote } from '../ledgerView'
@@ -45,10 +45,16 @@ export default function Mietkonto() {
       return
     }
     setError('')
-    await api('/api/payments', {
-      method: 'POST',
-      body: JSON.stringify({ tenancyId: form.tenancyId, date: form.date, amountCents: cents, note: form.note.trim() || undefined }),
-    })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      await api('/api/payments', {
+        method: 'POST',
+        body: JSON.stringify({ tenancyId: form.tenancyId, date: form.date, amountCents: cents, note: form.note.trim() || undefined }),
+      })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setForm(null)
     await load()
     toast(`Zahlung über ${fmtEuro(cents)} erfasst.`)
@@ -62,7 +68,13 @@ export default function Mietkonto() {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/payments/${p.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/payments/${p.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast('Zahlung gelöscht.')
   }

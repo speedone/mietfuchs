@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
-import { api, fmtDate } from '../api'
+import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
@@ -68,8 +68,14 @@ export default function Zaehler({ units }: Props) {
       unit: meterForm.unit.trim() || 'm³',
     })
     const editing = !!meterForm.id
-    if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/meters/${meterForm.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/meters', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const name = meterForm.name.trim()
     setMeterForm(null)
     await load()
@@ -84,7 +90,13 @@ export default function Zaehler({ units }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/meters/${m.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/meters/${m.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast(`Zähler „${m.name}" gelöscht.`)
   }
@@ -97,17 +109,22 @@ export default function Zaehler({ units }: Props) {
       return
     }
     setError('')
-    await api('/api/readings', {
-      method: 'POST',
-      body: JSON.stringify({
-        meterId,
-        date: readingForm.date,
-        value,
-        replacement: readingForm.replacement || undefined,
-        oldEndValue: readingForm.replacement ? oldEnd : undefined,
-        note: readingForm.note.trim() || undefined,
-      }),
-    })
+    try {
+      await api('/api/readings', {
+        method: 'POST',
+        body: JSON.stringify({
+          meterId,
+          date: readingForm.date,
+          value,
+          replacement: readingForm.replacement || undefined,
+          oldEndValue: readingForm.replacement ? oldEnd : undefined,
+          note: readingForm.note.trim() || undefined,
+        }),
+      })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     setReadingForm({ ...EMPTY_READING })
     await load()
     toast('Ablesung gespeichert.')
@@ -121,7 +138,13 @@ export default function Zaehler({ units }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/readings/${r.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/readings/${r.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast('Ablesung gelöscht.')
   }

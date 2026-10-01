@@ -18,7 +18,7 @@ import {
   selfAmountUnits,
   type ItemForm,
 } from '../costForm'
-import { api, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
@@ -104,8 +104,12 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
   async function uploadInvoice(f: File) {
     const fd = new FormData()
     fd.append('file', f)
-    const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
-    setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
+    try {
+      const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
+      setForm((prev) => (prev ? { ...prev, invoiceFile: res.file } : prev))
+    } catch (e) {
+      setError(`Der Beleg wurde nicht hochgeladen: ${errorText(e)}`)
+    }
   }
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
@@ -143,8 +147,14 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!form.id
-    if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
-    else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+    // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
+    try {
+      if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
+      else await api(withProperty('/api/costItems', propertyId), { method: 'POST', body })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
     const desc = form.description.trim()
     setForm(null)
     await load()
@@ -159,7 +169,13 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
       danger: true,
     })
     if (!ok) return
-    await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
+    try {
+      await api(`/api/costItems/${i.id}`, { method: 'DELETE' })
+    } catch (e) {
+      setError(errorText(e))
+      return
+    }
+    setError('')
     await load()
     toast(`„${i.description}" gelöscht.`)
   }
@@ -230,24 +246,36 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
   }, [queue])
 
   async function adoptPositions(entry: QueueEntry) {
-    const chosen = entry.positions.filter((p) => p.checked)
-    for (const p of chosen) {
+    setError('')
+    const done: number[] = []
+    for (const [index, p] of entry.positions.entries()) {
+      if (!p.checked) continue
       const amount = parseEuro(p.amount)
       if (amount === null) continue
       const labor35a = p.labor35a.trim() ? parseEuro(p.labor35a) : 0
-      await api(withProperty('/api/costItems', propertyId), {
-        method: 'POST',
-        body: JSON.stringify({
-          year,
-          category: p.category,
-          description: p.description,
-          vendor: entry.vendor,
-          amountCents: amount,
-          labor35aCents: labor35a || undefined,
-          key: p.key,
-          invoiceFile: entry.serverFile,
-        }),
-      })
+      try {
+        await api(withProperty('/api/costItems', propertyId), {
+          method: 'POST',
+          body: JSON.stringify({
+            year,
+            category: p.category,
+            description: p.description,
+            vendor: entry.vendor,
+            amountCents: amount,
+            labor35aCents: labor35a || undefined,
+            key: p.key,
+            invoiceFile: entry.serverFile,
+          }),
+        })
+        done.push(index)
+      } catch (e) {
+        // Was bis hierher übernommen ist, steht in der Liste und wird abgehakt, damit ein zweiter
+        // Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
+        for (const i of done) updatePos(entry.id, i, { checked: false })
+        setError(`„${p.description}“ wurde nicht übernommen: ${errorText(e)}`)
+        await load()
+        return
+      }
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await load()
