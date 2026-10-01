@@ -70,6 +70,41 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   31.12.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
 
+- **Das Belegarchiv ist jetzt ein Belegordner.** Voreingestellt sind das gewählte Objekt und das
+  Abrechnungsjahr, umschaltbar auf alle Objekte und alle Jahre. Je Kostenart gibt es ein Register
+  mit Summe; jeder Beleg steht als Karte mit Vorschaubild, Rechnungssteller, Betrag, Rechnungsdatum
+  (sofern die KI es gelesen hat) und den Positionen, an denen er hängt. Die Suche findet
+  Rechnungssteller, Beschreibung, Betrag („128,40“), Dateinamen und Jahr. Doppelt hochgeladene
+  Belege erkennt Mietfuchs am Inhalt (Prüfsumme), auch unter anderem Namen; der frühere Hinweis
+  „gleiche Dateigröße“ entfällt. Der Eintrag steht in der Seitenleiste unter „Sammeln“.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- **Belegabdeckung und „Beleg nachreichen“.** Der Belegordner zeigt je Objekt und Jahr, welcher
+  Anteil der erfassten Kosten durch einen Beleg gedeckt ist, und an jeder Position ohne Beleg
+  lässt sich einer hochladen oder aus dem Posteingang zuordnen. Das Cockpit führt dazu die Zeile
+  „Belege vollständig“; sie wird höchstens gelb, denn ein fehlender Beleg ändert keine Zahl.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- **Posteingang.** Belege lassen sich direkt im Belegordner hochladen, auch mehrere auf einmal
+  oder per Ziehen. Sie liegen dann im Posteingang, mit Objekt und Jahr, und werden von dort einer
+  Position zugeordnet oder per KI ausgewertet, ohne ein zweites Mal hochgeladen zu werden.
+  Originalname und genaue Hochladezeit bleiben erhalten, auch über ein Backup hinweg; bisher
+  verschob das Wiederherstellen die Anzeige um bis zu zwei Stunden.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- **Mappen packen.** „Belegmappe für Mieter“ erstellt je Objekt und Jahr eine PDF mit den Belegen
+  der umgelegten Positionen in der Reihenfolge der Abrechnung und einem Deckblatt „Position →
+  Beleg, Seite“, für die Belegeinsicht, die seit 2025 auch elektronisch gewährt werden darf
+  (§ 556 Abs. 4 BGB). Belege mit Einzelbeträgen je Mieter, etwa die Abrechnung eines
+  Messdienstes, kommen wegen der Daten anderer Mieter nur auf ausdrückliche Wahl hinein.
+  „Belege für die Steuer“ lädt ein ZIP aller Belege des Jahres, geordnet nach den Gruppen der
+  Anlage V, einschließlich der nicht umlagefähigen, mit einer Übersicht als CSV.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+
+### Hinweise zur Aktualisierung
+
+- Die Datenbank bekommt eine Tabelle mit Angaben zu Belegen (Migration `0012_belege`). Vorhandene
+  Belege brauchen nichts: Sie stehen weiter im Belegordner, ihre Angaben liest Mietfuchs aus der
+  Datei. Die Sicherung vor dem Update legt der Start wie gewohnt an.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+
 ## [0.9.0] – 2026-10-02
 
 ### Neu
