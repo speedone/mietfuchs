@@ -116,7 +116,9 @@ body {
 .sidebar .foot .theme-toggle:hover { color: #fff; }
 
 /* ---------- Layout ---------- */
-main { flex: 1; padding: 32px 40px 80px; max-width: 1080px; }
+/* min-width: 0, sonst ist main als Flex-Element mindestens so breit wie sein breitester Inhalt
+   und schiebt die Seite über den Bildschirm hinaus (#137). */
+main { flex: 1; min-width: 0; padding: 32px 40px 80px; max-width: 1080px; }
 h1 { font-size: 24px; margin: 0 0 4px; }
 .sub { color: var(--muted); margin: 0 0 24px; }
 h2 { font-size: 17px; margin: 0 0 12px; }
@@ -186,6 +188,11 @@ button.btn.danger { background: var(--red); color: #fff; }
 button.btn.danger:hover { filter: brightness(1.08); }
 
 /* ---------- Tabellen ---------- */
+/* Jede Tabelle liegt in diesem Bereich (components/Table.tsx, #137): Ist sie breiter als ihre
+   Karte, scrollt sie darin waagerecht, statt die Seite zu verbreitern. */
+/* position: relative, damit auch absolut gesetzte Teile wie die Kopfzelle `.sr-only` einer
+   Aktionsspalte im Bereich bleiben; sonst bezögen sie sich auf die Seite und verbreiterten sie. */
+.table-scroll { overflow-x: auto; max-width: 100%; position: relative; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.4px; padding: 8px 10px; border-bottom: 2px solid var(--line); }
 td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -237,6 +244,8 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 .rent-month.none { color: var(--muted); opacity: 0.5; }
 .rent-month.partial:hover, .rent-month.open:hover { outline: 2px solid var(--accent); }
 @media (max-width: 720px) { .rent-grid { grid-template-columns: repeat(6, 1fr); } }
+/* Sechs Monate mit Betrag passen auf dem Handy nicht in die Karte (#137), vier schon. */
+@media (max-width: 480px) { .rent-grid { grid-template-columns: repeat(4, 1fr); } }
 
 .chip { display: inline-block; padding: 2px 9px; margin: 0 6px 6px 0; border-radius: 99px; font-size: 12px; font-weight: 500; }
 .chip.gruen { background: var(--green-soft); color: var(--green); border: 1px solid var(--ok-border); }
@@ -299,6 +308,19 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ----------
+   Vor dem Block für das Handy, denn der überschreibt diese Regeln bei gleicher Spezifität. Stand
+   er dahinter, galt am Handy die Spalte des Rechners samt verborgener Gruppenüberschriften, und
+   die Knöpfe lagen ungeordnet nebeneinander (#137). */
+.sidebar .year-switcher { display: flex; flex-direction: column; gap: 4px; padding: 0 12px 14px; }
+.sidebar .year-switcher span { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; color: #7d86a5; }
+.sidebar .year-switcher select {
+  font: inherit; font-size: 15px; font-weight: 600; padding: 7px 10px; border-radius: 8px;
+  background: #262b4a; color: #fff; border: 1px solid #343b5c; cursor: pointer;
+}
+.sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
+.sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
+
 /* ---------- Mobil (Handy: Zählerstand erfassen, Beleg fotografieren) ---------- */
 @media (max-width: 760px) {
   #root { flex-direction: column; }
@@ -316,8 +338,9 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   .sidebar .foot { display: none; }
   /* Aktualisiert wird am Rechner, auf dem Mietfuchs läuft, nicht am Handy. */
   .sidebar .update-hint { display: none; }
-  .sidebar .nav-group { flex-direction: row; flex-wrap: wrap; gap: 2px; }
-  .sidebar .nav-section { display: none; }
+  /* Dieselben Gruppen und Überschriften wie am Rechner, je Gruppe eine eigene Zeile (#137) */
+  .sidebar .nav-group { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 2px; }
+  .sidebar .nav-section { width: 100%; padding: 8px 4px 2px; }
   .sidebar .year-switcher { flex-direction: row; align-items: center; gap: 8px; padding: 4px; }
   .sidebar .year-switcher span { display: none; }
   .sidebar .year-switcher select { padding: 5px 8px; font-size: 13px; }
@@ -325,16 +348,6 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   h1 { font-size: 20px; }
   .card { padding: 14px; }
 }
-
-/* ---------- Sidebar: Jahres-Umschalter & Navigationsgruppen ---------- */
-.sidebar .year-switcher { display: flex; flex-direction: column; gap: 4px; padding: 0 12px 14px; }
-.sidebar .year-switcher span { font-size: 10.5px; letter-spacing: 0.5px; text-transform: uppercase; color: #7d86a5; }
-.sidebar .year-switcher select {
-  font: inherit; font-size: 15px; font-weight: 600; padding: 7px 10px; border-radius: 8px;
-  background: #262b4a; color: #fff; border: 1px solid #343b5c; cursor: pointer;
-}
-.sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
-.sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
 
 /* ---------- Cockpit: Fortschritt, Checkliste, Mieterkarten ---------- */
 .progress { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
@@ -580,7 +593,8 @@ td.actions { white-space: nowrap; text-align: right; }
 .update-consent p.muted { margin: 10px 0 0; }
 
 /* KI-Einstellungen (#18): je Anbieter-Platz ein eigener Block */
-.ai-slot { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 6px; margin: 0 0 14px; }
+/* min-width: 0, denn ein fieldset ist sonst mindestens so breit wie sein Inhalt (#137) */
+.ai-slot { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 6px; margin: 0 0 14px; min-width: 0; }
 .ai-slot > legend { padding: 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .ai-slot .row { margin-bottom: 10px; }
 .recommendations { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -647,6 +661,9 @@ td.actions { white-space: nowrap; text-align: right; }
   }
   body { background: #fff; font-size: 13px; }
   .sidebar, .no-print { display: none !important; }
+  /* Im Druck kein Scrollbereich: Er schnitte ab, was nicht auf die Seite passt, und Chromium
+     bricht einen solchen Bereich nicht sauber über Seitengrenzen um. */
+  .table-scroll { overflow: visible; }
   main { padding: 0; max-width: none; }
   .card { border: none; padding: 0; margin: 0; }
   body.print-one .card.statement { display: none; }
