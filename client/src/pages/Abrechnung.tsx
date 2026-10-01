@@ -7,6 +7,7 @@ import { useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
+import { historyView, type HistoryEntry } from '../settlementHistory'
 import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS, type NoticeTab } from '../notices'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -35,6 +36,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const [printId, setPrintId] = useState<string | null>(null)
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string } | null>(null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
+  const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
   const [attachmentsLoading, setAttachmentsLoading] = useState(false)
 
@@ -45,8 +47,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     return Promise.all([
       api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
+      // Frühere Abschlüsse (#56). Fehlt die Route (älterer Server), bleibt die Liste leer.
+      // Nur ein älterer Server ohne die Route (404) heißt „keine“; jeder andere Fehler wird gezeigt.
+      api<HistoryEntry[]>(withProperty(`/api/settlement/${year}/history`, propertyId)).catch((e: unknown) => {
+        if (/\b404\b/.test(String((e as Error).message))) return []
+        throw e
+      }),
     ])
-      .then(([d, c]) => { setData(d); setCostItems(c); setError('') })
+      .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [year, propertyId])
 
@@ -107,9 +115,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   async function reopenSettlement() {
     const ok = await confirm({
       title: `Abrechnung ${year} wieder öffnen?`,
-      message: 'Der eingefrorene Stand wird verworfen, es gilt wieder die laufende Berechnung. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
+      message: 'Es gilt wieder die laufende Berechnung. Der bisherige Stand bleibt unter „Frühere Abschlüsse“ erhalten. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
       confirmLabel: 'Wieder öffnen',
-      danger: true,
     })
     if (!ok) return
     await api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })
@@ -254,6 +261,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             )}
           </div>
         )
+      )}
+      {history.length > 0 && (
+        <details className="settlement-history no-print">
+          <summary>Frühere Abschlüsse dieses Jahres ({history.length})</summary>
+          <div className="muted">Beim Wiederöffnen bleibt der bisherige Stand erhalten; hier stehen die früheren, der zuletzt wiedergeöffnete zuerst.</div>
+          {historyView(history).map((h) => (
+            <div key={h.id} className="settlement-history-entry">
+              <strong>{h.head}</strong>
+              <ul>{h.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </div>
+          ))}
+        </details>
       )}
       {data?.closed && (() => {
         // Abgeschlossenes Jahr gegen die heutige Berechnung (#56): erklären, nicht drängen.

@@ -32,7 +32,7 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
-import { and, count, eq, inArray, ne } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { CostItem, ExternalBasis, Meter, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
@@ -42,7 +42,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, baseRents, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, units,
 } from './schema.ts'
@@ -544,13 +544,14 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   const alle = await readProperties(db)
   if (!alle.some((p) => p.id === id)) return { removed: false, reason: 'missing' }
   if (alle.length === 1) return { removed: false, reason: 'last' }
-  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements) =>
+  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory) =>
     (await db.select({ n: count() }).from(table).where(eq(table.propertyId, id)))[0]?.n ?? 0
   const teile = [
     [await zahl(units), 'Wohnung', 'Wohnungen'],
     [await zahl(meters), 'Zähler', 'Zähler'],
     [await zahl(costItems), 'Kostenposition', 'Kostenpositionen'],
     [await zahl(closedSettlements), 'abgeschlossene Abrechnung', 'abgeschlossene Abrechnungen'],
+    [await zahl(closedSettlementHistory), 'früherer Abschluss', 'frühere Abschlüsse'],
   ] as const
   const inUse = teile.filter(([n]) => n > 0).map(([n, eins, viele]) => `${n} ${n === 1 ? eins : viele}`)
   if (inUse.length > 0) return { removed: false, reason: 'inUse', inUse: inUse.join(', ') }
@@ -874,10 +875,32 @@ export async function setSentAt(db: Database, propertyId: string, year: number, 
   return true
 }
 
-export async function reopenSettlement(db: Database, propertyId: string, year: number): Promise<boolean> {
-  if (!(await findClosedSettlement(db, propertyId, year))) return false
-  await db.delete(closedSettlements).where(closedOf(propertyId, year))
+// Wiederöffnen verschiebt den Stand in den Verlauf (#56, Teil 2), statt ihn zu löschen, und zwar
+// in einer Transaktion: Scheiterte das Löschen nach dem Einfügen, stünde das Jahr sonst zugleich
+// als abgeschlossen und im Verlauf da (Befund der Durchsicht).
+export async function reopenSettlement(db: Database, propertyId: string, year: number, historyId: string): Promise<boolean> {
+  const eintrag = await findClosedSettlement(db, propertyId, year)
+  if (!eintrag) return false
+  await db.transaction(async (tx) => {
+    await tx.insert(closedSettlementHistory).values({
+      id: historyId, propertyId, year, closedAt: eintrag.closedAt, sentAt: eintrag.sentAt,
+      reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
+    })
+    await tx.delete(closedSettlements).where(closedOf(propertyId, year))
+  })
   return true
+}
+
+export type SettlementHistoryEntry = { id: string, closedAt: string, sentAt: string | null, reopenedAt: string, settlement: unknown }
+
+// Frühere Abschlüsse eines Jahres, der zuletzt wiedergeöffnete zuerst.
+export async function settlementHistory(db: Database, propertyId: string, year: number): Promise<SettlementHistoryEntry[]> {
+  const rows = await db
+    .select()
+    .from(closedSettlementHistory)
+    .where(and(eq(closedSettlementHistory.propertyId, propertyId), eq(closedSettlementHistory.year, year)))
+    .orderBy(desc(closedSettlementHistory.reopenedAt), desc(sql`rowid`))
+  return rows.map((r) => ({ id: r.id, closedAt: r.closedAt, sentAt: r.sentAt, reopenedAt: r.reopenedAt, settlement: r.settlement }))
 }
 
 // ---------- Was die Sonderrouten brauchen ----------

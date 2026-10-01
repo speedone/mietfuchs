@@ -775,7 +775,9 @@ ersten Speichern, und genau dort wird am häufigsten wiederhergestellt. Die Sich
 legt die Route selbst an, statt sich darauf zu verlassen, dass multer ihn beim Laden des Moduls
 angelegt hat. Beides spricht seit Aufgabe 7a auch die Datenbank, siehe Backup und
 Wiederherstellen) sowie
-`/api/settlement/:year/close` (POST/PUT/DELETE): friert die Abrechnung als Snapshot in der
+`/api/settlement/:year/close` (POST/PUT/DELETE; DELETE schiebt den Stand in die Tabelle
+`closed_settlement_history` statt ihn zu löschen, lesbar über `/api/settlement/:year/history`,
+#56): friert die Abrechnung als Snapshot in der
 Collection `closedSettlements` ein (inkl. `sentAt` für die §556-Frist) — `GET
 /api/settlement/:year` liefert dann den Snapshot statt der Live-Berechnung; daneben rechnet sie neu und
 liefert in `deviation` je Mieter, was die heutige Berechnung anders ergäbe (#56,

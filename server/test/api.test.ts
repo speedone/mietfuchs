@@ -895,6 +895,34 @@ test('Abgeschlossenes Jahr: weicht die heutige Berechnung ab, sagt die Antwort e
   }
 })
 
+test('Wiederöffnen behält den verschickten Stand im Verlauf, erneutes Abschließen legt einen weiteren daneben (#56)', async () => {
+  const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Verlauf', areaM2: 50, participates: true }) })
+  await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({
+    unitId: u.id, tenantName: 'Verlauf', persons: 1, personHistory: [], start: '2048-01-01', end: '2048-12-31',
+    prepayments: [], prepaymentOverrides: {}, baseRents: [],
+  }) })
+  const k = await srv.api<{ id: string }>('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2048, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 30000, key: 'direct', directUnitId: u.id }) })
+  await srv.api('/api/settlement/2048/close', { method: 'POST', body: JSON.stringify({ sentAt: '2049-02-01' }) })
+  await srv.api('/api/settlement/2048/close', { method: 'DELETE' })
+  let history = await srv.api<{ closedAt: string, sentAt: string | null, reopenedAt: string, settlement: { totalCostsCents: number } }[]>('/api/settlement/2048/history')
+  assert.equal(history.length, 1, 'der verschickte Stand ist nicht verloren')
+  assert.equal(history[0]?.sentAt, '2049-02-01')
+  assert.equal(history[0]?.settlement.totalCostsCents, 30000)
+  assert.match(history[0]?.reopenedAt ?? '', /^\d{4}-\d{2}-\d{2}T/)
+  await srv.api(`/api/costItems/${k.id}`, { method: 'PUT', body: JSON.stringify({ amountCents: 25000 }) })
+  await srv.api('/api/settlement/2048/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    const gueltig = await srv.api<Settlement>('/api/settlement/2048')
+    assert.equal(gueltig.totalCostsCents, 25000, 'gültig ist der neue Abschluss')
+    history = await srv.api('/api/settlement/2048/history')
+    assert.equal(history.length, 1, 'der gültige Stand steht nicht im Verlauf')
+  } finally {
+    await srv.api('/api/settlement/2048/close', { method: 'DELETE' })
+  }
+  history = await srv.api('/api/settlement/2048/history')
+  assert.deepEqual(history.map((h) => h.settlement.totalCostsCents), [25000, 30000], 'neueste zuerst')
+})
+
 test('Abschließen: ein zweites Mal für dasselbe Jahr wird abgelehnt, und zwar mit einem Satz', async () => {
   // Die Route fragt vor dem Einfrieren, ob es für das Jahr schon eine abgeschlossene Abrechnung
   // gibt. Fiele diese Frage weg, käme statt einer Erklärung der Verstoß gegen den eindeutigen

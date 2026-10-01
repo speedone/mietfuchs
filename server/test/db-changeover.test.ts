@@ -31,7 +31,7 @@ import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { connect, loadMigrations, type Migration } from '../src/db/client.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
-import { closedSettlements, costItems, units } from '../src/db/schema.ts'
+import { closedSettlementHistory, closedSettlements, costItems, units } from '../src/db/schema.ts'
 // Die Umstiegsdatei steht beim Import auf Migration 0000, also schreibt der Griff mit deren Aufbau.
 import { units as unitsAtBaseline } from '../src/legacy/schema.ts'
 
@@ -310,6 +310,34 @@ test('Stehen nur Einstellungen in der Datenbank, sagt die Meldung, dass die Date
       assert.match(result.message, /ZIP-Archiv/)
       assert.doesNotMatch(result.message, /schon gelaufen|stört nicht/)
     })
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
+test('Ein früherer Abschluss in der Datenbank zählt als Bestand: der Umstieg überschreibt ihn nicht (#56)', async () => {
+  // Befund der zweiten Integrationsdurchsicht: Die Tabelle der früheren Abschlüsse ist die einzige,
+  // die Zeilen ohne eine gezählte Elterntabelle tragen kann. Fehlte sie in der Zählung, ersetzte der
+  // Umstieg die Datenbank samt Verlauf, ohne eine Sicherung zu hinterlassen.
+  const dataDir = tempDir()
+  try {
+    const opened = await openDatabase({ dataDir })
+    await opened.write((db) => db.insert(closedSettlementHistory).values({
+      id: 'h1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-10T09:00:00.000Z', sentAt: null,
+      reopenedAt: '2025-02-01T09:00:00.000Z', settlement: {},
+    }))
+    opened.close()
+    writeFile(dataDir, fullDb())
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'stale', result.message)
+    })
+    const check = await openDatabase({ dataDir })
+    try {
+      const rows = await check.read((db) => db.select().from(closedSettlementHistory))
+      assert.equal(rows.length, 1, 'der Verlauf ist noch da')
+    } finally {
+      check.close()
+    }
   } finally {
     removeDir(dataDir)
   }

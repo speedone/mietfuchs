@@ -64,6 +64,13 @@
       "when": 1790801894258,
       "tag": "0008_eigenbetraege",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790803152595,
+      "tag": "0009_abschluss_verlauf",
+      "breakpoints": true
     }
   ]
 }

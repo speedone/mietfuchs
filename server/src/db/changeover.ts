@@ -56,7 +56,7 @@ import { deviationMessage, frozenDifference, runRegression, standToCompare, year
 import { findingsText, validateDb, type Finding } from '../legacy/validate.ts'
 import { writeStock, type StockCounts } from '../legacy/write.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
+  aiSlots, baseRents, closedSettlementHistory, closedSettlements, costItemShares, costItems, meters, payments,
   personHistory, prepaymentOverrides, prepayments, readings, settings, tenancies, units,
 } from './schema.ts'
 import { count } from 'drizzle-orm'
@@ -140,6 +140,8 @@ const COUNTED: { label: string, table: SQLiteTable }[] = [
   { label: 'Ablesungen', table: readings },
   { label: 'Zahlungen', table: payments },
   { label: 'abgeschlossene Abrechnungen', table: closedSettlements },
+  // Die einzige Tabelle, die Zeilen ohne eine hier gezählte Elterntabelle tragen kann (#56).
+  { label: 'frühere Abschlüsse', table: closedSettlementHistory },
   { label: 'Einstellungen', table: settings },
   { label: 'KI-Plätze', table: aiSlots },
 ]
