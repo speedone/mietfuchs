@@ -30,6 +30,7 @@ import type {
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
+import { allocationOf, previousYearItems, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -219,6 +220,8 @@ const noticeKinds = {
   'heating.remote-reading': { level: 'hint', title: 'Zähler der Heizung fernablesbar?', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
+  // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
+  'key.changed-from-previous-year': { level: 'hint', title: 'Umlageschlüssel anders als im Vorjahr', terms: ['keyChange', 'allocationKey'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -1057,6 +1060,43 @@ const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
 // Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
 export type SettlementOptions = { asOf?: string }
 
+// Der Schlüssel als Satzteil („2025 nach Personenzahl verteilt“), für den Hinweis unten.
+const KEY_PHRASES: Record<CostKey, string> = {
+  area: 'nach Wohnfläche',
+  persons: 'nach Personenzahl',
+  units: 'nach Wohneinheiten',
+  direct: 'per Direktzuordnung',
+  meter: 'nach Verbrauch',
+  custom: 'nach vereinbarten Anteilen',
+  external: 'laut Gemeinschaftsabrechnung',
+  amounts: 'als Einzelbeträge',
+}
+
+// Hat eine Position einen anderen Schlüssel als dieselbe Kostenart im Vorjahr (#141)? Dann der
+// Text des Hinweises, sonst `null`. „Derselbe Schlüssel“ heißt dasselbe wie für den Vorschlag der
+// Oberfläche (shared/allocation.ts); entspricht die Position einer der Vorjahrespositionen, ist sie
+// keine Änderung. Wortlaut des § 556a BGB nachgelesen auf gesetze-im-internet.de.
+function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number): string | null {
+  if (isNotAllocable(item.category)) return null
+  const before = previousYearItems(previous, item.category, year).map(allocationOf)
+  const now = allocationOf(item)
+  const first = before[0]
+  if (!first || before.some((a) => sameAllocation(a, now))) return null
+  const prevYear = year - 1
+  const sameKey = before.find((a) => a.key === now.key)
+  const what = !sameKey
+    ? `„${item.description}“ wird ${year} ${KEY_PHRASES[now.key]} verteilt, die Kostenart „${item.category}“ ${prevYear} ${KEY_PHRASES[first.key]}.`
+    : `„${item.description}“ wird ${year} wieder ${KEY_PHRASES[now.key]} verteilt, aber mit ${
+      !sameUnits(sameKey.participantUnitIds, now.participantUnitIds) ? 'anderen beteiligten Wohnungen'
+        : sameKey.meterType !== now.meterType ? 'einem anderen Zählertyp'
+          : sameKey.directUnitId !== now.directUnitId ? 'einer anderen Wohnung'
+            : now.key === 'custom' ? 'anderen vereinbarten Anteilen'
+              : 'einem anderen Maßstab der Gemeinschaft'
+    } als ${prevYear}.`
+  return `${what} Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter oder durch Ihre Erklärung in Textform vor Beginn des Abrechnungszeitraums, und dann nur hin zu einer Verteilung nach Verbrauch oder Verursachung (§ 556a Abs. 2 BGB). ` +
+    'Bei einer vermieteten Eigentumswohnung gilt der jeweilige Maßstab der Gemeinschaft (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
+}
+
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   const year = snapshot.year
   const diy = daysInYear(year)
@@ -1486,6 +1526,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const b = basisOf(item)
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
+    // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
+    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], year)
+    if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets: Target[] = []
