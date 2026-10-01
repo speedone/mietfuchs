@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -69,4 +69,16 @@ test('neues Mietverhältnis: vorgewählt wird die erste vermietbare Wohnung ohne
   // gar keine vermietbare: die erste Wohnung, wie bisher
   expect(defaultTenancyUnitId([units[0] as Unit], [], heute)).toBe('eigen')
   expect(defaultTenancyUnitId([], [], heute)).toBe('')
+})
+
+// #142: Die Liste der Mietverhältnisse zeigte das Nebenkostenmodell nicht.
+test('Kennzeichen des Nebenkostenmodells in der Liste: nichts bei Abrechnung, sonst knapp', () => {
+  expect(costModelBadge(undefined, undefined)).toBeNull()
+  expect(costModelBadge(null, null)).toBeNull()
+  expect(costModelBadge('settlement', 'settlement')).toBeNull()
+  expect(costModelBadge('flatRate', 'flatRate')).toBe('Pauschale')
+  expect(costModelBadge('inclusive', 'inclusive')).toBe('inklusiv')
+  expect(costModelBadge('flatRate', null)).toBe('kalt pauschal · Heizung abgerechnet')
+  expect(costModelBadge(null, 'inclusive')).toBe('kalt abgerechnet · Heizung inklusiv')
+  expect(costModelBadge('inclusive', 'flatRate')).toBe('kalt inklusiv · Heizung pauschal')
 })

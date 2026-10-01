@@ -142,3 +142,26 @@ test('„Alle grünen übernehmen“ lässt eine gelbe Gutschrift stehen, statt 
   expect(screen.getByRole('button', { name: /Diese übernehmen/ })).toBeTruthy()
   expect(screen.getByText(/noch zu prüfen: „Gutschrift Vorjahr“/)).toBeTruthy()
 })
+
+// #142: Auch in der Vorschau einer Auswertung zeigt eine nicht umlagefähige Position keinen
+// Umlageschlüssel, denn verteilt wird sie nie.
+const keySelectOf = (description: string) => {
+  const row = screen.getByDisplayValue(description).closest('tr')
+  if (!row) throw new Error(`Keine Zeile zu „${description}“`)
+  return [...row.querySelectorAll('select')].find((s) => [...s.options].some((o) => o.value === 'persons')) ?? null
+}
+
+test('Nicht umlagefähig in der Vorschau: kein Umlageschlüssel, sondern „trägt der Vermieter“ (#142)', async () => {
+  extraction = {
+    vendor: 'Hausverwaltung', invoiceDate: '2025-03-01',
+    positions: [
+      { description: 'Verwaltergebühr', category: 'Nicht umlagefähig', amountEur: 360 },
+      { description: 'Hausmeister', category: 'Hauswart', amountEur: 500 },
+    ],
+  }
+  await evaluate()
+  expect(keySelectOf('Verwaltergebühr')).toBeNull()
+  expect(keySelectOf('Hausmeister')).not.toBeNull()
+  const row = screen.getByDisplayValue('Verwaltergebühr').closest('tr')
+  expect(row?.textContent).toMatch(/trägt der Vermieter/)
+})

@@ -2,7 +2,7 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { MeterType, Unit, UnitUsage } from './types'
+import type { MeterType, Unit, UnitDependents, UnitUsage } from './types'
 import { usageOf } from './types'
 
 export type UnitForm = {
@@ -90,4 +90,30 @@ export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undef
   const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
   const garage = new Set(garageLikeUnitIds ?? [])
   return { zero: withoutArea.filter((u) => garage.has(u.id)), missing: withoutArea.filter((u) => !garage.has(u.id)) }
+}
+
+// Die Löschfrage einer Wohnung (#142). Vorher nannte sie nur die Mietverhältnisse; die
+// Fremdschlüssel nehmen aber auch Zähler, Ablesungen, Zahlungen und die Angaben der Wohnung an
+// Kostenpositionen mit. Die Zahlen kommen vom Server (`/api/units/:id/dependents`); ist er nicht
+// erreichbar (`null`), steht die vollständige Liste ohne Zahlen da.
+const IRREVERSIBLE = 'Das lässt sich nicht rückgängig machen.'
+export function unitDeleteMessage(deps: UnitDependents | null): string {
+  if (deps === null) {
+    return 'Mit der Wohnung werden auch ihre Mietverhältnisse, Zähler, Ablesungen und Zahlungen gelöscht, dazu ihre Anteile an ' +
+      `Kostenpositionen. ${IRREVERSIBLE}`
+  }
+  const count = (n: number, one: string, many: string) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : [])
+  const parts = [
+    ...count(deps.tenancies, 'Mietverhältnis', 'Mietverhältnisse'),
+    ...count(deps.meters, 'Zähler', 'Zähler'),
+    ...count(deps.readings, 'Ablesung', 'Ablesungen'),
+    ...count(deps.payments, 'Zahlung', 'Zahlungen'),
+    ...count(deps.costItemLinks, 'Angabe an einer Kostenposition', 'Angaben an Kostenpositionen').map((t) => `${t} (vereinbarte Anteile, Teilnahmen, Einzelbeträge)`),
+  ]
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} und ${parts[parts.length - 1]}` : parts[0]
+  const head = list ? `Mit der Wohnung werden gelöscht: ${list}.` : 'An der Wohnung hängt nichts weiter.'
+  const direct = deps.directCostItems > 0
+    ? ` ${deps.directCostItems === 1 ? '1 direkt zugeordnete Kostenposition bleibt' : `${deps.directCostItems} direkt zugeordnete Kostenpositionen bleiben`} erhalten; ihren Betrag trägt danach der Vermieter.`
+    : ''
+  return `${head}${direct} ${IRREVERSIBLE}`
 }

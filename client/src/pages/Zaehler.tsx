@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
+import { defaultMeterUnit, emptyMeterForm, oldEndText, withMeterType, type MeterForm } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty } from '../property'
@@ -15,8 +16,6 @@ import { scrollToFocus, useFocusTarget, type FocusProps } from '../focus'
 type Props = { units: Unit[] } & FocusProps
 
 type Consumption = { meterId: string; consumption: number; readingCount: number; warnings: string[] }
-
-type MeterForm = { id?: string; name: string; unitId: string; type: MeterType; meterNumber: string; unit: string }
 
 export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const { year, setYear } = useYear()
@@ -65,7 +64,8 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
       unitId: meterForm.unitId || null,
       type: meterForm.type,
       meterNumber: meterForm.meterNumber.trim() || undefined,
-      unit: meterForm.unit.trim() || 'm³',
+      // Ohne Angabe die Vorgabe der Sparte (#142), nicht für jede Sparte „m³“.
+      unit: meterForm.unit.trim() || defaultMeterUnit(meterForm.type),
     })
     const editing = !!meterForm.id
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
@@ -206,7 +206,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
           </Table>
         )}
 
-        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setMeterForm({ name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: 'm³' }) }}>
+        <button className="btn secondary" style={{ marginTop: 14 }} onClick={() => { setError(''); setMeterForm(emptyMeterForm()) }}>
           + Zähler hinzufügen
         </button>
       </div>
@@ -242,7 +242,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
             </label>
             <label className="field grow">
               Sparte
-              <select value={meterForm.type} onChange={(e) => setMeterForm({ ...meterForm, type: e.target.value as MeterType })}>
+              <select value={meterForm.type} onChange={(e) => setMeterForm(withMeterType(meterForm, e.target.value as MeterType))}>
                 {(Object.keys(METER_TYPE_LABELS) as MeterType[]).map((t) => (
                   <option key={t} value={t}>{METER_TYPE_LABELS[t]}</option>
                 ))}
@@ -291,7 +291,7 @@ function FragmentRow(props: {
         <td>{METER_TYPE_LABELS[m.type] ?? m.type}</td>
         <td className="num">
           {cons && cons.readingCount >= 2
-            ? `${cons.consumption.toLocaleString('de-DE')} ${m.unit}`
+            ? `${cons.consumption.toLocaleString('de-DE')}${m.unit ? ` ${m.unit}` : ''}`
             : <span className="muted">zu wenig Ablesungen</span>}
         </td>
         <td className="actions no-print" style={{ whiteSpace: 'nowrap' }}>
@@ -309,7 +309,7 @@ function FragmentRow(props: {
                 <thead>
                   <tr>
                     <th>Datum</th>
-                    <th className="num">Stand ({m.unit})</th>
+                    <th className="num">Stand{m.unit ? ` (${m.unit})` : ''}</th>
                     <th>Hinweis</th>
                     <th></th>
                   </tr>
@@ -320,7 +320,7 @@ function FragmentRow(props: {
                       <td>{fmtDate(r.date)}</td>
                       <td className="num">
                         {r.value.toLocaleString('de-DE')}
-                        {r.replacement && <div className="muted">Endstand alt: {r.oldEndValue?.toLocaleString('de-DE')}</div>}
+                        {r.replacement && <div className="muted">Endstand alt: {oldEndText(r.oldEndValue)}</div>}
                       </td>
                       <td className="muted">
                         {r.replacement && <span className="badge gray">Zählerwechsel</span>} {r.note}

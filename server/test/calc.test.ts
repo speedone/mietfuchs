@@ -453,7 +453,7 @@ test('Zwei Ablesungen am selben Tag: der Verbrauch dazwischen wird gemeldet (#69
   ])
   const { warnings, segments } = meterSegments(doppelt)
   assert.equal(warnings.length, 1, warnings.join(' | '))
-  assert.match(warnings[0], /2025-06-30/)
+  assert.match(warnings[0], /30\.06\.2025/)
   assert.match(warnings[0], /nicht verteilt/)
   assert.match(warnings[0], /um 10,/, warnings[0])
   // Der Verbrauch selbst bleibt, wie er war: 50 bis zum Stichtag, 40 danach. Die 10 sind weg,
@@ -597,6 +597,8 @@ test('Zwei Ablesungen am selben Tag: kleine Unterschiede werden nicht zu null ge
   const { warnings } = meterSegments(fein)
   assert.equal(warnings.length, 1, warnings.join(' | '))
   assert.match(warnings[0], /0,004/, warnings[0])
+  // Das Datum deutsch, wie in der Meldung zum Zählerwechsel (#142).
+  assert.match(warnings[0], /am 30\.06\.2025/, warnings[0])
 })
 
 test('Zählerwechsel ohne Endstand des alten Geräts: Meldung statt negativem Verbrauch (#83)', () => {
@@ -617,7 +619,9 @@ test('Zählerwechsel ohne Endstand des alten Geräts: Meldung statt negativem Ve
   const { warnings, segments } = meterSegments(ohneEndstand)
   assert.equal(warnings.length, 1, warnings.join(' | '))
   assert.match(warnings[0], /Endstand/)
-  assert.match(warnings[0], /2025-06-30/)
+  // Das Datum deutsch wie überall in der Oberfläche, nicht in ISO-Form (#142).
+  assert.match(warnings[0], /am 30\.06\.2025/)
+  assert.doesNotMatch(warnings[0], /2025-06-30/)
 
   // Der Verbrauch des alten Geräts bis zum Wechsel ist unbekannt und wird nicht erfunden; das
   // neue Gerät rechnet ganz normal weiter.
@@ -712,6 +716,7 @@ test('Zählerwechsel: ein Endstand von 0 ist etwas anderes als keiner (#83)', ()
   assert.equal(warnings.length, 1, warnings.join(' | '))
   assert.match(warnings[0], /Negativer Verbrauch/)
   assert.doesNotMatch(warnings[0], /Endstand des alten/)
+  assert.match(warnings[0], /zwischen dem 31\.12\.2024 und dem 30\.06\.2025/, warnings[0])
 })
 
 test('Verbrauchsschlüssel: Verteilung nach Wohnungszählern', () => {
@@ -2051,4 +2056,44 @@ test('Mietkonto mit Stichtag: künftige Monate sind „noch nicht fällig“ und
   // Das Soll und damit die Steuerübersicht hängen nicht am Stichtag.
   assert.equal(heute.totals.sollYearCents, 1200000)
   assert.equal(taxReport(snapshot).income.sollCents, 1200000)
+})
+
+test('Nicht umlagefähig: der gespeicherte Schlüssel ändert keine Zahl (#142)', () => {
+  // Das Formular speichert für nicht umlagefähige Positionen jetzt die neutrale Vorgabe „area“
+  // ohne Zuordnungen. Bestehende Positionen tragen irgendeinen Schlüssel; beides muss dieselben
+  // Zahlen ergeben, in der Abrechnung, im Eigenanteil und in der Steuerübersicht.
+  const withKey = (patch: Partial<CostItem>): Db => ({
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'EG', areaM2: 80, participates: true },
+      { id: 'u2', name: 'OG', areaM2: 60, participates: false, selfUsed: true, selfPersons: 2 },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'A', start: '2025-01-01' })],
+    meters: [{ id: 'm1', unitId: 'u1', name: 'KW', type: 'kaltwasser', unit: 'm³' }],
+    costItems: [
+      { id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 70000, key: 'area' },
+      { id: 'c2', year: 2025, category: 'Nicht umlagefähig', description: 'Verwaltung', amountCents: 36000, key: 'area', ...patch },
+      { id: 'c3', year: 2025, category: RESERVE_CATEGORY, description: 'Rücklage', amountCents: 90000, key: 'area', ...patch },
+    ],
+  })
+  const numbers = (db: Db) => {
+    const s = computeSettlement(snapshotFromDb(db, 2025))
+    const t = taxReport(snapshotFromDb(db, 2025))
+    return {
+      shares: s.statements.map((st) => [st.tenancyId, st.totalShareCents]),
+      landlord: s.landlord.totalCents,
+      self: s.selfUsedShareCents,
+      total: s.totalCostsCents,
+      tax: [t.expenses.totalCents, t.reserveContributionCents, t.selfUsedShareCents, t.surplusSollCents, t.surplusPaidCents],
+    }
+  }
+  const neutral = numbers(withKey({}))
+  for (const patch of [
+    { key: 'persons' },
+    { key: 'meter', meterType: 'kaltwasser' },
+    { key: 'direct', directUnitId: 'u2' },
+    { key: 'custom', customShares: { u1: 50, u2: 50 } },
+  ] satisfies Partial<CostItem>[]) {
+    assert.deepEqual(numbers(withKey(patch)), neutral, JSON.stringify(patch))
+  }
 })

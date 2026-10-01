@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
-import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -136,9 +136,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
 
   async function deleteUnit(u: Unit) {
+    // Was mitgelöscht wird, mit Anzahl (#142); ohne Antwort die vollständige Liste ohne Zahlen.
+    const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
     const ok = await confirm({
       title: `Wohnung „${u.name}" löschen?`,
-      message: 'Die Wohnung und alle zugehörigen Mietverhältnisse werden gelöscht. Das lässt sich nicht rückgängig machen.',
+      message: unitDeleteMessage(deps),
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -270,6 +272,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   }
 
   const participating = units.filter((u) => u.participates)
+  // Miteigentumsanteile (#142): bei einer Eigentumswohnung immer, sonst sobald eine Wohnung welche hat.
+  const showsMea = property?.kind === 'etw' || units.some((u) => u.mea != null)
 
   return (
     <>
@@ -289,6 +293,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               <tr>
                 <th>Name</th>
                 <th className="num">Wohnfläche</th>
+                {showsMea && <th className="num"><Term id="mea">MEA</Term></th>}
                 <th>Kostenverteilung</th>
                 <th className="no-print"></th>
               </tr>
@@ -305,6 +310,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     )}
                   </td>
                   <td className="num">{u.areaM2.toLocaleString('de-DE')} m²</td>
+                  {showsMea && <td className="num">{u.mea != null ? u.mea.toLocaleString('de-DE') : '—'}</td>}
                   <td>
                     {usageOf(u) === 'vermietet' && <span className="badge green">beteiligt</span>}
                     {usageOf(u) === 'eigen' && (
@@ -358,6 +364,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <tr key={t.id}>
                   <td>
                     {t.tenantName}
+                    {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
+                    {costModelBadge(t.costModel, t.heatingModel) && (
+                      <span className="badge gray" style={{ marginLeft: 6 }} title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
+                        {costModelBadge(t.costModel, t.heatingModel)}
+                      </span>
+                    )}
                     {(t.email || t.phone) && (
                       <div className="muted" style={{ fontSize: 12 }}>{[t.email, t.phone].filter(Boolean).join(' · ')}</div>
                     )}
@@ -842,7 +854,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
               <div className="row">
                 {meters.map((m) => (
                   <label className="field" key={m.id}>
-                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}, {m.unit})
+                    {m.name} ({m.unitId === null ? 'Hauptzähler' : METER_TYPE_LABELS[m.type] ?? m.type}{m.unit ? `, ${m.unit}` : ''})
                     <input
                       value={meterValues[m.id] ?? ''}
                       disabled={step > 2}

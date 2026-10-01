@@ -2,7 +2,7 @@
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
 import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
-import { CATEGORIES, KEY_LABELS, defaultKeyFor } from './types'
+import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -84,6 +84,15 @@ const fmtCentsInput = (c: number) => (c / 100).toLocaleString('de-DE', { minimum
 export const PARTICIPANT_KEYS: CostKey[] = ['area', 'units', 'persons', 'meter', 'external', 'amounts']
 
 const MEASURE_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
+
+// Die Beschriftung der Summe aus der Gemeinschaftsabrechnung (#142). „Summe in der Anlage“ las
+// sich wie die Summe der Kosten; gemeint ist die Summe der Anteile im gewählten Maßstab.
+const EXTERNAL_TOTAL_LABELS: Record<ExternalMeasure, string> = {
+  mea: 'Summe der Miteigentumsanteile in der Anlage (z. B. 1.000 MEA)',
+  area: 'Summe der Wohnflächen in der Anlage (z. B. 1.240 m²)',
+  units: 'Zahl der Einheiten in der Anlage (z. B. 24)',
+}
+export const externalTotalLabel = (measure: ExternalMeasure): string => EXTERNAL_TOTAL_LABELS[measure]
 export const EXTERNAL_MEASURE_OPTIONS: { value: ExternalMeasure, label: string }[] = [
   { value: 'mea', label: 'Miteigentumsanteile (MEA)' },
   { value: 'area', label: 'Wohnfläche (m²)' },
@@ -175,7 +184,10 @@ export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenanc
   const sum = tenants + own
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
   const ownText = own > 0 ? `, davon ${fmtCentsInput(own)} € Ihre eigene Wohnung` : ''
-  return `Summe ${fmtCentsInput(sum)} €${ownText} — ${fmtCentsInput(amount - sum)} € trägt der Vermieter (Leerstand, Rundung)`
+  // Gerundet wird bei Einzelbeträgen nichts (#142); ein Rest entsteht, wenn für einen Zeitraum
+  // kein Mieter einen Betrag hat, etwa bei Leerstand.
+  if (sum === amount) return `Summe ${fmtCentsInput(sum)} €${ownText} — der Rechnungsbetrag ist vollständig verteilt`
+  return `Summe ${fmtCentsInput(sum)} €${ownText} — den Rest von ${fmtCentsInput(amount - sum)} € trägt der Vermieter (etwa für Leerstand)`
 }
 
 // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
@@ -186,6 +198,24 @@ export const basisUnitsOf = (units: Unit[]) => units.filter((u) => usageOf(u) !=
 // unverändert bleibt — gespeichert würde dann etwas anderes als das, was zu sehen ist.
 export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType | ''): MeterType[] {
   return [...new Set([...unitMeterTypes, ...(stored ? [stored] : [])])]
+}
+
+// Schlüssel wechseln (#142). Beim Verbrauchsschlüssel stand der Zählertyp auf „— wählen —“, auch
+// wenn es nur einen gab. Dann wird er jetzt vorgewählt, und zwar im Zustand und nicht nur in der
+// Anzeige, sodass gespeichert wird, was zu sehen ist; er steht ja in der Auswahl. Bei mehreren
+// Typen wählt weiter der Mensch, und eine schon getroffene Wahl bleibt.
+export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[]): ItemForm {
+  const [only, ...more] = unitMeterTypes
+  const meterType = key === 'meter' && !form.meterType && only && more.length === 0 ? only : form.meterType
+  return { ...form, key, meterType }
+}
+
+// Bei nicht umlagefähigen Kostenarten gibt es nichts zu verteilen (#142): Die Berechnung trägt sie
+// ganz dem Vermieter zu und liest ihren Schlüssel nicht (calc.ts, `isNotAllocable`). Das Formular
+// zeigt deshalb keine Schlüsselauswahl, und die Liste keinen Schlüssel.
+export const showsKeyFields = (category: string): boolean => !isNotAllocable(category)
+export function keyListText(item: Pick<CostItem, 'category' | 'key'>): string {
+  return isNotAllocable(item.category) ? '— trägt der Vermieter' : KEY_LABELS[item.key]
 }
 
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
@@ -265,6 +295,31 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
   if (!form.description.trim()) return { error: 'Bitte eine Beschreibung angeben.' }
   const problem = amountProblem(amount, labor35a, form.category)
   if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
+  // Nicht umlagefähig (#142): Gespeichert wird die neutrale Vorgabe ohne jede Zuordnung. Die
+  // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht; eine Zuordnung, die
+  // aus einer früheren Kostenart im Formular stehengeblieben ist, bliebe sonst als tote Angabe in
+  // der Datenbank und tauchte nach einem Wechsel der Kostenart unbemerkt wieder auf.
+  if (isNotAllocable(form.category)) {
+    return {
+      body: {
+        year,
+        category: form.category,
+        description: form.description.trim(),
+        vendor: form.vendor.trim() || undefined,
+        amountCents: amount,
+        labor35aCents: labor35a || undefined,
+        key: 'area',
+        directUnitId: null,
+        meterType: null,
+        customShares: null,
+        participantUnitIds: null,
+        externalBasis: null,
+        tenancyAmounts: null,
+        selfAmounts: null,
+        invoiceFile: form.invoiceFile ?? null,
+      },
+    }
+  }
   if (amount < 0 && form.key === 'amounts') return { error: CREDIT_WITH_AMOUNTS }
   if (form.key === 'direct' && !form.directUnitId) {
     return { error: 'Bei Direktzuordnung bitte eine Wohnung wählen.' }
@@ -306,7 +361,7 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
     const total = parseAmountNumber(form.externalTotal)
     const totalCents = parseEuro(form.externalTotalAmount)
     if (total === null || !(total > 0) || totalCents === null) {
-      return { error: 'Bitte aus der Gemeinschaftsabrechnung die Summe in der Anlage und die Gesamtkosten eintragen.' }
+      return { error: 'Bitte aus der Gemeinschaftsabrechnung die Summe der Anteile in der Anlage und die Kosten der Gemeinschaft eintragen.' }
     }
     externalBasis = { measure: form.externalMeasure, total, totalCents }
   }

@@ -46,3 +46,19 @@ test('Gemeinschaftsabrechnung mit mehreren eigenen Wohnungen: das Lexikon empfie
   assert.match(GLOSSARY.mea.needed, /mehrere Wohnungen/)
   assert.match(GLOSSARY.mea.needed, /Einzelbeträge/)
 })
+
+test('Hausgeld (Vorschuss): eigener Begriff, abgegrenzt von Abrechnung und Rücklage, Abfluss für die Steuer (#142)', () => {
+  const t = GLOSSARY.homeownersFee
+  assert.equal(t.title, 'Hausgeld (Vorschuss)')
+  assert.match(t.norm, /§ 28 WEG/)
+  assert.match(t.norm, /§ 11 Abs\. 2 EStG/)
+  // Abgrenzung: nicht die Hausgeldabrechnung und nicht die Erhaltungsrücklage.
+  assert.match(t.short + t.needed, /Hausgeldabrechnung/)
+  assert.match(t.short + t.example + t.needed, /Erhaltungsrücklage/)
+  // Steuerlich zählt der Abfluss.
+  assert.match(t.needed, /abfließt|Abfluss/)
+  // Beispiel nachgerechnet: 300 € im Monat sind 3.600 € im Jahr; davon 900 € Rücklage, 2.700 € sofort.
+  assert.match(t.example, /300 €.*3\.600 €.*900 €.*2\.700 €/s)
+  assert.equal(300 * 12, 3600)
+  assert.equal(3600 - 900, 2700)
+})
