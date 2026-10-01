@@ -1,4 +1,4 @@
-import type { CostModel, NotSettled } from './types'
+import type { CostModel, NotSettled, Tenancy, Unit } from './types'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
@@ -60,4 +60,13 @@ export function buildPersonHistory(
   }
   personHistory.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
   return { personHistory }
+}
+
+// Die Wohnung, die der Dialog für ein neues Mietverhältnis vorwählt (#142). Vorher die erste
+// überhaupt, oft die selbstgenutzte. Jetzt die erste vermietbare ohne laufendes Mietverhältnis,
+// sonst die erste vermietbare, und nur wenn es keine gibt, die erste Wohnung.
+export function defaultTenancyUnitId(units: Unit[], tenancies: Tenancy[], today: string): string {
+  const rentable = units.filter((u) => u.participates)
+  const occupied = new Set(tenancies.filter((t) => t.end === null || t.end >= today).map((t) => t.unitId))
+  return (rentable.find((u) => !occupied.has(u.id)) ?? rentable[0] ?? units[0])?.id ?? ''
 }

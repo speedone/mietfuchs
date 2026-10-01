@@ -120,6 +120,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   die betroffene Kostenposition, Wohnung oder das Mietverhältnis zum Bearbeiten, klappt die
   Ablesungen des Zählers auf oder hebt die Zeile im Mietkonto hervor.
   ([#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Erfassen: Hinweis und Vorbelegungen.** Ist die Abrechnung des Jahres abgeschlossen, sagt die
+  Kostenseite das oben und dass Änderungen als Abweichung angezeigt werden; bearbeiten lässt sich
+  weiterhin. Wasser/Abwasser schlägt „nach Verbrauch“ (Kaltwasser) vor, sobald Wohnungen
+  Kaltwasserzähler haben. Eine neue Zahlung in einem früheren Jahr steht auf dem 31.12. dieses
+  Jahres statt auf heute. Ein neues Mietverhältnis wählt die erste vermietbare Wohnung ohne
+  laufendes Mietverhältnis vor statt einer selbstgenutzten.
+  ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
   Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
   das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf

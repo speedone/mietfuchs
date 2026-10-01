@@ -9,6 +9,7 @@ import {
   customSharesSumText,
   itemToForm,
   meterTypeOptions,
+  suggestedKey,
   amountsSumText,
   externalHint,
   externalMismatch,
@@ -390,5 +391,27 @@ describe('Kabelanlage am Objekt (#121)', () => {
     expect(categoryNotice('Kabel/Antenne', 2020, false)).toBe('')
     expect(categoryNotice('Kabel/Antenne', 2023, null)).toBe('')
     expect(categoryNotice('Kabel/Antenne', 2025, true)).toMatch(/nicht mehr umlagefähig/)
+  })
+})
+
+describe('Vorschlag des Schlüssels je Kostenart (#142)', () => {
+  test('Wasser/Abwasser mit Kaltwasserzählern an Wohnungen: nach Verbrauch, Zählertyp Kaltwasser', () => {
+    expect(suggestedKey('Wasser/Abwasser', ['kaltwasser'])).toEqual({ key: 'meter', meterType: 'kaltwasser' })
+  })
+
+  test('ohne Kaltwasserzähler an Wohnungen bleibt es bei der Personenzahl', () => {
+    expect(suggestedKey('Wasser/Abwasser', [])).toEqual({ key: 'persons', meterType: '' })
+    expect(suggestedKey('Wasser/Abwasser', ['strom'])).toEqual({ key: 'persons', meterType: '' })
+  })
+
+  test('andere Kostenarten unverändert', () => {
+    expect(suggestedKey('Müllabfuhr', ['kaltwasser'])).toEqual({ key: 'persons', meterType: '' })
+    expect(suggestedKey('Grundsteuer', ['kaltwasser'])).toEqual({ key: 'area', meterType: '' })
+  })
+
+  test('der Vorschlag steht in beiden Auswahllisten, angezeigt wird also, was gespeichert wird', () => {
+    const s = suggestedKey('Wasser/Abwasser', ['kaltwasser'])
+    expect(costKeyOptions(['kaltwasser'], s.key)).toContain(s.key)
+    expect(meterTypeOptions(['kaltwasser'], s.meterType)).toContain(s.meterType)
   })
 })

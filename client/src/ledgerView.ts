@@ -55,3 +55,14 @@ export function bookingDate(year: number, mo: RentMonth, today: Date): string {
   if (mo.status !== 'notDue') return `${year}-${String(mo.month).padStart(2, '0')}-01`
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 }
+
+// Das Datum, mit dem „+ Zahlung erfassen“ vorbelegt (#142). Im laufenden Jahr heute. Ist ein
+// früheres Jahr gewählt, der 31.12. dieses Jahres: Wer dort nachträgt, meint eine Zahlung dieses
+// Jahres, und mit dem heutigen Datum stünde sie unbemerkt im falschen (für die Steuer zählt das
+// Jahr des Zuflusses). Ein späteres Jahr beginnt mit dem 1. Januar. Örtlich, wie bookingDate.
+export function newPaymentDate(year: number, today: Date): string {
+  const y = today.getFullYear()
+  if (year < y) return `${year}-12-31`
+  if (year > y) return `${year}-01-01`
+  return `${y}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+}

@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../un
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -54,6 +54,12 @@ const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
   flatRates: [] as { from: string; amount: string }[],
+}
+
+// Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
+const localToday = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // Formular aus einem gespeicherten Mietverhältnis füllen; auch „Hier beheben →“ öffnet es so (#142).
@@ -422,7 +428,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         <button
           className="btn secondary"
           style={{ marginTop: 14 }}
-          onClick={() => { setError(''); setTenForm({ unitId: units[0]?.id ?? '', tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
+          onClick={() => { setError(''); setTenForm({ unitId: defaultTenancyUnitId(units, tenancies, localToday()), tenantName: '', personHistory: [{ from: '', persons: '2' }], start: '', end: '', baseRents: [{ from: '', amount: '' }], prepayments: [{ from: '', amount: '' }], ...EMPTY_TENANCY_EXTRA }) }}
           disabled={units.length === 0}
         >
           + Mietverhältnis hinzufügen

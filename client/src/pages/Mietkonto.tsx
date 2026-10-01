@@ -3,7 +3,7 @@ import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
-import { bookingDate, rowStanding, showDecemberNote } from '../ledgerView'
+import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -114,7 +114,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
         actions={
           <button
             className="btn"
-            onClick={() => { setError(''); setForm({ tenancyId: ledger?.rows[0]?.tenancyId ?? '', date: new Date().toISOString().slice(0, 10), amount: '', note: '' }) }}
+            onClick={() => { setError(''); setForm({ tenancyId: ledger?.rows[0]?.tenancyId ?? '', date: newPaymentDate(year, new Date()), amount: '', note: '' }) }}
             disabled={(ledger?.rows.length ?? 0) === 0}
           >
             + Zahlung erfassen

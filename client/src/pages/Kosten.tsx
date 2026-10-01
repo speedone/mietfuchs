@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settings, Tenancy, Unit } from '../types'
+import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -18,9 +18,10 @@ import {
   categoryNotice,
   selfAmountUnits,
   amountProblem,
+  suggestedKey,
   type ItemForm,
 } from '../costForm'
-import { api, errorText, fmtEuro, parseEuro } from '../api'
+import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
@@ -94,6 +95,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
+  // Ist die Abrechnung des Jahres für dieses Objekt abgeschlossen (#142)? Dann ändert eine
+  // Kostenposition sie nicht mehr; die Seite sagt das, statt still weiter erfassen zu lassen.
+  const [closedAt, setClosedAt] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    setClosedAt(null)
+    api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${year}`, propertyId))
+      .then((s) => { if (alive) setClosedAt(s.closed?.closedAt ?? null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [year, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
   // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
@@ -316,6 +328,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         actions={<button className="btn" onClick={() => { setError(''); setForm({ ...EMPTY }) }}>+ Kostenposition</button>}
       />
       {error && !form && <div className="error">{error}</div>}
+      {closedAt && (
+        <div className="notice">
+          Die Abrechnung {year} ist abgeschlossen (am {fmtDate(closedAt.slice(0, 10))}). Änderungen an den Kosten
+          ändern die eingefrorene Abrechnung nicht; die Abrechnungsseite zeigt sie als Abweichung zur heutigen
+          Berechnung. Bearbeiten bleibt möglich, etwa für eine Berichtigung nach dem Wiederöffnen.
+        </div>
+      )}
 
       <div className="card no-print">
         <div className="row">
@@ -562,7 +581,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, key: form.id ? form.key : defaultKeyFor(e.target.value) })}>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, ...(form.id ? {} : suggestedKey(e.target.value, unitMeterTypes)) })}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>

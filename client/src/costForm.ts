@@ -2,7 +2,7 @@
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
 import type { CostItem, CostKey, ExternalMeasure, MeterType, Tenancy, Unit } from './types'
-import { CATEGORIES, KEY_LABELS } from './types'
+import { CATEGORIES, KEY_LABELS, defaultKeyFor } from './types'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
@@ -193,6 +193,15 @@ export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): Co
     (k) => (k !== 'meter' || unitMeterTypes.length > 0 || stored === 'meter') &&
       true,
   )
+}
+
+// Der Schlüssel, den das Formular für eine Kostenart vorschlägt (#142). Wasser/Abwasser nach
+// Personen ist nur richtig, solange es keine Wohnungszähler gibt; mit Kaltwasserzählern an
+// Wohnungen ist der Verbrauch der naheliegende Maßstab (§ 556a Abs. 1 Satz 2 BGB). Der Vorschlag
+// steht immer in beiden Auswahllisten, denn `unitMeterTypes` speist auch sie.
+export function suggestedKey(category: string, unitMeterTypes: MeterType[]): { key: CostKey, meterType: MeterType | '' } {
+  if (category === 'Wasser/Abwasser' && unitMeterTypes.includes('kaltwasser')) return { key: 'meter', meterType: 'kaltwasser' }
+  return { key: defaultKeyFor(category), meterType: '' }
 }
 
 // Summe der vereinbarten Anteile in Prozent (unlesbare Eingaben zählen als 0)
