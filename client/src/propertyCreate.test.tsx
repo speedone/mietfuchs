@@ -9,6 +9,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { Property, Unit } from './types'
 import App from './App'
 
+// Ganzseitentest: unter Last braucht er mehr als die 5 Sekunden der Voreinstellung, wie
+// tenantChange.test.tsx.
+vi.setConfig({ testTimeout: 20000 })
+
 const objekt = (id: string, name: string, extra: Partial<Property> = {}): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null, ...extra,
 })

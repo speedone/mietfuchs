@@ -46,3 +46,43 @@ test('Gemeinschaftsabrechnung mit mehreren eigenen Wohnungen: das Lexikon empfie
   assert.match(GLOSSARY.mea.needed, /mehrere Wohnungen/)
   assert.match(GLOSSARY.mea.needed, /Einzelbeträge/)
 })
+
+test('Hausgeld (Vorschuss): eigener Begriff, abgegrenzt von Abrechnung und Rücklage, Abfluss für die Steuer (#142)', () => {
+  const t = GLOSSARY.homeownersFee
+  assert.equal(t.title, 'Hausgeld (Vorschuss)')
+  assert.match(t.norm, /§ 28 WEG/)
+  assert.match(t.norm, /§ 11 Abs\. 2 EStG/)
+  // Abgrenzung: nicht die Hausgeldabrechnung und nicht die Erhaltungsrücklage.
+  assert.match(t.short + t.needed, /Hausgeldabrechnung/)
+  assert.match(t.short + t.example + t.needed, /Erhaltungsrücklage/)
+  // Steuerlich zählt der Abfluss.
+  assert.match(t.needed, /abfließt|Abfluss/)
+  // Beispiel nachgerechnet: 300 € im Monat sind 3.600 € im Jahr; davon 900 € Rücklage, 2.700 € sofort.
+  assert.match(t.example, /300 €.*3\.600 €.*900 €.*2\.700 €/s)
+  assert.equal(300 * 12, 3600)
+  assert.equal(3600 - 900, 2700)
+})
+
+test('Einheit ohne Anschluss: eigener Begriff mit nachgerechnetem Beispiel (#142)', () => {
+  const t = GLOSSARY.noConnection
+  assert.equal(t.title, 'Einheit ohne Anschluss')
+  assert.match(t.short, /Garage/)
+  // 600 € Wasser nach Verbrauch, zwei Wohnungen mit 40 und 20 m³, die Garage ohne Wasser: 400 € und 200 €.
+  assert.match(t.example, /600 €.*40.*20 m³.*400 €.*200 €/s)
+  assert.equal(600 * 40 / 60, 400)
+  assert.equal(600 * 20 / 60, 200)
+})
+
+test('Einliegerwohnung: Anlage in Mietfuchs, Folgen und ein nachgerechnetes Beispiel (#142)', () => {
+  const t = GLOSSARY.granny
+  assert.equal(t.title, 'Einliegerwohnung')
+  assert.match(t.norm, /§ 2 HeizkostenV/)
+  assert.match(t.needed, /selbstgenutzt/)
+  assert.match(t.needed, /Hauptzähler/)
+  assert.match(t.needed, /Eigenanteil/)
+  // 120 m² eigen + 45 m² vermietet = 165 m², Grundsteuer 600 €: 45/165 = 163,64 €, der Rest 436,36 €.
+  assert.match(t.example, /120 m².*45 m².*165 m².*600 €.*163,64 €.*436,36 €/s)
+  assert.equal(120 + 45, 165)
+  assert.equal(Math.round((60000 * 45) / 165), 16364)
+  assert.equal(60000 - 16364, 43636)
+})

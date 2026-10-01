@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
 import { isNotAllocable, usageOf } from '../types'
+import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
@@ -125,7 +126,8 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     }
 
     // 3. Zählerstände — nur relevant, wenn verbrauchsabhängig umgelegt wird
-    const meterTypes = new Set(yearItems.filter((c) => c.key === 'meter').map((c) => c.meterType))
+    // Nicht umlagefähige Positionen zählen nicht mit (#142, cockpitChecks.ts).
+    const meterTypes = meterTypesInUse(yearItems)
     const heatingIds = new Set(heatingWithoutConsumption(settlement))
     const heatingWithout = yearItems.filter((c) => heatingIds.has(c.id))
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
@@ -152,7 +154,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
     // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
     // Auch die Gemeinschaftsabrechnung (#105): Sie verteilt über die Wohnungen der Einheit.
-    const basisKeys = yearItems.some((c) => c.key === 'area' || c.key === 'units' || c.key === 'persons' || c.key === 'external')
+    const basisKeys = usesUnitBasis(yearItems)
     // Wohnungen, die an einer Position „laut Gemeinschaftsabrechnung“ nach MEA teilnehmen, und
     // denen die Anteile fehlen; wie in der Berechnung nur die Teilnehmer (Durchsicht zu #105).
     const meaIds = new Set(

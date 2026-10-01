@@ -32,7 +32,7 @@ import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
   changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, invoiceFilesInUse,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
-  TenantChangeError, writeSettings, type CollectionName,
+  TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -373,6 +373,13 @@ for (const coll of COLLECTIONS) {
     res.json({ ok: true })
   })
 }
+
+// Was das Löschen einer Wohnung mitnähme (#142), für die Löschfrage der Oberfläche.
+app.get('/api/units/:id/dependents', async (req, res) => {
+  const deps = await readData((db) => unitDependents(db, req.params.id))
+  if (!deps) return res.status(404).json({ error: 'Diese Wohnung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(deps)
+})
 
 // Der Mieterwechsel in einem Schritt (#150): altes Mietverhältnis beenden, Zwischenablesungen,
 // Nachmieter, alles in einer Transaktion. Begründung und Prüfungen in db/repository.ts.
@@ -793,7 +800,7 @@ app.get('/api/backup', async (req, res) => {
 
   const stamp = new Date().toISOString().slice(0, 10)
   res.set('Content-Type', 'application/zip')
-  res.set('Content-Disposition', `attachment; filename="nebenkosten-backup-${stamp}.zip"`)
+  res.set('Content-Disposition', `attachment; filename="mietfuchs-backup-${stamp}.zip"`)
   res.send(zip.toBuffer())
 })
 
@@ -810,7 +817,7 @@ type ReadBackup = {
   // `null`, wenn das Archiv keine db.json führt: Auf einem Rechner, der nie eine hatte,
   // entsteht sie seit dem Umstieg der Routen gar nicht mehr.
   dbText: string | null
-  files: { fileName: string, content: Buffer }[]
+  files: { fileName: string, content: Buffer, time: Date }[]
   // Die Datenbank aus dem Archiv, oder `null` bei einem Archiv aus einer Version vor ihr. Das
   // ist kein Randfall: Genau solche Archive liegen bei den heutigen Nutzern.
   database: Buffer | null
@@ -898,7 +905,9 @@ function readBackup(buffer: Buffer): ReadBackup {
   // Alles in den Speicher lesen, bevor geschrieben wird: Scheitert ein Eintrag, ist noch nichts ersetzt
   return {
     dbText,
-    files: files.map(({ fileName, e }) => ({ fileName, content: e.getData() })),
+    // Die Zeit des Eintrags kommt mit (#142): Ohne sie trüge jeder Beleg danach das Datum der
+    // Wiederherstellung, und im Belegarchiv sähe eine alte Rechnung aus wie eben hochgeladen.
+    files: files.map(({ fileName, e }) => ({ fileName, content: e.getData(), time: e.header.time })),
     database: databaseEntry ? databaseEntry.getData() : null,
     origin: originText(info),
   }
@@ -1089,7 +1098,14 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // keine: Der Umstieg beim nächsten Start hielte sie für einen zu übernehmenden Bestand.
   if (backup.dbText !== null) fs.writeFileSync(current, backup.dbText, 'utf8')
   else fs.rmSync(current, { force: true })
-  for (const { fileName, content } of backup.files) fs.writeFileSync(path.join(UPLOAD_DIR, fileName), content)
+  for (const { fileName, content, time } of backup.files) {
+    const target = path.join(UPLOAD_DIR, fileName)
+    fs.writeFileSync(target, content)
+    // Das Datum ist eine Auskunft: Scheitert es (etwa auf einem Netzlaufwerk), bleibt der Beleg.
+    try {
+      if (!Number.isNaN(time.getTime())) fs.utimesSync(target, time, time)
+    } catch { /* Datum bleibt das von heute */ }
+  }
 
   let notes: string[]
   try {

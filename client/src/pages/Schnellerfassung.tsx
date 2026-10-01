@@ -326,7 +326,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         vendor: entry.vendor,
         amountCents: amount,
         labor35aCents: labor || undefined,
-        key: p.key,
+        // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
+        key: isNotAllocable(p.category) ? 'area' : p.key,
         invoiceFile: entry.serverFile,
       }),
     })
@@ -569,11 +570,14 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                             </select>
                           </td>
                           <td>
+                            {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
+                            {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
                             <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
                               {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
                                 <option key={k} value={k}>{KEY_LABELS[k]}</option>
                               ))}
                             </select>
+                            )}
                           </td>
                           <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                           <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
