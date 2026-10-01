@@ -53,6 +53,9 @@ type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 // Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
 type ExtractPos = AiPosition & { checked: boolean }
 
+// Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
+const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
+
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
 type QueueEntry = {
@@ -443,6 +446,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                       <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
                     )}
                     {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
+                    {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
+                      <div className="muted">
+                        {r.source.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 })} {EXTERNAL_UNIT_LABELS[r.source.externalBasis.measure]} in der Anlage; Kosten der Gemeinschaft {year} €:
+                      </div>
+                    )}
                     {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
                       <input
                         aria-label={`Kosten der Gemeinschaft ${year} für ${r.description}`}
