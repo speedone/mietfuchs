@@ -402,6 +402,10 @@ app.delete('/api/properties/:id', async (req, res) => {
 })
 
 // ---------- Abrechnung ----------
+// Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
+// begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate.
+const today = (): string => new Date().toISOString().slice(0, 10)
+
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
 app.get('/api/settlement/:year', async (req, res) => {
   const year = Number(req.params.year)
@@ -420,10 +424,10 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year)), year, new Date().toISOString().slice(0, 10))
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), year, today())
     return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
-  res.json({ ...computeSettlement(snapshotFor(stock, property, year)), closed: null })
+  res.json({ ...computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -465,7 +469,7 @@ app.post('/api/settlement/:year/close', async (req, res) => {
       year,
       closedAt: new Date().toISOString(),
       sentAt,
-      settlement: computeSettlement(snapshotFor(await readStock(db), property, year)),
+      settlement: computeSettlement(snapshotFor(await readStock(db), property, year), { asOf: today() }),
     })
     return false
   })

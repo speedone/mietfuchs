@@ -515,7 +515,12 @@ test('Geraderücken: der feste Monatsbetrag neben einer leeren Staffel bewegt da
   // Die Abrechnung bleibt bis auf den Cent gleich, der Verbrauch ohnehin. Ausgenommen ist der
   // Wortlaut des Hinweises auf einen Rückstand (#133): Er nennt den offenen Betrag des
   // Mietkontos und bewegt sich deshalb mit ihm; dieselben Hinweise erscheinen vorher wie nachher.
-  const ohneWortlaut = (s: typeof vorher.settlement) => ({ ...s, notices: s.notices.map((n) => n.code), warnings: [] })
+  const arrearsTexts = new Set(vorher.settlement.notices.concat(nachher.settlement.notices).filter((n) => n.code === 'prepayment.arrears').map((n) => n.text))
+  const ohneWortlaut = (s: typeof vorher.settlement) => ({
+    ...s,
+    notices: s.notices.map((n) => (n.code === 'prepayment.arrears' ? { ...n, text: '' } : n)),
+    warnings: s.warnings.map((w) => (arrearsTexts.has(w) ? '' : w)),
+  })
   assert.deepEqual(ohneWortlaut(nachher.settlement), ohneWortlaut(vorher.settlement), 'Abrechnung')
   assert.ok(vorher.settlement.notices.some((n) => n.code === 'prepayment.arrears'), 'der Bestand zeigt einen Rückstand')
   assert.deepEqual(nachher.consumption, vorher.consumption, 'Verbrauch')

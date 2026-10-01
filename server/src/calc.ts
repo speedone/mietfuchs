@@ -879,7 +879,13 @@ export const HEATING_CATEGORY = 'Heizung und Warmwasser'
 const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
   (item.category === HEATING_CATEGORY ? t.heatingModel : t.costModel) ?? 'settlement'
 
-export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
+// Optionen der Abrechnung. `asOf` (JJJJ-MM-TT) ist der Stichtag für den Hinweis auf einen
+// Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
+// nach dem heutigen Datum, sonst rechneten dieselben Daten an zwei Tagen verschieden. Ohne
+// Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
+export type SettlementOptions = { asOf?: string }
+
+export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   const year = snapshot.year
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
@@ -1536,13 +1542,26 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // genau den Fall, um den es geht.
   // Gemeldet wird nur, wo eine Vorauszahlung angerechnet wird: Bei Pauschale und Inklusivmiete
   // fällt die Abrechnung oben weg oder rechnet nichts an.
+  // **Fällig ist nur, was vor dem Monat des Stichtags liegt.** Das Mietkonto führt das Soll für alle
+  // zwölf Monate, im laufenden Jahr also auch für die kommenden; ohne Grenze stünde dann bei jedem
+  // Mieter ein Rückstand. Die Miete ist bis zum dritten Werktag fällig (§ 556b Abs. 1 BGB), und
+  // eine Überweisung braucht ein paar Tage, bis sie gebucht ist. Den laufenden Monat erst ab einem
+  // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
+  // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
+  // Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts.
+  const dueMonths = !options.asOf || options.asOf.slice(0, 4) > String(year)
+    ? 12
+    : options.asOf.slice(0, 4) < String(year) ? 0 : Number(options.asOf.slice(5, 7)) - 1
   const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
-  if (ledgerInUse) {
+  if (ledgerInUse && dueMonths > 0) {
     const ledgerRows = new Map(rentLedger(snapshot).rows.map((r) => [r.tenancyId, r]))
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
       const row = ledgerRows.get(st.tenancyId)
-      if (!row || row.balanceCents >= 0) continue
+      if (!row) continue
+      const dueCents = row.months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      const openCents = dueCents - row.paidYearCents
+      if (openCents <= 0) continue
       // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
       // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
       // man erst im Mietkonto.
@@ -1550,7 +1569,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         ? 'stehen auch Kaltmiete und Pauschale'
         : row.baseRentYearCents > 0 ? 'steht auch die Kaltmiete' : row.flatRateYearCents > 0 ? 'steht auch die Pauschale' : ''
       warn('prepayment.arrears',
-        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(-row.balanceCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
+        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
+          'Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. ' +
           `Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto${alsoInSoll ? `: Im Soll ${alsoInSoll}, der Rückstand kann ebenso sie betreffen` : ''}. ` +
           'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
           'hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.',

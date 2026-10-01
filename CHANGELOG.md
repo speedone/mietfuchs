@@ -107,8 +107,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nicht an die Korrektur dachte, verschickte ein zu hohes Guthaben. Jetzt erscheint eine Warnung
   mit dem offenen Betrag, solange für das Jahr keine gezahlte Vorauszahlung eingetragen ist.
   Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
-  wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Wer gar keine Zahlungen erfasst, bekommt
-  den Hinweis nicht.
+  wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Im laufenden Jahr zählen nur die Monate
+  vor dem aktuellen. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
   ([#133](https://github.com/speedone/mietfuchs/issues/133))
 - **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
   einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
