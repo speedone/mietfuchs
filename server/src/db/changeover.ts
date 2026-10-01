@@ -92,6 +92,8 @@ export type ChangeoverResult = {
   notes: string[]
   // Der Pfad des Protokolls, sofern eines geschrieben wurde.
   protocol: string | null
+  // Siehe DatabaseState in shared/types.ts: der Bestand liegt noch ganz in der db.json (#89).
+  pending?: boolean
   // Die Datenbank, mit der weitergearbeitet wird. `null`, wenn sie sich nicht öffnen lässt;
   // dann arbeitet Mietfuchs ohne sie weiter.
   database: OpenedDatabase | null
@@ -352,16 +354,36 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       // ersetzt ist. **Ausdrücklich nicht gebaut ist die Brücke „dann steige eben noch einmal
       // um"**: Sie klänge hilfreich und wäre ein zweiter stiller Überschreiber, denn eine
       // hereinkopierte alte Datei verwürfe den neueren Stand der Datenbank, ohne zu fragen.
+      // Ein eigener Zustand und nicht `none` (#89): `none` ist auch jede frische Installation,
+      // und die Oberfläche blendet ihn aus. Hier soll der Nutzer die Meldung sehen.
+      //
+      // **Zwei Lagen, zwei Meldungen** (Befund der Durchsicht). Stehen nur Einstellungen darin,
+      // hat jemand zuerst gestartet und etwas gespeichert (das Cockpit fragt beim ersten Start nach
+      // der Update-Prüfung) und danach die alte Datei hineingelegt: Dann ist die Datei der ganze
+      // Bestand, und „schon gelaufen“ wäre falsch und gefährlich. Sonst trägt die Datenbank
+      // wirklich einen Bestand. In beiden Fällen ist der Weg dasselbe Wiederherstellen, und das
+      // nimmt nur ZIP-Archive und ersetzt den ganzen Stand; beides steht dabei. Welche Tabelle
+      // zuerst gefüllt ist, steht in den Notizen und nicht in der Meldung, denn die Oberfläche merkt
+      // sich eine weggeklickte Meldung an ihrem Wortlaut, und der soll sich nicht mit jeder neuen
+      // Wohnung ändern.
+      const onlySettings = filled === 'Einstellungen' || filled === 'KI-Plätze'
+      const way =
+        'Packen Sie die Datei db.json dazu in ein ZIP-Archiv und stellen Sie es unter Einstellungen ' +
+        'mit „Backup wiederherstellen …“ wieder her. Dort wird geprüft und nachgerechnet, bevor etwas ' +
+        'ersetzt wird; ersetzt wird dann aber der ganze jetzige Stand, der bisherige bleibt als ' +
+        'mietfuchs.sqlite.vor-restore im Datenordner.'
       return {
-        state: 'none',
-        message:
-          `Die Datenbank enthält bereits Daten (${filled}); der Umstieg ist schon gelaufen. ` +
-          'Im Datenordner liegt trotzdem eine Datei db.json. Gelesen und geschrieben wird sie ' +
-          'nicht mehr, Ihr laufender Stand ist der in der Datenbank. Enthält sie Daten, die Sie ' +
-          'noch brauchen, spielen Sie sie als Backup über die Einstellungen ein: Dort wird ' +
-          'geprüft und nachgerechnet, bevor etwas ersetzt wird. Brauchen Sie sie nicht, können ' +
-          'Sie die Datei liegen lassen; sie stört nicht.',
-        notes: [], protocol: null, database: opened,
+        state: 'stale',
+        message: onlySettings
+          ? 'Ihre Daten aus der Datei db.json sind noch nicht übernommen: In der Datenbank standen beim ' +
+            'Start schon Einstellungen, und dann unterbleibt die automatische Übernahme, damit nichts ' +
+            `überschrieben wird. So übernehmen Sie sie: ${way}`
+          : 'Die Datenbank trägt bereits Ihren Bestand, und im Datenordner liegt daneben noch eine ' +
+            'Datei db.json. Automatisch übernommen wird sie nicht, das würde den jetzigen Stand ' +
+            `überschreiben. Brauchen Sie etwas daraus: ${way} Brauchen Sie sie nicht, können Sie ` +
+            'die Datei löschen oder liegen lassen.',
+        notes: [`In der Datenbank gefunden: ${filled}.`], protocol: null, database: opened,
+        ...(onlySettings ? { pending: true } : {}),
       }
     }
 

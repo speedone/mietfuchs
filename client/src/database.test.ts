@@ -42,3 +42,11 @@ describe('Hinweis zum Umstieg in die Datenbank', () => {
     expect(databaseHint(gescheitert, 'Ein ganz anderer Grund.')).not.toBeNull()
   })
 })
+
+describe('Unterbliebener Umstieg (#89)', () => {
+  test('eine hereingelegte db.json neben einer gefüllten Datenbank wird gesagt, als Hinweis und nicht als Fehler', () => {
+    const hint = databaseHint(state({ state: 'stale', message: 'Die Datenbank enthält bereits Daten …', notes: [] }), null)
+    expect(hint).toEqual({ kind: 'stale', message: 'Die Datenbank enthält bereits Daten …', notes: [] })
+    expect(databaseHint(state({ state: 'stale', message: 'Die Datenbank enthält bereits Daten …', notes: [] }), 'Die Datenbank enthält bereits Daten …')).toBeNull()
+  })
+})

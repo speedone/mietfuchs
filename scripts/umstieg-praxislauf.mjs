@@ -535,6 +535,28 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   gleich(sicherungen, ['mietfuchs.sqlite.vor-0001_objekte'], 'Update: genau eine Sicherung')
 })
 
+fall(12, 'Alte db.json hineingelegt, nachdem schon gespeichert wurde (#89)', async () => {
+  // Der Weg aus #89: Beim ersten Start fragt das Cockpit nach der Update-Prüfung, beide Antworten
+  // speichern die Einstellungen, und danach wird die alte Datei hineingelegt. Der Umstieg
+  // unterbleibt zu Recht; gesagt werden muss es trotzdem.
+  const dataDir = tempDir()
+  await withServer(dataDir, async ({ base }) => {
+    const res = await fetch(`${base}/api/settings`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ updateCheck: 'off' }) })
+    gleich(res.status, 200, 'die Einstellungen sind gespeichert')
+  })
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify(bestand02()))
+  await withServer(dataDir, async ({ base }) => {
+    const bericht = await holen(base, '/healthz')
+    gleich(bericht.database?.changeover?.state, 'stale', 'der unterbliebene Umstieg hat seinen eigenen Zustand')
+    enthaelt(bericht.database?.changeover?.message, 'noch nicht übernommen', 'die Meldung sagt, dass die Daten noch nicht übernommen sind')
+    enthaelt(bericht.database?.changeover?.message, 'ZIP-Archiv', 'die Meldung nennt den gangbaren Weg über ein ZIP-Archiv')
+    gleich(bericht.status === 'ok', false, 'der Bericht meldet, dass die Daten noch nicht übernommen sind')
+    const res = await fetch(`${base}/api/units`)
+    gleich(res.status, 503, 'die Datenrouten sperren, damit kein zweiter, leerer Bestand entsteht')
+    gleich(fs.existsSync(path.join(dataDir, 'db.json')), true, 'die Datei bleibt, wo sie ist')
+  })
+})
+
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete

@@ -270,8 +270,8 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
 
     writeFile(dataDir, fullDb())
     await changeoverIn(dataDir, async (result) => {
-      assert.equal(result.state, 'none')
-      assert.match(result.message, /enthält bereits/)
+      assert.equal(result.state, 'stale', 'ein unterbliebener Umstieg mit Hinweis, nicht der stumme Normalfall (#89)')
+      assert.match(result.message, /trägt bereits Ihren Bestand/)
       // **Und der Nutzer erfährt, dass da eine db.json liegt.** Ein gelungener Umstieg benennt
       // sie um, hier liegt also eine, die Mietfuchs nicht hinterlassen hat. Zwei Lagen führen
       // dorthin und verlangen entgegengesetzte Antworten: Jemand hat eine alte Sicherung von
@@ -281,10 +281,35 @@ test('Eine gefüllte Datenbank wird nicht angerührt', async () => {
       // bevor etwas ersetzt ist.
       assert.match(result.message, /db\.json/, 'die Meldung verschweigt die vorgefundene Datei')
       assert.match(result.message, /Backup/, 'die Meldung nennt keinen Weg')
+      // Befunde der Durchsicht (#89): Der Weg muss sich gehen lassen, das Wiederherstellen nimmt
+      // nur ZIP-Archive; und es ersetzt den ganzen Stand, das darf die Meldung nicht verschweigen.
+      assert.match(result.message, /ZIP-Archiv/)
+      assert.match(result.message, /ersetzt/)
+      assert.doesNotMatch(result.message, /Wohnungen/, 'welche Tabelle zuerst gefüllt ist, steht in den Notizen, nicht in der Meldung')
     })
     const stock = await stockOf(dataDir)
     assert.deepEqual(stock.units.map((u) => u.id), ['schon-da'], 'der vorhandene Bestand ist unverändert')
     assert.equal(fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME)), false)
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
+test('Stehen nur Einstellungen in der Datenbank, sagt die Meldung, dass die Daten noch nicht übernommen sind (#89)', async () => {
+  // Der Weg aus #89: Das Cockpit speichert beim ersten Start die Einstellungen, danach wird die
+  // alte Datei hineingelegt. Die Datei ist dann der ganze Bestand, und „der Umstieg ist schon
+  // gelaufen“ wäre falsch und gefährlich.
+  const dataDir = tempDir()
+  try {
+    const nurEinstellungen = straightenForDatabase({ ...fullDb(), units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [] })
+    ;(await openDatabaseWithStock(dataDir, nurEinstellungen)).close()
+    writeFile(dataDir, fullDb())
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'stale')
+      assert.match(result.message, /noch nicht übernommen/)
+      assert.match(result.message, /ZIP-Archiv/)
+      assert.doesNotMatch(result.message, /schon gelaufen|stört nicht/)
+    })
   } finally {
     removeDir(dataDir)
   }

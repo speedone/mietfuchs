@@ -163,3 +163,12 @@ test('Healthcheck: nicht beschreibbarer Belegordner ist ein Fehler', (t) => {
     fs.chmodSync(path.join(dir, 'uploads'), 0o700)
   }
 })
+
+test('Unterbliebener Umstieg mit nur Einstellungen in der Datenbank sperrt die Daten wie ein gescheiterter (#89)', async () => {
+  // Die db.json ist dann der ganze Bestand. Was der Vermieter in das leere Haus schriebe, stünde
+  // als zweiter Bestand daneben (Befund der zweiten Integrationsdurchsicht).
+  const { databaseUnavailable } = await import('../src/health.ts')
+  const db = (changeover: DatabaseState['changeover']): DatabaseState => ({ open: true, file: 'x', migrations: 1, detail: 'geöffnet', changeover })
+  assert.match(databaseUnavailable(db({ state: 'stale', message: 'm', notes: [], pending: true })) ?? '', /noch nicht übernommen/)
+  assert.equal(databaseUnavailable(db({ state: 'stale', message: 'm', notes: [] })), null, 'mit echtem Bestand bleibt die Datenbank benutzbar')
+})

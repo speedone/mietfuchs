@@ -1414,7 +1414,7 @@ try {
 // was mit seinen Daten geschehen ist. Beim Start aus einem Linux-Paket gibt es keine Konsole,
 // auf der die Meldung sonst stünde.
 function databaseState(): DatabaseState {
-  const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes }
+  const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes, ...(changeover.pending ? { pending: true } : {}) }
   if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie }
   return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie }
 }
@@ -1477,6 +1477,8 @@ const server = app.listen(PORT, (err) => {
     if (changeover.protocol) console.log(`Protokoll des Umstiegs: ${changeover.protocol}`)
   } else if (changeover.state === 'failed') {
     console.error(changeover.message)
+  } else if (changeover.state === 'stale') {
+    console.log(`Hinweis: ${changeover.message}`)
   }
   if (STANDALONE) {
     // Aus einem Linux-Paket startet Mietfuchs ohne Konsolenfenster (Terminal=false), beendet

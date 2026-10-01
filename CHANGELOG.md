@@ -68,6 +68,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Eine alte `db.json` neben einer schon gefüllten Datenbank bleibt nicht mehr stumm.** Wer
+  Mietfuchs zuerst startet, etwas speichert und danach seine alte Datei in den Datenordner legt,
+  sah bisher ein leeres Haus ohne Erklärung. Der Umstieg unterbleibt weiterhin mit Absicht, damit
+  kein neuerer Stand überschrieben wird. Jetzt erscheint aber ein Hinweis, der erklärt, wie Sie
+  die alte Datei als ZIP-Archiv über „Backup wiederherstellen …“ prüfen und übernehmen. Stehen in
+  der Datenbank bis dahin nur Einstellungen, zeigt Mietfuchs keine leeren Seiten an, in die man
+  aus Versehen einen zweiten Bestand schreiben könnte.
+  ([#89](https://github.com/speedone/mietfuchs/issues/89))
 - **Einzelbeträge vom Messdienst: Der Betrag Ihrer eigenen Wohnung lässt sich jetzt eintragen.**
   Vorher steckte er im Rest beim Vermieter, und die Steuerübersicht nannte den privaten, nicht
   abziehbaren Anteil zu niedrig. Beim Schlüssel „Einzelbeträge je Mieter“ steht dafür unter den
