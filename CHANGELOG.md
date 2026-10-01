@@ -113,8 +113,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
   einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
   ein ganzes Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil
-  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, steht kein Vorschlag
-  mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12.,
+  steht kein Vorschlag mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
   ([#134](https://github.com/speedone/mietfuchs/issues/134))
 - **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
   Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen

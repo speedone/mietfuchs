@@ -1608,14 +1608,20 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       })),
     },
   }
+  const tenancyEnd = new Map(partTenancies.map((t) => [t.id, t.end]))
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
     // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet.
     // Die Kosten fallen künftig für zwölf Monate an; wer erst im Jahr einzog, hat einen Anteil für
-    // weniger Tage, der deshalb auf das volle Jahr hochgerechnet wird (#134). Endet das
-    // Mietverhältnis im Jahr, gibt es keine künftige Vorauszahlung und keinen Vorschlag; 0 heißt
-    // für die Oberfläche „nichts anzeigen“.
-    st.suggestedMonthlyCents = st.periodEnd < yTo || st.days <= 0
+    // weniger Tage, der deshalb auf das volle Jahr hochgerechnet wird (#134). Das ist eine
+    // Vergröberung: Bei einem kurzen Teiljahr vervielfacht die Hochrechnung jede Zufälligkeit
+    // (ein Einzug im November ergibt den Faktor sechs), und verbrauchsabhängige Kosten wie Heizung
+    // fallen nicht gleichmäßig übers Jahr an, ein Winterhalbjahr ergibt also zu viel, ein Sommer
+    // zu wenig. Es bleibt ein Vorschlag, den der Vermieter vor dem Versand prüft.
+    // Endet das Mietverhältnis im Jahr, auch zum 31.12., gibt es keine künftige Vorauszahlung und
+    // keinen Vorschlag; 0 heißt für die Oberfläche „nichts anzeigen“.
+    const end = tenancyEnd.get(st.tenancyId)
+    st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0
       ? 0
       : Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100
   }

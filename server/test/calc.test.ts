@@ -848,6 +848,12 @@ test('Vorschlag neue Vorauszahlung bei Auszug im Jahr: keiner', () => {
   assert.equal(st.suggestedMonthlyCents, 0)
 })
 
+test('Vorschlag neue Vorauszahlung bei Auszug zum 31.12.: keiner, es gibt keine künftige Vorauszahlung', () => {
+  const st = statementOf(computeSettlement(snapshotFromDb(teiljahr('2020-01-01', '2025-12-31'), 2025)), 't')
+  assert.ok(st.totalShareCents > 0)
+  assert.equal(st.suggestedMonthlyCents, 0)
+})
+
 test('Mietkonto: Soll = Kaltmiete + Vorauszahlung, Zahlungen füllen Monate der Reihe nach', () => {
   const db: Db = {
     ...emptyDb(),
