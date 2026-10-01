@@ -3892,6 +3892,24 @@ test('Einheit ohne Anschluss (#117): gespeichert, gelesen, unbekannte Typen fall
   }
 })
 
+test('Kabelanlage ab dem 01.12.2021 (#121): am Objekt gespeichert, und die Abrechnung 2023 warnt', async () => {
+  const s = await startServer()
+  try {
+    const [objekt] = await s.api<Property[]>('/api/properties')
+    const p = await s.api<Property>(`/api/properties/${objekt?.id}`, { method: 'PUT', body: JSON.stringify({ cableBuiltBeforeDec2021: false }) })
+    assert.equal(p.cableBuiltBeforeDec2021, false)
+    const u = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 50, participates: true }) })
+    await s.api('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: u.id, tenantName: 'M', persons: 1, personHistory: [], start: '2023-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }) })
+    await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2023, category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }) })
+    const abrechnung = await s.api<Settlement>('/api/settlement/2023')
+    assert.deepEqual(abrechnung.notices?.map((n) => n.code), ['tv-signal.new-system'])
+    const zurueck = await s.api<Property>(`/api/properties/${objekt?.id}`, { method: 'PUT', body: JSON.stringify({ cableBuiltBeforeDec2021: null }) })
+    assert.equal(zurueck.cableBuiltBeforeDec2021, null, 'unbekannt ist ein ausdrücklicher Wert')
+  } finally {
+    s.stop()
+  }
+})
+
 test('Objekt: die Einstellungen führen Hausname und Adresse nicht mehr, auch wenn ein alter Tab sie schickt', async () => {
   const s = await startServer()
   try {

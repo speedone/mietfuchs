@@ -92,6 +92,8 @@ export const properties = sqliteTable(
     landlordName: text('landlord_name'),
     iban: text('iban'),
     paymentDeadlineDays: integer('payment_deadline_days'),
+    // Kabelanlage vor dem 01.12.2021 errichtet (#121); null heißt unbekannt.
+    cableBuiltBeforeDec2021: integer('cable_built_before_dec_2021', { mode: 'boolean' }),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),

@@ -508,7 +508,7 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
           }
         >
           {error && <div className="error">{error}</div>}
-          {categoryNotice(form.category, year) && <div className="notice">{categoryNotice(form.category, year)}</div>}
+          {categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null) && <div className="notice">{categoryNotice(form.category, year, property?.cableBuiltBeforeDec2021 ?? null)}</div>}
           <div className="row">
             <label className="field grow">
               Kostenart

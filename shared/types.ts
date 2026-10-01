@@ -28,6 +28,9 @@ export type Property = {
   landlordName: string | null
   iban: string | null
   paymentDeadlineDays: number | null
+  // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
+  // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
+  cableBuiltBeforeDec2021?: boolean | null
 }
 
 export type Unit = {

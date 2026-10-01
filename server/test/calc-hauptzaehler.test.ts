@@ -321,3 +321,12 @@ test('Durchsicht: Küche ganzjährig, Bad im Jahr getauscht, dazu ein Zähler au
   assert.deepEqual(codes(s), [])
   assert.equal(s.selfUsedShareCents, 80000)
 })
+
+test('§ 2 HeizkostenV: bei einer Eigentumswohnung kein Rat, die eigene Wohnung anzulegen (#121, Snapshot.property)', () => {
+  const heating: SnapshotCostItem = { id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }
+  const base = snapshotOf({ units: [unit('el')], tenancies: [{ ...tenancy('t', 'el'), heatingModel: 'inclusive' }], costItems: [heating], meters: [], readings: [], payments: [], closedSettlements: [] }, 2025)
+  const etw = computeSettlement({ ...base, property: { kind: 'etw', cableBuiltBeforeDec2021: null } })
+  assert.doesNotMatch(etw.warnings.join(' '), /Wohnen Sie selbst im Haus/)
+  const efh = computeSettlement({ ...base, property: { kind: 'efh', cableBuiltBeforeDec2021: null } })
+  assert.match(efh.warnings.join(' '), /Wohnen Sie selbst im Haus/)
+})

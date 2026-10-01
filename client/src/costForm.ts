@@ -297,8 +297,13 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
 // Berechnung in der Abrechnung; hier steht sie schon beim Erfassen. Mit #108 kommen beide aus
 // dem Regelverzeichnis.
-export function categoryNotice(category: string, year: number): string {
-  if (category !== 'Kabel/Antenne' || year < 2024) return ''
+// `cableBuiltBeforeDec2021` vom Objekt (#121): Bei einer Anlage ab dem 01.12.2021 schon ab 2021.
+export function categoryNotice(category: string, year: number, cableBuiltBeforeDec2021: boolean | null = null): string {
+  if (category !== 'Kabel/Antenne') return ''
+  if (cableBuiltBeforeDec2021 === false && year >= 2021) {
+    return 'Die Kabel- oder Antennenanlage dieses Objekts wurde ab dem 01.12.2021 errichtet: Die Gebühren für das TV-Signal waren nie umlagefähig, auch Betriebsstrom und Wartung nicht; bitte als „Nicht umlagefähig“ erfassen.'
+  }
+  if (year < 2024) return ''
   return year === 2024
     ? 'Kabelfernsehen (TV-Signal) ist nur bis zum 30.06.2024 umlagefähig, und nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde. Umlegen Sie für 2024 höchstens das erste Halbjahr; den Rest bitte als „Nicht umlagefähig“ erfassen. Danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'
     : 'Kabelfernsehen (TV-Signal) ist seit dem 01.07.2024 nicht mehr umlagefähig; bitte als „Nicht umlagefähig“ erfassen. Umlagefähig bleibt nur der Betriebsstrom einer Anlage, die vor dem 01.12.2021 errichtet wurde, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'

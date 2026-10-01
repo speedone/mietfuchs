@@ -324,3 +324,12 @@ describe('Durchsicht zu #105', () => {
     expect(buildCostItemBody(f, UNITS, 2025, tenancies)).toMatchObject({ body: { tenancyAmounts: { t2: 50000 } } })
   })
 })
+
+describe('Kabelanlage am Objekt (#121)', () => {
+  test('ist die Anlage ab dem 01.12.2021 errichtet, sagt das Formular es schon ab 2021', () => {
+    expect(categoryNotice('Kabel/Antenne', 2022, false)).toMatch(/nie umlagefähig/)
+    expect(categoryNotice('Kabel/Antenne', 2020, false)).toBe('')
+    expect(categoryNotice('Kabel/Antenne', 2023, null)).toBe('')
+    expect(categoryNotice('Kabel/Antenne', 2025, true)).toMatch(/nicht mehr umlagefähig/)
+  })
+})

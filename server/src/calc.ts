@@ -145,6 +145,7 @@ const noticeKinds = {
   'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
+  'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'item.no-basis': { level: 'warning', title: 'Position geht ganz an den Vermieter', terms: ['distributionBasis'] },
   'external.value-missing': { level: 'warning', title: 'Miteigentumsanteil oder Wohnfläche fehlt', terms: ['mea', 'homeownersStatement'] },
   'external.amount-mismatch': { level: 'hint', title: 'Betrag passt nicht zum Anteil', terms: ['homeownersStatement', 'mea'] },
@@ -1106,8 +1107,13 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   // Regel nur im Teil des Jahres, ist es das Übergangsjahr; gilt sie gar nicht mehr, die Zeit
   // danach. Einen Beginn hat die Regel nicht, „gar nicht“ heißt deshalb immer „vorbei“.
   const tvSignal = ruleCoverage('tv-signal', yFrom, yTo)
+  // Eine Anlage ab dem 01.12.2021 fiel nie unter die Regel (#121, § 2 Satz 2 BetrKV): dann in jedem
+  // Jahr ab 2021 dieselbe Warnung, ohne Übergangszeit.
+  const newSystem = snapshot.property?.cableBuiltBeforeDec2021 === false && year >= 2021
   for (const item of items.filter((c) => c.category === 'Kabel/Antenne')) {
-    if (tvSignal === 'partial') {
+    if (newSystem) {
+      warn('tv-signal.new-system', `„${item.description}": Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV). Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === 2021 ? ' Für 2021 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.' : ''}`, itemSubject(item))
+    } else if (tvSignal === 'partial') {
       warn('tv-signal.partial-year', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))
     } else if (tvSignal === 'none') {
       warn('tv-signal.ended', `„${item.description}": Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))
@@ -1488,7 +1494,7 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
   const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement')
   // Das Gesetz zählt die Wohnungen im Gebäude, also alle des Objekts und nicht nur die
   // beteiligten. Eine vermietete Eigentumswohnung in einer großen Anlage erkennt Mietfuchs
-  // daran nicht (die Objektart steht nicht im Schnappschuss); dort bleibt die Warnung aus.
+  // daran nicht (nur die Zahl der Wohnungen, nicht die der Anlage); dort bleibt die Warnung aus.
   const exempt = snapshot.units.length <= 2 && selfUnits.length >= 1
   if (heatingFlat.length > 0 && !exempt && items.some((c) => c.category === HEATING_CATEGORY)) {
     warn('heating.flat-rate',
@@ -1499,7 +1505,8 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         // Die Einliegerwohnung (#116): Wer nur die vermietete Wohnung anlegt, hat womöglich
         // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
         // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.
-        (snapshot.units.length === 1 && selfUnits.length === 0
+        // Nicht bei einer Eigentumswohnung: In einer Anlage hilft die eigene Wohnung nicht (#121).
+        (snapshot.units.length === 1 && selfUnits.length === 0 && snapshot.property?.kind !== 'etw'
           ? ' Wohnen Sie selbst im Haus und hat es nur diese beiden Wohnungen, legen Sie Ihre eigene Wohnung unter Stammdaten als selbstgenutzt an; dann gilt die Ausnahme, und die Warnung entfällt.'
           : ''),
       tenancySubject(heatingFlat),

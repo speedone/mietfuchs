@@ -532,7 +532,7 @@ test('Objekt: anlegen, auflisten, ändern', async () => {
     const neu = await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt' }))
     assert.deepEqual(neu, {
       id: 'objekt-2', name: 'Gartenweg 3', kind: 'etw', address: '12345 Stadt',
-      landlordName: null, iban: null, paymentDeadlineDays: null,
+      landlordName: null, iban: null, paymentDeadlineDays: null, cableBuiltBeforeDec2021: null,
     })
     assert.deepEqual((await opened.read(listProperties)).map((p) => p.id), ['objekt-1', 'objekt-2'])
 
