@@ -33,7 +33,7 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
+import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -44,7 +44,7 @@ import {
 import {
   aiSlots, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
-  readings, settings, tenancies, units,
+  readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
 
@@ -221,6 +221,8 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     selfUsed: merged(body, 'selfUsed', current.selfUsed, asOptionalBoolean),
     selfPersons: merged(body, 'selfPersons', current.selfPersons, asOptionalNumber),
     mea: merged(body, 'mea', current.mea, asOptionalNumber),
+    // Nur bekannte Zählertypen, jeder einmal (#117).
+    noConnection: merged(body, 'noConnection', current.noConnection, (v) => (Array.isArray(v) ? [...new Set(v.filter((x): x is MeterType => oneOfOrUndefined(METER_TYPES, x) !== undefined))] : undefined)),
     rooms: merged(body, 'rooms', current.rooms, asOptionalNumber),
     floor: merged(body, 'floor', current.floor, asOptionalText),
     notes: merged(body, 'notes', current.notes, asOptionalText),
@@ -668,13 +670,25 @@ type Collection<T extends CollectionEntity> = {
   remove: (db: Executor, id: string) => Promise<void>
 }
 
+async function writeUnitChildren(db: Executor, u: Unit): Promise<void> {
+  await db.delete(unitNoConnection).where(eq(unitNoConnection.unitId, u.id))
+  const types = u.noConnection ?? []
+  if (types.length > 0) await db.insert(unitNoConnection).values(types.map((meterType) => ({ unitId: u.id, meterType })))
+}
+
 const unitCollection: Collection<Unit> = {
   guard: guardUnit,
   read: readUnits,
   empty: emptyUnit,
   merge: mergeUnit,
-  insert: async (db, u) => { await db.insert(units).values(unitRow(u)) },
-  replace: async (db, u) => { await db.update(units).set(unitRow(u)).where(eq(units.id, u.id)) },
+  insert: async (db, u) => {
+    await db.insert(units).values(unitRow(u))
+    await writeUnitChildren(db, u)
+  },
+  replace: async (db, u) => {
+    await db.update(units).set(unitRow(u)).where(eq(units.id, u.id))
+    await writeUnitChildren(db, u)
+  },
   remove: async (db, id) => { await db.delete(units).where(eq(units.id, id)) },
 }
 

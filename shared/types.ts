@@ -44,6 +44,9 @@ export type Unit = {
   // Miteigentumsanteile (#94), für den Schlüssel „laut Gemeinschaftsabrechnung“ bei einer
   // vermieteten Eigentumswohnung.
   mea?: number
+  // Zählertypen, für die die Einheit keinen Anschluss hat (#117), etwa eine Garage ohne Wasser.
+  // Sie gilt dann beim Verbrauchsschlüssel nicht als Wohnung ohne Zähler.
+  noConnection?: MeterType[]
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
   floor?: string // Etage, z. B. „EG", „1. OG"

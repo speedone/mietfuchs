@@ -433,6 +433,25 @@ export const costItemSelfAmounts = sqliteTable(
   ],
 )
 
+// Zählertypen, für die eine Einheit keinen Anschluss hat (#117), etwa eine Garage ohne Wasser.
+// Eine Liste und keine Spalten je Typ, damit die Tabelle der Wohnungen unberührt bleibt; ein neuer
+// Zählertyp braucht wegen der Prüfbedingung hier wie bei den Zählern einen Neubau dieser Tabelle.
+// Eine gelöschte Wohnung nimmt ihre Einträge mit. Die Angabe gilt nicht je Jahr: Wer sie ändert,
+// ändert auch die noch offenen früheren Jahre, wie bei der Nutzungsart.
+export const unitNoConnection = sqliteTable(
+  'unit_no_connection',
+  {
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    meterType: text('meter_type', { enum: METER_TYPES }).notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.unitId, t.meterType] }),
+    oneOf('unit_no_connection_meter_type_known', 'meter_type', METER_TYPES),
+  ],
+)
+
 // ---------- Zähler und Ablesungen ----------
 
 export const meters = sqliteTable(

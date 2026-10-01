@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { CostModel, DepositStatus, Meter, Settings, Tenancy, Unit, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, unitToForm, type UnitForm } from '../unitForm'
 import { api, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -621,6 +621,24 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
               </label>
             )}
+            {/* Ohne Anschluss (#117): Eine Garage ohne Wasser fehlt beim Verbrauchsschlüssel kein Zähler. */}
+            <fieldset className="field grow no-connection">
+              <legend className="field-legend">Kein Anschluss für</legend>
+              <div className="row" style={{ gap: 10 }}>
+                {/* Der Allgemeinstrom gehört dem Haus, nicht einer Einheit; hier nur, was eine Einheit hat. */}
+                {(['kaltwasser', 'waerme', 'sonstig'] as MeterType[]).map((t) => (
+                  <label key={t} className="checkline">
+                    <input
+                      type="checkbox"
+                      checked={unitForm.noConnection.includes(t)}
+                      onChange={(e) => setUnitForm({ ...unitForm, noConnection: e.target.checked ? [...unitForm.noConnection, t] : unitForm.noConnection.filter((x) => x !== t) })}
+                    />
+                    {METER_TYPE_LABELS[t]}
+                  </label>
+                ))}
+              </div>
+              <small className="muted">Etwa eine Garage ohne Wasser. Mietfuchs sucht dann für diesen Zählertyp keinen Zähler an der Einheit. Die Angabe gilt für alle noch offenen Jahre.</small>
+            </fieldset>
             <label className="field grow">
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
