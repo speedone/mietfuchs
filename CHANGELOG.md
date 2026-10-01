@@ -19,6 +19,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   verlangen. Die Regel steht im Regelverzeichnis mit „gilt ab 01.01.2027“, der Rechtsstand ist der
   02.10.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
+- **Kosten aus dem Vorjahr übernehmen.** Auf der Seite Kosten listet „Aus 2025 übernehmen …“ die
+  Positionen des Vorjahres im gewählten Objekt, mit Kostenart, Beschreibung (die Jahreszahl ist
+  ersetzt), Rechnungssteller und dem Umlageschlüssel samt Teilnehmern, Anteilen, Zählertyp und
+  Maßstab. Sie tragen je Zeile nur den neuen Betrag ein, bei einer Hausgeldabrechnung dazu die
+  Kosten der Gemeinschaft; angelegt wird erst auf Knopfdruck, ohne Beleg und nie mit dem Betrag
+  des Vorjahres. Positionen mit Einzelbeträgen je Mieter öffnen Sie dafür im Formular.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
+- **Der Umlageschlüssel wird je Kostenart gemerkt.** Eine neue Position bekommt den Schlüssel,
+  den dieselbe Kostenart im Vorjahr hatte, im Formular wie bei der KI-Auswertung auf der Seite
+  Kosten und in der Schnellerfassung. Weicht eine Position davon ab, weisen Formular und
+  Abrechnung darauf hin, mit dem neuen Begriff „Wechsel des Umlageschlüssels“ (§ 556a Abs. 2
+  und 3 BGB) im Lexikon. Bei einer Eigentumswohnung schlägt Mietfuchs ohne Vorjahr „laut
+  Gemeinschaftsabrechnung“ vor (außer bei der Grundsteuer), und die Summe der
+  Miteigentumsanteile steht nach der ersten Position nicht mehr an jeder weiteren neu an.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
 
 ### Geändert
 

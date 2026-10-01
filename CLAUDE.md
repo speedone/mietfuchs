@@ -80,7 +80,7 @@ und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `ma
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
-Laufzeit (`shared/heating.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
+Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
@@ -898,6 +898,26 @@ Eine vorher abgeschlossene Abrechnung hat keine Schritte; dann zeigt `stepsOf`
 ([calcSteps.ts](client/src/calcSteps.ts)) nur, was die Zeile selbst hergibt, statt nachzurechnen,
 denn eine neue Rechnung muss nicht zum eingefrorenen Stand passen. Die Regression des Umstiegs
 nimmt `steps` aus wie `basisText`.
+
+**Schlüssel merken und Vorjahr übernehmen** (#141, Entwurf in
+[docs/superpowers/specs/2026-10-02-schluessel-merken-design.md](docs/superpowers/specs/2026-10-02-schluessel-merken-design.md)):
+Der gemerkte Schlüssel einer Kostenart ist **der Schlüssel ihrer Positionen im Vorjahr desselben
+Objekts**, abgeleitet aus dem Bestand und ohne eigene Tabelle; eine Staffel daneben wäre ein
+zweites Abbild, das auseinanderläuft. Was „derselbe Schlüssel“ heißt (Schlüssel, Zählertyp,
+Wohnung, Anteile, Teilnehmer, Maßstab der Gemeinschaft, **nicht** deren Summe der Anteile), steht
+einmal in [shared/allocation.ts](shared/allocation.ts), weil Vorschlag (client/src/costForm.ts,
+`withCategory`/`newItemForm`/`aiPositionDefaults` mit `KeyContext`) und Hinweis
+(`key.changed-from-previous-year` in calc.ts, Stufe `hint`) dasselbe meinen müssen; sonst löste
+der Vorschlag selbst den Hinweis aus. Widersprechen sich die Vorjahrespositionen, gibt es keinen
+Vorschlag. Der Schnappschuss trägt dafür `previousCostItems` (optional wie `property`, gefüllt in
+`snapshotOf`); verteilt wird davon nichts. **„Aus dem Vorjahr übernehmen“ lebt nur im Browser**
+([client/src/carryOver.ts](client/src/carryOver.ts)): keine Entwürfe in der Datenbank, denn eine
+Position ohne Betrag wäre dort eine 0 oder ein Kennzeichen, das jede Rechnung kennen müsste.
+Gespeichert wird über `buildCostItemBody`, also mit derselben Prüfung wie im Formular; Betrag,
+§35a-Anteil, Kosten der Gemeinschaft und Beleg kommen nie mit. Die KI-Übernahme baut ihren Rumpf
+seither ebenfalls über `buildCostItemBody` (`aiPositionBody`). Die Summe der MEA am Objekt und die
+Hausgeldabrechnung als Klammer sind Folgearbeit mit #102; bis dahin kommt die Summe von der
+zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ (`lastExternalBasis`).
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
