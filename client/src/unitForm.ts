@@ -1,6 +1,7 @@
 // Entscheidungslogik des Wohnungs-Formulars: Nutzungsart ↔ Datenmodell. Die beiden
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
+import { parseNumberDe } from './numbers'
 import type { Unit, UnitUsage } from './types'
 import { usageOf } from './types'
 
@@ -42,19 +43,19 @@ export type UnitBuildResult = { error: string } | { body: Record<string, unknown
 // null statt undefined, damit geleerte Felder über die generische PUT-Route auch
 // zurückgesetzt werden.
 export function buildUnitBody(form: UnitForm): UnitBuildResult {
-  const area = Number(form.areaM2.replace(',', '.'))
+  const area = parseNumberDe(form.areaM2) ?? NaN
   if (!form.name.trim() || !Number.isFinite(area) || area <= 0) {
     return { error: 'Bitte Name und gültige Wohnfläche angeben.' }
   }
-  const rooms = form.rooms.trim() ? Number(form.rooms.replace(',', '.')) : null
+  const rooms = form.rooms.trim() ? (parseNumberDe(form.rooms) ?? NaN) : null
   if (rooms !== null && (!Number.isFinite(rooms) || rooms <= 0)) {
     return { error: 'Zimmerzahl bitte als Zahl angeben (oder leer lassen).' }
   }
-  const selfPersons = form.selfPersons.trim() ? Number(form.selfPersons.replace(',', '.')) : null
+  const selfPersons = form.selfPersons.trim() ? (parseNumberDe(form.selfPersons) ?? NaN) : null
   if (form.usage === 'eigen' && selfPersons !== null && (!Number.isFinite(selfPersons) || selfPersons < 0)) {
     return { error: 'Personen im eigenen Haushalt bitte als Zahl angeben (oder leer lassen).' }
   }
-  const mea = form.mea.trim() ? Number(form.mea.replace(/\./g, '').replace(',', '.')) : null
+  const mea = form.mea.trim() ? (parseNumberDe(form.mea) ?? NaN) : null
   if (mea !== null && (!Number.isFinite(mea) || mea < 0)) {
     return { error: 'Miteigentumsanteile bitte als Zahl angeben (oder leer lassen).' }
   }

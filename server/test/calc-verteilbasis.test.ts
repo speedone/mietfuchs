@@ -322,3 +322,13 @@ test('Teilnehmer: nach dem Löschen der letzten Teilnehmerwohnung verteilt die B
   assert.equal(shareOf(s, 't-b'), 0)
   assert.match(s.warnings[0] ?? '', /keine Wohnung nimmt teil/)
 })
+
+test('Fehlende Wohnfläche: gewarnt wird nur für Wohnungen, die an einer Flächenposition teilnehmen (#105)', () => {
+  // Die Garage ohne Fläche nimmt an keiner Flächenposition teil; die Warnung über sie wäre falsch.
+  const s = computeSettlement(snapshotOf({
+    units: [{ id: 'a', name: 'A', areaM2: 50, participates: true }, { id: 'g', name: 'Garage', areaM2: 0, participates: true }],
+    tenancies: [], meters: [], readings: [], payments: [], closedSettlements: [],
+    costItems: [{ id: 'k', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area', participantUnitIds: ['a'] }],
+  }, 2025))
+  assert.ok(!s.notices.some((n) => n.code === 'basis.unit-no-area'), s.warnings.join(' | '))
+})
