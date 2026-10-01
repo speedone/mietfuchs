@@ -108,6 +108,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
+  Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
+  das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf
+  „Anlegen und zu „…“ wechseln“ kündigt den Wechsel an. Im neuen, noch leeren Objekt steht oben
+  auf jeder Seite ein Hinweis, dass es noch keine Wohnungen hat und die Daten im vorigen Objekt
+  unverändert sind, mit den Knöpfen „Zurück zu „…““ und „Wohnungen anlegen“. Ab zwei Objekten
+  nennt der Seitenkopf jeder Seite das gewählte Objekt, der Umschalter in der Seitenleiste bleibt
+  auch am Handy mit „Objekt“ beschriftet, und der Abschlussdialog der Abrechnung nennt das Objekt.
+  Bei einer Eigentumswohnung bitten die Stammdaten nur noch um die eigene Wohnung statt um alle
+  Wohnungen des Hauses.
+  ([#157](https://github.com/speedone/mietfuchs/issues/157))
 - **Ein leeres Feld bei der Ablesung ist kein Zählerstand 0 mehr.** Blieb auf der Zähler-Seite der
   Zählerstand leer, speicherte Mietfuchs eine 0; jetzt kommt eine Meldung. Bleibt beim
   Zählerwechsel der Endstand des alten Geräts leer, wird er als fehlend gespeichert und nicht als

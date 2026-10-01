@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { useOpenForm } from '../property'
 
 type Props = {
@@ -20,6 +20,8 @@ type Props = {
 // wird das erste Eingabefeld fokussiert und der Seiten-Scroll gesperrt.
 export default function Drawer({ open, title, subtitle, onClose, footer, children, onSubmit, width = 460 }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
+  // Der Titel benennt den Dialog für Screenreader (#157).
+  const titleId = useId()
   // Ein offener Drawer ist ein offenes Formular: Der Objektwechsel fragt dann nach (#145).
   useOpenForm(open)
 
@@ -61,11 +63,12 @@ export default function Drawer({ open, title, subtitle, onClose, footer, childre
         style={{ width }}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="drawer-head">
           <div>
-            <div className="drawer-title">{title}</div>
+            <div className="drawer-title" id={titleId}>{title}</div>
             {subtitle && <div className="drawer-sub">{subtitle}</div>}
           </div>
           <button className="drawer-x" onClick={onClose} aria-label="Schließen">✕</button>
