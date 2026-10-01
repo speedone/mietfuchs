@@ -41,6 +41,7 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
+import { createChecksums, describeFile } from './uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -699,13 +700,11 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   }
 })
 
-// Belegarchiv: alle hochgeladenen Dateien mit Größe und Datum
+// Belegordner (#170): alle hochgeladenen Dateien mit Originalname, Hochladezeit und Prüfsumme.
+// Die Prüfsummen merkt sich der Prozess je Stand der Datei (server/src/uploads.ts).
+const checksums = createChecksums()
 app.get('/api/uploads', (req, res) => {
-  const files = fs.readdirSync(UPLOAD_DIR).map((name) => {
-    const st = fs.statSync(path.join(UPLOAD_DIR, name))
-    return { file: name, size: st.size, mtime: st.mtime.toISOString() }
-  })
-  res.json(files)
+  res.json(fs.readdirSync(UPLOAD_DIR).map((name) => describeFile(UPLOAD_DIR, name, checksums)))
 })
 
 // Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
