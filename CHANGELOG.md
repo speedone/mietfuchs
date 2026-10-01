@@ -8,6 +8,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Wiederöffnen verliert den verschickten Stand nicht mehr.** Öffnen Sie eine abgeschlossene
+  Abrechnung wieder, bleibt der bisherige Stand unter „Frühere Abschlüsse dieses Jahres“ erhalten,
+  mit Abschluss-, Versand- und Öffnungsdatum und den Salden je Mieter. So lässt sich eine
+  Korrektur gegenüber Mieter und Finanzamt begründen.
+  ([#56](https://github.com/speedone/mietfuchs/issues/56))
 - **Abgeschlossene Jahre zeigen, wenn die heutige Berechnung abweicht.** Öffnen Sie die
   Abrechnung eines abgeschlossenen Jahres, rechnet Mietfuchs im Hintergrund neu und nennt je
   Mieter, ob sich der Saldo seit dem Abschluss verändert hat und zu wessen Gunsten. Zugunsten des

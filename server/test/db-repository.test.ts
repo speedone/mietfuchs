@@ -363,9 +363,9 @@ test('Wieder öffnen verwirft den eingefrorenen Stand', async () => {
     await opened.write((db) => closeSettlement(db, {
       id: 's1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-15T10:00:00.000Z', sentAt: null, settlement: {},
     }))
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), true)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024, 'h1')), true)
     assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024)), undefined)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024)), false, 'ein zweites Mal meldet sich')
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-1', 2024, 'h2')), false, 'ein zweites Mal meldet sich')
   })
 })
 
@@ -590,7 +590,7 @@ test('Objekt: ein Abschluss desselben Jahres im anderen Objekt bleibt unberührt
     }))
     assert.equal(await opened.read((db) => findClosedSettlement(db, 'objekt-2', 2024)), undefined)
     assert.equal(await opened.write((db) => setSentAt(db, 'objekt-2', 2024, '2025-02-01')), false)
-    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', 2024)), false)
+    assert.equal(await opened.write((db) => reopenSettlement(db, 'objekt-2', 2024, 'h3')), false)
     const a = await opened.read((db) => findClosedSettlement(db, 'objekt-1', 2024))
     assert.equal(a?.sentAt, null, 'das Versanddatum von Objekt 1 ist nicht gesetzt worden')
 

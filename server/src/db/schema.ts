@@ -536,6 +536,31 @@ export const closedSettlements = sqliteTable(
   ],
 )
 
+// Frühere Abschlüsse (#56, Teil 2). Wird eine abgeschlossene Abrechnung wiedergeöffnet, wandert
+// ihr Stand hierher, statt gelöscht zu werden: Er ist das Dokument, das der Mieter bekommen hat,
+// und wird gebraucht, sobald eine Korrektur zu begründen ist, dem Mieter wie dem Finanzamt
+// gegenüber. Eine eigene Tabelle und keine Spalte an `closed_settlements`, damit dort alles bleibt,
+// wie es ist: je Objekt und Jahr höchstens ein gültiger Stand, und jeder, der ihn liest, bekommt
+// nur diesen.
+export const closedSettlementHistory = sqliteTable(
+  'closed_settlement_history',
+  {
+    id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
+    year: integer('year').notNull(),
+    closedAt: text('closed_at').notNull(),
+    sentAt: text('sent_at'),
+    // Wann wiedergeöffnet wurde, als Zeitstempel wie `closed_at`.
+    reopenedAt: text('reopened_at').notNull(),
+    settlement: text('settlement', { mode: 'json' }).notNull(),
+  },
+  (t) => [
+    index('closed_settlement_history_property_year_idx').on(t.propertyId, t.year),
+    // Unqualifiziert, aus demselben Grund wie oben.
+    check('closed_settlement_history_settlement_is_json', sql.raw('json_valid("settlement")')),
+  ],
+)
+
 // ---------- Einstellungen ----------
 
 // Echte Spalten statt eines JSON-Klumpens, und zwar genau deshalb, weil #60 sonst unverändert
