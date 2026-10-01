@@ -5,14 +5,14 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { DatabaseState } from '../types'
-import { DISMISS_KEY } from '../database'
+import { DISMISS_KEY, MIGRATION_GUIDE_URL, UPDATE_DISMISS_KEY } from '../database'
 import DatabaseNotice from './Database'
 
 const state = (changeover: DatabaseState['changeover']): DatabaseState => ({
-  open: true, file: '/daten/mietfuchs.sqlite', migrations: 0, detail: 'geöffnet', changeover,
+  open: true, file: '/daten/mietfuchs.sqlite', migrations: 0, detail: 'geöffnet', changeover, migrated: null,
 })
 
-let report: { database?: DatabaseState }
+let report: { version?: string, database?: DatabaseState }
 let failing = false
 let asked: string[]
 
@@ -91,4 +91,49 @@ test('eine alte db.json neben der gefüllten Datenbank erscheint als Hinweis, ni
   await waitFor(() => screen.getByText('Im Datenordner liegt noch eine alte Datei'))
   expect(screen.getByText(/enthält bereits Daten/)).toBeTruthy()
   expect(container.querySelector('.db-notice-problem')).toBeNull()
+})
+
+test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und bleibt geschlossen (#154)', async () => {
+  report = {
+    version: '0.9.0',
+    database: {
+      ...state({ state: 'none', message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [] }),
+      migrations: 2,
+      migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: '2026-10-01T10:00:00.000Z' },
+    },
+  }
+  const { unmount } = render(<DatabaseNotice />)
+  await screen.findByText(/Mietfuchs wurde auf Version 0\.9\.0 aktualisiert/)
+  screen.getByText(/mietfuchs\.sqlite\.vor-0001_objekte im Datenordner/)
+  const link = screen.getByRole('link', { name: /Anleitung/ })
+  expect(link.getAttribute('href')).toBe(MIGRATION_GUIDE_URL)
+  // Nur dieser eine Hinweis: Neben einem Umstieg, den es nicht gab, steht nichts.
+  expect(screen.getAllByRole('status')).toHaveLength(1)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Verstanden' }))
+  expect(screen.queryByText(/aktualisiert/)).toBeNull()
+  expect(localStorage.getItem(UPDATE_DISMISS_KEY)).toBe('mietfuchs.sqlite.vor-0001_objekte@2026-10-01T10:00:00.000Z')
+
+  // Beim nächsten Öffnen der Oberfläche, solange derselbe Start läuft, kommt er nicht wieder.
+  unmount()
+  asked = []
+  render(<DatabaseNotice />)
+  await waitFor(() => expect(asked).toEqual(['/healthz']))
+  expect(screen.queryByText(/aktualisiert/)).toBeNull()
+})
+
+test('ohne Zugriff auf den Speicher des Browsers erscheint der Hinweis trotzdem und lässt sich schließen', async () => {
+  report = {
+    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 1, backup: 'mietfuchs.sqlite.vor-0002_x', at: '2026-10-01T10:00:00.000Z' } },
+  }
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('gesperrt') })
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('gesperrt') })
+  try {
+    render(<DatabaseNotice />)
+    await screen.findByText(/Mietfuchs wurde aktualisiert/)
+    fireEvent.click(screen.getByRole('button', { name: 'Verstanden' }))
+    expect(screen.queryByText(/aktualisiert/)).toBeNull()
+  } finally {
+    vi.restoreAllMocks()
+  }
 })

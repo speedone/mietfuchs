@@ -241,6 +241,9 @@ async function umstiegGelungen(base, name) {
   gleich(bericht.database?.changeover?.state, 'done', `${name}: der Umstieg meldet sich als gelungen`)
   gleich(bericht.status, 'ok', `${name}: der Zustandsbericht ist in Ordnung`)
   enthaelt(bericht.database?.changeover?.message, 'Datenbank', `${name}: die Oberfläche bekommt einen Satz dazu`)
+  // Der Umstieg schreibt in eine neue Datei, eine Sicherung davor gibt es nicht; der Rückweg ist
+  // die abgelöste db.json. Also auch kein zweiter Hinweis neben diesem (#154).
+  gleich(bericht.database?.migrated, null, `${name}: keine Meldung über eine Sicherung vor dem Update`)
   return bericht
 }
 
@@ -517,7 +520,15 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   await writeStock(connection.db, straightenForDatabase(migrateLegacy(bestand)))
   connection.close()
 
+  const schritte = (await loadMigrations()).length - 1
   await withServer(dataDir, async ({ base }) => {
+    // Die Oberfläche erfährt von der Sicherung, mit Namen und ohne Pfad (#154).
+    const bericht = await holen(base, '/healthz')
+    const { at, ...genannt } = bericht.database?.migrated ?? {}
+    gleich(genannt, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' },
+      'Update: /healthz nennt die Sicherung vor dem Update')
+    gleich(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString(),
+      'Update: /healthz nennt den Zeitpunkt der Sicherung')
     const objekte = await holen(base, '/api/properties')
     gleich(objekte.map((o) => [o.id, o.name, o.address]), [['objekt-1', bestand.settings.houseName, bestand.settings.address]],
       'Update: der Bestand steht in Objekt 1, benannt wie das Haus')
@@ -529,6 +540,8 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
 
   // Ein zweiter Start hat nichts nachzuholen und legt keine weitere Sicherung an.
   await withServer(dataDir, async ({ base }) => {
+    const bericht = await holen(base, '/healthz')
+    gleich(bericht.database?.migrated, null, 'Update, zweiter Start: keine Meldung mehr über eine Sicherung')
     await fachlichePruefung(base, 'Update, zweiter Start')
   })
   const sicherungen = fs.readdirSync(dataDir).filter((n) => n.includes('.vor-0'))

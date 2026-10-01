@@ -1430,10 +1430,26 @@ try {
 // überall trägt, zeigt sich erst dort) und damit die Oberfläche dem Nutzer einmal sagen kann,
 // was mit seinen Daten geschehen ist. Beim Start aus einem Linux-Paket gibt es keine Konsole,
 // auf der die Meldung sonst stünde.
+// Wann die Sicherung entstand. Fehlt die Datei inzwischen, ist der Zeitpunkt unbekannt; der
+// Hinweis bleibt trotzdem richtig, er lässt sich dann nur nicht von einem früheren unterscheiden.
+function backupTime(file: string): string {
+  try {
+    return fs.statSync(file).mtime.toISOString()
+  } catch {
+    return ''
+  }
+}
+
 function databaseState(): DatabaseState {
   const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes, ...(changeover.pending ? { pending: true } : {}) }
-  if (database) return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie }
-  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie }
+  if (database) {
+    // Die Sicherung nur mit Namen: Sie liegt immer im Datenordner, und die Oberfläche sagt es so.
+    const migrated = database.backup
+      ? { steps: database.migrations, backup: path.basename(database.backup), at: backupTime(database.backup) }
+      : null
+    return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie, migrated }
+  }
+  return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie, migrated: null }
 }
 
 // Antwortet auf dem Port bereits Mietfuchs? /healthz nennt sich mit Namen (health.ts). Dann ist

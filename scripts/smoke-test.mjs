@@ -421,6 +421,9 @@ async function main() {
   // die Zahl der Migrationen die volle.
   assert(health.body.database?.open === true, 'Datenbank ist geöffnet', health.body.database)
   assert(health.body.database.migrations >= 1, 'Migrationen sind angewendet', health.body.database)
+  // Eine frisch angelegte Datenbank bekommt keine Sicherung vor den Migrationen, und die
+  // Oberfläche darf dann auch keine nennen (#154).
+  assert(health.body.database.migrated === null, 'keine Sicherung genannt (frische Datenbank)', health.body.database.migrated)
   // Der Umstieg der vorhandenen Daten (#55) läuft bei jedem Start. Der Datenordner ist leer,
   // es gibt also keine db.json und nichts zu übernehmen — und genau das muss dastehen. Ein
   // „failed" hier hieße, dass der Umstieg auf diesem System schon am leeren Ordner scheitert.
