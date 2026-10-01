@@ -95,7 +95,7 @@ function QuitButton({ onQuit }: { onQuit: () => void }) {
   async function stop() {
     const ok = await confirm({
       title: 'Mietfuchs beenden?',
-      message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis du Mietfuchs neu startest. Deine Daten bleiben gespeichert.',
+      message: 'Die Oberfläche lässt sich danach nicht mehr bedienen, bis Sie Mietfuchs neu starten. Ihre Daten bleiben gespeichert.',
       confirmLabel: 'Beenden',
     })
     if (!ok) return
@@ -124,7 +124,7 @@ function Stopped() {
     <main className="stopped">
       <div className="card">
         <h1>Mietfuchs ist beendet</h1>
-        <p>Dieses Fenster kann geschlossen werden. Deine Daten sind gespeichert.</p>
+        <p>Dieses Fenster kann geschlossen werden. Ihre Daten sind gespeichert.</p>
         <p className="muted">Zum Weiterarbeiten Mietfuchs neu starten, etwa über den Eintrag im Startmenü.</p>
       </div>
     </main>
