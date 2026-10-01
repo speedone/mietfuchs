@@ -555,6 +555,10 @@ export type TaxReport = {
   selfUsedShareCents: number // auf selbstgenutzte Wohnungen entfallender Kostenanteil (privat)
   surplusSollCents: number // Einkünfte auf Soll-Basis = Einnahmen(Soll) − Werbungskosten
   surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
+  // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
+  // der Anlage V).
+  // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.
+  costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
 }
 
 export type UploadInfo = {
