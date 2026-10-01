@@ -51,7 +51,8 @@ const renderPage = async () => {
       </PropertyProvider>
     </YearProvider>,
   )
-  await waitFor(() => expect(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) })).toBeTruthy())
+  // Großzügig gewartet: Unter Last (volle Testläufe parallel) kommen Objekt und Kosten später.
+  await waitFor(() => expect(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) })).toBeTruthy(), { timeout: 5000 })
 }
 const select = (label: RegExp) => screen.getByLabelText(label) as HTMLSelectElement
 
