@@ -22,10 +22,25 @@ export const useConfirm = () => useContext(ConfirmCtx)
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const idRef = useRef(1)
+  // Laufende Zeitgeber der Toasts, damit sie beim Abbauen nicht mehr feuern: Ein Zeitgeber, der
+  // nach dem Ende eines Komponententests läuft, trifft auf eine abgebaute Testumgebung
+  // („window is not defined“) und lässt den ganzen Lauf scheitern, obwohl jeder Test grün war.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
+  useEffect(() => {
+    const pending = timers.current
+    return () => {
+      for (const t of pending) clearTimeout(t)
+      pending.clear()
+    }
+  }, [])
   const toast = useCallback((msg: string, kind: ToastKind = 'ok') => {
     const id = idRef.current++
     setToasts((t) => [...t, { id, msg, kind }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200)
+    const timer = setTimeout(() => {
+      timers.current.delete(timer)
+      setToasts((t) => t.filter((x) => x.id !== id))
+    }, 3200)
+    timers.current.add(timer)
   }, [])
 
   const [dialog, setDialog] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null)
