@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RentLedgerRow, RentMonth, RentMonthStatus } from './types'
-import { bookingDate, rowStanding, showDecemberNote } from './ledgerView'
+import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from './ledgerView'
 
 const month = (m: number, sollCents: number, status: RentMonthStatus): RentMonth => ({
   month: m, baseRentCents: sollCents, prepaymentCents: 0, flatRateCents: 0, sollCents, paidCents: status === 'paid' ? sollCents : 0, status,
@@ -69,5 +69,22 @@ describe('Mietkonto: Buchungsdatum beim Klick auf einen Monat (#133, letzte Durc
   })
   it('ein noch nicht fälliger Monat: heute, denn gezahlt wird heute (Zuflussprinzip)', () => {
     expect(bookingDate(2026, month(12, 100000, 'notDue'), heute)).toBe('2026-10-01')
+  })
+})
+
+describe('Datum einer neuen Zahlung (#142)', () => {
+  const heute = new Date(2026, 9, 1, 12)
+  it('im laufenden Jahr: heute', () => {
+    expect(newPaymentDate(2026, heute)).toBe('2026-10-01')
+  })
+  it('ein früheres Jahr: der 31.12. dieses Jahres, nicht heute, damit die Zahlung im gewählten Jahr steht', () => {
+    expect(newPaymentDate(2025, heute)).toBe('2025-12-31')
+  })
+  it('ein späteres Jahr: der 1. Januar', () => {
+    expect(newPaymentDate(2027, heute)).toBe('2027-01-01')
+  })
+  it('örtlich gelesen, nicht in UTC: kurz nach Mitternacht am 1. Januar ist schon das neue Jahr', () => {
+    const neujahr = new Date(2026, 0, 1, 0, 30)
+    expect(newPaymentDate(2026, neujahr)).toBe('2026-01-01')
   })
 })

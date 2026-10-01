@@ -337,6 +337,11 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
           {settlement.statements.length > 0 && (
             <div className="card">
               <h2>Voraussichtliches Ergebnis je Mieter</h2>
+              {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
+                  das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
+              {yearItems.length === 0 ? (
+                <div className="empty">Noch keine Kosten für {year} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
+              ) : (
               <div className="tenant-cards">
                 {settlement.statements.map((st) => {
                   const isCredit = st.balanceCents >= 0
@@ -358,6 +363,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
         </>
