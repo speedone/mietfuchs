@@ -380,9 +380,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {t.tenantName}
                     {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
                     {costModelBadge(t.costModel, t.heatingModel) && (
-                      <span className="badge gray" style={{ marginLeft: 6 }} title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
-                        {costModelBadge(t.costModel, t.heatingModel)}
-                      </span>
+                      <div style={{ marginTop: 2 }}>
+                        <span className="badge gray" style={{ whiteSpace: 'nowrap' }} title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
+                          {costModelBadge(t.costModel, t.heatingModel)}
+                        </span>
+                      </div>
                     )}
                     {(t.email || t.phone) && (
                       <div className="muted" style={{ fontSize: 12 }}>{[t.email, t.phone].filter(Boolean).join(' · ')}</div>
@@ -684,31 +686,6 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
               </label>
             )}
-            {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
-                Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
-            {connectionTypes(meterTypes, unitForm.noConnection).length > 0 && (
-              <details className="extra-details" style={{ width: '100%' }}>
-                <summary>
-                  Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
-                </summary>
-                <fieldset className="field grow no-connection" style={{ marginTop: 10 }}>
-                  <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
-                  <div className="row" style={{ gap: 10 }}>
-                    {connectionTypes(meterTypes, unitForm.noConnection).map((t) => (
-                      <label key={t} className="checkline">
-                        <input
-                          type="checkbox"
-                          checked={!unitForm.noConnection.includes(t)}
-                          onChange={(e) => setUnitForm(setConnected(unitForm, t, e.target.checked))}
-                        />
-                        {METER_TYPE_LABELS[t]}
-                      </label>
-                    ))}
-                  </div>
-                  <small className="muted">Hat eine Einheit keinen Anschluss, etwa eine Garage ohne Wasser, das Häkchen entfernen. Dann fehlt ihr kein Zähler, und Verbrauchskosten dieser Art betreffen sie nicht. Die Angabe gilt für alle noch offenen Jahre.</small>
-                </fieldset>
-              </details>
-            )}
             <label className="field grow">
               Etage
               <input value={unitForm.floor} onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })} placeholder="z. B. 1. OG" />
@@ -736,6 +713,31 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
               Notiz (optional)
               <input value={unitForm.notes} onChange={(e) => setUnitForm({ ...unitForm, notes: e.target.value })} placeholder="z. B. Balkon, Stellplatz Nr. 2" />
             </label>
+            {/* Anschlüsse (#117, #142): positiv gefragt, gespeichert wird nur die Ausnahme. Nur
+                Zählerarten des Objekts und schon gesetzte Ausnahmen; sonst gibt es nichts zu fragen. */}
+            {connectionTypes(meterTypes, unitForm.noConnection).length > 0 && (
+              <details className="extra-details" style={{ width: '100%' }}>
+                <summary>
+                  Weitere Angaben — Anschlüsse{connectionSummary(unitForm.noConnection) ? `: ${connectionSummary(unitForm.noConnection)}` : ''}
+                </summary>
+                <fieldset className="field grow no-connection" style={{ marginTop: 10 }}>
+                  <legend className="field-legend"><Term id="noConnection">Anschlüsse</Term> dieser Einheit:</legend>
+                  <div className="row" style={{ gap: 10 }}>
+                    {connectionTypes(meterTypes, unitForm.noConnection).map((t) => (
+                      <label key={t} className="checkline">
+                        <input
+                          type="checkbox"
+                          checked={!unitForm.noConnection.includes(t)}
+                          onChange={(e) => setUnitForm(setConnected(unitForm, t, e.target.checked))}
+                        />
+                        {METER_TYPE_LABELS[t]}
+                      </label>
+                    ))}
+                  </div>
+                  <small className="muted">Hat eine Einheit keinen Anschluss, etwa eine Garage ohne Wasser, das Häkchen entfernen. Dann fehlt ihr kein Zähler, und Verbrauchskosten dieser Art betreffen sie nicht. Die Angabe gilt für alle noch offenen Jahre.</small>
+                </fieldset>
+              </details>
+            )}
           </div>
         </Drawer>
       )}
