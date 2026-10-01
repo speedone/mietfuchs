@@ -143,7 +143,9 @@ Vor jedem Update der Datenbank legt Mietfuchs eine Sicherung daneben, im Datenor
 3. Die Sicherung des **ersten** Schritts, den die neue Version angewandt hat, in
    `mietfuchs.sqlite` umbenennen. Beim Update auf die Version mit mehreren Objekten ist das
    `mietfuchs.sqlite.vor-0001_objekte`. Liegen mehrere Sicherungen da, ist es die mit der
-   kleinsten Nummer aus diesem Update.
+   kleinsten Nummer aus diesem Update, und zwar die ohne Zusatz am Ende: Eine Datei wie
+   `….vor-0001_objekte.vom-2026-08-01-0930` ist ein älterer Stand von einem früheren Versuch,
+   den Mietfuchs beim erneuten Update beiseitegelegt hat.
 4. Die ältere Version starten.
 
 Was Sie seit dem Update eingegeben haben, fehlt dann. Umgekehrt ist nichts zu befürchten: Eine

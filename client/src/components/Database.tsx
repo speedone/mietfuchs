@@ -78,8 +78,8 @@ export default function DatabaseNotice() {
             <p><a href={update.guideUrl} target="_blank" rel="noreferrer">Zur Anleitung: Zurück zu einer älteren Version</a></p>
           </div>
           <button className="btn" onClick={() => {
-            remember(UPDATE_DISMISS_KEY, update.backup)
-            setUpdateDismissed(update.backup)
+            remember(UPDATE_DISMISS_KEY, update.dismissKey)
+            setUpdateDismissed(update.dismissKey)
           }}>Verstanden</button>
         </section>
       )}

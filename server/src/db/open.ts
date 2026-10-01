@@ -426,8 +426,15 @@ const networkWarning = (beschreibung: string): string =>
 // `mietfuchs.sqlite.vor-<erster ausstehender Schritt>`, und gibt ihren Pfad zurück.
 //
 // Nur, wenn es etwas zu sichern gibt: Eine Datenbank ohne einen einzigen angewendeten Schritt
-// ist frisch angelegt und leer. Und nur einmal je Schritt: Liegt die Kopie schon da, stammt sie
-// von einem früheren, gescheiterten Versuch und ist der ältere, also sicherere Stand.
+// ist frisch angelegt und leer.
+//
+// **Eine Kopie gleichen Namens wird beiseitegelegt, nicht wiederverwendet** (#154). Sie stammt
+// von einem früheren Versuch, der gescheitert ist, und danach kann wochenlang mit der alten
+// Version weitergearbeitet worden sein. Sie als Sicherung dieses Updates zu nennen hieße: Wer
+// zurückgeht, verliert diese Wochen. Gelöscht wird sie aber auch nicht, denn sie ist der ältere
+// Stand und kann der sein, den jemand sucht. Sie bekommt den Zeitpunkt ihres Entstehens in den
+// Namen (`….vom-JJJJ-MM-TT-HHMM`, in UTC, damit der Name nicht vom Rechner abhängt); die Datei
+// ohne Zusatz ist damit immer die aktuelle.
 //
 // `VACUUM INTO` und keine Dateikopie, aus demselben Grund wie beim Backup (backup.ts): Es
 // liefert einen in sich stimmigen Stand ohne Beidateien.
@@ -440,9 +447,19 @@ export function backupBeforeMigrating(connection: Connection, file: string, migr
   const firstPending = migrations.find((m) => !done.has(m.hash))
   if (!firstPending) return null
   const target = `${file}.vor-${firstPending.tag}`
-  if (fs.existsSync(target)) return target
+  if (fs.existsSync(target)) fs.renameSync(target, setAsideName(target))
   connection.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`)
   return target
+}
+
+// Der Name, unter dem eine vorgefundene Sicherung beiseitegelegt wird. Gibt es ihn schon (zwei
+// Versuche in derselben Minute), wird hochgezählt statt überschrieben.
+function setAsideName(target: string): string {
+  const iso = fs.statSync(target).mtime.toISOString()
+  const base = `${target}.vom-${iso.slice(0, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}`
+  let name = base
+  for (let n = 2; fs.existsSync(name); n++) name = `${base}-${n}`
+  return name
 }
 
 export type OpenedDatabase = {

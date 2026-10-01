@@ -524,8 +524,11 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   await withServer(dataDir, async ({ base }) => {
     // Die Oberfläche erfährt von der Sicherung, mit Namen und ohne Pfad (#154).
     const bericht = await holen(base, '/healthz')
-    gleich(bericht.database?.migrated, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' },
+    const { at, ...genannt } = bericht.database?.migrated ?? {}
+    gleich(genannt, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' },
       'Update: /healthz nennt die Sicherung vor dem Update')
+    gleich(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString(),
+      'Update: /healthz nennt den Zeitpunkt der Sicherung')
     const objekte = await holen(base, '/api/properties')
     gleich(objekte.map((o) => [o.id, o.name, o.address]), [['objekt-1', bestand.settings.houseName, bestand.settings.address]],
       'Update: der Bestand steht in Objekt 1, benannt wie das Haus')

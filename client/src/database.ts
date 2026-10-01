@@ -45,23 +45,26 @@ export function databaseHint(database: DatabaseState | null | undefined, dismiss
 // Kommt nur nach einem Start, der wirklich nachgeholt hat: Beim nächsten liefert der Server
 // `migrated: null`, und dann ist der Hinweis weg, auch ohne dass ihn jemand weggeklickt hat.
 
-export type UpdateHint = { backup: string, message: string, guideUrl: string }
+export type UpdateHint = { dismissKey: string, message: string, guideUrl: string }
 
 // Der Abschnitt „Zurück zu einer älteren Version“ in MIGRATION.md, verankert so, wie GitHub die
 // Überschrift umsetzt (klein, Leerzeichen zu Bindestrichen, Umlaute bleiben).
 export const MIGRATION_GUIDE_URL = 'https://github.com/speedone/mietfuchs/blob/main/MIGRATION.md#zurück-zu-einer-älteren-version'
 
-// Gemerkt wird der Name der Sicherung: Er trägt den ersten nachgeholten Schritt und ist damit je
-// Update ein anderer. Ein späteres Update meldet sich so wieder, dasselbe nicht.
+// Gemerkt wird der Name der Sicherung samt ihrem Zeitpunkt. Der Name trägt den ersten
+// nachgeholten Schritt und ist damit je Update ein anderer; der Zeitpunkt unterscheidet eine
+// neue Sicherung von einer früheren gleichen Namens, die der Server beiseitegelegt hat (ein
+// gescheitertes Update, das später noch einmal versucht wird).
 export const UPDATE_DISMISS_KEY = 'nka-sicherung-gelesen'
 
 export function updateHint(database: DatabaseState | null | undefined, version: string | undefined, dismissed: string | null): UpdateHint | null {
   const migrated = database?.migrated
   if (!migrated) return null
-  if (dismissed === migrated.backup) return null
+  const dismissKey = `${migrated.backup}@${migrated.at}`
+  if (dismissed === dismissKey) return null
   const updated = version ? `Mietfuchs wurde auf Version ${version} aktualisiert.` : 'Mietfuchs wurde aktualisiert.'
   return {
-    backup: migrated.backup,
+    dismissKey,
     message:
       `${updated} Vorher wurde eine Sicherung Ihrer Daten angelegt (${migrated.backup} im Datenordner). ` +
       'Wie Sie zur vorigen Version zurückkommen, steht in der Anleitung.',

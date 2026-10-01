@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { databaseHint, MIGRATION_GUIDE_URL, updateHint } from './database'
 import type { DatabaseState } from './types'
+import guide from '../../MIGRATION.md?raw'
 
 const state = (changeover: DatabaseState['changeover']): DatabaseState => ({
   open: true, file: 'C:\\daten\\mietfuchs.sqlite', migrations: 0, detail: 'geöffnet', changeover, migrated: null,
@@ -53,7 +54,7 @@ describe('Unterbliebener Umstieg (#89)', () => {
 
 describe('Sicherung vor dem Update (#154)', () => {
   const none = { state: 'none' as const, message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [] }
-  const migrated = (backup: string): DatabaseState => ({ ...state(none), migrations: 3, migrated: { steps: 3, backup } })
+  const migrated = (backup: string, at = '2026-10-01T10:00:00.000Z'): DatabaseState => ({ ...state(none), migrations: 3, migrated: { steps: 3, backup, at } })
 
   test('ohne nachgeholte Schritte gibt es nichts zu sagen', () => {
     expect(updateHint(null, '0.9.0', null)).toBeNull()
@@ -63,7 +64,7 @@ describe('Sicherung vor dem Update (#154)', () => {
   test('nach dem Update steht die Version, die Sicherung mit Namen und der Weg zurück da', () => {
     const hint = updateHint(migrated('mietfuchs.sqlite.vor-0003_heizung'), '0.9.0', null)
     expect(hint).toEqual({
-      backup: 'mietfuchs.sqlite.vor-0003_heizung',
+      dismissKey: 'mietfuchs.sqlite.vor-0003_heizung@2026-10-01T10:00:00.000Z',
       message: 'Mietfuchs wurde auf Version 0.9.0 aktualisiert. Vorher wurde eine Sicherung Ihrer Daten ' +
         'angelegt (mietfuchs.sqlite.vor-0003_heizung im Datenordner). Wie Sie zur vorigen Version ' +
         'zurückkommen, steht in der Anleitung.',
@@ -77,13 +78,27 @@ describe('Sicherung vor dem Update (#154)', () => {
   })
 
   test('die Anleitung ist der Abschnitt zum Rückweg in MIGRATION.md, so verankert wie GitHub ihn bildet', () => {
-    expect(MIGRATION_GUIDE_URL).toBe('https://github.com/speedone/mietfuchs/blob/main/MIGRATION.md#zurück-zu-einer-älteren-version')
+    // Die Überschrift steht wirklich in der Datei, und der Anker entsteht aus ihr so wie bei
+    // GitHub: klein geschrieben, Leerzeichen zu Bindestrichen, Umlaute bleiben.
+    const heading = guide.split('\n').find((line) => line.startsWith('## ') && line.includes('älteren Version'))
+    if (!heading) throw new Error('MIGRATION.md hat keinen Abschnitt zum Rückweg')
+    const anchor = heading.slice(3).trim().toLowerCase().replace(/[^\p{L}\p{N} -]/gu, '').replace(/ /g, '-')
+    expect(MIGRATION_GUIDE_URL).toBe(`https://github.com/speedone/mietfuchs/blob/main/MIGRATION.md#${anchor}`)
+    expect(anchor).toBe('zurück-zu-einer-älteren-version')
   })
 
   test('weggeklickt bleibt weggeklickt, die Sicherung eines späteren Updates aber nicht', () => {
     // Gemerkt wird der Name der Sicherung; er enthält den ersten nachgeholten Schritt und ist
     // damit je Update ein anderer.
-    expect(updateHint(migrated('mietfuchs.sqlite.vor-0001_objekte'), '0.9.0', 'mietfuchs.sqlite.vor-0001_objekte')).toBeNull()
-    expect(updateHint(migrated('mietfuchs.sqlite.vor-0003_heizung'), '0.9.0', 'mietfuchs.sqlite.vor-0001_objekte')).not.toBeNull()
+    const gelesen = 'mietfuchs.sqlite.vor-0001_objekte@2026-10-01T10:00:00.000Z'
+    expect(updateHint(migrated('mietfuchs.sqlite.vor-0001_objekte'), '0.9.0', gelesen)).toBeNull()
+    expect(updateHint(migrated('mietfuchs.sqlite.vor-0003_heizung'), '0.9.0', gelesen)).not.toBeNull()
+  })
+
+  test('eine neue Sicherung unter demselben Namen meldet sich wieder', () => {
+    // Lag eine Sicherung gleichen Namens schon da (früher gescheitertes Update), legt der Server
+    // sie beiseite und sichert neu. Der Name ist derselbe, der Zeitpunkt nicht.
+    const gelesen = 'mietfuchs.sqlite.vor-0001_objekte@2026-08-01T10:00:00.000Z'
+    expect(updateHint(migrated('mietfuchs.sqlite.vor-0001_objekte'), '0.9.0', gelesen)).not.toBeNull()
   })
 })

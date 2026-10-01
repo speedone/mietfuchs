@@ -58,7 +58,7 @@ type HealthReport = {
     // auch die Oberfläche; beim Start aus einem Linux-Paket gibt es keine Konsole.
     changeover: { state: string, message: string, notes: string[] }
     // Hat dieser Start Schritte nachgeholt, die Sicherung davor (#154), sonst null.
-    migrated: { steps: number, backup: string } | null
+    migrated: { steps: number, backup: string, at: string } | null
   }
 }
 
@@ -4014,7 +4014,10 @@ test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, beim nä
   try {
     const report = await erster.api<HealthReport>('/healthz')
     // Nur der Name: Die Oberfläche sagt „im Datenordner“, einen Pfad braucht sie nicht.
-    assert.deepEqual(report.database?.migrated, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' })
+    const { at, ...rest } = report.database?.migrated ?? assert.fail('keine Sicherung genannt')
+    assert.deepEqual(rest, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' })
+    // Der Zeitpunkt der Sicherung unterscheidet sie von einer früheren gleichen Namens.
+    assert.equal(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString())
     assert.ok(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')), 'die genannte Sicherung fehlt')
   } finally {
     erster.child.kill()

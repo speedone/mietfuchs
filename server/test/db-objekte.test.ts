@@ -166,6 +166,41 @@ test('Objekt: vor dem Update liegt eine Sicherung des alten Stands daneben, und 
   }
 })
 
+test('Update: eine veraltete Sicherung gleichen Namens wird beiseitegelegt und neu gesichert (#154)', async () => {
+  // Ein früheres Update ist gescheitert und hat seine Sicherung liegen lassen; danach wurde
+  // wochenlang mit der alten Version weitergearbeitet. Die alte Sicherung wiederzuverwenden
+  // hieße: Wer zurückgeht, verliert diese Wochen.
+  const dir = tempDir()
+  try {
+    const file = databaseFile(dir)
+    const connection = await databaseAtBaseline(file)
+    const target = `${file}.vor-0001_objekte`
+    connection.exec(`VACUUM INTO '${target}'`)
+    const damals = new Date('2026-08-01T09:30:00Z')
+    fs.utimesSync(target, damals, damals)
+    // Seitdem eingetragen: steht nur in der Datenbank, nicht in der alten Sicherung.
+    connection.exec(`INSERT INTO units (id, name, area_m2, participates) VALUES ('w-neu', 'Neu', 30, 1)`)
+    connection.close()
+
+    const opened = await openDatabase({ dataDir: dir })
+    opened.close()
+    assert.equal(opened.backup, target, 'genannt wird die neue Sicherung')
+
+    const neu = await connect(target)
+    assert.deepEqual(column(neu, `SELECT id FROM units ORDER BY rowid`), ['w-z', 'w-a', 'w-neu'], 'die neue Sicherung hat den heutigen Stand')
+    neu.close()
+
+    // Die alte ist nicht gelöscht, sondern liegt mit ihrem Zeitpunkt im Namen daneben.
+    const beiseite = fs.readdirSync(dir).filter((name) => name.startsWith('mietfuchs.sqlite.vor-0001_objekte.'))
+    assert.deepEqual(beiseite, ['mietfuchs.sqlite.vor-0001_objekte.vom-2026-08-01-0930'])
+    const alt = await connect(path.join(dir, beiseite[0] ?? ''))
+    assert.deepEqual(column(alt, `SELECT id FROM units ORDER BY rowid`), ['w-z', 'w-a'])
+    alt.close()
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('Objekt: eine frische Datenbank bekommt keine Sicherung', async () => {
   const dir = tempDir()
   try {

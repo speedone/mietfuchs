@@ -99,7 +99,7 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
     database: {
       ...state({ state: 'none', message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [] }),
       migrations: 2,
-      migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte' },
+      migrated: { steps: 2, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: '2026-10-01T10:00:00.000Z' },
     },
   }
   const { unmount } = render(<DatabaseNotice />)
@@ -112,7 +112,7 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
 
   fireEvent.click(screen.getByRole('button', { name: 'Verstanden' }))
   expect(screen.queryByText(/aktualisiert/)).toBeNull()
-  expect(localStorage.getItem(UPDATE_DISMISS_KEY)).toBe('mietfuchs.sqlite.vor-0001_objekte')
+  expect(localStorage.getItem(UPDATE_DISMISS_KEY)).toBe('mietfuchs.sqlite.vor-0001_objekte@2026-10-01T10:00:00.000Z')
 
   // Beim nächsten Öffnen der Oberfläche, solange derselbe Start läuft, kommt er nicht wieder.
   unmount()
@@ -124,7 +124,7 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
 
 test('ohne Zugriff auf den Speicher des Browsers erscheint der Hinweis trotzdem und lässt sich schließen', async () => {
   report = {
-    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 1, backup: 'mietfuchs.sqlite.vor-0002_x' } },
+    database: { ...state({ state: 'none', message: '', notes: [] }), migrated: { steps: 1, backup: 'mietfuchs.sqlite.vor-0002_x', at: '2026-10-01T10:00:00.000Z' } },
   }
   vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('gesperrt') })
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('gesperrt') })
