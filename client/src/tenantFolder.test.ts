@@ -105,3 +105,19 @@ describe('Belegmappe für Mieter: die PDF', () => {
     expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1 + 2)
   })
 })
+
+describe('Belegmappe für Mieter: verschlüsselte PDFs', () => {
+  it('ein verschlüsseltes PDF wird nicht roh kopiert, sondern als Bild übernommen', async () => {
+    // Durchsicht: Mit `ignoreEncryption` kopierte pdf-lib verschlüsselte Inhalte unlesbar hinein,
+    // und die Mappe zeigte leere Seiten statt des Belegs.
+    const quelle = await PDFDocument.create()
+    quelle.addPage([300, 400])
+    const roh = new TextDecoder('latin1').decode(await quelle.save({ useObjectStreams: false }))
+    const verschluesselt = new TextEncoder().encode(roh.replace('trailer\n<<', 'trailer\n<<\n/Encrypt << /Filter /Standard /V 1 /R 2 >>'))
+    const jpeg = Uint8Array.from(atob('/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/APn+iiigD//Z'), (c) => c.charCodeAt(0))
+    let gerastert = 0
+    const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'v.pdf' })], [upload('v.pdf')], { includeIndividual: false })
+    await buildTenantFolderPdf(plan, { title: 't', subtitle: 's', load: async () => verschluesselt, rasterize: async () => { gerastert++; return [jpeg] } })
+    expect(gerastert).toBe(1)
+  })
+})

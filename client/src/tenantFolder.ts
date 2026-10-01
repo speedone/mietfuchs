@@ -27,10 +27,13 @@ export type TenantFolderPlan = { entries: FolderEntry[]; documents: FolderDocume
 
 // **Einzelbeträge je Mieter** (Schlüssel `amounts`) stammen meist aus der Abrechnung eines
 // Messdienstes. Deren Beleg führt die Beträge und Verbrauchswerte jeder Wohnung, oft mit Namen.
-// Das Einsichtsrecht reicht nach BGH (Urteil vom 07.02.2018, VIII ZR 189/17) zwar bis zu den
-// Verbrauchswerten der anderen Mieter, aber nur, soweit der einsehende Mieter sie zur Prüfung
-// braucht und verlangt; eine Mappe, die jedem Mieter unaufgefordert die Daten aller anderen
-// mitgibt, geht darüber hinaus. Deshalb nur auf ausdrückliche Wahl.
+// Das Einsichtsrecht reicht nach BGH (Urteil vom 07.02.2018, VIII ZR 189/17, Pressemitteilung
+// 25/2018) bis zu den Einzelverbrauchsdaten der anderen Nutzer, und ein besonderes Interesse muss
+// der Mieter dafür nicht darlegen. Es ist aber ein Recht **auf Verlangen** (§ 556 Abs. 4 Satz 1
+// BGB): Eine Mappe, die jedem Mieter unaufgefordert die Daten aller anderen mitgibt, geht darüber
+// hinaus, und die Datenschutz-Grundverordnung verlangt, nicht mehr personenbezogene Daten
+// weiterzugeben als nötig (Art. 5 Abs. 1 lit. c, Datenminimierung). Deshalb nur auf ausdrückliche
+// Wahl; Begründung im Design-Text.
 export const isIndividualAmounts = (c: CostItem): boolean => c.key === 'amounts'
 
 export function planTenantFolder(
@@ -141,7 +144,9 @@ async function appendDocument(lib: PdfLib, out: PDFDocument, u: UploadInfo, sour
   const bytes = await source.load(u)
   try {
     if (u.mimeType === 'application/pdf') {
-      const doc = await lib.PDFDocument.load(bytes, { ignoreEncryption: true })
+      // Ohne `ignoreEncryption`: Ein verschlüsseltes PDF soll scheitern und als Bild hineinkommen,
+      // statt unlesbar kopiert zu werden (Durchsicht).
+      const doc = await lib.PDFDocument.load(bytes)
       const pages = await out.copyPages(doc, doc.getPageIndices())
       for (const p of pages) out.addPage(p)
     } else if (u.mimeType === 'image/png') {
