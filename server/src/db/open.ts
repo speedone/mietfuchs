@@ -426,8 +426,15 @@ const networkWarning = (beschreibung: string): string =>
 // `mietfuchs.sqlite.vor-<erster ausstehender Schritt>`, und gibt ihren Pfad zurück.
 //
 // Nur, wenn es etwas zu sichern gibt: Eine Datenbank ohne einen einzigen angewendeten Schritt
-// ist frisch angelegt und leer. Und nur einmal je Schritt: Liegt die Kopie schon da, stammt sie
-// von einem früheren, gescheiterten Versuch und ist der ältere, also sicherere Stand.
+// ist frisch angelegt und leer.
+//
+// **Eine Kopie gleichen Namens wird beiseitegelegt, nicht wiederverwendet** (#154). Sie stammt
+// von einem früheren Versuch, der gescheitert ist, und danach kann wochenlang mit der alten
+// Version weitergearbeitet worden sein. Sie als Sicherung dieses Updates zu nennen hieße: Wer
+// zurückgeht, verliert diese Wochen. Gelöscht wird sie aber auch nicht, denn sie ist der ältere
+// Stand und kann der sein, den jemand sucht. Sie bekommt den Zeitpunkt ihres Entstehens in den
+// Namen (`….vom-JJJJ-MM-TT-HHMM`, in UTC, damit der Name nicht vom Rechner abhängt); die Datei
+// ohne Zusatz ist damit immer die aktuelle.
 //
 // `VACUUM INTO` und keine Dateikopie, aus demselben Grund wie beim Backup (backup.ts): Es
 // liefert einen in sich stimmigen Stand ohne Beidateien.
@@ -440,9 +447,19 @@ export function backupBeforeMigrating(connection: Connection, file: string, migr
   const firstPending = migrations.find((m) => !done.has(m.hash))
   if (!firstPending) return null
   const target = `${file}.vor-${firstPending.tag}`
-  if (fs.existsSync(target)) return target
+  if (fs.existsSync(target)) fs.renameSync(target, setAsideName(target))
   connection.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`)
   return target
+}
+
+// Der Name, unter dem eine vorgefundene Sicherung beiseitegelegt wird. Gibt es ihn schon (zwei
+// Versuche in derselben Minute), wird hochgezählt statt überschrieben.
+function setAsideName(target: string): string {
+  const iso = fs.statSync(target).mtime.toISOString()
+  const base = `${target}.vom-${iso.slice(0, 10)}-${iso.slice(11, 13)}${iso.slice(14, 16)}`
+  let name = base
+  for (let n = 2; fs.existsSync(name); n++) name = `${base}-${n}`
+  return name
 }
 
 export type OpenedDatabase = {
@@ -451,6 +468,11 @@ export type OpenedDatabase = {
   // Wie viele Änderungen am Aufbau dieser Start nachgeholt hat. Beim ersten Start sind es alle,
   // danach in aller Regel keine.
   migrations: number
+  // Die Sicherung, die dieser Start vor dem Nachholen angelegt hat (oder von einem früheren,
+  // gescheiterten Versuch vorgefunden), sonst null. Eine frisch angelegte Datenbank bekommt
+  // keine, und deshalb steht hier auch dann null, wenn `migrations` alle Schritte zählt: Die
+  // Oberfläche erzählt davon (#154) und darf keine Datei nennen, die es nicht gibt.
+  backup: string | null
   // Was zwar zu sagen, aber kein Grund zum Abbruch ist. Der Aufrufer gibt sie aus.
   warnings: string[]
   // Der einzige Weg zu einem Schreibvorgang, siehe die Begründung bei createLane.
@@ -559,8 +581,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
 
     // Vor einem Update eine Sicherung des bisherigen Stands (#92). Scheitert sie, wird nicht
     // migriert: Nichts anfassen, was man nicht zurückholen kann.
+    let backup: string | null
     try {
-      backupBeforeMigrating(connection, file, migrations)
+      backup = backupBeforeMigrating(connection, file, migrations)
     } catch (err) {
       return fail(
         `Vor dem Update der Datenbank ${file} ließ sich keine Sicherung anlegen. Mietfuchs ändert ` +
@@ -591,6 +614,9 @@ export async function openDatabase(options: OpenOptions): Promise<OpenedDatabase
       db: connection.db,
       file,
       migrations: applied,
+      // Nur wenn wirklich etwas nachgeholt wurde; ohne ausstehenden Schritt gibt
+      // backupBeforeMigrating ohnehin null zurück, das hier hält die Zusage aber an einer Stelle.
+      backup: applied > 0 ? backup : null,
       warnings,
       write: (work) => lane.write(() => work(connection.db)),
       read: (work) => lane.read(() => work(connection.db)),

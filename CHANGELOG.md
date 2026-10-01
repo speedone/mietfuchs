@@ -8,6 +8,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Nach einem Update sagt Mietfuchs, dass eine Sicherung angelegt wurde.** Hat der Start die
+  Datenbank auf den neuen Stand gebracht, nennt die Oberfläche oben auf jeder Seite einmal die
+  neue Version und den Namen der Sicherung im Datenordner (`mietfuchs.sqlite.vor-…`) und
+  verweist auf die Anleitung, wie man zur vorigen Version zurückkommt. Der Hinweis lässt sich
+  schließen und kommt beim nächsten Start nicht wieder. Nach dem Umstieg aus einer `db.json` und
+  nach dem Wiederherstellen eines Backups erscheint er nicht, denn dort entsteht keine solche
+  Sicherung.
+  ([#154](https://github.com/speedone/mietfuchs/issues/154))
 - **Steuerübersicht: Hinweise zu den Zeilen 24 und 20 der Anlage V.** Ist eine Inklusivmiete
   vereinbart, erinnert die Übersicht an das Kennzeichen „Nebenkosten nicht gesondert vereinbart“
   in Zeile 24, bei gemischten Verträgen mit dem Rat, den Eintrag zu klären; eine
