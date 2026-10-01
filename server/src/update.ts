@@ -12,7 +12,14 @@ export const UPDATE_URL = 'https://api.github.com/repos/speedone/mietfuchs/relea
 const ONE_MINUTE = 60 * 1000
 const ONE_HOUR = 60 * ONE_MINUTE
 const ONE_DAY = 24 * ONE_HOUR
-const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/
+// SemVer 2.0.0: drei Zahlen ohne führende Null, dahinter wahlweise eine Vorabversion aus
+// Punkt-getrennten Teilen (`-rc.2`) und Bauangaben (`+build.5`), die für die Reihenfolge nicht
+// zählen. Das `v` erlaubt der Tag-Name bei GitHub.
+const NUMBER = '0|[1-9]\\d*'
+const PRE_PART = '(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)'
+const VERSION = new RegExp(
+  `^v?(${NUMBER})\\.(${NUMBER})\\.(${NUMBER})(?:-(${PRE_PART}(?:\\.${PRE_PART})*))?(?:\\+[0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*)?$`,
+)
 
 // Links aus der Antwort landen in der Oberfläche. Übernommen wird nur, was ins Mietfuchs-Repo
 // auf GitHub zeigt, auch wenn NKA_UPDATE_URL die Abfrage anderswohin lenkt.
@@ -22,19 +29,43 @@ const trusted = (link: string | undefined): string | null => (typeof link === 's
 const TOO_MANY_REQUESTS =
   'GitHub hat zu viele Anfragen von diesem Internetanschluss gezählt. Mietfuchs fragt später noch einmal.'
 
-// 'v0.4.0' oder '0.4.0' → [0, 4, 0]. Vorabversionen und alles andere → null.
-export function parseVersion(v: unknown): [number, number, number] | null {
+// Eine Version zerlegt: `core` sind die drei Zahlen, `pre` die Teile der Vorabversion, Teile
+// aus Ziffern als Zahl. Eine fertige Version hat keine Teile.
+export type Version = { core: [number, number, number], pre: (number | string)[] }
+
+// 'v0.4.0' → { core: [0, 4, 0], pre: [] }, '0.9.0-rc.2' → { core: [0, 9, 0], pre: ['rc', 2] }.
+// Alles, was keine Version nach SemVer ist, → null.
+export function parseVersion(v: unknown): Version | null {
   const m = VERSION.exec(String(v ?? '').trim())
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+  if (!m) return null
+  const pre = m[4] ? m[4].split('.').map((part) => (/^\d+$/.test(part) ? Number(part) : part)) : []
+  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre }
+}
+
+// Reihenfolge nach SemVer 2.0.0 §11 (#166): erst die drei Zahlen; bei Gleichstand liegt jede
+// Vorabversion vor der fertigen (0.9.0-rc.2 < 0.9.0); unter Vorabversionen entscheidet der
+// erste verschiedene Teil, Zahlen numerisch (rc.2 < rc.10), Text nach Zeichencode, und eine
+// Zahl vor Text; sind alle gemeinsamen Teile gleich, ist die mit mehr Teilen die spätere.
+function compareVersions(a: Version, b: Version): number {
+  for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i]
+  if (a.pre.length === 0 || b.pre.length === 0) return b.pre.length - a.pre.length
+  for (let i = 0; i < Math.min(a.pre.length, b.pre.length); i++) {
+    const x = a.pre[i]
+    const y = b.pre[i]
+    if (x === y) continue
+    if (typeof x === 'number' && typeof y === 'number') return x - y
+    if (typeof x === 'number') return -1
+    if (typeof y === 'number') return 1
+    return x < y ? -1 : 1 // Zeichencode, nicht die Sprache des Rechners
+  }
+  return a.pre.length - b.pre.length
 }
 
 // Ist `candidate` neuer als `current`? Ohne gültige Versionen auf beiden Seiten nie.
 export function isNewer(candidate: unknown, current: unknown): boolean {
   const a = parseVersion(candidate)
   const b = parseVersion(current)
-  if (!a || !b) return false
-  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
-  return false
+  return !!a && !!b && compareVersions(a, b) > 0
 }
 
 // Nur die Felder, die wir wirklich lesen. Alles andere aus der Antwort interessiert nicht.
@@ -187,7 +218,10 @@ export function createUpdateChecker({
     if (release.draft || release.prerelease) return
     const version = parseVersion(release.tag_name)
     if (!version) throw new Error(`Unbekanntes Versionsformat „${release.tag_name}".`)
-    const latest = version.join('.')
+    // Ein Tag mit Vorabversion ohne das Kennzeichen: release.yml setzt es aus dem Bindestrich,
+    // fehlte es doch einmal, wird der Kandidat trotzdem niemandem angeboten (#166).
+    if (version.pre.length > 0) return
+    const latest = version.core.join('.')
     result.latest = latest
     result.available = isNewer(latest, currentVersion)
     result.releaseUrl = trusted(release.html_url)

@@ -198,6 +198,13 @@ test('Einstellungen: ohne passende Datei öffnet die Release-Seite in neuem Tab'
   expect(link.getAttribute('target')).toBe('_blank')
 })
 
+test('Einstellungen: ein Release-Kandidat nennt sich Vorabversion (#166)', async () => {
+  response = status({ current: '0.9.0-rc.2', latest: '0.8.0', available: false })
+  render(<Card s={settings({ updateCheck: 'on' })} />)
+  await waitFor(() => expect(screen.getByText(/Sie nutzen die Vorabversion 0\.9\.0-rc\.2\. Neueste veröffentlichte Version: 0\.8\.0\./)).toBeTruthy())
+  expect(screen.queryByText(/aktuelle Version/)).toBeNull()
+})
+
 test('Einstellungen: „Jetzt prüfen" fragt neu an und zeigt die Befehle für Docker', async () => {
   response = status({ available: false, latest: '0.4.0', mode: 'docker', downloadUrl: null })
   render(<Card s={settings({ updateCheck: 'on' })} />)

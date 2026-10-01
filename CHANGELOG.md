@@ -392,6 +392,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   kürzt nicht selbst, weil es nicht wissen kann, welcher Teil der Rechnung das TV-Signal ist.
   Prüfen Sie bitte Abrechnungen ab 2024 mit dieser Kostenart.
   ([#107](https://github.com/speedone/mietfuchs/issues/107))
+- **Ein Release-Kandidat meldet sich als Vorabversion.** Die Programmdatei, das Docker-Image und
+  die Linux-Pakete aus einem Tag wie `v0.9.0-rc.2` meldeten sich als fertige 0.9.0, und
+  erschien die echte 0.9.0, kam kein Update-Hinweis. Jetzt trägt der Bau die Nummer aus dem Tag,
+  die Einstellungen sagen „Sie nutzen die Vorabversion 0.9.0-rc.2. Neueste veröffentlichte
+  Version: 0.8.0.“, und die fertige Version wird angeboten, sobald sie erscheint. Die Pakete
+  sortieren den Kandidaten vor die fertige Version, sodass die Paketverwaltung sie als
+  Aktualisierung annimmt. ([#166](https://github.com/speedone/mietfuchs/issues/166))
 
 ## [0.8.0] – 2026-09-22
 
