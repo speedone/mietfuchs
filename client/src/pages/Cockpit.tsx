@@ -5,6 +5,9 @@ import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
+import { meterReadiness } from '../meterCheck'
+import { noticesNeedAttention } from '../notices'
+import { zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
 
 type Props = {
@@ -93,7 +96,9 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     // 1. Mietverhältnisse & Flächen
     // Auch die selbstgenutzte Wohnung braucht eine Fläche — ohne sie fällt ihr Eigenanteil
     // beim Flächenschlüssel stillschweigend weg.
-    const noArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
+    // 0 m² ohne Bewohner ist seit #135 eine Angabe (Garage, Stellplatz, Lager) und wird nur
+    // genannt; 0 m² bei einer bewohnten Wohnung ist eine vergessene Fläche.
+    const { zero: zeroArea, missing: noArea } = zeroAreaUnits(units, settlement.garageLikeUnitIds)
     // Mietverhältnisse ohne Abrechnung (Pauschale, Inklusivmiete, #93) zählen mit: Es gibt sie,
     // sie werden nur nicht abgerechnet.
     const ohneAbrechnung = settlement.notSettled ?? []
@@ -106,7 +111,8 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
         detail: `Wohnfläche fehlt bei: ${noArea.map((u) => u.name).join(', ')}` })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
-        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · vollständig` })
+        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · ` +
+          (zeroArea.length > 0 ? `0 m² und 0 Personen: ${zeroArea.map((u) => u.name).join(', ')}` : 'vollständig') })
     }
 
     // 2. Belege & Kosten erfasst
@@ -124,11 +130,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
     } else {
-      const relevant = meters.filter((m) => m.unitId && meterTypes.has(m.type))
-      const incomplete = relevant.filter((m) => {
-        const c = consumption.find((x) => x.meterId === m.id)
-        return !c || c.readingCount < 2 || c.warnings.length > 0
-      })
+      const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
         list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', cta: 'Stände erfassen',
           detail: `Anfang/Ende fehlt oder unplausibel bei: ${incomplete.map((m) => m.name).join(', ')}` })
@@ -185,7 +187,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
-      list.push({ title: 'Hinweise der Berechnung', level: 'gelb', tab: 'abrechnung', cta: 'Abrechnung ansehen',
+      list.push({ title: 'Hinweise der Berechnung', level: noticesNeedAttention(settlement) ? 'gelb' : 'gruen', tab: 'abrechnung', cta: 'Abrechnung ansehen',
         detail: settlement.warnings.join(' · ') })
     }
 

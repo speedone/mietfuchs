@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
-import { legalBasisLines, noticeClass, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
-import type { Notice } from './types'
+import { legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
 
@@ -22,6 +22,15 @@ describe('Hinweise (#112)', () => {
     expect(noticeTarget(undefined)).toBeNull()
   })
 
+  test('ein Rückstand führt ins Mietkonto (#133)', () => {
+    expect(noticeTarget({ kind: 'rentLedger', id: 't' })).toEqual({ tab: 'mietkonto', label: 'Hier beheben → Mietkonto' })
+  })
+
+  test('eine unbekannte Art aus einer eingefrorenen oder neueren Abrechnung ergibt keinen Knopf statt eines Absturzes', () => {
+    const fremd: NoticeSubject = JSON.parse('{ "kind": "gibtEsNicht", "id": "x" }')
+    expect(noticeTarget(fremd)).toBeNull()
+  })
+
   test('Stufen haben ein Wort und eine Farbe', () => {
     expect(NOTICE_LEVEL_LABELS).toEqual({ error: 'Fehler', warning: 'Warnung', hint: 'Hinweis', info: 'Info' })
     expect(noticeClass('error')).toBe('error')
@@ -40,5 +49,29 @@ describe('Hinweise (#112)', () => {
     })
     expect(legalBasisLines(undefined).head).toMatch(/nicht erfasst/)
     expect(legalBasisLines(undefined).rules).toEqual([])
+  })
+})
+
+// #135: 0 m² und 0 Personen sind Angaben (Garage, Stellplatz); ihr Hinweis soll die Cockpit-Ampel
+// nicht gelb färben. Gelb heißt: Es gibt einen Fehler oder eine Warnung.
+describe('Cockpit: verlangen die Hinweise etwas?', () => {
+  test('ein Hinweis zur Gemeinschaftsabrechnung allein: ja, er ist ein offener Punkt', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'external.amount-mismatch', level: 'hint' })] })).toBe(true)
+  })
+  test('nur die beiden Hinweise auf eine bewusst eingetragene 0: nein', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [
+      n({ code: 'basis.unit-zero', level: 'hint' }), n({ code: 'basis.tenancy-zero', level: 'hint' }),
+    ] })).toBe(false)
+  })
+  test('eine vergessene Wohnfläche (bewohnte Wohnung mit 0 m²): ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.tenancy-no-persons', level: 'warning' })] })).toBe(true)
+  })
+  test('die 0 neben einem anderen Hinweis: ja', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.unit-zero', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
+  })
+  test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
+    expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)
+    expect(noticesNeedAttention({ warnings: [] })).toBe(false)
   })
 })

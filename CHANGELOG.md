@@ -102,6 +102,34 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Monate je Zeile, und die Navigation oben ist nach denselben Gruppen geordnet wie am Rechner. Der
   Ausdruck bleibt unverändert.
   ([#137](https://github.com/speedone/mietfuchs/issues/137))
+- **Die Abrechnung weist auf einen Rückstand im Mietkonto hin.** Zahlt ein Mieter einen Monat
+  nicht, rechnete die Abrechnung trotzdem die volle Vorauszahlung an und sagte nichts dazu; wer
+  nicht an die Korrektur dachte, verschickte ein zu hohes Guthaben. Jetzt erscheint eine Warnung
+  mit dem offenen Betrag, solange für das Jahr keine gezahlte Vorauszahlung eingetragen ist.
+  Umgerechnet wird nicht, denn ob eine Teilzahlung die Kaltmiete oder die Vorauszahlung betraf,
+  wissen nur Sie. „Hier beheben →“ führt ins Mietkonto. Im laufenden Jahr zählen nur die Monate
+  vor dem aktuellen. Wer gar keine Zahlungen erfasst, bekommt den Hinweis nicht.
+  ([#133](https://github.com/speedone/mietfuchs/issues/133))
+- **Der Vorschlag für die neue Vorauszahlung war zu niedrig, wenn der Mieter erst im Jahr
+  einzog.** Mietfuchs teilte den Anteil des Teiljahres durch zwölf, obwohl die Kosten künftig für
+  ein ganzes Jahr anfallen; der Mieter hätte im Folgejahr nachgezahlt. Jetzt wird der Anteil
+  zuerst auf das volle Jahr hochgerechnet. Endet das Mietverhältnis im Jahr, auch zum 31.12.,
+  steht kein Vorschlag mehr auf der Abrechnung. Abgeschlossene Abrechnungen behalten ihren eingefrorenen Stand.
+  ([#134](https://github.com/speedone/mietfuchs/issues/134))
+- **Garage und Stellplatz lassen sich mit 0 m² und 0 Personen anlegen.** Bisher verlangte das
+  Formular eine Fläche über 0 und mindestens eine Person, und die Garage stand mit erfundenen
+  Werten in der Verteilbasis von Flächen- und Personenschlüssel. Jetzt sind 0 m² und 0 Personen
+  erlaubt, mit einem kurzen Hinweis am Feld; negative und gebrochene Personenzahlen bleiben
+  ausgeschlossen, und die Meldung sagt, was erlaubt ist. Ist eine Einheit mit 0 m²
+  ausdrücklich an 0 Personen vermietet, nennt die Abrechnung das nur als Hinweis mit den
+  betroffenen Positionen, und das Cockpit färbt sich allein deswegen nicht gelb. Eine bewohnte
+  Wohnung mit 0 m², eine leerstehende ohne Fläche oder eine Wohnung mit Fläche und 0 Personen
+  meldet sie weiter als Warnung, denn dann ist die Angabe vermutlich vergessen.
+  ([#135](https://github.com/speedone/mietfuchs/issues/135))
+- **Die Cockpit-Ampel „Zählerstände“ sieht den Hauptzähler.** Bisher zählte sie nur Zähler mit
+  Wohnung; fehlte der Endstand des Hauptzählers, blieb sie grün, obwohl er seit #116 die
+  Verteilbasis sein kann und die Abrechnung dann nicht stimmt.
+  ([#136](https://github.com/speedone/mietfuchs/issues/136))
 - **Eine Gutschrift verringert jetzt auch den Eigenanteil.** Bisher sank bei einer Gutschrift
   nur der Vermieteranteil, der Teil Ihrer selbstgenutzten Wohnung blieb unverändert, und die
   Steuerübersicht wies einen zu hohen privaten Anteil aus. Bei noch offenen Jahren mit Gutschriften

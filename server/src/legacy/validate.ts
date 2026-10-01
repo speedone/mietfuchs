@@ -428,7 +428,7 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
       adjust(c, where, 'Es ist keine aktuelle Personenzahl hinterlegt. Übernommen wird der letzte Eintrag der Personen-Staffel, und ohne Staffel die 1, so wie Mietfuchs sie heute schon einliest.')
     } else {
       // Das Schema führt sie als ganze Zahl, und das Formular lässt gar nichts anderes zu
-      // (`Number.isInteger(persons) && persons >= 1` in Stammdaten.tsx).
+      // (`parsePersons` in client/src/tenancyModel.ts: eine ganze Zahl ab 0, seit #135 auch 0).
       fields.number('persons', 'Personenzahl', { integer: true })
     }
 

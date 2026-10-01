@@ -143,6 +143,9 @@ const noticeKinds = {
   'basis.self-no-area': { level: 'warning', title: 'Wohnfläche der eigenen Wohnung fehlt', terms: ['ownShare', 'distributionBasis'] },
   'basis.unit-no-area': { level: 'warning', title: 'Wohnfläche fehlt', terms: ['distributionBasis'] },
   'basis.tenancy-no-persons': { level: 'warning', title: 'Personenzahl fehlt', terms: ['personDays'] },
+  // Bewusst eingetragene 0 bei einer Einheit ohne Fläche und Bewohner (Garage, Stellplatz, #135)
+  'basis.unit-zero': { level: 'hint', title: 'Einheit ohne Fläche', terms: ['distributionBasis'] },
+  'basis.tenancy-zero': { level: 'hint', title: 'Mietverhältnis ohne Personen', terms: ['personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
@@ -167,6 +170,7 @@ const noticeKinds = {
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
+  'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -863,8 +867,9 @@ type ConsumptionByTypeEntry = {
 // `closed` — das ergänzt erst die Route GET /api/settlement/:year.
 // Frisch gerechnet sind die Felder immer da, die am `Settlement` für alte eingefrorene
 // Abrechnungen optional sind.
-export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'notices' | 'legalBasis'> & {
+export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
   notSettled: NotSettled[]
+  garageLikeUnitIds: string[]
   notices: Notice[]
   legalBasis: LegalBasis
 }
@@ -878,7 +883,13 @@ export const HEATING_CATEGORY = 'Heizung und Warmwasser'
 const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
   (item.category === HEATING_CATEGORY ? t.heatingModel : t.costModel) ?? 'settlement'
 
-export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
+// Optionen der Abrechnung. `asOf` (JJJJ-MM-TT) ist der Stichtag für den Hinweis auf einen
+// Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
+// nach dem heutigen Datum, sonst rechneten dieselben Daten an zwei Tagen verschieden. Ohne
+// Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
+export type SettlementOptions = { asOf?: string }
+
+export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   const year = snapshot.year
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
@@ -911,6 +922,19 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     return days > 0 && unit ? [{ ...t, days, unit }] : []
   })
   const partTenancies = tenancies.filter((t) => t.unit.participates)
+  // Garage-artig (#135): keine Fläche, und im Jahr ausdrücklich mit 0 Personen genutzt, also
+  // mindestens ein Mietverhältnis und keines mit Personen (bei Eigennutzung ausdrücklich 0 eigene
+  // Personen). Dann ist eine 0 eine Angabe (Garage, Stellplatz, Lager) und keine vergessene Zahl;
+  // siehe die Hinweise zur Verteilbasis unten. **Leerstand zählt nicht dazu**: Ohne Mietverhältnis
+  // lässt sich eine Garage von einer Wohnung mit vergessener Fläche nicht unterscheiden, und im
+  // zweiten Fall wanderte der Anteil des Leerstands still zu den Mietern. Eine leere Garage warnt
+  // dann eben; das ist der billigere Irrtum.
+  const isGarageLike = (u: SnapshotUnit): boolean => {
+    if (u.areaM2 > 0) return false
+    if (u.selfUsed) return u.selfPersons === 0
+    const own = tenancies.filter((t) => t.unitId === u.id)
+    return own.length > 0 && own.every((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0))
+  }
   // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
   const selfPersonDays = selfUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
   const basisPersonDays =
@@ -1076,22 +1100,57 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       unitSubject(selfNoArea),
     )
   }
-  // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Fehlt ihr
-  // Basiswert, verteilt der Schlüssel ihren Anteil still auf die anderen — bei einer
-  // vermieteten Wohnung zahlen dann die übrigen Mieter mit. Für Mieter der teuerste Fall.
+  // Dasselbe bei den übrigen Wohnungen der Abrechnungseinheit, vermietet oder leer: Ohne
+  // Basiswert verteilt der Schlüssel ihren Anteil auf die anderen, bei einer vermieteten Wohnung
+  // zahlen dann die übrigen Mieter mit.
+  // **Seit #135 kann 0 eine Angabe sein**: Das Formular lässt 0 m² und 0 Personen für Garage,
+  // Stellplatz oder Lager ausdrücklich zu. In der Datenbank ist eine vergessene Fläche aber
+  // ebenfalls 0 (Pflichtfeld, und der Umstieg macht aus einer fehlenden Fläche 0 m²). Unterschieden
+  // wird deshalb am Gegenstück (`isGarageLike`): Hat eine Einheit weder Fläche noch Bewohner im
+  // Jahr, ist sie Garage-artig, und beide Nullen sind ein Hinweis (`basis.unit-zero`,
+  // `basis.tenancy-zero`). Wohnt dort jemand, ist 0 m² eine vergessene Fläche; hat sie Fläche, sind
+  // 0 Personen eine vergessene Personenzahl. Beides bleibt eine Warnung wie vor #135.
+  const positionsOf = (key: CostKey, unitIds: string[]) => {
+    const names = [...new Set(items
+      .filter((c) => c.key === key && c.category !== 'Nicht umlagefähig' && (!c.participantUnitIds || unitIds.some((id) => c.participantUnitIds?.includes(id))))
+      .map((c) => `„${c.description}“`))]
+    return names.join(', ')
+  }
   const partNoArea = snapshot.units.filter((u) => u.participates && !(u.areaM2 > 0) && inKeyBasis(u.id, 'area'))
   if (partNoArea.length > 0 && usesKey('area') && !areaBasisMissing) {
-    warn('basis.unit-no-area',
-      `Für die Wohnung(en) ${partNoArea.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
-      unitSubject(partNoArea),
-    )
+    const forgotten = partNoArea.filter((u) => !isGarageLike(u))
+    const zero = partNoArea.filter((u) => isGarageLike(u))
+    if (forgotten.length > 0) {
+      warn('basis.unit-no-area',
+        `Für die Wohnung(en) ${forgotten.map((u) => u.name).join(', ')} ist keine Wohnfläche hinterlegt — der Flächenschlüssel verteilt ihren Anteil auf die übrigen Wohnungen.`,
+        unitSubject(forgotten),
+      )
+    }
+    if (zero.length > 0) {
+      warn('basis.unit-zero',
+        `Für ${zero.map((u) => u.name).join(', ')} sind 0 m² und 0 Personen eingetragen; bei ${positionsOf('area', zero.map((u) => u.id))} ${zero.length === 1 ? 'trägt sie' : 'tragen sie'} nichts, ihr Anteil verteilt sich auf die übrigen Wohnungen. ` +
+          'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Wohnfläche ein.',
+        unitSubject(zero),
+      )
+    }
   }
   const partNoPersons = partTenancies.filter((t) => !(personDaysInPeriod(t, yFrom, yTo) > 0) && inKeyBasis(t.unitId, 'persons'))
   if (partNoPersons.length > 0 && usesKey('persons') && !personsBasisMissing) {
-    warn('basis.tenancy-no-persons',
-      `Für ${partNoPersons.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
-      tenancySubject(partNoPersons),
-    )
+    const forgotten = partNoPersons.filter((t) => t.unit.areaM2 > 0)
+    const zero = partNoPersons.filter((t) => !(t.unit.areaM2 > 0))
+    if (forgotten.length > 0) {
+      warn('basis.tenancy-no-persons',
+        `Für ${forgotten.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} ist keine Personenzahl hinterlegt — der Personenschlüssel verteilt deren Anteil auf die übrigen Wohnungen.`,
+        tenancySubject(forgotten),
+      )
+    }
+    if (zero.length > 0) {
+      warn('basis.tenancy-zero',
+        `Für ${zero.map((t) => `${t.tenantName} (${t.unit.name})`).join(', ')} sind 0 Personen und 0 m² eingetragen; bei ${positionsOf('persons', zero.map((t) => t.unitId))} ${zero.length === 1 ? 'trägt das Mietverhältnis nichts, sein' : 'tragen die Mietverhältnisse nichts, ihr'} Anteil verteilt sich auf die übrigen. ` +
+          'Ist das nicht gewollt (keine Garage, kein Stellplatz, kein Lager), tragen Sie die Personenzahl ein.',
+        tenancySubject(zero),
+      )
+    }
   }
 
   // Die Verteilbasis einer Position (#94). **Ohne Teilnehmer ist sie genau die bisherige**, und
@@ -1199,7 +1258,9 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
         if (!(own > 0)) {
           noBasis(eb.measure === 'mea' ? 'für die Wohnungen sind keine Miteigentumsanteile hinterlegt' : 'für die Wohnungen ist keine Wohnfläche hinterlegt')
         } else {
-          const missing = b.basisUnits.filter((u) => valueOf(u) === 0)
+          // Eine Garage-artige Einheit ohne Fläche (#135) fehlt beim Maßstab Fläche nicht, sie hat
+          // bewusst keine; bei Miteigentumsanteilen bleibt jede fehlende Angabe eine Lücke.
+          const missing = b.basisUnits.filter((u) => valueOf(u) === 0 && !(eb.measure === 'area' && isGarageLike(u)))
           if (missing.length > 0) {
             warn('external.value-missing', `„${item.description}": für ${missing.map((u) => u.name).join(', ')} ${eb.measure === 'mea' ? 'sind keine Miteigentumsanteile' : 'ist keine Wohnfläche'} hinterlegt — ihr Anteil verteilt sich auf die übrigen Wohnungen.`, unitSubject(missing))
           }
@@ -1507,6 +1568,56 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     }
   }
 
+  // Rückstand im Mietkonto (#133): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
+  // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (siehe
+  // computePrepaymentCents); zeigt das Mietkonto einen Rückstand, ging womöglich ein Guthaben
+  // hinaus, das es nicht gibt. Umgerechnet wird nicht: Ob eine Teilzahlung die Kaltmiete oder die
+  // Vorauszahlung betraf, weiß nur der Vermieter. Der Rückstand kommt aus `rentLedger` selbst,
+  // damit Abrechnung und Mietkonto nie Verschiedenes sagen.
+  // **Ohne eine einzige Zahlung des Objekts im Jahr bleibt der Hinweis aus.** Wer keine Zahlungen
+  // erfasst, führt das Mietkonto nicht, und dann stünde dort für jedes Mietverhältnis die ganze
+  // Jahresmiete als Rückstand; der Hinweis erschiene bei jedem dieser Nutzer an jeder Abrechnung
+  // und würde bald überlesen, auch dort, wo er zählt. Gefragt wird nach dem Objekt und nicht nach
+  // dem Mietverhältnis, denn wer das Mietkonto führt und für einen Mieter nichts gebucht hat, hat
+  // genau den Fall, um den es geht.
+  // Gemeldet wird nur, wo eine Vorauszahlung angerechnet wird: Bei Pauschale und Inklusivmiete
+  // fällt die Abrechnung oben weg oder rechnet nichts an.
+  // **Fällig ist nur, was vor dem Monat des Stichtags liegt.** Das Mietkonto führt das Soll für alle
+  // zwölf Monate, im laufenden Jahr also auch für die kommenden; ohne Grenze stünde dann bei jedem
+  // Mieter ein Rückstand. Die Miete ist bis zum dritten Werktag fällig (§ 556b Abs. 1 BGB), und
+  // eine Überweisung braucht ein paar Tage, bis sie gebucht ist. Den laufenden Monat erst ab einem
+  // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
+  // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
+  // Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts.
+  const dueMonths = !options.asOf || options.asOf.slice(0, 4) > String(year)
+    ? 12
+    : options.asOf.slice(0, 4) < String(year) ? 0 : Number(options.asOf.slice(5, 7)) - 1
+  const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
+  if (ledgerInUse && dueMonths > 0) {
+    const ledgerRows = new Map(rentLedger(snapshot).rows.map((r) => [r.tenancyId, r]))
+    for (const st of statements.values()) {
+      if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
+      const row = ledgerRows.get(st.tenancyId)
+      if (!row) continue
+      const dueCents = row.months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      const openCents = dueCents - row.paidYearCents
+      if (openCents <= 0) continue
+      // Der Text behauptet nicht, dass die Vorauszahlung fehlt: Im Soll stehen auch Kaltmiete und
+      // gegebenenfalls die Pauschale (gemischtes Modell, #93), und welcher Teil offen ist, sieht
+      // man erst im Mietkonto.
+      const alsoInSoll = row.baseRentYearCents > 0 && row.flatRateYearCents > 0
+        ? 'stehen auch Kaltmiete und Pauschale'
+        : row.baseRentYearCents > 0 ? 'steht auch die Kaltmiete' : row.flatRateYearCents > 0 ? 'steht auch die Pauschale' : ''
+      warn('prepayment.arrears',
+        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
+          'Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. ' +
+          `Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto${alsoInSoll ? `: Im Soll ${alsoInSoll}, der Rückstand kann ebenso sie betreffen` : ''}. ` +
+          'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
+          'hat der Mieter wirklich weniger Vorauszahlung geleistet, tragen Sie den gezahlten Betrag in der Abrechnung bei „abzüglich geleisteter Vorauszahlungen“ mit „✎ anpassen“ ein.',
+        { kind: 'rentLedger', id: st.tenancyId })
+    }
+  }
+
   // § 2 HeizkostenV: Die Verordnung geht einer Vereinbarung vor, ausgenommen ist nur das Gebäude
   // mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt. Gemeldet wird nur,
   // wenn es im Jahr eine Heizposition gibt; einen Kürzungsbetrag nennt die Meldung nicht, solange
@@ -1538,6 +1649,10 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
     daysInYear: diy,
     statements: [...statements.values()],
     notSettled,
+    // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt
+    // sie aus seinen eigenen Daten nachzubauen (#135). Alle Mietverhältnisse zählen, auch die mit
+    // Inklusivmiete oder Pauschale, die in `statements` fehlen.
+    garageLikeUnitIds: snapshot.units.filter((u) => (u.participates || u.selfUsed) && isGarageLike(u)).map((u) => u.id),
     landlord: {
       rows: landlordRows,
       totalCents: landlordRows.reduce((a, r) => a + r.shareCents, 0),
@@ -1557,10 +1672,22 @@ export function computeSettlement(snapshot: Snapshot): ComputedSettlement {
       })),
     },
   }
+  const tenancyEnd = new Map(partTenancies.map((t) => [t.id, t.end]))
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
-    // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet
-    st.suggestedMonthlyCents = Math.round(st.totalShareCents / 12 / 100) * 100
+    // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet.
+    // Die Kosten fallen künftig für zwölf Monate an; wer erst im Jahr einzog, hat einen Anteil für
+    // weniger Tage, der deshalb auf das volle Jahr hochgerechnet wird (#134). Das ist eine
+    // Vergröberung: Bei einem kurzen Teiljahr vervielfacht die Hochrechnung jede Zufälligkeit
+    // (ein Einzug im November ergibt den Faktor sechs), und verbrauchsabhängige Kosten wie Heizung
+    // fallen nicht gleichmäßig übers Jahr an, ein Winterhalbjahr ergibt also zu viel, ein Sommer
+    // zu wenig. Es bleibt ein Vorschlag, den der Vermieter vor dem Versand prüft.
+    // Endet das Mietverhältnis im Jahr, auch zum 31.12., gibt es keine künftige Vorauszahlung und
+    // keinen Vorschlag; 0 heißt für die Oberfläche „nichts anzeigen“.
+    const end = tenancyEnd.get(st.tenancyId)
+    st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0
+      ? 0
+      : Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100
   }
   return result
 }

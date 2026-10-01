@@ -94,8 +94,10 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 // ergänzt erst das Lesen in index.ts.
 // `notSettled` (#93), `notices` und `legalBasis` (#112) ebenso optional: Eine vorher
 // abgeschlossene Abrechnung kennt sie nicht.
-export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis'> & {
+export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
   selfUsedShareCents?: number
+  // vor #135 abgeschlossene Abrechnungen kennen die Einstufung nicht
+  garageLikeUnitIds?: ComputedSettlement['garageLikeUnitIds']
   notSettled?: ComputedSettlement['notSettled']
   notices?: ComputedSettlement['notices']
   legalBasis?: ComputedSettlement['legalBasis']
