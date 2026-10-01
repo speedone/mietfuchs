@@ -111,7 +111,7 @@ function QuitButton({ onQuit }: { onQuit: () => void }) {
   }
 
   return (
-    <button className="theme-toggle" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
+    <button className="theme-toggle quit" onClick={stop} disabled={stopping} title="Mietfuchs beenden">
       ⏻ {stopping ? 'Wird beendet …' : 'Mietfuchs beenden'}
     </button>
   )
@@ -255,11 +255,12 @@ function Shell() {
         ))}
 
         <div className="foot">
-          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)">
-            🌗 Design: {THEME_LABELS[choice]}
+          {/* Der Name steht am Knopf selbst: Am Handy bleibt nur „🌗“ sichtbar (#142). */}
+          <button className="theme-toggle" onClick={cycle} title="Design wechseln (System / Hell / Dunkel)" aria-label={`Design wechseln (jetzt: ${THEME_LABELS[choice]})`}>
+            🌗 <span className="theme-label">Design: {THEME_LABELS[choice]}</span>
           </button>
           {canQuit(update.status) && <QuitButton onQuit={() => setStopped(true)} />}
-          <div>Alle Daten bleiben lokal auf diesem Rechner.</div>
+          <div className="foot-note">Alle Daten bleiben lokal auf diesem Rechner.</div>
         </div>
       </nav>
       <main>

@@ -69,6 +69,9 @@ body {
 #root { display: flex; min-height: 100vh; }
 
 /* ---------- Sidebar ---------- */
+/* Die Leiste steht am Fenster und wächst nicht mit der Seite (#142): Sonst lag ihr Fuß (Design,
+   Beenden) auf langen Seiten erst nach langem Scrollen im Bild. Bei kleiner Fensterhöhe scrollt
+   sie selbst. */
 .sidebar {
   width: 230px;
   flex-shrink: 0;
@@ -78,6 +81,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  /* Schmal und dunkel, damit die eigene Scrollleiste die Leiste nicht zerschneidet */
+  scrollbar-width: thin;
+  scrollbar-color: #3a4160 transparent;
 }
 .sidebar .logo {
   display: flex;
@@ -104,7 +114,20 @@ body {
 }
 .sidebar button:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
 .sidebar button.active { background: var(--accent); color: #fff; font-weight: 600; }
-.sidebar .foot { margin-top: auto; font-size: 12px; color: #5d6580; padding: 0 12px; }
+/* Der Fuß bleibt unten in der Leiste stehen (#142): Ist das Fenster niedriger als die Navigation,
+   scrollt nur sie darüber hinweg. Er reicht über das Polster der Leiste bis an ihre Ränder, damit
+   keine Navigation unter ihm durchscheint. */
+.sidebar .foot {
+  margin: auto -14px -24px;
+  padding: 12px 26px 16px;
+  font-size: 12px;
+  color: #5d6580;
+  position: sticky;
+  bottom: -24px;
+  background: var(--sidebar);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -8px 12px -8px rgba(0, 0, 0, 0.5);
+}
 .sidebar .foot .theme-toggle {
   all: unset;
   cursor: pointer;
@@ -340,11 +363,18 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
     align-items: center;
     gap: 2px;
     padding: 10px 12px;
+    position: static;
+    height: auto;
+    overflow: visible;
   }
   .sidebar .logo { width: 100%; padding: 0 4px 8px; font-size: 15px; }
   .sidebar .logo small { display: inline; margin-left: 8px; }
   .sidebar button { padding: 7px 10px; font-size: 13px; gap: 6px; }
-  .sidebar .foot { display: none; }
+  /* Vom Fuß bleibt am Handy nur die Umschaltung des Designs, als kleiner Knopf (#142). Beendet
+     wird am Rechner, der Satz zur lokalen Ablage braucht dort keinen Platz. */
+  .sidebar .foot { margin: 0; padding: 0; position: static; border-top: none; box-shadow: none; background: none; }
+  .sidebar .foot .quit, .sidebar .foot .foot-note, .sidebar .foot .theme-label { display: none; }
+  .sidebar .foot .theme-toggle { margin: 0; padding: 7px 10px; font-size: 15px; border-radius: 8px; }
   /* Aktualisiert wird am Rechner, auf dem Mietfuchs läuft, nicht am Handy. */
   .sidebar .update-hint { display: none; }
   /* Dieselben Gruppen und Überschriften wie am Rechner, je Gruppe eine eigene Zeile (#137) */
