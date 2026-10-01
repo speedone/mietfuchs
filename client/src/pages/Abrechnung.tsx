@@ -3,7 +3,7 @@ import type { CostItem, Settings, Settlement, SettlementRow, Tenancy, Unit } fro
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord } from '../landlord'
 import { notSettledText } from '../tenancyModel'
 import { deviationView } from '../deviation'
@@ -36,6 +36,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const [error, setError] = useState('')
   const [printId, setPrintId] = useState<string | null>(null)
   const [ppEdit, setPpEdit] = useState<{ tenancyId: string; value: string } | null>(null)
+  // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
+  useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})

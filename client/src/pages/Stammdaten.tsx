@@ -6,7 +6,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, PERSONS_HINT, buildPersonHistory, costModelBody, parsePersons, showsFlatRates } from '../tenancyModel'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
@@ -726,6 +726,8 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [newTenant, setNewTenant] = useState({ name: '', start: '', persons: '2', baseRent: '', prepayment: '' })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
+  useOpenForm(true)
 
   // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
   const { property } = useProperty()

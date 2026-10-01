@@ -7,7 +7,7 @@ import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
 
@@ -87,6 +87,9 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const { property } = useProperty()
   const propertyId = property?.id
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
+  // ein Zählerstand hängt an einem seiner Zähler (#145).
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])

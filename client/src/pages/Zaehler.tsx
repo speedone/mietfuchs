@@ -3,7 +3,7 @@ import type { Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { api, errorText, fmtDate } from '../api'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -37,6 +37,8 @@ export default function Zaehler({ units }: Props) {
   const [openMeterId, setOpenMeterId] = useState<string | null>(null)
   const [readingForm, setReadingForm] = useState<ReadingForm>({ ...EMPTY_READING })
   const [error, setError] = useState('')
+  // Eine angefangene Ablesung hängt am Zähler dieses Objekts (#145).
+  useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
 
   const load = useCallback(async () => {
     const [m, r, c] = await Promise.all([

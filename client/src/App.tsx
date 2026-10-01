@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, Tenancy, Unit } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
@@ -137,9 +137,28 @@ function Shell() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
   const { year, setYear } = useYear()
-  const { properties, property, setPropertyId, reload: reloadProperties } = useProperty()
+  const { properties, property, setPropertyId, reload: reloadProperties, hasOpenForm } = useProperty()
+  const confirm = useConfirm()
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
+
+  // Objektwechsel (#145): Ist ein Formular offen, wird erst gefragt. Wer ablehnt, bleibt im
+  // bisherigen Objekt, mit Formular und Eingaben. Nach dem Wechsel stehen die Seiten neu auf
+  // (key unten), offene Formulare sind dann zu und können nichts mehr ins vorige Objekt speichern.
+  const switchProperty = useCallback(async (id: string) => {
+    if (id === propertyId) return
+    if (hasOpenForm()) {
+      const target = properties.find((p) => p.id === id)
+      const ok = await confirm({
+        title: 'Offene Eingaben verwerfen?',
+        message: `Sie haben in „${property?.name || 'Ohne Namen'}“ ein Formular offen oder eine Belegauswertung noch nicht übernommen. Beim Wechsel zu „${target?.name || 'Ohne Namen'}“ wird das geschlossen, ohne zu speichern.`,
+        confirmLabel: 'Objekt wechseln',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
+    setPropertyId(id)
+  }, [propertyId, hasOpenForm, properties, property, confirm, setPropertyId])
 
   // Wohnungen und Mietverhältnisse des gewählten Objekts (#92). Solange die Objekte noch nicht
   // geladen sind, wird gewartet: Ohne Angabe gälte auf dem Server bei mehreren Objekten keins.
@@ -178,7 +197,7 @@ function Shell() {
           <UpdateHint status={update.status} onDismissed={reload} onShowGuide={() => setTab('einstellungen')} />
         )}
 
-        <PropertySwitcher properties={properties} value={propertyId} onChange={setPropertyId} />
+        <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
 
         <label className="year-switcher no-print">
           <span>Abrechnungsjahr</span>
@@ -210,6 +229,9 @@ function Shell() {
         {/* Was beim Start mit den Daten geschehen ist (#55). Auf jeder Seite, damit die Meldung
             nicht davon abhängt, wo der Nutzer gerade ist. */}
         <DatabaseNotice />
+        {/* Je Objekt neu aufgestellt (#145): Formulare und Zwischenstände einer Seite gehören zu
+            dem Objekt, in dem sie entstanden sind. */}
+        <Fragment key={propertyId ?? ''}>
         {tab === 'cockpit' && (
           <Cockpit units={units} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
@@ -230,6 +252,7 @@ function Shell() {
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}
+        </Fragment>
       </main>
     </>
   )

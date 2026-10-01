@@ -23,7 +23,7 @@ import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
-import { useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
@@ -71,6 +71,9 @@ export default function Kosten({ units, settings, tenancies = [] }: Props) {
 
   // KI-Auswertung: Warteschlange für einen oder mehrere Belege
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
+  // ein Zählerstand hängt an einem seiner Zähler (#145).
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [dragOver, setDragOver] = useState(false)
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
 import type { Property } from './types'
 
@@ -14,6 +14,8 @@ type PropertyCtx = {
   property: Property | null
   setPropertyId: (id: string) => void
   reload: () => Promise<void>
+  // Ob gerade ein Formular offen ist (#145), siehe useOpenForm.
+  hasOpenForm: () => boolean
 }
 
 const Ctx = createContext<PropertyCtx | null>(null)
@@ -48,7 +50,30 @@ export function withProperty(path: string, propertyId: string | null | undefined
   return `${path}${path.includes('?') ? '&' : '?'}property=${encodeURIComponent(propertyId)}`
 }
 
+// Offene Formulare (#145). Ein Formular hält Verweise in das Objekt, in dem es geöffnet wurde (das
+// Mietverhältnis einer Zahlung, die Wohnung eines Mietverhältnisses), oder legt im gerade
+// gewählten Objekt an. Wechselte das Objekt darunter, landete der Eintrag still im falschen Haus.
+// Deshalb melden sich offene Formulare hier an, und der Umschalter fragt vor dem Wechsel nach;
+// nach dem Wechsel stellt die Oberfläche die Seiten neu auf (App.tsx), offene Formulare sind
+// dann zu. Eine Anmeldung ist eine Marke in einer Menge und kein Zustand: Sie soll nichts neu
+// zeichnen, gefragt wird erst im Augenblick des Wechsels.
+const OpenFormsCtx = createContext<Set<symbol> | null>(null)
+
+// Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst; Formulare ohne
+// Drawer rufen es selbst auf. Außerhalb des Providers (Tests einzelner Teile) geschieht nichts.
+export function useOpenForm(open: boolean): void {
+  const forms = useContext(OpenFormsCtx)
+  useEffect(() => {
+    if (!open || !forms) return
+    const mark = Symbol('Formular')
+    forms.add(mark)
+    return () => { forms.delete(mark) }
+  }, [open, forms])
+}
+
 export function PropertyProvider({ children }: { children: ReactNode }) {
+  const openForms = useRef(new Set<symbol>()).current
+  const hasOpenForm = useCallback(() => openForms.size > 0, [openForms])
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(remembered)
   // Ob die Liste einmal geantwortet hat. Bis dahin zeigt der Provider nichts: Eine Seite, die
@@ -75,7 +100,11 @@ export function PropertyProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const property = chooseProperty(properties, selectedId)
-  return <Ctx.Provider value={{ properties, property, setPropertyId, reload }}>{loaded ? children : null}</Ctx.Provider>
+  return (
+    <OpenFormsCtx.Provider value={openForms}>
+      <Ctx.Provider value={{ properties, property, setPropertyId, reload, hasOpenForm }}>{loaded ? children : null}</Ctx.Provider>
+    </OpenFormsCtx.Provider>
+  )
 }
 
 export function useProperty(): PropertyCtx {
