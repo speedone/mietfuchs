@@ -28,6 +28,13 @@ updates:
       kleine-updates:
         patterns: ['*']
         update-types: [minor, patch]
+    # Die Typen von Node folgen der Node-Version, mit der Mietfuchs läuft (engines, Docker,
+    # Release-Build). Mit den Typen einer neueren Hauptversion ließe der Übersetzer Funktionen
+    # durch, die es zur Laufzeit nicht gibt. Angehoben wird zusammen mit Node (CLAUDE.md,
+    # Node-Versionen), nicht von Dependabot.
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: chore
       include: scope
