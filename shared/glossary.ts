@@ -108,7 +108,7 @@ export const GLOSSARY = {
     short: 'Heizkosten müssen zu 50 bis 70 Prozent nach Verbrauch verteilt werden, der Rest nach Fläche oder umbautem Raum; beim Warmwasser der Rest nur nach Fläche. Die Verordnung geht einer anderen Vereinbarung im Mietvertrag vor.',
     example: '3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird nicht nach Verbrauch abgerechnet, etwa nur nach Fläche, darf der Mieter seinen Anteil um 15 % kürzen. Unabhängig davon darf er um 3 % kürzen, wenn Zähler nicht fernablesbar sind, obwohl sie es sein müssten (neue Geräte seit Dezember 2021, alle übrigen ab 2027), oder wenn die vorgeschriebenen Verbrauchsinformationen fehlen.',
     norm: '§§ 1, 2, 7, 8, 11, 12 HeizkostenV',
-    needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei einer Gastherme in der Wohnung mit eigenem Vertrag des Mieters. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen.',
+    needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei einer Gastherme in der Wohnung mit eigenem Vertrag des Mieters. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen. Nicht fernablesbare Zähler und Heizkostenverteiler müssen bis zum 31.12.2026 nachgerüstet oder getauscht sein; klären Sie das bitte mit Ihrem Messdienst. Ab dem Abrechnungsjahr 2027 erinnert Mietfuchs in der Abrechnung daran.',
   },
   cableTv: {
     title: 'Kabelfernsehen',
@@ -206,8 +206,8 @@ export const GLOSSARY = {
     title: 'Abrechnungsfrist',
     short: 'Die Abrechnung muss dem Mieter spätestens zwölf Monate nach Ende des Abrechnungszeitraums zugehen, sonst können Sie in der Regel keine Nachzahlung mehr verlangen; ausgenommen ist nur eine Verspätung, die Sie nicht zu vertreten haben.',
     example: 'Abrechnung für 2025: Sie muss bis zum 31.12.2026 beim Mieter sein. Kommt sie am 02.01.2027, entfällt eine Nachzahlung von 200 €; ein Guthaben des Mieters bleibt fällig.',
-    norm: '§ 556 Abs. 3 BGB',
-    needed: 'Ja, für jede Abrechnung. Es zählt der Zugang beim Mieter, nicht das Absenden. Bei einer Eigentumswohnung gilt die Frist auch, wenn die Hausgeldabrechnung noch fehlt. Mietfuchs zeigt die Frist auf der Seite Abrechnung.',
+    norm: '§ 556 Abs. 3 BGB; BGH, Urteil vom 20.05.2026, VIII ZR 6/24',
+    needed: 'Ja, für jede Abrechnung. Es zählt der Zugang beim Mieter, nicht das Absenden. Bei einer Eigentumswohnung gilt die Frist auch, wenn die Hausgeldabrechnung noch fehlt. Liegt der Grundsteuerbescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn oder den Messbescheid Einspruch eingelegt, dürfen Sie die Grundsteuer später nachberechnen, bis über den Einspruch entschieden ist. Rechnen Sie das Übrige trotzdem fristgerecht ab, behalten Sie sich die Grundsteuer darin am besten ausdrücklich vor und fordern Sie sie im Regelfall innerhalb von drei Monaten, nachdem der endgültige Bescheid da ist. Mietfuchs zeigt die Frist auf der Seite Abrechnung.',
   },
   largestRemainder: {
     title: 'Restcent-Verfahren',
