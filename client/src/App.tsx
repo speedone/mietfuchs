@@ -17,13 +17,14 @@ import Mietkonto from './pages/Mietkonto'
 import Zaehler from './pages/Zaehler'
 import Belege from './pages/Belege'
 import Abrechnung from './pages/Abrechnung'
+import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
 
 type Tab =
   | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
   | 'abrechnung' | 'uebersicht' | 'steuer'
-  | 'stammdaten' | 'belege' | 'einstellungen'
+  | 'stammdaten' | 'belege' | 'einstellungen' | 'hilfe'
 
 // Navigation nach Arbeitsphase gruppiert statt als flache Tab-Liste: erst der Überblick,
 // dann „Sammeln" (übers Jahr laufend), „Abrechnen" (Jahresende) und „Einrichten" (selten).
@@ -53,6 +54,7 @@ const NAV: { section?: string; items: NavItem[] }[] = [
       { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
       { id: 'belege', label: 'Belegarchiv', icon: '📁' },
       { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
+      { id: 'hilfe', label: 'Hilfe & Begriffe', icon: '❓' },
     ],
   },
 ]
@@ -224,6 +226,7 @@ function Shell() {
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t) => setTab(t)} />
         )}
         {tab === 'steuer' && <Steuer settings={settings} />}
+        {tab === 'hilfe' && <Hilfe />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}

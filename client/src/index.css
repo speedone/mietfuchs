@@ -672,3 +672,20 @@ td.actions { white-space: nowrap; text-align: right; }
     page-break-inside: avoid;
   }
 }
+
+/* Begriffslexikon (#113): Begriff gestrichelt unterstrichen, Erklärung als Kasten darunter */
+.term-wrap { display: inline; }
+.term { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; color: inherit; }
+.term:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.term-pop { display: block; margin: 6px 0; padding: 10px 12px; background: var(--card); color: var(--text); border: 1px solid var(--accent); border-radius: 8px; font-size: 13px; font-weight: 400; line-height: 1.45; text-transform: none; letter-spacing: normal; box-sizing: border-box; width: 0; min-width: 100%; overflow-wrap: anywhere; }
+/* width 0 und min-width 100 %: Der Kasten füllt das Label, macht es aber nicht breiter. Sonst
+   zöge er in einem schmalen Formular das ganze Feld über den Rand. */
+.term-pop .term-line { display: block; margin-top: 4px; }
+.glossary-entry h2 { margin: 0 0 6px; font-size: 17px; }
+.glossary-entry p { margin: 4px 0; }
+@media print { .term { text-decoration: none; } .term-pop { display: none; } }
+/* Ein Auswahlfeld ist so breit wie seine längste Option. „laut Gemeinschaftsabrechnung
+   (Eigentumswohnung)“ (#94) zog den Umlageschlüssel im Seitenfenster über den Rand, samt
+   waagerechtem Scrollbalken. Im Formular darf es schmaler werden als sein Inhalt. */
+.drawer-body .field { min-width: 0; }
+.drawer-body .field select { max-width: 100%; }

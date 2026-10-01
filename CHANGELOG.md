@@ -8,6 +8,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Neu
 
+- **Fachbegriffe erklären sich selbst.** In den Formularen sind Begriffe wie Umlageschlüssel,
+  Miteigentumsanteile, Pauschale oder Eigenanteil gestrichelt unterstrichen; ein Antippen zeigt,
+  was sie bedeuten, ein Beispiel mit Zahlen, die Rechtsgrundlage und ob Sie das überhaupt
+  brauchen. Jeder Hinweis auf der Abrechnung nennt die passenden Begriffe, und die neue Seite
+  „Hilfe & Begriffe“ sammelt alle zum Nachschlagen.
+  ([#113](https://github.com/speedone/mietfuchs/issues/113))
 - **Hinweise sagen, wie ernst sie sind und wo man sie behebt.** Auf der Seite Abrechnung steht
   jeder Hinweis jetzt mit Stufe (Fehler, Warnung, Hinweis) und kurzem Titel, und ein Knopf
   „Hier beheben →“ führt zur Seite, auf der man es ändert. Darunter nennt die Abrechnung ihren
@@ -56,6 +62,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- Im Formular für Kostenpositionen ragte das Auswahlfeld „Umlageschlüssel“ über den Rand des
+  Seitenfensters, weil seine längste Option breiter ist als das Fenster.
 - **Einliegerwohnung mit Zwischenzähler: Der Mieter zahlte das Wasser des Vermieters mit.**
   Hat eine Wohnung keinen eigenen Zähler, verteilte der Verbrauchsschlüssel die ganze Rechnung
   auf die Wohnungen mit Zähler. Jetzt gilt der Hauptzähler des Hauses als Grundlage, und der

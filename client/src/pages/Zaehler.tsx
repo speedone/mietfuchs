@@ -6,6 +6,7 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
+import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[] }
@@ -219,7 +220,7 @@ export default function Zaehler({ units }: Props) {
               <input value={meterForm.name} onChange={(e) => setMeterForm({ ...meterForm, name: e.target.value })} placeholder="z. B. Hauptwasserzähler" />
             </label>
             <label className="field grow">
-              Zuordnung
+              <span>Zuordnung (<Term id="mainMeter">Haupt- oder Zwischenzähler</Term>)</span>
               <select value={meterForm.unitId} onChange={(e) => setMeterForm({ ...meterForm, unitId: e.target.value })}>
                 <option value="">Haus (Hauptzähler)</option>
                 {units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}

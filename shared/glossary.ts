@@ -1,0 +1,192 @@
+// Das Begriffslexikon (#113): jeder Fachbegriff, dem ein Vermieter in Mietfuchs begegnet, mit
+// einer Erklärung in einem Satz, einem Beispiel mit Zahlen, der Rechtsgrundlage und der Antwort
+// auf „Brauche ich das?“.
+//
+// Es liegt in shared/, weil beide Seiten es brauchen: Der Server hängt an jeden Hinweis die
+// passenden Begriffe (`noticeKinds` in calc.ts), der Client zeigt sie an. Es ist der erste
+// Laufzeitanteil hier; das Docker-Image übernimmt den Ordner (siehe CLAUDE.md).
+//
+// Maßstab für die Texte: einfache Worte, eine Rechtsaussage nur, wo sie im Gesetz steht, und
+// Rechtsprechung ohne Aktenzeichen, wenn das Aktenzeichen nicht sicher belegt ist. Wer einen
+// Eintrag ändert, prüft ihn bei der jährlichen Durchsicht mit (#110).
+
+export type Term = {
+  title: string
+  // ein Satz
+  short: string
+  // mit Zahlen gerechnet
+  example: string
+  // Rechtsgrundlage, wo es eine gibt
+  norm?: string
+  // „Brauche ich das?“
+  needed: string
+}
+
+export const GLOSSARY = {
+  allocable: {
+    title: 'Umlagefähige Betriebskosten',
+    short: 'Laufende Kosten des Hauses, die Sie auf die Mieter umlegen dürfen, wenn der Mietvertrag das vorsieht; welche das sind, zählt die Betriebskostenverordnung auf.',
+    example: 'Grundsteuer 600 €, Müllabfuhr 360 €, Gebäudeversicherung 540 € im Jahr: zusammen 1.500 € umlagefähig.',
+    norm: '§ 556 Abs. 1 BGB, § 2 BetrKV',
+    needed: 'Ja, das ist der Kern jeder Nebenkostenabrechnung.',
+  },
+  notAllocable: {
+    title: 'Nicht umlagefähige Kosten',
+    short: 'Kosten, die der Vermieter selbst trägt, vor allem Verwaltung, Reparaturen und Instandhaltung; Mietfuchs rechnet sie ganz dem Vermieter zu.',
+    example: 'Reparatur der Heizung 800 € und Kontoführung 60 €: beide 860 € trägt der Vermieter, auf der Abrechnung erscheinen sie nicht beim Mieter.',
+    norm: '§ 1 Abs. 2 BetrKV',
+    needed: 'Nur wenn Sie solche Rechnungen trotzdem erfassen, etwa für die Steuer (Anlage V).',
+  },
+  allocationKey: {
+    title: 'Umlageschlüssel',
+    short: 'Die Regel, nach der eine Rechnung auf die Wohnungen verteilt wird: nach Wohnfläche, Personen, Wohneinheiten, Verbrauch oder einer vereinbarten Quote.',
+    example: '900 € Müllabfuhr nach Wohnfläche: Eine Wohnung mit 60 von 180 m² trägt 300 €.',
+    norm: '§ 556a Abs. 1 BGB',
+    needed: 'Ja, für jede Kostenposition. Ist im Mietvertrag nichts vereinbart, gilt die Wohnfläche; für gemessenen Verbrauch der Verbrauch, für Heizung die Heizkostenverordnung und bei einer Eigentumswohnung der Schlüssel der Gemeinschaft.',
+  },
+  distributionBasis: {
+    title: 'Verteilbasis',
+    short: 'Die Gesamtmenge, durch die geteilt wird, etwa die Summe aller Wohnflächen; jede Wohnung trägt ihren Teil davon.',
+    example: 'Drei Wohnungen mit 50, 60 und 70 m² ergeben eine Verteilbasis von 180 m². Die Wohnung mit 60 m² trägt 60/180 = ein Drittel.',
+    needed: 'Sie rechnen sie nicht selbst aus, Mietfuchs zeigt sie im Rechenweg. Wichtig ist nur, dass für jede Wohnung der Wert eingetragen ist.',
+  },
+  billingUnit: {
+    title: 'Abrechnungseinheit',
+    short: 'Die Wohnungen, die gemeinsam abgerechnet werden; eine Wohnung außerhalb, etwa ein Laden mit eigener Abrechnung, bleibt ganz außen vor.',
+    example: 'Haus mit drei Wohnungen und einem Laden: Die drei Wohnungen bilden die Abrechnungseinheit. Von 1.200 € Grundsteuer ziehen Sie zuerst den Anteil des Ladens ab, etwa 300 €; nur die übrigen 900 € verteilen sich auf die Wohnungen.',
+    needed: 'Nur wenn nicht alle Einheiten gemeinsam abgerechnet werden. Sonst gehört jede Wohnung dazu. Nehmen Sie eine Einheit heraus, gehört auch ihr Anteil an gemeinsamen Rechnungen heraus, sonst tragen ihn die Mieter mit.',
+  },
+  ownShare: {
+    title: 'Eigenanteil',
+    short: 'Der Teil der Kosten, der auf Ihre selbstgenutzte Wohnung entfällt; Sie tragen ihn selbst, und er ist privat, also nicht als Werbungskosten abziehbar.',
+    example: 'Grundsteuer 1.000 € nach Fläche, Ihre Wohnung hat 80 von 200 m²: 400 € sind Eigenanteil, nur die übrigen 600 € gehören in die Anlage V.',
+    norm: '§ 9, § 12 Nr. 1 EStG',
+    needed: 'Wenn Sie selbst im Haus wohnen. Legen Sie Ihre Wohnung dann als selbstgenutzt an, sonst zahlen die Mieter Ihren Teil mit.',
+  },
+  vacancy: {
+    title: 'Leerstand',
+    short: 'Eine Wohnung ohne Mieter; ihren Anteil an den Kosten trägt der Vermieter und nicht die übrigen Mieter.',
+    example: 'Eine von drei gleich großen Wohnungen steht vier Monate leer: Von 1.200 € Grundsteuer trägt der Vermieter für diese Zeit 400 € × 4/12 = 133,33 €.',
+    needed: 'Mietfuchs rechnet ihn von selbst heraus. Sie müssen nur Ein- und Auszug richtig eintragen.',
+  },
+  personDays: {
+    title: 'Personentage',
+    short: 'Beim Personenschlüssel zählt, wie viele Personen wie viele Tage im Jahr in der Wohnung gewohnt haben.',
+    example: 'Zwei Personen das ganze Jahr sind 2 × 365 = 730 Personentage; zieht im Juli eine dritte ein, kommen 1 × 184 dazu.',
+    needed: 'Nur beim Umlageschlüssel „Personen“. Tragen Sie Änderungen der Personenzahl mit Datum ein.',
+  },
+  prepayment: {
+    title: 'Vorauszahlung',
+    short: 'Ein monatlicher Betrag auf die Nebenkosten, über den einmal im Jahr abgerechnet wird; danach gibt es eine Nachzahlung oder ein Guthaben.',
+    example: '150 € im Monat sind 1.800 € im Jahr. Betragen die Kosten 2.000 €, zahlt der Mieter 200 € nach.',
+    norm: '§ 556 Abs. 2, § 560 Abs. 4 BGB',
+    needed: 'Ja, wenn der Mietvertrag Vorauszahlungen vorsieht, der Normalfall. Nach der Abrechnung dürfen Sie sie angemessen anpassen.',
+  },
+  flatRate: {
+    title: 'Betriebskostenpauschale',
+    short: 'Ein fester monatlicher Betrag für die Nebenkosten, über den nicht abgerechnet wird; es gibt weder Nachzahlung noch Guthaben.',
+    example: '120 € Pauschale im Monat sind 1.440 € im Jahr, gleich was die Kosten tatsächlich betragen.',
+    norm: '§ 556 Abs. 2, § 560 Abs. 1 und 3 BGB',
+    needed: 'Nur wenn der Mietvertrag eine Pauschale vereinbart. Erhöhen dürfen Sie sie nur, wenn der Vertrag das vorsieht und die Kosten tatsächlich gestiegen sind, mit einer begründeten Erklärung in Textform; sinken die Kosten, müssen Sie sie senken.',
+  },
+  inclusiveRent: {
+    title: 'Inklusivmiete',
+    short: 'Die Nebenkosten stecken in der Miete und werden weder gesondert ausgewiesen noch abgerechnet; steckt auch die Heizung darin, spricht man von einer Bruttowarmmiete. Nicht zu verwechseln mit der „Warmmiete“ im Alltag, die meist Kaltmiete plus Vorauszahlungen mit Abrechnung meint.',
+    example: '750 € Miete im Monat einschließlich aller Nebenkosten: Es gibt keine Abrechnung, die Kosten trägt der Vermieter aus den 9.000 € Jahresmiete.',
+    needed: 'Nur bei solchen Verträgen, häufig bei möblierten Zimmern oder Einliegerwohnungen. Für die Heizung gilt die Heizkostenverordnung trotzdem, außer im Zweifamilienhaus, in dem Sie selbst wohnen; siehe dort.',
+  },
+  heatingCostOrdinance: {
+    title: 'Heizkostenverordnung',
+    short: 'Heizung und Warmwasser müssen zu 50 bis 70 Prozent nach Verbrauch abgerechnet werden, der Rest nach Fläche oder umbautem Raum; sie geht einer anderen Vereinbarung im Mietvertrag vor.',
+    example: '3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird trotzdem pauschal abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen.',
+    norm: '§§ 2, 7, 8, 11, 12 HeizkostenV',
+    needed: 'Bei einer Zentralheizung und bei Fernwärme. Ausgenommen ist vor allem das Zweifamilienhaus, in dem Sie selbst eine der beiden Wohnungen bewohnen; wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre.',
+  },
+  cableTv: {
+    title: 'Kabelfernsehen',
+    short: 'Die Gebühren für das TV-Signal eines Kabelanschlusses sind seit dem 01.07.2024 keine umlagefähigen Betriebskosten mehr; Betriebsstrom und Wartung einer Antenne oder der Verteilanlage im Haus bleiben es.',
+    example: 'Kabelgebühren 2024 von 240 €: Umlegen dürfen Sie höchstens die 120 € für Januar bis Juni. Ab 2025 nichts mehr davon.',
+    norm: '§ 2 Nr. 15 BetrKV a. F., § 230 Abs. 4 TKG',
+    needed: 'Nur wenn Ihr Haus einen Kabelanschluss über einen Sammelvertrag hat.',
+  },
+  consumptionKey: {
+    title: 'Verbrauchsschlüssel',
+    short: 'Die Kosten werden nach den Zählerständen verteilt, also danach, wie viel jede Wohnung tatsächlich verbraucht hat.',
+    example: 'Wasser 1.000 €, gemessen 60 m³ in Wohnung A und 40 m³ in Wohnung B: A trägt 600 €, B 400 €.',
+    norm: '§ 556a Abs. 1 Satz 2 BGB',
+    needed: 'Wenn die Wohnungen eigene Zähler haben. Dann ist der Verbrauch der gerechteste Maßstab.',
+  },
+  mainMeter: {
+    title: 'Hauptzähler und Zwischenzähler',
+    short: 'Der Hauptzähler misst das ganze Haus, ein Zwischenzähler eine einzelne Wohnung. Fehlt nur Ihrer eigenen Wohnung der Zwischenzähler, gilt für sie der Rest des Hauptzählers; fehlt er einer vermieteten Wohnung, trägt den Rest der Vermieter.',
+    example: 'Hauptzähler 200 m³, Zwischenzähler der Einliegerwohnung 40 m³, Ihre Wohnung ohne Zähler: Die übrigen 160 m³ gelten als Ihr Verbrauch. Bei 1.000 € Wasser trägt der Mieter der Einliegerwohnung 200 €, 800 € sind Ihr Eigenanteil.',
+    needed: 'Wenn nicht jede Wohnung einen eigenen Zähler hat, etwa bei einer Einliegerwohnung. Lesen Sie den Hauptzähler dann zum 31.12. ab.',
+  },
+  meterReading: {
+    title: 'Zählerstand und Zählerwechsel',
+    short: 'Der Verbrauch ist der Unterschied zweier Ablesungen; wird ein Zähler getauscht, gehören der Endstand des alten und der Anfangsstand des neuen Geräts dazu.',
+    example: 'Stand am 31.12.2024: 120 m³, am 31.12.2025: 165 m³, Verbrauch 45 m³. Beim Tausch im Juni: alter Zähler endet bei 140, neuer beginnt bei 0 und steht am Jahresende bei 25; zusammen ebenfalls 45 m³.',
+    needed: 'Wenn Sie nach Verbrauch abrechnen. Ablesen am besten immer zum 31.12.',
+  },
+  directAssignment: {
+    title: 'Direktzuordnung',
+    short: 'Eine Rechnung gehört vollständig zu einer einzigen Wohnung und wird nicht verteilt.',
+    example: 'Der Schornsteinfeger prüft nur die Gastherme in Wohnung B für 85 €: Die 85 € trägt allein Wohnung B.',
+    needed: 'Selten, nur für Rechnungen, die eindeutig eine Wohnung betreffen.',
+  },
+  agreedShares: {
+    title: 'Vereinbarte Anteile',
+    short: 'Im Mietvertrag steht für jede Wohnung eine feste Quote in Prozent; was unter 100 Prozent bleibt, trägt der Vermieter.',
+    example: 'Aufzug 2.000 €, vereinbart 40 % für Wohnung A und 35 % für B: A trägt 800 €, B 700 €, der Vermieter 500 €.',
+    norm: '§ 556a Abs. 1 BGB',
+    needed: 'Nur wenn Ihr Mietvertrag solche Quoten nennt.',
+  },
+  individualAmounts: {
+    title: 'Einzelbeträge',
+    short: 'Die Beträge je Mieter stehen schon fest, etwa in der Abrechnung eines Messdienstes, und werden unverändert übernommen.',
+    example: 'Die Heizkostenabrechnung des Messdienstes über 3.000 € nennt 1.240 € für Wohnung A und 1.160 € für B; 600 € entfallen auf Ihre eigene Wohnung.',
+    needed: 'Wenn ein Dienstleister wie ein Messdienst bereits je Wohnung abgerechnet hat.',
+  },
+  participants: {
+    title: 'Teilnehmende Wohnungen',
+    short: 'Eine Rechnung betrifft nur einen Teil der Wohnungen und wird nur auf diese verteilt.',
+    example: 'Der Aufzug 1.800 € im Jahr dient nur den drei Wohnungen im Hinterhaus: Nur ihre 210 m² bilden die Verteilbasis.',
+    needed: 'Nur wenn nicht alle Wohnungen eine Einrichtung nutzen, etwa Aufzug, Waschküche oder ein zweites Haus.',
+  },
+  mea: {
+    title: 'Miteigentumsanteile (MEA)',
+    short: 'Der Anteil einer Eigentumswohnung am gemeinsamen Eigentum, meist in Tausendsteln; nach ihm verteilt die Gemeinschaft ihre Kosten.',
+    example: 'Ihre Wohnung hat 85 von 1.000 MEA. Die Gebäudeversicherung der Anlage über 6.000 € kostet Sie 85/1.000 × 6.000 = 510 €.',
+    norm: '§ 16 Abs. 1 und 2 WEG, § 556a Abs. 3 BGB',
+    needed: 'Nur bei einer vermieteten Eigentumswohnung. Ohne andere Vereinbarung gilt der Maßstab der Gemeinschaft auch gegenüber dem Mieter, sofern er nicht unbillig ist.',
+  },
+  homeownersStatement: {
+    title: 'Hausgeldabrechnung',
+    short: 'Die Jahresabrechnung der Eigentümergemeinschaft; aus ihr übernehmen Sie für die Nebenkostenabrechnung nur die umlagefähigen Kosten.',
+    example: 'Hausgeld 3.600 € im Jahr, davon 1.900 € umlagefähig (Versicherung, Müll, Allgemeinstrom, Hausmeister). Verwaltergebühr 360 €, Rücklage 900 € und Reparaturen 440 € tragen Sie selbst. Die Grundsteuer steht nicht darin, sie kommt mit eigenem Bescheid an Sie.',
+    norm: '§ 28 WEG, § 556a Abs. 3 BGB',
+    needed: 'Nur bei einer vermieteten Eigentumswohnung.',
+  },
+  labor35a: {
+    title: 'Lohnanteil nach § 35a EStG',
+    short: 'Der Anteil einer Rechnung, der auf Arbeitskosten entfällt; 20 Prozent davon kann der Mieter von seiner Einkommensteuer abziehen, wenn die Abrechnung ihn ausweist, im Jahr höchstens 4.000 € für haushaltsnahe Dienstleistungen und 1.200 € für Handwerker.',
+    example: 'Gartenpflege 1.000 €, davon Lohn 800 €: Trägt der Mieter 250 € der Rechnung, entfallen davon 200 € auf Lohn, und er kann 20 % davon abziehen, also 40 €.',
+    norm: '§ 35a Abs. 2 und 3 EStG',
+    needed: 'Nicht Pflicht, aber für Ihre Mieter bares Geld. Den Lohnanteil finden Sie auf der Rechnung des Handwerkers oder Dienstleisters.',
+  },
+  settlementDeadline: {
+    title: 'Abrechnungsfrist',
+    short: 'Die Abrechnung muss dem Mieter spätestens zwölf Monate nach Ende des Abrechnungszeitraums zugehen, sonst können Sie in der Regel keine Nachzahlung mehr verlangen; ausgenommen ist nur eine Verspätung, die Sie nicht zu vertreten haben.',
+    example: 'Abrechnung für 2025: Sie muss bis zum 31.12.2026 beim Mieter sein. Kommt sie am 02.01.2027, entfällt eine Nachzahlung von 200 €; ein Guthaben des Mieters bleibt fällig.',
+    norm: '§ 556 Abs. 3 BGB',
+    needed: 'Ja, für jede Abrechnung. Mietfuchs zeigt die Frist auf der Seite Abrechnung.',
+  },
+  legalBasis: {
+    title: 'Rechtsstand',
+    short: 'Das Datum, auf dem die Regeln in Mietfuchs stehen, und die Regeln, die im Abrechnungsjahr gelten; beim Abschließen wird er mit der Abrechnung eingefroren.',
+    example: 'Eine Abrechnung für 2023 mit Rechtsstand 30.09.2026 nennt die Regel zum Kabelfernsehen, denn 2023 war es noch umlagefähig; eine für 2025 nennt sie nicht mehr.',
+    needed: 'Sie müssen nichts tun. Er zeigt, nach welchen Regeln eine Abrechnung erstellt wurde.',
+  },
+} satisfies Record<string, Term>
+
+export type TermId = keyof typeof GLOSSARY

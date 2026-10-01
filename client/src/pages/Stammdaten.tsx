@@ -8,6 +8,7 @@ import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, costModelBody, showsFlatRates } from '../tenancyModel'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
+import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 
 type Props = {
@@ -481,7 +482,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </div>
 
             <div className="field-group">
-              <div className="field-group-label">NK-Vorauszahlung je Monat — Staffel</div>
+              <div className="field-group-label">NK-<Term id="prepayment">Vorauszahlung</Term> je Monat — Staffel</div>
               {tenForm.prepayments.map((p, i) => (
                 <div className="staffel-row" key={i}>
                   <label className="field">
@@ -504,13 +505,13 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               <summary>Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag (optional)</summary>
               <div className="row" style={{ marginTop: 10 }}>
                 <label className="field grow" title="Pauschale nach § 556 Abs. 2 BGB oder Inklusivmiete: dann gibt es keine Nebenkostenabrechnung">
-                  Nebenkosten
+                  <span>Nebenkosten (<Term id="flatRate">Pauschale</Term>, <Term id="inclusiveRent">Inklusivmiete</Term>)</span>
                   <select value={tenForm.costModel} onChange={(e) => setTenForm({ ...tenForm, costModel: e.target.value as CostModel })}>
                     {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
                   </select>
                 </label>
                 <label className="field grow" title="Für die Kostenart Heizung und Warmwasser; eine Pauschale oder Warmmiete ist nur im selbstbewohnten Zweifamilienhaus zulässig (§ 2 HeizkostenV)">
-                  Heizung und Warmwasser
+                  <span>Heizung und Warmwasser (<Term id="heatingCostOrdinance">HeizkostenV</Term>)</span>
                   <select value={tenForm.heatingModel} onChange={(e) => setTenForm({ ...tenForm, heatingModel: e.target.value as CostModel })}>
                     {(Object.keys(COST_MODEL_LABELS) as CostModel[]).map((m) => <option key={m} value={m}>{COST_MODEL_LABELS[m]}</option>)}
                   </select>
@@ -616,7 +617,7 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
             </label>
             {(property?.kind === 'etw' || unitForm.mea.trim() !== '') && (
               <label className="field grow" title="Aus der Teilungserklärung oder der Hausgeldabrechnung; für den Umlageschlüssel „laut Gemeinschaftsabrechnung“">
-                Miteigentumsanteile
+                <Term id="mea">Miteigentumsanteile</Term>
                 <input value={unitForm.mea} onChange={(e) => setUnitForm({ ...unitForm, mea: e.target.value })} placeholder="z. B. 124" inputMode="decimal" />
               </label>
             )}
@@ -633,8 +634,8 @@ export default function Stammdaten({ units, tenancies, settings, reload }: Props
               </select>
               <small className="muted">
                 {unitForm.usage === 'vermietet' && 'Die Wohnung nimmt an der Verteilung teil, ihren Anteil trägt der Mieter.'}
-                {unitForm.usage === 'eigen' && 'Zählt in die Verteilbasis, hat aber keinen Mieter — der Anteil erscheint im Vermieteranteil. Richtig für selbst bewohnte Wohnungen, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.'}
-                {unitForm.usage === 'ausgenommen' && 'Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur Abrechnungseinheit gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.'}
+                {unitForm.usage === 'eigen' && <>Zählt in die <Term id="distributionBasis">Verteilbasis</Term>, hat aber keinen Mieter — der Anteil ist Ihr <Term id="ownShare">Eigenanteil</Term>. Richtig für selbst bewohnte Wohnungen, denn Kosten für das ganze Haus dürfen nur anteilig umgelegt werden.</>}
+                {unitForm.usage === 'ausgenommen' && <>Bleibt vollständig außen vor. Nur richtig, wenn die Wohnung nicht zur <Term id="billingUnit">Abrechnungseinheit</Term> gehört (z. B. separat abgerechnete Einheit) — sonst tragen die Mieter deren Anteil mit.</>}
               </small>
             </label>
             {unitForm.usage === 'eigen' && (
