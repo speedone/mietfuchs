@@ -120,7 +120,7 @@ export function assetFor(assets: unknown, platform: string, arch: string): Githu
 // einen Tag wird nie gewartet, sonst legte eine unsinnige Angabe den Hinweis dauerhaft still.
 function rateLimitUntil(res: Response, now: number): number | null {
   if (res.status !== 403 && res.status !== 429) return null
-  let until = null
+  let until: number | null = null
   const retryAfter = Number(res.headers.get('retry-after'))
   if (retryAfter > 0) until = now + retryAfter * 1000
   else if (res.headers.get('x-ratelimit-remaining') === '0') {

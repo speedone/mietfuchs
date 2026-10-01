@@ -10,7 +10,7 @@
     "dev": "node --watch-path=src src/index.ts",
     "start": "node src/index.ts",
     "test": "node --test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p ../scripts",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

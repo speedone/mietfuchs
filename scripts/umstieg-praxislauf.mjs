@@ -186,7 +186,8 @@ const bestandAnderesHaus = () => ({
 // Zähler ohne Wohnung, fehlende Beteiligung.
 const bestandKrumm = () => {
   const b = bestand02()
-  b.units.push({ id: 'u3', name: 'Keller' })
+  // Absichtlich ohne Wohnfläche und Beteiligung, deshalb am Übersetzer vorbei
+  b.units.push(/** @type {any} */ ({ id: 'u3', name: 'Keller' }))
   b.tenancies[0].prepayments = []
   b.tenancies[0].prepaymentMonthlyCents = 15000
   b.tenancies[1].baseRents = [{ from: '2024-01', monthlyCents: 40000 }, { from: '2024-01', monthlyCents: 45000 }]
@@ -268,10 +269,10 @@ fall(1, 'Frischer Rechner, keine db.json', async () => {
     gleich(bericht.status, 'ok', 'der Server ist gesund')
     gleich(bericht.database?.changeover?.state, 'none', 'es gibt nichts zu übernehmen')
     gleich(await holen(base, '/api/units'), [], 'die Wohnungsliste ist leer')
-    const angelegt = await (await fetch(`${base}/api/units`, {
+    const angelegt = /** @type {any} */ (await (await fetch(`${base}/api/units`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 'Neu', areaM2: 50, participates: true }),
-    })).json()
+    })).json())
     gleich(angelegt.name, 'Neu', 'eine neue Wohnung lässt sich anlegen')
     dateienImOrdner(dataDir, 'frisch', { 'mietfuchs.sqlite': true, 'db.json': false })
   })
@@ -517,7 +518,8 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   const [baseline] = await loadMigrations()
   applyMigrations(connection, [baseline])
   const bestand = bestandHeute()
-  await writeStock(connection.db, straightenForDatabase(migrateLegacy(bestand)))
+  // Wie aus einer db.json gelesen: ein roher Bestand, dessen Werte migrateLegacy erst prüft
+  await writeStock(connection.db, straightenForDatabase(migrateLegacy(/** @type {any} */ (bestand))))
   connection.close()
 
   const schritte = (await loadMigrations()).length - 1

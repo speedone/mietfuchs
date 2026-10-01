@@ -1,0 +1,37 @@
+// Typprüfung der Skripte (#64), aufgerufen über `npm run typecheck` mit dem Compiler des Servers.
+//
+// Geprüft wird das JavaScript, wie es dasteht (`checkJs`), ohne es nach TypeScript zu bringen:
+// Die Skripte laufen nur beim Bauen und Prüfen, und was hier zählt, ist ein Tippfehler, ein
+// verschwundener Import oder eine geänderte Node-Schnittstelle, nicht eine Typangabe an jedem
+// Parameter. Deshalb weicht genau eine Einstellung vom Server ab: `noImplicitAny` ist aus. Mit
+// ihr verlangte der Übersetzer rund 140 JSDoc-Angaben an Parametern, also ein Umschreiben.
+//
+// Alles andere gleicht dem Server, und das ist nicht Geschmack: Die Skripte importieren Dateien
+// aus server/src, und die prüft der Übersetzer in diesem Lauf mit diesen Einstellungen noch
+// einmal. Mit `strict: false` meldete er dort Fehler, die es unter den Einstellungen des
+// Servers nicht gibt. Auch `noImplicitAny` wirkt dorthin hinein: Ohne sie bleibt `let x = null`
+// vom Typ `null`, statt mit der ersten Zuweisung zu wachsen. In server/src deshalb einer solchen
+// Variablen ihren Typ mitgeben (`let x: number | null = null`), sonst wird dieser Lauf rot.
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noImplicitAny": false,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    // scripts/ hat kein eigenes package.json; die Node-Typen kommen vom Server.
+    "typeRoots": ["../server/node_modules/@types"],
+    "types": ["node"]
+  },
+  // Die beiden Deklarationen braucht server/src/db/client.ts, das ein Skript importiert.
+  "include": ["*.mjs", "../server/src/globals.d.ts", "../server/src/db/bun-sqlite.d.ts"]
+}
