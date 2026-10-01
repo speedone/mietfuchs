@@ -108,6 +108,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Abrechnung: was beim Mieter auf dem Papier steht.** „(manuell angepasst)“ an der
+  Vorauszahlung erscheint nur noch am Bildschirm. Statt „Abrechnung nach dem Abflussprinzip“, was
+  nicht zutraf, steht dort „Abgerechnet werden die Kosten des Abrechnungsjahres …“. Wechselt die
+  Personenzahl im Jahr, nennt die Kopfzeile den Bereich und die Personentage („1 bis 2 Personen
+  (457 Personentage)“) statt nur des letzten Stands; gerechnet wird unverändert. „✎ anpassen“
+  schließt jetzt auch mit Esc, Enter übernimmt. Nach dem Wiederöffnen nennt die Seite das
+  Versanddatum der früheren Fassung, statt die Frist nach § 556 Abs. 3 BGB scheinbar neu laufen zu
+  lassen. ([#142](https://github.com/speedone/mietfuchs/issues/142))
 - **Ein weiteres Objekt anzulegen sieht nicht mehr aus, als wären die Daten weg.** „Weiteres
   Objekt anlegen“ öffnet jetzt einen eigenen Dialog: Er erklärt, was ein Objekt ist, sagt, dass
   das bisherige unverändert bleibt, fragt Name, Art und Adresse mit Beschriftung ab, und der Knopf
