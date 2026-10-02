@@ -5,7 +5,7 @@ import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
+import { amountCheckBody, attachChoices, buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -198,6 +198,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
   const [uploads, setUploads] = useState<UploadInfo[]>([])
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [error, setError] = useState('')
+  // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
+  // übernommene Position trägt einen geschätzten Betrag, der sonst still stehen bliebe.
+  const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string } | null>(null)
   // Voreinstellung: das gewählte Objekt und das Abrechnungsjahr (#170). Umschalten wirkt nur
   // hier; das Objekt der übrigen Seiten bleibt, wie es ist.
   const [filterProperty, setFilterProperty] = useState<string>(property?.id ?? 'all')
@@ -261,6 +264,20 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
   // dort im Posteingang steht, falls das Verknüpfen danach scheitert.
   async function attach(c: CostItem, invoiceFile: string) {
     await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile }) })
+    setAmountCheck({ item: c, file: invoiceFile, amount: '', problem: '' })
+  }
+  async function saveCheckedAmount() {
+    if (!amountCheck) return
+    const built = amountCheckBody(amountCheck.amount, amountCheck.item)
+    if ('error' in built) { setAmountCheck({ ...amountCheck, problem: built.error }); return }
+    try {
+      await api(`/api/costItems/${encodeURIComponent(amountCheck.item.id)}`, { method: 'PUT', body: JSON.stringify(built.body) })
+      setAmountCheck(null)
+      await load()
+      toast(`Betrag von „${amountCheck.item.description}“ auf ${fmtEuro(built.body.amountCents)} gesetzt.`)
+    } catch (e) {
+      setAmountCheck({ ...amountCheck, problem: errorText(e) })
+    }
   }
   async function uploadFor(c: CostItem, f: File) {
     const fd = new FormData()
@@ -387,15 +404,24 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
                 <option value="">ohne Jahr</option>
                 {[...new Set([...yearOptions, ...(upload.year === null ? [] : [upload.year])])].sort((a, b) => b - a).map((y) => <option key={y} value={String(y)}>{y}</option>)}
               </select>
-              {candidatesFor(upload).length > 0 && (
-                <select aria-label={`${receiptName(upload)} einer Position zuordnen`} value=""
-                  onChange={(e) => { const c = costItems.find((x) => x.id === e.target.value); if (c) void attachExisting(c, upload.file) }}>
-                  <option value="">einer Position zuordnen …</option>
-                  {candidatesFor(upload).map((c) => (
-                    <option key={c.id} value={c.id}>{c.year} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
-                  ))}
-                </select>
-              )}
+              {candidatesFor(upload).length > 0 && (() => {
+                // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
+                // (shared/duplicates.ts); sonst die Liste wie gehabt.
+                const choices = attachChoices(upload, candidatesFor(upload))
+                const option = (c: CostItem) => <option key={c.id} value={c.id}>{c.year} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
+                return (
+                  <select aria-label={`${receiptName(upload)} einer Position zuordnen`} value=""
+                    onChange={(e) => { const c = costItems.find((x) => x.id === e.target.value); if (c) void attachExisting(c, upload.file) }}>
+                    <option value="">einer Position zuordnen …</option>
+                    {choices.likely.length > 0 ? (
+                      <>
+                        <optgroup label={`Passend zu „${choices.category}“`}>{choices.likely.map(option)}</optgroup>
+                        {choices.rest.length > 0 && <optgroup label="Weitere Positionen ohne Beleg">{choices.rest.map(option)}</optgroup>}
+                      </>
+                    ) : choices.rest.map(option)}
+                  </select>
+                )
+              })()}
               {onEvaluate && (
                 <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
               )}
@@ -418,6 +444,23 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
         subtitle="Ihre Belege wie im Ordner aus Papier: je Objekt und Jahr, mit einem Register je Kostenart. Neue Belege kommen in den Posteingang."
       />
       {error && <div className="error">{error}</div>}
+      {amountCheck && (
+        <div className="notice no-print" role="status" aria-label="Betrag prüfen">
+          Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
+          Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
+          <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
+          <div className="row" style={{ marginTop: 8, alignItems: 'flex-end', gap: 8 }}>
+            <label className="field">
+              Betrag laut Beleg
+              <input value={amountCheck.amount} placeholder={fmtEuro(amountCheck.item.amountCents)} style={{ width: 120, textAlign: 'right' }}
+                onChange={(e) => setAmountCheck({ ...amountCheck, amount: e.target.value, problem: '' })} />
+            </label>
+            <button className="btn small" onClick={() => void saveCheckedAmount()} disabled={!amountCheck.amount.trim()}>Betrag speichern</button>
+            <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Stimmt so</button>
+          </div>
+          {amountCheck.problem && <div className="error" style={{ marginTop: 6 }}>{amountCheck.problem}</div>}
+        </div>
+      )}
 
       <div className="card no-print">
         <div className="row receipt-filters">

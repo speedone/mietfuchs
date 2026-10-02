@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CostItem, UploadInfo } from './types'
-import { buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
+import { amountCheckBody, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -224,5 +224,37 @@ describe('Cockpit-Zeile mit Dateiliste (Durchsicht)', () => {
     expect(check.detail).toMatch(/1 von 2 Positionen ohne Beleg/)
     expect(check.detail).toMatch(/bei 1 fehlt die Datei im Belegordner/)
     expect(coverageCheck(items, new Set(['1_da.pdf', '2_weg.pdf'])).level).toBe('gruen')
+  })
+})
+
+// Befund C: Ein Beleg aus dem Posteingang wird einer bestehenden Position zugeordnet. Die Liste
+// nannte alle Positionen ohne Beleg ohne Vorschlag, und der geschätzte Betrag einer übernommenen
+// Position blieb ohne Hinweis stehen.
+describe('Posteingang: einer Position zuordnen', () => {
+  const open = [
+    item('wasser', { category: 'Wasser/Abwasser', description: 'Wasser 2025' }),
+    item('gs', { category: 'Grundsteuer', description: 'Grundsteuer 2025' }),
+    item('sonst', { category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage' }),
+  ]
+  it('Positionen der Kostenart, die der Name des Belegs nennt, stehen oben (gemeinsame Regel)', () => {
+    const c = attachChoices(upload('1_Grundsteuerbescheid_2025.pdf'), open)
+    expect(c.category).toBe('Grundsteuer')
+    expect(c.likely.map((i) => i.id)).toEqual(['gs'])
+    expect(c.rest.map((i) => i.id)).toEqual(['wasser', 'sonst'])
+  })
+  it('ohne erkennbare Kostenart bleibt die Liste, wie sie ist', () => {
+    const c = attachChoices(upload('1_scan0042.pdf'), open)
+    expect(c.category).toBeNull()
+    expect(c.likely).toEqual([])
+    expect(c.rest.map((i) => i.id)).toEqual(['wasser', 'gs', 'sonst'])
+  })
+  it('bei einer breiten Kostenart nur mit ähnlicher Beschreibung', () => {
+    const c = attachChoices(upload('1_Rechnung.pdf'), open)
+    expect(c.likely).toEqual([])
+  })
+  it('Betrag prüfen: ein neuer Betrag wird gespeichert, mit derselben Prüfung wie im Formular', () => {
+    expect(amountCheckBody('612,40', item('gs'))).toEqual({ body: { amountCents: 61240 } })
+    expect(amountCheckBody('0', item('gs'))).toMatchObject({ error: expect.stringMatching(/0 €/) })
+    expect(amountCheckBody('abc', item('gs'))).toMatchObject({ error: expect.stringMatching(/Euro-Betrag/) })
   })
 })

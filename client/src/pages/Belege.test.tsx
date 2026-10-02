@@ -33,6 +33,9 @@ const ITEMS: Record<string, CostItem[]> = {
 }
 
 let sent: { url: string; method: string; body: unknown }[]
+// Für einzelne Tests: weitere Belege im Posteingang und Positionen im ersten Objekt
+let extraUploads: UploadInfo[]
+let extraItems: CostItem[]
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -43,6 +46,8 @@ const SETTLEMENT = {
 beforeEach(() => {
   localStorage.clear()
   sent = []
+  extraUploads = []
+  extraItems = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -54,8 +59,8 @@ beforeEach(() => {
     }
     let body: unknown = []
     if (u.pathname === '/api/properties') body = PROPS
-    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf')]
-    else if (u.pathname === '/api/costItems') body = ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []
+    else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
+    else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
     else if (u.pathname.startsWith('/api/settlement/')) body = SETTLEMENT
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -214,4 +219,38 @@ test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was feh
   await waitFor(() => expect(make).toHaveBeenCalled())
   const [plan] = make.mock.calls[0] as unknown as [{ documents: { upload: UploadInfo }[] }]
   expect(plan.documents.map((d) => d.upload.file)).toEqual(['2_wasser.pdf', '1_gs.pdf'])
+})
+
+// Befund C: Zuordnen aus dem Posteingang an eine übernommene Position mit Schätzbetrag. Die Liste
+// schlägt die Positionen der Kostenart vor, die der Name des Belegs nennt, und danach fragt die
+// Seite nach dem Betrag, statt den geschätzten still stehen zu lassen.
+test('Posteingang: passende Kostenart oben, nach dem Zuordnen „Betrag prüfen“', async () => {
+  extraUploads = [up('5_Grundsteuerbescheid.pdf')]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const zuordnen = await screen.findByLabelText('Grundsteuerbescheid.pdf einer Position zuordnen') as HTMLSelectElement
+  const groups = [...zuordnen.querySelectorAll('optgroup')]
+  expect(groups.map((g) => g.label)).toEqual(['Passend zu „Grundsteuer“', 'Weitere Positionen ohne Beleg'])
+  expect([...(groups[0]?.querySelectorAll('option') ?? [])].map((o) => o.value)).toEqual(['gs2'])
+  fireEvent.change(zuordnen, { target: { value: 'gs2' } })
+  await waitFor(() => expect(sent).toEqual([{ url: '/api/costItems/gs2', method: 'PUT', body: { invoiceFile: '5_Grundsteuerbescheid.pdf' } }]))
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  expect(check.textContent).toMatch(/610,00/)
+  fireEvent.change(within(check).getByLabelText('Betrag laut Beleg'), { target: { value: '612,40' } })
+  fireEvent.click(within(check).getByRole('button', { name: 'Betrag speichern' }))
+  await waitFor(() => expect(sent[1]).toEqual({ url: '/api/costItems/gs2', method: 'PUT', body: { amountCents: 61240 } }))
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Betrag prüfen' })).toBeNull())
+})
+
+test('„nachreichen“: auch nach dem Hochladen an der Position „Betrag prüfen“, „Stimmt so“ schließt ohne Änderung', async () => {
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  const input = screen.getByLabelText('Beleg für Abwasser hochladen') as HTMLInputElement
+  fireEvent.change(input, { target: { files: [new File(['x'], 'abwasser.pdf', { type: 'application/pdf' })] } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  expect(check.textContent).toMatch(/260,00/)
+  fireEvent.click(within(check).getByRole('button', { name: 'Stimmt so' }))
+  await waitFor(() => expect(screen.queryByRole('status', { name: 'Betrag prüfen' })).toBeNull())
+  expect(sent.filter((x) => x.method === 'PUT' && (x.body as Record<string, unknown>).amountCents !== undefined)).toEqual([])
 })

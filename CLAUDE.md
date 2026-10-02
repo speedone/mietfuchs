@@ -755,7 +755,13 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   entfernt, ein Fehler der Datenbank dagegen verhindert das Hochladen nicht.
 - **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: Die KI-Routen nehmen statt
   `file` das Feld `existingFile` (nur ein Name im Belegordner, `path.basename`), und ein Abbruch
-  löscht ihn nicht. Die Schnellerfassung bekommt die Belege über `handoff` aus App.tsx.
+  löscht ihn nicht. Die Schnellerfassung bekommt die Belege über `handoff` aus App.tsx und prüft
+  sie damit auf demselben Weg auf eine schon erfasste Position (siehe Doppelte Kostenpositionen).
+- **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody` in receipts.ts):
+  Mehr als den Namen weiß der Posteingang über einen Beleg nicht; nennt er eine Kostenart
+  (`matchCategory`), stehen die Positionen, die nach shared/duplicates.ts dazu passen, oben.
+  Danach fragt „Betrag prüfen“ nach dem Betrag, weil eine übernommene Position einen Schätzbetrag
+  trägt; gespeichert wird nur `amountCents`, mit derselben Prüfung wie im Formular.
 - **Löschen** nimmt die Zeile mit und bleibt gesperrt, solange irgendeine Position irgendeines
   Objekts auf den Beleg zeigt (`invoiceFilesInUse` fragt ohne Objekt).
 - **Backup und Umstieg**: Die Tabelle steckt im Schnappschuss der Datenbank und kommt so mit; ein
