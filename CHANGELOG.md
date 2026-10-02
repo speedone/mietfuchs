@@ -88,7 +88,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   oder per Ziehen. Sie liegen dann im Posteingang, mit Objekt und Jahr, und werden von dort einer
   Position zugeordnet oder per KI ausgewertet, ohne ein zweites Mal hochgeladen zu werden.
   Originalname und genaue Hochladezeit bleiben erhalten, auch über ein Backup hinweg; bisher
-  verschob das Wiederherstellen die Anzeige um bis zu zwei Stunden.
+  verschob das Wiederherstellen die Anzeige um bis zu zwei Stunden. Nennt der Name eines Belegs
+  eine Kostenart, stehen beim Zuordnen die passenden Positionen oben. Nach dem Zuordnen oder
+  Nachreichen fragt der Belegordner nach dem Betrag der Position, denn eine aus dem Vorjahr
+  übernommene trägt oft noch einen geschätzten; „Per KI auswerten“ bietet wie die
+  Schnellerfassung an, den Beleg mit einer schon erfassten Position zu verknüpfen.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
 - **Mappen packen.** „Belegmappe für Mieter“ erstellt je Objekt und Jahr eine PDF mit den Belegen
   der umgelegten Positionen in der Reihenfolge der Abrechnung und einem Deckblatt „Position →

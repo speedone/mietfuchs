@@ -9,8 +9,10 @@
 // Wahrheiten, die auseinanderlaufen, sobald jemand die Position verschiebt. Nur ein Beleg im
 // Posteingang (an keiner Position) trägt sie selbst.
 import type { CostItem, UploadInfo } from './types'
-import { CATEGORIES } from './types'
+import { CATEGORIES, matchCategory } from './types'
 import { parseEuro } from './api'
+import { amountProblem } from './costForm'
+import { sameCostCandidates } from '../../shared/duplicates.ts'
 
 export type FolderFilter = { propertyId: string | 'all'; year: number | 'all' }
 
@@ -240,4 +242,27 @@ export function inboxOf(cards: ReceiptCard[], filter: FolderFilter): { here: Rec
 // Welche Belege des Posteingangs für eine Position in Frage kommen.
 export function inboxFor(cards: ReceiptCard[], c: CostItem): ReceiptCard[] {
   return cards.filter((card) => card.items.length === 0 && isReceipt(card) && fitsPlacement(card.upload, c.propertyId, c.year))
+}
+
+// ---------- Einer Position zuordnen (Befund C) ----------
+
+// Die Positionen, denen ein Beleg aus dem Posteingang zugeordnet werden kann, geteilt in die, die
+// nach der gemeinsamen Regel (shared/duplicates.ts) zur Kostenart passen, die der Name des Belegs
+// nennt, und die übrigen. Mehr als den Namen weiß der Posteingang über den Beleg nicht; erkennt er
+// keine Kostenart, bleibt die Liste, wie sie ist. Die Reihenfolge der übergebenen Liste bleibt.
+export function attachChoices(u: UploadInfo, candidates: readonly CostItem[]): { category: string | null; likely: CostItem[]; rest: CostItem[] } {
+  const name = (u.originalName || u.file).replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
+  const category = matchCategory(name)
+  const likely = candidates.filter((c) => sameCostCandidates([c], { propertyId: c.propertyId, year: c.year, category, description: name }).length > 0)
+  return { category: likely.length > 0 ? category : null, likely, rest: candidates.filter((c) => !likely.includes(c)) }
+}
+
+// „Betrag prüfen“ nach dem Zuordnen: Eine aus dem Vorjahr übernommene Position trägt einen
+// geschätzten Betrag, der Beleg den wirklichen. Gespeichert wird nur der Betrag, mit derselben
+// Prüfung wie im Formular; der Lohnanteil der Position bleibt.
+export function amountCheckBody(amount: string, item: CostItem): { error: string } | { body: { amountCents: number } } {
+  const cents = parseEuro(amount)
+  const problem = amountProblem(cents, item.labor35aCents ?? 0, item.category)
+  if (problem !== null || cents === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
+  return { body: { amountCents: cents } }
 }
