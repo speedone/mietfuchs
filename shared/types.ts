@@ -539,12 +539,47 @@ export type SettlementComparison = {
 
 // ---------- Steuer-Export (Anlage V) ----------
 
-export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number }
+// Bei teilweiser Eigennutzung (#163): `privateCents` entfällt auf selbstgenutzte Wohnungen und ist
+// nicht abziehbar, `deductibleCents` ist der Rest. Zusammen immer `amountCents`. Ohne
+// selbstgenutzte Wohnung ist `privateCents` 0.
+export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number }
 export type TaxExpenseGroup = {
   group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten")
   amountCents: number
   labor35aCents: number
+  privateCents: number
+  deductibleCents: number
   categories: TaxExpenseCategory[]
+}
+
+// Wie der private Teil einer Position zustande kommt (#163, Regeln in calc.ts `taxReport`):
+//   `settlement`     umlagefähig: der Eigenanteil laut Nebenkostenabrechnung
+//   `direct-self`    direkt der selbstgenutzten Einheit zugeordnet
+//   `direct-rented`  direkt einer vermieteten oder leeren Einheit zugeordnet, voll abziehbar
+//   `direct-outside` direkt einer Einheit außerhalb der Abrechnungseinheit; abziehbar, Mietfuchs
+//                    kann die Einheit aber nicht einordnen
+//   `area`           nach der Fläche der betroffenen Einheiten (BFH-Regelmaßstab)
+//   `unsplittable`   nicht aufteilbar, weil eine Fläche fehlt; ungekürzt abziehbar und gemeldet
+export type TaxAllocation = 'settlement' | 'direct-self' | 'direct-rented' | 'direct-outside' | 'area' | 'unsplittable'
+export type TaxExpenseItem = {
+  costItemId: string
+  category: string
+  group: string
+  description: string
+  amountCents: number
+  privateCents: number
+  deductibleCents: number
+  labor35aCents: number
+  allocation: TaxAllocation
+  // „abzugsfähiger Anteil (in %)“ der Anlage V, auf zwei Stellen, nur bei verhältnismäßiger
+  // Zuordnung (`settlement`, `area`) und einem Betrag ungleich 0.
+  deductiblePercent: number | null
+  // Zum Vergleich der private Teil nach der Fläche des ganzen Gebäudes, wo die Abrechnung nach
+  // einem anderen Maßstab als Fläche oder Verbrauch verteilt (Personen, Einheiten, vereinbart,
+  // Gemeinschaft). Sonst null.
+  areaPrivateCents: number | null
+  // Der Rechenweg (#114), als „gesonderte Aufstellung“ der Anleitung zur Anlage V.
+  steps: CalcStep[]
 }
 
 export type TaxReport = {
@@ -579,9 +614,20 @@ export type TaxReport = {
   }
   expenses: {
     groups: TaxExpenseGroup[]
+    // Die Bruttosumme aller Positionen, ohne die Rücklage. Abziehbar ist `deductibleCents` (#163).
     totalCents: number
+    privateCents: number
+    deductibleCents: number
     labor35aCents: number // Summe der §35a-Arbeitskosten (Lohnanteile)
+    // Jede Position mit ihrer Aufteilung, in der Reihenfolge der Erfassung (#163)
+    items: TaxExpenseItem[]
   }
+  // Hatte eine selbstgenutzte Einheit im Jahr ein Mietverhältnis? Dann ist die Aufteilung nach
+  // Fläche nicht nach Tagen gerechnet (#163).
+  selfUseChangedInYear: boolean
+  // Abgeschlossene Abrechnung, deren eingefrorene Eigenanteile von der heutigen Rechnung abweichen
+  // oder je Position gar nicht vorliegen (Archivstück von vor #142).
+  closedSelfUseDiffers: boolean
   // Zuführung zur Erhaltungsrücklage des Jahres (#143), nicht in den Werbungskosten: abziehbar
   // erst, wenn und soweit die Gemeinschaft sie verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
   reserveContributionCents: number
@@ -601,8 +647,9 @@ export type TaxReport = {
   // Bestand von vor der dreiwertigen Unterscheidung.
   excludedExists: boolean
   selfUsedShareCents: number // auf selbstgenutzte Wohnungen entfallender Kostenanteil (privat)
-  surplusSollCents: number // Einkünfte auf Soll-Basis = Einnahmen(Soll) − Werbungskosten
-  surplusPaidCents: number // Einkünfte auf Ist-Basis (Zuflussprinzip)
+  // Einkünfte = Einnahmen − abziehbare Werbungskosten (`expenses.deductibleCents`, #163)
+  surplusSollCents: number // auf Soll-Basis
+  surplusPaidCents: number // auf Ist-Basis (Zuflussprinzip)
   // Mietverhältnisse des Jahres, davon mit Inklusivmiete und mit Pauschale (#96, Zeilen 24 und 20
   // der Anlage V).
   // `inclusive`: kalt und warm inklusiv; `partlyInclusive`: nur eines von beiden.

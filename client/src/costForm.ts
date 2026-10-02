@@ -214,8 +214,24 @@ export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[
 // ganz dem Vermieter zu und liest ihren Schlüssel nicht (calc.ts, `isNotAllocable`). Das Formular
 // zeigt deshalb keine Schlüsselauswahl, und die Liste keinen Schlüssel.
 export const showsKeyFields = (category: string): boolean => !isNotAllocable(category)
-export function keyListText(item: Pick<CostItem, 'category' | 'key'>): string {
-  return isNotAllocable(item.category) ? '— trägt der Vermieter' : KEY_LABELS[item.key]
+export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUnitId'>, units: Pick<Unit, 'id' | 'name'>[] = []): string {
+  if (!isNotAllocable(item.category)) return KEY_LABELS[item.key]
+  const unit = taxUnitOf(item) ? units.find((u) => u.id === item.directUnitId) : undefined
+  return unit ? `— trägt der Vermieter · betrifft ${unit.name}` : '— trägt der Vermieter'
+}
+
+// **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,
+// die Position trägt der Vermieter. Für die Steuer zählt, wen sie betrifft: Eine Badrenovierung in
+// der vermieteten Wohnung ist ganz abziehbar, eine in der eigenen gar nicht, und eine Reparatur am
+// Dach wird nach Fläche aufgeteilt. Gespeichert wird das als Direktzuordnung, die Berechnung der
+// Abrechnung liest den Schlüssel weiterhin nicht. Nur „Nicht umlagefähig“: Die Zuführung zur
+// Erhaltungsrücklage ist keine Werbungskosten des Jahres (#143), dort gibt es nichts zuzuordnen.
+export const showsTaxUnitField = (category: string): boolean => category === 'Nicht umlagefähig'
+const taxUnitOf = (item: Pick<CostItem, 'category' | 'key' | 'directUnitId'>): string | null =>
+  showsTaxUnitField(item.category) && item.key === 'direct' && item.directUnitId ? item.directUnitId : null
+// Die Auswahl „Betrifft (für die Steuer)“: eine Einheit oder leer für das ganze Gebäude.
+export function withTaxUnit(form: ItemForm, unitId: string): ItemForm {
+  return unitId ? { ...form, key: 'direct', directUnitId: unitId } : { ...form, key: 'area', directUnitId: '' }
 }
 
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
@@ -309,6 +325,8 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
   // aus einer früheren Kostenart im Formular stehengeblieben ist, bliebe sonst als tote Angabe in
   // der Datenbank und tauchte nach einem Wechsel der Kostenart unbemerkt wieder auf.
   if (isNotAllocable(form.category)) {
+    // Die eine Ausnahme ist die Einheit für die Steuer (#163), siehe `showsTaxUnitField`.
+    const taxUnit = taxUnitOf({ category: form.category, key: form.key, directUnitId: form.directUnitId })
     return {
       body: {
         year,
@@ -317,8 +335,8 @@ export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, t
         vendor: form.vendor.trim() || undefined,
         amountCents: amount,
         labor35aCents: labor35a || undefined,
-        key: 'area',
-        directUnitId: null,
+        key: taxUnit ? 'direct' : 'area',
+        directUnitId: taxUnit,
         meterType: null,
         customShares: null,
         participantUnitIds: null,

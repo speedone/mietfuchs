@@ -90,8 +90,8 @@ export type SnapshotReading = Pick<Reading, 'meterId' | 'date' | 'value' | 'repl
 export type SnapshotPayment = Pick<Payment, 'tenancyId' | 'date' | 'amountCents'>
 
 // Die abgeschlossene (eingefrorene) Abrechnung des Jahres, eingedampft auf das, was die
-// Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen und die Vorauszahlungen,
-// die auf dem zugestellten Papier standen. Beides nimmt die Steuerübersicht von dort, damit sie
+// Berechnung daraus liest: den Eigenanteil selbstgenutzter Wohnungen (als Summe und je Position,
+// #163) und die Vorauszahlungen, die auf dem zugestellten Papier standen. Beides nimmt die Steuerübersicht von dort, damit sie
 // nicht von der versendeten Abrechnung abweicht. `null` heißt, das Jahr ist nicht abgeschlossen;
 // dann rechnet die Steuerübersicht selbst.
 export type SnapshotClosedSettlement = {
@@ -102,6 +102,39 @@ export type SnapshotClosedSettlement = {
   // ergäben.
   prepaymentCents: number
   prepaymentOverridden: boolean
+  // Der Eigenanteil je Kostenposition und ob die Abrechnung sie gar nicht verteilen konnte, aus
+  // der Zerlegung des Vermieteranteils (#142). Die Steuerübersicht teilt damit die Werbungskosten
+  // auf (#163). `null`: Das Archivstück kennt die Zerlegung nicht (vor #142). Optional, weil
+  // Schnappschüsse, die eine Prüfung von Hand baut, ihn nicht brauchen; fehlt er, gilt dasselbe
+  // wie bei `null`.
+  selfUseByItem?: Record<string, FrozenItemSelfUse> | null
+}
+export type FrozenItemSelfUse = { selfCents: number, noBasis: boolean }
+
+// Die Eigenanteile je Position aus den Zeilen des Vermieteranteils. Fehlt einer Zeile die
+// Zerlegung, ist das Archivstück älter als #142, und dann gibt es keine Auskunft je Position:
+// Eine teilweise gelesene wäre eine Behauptung über die übrigen Zeilen.
+function selfUseOf(landlord: unknown): Record<string, FrozenItemSelfUse> | null {
+  if (landlord === null || typeof landlord !== 'object') return null
+  const rows: unknown = Reflect.get(landlord, 'rows')
+  if (!Array.isArray(rows)) return null
+  const result: Record<string, FrozenItemSelfUse> = {}
+  for (const row of rows) {
+    if (row === null || typeof row !== 'object') return null
+    const id: unknown = Reflect.get(row, 'costItemId')
+    const parts: unknown = Reflect.get(row, 'landlordParts')
+    if (typeof id !== 'string' || !Array.isArray(parts)) return null
+    const entry = result[id] ?? { selfCents: 0, noBasis: false }
+    for (const part of parts) {
+      if (part === null || typeof part !== 'object') continue
+      const reason: unknown = Reflect.get(part, 'reason')
+      const cents: unknown = Reflect.get(part, 'cents')
+      if (reason === 'selfUse' && typeof cents === 'number') entry.selfCents += cents
+      if (reason === 'noBasis') entry.noBasis = true
+    }
+    result[id] = entry
+  }
+  return result
 }
 
 // **Der eine Auszug aus einem eingefrorenen Berechnungsstand**, und zwar für beide Wege: die
@@ -119,14 +152,21 @@ export type SnapshotClosedSettlement = {
 // Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur". Das ist die richtige Antwort und keine
 // Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
 // Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false }
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
   const auszug = {
     ...leer,
     selfUsedShareCents: typeof eigenanteil === 'number' ? eigenanteil : 0,
+    selfUseByItem: selfUseOf(Reflect.get(settlement, 'landlord')),
+  }
+  // Ergeben die Eigenanteile je Position nicht die Summe des Papiers, ist das Archivstück in sich
+  // nicht stimmig (etwa von Hand gebaut), und dann gilt nur die Summe; die Steuerübersicht verteilt
+  // sie wie bei einem Stand von vor #142 (#163).
+  if (auszug.selfUseByItem && Object.values(auszug.selfUseByItem).reduce((a, x) => a + x.selfCents, 0) !== auszug.selfUsedShareCents) {
+    auszug.selfUseByItem = null
   }
   if (!Array.isArray(statements)) return auszug
   for (const statement of statements) {
@@ -290,6 +330,7 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
           selfUsedShareCents: closed.selfUsedShareCents,
           prepaymentCents: closed.prepaymentCents,
           prepaymentOverridden: closed.prepaymentOverridden,
+          selfUseByItem: closed.selfUseByItem ?? null,
         }
       : null,
   }

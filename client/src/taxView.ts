@@ -18,7 +18,7 @@
 // der Seite, etwa der Kasten zur gemischten Nutzung: Dort entscheidet der Server mit
 // `selfOccupiedExists`, die Seite zeigt ihn nur an.
 
-import type { PropertyKind, TaxReport } from './types'
+import type { PropertyKind, TaxExpenseItem, TaxReport } from './types'
 
 export type Basis = 'soll' | 'ist'
 
@@ -39,6 +39,8 @@ export const DEFAULT_BASIS: Basis = 'ist'
 export const TAX_HINTS = [
   'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
+  'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
+  'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -87,6 +89,24 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        Hausgeld-Vorschüsse des Jahres und eine Nachzahlung aus dem Vorjahr, nicht
 //                        die Beträge der Hausgeldabrechnung (§ 11 Abs. 2 Satz 1 EStG). Rechnen
 //                        lässt sich das erst mit erfassten Hausgeldzahlungen (#96).
+//
+// Teilweise Eigennutzung (#163), alle nur, wenn es eine selbstgenutzte Wohnung gibt:
+//
+//   `mixedUseSplit`      Wie aufgeteilt wurde: direkt oder verhältnismäßig, die Zeilen 11 und 12,
+//                        und dass der Ausdruck als gesonderte Aufstellung taugt.
+//   `mixedUseKeyNotArea` Mindestens eine umlagefähige Position verteilt die Abrechnung nach
+//                        Personen, Einheiten oder vereinbarten Anteilen, und nach Fläche käme ein
+//                        anderer privater Teil heraus. Ob das Finanzamt den Schlüssel als Maßstab
+//                        anerkennt, ist nicht belegt; der Hinweis beziffert den Unterschied.
+//   `mixedUseAreaMissing` Eine Position ließ sich mangels Fläche nicht aufteilen.
+//   `mixedUseDirectOutside` Eine Position ist einer Einheit außerhalb der Abrechnungseinheit
+//                        zugeordnet; Mietfuchs zählt sie als abziehbar, kann sie aber nicht einordnen.
+//   `mixedUseChangedInYear` Eine selbstgenutzte Einheit hatte im Jahr ein Mietverhältnis.
+//   `mixedUseClosedChanged` Die abgeschlossene Abrechnung sagt beim Eigenanteil etwas anderes als
+//                        die heutige Rechnung; es gilt der eingefrorene Stand.
+//   `mixedUseLabor35a`   Eine Position mit §35a-Lohnanteil hat einen privaten Teil.
+//   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
+//                        verbilligte Vermietung.
 
 export function taxHints(report: TaxReport, basis: Basis, propertyKind?: PropertyKind): TaxHint[] {
   const hints: TaxHint[] = []
@@ -97,6 +117,17 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
   if (tenancies > 0 && inclusive === tenancies) hints.push('inclusiveLine24')
   else if (inclusive > 0 || partlyInclusive > 0) hints.push('inclusiveLine24Mixed')
   if (flatRate > 0) hints.push('flatRateLine20')
+  if (report.selfOccupiedExists) {
+    const items = report.expenses.items
+    hints.push('mixedUseSplit')
+    if (keyNotAreaDifference(report).count > 0) hints.push('mixedUseKeyNotArea')
+    if (items.some((x) => x.allocation === 'unsplittable')) hints.push('mixedUseAreaMissing')
+    if (items.some((x) => x.allocation === 'direct-outside')) hints.push('mixedUseDirectOutside')
+    if (report.selfUseChangedInYear) hints.push('mixedUseChangedInYear')
+    if (report.closedSelfUseDiffers) hints.push('mixedUseClosedChanged')
+    if (items.some((x) => x.labor35aCents > 0 && x.privateCents !== 0)) hints.push('mixedUseLabor35a')
+    hints.push('mixedUseNotCalculated')
+  }
   if (basis === 'soll') {
     hints.push('sollIsNotTaxBasis')
     return hints
@@ -148,4 +179,38 @@ export function incomeCentsFor(report: TaxReport, basis: Basis): number {
 
 export function surplusCentsFor(report: TaxReport, basis: Basis): number {
   return basis === 'soll' ? report.surplusSollCents : report.surplusPaidCents
+}
+
+// ---------- Teilweise Eigennutzung (#163) ----------
+
+// Die Spalten privat und abziehbar zeigt die Seite nur, wenn es etwas Privates geben kann. Ohne
+// selbstgenutzte Wohnung wären sie eine Spalte voller Nullen und eine Spalte, die den Betrag
+// wiederholt; eine Unterscheidung, die es nicht gibt, ist schlechter als keine (wie #68).
+export function showsSplit(report: TaxReport): boolean {
+  return report.selfOccupiedExists || report.expenses.privateCents !== 0
+}
+
+// Positionen, deren privater Teil laut Abrechnung von dem nach Fläche abweicht, und um wie viel
+// zusammen. Der Betrag ist die Summe der Abstände und nicht ihr Saldo: Zwei Positionen, die sich
+// gegenseitig ausgleichen, sind trotzdem zwei Fragen an den Steuerberater.
+export function keyNotAreaDifference(report: TaxReport): { count: number; differenceCents: number } {
+  const differing = report.expenses.items.filter((x) => x.areaPrivateCents !== null && x.areaPrivateCents !== x.privateCents)
+  return {
+    count: differing.length,
+    differenceCents: differing.reduce((a, x) => a + Math.abs(x.privateCents - (x.areaPrivateCents ?? x.privateCents)), 0),
+  }
+}
+
+// Die Zuordnung einer Position in der Sprache des Vordrucks: „direkt“ oder „verhältnismäßig“ mit
+// dem abzugsfähigen Anteil in Prozent.
+export function allocationLabel(item: TaxExpenseItem): string {
+  const pct = item.deductiblePercent !== null ? `, abziehbar ${item.deductiblePercent.toLocaleString('de-DE', { maximumFractionDigits: 2 })} %` : ''
+  switch (item.allocation) {
+    case 'settlement': return `anteilig${pct} (laut Abrechnung)`
+    case 'area': return `anteilig${pct} (nach Fläche)`
+    case 'direct-self': return 'direkt, selbstgenutzt'
+    case 'direct-rented': return 'direkt, vermietet'
+    case 'direct-outside': return 'direkt, außerhalb der Abrechnungseinheit'
+    case 'unsplittable': return 'nicht aufteilbar, Fläche fehlt'
+  }
 }

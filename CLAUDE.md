@@ -1011,7 +1011,28 @@ die ganze fachliche Komplexität:
   das Vermietete**, denn nur das ist eindeutig, und die Anlage V fragt genau diese beiden Zahlen
   im Kopf ab; die Grundmenge ist das ganze Gebäude und damit eine andere als die Verteilbasis der
   Abrechnung) sowie den Überschuss. Bewusst beschreibende Gruppen statt fester
-  Anlage-V-Zeilennummern; keine automatische Eigennutzungs-Aufteilung (nur Hinweis).
+  Anlage-V-Zeilennummern.
+  **Bei teilweiser Eigennutzung teilt sie jede Position in privat und abziehbar** (#163,
+  `splitForTax` in calc.ts, Entscheidungen samt Quellen in
+  [docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md](docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md)).
+  Direkt zugeordnet gehört eine Position ganz zu ihrer Einheit; nicht umlagefähige Gebäudekosten
+  gehen nach der Fläche der betroffenen Einheiten (Teilnehmer, sonst das ganze Objekt wie #68;
+  BFH IX R 26/06); **umlagefähige übernehmen den Eigenanteil der Abrechnung** (`landlordParts`
+  mit `selfUse`), damit Abrechnung und Steuer dasselbe sagen. Das ist eine Auslegung: Bei Personen,
+  Einheiten, vereinbarten Anteilen und Gemeinschaft rechnet `areaPrivateCents` zum Vergleich nach
+  Fläche, und ein Hinweis beziffert den Abstand. Hat die Abrechnung eine Position nicht verteilt
+  (`noBasis`), gilt die Fläche. Bei abgeschlossener Abrechnung kommen die Eigenanteile je Position
+  aus dem eingefrorenen Stand (`selfUseByItem` in `frozenSettlementOf`); ein Archivstück von vor
+  #142 oder eines, dessen Teile nicht die Summe ergeben, verteilt die eingefrorene Summe im
+  Verhältnis der heutigen. `abziehbar = Betrag − privat` je Position, Rundung spiegelbildlich
+  (und ohne negative Null, die Invariante fand sie). **Der Überschuss rechnet mit
+  `deductibleCents`**, `totalCents` bleibt die Bruttosumme. Ohne selbstgenutzte Einheit ist nichts
+  privat, und keine Zahl ändert sich (Invariante in calc.test.ts). Die Abrechnung bleibt
+  unberührt. „Nicht umlagefähig“ lässt sich im Formular für die Steuer einer Einheit zuordnen
+  („Betrifft (für die Steuer)“, gespeichert als `key: 'direct'`); die Abrechnung liest das nicht.
+  AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung und ein Nutzungswechsel im Jahr werden
+  nicht gerechnet, nur genannt. Zeilennummern der Anlage V nennt die Seite nur, wo der Vordruck 2025
+  sie belegt (11, 12, 33/34, 87/88); eine Anleitung 2025 war nicht auffindbar.
   **Maßgeblich ist das Ist** (#70): § 11 Abs. 1 Satz 1 EStG setzt Einnahmen im Jahr des Zuflusses
   an, ein vereinbartes, nicht gezahltes Soll ist keine Einnahme. Das Soll bleibt umschaltbar, denn
   zum Abgleich taugt es, ist aber nicht mehr die Vorgabe; die Entscheidungslogik samt Hinweisen

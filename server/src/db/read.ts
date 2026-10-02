@@ -21,7 +21,7 @@ import { sql } from 'drizzle-orm'
 import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
-import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
+import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
@@ -42,6 +42,8 @@ export type StoredClosedSettlement = {
   selfUsedShareCents: number
   prepaymentCents: number
   prepaymentOverridden: boolean
+  // Eigenanteile je Position (#163), ebenfalls aus `frozenSettlementOf`
+  selfUseByItem: Record<string, FrozenItemSelfUse> | null
   settlement: unknown
 }
 

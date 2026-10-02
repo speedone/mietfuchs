@@ -22,6 +22,8 @@ import {
   externalTotalLabel,
   keyListText,
   showsKeyFields,
+  showsTaxUnitField,
+  withTaxUnit,
   withKey,
   withCategory,
   type ItemForm,
@@ -510,7 +512,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td>
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
-                    {keyListText(i)}
+                    {keyListText(i, units)}
                     {showsKeyFields(i.category) && <>
                     {/* Eine Einschränkung auf Teilnehmer (#105) soll man in der Liste sehen, nicht erst im Formular. */}
                     {i.participantUnitIds && (
@@ -620,6 +622,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <div className="field grow muted">
                 <span><Term id="notAllocable">Nicht umlagefähig</Term>: Diese Position trägt der Vermieter allein; ein Umlageschlüssel entfällt.</span>
               </div>
+            )}
+            {/* #163: Für die Steuer zählt, wen eine Reparatur betrifft. Die Abrechnung liest das nicht. */}
+            {showsTaxUnitField(form.category) && (
+              <label className="field grow">
+                <Term id="mixedUse">Betrifft (für die Steuer)</Term>
+                <select value={form.key === 'direct' ? form.directUnitId : ''} onChange={(e) => setForm(withTaxUnit(form, e.target.value))}>
+                  <option value="">das ganze Gebäude (nach Fläche)</option>
+                  {units.map((u) => <option key={u.id} value={u.id}>{u.name}{u.selfUsed && !u.participates ? ' (selbstgenutzt)' : ''}</option>)}
+                </select>
+              </label>
             )}
             {showsKeyFields(form.category) && <>
             <label className="field grow">

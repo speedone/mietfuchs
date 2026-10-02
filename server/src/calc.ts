@@ -20,8 +20,10 @@ import type {
   Settlement,
   SettlementRow,
   Statement,
+  TaxAllocation,
   TaxExpenseCategory,
   TaxExpenseGroup,
+  TaxExpenseItem,
   TaxReport,
 } from '../../shared/types.ts'
 // Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
@@ -30,7 +32,7 @@ import type {
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
-import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
+import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -764,12 +766,13 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
   const items = snapshot.costItems.filter((c) => c.year === year)
+  // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position. Die Rücklage fehlt darin.
+  const split = splitForTax(snapshot, items.filter((c) => groupOf(c.category) !== null), settlement)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
-  // Bewusst nach `Object.hasOwn` gefragt und nicht mit `??`: `null` ist hier eine Angabe.
   let reserveContributionCents = 0
   for (const item of items) {
-    const group = Object.hasOwn(ANLAGE_V_GROUP, item.category) ? ANLAGE_V_GROUP[item.category] : 'Sonstige Werbungskosten'
+    const group = groupOf(item.category)
     if (group === null) {
       reserveContributionCents += item.amountCents
       continue
@@ -779,8 +782,11 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       cats = new Map()
       byGroup.set(group, cats)
     }
-    const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0 }
+    const prev = cats.get(item.category) ?? { category: item.category, amountCents: 0, labor35aCents: 0, privateCents: 0, deductibleCents: 0 }
+    const share = split.items.get(item.id)
     prev.amountCents += item.amountCents
+    prev.privateCents += share?.privateCents ?? 0
+    prev.deductibleCents += share?.deductibleCents ?? item.amountCents
     // Nur ein gültiger Lohnanteil, dieselbe Regel wie in der Abrechnung (#148).
     prev.labor35aCents += validLabor35aCents(item) ?? 0
     cats.set(item.category, prev)
@@ -792,6 +798,8 @@ export function taxReport(snapshot: Snapshot): TaxReport {
         group,
         amountCents: categories.reduce((a, c) => a + c.amountCents, 0),
         labor35aCents: categories.reduce((a, c) => a + c.labor35aCents, 0),
+        privateCents: categories.reduce((a, c) => a + c.privateCents, 0),
+        deductibleCents: categories.reduce((a, c) => a + c.deductibleCents, 0),
         categories,
       }
     })
@@ -801,6 +809,9 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)
     })
   const totalCents = groups.reduce((a, g) => a + g.amountCents, 0)
+  const privateCents = groups.reduce((a, g) => a + g.privateCents, 0)
+  // Als Differenz, damit privat und abziehbar zusammen immer die Bruttosumme ergeben.
+  const deductibleCents = totalCents - privateCents
   const labor35aCents = groups.reduce((a, g) => a + g.labor35aCents, 0)
   // Positionen „Nicht umlagefähig“, die nach Rücklage aussehen (#143). Gerechnet wird wie
   // erfasst; die Steuerübersicht rät nur, die Kostenart zu ändern. Der Hinweis gehört hierher und
@@ -881,7 +892,9 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithSoll,
       tenanciesWithoutPayment,
     },
-    expenses: { groups, totalCents, labor35aCents },
+    expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, items: [...split.items.values()] },
+    selfUseChangedInYear: split.selfUseChangedInYear,
+    closedSelfUseDiffers: split.closedSelfUseDiffers,
     reserveContributionCents,
     reserveSuspects,
     totalAreaM2: totalArea,
@@ -890,9 +903,195 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     excludedExists,
     costModels,
     selfUsedShareCents,
-    surplusSollCents: sollCents - totalCents,
-    surplusPaidCents: paidCents - totalCents,
+    // Der Überschuss rechnet mit dem abziehbaren Teil (#163). Ohne Eigennutzung ist er die
+    // Bruttosumme, und die Zahl bleibt, wie sie war.
+    surplusSollCents: sollCents - deductibleCents,
+    surplusPaidCents: paidCents - deductibleCents,
   }
+}
+
+// Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach
+// `Object.hasOwn` gefragt und nicht mit `??`: `null` ist hier eine Angabe.
+const groupOf = (category: string): string | null =>
+  Object.hasOwn(ANLAGE_V_GROUP, category) ? ANLAGE_V_GROUP[category] ?? null : 'Sonstige Werbungskosten'
+
+// ---------- Werbungskosten bei teilweiser Eigennutzung (#163) ----------
+//
+// Die Regeln und ihre Quellen stehen in docs/superpowers/specs/2026-10-02-steuer-eigennutzung-design.md.
+// Kurz: Was einer Einheit direkt zugeordnet ist, gehört ganz zu ihr; Gebäudekosten werden nach dem
+// Verhältnis der Wohn- und Nutzflächen aufgeteilt (BFH, Urteil vom 24.06.2008, IX R 26/06), mit dem
+// ganzen Gebäude als Grundmenge wie in #68; und bei umlagefähigen Kosten gilt der Eigenanteil, den
+// die Nebenkostenabrechnung ausweist, damit Abrechnung und Steuer dasselbe sagen (Auslegung, F1).
+//
+// **Die Abrechnung bleibt unberührt.** Gelesen wird ihr Ergebnis, die Zerlegung des
+// Vermieteranteils (#142); `computeSettlement` ändert sich nicht, und die Golden-Tests bleiben der
+// Beweis, dass keine Abrechnung wandert.
+//
+// **Ohne selbstgenutzte Einheit ist nichts privat**: Der Eigenanteil der Abrechnung ist dann 0, und
+// die Fläche der eigenen Einheiten ebenso. Eine Invariante in calc.test.ts hält das fest.
+
+// Kaufmännisch gerundet und bei einer Gutschrift spiegelbildlich: −0,5 Cent wird −1 Cent, nicht 0.
+// Das `|| 0` macht aus einer negativen Null eine Null; sonst hieße eine Gutschrift ohne privaten
+// Teil „privat −0“, und ein Vergleich mit 0 schlüge fehl (gefunden von der Invariante).
+const roundHalfAway = (x: number): number => (Math.sign(x) * Math.round(Math.abs(x))) || 0
+
+// Die Schlüssel, bei denen der Eigenanteil der Abrechnung einem anderen Maßstab folgt als Fläche
+// oder gemessenem Verbrauch. Für sie rechnet die Übersicht zum Vergleich nach Fläche.
+const KEYS_NOT_AREA: readonly CostKey[] = ['persons', 'units', 'custom', 'external']
+
+type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, closedSelfUseDiffers: boolean }
+
+function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: ComputedSettlement): TaxSplit {
+  const units = snapshot.units
+  const unitById = new Map(units.map((u) => [u.id, u]))
+  const isSelf = (u: SnapshotUnit) => !!u.selfUsed && !u.participates
+  const areaOf = (u: SnapshotUnit) => u.areaM2 || 0
+
+  // Der Eigenanteil je Position, wie ihn die Abrechnung dieses Jahres ausweist.
+  const live = new Map<string, FrozenItemSelfUse>()
+  for (const row of settlement.landlord.rows) {
+    const entry = live.get(row.costItemId) ?? { selfCents: 0, noBasis: false }
+    for (const part of row.landlordParts ?? []) {
+      if (part.reason === 'selfUse') entry.selfCents += part.cents
+      if (part.reason === 'noBasis') entry.noBasis = true
+    }
+    live.set(row.costItemId, entry)
+  }
+  const liveOf = (id: string): FrozenItemSelfUse => live.get(id) ?? { selfCents: 0, noBasis: false }
+
+  // **Bei abgeschlossener Abrechnung gilt ihr eingefrorener Stand**, wie beim Eigenanteil und den
+  // Vorauszahlungen (#70): Die Steuerübersicht soll nennen, was beim Mieter auf dem Papier steht.
+  const frozen = snapshot.closedSettlement
+  let fromSettlement = liveOf
+  let closedSelfUseDiffers = false
+  if (frozen && frozen.selfUseByItem) {
+    const byItem = frozen.selfUseByItem
+    fromSettlement = (id) => (Object.hasOwn(byItem, id) ? byItem[id] : undefined) ?? { selfCents: 0, noBasis: false }
+    closedSelfUseDiffers = items.some((c) => fromSettlement(c.id).selfCents !== liveOf(c.id).selfCents)
+  } else if (frozen) {
+    // Ein Archivstück von vor #142 kennt nur die Summe. Sie wird im Verhältnis der heutigen
+    // Eigenanteile verteilt, mit dem Restverfahren und der Kennung als Entscheid; so bleibt die
+    // Summe die des Papiers. Ohne heutigen Eigenanteil lässt sie sich nicht verteilen, und das
+    // sagt der Hinweis.
+    const allocable = items.filter((c) => !isNotAllocable(c.category))
+    const today = allocable.map((c) => liveOf(c.id).selfCents)
+    const todaySum = today.reduce((a, c) => a + c, 0)
+    const parts = todaySum !== 0
+      ? largestRemainder(frozen.selfUsedShareCents, today.map((c) => (c * frozen.selfUsedShareCents) / todaySum), allocable.map((c) => c.id))
+      : allocable.map(() => 0)
+    const distributed = new Map(allocable.map((c, k) => [c.id, parts[k] ?? 0]))
+    fromSettlement = (id) => ({ selfCents: distributed.get(id) ?? 0, noBasis: liveOf(id).noBasis })
+    closedSelfUseDiffers = todaySum !== frozen.selfUsedShareCents
+  }
+
+  // Nach Fläche über die betroffenen Einheiten: die Teilnehmer der Position, sonst alle Einheiten
+  // des Objekts. `null`, wenn eine Fläche fehlt, die es zum Aufteilen bräuchte.
+  const byArea = (item: SnapshotCostItem) => {
+    const only = item.participantUnitIds ? new Set(item.participantUnitIds) : null
+    const affected = only ? units.filter((u) => only.has(u.id)) : units
+    const area = affected.reduce((a, u) => a + areaOf(u), 0)
+    const selfAffected = affected.filter(isSelf)
+    const selfArea = selfAffected.reduce((a, u) => a + areaOf(u), 0)
+    const missing = selfAffected.filter((u) => !(areaOf(u) > 0))
+    if (selfAffected.length > 0 && (missing.length > 0 || !(area > 0))) {
+      return { ok: false as const, missing: missing.length > 0 ? missing : selfAffected, limited: only !== null }
+    }
+    const raw = area > 0 ? (item.amountCents * selfArea) / area : 0
+    return { ok: true as const, area, selfArea, raw, privateCents: roundHalfAway(raw), limited: only !== null }
+  }
+
+  const result = new Map<string, TaxExpenseItem>()
+  for (const item of items) {
+    const amount = item.amountCents
+    const allocable = !isNotAllocable(item.category)
+    const direct = item.key === 'direct' && item.directUnitId ? unitById.get(item.directUnitId) : undefined
+    const fromBill = fromSettlement(item.id)
+    const steps: CalcStep[] = [{ label: 'Rechnungsbetrag', value: fmtCents(amount) }]
+    let allocation: TaxAllocation
+    let privateCents = 0
+    let areaPrivateCents: number | null = null
+
+    const directLabel = (u: SnapshotUnit) =>
+      `direkt: ${u.name} (${isSelf(u) ? 'selbstgenutzt' : u.participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
+    // Nach Fläche aufteilen; gibt die Zuordnung zurück, damit jeder Zweig unten sie selbst setzt.
+    const applyArea = (why?: string): TaxAllocation => {
+      const a = byArea(item)
+      if (why) steps.push({ label: 'Hinweis', value: why })
+      if (!a.ok) {
+        steps.push({ label: 'Zuordnung', value: `nicht aufteilbar: Für ${a.missing.map((u) => u.name).join(', ')} ist keine Fläche hinterlegt; der Betrag ist ungekürzt angesetzt`, term: 'mixedUse' })
+        return 'unsplittable'
+      }
+      privateCents = a.privateCents
+      steps.push({ label: 'Zuordnung', value: 'verhältnismäßig nach Wohn- und Nutzfläche', term: 'mixedUse' })
+      steps.push({ label: 'Betroffene Fläche', value: `${fmtNum(a.area)} m² (${a.limited ? 'nur die betroffenen Einheiten' : 'ganzes Gebäude'})` })
+      steps.push({ label: 'davon selbstgenutzt', value: `${fmtNum(a.selfArea)} m²` })
+      if (a.area > 0 && a.selfArea > 0) {
+        steps.push({ label: 'Rechnung', value: `${fmtCents(amount)} × ${fmtNum(a.selfArea)}/${fmtNum(a.area)} = ${fmtExactEuro(a.raw)}` })
+      }
+      steps.push({ label: 'privat, auf Cent gerundet', value: fmtCents(privateCents), term: 'ownShare' })
+      return 'area'
+    }
+
+    if (!allocable) {
+      if (direct && isSelf(direct)) {
+        allocation = 'direct-self'
+        privateCents = amount
+        steps.push({ label: 'Zuordnung', value: directLabel(direct) })
+        steps.push({ label: 'privat', value: fmtCents(privateCents), term: 'ownShare' })
+      } else if (direct) {
+        allocation = direct.participates ? 'direct-rented' : 'direct-outside'
+        steps.push({ label: 'Zuordnung', value: directLabel(direct) })
+      } else {
+        allocation = applyArea()
+      }
+    } else if (direct && !fromBill.noBasis) {
+      allocation = isSelf(direct) ? 'direct-self' : direct.participates ? 'direct-rented' : 'direct-outside'
+      privateCents = fromBill.selfCents
+      steps.push({ label: 'Zuordnung', value: directLabel(direct) })
+      if (privateCents !== 0) steps.push({ label: 'Eigenanteil laut Abrechnung (privat)', value: fmtCents(privateCents), term: 'ownShare' })
+    } else if (fromBill.noBasis) {
+      allocation = applyArea('Die Nebenkostenabrechnung hat diese Position nicht verteilt; aufgeteilt wird deshalb nach Fläche.')
+    } else {
+      allocation = 'settlement'
+      privateCents = fromBill.selfCents
+      steps.push({ label: 'Zuordnung', value: `verhältnismäßig laut Nebenkostenabrechnung ${snapshot.year}, verteilt nach ${KEY_LABELS[item.key] || item.key}${frozen ? ' (abgeschlossene Abrechnung)' : ''}`, term: 'allocationKey' })
+      steps.push({ label: 'Eigenanteil laut Abrechnung (privat)', value: fmtCents(privateCents), term: 'ownShare' })
+      if (KEYS_NOT_AREA.includes(item.key)) {
+        const a = byArea(item)
+        if (a.ok) {
+          areaPrivateCents = a.privateCents
+          steps.push({ label: 'Zum Vergleich nach Wohn- und Nutzfläche', value: `${fmtCents(a.privateCents)} privat (${fmtNum(a.selfArea)} von ${fmtNum(a.area)} m²)`, term: 'mixedUse' })
+        }
+      }
+    }
+
+    const deductibleCents = amount - privateCents
+    const kind: TaxAllocation = allocation
+    const deductiblePercent = (kind === 'settlement' || kind === 'area') && amount !== 0
+      ? Math.round((deductibleCents / amount) * 10000) / 100
+      : null
+    steps.push({ label: 'abziehbar', value: deductiblePercent !== null ? `${fmtCents(deductibleCents)} (${fmtNum(deductiblePercent)} %)` : fmtCents(deductibleCents) })
+    result.set(item.id, {
+      costItemId: item.id,
+      category: item.category,
+      group: groupOf(item.category) ?? 'Sonstige Werbungskosten',
+      description: item.description,
+      amountCents: amount,
+      privateCents,
+      deductibleCents,
+      labor35aCents: validLabor35aCents(item) ?? 0,
+      allocation: kind,
+      deductiblePercent,
+      areaPrivateCents,
+      steps,
+    })
+  }
+
+  // Ein Mietverhältnis auf einer selbstgenutzten Einheit im Jahr: Die Nutzung hat keine Zeitachse,
+  // die Fläche zählt also das ganze Jahr als privat (F5).
+  const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
+  const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && overlapDays(t.start, t.end, snapshot.year) > 0)
+  return { items: result, selfUseChangedInYear, closedSelfUseDiffers }
 }
 
 // ---------- Hilfen ----------
