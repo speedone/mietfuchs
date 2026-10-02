@@ -124,10 +124,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   für den Personenschlüssel ist er nicht abschließend geklärt, nach BGH, Beschluss vom 08.01.2013,
   VIII ZR 180/12, kommt eine fiktive Person für die Zeit des Leerstands in Betracht. Die eine
   Person ist eine Auslegung von Mietfuchs; ein Hinweis an der Abrechnung sagt das, der Rechenweg
-  nennt die Leerstandstage. Selbstgenutzte Wohnungen, Garagen und Stellplätze mit 0 m² und 0
-  Personen sowie Wohnungen, die an der Position nicht teilnehmen, bleiben wie bisher.
+  nennt die Leerstandstage. Selbstgenutzte Wohnungen, Einheiten ohne Fläche und ohne Bewohner
+  (Garage, Stellplatz, auch leer) sowie Wohnungen, die an der Position nicht teilnehmen, bleiben
+  wie bisher; zu einer ganz leeren Einheit mit 0 m² gibt es einen Hinweis, falls sie doch eine
+  Wohnung ist. Eine leere Garage mit eingetragener Fläche zählt als Leerstand.
   **Ihre Zahlen ändern sich**: In noch offenen Jahren mit einer Position nach Personen und einer
-  zeitweise leeren Wohnung zahlen die Mieter weniger und Sie mehr. Abgeschlossene Abrechnungen
+  zeitweise leeren Wohnung zahlen die Mieter weniger und Sie mehr. Wohnen Sie selbst im Haus, kann
+  dabei der private Anteil (Eigenanteil) in der Steuerübersicht kleiner werden, denn der Anteil des
+  Leerstands ist anders als der Eigenanteil als Werbungskosten abziehbar. Abgeschlossene Abrechnungen
   bleiben unverändert; die Seite Abrechnung zeigt dort wie bei jeder Änderung an, welcher Saldo
   sich nach heutiger Berechnung unterscheiden würde.
   ([#177](https://github.com/speedone/mietfuchs/issues/177))
