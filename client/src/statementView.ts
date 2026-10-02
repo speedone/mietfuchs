@@ -31,12 +31,12 @@ function levelsInPeriod(t: Tenancy, from: string, to: string): { persons: number
 }
 
 // Die Personen in der Kopfzeile. Wechselt die Zahl im Jahr, nannte die Zeile bisher nur den
-// letzten Stand („2 Person(en)“, obwohl bis 30.09. eine Person); gerechnet wurde mit
+// letzten Stand („2 Personen“, obwohl bis 30.09. eine Person); gerechnet wurde mit
 // Personentagen. Der Bereich kommt aus der Staffel des Mietverhältnisses, aber nur, wenn sie
 // dieselben Personentage ergibt wie die Abrechnung: Eine eingefrorene Abrechnung bleibt, was sie
 // war, auch wenn die Staffel seither geändert wurde.
 export function personsText(st: Statement, tenancy: Tenancy | undefined): string {
-  const simple = `${st.persons} Person(en)`
+  const simple = `${st.persons} ${st.persons === 1 ? 'Person' : 'Personen'}`
   if (typeof st.personDays !== 'number' || st.personDays === st.persons * st.days) return simple
   if (tenancy) {
     const levels = levelsInPeriod(tenancy, st.periodStart, st.periodEnd)

@@ -2,8 +2,8 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { Meter, MeterType, Unit, UnitDependents, UnitUsage } from './types'
-import { usageOf } from './types'
+import type { CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
+import { isNotAllocable, usageOf } from './types'
 
 export type UnitForm = {
   id?: string
@@ -90,6 +90,39 @@ export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undef
   const withoutArea = units.filter((u) => usageOf(u) !== 'ausgenommen' && !u.areaM2)
   const garage = new Set(garageLikeUnitIds ?? [])
   return { zero: withoutArea.filter((u) => garage.has(u.id)), missing: withoutArea.filter((u) => !garage.has(u.id)) }
+}
+
+// Was das Cockpit zu den Einheiten mit fehlender Fläche sagt (`missing` aus `zeroAreaUnits`,
+// Endprüfung rc.4). Wohnt dort im Jahr jemand, ist 0 m² eine vergessene Fläche, und der Befehl
+// bleibt. Steht die Einheit leer, kann sie ebenso eine Garage sein: Dann fragt das Cockpit nach,
+// denn wer bei einer leeren Garage „Wohnfläche ergänzen“ befolgte, machte sie beim
+// Personenschlüssel zum Leerstand (#177) und trüge selbst mehr. Keine neue Regel: Ob jemand dort
+// wohnt, hat der Server mit `garageLikeUnitIds` schon entschieden (eine Einheit mit Mietverhältnis
+// steht nur dann in `missing`, wenn es Personen hat); hier zählt nur noch, ob es im Jahr eines gibt.
+// Eine selbstgenutzte Einheit in `missing` ist immer bewohnt: Leer ist sie für den Server nur mit
+// ausdrücklich 0 eigenen Personen, und dann steht sie nicht in `missing`.
+// Gibt es eine Position nach Fläche, an der die leere Einheit teilnimmt, warnt die Abrechnung
+// trotzdem (`basis.unit-no-area`, #135); das sagt der Text dann vorab, statt sich zu widersprechen.
+export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: number, yearItems: CostItem[] = []): { cta: string, detail: string } {
+  const from = `${year}-01-01`
+  const to = `${year}-12-31`
+  const inhabited = (u: Unit) => (u.selfUsed && !u.participates)
+    || tenancies.some((t) => t.unitId === u.id && t.start <= to && (!t.end || t.end >= from))
+  const known = missing.filter(inhabited)
+  const empty = missing.filter((u) => !inhabited(u))
+  const parts: string[] = []
+  if (known.length > 0) parts.push(`Wohnfläche fehlt bei: ${known.map((u) => u.name).join(', ')}`)
+  if (empty.length > 0) {
+    const names = empty.map((u) => u.name)
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}` : names[0]
+    const byArea = yearItems.some((c) => c.year === year && c.key === 'area' && !isNotAllocable(c.category) &&
+      empty.some((u) => u.participates && (!c.participantUnitIds || c.participantUnitIds.includes(u.id))))
+    parts.push((empty.length === 1
+      ? `${list} hat 0 m² und im Jahr keine Bewohner. Ist ${list} eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².`
+      : `${list} haben 0 m² und im Jahr keine Bewohner. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².`) +
+      (byArea ? ' Bei Positionen nach Wohnfläche weist die Abrechnung trotzdem darauf hin.' : ''))
+  }
+  return { cta: known.length > 0 ? 'Wohnfläche ergänzen' : 'Fläche prüfen', detail: parts.join('. ') }
 }
 
 // Die Löschfrage einer Wohnung (#142). Vorher nannte sie nur die Mietverhältnisse; die
