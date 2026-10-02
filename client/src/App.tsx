@@ -22,44 +22,7 @@ import Abrechnung from './pages/Abrechnung'
 import Hilfe from './pages/Hilfe'
 import Steuer from './pages/Steuer'
 import Einstellungen from './pages/Einstellungen'
-
-type Tab =
-  | 'cockpit' | 'schnellerfassung' | 'zaehler' | 'kosten' | 'mietkonto'
-  | 'abrechnung' | 'uebersicht' | 'steuer'
-  | 'stammdaten' | 'belege' | 'einstellungen' | 'hilfe'
-
-// Navigation nach Arbeitsphase gruppiert statt als flache Tab-Liste: erst der Überblick,
-// dann „Sammeln" (übers Jahr laufend), „Abrechnen" (Jahresende) und „Einrichten" (selten).
-type NavItem = { id: Tab; label: string; icon: string }
-const NAV: { section?: string; items: NavItem[] }[] = [
-  { items: [{ id: 'cockpit', label: 'Cockpit', icon: '◎' }] },
-  {
-    section: 'Sammeln · laufend',
-    items: [
-      { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥' },
-      { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢' },
-      { id: 'kosten', label: 'Kosten', icon: '🧾' },
-      { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
-    ],
-  },
-  {
-    section: 'Abrechnen · Jahresende',
-    items: [
-      { id: 'abrechnung', label: 'Abrechnung', icon: '📄' },
-      { id: 'uebersicht', label: 'Kostenvergleich', icon: '📊' },
-      { id: 'steuer', label: 'Steuer (Anlage V)', icon: '🧮' },
-    ],
-  },
-  {
-    section: 'Einrichten · selten',
-    items: [
-      { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
-      { id: 'belege', label: 'Belegarchiv', icon: '📁' },
-      { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
-      { id: 'hilfe', label: 'Hilfe & Begriffe', icon: '❓' },
-    ],
-  },
-]
+import { NAV, type Tab } from './nav'
 
 // ---------- Dark Mode ----------
 type ThemeChoice = 'system' | 'light' | 'dark'
@@ -301,7 +264,7 @@ function Shell() {
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}
         {tab === 'steuer' && <Steuer settings={settings} />}
-        {tab === 'hilfe' && <Hilfe />}
+        {tab === 'hilfe' && <Hilfe onNavigate={(t) => setTab(t)} />}
         {tab === 'einstellungen' && settings && (
           <Einstellungen settings={settings} reload={reload} update={update} />
         )}
