@@ -141,3 +141,11 @@ describe('schon erfasst nach der gemeinsamen Regel', () => {
     expect(rowOf(rows, 'Biomüll 2025').already).toBe(false)
   })
 })
+
+describe('Nicht umlagefähig mit Einheit für die Steuer (#163)', () => {
+  test('die Übernahme behält die Einheit, die die Position für die Steuer betrifft', () => {
+    const items = [item({ year: 2025, category: 'Nicht umlagefähig', description: 'Wartung Therme EG', key: 'direct', directUnitId: 'u1' })]
+    const row = withCarryAmount(rowOf(carryOverRows(items, 2026), 'Wartung Therme EG'), '180,00')
+    expect(carryOverBody(row, UNITS, 2026)).toMatchObject({ body: { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' } })
+  })
+})

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { TaxReport } from './types'
-import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints } from './taxView'
+import type { TaxExpenseItem, TaxReport } from './types'
+import { allocationLabel, DEFAULT_BASIS, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
 
 // Ein Bericht, in dem nur das steht, was die Hinweise lesen. Die übrigen Felder füllt der Typ
 // ab, damit der Übersetzer mitprüft, dass die Hinweise wirklich einen TaxReport lesen.
@@ -19,7 +19,9 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
     tenanciesWithoutPayment: 0,
     ...income,
   },
-  expenses: { groups: [], totalCents: 0, labor35aCents: 0 },
+  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
+  selfUseChangedInYear: false,
+  closedSelfUseDiffers: false,
   reserveContributionCents: 0,
   reserveSuspects: [],
   totalAreaM2: 100,
@@ -162,5 +164,67 @@ describe('Erhaltungsrücklage (#143)', () => {
     expect(taxHints(report({}), 'soll', 'etw')).toContain('etwHousingMoney')
     expect(taxHints(report({}), 'ist', 'mfh')).not.toContain('etwHousingMoney')
     expect(taxHints(report({}), 'ist')).not.toContain('etwHousingMoney')
+  })
+})
+
+describe('Teilweise Eigennutzung (#163)', () => {
+  const pos = (over: Partial<TaxExpenseItem>): TaxExpenseItem => ({
+    costItemId: 'c', category: 'Grundsteuer', group: 'Grundsteuer & öffentliche Abgaben', description: 'Grundsteuer',
+    amountCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0,
+    allocation: 'settlement', deductiblePercent: 100, areaPrivateCents: null, steps: [], ...over,
+  })
+  const mixed = (items: TaxExpenseItem[], rest: Partial<TaxReport> = {}) => report({}, {
+    selfOccupiedExists: true, selfUsedAreaM2: 50,
+    expenses: {
+      groups: [], items, totalCents: items.reduce((a, x) => a + x.amountCents, 0),
+      privateCents: items.reduce((a, x) => a + x.privateCents, 0),
+      deductibleCents: items.reduce((a, x) => a + x.deductibleCents, 0), labor35aCents: 0,
+    },
+    ...rest,
+  })
+
+  it('erklärt die Aufteilung und das, was nicht gerechnet wird, nur bei Eigennutzung', () => {
+    expect(taxHints(mixed([]), 'ist')).toEqual(expect.arrayContaining(['mixedUseSplit', 'mixedUseNotCalculated']))
+    expect(taxHints(report({}), 'ist')).not.toContain('mixedUseSplit')
+    expect(taxHints(report({}), 'ist')).not.toContain('mixedUseNotCalculated')
+  })
+
+  it('zeigt die Spalten privat und abziehbar nur, wenn es etwas Privates geben kann', () => {
+    expect(showsSplit(report({}))).toBe(false)
+    expect(showsSplit(mixed([]))).toBe(true)
+  })
+
+  it('beziffert den Unterschied zum Flächenmaßstab, wenn die Abrechnung anders verteilt', () => {
+    const r = mixed([
+      pos({ costItemId: 'a', privateCents: 50000, deductibleCents: 50000, areaPrivateCents: 25000 }),
+      pos({ costItemId: 'b', privateCents: 30000, deductibleCents: 70000, areaPrivateCents: 30000 }),
+      pos({ costItemId: 'c', privateCents: 10000, deductibleCents: 90000, areaPrivateCents: null }),
+    ])
+    expect(taxHints(r, 'ist')).toContain('mixedUseKeyNotArea')
+    expect(keyNotAreaDifference(r)).toEqual({ count: 1, differenceCents: 25000 })
+    // Gleich oder ohne Vergleich: kein Hinweis.
+    expect(taxHints(mixed([pos({ areaPrivateCents: 0 })]), 'ist')).not.toContain('mixedUseKeyNotArea')
+  })
+
+  it('meldet fehlende Fläche, Einheiten außerhalb, Nutzungswechsel, geänderten Abschluss und Lohnanteile', () => {
+    expect(taxHints(mixed([pos({ allocation: 'unsplittable', deductiblePercent: null })]), 'ist')).toContain('mixedUseAreaMissing')
+    expect(taxHints(mixed([pos({ allocation: 'direct-outside', deductiblePercent: null })]), 'ist')).toContain('mixedUseDirectOutside')
+    expect(taxHints(mixed([], { selfUseChangedInYear: true }), 'ist')).toContain('mixedUseChangedInYear')
+    expect(taxHints(mixed([], { closedSelfUseDiffers: true }), 'ist')).toContain('mixedUseClosedChanged')
+    expect(taxHints(mixed([pos({ labor35aCents: 8000, privateCents: 4000, deductibleCents: 96000 })]), 'ist')).toContain('mixedUseLabor35a')
+    // Ein Lohnanteil an einer voll abziehbaren Position betrifft die eigene Erklärung nicht.
+    expect(taxHints(mixed([pos({ labor35aCents: 8000 })]), 'ist')).not.toContain('mixedUseLabor35a')
+    const leer = taxHints(mixed([]), 'ist')
+    for (const h of ['mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear', 'mixedUseClosedChanged', 'mixedUseLabor35a'] as const) expect(leer).not.toContain(h)
+  })
+
+  it('nennt die Zuordnung wie der Vordruck: direkt oder anteilig mit Prozent', () => {
+    expect(allocationLabel(pos({ allocation: 'settlement', deductiblePercent: 27.27 }))).toBe('anteilig, abziehbar 27,27 % (laut Abrechnung)')
+    expect(allocationLabel(pos({ allocation: 'area', deductiblePercent: 42.86 }))).toBe('anteilig, abziehbar 42,86 % (nach Fläche)')
+    expect(allocationLabel(pos({ allocation: 'settlement', deductiblePercent: null }))).toBe('anteilig (laut Abrechnung)')
+    expect(allocationLabel(pos({ allocation: 'direct-self' }))).toBe('direkt, selbstgenutzt')
+    expect(allocationLabel(pos({ allocation: 'direct-rented' }))).toBe('direkt, vermietet')
+    expect(allocationLabel(pos({ allocation: 'direct-outside' }))).toBe('direkt, außerhalb der Abrechnungseinheit')
+    expect(allocationLabel(pos({ allocation: 'unsplittable' }))).toBe('nicht aufteilbar, Fläche fehlt')
   })
 })

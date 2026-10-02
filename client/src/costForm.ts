@@ -7,10 +7,10 @@ import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePr
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
-import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
+import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
-export { amountProblem, type BuildResult } from '../../shared/costItem.ts'
+export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
@@ -310,8 +310,17 @@ export function aiKeyOptions(stored: CostKey): CostKey[] {
 // ganz dem Vermieter zu und liest ihren Schlüssel nicht (calc.ts, `isNotAllocable`). Das Formular
 // zeigt deshalb keine Schlüsselauswahl, und die Liste keinen Schlüssel.
 export const showsKeyFields = (category: string): boolean => !isNotAllocable(category)
-export function keyListText(item: Pick<CostItem, 'category' | 'key'>): string {
-  return isNotAllocable(item.category) ? '— trägt der Vermieter' : KEY_LABELS[item.key]
+export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUnitId'>, units: Pick<Unit, 'id' | 'name'>[] = []): string {
+  if (!isNotAllocable(item.category)) return KEY_LABELS[item.key]
+  const unit = taxUnitOf(item) ? units.find((u) => u.id === item.directUnitId) : undefined
+  return unit ? `— trägt der Vermieter · betrifft ${unit.name}` : '— trägt der Vermieter'
+}
+
+// Nicht umlagefähig, aber für die Steuer einer Einheit zugeordnet (#163): Regel und Begründung
+// in shared/costItem.ts (`showsTaxUnitField`, `taxUnitOf`).
+// Die Auswahl „Betrifft (für die Steuer)“: eine Einheit oder leer für das ganze Gebäude.
+export function withTaxUnit(form: ItemForm, unitId: string): ItemForm {
+  return unitId ? { ...form, key: 'direct', directUnitId: unitId } : { ...form, key: 'area', directUnitId: '' }
 }
 
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {

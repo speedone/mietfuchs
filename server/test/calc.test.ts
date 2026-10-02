@@ -202,10 +202,13 @@ test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum
   // Der eingefrorene Stand bringt mit, was die Steuerübersicht daraus liest: den Eigenanteil und
   // die Vorauszahlungen der zugestellten Abrechnung (#70). Die Prüfung steht bewusst als ganzes
   // Objekt da: Ein neues Feld, das niemand füllt, fiele sonst nicht auf.
+  // Die Eigenanteile je Position (#163) fehlen: Das Archivstück hier hat keine Zeilen des
+  // Vermieteranteils, die die Summe von 222 € tragen, und dann gilt nur die Summe.
   assert.deepEqual(snap.closedSettlement, {
     selfUsedShareCents: 22200,
     prepaymentCents: 0,
     prepaymentOverridden: false,
+    selfUseByItem: null,
   })
   assert.strictEqual(snapshotFromDb(db, 2023).closedSettlement, null)
 })
@@ -1342,9 +1345,12 @@ test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, �
   assert.equal(r.expenses.labor35aCents, 12000)
   assert.equal(groupOf(r, 'Grundsteuer & öffentliche Abgaben').amountCents, 50000)
   assert.equal(groupOf(r, 'Laufende Betriebskosten').amountCents, 50000) // Müll + Garten
-  // Überschuss
-  assert.equal(r.surplusSollCents, 1100000) // 1.200.000 − 100.000
-  assert.equal(r.surplusPaidCents, 1000000) // 1.100.000 − 100.000
+  // Überschuss aus dem abziehbaren Teil (#163): Die eigene Wohnung trägt laut Abrechnung die
+  // Hälfte jeder Position (1 von 2 Einheiten, 2 von 4 Personen), privat sind also 500 €.
+  assert.equal(r.expenses.privateCents, 50000)
+  assert.equal(r.expenses.deductibleCents, 50000)
+  assert.equal(r.surplusSollCents, 1150000) // 1.200.000 − 50.000
+  assert.equal(r.surplusPaidCents, 1050000) // 1.100.000 − 50.000
   // gemischte Nutzung: die halbe Fläche ist selbstgenutzt und damit privat
   assert.equal(r.selfOccupiedExists, true)
   assert.equal(r.selfUsedAreaM2, 100)
@@ -1960,6 +1966,68 @@ test('Invariante: Steuer — Werbungskosten + Rücklage = Kostensumme, §35a = g
   }
 })
 
+// ---------- Teilweise Eigennutzung (#163) ----------
+
+test('Invariante: Steuer — privat + abziehbar = Betrag je Position, Kostenart, Gruppe und gesamt; privat nie über dem Betrag', () => {
+  const rnd = makeRng(1632025)
+  for (let i = 0; i < 400; i++) {
+    const db = randomDb(rnd)
+    const r = taxReport(snapshotFromDb(db, 2025))
+    const fall = `Fall ${i}\n${JSON.stringify(db)}`
+    for (const x of r.expenses.items) {
+      assert.equal(x.privateCents + x.deductibleCents, x.amountCents, `${fall}: Position ${x.costItemId}`)
+      assert.ok(x.privateCents === 0 || Math.sign(x.privateCents) === Math.sign(x.amountCents), `${fall}: privat ${x.privateCents} gegen das Vorzeichen von ${x.amountCents}`)
+      assert.ok(Math.abs(x.privateCents) <= Math.abs(x.amountCents), `${fall}: privat ${x.privateCents} über dem Betrag ${x.amountCents}`)
+    }
+    for (const g of r.expenses.groups) {
+      assert.equal(g.privateCents + g.deductibleCents, g.amountCents, `${fall}: Gruppe ${g.group}`)
+      for (const c of g.categories) assert.equal(c.privateCents + c.deductibleCents, c.amountCents, `${fall}: Kostenart ${c.category}`)
+      const ofGroup = r.expenses.items.filter((x) => x.group === g.group)
+      assert.equal(ofGroup.reduce((a, x) => a + x.privateCents, 0), g.privateCents, `${fall}: Gruppe ${g.group} ≠ Summe der Positionen`)
+    }
+    assert.equal(r.expenses.privateCents + r.expenses.deductibleCents, r.expenses.totalCents, fall)
+    assert.equal(r.expenses.items.reduce((a, x) => a + x.amountCents, 0), r.expenses.totalCents, `${fall}: Positionen ≠ Werbungskosten`)
+    assert.equal(r.surplusPaidCents, r.income.paidCents - r.expenses.deductibleCents, fall)
+    assert.equal(r.surplusSollCents, r.income.sollCents - r.expenses.deductibleCents, fall)
+  }
+})
+
+test('Invariante: Steuer — ohne selbstgenutzte Wohnung ist nichts privat, und der Überschuss bleibt der bisherige', () => {
+  const rnd = makeRng(163)
+  let geprueft = 0
+  for (let i = 0; i < 400; i++) {
+    const db = randomDb(rnd)
+    // Jede selbstgenutzte Wohnung wird vermietet; der Bestand bleibt sonst derselbe.
+    for (const u of db.units) if (u.selfUsed) { u.selfUsed = false; u.participates = true }
+    const r = taxReport(snapshotFromDb(db, 2025))
+    const fall = `Fall ${i}\n${JSON.stringify(db)}`
+    assert.equal(r.expenses.privateCents, 0, fall)
+    for (const x of r.expenses.items) assert.equal(x.privateCents, 0, `${fall}: ${x.costItemId}`)
+    assert.equal(r.surplusPaidCents, r.income.paidCents - r.expenses.totalCents, fall)
+    assert.equal(r.surplusSollCents, r.income.sollCents - r.expenses.totalCents, fall)
+    geprueft += r.expenses.items.length
+  }
+  assert.ok(geprueft > 400, 'der Generator erzeugt kaum Positionen')
+})
+
+test('Invariante: Steuer — bei umlagefähigen Kosten ist der private Teil der Eigenanteil der Abrechnung', () => {
+  // Summenprobe: Was die Steuer laut Abrechnung oder direkt zuordnet, ergibt zusammen genau den
+  // Eigenanteil der Abrechnung. Positionen, die die Abrechnung nicht verteilt hat, gehen nach
+  // Fläche und tragen dort keinen Eigenanteil.
+  const rnd = makeRng(1630)
+  let mitEigenanteil = 0
+  for (let i = 0; i < 400; i++) {
+    const db = randomDb(rnd)
+    const snapshot = snapshotFromDb(db, 2025)
+    const r = taxReport(snapshot)
+    const s = computeSettlement(snapshot)
+    const ausAbrechnung = r.expenses.items.filter((x) => !isNotAllocable(x.category) && x.allocation !== 'area' && x.allocation !== 'unsplittable')
+    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0), s.selfUsedShareCents, `Fall ${i}\n${JSON.stringify(db)}`)
+    if (s.selfUsedShareCents !== 0) mitEigenanteil++
+  }
+  assert.ok(mitEigenanteil > 50, `nur ${mitEigenanteil} Fälle mit Eigenanteil`)
+})
+
 // ---------- Mehrere Objekte (#92) ----------
 // Ein Bestand mit zwei Objekten muss je Objekt genau das rechnen, was ein Bestand ergäbe, der nur
 // aus diesem Objekt besteht. Das ist der Fehler, der sonst still bliebe: Ein Filter fehlt, und
@@ -2091,9 +2159,14 @@ test('Nicht umlagefähig: der gespeicherte Schlüssel ändert keine Zahl (#142)'
   for (const patch of [
     { key: 'persons' },
     { key: 'meter', meterType: 'kaltwasser' },
-    { key: 'direct', directUnitId: 'u2' },
     { key: 'custom', customShares: { u1: 50, u2: 50 } },
   ] satisfies Partial<CostItem>[]) {
     assert.deepEqual(numbers(withKey(patch)), neutral, JSON.stringify(patch))
   }
+  // **Die Direktzuordnung ist seit #163 eine Angabe für die Steuer**: Sie ordnet die Verwaltung der
+  // eigenen Wohnung zu, die dann ganz privat ist (360 € statt 360 € × 60/140 = 154,29 €). Die
+  // Abrechnung bleibt dieselbe, die Rücklage ebenso.
+  const direkt = numbers(withKey({ key: 'direct', directUnitId: 'u2' }))
+  assert.deepEqual({ ...direkt, tax: direkt.tax.slice(0, 3) }, { ...neutral, tax: neutral.tax.slice(0, 3) })
+  assert.deepEqual(direkt.tax.slice(3), neutral.tax.slice(3).map((x) => x + (36000 - 15429)), 'weniger abziehbar, also mehr Überschuss')
 })

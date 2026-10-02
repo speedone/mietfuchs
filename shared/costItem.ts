@@ -86,6 +86,18 @@ export type CostItemBody = {
   invoiceFile: string | null
 }
 
+// **Nicht umlagefähig, aber einer Einheit zuzuordnen** (#163): Für die Abrechnung bleibt es dabei,
+// die Position trägt der Vermieter. Für die Steuer zählt, wen sie betrifft: Eine Badrenovierung in
+// der vermieteten Wohnung ist ganz abziehbar, eine in der eigenen gar nicht, und eine Reparatur am
+// Dach wird nach Fläche aufgeteilt. Gespeichert wird das als Direktzuordnung, die Berechnung der
+// Abrechnung liest den Schlüssel weiterhin nicht. Nur „Nicht umlagefähig“: Die Zuführung zur
+// Erhaltungsrücklage ist keine Werbungskosten des Jahres (#143), dort gibt es nichts zuzuordnen.
+// Die Regel steht hier und nicht im Formular, weil auch „Aus dem Vorjahr übernehmen“ und die
+// Belegbuchung auf dem Server Positionen durch `costItemBody` anlegen.
+export const showsTaxUnitField = (category: string): boolean => category === 'Nicht umlagefähig'
+export const taxUnitOf = (item: { category: string; key: CostKey; directUnitId?: string | null }): string | null =>
+  showsTaxUnitField(item.category) && item.key === 'direct' && item.directUnitId ? item.directUnitId : null
+
 export type BuildResult = { error: string } | { body: CostItemBody }
 
 // Liest eine Liste von Beträgen; `null`, wenn einer unlesbar oder negativ ist.
@@ -114,11 +126,14 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], year: num
     invoiceFile: d.invoiceFile,
   }
   // Nicht umlagefähig (#142): Gespeichert wird die neutrale Vorgabe ohne jede Zuordnung. Die
-  // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht.
+  // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht. Eine Zuordnung, die
+  // aus einer früheren Kostenart stehengeblieben ist, bliebe sonst als tote Angabe in der Datenbank.
   if (isNotAllocable(d.category)) {
+    // Die eine Ausnahme ist die Einheit für die Steuer (#163, `taxUnitOf`).
+    const taxUnit = taxUnitOf(d)
     return {
       body: {
-        ...common, key: 'area', directUnitId: null, meterType: null, customShares: null, participantUnitIds: null,
+        ...common, key: taxUnit ? 'direct' : 'area', directUnitId: taxUnit, meterType: null, customShares: null, participantUnitIds: null,
         externalBasis: null, tenancyAmounts: null, selfAmounts: null,
       },
     }

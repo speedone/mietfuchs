@@ -86,3 +86,17 @@ test('Einliegerwohnung: Anlage in Mietfuchs, Folgen und ein nachgerechnetes Beis
   assert.equal(Math.round((60000 * 45) / 165), 16364)
   assert.equal(60000 - 16364, 43636)
 })
+
+test('Teilweise selbstgenutztes Gebäude: Rechtsgrundlage, gesonderte Aufstellung und ein nachgerechnetes Beispiel (#163)', () => {
+  const t = GLOSSARY.mixedUse
+  assert.equal(t.title, 'Teilweise selbstgenutztes Gebäude')
+  assert.match(t.norm, /§ 12 Nr\. 1 EStG/)
+  assert.match(t.norm, /IX R 26\/06/)
+  assert.match(t.needed, /gesonderte[nr]? Aufstellung/)
+  assert.match(t.needed, /Betrifft \(für die Steuer\)/)
+  // 120 + 60 = 180 m²; Dachreparatur 1.800 € × 60/180 = 600 € abziehbar, 1.200 € privat.
+  assert.match(t.example, /120 m².*60 m².*180 m².*1\.800 €.*600 €.*1\.200 €/s)
+  assert.equal(120 + 60, 180)
+  assert.equal(1800 * 60 / 180, 600)
+  assert.equal(1800 - 600, 1200)
+})

@@ -122,6 +122,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Belege für die Steuer“ lädt ein ZIP aller Belege des Jahres, geordnet nach den Gruppen der
   Anlage V, einschließlich der nicht umlagefähigen, mit einer Übersicht als CSV.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- **Steuerübersicht: Werbungskosten bei teilweiser Eigennutzung aufgeteilt.** Wohnen Sie selbst
+  im Haus, zeigt die Übersicht als Hauptzahl die abziehbaren Werbungskosten und daneben den
+  privaten Teil. Jede Position ist aufgeteilt: Was einer Einheit direkt zugeordnet ist, gehört
+  ganz zu ihr; Kosten des ganzen Gebäudes werden nach dem Verhältnis der Wohn- und Nutzflächen
+  aufgeteilt (BFH, Urteil vom 24.06.2008, IX R 26/06); bei umlagefähigen Kosten gilt der
+  Eigenanteil aus der Nebenkostenabrechnung, bei abgeschlossener Abrechnung ihr eingefrorener
+  Stand. Die Tabelle nennt je Position Gesamtbetrag, privat, abziehbar und die Zuordnung wie im
+  Vordruck („direkt“ oder anteilig mit dem abzugsfähigen Anteil in Prozent), mit Rechenweg zum
+  Aufklappen; der Ausdruck taugt als gesonderte Aufstellung für das Finanzamt. Hinweise nennen,
+  was nicht gerechnet wird (AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung), und
+  beziffern den Unterschied, wo die Abrechnung nicht nach Fläche verteilt. Ohne selbstgenutzte
+  Wohnung ändert sich keine Zahl.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
+- **Kosten: „Nicht umlagefähig“ lässt sich für die Steuer einer Einheit zuordnen.** Die Auswahl
+  „Betrifft (für die Steuer)“ ordnet etwa eine Badrenovierung der vermieteten Wohnung (voll
+  abziehbar) oder der eigenen Wohnung (privat) zu; ohne Auswahl gilt das ganze Gebäude. Die
+  Nebenkostenabrechnung bleibt davon unberührt.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
 ### Geändert
 
@@ -134,6 +152,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenverordnung nennt das Lexikon die Nachrüstfrist für fernablesbare Geräte zum
   31.12.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
+- **Der Überschuss der Steuerübersicht rechnet mit den abziehbaren Werbungskosten.** Bisher zog
+  er bei teilweiser Eigennutzung die vollen Kosten ab und fiel um den privaten Anteil zu niedrig
+  aus. Für bestehende Daten: Wer eine selbstgenutzte Wohnung angelegt hat, sieht für vergangene
+  Jahre einen höheren Überschuss; eine Zahl, die schon in einer Steuererklärung steht, gleichen
+  Sie bitte mit Ihrem Steuerberater ab. Ältere Positionen „Nicht umlagefähig“ gelten als Kosten
+  des ganzen Gebäudes, bis Sie sie einer Einheit zuordnen.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
 ### Hinweise zur Aktualisierung
 
