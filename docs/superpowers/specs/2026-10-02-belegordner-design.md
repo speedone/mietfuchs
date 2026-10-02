@@ -154,9 +154,14 @@ keine Mieter; eine Messdienst-Abrechnung kommt nach CLAUDE.md über Einzelbeträ
 **Nicht belegt** (Suchbudget der Sitzung erschöpft, die Recherche über einen Hilfsagenten blieb an
 einer Freigabe hängen): ob die Gesetzesbegründung zu „elektronisch bereitstellen“ bestimmte Wege
 (E-Mail, Portal) nennt oder das Recht auf Einsicht in Papier unberührt lässt; der Anspruch auf
-Kopien gegen Kostenerstattung nach älterer BGH-Rechtsprechung; ob § 556 Abs. 4 nur für Wohnraum
-gilt (die Vorschrift steht im Untertitel über Wohnraummietverhältnisse, die Sekundärquelle der
-Rechtsdurchsicht sagt dasselbe). Die Oberfläche sagt dazu deshalb nichts.
+Kopien gegen Kostenerstattung nach älterer BGH-Rechtsprechung. Die Oberfläche sagt dazu deshalb
+nichts.
+
+**Nur Wohnraum** (belegt): § 578 Abs. 1 und 2 BGB erklären für Grundstücke und Gewerberäume nur
+einzelne Vorschriften für entsprechend anwendbar, aus dem Betriebskostenrecht lediglich § 556c,
+nicht § 556 ([gesetze-im-internet.de/bgb/__578.html](https://www.gesetze-im-internet.de/bgb/__578.html)).
+§ 556 Abs. 4 gilt damit unmittelbar nur für Wohnraum. Abs. 4 ist in § 556 Abs. 5 (Verbot
+abweichender Vereinbarungen zum Nachteil des Mieters) nicht aufgezählt.
 
 ## Folgearbeit
 
