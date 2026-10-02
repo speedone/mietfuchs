@@ -101,9 +101,10 @@ test('§35a: geprüft wird gegen den Lohnanteil, der danach gilt, auch bei Gutsc
   const garten: CostItem = { ...wasser, id: 'g', category: 'Gartenpflege', description: 'Garten', amountCents: 50000, invoiceFile: 'w.pdf', labor35aCents: 40000 }
   // Gleicher Beleg: Lohnanteil 400 + 300 = 700 € bei 500 + 100 = 600 € Betrag
   expect(groupsOf([row('Nachtrag', '100,00', '300,00', 'Gartenpflege')], [garten])[0]?.offers[0]?.built).toMatchObject({ error: expect.stringMatching(/§35a/) })
+  // Gutschriften werden seit der dritten Durchsicht nicht mehr verknüpft, sondern angelegt (L3);
+  // dort prüft amountProblem wie im Formular.
   const ohne: CostItem = { ...garten, invoiceFile: undefined }
-  expect(groupsOf([row('Gutschrift', '-50,00', '', 'Gartenpflege')], [ohne])[0]?.offers[0]?.built).toEqual({ body: { amountCents: -5000, invoiceFile: 'w.pdf', labor35aCents: 0 } })
-  expect(groupsOf([row('Gutschrift', '-50,00', '10,00', 'Gartenpflege')], [ohne])[0]?.offers[0]?.built).toMatchObject({ error: expect.stringMatching(/Gutschrift/) })
+  expect(groupsOf([row('Gutschrift', '-50,00', '', 'Gartenpflege')], [ohne])[0]?.offers).toEqual([])
 })
 
 test('Gemeinschaftsabrechnung und Einzelbeträge: kein Ein-Klick-Verknüpfen, sondern die Position im Formular', () => {
@@ -112,4 +113,37 @@ test('Gemeinschaftsabrechnung und Einzelbeträge: kein Ein-Klick-Verknüpfen, so
   const g = groupsOf([row('Frischwasser', '700,00')], [hg, einzel])[0]
   expect(g?.offers).toEqual([])
   expect(g?.formOnly.map((i) => i.id)).toEqual(['hg', 'ez'])
+})
+
+// ---------- Dritte Durchsicht ----------
+const muell: CostItem = { id: 'P', propertyId: 'p', year: 2025, category: 'Müllabfuhr', description: 'Restmüll', amountCents: 70000, key: 'area', invoiceFile: 'w.pdf' }
+
+test('H1: eine eben aus diesem Beleg angelegte Zeile bietet kein „erhöhen“ mit ihrem eigenen Betrag an', () => {
+  const rows = [{ ...row('Restmüll', '700,00', '', 'Müllabfuhr'), created: true }, row('Gutschrift', '-50,00', '', 'Müllabfuhr')]
+  // Die angelegte Position gehört zu diesem Beleg: Die Gutschrift wird als eigene Zeile angelegt.
+  expect(duplicateGroups(rows, { items: [muell], vendor: 'Stadt', year: 2025, invoiceFile: 'w.pdf', ownIds: ['P'] })).toEqual([])
+  // Auch ohne die Kennung (etwa nach einem Fehler): nie 700 + 650, und keine negative Summe verknüpft
+  const g = duplicateGroups(rows, { items: [muell], vendor: 'Stadt', year: 2025, invoiceFile: 'w.pdf' })
+  expect(g.flatMap((x) => x.rows)).toEqual([1])
+  expect(g[0]?.offers).toEqual([])
+})
+
+test('derselbe Beleg zweimal in der Warteschlange: kein zweites „erhöhen“, sondern „schon mit diesem Beleg erfasst“', () => {
+  const t: CostItem = { ...wasser, invoiceFile: 'w.pdf' }
+  const g = groupsOf([row('Frischwasser', '700,00'), row('Schmutzwasser', '800,00')], [t])
+  expect(g[0]?.offers.map((o) => o.label)).toEqual([expect.stringMatching(/um 1\.500,00\s€ auf 3\.000,00\s€ erhöhen/)])
+  const taken = duplicateGroups([row('Frischwasser', '700,00'), row('Schmutzwasser', '800,00')], { items: [t], vendor: 'S', year: 2025, invoiceFile: 'w.pdf', receiptTaken: ['wa'] })
+  expect(taken[0]?.offers).toEqual([])
+  expect(taken[0]?.takenByReceipt.map((i) => i.id)).toEqual(['wa'])
+})
+
+test('L3: eine Gruppe mit negativer Summe wird nicht verknüpft, nur neu angelegt', () => {
+  expect(groupsOf([row('Gutschrift', '-50,00')], [wasser])[0]?.offers).toEqual([])
+})
+
+test('L1: ausdrücklich 0 als Lohn eingetragen heißt „auf 0 gesetzt“, nicht „tragen Sie ihn ein“', () => {
+  const garten: CostItem = { ...wasser, id: 'g', category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000 }
+  const o = groupsOf([row('Gartenpflege', '2.800,00', '0', 'Gartenpflege')], [garten])[0]?.offers[0]
+  expect(o?.built).toMatchObject({ body: { labor35aCents: 0 } })
+  expect(o?.note).toBe('Der §35a-Lohnanteil wird auf 0 gesetzt.')
 })

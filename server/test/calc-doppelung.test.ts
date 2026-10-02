@@ -69,3 +69,15 @@ test('Keine Zahl ändert sich: dieselbe Verteilung mit und ohne den Hinweis', ()
   assert.deepEqual(withHint.statements, without.statements)
   assert.equal(withHint.totalCostsCents, without.totalCostsCents)
 })
+
+test('L2: bei drei Positionen heißt es nicht „beide“', () => {
+  const found = dupes([
+    item({ id: 'a', year: 2026, amountCents: 61000 }),
+    item({ id: 'b', year: 2026, description: 'Bescheid', amountCents: 61240, invoiceFile: 'gs.pdf' }),
+    item({ id: 'c', year: 2026, description: 'Nachtrag', amountCents: 1000 }),
+  ])
+  assert.equal(found.length, 1)
+  const text = found[0]?.text ?? ''
+  assert.doesNotMatch(text, /beide/)
+  assert.match(text, /„Grundsteuer 2026“ \(610,00 €, ohne Beleg\), „Bescheid“ \(612,40 €\) und „Nachtrag“ \(10,00 €, ohne Beleg\) stehen 2026 alle unter „Grundsteuer“/)
+})

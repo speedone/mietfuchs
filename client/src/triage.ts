@@ -113,7 +113,10 @@ export function categoryDeviationPct(items: readonly CostItem[], category: strin
 // werden gemeinsam verknüpft, mit der Summe, sonst bekäme die Position den Betrag der ersten Zeile
 // und die zweite ginge verloren (zweite Durchsicht).
 
-export type AiRow = { category: string; description: string; amount: string; labor35a: string; linked?: string }
+// `linked`: mit einer bestehenden Position verknüpft (deren Beschreibung); `created`: als neue
+// Position angelegt. Beides heißt erledigt, und erledigte Zeilen fragen nicht mehr nach Doppelungen
+// (dritte Durchsicht: Sonst bot eine eben angelegte Zeile „um ihren eigenen Betrag erhöhen“ an).
+export type AiRow = { category: string; description: string; amount: string; labor35a: string; linked?: string; created?: boolean }
 
 export type LinkOffer = {
   target: CostItem
@@ -132,6 +135,11 @@ export type DuplicateGroup = {
   // Kandidaten, deren Betrag an weiteren Angaben hängt (Einzelbeträge je Mieter, eigener Anteil
   // laut Gemeinschaftsabrechnung): Sie werden im Formular gepflegt, nicht mit einem Klick.
   formOnly: CostItem[]
+  // Positionen, die schon diesen Beleg tragen, aus einem anderen Eintrag der Warteschlange
+  // (derselbe Beleg zweimal ausgewertet): kein zweites „erhöhen“, nur der Hinweis.
+  takenByReceipt: CostItem[]
+  // Die Summe der Zeilen ist negativ (Gutschrift): wird angelegt, nicht verrechnet (L3).
+  credit: boolean
 }
 
 const FORM_ONLY_KEYS: readonly CostItem['key'][] = ['amounts', 'external']
@@ -140,6 +148,7 @@ function linkOffer(rows: readonly AiRow[], target: CostItem, invoiceFile: string
   const sameReceipt = !!invoiceFile && target.invoiceFile === invoiceFile
   const amounts = rows.map((r) => parseEuro(r.amount))
   const laborGiven = rows.some((r) => r.labor35a.trim() !== '')
+  const laborZero = laborGiven && rows.every((r) => r.labor35a.trim() === '' || parseEuro(r.labor35a) === 0)
   const labors = rows.map((r) => (r.labor35a.trim() ? parseEuro(r.labor35a) : 0))
   const sum = amounts.every((a) => a !== null) ? amounts.reduce<number>((x, a) => x + (a ?? 0), 0) : null
   const laborSum = labors.every((l) => l !== null) ? labors.reduce<number>((x, l) => x + (l ?? 0), 0) : null
@@ -165,7 +174,10 @@ function linkOffer(rows: readonly AiRow[], target: CostItem, invoiceFile: string
       // zu bescheinigen, ohne dass die Rechnung ihn trägt.
       labor = 0
       laborField = 0
-      note = `Der bisherige §35a-Lohnanteil (${fmtEuro(before)}) wird entfernt; tragen Sie ihn aus der Rechnung ein.`
+      // Ausdrücklich 0 eingetragen ist eine Angabe aus der Rechnung, keine Lücke (L1).
+      note = laborZero
+        ? 'Der §35a-Lohnanteil wird auf 0 gesetzt.'
+        : `Der bisherige §35a-Lohnanteil (${fmtEuro(before)}) wird entfernt; tragen Sie ihn aus der Rechnung ein.`
     } else {
       labor = 0
     }
@@ -181,24 +193,34 @@ function linkOffer(rows: readonly AiRow[], target: CostItem, invoiceFile: string
   return { target, sameReceipt, label, note, built }
 }
 
-export function duplicateGroups(rows: readonly AiRow[], ctx: { items: readonly CostItem[]; vendor: string; year: number; invoiceFile?: string }): DuplicateGroup[] {
+// `ownIds`: Positionen, die aus diesem Eintrag angelegt wurden. Sie sind Zeilen derselben Rechnung
+// und keine Doppelung; eine Gutschrift neben der eben angelegten Position wird deshalb selbst
+// angelegt und nicht mit ihr verrechnet, so bleibt sie auf der Abrechnung sichtbar.
+// `receiptTaken`: Positionen, die ein anderer Eintrag mit demselben Beleg schon gefüllt hat.
+export function duplicateGroups(rows: readonly AiRow[], ctx: { items: readonly CostItem[]; vendor: string; year: number; invoiceFile?: string; ownIds?: readonly string[]; receiptTaken?: readonly string[] }): DuplicateGroup[] {
   const groups = new Map<string, DuplicateGroup>()
+  const items = ctx.ownIds?.length ? ctx.items.filter((i) => !ctx.ownIds?.includes(i.id)) : ctx.items
   rows.forEach((r, i) => {
-    if (r.linked) return
-    const candidates = duplicateCandidates(ctx.items, { category: r.category, description: r.description, vendor: ctx.vendor, year: ctx.year })
+    if (r.linked || r.created) return
+    const candidates = duplicateCandidates(items, { category: r.category, description: r.description, vendor: ctx.vendor, year: ctx.year })
     if (candidates.length === 0) return
     const key = `${r.category}|${candidates.map((c) => c.id).join(',')}`
-    const g = groups.get(key) ?? { rows: [], candidates, offers: [], formOnly: [] }
+    const g = groups.get(key) ?? { rows: [], candidates, offers: [], formOnly: [], takenByReceipt: [], credit: false }
     g.rows.push(i)
     groups.set(key, g)
   })
   for (const g of groups.values()) {
     // Ziel ist eine Position ohne Beleg oder eine, die schon an diesem Beleg hängt; sonst ersetzte
     // der Beleg einen anderen.
-    const open = g.candidates.filter((c) => !c.invoiceFile || (!!ctx.invoiceFile && c.invoiceFile === ctx.invoiceFile))
+    const sameFile = (c: CostItem) => !!ctx.invoiceFile && c.invoiceFile === ctx.invoiceFile
+    g.takenByReceipt = g.candidates.filter((c) => sameFile(c) && (ctx.receiptTaken ?? []).includes(c.id))
+    const open = g.candidates.filter((c) => (!c.invoiceFile || sameFile(c)) && !g.takenByReceipt.includes(c))
     g.formOnly = open.filter((c) => FORM_ONLY_KEYS.includes(c.key))
     const members = g.rows.map((i) => rows[i]).filter((r): r is AiRow => !!r)
-    g.offers = open.filter((c) => !FORM_ONLY_KEYS.includes(c.key)).map((c) => linkOffer(members, c, ctx.invoiceFile))
+    // Eine negative Summe (Gutschrift) wird nicht mit einer Position verrechnet, sondern angelegt (L3).
+    const sum = members.reduce((x, r) => x + (parseEuro(r.amount) ?? 0), 0)
+    g.credit = sum < 0
+    g.offers = g.credit ? [] : open.filter((c) => !FORM_ONLY_KEYS.includes(c.key)).map((c) => linkOffer(members, c, ctx.invoiceFile))
   }
   return [...groups.values()]
 }

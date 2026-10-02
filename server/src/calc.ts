@@ -1544,7 +1544,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
     const named = list.length === 2 ? `${list[0]} und ${list[1]}` : `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`
     warn('cost.possible-duplicate',
-      `${named} stehen beide ${year} unter „${first.category}“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
+      `${named} stehen ${list.length === 2 ? `beide ${year}` : `${year} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
       'Dann bitte die Position ohne Beleg löschen oder ihr den Beleg zuordnen und den Betrag anpassen. Sind es zwei Rechnungen, ist nichts zu tun.',
       itemSubject(first))
   }
