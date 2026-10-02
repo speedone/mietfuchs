@@ -12,7 +12,7 @@ import Schnellerfassung from './Schnellerfassung'
 const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
 const IMAGE: UploadInfo = {
   file: '1767225600000_foto.jpg', size: 4, mtime: '2026-01-01T00:00:00.000Z', originalName: 'foto.jpg', mimeType: 'image/jpeg',
-  uploadedAt: '2026-01-01T00:00:00.000Z', sha256: 'x', propertyId: null, year: null, invoiceDate: null,
+  uploadedAt: '2026-01-01T00:00:00.000Z', sha256: 'x', propertyId: null, year: null, invoiceDate: null, kind: 'receipt',
 }
 const EXTRACTION: Extraction = {
   vendor: 'Stadtwerke', invoiceDate: '2026-02-15', periodStart: '2025-01-01', periodEnd: '2025-12-31', totalGrossEur: 98,

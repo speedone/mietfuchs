@@ -22,15 +22,23 @@ export async function recordUpload(db: Database, row: UploadRow): Promise<void> 
   await db.insert(uploads).values(row).onConflictDoUpdate({ target: uploads.file, set: { ...row } })
 }
 
-export type Placement = Partial<Pick<UploadRow, 'propertyId' | 'year' | 'invoiceDate'>>
+// Die Zeile eines Belegs, der noch keine hat (Nachtragen der Prüfsumme). Eine schon vorhandene
+// bleibt unberührt: Sie kann inzwischen Objekt, Jahr oder Rechnungsdatum tragen.
+export async function recordIfMissing(db: Database, row: UploadRow): Promise<void> {
+  await db.insert(uploads).values(row).onConflictDoNothing({ target: uploads.file })
+}
+
+export type Placement = Partial<Pick<UploadRow, 'propertyId' | 'year' | 'invoiceDate' | 'kind'>>
 
 // Ändert Objekt, Jahr oder Rechnungsdatum. Fehlt die Zeile, entsteht sie aus dem Rückfall, also
 // aus dem, was die Datei selbst hergibt. Verschmolzen wird nach Anwesenheit eines Schlüssels,
 // wie bei den übrigen Routen (repository.ts): `{ year: null }` leert das Jahr, ein fehlendes
 // `year` lässt es stehen.
-export async function placeUpload(db: Database, file: string, changes: Placement, fallback: () => UploadInfo): Promise<UploadRow> {
+export async function placeUpload(db: Database, file: string, changes: Placement, fallback: () => UploadInfo | null): Promise<UploadRow | null> {
   const [current] = await db.select().from(uploads).where(eq(uploads.file, file))
-  const base: UploadRow = current ?? rowOf(fallback())
+  const described = current ? null : fallback()
+  const base: UploadRow | null = current ?? (described ? rowOf(described) : null)
+  if (!base) return null
   const next: UploadRow = { ...base, ...changes }
   await recordUpload(db, next)
   return next

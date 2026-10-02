@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "de400a08-b927-453e-8429-c61622e666ce",
+  "id": "bf580a7a-80c7-47a4-9a0d-ce7ac3c0f6de",
   "prevId": "58595b6a-985f-4ca9-b323-adaa872b760d",
   "tables": {
     "ai_slots": {
@@ -1852,6 +1852,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'receipt'"
         }
       },
       "indexes": {},
@@ -1876,6 +1884,10 @@
         "uploads_size_not_negative": {
           "name": "uploads_size_not_negative",
           "value": "\"size_bytes\" >= 0"
+        },
+        "uploads_kind_known": {
+          "name": "uploads_kind_known",
+          "value": "\"kind\" IN ('receipt', 'meterPhoto')"
         },
         "uploads_year_positive": {
           "name": "uploads_year_positive",

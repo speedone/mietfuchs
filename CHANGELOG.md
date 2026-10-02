@@ -93,7 +93,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   der umgelegten Positionen in der Reihenfolge der Abrechnung und einem Deckblatt „Position →
   Beleg, Seite“, für die Belegeinsicht, die seit 2025 auch elektronisch gewährt werden darf
   (§ 556 Abs. 4 BGB). Belege mit Einzelbeträgen je Mieter, etwa die Abrechnung eines
-  Messdienstes, kommen wegen der Daten anderer Mieter nur auf ausdrückliche Wahl hinein.
+  Messdienstes, und zu Positionen, die nur einzelne Mieter betreffen (Direktzuordnung,
+  Teilnehmer), kommen wegen der Daten anderer Mieter nur auf ausdrückliche Wahl hinein. Ein
+  Beleg, der sich nicht übernehmen lässt, steht auf dem Deckblatt mit dem Hinweis, ihn gesondert
+  beizulegen.
   „Belege für die Steuer“ lädt ein ZIP aller Belege des Jahres, geordnet nach den Gruppen der
   Anlage V, einschließlich der nicht umlagefähigen, mit einer Übersicht als CSV.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))

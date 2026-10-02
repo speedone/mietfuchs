@@ -55,36 +55,38 @@ export function mimeTypeOf(file: string): string {
   return MIME_BY_EXTENSION[path.extname(file).toLowerCase()] ?? 'application/octet-stream'
 }
 
-// Prüfsummen, je Stand der Datei nur einmal gerechnet. Ein Belegordner mit ein paar hundert
-// Rechnungen läse sonst bei jedem Aufruf der Seite jede Datei vollständig. Der Stand ist Größe
-// und Änderungszeit; ändert sich eines davon, wird neu gerechnet.
-export type Checksums = { of(file: string): string }
-
-export function createChecksums(read: (file: string) => Buffer = (file) => fs.readFileSync(file)): Checksums {
-  const known = new Map<string, { size: number, mtimeMs: number, sha256: string }>()
-  return {
-    of(file) {
-      const st = fs.statSync(file)
-      const cached = known.get(file)
-      if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached.sha256
-      const sha256 = sha256Of(read(file))
-      known.set(file, { size: st.size, mtimeMs: st.mtimeMs, sha256 })
-      return sha256
-    },
-  }
+// Die Prüfsumme einer Datei, **gestreamt und asynchron**: Ein Beleg kann 25 MB groß sein, und
+// eine Altablage hat Hunderte davon. Synchron gelesen hielte das den ganzen Server an, auch
+// /healthz (Durchsicht). Gerechnet wird je Beleg nur einmal; danach steht sie in der Tabelle
+// `uploads` (siehe backfill in index.ts).
+export function hashFile(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    fs.createReadStream(file)
+      .on('error', reject)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('end', () => resolve(hash.digest('hex')))
+  })
 }
 
 export const sha256Of = (content: Buffer): string => createHash('sha256').update(content).digest('hex')
 
 // Was der Belegordner über eine Datei ohne Eintrag in der Datenbank erfährt. Objekt und Jahr
 // fehlen: Ein solcher Beleg liegt, solange er an keiner Position hängt, unzugeordnet im
-// Posteingang.
+// Posteingang. Die Prüfsumme kommt mit `sha256`, wenn sie schon gerechnet ist, sonst ist sie leer
+// („noch nicht gerechnet“); gelesen wird die Datei hier nie.
 //
-// Mit `row` (der Zeile aus der Datenbank) gilt, was dort steht, und die Datei wird nicht gelesen;
-// Größe und Zeit der Datei kommen immer von der Platte.
-export function describeFile(dir: string, file: string, checksums: Checksums, row?: Omit<UploadInfo, 'mtime'>): UploadInfo {
-  const full = path.join(dir, file)
-  const st = fs.statSync(full)
+// Mit `row` (der Zeile aus der Datenbank) gilt, was dort steht; Größe und Zeit der Datei kommen
+// immer von der Platte. `null`, wenn der Eintrag keine gewöhnliche Datei ist (ein Unterordner)
+// oder zwischen Auflisten und Lesen verschwunden ist: Die Liste übergeht ihn, statt zu scheitern.
+export function describeFile(dir: string, file: string, row?: Omit<UploadInfo, 'mtime'>, sha256 = ''): UploadInfo | null {
+  let st: fs.Stats
+  try {
+    st = fs.statSync(path.join(dir, file))
+  } catch {
+    return null
+  }
+  if (!st.isFile()) return null
   if (row) return { ...row, file, size: st.size, mtime: st.mtime.toISOString() }
   return {
     file,
@@ -93,9 +95,20 @@ export function describeFile(dir: string, file: string, checksums: Checksums, ro
     originalName: originalNameOf(file),
     mimeType: mimeTypeOf(file),
     uploadedAt: uploadedAtOf(file, st.mtime),
-    sha256: checksums.of(full),
+    sha256,
     propertyId: null,
     year: null,
     invoiceDate: null,
+    kind: 'receipt',
   }
+}
+
+// Alle Belege im Ordner, je Eintrag einzeln: Was sich nicht beschreiben lässt, fällt heraus.
+export function describeFolder(dir: string, rows: Map<string, Omit<UploadInfo, 'mtime'>>): UploadInfo[] {
+  const list: UploadInfo[] = []
+  for (const name of fs.readdirSync(dir)) {
+    const info = describeFile(dir, name, rows.get(name))
+    if (info) list.push(info)
+  }
+  return list
 }

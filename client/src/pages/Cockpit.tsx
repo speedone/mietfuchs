@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit } from '../types'
+import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadInfo } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck } from '../receipts'
@@ -48,6 +48,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const [meters, setMeters] = useState<Meter[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
   const [error, setError] = useState('')
+  // Die Dateien im Belegordner, damit „Belege vollständig“ dasselbe sagt wie der Belegordner
+  // (#170). Scheitert der Abruf, zählt der Verweis an der Position.
+  const [uploadFiles, setUploadFiles] = useState<Set<string> | null>(null)
 
   const load = useCallback(() => {
     return Promise.all([
@@ -61,6 +64,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   }, [year, propertyId])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    api<UploadInfo[]>('/api/uploads').then((list) => setUploadFiles(new Set(list.map((u) => u.file))), () => setUploadFiles(null))
+  }, [year, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
   const yearItems = useMemo(() => costItems.filter((c) => c.year === year), [costItems, year])
@@ -129,7 +135,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
-    const belege = coverageCheck(yearItems)
+    const belege = coverageCheck(yearItems, uploadFiles)
     list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
       ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
 
@@ -229,7 +235,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year])
+  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year, uploadFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
