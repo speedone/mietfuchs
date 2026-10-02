@@ -963,8 +963,15 @@ hält `Tab` und `NAV` (aus App.tsx herausgezogen) und übersetzt nur, wenn jede 
 ist. [guides.test.ts](server/test/guides.test.ts) **rechnet jedes Beispiel mit der Berechnung
 nach** (`computeSettlement`, `taxReport`) und verlangt die Beträge wörtlich im Text, und es
 verlangt jede Beschriftung in „…“ der Schritte wörtlich in der Oberfläche: Wer eine Schaltfläche
-umbenennt oder die Verteilung ändert, sieht die Anleitung rot werden. Beschrieben wird nur, was
-Mietfuchs auf dem Stand des Zweigs kann.
+umbenennt oder die Verteilung ändert, sieht die Anleitung rot werden. **Die Grenze dieses
+Wächters**: Er sucht den Wortlaut im Quelltext (client/src und shared/, `&amp;` aufgelöst), nicht in
+der gerenderten Seite; ein Zitat besteht also auch, wenn der Text nur in einem Kommentar oder auf
+einer anderen Seite steht, und Text, den JSX zerlegt (ein `<Term>` im Satz, `{year}` im Knopf),
+findet er nicht und darf deshalb nicht zitiert werden. Beschrieben wird nur, was Mietfuchs auf dem
+Stand des Zweigs kann; wo Mietfuchs von einer verbreiteten Auffassung abweicht (Leerstand beim
+Personenschlüssel, #177), sagt die Anleitung das, statt einen Ausweg zu raten. Auf der Seite sind
+Anleitungstitel und Begriffe `h3`, die Abschnitte einer Anleitung `h4`; bei einer Suche sind die
+Treffer aufgeklappt, und ein Sprung beginnt oben auf der Zielseite.
 
 **Rechenweg** (#114): Jede Zeile der Mieter trägt `steps` (`CalcStep` in shared/types.ts),
 erzeugt dort, wo die Zeile entsteht, aus denselben Zahlen, als fertiger Text. Der Restcent aus

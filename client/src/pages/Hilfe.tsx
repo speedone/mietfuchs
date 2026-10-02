@@ -20,6 +20,11 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
   const shownTerms = filterTerms(terms, query)
   const shownGuides = filterGuides(guides, query)
   const q = query.trim()
+  // Ein Sprung beginnt oben auf der Zielseite, nicht auf der Höhe, auf der die Anleitung stand.
+  const jump = (page: GuidePage) => {
+    window.scrollTo(0, 0)
+    onNavigate(page)
+  }
   return (
     <>
       <PageHeader
@@ -35,13 +40,14 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
 
       <h2 className="help-section">Anleitungen</h2>
       {shownGuides.length === 0 && <div className="notice">Keine Anleitung passt zu „{q}“.</div>}
-      {shownGuides.map((g) => <GuideCard key={g.id} guide={g} onNavigate={onNavigate} />)}
+      {/* Bei einer Suche aufgeklappt: Sonst sähe man nicht, wo das gesuchte Wort steht. */}
+      {shownGuides.map((g) => <GuideCard key={g.id} guide={g} open={q !== ''} onNavigate={jump} />)}
 
       <h2 className="help-section">Begriffe</h2>
       {shownTerms.length === 0 && <div className="notice">Kein Begriff passt zu „{q}“.</div>}
       {shownTerms.map((t) => (
         <div key={t.id} className="card glossary-entry" id={`begriff-${t.id}`}>
-          <h2>{t.title}</h2>
+          <h3>{t.title}</h3>
           <p>{t.short}</p>
           <p><em>Beispiel:</em> {t.example}</p>
           {t.norm && <p><em>Rechtsgrundlage:</em> {t.norm}</p>}
@@ -52,14 +58,14 @@ export default function Hilfe({ onNavigate }: { onNavigate: (page: GuidePage) =>
   )
 }
 
-function GuideCard({ guide: g, onNavigate }: { guide: GuideEntry; onNavigate: (page: GuidePage) => void }) {
+function GuideCard({ guide: g, open, onNavigate }: { guide: GuideEntry; open: boolean; onNavigate: (page: GuidePage) => void }) {
   return (
-    <details className="card guide" id={`anleitung-${g.id}`}>
-      <summary><span className="guide-title">{g.title}</span></summary>
-      <h3>Trifft das auf Sie zu?</h3>
+    <details className="card guide" id={`anleitung-${g.id}`} open={open}>
+      <summary><h3 className="guide-title">{g.title}</h3></summary>
+      <h4>Trifft das auf Sie zu?</h4>
       <p>{g.applies}</p>
 
-      <h3>So legen Sie es an</h3>
+      <h4>So legen Sie es an</h4>
       <ol className="guide-steps">
         {g.steps.map((s, i) => (
           <li key={i}>
@@ -76,15 +82,15 @@ function GuideCard({ guide: g, onNavigate }: { guide: GuideEntry; onNavigate: (p
         ))}
       </ol>
 
-      <h3>Was Mietfuchs daraus macht</h3>
+      <h4>Was Mietfuchs daraus macht</h4>
       <ul>
         {g.result.map((r, i) => <li key={i}>{r}</li>)}
       </ul>
 
-      <h3>Beispiel</h3>
+      <h4>Beispiel</h4>
       <p>{g.example}</p>
 
-      <h3>Worauf Sie achten müssen</h3>
+      <h4>Worauf Sie achten müssen</h4>
       <ul>
         {g.caveats.map((c, i) => (
           <li key={i}>
@@ -94,7 +100,7 @@ function GuideCard({ guide: g, onNavigate }: { guide: GuideEntry; onNavigate: (p
         ))}
       </ul>
 
-      <h3>Was Mietfuchs (noch) nicht kann</h3>
+      <h4>Was Mietfuchs (noch) nicht kann</h4>
       <ul>
         {g.gaps.map((x, i) => (
           <li key={i}>

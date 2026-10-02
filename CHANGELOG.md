@@ -151,7 +151,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   oder Inklusivmiete, die fertige Abrechnung eines Messdienstes und Mieterwechsel mit Leerstand.
   Jede Anleitung nennt, ob sie auf Sie zutrifft, die Schritte mit einem Knopf zur passenden Seite,
   ein nachgerechnetes Beispiel, worauf Sie rechtlich achten müssen (mit Norm) und was Mietfuchs
-  noch nicht kann (mit Verweis auf das Issue). Die Suche der Seite findet Anleitungen und Begriffe.
+  noch nicht kann (mit Verweis auf das Issue). Die Suche der Seite findet Anleitungen und Begriffe
+  und klappt die Treffer auf. Der Begriff „Leerstand“ sagt jetzt ehrlich, dass Mietfuchs beim
+  Personenschlüssel den Anteil einer leeren Wohnung heute auf die übrigen Bewohner verteilt; das
+  wird geprüft ([#177](https://github.com/speedone/mietfuchs/issues/177)).
   ([#164](https://github.com/speedone/mietfuchs/issues/164))
 
 ### Geändert

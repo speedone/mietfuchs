@@ -758,14 +758,14 @@ td.actions { white-space: nowrap; text-align: right; }
 /* width 0 und min-width 100 %: Der Kasten füllt das Label, macht es aber nicht breiter. Sonst
    zöge er in einem schmalen Formular das ganze Feld über den Rand. */
 .term-pop .term-line { display: block; margin-top: 4px; }
-.glossary-entry h2 { margin: 0 0 6px; font-size: 17px; }
+.glossary-entry h3 { margin: 0 0 6px; font-size: 17px; color: var(--text); text-transform: none; letter-spacing: normal; }
 .glossary-entry p { margin: 4px 0; }
 .help-section { margin: 22px 0 10px; font-size: 18px; }
 /* Anleitungen je Vermietungsart (#164): zugeklappt nur der Titel, aufgeklappt die fünf Abschnitte. */
 .guide > summary { cursor: pointer; list-style-position: outside; margin-left: 18px; }
-.guide .guide-title { font-weight: 600; font-size: 16px; }
+.guide .guide-title { display: inline; margin: 0; font-weight: 600; font-size: 16px; color: var(--text); text-transform: none; letter-spacing: normal; }
 .guide[open] > summary { margin-bottom: 6px; }
-.guide h3 { margin: 14px 0 4px; font-size: 14px; }
+.guide h4 { margin: 14px 0 4px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .guide p, .guide li { overflow-wrap: anywhere; }
 .guide ol, .guide ul { margin: 4px 0; padding-left: 22px; }
 .guide li { margin: 4px 0; line-height: 1.45; }
