@@ -1,5 +1,5 @@
 import type { CostItem } from '../types'
-import { candidateText, linkLabel } from '../triage'
+import { candidateText, linkLabel, linkTargets } from '../triage'
 
 // Die Zeile unter einer KI-Position, wenn dieselbe Rechnung schon erfasst sein könnte
 // (shared/duplicates.ts), etwa als Übernahme aus dem Vorjahr mit Schätzbetrag. Angeboten wird,
@@ -23,7 +23,7 @@ export default function DuplicateRow({ candidates, amount, year, colSpan, linked
     )
   }
   if (candidates.length === 0) return null
-  const targets = candidates.filter((c) => !c.invoiceFile)
+  const targets = linkTargets(candidates)
   return (
     <tr className="no-print">
       <td colSpan={colSpan}>
