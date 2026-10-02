@@ -35,7 +35,7 @@ import type { AiConsent, AiSettings, AiSlot, Payment, Reading, Settings, Tenancy
 import type { LegacyCostItem as CostItem, LegacyMeter as Meter, LegacyUnit as Unit } from '../store.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
-import { frozenSettlementOf, type SnapshotSource } from '../snapshot.ts'
+import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from '../db/client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemShares, costItems, meters, payments,
@@ -59,6 +59,8 @@ export type StoredClosedSettlement = {
   selfUsedShareCents: number
   prepaymentCents: number
   prepaymentOverridden: boolean
+  // Eigenanteile je Position (#163), ebenfalls aus `frozenSettlementOf`
+  selfUseByItem: Record<string, FrozenItemSelfUse> | null
   settlement: unknown
 }
 

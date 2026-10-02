@@ -19,6 +19,8 @@ import {
   externalTotalLabel,
   keyListText,
   showsKeyFields,
+  showsTaxUnitField,
+  withTaxUnit,
   withKey,
   withCategory,
   type ItemForm,
@@ -476,6 +478,25 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     })
     expect(buildCostItemBody(form({ category: 'Zuführung Erhaltungsrücklage', amount: '900,00', key: 'direct', directUnitId: '' }), UNITS, 2025))
       .toMatchObject({ body: { key: 'area', directUnitId: null } })
+  })
+
+  test('Nicht umlagefähig: für die Steuer einer Einheit zuordenbar, sonst das ganze Gebäude (#163)', () => {
+    // Die Abrechnung liest den Schlüssel weiter nicht; die Steuerübersicht teilt damit auf: eine
+    // Badrenovierung der vermieteten Wohnung voll abziehbar, eine der eigenen gar nicht.
+    expect(showsTaxUnitField('Nicht umlagefähig')).toBe(true)
+    expect(showsTaxUnitField('Zuführung Erhaltungsrücklage')).toBe(false)
+    expect(showsTaxUnitField('Grundsteuer')).toBe(false)
+    const f = withTaxUnit(form({ category: 'Nicht umlagefähig', amount: '4.000,00' }), 'u1')
+    expect(f).toMatchObject({ key: 'direct', directUnitId: 'u1' })
+    expect(buildCostItemBody(f, UNITS, 2025)).toMatchObject({ body: { key: 'direct', directUnitId: 'u1', customShares: null, participantUnitIds: null } })
+    // Zurück auf das ganze Gebäude: der neutrale Schlüssel ohne Einheit.
+    const g = withTaxUnit(f, '')
+    expect(g).toMatchObject({ key: 'area', directUnitId: '' })
+    expect(buildCostItemBody(g, UNITS, 2025)).toMatchObject({ body: { key: 'area', directUnitId: null } })
+    // In der Liste steht, wen die Position betrifft.
+    const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('— trägt der Vermieter · betrifft U1')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('— trägt der Vermieter')
   })
 
   test('Verbrauchsschlüssel: gibt es nur einen Zählertyp, ist er vorgewählt und gespeichert', () => {

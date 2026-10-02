@@ -35,6 +35,16 @@ export default function CalcSteps({ row, colSpan, children }: { row: SettlementR
   )
 }
 
+// Die Schritte als Liste, für Rechenwege, die nicht an einer Zeile der Abrechnung hängen (die
+// Steuerübersicht, #163).
+export function StepList({ steps }: { steps: CalcStep[] }) {
+  return (
+    <ol className="calc-steps-list">
+      {steps.map((s, i) => <Step key={i} step={s} />)}
+    </ol>
+  )
+}
+
 // Ein Schritt. Die Erklärung seines Begriffs steht unter der ganzen Zeile und nicht hinter dem
 // Begriff (#142): Dort stand sie zwischen Beschriftung und Wert, und der Rest der Zeile
 // („: 40 von 180“) rutschte unter den Kasten.

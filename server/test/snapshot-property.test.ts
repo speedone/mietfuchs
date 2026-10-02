@@ -62,7 +62,7 @@ test('Objekt: was erbt, folgt seiner Wurzel', () => {
 
 test('Objekt: der Abschluss desselben Jahres im anderen Objekt gilt nicht', () => {
   const snapshot = snapshotFor(source, 'A', 2024)
-  assert.deepEqual(snapshot.closedSettlement, { selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false })
+  assert.deepEqual(snapshot.closedSettlement, { selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false, selfUseByItem: null })
   assert.equal(snapshot.propertyId, 'A')
 })
 
