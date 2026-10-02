@@ -761,7 +761,10 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   Mehr als den Namen weiß der Posteingang über einen Beleg nicht; nennt er eine Kostenart
   (`matchCategory`), stehen die Positionen, die nach shared/duplicates.ts dazu passen, oben.
   Danach fragt „Betrag prüfen“ nach dem Betrag, weil eine übernommene Position einen Schätzbetrag
-  trägt; gespeichert wird nur `amountCents`, mit derselben Prüfung wie im Formular.
+  trägt; gespeichert wird nur `amountCents`, mit derselben Prüfung wie im Formular. Bei `amounts`
+  und `external` (`amountCheckMode`) und wenn der Lohnanteil über dem neuen Betrag läge, gibt es
+  kein Feld, sondern „Position öffnen“ (Formular auf der Seite Kosten, `onOpenItem`). Der Dateiname
+  wird vor `matchCategory` mit NFC normalisiert.
 - **Löschen** nimmt die Zeile mit und bleibt gesperrt, solange irgendeine Position irgendeines
   Objekts auf den Beleg zeigt (`invoiceFilesInUse` fragt ohne Objekt).
 - **Backup und Umstieg**: Die Tabelle steckt im Schnappschuss der Datenbank und kommt so mit; ein

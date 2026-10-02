@@ -10,7 +10,7 @@
 // Posteingang (an keiner Position) trägt sie selbst.
 import type { CostItem, UploadInfo } from './types'
 import { CATEGORIES, matchCategory } from './types'
-import { parseEuro } from './api'
+import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 
@@ -251,18 +251,30 @@ export function inboxFor(cards: ReceiptCard[], c: CostItem): ReceiptCard[] {
 // nennt, und die übrigen. Mehr als den Namen weiß der Posteingang über den Beleg nicht; erkennt er
 // keine Kostenart, bleibt die Liste, wie sie ist. Die Reihenfolge der übergebenen Liste bleibt.
 export function attachChoices(u: UploadInfo, candidates: readonly CostItem[]): { category: string | null; likely: CostItem[]; rest: CostItem[] } {
-  const name = (u.originalName || u.file).replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
+  // NFC: macOS liefert Dateinamen zerlegt („u“ und Trema), matchCategory sucht das „ü“.
+  const name = (u.originalName || u.file).normalize('NFC').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
   const category = matchCategory(name)
   const likely = candidates.filter((c) => sameCostCandidates([c], { propertyId: c.propertyId, year: c.year, category, description: name }).length > 0)
   return { category: likely.length > 0 ? category : null, likely, rest: candidates.filter((c) => !likely.includes(c)) }
 }
 
+// Bei Einzelbeträgen je Mieter und „laut Gemeinschaftsabrechnung“ hängt der Betrag an weiteren
+// Angaben (Einzelbeträge, Kosten der Gemeinschaft); ihn allein zu ändern, ließe sie auseinanderlaufen.
+export function amountCheckMode(item: CostItem): 'field' | 'form' {
+  return item.key === 'amounts' || item.key === 'external' ? 'form' : 'field'
+}
+
 // „Betrag prüfen“ nach dem Zuordnen: Eine aus dem Vorjahr übernommene Position trägt einen
 // geschätzten Betrag, der Beleg den wirklichen. Gespeichert wird nur der Betrag, mit derselben
 // Prüfung wie im Formular; der Lohnanteil der Position bleibt.
-export function amountCheckBody(amount: string, item: CostItem): { error: string } | { body: { amountCents: number } } {
+export function amountCheckBody(amount: string, item: CostItem): { error: string; form?: boolean } | { body: { amountCents: number } } {
   const cents = parseEuro(amount)
-  const problem = amountProblem(cents, item.labor35aCents ?? 0, item.category)
+  const labor = item.labor35aCents ?? 0
+  // Ein Lohnanteil, der zum neuen Betrag nicht passt, lässt sich nur im Formular anpassen.
+  if (cents !== null && labor > 0 && (cents < 0 || labor > cents)) {
+    return { error: `Der §35a-Lohnanteil der Position (${fmtEuro(labor)}) liegt über dem neuen Betrag. Passen Sie ihn bitte im Formular an.`, form: true }
+  }
+  const problem = amountProblem(cents, labor, item.category)
   if (problem !== null || cents === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
   return { body: { amountCents: cents } }
 }
