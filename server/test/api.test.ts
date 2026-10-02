@@ -13,6 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
+import { createHash } from 'node:crypto'
 import { LEGACY_JSON_NAME } from '../src/db/changeover.ts'
 import { applyMigrations, connect, loadMigrations, type Database } from '../src/db/client.ts'
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
@@ -1102,7 +1103,7 @@ const OFF_SCHEMA = {
 type FakeModel = { name: string, size?: number, capabilities?: string[], remote_host?: string }
 type FakeOllamaOptions = {
   models?: FakeModel[]
-  chat?: 'normal' | 'netto' | 'offSchema' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff'
+  chat?: 'normal' | 'netto' | 'offSchema' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff' | 'meter'
   key?: string | null
   echoKey?: boolean
   garbledShow?: boolean
@@ -1179,8 +1180,13 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
         return send(400, { error: `think value "false" is not supported for "${modelOf(json)}"` })
       }
       // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
+      // 'meter': Das Foto ist ein Zählerstand (Schuhkarton der Schnellerfassung)
       const content = JSON.stringify(
-        json.format?.properties?.categories
+        json.format?.properties?.docType
+          ? { docType: chat === 'meter' ? 'zaehlerstand' : 'rechnung' }
+          : json.format?.properties?.meterNumber
+            ? { meterNumber: '4711', value: 123.4, dateOnImage: null }
+        : json.format?.properties?.categories
           ? { categories: ['Wasser/Abwasser'] }
           : chat === 'offSchema'
             ? OFF_SCHEMA
@@ -4475,4 +4481,78 @@ test('Posteingang (#170): PUT nimmt nur einen Beleg im Ordner, keinen Verzeichni
   } finally {
     s.stop()
   }
+})
+
+test('Belegordner (Durchsicht): ein Unterordner oder Fremdes im Belegordner bricht die Liste nicht ab', async () => {
+  const s = await startServer()
+  try {
+    const file = await uploadBelegFile(s, '%PDF-x', 'x.pdf')
+    fs.mkdirSync(path.join(s.dataDir, 'uploads', 'unterordner'))
+    const res = await fetch(`${s.base}/api/uploads`)
+    assert.equal(res.status, 200)
+    assert.deepEqual((await jsonOf<UploadInfo[]>(res)).map((u) => u.file), [file])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Belegordner (Durchsicht): die Prüfsumme eines Belegs ohne Zeile wird einmal gerechnet und festgeschrieben', async () => {
+  // Vorher rechnete jeder Start sie neu, synchron und im Speicher, und eine große Altablage hielt
+  // dabei den ganzen Server an.
+  const s = await startServer()
+  try {
+    const alt = '1700000000000_alt.pdf'
+    const voll = path.join(s.dataDir, 'uploads', alt)
+    fs.writeFileSync(voll, '%PDF-alt')
+    const erwartet = createHash('sha256').update('%PDF-alt').digest('hex')
+    let info: UploadInfo | undefined
+    for (let i = 0; i < 50; i++) {
+      info = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === alt)
+      if (info?.sha256) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    assert.equal(info?.sha256, erwartet, 'im Hintergrund nachgetragen')
+    // Festgeschrieben: Auch wenn sich die Datei danach ändert, gilt die Zeile, ohne neu zu lesen.
+    fs.writeFileSync(voll, '%PDF-anders')
+    assert.equal((await listedUpload(s, alt)).sha256, erwartet)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Abbrechen per Kennung (#170): ein Beleg aus dem Posteingang bleibt samt Angaben liegen', async () => {
+  await withOllama(async (s, ollama) => {
+    const file = await uploadBelegFile(s, PDF, 'posteingang.pdf', { year: '2025' })
+    const requestId = 'fedcba9876543210fedcba9876543210'
+    const fd = new FormData()
+    fd.append('existingFile', file)
+    fd.append('pdfText', LONG_TEXT)
+    fd.append('requestId', requestId)
+    const pending = fetch(`${s.base}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } }).then((r) => r.text())
+    assert.ok(await until(() => chatRequests(ollama).length > 0), 'Ollama wurde nicht gefragt')
+    assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 200)
+    assert.ok(await until(() => ollama.closedEarly > 0), 'die Anfrage an Ollama lief weiter')
+    await pending
+    const u = await listedUpload(s, file)
+    assert.equal(u.year, 2025, 'die Zeile ist noch da')
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', file)), 'die Datei ist noch da')
+  }, { chat: 'hang' })
+})
+
+test('Schuhkarton (#170): ein Zählerfoto ist kein Beleg und steht nicht im Posteingang des Objekts', async () => {
+  await withOllama(async (s) => {
+    const fd = new FormData()
+    fd.append('file', new Blob([Buffer.from('JPEG-Zaehler')], { type: 'image/jpeg' }), 'zaehler.jpg')
+    fd.append('propertyId', 'objekt-1')
+    const res = await fetch(`${s.base}/api/intake`, { method: 'POST', body: fd })
+    assert.equal(res.status, 200)
+    const body = await jsonOf<UploadBody & { kind?: string }>(res)
+    assert.equal(body.kind, 'zaehler')
+    const u = await listedUpload(s, fileOf(body))
+    assert.equal(u.kind, 'meterPhoto')
+    assert.equal(u.propertyId, null, 'ohne Objekt, damit es in keinem Posteingang als Beleg steht')
+    // Ein gewöhnlicher Beleg bleibt ein Beleg
+    const beleg = await uploadBelegFile(s, '%PDF-b', 'b.pdf')
+    assert.equal((await listedUpload(s, beleg)).kind, 'receipt')
+  }, { chat: 'meter' })
 })

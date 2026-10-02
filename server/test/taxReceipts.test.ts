@@ -54,3 +54,21 @@ test('Steuer-Belege: gleiche Namen in einem Ordner bekommen eine Nummer, Felder 
   ])
   assert.match(plan.overviewCsv, /;"Teil; eins";/)
 })
+
+test('Steuer-Belege: ein Feld, das mit = + - @ beginnt, wird nicht als Formel gelesen (Durchsicht)', () => {
+  // Rechnungssteller und Beschreibung kommen auch aus der KI-Auswertung eines fremden Belegs. Eine
+  // Zelle „=HYPERLINK(…)“ führte Excel beim Öffnen der Übersicht aus.
+  const plan = planTaxArchive([
+    item('a', { vendor: '=HYPERLINK("http://x")', description: '+1+1' }),
+    item('b', { vendor: '@SUMME(A1)', description: '-2' }),
+    item('c', { vendor: '\tTab', description: '\rCR' }),
+  ], new Map())
+  const zeilen = plan.overviewCsv.replace(/^﻿/, '').split('\r\n')
+  assert.ok(zeilen.some((z) => z.includes(`;'+1+1;"'=HYPERLINK(""http://x"")";`)), zeilen.join('\n'))
+  assert.ok(zeilen.some((z) => z.includes(`;'-2;'@SUMME(A1);`)), zeilen.join('\n'))
+  assert.ok(plan.overviewCsv.includes(`'\tTab`), 'Tab entschärft')
+  assert.ok(plan.overviewCsv.includes(`"'\rCR"`), 'CR entschärft und gequotet')
+  // Beträge bleiben Zahlen, auch eine Gutschrift mit Minus.
+  const gutschrift = planTaxArchive([item('g', { amountCents: -500 })], new Map()).overviewCsv
+  assert.match(gutschrift, /;-5,00;/)
+})

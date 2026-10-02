@@ -5,7 +5,7 @@ import { buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
   mimeType: file.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg', uploadedAt: '2026-01-02T10:00:00.000Z',
-  sha256: `sha-${file}`, propertyId: null, year: null, invoiceDate: null, ...extra,
+  sha256: `sha-${file}`, propertyId: null, year: null, invoiceDate: null, kind: 'receipt', ...extra,
 })
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
@@ -202,5 +202,27 @@ describe('Posteingang', () => {
 
   it('für eine Position kommen nur Belege ihres Objekts und Jahres oder ohne Zuordnung in Frage', () => {
     expect(inboxFor(cards, item('x', { propertyId: 'p1', year: 2024 })).map((c) => c.upload.file)).toEqual(['1_ohne.pdf', '3_anderes-jahr.pdf'])
+  })
+})
+
+describe('Zählerfotos (Durchsicht)', () => {
+  const cards = receiptCards([upload('1_foto.jpg', { kind: 'meterPhoto' }), upload('2_beleg.pdf')], [])
+
+  it('stehen weder im Posteingang noch bei „nachreichen“ noch bei den Belegen ohne Position', () => {
+    expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).here.map((c) => c.upload.file)).toEqual(['2_beleg.pdf'])
+    expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).elsewhere).toBe(0)
+    expect(inboxFor(cards, item('x')).map((c) => c.upload.file)).toEqual(['2_beleg.pdf'])
+    expect(buildFolder(cards.map((c) => c.upload), [], { propertyId: 'all', year: 'all' }, '').unlinked.map((c) => c.upload.file)).toEqual(['2_beleg.pdf'])
+  })
+})
+
+describe('Cockpit-Zeile mit Dateiliste (Durchsicht)', () => {
+  it('ein verknüpfter Beleg, dessen Datei fehlt, zählt wie im Belegordner als fehlend und wird benannt', () => {
+    const items = [item('a', { invoiceFile: '1_da.pdf' }), item('b', { invoiceFile: '2_weg.pdf' })]
+    const check = coverageCheck(items, new Set(['1_da.pdf']))
+    expect(check.level).toBe('gelb')
+    expect(check.detail).toMatch(/1 von 2 Positionen ohne Beleg/)
+    expect(check.detail).toMatch(/bei 1 fehlt die Datei im Belegordner/)
+    expect(coverageCheck(items, new Set(['1_da.pdf', '2_weg.pdf'])).level).toBe('gruen')
   })
 })

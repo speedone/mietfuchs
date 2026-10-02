@@ -22,6 +22,7 @@ import type {
   MeterType,
   PropertyKind,
   Settings,
+  UploadKind,
 } from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
@@ -687,6 +688,8 @@ export const aiSlots = sqliteTable(
 // jeder Beleg aus einem Backup einer älteren Version hat keine; die Route beschreibt ihn dann aus
 // der Datei (server/src/uploads.ts). Deshalb gibt es auch keinen Fremdschlüssel von
 // `cost_items.invoice_file` hierher: Er lehnte genau diese Belege ab.
+export const UPLOAD_KINDS = exactly<UploadKind>()(['receipt', 'meterPhoto'] as const)
+
 export const uploads = sqliteTable(
   'uploads',
   {
@@ -699,9 +702,12 @@ export const uploads = sqliteTable(
     propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
     year: integer('year'),
     invoiceDate: text('invoice_date'),
+    // Zählerfotos der Schnellerfassung liegen im selben Ordner, belegen aber keine Kosten.
+    kind: text('kind', { enum: UPLOAD_KINDS }).notNull().default('receipt'),
   },
   () => [
     notNegative('uploads_size_not_negative', 'size_bytes'),
+    oneOf('uploads_kind_known', 'kind', UPLOAD_KINDS),
     // Ein Jahr 0 oder darunter wäre ein Tippfehler, kein Abrechnungsjahr.
     check('uploads_year_positive', sql.raw('"year" > 0')),
   ],

@@ -742,7 +742,12 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   ([server/src/uploads.ts](server/src/uploads.ts), `describeFile`; Hochladezeit aus dem
   Zeitstempel im Namen, nicht aus der Dateizeit, die ein ZIP verfälscht). Deshalb auch kein
   Fremdschlüssel von `cost_items.invoice_file` dorthin. `GET /api/uploads` liefert die Liste auch
-  ohne Datenbank, nur ohne Posteingang.
+  ohne Datenbank, nur ohne Posteingang, und übergeht Unterordner und verschwundene Dateien. **Die
+  Prüfsumme wird nie synchron gerechnet**: Fehlt sie, trägt `backfillUploads` sie gestreamt und
+  je Beleg einzeln nach und schreibt sie in die Zeile; bis dahin ist `sha256` leer.
+- **`kind`**: `receipt` oder `meterPhoto`. Ein Foto, das der Schuhkarton als Zählerstand erkennt,
+  wird ohne Objekt als Zählerfoto gekennzeichnet und steht weder im Posteingang noch beim
+  Nachreichen.
 - **Objekt und Jahr nur für den Posteingang**, also für Belege an keiner Position; für verknüpfte
   ergeben sie sich aus den Positionen (keine zweite Wahrheit). `property_id` mit `SET NULL`.
   Hochladen nimmt `propertyId` und `year` als Formularfelder (`/api/upload`, `/api/extract`,
@@ -762,13 +767,16 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
 - **Belegmappe für Mieter** ([client/src/tenantFolder.ts](client/src/tenantFolder.ts)) entsteht im
   Browser mit **pdf-lib** (reines JavaScript, erst bei Bedarf geladen); was pdf-lib nicht kopieren
   kann, kommt über pdf.js als Seitenbilder hinein. Sie enthält die Positionen der Mieterzeilen der
-  Abrechnung in deren Reihenfolge, ohne nicht Umlagefähiges. **Belege zu Einzelbeträgen je Mieter
-  nur auf ausdrückliche Wahl**, weil sie Daten anderer Mieter tragen; Begründung mit Quellen im
-  Design-Text. Die Standardschrift kann nur WinAnsi, `winAnsiSafe` ersetzt den Rest.
+  Abrechnung in deren Reihenfolge, ohne nicht Umlagefähiges. **Belege, die nur einzelne Mieter
+  betreffen (Einzelbeträge, Direktzuordnung, Teilnehmer), nur auf ausdrückliche Wahl**, solange es
+  keine Mappe je Mieter gibt; Begründung mit Quellen im Design-Text. Ein Beleg, der sich weder
+  übernehmen noch rendern lässt, bricht die Mappe nicht ab: Das Deckblatt sagt „nicht
+  übernehmbar, bitte gesondert beilegen“. Die Standardschrift kann nur WinAnsi, `winAnsiSafe` ersetzt den Rest.
 - **Belege für die Steuer** ([server/src/taxReceipts.ts](server/src/taxReceipts.ts)) baut der
   Server mit adm-zip: Ordner je Gruppe aus `ANLAGE_V_GROUP` in derselben Reihenfolge wie die
   Steuerübersicht, Erhaltungsrücklage gesondert, dazu `Übersicht.csv` (mit BOM, Semikolon) mit
-  jeder Position, auch ohne Beleg.
+  jeder Position, auch ohne Beleg. Textfelder, die mit = + - @ beginnen, bekommen einen Apostroph
+  davor (CSV-Formel-Einschleusung).
 
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl

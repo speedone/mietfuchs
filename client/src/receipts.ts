@@ -44,6 +44,9 @@ export type Folder = {
 }
 
 // Der Anzeigename eines Belegs: der Originalname, wie er beim Hochladen hieß.
+// Zählerfotos der Schnellerfassung liegen im selben Ordner, belegen aber keine Kosten.
+export const isReceipt = (c: ReceiptCard): boolean => c.upload.kind !== 'meterPhoto'
+
 export const receiptName = (u: Pick<UploadInfo, 'originalName' | 'file'>): string => u.originalName || u.file
 
 export function receiptCards(uploads: UploadInfo[], items: CostItem[]): ReceiptCard[] {
@@ -129,7 +132,7 @@ export function buildFolder(uploads: UploadInfo[], items: CostItem[], filter: Fo
   const sorted = [...groups.values()]
     .filter((g) => !query.trim() || g.cards.length > 0 || g.missing.length > 0)
     .sort((a, b) => b.year - a.year || categoryRank(a.category) - categoryRank(b.category) || a.category.localeCompare(b.category, 'de'))
-  const unlinked = cards.filter((c) => c.items.length === 0 && matchesQuery(c, query))
+  const unlinked = cards.filter((c) => c.items.length === 0 && isReceipt(c) && matchesQuery(c, query))
   return { groups: sorted, unlinked }
 }
 
@@ -198,8 +201,13 @@ export function coverage(items: CostItem[], filter: FolderFilter, present: Set<s
 // Die Zeile „Belege vollständig“ im Cockpit, für die Positionen eines Objekts und Jahres. **Nie
 // rot**: Rot heißt dort, die Abrechnung lässt sich so nicht erstellen. Ein fehlender Beleg ändert
 // keine Zahl; er wird erst wichtig, wenn ein Mieter Einsicht verlangt (§ 556 Abs. 4 BGB).
-export function coverageCheck(yearItems: CostItem[]): { level: 'gruen' | 'gelb' | 'leer'; detail: string } {
-  const cov = coverage(yearItems, { propertyId: 'all', year: 'all' }, null)
+//
+// `present`: die Dateien im Belegordner. Mit ihr zählt ein Verweis auf eine fehlende Datei wie im
+// Belegordner als fehlend, und die Zeile sagt es; sonst widersprächen Cockpit und Belegordner
+// einander (Durchsicht). Ohne sie (Liste nicht geladen) zählt der Verweis.
+export function coverageCheck(yearItems: CostItem[], present: Set<string> | null = null): { level: 'gruen' | 'gelb' | 'leer'; detail: string } {
+  const cov = coverage(yearItems, { propertyId: 'all', year: 'all' }, present)
+  const fileGone = cov.missing.filter((c) => c.invoiceFile).length
   if (cov.positions === 0) return { level: 'leer', detail: 'Noch keine Kosten erfasst, also auch nichts zu belegen.' }
   if (cov.covered === cov.positions) {
     return { level: 'gruen', detail: `Zu allen ${cov.positions} Position(en) liegt ein Beleg vor.` }
@@ -207,7 +215,7 @@ export function coverageCheck(yearItems: CostItem[]): { level: 'gruen' | 'gelb' 
   const ohne = cov.positions - cov.covered
   return {
     level: 'gelb',
-    detail: `${ohne} von ${cov.positions} Positionen ohne Beleg · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
+    detail: `${ohne} von ${cov.positions} Positionen ohne Beleg${fileGone > 0 ? ` (bei ${fileGone} fehlt die Datei im Belegordner)` : ''} · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
   }
 }
 
@@ -224,12 +232,12 @@ const fitsPlacement = (u: UploadInfo, propertyId: string | 'all', year: number |
 // Die Belege des Posteingangs für die Auswahl, und wie viele anderen Objekten oder Jahren
 // zugedacht sind. Ein Beleg ohne Zuordnung steht überall, denn er wartet auf genau die.
 export function inboxOf(cards: ReceiptCard[], filter: FolderFilter): { here: ReceiptCard[]; elsewhere: number } {
-  const unlinked = cards.filter((c) => c.items.length === 0)
+  const unlinked = cards.filter((c) => c.items.length === 0 && isReceipt(c))
   const here = unlinked.filter((c) => fitsPlacement(c.upload, filter.propertyId, filter.year))
   return { here, elsewhere: unlinked.length - here.length }
 }
 
 // Welche Belege des Posteingangs für eine Position in Frage kommen.
 export function inboxFor(cards: ReceiptCard[], c: CostItem): ReceiptCard[] {
-  return cards.filter((card) => card.items.length === 0 && fitsPlacement(card.upload, c.propertyId, c.year))
+  return cards.filter((card) => card.items.length === 0 && isReceipt(card) && fitsPlacement(card.upload, c.propertyId, c.year))
 }

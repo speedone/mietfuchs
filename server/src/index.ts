@@ -41,9 +41,9 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
-import { createChecksums, describeFile, mimeTypeOf, originalNameOf, uploadedAtOf } from './uploads.ts'
+import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
 import { planTaxArchive } from './taxReceipts.ts'
-import { forgetUpload, placeUpload, recordUpload, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
+import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -86,8 +86,6 @@ const diskStore = multer.diskStorage({
   },
 })
 const memoryStore = multer.memoryStorage()
-// Prüfsummen der Belege, je Stand der Datei gemerkt (server/src/uploads.ts, #170)
-const checksums = createChecksums()
 const storageFor = (file: Express.Multer.File): multer.StorageEngine => (file.fieldname === 'pages' ? memoryStore : diskStore)
 const UPLOAD_MAX_BYTES = 25 * 1024 * 1024
 const upload = multer({
@@ -600,11 +598,12 @@ async function recordNewUpload(req: Request, file: Express.Multer.File): Promise
     originalName: file.originalname.normalize('NFC'),
     mimeType: file.mimetype || mimeTypeOf(file.filename),
     size: file.size,
-    sha256: checksums.of(file.path),
+    sha256: await hashFile(file.path),
     uploadedAt: uploadedAtOf(file.filename, new Date()),
     propertyId: null,
     year,
     invoiceDate: null,
+    kind: 'receipt',
   }
   try {
     await writeData(async (db) => recordUpload(db, { ...row, propertyId: await placementProperty(db, body.propertyId) }))
@@ -778,9 +777,19 @@ async function documentOf(req: Request, res: Response): Promise<DocumentSource |
 async function rememberInvoiceDate(file: string, value: unknown): Promise<void> {
   if (!isDateOnly(value)) return
   try {
-    await writeData((db) => placeUpload(db, file, { invoiceDate: value }, () => describeFile(UPLOAD_DIR, file, checksums)))
+    const sha256 = await hashFile(path.join(UPLOAD_DIR, file))
+    await writeData((db) => placeUpload(db, file, { invoiceDate: value }, () => describeFile(UPLOAD_DIR, file, undefined, sha256)))
   } catch (err) {
     console.warn(`Das Rechnungsdatum zu ${file} ließ sich nicht speichern: ${messageOf(err)}`)
+  }
+}
+
+async function markMeterPhoto(file: string): Promise<void> {
+  try {
+    const sha256 = await hashFile(path.join(UPLOAD_DIR, file))
+    await writeData((db) => placeUpload(db, file, { kind: 'meterPhoto', propertyId: null, year: null }, () => describeFile(UPLOAD_DIR, file, undefined, sha256)))
+  } catch (err) {
+    console.warn(`Das Zählerfoto ${file} ließ sich nicht kennzeichnen: ${messageOf(err)}`)
   }
 }
 
@@ -811,6 +820,9 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
     const material = { ...aiInput(req), signal, stats, onProgress }
     const docType = await classifyDocType(file.path, file.mimetype, settings, { signal, stats, onProgress })
     if (docType === 'zaehlerstand') {
+      // Ein Zählerfoto belegt keine Kosten: als solches kennzeichnen und ohne Objekt, damit es in
+      // keinem Posteingang als Beleg wartet und beim Nachreichen nicht angeboten wird (Durchsicht).
+      await markMeterPhoto(file.filename)
       const reading = await extractMeterReading(file.path, file.mimetype, settings, material)
       answer.done({ file: file.filename, kind: 'zaehler', reading, stats })
     } else {
@@ -828,10 +840,48 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
 // Die Angaben aus der Datenbank gelten, wo es sie gibt; sonst wird der Beleg aus der Datei
 // beschrieben. **Ohne Datenbank bleibt die Liste trotzdem vollständig**, nur ohne Posteingang:
 // Belege sind Dateien, und sie zu sehen soll nicht davon abhängen, ob gerade die Datenbank trägt.
+//
+// **Prüfsummen fehlender Zeilen werden nachgetragen, einmal und im Hintergrund** (`backfillUploads`):
+// Bis dahin ist `sha256` leer, und die Liste antwortet sofort. Vorher rechnete jeder Start sie
+// synchron und im Speicher neu, und eine große Altablage hielt dabei den ganzen Server an.
 app.get('/api/uploads', async (req, res) => {
-  const rows = await readData(uploadRows).catch(() => new Map<string, UploadRow>())
-  res.json(fs.readdirSync(UPLOAD_DIR).map((name) => describeFile(UPLOAD_DIR, name, checksums, rows.get(name))))
+  const rows = await readData(uploadRows).catch(() => null)
+  const list = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
+  if (rows && list.some((u) => !u.sha256)) void backfillUploads()
+  res.json(list)
 })
+
+// Trägt zu jedem Beleg ohne Zeile (oder ohne Prüfsumme) die Zeile nach. Je Beleg ein eigener
+// Lese- und Schreibvorgang, dazwischen kommt jede andere Anfrage dran. Läuft höchstens einmal
+// zugleich; ein zweiter Aufruf während des Laufs wartet auf denselben.
+let backfillRunning: Promise<void> | null = null
+function backfillUploads(): Promise<void> {
+  backfillRunning ??= (async () => {
+    try {
+      const rows = await readData(uploadRows)
+      for (const info of describeFolder(UPLOAD_DIR, rows)) {
+        if (info.sha256) continue
+        try {
+          const sha256 = await hashFile(path.join(UPLOAD_DIR, info.file))
+          const row = { ...rowOf(info), sha256 }
+          await writeData(async (db) => {
+            const current = (await uploadRows(db)).get(info.file)
+            if (current) await recordUpload(db, { ...current, sha256 })
+            else await recordIfMissing(db, row)
+          })
+        } catch (err) {
+          // Verschwunden oder unlesbar: beim nächsten Mal wieder, die Liste übergeht ihn ohnehin.
+          console.warn(`Prüfsumme zu ${info.file} nicht nachgetragen: ${messageOf(err)}`)
+        }
+      }
+    } catch (err) {
+      console.warn(`Prüfsummen nicht nachgetragen: ${messageOf(err)}`)
+    } finally {
+      backfillRunning = null
+    }
+  })()
+  return backfillRunning
+}
 
 // Objekt, Jahr und Rechnungsdatum eines Belegs ändern (#170, Posteingang). Zugeordnet wird einer
 // Position weiterhin über die Position (`PUT /api/costItems/:id` mit `invoiceFile`).
@@ -851,11 +901,15 @@ app.put('/api/uploads/:file', async (req, res) => {
     if (value !== null && value !== '' && !isDateOnly(value)) return res.status(400).json({ error: 'Das Rechnungsdatum muss ein Datum als JJJJ-MM-TT sein oder fehlen.' })
     changes.invoiceDate = isDateOnly(value) ? value : null
   }
+  // Hat der Beleg noch keine Zeile, entsteht sie hier, und zwar gleich mit Prüfsumme
+  const sha256 = await hashFile(full)
   const row = await writeData(async (db) => {
     if (Object.hasOwn(body, 'propertyId')) changes.propertyId = await placementProperty(db, body.propertyId)
-    return placeUpload(db, name, changes, () => describeFile(UPLOAD_DIR, name, checksums))
+    return placeUpload(db, name, changes, () => describeFile(UPLOAD_DIR, name, undefined, sha256))
   })
-  res.json(describeFile(UPLOAD_DIR, name, checksums, row))
+  const info = row ? describeFile(UPLOAD_DIR, name, row) : null
+  if (!info) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  res.json(info)
 })
 
 // Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
@@ -891,7 +945,7 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db) }
   })
   const names = new Map<string, string>()
-  for (const name of fs.readdirSync(UPLOAD_DIR)) names.set(name, rows.get(name)?.originalName ?? originalNameOf(name))
+  for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
   const plan = planTaxArchive(items, names)
   const zip = new AdmZip()
   for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
