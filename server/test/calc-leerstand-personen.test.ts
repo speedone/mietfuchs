@@ -80,7 +80,25 @@ test('Leerstand beim Personenschlüssel: eine ganzjährig leere Wohnung zählt m
   assert.doesNotMatch(notice.text, /üblich|vorgeschrieben/)
   assert.match(notice.text, /„Müll“/)
   assert.match(notice.text, /C \(365 Tage\)/)
-  assert.deepEqual(notice.subject, { kind: 'unit', id: 'C' })
+  // Eine Auskunft, nichts zu beheben: kein „Hier beheben →“ (Endprüfung rc.4).
+  assert.equal(notice.subject, undefined)
+})
+
+test('Leerstand beim Personenschlüssel: mehrere leere Wohnungen stehen als deutsche Aufzählung da', () => {
+  const zwei = settle({
+    units: [unit('A'), unit('C'), unit('G')],
+    tenancies: [tenancy('ta', 'A', 2), tenancy('tc', 'C', 1, '2020-01-01', '2025-06-30')],
+    costItems: [muell()],
+  })
+  const n2 = zwei.notices.find((n) => n.code === 'basis.vacancy-persons') ?? assert.fail(`kein Hinweis: ${JSON.stringify(zwei.notices)}`)
+  assert.match(n2.text, /standen C \(184 Tage\) und G \(365 Tage\) leer\./)
+  const drei = settle({
+    units: [unit('A'), unit('B'), unit('C'), unit('D')],
+    tenancies: [tenancy('ta', 'A', 2)],
+    costItems: [muell({ id: 'm1', description: 'Müll' }), muell({ id: 'm2', description: 'Wasser' })],
+  })
+  const n3 = drei.notices.find((n) => n.code === 'basis.vacancy-persons') ?? assert.fail(`kein Hinweis: ${JSON.stringify(drei.notices)}`)
+  assert.match(n3.text, /^Bei „Müll“ und „Wasser“ \(nach Personen\) standen B \(365 Tage\), C \(365 Tage\) und D \(365 Tage\) leer\./)
 })
 
 test('Leerstand beim Personenschlüssel: Teiljahr zwischen zwei Mietern', () => {
@@ -235,7 +253,7 @@ test('Leerstand beim Personenschlüssel: sechs Wohnungen und vier leere Stellpl�
   assert.equal(s.landlord.totalCents, 0)
   const hints = s.notices.filter((n) => n.code === 'basis.vacancy-no-area')
   assert.equal(hints.length, 1)
-  assert.match(hints[0]?.text ?? '', /^Stellplatz 1, Stellplatz 2, Stellplatz 3, Stellplatz 4 haben 0 m² und keine Bewohner/)
+  assert.match(hints[0]?.text ?? '', /^Stellplatz 1, Stellplatz 2, Stellplatz 3 und Stellplatz 4 haben 0 m² und keine Bewohner/)
 })
 
 test('Leerstand beim Personenschlüssel: eine leere Garage mit eingetragener Fläche zählt als Leerstand', () => {

@@ -1140,6 +1140,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const vacancyPersonDays = vacancies.reduce((a, v) => a + v.personDays, 0)
   const personsLabel = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Person' : 'Personen'}`
   const daysLabel = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Tag' : 'Tage'}`
+  // Deutsche Aufzählung für die Hinweise: „A“, „A und B“, „A, B und C“.
+  const andList = (parts: string[]): string => parts.length > 1 ? `${parts.slice(0, -1).join(', ')} und ${parts[parts.length - 1]}` : parts[0] ?? ''
   const vacancyText = (vs: Vacancy[]) =>
     vs.map((v) => `${v.unit.name}: ${daysLabel(v.days)} × ${personsLabel(v.persons)} = ${fmtNum(v.personDays)} ${v.personDays === 1 ? 'Personentag' : 'Personentage'}`).join('; ')
   // Personentage der Bewohner, ohne Leerstand: Fehlen sie bei vorhandenen Mietverhältnissen ganz,
@@ -1373,12 +1375,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (affected.length > 0 && !personsBasisMissing) {
       const persons = [...new Set(units.map((v) => v.persons))]
       warn('basis.vacancy-persons',
-        `Bei ${affected.map((c) => `„${c.description}“`).join(', ')} (nach Personen) ${units.length === 1 ? 'stand' : 'standen'} ${units.map((v) => `${v.unit.name} (${daysLabel(v.days)})`).join(', ')} leer. ` +
+        `Bei ${andList(affected.map((c) => `„${c.description}“`))} (nach Personen) ${units.length === 1 ? 'stand' : 'standen'} ${andList(units.map((v) => `${v.unit.name} (${daysLabel(v.days)})`))} leer. ` +
           'An den Kosten leerstehender Wohnungen ist der Vermieter zu beteiligen; sie gehen nicht still an die übrigen Mieter (Grundsatz nach BGH, Urteil vom 31.05.2006, VIII ZR 159/05, dort zum Flächenschlüssel). ' +
           'Wie das beim Personenschlüssel geschieht, regelt kein Gesetz, und es ist nicht abschließend geklärt: Nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12, kommt es auf den Einzelfall an, und es kann in Betracht kommen, für die Zeit des Leerstands eine fiktive Person anzusetzen. ' +
           `Mietfuchs setzt jeden Tag ohne Mietverhältnis mit ${persons.length === 1 ? personsLabel(persons[0] ?? 0) : 'der angegebenen Personenzahl'} an; das ist eine Auslegung von Mietfuchs. Der Anteil steht in Ihrem Vermieteranteil als Leerstand. ` +
           'Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.',
-        unitSubject(units.map((v) => v.unit)),
+        // Bewusst ohne Eintrag: Eine Auskunft, an der Wohnung ist nichts zu beheben, und ein „Hier
+        // beheben →“ darunter legte nahe, es sei etwas falsch (Endprüfung rc.4).
       )
     }
     // Ganz leer und ohne Fläche: keine Wohnung, also kein Leerstand (siehe `isDwelling`). Ob das
@@ -1387,7 +1390,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       !tenancies.some((t) => t.unitId === u.id) &&
       items.some((c) => c.key === 'persons' && !isNotAllocable(c.category) && takes(c, u.id) && partTenancies.some((t) => takes(c, t.unitId))))
     if (noArea.length > 0 && !personsBasisMissing) {
-      const names = noArea.map((u) => u.name).join(', ')
+      const names = andList(noArea.map((u) => u.name))
       warn('basis.vacancy-no-area', noArea.length === 1
         ? `${names} hat 0 m² und keine Bewohner und wird beim Personenschlüssel nicht als Leerstand angesetzt. Ist ${names} eine Wohnung, tragen Sie die Wohnfläche ein.`
         : `${names} haben 0 m² und keine Bewohner und werden beim Personenschlüssel nicht als Leerstand angesetzt. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein.`,

@@ -14,7 +14,15 @@ const ten = (over: Partial<Tenancy>): Tenancy => ({
 
 describe('Kopfzeile der Abrechnung: Personen (#142)', () => {
   test('gleichbleibende Personenzahl: wie bisher', () => {
-    expect(personsText(st({}), ten({}))).toBe('2 Person(en)')
+    expect(personsText(st({}), ten({}))).toBe('2 Personen')
+  })
+
+  test('Einzahl und Mehrzahl statt „Person(en)“ (Endprüfung rc.4)', () => {
+    const fest = (persons: number) => personsText(st({ persons, personDays: persons * 365 }), ten({ persons, personHistory: [{ from: '2020-01-01', persons }] }))
+    expect(fest(1)).toBe('1 Person')
+    expect(fest(0)).toBe('0 Personen')
+    expect(fest(3)).toBe('3 Personen')
+    expect(fest(1.5)).toBe('1.5 Personen')
   })
 
   test('wechselnde Personenzahl im Jahr: der Bereich und die Personentage, nicht nur der letzte Stand', () => {
@@ -25,19 +33,19 @@ describe('Kopfzeile der Abrechnung: Personen (#142)', () => {
 
   test('ein Wechsel vor dem Jahr zählt nicht als Bereich', () => {
     const t = ten({ personHistory: [{ from: '2020-01-01', persons: 1 }, { from: '2024-03-01', persons: 2 }] })
-    expect(personsText(st({}), t)).toBe('2 Person(en)')
+    expect(personsText(st({}), t)).toBe('2 Personen')
   })
 
   test('ohne passendes Mietverhältnis (etwa eine eingefrorene Abrechnung, deren Staffel sich seither geändert hat): die Personentage aus der Abrechnung selbst', () => {
-    expect(personsText(st({ persons: 2, personDays: 457 }), undefined)).toBe('457 Personentage, zuletzt 2 Person(en)')
+    expect(personsText(st({ persons: 2, personDays: 457 }), undefined)).toBe('457 Personentage, zuletzt 2 Personen')
     const geaendert = ten({ personHistory: [{ from: '2020-01-01', persons: 3 }] })
-    expect(personsText(st({ persons: 2, personDays: 457 }), geaendert)).toBe('457 Personentage, zuletzt 2 Person(en)')
+    expect(personsText(st({ persons: 2, personDays: 457 }), geaendert)).toBe('457 Personentage, zuletzt 2 Personen')
   })
 
   test('eine Abrechnung ohne Personentage (älterer Stand): wie bisher', () => {
     const alt: Statement = JSON.parse(JSON.stringify(st({})))
     Reflect.deleteProperty(alt, 'personDays')
-    expect(personsText(alt, undefined)).toBe('2 Person(en)')
+    expect(personsText(alt, undefined)).toBe('2 Personen')
   })
 })
 
