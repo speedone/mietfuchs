@@ -273,7 +273,7 @@ const GUIDE_DATA = {
     ],
     result: [
       'Jeder Mieter trägt seinen Anteil für die Tage, an denen er gemietet hat. Den Anteil für die leeren Tage trägt der Vermieter, mit dem Grund „Leerstand“.',
-      'Beim Personenschlüssel verteilt Mietfuchs den Anteil einer leerstehenden Wohnung heute auf die Bewohner der übrigen Wohnungen. Das Leerstandsrisiko trägt nach verbreiteter Auffassung grundsätzlich der Vermieter; das wird gerade geprüft (#177).',
+      'Beim Personenschlüssel zählt eine leerstehende Wohnung je Leerstandstag mit einer Person, und auch diesen Anteil trägt der Vermieter. Wie eine leere Wohnung dort anzusetzen ist, ist nicht abschließend geklärt; die eine Person ist eine Auslegung von Mietfuchs.',
       'Beim Verbrauch teilt eine Zwischenablesung genau auf; ohne sie verteilt Mietfuchs den Verbrauch zwischen zwei Ablesungen tagesanteilig.',
       'Für ein Mietverhältnis, das im Jahr endet, schlägt die Abrechnung keine neue Vorauszahlung vor.',
     ],
@@ -284,7 +284,6 @@ const GUIDE_DATA = {
       { text: 'Nach der Abrechnung können Sie und der neue Mieter die Vorauszahlung durch Erklärung in Textform auf eine angemessene Höhe anpassen.', norm: '§ 560 Abs. 4 BGB' },
     ],
     gaps: [
-      { text: 'Den Anteil einer leerstehenden Wohnung beim Personenschlüssel dem Vermieter zuordnen; heute tragen ihn die übrigen Bewohner.', issue: 177 },
       { text: 'Eine geschätzte Ablesung kennzeichnen, wenn die Zwischenablesung versäumt wurde.', issue: 98 },
     ],
     terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'settlementDeadline'],

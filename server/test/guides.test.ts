@@ -282,24 +282,27 @@ for (const id of ids) {
   test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, () => checks[id]())
 }
 
-test('Leerstand beim Personenschlüssel: Die leere Wohnung hat keine Personentage, ihr Anteil geht heute an die Bewohner (so steht es in der Anleitung, mit #177)', () => {
+test('Leerstand beim Personenschlüssel: Die leere Wohnung zählt je Leerstandstag mit einer Person, den Anteil trägt der Vermieter (so steht es in der Anleitung, seit #177)', () => {
   const r = settle(source({
     units: [rented('a', 60), rented('b', 120)],
     tenancies: [tenancy('alt', 'a', '2020-01-01', '2025-03-31'), tenancy('neu', 'a', '2025-06-01'), tenancy('tb', 'b')],
     costItems: [item('muell', { category: 'Müllabfuhr', amountCents: 36500, key: 'persons' })],
   }))
-  assert.equal(r.landlord.rows.filter((x) => x.costItemId === 'muell').length, 0, 'beim Vermieter bleibt nichts')
-  assert.equal(share(r, 'alt', 'muell') + share(r, 'neu', 'muell') + share(r, 'tb', 'muell'), 36500)
+  // 2025: alt 90, Leerstand 61, neu 214 und tb 365 Personentage, zusammen 730; 50 Cent je Tag.
+  const landlordRow = r.landlord.rows.find((x) => x.costItemId === 'muell') ?? assert.fail('beim Vermieter fehlt der Leerstand')
+  assert.deepEqual(landlordRow.landlordParts, [{ reason: 'vacancy', cents: 3050 }])
+  assert.deepEqual([share(r, 'alt', 'muell'), share(r, 'neu', 'muell'), share(r, 'tb', 'muell')], [4500, 10700, 18250])
   const result = GUIDES.tenantChange.result.join(' ')
-  assert.match(result, /Beim Personenschlüssel verteilt Mietfuchs den Anteil einer leerstehenden Wohnung heute auf die Bewohner der übrigen Wohnungen/)
-  assert.match(result, /\(#177\)/)
+  assert.match(result, /Beim Personenschlüssel zählt eine leerstehende Wohnung je Leerstandstag mit einer Person, und auch diesen Anteil trägt der Vermieter/)
+  assert.match(result, /Auslegung von Mietfuchs/)
+  assert.doesNotMatch(result, /#177/)
   // Kein Rat zum Schlüsselwechsel: Einseitig geht das nur nach § 556a Abs. 2 BGB (Durchsicht).
   assert.doesNotMatch(JSON.stringify(GUIDES.tenantChange), /verteilen Sie diese Position nach Fläche/)
-  assert.ok(GUIDES.tenantChange.gaps.some((g) => g.issue === 177))
-  // Das Lexikon sagt dasselbe und nicht mehr pauschal „trägt der Vermieter“.
+  assert.ok(!GUIDES.tenantChange.gaps.some((g) => g.issue === 177), 'die Lücke ist mit 0.9.0 geschlossen')
+  // Das Lexikon sagt dasselbe: eine Person je Leerstandstag, als Auslegung.
   const v = GLOSSARY.vacancy
-  assert.match(v.short + v.needed, /Personenschlüssel/)
-  assert.match(v.short + v.needed, /#177/)
+  assert.match(v.example + v.needed, /Personenschlüssel/)
+  assert.match(v.needed, /Auslegung von Mietfuchs/)
 })
 
 // ---------- Befunde der Durchsicht (#164) ----------
