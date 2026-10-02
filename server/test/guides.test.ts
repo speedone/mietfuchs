@@ -7,6 +7,13 @@
 // Dazu ein Wächter über die Bedienangaben: Jeder Text in „…“ in den Schritten und in „Was
 // Mietfuchs daraus macht“ muss so in der Oberfläche stehen. Eine umbenannte Schaltfläche fällt
 // damit hier auf und nicht erst beim Leser.
+//
+// **Seine Grenze**: Er sucht im Quelltext (client/src und shared/, ohne Tests), nicht in der
+// gerenderten Seite. Ein Zitat besteht, sobald der Wortlaut irgendwo im Quelltext steht, auch in
+// einem Kommentar oder an einer anderen Stelle als der gemeinten; ob die Beschriftung auf der
+// genannten Seite sitzt, prüft er nicht. Umgekehrt findet er keinen Text, den JSX zerlegt (ein
+// <Term> mitten im Satz, ein `{year}` im Knopf); solche Stellen zitiert die Anleitung nicht. HTML-
+// Entitäten im JSX-Text werden vor dem Vergleich aufgelöst (`&amp;` ist `&`).
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -92,6 +99,7 @@ function uiSources(): string {
     .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
     .map((f) => fs.readFileSync(path.join(ROOT, dir, f), 'utf8'))
   return [...files('client/src'), ...files('shared').filter((s) => !s.includes('export const GUIDES'))].join('\n')
+    .replaceAll('&amp;', '&')
 }
 
 test('Anleitungen: jede zitierte Beschriftung steht so in der Oberfläche', () => {
@@ -274,7 +282,7 @@ for (const id of ids) {
   test(`Anleitung „${GUIDES[id].title}“: das Zahlenbeispiel ist mit der Berechnung nachgerechnet`, () => checks[id]())
 }
 
-test('Leerstand beim Personenschlüssel: Die leere Wohnung hat keine Personentage, ihr Anteil geht an die Bewohner (so steht es in der Anleitung)', () => {
+test('Leerstand beim Personenschlüssel: Die leere Wohnung hat keine Personentage, ihr Anteil geht heute an die Bewohner (so steht es in der Anleitung, mit #177)', () => {
   const r = settle(source({
     units: [rented('a', 60), rented('b', 120)],
     tenancies: [tenancy('alt', 'a', '2020-01-01', '2025-03-31'), tenancy('neu', 'a', '2025-06-01'), tenancy('tb', 'b')],
@@ -282,5 +290,71 @@ test('Leerstand beim Personenschlüssel: Die leere Wohnung hat keine Personentag
   }))
   assert.equal(r.landlord.rows.filter((x) => x.costItemId === 'muell').length, 0, 'beim Vermieter bleibt nichts')
   assert.equal(share(r, 'alt', 'muell') + share(r, 'neu', 'muell') + share(r, 'tb', 'muell'), 36500)
-  assert.match(GUIDES.tenantChange.result.join(' '), /Personenzahl[^.]*keine Personentage/)
+  const result = GUIDES.tenantChange.result.join(' ')
+  assert.match(result, /Beim Personenschlüssel verteilt Mietfuchs den Anteil einer leerstehenden Wohnung heute auf die Bewohner der übrigen Wohnungen/)
+  assert.match(result, /\(#177\)/)
+  // Kein Rat zum Schlüsselwechsel: Einseitig geht das nur nach § 556a Abs. 2 BGB (Durchsicht).
+  assert.doesNotMatch(JSON.stringify(GUIDES.tenantChange), /verteilen Sie diese Position nach Fläche/)
+  assert.ok(GUIDES.tenantChange.gaps.some((g) => g.issue === 177))
+  // Das Lexikon sagt dasselbe und nicht mehr pauschal „trägt der Vermieter“.
+  const v = GLOSSARY.vacancy
+  assert.match(v.short + v.needed, /Personenschlüssel/)
+  assert.match(v.short + v.needed, /#177/)
+})
+
+// ---------- Befunde der Durchsicht (#164) ----------
+
+test('Durchsicht: Zählerstände zu Jahresbeginn und Jahresende, Speichern beim Objekt der Eigentumswohnung', () => {
+  for (const id of ['granny', 'multiFamily'] as const) {
+    const zaehler = GUIDES[id].steps.filter((s) => s.page === 'zaehler').map((s) => s.text).join(' ')
+    assert.match(zaehler, /31\.12\. des Vorjahres/, id)
+    assert.match(zaehler, /Jahresende/, id)
+  }
+  assert.match(GUIDES.condo.steps[0]?.text ?? '', /klicken Sie auf „Speichern“/)
+})
+
+test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim Messdienst', () => {
+  for (const id of ['multiFamily', 'meteringService'] as const) {
+    const c = GUIDES[id].caveats.find((x) => /CO₂/.test(x.text))
+    if (!c) return assert.fail(`${id}: kein Satz zur CO₂-Aufteilung`)
+    assert.match(c.norm ?? '', /§ 7 Abs\. 3 und 4 CO2KostAufG/)
+    assert.match(c.text, /3 Prozent/)
+    assert.match(c.text, /#97/)
+  }
+})
+
+test('Durchsicht: Garagenhof nach Wohneinheiten, denn nach Fläche gibt es bei 0 m² keine Verteilbasis', () => {
+  const step = GUIDES.garage.steps.find((s) => /Garagenhof/.test(s.text))?.text ?? ''
+  assert.match(step, /nach Wohneinheiten/)
+  assert.match(step, /ändert an der Berechnung nichts/)
+  const r = settle(source({
+    units: [rented('g1', 0), rented('g2', 0)],
+    tenancies: [tenancy('t1', 'g1', '2020-01-01', null, 0), tenancy('t2', 'g2', '2020-01-01', null, 0)],
+    costItems: [item('gs', { amountCents: 40000 }), item('gs2', { amountCents: 40000, key: 'units' })],
+  }))
+  assert.deepEqual(landlordParts(r, 'gs').map((p) => p.reason), ['noBasis'], 'nach Fläche bleibt alles beim Vermieter')
+  assert.equal(share(r, 't1', 'gs2'), 20000)
+})
+
+test('Durchsicht: Normen genauer (§ 535, § 556a Abs. 1 Satz 2, § 16 Abs. 2 WEG, Frist mit Ausnahme, Anleitung zur Anlage V)', () => {
+  const garage = GUIDES.garage.caveats.find((c) => /Garage/.test(c.text))
+  assert.equal(garage?.norm, '§ 535 Abs. 1 Satz 3, § 556 Abs. 1 BGB')
+  assert.ok(ids.some((id) => GUIDES[id].caveats.some((c) => /§ 556a Abs\. 1 Satz (1 und )?2 BGB/.test(c.norm ?? ''))))
+  assert.match(GUIDES.condo.caveats.find((c) => c.norm === '§ 16 Abs. 2 WEG')?.text ?? '', /beschlossen oder vereinbart/)
+  const frist = GUIDES.condo.caveats.find((c) => /Hausgeldabrechnung noch fehlt/.test(c.text))
+  assert.match(frist?.text ?? '', /nicht zu vertreten/)
+  assert.doesNotMatch(frist?.text ?? '', /VIII ZR|V ZR/)
+  const aufstellung = GUIDES.granny.caveats.find((c) => /gesonderte/.test(c.text))
+  assert.match(aufstellung?.text ?? '', /Anleitung zur Anlage V/)
+  assert.equal(aufstellung?.norm, undefined, 'eine Anleitung des Vordrucks ist kein Gesetz')
+})
+
+test('Durchsicht: Wortlaute „Vermieter & Zahlung“, Inklusivmiete und die neue Anschrift', () => {
+  assert.match(GUIDES.properties.steps.map((s) => s.text).join(' '), /„Vermieter & Zahlung“/)
+  assert.match(GUIDES.flatRate.steps.map((s) => s.text).join(' '), /Ist alles inklusive, /)
+  const address = GUIDES.tenantChange.steps.find((s) => /Anschrift/.test(s.text))?.text ?? ''
+  assert.match(address, /✎/)
+  assert.match(address, /„Weitere Angaben — Nebenkosten-Modell, Kontakt, Kaution, Vertrag \(optional\)“/)
+  assert.match(address, /zur Hand/)
+  assert.match(address, /auf den Ausdruck kommt sie nicht/)
 })
