@@ -8,7 +8,7 @@ import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
-import { scrollToFocus, useFocusTarget, type FocusProps } from '../focus'
+import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
 
@@ -27,6 +27,7 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
   const [error, setError] = useState('')
   // „Hier beheben →“ aus der Abrechnung (#142): die Zeile des Mietverhältnisses hervorheben.
   const [focusedId, setFocusedId] = useState<string | null>(null)
+  const scrollToFocus = useScrollToFocus()
   useFocusTarget(focus, 'rentLedger', ledger?.rows ?? null, (r) => r.tenancyId, (r) => { setFocusedId(r.tenancyId); scrollToFocus() }, onFocusDone)
 
   const load = useCallback(() => {

@@ -11,7 +11,7 @@ import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
-import { scrollToFocus, useFocusTarget, type FocusProps } from '../focus'
+import { useFocusTarget, useScrollToFocus, type FocusProps } from '../focus'
 
 type Props = { units: Unit[] } & FocusProps
 
@@ -33,6 +33,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   // „Hier beheben →“ aus der Abrechnung (#142): die Ablesungen des betroffenen Zählers aufklappen,
   // denn dort liegt, was ein Hinweis zu einem Zähler meint.
   const [focusedId, setFocusedId] = useState<string | null>(null)
+  const scrollToFocus = useScrollToFocus()
   useFocusTarget(focus, 'meter', meters, (m) => m.id, (m) => { setOpenMeterId(m.id); setFocusedId(m.id); scrollToFocus() }, onFocusDone)
   // Eine angefangene Ablesung hängt am Zähler dieses Objekts (#145).
   useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
