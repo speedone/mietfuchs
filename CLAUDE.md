@@ -968,8 +968,8 @@ Wächters**: Er sucht den Wortlaut im Quelltext (client/src und shared/, `&amp;`
 der gerenderten Seite; ein Zitat besteht also auch, wenn der Text nur in einem Kommentar oder auf
 einer anderen Seite steht, und Text, den JSX zerlegt (ein `<Term>` im Satz, `{year}` im Knopf),
 findet er nicht und darf deshalb nicht zitiert werden. Beschrieben wird nur, was Mietfuchs auf dem
-Stand des Zweigs kann; wo Mietfuchs von einer verbreiteten Auffassung abweicht (Leerstand beim
-Personenschlüssel, #177), sagt die Anleitung das, statt einen Ausweg zu raten. Auf der Seite sind
+Stand des Zweigs kann; wo Mietfuchs eine nicht abschließend geklärte Frage selbst auslegt
+(Leerstand beim Personenschlüssel, #177), sagt die Anleitung das, statt einen Ausweg zu raten. Auf der Seite sind
 Anleitungstitel und Begriffe `h3`, die Abschnitte einer Anleitung `h4`; bei einer Suche sind die
 Treffer aufgeklappt, und ein Sprung beginnt oben auf der Zielseite.
 
