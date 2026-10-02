@@ -115,6 +115,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Personenschlüssel bei Leerstand: den Anteil der leeren Wohnung trägt der Vermieter.** Bisher
+  hatte eine leerstehende Wohnung beim Schlüssel „Personen“ keine Personentage und fiel aus der
+  Verteilbasis; ihr Anteil ging an die übrigen Mieter, anders als bei Fläche und Einheiten. Jetzt
+  zählt jede Wohnung der Abrechnungseinheit für jeden Tag ohne Mietverhältnis mit einer Person,
+  auch zwischen zwei Mietern, und dieser Anteil steht im Vermieteranteil als Leerstand. Den
+  Grundsatz hat der BGH am Flächenschlüssel entschieden (Urteil vom 31.05.2006, VIII ZR 159/05);
+  für den Personenschlüssel ist er nicht abschließend geklärt, nach BGH, Beschluss vom 08.01.2013,
+  VIII ZR 180/12, kommt eine fiktive Person für die Zeit des Leerstands in Betracht. Die eine
+  Person ist eine Auslegung von Mietfuchs; ein Hinweis an der Abrechnung sagt das, der Rechenweg
+  nennt die Leerstandstage. Selbstgenutzte Wohnungen, Garagen und Stellplätze mit 0 m² und 0
+  Personen sowie Wohnungen, die an der Position nicht teilnehmen, bleiben wie bisher.
+  **Ihre Zahlen ändern sich**: In noch offenen Jahren mit einer Position nach Personen und einer
+  zeitweise leeren Wohnung zahlen die Mieter weniger und Sie mehr. Abgeschlossene Abrechnungen
+  bleiben unverändert; die Seite Abrechnung zeigt dort wie bei jeder Änderung an, welcher Saldo
+  sich nach heutiger Berechnung unterscheiden würde.
+  ([#177](https://github.com/speedone/mietfuchs/issues/177))
 - **Abrechnung: was beim Mieter auf dem Papier steht.** „(manuell angepasst)“ an der
   Vorauszahlung erscheint nur noch am Bildschirm. Statt „Abrechnung nach dem Abflussprinzip“, was
   nicht zutraf, steht dort „Abgerechnet werden die Kosten des Abrechnungsjahres …“. Wechselt die
