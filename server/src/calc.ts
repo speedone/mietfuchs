@@ -1591,7 +1591,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const names = data.unmetered.map((u) => u.name).join(', ')
           // Eine Garage oder ein Stellplatz hat oft keinen Anschluss; dann nennt die Meldung den
           // Ausweg, die Kennzeichnung an der Einheit (#117).
-          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), kreuzen Sie in den Stammdaten der Einheit „Kein Anschluss für“ an.'
+          const noConnection = ' Hat eine dieser Einheiten keinen eigenen Anschluss (etwa eine Garage), entfernen Sie in den Stammdaten der Einheit unter „Weitere Angaben — Anschlüsse“ das Häkchen dieser Zählerart.'
           const text = data.main !== null
             ? `der Rest des Hauptzählers geht an den Vermieter, weil sich nicht bestimmen lässt, wie viel davon auf sie entfällt.${b.selfUnits.length > 0 ? ' Einen Eigenanteil weist Mietfuchs für diesen Rest deshalb nicht aus.' : ''}${noConnection}`
             : data.hasMain
