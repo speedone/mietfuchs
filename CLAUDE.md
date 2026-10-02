@@ -953,6 +953,22 @@ die ganze fachliche Komplexität:
   erscheinen sie nicht, denn `computeSettlement` ruft `consumptionInPeriod` auf und wirft sie
   weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
   Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
+- **Leerstand beim Personenschlüssel** (#177): Jede Wohnung der Verteilbasis, die vermietet
+  wird (`participates`, nicht selbstgenutzt, nicht Garage-artig nach #135, unter den Teilnehmern
+  der Position), zählt für jeden Tag ohne Mietverhältnis mit `VACANCY_PERSONS` Personen (heute 1),
+  auch zwischen zwei Mietern. Diese Personentage bekommt niemand zugebucht, ihr Anteil bleibt als
+  `vacancy` beim Vermieter. Vorher fiel die leere Wohnung aus der Basis, und die übrigen Mieter
+  zahlten ihren Anteil. Grundsatz: BGH VIII ZR 159/05 (am Flächenschlüssel); die fiktive Person
+  nennt BGH VIII ZR 180/12 als Möglichkeit im Einzelfall, höchstrichterlich ist es nicht
+  geklärt, abweichend etwa AG Köln WuM 2002, 28 (Durchschnittsbelegung). Die Zahl ist deshalb
+  **eine Auslegung an genau einer Stelle** (`VACANCY_PERSONS`, verwendet über `vacancyPersons` in
+  computeSettlement), und Hinweis `basis.vacancy-persons` (Stufe `hint`: nichts ist falsch
+  erfasst) und Lexikon sagen das. `item.no-basis` hängt an den Personentagen der **Bewohner**
+  (`occupantPersonDays`), nicht an der Basis samt Leerstand: Fehlen die Personen aller Mieter,
+  bleibt das ein Datenmangel. Eine ganz leere Einheit mit 0 m² ist nach #135 nicht Garage-artig
+  und zählt mit; der Irrtum geht dann zulasten des Vermieters. Der Rechenweg nennt die
+  Leerstandstage („davon Leerstand“). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
+  den Unterschied.
 - **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
   Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den
