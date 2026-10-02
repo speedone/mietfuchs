@@ -24,6 +24,8 @@ const ITEMS: CostItem[] = [
   { id: 'c2', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR}`, amountCents: 61000, key: 'area' },
   { id: 'd', propertyId: 'objekt-1', year: PREV, category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'custom', customShares: { u1: 30, u2: 50 } },
   { id: 'e', propertyId: 'objekt-1', year: PREV, category: 'Schornsteinfeger', description: 'Kamin', amountCents: 9000, key: 'direct', directUnitId: 'u2' },
+  // #163: nicht umlagefähig, für die Steuer der Wohnung OG zugeordnet
+  { id: 'f', propertyId: 'objekt-1', year: PREV, category: 'Nicht umlagefähig', description: 'Therme OG', amountCents: 25000, key: 'direct', directUnitId: 'u2' },
 ]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -193,4 +195,11 @@ test('Handy: der Betrag steht gleich hinter der Kostenart, nicht erst nach dem S
   const cells = [...(row?.children ?? [])]
   expect(cells.findIndex((td) => td.querySelector(`[aria-label="Betrag ${YEAR} für Müllabfuhr ${YEAR}"]`))).toBe(2)
   expect(cells.findIndex((td) => td.querySelector(`[aria-label="§35a-Lohn ${YEAR} für Müllabfuhr ${YEAR}"]`))).toBe(3)
+})
+
+test('Nicht umlagefähig mit Einheit für die Steuer: die Übernahme nennt die Einheit beim Namen (#163)', async () => {
+  await openCarry()
+  const row = screen.getByLabelText(`Betrag ${YEAR} für Therme OG`).closest('tr')
+  if (!row) return expect.fail('Zeile der Übernahme nicht gefunden')
+  expect(within(row as HTMLElement).getByText('— trägt der Vermieter · betrifft OG')).toBeTruthy()
 })

@@ -40,7 +40,7 @@ export const TAX_HINTS = [
   'sollIsNotTaxBasis', 'paymentsMissing', 'turnOfYear', 'inclusiveLine24', 'inclusiveLine24Mixed', 'flatRateLine20',
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
-  'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated',
+  'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -105,6 +105,11 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //   `mixedUseClosedChanged` Die abgeschlossene Abrechnung sagt beim Eigenanteil etwas anderes als
 //                        die heutige Rechnung; es gilt der eingefrorene Stand.
 //   `mixedUseLabor35a`   Eine Position mit §35a-Lohnanteil hat einen privaten Teil.
+//   `mixedUseExcludedArea` Es gibt Einheiten außerhalb der Abrechnungseinheit; umlagefähige
+//                        Positionen sind deshalb nach der Fläche des ganzen Gebäudes aufgeteilt, und
+//                        der Hinweis beziffert den Abstand zum Eigenanteil der Abrechnung.
+//   `mixedUseClosedItemsChanged` Positionen nach dem Abschluss erfasst oder im Betrag geändert;
+//                        sie sind heute gerechnet und nicht aus dem eingefrorenen Stand.
 //   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
 //                        verbilligte Vermietung.
 
@@ -125,6 +130,8 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
     if (items.some((x) => x.allocation === 'direct-outside')) hints.push('mixedUseDirectOutside')
     if (report.selfUseChangedInYear) hints.push('mixedUseChangedInYear')
     if (report.closedSelfUseDiffers) hints.push('mixedUseClosedChanged')
+    if (report.closedItemsChanged > 0) hints.push('mixedUseClosedItemsChanged')
+    if (excludedAreaDifference(report).count > 0) hints.push('mixedUseExcludedArea')
     if (items.some((x) => x.labor35aCents > 0 && x.privateCents !== 0)) hints.push('mixedUseLabor35a')
     hints.push('mixedUseNotCalculated')
   }
@@ -198,6 +205,16 @@ export function keyNotAreaDifference(report: TaxReport): { count: number; differ
   return {
     count: differing.length,
     differenceCents: differing.reduce((a, x) => a + Math.abs(x.privateCents - (x.areaPrivateCents ?? x.privateCents)), 0),
+  }
+}
+
+// Positionen, die wegen Einheiten außerhalb der Abrechnungseinheit nach der Gebäudefläche statt
+// laut Abrechnung aufgeteilt sind, und der Abstand zusammen (wie oben als Summe der Beträge).
+export function excludedAreaDifference(report: TaxReport): { count: number; differenceCents: number } {
+  const differing = report.expenses.items.filter((x) => x.settlementPrivateCents !== null && x.settlementPrivateCents !== x.privateCents)
+  return {
+    count: differing.length,
+    differenceCents: differing.reduce((a, x) => a + Math.abs((x.settlementPrivateCents ?? x.privateCents) - x.privateCents), 0),
   }
 }
 

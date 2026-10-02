@@ -310,17 +310,33 @@ export function aiKeyOptions(stored: CostKey): CostKey[] {
 // ganz dem Vermieter zu und liest ihren Schlüssel nicht (calc.ts, `isNotAllocable`). Das Formular
 // zeigt deshalb keine Schlüsselauswahl, und die Liste keinen Schlüssel.
 export const showsKeyFields = (category: string): boolean => !isNotAllocable(category)
-export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUnitId'>, units: Pick<Unit, 'id' | 'name'>[] = []): string {
+export function keyListText(item: Pick<CostItem, 'category' | 'key' | 'directUnitId' | 'participantUnitIds'>, units: Pick<Unit, 'id' | 'name'>[] = []): string {
   if (!isNotAllocable(item.category)) return KEY_LABELS[item.key]
-  const unit = taxUnitOf(item) ? units.find((u) => u.id === item.directUnitId) : undefined
-  return unit ? `— trägt der Vermieter · betrifft ${unit.name}` : '— trägt der Vermieter'
+  const nameOf = (id: string) => units.find((u) => u.id === id)?.name ?? '?'
+  const direct = taxUnitOf(item)
+  const ids = direct ? [direct] : showsTaxUnitField(item.category) && item.key === 'area' && item.participantUnitIds ? item.participantUnitIds : []
+  return ids.length > 0 ? `— trägt der Vermieter · betrifft ${ids.map(nameOf).join(', ')}` : '— trägt der Vermieter'
 }
 
 // Nicht umlagefähig, aber für die Steuer einer Einheit zugeordnet (#163): Regel und Begründung
-// in shared/costItem.ts (`showsTaxUnitField`, `taxUnitOf`).
-// Die Auswahl „Betrifft (für die Steuer)“: eine Einheit oder leer für das ganze Gebäude.
-export function withTaxUnit(form: ItemForm, unitId: string): ItemForm {
-  return unitId ? { ...form, key: 'direct', directUnitId: unitId } : { ...form, key: 'area', directUnitId: '' }
+// in shared/costItem.ts (`showsTaxUnitField`, `taxUnitOf`, `taxPartsOf`).
+// Die Auswahl „Betrifft (für die Steuer)“: leer für das ganze Gebäude, `TAX_SCOPE_SOME` für
+// bestimmte Einheiten (Teilnehmer, etwa das Dach des Hinterhauses; Durchsicht) oder eine Einheit.
+// Angezeigt wird, was gespeichert wird: `taxScopeOf` liest den Wert der Auswahl aus denselben
+// Feldern, die `buildCostItemBody` schreibt.
+export const TAX_SCOPE_SOME = '__einige'
+export function taxScopeOf(form: Pick<ItemForm, 'key' | 'directUnitId' | 'participants'>): string {
+  if (form.key === 'direct' && form.directUnitId) return form.directUnitId
+  return form.key === 'area' && form.participants !== null ? TAX_SCOPE_SOME : ''
+}
+export function withTaxUnit(form: ItemForm, scope: string): ItemForm {
+  if (scope === TAX_SCOPE_SOME) return { ...form, key: 'area', directUnitId: '', participants: form.participants ?? [] }
+  return scope ? { ...form, key: 'direct', directUnitId: scope, participants: null } : { ...form, key: 'area', directUnitId: '', participants: null }
+}
+export function toggleTaxUnit(form: ItemForm, unitId: string, checked: boolean): ItemForm {
+  const current = form.participants ?? []
+  const next = checked ? [...current.filter((id) => id !== unitId), unitId] : current.filter((id) => id !== unitId)
+  return { ...form, key: 'area', directUnitId: '', participants: next }
 }
 
 export function costKeyOptions(unitMeterTypes: MeterType[], stored: CostKey): CostKey[] {
@@ -355,6 +371,12 @@ export function suggestedKey(category: string, units: Unit[], meters: Meter[]): 
 // Mit `ctx` (#141) gilt für eine neue Position der Schlüssel derselben Kostenart im Vorjahr.
 export function withCategory(form: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const suggest = !form.id || (isNotAllocable(form.category) && !isNotAllocable(category))
+  // Wer zu „Nicht umlagefähig“ wechselt, nimmt keine Zuordnung der vorigen Kostenart mit: Dort
+  // hieße sie „betrifft (für die Steuer)“, und ein alter Teilnehmer oder eine alte Direktzuordnung
+  // würde still zu einer Steuerangabe (#163, Durchsicht).
+  if (showsTaxUnitField(category) && !showsTaxUnitField(form.category)) {
+    return { ...form, category, key: 'area', directUnitId: '', participants: null }
+  }
   return suggest ? proposal({ ...form, category }, category, units, meters, ctx) : { ...form, category }
 }
 

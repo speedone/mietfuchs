@@ -97,6 +97,11 @@ export type CostItemBody = {
 export const showsTaxUnitField = (category: string): boolean => category === 'Nicht umlagefähig'
 export const taxUnitOf = (item: { category: string; key: CostKey; directUnitId?: string | null }): string | null =>
   showsTaxUnitField(item.category) && item.key === 'direct' && item.directUnitId ? item.directUnitId : null
+// Oder mehrere bestimmte Einheiten (etwa das Dach des Hinterhauses; Durchsicht), gespeichert als
+// Teilnehmer bei der Vorgabe „Wohnfläche“. Anders als bei umlagefähigen Kosten bleibt die Liste
+// auch dann stehen, wenn sie alle Einheiten nennt: Gewählt ist dann ausdrücklich „bestimmte“.
+export const taxPartsOf = (item: { category: string; key: CostKey; participants: string[] | null }): string[] | null =>
+  showsTaxUnitField(item.category) && item.key === 'area' && item.participants !== null ? item.participants : null
 
 export type BuildResult = { error: string } | { body: CostItemBody }
 
@@ -131,9 +136,11 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], year: num
   if (isNotAllocable(d.category)) {
     // Die eine Ausnahme ist die Einheit für die Steuer (#163, `taxUnitOf`).
     const taxUnit = taxUnitOf(d)
+    const taxParts = taxPartsOf(d)
+    if (taxParts !== null && taxParts.length === 0) return { error: 'Bitte mindestens eine Einheit wählen, die diese Position betrifft.' }
     return {
       body: {
-        ...common, key: taxUnit ? 'direct' : 'area', directUnitId: taxUnit, meterType: null, customShares: null, participantUnitIds: null,
+        ...common, key: taxUnit ? 'direct' : 'area', directUnitId: taxUnit, meterType: null, customShares: null, participantUnitIds: taxParts,
         externalBasis: null, tenancyAmounts: null, selfAmounts: null,
       },
     }

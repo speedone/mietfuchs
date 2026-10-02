@@ -1253,18 +1253,25 @@ die ganze fachliche Komplexität:
   Direkt zugeordnet gehört eine Position ganz zu ihrer Einheit; nicht umlagefähige Gebäudekosten
   gehen nach der Fläche der betroffenen Einheiten (Teilnehmer, sonst das ganze Objekt wie #68;
   BFH IX R 26/06); **umlagefähige übernehmen den Eigenanteil der Abrechnung** (`landlordParts`
-  mit `selfUse`), damit Abrechnung und Steuer dasselbe sagen. Das ist eine Auslegung: Bei Personen,
+  mit `selfUse`), damit Abrechnung und Steuer dasselbe sagen; **außer** es gibt unter den
+  betroffenen Einheiten eine außerhalb der Abrechnungseinheit: Dann gilt bei den Schlüsseln über
+  Wohnungen (Fläche, Einheiten, Personen, vereinbart, Gemeinschaft) die Gebäudefläche, denn der
+  Eigenanteil der Abrechnung behandelte die Fläche dieser Einheit wie privat
+  (`settlementPrivateCents` steht zum Vergleich daneben). Das ist eine Auslegung: Bei Personen,
   Einheiten, vereinbarten Anteilen und Gemeinschaft rechnet `areaPrivateCents` zum Vergleich nach
   Fläche, und ein Hinweis beziffert den Abstand. Hat die Abrechnung eine Position nicht verteilt
   (`noBasis`), gilt die Fläche. Bei abgeschlossener Abrechnung kommen die Eigenanteile je Position
-  aus dem eingefrorenen Stand (`selfUseByItem` in `frozenSettlementOf`); ein Archivstück von vor
+  aus dem eingefrorenen Stand (`selfUseByItem` in `frozenSettlementOf`), aber nur für Positionen,
+  die mit demselben Betrag darin stehen (`itemTotals`); nachgetragene oder geänderte rechnet sie
+  heute (`closedItemsChanged`). Ein Archivstück von vor
   #142 oder eines, dessen Teile nicht die Summe ergeben, verteilt die eingefrorene Summe im
   Verhältnis der heutigen. `abziehbar = Betrag − privat` je Position, Rundung spiegelbildlich
   (und ohne negative Null, die Invariante fand sie). **Der Überschuss rechnet mit
   `deductibleCents`**, `totalCents` bleibt die Bruttosumme. Ohne selbstgenutzte Einheit ist nichts
   privat, und keine Zahl ändert sich (Invariante in calc.test.ts). Die Abrechnung bleibt
   unberührt. „Nicht umlagefähig“ lässt sich im Formular für die Steuer einer Einheit zuordnen
-  („Betrifft (für die Steuer)“, gespeichert als `key: 'direct'`); die Abrechnung liest das nicht.
+  („Betrifft (für die Steuer)“, gespeichert als `key: 'direct'`) oder bestimmten Einheiten
+  (`participantUnitIds`); die Abrechnung liest das nicht.
   AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung und ein Nutzungswechsel im Jahr werden
   nicht gerechnet, nur genannt. Zeilennummern der Anlage V nennt die Seite nur, wo der Vordruck 2025
   sie belegt (11, 12, 33/34, 87/88); eine Anleitung 2025 war nicht auffindbar.

@@ -86,3 +86,15 @@ test('Entwurf einer KI-Zeile ohne Gedächtnis: nur der Schlüssel, Nebenfelder l
   const null0 = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 0, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, 2026)
   assert.match('error' in null0 ? null0.error : '', /0 €/)
 })
+
+test('Entwurf einer KI-Zeile „Nicht umlagefähig“: ein gemerkter Schlüssel wird keine Einheit für die Steuer (#163)', () => {
+  // Wechselt eine Zeile mit gemerktem Schlüssel (hier nur U1 und U2, oder direkt U3) die Kostenart
+  // zu „Nicht umlagefähig“, zeigt die Zeile „— trägt der Vermieter“ und keine Einheit. Gebucht
+  // werden muss dann auch keine: Sonst wäre die Position für die Steuer still nur diesen Einheiten
+  // zugeordnet, und ihr privater Teil verschöbe sich, ohne dass jemand es gewählt hätte.
+  for (const alloc of [ALLOC({ participantUnitIds: ['u1', 'u2'] }), ALLOC({ key: 'direct', directUnitId: 'u3' })]) {
+    const built = costItemBody(lineDraft(fieldsOf('Dachrinne', 'Nicht umlagefähig', 30000, alloc.key, alloc), { vendor: 'Dachdecker', invoiceFile: 'd.pdf' }, UNITS3), UNITS3, 2026)
+    if (!('body' in built)) return assert.fail(built.error)
+    assert.deepEqual([built.body.key, built.body.directUnitId, built.body.participantUnitIds], ['area', null, null])
+  }
+})

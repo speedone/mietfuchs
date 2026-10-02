@@ -6,7 +6,7 @@ import type {
   AssessmentLine, AssessmentLineState, AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Meter, PropertyKind,
   StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
-import { matchCategory } from '../../shared/categories.ts'
+import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
@@ -162,7 +162,9 @@ export function withoutBooked(fresh: readonly NewLine[], booked: readonly Stored
 // (`applyAllocation`). Einzelbeträge hat eine KI-Zeile nie.
 export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFile: string }, units: readonly Unit[]): CostItemDraft {
   const known = new Set(units.map((u) => u.id))
-  const a = fields.allocation && fields.allocation.key === fields.key ? fields.allocation : null
+  // Bei „Nicht umlagefähig“ gilt kein gemerkter Schlüssel: Dort hieße eine Wohnung „betrifft (für die
+  // Steuer)“ (#163), und die Zeile zeigt keine; gewählt wird das nur im Formular.
+  const a = fields.allocation && fields.allocation.key === fields.key && !isNotAllocable(fields.category) ? fields.allocation : null
   return {
     category: fields.category,
     description: fields.description,

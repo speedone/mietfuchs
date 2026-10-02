@@ -48,6 +48,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
   selfUseChangedInYear: false,
   closedSelfUseDiffers: false,
+  closedItemsChanged: 0,
   reserveContributionCents: 0,
   reserveSuspects: [],
   totalAreaM2: 200,
@@ -65,7 +66,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
 const POS = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
   costItemId: 'c1', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Dachreparatur',
   amountCents: 330000, privateCents: 240000, deductibleCents: 90000, labor35aCents: 0,
-  allocation: 'area', deductiblePercent: 27.27, areaPrivateCents: null,
+  allocation: 'area', deductiblePercent: 27.27, areaPrivateCents: null, settlementPrivateCents: null,
   steps: [{ label: 'Rechnungsbetrag', value: '3.300,00 €' }, { label: 'Rechnung', value: '3.300,00 € × 120/165 = 2.400 €' }],
   ...over,
 })
@@ -170,6 +171,11 @@ const LAGEN: Record<TaxHint, Lage> = {
   mixedUseClosedChanged: { report: MIXED([POS()], { closedSelfUseDiffers: true }), text: /gilt der eingefrorene Stand/ },
   mixedUseLabor35a: { report: MIXED([POS({ labor35aCents: 50000 })]), text: /in Ihrer eigenen Steuererklärung/ },
   mixedUseNotCalculated: { report: MIXED(), text: /Nicht gerechnet werden/ },
+  mixedUseExcludedArea: {
+    report: MIXED([POS({ allocation: 'area', category: 'Grundsteuer', privateCents: 100000, deductibleCents: 200000, amountCents: 300000, settlementPrivateCents: 150000 })], { excludedExists: true }),
+    text: /über das ganze Gebäude/,
+  },
+  mixedUseClosedItemsChanged: { report: MIXED([POS()], { closedItemsChanged: 1 }), text: /nach dem Abschluss der Abrechnung/ },
 }
 
 for (const hint of TAX_HINTS) {
@@ -316,4 +322,18 @@ test('Ohne eigene Wohnung: keine Spalte „privat“ und kein „davon privat“
 test('Der Unterschied zum Flächenmaßstab wird beziffert (#163)', async () => {
   await zeige(MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', description: 'Müll', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]))
   expect(screen.getByText(/Nach Fläche wären es/).textContent).toMatch(/250,00/)
+})
+
+test('Der Hinweis zum Personenschlüssel nennt den Leerstand als Ursache (#163, Durchsicht)', async () => {
+  await zeige(MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', description: 'Müll', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]))
+  const kasten = screen.getByText(/Nach Fläche wären es/)
+  expect(kasten.textContent).toMatch(/Leerstand/)
+  expect(kasten.textContent).toMatch(/Vermietungsabsicht/)
+})
+
+test('Einheiten außerhalb: der Kasten sagt, dass die Aufteilung über das ganze Gebäude rechnet (#163, Durchsicht)', async () => {
+  await zeige(MIXED([POS()], { excludedExists: true }))
+  const kasten = screen.getByText(/Wohnungen außerhalb der Abrechnungseinheit/i).closest('div')
+  expect(kasten?.textContent).toMatch(/ganzen Gebäudes/)
+  expect(kasten?.textContent).not.toMatch(/zählen sie bei der Aufteilung als\s+vermietet/)
 })

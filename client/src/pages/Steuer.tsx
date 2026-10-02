@@ -6,7 +6,7 @@ import { useProperty, withProperty, useSwitchYear } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, DEFAULT_BASIS, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
 
@@ -54,6 +54,7 @@ export default function Steuer({ settings }: Props) {
   // Teilweise Eigennutzung (#163): Spalten privat und abziehbar nur, wenn es etwas Privates gibt.
   const split = data ? showsSplit(data) : false
   const keyDiff = data ? keyNotAreaDifference(data) : null
+  const excludedDiff = data ? excludedAreaDifference(data) : null
 
   return (
     <>
@@ -398,12 +399,32 @@ export default function Steuer({ settings }: Props) {
                 Bei {keyDiff.count === 1 ? 'einer Position' : `${keyDiff.count} Positionen`} verteilt die
                 Nebenkostenabrechnung nach Personen, Wohneinheiten oder vereinbarten Anteilen, und der private Teil
                 folgt diesem Schlüssel. Nach Fläche wären es zusammen <strong>{fmtEuro(keyDiff.differenceCents)}</strong> anders.
+                Eine häufige Ursache ist Leerstand: Beim Personenschlüssel trägt eine leere Wohnung keine Personen,
+                ihr Anteil fällt dann auf die Personen der übrigen und damit auch auf Ihre. Kosten einer leerstehenden
+                Wohnung bleiben aber abziehbar, solange Sie sie vermieten wollen (Vermietungsabsicht).
                 Für Kosten, die sich nicht direkt zuordnen lassen, nennt der Bundesfinanzhof das Verhältnis der Wohn-
                 und Nutzflächen als Regelmaßstab; ob ein Umlageschlüssel als Maßstab anerkannt wird, ist nicht
                 entschieden. Mietfuchs übernimmt den Eigenanteil der Abrechnung, damit Abrechnung und Steuer dasselbe
                 sagen; den Vergleich nach Fläche zeigt der Rechenweg der Position. Bitte klären Sie den Maßstab mit
                 Ihrem Steuerberater.
               </div>
+            )}
+            {hints.includes('mixedUseExcludedArea') && excludedDiff && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                Zum Gebäude gehören Einheiten außerhalb der Abrechnungseinheit. Die Nebenkostenabrechnung verteilt
+                nur über die Abrechnungseinheit; ihr Eigenanteil behandelte die Fläche dieser Einheiten wie privat.
+                Für die Steuer teilt diese Übersicht deshalb {excludedDiff.count === 1 ? 'eine Position' : `${excludedDiff.count} Positionen`} nach
+                der Fläche über das ganze Gebäude auf; gegenüber der Abrechnung sind das
+                zusammen <strong>{fmtEuro(excludedDiff.differenceCents)}</strong> weniger privat. Den Eigenanteil laut
+                Abrechnung zeigt der Rechenweg der Position.
+              </div>
+            )}
+            {hints.includes('mixedUseClosedItemsChanged') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                {data.closedItemsChanged === 1 ? 'Eine Position wurde' : `${data.closedItemsChanged} Positionen wurden`} nach dem Abschluss der Abrechnung {year} erfasst
+                oder geändert. Sie {data.closedItemsChanged === 1 ? 'steht' : 'stehen'} nicht so auf dem Papier beim Mieter; ihren privaten Teil rechnet die
+                Übersicht deshalb mit den heutigen Daten.
+              </p>
             )}
             {hints.includes('mixedUseAreaMissing') && (
               <div className="notice" style={{ marginTop: 10 }}>
@@ -465,8 +486,10 @@ export default function Steuer({ settings }: Props) {
                 nur, wenn Sie das Mietverhältnis in Mietfuchs erfasst haben.
                 {data.selfOccupiedExists && (
                   <>
-                    {' '}Solange diese Wohnungen nicht eingeordnet sind, zählen sie bei der Aufteilung als
-                    vermietet; ist eine davon in Wahrheit privat, sind die abziehbaren Werbungskosten zu hoch.
+                    {' '}Bei der Aufteilung der Werbungskosten zählen sie mit ihrer Fläche zum vermieteten
+                    Teil: Kosten des Gebäudes teilt diese Übersicht nach dem Verhältnis der Flächen des ganzen Gebäudes
+                    auf, auch die umlagefähigen, die die Abrechnung nur über die Abrechnungseinheit verteilt. Ist eine
+                    dieser Wohnungen in Wahrheit privat, sind die abziehbaren Werbungskosten zu hoch.
                   </>
                 )}
               </div>

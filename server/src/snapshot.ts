@@ -112,6 +112,11 @@ export type SnapshotClosedSettlement = {
   // Schnappschüsse, die eine Prüfung von Hand baut, ihn nicht brauchen; fehlt er, gilt dasselbe
   // wie bei `null`.
   selfUseByItem?: Record<string, FrozenItemSelfUse> | null
+  // Die Positionen des eingefrorenen Stands mit ihrem Betrag, aus den Zeilen der Mieter und des
+  // Vermieters (#163, Durchsicht). Eine Position, die hier fehlt oder deren Betrag sich seither
+  // geändert hat, stand so nicht auf dem Papier; die Steuerübersicht rechnet sie heute. `null`:
+  // Das Archivstück lässt sich nicht lesen; fehlt das Feld, gilt dasselbe.
+  itemTotals?: Record<string, number> | null
 }
 export type FrozenItemSelfUse = { selfCents: number, noBasis: boolean }
 
@@ -141,6 +146,30 @@ function selfUseOf(landlord: unknown): Record<string, FrozenItemSelfUse> | null 
   return result
 }
 
+// Die Beträge der Positionen, die im eingefrorenen Stand vorkommen: in einer Zeile eines Mieters
+// oder des Vermieters. Eine Position, die ganz bei den Mietern lag, hat keine Zeile des Vermieters
+// und gehört trotzdem dazu.
+function itemTotalsOf(settlement: object): Record<string, number> | null {
+  const rowsOf = (holder: unknown): unknown[] | null => {
+    if (holder === null || typeof holder !== 'object') return null
+    const rows: unknown = Reflect.get(holder, 'rows')
+    return Array.isArray(rows) ? rows : null
+  }
+  const statements: unknown = Reflect.get(settlement, 'statements')
+  const landlordRows = rowsOf(Reflect.get(settlement, 'landlord'))
+  if (!Array.isArray(statements) || landlordRows === null) return null
+  const rows = [...statements.flatMap((st) => rowsOf(st) ?? []), ...landlordRows]
+  const result: Record<string, number> = {}
+  for (const row of rows) {
+    if (row === null || typeof row !== 'object') return null
+    const id: unknown = Reflect.get(row, 'costItemId')
+    const total: unknown = Reflect.get(row, 'totalCents')
+    if (typeof id !== 'string' || typeof total !== 'number') return null
+    result[id] = total
+  }
+  return result
+}
+
 // **Der eine Auszug aus einem eingefrorenen Berechnungsstand**, und zwar für beide Wege: die
 // JSON-Datei unten und die Datenbank (`readClosedSettlements` in db/read.ts). Er nimmt `unknown`
 // und nicht `Settlement`, denn ein Archivstück hat eine frühere Version geschrieben, und ein Typ
@@ -156,8 +185,8 @@ function selfUseOf(landlord: unknown): Record<string, FrozenItemSelfUse> | null 
 // Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur". Das ist die richtige Antwort und keine
 // Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
 // Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null } {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null }
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
@@ -165,6 +194,7 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
     ...leer,
     selfUsedShareCents: typeof eigenanteil === 'number' ? eigenanteil : 0,
     selfUseByItem: selfUseOf(Reflect.get(settlement, 'landlord')),
+    itemTotals: itemTotalsOf(settlement),
   }
   // Ergeben die Eigenanteile je Position nicht die Summe des Papiers, ist das Archivstück in sich
   // nicht stimmig (etwa von Hand gebaut), und dann gilt nur die Summe; die Steuerübersicht verteilt
@@ -342,6 +372,7 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
           prepaymentCents: closed.prepaymentCents,
           prepaymentOverridden: closed.prepaymentOverridden,
           selfUseByItem: closed.selfUseByItem ?? null,
+          itemTotals: closed.itemTotals ?? null,
         }
       : null,
   }

@@ -310,19 +310,50 @@ const closedSource = () => {
 
 test('Abgeschlossene Abrechnung: privat je Position aus dem eingefrorenen Stand', () => {
   const { src, frozen } = closedSource()
+  // Nach dem Abschluss geändert: Die eigene Wohnung ist größer erfasst, die Beträge sind dieselben.
   const later = {
     ...src,
-    // Nach dem Abschluss geändert: Die Grundsteuer ist höher erfasst.
-    costItems: [item('gs', { amountCents: 200000 }), item('vers', { category: 'Sach- und Haftpflichtversicherung', amountCents: 50000 })],
+    units: [own('eg', 120), rented('og', 120)],
     closedSettlements: [{ year: 2025, ...frozenSettlementOf(frozen) }],
   }
   const r = tax(later)
-  assert.equal(split(r, 'gs').privat, 40000, 'der eingefrorene Eigenanteil, nicht 80.000')
-  assert.equal(split(r, 'gs').abziehbar, 160000)
+  assert.equal(split(r, 'gs').privat, 40000, 'der eingefrorene Eigenanteil, nicht 50.000')
+  assert.equal(split(r, 'gs').abziehbar, 60000)
   assert.equal(split(r, 'vers').privat, 20000)
   assert.equal(r.closedSelfUseDiffers, true)
+  assert.equal(r.closedItemsChanged, 0)
   // Unverändert: kein Hinweis.
   assert.equal(tax({ ...src, closedSettlements: [{ year: 2025, ...frozenSettlementOf(frozen) }] }).closedSelfUseDiffers, false)
+})
+
+// Die Einliegerwohnung (120 m² eigen, 45 m² vermietet), abgeschlossen mit der Grundsteuer allein.
+const einlieger = (costItems: SnapshotCostItem[]) => source({
+  units: [own('eigen', 120), rented('elw', 45)],
+  tenancies: [tenancy('t', 'elw')],
+  costItems,
+})
+const closedWith = (base: SnapshotSource, later: SnapshotCostItem[]): SnapshotSource => ({
+  ...base,
+  costItems: later,
+  closedSettlements: [{ year: 2025, ...frozenSettlementOf(computeSettlement(snapshotOf(base, 2025))) }],
+})
+
+test('Abgeschlossene Abrechnung: eine danach erfasste Position wird heute gerechnet, nicht als 0 privat', () => {
+  // Gebäudeversicherung 1.650 € nachgetragen: 1.650 € × 120/165 = 1.200 € privat.
+  const base = einlieger([item('gs', { amountCents: 60000 })])
+  const r = tax(closedWith(base, [item('gs', { amountCents: 60000 }), item('vers', { category: 'Sach- und Haftpflichtversicherung', amountCents: 165000 })]))
+  assert.equal(split(r, 'gs').privat, 43636)
+  assert.deepEqual([split(r, 'vers').privat, split(r, 'vers').abziehbar], [120000, 45000])
+  assert.equal(r.closedItemsChanged, 1)
+})
+
+test('Abgeschlossene Abrechnung: ein danach geänderter Betrag wird heute gerechnet, nie negativ abziehbar', () => {
+  // Grundsteuer beim Abschluss 600 € (436,36 € privat), danach auf 100 € berichtigt:
+  // heute 100 € × 120/165 = 72,73 € privat, 27,27 € abziehbar.
+  const base = einlieger([item('gs', { amountCents: 60000 })])
+  const r = tax(closedWith(base, [item('gs', { amountCents: 10000 })]))
+  assert.deepEqual([split(r, 'gs').privat, split(r, 'gs').abziehbar], [7273, 2727])
+  assert.equal(r.closedItemsChanged, 1)
 })
 
 test('Abgeschlossene Abrechnung von vor #142: die eingefrorene Summe wird auf die Positionen verteilt', () => {
@@ -338,6 +369,45 @@ test('Abgeschlossene Abrechnung von vor #142: die eingefrorene Summe wird auf di
 })
 
 // ---------- Der Rechenweg ----------
+
+// ---------- Einheiten außerhalb der Abrechnungseinheit ----------
+
+test('Einheit außerhalb der Abrechnungseinheit: umlagefähige Kosten nach der Fläche des ganzen Gebäudes', () => {
+  // 100 m² eigen, 100 m² vermietet, 100 m² Gewerbe außerhalb. Grundsteuer 3.000 € nach Fläche:
+  // Die Abrechnung verteilt über 200 m² und weist 1.500 € Eigenanteil aus; privat sind nach dem
+  // Gebäude 3.000 € × 100/300 = 1.000 €, sonst zählte das Gewerbe wie privat.
+  const r = tax(source({
+    units: [own('eigen', 100), rented('og', 100), { id: 'laden', name: 'Laden', areaM2: 100, participates: false, selfUsed: false }],
+    tenancies: [tenancy('t', 'og')],
+    costItems: [item('gs', { amountCents: 300000 })],
+  }))
+  assert.deepEqual(split(r, 'gs'), { privat: 100000, abziehbar: 200000, zuordnung: 'area', prozent: 66.67 })
+  assert.equal(itemOf(r, 'gs').settlementPrivateCents, 150000, 'zum Vergleich der Eigenanteil der Abrechnung')
+  assert.equal(r.selfUsedShareCents, 150000, 'die Abrechnung selbst bleibt unberührt')
+})
+
+test('Einheit außerhalb: Verbrauch und Einzelbeträge bleiben bei der Abrechnung, sie ordnen eindeutig zu', () => {
+  const r = tax(source({
+    units: [own('eigen', 100), rented('og', 100), { id: 'laden', name: 'Laden', areaM2: 100, participates: false, selfUsed: false }],
+    tenancies: [tenancy('t', 'og')],
+    meters: [{ id: 'me', unitId: 'eigen', type: 'kaltwasser' }, { id: 'mo', unitId: 'og', type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'me', date: '2024-12-31', value: 0 }, { meterId: 'me', date: '2025-12-31', value: 30 },
+      { meterId: 'mo', date: '2024-12-31', value: 0 }, { meterId: 'mo', date: '2025-12-31', value: 70 },
+    ],
+    costItems: [item('wasser', { category: 'Wasser/Abwasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' })],
+  }))
+  assert.deepEqual([split(r, 'wasser').privat, split(r, 'wasser').zuordnung], [30000, 'settlement'])
+})
+
+test('Nicht umlagefähig nur am Hinterhaus: Vorderhaus eigen, Dach des vermieteten Hinterhauses ganz abziehbar', () => {
+  const r = tax(source({
+    units: [own('vorderhaus', 120), rented('hinterhaus', 80)],
+    tenancies: [tenancy('t', 'hinterhaus')],
+    costItems: [item('dach', { category: 'Nicht umlagefähig', amountCents: 300000, participantUnitIds: ['hinterhaus'] })],
+  }))
+  assert.deepEqual([split(r, 'dach').privat, split(r, 'dach').abziehbar], [0, 300000])
+})
 
 test('Rechenweg: laut Abrechnung nennt Schlüssel und Eigenanteil; direkt nennt die Wohnung', () => {
   const r = tax(source({
