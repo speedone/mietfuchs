@@ -68,6 +68,12 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
       n({ code: 'basis.unit-zero', level: 'hint' }), n({ code: 'basis.tenancy-zero', level: 'hint' }),
     ] })).toBe(false)
   })
+  test('Leerstand beim Personenschlüssel und leere Einheit ohne Fläche (#177): nein, beides ist eine Auskunft', () => {
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [
+      n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'basis.vacancy-no-area', level: 'hint' }),
+    ] })).toBe(false)
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
+  })
   test('eine vergessene Wohnfläche (bewohnte Wohnung mit 0 m²): ja', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe(true)
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.tenancy-no-persons', level: 'warning' })] })).toBe(true)
