@@ -345,7 +345,8 @@ test('Invariante (#163): Steuer mit Teilnehmern — privat + abziehbar = Betrag,
       }
     }
     const ausAbrechnung = r.expenses.items.filter((x) => x.category !== 'Nicht umlagefähig' && x.allocation !== 'area' && x.allocation !== 'unsplittable')
-    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0), s.selfUsedShareCents, fall)
+    const verglichen = r.expenses.items.reduce((a, x) => a + (x.settlementPrivateCents ?? 0), 0)
+    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0) + verglichen, s.selfUsedShareCents, fall)
   }
 })
 

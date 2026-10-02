@@ -44,6 +44,7 @@ export type StoredClosedSettlement = {
   prepaymentOverridden: boolean
   // Eigenanteile je Position (#163), ebenfalls aus `frozenSettlementOf`
   selfUseByItem: Record<string, FrozenItemSelfUse> | null
+  itemTotals: Record<string, number> | null
   settlement: unknown
 }
 

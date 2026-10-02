@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, DEFAULT_BASIS, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
 
 // Ein Bericht, in dem nur das steht, was die Hinweise lesen. Die übrigen Felder füllt der Typ
 // ab, damit der Übersetzer mitprüft, dass die Hinweise wirklich einen TaxReport lesen.
@@ -22,6 +22,7 @@ const report = (income: Partial<TaxReport['income']>, rest: Partial<TaxReport> =
   expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
   selfUseChangedInYear: false,
   closedSelfUseDiffers: false,
+  closedItemsChanged: 0,
   reserveContributionCents: 0,
   reserveSuspects: [],
   totalAreaM2: 100,
@@ -171,7 +172,7 @@ describe('Teilweise Eigennutzung (#163)', () => {
   const pos = (over: Partial<TaxExpenseItem>): TaxExpenseItem => ({
     costItemId: 'c', category: 'Grundsteuer', group: 'Grundsteuer & öffentliche Abgaben', description: 'Grundsteuer',
     amountCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0,
-    allocation: 'settlement', deductiblePercent: 100, areaPrivateCents: null, steps: [], ...over,
+    allocation: 'settlement', deductiblePercent: 100, areaPrivateCents: null, settlementPrivateCents: null, steps: [], ...over,
   })
   const mixed = (items: TaxExpenseItem[], rest: Partial<TaxReport> = {}) => report({}, {
     selfOccupiedExists: true, selfUsedAreaM2: 50,
@@ -226,5 +227,17 @@ describe('Teilweise Eigennutzung (#163)', () => {
     expect(allocationLabel(pos({ allocation: 'direct-rented' }))).toBe('direkt, vermietet')
     expect(allocationLabel(pos({ allocation: 'direct-outside' }))).toBe('direkt, außerhalb der Abrechnungseinheit')
     expect(allocationLabel(pos({ allocation: 'unsplittable' }))).toBe('nicht aufteilbar, Fläche fehlt')
+  })
+
+  it('beziffert bei Einheiten außerhalb den Abstand zur Abrechnung (Durchsicht)', () => {
+    const r = mixed([pos({ allocation: 'area', privateCents: 100000, deductibleCents: 200000, amountCents: 300000, settlementPrivateCents: 150000 })])
+    expect(taxHints(r, 'ist')).toContain('mixedUseExcludedArea')
+    expect(excludedAreaDifference(r)).toEqual({ count: 1, differenceCents: 50000 })
+    expect(taxHints(mixed([pos({})]), 'ist')).not.toContain('mixedUseExcludedArea')
+  })
+
+  it('meldet Positionen, die nach dem Abschluss erfasst oder geändert wurden (Durchsicht)', () => {
+    expect(taxHints(mixed([], { closedItemsChanged: 2 }), 'ist')).toContain('mixedUseClosedItemsChanged')
+    expect(taxHints(mixed([]), 'ist')).not.toContain('mixedUseClosedItemsChanged')
   })
 })
