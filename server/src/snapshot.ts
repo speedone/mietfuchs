@@ -73,6 +73,10 @@ export type SnapshotCostItem = Pick<
   | 'tenancyAmounts'
   | 'selfAmounts'
   | 'labor35aCents'
+  // Nur für den Hinweis auf eine mögliche Doppelung (shared/duplicates.ts); verteilt wird nach
+  // keinem der beiden.
+  | 'vendor'
+  | 'invoiceFile'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp. Name, Zählernummer und

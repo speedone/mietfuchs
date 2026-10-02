@@ -44,8 +44,10 @@ test('Garage mit 0 m² neben einer Wohnung: zählt beim Flächenschlüssel nicht
   assert.equal(garage?.totalShareCents, 0)
   const wohnung = s.statements.find((x) => x.tenancyId === 'tw')
   assert.equal(wohnung?.totalShareCents, 200000)
-  // Die 0 ist eine Angabe: je ein Hinweis, keine Warnung (Durchsicht zu #135).
-  assert.deepEqual(s.notices.map((n) => [n.code, n.level]), [['basis.unit-zero', 'hint'], ['basis.tenancy-zero', 'hint']])
+  // Die 0 ist eine Angabe: je ein Hinweis, keine Warnung (Durchsicht zu #135). Die beiden
+  // Positionen sind hier nur Platzhalter derselben Kostenart ohne Beleg; dass die Abrechnung das als
+  // mögliche Doppelung nennt, prüft calc-doppelung.test.ts.
+  assert.deepEqual(s.notices.filter((n) => n.code !== 'cost.possible-duplicate').map((n) => [n.code, n.level]), [['basis.unit-zero', 'hint'], ['basis.tenancy-zero', 'hint']])
 })
 
 test('Vermietete Wohnung mit 2 Personen und 0 m²: die Fläche ist vergessen, das bleibt eine Warnung', () => {

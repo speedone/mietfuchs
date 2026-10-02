@@ -1301,7 +1301,9 @@ test('Leerstand im ganzen Haus ist keine fehlende Verteilbasis: keine Meldung', 
   }
   const s = computeSettlement(snapshotFromDb(db, 2025))
   assert.equal(s.landlord.totalCents, 270000)
-  assert.deepEqual(s.warnings, [])
+  // Die drei Positionen sind Platzhalter derselben Kostenart ohne Beleg; den Hinweis auf eine
+  // mögliche Doppelung prüft calc-doppelung.test.ts, hier geht es um die Verteilbasis.
+  assert.deepEqual(s.notices.filter((n) => n.code !== 'cost.possible-duplicate').map((n) => n.text), [])
 })
 
 test('Steuer (Anlage V): Einnahmen aus Mietkonto, Werbungskosten nach Gruppen, Überschuss', () => {
