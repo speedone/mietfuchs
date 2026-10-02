@@ -5,7 +5,7 @@ import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, attachChoices, buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -186,11 +186,13 @@ type Props = {
   renderThumb?: typeof renderThumbnail
   // Belege aus dem Posteingang per KI auswerten: übergibt sie der Schnellerfassung (App.tsx)
   onEvaluate?: (uploads: UploadInfo[]) => void
+  // Eine Position im Formular der Seite Kosten öffnen, etwa um Betrag und §35a dort zu pflegen
+  onOpenItem?: (item: CostItem) => void
   // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
   makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }
 
-export default function Belege({ renderThumb = renderThumbnail, onEvaluate, makeTenantFolder = downloadTenantFolder }: Props) {
+export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { year: currentYear } = useYear()
@@ -200,7 +202,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
   const [error, setError] = useState('')
   // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
   // übernommene Position trägt einen geschätzten Betrag, der sonst still stehen bliebe.
-  const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string } | null>(null)
+  const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string; form?: boolean } | null>(null)
   // Voreinstellung: das gewählte Objekt und das Abrechnungsjahr (#170). Umschalten wirkt nur
   // hier; das Objekt der übrigen Seiten bleibt, wie es ist.
   const [filterProperty, setFilterProperty] = useState<string>(property?.id ?? 'all')
@@ -269,7 +271,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
   async function saveCheckedAmount() {
     if (!amountCheck) return
     const built = amountCheckBody(amountCheck.amount, amountCheck.item)
-    if ('error' in built) { setAmountCheck({ ...amountCheck, problem: built.error }); return }
+    if ('error' in built) { setAmountCheck({ ...amountCheck, problem: built.error, form: built.form }); return }
     try {
       await api(`/api/costItems/${encodeURIComponent(amountCheck.item.id)}`, { method: 'PUT', body: JSON.stringify(built.body) })
       setAmountCheck(null)
@@ -449,6 +451,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
+          {amountCheckMode(amountCheck.item) === 'form' ? (
+            <div className="row" style={{ marginTop: 8, alignItems: 'center', gap: 8 }}>
+              <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
+              {onOpenItem && <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button>}
+              <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Schließen</button>
+            </div>
+          ) : (
           <div className="row" style={{ marginTop: 8, alignItems: 'flex-end', gap: 8 }}>
             <label className="field">
               Betrag laut Beleg
@@ -458,7 +467,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
             <button className="btn small" onClick={() => void saveCheckedAmount()} disabled={!amountCheck.amount.trim()}>Betrag speichern</button>
             <button className="btn small ghost" onClick={() => setAmountCheck(null)}>Stimmt so</button>
           </div>
-          {amountCheck.problem && <div className="error" style={{ marginTop: 6 }}>{amountCheck.problem}</div>}
+          )}
+          {amountCheck.problem && (
+            <div className="error" style={{ marginTop: 6 }}>
+              {amountCheck.problem}
+              {amountCheck.form && onOpenItem && <> <button className="btn small" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Position öffnen</button></>}
+            </div>
+          )}
         </div>
       )}
 

@@ -254,3 +254,43 @@ test('„nachreichen“: auch nach dem Hochladen an der Position „Betrag prüf
   await waitFor(() => expect(screen.queryByRole('status', { name: 'Betrag prüfen' })).toBeNull())
   expect(sent.filter((x) => x.method === 'PUT' && (x.body as Record<string, unknown>).amountCents !== undefined)).toEqual([])
 })
+
+// Zweite Durchsicht: Bei Einzelbeträgen und „laut Gemeinschaftsabrechnung“ hängt der Betrag an
+// weiteren Angaben; dort kein Betragsfeld, sondern das Formular. Ebenso, wenn der Lohnanteil über
+// dem neuen Betrag läge.
+const renderWithOpen = (onOpenItem: (c: CostItem) => void) =>
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+
+test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein Feld, „Position öffnen“', async () => {
+  extraItems = [{ id: 'hg', propertyId: 'p1', year: YEAR, category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }]
+  const onOpenItem = vi.fn()
+  renderWithOpen(onOpenItem)
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'hg' } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  expect(within(check).queryByLabelText('Betrag laut Beleg')).toBeNull()
+  expect(check.textContent).toMatch(/Bei dieser Position prüfen Sie den Betrag im Formular/)
+  fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'hg' }))
+})
+
+test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins Formular', async () => {
+  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
+  const onOpenItem = vi.fn()
+  renderWithOpen(onOpenItem)
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gp' } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  fireEvent.change(within(check).getByLabelText('Betrag laut Beleg'), { target: { value: '500,00' } })
+  fireEvent.click(within(check).getByRole('button', { name: 'Betrag speichern' }))
+  await within(check).findByText(/§35a-Lohnanteil der Position .* im Formular/)
+  expect(sent.filter((x) => (x.body as Record<string, unknown>).amountCents !== undefined)).toEqual([])
+  fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'gp' }))
+})
