@@ -34,9 +34,20 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Ebenso reine Auskünfte zum Leerstand beim Personenschlüssel (#177): `basis.vacancy-persons`
 // erklärt, warum ein Anteil beim Vermieter bleibt, und erschiene sonst in jedem Jahr mit Leerstand;
 // `basis.vacancy-no-area` ist die leere Garage, also wieder eine bewusst eingetragene 0.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area'])
+// Und die Erinnerung an fernablesbare Geräte ab 2027 (#110): Welche Geräte eingebaut sind, erfasst
+// Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
+// mit Heizabrechnung dauerhaft auf Gelb.
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
+}
+
+// Der Text der Cockpit-Zeile: nur, was etwas verlangt. Eine reine Auskunft steht vollständig auf
+// der Seite Abrechnung; im Cockpit wäre der Hinweis zur Fernablesbarkeit sonst ein Block von gut
+// 900 Zeichen in einer grünen Zeile.
+export function attentionDetail(settlement: Pick<Settlement, 'notices' | 'warnings'>): string {
+  const texts = noticesOf(settlement).filter((n) => !INFORMATIONAL.has(n.code)).map((n) => n.text)
+  return texts.length > 0 ? texts.join(' · ') : 'Nur Auskünfte, nichts zu beheben. Sie stehen auf der Seite Abrechnung.'
 }
 
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt
