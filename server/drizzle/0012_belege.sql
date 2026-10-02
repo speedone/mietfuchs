@@ -8,7 +8,9 @@ CREATE TABLE `uploads` (
 	`property_id` text,
 	`year` integer,
 	`invoice_date` text,
+	`kind` text DEFAULT 'receipt' NOT NULL,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "uploads_size_not_negative" CHECK("size_bytes" >= 0),
+	CONSTRAINT "uploads_kind_known" CHECK("kind" IN ('receipt', 'meterPhoto')),
 	CONSTRAINT "uploads_year_positive" CHECK("year" > 0)
 );

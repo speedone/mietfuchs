@@ -4,7 +4,7 @@ import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
-import { buildTenantFolderPdf, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
+import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
@@ -52,12 +52,19 @@ async function jpegBytes(src: string): Promise<Uint8Array> {
 
 // Die Mappe erzeugen und herunterladen. Alles im Browser: Die Belege liegen ohnehin hier, und
 // der Server braucht dafür kein Werkzeug, das in der Programmdatei fehlen könnte.
-async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): Promise<void> {
+// Gibt die Namen der Belege zurück, die nicht hineinkamen.
+async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): Promise<string[]> {
+  const unreadable: string[] = []
   const bytes = await buildTenantFolderPdf(plan, {
     title: meta.title,
     subtitle: meta.subtitle,
-    load: async (u) => new Uint8Array(await (await fetch(`/uploads/${encodeURIComponent(u.file)}`)).arrayBuffer()),
+    load: async (u) => {
+      const res = await fetch(`/uploads/${encodeURIComponent(u.file)}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return new Uint8Array(await res.arrayBuffer())
+    },
     rasterize: async (u) => Promise.all((await renderInvoicePages(u.file)).map(jpegBytes)),
+    onUnreadable: (u) => unreadable.push(receiptName(u)),
   })
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }))
   const a = document.createElement('a')
@@ -67,6 +74,7 @@ async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): P
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10000)
+  return unreadable
 }
 
 const fileLabel = (s: string) => s.normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
@@ -77,7 +85,7 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
   year: number
   uploads: UploadInfo[]
   costItems: CostItem[]
-  make: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<void>
+  make: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }) {
   const [open, setOpen] = useState(false)
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -100,19 +108,22 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
     [settlement, costItems, uploads, includeIndividual, propertyId, year],
   )
   const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
-  const individual = plan?.entries.filter((e) => e.item.key === 'amounts' && e.upload).length ?? 0
+  const individual = plan?.entries.filter((e) => isIndividualAmounts(e.item) && e.upload).length ?? 0
 
   async function create() {
     if (!plan) return
     setBusy(true)
     setProblem('')
     try {
-      await make(plan, {
+      const unreadable = await make(plan, {
         title: `Belegmappe ${year}`,
         subtitle: propertyName,
         fileName: `belegmappe-${year}-${fileLabel(propertyName)}.pdf`,
       })
       toast('Die Belegmappe ist erstellt.')
+      if (unreadable && unreadable.length > 0) {
+        setProblem(`Nicht übernehmbar, bitte gesondert beilegen: ${unreadable.join(', ')}. Das Deckblatt nennt sie.`)
+      }
     } catch (e) {
       setProblem(`Die Mappe ließ sich nicht erstellen: ${errorText(e)}`)
     } finally {
@@ -147,16 +158,17 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
               <label className="field checkline">
                 <span>
                   <input type="checkbox" checked={includeIndividual} onChange={(e) => setIncludeIndividual(e.target.checked)} />{' '}
-                  Belege mit Einzelbeträgen je Mieter beilegen ({individual})
+                  Belege beilegen, die nur einzelne Mieter betreffen ({individual})
                 </span>
               </label>
             )}
             {individual > 0 && (
               <p className="notice">
-                Belege zu „Einzelbeträge je Mieter“, etwa die Abrechnung eines Messdienstes, nennen meist die Beträge und Verbrauchswerte
-                aller Wohnungen, oft mit Namen. Ein Mieter darf auch sie einsehen, ohne ein besonderes Interesse darzulegen
-                (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Weil sie Daten anderer Mieter enthalten, legen Sie sie am besten nur dem bei,
-                der danach fragt, und prüfen vorher, ob Namen darauf stehen müssen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
+                Belege zu „Einzelbeträge je Mieter“ (etwa die Abrechnung eines Messdienstes), zu einer Direktzuordnung oder zu einer
+                Position mit Teilnehmern betreffen nur einzelne Mieter und nennen oft deren Namen und Verbrauchswerte. Ein Mieter darf
+                auch sie einsehen, ohne ein besonderes Interesse darzulegen (BGH, Urteil vom 07.02.2018, VIII ZR 189/17). Weil die Mappe
+                an alle Mieter des Objekts geht, legen Sie sie am besten nur dem bei, der danach fragt, und prüfen vorher, ob Namen darauf
+                stehen müssen. Ohne Haken stehen diese Positionen im Deckblatt mit „auf Anfrage“.
               </p>
             )}
             <button className="btn" onClick={() => void create()} disabled={busy || plan.entries.length === 0}>
@@ -175,7 +187,7 @@ type Props = {
   // Belege aus dem Posteingang per KI auswerten: übergibt sie der Schnellerfassung (App.tsx)
   onEvaluate?: (uploads: UploadInfo[]) => void
   // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
-  makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<void>
+  makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }
 
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, makeTenantFolder = downloadTenantFolder }: Props) {
@@ -220,6 +232,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
   const folder = useMemo(() => buildFolder(uploads, costItems, filter, query), [uploads, costItems, filter, query])
   const allCards = useMemo(() => receiptCards(uploads, costItems), [uploads, costItems])
   const hints = useMemo(() => duplicateHints(allCards), [allCards])
+  const meterPhotos = useMemo(() => allCards.filter((c) => c.upload.kind === 'meterPhoto' && c.items.length === 0), [allCards])
   // Die Suche gilt auch im Posteingang
   const inbox = useMemo(() => inboxOf(allCards.filter((c) => matchesQuery(c, query)), filter), [allCards, filter, query])
   const [dragOver, setDragOver] = useState(false)
@@ -352,7 +365,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
             {card.vendor && <>{receiptName(upload)} · </>}hochgeladen {fmtDay(upload.uploadedAt)} · {fmtSize(upload.size)}
             {showProperty && card.propertyIds.length > 0 && <> · <span className="badge gray">{card.propertyIds.map(propertyName).join(', ')}</span></>}
           </div>
-          {card.items.length > 0 ? (
+          {upload.kind === 'meterPhoto' ? (
+            <span className="badge gray">Zählerfoto aus der Schnellerfassung</span>
+          ) : card.items.length > 0 ? (
             <ul className="receipt-items">
               {card.items.map((c) => (
                 <li key={c.id}>→ {c.description}{filter.year === c.year ? '' : ` (${c.year})`} · {fmtEuro(c.amountCents)}</li>
@@ -537,6 +552,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, make
         })
       )}
 
+      {meterPhotos.length > 0 && (
+        <details className="card no-print">
+          <summary>Zählerfotos ({meterPhotos.length})</summary>
+          <p className="muted">Fotos von Zählerständen aus der Schnellerfassung. Sie belegen keine Kosten und stehen deshalb nicht im Posteingang.</p>
+          <ul className="receipt-list">{meterPhotos.map(renderCard)}</ul>
+        </details>
+      )}
     </>
   )
 }

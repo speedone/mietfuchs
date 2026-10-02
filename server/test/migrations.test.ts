@@ -60,7 +60,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0010_ohne_anschluss': '78e852dae3ad183f2dbbcaaa15fb3b47e2889ed7458287fad6cfb16e63ed761f',
   '0011_kabel_baujahr': '5ab69587079473d1b0af45d15d09ed5882407dd7c2a5373c7743fbd4b4880e8d',
   // Angaben zu Belegen (#170).
-  '0012_belege': '9d866fddb0713227209e06a8132d5ab59a03566893bac4e98a8bc8ea36f29144',
+  // Vor der Veröffentlichung neu erzeugt (Spalte kind, Durchsicht); der Schritt hat den Arbeitszweig nie verlassen.
+  '0012_belege': '02a985bcc59b65113f13754a77ce17b4800357f8149ce5b73690c4d8e4b7bf71',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

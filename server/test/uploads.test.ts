@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { describeFile, mimeTypeOf, originalNameOf, uploadedAtOf, createChecksums } from '../src/uploads.ts'
+import { describeFile, describeFolder, hashFile, mimeTypeOf, originalNameOf, uploadedAtOf } from '../src/uploads.ts'
 
 test('Belegordner: der Originalname ist der Name ohne den Zeitstempel davor', () => {
   assert.equal(originalNameOf('1767225600000_Grundsteuer_2025.pdf'), 'Grundsteuer_2025.pdf')
@@ -35,39 +35,45 @@ test('Belegordner: die Art der Datei ergibt sich aus der Endung', () => {
   assert.equal(mimeTypeOf('a.txt'), 'application/octet-stream')
 })
 
-test('Belegordner: die Prüfsumme ist SHA-256 über den Inhalt und wird je Stand nur einmal gerechnet', () => {
+test('Belegordner: die Prüfsumme ist SHA-256 über den Inhalt, gestreamt gerechnet', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-uploads-'))
   try {
     const file = path.join(dir, '1767225600000_a.pdf')
     fs.writeFileSync(file, '%PDF-eins')
-    let reads = 0
-    const checksums = createChecksums((p) => { reads++; return fs.readFileSync(p) })
-    const erwartet = createHash('sha256').update('%PDF-eins').digest('hex')
-    assert.equal(checksums.of(file), erwartet)
-    assert.equal(checksums.of(file), erwartet)
-    assert.equal(reads, 1, 'unveränderte Datei nicht erneut lesen')
-    // Ändert sich die Datei (andere Größe oder Zeit), wird neu gerechnet.
-    fs.writeFileSync(file, '%PDF-zwei, länger')
-    assert.equal(checksums.of(file), createHash('sha256').update('%PDF-zwei, länger').digest('hex'))
-    assert.equal(reads, 2)
+    assert.equal(await hashFile(file), createHash('sha256').update('%PDF-eins').digest('hex'))
+    await assert.rejects(hashFile(path.join(dir, 'fehlt.pdf')))
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('Belegordner: ein Beleg ohne Angaben in der Datenbank wird aus der Datei beschrieben', () => {
+test('Belegordner: ein Beleg ohne Angaben in der Datenbank wird aus der Datei beschrieben, ohne sie zu lesen', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-uploads-'))
   try {
     const name = '1767225600000_Müll_2025.pdf'
     fs.writeFileSync(path.join(dir, name), '%PDF-x')
-    const info = describeFile(dir, name, createChecksums())
+    const info = describeFile(dir, name) ?? assert.fail('nicht beschrieben')
     assert.equal(info.file, name)
     assert.equal(info.originalName, 'Müll_2025.pdf')
     assert.equal(info.mimeType, 'application/pdf')
     assert.equal(info.size, 6)
     assert.equal(info.uploadedAt, '2026-01-01T00:00:00.000Z')
-    assert.equal(info.sha256, createHash('sha256').update('%PDF-x').digest('hex'))
+    // Noch nicht gerechnet: leer, bis der Server sie im Hintergrund nachträgt
+    assert.equal(info.sha256, '')
     assert.match(info.mtime, /^\d{4}-\d{2}-\d{2}T/)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Belegordner: Unterordner und verschwundene Dateien übergeht die Liste', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-uploads-'))
+  try {
+    fs.writeFileSync(path.join(dir, 'a.pdf'), '%PDF')
+    fs.mkdirSync(path.join(dir, 'unter'))
+    assert.equal(describeFile(dir, 'unter'), null)
+    assert.equal(describeFile(dir, 'fehlt.pdf'), null)
+    assert.deepEqual(describeFolder(dir, new Map()).map((u) => u.file), ['a.pdf'])
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }

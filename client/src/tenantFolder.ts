@@ -34,7 +34,13 @@ export type TenantFolderPlan = { entries: FolderEntry[]; documents: FolderDocume
 // hinaus, und die Datenschutz-Grundverordnung verlangt, nicht mehr personenbezogene Daten
 // weiterzugeben als nötig (Art. 5 Abs. 1 lit. c, Datenminimierung). Deshalb nur auf ausdrückliche
 // Wahl; Begründung im Design-Text.
-export const isIndividualAmounts = (c: CostItem): boolean => c.key === 'amounts'
+//
+// Dasselbe gilt, solange es keine Mappe je Mieter gibt, für jeden Beleg, der nur einen Teil der
+// Mieter betrifft: eine **Direktzuordnung** (die Reparatur in einer Wohnung, oft mit dem Namen des
+// Mieters auf der Rechnung) und eine Position mit **Teilnehmern** (#94). Die Mappe geht an jeden
+// Mieter des Objekts, auch an die, die mit diesen Kosten nichts zu tun haben (Durchsicht).
+export const isIndividualAmounts = (c: CostItem): boolean =>
+  c.key === 'amounts' || c.key === 'direct' || (Array.isArray(c.participantUnitIds) && c.participantUnitIds.length > 0)
 
 export function planTenantFolder(
   settlement: Settlement,
@@ -78,17 +84,27 @@ export function coverPageCount(entries: number): number {
   return 1 + Math.ceil((entries - FIRST_PAGE_ROWS) / NEXT_PAGE_ROWS)
 }
 
-export type CoverRow = { entry: FolderEntry; page: number | null }
+export type CoverRow = { entry: FolderEntry; page: number | null; unreadable: boolean }
 
-// Die Seite, auf der der Beleg jeder Position beginnt. `pages`: Seitenzahl je Beleg.
-export function pageRows(plan: TenantFolderPlan, pages: Map<string, number>): CoverRow[] {
+// Was auf dem Deckblatt bei einem Beleg steht, der sich weder übernehmen noch als Bild rendern
+// ließ (HEIC, TIFF, PDF mit Öffnungspasswort, Datei nicht abrufbar). Die Mappe entsteht trotzdem.
+export const UNREADABLE_TEXT = 'nicht übernehmbar, bitte gesondert beilegen'
+
+// Die Seite, auf der der Beleg jeder Position beginnt. `pages`: Seitenzahl je Beleg;
+// `unreadable`: Belege, die nicht in die Mappe kamen.
+export function pageRows(plan: TenantFolderPlan, pages: Map<string, number>, unreadable: Set<string> = new Set()): CoverRow[] {
   const start = new Map<string, number>()
   let next = coverPageCount(plan.entries.length) + 1
   for (const d of plan.documents) {
+    if (unreadable.has(d.upload.file)) continue
     start.set(d.upload.file, next)
     next += pages.get(d.upload.file) ?? 0
   }
-  return plan.entries.map((entry) => ({ entry, page: entry.status === 'ok' && entry.upload ? start.get(entry.upload.file) ?? null : null }))
+  return plan.entries.map((entry) => {
+    const file = entry.status === 'ok' && entry.upload ? entry.upload.file : null
+    const broken = file !== null && unreadable.has(file)
+    return { entry, unreadable: broken, page: file && !broken ? start.get(file) ?? null : null }
+  })
 }
 
 // Die Standardschrift eines PDFs (WinAnsi) kennt Umlaute, ß, € und § , aber keine Pfeile oder
@@ -106,7 +122,7 @@ export function winAnsiSafe(text: string): string {
 const STATUS_TEXT: Record<Exclude<FolderEntryStatus, 'ok'>, string> = {
   none: 'kein Beleg erfasst',
   missing: 'Datei fehlt',
-  excluded: 'auf Anfrage (Einzelbeträge)',
+  excluded: 'auf Anfrage (betrifft einzelne Mieter)',
 }
 
 function fitText(text: string, font: PDFFont, size: number, width: number): string {
@@ -123,6 +139,8 @@ export type FolderSource = {
   load: (u: UploadInfo) => Promise<Uint8Array>
   // Seiten eines Belegs als JPEG, wenn pdf-lib ihn nicht übernehmen kann
   rasterize: (u: UploadInfo) => Promise<Uint8Array[]>
+  // Meldet einen Beleg, der nicht in die Mappe kam
+  onUnreadable?: (u: UploadInfo) => void
 }
 
 type PdfLib = typeof import('pdf-lib')
@@ -190,12 +208,14 @@ function drawCover(lib: PdfLib, pages: PDFPage[], rows: CoverRow[], fonts: { reg
     y -= ROW_HEIGHT + 2
     const limit = p === 0 ? FIRST_PAGE_ROWS : NEXT_PAGE_ROWS
     for (let n = 0; n < limit && index < rows.length; n++, index++) {
-      const { entry, page: at } = rows[index]
+      const { entry, page: at, unreadable: broken } = rows[index]
       const amount = fmtEuro(entry.item.amountCents).replace(/ /g, ' ')
       page.drawText(String(index + 1), { x: cols.nr, y, size: 9, font: regular })
       page.drawText(fitText(`${entry.item.category} – ${entry.item.description}`, regular, 9, cols.amount - cols.position - 8), { x: cols.position, y, size: 9, font: regular })
       page.drawText(winAnsiSafe(amount), { x: cols.amount, y, size: 9, font: regular })
-      if (entry.status === 'ok' && entry.upload) {
+      if (broken) {
+        page.drawText(fitText(UNREADABLE_TEXT, regular, 7, A4[0] - MARGIN - cols.beleg), { x: cols.beleg, y, size: 7, font: regular, color: rgb(0.6, 0.1, 0.1) })
+      } else if (entry.status === 'ok' && entry.upload) {
         page.drawText(fitText(entry.upload.originalName || entry.upload.file, regular, 8, cols.page - cols.beleg - 6), { x: cols.beleg, y, size: 8, font: regular })
         page.drawText(at === null ? '' : String(at), { x: cols.page, y, size: 9, font: bold })
       } else {
@@ -212,7 +232,19 @@ export async function buildTenantFolderPdf(plan: TenantFolderPlan, source: Folde
   // Erst die Belege, damit ihre Seitenzahlen feststehen; das Deckblatt kommt danach nach vorn.
   const body = await PDFDocument.create()
   const pages = new Map<string, number>()
-  for (const d of plan.documents) pages.set(d.upload.file, await appendDocument(lib, body, d.upload, source))
+  const unreadable = new Set<string>()
+  for (const d of plan.documents) {
+    const before = body.getPageCount()
+    try {
+      pages.set(d.upload.file, await appendDocument(lib, body, d.upload, source))
+    } catch {
+      // Weder übernehmbar noch als Bild darstellbar: Die Mappe entsteht trotzdem, das Deckblatt
+      // nennt den Beleg mit dem Hinweis, ihn gesondert beizulegen (Durchsicht).
+      while (body.getPageCount() > before) body.removePage(body.getPageCount() - 1)
+      unreadable.add(d.upload.file)
+      source.onUnreadable?.(d.upload)
+    }
+  }
 
   const out = await PDFDocument.create()
   out.setTitle(winAnsiSafe(source.title))
@@ -220,7 +252,7 @@ export async function buildTenantFolderPdf(plan: TenantFolderPlan, source: Folde
   out.setCreator('Mietfuchs')
   const fonts = { regular: await out.embedFont(StandardFonts.Helvetica), bold: await out.embedFont(StandardFonts.HelveticaBold) }
   const cover = Array.from({ length: coverPageCount(plan.entries.length) }, () => out.addPage(A4))
-  drawCover(lib, cover, pageRows(plan, pages), fonts, source)
+  drawCover(lib, cover, pageRows(plan, pages, unreadable), fonts, source)
   const copied = await out.copyPages(body, body.getPageIndices())
   for (const p of copied) out.addPage(p)
   // Jede Seite trägt ihre Nummer, damit sich „Seite 7“ vom Deckblatt auch ausgedruckt findet.
