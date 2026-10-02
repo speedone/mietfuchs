@@ -78,6 +78,9 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'heating.remote-reading', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
   })
+  test('dieselbe Rechnung möglicherweise zweimal erfasst: ja, das verlangt eine Prüfung', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'cost.possible-duplicate', level: 'hint' })] })).toBe(true)
+  })
   test('eine vergessene Wohnfläche (bewohnte Wohnung mit 0 m²): ja', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe(true)
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.tenancy-no-persons', level: 'warning' })] })).toBe(true)

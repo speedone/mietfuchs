@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
-import { CATEGORIES, METER_TYPE_LABELS, isNotAllocable, matchCategory } from '../types'
+import { CATEGORIES, METER_TYPE_LABELS, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
-import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
+import { aiRowPreselected, autoMatchMeter, categoryDeviationPct, duplicateCandidates, invoiceSumCheck, linkBody, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { aiPositionBody, aiPositionDefaults, aiPositionPreselect, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
 import AiKeyCell from '../components/AiKeyCell'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
+import DuplicateRow from '../components/DuplicateRow'
+import { useConfirm } from '../components/feedback'
 
 type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
 
@@ -20,6 +22,8 @@ type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: strin
 type InvoicePosition = AiPosition & {
   matchedByDesc: boolean
   checked: boolean
+  // Mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
+  linked?: string
 }
 
 type ReadingCandidate = {
@@ -95,6 +99,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const [error, setError] = useState('')
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
   const [pending, setPending] = useState('')
+  const [linking, setLinking] = useState(false)
+  const confirm = useConfirm()
 
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
@@ -102,12 +108,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
 
-  const loadData = () =>
-    Promise.all([
-      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
+  // Der zuletzt geladene Stand der Positionen und das Laden selbst, für die Auswertung: Sie
+  // entscheidet beim Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was
+  // schon erfasst ist, auch wenn der Beleg schneller ausgewertet ist, als die Liste geladen war.
+  const itemsRef = useRef<CostItem[]>([])
+  const loadingRef = useRef<Promise<unknown> | null>(null)
+  const loadData = () => {
+    const loading = Promise.all([
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setExistingItems(list) }),
       api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
       api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
     ])
+    loadingRef.current = loading
+    return loading
+  }
   useEffect(() => {
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     // Neu laden, wenn das Objekt wechselt (#92).
@@ -149,6 +163,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           onProgress: (progress) => patchEntry(next.id, { progress }),
         })
 
+        await loadingRef.current?.catch(() => {})
         if (res.kind === 'zaehler') {
           const r = res.reading
           const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
@@ -175,7 +190,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           const ex = res.extraction
           // Der gemerkte Schlüssel (#141) kommt aus dem Vorjahr des Jahres, dem der Beleg zugeht.
           const targetYear = yearFrom(ex.periodStart, ex.invoiceDate) ?? year
-          const ctx = keyCtx(targetYear)
+          const known = itemsRef.current
+          const ctx: KeyContext = { items: known, year: targetYear, propertyKind: property?.kind ?? null }
           const positions: InvoicePosition[] = (ex.positions || []).map((p) => {
             // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls über die
             // Beschreibung. matchedByDesc merkt sich, ob die Kategorie nur so zustande kam (→ gelb).
@@ -203,11 +219,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               matchedByDesc,
               checked: false,
             }
-          }).map((p) => ({
-            ...p,
-            // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-            checked: !isNotAllocable(p.category) && aiPositionPreselect(p) && aiPositionProblem(p, units, targetYear) === null,
-          }))
+          }).map((p) => {
+            // Was sich nicht übernehmen lässt, rot ist oder dieselbe Rechnung sein könnte wie eine
+            // schon erfasste Position (shared/duplicates.ts), ist nicht vorab angehakt; die Ampel
+            // und die Zeile darunter sagen warum.
+            const amountCents = parseEuro(p.amount) ?? 0
+            const vendor = ex.vendor || next.fileName
+            const detectedYear = yearFrom(ex.periodStart, ex.invoiceDate)
+            const score = scorePosition({
+              category: p.category, description: p.description, amountCents, labor35aCents: 0, matchedByDesc: p.matchedByDesc,
+              vendor, detectedYear, targetYear: year, existingItems: known,
+            })
+            const candidates = duplicateCandidates(known, { category: p.category, description: p.description, vendor, year: targetYear })
+            return { ...p, checked: aiRowPreselected({ category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, targetYear), level: score.level, candidates }) }
+          })
           patchEntry(next.id, {
             status: 'fertig',
             kind: 'rechnung',
@@ -247,17 +272,11 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   }
 
   // ---------- Live-Bewertung (re-scort bei jeder Eingabe) ----------
-  const priorYear = year - 1
-  const priorTotalsByCat = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const i of existingItems) if (i.year === priorYear) m.set(i.category, (m.get(i.category) ?? 0) + i.amountCents)
-    return m
-  }, [existingItems, priorYear])
-  const existingTargetByCat = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const i of existingItems) if (i.year === year) m.set(i.category, (m.get(i.category) ?? 0) + i.amountCents)
-    return m
-  }, [existingItems, year])
+  // Verglichen wird im Jahr des Belegs und nicht im gewählten: Im Januar steht die Auswahl oft
+  // noch auf dem Vorjahr, angelegt wird die Position aber im Jahr des Belegs.
+  const entryYear = (entry: QueueEntry) => entry.detectedYear ?? year
+  const candidatesOf = (entry: QueueEntry, p: InvoicePosition): CostItem[] =>
+    p.linked ? [] : duplicateCandidates(existingItems, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) })
 
   type PosScore = { level: TrafficLight; reasons: string[] }
   type EntryScore = { posScores: PosScore[]; sumWarning: string | null; readingScore: ReturnType<typeof scoreReading> | null }
@@ -272,11 +291,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           // Eine Gutschrift auf der Rechnung mindert auch deren Summe.
           sum += amountCents
           const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-          const prior = priorTotalsByCat.get(p.category) ?? 0
-          const current = (existingTargetByCat.get(p.category) ?? 0) + amountCents
-          const devPct = prior > 0 ? ((current - prior) / prior) * 100 : null
+          const devPct = categoryDeviationPct(existingItems, p.category, entryYear(entry), amountCents)
           const score = scorePosition({
             category: p.category,
+            description: p.description,
             amountCents,
             labor35aCents: labor,
             matchedByDesc: p.matchedByDesc,
@@ -307,7 +325,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       }
     }
     return map
-  }, [queue, existingItems, readings, year, priorTotalsByCat, existingTargetByCat])
+  }, [queue, existingItems, readings, year])
 
   // Ampel-Zählung über alle fertigen Einträge
   const tally = useMemo(() => {
@@ -367,6 +385,18 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(entry, p)}`).join(' ')}`)
       return
     }
+    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen, sonst
+    // stünde sie zweimal in der Abrechnung (shared/duplicates.ts).
+    const twice = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && candidatesOf(entry, p).length > 0) : []
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst?',
+        message: `Für ${entryYear(entry)} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
     setError('')
     setPending('')
     const done: number[] = []
@@ -423,6 +453,28 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       } else if (any) patchEntry(entry.id, { status: 'übernommen' })
     }
     if (left.length > 0) setPending(`Übernommen ist, was grün war. Angehakt und noch zu prüfen: ${left.join(', ')}. Bitte ansehen und mit „Diese übernehmen“ übernehmen.`)
+    await loadData()
+  }
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen: Betrag und
+  // Beleg kommen vom Beleg, Schlüssel und alles Übrige bleiben (linkBody in triage.ts).
+  async function linkPosition(entry: QueueEntry, idx: number, target: CostItem) {
+    const p = entry.positions?.[idx]
+    if (!p) return
+    const built = linkBody(p, entry.serverFile, target)
+    if ('error' in built) { setError(`Nicht verknüpft: „${p.description}“: ${built.error}`); return }
+    setError('')
+    setLinking(true)
+    try {
+      await api(`/api/costItems/${target.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+    } catch (e) {
+      setError(`Nicht verknüpft: ${errorText(e)}`)
+      return
+    } finally {
+      setLinking(false)
+    }
+    const positions = (entry.positions ?? []).map((x, i) => (i === idx ? { ...x, linked: target.description, checked: false } : x))
+    patchEntry(entry.id, { positions, ...(positions.every((x) => x.linked) ? { status: 'übernommen' as const } : {}) })
     await loadData()
   }
 
@@ -556,8 +608,9 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                     {entry.positions.map((p, i) => {
                       const ps = es?.posScores[i]
                       return (
-                        <tr key={i}>
-                          <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                        <Fragment key={i}>
+                        <tr>
+                          <td><input type="checkbox" checked={p.checked} disabled={!!p.linked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                           <td>
                             <span className={`ampel ${ps?.level ?? 'gruen'}`} title={ps?.reasons.join('\n')} />
                           </td>
@@ -571,6 +624,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                           <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                           <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
                         </tr>
+                        <DuplicateRow candidates={candidatesOf(entry, p)} amount={p.amount} year={entryYear(entry)} colSpan={7} linked={p.linked} busy={linking} onLink={(t) => void linkPosition(entry, i, t)} />
+                        </Fragment>
                       )
                     })}
                   </tbody>

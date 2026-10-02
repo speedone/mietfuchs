@@ -80,7 +80,7 @@ und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `ma
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
-Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
+Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
@@ -925,6 +925,28 @@ Gespeichert wird über `buildCostItemBody`, also mit derselben Prüfung wie im F
 seither ebenfalls über `buildCostItemBody` (`aiPositionBody`). Die Summe der MEA am Objekt und die
 Hausgeldabrechnung als Klammer sind Folgearbeit mit #102; bis dahin kommt die Summe von der
 zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ (`lastExternalBasis`).
+
+**Doppelte Kostenpositionen** (Zusammenspiel von #141 und #170): Die Übernahme aus dem Vorjahr
+legt eine Position mit Schätzbetrag und ohne Beleg an; kam danach die echte Rechnung über einen
+KI-Weg, entstand still eine zweite derselben Kostenart, und umgekehrt traf der Vergleich der
+Beschreibung eine KI-Beschreibung nie. Ob eine Position dieselbe Rechnung sein könnte, steht
+deshalb **einmal** in [shared/duplicates.ts](shared/duplicates.ts) (`sameCostCandidates`):
+dasselbe Objekt, Jahr und dieselbe Kostenart; bei den breiten Kostenarten (`LOOSE_CATEGORIES`:
+`BROAD_CATEGORIES` und „Nicht umlagefähig“) zusätzlich ähnliche Beschreibung oder gleicher
+Rechnungssteller (ohne Jahreszahlen und Satzzeichen, Präfixvergleich), weil dort ganz
+verschiedene Rechnungen nebeneinander stehen. Die Regel findet nur Kandidaten, entscheiden tut der
+Vermieter. Sie fragen: `alreadyCarried` (carryOver.ts, ausgenommen die genaue Übernahme einer
+Schwesterposition des Vorjahres), Schnellerfassung und KI-Auswertung der Kostenseite über
+`duplicateCandidates`/`aiRowPreselected`/`linkBody` in [client/src/triage.ts](client/src/triage.ts)
+(nicht vorab angehakt, „verknüpfen und Betrag setzen“ als `PUT` mit `amountCents`, `invoiceFile`
+und gegebenenfalls `labor35aCents`, Rückfrage „Trotzdem anlegen“; die Zeile zeigt
+[DuplicateRow.tsx](client/src/components/DuplicateRow.tsx)) und der Hinweis
+`cost.possible-duplicate` in calc.ts (`possibleDuplicates`, Stufe `hint`, zählt in der Ampel). Der
+Hinweis kommt nur, wenn eine der Positionen keinen Beleg hat **und** das Jahr mehr solche
+Positionen hat als das Vorjahr: Restmüll und Biomüll, beide aus dem Vorjahr übernommen, sind die
+Gliederung des Hauses und keine Doppelung. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
+nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
+führt dafür `vendor` und `invoiceFile`; verteilt wird nach keinem.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
