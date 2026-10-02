@@ -6,6 +6,40 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Neu
+
+- **Steuerübersicht: Werbungskosten bei teilweiser Eigennutzung aufgeteilt.** Wohnen Sie selbst
+  im Haus, zeigt die Übersicht als Hauptzahl die abziehbaren Werbungskosten und daneben den
+  privaten Teil. Jede Position ist aufgeteilt: Was einer Einheit direkt zugeordnet ist, gehört
+  ganz zu ihr; Kosten des ganzen Gebäudes werden nach dem Verhältnis der Wohn- und Nutzflächen
+  aufgeteilt (BFH, Urteil vom 24.06.2008, IX R 26/06); bei umlagefähigen Kosten gilt der
+  Eigenanteil aus der Nebenkostenabrechnung, bei abgeschlossener Abrechnung ihr eingefrorener
+  Stand, soweit eine Position seither nicht nachgetragen oder geändert wurde. Gibt es Einheiten
+  außerhalb der Abrechnungseinheit, etwa ein getrennt abgerechnetes Gewerbe, gilt auch für
+  umlagefähige Kosten die Fläche des ganzen Gebäudes. Die Tabelle nennt je Position Gesamtbetrag, privat, abziehbar und die Zuordnung wie im
+  Vordruck („direkt“ oder anteilig mit dem abzugsfähigen Anteil in Prozent), mit Rechenweg zum
+  Aufklappen; der Ausdruck taugt als gesonderte Aufstellung für das Finanzamt. Hinweise nennen,
+  was nicht gerechnet wird (AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung), und
+  beziffern den Unterschied, wo die Abrechnung nicht nach Fläche verteilt. Ohne selbstgenutzte
+  Wohnung ändert sich keine Zahl.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
+- **Kosten: „Nicht umlagefähig“ lässt sich für die Steuer einer Einheit zuordnen.** Die Auswahl
+  „Betrifft (für die Steuer)“ ordnet etwa eine Badrenovierung der vermieteten Wohnung (voll
+  abziehbar) oder der eigenen Wohnung (privat) zu, oder eine Dachreparatur nur den Einheiten des
+  betroffenen Gebäudeteils; ohne Auswahl gilt das ganze Gebäude. Die
+  Nebenkostenabrechnung bleibt davon unberührt.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
+
+### Geändert
+
+- **Der Überschuss der Steuerübersicht rechnet mit den abziehbaren Werbungskosten.** Bisher zog
+  er bei teilweiser Eigennutzung die vollen Kosten ab und fiel um den privaten Anteil zu niedrig
+  aus. Für bestehende Daten: Wer eine selbstgenutzte Wohnung angelegt hat, sieht für vergangene
+  Jahre einen höheren Überschuss; eine Zahl, die schon in einer Steuererklärung steht, gleichen
+  Sie bitte mit Ihrem Steuerberater ab. Ältere Positionen „Nicht umlagefähig“ gelten als Kosten
+  des ganzen Gebäudes, bis Sie sie einer Einheit zuordnen.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
+
 ## [0.9.0] – 2026-10-02
 
 ### Neu

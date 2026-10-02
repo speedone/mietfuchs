@@ -22,6 +22,11 @@ import {
   externalTotalLabel,
   keyListText,
   showsKeyFields,
+  showsTaxUnitField,
+  taxScopeOf,
+  TAX_SCOPE_SOME,
+  toggleTaxUnit,
+  withTaxUnit,
   withKey,
   withCategory,
   type ItemForm,
@@ -510,7 +515,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td>
                     {/* Nicht umlagefähig (#142): kein Schlüssel, die Position trägt der Vermieter. */}
-                    {keyListText(i)}
+                    {keyListText(i, units)}
                     {showsKeyFields(i.category) && <>
                     {/* Eine Einschränkung auf Teilnehmer (#105) soll man in der Liste sehen, nicht erst im Formular. */}
                     {i.participantUnitIds && (
@@ -619,6 +624,39 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {!showsKeyFields(form.category) && (
               <div className="field grow muted">
                 <span><Term id="notAllocable">Nicht umlagefähig</Term>: Diese Position trägt der Vermieter allein; ein Umlageschlüssel entfällt.</span>
+              </div>
+            )}
+            {/* #163: Für die Steuer zählt, wen eine Reparatur betrifft. Die Abrechnung liest das nicht. */}
+            {showsTaxUnitField(form.category) && (
+              <label className="field grow">
+                <Term id="mixedUse">Betrifft (für die Steuer)</Term>
+                <select value={taxScopeOf(form)} onChange={(e) => setForm(withTaxUnit(form, e.target.value))}>
+                  <option value="">das ganze Gebäude (nach Fläche)</option>
+                  <option value={TAX_SCOPE_SOME}>bestimmte Einheiten (nach Fläche)</option>
+                  {units.map((u) => <option key={u.id} value={u.id}>{u.name}{u.selfUsed && !u.participates ? ' (selbstgenutzt)' : ''}</option>)}
+                </select>
+              </label>
+            )}
+            {/* Bestimmte Einheiten, etwa das Dach des Hinterhauses (Durchsicht): Die Kästchen zeigen genau
+                die gespeicherten Teilnehmer. */}
+            {showsTaxUnitField(form.category) && taxScopeOf(form) === TAX_SCOPE_SOME && (
+              <div className="field-group">
+                <div className="field-group-label">Betroffene Einheiten (für die Steuer)</div>
+                <div className="row">
+                  {units.map((u) => (
+                    <label key={u.id} className="field checkline">
+                      <span>
+                        <input
+                          type="checkbox"
+                          aria-label={`${u.name} (betroffen)`}
+                          checked={(form.participants ?? []).includes(u.id)}
+                          onChange={(e) => setForm(toggleTaxUnit(form, u.id, e.target.checked))}
+                        />{' '}
+                        {u.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
             {showsKeyFields(form.category) && <>

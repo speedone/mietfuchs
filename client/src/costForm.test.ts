@@ -19,6 +19,11 @@ import {
   externalTotalLabel,
   keyListText,
   showsKeyFields,
+  showsTaxUnitField,
+  taxScopeOf,
+  TAX_SCOPE_SOME,
+  toggleTaxUnit,
+  withTaxUnit,
   withKey,
   withCategory,
   type ItemForm,
@@ -476,6 +481,48 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
     })
     expect(buildCostItemBody(form({ category: 'Zuführung Erhaltungsrücklage', amount: '900,00', key: 'direct', directUnitId: '' }), UNITS, 2025))
       .toMatchObject({ body: { key: 'area', directUnitId: null } })
+  })
+
+  test('Nicht umlagefähig: für die Steuer einer Einheit zuordenbar, sonst das ganze Gebäude (#163)', () => {
+    // Die Abrechnung liest den Schlüssel weiter nicht; die Steuerübersicht teilt damit auf: eine
+    // Badrenovierung der vermieteten Wohnung voll abziehbar, eine der eigenen gar nicht.
+    expect(showsTaxUnitField('Nicht umlagefähig')).toBe(true)
+    expect(showsTaxUnitField('Zuführung Erhaltungsrücklage')).toBe(false)
+    expect(showsTaxUnitField('Grundsteuer')).toBe(false)
+    const f = withTaxUnit(form({ category: 'Nicht umlagefähig', amount: '4.000,00' }), 'u1')
+    expect(f).toMatchObject({ key: 'direct', directUnitId: 'u1' })
+    expect(buildCostItemBody(f, UNITS, 2025)).toMatchObject({ body: { key: 'direct', directUnitId: 'u1', customShares: null, participantUnitIds: null } })
+    // Zurück auf das ganze Gebäude: der neutrale Schlüssel ohne Einheit.
+    const g = withTaxUnit(f, '')
+    expect(g).toMatchObject({ key: 'area', directUnitId: '' })
+    expect(buildCostItemBody(g, UNITS, 2025)).toMatchObject({ body: { key: 'area', directUnitId: null } })
+    // In der Liste steht, wen die Position betrifft.
+    const base = { id: 'c', propertyId: 'p', year: 2025, description: 'X', amountCents: 100 } as const
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' }, UNITS)).toBe('— trägt der Vermieter · betrifft U1')
+    expect(keyListText({ ...base, category: 'Nicht umlagefähig', key: 'area' }, UNITS)).toBe('— trägt der Vermieter')
+  })
+
+  test('Nicht umlagefähig: nur bestimmte Einheiten betroffen, etwa das Dach des Hinterhauses (#163, Durchsicht)', () => {
+    const base = form({ category: 'Nicht umlagefähig', amount: '3.000,00' })
+    expect(taxScopeOf(base)).toBe('')
+    const einige = withTaxUnit(base, TAX_SCOPE_SOME)
+    expect(taxScopeOf(einige)).toBe(TAX_SCOPE_SOME)
+    // Ohne gewählte Einheit wird nicht gespeichert.
+    expect(buildCostItemBody(einige, UNITS, 2025)).toEqual({ error: 'Bitte mindestens eine Einheit wählen, die diese Position betrifft.' })
+    const hinterhaus = toggleTaxUnit(einige, 'u2', true)
+    expect(hinterhaus.participants).toEqual(['u2'])
+    expect(buildCostItemBody(hinterhaus, UNITS, 2025)).toMatchObject({ body: { key: 'area', directUnitId: null, participantUnitIds: ['u2'] } })
+    expect(taxScopeOf(toggleTaxUnit(hinterhaus, 'u2', false))).toBe(TAX_SCOPE_SOME)
+    // Zurück auf das ganze Gebäude oder eine Einheit: keine Teilnehmer mehr.
+    expect(withTaxUnit(hinterhaus, '')).toMatchObject({ key: 'area', participants: null })
+    expect(withTaxUnit(hinterhaus, 'u1')).toMatchObject({ key: 'direct', directUnitId: 'u1', participants: null })
+    // Gespeicherte Teilnehmer kommen als „bestimmte Einheiten“ zurück, und die Liste nennt sie.
+    const stored = { id: 'c', propertyId: 'p', year: 2025, description: 'Dach', amountCents: 300000, category: 'Nicht umlagefähig', key: 'area', participantUnitIds: ['u2'] } as const
+    expect(taxScopeOf(itemToForm({ ...stored, participantUnitIds: ['u2'] }))).toBe(TAX_SCOPE_SOME)
+    expect(keyListText({ ...stored, participantUnitIds: ['u2'] }, UNITS)).toBe('— trägt der Vermieter · betrifft U2')
+    // Wer von einer umlagefähigen Kostenart wechselt, nimmt keine alten Teilnehmer mit.
+    const vorher = form({ category: 'Grundsteuer', key: 'area', participants: ['u1'] })
+    expect(withCategory(vorher, 'Nicht umlagefähig', UNITS, [])).toMatchObject({ key: 'area', participants: null, directUnitId: '' })
   })
 
   test('Verbrauchsschlüssel: gibt es nur einen Zählertyp, ist er vorgewählt und gespeichert', () => {

@@ -6,7 +6,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 
@@ -317,6 +317,36 @@ test('Invariante (#94): Mieteranteile + Vermieteranteil ergeben die Gesamtkosten
       assert.ok(Math.abs(one.selfUsedShareCents) <= Math.abs(landlord), `Fall ${i}, ${c.id}: Eigenanteil über dem Vermieteranteil\n${JSON.stringify(src)}`)
     }
     assert.equal(s.selfUsedShareCents, sum, `Fall ${i}: Eigenanteil ≠ Summe je Position`)
+  }
+})
+
+// Teilweise Eigennutzung (#163) mit Teilnehmern: Eine Gebäudeposition „Nicht umlagefähig“ teilt nach
+// der Fläche der Teilnehmer auf, eine umlagefähige übernimmt den Eigenanteil der Abrechnung.
+test('Invariante (#163): Steuer mit Teilnehmern — privat + abziehbar = Betrag, privat aus Abrechnung oder Fläche der Teilnehmer', () => {
+  const rnd = makeRng(163094)
+  for (let i = 0; i < 400; i++) {
+    const src = randomSource(rnd)
+    for (const c of src.costItems) if (rnd() < 0.4) c.category = 'Nicht umlagefähig'
+    const snapshot = snapshotOf(src, 2025)
+    const r = taxReport(snapshot)
+    const s = computeSettlement(snapshot)
+    const fall = `Fall ${i}\n${JSON.stringify(src)}`
+    for (const x of r.expenses.items) {
+      assert.equal(x.privateCents + x.deductibleCents, x.amountCents, fall)
+      assert.ok(Math.abs(x.privateCents) <= Math.abs(x.amountCents), fall)
+      const c = src.costItems.find((k) => k.id === x.costItemId)
+      if (!c) return assert.fail(`${fall}: Position ${x.costItemId} fehlt`)
+      if (x.allocation === 'area') {
+        const betroffen = src.units.filter((u) => !c.participantUnitIds || c.participantUnitIds.includes(u.id))
+        const flaeche = betroffen.reduce((a, u) => a + (u.areaM2 || 0), 0)
+        const eigen = betroffen.filter((u) => u.selfUsed && !u.participates).reduce((a, u) => a + (u.areaM2 || 0), 0)
+        const roh = flaeche > 0 ? (c.amountCents * eigen) / flaeche : 0
+        assert.ok(Math.abs(x.privateCents - roh) <= 0.5, `${fall}: ${x.privateCents} gegen ${roh}`)
+      }
+    }
+    const ausAbrechnung = r.expenses.items.filter((x) => x.category !== 'Nicht umlagefähig' && x.allocation !== 'area' && x.allocation !== 'unsplittable')
+    const verglichen = r.expenses.items.reduce((a, x) => a + (x.settlementPrivateCents ?? 0), 0)
+    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0) + verglichen, s.selfUsedShareCents, fall)
   }
 })
 

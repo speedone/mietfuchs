@@ -19,7 +19,7 @@
 
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Property, PropertyKind, TaxReport } from '../types'
+import type { Property, PropertyKind, TaxExpenseItem, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
@@ -45,7 +45,10 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
     tenanciesWithoutPayment: 0,
     ...income,
   },
-  expenses: { groups: [], totalCents: 0, labor35aCents: 0 },
+  expenses: { groups: [], totalCents: 0, privateCents: 0, deductibleCents: 0, labor35aCents: 0, items: [] },
+  selfUseChangedInYear: false,
+  closedSelfUseDiffers: false,
+  closedItemsChanged: 0,
   reserveContributionCents: 0,
   reserveSuspects: [],
   totalAreaM2: 200,
@@ -58,6 +61,27 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
   ...over,
 })
+
+// Eine Position der Steuerübersicht (#163) und ein Bericht mit eigener Wohnung.
+const POS = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
+  costItemId: 'c1', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Dachreparatur',
+  amountCents: 330000, privateCents: 240000, deductibleCents: 90000, labor35aCents: 0,
+  allocation: 'area', deductiblePercent: 27.27, areaPrivateCents: null, settlementPrivateCents: null,
+  steps: [{ label: 'Rechnungsbetrag', value: '3.300,00 €' }, { label: 'Rechnung', value: '3.300,00 € × 120/165 = 2.400 €' }],
+  ...over,
+})
+const MIXED = (items: TaxExpenseItem[] = [POS()], over: Partial<TaxReport> = {}): TaxReport => {
+  const sum = (f: (x: TaxExpenseItem) => number) => items.reduce((a, x) => a + f(x), 0)
+  return REPORT({
+    selfOccupiedExists: true, selfUsedAreaM2: 120, totalAreaM2: 165,
+    expenses: {
+      groups: [{ group: 'Verwaltung & Instandhaltung', amountCents: sum((x) => x.amountCents), labor35aCents: 0, privateCents: sum((x) => x.privateCents), deductibleCents: sum((x) => x.deductibleCents), categories: [] }],
+      items, totalCents: sum((x) => x.amountCents), privateCents: sum((x) => x.privateCents), deductibleCents: sum((x) => x.deductibleCents), labor35aCents: 0,
+    },
+    surplusPaidCents: 1200000 - sum((x) => x.deductibleCents),
+    ...over,
+  })
+}
 
 const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKind) => {
   // Die Objekte sind meist gleichgültig: ohne Objekt gilt auf dem Server das einzige (#92). Nur
@@ -135,6 +159,23 @@ const LAGEN: Record<TaxHint, Lage> = {
     kind: 'etw',
     text: /Hausgeld-Vorschüsse/i,
   },
+  // #163: teilweise Eigennutzung.
+  mixedUseSplit: { report: MIXED(), text: /durch direkte Zuordnung ermittelt/ },
+  mixedUseKeyNotArea: {
+    report: MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]),
+    text: /Nach Fläche wären es/,
+  },
+  mixedUseAreaMissing: { report: MIXED([POS({ allocation: 'unsplittable', privateCents: 0, deductibleCents: 330000, deductiblePercent: null })]), text: /ließ sich nicht aufteilen/ },
+  mixedUseDirectOutside: { report: MIXED([POS({ allocation: 'direct-outside', privateCents: 0, deductibleCents: 330000, deductiblePercent: null })]), text: /außerhalb der Abrechnungseinheit zugeordnet/ },
+  mixedUseChangedInYear: { report: MIXED([POS()], { selfUseChangedInYear: true }), text: /nicht nach Tagen/ },
+  mixedUseClosedChanged: { report: MIXED([POS()], { closedSelfUseDiffers: true }), text: /gilt der eingefrorene Stand/ },
+  mixedUseLabor35a: { report: MIXED([POS({ labor35aCents: 50000 })]), text: /in Ihrer eigenen Steuererklärung/ },
+  mixedUseNotCalculated: { report: MIXED(), text: /Nicht gerechnet werden/ },
+  mixedUseExcludedArea: {
+    report: MIXED([POS({ allocation: 'area', category: 'Grundsteuer', privateCents: 100000, deductibleCents: 200000, amountCents: 300000, settlementPrivateCents: 150000 })], { excludedExists: true }),
+    text: /über das ganze Gebäude/,
+  },
+  mixedUseClosedItemsChanged: { report: MIXED([POS()], { closedItemsChanged: 1 }), text: /nach dem Abschluss der Abrechnung/ },
 }
 
 for (const hint of TAX_HINTS) {
@@ -242,4 +283,57 @@ test('Der Hinweis zu Zeile 24 bei gemischten Verträgen liest sich als ein Satz 
   await zeige(REPORT({ costModels: { tenancies: 2, inclusive: 1, partlyInclusive: 0, flatRate: 0 } }))
   expect(screen.getByText(/Eine Inklusivmiete gilt hier nur für einen Teil der Mietverhältnisse oder nur für einen Teil der Nebenkosten/)).toBeTruthy()
   expect(screen.queryByText(/Für einen Teil der Mietverhältnisse, oder/)).toBeNull()
+})
+
+// ---------- #163: Werbungskosten bei teilweiser Eigennutzung ----------
+
+test('Mit eigener Wohnung: Hauptzahl abziehbar, „davon privat“ daneben, Überschuss aus dem abziehbaren Teil (#163)', async () => {
+  await zeige(MIXED())
+  const kpi = screen.getByText(/Werbungskosten \(abziehbar\)/).closest('.kpi')
+  expect(kpi?.textContent).toMatch(/900,00/)
+  expect(kpi?.textContent).toMatch(/gesamt 3\.300,00.*davon privat 2\.400,00/)
+  // Die Tabelle führt Gesamt, privat, abziehbar und die Zuordnung.
+  const zeile = screen.getByText('Dachreparatur').closest('tr')
+  expect(zeile?.textContent).toMatch(/3\.300,00.*2\.400,00.*900,00/)
+  expect(zeile?.textContent).toMatch(/anteilig, abziehbar 27,27 % \(nach Fläche\)/)
+  expect(screen.getByRole('columnheader', { name: 'privat' })).toBeTruthy()
+  // Ergebnis: abzüglich der abziehbaren Werbungskosten.
+  expect(screen.getByText(/abzüglich abziehbarer Werbungskosten/).closest('tr')?.textContent).toMatch(/900,00/)
+  // Der Rechenweg ist die gesonderte Aufstellung, zum Aufklappen.
+  fireEvent.click(screen.getByRole('button', { name: 'Rechenweg' }))
+  expect(screen.getByText(/3\.300,00 € × 120\/165/)).toBeTruthy()
+  // Der alte Satz, die Übersicht nehme die Aufteilung nicht vor, ist weg.
+  expect(screen.queryByText(/nimmt die\s+Aufteilung nicht automatisch vor/)).toBeNull()
+})
+
+test('Ohne eigene Wohnung: keine Spalte „privat“ und kein „davon privat“ (#163)', async () => {
+  await zeige(REPORT({
+    expenses: {
+      groups: [{ group: 'Laufende Betriebskosten', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000, categories: [{ category: 'Müllabfuhr', amountCents: 50000, labor35aCents: 0, privateCents: 0, deductibleCents: 50000 }] }],
+      items: [POS({ category: 'Müllabfuhr', description: 'Müll', amountCents: 50000, privateCents: 0, deductibleCents: 50000, allocation: 'settlement', deductiblePercent: 100 })],
+      totalCents: 50000, privateCents: 0, deductibleCents: 50000, labor35aCents: 0,
+    },
+  }))
+  expect(screen.queryByRole('columnheader', { name: 'privat' })).toBeNull()
+  expect(screen.queryByText(/davon privat/)).toBeNull()
+  expect(screen.getByText(/Müllabfuhr/).closest('tr')?.textContent).toMatch(/500,00/)
+})
+
+test('Der Unterschied zum Flächenmaßstab wird beziffert (#163)', async () => {
+  await zeige(MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', description: 'Müll', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]))
+  expect(screen.getByText(/Nach Fläche wären es/).textContent).toMatch(/250,00/)
+})
+
+test('Der Hinweis zum Personenschlüssel nennt den Leerstand als Ursache (#163, Durchsicht)', async () => {
+  await zeige(MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', description: 'Müll', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]))
+  const kasten = screen.getByText(/Nach Fläche wären es/)
+  expect(kasten.textContent).toMatch(/Leerstand/)
+  expect(kasten.textContent).toMatch(/Vermietungsabsicht/)
+})
+
+test('Einheiten außerhalb: der Kasten sagt, dass die Aufteilung über das ganze Gebäude rechnet (#163, Durchsicht)', async () => {
+  await zeige(MIXED([POS()], { excludedExists: true }))
+  const kasten = screen.getByText(/Wohnungen außerhalb der Abrechnungseinheit/i).closest('div')
+  expect(kasten?.textContent).toMatch(/ganzen Gebäudes/)
+  expect(kasten?.textContent).not.toMatch(/zählen sie bei der Aufteilung als\s+vermietet/)
 })
