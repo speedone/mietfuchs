@@ -609,11 +609,29 @@ export type TaxReport = {
   costModels: { tenancies: number; inclusive: number; partlyInclusive: number; flatRate: number }
 }
 
+// Ein Beleg im Belegordner (#170). `mtime` ist die Zeit der Datei und nur noch für ältere Tabs
+// da; maßgeblich ist `uploadedAt` (siehe server/src/uploads.ts). `sha256` erkennt einen Beleg,
+// der mit gleichem Inhalt zweimal hochgeladen wurde, auch unter anderem Namen.
 export type UploadInfo = {
   file: string
   size: number
   mtime: string
+  originalName: string
+  mimeType: string
+  uploadedAt: string
+  sha256: string
+  // Nur für einen Beleg im **Posteingang**, also an keiner Position: Objekt und Jahr, denen er
+  // zugedacht ist. Hängt er an einer Position, ergeben sie sich aus ihr; diese Felder sagen dann
+  // nichts mehr, damit es keine zweite Wahrheit gibt. `null` heißt „noch nicht zugeordnet“.
+  propertyId: string | null
+  year: number | null
+  // Rechnungsdatum, wie es die KI-Auswertung gelesen hat oder jemand eingetragen hat (JJJJ-MM-TT)
+  invoiceDate: string | null
+  // Ein Beleg oder ein Zählerfoto aus der Schnellerfassung. Ein Zählerfoto belegt keine Kosten und
+  // gehört deshalb weder in den Posteingang noch zum „Nachreichen“.
+  kind: UploadKind
 }
+export type UploadKind = 'receipt' | 'meterPhoto'
 
 // Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
 // erledigen die Fremdschlüssel (db/schema.ts); hier steht nur, wie viel sie träfe.

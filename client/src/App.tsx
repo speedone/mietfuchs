@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import type { NoticeSubject, Settings, Tenancy, Unit } from './types'
+import type { CostItem, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
 import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty, useSwitchYear } from './property'
@@ -39,6 +39,8 @@ const NAV: { section?: string; items: NavItem[] }[] = [
       { id: 'schnellerfassung', label: 'Schnellerfassung', icon: '📥' },
       { id: 'zaehler', label: 'Zähler & Stände', icon: '🔢' },
       { id: 'kosten', label: 'Kosten', icon: '🧾' },
+      // Der Belegordner (#170) gehört zum laufenden Sammeln: Dort landen neue Belege im Posteingang.
+      { id: 'belege', label: 'Belegordner', icon: '📁' },
       { id: 'mietkonto', label: 'Mietkonto', icon: '💶' },
     ],
   },
@@ -54,7 +56,6 @@ const NAV: { section?: string; items: NavItem[] }[] = [
     section: 'Einrichten · selten',
     items: [
       { id: 'stammdaten', label: 'Stammdaten', icon: '🏠' },
-      { id: 'belege', label: 'Belegarchiv', icon: '📁' },
       { id: 'einstellungen', label: 'Einstellungen', icon: '⚙️' },
       { id: 'hilfe', label: 'Hilfe & Begriffe', icon: '❓' },
     ],
@@ -159,6 +160,8 @@ function Shell() {
   const setTab = useCallback((t: Tab, f: NoticeSubject | null = null) => { setFocus(f); setTabState(t) }, [])
   const clearFocus = useCallback(() => setFocus(null), [])
   const [stopped, setStopped] = useState(false)
+  // Belege aus dem Posteingang, die die Schnellerfassung auswerten soll (#170)
+  const [handoff, setHandoff] = useState<UploadInfo[] | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   // Zu welchem Objekt `units` gehört (#157): Bis die Wohnungen eines eben gewählten Objekts da
   // sind, stehen noch die des vorigen hier.
@@ -176,6 +179,19 @@ function Shell() {
   const switchYear = useSwitchYear()
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
+  // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
+  const evaluateFromInbox = async (list: UploadInfo[]) => {
+    const target = list.find((u) => u.propertyId)?.propertyId
+    if (target && target !== property?.id && !(await switchProperty(target))) return
+    setHandoff(list)
+    setTab('schnellerfassung')
+  }
+  // „Position öffnen“ aus dem Belegordner: Der zeigt alle Objekte, die Seite Kosten nur das
+  // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
+  const openCostItem = async (item: CostItem) => {
+    if (item.propertyId !== property?.id && !(await switchProperty(item.propertyId))) return
+    setTab('kosten', { kind: 'costItem', id: item.id })
+  }
   const update = useUpdateStatus(settings)
   const propertyId = property?.id
   // Das zuletzt gewählte Objekt, für den Reihenfolge-Schutz in reload (#145)
@@ -290,7 +306,10 @@ function Shell() {
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
-        {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />}
+        {tab === 'schnellerfassung' && (
+          <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)}
+            handoff={handoff ?? undefined} onHandoffTaken={() => setHandoff(null)} />
+        )}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />
@@ -298,7 +317,7 @@ function Shell() {
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege />}
+        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onOpenItem={(item) => void openCostItem(item)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}

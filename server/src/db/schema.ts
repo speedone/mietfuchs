@@ -22,6 +22,7 @@ import type {
   MeterType,
   PropertyKind,
   Settings,
+  UploadKind,
 } from '../../../shared/types.ts'
 
 // Die Werte der Aufzählungstypen stehen hier noch einmal, weil `shared/types.ts` bewusst keinen
@@ -668,5 +669,46 @@ export const aiSlots = sqliteTable(
     // Es gibt genau zwei Plätze. Ein dritter Name wäre eine Einstellung, die nie jemand liest.
     oneOf('ai_slots_slot_known', 'slot', AI_SLOT_NAMES),
     oneOf('ai_slots_provider_known', 'provider', AI_PROVIDERS),
+  ],
+)
+
+// ---------- Angaben zu Belegen (#170) ----------
+
+// Eine Zeile je Datei im Belegordner (`uploads/`). Die Datei selbst bleibt auf der Platte; hier
+// steht, was sich ihr nicht zuverlässig ansehen lässt: wie sie beim Hochladen hieß, wann genau
+// das war und ihre Prüfsumme, an der ein zweites Hochladen desselben Belegs auffällt.
+//
+// **Objekt und Jahr nur für den Posteingang.** Ein Beleg, der an einer Position hängt, hat Objekt
+// und Jahr seiner Positionen; trüge die Zeile sie ebenfalls, liefen zwei Wahrheiten auseinander,
+// sobald jemand eine Position verschiebt. Die Spalten sagen deshalb nur, wohin ein noch nicht
+// verknüpfter Beleg gehört. `SET NULL` beim Objekt: Wird es gelöscht (das geht nur leer), fällt
+// der Beleg in den Posteingang ohne Objekt zurück, statt mit ihm zu verschwinden.
+//
+// **Eine fehlende Zeile ist kein Fehler.** Alles, was vor dieser Tabelle hochgeladen wurde, und
+// jeder Beleg aus einem Backup einer älteren Version hat keine; die Route beschreibt ihn dann aus
+// der Datei (server/src/uploads.ts). Deshalb gibt es auch keinen Fremdschlüssel von
+// `cost_items.invoice_file` hierher: Er lehnte genau diese Belege ab.
+export const UPLOAD_KINDS = exactly<UploadKind>()(['receipt', 'meterPhoto'] as const)
+
+export const uploads = sqliteTable(
+  'uploads',
+  {
+    file: text('file').primaryKey().notNull(),
+    originalName: text('original_name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    size: integer('size_bytes').notNull(),
+    sha256: text('sha256').notNull(),
+    uploadedAt: text('uploaded_at').notNull(),
+    propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
+    year: integer('year'),
+    invoiceDate: text('invoice_date'),
+    // Zählerfotos der Schnellerfassung liegen im selben Ordner, belegen aber keine Kosten.
+    kind: text('kind', { enum: UPLOAD_KINDS }).notNull().default('receipt'),
+  },
+  () => [
+    notNegative('uploads_size_not_negative', 'size_bytes'),
+    oneOf('uploads_kind_known', 'kind', UPLOAD_KINDS),
+    // Ein Jahr 0 oder darunter wäre ein Tippfehler, kein Abrechnungsjahr.
+    check('uploads_year_positive', sql.raw('"year" > 0')),
   ],
 )

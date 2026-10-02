@@ -659,7 +659,7 @@ export const ANLAGE_V_GROUP: Record<string, string | null> = {
   'Zuführung Erhaltungsrücklage': null,
 }
 // Anzeigereihenfolge der Gruppen in der Auswertung
-const ANLAGE_V_GROUP_ORDER = [
+export const ANLAGE_V_GROUP_ORDER = [
   'Grundsteuer & öffentliche Abgaben',
   'Laufende Betriebskosten',
   'Versicherungen',

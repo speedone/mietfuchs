@@ -31,6 +31,7 @@ import { straightenForDatabase } from '../src/legacy/migrate.ts'
 import { LEGACY_JSON_NAME, PROTOCOL_NAME, runChangeover, TEMP_NAME, type ChangeoverHooks } from '../src/db/changeover.ts'
 import { connect, loadMigrations, type Migration } from '../src/db/client.ts'
 import { yearsToCheck } from '../src/db/regression.ts'
+import { uploadRows } from '../src/db/uploads.ts'
 import { closedSettlementHistory, closedSettlements, costItems, units } from '../src/db/schema.ts'
 // Die Umstiegsdatei steht beim Import auf Migration 0000, also schreibt der Griff mit deren Aufbau.
 import { units as unitsAtBaseline } from '../src/legacy/schema.ts'
@@ -826,4 +827,21 @@ test('Ein altes, aber mögliches Jahr bleibt im zusammenhängenden Bereich', () 
   db.tenancies = [tenancy({ id: 't1', unitId: 'u1', start: '1950-01-01', end: '1955-12-31' })]
   const jahre = yearsToCheck(db, 2026)
   assert.deepEqual(jahre, [1950, 1951, 1952, 1953, 1954, 1955])
+})
+
+test('Nach dem Umstieg gibt es die Tabelle der Belege, und sie ist leer (#170)', async () => {
+  // Die db.json kennt keine Angaben zu Belegen. Ihre Belege liegen als Dateien im Ordner und
+  // werden aus der Datei beschrieben (server/src/uploads.ts); eine erfundene Zeile wäre schlechter
+  // als keine.
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    await changeoverIn(dataDir, async (result, database) => {
+      assert.equal(result.state, 'done', result.message)
+      if (!database) return assert.fail('nach dem Umstieg keine Datenbank')
+      assert.equal((await database.read(uploadRows)).size, 0)
+    })
+  } finally {
+    removeDir(dataDir)
+  }
 })

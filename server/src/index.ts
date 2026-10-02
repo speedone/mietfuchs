@@ -41,6 +41,9 @@ import {
 import { findingsText, validateDb } from './legacy/validate.ts'
 import { createUpdateChecker, UPDATE_URL } from './update.ts'
 import { APP_VERSION, RUNTIME, STANDALONE } from './version.ts'
+import { describeFile, describeFolder, hashFile, mimeTypeOf, uploadedAtOf } from './uploads.ts'
+import { planTaxArchive } from './taxReceipts.ts'
+import { forgetUpload, placeUpload, recordIfMissing, recordUpload, rowOf, uploadRows, type Placement, type UploadRow } from './db/uploads.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -111,6 +114,21 @@ const checkPageSizes = (req: Request, res: Response, next: NextFunction): void =
 }
 const fileWithPages = [upload.fields([{ name: 'file', maxCount: 1 }, { name: 'pages', maxCount: MAX_PAGES }]), checkPageSizes]
 const uploadedFile = (req: Request): Express.Multer.File | null => filesOf(req).file?.[0] ?? null
+
+// Ein Beleg, der schon im Belegordner liegt (#170, Posteingang), statt eines neu hochgeladenen:
+// Das Feld `existingFile` nennt ihn. Er wird nur gelesen und bei einem Abbruch nicht gelöscht,
+// denn er gehörte schon vorher dem Vermieter. `undefined`: nicht angefragt; `null`: angefragt,
+// aber kein Beleg dieses Namens im Ordner.
+type DocumentSource = { path: string, filename: string, mimetype: string }
+const existingDocument = (req: Request): DocumentSource | null | undefined => {
+  const name: unknown = req.body?.existingFile
+  if (name === undefined) return undefined
+  if (typeof name !== 'string' || name === '' || path.basename(name) !== name) return null
+  const full = path.join(UPLOAD_DIR, name)
+  if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return null
+  return { path: full, filename: name, mimetype: mimeTypeOf(name) }
+}
+const NO_EXISTING = 'Diesen Beleg gibt es im Belegordner nicht (mehr). Bitte laden Sie die Seite neu.'
 const aiInput = (req: Request): { pdfText: string, pages: { mimeType: string, data: string }[] } => {
   const pdfText: unknown = req.body?.pdfText
   return {
@@ -542,8 +560,75 @@ app.get('/api/taxreport/:year', async (req, res) => {
 // ---------- Belege & KI-Auswertung ----------
 app.use('/uploads', express.static(UPLOAD_DIR))
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
+// ---------- Angaben zu Belegen (#170) ----------
+//
+// Jeder neu hochgeladene Beleg bekommt eine Zeile in `uploads` (db/uploads.ts): Originalname,
+// Art, Prüfsumme, genaue Hochladezeit und, solange er an keiner Position hängt, Objekt und Jahr
+// für den Posteingang. Woher Objekt und Jahr kommen, sagen die Felder `propertyId` und `year` des
+// Formulars; ohne sie liegt der Beleg im Posteingang ohne Zuordnung.
+
+// Ein Jahr aus einem Formular oder Rumpf: eine ganze Zahl über null. Leer heißt „kein Jahr“
+// (`null`), `false` heißt „keine gültige Angabe“.
+const yearOf = (value: unknown): number | null | false => {
+  if (value === undefined || value === null || value === '') return null
+  const n = typeof value === 'number' ? value : typeof value === 'string' && /^\d{1,4}$/.test(value.trim()) ? Number(value) : Number.NaN
+  return Number.isInteger(n) && n > 0 && n < 10000 ? n : false
+}
+const YEAR_INVALID = 'Das Jahr muss eine ganze Zahl sein, etwa 2025, oder fehlen.'
+
+// Das Objekt einer Angabe, geprüft: `null` heißt „ohne Objekt“.
+async function placementProperty(db: Database, value: unknown): Promise<string | null> {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string' || !(await listProperties(db)).some((p) => p.id === value)) {
+    throw new RouteProblem(404, 'Dieses Objekt gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+  }
+  return value
+}
+
+// Die Zeile zu einem eben hochgeladenen Beleg. **Ein Fehler der Datenbank verhindert das
+// Hochladen nicht**: Eine fehlende Zeile ist erlaubt (der Beleg wird dann aus der Datei
+// beschrieben), ein verlorener Beleg nicht. Abgelehnt wird nur eine ungültige Angabe; dann
+// verschwindet auch die Datei wieder, damit kein Rest im Ordner liegt.
+async function recordNewUpload(req: Request, file: Express.Multer.File): Promise<void> {
+  const body = bodyObject(req)
+  const year = yearOf(body.year)
+  if (year === false) throw new RouteProblem(400, YEAR_INVALID)
+  const row: UploadRow = {
+    file: file.filename,
+    originalName: file.originalname.normalize('NFC'),
+    mimeType: file.mimetype || mimeTypeOf(file.filename),
+    size: file.size,
+    sha256: await hashFile(file.path),
+    uploadedAt: uploadedAtOf(file.filename, new Date()),
+    propertyId: null,
+    year,
+    invoiceDate: null,
+    kind: 'receipt',
+  }
+  try {
+    await writeData(async (db) => recordUpload(db, { ...row, propertyId: await placementProperty(db, body.propertyId) }))
+  } catch (err) {
+    if (err instanceof RouteProblem) throw err
+    console.warn(`Die Angaben zum Beleg ${file.filename} ließen sich nicht speichern: ${messageOf(err)}`)
+  }
+}
+
+// Dasselbe für die KI-Routen, die ihre Antwort selbst schreiben: Statt zu werfen, antwortet die
+// Route und gibt `false` zurück.
+async function recordOrRefuse(req: Request, res: Response, file: Express.Multer.File): Promise<boolean> {
+  try {
+    await recordNewUpload(req, file)
+    return true
+  } catch (err) {
+    fs.rmSync(file.path, { force: true })
+    res.status(statusOf(err)).json({ error: messageOf(err) })
+    return false
+  }
+}
+
+app.post('/api/upload', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Keine Datei' })
+  if (!(await recordOrRefuse(req, res, req.file))) return
   res.json({ file: req.file.filename })
 })
 
@@ -602,7 +687,11 @@ function aiResponse(req: Request, res: Response): AiAnswer {
     settle()
     controller.abort()
     const upload = uploadedFile(req)
-    if (upload) fs.rmSync(upload.path, { force: true })
+    if (upload) {
+      fs.rmSync(upload.path, { force: true })
+      // Seine Angaben gehen mit (#170); ein Beleg aus dem Posteingang ist nie `upload`.
+      void writeData((db) => forgetUpload(db, upload.filename)).catch(() => undefined)
+    }
     // Die Verbindung beenden; hat der Browser sie schon geschlossen, schadet das nicht
     if (!res.writableEnded) res.end()
   }
@@ -662,13 +751,56 @@ app.post('/api/ai/cancel/:id', (req, res) => {
 // mit und bei Scans die gerenderten Seiten. Der Server öffnet selbst keine PDFs. `stats`
 // enthält die Kennzahlen des Modells je Schritt (Token, Sekunden), die Oberfläche braucht sie
 // nicht, der KI-Prüflauf wertet sie aus.
+// Der Beleg einer KI-Route: neu hochgeladen (dann mit Zeile in `uploads`) oder aus dem
+// Posteingang. Antwortet selbst und gibt `null` zurück, wenn es keinen gibt.
+async function documentOf(req: Request, res: Response): Promise<DocumentSource | null> {
+  const fresh = uploadedFile(req)
+  if (fresh) {
+    if (!(await recordOrRefuse(req, res, fresh))) return null
+    // Hat der Browser während des Speicherns schon aufgegeben, hört niemand mehr zu, und der
+    // Abbruch in aiResponse käme nie an (Durchsicht): dann gleich aufräumen statt auszuwerten.
+    if (res.destroyed || req.socket.destroyed) {
+      fs.rmSync(fresh.path, { force: true })
+      await writeData((db) => forgetUpload(db, fresh.filename)).catch(() => undefined)
+      return null
+    }
+    return fresh
+  }
+  const existing = existingDocument(req)
+  if (existing === undefined) res.status(400).json({ error: 'Keine Datei' })
+  else if (existing === null) res.status(400).json({ error: NO_EXISTING })
+  return existing ?? null
+}
+
+// Das Rechnungsdatum, das die KI gelesen hat, kommt zum Beleg (#170): Der Belegordner nennt es
+// auf der Karte. Nur ein echtes Datum; misslingt das Speichern, fehlt es eben.
+async function rememberInvoiceDate(file: string, value: unknown): Promise<void> {
+  if (!isDateOnly(value)) return
+  try {
+    const sha256 = await hashFile(path.join(UPLOAD_DIR, file))
+    await writeData((db) => placeUpload(db, file, { invoiceDate: value }, () => describeFile(UPLOAD_DIR, file, undefined, sha256)))
+  } catch (err) {
+    console.warn(`Das Rechnungsdatum zu ${file} ließ sich nicht speichern: ${messageOf(err)}`)
+  }
+}
+
+async function markMeterPhoto(file: string): Promise<void> {
+  try {
+    const sha256 = await hashFile(path.join(UPLOAD_DIR, file))
+    await writeData((db) => placeUpload(db, file, { kind: 'meterPhoto', propertyId: null, year: null }, () => describeFile(UPLOAD_DIR, file, undefined, sha256)))
+  } catch (err) {
+    console.warn(`Das Zählerfoto ${file} ließ sich nicht kennzeichnen: ${messageOf(err)}`)
+  }
+}
+
 app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
-  const file = uploadedFile(req)
-  if (!file) return res.status(400).json({ error: 'Keine Datei' })
+  const file = await documentOf(req, res)
+  if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   try {
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
+    await rememberInvoiceDate(file.filename, result.invoiceDate)
     answer.done({ file: file.filename, extraction: result, stats })
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
@@ -679,8 +811,8 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
 // ein Zählerfoto ist, und liefert die passende KI-Auswertung. Antwort ist eine diskriminierte
 // Union über `kind`. `/api/extract` bleibt für die (rein rechnungsbezogene) Kosten-Seite.
 app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
-  const file = uploadedFile(req)
-  if (!file) return res.status(400).json({ error: 'Keine Datei' })
+  const file = await documentOf(req, res)
+  if (!file) return
   const answer = aiResponse(req, res)
   const { signal, stats, onProgress } = answer
   try {
@@ -688,10 +820,14 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
     const material = { ...aiInput(req), signal, stats, onProgress }
     const docType = await classifyDocType(file.path, file.mimetype, settings, { signal, stats, onProgress })
     if (docType === 'zaehlerstand') {
+      // Ein Zählerfoto belegt keine Kosten: als solches kennzeichnen und ohne Objekt, damit es in
+      // keinem Posteingang als Beleg wartet und beim Nachreichen nicht angeboten wird (Durchsicht).
+      await markMeterPhoto(file.filename)
       const reading = await extractMeterReading(file.path, file.mimetype, settings, material)
       answer.done({ file: file.filename, kind: 'zaehler', reading, stats })
     } else {
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
+      await rememberInvoiceDate(file.filename, extraction.invoiceDate)
       answer.done({ file: file.filename, kind: 'rechnung', extraction, stats })
     }
   } catch (err) {
@@ -699,13 +835,81 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
   }
 })
 
-// Belegarchiv: alle hochgeladenen Dateien mit Größe und Datum
-app.get('/api/uploads', (req, res) => {
-  const files = fs.readdirSync(UPLOAD_DIR).map((name) => {
-    const st = fs.statSync(path.join(UPLOAD_DIR, name))
-    return { file: name, size: st.size, mtime: st.mtime.toISOString() }
+// Belegordner (#170): alle hochgeladenen Dateien mit Originalname, Hochladezeit und Prüfsumme.
+//
+// Die Angaben aus der Datenbank gelten, wo es sie gibt; sonst wird der Beleg aus der Datei
+// beschrieben. **Ohne Datenbank bleibt die Liste trotzdem vollständig**, nur ohne Posteingang:
+// Belege sind Dateien, und sie zu sehen soll nicht davon abhängen, ob gerade die Datenbank trägt.
+//
+// **Prüfsummen fehlender Zeilen werden nachgetragen, einmal und im Hintergrund** (`backfillUploads`):
+// Bis dahin ist `sha256` leer, und die Liste antwortet sofort. Vorher rechnete jeder Start sie
+// synchron und im Speicher neu, und eine große Altablage hielt dabei den ganzen Server an.
+app.get('/api/uploads', async (req, res) => {
+  const rows = await readData(uploadRows).catch(() => null)
+  const list = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
+  if (rows && list.some((u) => !u.sha256)) void backfillUploads()
+  res.json(list)
+})
+
+// Trägt zu jedem Beleg ohne Zeile (oder ohne Prüfsumme) die Zeile nach. Je Beleg ein eigener
+// Lese- und Schreibvorgang, dazwischen kommt jede andere Anfrage dran. Läuft höchstens einmal
+// zugleich; ein zweiter Aufruf während des Laufs wartet auf denselben.
+let backfillRunning: Promise<void> | null = null
+function backfillUploads(): Promise<void> {
+  backfillRunning ??= (async () => {
+    try {
+      const rows = await readData(uploadRows)
+      for (const info of describeFolder(UPLOAD_DIR, rows)) {
+        if (info.sha256) continue
+        try {
+          const sha256 = await hashFile(path.join(UPLOAD_DIR, info.file))
+          const row = { ...rowOf(info), sha256 }
+          await writeData(async (db) => {
+            const current = (await uploadRows(db)).get(info.file)
+            if (current) await recordUpload(db, { ...current, sha256 })
+            else await recordIfMissing(db, row)
+          })
+        } catch (err) {
+          // Verschwunden oder unlesbar: beim nächsten Mal wieder, die Liste übergeht ihn ohnehin.
+          console.warn(`Prüfsumme zu ${info.file} nicht nachgetragen: ${messageOf(err)}`)
+        }
+      }
+    } catch (err) {
+      console.warn(`Prüfsummen nicht nachgetragen: ${messageOf(err)}`)
+    } finally {
+      backfillRunning = null
+    }
+  })()
+  return backfillRunning
+}
+
+// Objekt, Jahr und Rechnungsdatum eines Belegs ändern (#170, Posteingang). Zugeordnet wird einer
+// Position weiterhin über die Position (`PUT /api/costItems/:id` mit `invoiceFile`).
+app.put('/api/uploads/:file', async (req, res) => {
+  const name = path.basename(req.params.file)
+  const full = path.join(UPLOAD_DIR, name)
+  if (name !== req.params.file || !fs.existsSync(full) || !fs.statSync(full).isFile()) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  const body = bodyObject(req)
+  const changes: Placement = {}
+  if (Object.hasOwn(body, 'year')) {
+    const year = yearOf(body.year)
+    if (year === false) return res.status(400).json({ error: YEAR_INVALID })
+    changes.year = year
+  }
+  if (Object.hasOwn(body, 'invoiceDate')) {
+    const value: unknown = body.invoiceDate
+    if (value !== null && value !== '' && !isDateOnly(value)) return res.status(400).json({ error: 'Das Rechnungsdatum muss ein Datum als JJJJ-MM-TT sein oder fehlen.' })
+    changes.invoiceDate = isDateOnly(value) ? value : null
+  }
+  // Hat der Beleg noch keine Zeile, entsteht sie hier, und zwar gleich mit Prüfsumme
+  const sha256 = await hashFile(full)
+  const row = await writeData(async (db) => {
+    if (Object.hasOwn(body, 'propertyId')) changes.propertyId = await placementProperty(db, body.propertyId)
+    return placeUpload(db, name, changes, () => describeFile(UPLOAD_DIR, name, undefined, sha256))
   })
-  res.json(files)
+  const info = row ? describeFile(UPLOAD_DIR, name, row) : null
+  if (!info) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  res.json(info)
 })
 
 // Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
@@ -723,7 +927,33 @@ app.delete('/api/uploads/:file', async (req, res) => {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
   fs.unlinkSync(full)
+  // Die Angaben gehen mit. Scheitert das, bleibt eine Zeile ohne Datei, und die zeigt niemand an.
+  await writeData((db) => forgetUpload(db, name)).catch((err: unknown) => console.warn(`Angaben zu ${name} nicht entfernt: ${messageOf(err)}`))
   res.json({ ok: true })
+})
+
+// ---------- Belege für die Steuer (#170) ----------
+// Ein ZIP aller Belege eines Objekts und Jahres nach den Gruppen der Anlage V, samt Übersicht.
+// Aufbau und Begründung in taxReceipts.ts.
+app.get('/api/receipts/tax/:year', async (req, res) => {
+  const year = Number(req.params.year)
+  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+  const { items, property, rows } = await readData(async (db) => {
+    const propertyId = await propertyOf(db, req)
+    const stock = narrowToProperty(await readStock(db), propertyId)
+    const property = (await listProperties(db)).find((p) => p.id === propertyId)
+    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db) }
+  })
+  const names = new Map<string, string>()
+  for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
+  const plan = planTaxArchive(items, names)
+  const zip = new AdmZip()
+  for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
+  zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
+  const label = (property?.name || 'objekt').normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
+  res.set('Content-Type', 'application/zip')
+  res.set('Content-Disposition', `attachment; filename="belege-steuer-${year}-${label.replace(/[^\x20-\x7e]/g, '_')}.zip"; filename*=UTF-8''${encodeURIComponent(`belege-steuer-${year}-${label}.zip`)}`)
+  res.send(zip.toBuffer())
 })
 
 // ---------- Backup & Wiederherstellen ----------
