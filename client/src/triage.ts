@@ -105,27 +105,102 @@ export function categoryDeviationPct(items: readonly CostItem[], category: strin
   return prior > 0 ? ((sum(year) + amountCents - prior) / prior) * 100 : null
 }
 
-// Eine KI-Zeile mit einer bestehenden Position verknüpfen: Betrag und Beleg kommen vom Beleg, der
-// §35a-Lohnanteil nur, wenn die KI einen gelesen hat. Schlüssel, Beschreibung und alles Übrige
-// der Position bleiben; die PUT-Route ergänzt nur die mitgeschickten Felder.
-export function linkBody(p: { amount: string; labor35a: string }, invoiceFile: string | undefined, target: CostItem): { error: string } | { body: Record<string, unknown> } {
-  const amount = parseEuro(p.amount)
-  const labor = p.labor35a.trim() ? parseEuro(p.labor35a) : null
-  const problem = amountProblem(amount, p.labor35a.trim() ? labor : 0, target.category)
-  if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
-  return { body: { amountCents: amount, invoiceFile, ...(labor !== null ? { labor35aCents: labor } : {}) } }
+// ---------- Verknüpfen statt neu anlegen ----------
+// Eine KI-Zeile, für die dieselbe Rechnung schon erfasst sein könnte, wird nicht still angelegt,
+// sondern mit der bestehenden Position verknüpft: Betrag und Beleg kommen vom Beleg, Schlüssel und
+// alles Übrige der Position bleiben. Zeilen desselben Belegs mit derselben Kostenart und denselben
+// Kandidaten bilden eine Gruppe (Frischwasser und Schmutzwasser gegen „Wasser/Abwasser“): Sie
+// werden gemeinsam verknüpft, mit der Summe, sonst bekäme die Position den Betrag der ersten Zeile
+// und die zweite ginge verloren (zweite Durchsicht).
+
+export type AiRow = { category: string; description: string; amount: string; labor35a: string; linked?: string }
+
+export type LinkOffer = {
+  target: CostItem
+  // Die Position hängt schon an diesem Beleg: Der Betrag wird erhöht statt ersetzt.
+  sameReceipt: boolean
+  label: string
+  // Was der Knopf zusätzlich tut und gesagt werden muss, etwa das Entfernen eines Lohnanteils
+  note: string | null
+  built: { error: string } | { body: Record<string, unknown> }
 }
 
-// Womit sich ein Beleg verknüpfen lässt: Positionen ohne Beleg (sonst ersetzte er einen anderen),
-// und keine mit Einzelbeträgen je Mieter, denn deren Betrag hängt an den Einzelbeträgen, die der
-// Rechnungsbetrag nicht kennt (Durchsicht).
-export function linkTargets(candidates: readonly CostItem[]): CostItem[] {
-  return candidates.filter((c) => !c.invoiceFile && c.key !== 'amounts')
+export type DuplicateGroup = {
+  rows: number[]
+  candidates: CostItem[]
+  offers: LinkOffer[]
+  // Kandidaten, deren Betrag an weiteren Angaben hängt (Einzelbeträge je Mieter, eigener Anteil
+  // laut Gemeinschaftsabrechnung): Sie werden im Formular gepflegt, nicht mit einem Klick.
+  formOnly: CostItem[]
 }
 
-export function linkLabel(target: CostItem, p: { amount: string }): string {
-  const amount = parseEuro(p.amount)
-  return `Mit „${target.description}“ (${fmtEuro(target.amountCents)}) verknüpfen und Betrag auf ${amount === null ? '?' : fmtEuro(amount)} setzen`
+const FORM_ONLY_KEYS: readonly CostItem['key'][] = ['amounts', 'external']
+
+function linkOffer(rows: readonly AiRow[], target: CostItem, invoiceFile: string | undefined): LinkOffer {
+  const sameReceipt = !!invoiceFile && target.invoiceFile === invoiceFile
+  const amounts = rows.map((r) => parseEuro(r.amount))
+  const laborGiven = rows.some((r) => r.labor35a.trim() !== '')
+  const labors = rows.map((r) => (r.labor35a.trim() ? parseEuro(r.labor35a) : 0))
+  const sum = amounts.every((a) => a !== null) ? amounts.reduce<number>((x, a) => x + (a ?? 0), 0) : null
+  const laborSum = labors.every((l) => l !== null) ? labors.reduce<number>((x, l) => x + (l ?? 0), 0) : null
+  const before = target.labor35aCents ?? 0
+  const many = rows.length > 1 ? ` (${rows.length} Positionen)` : ''
+  let amount: number | null
+  let labor: number | null
+  let laborField: number | undefined
+  let note: string | null = null
+  if (sameReceipt) {
+    amount = sum === null ? null : target.amountCents + sum
+    labor = laborSum === null ? null : before + laborSum
+    if (laborGiven) laborField = labor ?? undefined
+  } else {
+    amount = sum
+    if (laborGiven && laborSum !== null && laborSum > 0) {
+      labor = laborSum
+      laborField = laborSum
+    } else if (laborSum === null) {
+      labor = null
+    } else if (before > 0) {
+      // Den geschätzten Lohnanteil stehen zu lassen hieße, ihn den Mietern und in der Anlage V
+      // zu bescheinigen, ohne dass die Rechnung ihn trägt.
+      labor = 0
+      laborField = 0
+      note = `Der bisherige §35a-Lohnanteil (${fmtEuro(before)}) wird entfernt; tragen Sie ihn aus der Rechnung ein.`
+    } else {
+      labor = 0
+    }
+  }
+  const problem = amountProblem(amount, labor, target.category)
+  const built = problem !== null || amount === null
+    ? { error: problem ?? 'Bitte einen Betrag angeben.' }
+    : { body: { amountCents: amount, ...(sameReceipt ? {} : { invoiceFile }), ...(laborField !== undefined ? { labor35aCents: laborField } : {}) } }
+  const shown = (n: number | null) => (n === null ? '?' : fmtEuro(n))
+  const label = sameReceipt
+    ? `„${target.description}“ (${fmtEuro(target.amountCents)}) um ${shown(sum)} auf ${shown(amount)} erhöhen${many}`
+    : `Mit „${target.description}“ (${fmtEuro(target.amountCents)}) verknüpfen und Betrag auf ${shown(amount)} setzen${many}`
+  return { target, sameReceipt, label, note, built }
+}
+
+export function duplicateGroups(rows: readonly AiRow[], ctx: { items: readonly CostItem[]; vendor: string; year: number; invoiceFile?: string }): DuplicateGroup[] {
+  const groups = new Map<string, DuplicateGroup>()
+  rows.forEach((r, i) => {
+    if (r.linked) return
+    const candidates = duplicateCandidates(ctx.items, { category: r.category, description: r.description, vendor: ctx.vendor, year: ctx.year })
+    if (candidates.length === 0) return
+    const key = `${r.category}|${candidates.map((c) => c.id).join(',')}`
+    const g = groups.get(key) ?? { rows: [], candidates, offers: [], formOnly: [] }
+    g.rows.push(i)
+    groups.set(key, g)
+  })
+  for (const g of groups.values()) {
+    // Ziel ist eine Position ohne Beleg oder eine, die schon an diesem Beleg hängt; sonst ersetzte
+    // der Beleg einen anderen.
+    const open = g.candidates.filter((c) => !c.invoiceFile || (!!ctx.invoiceFile && c.invoiceFile === ctx.invoiceFile))
+    g.formOnly = open.filter((c) => FORM_ONLY_KEYS.includes(c.key))
+    const members = g.rows.map((i) => rows[i]).filter((r): r is AiRow => !!r)
+    g.offers = open.filter((c) => !FORM_ONLY_KEYS.includes(c.key)).map((c) => linkOffer(members, c, ctx.invoiceFile))
+  }
+  return [...groups.values()]
 }
 
 // ---------- Zählerstand ----------

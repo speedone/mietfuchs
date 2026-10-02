@@ -49,8 +49,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Sonstige Betriebskosten“ und „Nicht umlagefähig“ zählt nur eine Position mit ähnlicher
   Beschreibung oder vom selben Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin,
   wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat; die
-  Ampel im Cockpit zählt ihn mit. Im Januar vergleicht die Schnellerfassung mit dem Jahr des
-  Belegs statt mit dem gewählten.
+  Ampel im Cockpit zählt ihn mit, wenn eine Position mit und eine ohne Beleg dasteht oder es mehr
+  sind als im Vorjahr. Mehrere Zeilen eines Belegs derselben Kostenart (etwa Frischwasser und
+  Schmutzwasser) werden gemeinsam mit ihrer Summe verknüpft. Hat die Auswertung keinen
+  §35a-Lohnanteil gelesen, wird ein geschätzter entfernt, und die Wahl sagt das. Eine Position
+  laut Gemeinschaftsabrechnung oder mit Einzelbeträgen öffnet sich im Formular. Auch das
+  Kostenformular fragt beim Anlegen nach, wenn dieselbe Rechnung schon erfasst sein könnte. Im
+  Januar vergleicht die Schnellerfassung mit dem Jahr des Belegs statt mit dem gewählten.
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
 
 ### Geändert

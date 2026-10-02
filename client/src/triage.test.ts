@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { aiRowPreselected, categoryDeviationPct, duplicateCandidates, linkBody, linkLabel, linkTargets, scorePosition, type PositionCtx } from './triage'
+import { aiRowPreselected, categoryDeviationPct, duplicateCandidates, duplicateGroups, scorePosition, type PositionCtx } from './triage'
 import type { CostItem } from './types'
 
 const ctx = (patch: Partial<PositionCtx>): PositionCtx => ({
@@ -47,13 +47,6 @@ test('A: vorab angehakt nur ohne Kandidaten und ohne Rot', () => {
   expect(aiRowPreselected({ category: 'Nicht umlagefähig', preselect: true, problem: null, level: 'gelb', candidates: [] })).toBe(false)
 })
 
-test('A: Verknüpfen setzt Betrag und Beleg, den Lohnanteil nur, wenn die KI einen liefert; der Schlüssel bleibt', () => {
-  expect(linkBody({ amount: '612,40', labor35a: '' }, 'gs.pdf', schaetzung)).toEqual({ body: { amountCents: 61240, invoiceFile: 'gs.pdf' } })
-  expect(linkBody({ amount: '612,40', labor35a: '100,00' }, 'gs.pdf', schaetzung)).toEqual({ body: { amountCents: 61240, invoiceFile: 'gs.pdf', labor35aCents: 10000 } })
-  expect(linkBody({ amount: '', labor35a: '' }, 'gs.pdf', schaetzung)).toMatchObject({ error: expect.stringMatching(/Betrag/) })
-  expect(linkLabel(schaetzung, { amount: '612,40' })).toMatch(/^Mit „Grundsteuer 2026“ \(610,00\s€\) verknüpfen und Betrag auf 612,40\s€ setzen$/)
-})
-
 test('A im Januar: Vorjahresvergleich nach dem Jahr des Belegs, nicht nach dem gewählten', () => {
   const items: CostItem[] = [
     { ...schaetzung, id: 'a', year: 2025, amountCents: 60000 },
@@ -66,8 +59,57 @@ test('A im Januar: Vorjahresvergleich nach dem Jahr des Belegs, nicht nach dem g
   expect(categoryDeviationPct([], 'Grundsteuer', 2026, 61200)).toBeNull()
 })
 
-test('Durchsicht: verknüpft wird nur mit einer Position ohne Beleg und nie mit Einzelbeträgen je Mieter', () => {
-  const mitBeleg: CostItem = { ...schaetzung, id: 'b', invoiceFile: 'x.pdf' }
-  const einzel: CostItem = { ...schaetzung, id: 'e', key: 'amounts', tenancyAmounts: { t1: 30000 } }
-  expect(linkTargets([schaetzung, mitBeleg, einzel]).map((i) => i.id)).toEqual(['gs'])
+// ---------- Verknüpfen je Gruppe (zweite Durchsicht) ----------
+const row = (description: string, amount: string, labor35a = '', category = 'Wasser/Abwasser') => ({ description, category, amount, labor35a })
+const wasser: CostItem = { id: 'wa', propertyId: 'p', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser/Abwasser 2025', amountCents: 150000, key: 'area' }
+const groupsOf = (rows: ReturnType<typeof row>[], items: CostItem[], invoiceFile = 'w.pdf') =>
+  duplicateGroups(rows, { items, vendor: 'Stadtwerke', year: 2025, invoiceFile })
+
+test('mehrere KI-Zeilen derselben Kostenart aus einem Beleg: eine Wahl mit der Summe, alle Zeilen in der Gruppe', () => {
+  const groups = groupsOf([row('Frischwasser', '700,00'), row('Schmutzwasser', '800,00')], [wasser])
+  expect(groups).toHaveLength(1)
+  expect(groups[0]?.rows).toEqual([0, 1])
+  const offer = groups[0]?.offers[0]
+  expect(offer?.label).toMatch(/^Mit „Wasser\/Abwasser 2025“ \(1\.500,00\s€\) verknüpfen und Betrag auf 1\.500,00\s€ setzen \(2 Positionen\)$/)
+  expect(offer?.built).toEqual({ body: { amountCents: 150000, invoiceFile: 'w.pdf' } })
+})
+
+test('eine Position, die schon mit diesem Beleg verknüpft ist, bleibt Ziel: Betrag erhöhen', () => {
+  const half: CostItem = { ...wasser, amountCents: 70000, invoiceFile: 'w.pdf' }
+  const groups = groupsOf([row('Schmutzwasser', '800,00')], [half])
+  const offer = groups[0]?.offers[0]
+  expect(offer?.sameReceipt).toBe(true)
+  expect(offer?.label).toMatch(/um 800,00\s€ auf 1\.500,00\s€ erhöhen/)
+  expect(offer?.built).toEqual({ body: { amountCents: 150000 } })
+  // Ein anderer Beleg bleibt kein Ziel
+  expect(groupsOf([row('Schmutzwasser', '800,00')], [half], 'anders.pdf')[0]?.offers).toEqual([])
+})
+
+test('§35a: ohne gelesenen Lohnanteil wird der bisherige entfernt und das gesagt; ein gelesener gilt', () => {
+  const garten: CostItem = { ...wasser, id: 'g', category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000 }
+  const leer = groupsOf([row('Gartenpflege', '2.800,00', '', 'Gartenpflege')], [garten])[0]?.offers[0]
+  expect(leer?.built).toEqual({ body: { amountCents: 280000, invoiceFile: 'w.pdf', labor35aCents: 0 } })
+  expect(leer?.note).toMatch(/Der bisherige §35a-Lohnanteil \(1\.000,00\s€\) wird entfernt; tragen Sie ihn aus der Rechnung ein\./)
+  const null0 = groupsOf([row('Gartenpflege', '2.800,00', '0', 'Gartenpflege')], [garten])[0]?.offers[0]
+  expect(null0?.built).toMatchObject({ body: { labor35aCents: 0 } })
+  const gelesen = groupsOf([row('Gartenpflege', '2.800,00', '500,00', 'Gartenpflege')], [garten])[0]?.offers[0]
+  expect(gelesen?.built).toEqual({ body: { amountCents: 280000, invoiceFile: 'w.pdf', labor35aCents: 50000 } })
+  expect(gelesen?.note).toBeNull()
+})
+
+test('§35a: geprüft wird gegen den Lohnanteil, der danach gilt, auch bei Gutschriften', () => {
+  const garten: CostItem = { ...wasser, id: 'g', category: 'Gartenpflege', description: 'Garten', amountCents: 50000, invoiceFile: 'w.pdf', labor35aCents: 40000 }
+  // Gleicher Beleg: Lohnanteil 400 + 300 = 700 € bei 500 + 100 = 600 € Betrag
+  expect(groupsOf([row('Nachtrag', '100,00', '300,00', 'Gartenpflege')], [garten])[0]?.offers[0]?.built).toMatchObject({ error: expect.stringMatching(/§35a/) })
+  const ohne: CostItem = { ...garten, invoiceFile: undefined }
+  expect(groupsOf([row('Gutschrift', '-50,00', '', 'Gartenpflege')], [ohne])[0]?.offers[0]?.built).toEqual({ body: { amountCents: -5000, invoiceFile: 'w.pdf', labor35aCents: 0 } })
+  expect(groupsOf([row('Gutschrift', '-50,00', '10,00', 'Gartenpflege')], [ohne])[0]?.offers[0]?.built).toMatchObject({ error: expect.stringMatching(/Gutschrift/) })
+})
+
+test('Gemeinschaftsabrechnung und Einzelbeträge: kein Ein-Klick-Verknüpfen, sondern die Position im Formular', () => {
+  const hg: CostItem = { ...wasser, id: 'hg', key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 1000000 } }
+  const einzel: CostItem = { ...wasser, id: 'ez', key: 'amounts', tenancyAmounts: { t1: 30000 } }
+  const g = groupsOf([row('Frischwasser', '700,00')], [hg, einzel])[0]
+  expect(g?.offers).toEqual([])
+  expect(g?.formOnly.map((i) => i.id)).toEqual(['hg', 'ez'])
 })

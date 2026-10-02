@@ -1,21 +1,21 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
+import type { CostItem, Extraction, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit } from '../types'
 import { CATEGORIES, METER_TYPE_LABELS, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
-import { aiRowPreselected, autoMatchMeter, categoryDeviationPct, duplicateCandidates, invoiceSumCheck, linkBody, scorePosition, scoreReading, type TrafficLight } from '../triage'
+import { type DuplicateGroup, type LinkOffer, aiRowPreselected, autoMatchMeter, categoryDeviationPct, duplicateCandidates, duplicateGroups, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
 import { aiPositionBody, aiPositionDefaults, aiPositionPreselect, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
 import AiKeyCell from '../components/AiKeyCell'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
-import DuplicateRow from '../components/DuplicateRow'
+import DuplicateNotices from '../components/DuplicateNotices'
 import { useConfirm } from '../components/feedback'
 
-type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
+type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string, focus?: NoticeSubject) => void }
 
 // Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann), samt
 // Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141)
@@ -466,30 +466,30 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     await loadData()
   }
 
-  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen: Betrag und
-  // Beleg kommen vom Beleg, Schlüssel und alles Übrige bleiben (linkBody in triage.ts).
-  async function linkPosition(entry: QueueEntry, idx: number, target: CostItem) {
-    const p = entry.positions?.[idx]
-    if (!p) return
-    const built = linkBody(p, entry.serverFile, target)
-    if ('error' in built) { setError(`Nicht verknüpft: „${p.description}“: ${built.error}`); return }
+  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
+    duplicateGroups(entry.positions ?? [], { items: existingItems, vendor: entry.vendor ?? '', year: entryYear(entry), invoiceFile: entry.serverFile })
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
+  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bleibt bis nach dem
+  // Neuladen, sonst böte die Seite kurz die alte Wahl noch einmal an.
+  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
+    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
     setError('')
     setLinking(true)
     try {
-      await api(`/api/costItems/${target.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
+      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+      setQueue((q) => q.map((x) => {
+        if (x.id !== entry.id || !x.positions) return x
+        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
+        return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
+      }))
+      await loadData()
     } catch (e) {
       setError(`Nicht verknüpft: ${errorText(e)}`)
-      return
     } finally {
       setLinking(false)
     }
-    // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
-    setQueue((q) => q.map((x) => {
-      if (x.id !== entry.id || !x.positions) return x
-      const positions = x.positions.map((y, i) => (i === idx ? { ...y, linked: target.description, checked: false } : y))
-      return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
-    }))
-    await loadData()
   }
 
   function removeEntry(id: number) {
@@ -638,12 +638,13 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                           <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                           <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
                         </tr>
-                        <DuplicateRow candidates={candidatesOf(entry, p)} amount={p.amount} year={entryYear(entry)} colSpan={7} linked={p.linked} busy={linking} onLink={(t) => void linkPosition(entry, i, t)} />
                         </Fragment>
                       )
                     })}
                   </tbody>
                 </Table>
+                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={entryYear(entry)} busy={linking}
+                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => onNavigate('kosten', { kind: 'costItem', id: item.id })} />
                 {/* Begründungen der nicht-grünen Positionen */}
                 {es?.posScores.some((s) => s.level !== 'gruen') && (
                   <div style={{ marginTop: 6 }}>
