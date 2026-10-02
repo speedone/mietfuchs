@@ -294,3 +294,17 @@ test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins For
   fireEvent.click(within(check).getByRole('button', { name: 'Position öffnen' }))
   expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'gp' }))
 })
+
+// Dritte Durchsicht (M1): Eine übernommene Position kann einen geschätzten §35a-Lohnanteil tragen.
+// „Betrag prüfen“ nennt ihn, damit er nicht still in die Anlage V gelangt.
+test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Formular', async () => {
+  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000, key: 'area' }]
+  const onOpenItem = vi.fn()
+  renderWithOpen(onOpenItem)
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gp' } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  expect(check.textContent).toMatch(/Lohnanteil der Position: 1\.000,00\s€ – stimmt er mit dem Beleg\?/)
+  fireEvent.click(within(check).getByRole('button', { name: 'Lohnanteil im Formular prüfen' }))
+  expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'gp' }))
+})
