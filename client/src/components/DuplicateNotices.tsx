@@ -24,13 +24,15 @@ export default function DuplicateNotices({ groups, rows, year, busy, onLink, onO
         <div key={`l-${target}`}><span className="badge green">✓ {descs.map((d) => `„${d}“`).join(', ')} verknüpft mit „{target}“</span></div>
       ))}
       {groups.map((g) => {
-        const other = g.candidates.filter((c) => !g.offers.some((o) => o.target.id === c.id) && !g.formOnly.includes(c))
+        const other = g.candidates.filter((c) => !g.offers.some((o) => o.target.id === c.id) && !g.formOnly.includes(c) && !g.takenByReceipt.includes(c))
         return (
           <div key={g.rows.join('-')} className="warn" style={{ marginTop: 6 }}>
             {names(g)}: Für {year} schon erfasst: {g.candidates.map(candidateText).join(', ')}.{' '}
+            {g.takenByReceipt.length > 0 && `${g.takenByReceipt.map((c) => `„${c.description}“`).join(', ')} ist schon mit diesem Beleg erfasst; derselbe Beleg ist wohl zweimal ausgewertet. `}
+            {g.credit && 'Eine Gutschrift wird nicht mit einer Position verrechnet; gehört sie zur Rechnung, legen Sie sie als eigene Position an. '}
             {g.offers.length > 0 && 'Ist das dieselbe Rechnung, verknüpfen Sie den Beleg mit der Position. '}
             {g.formOnly.length > 0 && 'Bei einer Position laut Gemeinschaftsabrechnung oder mit Einzelbeträgen pflegen Sie Betrag und Angaben im Formular. '}
-            {g.offers.length === 0 && g.formOnly.length === 0 && other.length > 0 && 'Ist das dieselbe Rechnung, übernehmen Sie die Zeile bitte nicht. '}
+            {!g.credit && g.offers.length === 0 && g.formOnly.length === 0 && other.length > 0 && 'Ist das dieselbe Rechnung, übernehmen Sie die Zeile bitte nicht. '}
             Ist es eine zweite Rechnung, haken Sie die Zeile an und legen sie als neue Position an.
             {(g.offers.length > 0 || (g.formOnly.length > 0 && onOpen)) && (
               <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
