@@ -2,7 +2,7 @@
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
 import { describe, expect, test } from 'vitest'
 import type { CostItem, Unit } from './types'
-import { carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
+import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
 
 const UNITS: Unit[] = [
   { id: 'u1', propertyId: 'p', name: 'EG', areaM2: 50, participates: true },
@@ -100,5 +100,44 @@ describe('Vorlagen aus dem Vorjahr', () => {
 
   test('0 € bleibt keine Kostenposition (#139)', () => {
     expect(carryOverBody(withCarryAmount(rowOf(rows, 'Grundsteuer 2025'), '0'), UNITS, 2026)).toMatchObject({ error: expect.stringMatching(/0 €/) })
+  })
+})
+
+// Zusammenspiel mit der KI-Erfassung (Befund B): Erst kommt die Rechnung per KI, dann „Aus dem
+// Vorjahr übernehmen“. Die KI beschreibt anders als die Vorlage, der Vergleich der Beschreibung
+// traf nie, und die Zeile wurde angehakt und doppelt angelegt. Jetzt gilt die gemeinsame Regel
+// aus shared/duplicates.ts.
+describe('schon erfasst nach der gemeinsamen Regel', () => {
+  test('KI-Beschreibung bei gleicher Kostenart: als erfasst erkannt, ein Betrag hakt nicht an', () => {
+    const items = [
+      item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
+      item({ year: 2026, category: 'Grundsteuer', description: 'Abgabenbescheid Stadt Musterstadt Q1–Q4', invoiceFile: 'gs.pdf' }),
+    ]
+    const row = rowOf(carryOverRows(items, 2026), 'Grundsteuer 2025')
+    expect(row.already).toBe(true)
+    expect(alreadyCarried(items, row, 2026)).toBe(true)
+    expect(withCarryAmount(row, '610,00', row.already).checked).toBe(false)
+  })
+
+  test('breite Kostenart mit anderer Beschreibung und anderem Steller: nicht erfasst', () => {
+    const items = [
+      item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025', vendor: 'Pumpen Huber' }),
+      item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne', vendor: 'Dach Maier' }),
+    ]
+    expect(rowOf(carryOverRows(items, 2026), 'Wartung Hebeanlage 2025').already).toBe(false)
+    // derselbe Steller schon: dann ist es wohl dieselbe Wartung
+    const same = [items[0]!, item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Jahresrechnung', vendor: 'Pumpen Huber GmbH' })]
+    expect(rowOf(carryOverRows(same, 2026), 'Wartung Hebeanlage 2025').already).toBe(true)
+  })
+
+  test('eine schon übernommene Schwesterposition macht die andere nicht zu „erfasst“', () => {
+    const items = [
+      item({ year: 2025, category: 'Müllabfuhr', description: 'Restmüll 2025' }),
+      item({ year: 2025, category: 'Müllabfuhr', description: 'Biomüll 2025' }),
+      item({ year: 2026, category: 'Müllabfuhr', description: 'Restmüll 2026' }),
+    ]
+    const rows = carryOverRows(items, 2026)
+    expect(rowOf(rows, 'Restmüll 2025').already).toBe(true)
+    expect(rowOf(rows, 'Biomüll 2025').already).toBe(false)
   })
 })

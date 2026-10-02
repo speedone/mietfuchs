@@ -46,13 +46,16 @@ import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import DuplicateRow from '../components/DuplicateRow'
+import { aiRowPreselected, duplicateCandidates, linkBody } from '../triage'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
 
 // Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
-type ExtractPos = AiPosition & { checked: boolean }
+// `linked`: mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
+type ExtractPos = AiPosition & { checked: boolean; linked?: string }
 
 // Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
 const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
@@ -107,7 +110,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
 
-  const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
+  // Der zuletzt geladene Stand und das Laden selbst, für die KI-Auswertung: Sie entscheidet beim
+  // Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was schon erfasst ist.
+  const itemsRef = useRef<CostItem[]>([])
+  const loadingRef = useRef<Promise<unknown> | null>(null)
+  const [linking, setLinking] = useState(false)
+  const load = () => {
+    const loading = api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setItems(list) })
+    loadingRef.current = loading
+    return loading
+  }
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
@@ -338,6 +350,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           onProgress: (progress) => patchEntry(next.id, { progress }),
         })
         const ex = res.extraction
+        await loadingRef.current?.catch(() => {})
+        const known = itemsRef.current
+        const ctx: KeyContext = { items: known, year, propertyKind: property?.kind ?? null }
+        const vendor = ex.vendor || next.fileName
         const positions = (ex.positions || []).map((p) => {
           // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
           // über die Beschreibung (z. B. wenn das Modell eine eigene Kategorie erfindet)
@@ -357,10 +373,19 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             amount,
             labor35a,
             externalTotalAmount: '',
-            ...aiPositionDefaults(category, units, meters, keyCtx, p.description),
+            ...aiPositionDefaults(category, units, meters, ctx, p.description),
           }
-        }).map((p) => ({ ...p, checked: !isNotAllocable(p.category) && aiPositionPreselect(p) && aiPositionProblem(p, units, year) === null }))
-        patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
+          // Könnte dieselbe Rechnung schon erfasst sein, etwa aus dem Vorjahr übernommen
+          // (shared/duplicates.ts)? Dann nicht vorab angehakt; die Zeile darunter bietet an, den
+          // Beleg mit der Position zu verknüpfen.
+        }).map((p) => ({
+          ...p,
+          checked: aiRowPreselected({
+            category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, year), level: 'gruen',
+            candidates: duplicateCandidates(known, { category: p.category, description: p.description, vendor, year }),
+          }),
+        }))
+        patchEntry(next.id, { status: 'fertig', vendor, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
         if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
@@ -380,6 +405,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (blocked.length > 0) {
       setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${aiPositionProblem(p, units, year)}`).join(' ')}`)
       return
+    }
+    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen.
+    const twice = entry.positions.filter((p) => p.checked && candidatesOf(entry, p).length > 0)
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst?',
+        message: `Für ${year} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
     }
     setError('')
     const done: number[] = []
@@ -403,6 +439,32 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await load()
+  }
+
+  const candidatesOf = (entry: QueueEntry, p: ExtractPos): CostItem[] =>
+    p.linked ? [] : duplicateCandidates(items, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen: Betrag und
+  // Beleg vom Beleg, Schlüssel und alles Übrige bleiben (linkBody in triage.ts).
+  async function linkPosition(entry: QueueEntry, idx: number, target: CostItem) {
+    const p = entry.positions[idx]
+    if (!p) return
+    const built = linkBody(p, entry.serverFile, target)
+    if ('error' in built) { setError(`Nicht verknüpft: „${p.description}“: ${built.error}`); return }
+    setError('')
+    setLinking(true)
+    try {
+      await api(`/api/costItems/${target.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+    } catch (e) {
+      setError(`Nicht verknüpft: ${errorText(e)}`)
+      return
+    } finally {
+      setLinking(false)
+    }
+    const positions = entry.positions.map((x, i) => (i === idx ? { ...x, linked: target.description, checked: false } : x))
+    patchEntry(entry.id, { positions, ...(positions.every((x) => x.linked) ? { status: 'übernommen' as const } : {}) })
+    await load()
+    toast(`„${target.description}“ mit dem Beleg verknüpft.`)
   }
 
   function updatePos(entryId: number, idx: number, patch: Partial<ExtractPos>) {
@@ -618,8 +680,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </thead>
                   <tbody>
                     {entry.positions.map((p, i) => (
-                      <tr key={i}>
-                        <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                      <Fragment key={i}>
+                      <tr>
+                        <td><input type="checkbox" checked={p.checked} disabled={!!p.linked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
                           <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx, p.description) })}>
@@ -630,6 +693,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                         <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
                       </tr>
+                      <DuplicateRow candidates={candidatesOf(entry, p)} amount={p.amount} year={year} colSpan={6} linked={p.linked} busy={linking} onLink={(t) => void linkPosition(entry, i, t)} />
+                      </Fragment>
                     ))}
                   </tbody>
                 </Table>

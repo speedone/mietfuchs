@@ -3,6 +3,9 @@
 // Bewusst reine Logik ohne React/Netzwerk — damit testbar und vom Modell unabhängig.
 import type { CostItem, Meter, Reading } from './types'
 import { isNotAllocable } from './types'
+import { parseEuro, fmtEuro } from './api'
+import { amountProblem } from './costForm'
+import { sameCostCandidates } from '../../shared/duplicates.ts'
 
 export type TrafficLight = 'gruen' | 'gelb' | 'rot'
 
@@ -35,6 +38,7 @@ export type PositionCtx = {
   targetYear: number
   existingItems: CostItem[]
   priorYearDeviationPct?: number | null // Abweichung der Kategorie-Summe ggü. Vorjahr in %
+  description?: string // für die Frage, ob dieselbe Rechnung schon erfasst ist
 }
 
 export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons: string[] } {
@@ -56,6 +60,13 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
     if (dupe) s.bump('rot', 'mögliche Dublette — gleicher Betrag, Steller und Jahr existiert bereits')
   }
 
+  // Schon eine Position, die dieselbe Rechnung sein könnte, etwa aus dem Vorjahr übernommen
+  // (shared/duplicates.ts)? Nie grün: verknüpfen oder bewusst als neue Position anhaken.
+  const candidates = duplicateCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, year })
+  if (candidates.length > 0) {
+    s.bump('gelb', `schon erfasst: ${candidates.map(candidateText).join(', ')} — verknüpfen oder bewusst als neue Position anlegen`)
+  }
+
   if (ctx.matchedByDesc) s.bump('gelb', 'Kategorie nur über die Beschreibung erraten')
   if (ctx.amountCents > 0 && ctx.labor35aCents > ctx.amountCents) s.bump('gelb', '§35a-Lohnanteil größer als der Betrag')
   if (ctx.detectedYear != null && ctx.detectedYear !== ctx.targetYear) {
@@ -67,6 +78,47 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
   }
 
   return s.result()
+}
+
+// ---------- Dieselbe Rechnung schon erfasst? (Zusammenspiel #141 und #170) ----------
+// Die Regel steht in shared/duplicates.ts, damit „Aus dem Vorjahr übernehmen“, Schnellerfassung,
+// KI-Auswertung der Kostenseite, Posteingang und der Hinweis der Abrechnung dasselbe sagen. Das
+// Jahr ist das des Belegs: Im Januar steht die Auswahl oft noch auf dem Vorjahr.
+export function duplicateCandidates(items: readonly CostItem[], q: { category: string; description: string; vendor: string; year: number }): CostItem[] {
+  return sameCostCandidates(items, q)
+}
+
+export const candidateText = (i: CostItem): string => `„${i.description}“ (${fmtEuro(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`
+
+// Vorab angehakt ist eine KI-Zeile nur, wenn nichts dagegen spricht: umlagefähig, mit Schlüssel für
+// alle (aiPositionPreselect), übernehmbar, nicht rot und ohne eine Position, die dieselbe Rechnung
+// sein könnte. Sonst legte „Diese übernehmen“ sie ungesehen an.
+export function aiRowPreselected(r: { category: string; preselect: boolean; problem: string | null; level: TrafficLight; candidates: readonly CostItem[] }): boolean {
+  return !isNotAllocable(r.category) && r.preselect && r.problem === null && r.level !== 'rot' && r.candidates.length === 0
+}
+
+// Weicht die Summe der Kostenart im Jahr des Belegs, mit diesem Betrag, um wie viel Prozent vom
+// Jahr davor ab? `null` ohne Vorjahr.
+export function categoryDeviationPct(items: readonly CostItem[], category: string, year: number, amountCents: number): number | null {
+  const sum = (y: number) => items.filter((i) => i.year === y && i.category === category).reduce((a, i) => a + i.amountCents, 0)
+  const prior = sum(year - 1)
+  return prior > 0 ? ((sum(year) + amountCents - prior) / prior) * 100 : null
+}
+
+// Eine KI-Zeile mit einer bestehenden Position verknüpfen: Betrag und Beleg kommen vom Beleg, der
+// §35a-Lohnanteil nur, wenn die KI einen gelesen hat. Schlüssel, Beschreibung und alles Übrige
+// der Position bleiben; die PUT-Route ergänzt nur die mitgeschickten Felder.
+export function linkBody(p: { amount: string; labor35a: string }, invoiceFile: string | undefined, target: CostItem): { error: string } | { body: Record<string, unknown> } {
+  const amount = parseEuro(p.amount)
+  const labor = p.labor35a.trim() ? parseEuro(p.labor35a) : null
+  const problem = amountProblem(amount, p.labor35a.trim() ? labor : 0, target.category)
+  if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
+  return { body: { amountCents: amount, invoiceFile, ...(labor !== null ? { labor35aCents: labor } : {}) } }
+}
+
+export function linkLabel(target: CostItem, p: { amount: string }): string {
+  const amount = parseEuro(p.amount)
+  return `Mit „${target.description}“ (${fmtEuro(target.amountCents)}) verknüpfen und Betrag auf ${amount === null ? '?' : fmtEuro(amount)} setzen`
 }
 
 // ---------- Zählerstand ----------

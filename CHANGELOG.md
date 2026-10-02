@@ -39,6 +39,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Gemeinschaftsabrechnung“ vor (außer bei der Grundsteuer), und die Summe der
   Miteigentumsanteile steht nach der ersten Position nicht mehr an jeder weiteren neu an.
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
+- **Dieselbe Rechnung wird nicht mehr still zweimal erfasst.** Steht für das Jahr des Belegs
+  schon eine Position derselben Kostenart, etwa aus dem Vorjahr übernommen mit geschätztem
+  Betrag, ist eine KI-Zeile in der Schnellerfassung und bei der Auswertung auf der Seite Kosten
+  nicht mehr vorab angehakt. Angeboten wird stattdessen, den Beleg mit der bestehenden Position
+  zu verknüpfen und ihren Betrag zu setzen; Schlüssel und übrige Angaben bleiben. Wer bewusst
+  eine zweite Rechnung anlegt, wird gefragt. Umgekehrt erkennt „Aus dem Vorjahr übernehmen“ eine
+  schon per KI erfasste Rechnung auch dann, wenn die KI sie anders beschrieben hat. Bei
+  „Sonstige Betriebskosten“ und „Nicht umlagefähig“ zählt nur eine Position mit ähnlicher
+  Beschreibung oder vom selben Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin,
+  wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat; die
+  Ampel im Cockpit zählt ihn mit. Im Januar vergleicht die Schnellerfassung mit dem Jahr des
+  Belegs statt mit dem gewählten.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
 
 ### Geändert
 

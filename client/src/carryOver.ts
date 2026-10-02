@@ -10,6 +10,7 @@
 import type { CostItem, Tenancy, Unit } from './types'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
+import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
@@ -23,17 +24,31 @@ export type CarryRow = {
   // Nur bei „laut Gemeinschaftsabrechnung“: die Kosten der ganzen Anlage im neuen Jahr
   externalTotalAmount: string
   checked: boolean
-  // Steht im Jahr schon eine Position derselben Kostenart mit derselben Beschreibung?
+  // Steht im Jahr schon eine Position, die dieselbe Rechnung sein könnte (alreadyCarried)?
   already: boolean
   // Einzelbeträge je Mieter lassen sich nicht in einer Zeile eintragen, nur im Formular.
   inline: boolean
 }
 
-// Steht im Jahr schon eine Position derselben Kostenart mit dieser Beschreibung? Die Seite fragt
-// das bei jeder Anzeige neu, damit eine über das Formular angelegte Zeile gleich vermerkt ist.
-export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'>, year: number): boolean {
-  const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
-  return items.some((i) => i.year === year && i.category === row.source.category && sameText(i.description, row.description))
+// Steht im Jahr schon eine Position, die dieselbe Rechnung sein könnte? Die Regel ist die gemeinsame
+// aus shared/duplicates.ts (Befund B): dieselbe Kostenart, bei einer breiten zusätzlich ähnliche
+// Beschreibung oder derselbe Rechnungssteller. Ein Vergleich der Beschreibung allein traf nie, wenn
+// die Rechnung vorher per KI erfasst war, denn die KI beschreibt anders als die Vorlage.
+// Ausgenommen ist eine Position, die genau die Übernahme einer anderen Vorjahresposition derselben
+// Kostenart ist: Wer Restmüll und Biomüll getrennt führt und Restmüll schon übernommen hat, soll
+// Biomüll nicht als erfasst sehen. Die Seite fragt das bei jeder Anzeige neu, damit eine über das
+// Formular angelegte Zeile gleich vermerkt ist.
+export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'> & Partial<Pick<CarryRow, 'vendor'>>, year: number): boolean {
+  const category = row.source.category
+  const sisters = items
+    .filter((i) => i.year === year - 1 && i.category === category && i.id !== row.source.id)
+    .map((i) => normalizedText(i.description))
+  const own = normalizedText(row.description)
+  return sameCostCandidates(items, { year, category, description: row.description, vendor: row.vendor ?? row.source.vendor })
+    .some((i) => {
+      const text = normalizedText(i.description)
+      return text === own || !sisters.includes(text)
+    })
 }
 
 export function carryOverRows(items: readonly CostItem[], year: number): CarryRow[] {
@@ -47,7 +62,7 @@ export function carryOverRows(items: readonly CostItem[], year: number): CarryRo
       labor35a: '',
       externalTotalAmount: '',
       checked: false,
-      already: alreadyCarried(items, { source, description }, year),
+      already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, year),
       inline: source.key !== 'amounts',
     }
   })

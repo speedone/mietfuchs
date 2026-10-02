@@ -31,6 +31,7 @@ import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
+import { possibleDuplicates } from '../../shared/duplicates.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -222,6 +223,10 @@ const noticeKinds = {
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
   'key.changed-from-previous-year': { level: 'hint', title: 'Umlageschlüssel anders als im Vorjahr', terms: ['keyChange', 'allocationKey'] },
+  // Dieselbe Rechnung zweimal erfasst? (Zusammenspiel #141 und #170, shared/duplicates.ts) Ein
+  // Hinweis, denn zwei Rechnungen derselben Kostenart gibt es; zu prüfen ist es trotzdem, deshalb
+  // zählt er in der Ampel des Cockpits mit.
+  'cost.possible-duplicate': { level: 'hint', title: 'Dieselbe Rechnung zweimal erfasst?', terms: ['allocable'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -1530,6 +1535,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // bei Heizung und Warmwasser keine beteiligte Wohnung: keine Warnung zur Warmmiete, kein
   // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
   const outsideHeating = (u: SnapshotUnit) => isGarageLike(u) || (u.noConnection ?? []).includes('waerme')
+
+  // Zwei Positionen derselben Kostenart, eine ohne Beleg: oft die Übernahme aus dem Vorjahr und
+  // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst.
+  for (const group of possibleDuplicates(items, year, snapshot.previousCostItems ?? [])) {
+    const first = group.find((i) => !i.invoiceFile) ?? group[0]
+    if (!first) continue
+    const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
+    const named = list.length === 2 ? `${list[0]} und ${list[1]}` : `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`
+    warn('cost.possible-duplicate',
+      `${named} stehen beide ${year} unter „${first.category}“. Ist das dieselbe Rechnung, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
+      'Dann bitte die Position ohne Beleg löschen oder ihr den Beleg zuordnen und den Betrag anpassen. Sind es zwei Rechnungen, ist nichts zu tun.',
+      itemSubject(first))
+  }
 
   for (const item of items) {
     const b = basisOf(item)
