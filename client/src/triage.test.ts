@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { aiRowPreselected, categoryDeviationPct, duplicateCandidates, linkBody, linkLabel, scorePosition, type PositionCtx } from './triage'
+import { aiRowPreselected, categoryDeviationPct, duplicateCandidates, linkBody, linkLabel, linkTargets, scorePosition, type PositionCtx } from './triage'
 import type { CostItem } from './types'
 
 const ctx = (patch: Partial<PositionCtx>): PositionCtx => ({
@@ -64,4 +64,10 @@ test('A im Januar: Vorjahresvergleich nach dem Jahr des Belegs, nicht nach dem g
   // Das gewählte Jahr hätte 2025 (schon 600 €) + 612 € gegen 2024 verglichen: +304 %
   expect(categoryDeviationPct(items, 'Grundsteuer', 2025, 61200)).toBeCloseTo(304)
   expect(categoryDeviationPct([], 'Grundsteuer', 2026, 61200)).toBeNull()
+})
+
+test('Durchsicht: verknüpft wird nur mit einer Position ohne Beleg und nie mit Einzelbeträgen je Mieter', () => {
+  const mitBeleg: CostItem = { ...schaetzung, id: 'b', invoiceFile: 'x.pdf' }
+  const einzel: CostItem = { ...schaetzung, id: 'e', key: 'amounts', tenancyAmounts: { t1: 30000 } }
+  expect(linkTargets([schaetzung, mitBeleg, einzel]).map((i) => i.id)).toEqual(['gs'])
 })

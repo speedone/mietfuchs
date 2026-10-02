@@ -116,6 +116,13 @@ export function linkBody(p: { amount: string; labor35a: string }, invoiceFile: s
   return { body: { amountCents: amount, invoiceFile, ...(labor !== null ? { labor35aCents: labor } : {}) } }
 }
 
+// Womit sich ein Beleg verknüpfen lässt: Positionen ohne Beleg (sonst ersetzte er einen anderen),
+// und keine mit Einzelbeträgen je Mieter, denn deren Betrag hängt an den Einzelbeträgen, die der
+// Rechnungsbetrag nicht kennt (Durchsicht).
+export function linkTargets(candidates: readonly CostItem[]): CostItem[] {
+  return candidates.filter((c) => !c.invoiceFile && c.key !== 'amounts')
+}
+
 export function linkLabel(target: CostItem, p: { amount: string }): string {
   const amount = parseEuro(p.amount)
   return `Mit „${target.description}“ (${fmtEuro(target.amountCents)}) verknüpfen und Betrag auf ${amount === null ? '?' : fmtEuro(amount)} setzen`

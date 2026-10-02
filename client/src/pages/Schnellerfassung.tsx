@@ -420,6 +420,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     setError('')
     setPending('')
     const left: string[] = []
+    // In diesem Lauf schon angelegt, je Beleg: Die Ampel rechnet mit dem Stand vor dem Lauf, und zwei
+    // Belege derselben Kostenart würden sonst beide angelegt (Durchsicht). Positionen desselben
+    // Belegs zählen nicht gegeneinander, Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
+    const posted: { entryId: number; item: CostItem }[] = []
     for (const entry of queue) {
       const es = scored.get(entry.id)
       if (!es || entry.status !== 'fertig') continue
@@ -430,7 +434,13 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           for (let i = 0; i < entry.positions.length; i++) {
             const p = entry.positions[i]
             if (p.checked && es.posScores[i]?.level === 'gruen') {
-              if (await postPosition(entry, p)) { any = true; done.push(i) }
+              const others = posted.filter((x) => x.entryId !== entry.id).map((x) => x.item)
+              if (duplicateCandidates(others, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) }).length > 0) continue
+              if (await postPosition(entry, p)) {
+                any = true
+                done.push(i)
+                posted.push({ entryId: entry.id, item: { id: `lauf-${entry.id}-${i}`, propertyId: propertyId ?? '', year: entryYear(entry), category: p.category, description: p.description, vendor: entry.vendor, amountCents: parseEuro(p.amount) ?? 0, key: p.key, invoiceFile: entry.serverFile } })
+              }
             }
           }
         } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
@@ -473,8 +483,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     } finally {
       setLinking(false)
     }
-    const positions = (entry.positions ?? []).map((x, i) => (i === idx ? { ...x, linked: target.description, checked: false } : x))
-    patchEntry(entry.id, { positions, ...(positions.every((x) => x.linked) ? { status: 'übernommen' as const } : {}) })
+    // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+    setQueue((q) => q.map((x) => {
+      if (x.id !== entry.id || !x.positions) return x
+      const positions = x.positions.map((y, i) => (i === idx ? { ...y, linked: target.description, checked: false } : y))
+      return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
+    }))
     await loadData()
   }
 
