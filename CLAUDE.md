@@ -937,14 +937,22 @@ Rechnungssteller (ohne Jahreszahlen und Satzzeichen, Präfixvergleich), weil dor
 verschiedene Rechnungen nebeneinander stehen. Die Regel findet nur Kandidaten, entscheiden tut der
 Vermieter. Sie fragen: `alreadyCarried` (carryOver.ts, ausgenommen die genaue Übernahme einer
 Schwesterposition des Vorjahres), Schnellerfassung und KI-Auswertung der Kostenseite über
-`duplicateCandidates`/`aiRowPreselected`/`linkBody` in [client/src/triage.ts](client/src/triage.ts)
-(nicht vorab angehakt, „verknüpfen und Betrag setzen“ als `PUT` mit `amountCents`, `invoiceFile`
-und gegebenenfalls `labor35aCents`, Rückfrage „Trotzdem anlegen“; die Zeile zeigt
-[DuplicateRow.tsx](client/src/components/DuplicateRow.tsx)) und der Hinweis
-`cost.possible-duplicate` in calc.ts (`possibleDuplicates`, Stufe `hint`, zählt in der Ampel). Der
-Hinweis kommt nur, wenn eine der Positionen keinen Beleg hat **und** das Jahr mehr solche
-Positionen hat als das Vorjahr: Restmüll und Biomüll, beide aus dem Vorjahr übernommen, sind die
-Gliederung des Hauses und keine Doppelung. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
+`duplicateCandidates`/`aiRowPreselected`/`duplicateGroups` in [client/src/triage.ts](client/src/triage.ts)
+(nicht vorab angehakt, Rückfrage „Trotzdem anlegen“), das Kostenformular beim Neuanlegen
+(„Stattdessen … bearbeiten“) und der Hinweis `cost.possible-duplicate` in calc.ts.
+**Verknüpft wird je Gruppe**: Zeilen eines Belegs mit derselben Kostenart und denselben Kandidaten
+gehen zusammen, mit der Summe, sonst bekäme die Position den Betrag der ersten Zeile und die
+übrigen gingen verloren. Ziel ist eine Position ohne Beleg oder eine, die schon an **diesem** Beleg
+hängt (dann wird der Betrag erhöht). Hat die KI keinen §35a-Lohnanteil gelesen, wird ein
+vorhandener entfernt und das an der Wahl gesagt; ein stehengebliebener Schätzwert würde sonst den
+Mietern und in der Anlage V bescheinigt. Geprüft wird gegen den Lohnanteil, der danach gilt.
+Positionen mit `external` oder `amounts` werden nicht mit einem Klick verknüpft, ihr Betrag hängt
+an weiteren Angaben; dort öffnet ein Knopf das Formular. Die Hinweise stehen **unter** der Tabelle
+([DuplicateNotices.tsx](client/src/components/DuplicateNotices.tsx)), in einer Zeile scrollten sie
+auf dem Handy mit. Der Hinweis der Abrechnung (`possibleDuplicates`, Stufe `hint`, zählt in der
+Ampel) kommt nur, wenn eine Position der Gruppe keinen Beleg hat und dazu (a) eine einen Beleg
+hat oder (b) das Vorjahr Positionen dieser Art hatte und das Jahr mehr hat. Ohne Vorjahr und ganz
+ohne Belege bleibt er still, ebenso Restmüll und Biomüll, beide übernommen. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
 nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
 führt dafür `vendor` und `invoiceFile`; verteilt wird nach keinem.
 

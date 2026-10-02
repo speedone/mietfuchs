@@ -46,8 +46,9 @@ import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
-import DuplicateRow from '../components/DuplicateRow'
-import { aiRowPreselected, duplicateCandidates, linkBody } from '../triage'
+import DuplicateNotices from '../components/DuplicateNotices'
+import { aiRowPreselected, candidateText, duplicateCandidates, duplicateGroups, type DuplicateGroup, type LinkOffer } from '../triage'
+import { sameCostCandidates } from '../../../shared/duplicates.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
@@ -284,6 +285,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!form.id
+    // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
+    // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
+    if (!editing) {
+      const same = sameCostCandidates(items, { propertyId, year, category: form.category, description: form.description, vendor: form.vendor })
+      const first = same[0]
+      if (first) {
+        let instead = false
+        const ok = await confirm({
+          title: 'Dieselbe Rechnung?',
+          message: `Für ${year} ist ${same.map(candidateText).join(', ')} schon erfasst. Ist das dieselbe Rechnung? Dann bearbeiten Sie besser die vorhandene Position, sonst wird sie zweimal verteilt.`,
+          confirmLabel: 'Trotzdem anlegen',
+          alternativeLabel: `Stattdessen „${first.description}“ bearbeiten`,
+          onAlternative: () => { instead = true },
+          cancelLabel: 'Abbrechen',
+        })
+        if (instead) { setForm(itemToForm(first)); return }
+        if (!ok) return
+      }
+    }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
@@ -444,31 +464,30 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const candidatesOf = (entry: QueueEntry, p: ExtractPos): CostItem[] =>
     p.linked ? [] : duplicateCandidates(items, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
 
-  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen: Betrag und
-  // Beleg vom Beleg, Schlüssel und alles Übrige bleiben (linkBody in triage.ts).
-  async function linkPosition(entry: QueueEntry, idx: number, target: CostItem) {
-    const p = entry.positions[idx]
-    if (!p) return
-    const built = linkBody(p, entry.serverFile, target)
-    if ('error' in built) { setError(`Nicht verknüpft: „${p.description}“: ${built.error}`); return }
+  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
+    duplicateGroups(entry.positions, { items, vendor: entry.vendor ?? '', year, invoiceFile: entry.serverFile })
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
+  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bis nach dem Neuladen.
+  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
+    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
     setError('')
     setLinking(true)
     try {
-      await api(`/api/costItems/${target.id}`, { method: 'PUT', body: JSON.stringify(built.body) })
+      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
+      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+      setQueue((q) => q.map((x) => {
+        if (x.id !== entry.id) return x
+        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
+        return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
+      }))
+      await load()
+      toast(`„${offer.target.description}“ mit dem Beleg verknüpft.`)
     } catch (e) {
       setError(`Nicht verknüpft: ${errorText(e)}`)
-      return
     } finally {
       setLinking(false)
     }
-    // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
-    setQueue((q) => q.map((x) => {
-      if (x.id !== entry.id) return x
-      const positions = x.positions.map((y, i) => (i === idx ? { ...y, linked: target.description, checked: false } : y))
-      return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
-    }))
-    await load()
-    toast(`„${target.description}“ mit dem Beleg verknüpft.`)
   }
 
   function updatePos(entryId: number, idx: number, patch: Partial<ExtractPos>) {
@@ -697,11 +716,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                         <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
                       </tr>
-                      <DuplicateRow candidates={candidatesOf(entry, p)} amount={p.amount} year={year} colSpan={6} linked={p.linked} busy={linking} onLink={(t) => void linkPosition(entry, i, t)} />
                       </Fragment>
                     ))}
                   </tbody>
                 </Table>
+                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={year} busy={linking}
+                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => { setError(''); setForm(itemToForm(item)) }} />
                 <div className="row" style={{ marginTop: 10 }}>
                   <button className="btn" onClick={() => void adoptPositions(entry)} disabled={entry.positions.every((p) => !p.checked)}>
                     Ausgewählte Positionen für {year} übernehmen

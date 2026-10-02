@@ -5,7 +5,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { possibleDuplicates, sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
+import { normalizedText, possibleDuplicates, sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 
 let n = 0
 const item = (over: Partial<DuplicateItem> & Pick<DuplicateItem, 'year' | 'category'>): DuplicateItem => ({
@@ -74,4 +74,34 @@ test('Mögliche Doppelung: nicht, wenn alle einen Beleg haben, und nicht, wenn d
   const s1 = item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage' })
   const s2 = item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne' })
   assert.deepEqual(possibleDuplicates([s1, s2], 2026, []), [])
+})
+
+// Zweite Durchsicht: Der Hinweis soll die Ampel nicht dauerhaft färben, wenn es wirklich zwei
+// Rechnungen sind. Gemeldet wird nur (a) Beleg neben Position ohne Beleg oder (b) mehr als im
+// Vorjahr, mit einer ohne Beleg.
+test('Mögliche Doppelung (a): eine mit, eine ohne Beleg, auch wenn das Vorjahr ebenso viele hatte', () => {
+  const prev = [item({ year: 2025, category: 'Müllabfuhr', description: 'Restmüll 2025' }), item({ year: 2025, category: 'Müllabfuhr', description: 'Biomüll 2025' })]
+  const rest = item({ year: 2026, category: 'Müllabfuhr', description: 'Restmüll 2026' })
+  const echt = item({ year: 2026, category: 'Müllabfuhr', description: 'Abfallgebühren', invoiceFile: 'm.pdf' })
+  assert.equal(possibleDuplicates([rest, echt], 2026, prev).length, 1)
+})
+
+test('Mögliche Doppelung (b): mehr als im Vorjahr, eine ohne Beleg, auch ganz ohne Belege', () => {
+  const prev = [item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025' })]
+  const a = item({ year: 2026, category: 'Grundsteuer', description: 'Grundsteuer 2026' })
+  const b = item({ year: 2026, category: 'Grundsteuer', description: 'Grundsteuer Nachtrag' })
+  assert.equal(possibleDuplicates([a, b], 2026, prev).length, 1)
+})
+
+test('Mögliche Doppelung: still ohne Vorjahr und ganz ohne Belege', () => {
+  const a = item({ year: 2026, category: 'Sach- und Haftpflichtversicherung', description: 'Gebäudeversicherung' })
+  const b = item({ year: 2026, category: 'Sach- und Haftpflichtversicherung', description: 'Haftpflicht' })
+  assert.deepEqual(possibleDuplicates([a, b], 2026, []), [])
+})
+
+test('Normalisierung: ein zerlegtes „ü“ (NFD, etwa aus macOS-Dateinamen) gilt wie das zusammengesetzte', () => {
+  const nfd = 'Müllabfuhr'
+  assert.equal(normalizedText(nfd), normalizedText('Müllabfuhr'))
+  const x = item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Müllschlucker Wartung' })
+  assert.equal(sameCostCandidates([x], { year: 2026, category: 'Sonstige Betriebskosten', description: 'Müllschlucker Wartung' }).length, 1)
 })
