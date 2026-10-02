@@ -60,7 +60,7 @@ const wrap = (node: ReactNode) => render(
 )
 
 test('Cockpit: ohne Kosten im Jahr kein voraussichtliches Guthaben, sondern „Noch keine Kosten erfasst“', async () => {
-  wrap(<Cockpit units={UNITS} settings={null} reload={async () => {}} onNavigate={() => {}} />)
+  wrap(<Cockpit units={UNITS} tenancies={[]} settings={null} reload={async () => {}} onNavigate={() => {}} />)
   await screen.findByText(`Gesamtkosten ${YEAR}`, {}, SLOW)
   expect(screen.getByText(new RegExp(`Noch keine Kosten für ${YEAR} erfasst`))).toBeTruthy()
   expect(screen.queryByText('2.400,00 €', { exact: false })).toBeNull()

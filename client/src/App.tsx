@@ -286,7 +286,7 @@ function Shell() {
             dem Objekt, in dem sie entstanden sind. */}
         <Fragment key={propertyId ?? ''}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
         {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
