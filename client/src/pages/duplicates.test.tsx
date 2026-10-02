@@ -171,3 +171,93 @@ test('Schnellerfassung: „Alle grünen übernehmen“ legt dieselbe Kostenart a
   await waitFor(() => expect(screen.getByText(/noch zu prüfen/)).toBeTruthy(), SLOW)
   expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1)
 })
+
+// ---------- Zweite Durchsicht ----------
+const wasserEstimate = (year: number): CostItem => ({ id: 'wa', propertyId: 'objekt-1', year, category: 'Wasser/Abwasser', description: `Wasser/Abwasser ${year}`, amountCents: 150000, key: 'area' })
+const wasserBeleg = (year: number): Extraction => ({
+  vendor: 'Stadtwerke', invoiceDate: `${year}-02-15`,
+  positions: [
+    { description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 },
+    { description: 'Schmutzwasser', category: 'Wasser/Abwasser', amountEur: 800 },
+  ],
+})
+
+test('Schnellerfassung: zwei KI-Zeilen derselben Kostenart werden gemeinsam verknüpft, mit der Summe, und nichts geht verloren', async () => {
+  items = [wasserEstimate(YEAR)]
+  extraction = wasserBeleg(YEAR)
+  const { container } = intake()
+  await upload(container)
+  const link = await screen.findByRole('button', { name: /Mit „Wasser\/Abwasser .*“ \(1\.500,00\s€\) verknüpfen und Betrag auf 1\.500,00\s€ setzen \(2 Positionen\)/ }, SLOW)
+  // Die Hinweise stehen unter der Tabelle, nicht in ihr: Auf dem Handy scrollten sie sonst mit.
+  expect(link.closest('.table-scroll')).toBeNull()
+  fireEvent.click(link)
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  expect(sent[0]).toMatchObject({ url: '/api/costItems/wa', method: 'PUT', body: { amountCents: 150000, invoiceFile: 'bescheid.pdf' } })
+  await screen.findByText('✓ übernommen', {}, SLOW)
+  expect(sent.filter((s) => s.method === 'POST')).toEqual([])
+})
+
+test('Kostenseite: eine Position laut Gemeinschaftsabrechnung wird nicht mit einem Klick verknüpft, sondern im Formular geöffnet', async () => {
+  items = [{ ...wasserEstimate(YEAR), key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 3000000 } }]
+  extraction = wasserBeleg(YEAR)
+  const { container } = render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Kosten units={UNITS} settings={null} />
+        </UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  await upload(container)
+  const open = await screen.findByRole('button', { name: /Position „Wasser\/Abwasser .*“ öffnen/ }, SLOW)
+  expect(screen.queryByRole('button', { name: /verknüpfen und Betrag/ })).toBeNull()
+  fireEvent.click(open)
+  await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe(`Wasser/Abwasser ${YEAR}`), SLOW)
+  expect(sent).toEqual([])
+})
+
+const kostenPage = () => render(
+  <YearProvider>
+    <PropertyProvider>
+      <UIProvider>
+        <Kosten units={UNITS} settings={null} />
+      </UIProvider>
+    </PropertyProvider>
+  </YearProvider>,
+)
+
+async function fillNewGrundsteuer() {
+  fireEvent.click(await screen.findByRole('button', { name: /Kostenposition manuell erfassen/ }, SLOW))
+  fireEvent.change(screen.getByLabelText(/Kostenart/), { target: { value: 'Grundsteuer' } })
+  fireEvent.change(screen.getByLabelText(/Beschreibung/), { target: { value: 'Grundsteuerbescheid' } })
+  fireEvent.change(screen.getByLabelText(/Betrag/), { target: { value: '612,40' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/ }))
+}
+
+test('Kostenformular: eine neue Position derselben Kostenart fragt nach; „Stattdessen bearbeiten“ öffnet die vorhandene', async () => {
+  items = [estimate(YEAR)]
+  kostenPage()
+  await screen.findByText(`Grundsteuer ${YEAR}`, {}, SLOW)
+  await fillNewGrundsteuer()
+  fireEvent.click(await screen.findByRole('button', { name: `Stattdessen „Grundsteuer ${YEAR}“ bearbeiten` }, SLOW))
+  await waitFor(() => expect((screen.getByLabelText(/Beschreibung/) as HTMLInputElement).value).toBe(`Grundsteuer ${YEAR}`), SLOW)
+  expect(sent).toEqual([])
+})
+
+test('Kostenformular: „Trotzdem anlegen“ legt an; beim Bearbeiten wird nicht gefragt', async () => {
+  items = [estimate(YEAR)]
+  kostenPage()
+  await screen.findByText(`Grundsteuer ${YEAR}`, {}, SLOW)
+  await fillNewGrundsteuer()
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem anlegen' }, SLOW))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  expect(sent[0]).toMatchObject({ method: 'POST', body: { description: 'Grundsteuerbescheid', amountCents: 61240 } })
+  // Bearbeiten der vorhandenen: keine Rückfrage
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Kostenposition bearbeiten' }, SLOW))[0]!)
+  fireEvent.change(screen.getByLabelText(/Betrag/), { target: { value: '615,00' } })
+  fireEvent.click(screen.getByRole('button', { name: /^(Übernehmen|Speichern)$/ }))
+  await waitFor(() => expect(sent).toHaveLength(2), SLOW)
+  expect(sent[1]).toMatchObject({ method: 'PUT', url: '/api/costItems/gs' })
+  expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
+})

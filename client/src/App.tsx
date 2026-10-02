@@ -290,7 +290,7 @@ function Shell() {
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
-        {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t) => setTab(t as Tab)} />}
+        {tab === 'schnellerfassung' && <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />}
         {tab === 'uebersicht' && <Uebersicht onNavigate={(t) => setTab(t as Tab)} />}
         {tab === 'stammdaten' && (
           <Stammdaten units={units} tenancies={tenancies} settings={settings} reload={reload} focus={focus} onFocusDone={clearFocus} />

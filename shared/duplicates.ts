@@ -34,7 +34,9 @@ export const LOOSE_CATEGORIES: readonly string[] = [...BROAD_CATEGORIES, 'Nicht 
 // Klein geschrieben, Jahreszahlen und Satzzeichen entfernt: „Grundsteuer 2025“ und „Grundsteuer
 // 2026“ sind dieselbe Beschreibung, so wie die Übernahme aus dem Vorjahr die Jahreszahl ersetzt.
 export function normalizedText(s: string | undefined | null): string {
+  // NFC zuerst: macOS liefert Dateinamen zerlegt („u“ und Trema), das gehört zum Buchstaben.
   return (s ?? '')
+    .normalize('NFC')
     .toLowerCase()
     .replace(/(^|[^0-9])(19|20)\d{2}(?=[^0-9]|$)/g, '$1 ')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
@@ -68,10 +70,12 @@ const queryOf = (i: DuplicateItem, year = i.year): CostQuery => ({
 })
 
 // Die Gruppen möglicher Doppelungen eines Jahres, für den Hinweis der Abrechnung: zwei oder mehr
-// Positionen, die nach der Regel oben zusammengehören, mindestens eine davon ohne Beleg (das ist
-// die Schätzung aus dem Vorjahr), und mehr als im Vorjahr. Das Letzte ist kein Zierrat: Wer
-// Restmüll und Biomüll getrennt abrechnet und beide aus dem Vorjahr übernimmt, hat zwei Positionen
-// ohne Beleg, und das ist die Gliederung des Hauses und keine Doppelung.
+// Positionen, die nach der Regel oben zusammengehören, mindestens eine davon ohne Beleg, und dazu
+// (a) mindestens eine mit Beleg, also der Fall „übernommen und dann aus dem Beleg erfasst“, oder
+// (b) ein Vorjahr mit Positionen dieser Art, und dieses Jahr sind es mehr. Ohne Vorjahr und ganz
+// ohne Belege bleibt es still: Zwei von Hand erfasste Versicherungen sind zwei Rechnungen, und der
+// Hinweis färbte die Ampel sonst dauerhaft (zweite Durchsicht). Ebenso still bleiben Restmüll und
+// Biomüll, beide aus dem Vorjahr übernommen: Das ist die Gliederung des Hauses.
 export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], year: number, previous: readonly DuplicateItem[] = []): T[][] {
   const own = items.filter((i) => i.year === year)
   const groupOf = new Map<string, T[]>()
@@ -93,7 +97,8 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     .filter((g) => g.length >= 2 && g.some((i) => !i.invoiceFile))
     .map((g) => own.filter((i) => g.includes(i)))
     .filter((g) => {
+      if (g.some((i) => i.invoiceFile)) return true
       const before = previous.filter((p) => g.some((i) => sameCostCandidates([p], queryOf(i, year - 1)).length > 0))
-      return g.length > before.length
+      return before.length > 0 && g.length > before.length
     })
 }

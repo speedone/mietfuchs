@@ -15,6 +15,10 @@ type ConfirmOpts = {
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  // Eine dritte Wahl neben Abbrechen und Bestätigen, etwa „Stattdessen … bearbeiten“. Sie schließt
+  // die Rückfrage wie Abbrechen (das Versprechen liefert false) und ruft vorher `onAlternative`.
+  alternativeLabel?: string
+  onAlternative?: () => void
 }
 const ConfirmCtx = createContext<(opts: ConfirmOpts) => Promise<boolean>>(async () => false)
 export const useConfirm = () => useContext(ConfirmCtx)
@@ -85,6 +89,9 @@ export function UIProvider({ children }: { children: ReactNode }) {
               {dialog.message && <div className="dialog-msg">{dialog.message}</div>}
               <div className="dialog-actions">
                 <button className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
+                {dialog.alternativeLabel && (
+                  <button className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
+                )}
                 <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus>
                   {dialog.confirmLabel ?? 'OK'}
                 </button>
