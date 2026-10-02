@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -251,6 +251,23 @@ describe('Posteingang: einer Position zuordnen', () => {
   it('bei einer breiten Kostenart nur mit ähnlicher Beschreibung', () => {
     const c = attachChoices(upload('1_Rechnung.pdf'), open)
     expect(c.likely).toEqual([])
+  })
+  it('ein zerlegtes „ü“ im Dateinamen (NFD, macOS) erkennt die Kostenart ebenso', () => {
+    const muell = item('m', { category: 'Müllabfuhr', description: 'Müll 2025' })
+    const c = attachChoices(upload('1_Mu\u0308llgebu\u0308hren.pdf'), [...open, muell])
+    expect(c.category).toBe('Müllabfuhr')
+    expect(c.likely.map((i) => i.id)).toEqual(['m'])
+  })
+  it('Betrag prüfen: bei Einzelbeträgen und Gemeinschaftsabrechnung im Formular, sonst im Feld', () => {
+    expect(amountCheckMode(item('a', { key: 'amounts', tenancyAmounts: { t1: 100 } }))).toBe('form')
+    expect(amountCheckMode(item('e', { key: 'external' }))).toBe('form')
+    expect(amountCheckMode(item('g'))).toBe('field')
+  })
+  it('Betrag prüfen: ein Lohnanteil über dem neuen Betrag verweist ins Formular', () => {
+    expect(amountCheckBody('500,00', item('g', { labor35aCents: 80000 }))).toEqual({
+      error: expect.stringMatching(/§35a-Lohnanteil der Position \(800,00\s€\) liegt über dem neuen Betrag.*Formular/), form: true,
+    })
+    expect(amountCheckBody('-50,00', item('g', { labor35aCents: 1000 }))).toMatchObject({ form: true })
   })
   it('Betrag prüfen: ein neuer Betrag wird gespeichert, mit derselben Prüfung wie im Formular', () => {
     expect(amountCheckBody('612,40', item('gs'))).toEqual({ body: { amountCents: 61240 } })

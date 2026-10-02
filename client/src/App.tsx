@@ -311,7 +311,7 @@ function Shell() {
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} />}
+        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onOpenItem={(item) => setTab('kosten', { kind: 'costItem', id: item.id })} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}
