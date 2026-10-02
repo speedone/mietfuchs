@@ -155,3 +155,19 @@ test('Kostenseite: dieselbe Abfrage bei der KI-Auswertung, Verknüpfen statt sti
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]).toMatchObject({ url: '/api/costItems/gs', method: 'PUT', body: { amountCents: 61240, invoiceFile: 'bescheid.pdf' } })
 })
+
+// Durchsicht: Zwei Belege derselben Kostenart in einem Lauf von „Alle grünen übernehmen“. Die Ampel
+// rechnete mit dem Stand vor dem Lauf, also wurden beide angelegt. Positionen desselben Belegs
+// (Frischwasser und Abwasser) bleiben davon unberührt.
+test('Schnellerfassung: „Alle grünen übernehmen“ legt dieselbe Kostenart aus zwei Belegen nicht still zweimal an', async () => {
+  items = []
+  extraction = bescheid(YEAR)
+  const { container } = intake()
+  await upload(container)
+  await screen.findByRole('button', { name: /Diese übernehmen/ }, SLOW)
+  await upload(container)
+  await waitFor(() => expect(screen.getAllByRole('button', { name: /Diese übernehmen/ })).toHaveLength(2), SLOW)
+  fireEvent.click(screen.getByRole('button', { name: /Alle grünen übernehmen/ }))
+  await waitFor(() => expect(screen.getByText(/noch zu prüfen/)).toBeTruthy(), SLOW)
+  expect(sent.filter((s) => s.method === 'POST')).toHaveLength(1)
+})

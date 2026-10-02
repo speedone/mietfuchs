@@ -461,8 +461,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     } finally {
       setLinking(false)
     }
-    const positions = entry.positions.map((x, i) => (i === idx ? { ...x, linked: target.description, checked: false } : x))
-    patchEntry(entry.id, { positions, ...(positions.every((x) => x.linked) ? { status: 'übernommen' as const } : {}) })
+    // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+    setQueue((q) => q.map((x) => {
+      if (x.id !== entry.id) return x
+      const positions = x.positions.map((y, i) => (i === idx ? { ...y, linked: target.description, checked: false } : y))
+      return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
+    }))
     await load()
     toast(`„${target.description}“ mit dem Beleg verknüpft.`)
   }
