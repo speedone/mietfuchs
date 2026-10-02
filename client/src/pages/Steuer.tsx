@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
-import type { Settings, TaxReport } from '../types'
+import type { Settings, TaxExpenseItem, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { useProperty, withProperty, useSwitchYear } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { DEFAULT_BASIS, incomeCentsFor, prepaymentNote, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, DEFAULT_BASIS, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { StepList } from '../components/CalcSteps'
+import Term from '../components/Term'
 
 type Props = { settings: Settings | null }
 
@@ -49,6 +51,9 @@ export default function Steuer({ settings }: Props) {
     : null
   const hints = data ? taxHints(data, basis, property?.kind) : []
   const note = data ? prepaymentNote(data) : null
+  // Teilweise Eigennutzung (#163): Spalten privat und abziehbar nur, wenn es etwas Privates gibt.
+  const split = data ? showsSplit(data) : false
+  const keyDiff = data ? keyNotAreaDifference(data) : null
 
   return (
     <>
@@ -84,9 +89,16 @@ export default function Steuer({ settings }: Props) {
               <div className="v">{fmtEuro(incomeCents)}</div>
               <div className="l">Einnahmen {year}</div>
             </div>
+            {/* #163: Die Hauptzahl ist der abziehbare Teil, der private steht klein darunter. Ohne
+                Eigennutzung sind beide dieselbe Zahl, und die Karte bleibt, wie sie war. */}
             <div className="kpi">
-              <div className="v">{fmtEuro(data.expenses.totalCents)}</div>
-              <div className="l">Werbungskosten</div>
+              <div className="v">{fmtEuro(data.expenses.deductibleCents)}</div>
+              <div className="l">{split ? 'Werbungskosten (abziehbar)' : 'Werbungskosten'}</div>
+              {split && data.expenses.privateCents !== 0 && (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  gesamt {fmtEuro(data.expenses.totalCents)} · davon privat {fmtEuro(data.expenses.privateCents)}
+                </div>
+              )}
             </div>
             <div className="kpi">
               <div className="v" style={{ color: surplusCents >= 0 ? 'var(--green)' : 'var(--red)' }}>
@@ -201,6 +213,8 @@ export default function Steuer({ settings }: Props) {
             <h3 style={{ marginTop: 18 }}>Werbungskosten</h3>
             {data.expenses.groups.length === 0 ? (
               <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
+            ) : split ? (
+              <SplitTable report={data} />
             ) : (
               <Table>
                 <thead>
@@ -270,8 +284,8 @@ export default function Steuer({ settings }: Props) {
                   <td className="num">{fmtEuro(incomeCents)}</td>
                 </tr>
                 <tr>
-                  <td>abzüglich Werbungskosten</td>
-                  <td className="num">− {fmtEuro(data.expenses.totalCents)}</td>
+                  <td>{split ? 'abzüglich abziehbarer Werbungskosten' : 'abzüglich Werbungskosten'}</td>
+                  <td className="num">− {fmtEuro(data.expenses.deductibleCents)}</td>
                 </tr>
                 <tr className="subtotal">
                   <td><strong>{surplusCents >= 0 ? 'Überschuss (Einkünfte)' : 'Verlust (negative Einkünfte)'}</strong></td>
@@ -295,7 +309,8 @@ export default function Steuer({ settings }: Props) {
                 dass Fälligkeit und Zahlung beide in den kurzen Zeitraum fallen. Mietfuchs kennt
                 die Fälligkeit nicht, und ein Feld dafür einzuführen hieße, eine Zahl der
                 Steuererklärung davon abhängig zu machen, dass jeder Nutzer es richtig ausfüllt.
-                Dieselbe Zurückhaltung wie bei der Aufteilung gemischt genutzter Gebäude.
+                Die Aufteilung gemischt genutzter Gebäude (#163) rechnet dagegen, weil alle Angaben
+                dafür im Bestand stehen.
                 **Das Beispiel ist bewusst die Januarmiete und nicht die Dezembermiete.** Die
                 Dezembermiete ist nach § 556b Abs. 1 BGB im Dezember fällig; geht sie im Januar
                 ein, liegt die Fälligkeit weit außerhalb des kurzen Zeitraums, und die Regel
@@ -355,20 +370,85 @@ export default function Steuer({ settings }: Props) {
                 <strong>Gemischt genutztes Gebäude.</strong> Von {fmtArea(data.totalAreaM2)} Gesamtfläche
                 sind <strong>{fmtArea(data.selfUsedAreaM2)}</strong> selbstgenutzt und damit privat
                 {sharePct !== null && <> ({sharePct.toLocaleString('de-DE')} %)</>}.
-                Werbungskosten, die das gesamte Gebäude betreffen, sind nur anteilig nach Fläche
-                abziehbar; der auf selbstgenutzte Wohnungen entfallende Teil ist privat.
-                {data.selfUsedShareCents !== 0 && (
-                  <>
-                    {' '}Nach der Verteilung dieses Jahres entfallen <strong>{fmtEuro(data.selfUsedShareCents)}</strong>{' '}
-                    auf selbstgenutzte Wohnungen{data.selfUsedShareCents < 0 ? ', per Saldo eine Gutschrift, weil Gutschriften überwiegen' : ''} — dieser
-                    Teil ist in den oben ausgewiesenen Werbungskosten noch enthalten. Die Verteilung rechnet dabei über die Wohnungen der Abrechnungseinheit
-                    und nicht über das ganze Gebäude; der Betrag entspricht also nicht unbedingt dem
-                    Flächenanteil daneben.
-                  </>
-                )}{' '}
-                Bitte den abziehbaren Anteil mit dem Steuerberater abstimmen — diese Übersicht nimmt die
-                Aufteilung nicht automatisch vor.
+                Werbungskosten sind nur abziehbar, soweit sie auf den vermieteten Teil entfallen
+                (§ 9 Abs. 1, § 12 Nr. 1 EStG). Diese Übersicht teilt deshalb jede Position auf: Was einer
+                Einheit direkt zugeordnet ist, gehört ganz zu ihr; Kosten des ganzen Gebäudes werden nach dem
+                Verhältnis der Wohn- und Nutzflächen aufgeteilt (BFH, Urteil vom 24.06.2008, IX R 26/06); bei
+                umlagefähigen Kosten gilt der Eigenanteil aus der Nebenkostenabrechnung, damit beide dasselbe
+                sagen. Zusammen sind <strong>{fmtEuro(data.expenses.privateCents)}</strong> privat
+                und <strong>{fmtEuro(data.expenses.deductibleCents)}</strong> abziehbar.{' '}
+                <Term id="mixedUse">Was heißt das?</Term>
               </div>
+            )}
+            {hints.includes('mixedUseSplit') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                <strong>In der Anlage V.</strong> Zeile 11 fragt die Gesamtwohnfläche, Zeile 12 den
+                eigengenutzten oder unentgeltlich überlassenen Wohnraum darin. Dorthin gehört nur Wohnfläche:
+                Garagen, Keller und andere Zubehörräume zählen nicht mit; für die Aufteilung der Gebäudekosten zählt
+                eine eingetragene Fläche dagegen, denn maßgeblich sind Wohn- und Nutzflächen. Die Werbungskosten
+                gehören in die Zeilen „durch direkte Zuordnung ermittelt“ und „durch verhältnismäßige Zuordnung
+                ermittelt“, dort mit Gesamtbetrag und abzugsfähigem Anteil; beides steht oben je Position. Teilen
+                Sie zum ersten Mal verhältnismäßig auf, erläutern Sie Maßstab und Zuordnung in einer gesonderten
+                Aufstellung; dafür taugt der Ausdruck dieser Übersicht samt Rechenweg. Bitte stimmen Sie die
+                Aufteilung mit Ihrem Steuerberater ab.
+              </p>
+            )}
+            {hints.includes('mixedUseKeyNotArea') && keyDiff && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                Bei {keyDiff.count === 1 ? 'einer Position' : `${keyDiff.count} Positionen`} verteilt die
+                Nebenkostenabrechnung nach Personen, Wohneinheiten oder vereinbarten Anteilen, und der private Teil
+                folgt diesem Schlüssel. Nach Fläche wären es zusammen <strong>{fmtEuro(keyDiff.differenceCents)}</strong> anders.
+                Für Kosten, die sich nicht direkt zuordnen lassen, nennt der Bundesfinanzhof das Verhältnis der Wohn-
+                und Nutzflächen als Regelmaßstab; ob ein Umlageschlüssel als Maßstab anerkannt wird, ist nicht
+                entschieden. Mietfuchs übernimmt den Eigenanteil der Abrechnung, damit Abrechnung und Steuer dasselbe
+                sagen; den Vergleich nach Fläche zeigt der Rechenweg der Position. Bitte klären Sie den Maßstab mit
+                Ihrem Steuerberater.
+              </div>
+            )}
+            {hints.includes('mixedUseAreaMissing') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                Mindestens eine Position ließ sich nicht aufteilen, weil für eine betroffene Einheit keine Fläche
+                hinterlegt ist. Sie steht ungekürzt bei den abziehbaren Werbungskosten. Bitte tragen Sie die Fläche
+                in den Stammdaten ein.
+              </div>
+            )}
+            {hints.includes('mixedUseDirectOutside') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                Mindestens eine Position ist einer Einheit außerhalb der Abrechnungseinheit zugeordnet. Mietfuchs
+                zählt sie als abziehbar. Nutzen Sie diese Einheit selbst, stellen Sie sie in den Stammdaten auf
+                Eigennutzung; sonst sind die abziehbaren Werbungskosten zu hoch.
+              </div>
+            )}
+            {hints.includes('mixedUseChangedInYear') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                Eine selbstgenutzte Einheit war in diesem Jahr auch vermietet. Die Nutzung einer Einheit hat in
+                Mietfuchs keinen Stichtag; die Aufteilung nach Fläche ist deshalb nicht nach Tagen gerechnet und zählt
+                die Einheit das ganze Jahr als privat. Für die Zeit der Vermietung sind ihre Kosten abziehbar; bitte
+                rechnen Sie diesen Teil anteilig nach.
+              </div>
+            )}
+            {hints.includes('mixedUseClosedChanged') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                Die Abrechnung {year} ist abgeschlossen. Für den privaten Teil der umlagefähigen Kosten gilt der eingefrorene Stand,
+                auch wenn die heutige Rechnung etwas anderes ergäbe oder die Abrechnung den Eigenanteil je Position
+                noch nicht festhielt; so nennt die Übersicht dieselbe Zahl wie das Papier beim Mieter.
+              </p>
+            )}
+            {hints.includes('mixedUseLabor35a') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                Bei Positionen mit Lohnanteil (§ 35a EStG) gehört der private Teil nicht zu den Werbungskosten. Ob
+                Sie für den Lohnanteil, der auf Ihre eigene Wohnung entfällt, die Steuerermäßigung in Ihrer eigenen Steuererklärung
+                nutzen können, klären Sie bitte mit Ihrem Steuerberater; Mietfuchs rechnet sie nicht aus.
+              </p>
+            )}
+            {hints.includes('mixedUseNotCalculated') && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>
+                Nicht gerechnet werden: die Abschreibung (AfA) des Gebäudes, die ebenfalls nur anteilig abziehbar
+                ist (Zeilen 33 und 34); Schuldzinsen, die der Zuordnung des Darlehens folgen und nicht der Fläche; die
+                Verteilung größeren Erhaltungsaufwands auf mehrere Jahre nach § 82b EStDV; und die Kürzung bei
+                verbilligter Vermietung, für die die Aufwendungen voll eingetragen und nur in den Zeilen 87 und 88
+                gekürzt werden. Diese Angaben kennt Mietfuchs nicht.
+              </p>
             )}
 
             {/* Der dritte Zustand, den es vorher nicht gab. Hier fallen zwei verschiedene Bestände
@@ -380,13 +460,13 @@ export default function Steuer({ settings }: Props) {
                 <strong>Wohnungen außerhalb der Abrechnungseinheit.</strong> Diese Wohnungen sind weder
                 als vermietet noch als selbstgenutzt gekennzeichnet, und deshalb weiß Mietfuchs nicht, wie
                 sie steuerlich zu behandeln sind. Nutzen Sie eine davon selbst, stellen Sie sie in den <em>Stammdaten</em> auf
-                <em> Eigennutzung</em>; dann beziffert diese Übersicht den privaten Anteil. Sind sie getrennt
+                <em> Eigennutzung</em>; dann teilt diese Übersicht die Werbungskosten auf. Sind sie getrennt
                 vermietet, etwa eine Gewerbeeinheit mit eigener Abrechnung, dann stehen ihre Einnahmen hier
                 nur, wenn Sie das Mietverhältnis in Mietfuchs erfasst haben.
                 {data.selfOccupiedExists && (
                   <>
-                    {' '}Solange diese Wohnungen nicht eingeordnet sind, ist der Rest des Flächenanteils
-                    oben <strong>nicht</strong> einfach der abziehbare Teil.
+                    {' '}Solange diese Wohnungen nicht eingeordnet sind, zählen sie bei der Aufteilung als
+                    vermietet; ist eine davon in Wahrheit privat, sind die abziehbaren Werbungskosten zu hoch.
                   </>
                 )}
               </div>
@@ -421,6 +501,69 @@ export default function Steuer({ settings }: Props) {
             </p>
           </div>
         </>
+      )}
+    </>
+  )
+}
+
+// Die Werbungskosten je Position mit ihrer Aufteilung (#163). Die Spalten folgen dem Vordruck:
+// Gesamtbetrag, privater und abzugsfähiger Teil, und ob direkt oder verhältnismäßig zugeordnet.
+// Die Zuordnung steht auch im Druck, damit das Blatt als gesonderte Aufstellung taugt; der
+// aufklappbare Rechenweg nur am Bildschirm.
+function SplitTable({ report }: { report: TaxReport }) {
+  const order = report.expenses.groups.map((g) => g.group)
+  const items = [...report.expenses.items].sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group))
+  return (
+    <Table>
+      <thead>
+        <tr>
+          <th>Position</th>
+          <th className="num">Gesamt</th>
+          <th className="num">privat</th>
+          <th className="num">abziehbar</th>
+          <th>Zuordnung</th>
+          <th className="no-print" />
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((x) => <SplitRow key={x.costItemId} item={x} />)}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Summe Werbungskosten</td>
+          <td className="num">{fmtEuro(report.expenses.totalCents)}</td>
+          <td className="num">{fmtEuro(report.expenses.privateCents)}</td>
+          <td className="num">{fmtEuro(report.expenses.deductibleCents)}</td>
+          <td />
+          <td className="no-print" />
+        </tr>
+      </tfoot>
+    </Table>
+  )
+}
+
+function SplitRow({ item }: { item: TaxExpenseItem }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <tr>
+        <td>
+          <span className="muted">{item.group} · {item.category} · </span><span>{item.description}</span>
+        </td>
+        <td className="num">{fmtEuro(item.amountCents)}</td>
+        <td className="num">{fmtEuro(item.privateCents)}</td>
+        <td className="num">{fmtEuro(item.deductibleCents)}</td>
+        <td>{allocationLabel(item)}</td>
+        <td className="no-print">
+          <button type="button" className="btn small secondary calc-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? 'Rechenweg schließen' : 'Rechenweg'}
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr className="calc-steps no-print">
+          <td colSpan={6}><StepList steps={item.steps} /></td>
+        </tr>
       )}
     </>
   )

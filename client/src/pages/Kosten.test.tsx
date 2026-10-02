@@ -115,6 +115,24 @@ test('Nicht umlagefähig (#142): keine Schlüsselauswahl, gespeichert wird die n
   expect(sent[0].body).toMatchObject({ category: 'Nicht umlagefähig', key: 'area', customShares: null })
 })
 
+test('Nicht umlagefähig (#163): für die Steuer einer Einheit zuordnen, etwa die Badrenovierung der eigenen Wohnung', async () => {
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Nicht umlagefähig' } })
+  const betrifft = select(/Betrifft \(für die Steuer\)/i)
+  expect(betrifft.value).toBe('')
+  expect([...betrifft.options].map((o) => o.textContent)).toEqual(['das ganze Gebäude (nach Fläche)', 'EG (selbstgenutzt)', 'OG links', 'OG rechts'])
+  fireEvent.change(betrifft, { target: { value: 'u1' } })
+  expect(select(/Betrifft \(für die Steuer\)/i).value).toBe('u1')
+  fireEvent.click(screen.getByRole('button', { name: /^Hinzufügen$/i }))
+  await waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0].body).toMatchObject({ category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' })
+  // Die Rücklage kennt die Auswahl nicht (#143).
+  cleanup()
+  await openForm()
+  fireEvent.change(select(/Kostenart/i), { target: { value: 'Zuführung Erhaltungsrücklage' } })
+  expect(screen.queryByLabelText(/Betrifft \(für die Steuer\)/i)).toBeNull()
+})
+
 test('Gemeinschaftsabrechnung (#142): die Summe heißt nach dem Maßstab, nicht nach den Kosten', async () => {
   await openForm()
   fireEvent.change(select(/Umlageschlüssel/i), { target: { value: 'external' } })
