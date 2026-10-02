@@ -209,6 +209,8 @@ test('Schnappschuss: Kostenpositionen und abgeschlossene Abrechnung gehören zum
     prepaymentCents: 0,
     prepaymentOverridden: false,
     selfUseByItem: null,
+    // Welche Positionen auf dem Papier standen (Durchsicht zu #163): hier keine.
+    itemTotals: {},
   })
   assert.strictEqual(snapshotFromDb(db, 2023).closedSettlement, null)
 })
@@ -2022,7 +2024,10 @@ test('Invariante: Steuer — bei umlagefähigen Kosten ist der private Teil der 
     const r = taxReport(snapshot)
     const s = computeSettlement(snapshot)
     const ausAbrechnung = r.expenses.items.filter((x) => !isNotAllocable(x.category) && x.allocation !== 'area' && x.allocation !== 'unsplittable')
-    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0), s.selfUsedShareCents, `Fall ${i}\n${JSON.stringify(db)}`)
+    // Gibt es Einheiten außerhalb, rechnet die Steuer nach der Gebäudefläche und führt den Eigenanteil
+    // der Abrechnung als Vergleich (`settlementPrivateCents`); zusammen ergibt es wieder die Summe.
+    const verglichen = r.expenses.items.reduce((a, x) => a + (x.settlementPrivateCents ?? 0), 0)
+    assert.equal(ausAbrechnung.reduce((a, x) => a + x.privateCents, 0) + verglichen, s.selfUsedShareCents, `Fall ${i}\n${JSON.stringify(db)}`)
     if (s.selfUsedShareCents !== 0) mitEigenanteil++
   }
   assert.ok(mitEigenanteil > 50, `nur ${mitEigenanteil} Fälle mit Eigenanteil`)
