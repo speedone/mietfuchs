@@ -1949,15 +1949,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Fernablesbarkeit (#110): Ab dem Abrechnungsjahr 2027 müssen alle Erfassungsgeräte fernablesbar
   // sein. Welche Geräte eingebaut sind, weiß Mietfuchs nicht; deshalb ein Hinweis ohne Betrag statt
   // einer bezifferten Kürzung. Ein Feld dafür am Zähler gehört zur Heizkostenabrechnung (#97, #99).
+  // Ohne `subject`: An der Kostenposition gibt es nichts zu beheben, ein „Hier beheben →“ führte
+  // ins Leere.
   if (heatingBilledItem && ruleCoverage('heating-remote-reading', yFrom, yTo) !== 'none') {
     warn('heating.remote-reading',
       'Spätestens seit dem 01.01.2027 müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 3 HeizkostenV); ' +
-        'Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen es schon seit ihrem Einbau sein (§ 5 Abs. 2). Bei fernablesbaren Geräten stehen den Mietern schon seit 2022 monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). ' +
+        'Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen es in der Regel schon seit ihrem Einbau sein (§ 5 Abs. 2). Bei fernablesbaren Geräten stehen den Mietern schon seit 2022 monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). ' +
         'Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). ' +
         'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst. Ausgenommen sind Einzelfälle, in denen die Nachrüstung technisch nicht möglich ist, unangemessen aufwendig wäre oder sonst eine unbillige Härte bedeutete (§ 5 Abs. 3 Satz 2), sowie die Fälle des § 11 HeizkostenV. ' +
         'Das gilt nicht für eine Gastherme in der Wohnung mit eigenem Gasvertrag des Mieters. ' +
-        'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).',
-      itemSubject(heatingBilledItem))
+        'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).')
   }
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine

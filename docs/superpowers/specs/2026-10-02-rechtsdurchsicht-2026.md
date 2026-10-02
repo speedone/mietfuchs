@@ -224,7 +224,7 @@ Auf bundesfinanzhof.de gelesen. **P**
 ## 6. Umgesetzt auf diesem Zweig
 
 - **`server/src/rules.ts`:**
-  - neue Regel `heating-remote-reading`, `validFrom: '2027-01-01'`, Rechtsgrundlage § 5 Abs. 2, 3 und 5, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV;
+  - neue Regel `heating-remote-reading`, `validFrom: '2027-01-01'`, Rechtsgrundlage § 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV;
   - `RULES_AS_OF = '2026-10-02'`.
 - **`server/src/calc.ts`:**
   - neuer Hinweis `heating.remote-reading`, Stufe `hint`, ohne Betrag.

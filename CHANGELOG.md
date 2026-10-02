@@ -13,9 +13,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   HeizkostenV); fehlt das oder fehlen die monatlichen Verbrauchsinformationen, darf der Mieter
   seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). Ab 2027 erinnert die
   Abrechnung einmal daran, sobald ein Mieter über die Heizung abgerechnet wird, auch bei einer
-  Heizposition, die direkt einer vermieteten Wohnung zugeordnet ist. Einen Betrag
-  nennt sie nicht, weil Mietfuchs nicht weiß, welche Geräte eingebaut sind. Die Regel steht im
-  Regelverzeichnis mit „gilt ab 01.01.2027“, der Rechtsstand ist der 02.10.2026.
+  Heizposition, die direkt einer vermieteten Wohnung zugeordnet ist. Einen Betrag nennt sie nicht,
+  weil Mietfuchs nicht weiß, welche Geräte eingebaut sind; aus demselben Grund färbt der Hinweis
+  die Ampel im Cockpit nicht gelb, und das Cockpit nennt nur noch die Hinweise, die etwas
+  verlangen. Die Regel steht im Regelverzeichnis mit „gilt ab 01.01.2027“, der Rechtsstand ist der
+  02.10.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
 
 ### Geändert
@@ -25,8 +27,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der
   endgültige Bescheid da oder über den Einspruch entschieden ist. Das Übrige rechnen Sie
   fristgerecht ab und behalten sich die Grundsteuer ausdrücklich vor; gefordert wird sie im
-  Regelfall innerhalb von drei Monaten danach (BGH, Urteil vom 20.05.2026, VIII ZR 6/24). Bei der Heizkostenverordnung nennt das
-  Lexikon die Nachrüstfrist für fernablesbare Geräte zum 31.12.2026.
+  Regelfall innerhalb von drei Monaten danach (BGH, Urteil vom 20.05.2026, VIII ZR 6/24). Bei der
+  Heizkostenverordnung nennt das Lexikon die Nachrüstfrist für fernablesbare Geräte zum
+  31.12.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
 
 ## [0.9.0] – 2026-10-02
