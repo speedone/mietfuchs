@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import type { MeterType, Unit } from './types'
+import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
-import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, type UnitForm } from './unitForm'
+import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
 
 const form = (patch: Partial<UnitForm> = {}): UnitForm => ({
   ...EMPTY_UNIT_FORM, name: 'EG', areaM2: '80', ...patch,
@@ -207,5 +207,50 @@ describe('Anschlüsse einer Einheit', () => {
     expect(connectionSummary(['kaltwasser'])).toBe('ohne Wasseranschluss')
     expect(connectionSummary(['kaltwasser', 'waerme'])).toBe('ohne Wasser- und Wärmeanschluss')
     expect(connectionSummary(['sonstig'])).toBe('ohne Anschluss für Sonstiges')
+  })
+})
+
+describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc.4)', () => {
+  // Eine leere Einheit mit 0 m² kann eine Garage sein. „Wohnfläche ergänzen“ als Befehl machte sie
+  // beim Personenschlüssel zum Leerstand (#177), und der Vermieter trüge mehr. Deshalb eine Frage.
+  const u = (name: string, over: Partial<Unit> = {}): Unit => ({ id: name, propertyId: 'p', name, areaM2: 0, participates: true, ...over })
+  const t = (unitId: string, start: string, end: string | null): Tenancy => ({
+    id: `t-${unitId}`, unitId, tenantName: 'M', persons: 2, personHistory: [{ from: start, persons: 2 }], start, end,
+    prepayments: [], prepaymentOverrides: {}, baseRents: [],
+  })
+  test('leere Einheit ohne Mietverhältnis im Jahr: eine bedingte Frage, kein Befehl', () => {
+    expect(missingAreaCheck([u('G')], [t('G', '2020-01-01', '2024-12-31')], 2025)).toEqual({
+      cta: 'Fläche prüfen',
+      detail: 'G hat 0 m² und im Jahr keine Bewohner. Ist G eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².',
+    })
+  })
+  test('mehrere leere Einheiten', () => {
+    expect(missingAreaCheck([u('G1'), u('G2')], [], 2025).detail).toBe(
+      'G1 und G2 haben 0 m² und im Jahr keine Bewohner. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².')
+  })
+  test('bewohnte Einheit mit 0 m²: der bisherige eindeutige Text', () => {
+    expect(missingAreaCheck([u('OG')], [t('OG', '2025-07-01', null)], 2025)).toEqual({ cta: 'Wohnfläche ergänzen', detail: 'Wohnfläche fehlt bei: OG' })
+  })
+  test('selbstgenutzt mit eigenen Personen gilt als bewohnt', () => {
+    expect(missingAreaCheck([u('EG', { participates: false, selfUsed: true, selfPersons: 2 })], [], 2025).detail).toBe('Wohnfläche fehlt bei: EG')
+  })
+  test('selbstgenutzt ohne Personenzahl: der Befehl, wie der Server (keine Garage)', () => {
+    expect(missingAreaCheck([u('EG', { participates: false, selfUsed: true })], [], 2025).detail).toBe('Wohnfläche fehlt bei: EG')
+    expect(missingAreaCheck([u('EG', { participates: false, selfUsed: true, selfPersons: undefined })], [], 2025).cta).toBe('Wohnfläche ergänzen')
+  })
+  test('mit einer Position nach Fläche: der Hinweis der Abrechnung wird angekündigt', () => {
+    const flaeche = (over: Partial<CostItem> = {}): CostItem => ({ id: 'c', propertyId: 'p', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 1000, key: 'area', ...over })
+    const satz = 'G hat 0 m² und im Jahr keine Bewohner. Ist G eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².'
+    expect(missingAreaCheck([u('G')], [], 2025, [flaeche()]).detail).toBe(`${satz} Bei Positionen nach Wohnfläche weist die Abrechnung trotzdem darauf hin.`)
+    // Nicht bei anderem Schlüssel, nicht umlagefähig oder ohne G als Teilnehmer
+    expect(missingAreaCheck([u('G')], [], 2025, [flaeche({ key: 'persons' })]).detail).toBe(satz)
+    expect(missingAreaCheck([u('G')], [], 2025, [flaeche({ category: 'Nicht umlagefähig' })]).detail).toBe(satz)
+    expect(missingAreaCheck([u('G')], [], 2025, [flaeche({ participantUnitIds: ['EG'] })]).detail).toBe(satz)
+  })
+  test('beides zugleich: der Befehl für die bewohnte, die Frage für die leere', () => {
+    expect(missingAreaCheck([u('OG'), u('G')], [t('OG', '2020-01-01', null)], 2025)).toEqual({
+      cta: 'Wohnfläche ergänzen',
+      detail: 'Wohnfläche fehlt bei: OG. G hat 0 m² und im Jahr keine Bewohner. Ist G eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².',
+    })
   })
 })
