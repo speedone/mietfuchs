@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import { attentionDetail, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
 import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
@@ -74,6 +74,10 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
     ] })).toBe(false)
     expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'basis.vacancy-persons', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
   })
+  test('Fernablesbarkeit ab 2027 (#110): nein, der Nutzer kann im Programm nichts beheben', () => {
+    expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'heating.remote-reading', level: 'hint' })] })).toBe(false)
+    expect(noticesNeedAttention({ warnings: ['a', 'b'], notices: [n({ code: 'heating.remote-reading', level: 'hint' }), n({ code: 'meter.main-gap', level: 'hint' })] })).toBe(true)
+  })
   test('eine vergessene Wohnfläche (bewohnte Wohnung mit 0 m²): ja', () => {
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe(true)
     expect(noticesNeedAttention({ warnings: ['a'], notices: [n({ code: 'basis.tenancy-no-persons', level: 'warning' })] })).toBe(true)
@@ -84,5 +88,24 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
   test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
     expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)
     expect(noticesNeedAttention({ warnings: [] })).toBe(false)
+  })
+})
+
+// Die Zeile im Cockpit nennt nur, was etwas verlangt; eine reine Auskunft wie der lange Hinweis zur
+// Fernablesbarkeit stünde sonst als Textblock in jeder Zeile eines Hauses mit Heizabrechnung.
+describe('Cockpit: Text der Zeile „Hinweise der Berechnung“', () => {
+  test('nur reine Auskünfte: ein kurzer Satz statt der Texte', () => {
+    const lang = 'x'.repeat(900)
+    const detail = attentionDetail({ warnings: [lang], notices: [n({ code: 'heating.remote-reading', level: 'hint', text: lang })] })
+    expect(detail).not.toContain(lang)
+    expect(detail.length).toBeLessThan(120)
+  })
+  test('neben einer Auskunft nur die Texte, die etwas verlangen', () => {
+    expect(attentionDetail({ warnings: ['lang', 'kurz'], notices: [
+      n({ code: 'heating.remote-reading', level: 'hint', text: 'lang' }), n({ code: 'meter.main-gap', level: 'hint', text: 'kurz' }),
+    ] })).toBe('kurz')
+  })
+  test('vor #112 abgeschlossen: alle Texte wie bisher', () => {
+    expect(attentionDetail({ warnings: ['a', 'b'] })).toBe('a · b')
   })
 })

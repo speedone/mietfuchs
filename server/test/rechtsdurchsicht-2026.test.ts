@@ -52,7 +52,7 @@ test('Rechtsdurchsicht 2026: Abrechnung 2027: ein Hinweis zur Fernablesbarkeit, 
   assert.equal(n.length, 1)
   assert.equal(n[0]?.level, 'hint')
   assert.equal(n[0]?.rule, 'heating-remote-reading')
-  assert.deepEqual(n[0]?.subject, { kind: 'costItem', id: 'h2027' })
+  assert.equal(n[0]?.subject, undefined, 'nichts zu beheben, also kein „Hier beheben →“')
   assert.ok((n[0]?.terms ?? []).includes('heatingCostOrdinance'))
   const text = n[0]?.text ?? ''
   assert.match(text, /fernablesbar/)
@@ -80,6 +80,7 @@ test('Rechtsdurchsicht 2026: Abrechnung 2027: kein Hinweis, wenn kein Mieter üb
 test('Rechtsdurchsicht 2026: Lexikon: die Nachrüstfrist 31.12.2026 steht bei der Heizkostenverordnung', () => {
   assert.match(GLOSSARY.heatingCostOrdinance.needed, /31\.12\.2026/)
   assert.match(GLOSSARY.heatingCostOrdinance.needed, /Abrechnungsjahr 2027/)
+  assert.match(GLOSSARY.heatingCostOrdinance.norm, /§§ 1, 2, 5, 6a, 7, 8, 11, 12 HeizkostenV/)
 })
 
 test('Rechtsdurchsicht 2026: Lexikon: Abrechnungsfrist bei fehlendem oder angefochtenem Grundsteuerbescheid (BGH VIII ZR 6/24)', () => {
@@ -108,7 +109,9 @@ test('Rechtsdurchsicht 2026: Wortlaut von Hinweis und Regel nach der Prüfung an
   assert.match(text, /Gastherme in der Wohnung mit eigenem Gasvertrag des Mieters/)
   assert.doesNotMatch(text, /ausgenommen ist nur/)
   const r = rulesFor('2027-01-01', '2027-12-31').find((x) => x.code === 'heating-remote-reading')
-  assert.match(r?.norm ?? '', /§ 5 Abs\. 2, 3 und 5/)
+  assert.match(r?.norm ?? '', /§ 5 Abs\. 2 und 3, § 6a/)
+  assert.doesNotMatch(r?.norm ?? '', /Abs\. 5/, 'Abs. 5 (Interoperabilität) kommt im Text nicht vor')
+  assert.match(text, /müssen es in der Regel schon seit ihrem Einbau sein \(§ 5 Abs\. 2\)/)
   assert.match(r?.summary ?? '', /nach dem 01\.12\.2021/)
   assert.doesNotMatch(r?.summary ?? '', /seit dem 01\.12\.2021/)
   assert.match(r?.summary ?? '', /in sonstiger Weise eine unbillige Härte/)
@@ -118,7 +121,7 @@ test('Rechtsdurchsicht 2026: Direktzuordnung einer Heizposition auf eine vermiet
   const direkt = heizung(2027, { key: 'direct', directUnitId: 'w1', tenancyAmounts: undefined, amountCents: 90000 })
   const n = remote(settle(2027, { ...haus, costItems: [direkt] }))
   assert.equal(n.length, 1)
-  assert.deepEqual(n[0]?.subject, { kind: 'costItem', id: 'h2027' })
+  assert.equal(n[0]?.subject, undefined, 'nichts zu beheben, also kein „Hier beheben →“')
   // 2026 weiterhin nicht
   assert.deepEqual(remote(settle(2026, { ...haus, costItems: [{ ...direkt, year: 2026 }] })), [])
 })
