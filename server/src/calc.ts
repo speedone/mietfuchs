@@ -70,7 +70,7 @@ export function overlapDays(start: string, end: string | null, year: number): nu
 // Tage im Zeitraum [from, to], an denen mindestens eines der Mietverhältnisse besteht. Überlappen
 // sie sich (ein Auszug nach dem nächsten Einzug), zählt jeder Tag nur einmal; die Lücke dazwischen
 // ist der Leerstand (#177).
-function occupiedDays(tenancies: { start: string, end: string | null }[], from: string, to: string): number {
+export function occupiedDays(tenancies: { start: string, end: string | null }[], from: string, to: string): number {
   const lo = toUTC(from)
   const hi = toUTC(to)
   const ranges = tenancies
@@ -187,6 +187,9 @@ const noticeKinds = {
   // dem Grundsatz hingehört. Zu prüfen ist nur, ob der Ansatz für die leere Wohnung, eine Auslegung,
   // zum Mietvertrag passt.
   'basis.vacancy-persons': { level: 'hint', title: 'Leerstand beim Personenschlüssel', terms: ['vacancy', 'personDays'] },
+  // Eine leere Einheit ohne Fläche ist beim Personenschlüssel kein Leerstand (#177); wie bei
+  // `basis.unit-zero` ist die 0 meist eine Angabe (Garage, Stellplatz).
+  'basis.vacancy-no-area': { level: 'hint', title: 'Leere Einheit ohne Fläche', terms: ['vacancy', 'personDays'] },
   'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
@@ -1101,32 +1104,44 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   // Personentage der selbstgenutzten Wohnungen: ganzjährig mit der hinterlegten Personenzahl
   const selfPersonDays = selfUnits.reduce((a, u) => a + selfPersonsOf(u) * diy, 0)
+  // Wohnung ist, was Fläche hat oder im Jahr bewohnt ist; eine Einheit ohne Fläche und ohne
+  // Bewohner (Garage, Stellplatz) ist keine. Eine Regel für zwei Fragen: ob das Gebäude unter § 2
+  // HeizkostenV fällt (unten) und ob eine leere Einheit beim Personenschlüssel Leerstand ist (#177).
+  const inhabited = (u: SnapshotUnit) => u.selfUsed && !u.participates
+    ? selfPersonsOf(u) > 0
+    : tenancies.some((t) => t.unitId === u.id && personDaysInPeriod(t, yFrom, yTo) > 0)
+  const isDwelling = (u: SnapshotUnit) => u.areaM2 > 0 || inhabited(u)
   // **Leerstand beim Personenschlüssel (#177).** Eine leere Wohnung hat keine Personentage und fiel
   // deshalb aus der Verteilbasis: Ihr Anteil ging still an die übrigen Mieter, während Fläche und
   // Einheiten ihn beim Vermieter ließen. Den Leerstand trägt der Vermieter (BGH, Urteil vom
   // 31.05.2006, VIII ZR 159/05, dort am Flächenschlüssel entschieden; zum Personenschlüssel die
   // fiktive Person nach BGH VIII ZR 180/12, siehe `VACANCY_PERSONS`). Deshalb zählt jede
-  // vermietbare Wohnung der Verteilbasis für jeden Tag ohne Mietverhältnis mit
+  // vermietete Wohnung der Verteilbasis für jeden Tag ohne Mietverhältnis mit
   // `vacancyPersons(u)` Personen; kein Mietverhältnis bekommt diese Tage, ihr Anteil bleibt also
   // als `vacancy` beim Vermieter. Auch der Leerstand zwischen zwei Mietern zählt.
-  // Ausgenommen sind die selbstgenutzten Wohnungen (die zählen mit ihren eigenen Personen) und die
-  // Garage-artigen (#135): Mit 0 Personen genutzt, ist auch die leere Zeit keine Wohnzeit. Eine
-  // ganz leere Einheit mit 0 m² ist nach derselben Regel nicht Garage-artig und zählt mit; das ist
-  // der billigere Irrtum, er geht zulasten des Vermieters und nicht eines Mieters.
+  // Ausgenommen sind die selbstgenutzten Wohnungen (die zählen mit ihren eigenen Personen) und
+  // alles, was keine Wohnung ist (`isDwelling`, dieselbe Regel wie bei § 2 HeizkostenV): Eine
+  // Einheit ohne Fläche und ohne Bewohner, leer oder mit 0 Personen vermietet (Garage, Stellplatz,
+  // #135), bekäme sonst eine fiktive Person, und eine Tiefgarage mit vier leeren Stellplätzen
+  // verschöbe dem Vermieter einen großen Teil der Müllabfuhr. Eine ganz leere Einheit mit 0 m² meldet
+  // dafür `basis.vacancy-no-area`, denn sie kann auch eine Wohnung mit vergessener Fläche sein. Eine
+  // leere Garage **mit** eingetragener Fläche ist nach dieser Regel eine Wohnung und zählt weiter als
+  // Leerstand; wer das nicht will, nimmt sie aus der Abrechnungseinheit oder aus den Teilnehmern.
   // Die Zahl je Wohnung kommt aus dieser einen Funktion: Wer später etwa die durchschnittliche
   // Belegung des Hauses ansetzen will, rechnet sie hier aus (ohne die Leerstände selbst).
   const vacancyPersons = (_u: SnapshotUnit): number => VACANCY_PERSONS
   type Vacancy = { unit: SnapshotUnit, days: number, persons: number, personDays: number }
   const vacancies: Vacancy[] = basisUnits.flatMap((u) => {
-    if (!u.participates || isGarageLike(u)) return []
+    if (!u.participates || !isDwelling(u)) return []
     const days = diy - occupiedDays(tenancies.filter((t) => t.unitId === u.id), yFrom, yTo)
     const persons = vacancyPersons(u)
     return days > 0 && persons > 0 ? [{ unit: u, days, persons, personDays: days * persons }] : []
   })
   const vacancyPersonDays = vacancies.reduce((a, v) => a + v.personDays, 0)
   const personsLabel = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Person' : 'Personen'}`
+  const daysLabel = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Tag' : 'Tage'}`
   const vacancyText = (vs: Vacancy[]) =>
-    vs.map((v) => `${v.unit.name}: ${fmtNum(v.days)} Tage × ${personsLabel(v.persons)} = ${fmtNum(v.personDays)} Personentage`).join('; ')
+    vs.map((v) => `${v.unit.name}: ${daysLabel(v.days)} × ${personsLabel(v.persons)} = ${fmtNum(v.personDays)} ${v.personDays === 1 ? 'Personentag' : 'Personentage'}`).join('; ')
   // Personentage der Bewohner, ohne Leerstand: Fehlen sie bei vorhandenen Mietverhältnissen ganz,
   // ist das ein Datenmangel und keine Verteilung an den Leerstand (siehe `item.no-basis`).
   const occupantPersonDays =
@@ -1358,13 +1373,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     if (affected.length > 0 && !personsBasisMissing) {
       const persons = [...new Set(units.map((v) => v.persons))]
       warn('basis.vacancy-persons',
-        `Bei ${affected.map((c) => `„${c.description}“`).join(', ')} (nach Personen) ${units.length === 1 ? 'stand' : 'standen'} ${units.map((v) => `${v.unit.name} ${fmtNum(v.days)} Tage`).join(', ')} leer. ` +
+        `Bei ${affected.map((c) => `„${c.description}“`).join(', ')} (nach Personen) ${units.length === 1 ? 'stand' : 'standen'} ${units.map((v) => `${v.unit.name} (${daysLabel(v.days)})`).join(', ')} leer. ` +
           'An den Kosten leerstehender Wohnungen ist der Vermieter zu beteiligen; sie gehen nicht still an die übrigen Mieter (Grundsatz nach BGH, Urteil vom 31.05.2006, VIII ZR 159/05, dort zum Flächenschlüssel). ' +
           'Wie das beim Personenschlüssel geschieht, regelt kein Gesetz, und es ist nicht abschließend geklärt: Nach BGH, Beschluss vom 08.01.2013, VIII ZR 180/12, kommt es auf den Einzelfall an, und es kann in Betracht kommen, für die Zeit des Leerstands eine fiktive Person anzusetzen. ' +
           `Mietfuchs setzt jeden Tag ohne Mietverhältnis mit ${persons.length === 1 ? personsLabel(persons[0] ?? 0) : 'der angegebenen Personenzahl'} an; das ist eine Auslegung von Mietfuchs. Der Anteil steht in Ihrem Vermieteranteil als Leerstand. ` +
           'Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.',
         unitSubject(units.map((v) => v.unit)),
       )
+    }
+    // Ganz leer und ohne Fläche: keine Wohnung, also kein Leerstand (siehe `isDwelling`). Ob das
+    // stimmt, weiß nur der Vermieter; eine Wohnung mit vergessener Fläche sähe genauso aus.
+    const noArea = basisUnits.filter((u) => u.participates && !isDwelling(u) &&
+      !tenancies.some((t) => t.unitId === u.id) &&
+      items.some((c) => c.key === 'persons' && !isNotAllocable(c.category) && takes(c, u.id) && partTenancies.some((t) => takes(c, t.unitId))))
+    if (noArea.length > 0 && !personsBasisMissing) {
+      const names = noArea.map((u) => u.name).join(', ')
+      warn('basis.vacancy-no-area', noArea.length === 1
+        ? `${names} hat 0 m² und keine Bewohner und wird beim Personenschlüssel nicht als Leerstand angesetzt. Ist ${names} eine Wohnung, tragen Sie die Wohnfläche ein.`
+        : `${names} haben 0 m² und keine Bewohner und werden beim Personenschlüssel nicht als Leerstand angesetzt. Ist eine davon eine Wohnung, tragen Sie dort die Wohnfläche ein.`,
+      unitSubject(noArea))
     }
   }
 
@@ -1437,10 +1464,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // eine bewohnte mit vergessener Fläche zählt (letzte Durchsicht). Bewusst anders als bei
   // `basis.unit-no-area`: Dort warnt auch ein Leerstand mit 0 m², weil Geld wandern kann; hier geht
   // es nur darum, ob das Gebäude mehr als zwei Wohnungen hat.
-  const inhabited = (u: SnapshotUnit) => u.selfUsed && !u.participates
-    ? selfPersonsOf(u) > 0
-    : tenancies.some((t) => t.unitId === u.id && personDaysInPeriod(t, yFrom, yTo) > 0)
-  const heatingAgreeable = mayAgreeOtherwise(snapshot.units, (u) => u.areaM2 > 0 || inhabited(u))
+  const heatingAgreeable = mayAgreeOtherwise(snapshot.units, isDwelling)
   // Heizpositionen ohne Verbrauchsanteil (#140): Die Kürzungsbeträge entstehen in der Verteilung,
   // gemeldet wird erst danach, denn ob eine Wohnung nach Verbrauch gedeckt ist, steht erst fest,
   // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
@@ -1504,7 +1528,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       for (const t of b.partTenancies) {
         const pd = personDaysInPeriod(t, yFrom, yTo)
         const raw = item.amountCents * (pd / b.basisPersonDays)
-        targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(b.basisPersonDays)} Personentagen` })
+        // Der Leerstand steht im gedruckten Text dabei, sonst ginge die Summe der Personentage für
+        // den Mieter nicht auf (#177).
+        const vacancyNote = b.vacancyPersonDays > 0 ? ` (davon ${fmtNum(b.vacancyPersonDays)} Leerstand)` : ''
+        targets.push({ t, raw, basisText: `${fmtNum(pd)} von ${fmtNum(b.basisPersonDays)} Personentagen${vacancyNote}` })
       }
       selfRaw = item.amountCents * (b.selfPersonDays / b.basisPersonDays)
     } else if (item.key === 'external') {

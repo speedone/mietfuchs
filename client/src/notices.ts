@@ -31,9 +31,12 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // „Mietverhältnisse & Flächen“ nennt sie schon. Eine vergessene Fläche oder Personenzahl
 // (`basis.unit-no-area`, `basis.tenancy-no-persons`) zählt dagegen. Eine vor #112 abgeschlossene Abrechnung kennt nur Texte; die
 // zählen wie bisher.
-const DELIBERATE_ZERO = new Set(['basis.unit-zero', 'basis.tenancy-zero'])
+// Ebenso reine Auskünfte zum Leerstand beim Personenschlüssel (#177): `basis.vacancy-persons`
+// erklärt, warum ein Anteil beim Vermieter bleibt, und erschiene sonst in jedem Jahr mit Leerstand;
+// `basis.vacancy-no-area` ist die leere Garage, also wieder eine bewusst eingetragene 0.
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
-  return noticesOf(settlement).some((n) => !DELIBERATE_ZERO.has(n.code))
+  return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
 
 // Die CSS-Klasse je Stufe. Hinweis und Info teilen sich eine ruhige Farbe: Beides verlangt

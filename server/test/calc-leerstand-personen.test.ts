@@ -8,7 +8,8 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, VACANCY_PERSONS, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, occupiedDays, VACANCY_PERSONS, type ComputedSettlement } from '../src/calc.ts'
+import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { GLOSSARY } from '../../shared/glossary.ts'
@@ -66,7 +67,7 @@ test('Leerstand beim Personenschlüssel: eine ganzjährig leere Wohnung zählt m
   assert.equal(s.landlord.rows[0]?.landlordParts?.[0]?.cents, part(60000, 365 * V, basis))
   assert.equal(s.selfUsedShareCents, 0)
   const row = s.statements.find((x) => x.tenancyId === 'ta')?.rows[0] ?? assert.fail('keine Zeile')
-  assert.equal(row.basisText, `730 von ${basis.toLocaleString('de-DE')} Personentagen`)
+  assert.equal(row.basisText, `730 von ${basis.toLocaleString('de-DE')} Personentagen (davon ${(365 * V).toLocaleString('de-DE')} Leerstand)`)
   const vacancyStep = row.steps?.find((x) => x.label === 'davon Leerstand') ?? assert.fail(`kein Schritt zum Leerstand: ${JSON.stringify(row.steps)}`)
   assert.equal(vacancyStep.value, `C: 365 Tage × ${personen(V)} = ${365 * V} Personentage`)
   assert.equal(vacancyStep.term, 'vacancy')
@@ -78,7 +79,7 @@ test('Leerstand beim Personenschlüssel: eine ganzjährig leere Wohnung zählt m
   assert.match(notice.text, /fiktive Person/)
   assert.doesNotMatch(notice.text, /üblich|vorgeschrieben/)
   assert.match(notice.text, /„Müll“/)
-  assert.match(notice.text, /\bC\b/)
+  assert.match(notice.text, /C \(365 Tage\)/)
   assert.deepEqual(notice.subject, { kind: 'unit', id: 'C' })
 })
 
@@ -199,4 +200,101 @@ test('Leerstand beim Personenschlüssel: steht das ganze Haus leer, gibt es kein
   assert.equal(s.landlord.totalCents, 60000)
   assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'vacancy', cents: 60000 }])
   assert.deepEqual(s.notices, [])
+})
+
+const muell1200 = (over: Partial<SnapshotCostItem> = {}) => muell({ amountCents: 120000, ...over })
+
+test('Leerstand beim Personenschlüssel: eine leere Garage mit 0 m² ist keine Wohnung und kein Leerstand, dazu ein Hinweis', () => {
+  const s = settle({
+    units: [unit('W1'), unit('W2'), unit('Garage', { areaM2: 0 })],
+    tenancies: [tenancy('t1', 'W1', 2), tenancy('t2', 'W2', 2)],
+    costItems: [muell1200()],
+  })
+  assertSound(s, 2)
+  assert.equal(shareOf(s, 't1'), 60000)
+  assert.equal(shareOf(s, 't2'), 60000)
+  assert.equal(s.landlord.totalCents, 0)
+  assert.ok(!s.notices.some((n) => n.code === 'basis.vacancy-persons'), JSON.stringify(s.notices))
+  const hint = s.notices.find((n) => n.code === 'basis.vacancy-no-area') ?? assert.fail(`kein Hinweis: ${JSON.stringify(s.notices)}`)
+  assert.equal(hint.level, 'hint')
+  assert.equal(hint.text, 'Garage hat 0 m² und keine Bewohner und wird beim Personenschlüssel nicht als Leerstand angesetzt. Ist Garage eine Wohnung, tragen Sie die Wohnfläche ein.')
+  assert.deepEqual(hint.subject, { kind: 'unit', id: 'Garage' })
+  const row = s.statements[0]?.rows[0] ?? assert.fail('keine Zeile')
+  assert.equal(row.basisText, '730 von 1.460 Personentagen')
+  assert.equal(row.steps?.find((x) => x.label === 'davon Leerstand'), undefined)
+})
+
+test('Leerstand beim Personenschlüssel: sechs Wohnungen und vier leere Stellplätze, die Mieter zahlen je ein Sechstel', () => {
+  const s = settle({
+    units: [...[1, 2, 3, 4, 5, 6].map((i) => unit(`W${i}`)), ...[1, 2, 3, 4].map((i) => unit(`Stellplatz ${i}`, { areaM2: 0 }))],
+    tenancies: [1, 2, 3, 4, 5, 6].map((i) => tenancy(`t${i}`, `W${i}`, 1)),
+    costItems: [muell1200()],
+  })
+  assertSound(s, 6)
+  assert.deepEqual([1, 2, 3, 4, 5, 6].map((i) => shareOf(s, `t${i}`)), [20000, 20000, 20000, 20000, 20000, 20000])
+  assert.equal(s.landlord.totalCents, 0)
+  const hints = s.notices.filter((n) => n.code === 'basis.vacancy-no-area')
+  assert.equal(hints.length, 1)
+  assert.match(hints[0]?.text ?? '', /^Stellplatz 1, Stellplatz 2, Stellplatz 3, Stellplatz 4 haben 0 m² und keine Bewohner/)
+})
+
+test('Leerstand beim Personenschlüssel: eine leere Garage mit eingetragener Fläche zählt als Leerstand', () => {
+  const s = settle({
+    units: [unit('W1'), unit('W2'), unit('Garage', { areaM2: 15 })],
+    tenancies: [tenancy('t1', 'W1', 2), tenancy('t2', 'W2', 2)],
+    costItems: [muell1200()],
+  })
+  assertSound(s, 2)
+  const basis = 730 + 730 + 365 * V
+  assert.equal(shareOf(s, 't1'), part(120000, 730, basis))
+  assert.ok(s.notices.some((n) => n.code === 'basis.vacancy-persons'))
+  assert.ok(!s.notices.some((n) => n.code === 'basis.vacancy-no-area'))
+})
+
+test('Leerstand beim Personenschlüssel: ein einzelner Leerstandstag heißt „1 Tag“', () => {
+  const s = settle({
+    units: [unit('A'), unit('B')],
+    tenancies: [tenancy('ta', 'A', 2), tenancy('tx', 'B', 1, '2020-01-01', '2025-06-29'), tenancy('ty', 'B', 1, '2025-07-01')],
+    costItems: [muell()],
+  })
+  assertSound(s, 3)
+  const row = s.statements.find((x) => x.tenancyId === 'ta')?.rows[0] ?? assert.fail('keine Zeile')
+  assert.equal(row.steps?.find((x) => x.label === 'davon Leerstand')?.value, `B: 1 Tag × ${personen(V)} = ${V} ${V === 1 ? 'Personentag' : 'Personentage'}`)
+  assert.match(s.notices.find((n) => n.code === 'basis.vacancy-persons')?.text ?? '', /B \(1 Tag\)/)
+})
+
+test('Belegte Tage: Überlappung, Verschachtelung, nahtloser Wechsel und ein Tag Lücke', () => {
+  const t = (start: string, end: string | null) => ({ start, end })
+  const y = ['2025-01-01', '2025-12-31'] as const
+  assert.equal(occupiedDays([], ...y), 0)
+  assert.equal(occupiedDays([t('2020-01-01', null)], ...y), 365)
+  // Überlappung: bis 30.06. und ab 15.06. — jeder Tag nur einmal
+  assert.equal(occupiedDays([t('2020-01-01', '2025-06-30'), t('2025-06-15', null)], ...y), 365)
+  // Verschachtelt: ein kurzes Mietverhältnis innerhalb eines langen
+  assert.equal(occupiedDays([t('2025-03-01', '2025-08-31'), t('2025-04-01', '2025-04-30')], ...y), 184)
+  // nahtlos: Auszug 30.06., Einzug 01.07.
+  assert.equal(occupiedDays([t('2020-01-01', '2025-06-30'), t('2025-07-01', null)], ...y), 365)
+  // ein Tag Lücke: Auszug 29.06., Einzug 01.07.
+  assert.equal(occupiedDays([t('2025-07-01', null), t('2020-01-01', '2025-06-29')], ...y), 364)
+  // außerhalb des Jahres
+  assert.equal(occupiedDays([t('2020-01-01', '2024-12-31'), t('2026-01-01', null)], ...y), 0)
+})
+
+test('Leerstand beim Personenschlüssel: eine nach altem Stand abgeschlossene Abrechnung zeigt die Abweichung zugunsten der Mieter', () => {
+  const source = {
+    units: [unit('A'), unit('B'), unit('C')],
+    tenancies: [tenancy('ta', 'A', 2), tenancy('tb', 'B', 1)],
+    costItems: [muell()],
+  }
+  // Der alte Stand: C fiel aus der Verteilbasis (A 400 €, B 200 €). Nachgestellt mit C außerhalb der
+  // Abrechnungseinheit, was beim Personenschlüssel genau dasselbe ergab.
+  const frozen = settle({ ...source, units: [unit('A'), unit('B'), unit('C', { participates: false })] })
+  assert.equal(shareOf(frozen, 'ta'), 40000)
+  const current = settle(source)
+  const cmp = compareWithFrozen(frozen, current, 2025, '2026-03-01')
+  assert.equal(cmp.comparable, true)
+  assert.deepEqual(cmp.deviations.map((d) => [d.tenancyId, d.direction, d.differenceCents]), [
+    ['ta', 'tenant', 40000 - shareOf(current, 'ta')],
+    ['tb', 'tenant', 20000 - shareOf(current, 'tb')],
+  ])
 })
