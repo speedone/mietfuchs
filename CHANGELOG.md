@@ -26,9 +26,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Kosten der Gemeinschaft; angelegt wird erst auf Knopfdruck, ohne Beleg und nie mit dem Betrag
   des Vorjahres. Positionen mit Einzelbeträgen je Mieter öffnen Sie dafür im Formular. Was im Jahr
   schon erfasst ist, wird nur nach Rückfrage noch einmal angelegt.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
 - **Der Wechsel des Abrechnungsjahres fragt nach, wenn ein Formular offen ist**, wie schon der
   Wechsel des Objekts; sonst gingen Eingaben verloren oder landeten im falschen Jahr.
-  ([#141](https://github.com/speedone/mietfuchs/issues/141))
 - **Der Umlageschlüssel wird je Kostenart gemerkt.** Eine neue Position bekommt den Schlüssel,
   den dieselbe Kostenart im Vorjahr hatte, im Formular wie bei der KI-Auswertung auf der Seite
   Kosten und in der Schnellerfassung; bei „Sonstige Betriebskosten“ nur von der Position mit
