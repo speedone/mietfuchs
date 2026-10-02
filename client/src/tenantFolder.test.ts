@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import type { CostItem, Settlement, SettlementRow, UploadInfo } from './types'
-import { buildTenantFolderPdf, coverPageCount, pageRows, planTenantFolder, winAnsiSafe } from './tenantFolder'
+import { buildTenantFolderPdf, coverPageCount, pageRows, planTenantFolder, UNREADABLE_TEXT, winAnsiSafe } from './tenantFolder'
 
 const upload = (file: string, mimeType = 'application/pdf'): UploadInfo => ({
   file, size: 1, mtime: '2026-01-01T00:00:00.000Z', originalName: file.replace(/^\d+_/, ''), mimeType,
-  uploadedAt: '2026-01-01T00:00:00.000Z', sha256: file, propertyId: null, year: null, invoiceDate: null,
+  uploadedAt: '2026-01-01T00:00:00.000Z', sha256: file, propertyId: null, year: null, invoiceDate: null, kind: 'receipt',
 })
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
   id, propertyId: 'p1', year: 2025, category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
@@ -119,5 +119,59 @@ describe('Belegmappe für Mieter: verschlüsselte PDFs', () => {
     const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'v.pdf' })], [upload('v.pdf')], { includeIndividual: false })
     await buildTenantFolderPdf(plan, { title: 't', subtitle: 's', load: async () => verschluesselt, rasterize: async () => { gerastert++; return [jpeg] } })
     expect(gerastert).toBe(1)
+  })
+})
+
+describe('Belegmappe für Mieter: Belege, die einzelne Mieter betreffen (Durchsicht)', () => {
+  // Solange es keine Mappe je Mieter gibt, geht die Mappe an jeden Mieter des Objekts. Ein Beleg
+  // zu einer Direktzuordnung (Reparatur in einer Wohnung) oder zu einer Position mit Teilnehmern
+  // betrifft nur einen Teil der Mieter und kommt deshalb wie die Einzelbeträge nur auf Wahl hinein.
+  const items = [
+    item('d', { key: 'direct', directUnitId: 'u1', invoiceFile: 'd.pdf' }),
+    item('t', { participantUnitIds: ['u1'], invoiceFile: 't.pdf' }),
+    item('alle', { participantUnitIds: null, invoiceFile: 'a.pdf' }),
+  ]
+  const uploads = [upload('d.pdf'), upload('t.pdf'), upload('a.pdf')]
+  const s = settlement([['d', 't', 'alle']])
+
+  it('Direktzuordnung und Teilnehmer stehen ohne Wahl „auf Anfrage“', () => {
+    const plan = planTenantFolder(s, items, uploads, { includeIndividual: false })
+    expect(plan.entries.map((e) => [e.item.id, e.status])).toEqual([['d', 'excluded'], ['t', 'excluded'], ['alle', 'ok']])
+  })
+
+  it('mit Wahl kommen sie hinein', () => {
+    const plan = planTenantFolder(s, items, uploads, { includeIndividual: true })
+    expect(plan.documents.map((d) => d.upload.file)).toEqual(['d.pdf', 't.pdf', 'a.pdf'])
+  })
+})
+
+describe('Belegmappe für Mieter: nicht lesbare Belege (Durchsicht)', () => {
+  it('ein Beleg, der sich weder übernehmen noch rendern lässt, bricht die Mappe nicht ab', async () => {
+    const gut = await PDFDocument.create()
+    gut.addPage([300, 400])
+    const gutBytes = await gut.save()
+    const plan = planTenantFolder(settlement([['a', 'b', 'c']]), [
+      item('a', { invoiceFile: 'foto.heic' }),
+      item('b', { invoiceFile: 'gut.pdf' }),
+      item('c', { invoiceFile: 'weg.pdf' }),
+    ], [upload('foto.heic', 'image/heic'), upload('gut.pdf'), upload('weg.pdf')], { includeIndividual: false })
+    const unlesbar: string[] = []
+    const bytes = await buildTenantFolderPdf(plan, {
+      title: 't', subtitle: 's',
+      // weg.pdf: der Abruf scheitert (etwa 404), foto.heic: kein Browser kann es rendern
+      load: async (u) => { if (u.file === 'weg.pdf') throw new Error('HTTP 404'); return u.file === 'gut.pdf' ? gutBytes : new Uint8Array([1, 2, 3]) },
+      rasterize: async () => { throw new Error('nicht darstellbar') },
+      onUnreadable: (u) => unlesbar.push(u.file),
+    })
+    expect(unlesbar).toEqual(['foto.heic', 'weg.pdf'])
+    expect((await PDFDocument.load(bytes)).getPageCount()).toBe(1 + 1)
+  })
+
+  it('auf dem Deckblatt steht bei einem nicht übernehmbaren Beleg keine Seite, sondern der Hinweis', () => {
+    const plan = planTenantFolder(settlement([['a']]), [item('a', { invoiceFile: 'x.pdf' })], [upload('x.pdf')], { includeIndividual: false })
+    const [row] = pageRows(plan, new Map([['x.pdf', 0]]), new Set(['x.pdf']))
+    expect(row.page).toBeNull()
+    expect(row.unreadable).toBe(true)
+    expect(UNREADABLE_TEXT).toBe('nicht übernehmbar, bitte gesondert beilegen')
   })
 })

@@ -627,7 +627,11 @@ export type UploadInfo = {
   year: number | null
   // Rechnungsdatum, wie es die KI-Auswertung gelesen hat oder jemand eingetragen hat (JJJJ-MM-TT)
   invoiceDate: string | null
+  // Ein Beleg oder ein Zählerfoto aus der Schnellerfassung. Ein Zählerfoto belegt keine Kosten und
+  // gehört deshalb weder in den Posteingang noch zum „Nachreichen“.
+  kind: UploadKind
 }
+export type UploadKind = 'receipt' | 'meterPhoto'
 
 // Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
 // erledigen die Fremdschlüssel (db/schema.ts); hier steht nur, wie viel sie träfe.

@@ -18,7 +18,7 @@ const YEAR = new Date().getFullYear() - 1
 
 const up = (file: string, sha = file): UploadInfo => ({
   file, size: 2048, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''), mimeType: 'application/pdf',
-  uploadedAt: '2026-01-02T10:00:00.000Z', sha256: sha, propertyId: null, year: null, invoiceDate: null,
+  uploadedAt: '2026-01-02T10:00:00.000Z', sha256: sha, propertyId: null, year: null, invoiceDate: null, kind: 'receipt',
 })
 
 const ITEMS: Record<string, CostItem[]> = {

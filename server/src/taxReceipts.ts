@@ -29,6 +29,12 @@ const euro = (cents: number): string => (cents / 100).toFixed(2).replace('.', ',
 
 const csvField = (value: string): string => (/[;"\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value)
 
+// Ein Textfeld, das mit = + - @ (oder Tab, Wagenrücklauf) beginnt, liest eine Tabellenkalkulation
+// als Formel. Rechnungssteller und Beschreibung können aus der KI-Auswertung eines fremden Belegs
+// stammen, deshalb wird entschärft: ein Apostroph davor, wie es die OWASP-Empfehlung zur
+// CSV-Einschleusung vorsieht. Beträge sind keine Textfelder; eine Gutschrift bleibt „-5,00“.
+const textField = (value: string): string => csvField(/^[=+\-@\t\r]/.test(value) ? `'${value}` : value)
+
 export type TaxArchivePlan = {
   files: { zipPath: string, file: string }[]
   overviewCsv: string
@@ -72,9 +78,9 @@ export function planTaxArchive(items: CostItem[], names: Map<string, string>): T
       }
     }
     rows.push([
-      group, c.category, c.description, c.vendor ?? '', euro(c.amountCents),
-      c.labor35aCents ? euro(c.labor35aCents) : '', beleg,
-    ].map(csvField).join(';'))
+      textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
+      csvField(c.labor35aCents ? euro(c.labor35aCents) : ''), textField(beleg),
+    ].join(';'))
   }
   const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);Lohnanteil § 35a (EUR);Beleg'
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }

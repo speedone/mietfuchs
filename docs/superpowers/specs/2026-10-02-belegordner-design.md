@@ -120,7 +120,7 @@ Seitenbilder hinein. Die Standardschrift kennt nur WinAnsi; `winAnsiSafe` ersetz
 ## Rechtliches: Was in die Mieter-Mappe gehört
 
 **Wortlaut.** § 556 Abs. 4 BGB lautet seit dem 01.01.2025: „Der Vermieter hat dem Mieter auf
-Verlangen Einsicht in die der Abrechnung zugrundeliegenden Belege zu gewähren. Der Vermieter ist
+Verlangen Einsicht in die der Abrechnung zugrundeliegenden [sic, so im Gesetzestext zusammengeschrieben] Belege zu gewähren. Der Vermieter ist
 berechtigt, die Belege elektronisch bereitzustellen.“
 ([gesetze-im-internet.de/bgb/__556.html](https://www.gesetze-im-internet.de/bgb/__556.html),
 gelesen am 02.10.2026; eingefügt durch das Vierte Bürokratieentlastungsgesetz, BGBl. 2024 I

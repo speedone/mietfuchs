@@ -40,6 +40,7 @@ beforeEach(() => {
     const responses: Record<string, unknown> = {
       '/api/properties': [{ id: 'objekt-1', name: 'A', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }],
       '/api/costItems': costItems,
+      '/api/uploads': [{ file: '1_gs.pdf' }],
       [`/api/settlement/${YEAR}`]: settlementOhneKosten,
     }
     return json(responses[path] ?? [])
