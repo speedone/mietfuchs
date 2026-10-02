@@ -6,7 +6,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
-## [0.9.0] – 2026-10-01
+## [0.9.0] – 2026-10-02
 
 ### Neu
 
