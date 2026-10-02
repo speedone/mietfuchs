@@ -464,10 +464,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <tr>
                 <th><span className="sr-only">Übernehmen</span></th>
                 <th>Kostenart</th>
-                <th>Beschreibung</th>
-                <th>Umlageschlüssel</th>
+                {/* Betrag gleich hinter der Kostenart: Auf dem Handy scrollt die Tabelle waagerecht
+                    (Table.tsx), und das Feld, das man ausfüllen muss, soll ohne Wischen dastehen. */}
                 <th className="num">Betrag {year} €</th>
                 <th className="num">§35a Lohn €</th>
+                <th>Beschreibung</th>
+                <th>Umlageschlüssel</th>
                 <th><span className="sr-only">Formular</span></th>
               </tr>
             </thead>
@@ -481,6 +483,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td>
                     {r.source.category}
                     {alreadyCarried(items, r, year) && <div><span className="badge gray">schon für {year} erfasst</span></div>}
+                  </td>
+                  <td className="num">
+                    {r.inline && (
+                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, year)))}
+                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
+                    )}
+                    {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
+                    <div className="muted">{year - 1}: {fmtEuro(r.source.amountCents)}</div>
+                  </td>
+                  <td className="num">
+                    {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
                   </td>
                   <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
                   <td>
@@ -510,17 +523,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                       />
                     )}
                     {!r.inline && <div className="muted">Einzelbeträge je Mieter bitte im Formular eintragen.</div>}
-                  </td>
-                  <td className="num">
-                    {r.inline && (
-                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, year)))}
-                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
-                    )}
-                    {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
-                    <div className="muted">{year - 1}: {fmtEuro(r.source.amountCents)}</div>
-                  </td>
-                  <td className="num">
-                    {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
                   </td>
                   <td>
                     <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>

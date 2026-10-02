@@ -179,3 +179,18 @@ test('Durchsicht (3): ein Jahreswechsel mit Eingaben in der Liste fragt nach', a
   fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Jahr wechseln' })))
   await waitFor(() => expect(select(/Abrechnungsjahr/i).value).toBe(String(PREV)))
 })
+
+test('Handy: der Betrag steht gleich hinter der Kostenart, nicht erst nach dem Schlüssel', async () => {
+  await openCarry()
+  // Bei 360 px ist die Tabelle breiter als der Bildschirm (Table.tsx scrollt nur sie). Der Betrag
+  // ist das Feld, das man ausfüllen muss; er gehört deshalb in den ersten sichtbaren Bereich.
+  const table = screen.getByRole('heading', { name: new RegExp(`aus ${PREV} für ${YEAR} übernehmen`) }).parentElement?.querySelector('table')
+  if (!table) return expect.fail('Tabelle der Übernahme nicht gefunden')
+  const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent?.trim())
+  expect(heads.slice(0, 4)).toEqual(['Übernehmen', 'Kostenart', `Betrag ${YEAR} €`, '§35a Lohn €'])
+  // Die Zellen folgen den Köpfen: das Betragsfeld steht in der dritten Spalte jeder Zeile.
+  const row = within(table).getByLabelText(`Betrag ${YEAR} für Müllabfuhr ${YEAR}`).closest('tr')
+  const cells = [...(row?.children ?? [])]
+  expect(cells.findIndex((td) => td.querySelector(`[aria-label="Betrag ${YEAR} für Müllabfuhr ${YEAR}"]`))).toBe(2)
+  expect(cells.findIndex((td) => td.querySelector(`[aria-label="§35a-Lohn ${YEAR} für Müllabfuhr ${YEAR}"]`))).toBe(3)
+})
