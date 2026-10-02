@@ -954,8 +954,7 @@ die ganze fachliche Komplexität:
   weg. Das war vorher schon so, und es soll so bleiben: Die Abrechnung ist das Dokument, das der
   Mieter bekommt, und ein Hinweis auf einen Datenfehler des Vermieters gehört nicht darauf.
 - **Leerstand beim Personenschlüssel** (#177): Jede Wohnung der Verteilbasis, die vermietet
-  wird (`participates`, nicht selbstgenutzt, nicht Garage-artig nach #135, unter den Teilnehmern
-  der Position), zählt für jeden Tag ohne Mietverhältnis mit `VACANCY_PERSONS` Personen (heute 1),
+  wird (`participates`, nicht selbstgenutzt, unter den Teilnehmern der Position), zählt für jeden Tag ohne Mietverhältnis mit `VACANCY_PERSONS` Personen (heute 1),
   auch zwischen zwei Mietern. Diese Personentage bekommt niemand zugebucht, ihr Anteil bleibt als
   `vacancy` beim Vermieter. Vorher fiel die leere Wohnung aus der Basis, und die übrigen Mieter
   zahlten ihren Anteil. Grundsatz: BGH VIII ZR 159/05 (am Flächenschlüssel); die fiktive Person
@@ -965,9 +964,14 @@ die ganze fachliche Komplexität:
   computeSettlement), und Hinweis `basis.vacancy-persons` (Stufe `hint`: nichts ist falsch
   erfasst) und Lexikon sagen das. `item.no-basis` hängt an den Personentagen der **Bewohner**
   (`occupantPersonDays`), nicht an der Basis samt Leerstand: Fehlen die Personen aller Mieter,
-  bleibt das ein Datenmangel. Eine ganz leere Einheit mit 0 m² ist nach #135 nicht Garage-artig
-  und zählt mit; der Irrtum geht dann zulasten des Vermieters. Der Rechenweg nennt die
-  Leerstandstage („davon Leerstand“). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
+  bleibt das ein Datenmangel. **Wohnung ist, was Fläche hat oder bewohnt ist** (`isDwelling`,
+  dieselbe Regel wie bei § 2 HeizkostenV): Eine Einheit ohne Fläche und ohne Bewohner (Garage,
+  Stellplatz, auch ganz leer) ist kein Leerstand, sonst verschöben vier leere Stellplätze einen
+  großen Teil der Müllabfuhr zum Vermieter; eine ganz leere meldet `basis.vacancy-no-area`, weil
+  sie auch eine Wohnung mit vergessener Fläche sein kann. Eine leere Garage **mit** eingetragener
+  Fläche zählt weiter als Leerstand. Der Rechenweg nennt die Leerstandstage („davon
+  Leerstand“), der gedruckte `basisText` die Summe („(davon N Leerstand)“). Beide Hinweise färben
+  die Cockpit-Ampel nicht (`INFORMATIONAL` in client/src/notices.ts). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
   den Unterschied.
 - **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
