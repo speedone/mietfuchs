@@ -578,6 +578,9 @@ export type TaxExpenseItem = {
   // einem anderen Maßstab als Fläche oder Verbrauch verteilt (Personen, Einheiten, vereinbart,
   // Gemeinschaft). Sonst null.
   areaPrivateCents: number | null
+  // Zum Vergleich der Eigenanteil laut Abrechnung, wo die Steuer trotzdem nach der Fläche des
+  // ganzen Gebäudes rechnet, weil es Einheiten außerhalb der Abrechnungseinheit gibt. Sonst null.
+  settlementPrivateCents: number | null
   // Der Rechenweg (#114), als „gesonderte Aufstellung“ der Anleitung zur Anlage V.
   steps: CalcStep[]
 }
@@ -628,6 +631,9 @@ export type TaxReport = {
   // Abgeschlossene Abrechnung, deren eingefrorene Eigenanteile von der heutigen Rechnung abweichen
   // oder je Position gar nicht vorliegen (Archivstück von vor #142).
   closedSelfUseDiffers: boolean
+  // Positionen, die nach dem Abschluss erfasst oder im Betrag geändert wurden; sie rechnet die
+  // Übersicht heute statt aus dem eingefrorenen Stand.
+  closedItemsChanged: number
   // Zuführung zur Erhaltungsrücklage des Jahres (#143), nicht in den Werbungskosten: abziehbar
   // erst, wenn und soweit die Gemeinschaft sie verausgabt (BFH, Urteil vom 14.01.2025, IX R 19/24).
   reserveContributionCents: number

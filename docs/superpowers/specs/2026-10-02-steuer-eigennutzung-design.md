@@ -146,6 +146,28 @@ immer den neutralen Schlüssel. Jetzt bietet es „Betrifft (für die Steuer)“
 oder eine Einheit. Gespeichert wird `key: 'direct'` mit der Einheit; die Abrechnung liest den
 Schlüssel weiterhin nicht. Keine Migration.
 
+## Nachträge aus der Durchsicht
+
+- **Einheiten außerhalb der Abrechnungseinheit.** Die Abrechnung verteilt nur über die
+  Abrechnungseinheit; ihr Eigenanteil behandelte eine getrennt abgerechnete Gewerbeeinheit wie
+  privat (100 m² eigen, 100 m² vermietet, 100 m² Gewerbe, Grundsteuer 3.000 € nach Fläche:
+  1.500 € statt 1.000 €). Entschieden: Gehört eine solche Einheit zu den betroffenen Einheiten
+  einer umlagefähigen Position, die nach Fläche, Einheiten, Personen, vereinbarten Anteilen oder
+  laut Gemeinschaft verteilt wird, gilt für die Steuer der Flächenmaßstab über das ganze Gebäude
+  (BFH-Regelmaßstab); der Eigenanteil der Abrechnung steht als `settlementPrivateCents` zum
+  Vergleich daneben, und ein Hinweis beziffert den Abstand. Verbrauch und Einzelbeträge bleiben
+  bei der Abrechnung, denn sie ordnen eindeutig zu. Damit ist F1 eingeschränkt: „Abrechnung und
+  Steuer sagen dasselbe“ gilt, solange alle Einheiten zur Abrechnungseinheit gehören.
+- **Abgeschlossene Abrechnung.** Der eingefrorene Eigenanteil gilt nur für Positionen, die mit
+  demselben Betrag im eingefrorenen Stand stehen (`itemTotals` aus den Zeilen der Mieter und des
+  Vermieters). Eine danach erfasste Position galt sonst als 0 privat, ein danach geänderter Betrag
+  ergab einen negativen abziehbaren Teil. Solche Positionen rechnet die Übersicht heute und zählt
+  sie für einen Hinweis (`closedItemsChanged`).
+- **Nicht umlagefähig für bestimmte Einheiten.** Das Formular bietet neben „ganzes Gebäude“ und
+  einer Einheit „bestimmte Einheiten“ (Teilnehmer), etwa für das Dach des Hinterhauses.
+- **Personenschlüssel.** Der Hinweis zum Abstand nennt Leerstand als typische Ursache; Kosten
+  einer leerstehenden Wohnung bleiben bei Vermietungsabsicht abziehbar.
+
 ## Was nicht gerechnet wird
 
 AfA (Zeilen 33/34 kennen ebenfalls die verhältnismäßige Zuordnung), Schuldzinsen (sie folgen der

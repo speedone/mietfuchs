@@ -23,6 +23,9 @@ import {
   keyListText,
   showsKeyFields,
   showsTaxUnitField,
+  taxScopeOf,
+  TAX_SCOPE_SOME,
+  toggleTaxUnit,
   withTaxUnit,
   withKey,
   withCategory,
@@ -627,11 +630,34 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {showsTaxUnitField(form.category) && (
               <label className="field grow">
                 <Term id="mixedUse">Betrifft (für die Steuer)</Term>
-                <select value={form.key === 'direct' ? form.directUnitId : ''} onChange={(e) => setForm(withTaxUnit(form, e.target.value))}>
+                <select value={taxScopeOf(form)} onChange={(e) => setForm(withTaxUnit(form, e.target.value))}>
                   <option value="">das ganze Gebäude (nach Fläche)</option>
+                  <option value={TAX_SCOPE_SOME}>bestimmte Einheiten (nach Fläche)</option>
                   {units.map((u) => <option key={u.id} value={u.id}>{u.name}{u.selfUsed && !u.participates ? ' (selbstgenutzt)' : ''}</option>)}
                 </select>
               </label>
+            )}
+            {/* Bestimmte Einheiten, etwa das Dach des Hinterhauses (Durchsicht): Die Kästchen zeigen genau
+                die gespeicherten Teilnehmer. */}
+            {showsTaxUnitField(form.category) && taxScopeOf(form) === TAX_SCOPE_SOME && (
+              <div className="field-group">
+                <div className="field-group-label">Betroffene Einheiten (für die Steuer)</div>
+                <div className="row">
+                  {units.map((u) => (
+                    <label key={u.id} className="field checkline">
+                      <span>
+                        <input
+                          type="checkbox"
+                          aria-label={`${u.name} (betroffen)`}
+                          checked={(form.participants ?? []).includes(u.id)}
+                          onChange={(e) => setForm(toggleTaxUnit(form, u.id, e.target.checked))}
+                        />{' '}
+                        {u.name}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             )}
             {showsKeyFields(form.category) && <>
             <label className="field grow">

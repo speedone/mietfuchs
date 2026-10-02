@@ -895,6 +895,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, items: [...split.items.values()] },
     selfUseChangedInYear: split.selfUseChangedInYear,
     closedSelfUseDiffers: split.closedSelfUseDiffers,
+    closedItemsChanged: split.closedItemsChanged,
     reserveContributionCents,
     reserveSuspects,
     totalAreaM2: totalArea,
@@ -939,7 +940,7 @@ const roundHalfAway = (x: number): number => (Math.sign(x) * Math.round(Math.abs
 // oder gemessenem Verbrauch. Für sie rechnet die Übersicht zum Vergleich nach Fläche.
 const KEYS_NOT_AREA: readonly CostKey[] = ['persons', 'units', 'custom', 'external']
 
-type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, closedSelfUseDiffers: boolean }
+type TaxSplit = { items: Map<string, TaxExpenseItem>, selfUseChangedInYear: boolean, closedSelfUseDiffers: boolean, closedItemsChanged: number }
 
 function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: ComputedSettlement): TaxSplit {
   const units = snapshot.units
@@ -961,28 +962,51 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
 
   // **Bei abgeschlossener Abrechnung gilt ihr eingefrorener Stand**, wie beim Eigenanteil und den
   // Vorauszahlungen (#70): Die Steuerübersicht soll nennen, was beim Mieter auf dem Papier steht.
+  // **Aber nur für Positionen, die genau so auf dem Papier standen** (Durchsicht): Eine nach dem
+  // Abschluss erfasste Position hat dort keinen Eigenanteil, und ihn als 0 zu lesen machte sie
+  // ganz abziehbar; bei einem danach geänderten Betrag passte der eingefrorene Eigenanteil nicht
+  // mehr zum Betrag und ergab einen negativen abziehbaren Teil. Solche Positionen rechnet die
+  // Übersicht heute und zählt sie für den Hinweis.
   const frozen = snapshot.closedSettlement
-  let fromSettlement = liveOf
+  const totals = frozen?.itemTotals ?? null
+  const asClosed = (c: SnapshotCostItem): boolean =>
+    !!frozen && (totals === null || (Object.hasOwn(totals, c.id) && totals[c.id] === c.amountCents))
+  const closedItemsChanged = frozen ? items.filter((c) => !asClosed(c)).length : 0
+  let fromSettlement = (c: SnapshotCostItem) => liveOf(c.id)
   let closedSelfUseDiffers = false
   if (frozen && frozen.selfUseByItem) {
     const byItem = frozen.selfUseByItem
-    fromSettlement = (id) => (Object.hasOwn(byItem, id) ? byItem[id] : undefined) ?? { selfCents: 0, noBasis: false }
-    closedSelfUseDiffers = items.some((c) => fromSettlement(c.id).selfCents !== liveOf(c.id).selfCents)
+    fromSettlement = (c) => (asClosed(c) ? (Object.hasOwn(byItem, c.id) ? byItem[c.id] : undefined) ?? { selfCents: 0, noBasis: false } : liveOf(c.id))
+    closedSelfUseDiffers = items.some((c) => asClosed(c) && fromSettlement(c).selfCents !== liveOf(c.id).selfCents)
   } else if (frozen) {
-    // Ein Archivstück von vor #142 kennt nur die Summe. Sie wird im Verhältnis der heutigen
-    // Eigenanteile verteilt, mit dem Restverfahren und der Kennung als Entscheid; so bleibt die
-    // Summe die des Papiers. Ohne heutigen Eigenanteil lässt sie sich nicht verteilen, und das
-    // sagt der Hinweis.
-    const allocable = items.filter((c) => !isNotAllocable(c.category))
+    // Ein Archivstück von vor #142 kennt nur die Summe. Sie wird auf die Positionen, die so auf dem
+    // Papier standen, im Verhältnis der heutigen Eigenanteile verteilt, mit dem Restverfahren und
+    // der Kennung als Entscheid. Ohne heutigen Eigenanteil lässt sie sich nicht verteilen, und das
+    // sagt der Hinweis. Ist seither eine Position entfallen oder geändert, enthält die Summe auch
+    // ihren Anteil; das bleibt eine Näherung, und der Hinweis erscheint.
+    const allocable = items.filter((c) => !isNotAllocable(c.category) && asClosed(c))
     const today = allocable.map((c) => liveOf(c.id).selfCents)
     const todaySum = today.reduce((a, c) => a + c, 0)
     const parts = todaySum !== 0
       ? largestRemainder(frozen.selfUsedShareCents, today.map((c) => (c * frozen.selfUsedShareCents) / todaySum), allocable.map((c) => c.id))
       : allocable.map(() => 0)
     const distributed = new Map(allocable.map((c, k) => [c.id, parts[k] ?? 0]))
-    fromSettlement = (id) => ({ selfCents: distributed.get(id) ?? 0, noBasis: liveOf(id).noBasis })
+    fromSettlement = (c) => (asClosed(c) ? { selfCents: distributed.get(c.id) ?? 0, noBasis: liveOf(c.id).noBasis } : liveOf(c.id))
     closedSelfUseDiffers = todaySum !== frozen.selfUsedShareCents
   }
+
+  // **Gibt es Einheiten außerhalb der Abrechnungseinheit, zählt das ganze Gebäude** (Durchsicht).
+  // Die Abrechnung verteilt nur über die Abrechnungseinheit; ihr Eigenanteil behandelte die
+  // Fläche einer getrennt abgerechneten Gewerbeeinheit damit wie privat (100 m² eigen, 100 m²
+  // vermietet, 100 m² Gewerbe: 1.500 € statt 1.000 € von 3.000 €). Dann gilt für die Schlüssel,
+  // die über Wohnungen verteilen, der BFH-Maßstab über das Gebäude, und der Eigenanteil der
+  // Abrechnung steht zum Vergleich daneben. Verbrauch und Einzelbeträge ordnen dagegen eindeutig
+  // zu (der Verbrauch einer Einheit außerhalb steckt in der Verteilbasis), dort bleibt es bei der
+  // Abrechnung. Gefragt wird nach den betroffenen Einheiten der Position.
+  const outside = (u: SnapshotUnit) => !u.participates && !u.selfUsed
+  const BUILDING_KEYS: readonly CostKey[] = ['area', 'units', 'persons', 'custom', 'external']
+  const outsideAffected = (item: SnapshotCostItem): boolean =>
+    BUILDING_KEYS.includes(item.key) && units.some((u) => outside(u) && (!item.participantUnitIds || item.participantUnitIds.includes(u.id)))
 
   // Nach Fläche über die betroffenen Einheiten: die Teilnehmer der Position, sonst alle Einheiten
   // des Objekts. `null`, wenn eine Fläche fehlt, die es zum Aufteilen bräuchte.
@@ -1005,11 +1029,12 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     const amount = item.amountCents
     const allocable = !isNotAllocable(item.category)
     const direct = item.key === 'direct' && item.directUnitId ? unitById.get(item.directUnitId) : undefined
-    const fromBill = fromSettlement(item.id)
+    const fromBill = fromSettlement(item)
     const steps: CalcStep[] = [{ label: 'Rechnungsbetrag', value: fmtCents(amount) }]
     let allocation: TaxAllocation
     let privateCents = 0
     let areaPrivateCents: number | null = null
+    let settlementPrivateCents: number | null = null
 
     const directLabel = (u: SnapshotUnit) =>
       `direkt: ${u.name} (${isSelf(u) ? 'selbstgenutzt' : u.participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
@@ -1051,6 +1076,9 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       if (privateCents !== 0) steps.push({ label: 'Eigenanteil laut Abrechnung (privat)', value: fmtCents(privateCents), term: 'ownShare' })
     } else if (fromBill.noBasis) {
       allocation = applyArea('Die Nebenkostenabrechnung hat diese Position nicht verteilt; aufgeteilt wird deshalb nach Fläche.')
+    } else if (outsideAffected(item)) {
+      settlementPrivateCents = fromBill.selfCents
+      allocation = applyArea(`Zum Gebäude gehören Einheiten außerhalb der Abrechnungseinheit. Die Nebenkostenabrechnung verteilt nur über die Abrechnungseinheit und weist ${fmtCents(fromBill.selfCents)} Eigenanteil aus; für die Steuer zählt das Verhältnis der Flächen des ganzen Gebäudes.`)
     } else {
       allocation = 'settlement'
       privateCents = fromBill.selfCents
@@ -1083,6 +1111,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       allocation: kind,
       deductiblePercent,
       areaPrivateCents,
+      settlementPrivateCents,
       steps,
     })
   }
@@ -1091,7 +1120,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // die Fläche zählt also das ganze Jahr als privat (F5).
   const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
   const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && overlapDays(t.start, t.end, snapshot.year) > 0)
-  return { items: result, selfUseChangedInYear, closedSelfUseDiffers }
+  return { items: result, selfUseChangedInYear, closedSelfUseDiffers, closedItemsChanged }
 }
 
 // ---------- Hilfen ----------
