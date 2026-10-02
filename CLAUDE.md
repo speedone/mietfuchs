@@ -946,6 +946,12 @@ gehen zusammen, mit der Summe, sonst bekäme die Position den Betrag der ersten 
 hängt (dann wird der Betrag erhöht). Hat die KI keinen §35a-Lohnanteil gelesen, wird ein
 vorhandener entfernt und das an der Wahl gesagt; ein stehengebliebener Schätzwert würde sonst den
 Mietern und in der Anlage V bescheinigt. Geprüft wird gegen den Lohnanteil, der danach gilt.
+Angelegte Zeilen gelten wie verknüpfte als erledigt (`created`) und fragen nicht mehr nach
+Doppelungen; die aus einem Beleg angelegten Positionen (`createdIds`) sind für dessen übrige Zeilen
+keine Kandidaten, sonst böte die eben angelegte Position „um ihren eigenen Betrag erhöhen“ an. Eine
+Gutschrift (negative Summe einer Gruppe) wird nie verrechnet, sondern als eigene Position angelegt,
+damit sie auf der Abrechnung sichtbar bleibt. Hat ein anderer Eintrag der Warteschlange mit
+demselben Beleg eine Position schon gefüllt, gibt es kein zweites „erhöhen“.
 Positionen mit `external` oder `amounts` werden nicht mit einem Klick verknüpft, ihr Betrag hängt
 an weiteren Angaben; dort öffnet ein Knopf das Formular. Die Hinweise stehen **unter** der Tabelle
 ([DuplicateNotices.tsx](client/src/components/DuplicateNotices.tsx)), in einer Zeile scrollten sie

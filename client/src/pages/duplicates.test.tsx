@@ -36,6 +36,12 @@ beforeEach(() => {
       sent.push({ url, method, body })
       // Die Seite lädt danach neu; die Position trägt dann Betrag und Beleg.
       if (method === 'PUT') items = items.map((i) => (url.startsWith(`/api/costItems/${i.id}`) ? { ...i, ...body } : i))
+      // Wie der Server: Eine angelegte Position steht danach in der Liste und kommt zurück.
+      if (method === 'POST' && url.startsWith('/api/costItems')) {
+        const created = { ...(body as unknown as CostItem), id: `neu-${sent.length}`, propertyId: 'objekt-1' }
+        items = [...items, created]
+        return json(created)
+      }
       return json({ ok: true })
     }
     const path = url.split('?')[0] ?? url
@@ -259,5 +265,31 @@ test('Kostenformular: „Trotzdem anlegen“ legt an; beim Bearbeiten wird nicht
   fireEvent.click(screen.getByRole('button', { name: /^(Übernehmen|Speichern)$/ }))
   await waitFor(() => expect(sent).toHaveLength(2), SLOW)
   expect(sent[1]).toMatchObject({ method: 'PUT', url: '/api/costItems/gs' })
+  expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
+})
+
+// Dritte Durchsicht (H1): Restmüll 700 € und eine Gutschrift −50 € auf demselben Beleg. „Alle
+// grünen übernehmen“ legt die 700 € an; die Gutschrift (gelb) bleibt. Nach dem Neuladen hing die
+// neue Position am selben Beleg, und die Seite bot „um 650 € auf 1.350 € erhöhen“ an.
+test('Schnellerfassung: nach „Alle grünen übernehmen“ bietet die eben angelegte Position kein „erhöhen“ an', async () => {
+  items = []
+  extraction = {
+    vendor: 'Stadt Musterstadt', invoiceDate: `${YEAR}-02-15`,
+    positions: [
+      { description: 'Restmüll', category: 'Müllabfuhr', amountEur: 700 },
+      { description: 'Gutschrift Vorjahr', category: 'Müllabfuhr', amountEur: -50 },
+    ],
+  }
+  const { container } = intake()
+  await upload(container)
+  fireEvent.click(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW))
+  await waitFor(() => expect(sent).toHaveLength(1), SLOW)
+  await screen.findByText(/noch zu prüfen: „Gutschrift Vorjahr“/, {}, SLOW)
+  expect(screen.queryByRole('button', { name: /erhöhen|verknüpfen/ })).toBeNull()
+  // Die Gutschrift wird als eigene Position angelegt, ohne Rückfrage nach einer Doppelung.
+  fireEvent.click(screen.getByRole('button', { name: /Diese übernehmen/ }))
+  await waitFor(() => expect(sent).toHaveLength(2), SLOW)
+  expect(sent[1]).toMatchObject({ method: 'POST', body: { description: 'Gutschrift Vorjahr', amountCents: -5000 } })
+  expect(sent.filter((s) => s.method === 'PUT')).toEqual([])
   expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
 })

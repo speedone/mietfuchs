@@ -56,7 +56,8 @@ type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] }
 
 // Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
 // `linked`: mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
-type ExtractPos = AiPosition & { checked: boolean; linked?: string }
+// `created`: als neue Position angelegt; erledigt wie `linked` (dritte Durchsicht)
+type ExtractPos = AiPosition & { checked: boolean; linked?: string; created?: boolean }
 
 // Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
 const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
@@ -74,6 +75,8 @@ type QueueEntry = {
   amountsAdjusted?: Extraction['amountsAdjusted']
   laborFromTotal?: boolean
   positions: ExtractPos[]
+  // Aus diesem Beleg angelegte Positionen: Sie sind keine Doppelung der übrigen Zeilen.
+  createdIds?: string[]
   // während der Auswertung: was das Modell gerade tut und seit wann
   progress?: AiProgress | null
   startedAt?: number
@@ -438,7 +441,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       if (!ok) return
     }
     setError('')
-    const done: number[] = []
+    const done: { index: number; id: string }[] = []
+    // Angelegte Zeilen sind erledigt, nicht nur abgehakt: Sonst fänden sie nach dem Neuladen ihre
+    // eigene Position am selben Beleg und böten „um ihren Betrag erhöhen“ an.
+    const markCreated = () => setQueue((q) => q.map((x) => (x.id !== entry.id ? x : {
+      ...x,
+      positions: x.positions.map((y, i) => (done.some((d) => d.index === i) ? { ...y, checked: false, created: true } : y)),
+      createdIds: [...(x.createdIds ?? []), ...done.map((d) => d.id).filter(Boolean)],
+    })))
     for (const [index, p] of entry.positions.entries()) {
       if (!p.checked) continue
       // Über dieselbe Prüfung wie das Formular (#141), samt gemerktem Schlüssel; nicht umlagefähig
@@ -446,26 +456,29 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, year)
       if ('error' in built) continue
       try {
-        await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
-        done.push(index)
+        const created = await api<{ id?: string } | null>(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+        done.push({ index, id: created?.id ?? '' })
       } catch (e) {
-        // Was bis hierher übernommen ist, steht in der Liste und wird abgehakt, damit ein zweiter
-        // Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
-        for (const i of done) updatePos(entry.id, i, { checked: false })
+        // Was bis hierher übernommen ist, steht in der Liste und gilt als erledigt, damit ein
+        // zweiter Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
+        markCreated()
         setError(`„${p.description}“ wurde nicht übernommen: ${errorText(e)}`)
         await load()
         return
       }
     }
+    markCreated()
     patchEntry(entry.id, { status: 'übernommen' })
     await load()
   }
 
+  const itemsFor = (entry: QueueEntry): CostItem[] =>
+    entry.createdIds?.length ? items.filter((i) => !entry.createdIds?.includes(i.id)) : items
   const candidatesOf = (entry: QueueEntry, p: ExtractPos): CostItem[] =>
-    p.linked ? [] : duplicateCandidates(items, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
+    p.linked || p.created ? [] : duplicateCandidates(itemsFor(entry), { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
 
   const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
-    duplicateGroups(entry.positions, { items, vendor: entry.vendor ?? '', year, invoiceFile: entry.serverFile })
+    duplicateGroups(entry.positions, { items, vendor: entry.vendor ?? '', year, invoiceFile: entry.serverFile, ownIds: entry.createdIds })
 
   // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
   // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bis nach dem Neuladen.
@@ -479,7 +492,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       setQueue((q) => q.map((x) => {
         if (x.id !== entry.id) return x
         const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
-        return { ...x, positions, ...(positions.every((y) => y.linked) ? { status: 'übernommen' as const } : {}) }
+        return { ...x, positions, ...(positions.every((y) => y.linked || y.created) ? { status: 'übernommen' as const } : {}) }
       }))
       await load()
       toast(`„${offer.target.description}“ mit dem Beleg verknüpft.`)
@@ -705,7 +718,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     {entry.positions.map((p, i) => (
                       <Fragment key={i}>
                       <tr>
-                        <td><input type="checkbox" checked={p.checked} disabled={!!p.linked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                        <td><input type="checkbox" checked={p.checked} disabled={!!p.linked || !!p.created} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
                           <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx, p.description) })}>
