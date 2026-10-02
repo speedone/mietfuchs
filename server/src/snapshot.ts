@@ -73,6 +73,10 @@ export type SnapshotCostItem = Pick<
   | 'tenancyAmounts'
   | 'selfAmounts'
   | 'labor35aCents'
+  // Nur für den Hinweis auf eine mögliche Doppelung (shared/duplicates.ts); verteilt wird nach
+  // keinem der beiden.
+  | 'vendor'
+  | 'invoiceFile'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp. Name, Zählernummer und
@@ -158,6 +162,10 @@ export type Snapshot = {
   // Was die Berechnung vom Objekt wissen muss (#121). Fehlt es, etwa beim Umstieg aus einer
   // db.json, rechnet sie wie ohne die Angabe.
   property?: SnapshotProperty | null
+  // Die Kostenpositionen des Vorjahres (#141), nur für den Hinweis, dass eine Position einen
+  // anderen Schlüssel hat als dieselbe Kostenart im Vorjahr. Verteilt wird nichts davon. Fehlt
+  // die Angabe, etwa in einem von Hand gebauten Schnappschuss, entfällt nur der Hinweis.
+  previousCostItems?: SnapshotCostItem[]
 }
 
 export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
@@ -282,6 +290,9 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
     units: source.units,
     tenancies: source.tenancies,
     costItems: source.costItems.filter((c) => c.year === year),
+    // Das Vorjahr nur für den Vergleich der Schlüssel (#141); dieselbe Eingrenzung nach dem Feld
+    // `year`, deshalb hier und nicht in `snapshotFor`.
+    previousCostItems: source.costItems.filter((c) => c.year === year - 1),
     meters: source.meters,
     readings: source.readings,
     payments: source.payments,

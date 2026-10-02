@@ -1,34 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, Extraction, IntakeResult, Meter, Reading, Settings, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory } from '../types'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import type { CostItem, Extraction, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit } from '../types'
+import { CATEGORIES, METER_TYPE_LABELS, matchCategory } from '../types'
 import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
-import { autoMatchMeter, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
-import { amountProblem, parseQuantity } from '../costForm'
+import { type DuplicateGroup, type LinkOffer, aiRowPreselected, autoMatchMeter, categoryDeviationPct, duplicateCandidates, duplicateGroups, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
+import { aiPositionBody, aiPositionDefaults, aiPositionPreselect, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
+import AiKeyCell from '../components/AiKeyCell'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import Table from '../components/Table'
+import DuplicateNotices from '../components/DuplicateNotices'
+import { useConfirm } from '../components/feedback'
 
-type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string) => void }
+type Props = { units: Unit[]; settings: Settings | null; onNavigate: (tab: string, focus?: NoticeSubject) => void }
 
-// Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann)
-type InvoicePosition = {
-  description: string
-  category: string
-  amount: string
-  labor35a: string
-  key: CostKey
+// Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann), samt
+// Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141)
+type InvoicePosition = AiPosition & {
   matchedByDesc: boolean
   checked: boolean
+  // Mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
+  linked?: string
+  // Als neue Position angelegt; erledigt wie `linked` (dritte Durchsicht)
+  created?: boolean
 }
-
-// Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular. Eine Gutschrift
-// geht durch, 0 € und ein unlesbarer Betrag nicht.
-const positionProblem = (p: Pick<InvoicePosition, 'amount' | 'labor35a' | 'category'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
 
 type ReadingCandidate = {
   meterNumber: string
@@ -58,6 +56,10 @@ type QueueEntry = {
   detectedYear?: number | null
   totalGrossCents?: number | null
   positions?: InvoicePosition[]
+  // Aus diesem Beleg angelegte und mit ihm verknüpfte Positionen (Kennungen), für die Frage nach
+  // Doppelungen: Eigene sind keine, und derselbe Beleg zweimal füllt keine Position doppelt.
+  createdIds?: string[]
+  linkedIds?: string[]
   // Was der Server gerechnet hat (#34), als Hinweis für die Prüfung
   amountsAdjusted?: Extraction['amountsAdjusted']
   laborFromTotal?: boolean
@@ -87,7 +89,9 @@ function yearFrom(periodStart?: string | null, invoiceDate?: string): number | n
 export default function Schnellerfassung({ units, settings, onNavigate }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const [queue, setQueue] = useState<QueueEntry[]>([])
@@ -101,6 +105,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const [error, setError] = useState('')
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
   const [pending, setPending] = useState('')
+  const [linking, setLinking] = useState(false)
+  const confirm = useConfirm()
 
   const filesRef = useRef(new Map<number, File>())
   const nextIdRef = useRef(1)
@@ -108,12 +114,20 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
 
-  const loadData = () =>
-    Promise.all([
-      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
+  // Der zuletzt geladene Stand der Positionen und das Laden selbst, für die Auswertung: Sie
+  // entscheidet beim Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was
+  // schon erfasst ist, auch wenn der Beleg schneller ausgewertet ist, als die Liste geladen war.
+  const itemsRef = useRef<CostItem[]>([])
+  const loadingRef = useRef<Promise<unknown> | null>(null)
+  const loadData = () => {
+    const loading = Promise.all([
+      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setExistingItems(list) }),
       api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
       api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
     ])
+    loadingRef.current = loading
+    return loading
+  }
   useEffect(() => {
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     // Neu laden, wenn das Objekt wechselt (#92).
@@ -155,6 +169,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           onProgress: (progress) => patchEntry(next.id, { progress }),
         })
 
+        await loadingRef.current?.catch(() => {})
         if (res.kind === 'zaehler') {
           const r = res.reading
           const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
@@ -179,6 +194,10 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
         } else {
           const ex = res.extraction
+          // Der gemerkte Schlüssel (#141) kommt aus dem Vorjahr des Jahres, dem der Beleg zugeht.
+          const targetYear = yearFrom(ex.periodStart, ex.invoiceDate) ?? year
+          const known = itemsRef.current
+          const ctx: KeyContext = { items: known, year: targetYear, propertyKind: property?.kind ?? null }
           const positions: InvoicePosition[] = (ex.positions || []).map((p) => {
             // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls über die
             // Beschreibung. matchedByDesc merkt sich, ob die Kategorie nur so zustande kam (→ gelb).
@@ -201,11 +220,24 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
               category,
               amount,
               labor35a,
-              key: defaultKeyFor(category),
+              externalTotalAmount: '',
+              ...aiPositionDefaults(category, units, meters, ctx, p.description),
               matchedByDesc,
-              // Was sich nicht übernehmen lässt, ist nicht vorab angehakt; die Ampel sagt warum.
-              checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
+              checked: false,
             }
+          }).map((p) => {
+            // Was sich nicht übernehmen lässt, rot ist oder dieselbe Rechnung sein könnte wie eine
+            // schon erfasste Position (shared/duplicates.ts), ist nicht vorab angehakt; die Ampel
+            // und die Zeile darunter sagen warum.
+            const amountCents = parseEuro(p.amount) ?? 0
+            const vendor = ex.vendor || next.fileName
+            const detectedYear = yearFrom(ex.periodStart, ex.invoiceDate)
+            const score = scorePosition({
+              category: p.category, description: p.description, amountCents, labor35aCents: 0, matchedByDesc: p.matchedByDesc,
+              vendor, detectedYear, targetYear: year, existingItems: known,
+            })
+            const candidates = duplicateCandidates(known, { category: p.category, description: p.description, vendor, year: targetYear })
+            return { ...p, checked: aiRowPreselected({ category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, targetYear), level: score.level, candidates }) }
           })
           patchEntry(next.id, {
             status: 'fertig',
@@ -230,6 +262,12 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     })()
   }, [queue, meters, readings])
 
+  // Woraus eine Position ihren Schlüssel vorgeschlagen bekommt (#141), je Jahr des Belegs.
+  const keyCtx = (target: number): KeyContext => ({ items: existingItems, year: target, propertyKind: property?.kind ?? null })
+  // Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular, samt
+  // gemerktem Schlüssel. Eine Gutschrift geht durch, 0 € und ein unlesbarer Betrag nicht.
+  const positionProblem = (entry: QueueEntry, p: InvoicePosition): string | null => aiPositionProblem(p, units, entry.detectedYear ?? year)
+
   function updatePos(entryId: number, idx: number, patch: Partial<InvoicePosition>) {
     setQueue((q) =>
       q.map((x) => (x.id === entryId ? { ...x, positions: x.positions!.map((p, i) => (i === idx ? { ...p, ...patch } : p)) } : x)),
@@ -240,17 +278,17 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   }
 
   // ---------- Live-Bewertung (re-scort bei jeder Eingabe) ----------
-  const priorYear = year - 1
-  const priorTotalsByCat = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const i of existingItems) if (i.year === priorYear) m.set(i.category, (m.get(i.category) ?? 0) + i.amountCents)
-    return m
-  }, [existingItems, priorYear])
-  const existingTargetByCat = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const i of existingItems) if (i.year === year) m.set(i.category, (m.get(i.category) ?? 0) + i.amountCents)
-    return m
-  }, [existingItems, year])
+  // Verglichen wird im Jahr des Belegs und nicht im gewählten: Im Januar steht die Auswahl oft
+  // noch auf dem Vorjahr, angelegt wird die Position aber im Jahr des Belegs.
+  const entryYear = (entry: QueueEntry) => entry.detectedYear ?? year
+  // Was ein Eintrag mit Doppelungen vergleicht: alles außer den Positionen, die er selbst angelegt hat.
+  const itemsFor = (entry: QueueEntry): CostItem[] =>
+    entry.createdIds?.length ? existingItems.filter((i) => !entry.createdIds?.includes(i.id)) : existingItems
+  const receiptTaken = (entry: QueueEntry): string[] =>
+    queue.filter((x) => x.id !== entry.id && !!entry.serverFile && x.serverFile === entry.serverFile)
+      .flatMap((x) => [...(x.createdIds ?? []), ...(x.linkedIds ?? [])])
+  const candidatesOf = (entry: QueueEntry, p: InvoicePosition): CostItem[] =>
+    p.linked || p.created ? [] : duplicateCandidates(itemsFor(entry), { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) })
 
   type PosScore = { level: TrafficLight; reasons: string[] }
   type EntryScore = { posScores: PosScore[]; sumWarning: string | null; readingScore: ReturnType<typeof scoreReading> | null }
@@ -265,22 +303,25 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
           // Eine Gutschrift auf der Rechnung mindert auch deren Summe.
           sum += amountCents
           const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-          const prior = priorTotalsByCat.get(p.category) ?? 0
-          const current = (existingTargetByCat.get(p.category) ?? 0) + amountCents
-          const devPct = prior > 0 ? ((current - prior) / prior) * 100 : null
+          const devPct = categoryDeviationPct(existingItems, p.category, entryYear(entry), amountCents)
           const score = scorePosition({
             category: p.category,
+            description: p.description,
             amountCents,
             labor35aCents: labor,
             matchedByDesc: p.matchedByDesc,
             vendor: entry.vendor ?? '',
             detectedYear: entry.detectedYear ?? null,
             targetYear: year,
-            existingItems,
+            existingItems: itemsFor(entry),
             priorYearDeviationPct: devPct,
           })
-          const problem = positionProblem(p)
-          return problem === null ? score : { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
+          const problem = positionProblem(entry, p)
+          if (problem !== null) return { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
+          // Gemerkter Schlüssel nur für einzelne Wohnungen (Durchsicht zu #141): nie grün, damit
+          // „Alle grünen übernehmen“ ihn nicht ungeprüft übernimmt.
+          if (!aiPositionPreselect(p) && score.level === 'gruen') return { level: 'gelb' as const, reasons: [...score.reasons, 'Schlüssel aus dem Vorjahr nur für einzelne Wohnungen, bitte prüfen'] }
+          return score
         })
         map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
       } else if (entry.kind === 'zaehler' && entry.reading) {
@@ -296,7 +337,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       }
     }
     return map
-  }, [queue, existingItems, readings, year, priorTotalsByCat, existingTargetByCat])
+  }, [queue, existingItems, readings, year])
 
   // Ampel-Zählung über alle fertigen Einträge
   const tally = useMemo(() => {
@@ -312,26 +353,25 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   const totalRecognized = tally.gruen + tally.gelb + tally.rot
 
   // ---------- Übernehmen ----------
-  async function postPosition(entry: QueueEntry, p: InvoicePosition) {
-    const amount = parseEuro(p.amount)
-    // Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
-    if (amount === null || positionProblem(p) !== null) return false
-    const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-    await api(withProperty('/api/costItems', propertyId), {
-      method: 'POST',
-      body: JSON.stringify({
-        year: entry.detectedYear ?? year,
-        category: p.category,
-        description: p.description,
-        vendor: entry.vendor,
-        amountCents: amount,
-        labor35aCents: labor || undefined,
-        // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
-        key: isNotAllocable(p.category) ? 'area' : p.key,
-        invoiceFile: entry.serverFile,
-      }),
-    })
-    return true
+  // Gibt die Kennung der angelegten Position zurück (leer, wenn der Server keine nennt), oder null,
+  // wenn nichts angelegt wurde.
+  async function postPosition(entry: QueueEntry, p: InvoicePosition): Promise<string | null> {
+    // Über dieselbe Prüfung wie das Formular (#141); nicht umlagefähig ergibt dort die neutrale
+    // Vorgabe (#142). Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
+    const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, entry.detectedYear ?? year)
+    if ('error' in built) return null
+    const created = await api<{ id?: string } | null>(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+    return created?.id ?? ''
+  }
+  // Angelegte Zeilen sind erledigt, nicht nur abgehakt (dritte Durchsicht): Sonst fänden sie nach
+  // dem Neuladen ihre eigene Position am selben Beleg und böten „um ihren Betrag erhöhen“ an.
+  function markCreated(entryId: number, done: { index: number; id: string }[]) {
+    if (done.length === 0) return
+    setQueue((q) => q.map((x) => (x.id !== entryId || !x.positions ? x : {
+      ...x,
+      positions: x.positions.map((p, i) => (done.some((d) => d.index === i) ? { ...p, checked: false, created: true } : p)),
+      createdIds: [...(x.createdIds ?? []), ...done.map((d) => d.id).filter(Boolean)],
+    })))
   }
   async function postReading(entry: QueueEntry) {
     const r = entry.reading!
@@ -354,8 +394,8 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
 
   // Lehnt der Server eine Übernahme ab (#146), bricht sie ab und sagt warum. Was schon übernommen
   // ist, wird abgehakt, damit ein zweiter Versuch es nicht doppelt anlegt.
-  function adoptFailed(entry: QueueEntry, done: number[], e: unknown) {
-    for (const i of done) updatePos(entry.id, i, { checked: false })
+  function adoptFailed(entry: QueueEntry, done: { index: number; id: string }[], e: unknown) {
+    markCreated(entry.id, done)
     setError(`Nicht übernommen: ${errorText(e)}`)
   }
 
@@ -363,18 +403,34 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
   async function adoptEntry(entry: QueueEntry) {
     // Erst prüfen, dann übernehmen (#139): Eine angehakte Position, die sich nicht übernehmen
     // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
-    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(p) !== null) : []
+    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(entry, p) !== null) : []
     if (blocked.length > 0) {
       setPending('')
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(entry, p)}`).join(' ')}`)
       return
+    }
+    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen, sonst
+    // stünde sie zweimal in der Abrechnung (shared/duplicates.ts).
+    const twice = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && candidatesOf(entry, p).length > 0) : []
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst?',
+        message: `Für ${entryYear(entry)} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
     }
     setError('')
     setPending('')
-    const done: number[] = []
+    const done: { index: number; id: string }[] = []
     try {
       if (entry.kind === 'rechnung') {
-        for (const [i, p] of (entry.positions ?? []).entries()) if (p.checked && (await postPosition(entry, p))) done.push(i)
+        for (const [i, p] of (entry.positions ?? []).entries()) {
+          if (!p.checked) continue
+          const id = await postPosition(entry, p)
+          if (id !== null) done.push({ index: i, id })
+        }
       } else if (entry.kind === 'zaehler') {
         if (entry.reading?.checked) await postReading(entry)
       }
@@ -383,6 +439,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       await loadData()
       return
     }
+    markCreated(entry.id, done)
     patchEntry(entry.id, { status: 'übernommen' })
     await loadData()
   }
@@ -392,17 +449,28 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
     setError('')
     setPending('')
     const left: string[] = []
+    // In diesem Lauf schon angelegt, je Beleg: Die Ampel rechnet mit dem Stand vor dem Lauf, und zwei
+    // Belege derselben Kostenart würden sonst beide angelegt (Durchsicht). Positionen desselben
+    // Belegs zählen nicht gegeneinander, Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
+    const posted: { entryId: number; item: CostItem }[] = []
     for (const entry of queue) {
       const es = scored.get(entry.id)
       if (!es || entry.status !== 'fertig') continue
-      const done: number[] = []
+      const done: { index: number; id: string }[] = []
       let any = false
       try {
         if (entry.kind === 'rechnung' && entry.positions) {
           for (let i = 0; i < entry.positions.length; i++) {
             const p = entry.positions[i]
             if (p.checked && es.posScores[i]?.level === 'gruen') {
-              if (await postPosition(entry, p)) { any = true; done.push(i) }
+              const others = posted.filter((x) => x.entryId !== entry.id).map((x) => x.item)
+              if (duplicateCandidates(others, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) }).length > 0) continue
+              const id = await postPosition(entry, p)
+              if (id !== null) {
+                any = true
+                done.push({ index: i, id })
+                posted.push({ entryId: entry.id, item: { id: `lauf-${entry.id}-${i}`, propertyId: propertyId ?? '', year: entryYear(entry), category: p.category, description: p.description, vendor: entry.vendor, amountCents: parseEuro(p.amount) ?? 0, key: p.key, invoiceFile: entry.serverFile } })
+              }
             }
           }
         } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
@@ -417,15 +485,40 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
       // gelb ist), gilt der Beleg nicht als übernommen; sonst verschwänden sie mit ihm still (#139).
       // Die übernommenen werden abgehakt, damit „Diese übernehmen“ sie nicht doppelt anlegt.
       const rest = entry.kind === 'rechnung'
-        ? (entry.positions ?? []).filter((p, i) => p.checked && !done.includes(i)).map((p) => `„${p.description}“`)
+        ? (entry.positions ?? []).filter((p, i) => p.checked && !done.some((d) => d.index === i)).map((p) => `„${p.description}“`)
         : []
-      if (rest.length > 0) {
-        for (const i of done) updatePos(entry.id, i, { checked: false })
-        left.push(...rest)
-      } else if (any) patchEntry(entry.id, { status: 'übernommen' })
+      markCreated(entry.id, done)
+      if (rest.length > 0) left.push(...rest)
+      else if (any) patchEntry(entry.id, { status: 'übernommen' })
     }
     if (left.length > 0) setPending(`Übernommen ist, was grün war. Angehakt und noch zu prüfen: ${left.join(', ')}. Bitte ansehen und mit „Diese übernehmen“ übernehmen.`)
     await loadData()
+  }
+
+  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
+    duplicateGroups(entry.positions ?? [], { items: existingItems, vendor: entry.vendor ?? '', year: entryYear(entry), invoiceFile: entry.serverFile, ownIds: entry.createdIds, receiptTaken: receiptTaken(entry) })
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
+  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bleibt bis nach dem
+  // Neuladen, sonst böte die Seite kurz die alte Wahl noch einmal an.
+  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
+    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
+    setError('')
+    setLinking(true)
+    try {
+      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
+      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+      setQueue((q) => q.map((x) => {
+        if (x.id !== entry.id || !x.positions) return x
+        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
+        return { ...x, positions, linkedIds: [...(x.linkedIds ?? []), offer.target.id], ...(positions.every((y) => y.linked || y.created) ? { status: 'übernommen' as const } : {}) }
+      }))
+      await loadData()
+    } catch (e) {
+      setError(`Nicht verknüpft: ${errorText(e)}`)
+    } finally {
+      setLinking(false)
+    }
   }
 
   function removeEntry(id: number) {
@@ -451,7 +544,7 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
         <div className="row" style={{ alignItems: 'center' }}>
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
@@ -558,34 +651,29 @@ export default function Schnellerfassung({ units, settings, onNavigate }: Props)
                     {entry.positions.map((p, i) => {
                       const ps = es?.posScores[i]
                       return (
-                        <tr key={i}>
-                          <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                        <Fragment key={i}>
+                        <tr>
+                          <td><input type="checkbox" checked={p.checked} disabled={!!p.linked || !!p.created} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                           <td>
                             <span className={`ampel ${ps?.level ?? 'gruen'}`} title={ps?.reasons.join('\n')} />
                           </td>
                           <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                           <td>
-                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, key: defaultKeyFor(e.target.value), matchedByDesc: false })}>
+                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year), p.description), matchedByDesc: false })}>
                               {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                             </select>
                           </td>
-                          <td>
-                            {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
-                            {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
-                            <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
-                              {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
-                                <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                              ))}
-                            </select>
-                            )}
-                          </td>
+                          <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
                           <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                           <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
                         </tr>
+                        </Fragment>
                       )
                     })}
                   </tbody>
                 </Table>
+                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={entryYear(entry)} busy={linking}
+                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => onNavigate('kosten', { kind: 'costItem', id: item.id })} />
                 {/* Begründungen der nicht-grünen Positionen */}
                 {es?.posScores.some((s) => s.level !== 'gruen') && (
                   <div style={{ marginTop: 6 }}>

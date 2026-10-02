@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, defaultKeyFor, isNotAllocable, matchCategory, usageOf } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, matchCategory, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -17,37 +17,50 @@ import {
   PARTICIPANT_KEYS,
   categoryNotice,
   selfAmountUnits,
-  amountProblem,
-  suggestedKey,
+  aiPositionBody,
+  aiPositionDefaults,
+  aiPositionPreselect,
+  aiPositionProblem,
+  keyChangeNotice,
+  newItemForm,
   externalTotalLabel,
   keyListText,
   showsKeyFields,
   withKey,
   withCategory,
+  type AiPosition,
   type ItemForm,
+  type KeyContext,
 } from '../costForm'
+import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
+import AiKeyCell from '../components/AiKeyCell'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
 import { buildUpload } from '../pdfIntake'
 import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty } from '../property'
+import { useOpenForm, useProperty, useSwitchYear, withProperty } from '../property'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
 import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import DuplicateNotices from '../components/DuplicateNotices'
+import { aiRowPreselected, candidateText, duplicateCandidates, duplicateGroups, type DuplicateGroup, type LinkOffer } from '../triage'
+import { sameCostCandidates } from '../../../shared/duplicates.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
 
-type ExtractPos = { description: string; category: string; amount: string; labor35a: string; key: CostKey; checked: boolean }
+// Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
+// `linked`: mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
+// `created`: als neue Position angelegt; erledigt wie `linked` (dritte Durchsicht)
+type ExtractPos = AiPosition & { checked: boolean; linked?: string; created?: boolean }
 
-// Was der Übernahme einer ausgewerteten Position entgegensteht (#139), wie im Formular.
-const positionProblem = (p: Pick<ExtractPos, 'amount' | 'labor35a' | 'category'>): string | null =>
-  amountProblem(parseEuro(p.amount), p.labor35a.trim() ? parseEuro(p.labor35a) : 0, p.category)
+// Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
+const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
 
 // Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
 // (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
@@ -62,17 +75,20 @@ type QueueEntry = {
   amountsAdjusted?: Extraction['amountsAdjusted']
   laborFromTotal?: boolean
   positions: ExtractPos[]
+  // Aus diesem Beleg angelegte Positionen: Sie sind keine Doppelung der übrigen Zeilen.
+  createdIds?: string[]
   // während der Auswertung: was das Modell gerade tut und seit wann
   progress?: AiProgress | null
   startedAt?: number
 }
 
-const EMPTY = EMPTY_ITEM_FORM
 
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year, setYear } = useYear()
+  const { year } = useYear()
+  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht).
+  const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -84,6 +100,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // KI-Auswertung: Warteschlange für einen oder mehrere Belege
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
+  // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
+  const [carry, setCarry] = useState<CarryRow[] | null>(null)
+  useOpenForm(carry?.some((r) => r.amount.trim() !== '') ?? false)
   // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
   // ein Zählerstand hängt an einem seiner Zähler (#145).
   useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
@@ -94,7 +114,16 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
   const abortRef = useRef(new Map<number, AbortController>())
 
-  const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
+  // Der zuletzt geladene Stand und das Laden selbst, für die KI-Auswertung: Sie entscheidet beim
+  // Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was schon erfasst ist.
+  const itemsRef = useRef<CostItem[]>([])
+  const loadingRef = useRef<Promise<unknown> | null>(null)
+  const [linking, setLinking] = useState(false)
+  const load = () => {
+    const loading = api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setItems(list) })
+    loadingRef.current = loading
+    return loading
+  }
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
@@ -142,6 +171,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }
 
   const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
+  // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
+  // Objekts, das Jahr und die Art des Objekts.
+  const keyCtx: KeyContext = useMemo(() => ({ items, year, propertyKind: property?.kind ?? null }), [items, year, property?.kind])
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
   // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
@@ -166,6 +198,86 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     return [...withInvoice, ...withoutInvoice]
   }, [yearItems])
 
+  // Die Vorlagen gehören zum gewählten Jahr und Objekt; wechselt eines davon, schließt die Liste.
+  useEffect(() => { setCarry(null) }, [year, propertyId])
+  const previousCount = useMemo(() => items.filter((i) => i.year === year - 1).length, [items, year])
+
+  function updateCarry(index: number, patch: Partial<CarryRow>) {
+    setCarry((rows) => rows && rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  }
+
+  // Erst alle angehakten Zeilen prüfen, dann anlegen (#139): Eine Zeile ohne Betrag wird genannt,
+  // statt still zu fehlen. Angelegte Zeilen verschwinden aus der Liste; scheitert eine, bleibt der
+  // Rest stehen, damit ein zweiter Versuch nichts doppelt anlegt.
+  // Gesperrt, solange ein Durchgang läuft (Durchsicht): Ein Doppelklick legte sonst alles zweimal
+  // an, denn der zweite Klick kommt, bevor die Liste neu gezeichnet ist. Deshalb ein Ref und nicht
+  // nur der gesperrte Knopf.
+  const carryBusy = useRef(false)
+  const [carrySaving, setCarrySaving] = useState(false)
+  async function adoptCarry() {
+    if (!carry || carryBusy.current) return
+    carryBusy.current = true
+    setCarrySaving(true)
+    try {
+      await adoptCarryRows(carry)
+    } finally {
+      carryBusy.current = false
+      setCarrySaving(false)
+    }
+  }
+  async function adoptCarryRows(rows: CarryRow[]) {
+    const chosen = rows.filter((row) => row.checked)
+    const blocked = chosen.flatMap((row) => {
+      const built = carryOverBody(row, units, year, tenancies)
+      return 'error' in built ? [`„${row.description}“: ${built.error}`] : []
+    })
+    if (blocked.length > 0) {
+      setError(`Nicht übernommen: ${blocked.join(' ')}`)
+      return
+    }
+    // Schon im Jahr erfasst und trotzdem angehakt: ausdrücklich nachfragen (Durchsicht), sonst
+    // stünde dieselbe Rechnung zweimal in der Abrechnung.
+    const twice = chosen.filter((row) => alreadyCarried(items, row, year))
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst',
+        message: `${twice.map((r) => `„${r.description}“`).join(', ')} ${twice.length === 1 ? 'ist' : 'sind'} für ${year} schon erfasst. Legen Sie ${twice.length === 1 ? 'die Position' : 'die Positionen'} trotzdem noch einmal an, wird dieselbe Rechnung zweimal verteilt.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
+    setError('')
+    const done = new Set<string>()
+    for (const row of chosen) {
+      const built = carryOverBody(row, units, year, tenancies)
+      if ('error' in built) continue
+      try {
+        await api(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+        done.add(row.source.id)
+      } catch (e) {
+        setError(`„${row.description}“ wurde nicht übernommen: ${errorText(e)}`)
+        break
+      }
+    }
+    removeCarried(done)
+    await load()
+    if (done.size > 0) toast(`${done.size} ${done.size === 1 ? 'Position' : 'Positionen'} aus ${year - 1} für ${year} angelegt.`)
+  }
+  // Angelegte Zeilen verschwinden aus der Liste, gleich auf welchem Weg (Knopf oder Formular).
+  function removeCarried(ids: Set<string>) {
+    if (ids.size === 0) return
+    setCarry((rows) => {
+      if (!rows) return rows
+      const rest = rows.filter((r) => !ids.has(r.source.id))
+      return rest.length > 0 ? rest : null
+    })
+  }
+  // Die Zeile, aus der das offene Formular stammt („Im Formular öffnen“): Nach dem Speichern
+  // verschwindet sie aus der Liste, sonst legte der Knopf sie ein zweites Mal an (Durchsicht).
+  const [formCarryId, setFormCarryId] = useState<string | null>(null)
+  useEffect(() => { if (!form) setFormCarryId(null) }, [form])
+
   async function saveItem() {
     if (!form) return
     const built = buildCostItemBody(form, units, year, tenancies)
@@ -176,6 +288,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!form.id
+    // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
+    // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
+    if (!editing) {
+      const same = sameCostCandidates(items, { propertyId, year, category: form.category, description: form.description, vendor: form.vendor })
+      const first = same[0]
+      if (first) {
+        let instead = false
+        const ok = await confirm({
+          title: 'Dieselbe Rechnung?',
+          message: `Für ${year} ist ${same.map(candidateText).join(', ')} schon erfasst. Ist das dieselbe Rechnung? Dann bearbeiten Sie besser die vorhandene Position, sonst wird sie zweimal verteilt.`,
+          confirmLabel: 'Trotzdem anlegen',
+          alternativeLabel: `Stattdessen „${first.description}“ bearbeiten`,
+          onAlternative: () => { instead = true },
+          cancelLabel: 'Abbrechen',
+        })
+        if (instead) { setForm(itemToForm(first)); return }
+        if (!ok) return
+      }
+    }
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
       if (editing) await api(`/api/costItems/${form.id}`, { method: 'PUT', body })
@@ -185,6 +316,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       return
     }
     const desc = form.description.trim()
+    if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
     setForm(null)
     await load()
     toast(editing ? `„${desc}" übernommen.` : `„${desc}" hinzugefügt.`)
@@ -241,6 +373,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           onProgress: (progress) => patchEntry(next.id, { progress }),
         })
         const ex = res.extraction
+        await loadingRef.current?.catch(() => {})
+        const known = itemsRef.current
+        const ctx: KeyContext = { items: known, year, propertyKind: property?.kind ?? null }
+        const vendor = ex.vendor || next.fileName
         const positions = (ex.positions || []).map((p) => {
           // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
           // über die Beschreibung (z. B. wenn das Modell eine eigene Kategorie erfindet)
@@ -259,11 +395,20 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             category,
             amount,
             labor35a,
-            key: defaultKeyFor(category),
-            checked: !isNotAllocable(category) && positionProblem({ amount, labor35a, category }) === null,
+            externalTotalAmount: '',
+            ...aiPositionDefaults(category, units, meters, ctx, p.description),
           }
-        })
-        patchEntry(next.id, { status: 'fertig', vendor: ex.vendor || next.fileName, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
+          // Könnte dieselbe Rechnung schon erfasst sein, etwa aus dem Vorjahr übernommen
+          // (shared/duplicates.ts)? Dann nicht vorab angehakt; die Zeile darunter bietet an, den
+          // Beleg mit der Position zu verknüpfen.
+        }).map((p) => ({
+          ...p,
+          checked: aiRowPreselected({
+            category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, year), level: 'gruen',
+            candidates: duplicateCandidates(known, { category: p.category, description: p.description, vendor, year }),
+          }),
+        }))
+        patchEntry(next.id, { status: 'fertig', vendor, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
       } catch (e) {
         // Selbst abgebrochen ist kein Fehler
         if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
@@ -279,45 +424,83 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // Erst prüfen, dann übernehmen (#139), mit derselben Regel wie das Formular: Eine Gutschrift
     // geht durch, eine angehakte Position mit 0 € oder ohne Betrag wird genannt statt still
     // ausgelassen.
-    const blocked = entry.positions.filter((p) => p.checked && positionProblem(p) !== null)
+    const blocked = entry.positions.filter((p) => p.checked && aiPositionProblem(p, units, year) !== null)
     if (blocked.length > 0) {
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(p)}`).join(' ')}`)
+      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${aiPositionProblem(p, units, year)}`).join(' ')}`)
       return
     }
+    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen.
+    const twice = entry.positions.filter((p) => p.checked && candidatesOf(entry, p).length > 0)
+    if (twice.length > 0) {
+      const ok = await confirm({
+        title: 'Schon erfasst?',
+        message: `Für ${year} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
+        confirmLabel: 'Trotzdem anlegen',
+        cancelLabel: 'Abbrechen',
+      })
+      if (!ok) return
+    }
     setError('')
-    const done: number[] = []
+    const done: { index: number; id: string }[] = []
+    // Angelegte Zeilen sind erledigt, nicht nur abgehakt: Sonst fänden sie nach dem Neuladen ihre
+    // eigene Position am selben Beleg und böten „um ihren Betrag erhöhen“ an.
+    const markCreated = () => setQueue((q) => q.map((x) => (x.id !== entry.id ? x : {
+      ...x,
+      positions: x.positions.map((y, i) => (done.some((d) => d.index === i) ? { ...y, checked: false, created: true } : y)),
+      createdIds: [...(x.createdIds ?? []), ...done.map((d) => d.id).filter(Boolean)],
+    })))
     for (const [index, p] of entry.positions.entries()) {
       if (!p.checked) continue
-      const amount = parseEuro(p.amount)
-      if (amount === null) continue
-      const labor35a = p.labor35a.trim() ? parseEuro(p.labor35a) : 0
+      // Über dieselbe Prüfung wie das Formular (#141), samt gemerktem Schlüssel; nicht umlagefähig
+      // ergibt dort die neutrale Vorgabe (#142).
+      const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, year)
+      if ('error' in built) continue
       try {
-        await api(withProperty('/api/costItems', propertyId), {
-          method: 'POST',
-          body: JSON.stringify({
-            year,
-            category: p.category,
-            description: p.description,
-            vendor: entry.vendor,
-            amountCents: amount,
-            labor35aCents: labor35a || undefined,
-            // Nicht umlagefähig (#142): die neutrale Vorgabe, wie im Formular (buildCostItemBody).
-            key: isNotAllocable(p.category) ? 'area' : p.key,
-            invoiceFile: entry.serverFile,
-          }),
-        })
-        done.push(index)
+        const created = await api<{ id?: string } | null>(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
+        done.push({ index, id: created?.id ?? '' })
       } catch (e) {
-        // Was bis hierher übernommen ist, steht in der Liste und wird abgehakt, damit ein zweiter
-        // Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
-        for (const i of done) updatePos(entry.id, i, { checked: false })
+        // Was bis hierher übernommen ist, steht in der Liste und gilt als erledigt, damit ein
+        // zweiter Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
+        markCreated()
         setError(`„${p.description}“ wurde nicht übernommen: ${errorText(e)}`)
         await load()
         return
       }
     }
+    markCreated()
     patchEntry(entry.id, { status: 'übernommen' })
     await load()
+  }
+
+  const itemsFor = (entry: QueueEntry): CostItem[] =>
+    entry.createdIds?.length ? items.filter((i) => !entry.createdIds?.includes(i.id)) : items
+  const candidatesOf = (entry: QueueEntry, p: ExtractPos): CostItem[] =>
+    p.linked || p.created ? [] : duplicateCandidates(itemsFor(entry), { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
+
+  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
+    duplicateGroups(entry.positions, { items, vendor: entry.vendor ?? '', year, invoiceFile: entry.serverFile, ownIds: entry.createdIds })
+
+  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
+  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bis nach dem Neuladen.
+  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
+    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
+    setError('')
+    setLinking(true)
+    try {
+      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
+      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
+      setQueue((q) => q.map((x) => {
+        if (x.id !== entry.id) return x
+        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
+        return { ...x, positions, ...(positions.every((y) => y.linked || y.created) ? { status: 'übernommen' as const } : {}) }
+      }))
+      await load()
+      toast(`„${offer.target.description}“ mit dem Beleg verknüpft.`)
+    } catch (e) {
+      setError(`Nicht verknüpft: ${errorText(e)}`)
+    } finally {
+      setLinking(false)
+    }
   }
 
   function updatePos(entryId: number, idx: number, patch: Partial<ExtractPos>) {
@@ -331,7 +514,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       <PageHeader
         title="Kosten & Belege"
         subtitle="Alle Rechnungen des Abrechnungsjahres erfassen — manuell oder per KI-Belegauswertung."
-        actions={<button className="btn" onClick={() => { setError(''); setForm({ ...EMPTY }) }}>+ Kostenposition</button>}
+        actions={<button className="btn" onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>+ Kostenposition</button>}
       />
       {error && !form && <div className="error">{error}</div>}
       {closedAt && (
@@ -346,12 +529,17 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <div className="row">
           <label className="field">
             Abrechnungsjahr
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
               {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
           </label>
+          {previousCount > 0 && !carry && (
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, year)) }}>
+              Aus {year - 1} übernehmen …
+            </button>
+          )}
           <div className="grow" />
           <div>
             <div className="muted">Erfasste Kosten {year}</div>
@@ -359,6 +547,96 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </div>
         </div>
       </div>
+
+
+      {carry && (
+        <div className="card no-print">
+          <h2>Positionen aus {year - 1} für {year} übernehmen</h2>
+          <p className="muted">
+            Übernommen werden Kostenart, Beschreibung, Rechnungssteller und der Umlageschlüssel samt
+            Angaben. Tragen Sie je Zeile den Betrag {year} ein; eine Zeile mit Betrag ist angehakt.
+            Angelegt wird erst mit dem Knopf unten, ohne Beleg.
+          </p>
+          <Table>
+            <thead>
+              <tr>
+                <th><span className="sr-only">Übernehmen</span></th>
+                <th>Kostenart</th>
+                {/* Betrag gleich hinter der Kostenart: Auf dem Handy scrollt die Tabelle waagerecht
+                    (Table.tsx), und das Feld, das man ausfüllen muss, soll ohne Wischen dastehen. */}
+                <th className="num">Betrag {year} €</th>
+                <th className="num">§35a Lohn €</th>
+                <th>Beschreibung</th>
+                <th>Umlageschlüssel</th>
+                <th><span className="sr-only">Formular</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {carry.map((r, i) => (
+                <tr key={r.source.id}>
+                  <td>
+                    <input type="checkbox" aria-label={`${r.description} übernehmen`} checked={r.checked} disabled={!r.inline}
+                      onChange={(e) => updateCarry(i, { checked: e.target.checked })} />
+                  </td>
+                  <td>
+                    {r.source.category}
+                    {alreadyCarried(items, r, year) && <div><span className="badge gray">schon für {year} erfasst</span></div>}
+                  </td>
+                  <td className="num">
+                    {r.inline && (
+                      <input aria-label={`Betrag ${year} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, year)))}
+                        placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
+                    )}
+                    {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
+                    <div className="muted">{year - 1}: {fmtEuro(r.source.amountCents)}</div>
+                  </td>
+                  <td className="num">
+                    {r.inline && <input aria-label={`§35a-Lohn ${year} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
+                  </td>
+                  <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
+                  <td>
+                    {keyListText(r.source)}
+                    {showsKeyFields(r.source.category) && r.source.participantUnitIds && (
+                      <div className="muted">nur {r.source.participantUnitIds.map((id) => units.find((u) => u.id === id)?.name ?? '?').join(', ')}</div>
+                    )}
+                    {showsKeyFields(r.source.category) && r.source.key === 'meter' && r.source.meterType && <div className="muted">{METER_TYPE_LABELS[r.source.meterType]}</div>}
+                    {/* Durchsicht: Anteile samt Summe, Wohnung der Direktzuordnung */}
+                    {showsKeyFields(r.source.category) && (() => {
+                      const d = carryKeyDetails(r.source, units)
+                      return d && <div className={d.warn ? '' : 'muted'}>{d.warn ? <span className="badge red">{d.text}</span> : d.text}</div>
+                    })()}
+                    {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
+                      <div className="muted">
+                        {r.source.externalBasis.total.toLocaleString('de-DE', { maximumFractionDigits: 6 })} {EXTERNAL_UNIT_LABELS[r.source.externalBasis.measure]} in der Anlage; Kosten der Gemeinschaft {year} €:
+                      </div>
+                    )}
+                    {showsKeyFields(r.source.category) && r.source.key === 'external' && r.source.externalBasis && (
+                      <input
+                        aria-label={`Kosten der Gemeinschaft ${year} für ${r.description}`}
+                        value={r.externalTotalAmount}
+                        onChange={(e) => updateCarry(i, { externalTotalAmount: e.target.value })}
+                        placeholder="Kosten der Gemeinschaft €"
+                        inputMode="decimal"
+                        style={{ width: 170, marginTop: 4 }}
+                      />
+                    )}
+                    {!r.inline && <div className="muted">Einzelbeträge je Mieter bitte im Formular eintragen.</div>}
+                  </td>
+                  <td>
+                    <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button className="btn" onClick={() => void adoptCarry()} disabled={carrySaving || carry.every((r) => !r.checked)}>
+              {carry.filter((r) => r.checked).length} {carry.filter((r) => r.checked).length === 1 ? 'Position' : 'Positionen'} für {year} anlegen
+            </button>
+            <button className="btn ghost" onClick={() => setCarry(null)}>Schließen</button>
+          </div>
+        </div>
+      )}
 
       <div className="card no-print">
         <h2>🤖 Beleg per KI auswerten <span className="badge gray">{ai.where}</span></h2>
@@ -438,30 +716,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </thead>
                   <tbody>
                     {entry.positions.map((p, i) => (
-                      <tr key={i}>
-                        <td><input type="checkbox" checked={p.checked} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
+                      <Fragment key={i}>
+                      <tr>
+                        <td><input type="checkbox" checked={p.checked} disabled={!!p.linked || !!p.created} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
                         <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
                         <td>
-                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, key: defaultKeyFor(e.target.value) })}>
+                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx, p.description) })}>
                             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
                           </select>
                         </td>
-                        <td>
-                          {/* Nicht umlagefähig (#142): verteilt wird nie, also kein Schlüssel. */}
-                          {isNotAllocable(p.category) ? <span className="muted">— trägt der Vermieter</span> : (
-                          <select value={p.key} onChange={(e) => updatePos(entry.id, i, { key: e.target.value as CostKey })}>
-                            {(['area', 'persons', 'units'] as CostKey[]).map((k) => (
-                              <option key={k} value={k}>{KEY_LABELS[k]}</option>
-                            ))}
-                          </select>
-                          )}
-                        </td>
+                        <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
                         <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
                         <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
                       </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </Table>
+                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={year} busy={linking}
+                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => { setError(''); setForm(itemToForm(item)) }} />
                 <div className="row" style={{ marginTop: 10 }}>
                   <button className="btn" onClick={() => void adoptPositions(entry)} disabled={entry.positions.every((p) => !p.checked)}>
                     Ausgewählte Positionen für {year} übernehmen
@@ -567,7 +840,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           </Table>
         )}
 
-        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm({ ...EMPTY }) }}>
+        <button className="btn secondary no-print" style={{ marginTop: 14 }} onClick={() => { setError(''); setForm(newItemForm(units, meters, keyCtx)) }}>
           + Kostenposition manuell erfassen
         </button>
       </div>
@@ -593,7 +866,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
           <div className="row">
             <label className="field grow">
               Kostenart
-              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters))}>
+              <select value={form.category} onChange={(e) => setForm(withCategory(form, e.target.value, units, meters, keyCtx))}>
                 {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </label>
@@ -624,12 +897,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             {showsKeyFields(form.category) && <>
             <label className="field grow">
               <Term id="allocationKey">Umlageschlüssel</Term>
-              <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes))}>
+              <select value={form.key} onChange={(e) => setForm(withKey(form, e.target.value as CostKey, unitMeterTypes, keyCtx))}>
                 {costKeyOptions(unitMeterTypes, form.key).map((k) => (
                   <option key={k} value={k}>{KEY_LABELS[k]}</option>
                 ))}
               </select>
             </label>
+            {/* #141: anders als dieselbe Kostenart im Vorjahr? Dasselbe sagt die Abrechnung. */}
+            {keyChangeNotice(form, units, keyCtx) && (
+              <div className="notice">
+                {keyChangeNotice(form, units, keyCtx)} Mehr dazu: <Term id="keyChange" />.
+              </div>
+            )}
             {form.key === 'meter' && (
               <label className="field grow">
                 Zählertyp

@@ -30,6 +30,8 @@ import type {
 import { RULES_AS_OF, ruleCoverage, rulesFor } from './rules.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import type { TermId } from '../../shared/glossary.ts'
+import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
+import { possibleDuplicates } from '../../shared/duplicates.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -219,6 +221,12 @@ const noticeKinds = {
   'heating.remote-reading': { level: 'hint', title: 'Zähler der Heizung fernablesbar?', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
+  // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
+  'key.changed-from-previous-year': { level: 'hint', title: 'Umlageschlüssel anders als im Vorjahr', terms: ['keyChange', 'allocationKey'] },
+  // Dieselbe Rechnung zweimal erfasst? (Zusammenspiel #141 und #170, shared/duplicates.ts) Ein
+  // Hinweis, denn zwei Rechnungen derselben Kostenart gibt es; zu prüfen ist es trotzdem, deshalb
+  // zählt er in der Ampel des Cockpits mit.
+  'cost.possible-duplicate': { level: 'hint', title: 'Dieselbe Rechnung zweimal erfasst?', terms: ['allocable'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -1057,6 +1065,50 @@ const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
 // Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
 export type SettlementOptions = { asOf?: string }
 
+// Der Schlüssel als Satzteil („2025 nach Personenzahl verteilt“), für den Hinweis unten.
+const KEY_PHRASES: Record<CostKey, string> = {
+  area: 'nach Wohnfläche',
+  persons: 'nach Personenzahl',
+  units: 'nach Wohneinheiten',
+  direct: 'per Direktzuordnung',
+  meter: 'nach Verbrauch',
+  custom: 'nach vereinbarten Anteilen',
+  external: 'laut Gemeinschaftsabrechnung',
+  amounts: 'als Einzelbeträge',
+}
+
+// Hat eine Position einen anderen Schlüssel als dieselbe Kostenart im Vorjahr (#141)? Dann der
+// Text des Hinweises, sonst `null`. „Derselbe Schlüssel“ heißt dasselbe wie für den Vorschlag der
+// Oberfläche (shared/allocation.ts); entspricht die Position einer der Vorjahrespositionen, ist sie
+// keine Änderung. Wortlaut des § 556a BGB nachgelesen auf gesetze-im-internet.de.
+function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostItem[], year: number, basisUnitIds: readonly string[]): string | null {
+  if (isNotAllocable(item.category)) return null
+  // Bei einer breiten Kostenart nur die Position mit derselben Beschreibung (Befund der Durchsicht).
+  const before = comparablePrevious(previous, item.category, year, item.description).map((i) => allocationOf(i, basisUnitIds))
+  const now = allocationOf(item, basisUnitIds)
+  const first = before[0]
+  if (!first || before.some((a) => sameAllocation(a, now))) return null
+  const prevYear = year - 1
+  const sameKey = before.find((a) => a.key === now.key)
+  const what = !sameKey
+    ? `„${item.description}“ wird ${year} ${KEY_PHRASES[now.key]} verteilt, die Kostenart „${item.category}“ ${prevYear} ${KEY_PHRASES[first.key]}.`
+    : `„${item.description}“ wird ${year} wieder ${KEY_PHRASES[now.key]} verteilt, aber mit ${
+      !sameUnits(sameKey.participantUnitIds, now.participantUnitIds) ? 'anderen beteiligten Wohnungen'
+        : sameKey.meterType !== now.meterType ? 'einem anderen Zählertyp'
+          : sameKey.directUnitId !== now.directUnitId ? 'einer anderen Wohnung'
+            : now.key === 'custom' ? 'anderen vereinbarten Anteilen'
+              : 'einem anderen Maßstab der Gemeinschaft'
+    } als ${prevYear}.`
+  // Wortlaut nachgelesen auf gesetze-im-internet.de: § 556a BGB und § 6 Abs. 4 HeizkostenV. Für
+  // Heizung und Warmwasser geht die Verordnung vor und erlaubt die Änderung in weiteren Fällen.
+  if (item.category === HEATING_CATEGORY) {
+    return `${what} Für Heizung und Warmwasser gilt die Heizkostenverordnung: Den Abrechnungsmaßstab darf der Gebäudeeigentümer durch Erklärung gegenüber den Nutzern für künftige Abrechnungszeiträume ändern, bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, und nur mit Wirkung zum Beginn eines Abrechnungszeitraums (§ 6 Abs. 4 HeizkostenV). ` +
+      'Ist die Änderung so erklärt oder vereinbart, ist nichts zu tun.'
+  }
+  return `${what} Ein vereinbarter Umlageschlüssel gilt weiter, bis er geändert wird: mit Zustimmung der Mieter, oder durch Ihre Erklärung in Textform, nur vor Beginn eines Abrechnungszeitraums und nur hin zu einer Verteilung nach erfasstem Verbrauch oder erfasster Verursachung (§ 556a Abs. 2 BGB). ` +
+    'Bei einer vermieteten Eigentumswohnung gilt, soweit nichts anderes vereinbart ist, der jeweils geltende Maßstab der Gemeinschaft; widerspricht er billigem Ermessen, wird nach Absatz 1 umgelegt, also in der Regel nach Wohnfläche (§ 556a Abs. 3 BGB). Ist die Änderung so vereinbart, ist nichts zu tun.'
+}
+
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
   const year = snapshot.year
   const diy = daysInYear(year)
@@ -1403,6 +1455,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // zwar dasselbe Objekt, einmal berechnet: So kann die Umstellung keine Zahl verschieben, und
   // die Golden-Tests bleiben der Beweis dafür. Mit Teilnehmern besteht sie nur aus ihnen, bei
   // vermieteten wie bei selbstgenutzten Wohnungen, und beim Verbrauch zählen nur ihre Zähler.
+  // Für den Vergleich mit dem Vorjahr (#141): die Wohnungen der Abrechnungseinheit heute.
+  const basisUnitIds = basisUnits.map((u) => u.id)
   const fullBasis = { basisUnits, selfUnits, basisArea, selfArea, partTenancies, basisPersonDays, occupantPersonDays, selfPersonDays, vacancies, vacancyPersonDays, consumptionByType }
   const basisOf = (item: SnapshotCostItem): typeof fullBasis => {
     if (!item.participantUnitIds) return fullBasis
@@ -1482,10 +1536,26 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Kürzungsbetrag (zweite Browserabnahme). Verteilt wird weiter wie erfasst.
   const outsideHeating = (u: SnapshotUnit) => isGarageLike(u) || (u.noConnection ?? []).includes('waerme')
 
+  // Zwei Positionen derselben Kostenart, eine ohne Beleg: oft die Übernahme aus dem Vorjahr und
+  // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst.
+  for (const group of possibleDuplicates(items, year, snapshot.previousCostItems ?? [])) {
+    const first = group.find((i) => !i.invoiceFile) ?? group[0]
+    if (!first) continue
+    const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
+    const named = list.length === 2 ? `${list[0]} und ${list[1]}` : `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`
+    warn('cost.possible-duplicate',
+      `${named} stehen ${list.length === 2 ? `beide ${year}` : `${year} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
+      'Dann bitte die Position ohne Beleg löschen oder ihr den Beleg zuordnen und den Betrag anpassen. Sind es zwei Rechnungen, ist nichts zu tun.',
+      itemSubject(first))
+  }
+
   for (const item of items) {
     const b = basisOf(item)
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
+    // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
+    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], year, basisUnitIds)
+    if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
     const targets: Target[] = []

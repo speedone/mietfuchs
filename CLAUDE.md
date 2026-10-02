@@ -80,7 +80,7 @@ und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `ma
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
-Laufzeit (`shared/heating.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
+Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
@@ -898,6 +898,69 @@ Eine vorher abgeschlossene Abrechnung hat keine Schritte; dann zeigt `stepsOf`
 ([calcSteps.ts](client/src/calcSteps.ts)) nur, was die Zeile selbst hergibt, statt nachzurechnen,
 denn eine neue Rechnung muss nicht zum eingefrorenen Stand passen. Die Regression des Umstiegs
 nimmt `steps` aus wie `basisText`.
+
+**Schlüssel merken und Vorjahr übernehmen** (#141, Entwurf in
+[docs/superpowers/specs/2026-10-02-schluessel-merken-design.md](docs/superpowers/specs/2026-10-02-schluessel-merken-design.md)):
+Der gemerkte Schlüssel einer Kostenart ist **der Schlüssel ihrer Positionen im Vorjahr desselben
+Objekts**, abgeleitet aus dem Bestand und ohne eigene Tabelle; eine Staffel daneben wäre ein
+zweites Abbild, das auseinanderläuft. Was „derselbe Schlüssel“ heißt (Schlüssel, Zählertyp,
+Wohnung, Anteile, Teilnehmer, Maßstab der Gemeinschaft, **nicht** deren Summe der Anteile), steht
+einmal in [shared/allocation.ts](shared/allocation.ts), weil Vorschlag (client/src/costForm.ts,
+`withCategory`/`newItemForm`/`aiPositionDefaults` mit `KeyContext`) und Hinweis
+(`key.changed-from-previous-year` in calc.ts, Stufe `hint`) dasselbe meinen müssen; sonst löste
+der Vorschlag selbst den Hinweis aus. Widersprechen sich die Vorjahrespositionen, gibt es keinen
+Vorschlag. Bei einer breiten Kostenart (`BROAD_CATEGORIES`, heute „Sonstige Betriebskosten“) zählt
+nur die Vorjahresposition mit derselben Beschreibung (Jahreszahl ersetzt), sonst bekäme die
+Dachrinne die Direktzuordnung der Hebeanlage (`comparablePrevious`, für Vorschlag und Hinweis
+dieselbe). Eine KI-Zeile mit gemerkten Teilnehmern oder Direktzuordnung ist nie vorab angehakt
+und in der Schnellerfassung nie grün. Für Heizung und Warmwasser nennt der Hinweis § 6 Abs. 4
+HeizkostenV statt § 556a Abs. 2 BGB. Das Abrechnungsjahr wechselt nur über `useSwitchYear`
+(property.tsx), das wie `useSwitchProperty` bei offenem Formular fragt; App.tsx stellt die
+Seiten je Objekt **und Jahr** neu auf. Der Schnappschuss trägt dafür `previousCostItems` (optional wie `property`, gefüllt in
+`snapshotOf`); verteilt wird davon nichts. **„Aus dem Vorjahr übernehmen“ lebt nur im Browser**
+([client/src/carryOver.ts](client/src/carryOver.ts)): keine Entwürfe in der Datenbank, denn eine
+Position ohne Betrag wäre dort eine 0 oder ein Kennzeichen, das jede Rechnung kennen müsste.
+Gespeichert wird über `buildCostItemBody`, also mit derselben Prüfung wie im Formular; Betrag,
+§35a-Anteil, Kosten der Gemeinschaft und Beleg kommen nie mit. Die KI-Übernahme baut ihren Rumpf
+seither ebenfalls über `buildCostItemBody` (`aiPositionBody`). Die Summe der MEA am Objekt und die
+Hausgeldabrechnung als Klammer sind Folgearbeit mit #102; bis dahin kommt die Summe von der
+zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ (`lastExternalBasis`).
+
+**Doppelte Kostenpositionen** (Zusammenspiel von #141 und #170): Die Übernahme aus dem Vorjahr
+legt eine Position mit Schätzbetrag und ohne Beleg an; kam danach die echte Rechnung über einen
+KI-Weg, entstand still eine zweite derselben Kostenart, und umgekehrt traf der Vergleich der
+Beschreibung eine KI-Beschreibung nie. Ob eine Position dieselbe Rechnung sein könnte, steht
+deshalb **einmal** in [shared/duplicates.ts](shared/duplicates.ts) (`sameCostCandidates`):
+dasselbe Objekt, Jahr und dieselbe Kostenart; bei den breiten Kostenarten (`LOOSE_CATEGORIES`:
+`BROAD_CATEGORIES` und „Nicht umlagefähig“) zusätzlich ähnliche Beschreibung oder gleicher
+Rechnungssteller (ohne Jahreszahlen und Satzzeichen, Präfixvergleich), weil dort ganz
+verschiedene Rechnungen nebeneinander stehen. Die Regel findet nur Kandidaten, entscheiden tut der
+Vermieter. Sie fragen: `alreadyCarried` (carryOver.ts, ausgenommen die genaue Übernahme einer
+Schwesterposition des Vorjahres), Schnellerfassung und KI-Auswertung der Kostenseite über
+`duplicateCandidates`/`aiRowPreselected`/`duplicateGroups` in [client/src/triage.ts](client/src/triage.ts)
+(nicht vorab angehakt, Rückfrage „Trotzdem anlegen“), das Kostenformular beim Neuanlegen
+(„Stattdessen … bearbeiten“) und der Hinweis `cost.possible-duplicate` in calc.ts.
+**Verknüpft wird je Gruppe**: Zeilen eines Belegs mit derselben Kostenart und denselben Kandidaten
+gehen zusammen, mit der Summe, sonst bekäme die Position den Betrag der ersten Zeile und die
+übrigen gingen verloren. Ziel ist eine Position ohne Beleg oder eine, die schon an **diesem** Beleg
+hängt (dann wird der Betrag erhöht). Hat die KI keinen §35a-Lohnanteil gelesen, wird ein
+vorhandener entfernt und das an der Wahl gesagt; ein stehengebliebener Schätzwert würde sonst den
+Mietern und in der Anlage V bescheinigt. Geprüft wird gegen den Lohnanteil, der danach gilt.
+Angelegte Zeilen gelten wie verknüpfte als erledigt (`created`) und fragen nicht mehr nach
+Doppelungen; die aus einem Beleg angelegten Positionen (`createdIds`) sind für dessen übrige Zeilen
+keine Kandidaten, sonst böte die eben angelegte Position „um ihren eigenen Betrag erhöhen“ an. Eine
+Gutschrift (negative Summe einer Gruppe) wird nie verrechnet, sondern als eigene Position angelegt,
+damit sie auf der Abrechnung sichtbar bleibt. Hat ein anderer Eintrag der Warteschlange mit
+demselben Beleg eine Position schon gefüllt, gibt es kein zweites „erhöhen“.
+Positionen mit `external` oder `amounts` werden nicht mit einem Klick verknüpft, ihr Betrag hängt
+an weiteren Angaben; dort öffnet ein Knopf das Formular. Die Hinweise stehen **unter** der Tabelle
+([DuplicateNotices.tsx](client/src/components/DuplicateNotices.tsx)), in einer Zeile scrollten sie
+auf dem Handy mit. Der Hinweis der Abrechnung (`possibleDuplicates`, Stufe `hint`, zählt in der
+Ampel) kommt nur, wenn eine Position der Gruppe keinen Beleg hat und dazu (a) eine einen Beleg
+hat oder (b) das Vorjahr Positionen dieser Art hatte und das Jahr mehr hat. Ohne Vorjahr und ganz
+ohne Belege bleibt er still, ebenso Restmüll und Biomüll, beide übernommen. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
+nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
+führt dafür `vendor` und `invoiceFile`; verteilt wird nach keinem.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:

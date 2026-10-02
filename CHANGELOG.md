@@ -19,6 +19,44 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   verlangen. Die Regel steht im Regelverzeichnis mit „gilt ab 01.01.2027“, der Rechtsstand ist der
   02.10.2026.
   ([#110](https://github.com/speedone/mietfuchs/issues/110))
+- **Kosten aus dem Vorjahr übernehmen.** Auf der Seite Kosten listet „Aus 2025 übernehmen …“ die
+  Positionen des Vorjahres im gewählten Objekt, mit Kostenart, Beschreibung (die Jahreszahl ist
+  ersetzt), Rechnungssteller und dem Umlageschlüssel samt Teilnehmern, Anteilen, Zählertyp und
+  Maßstab. Sie tragen je Zeile nur den neuen Betrag ein, bei einer Hausgeldabrechnung dazu die
+  Kosten der Gemeinschaft; angelegt wird erst auf Knopfdruck, ohne Beleg und nie mit dem Betrag
+  des Vorjahres. Positionen mit Einzelbeträgen je Mieter öffnen Sie dafür im Formular. Was im Jahr
+  schon erfasst ist, wird nur nach Rückfrage noch einmal angelegt.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
+- **Der Wechsel des Abrechnungsjahres fragt nach, wenn ein Formular offen ist**, wie schon der
+  Wechsel des Objekts; sonst gingen Eingaben verloren oder landeten im falschen Jahr.
+- **Der Umlageschlüssel wird je Kostenart gemerkt.** Eine neue Position bekommt den Schlüssel,
+  den dieselbe Kostenart im Vorjahr hatte, im Formular wie bei der KI-Auswertung auf der Seite
+  Kosten und in der Schnellerfassung; bei „Sonstige Betriebskosten“ nur von der Position mit
+  derselben Beschreibung. Eine KI-Zeile, deren gemerkter Schlüssel nur einzelne Wohnungen trifft,
+  ist hervorgehoben und nicht vorab angehakt. Weicht eine Position davon ab, weisen Formular und
+  Abrechnung darauf hin, mit dem neuen Begriff „Wechsel des Umlageschlüssels“ (§ 556a Abs. 2
+  und 3 BGB) im Lexikon. Bei einer Eigentumswohnung schlägt Mietfuchs ohne Vorjahr „laut
+  Gemeinschaftsabrechnung“ vor (außer bei der Grundsteuer), und die Summe der
+  Miteigentumsanteile steht nach der ersten Position nicht mehr an jeder weiteren neu an.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
+- **Dieselbe Rechnung wird nicht mehr still zweimal erfasst.** Steht für das Jahr des Belegs
+  schon eine Position derselben Kostenart, etwa aus dem Vorjahr übernommen mit geschätztem
+  Betrag, ist eine KI-Zeile in der Schnellerfassung und bei der Auswertung auf der Seite Kosten
+  nicht mehr vorab angehakt. Angeboten wird stattdessen, den Beleg mit der bestehenden Position
+  zu verknüpfen und ihren Betrag zu setzen; Schlüssel und übrige Angaben bleiben. Wer bewusst
+  eine zweite Rechnung anlegt, wird gefragt. Umgekehrt erkennt „Aus dem Vorjahr übernehmen“ eine
+  schon per KI erfasste Rechnung auch dann, wenn die KI sie anders beschrieben hat. Bei
+  „Sonstige Betriebskosten“ und „Nicht umlagefähig“ zählt nur eine Position mit ähnlicher
+  Beschreibung oder vom selben Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin,
+  wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat; die
+  Ampel im Cockpit zählt ihn mit, wenn eine Position mit und eine ohne Beleg dasteht oder es mehr
+  sind als im Vorjahr. Mehrere Zeilen eines Belegs derselben Kostenart (etwa Frischwasser und
+  Schmutzwasser) werden gemeinsam mit ihrer Summe verknüpft. Hat die Auswertung keinen
+  §35a-Lohnanteil gelesen, wird ein geschätzter entfernt, und die Wahl sagt das. Eine Position
+  laut Gemeinschaftsabrechnung oder mit Einzelbeträgen öffnet sich im Formular. Auch das
+  Kostenformular fragt beim Anlegen nach, wenn dieselbe Rechnung schon erfasst sein könnte. Im
+  Januar vergleicht die Schnellerfassung mit dem Jahr des Belegs statt mit dem gewählten.
+  ([#141](https://github.com/speedone/mietfuchs/issues/141))
 
 ### Geändert
 
