@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Unit } from '../types'
+import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
 import { api, fmtEuro, fmtDate } from '../api'
@@ -8,11 +8,13 @@ import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
 import { noticesNeedAttention } from '../notices'
-import { zeroAreaUnits } from '../unitForm'
+import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
 
 type Props = {
   units: Unit[]
+  // Hält App je Objekt aktuell (beim Wechsel und nach jedem reload), wie für Stammdaten und Kosten.
+  tenancies: Tenancy[]
   settings: Settings | null
   reload: () => Promise<void>
   onNavigate: (tab: string) => void
@@ -36,7 +38,7 @@ type Check = {
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
-export default function Cockpit({ units, settings, reload, onNavigate }: Props) {
+export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
   const { year } = useYear()
   const { property } = useProperty()
   const propertyId = property?.id
@@ -108,8 +110,8 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
         detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', cta: 'Wohnfläche ergänzen',
-        detail: `Wohnfläche fehlt bei: ${noArea.map((u) => u.name).join(', ')}` })
+      // Bei einer leeren Einheit eine Frage statt eines Befehls (Endprüfung rc.4, missingAreaCheck).
+      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, year, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
         detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · ` +
@@ -221,7 +223,7 @@ export default function Cockpit({ units, settings, reload, onNavigate }: Props) 
     }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, notable, daysLeft, year])
+  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

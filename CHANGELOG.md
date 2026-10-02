@@ -127,7 +127,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   nennt die Leerstandstage. Selbstgenutzte Wohnungen, Einheiten ohne Fläche und ohne Bewohner
   (Garage, Stellplatz, auch leer) sowie Wohnungen, die an der Position nicht teilnehmen, bleiben
   wie bisher; zu einer ganz leeren Einheit mit 0 m² gibt es einen Hinweis, falls sie doch eine
-  Wohnung ist. Eine leere Garage mit eingetragener Fläche zählt als Leerstand.
+  Wohnung ist. Das Cockpit fragt bei einer leeren Einheit mit 0 m² entsprechend nach, statt eine
+  Wohnfläche zu verlangen. Eine leere Garage mit eingetragener Fläche zählt als Leerstand.
   **Ihre Zahlen ändern sich**: In noch offenen Jahren mit einer Position nach Personen und einer
   zeitweise leeren Wohnung zahlen die Mieter weniger und Sie mehr. Wohnen Sie selbst im Haus, kann
   dabei der private Anteil (Eigenanteil) in der Steuerübersicht kleiner werden, denn der Anteil des
