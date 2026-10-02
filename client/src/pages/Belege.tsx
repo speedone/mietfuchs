@@ -451,6 +451,13 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOp
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
+          {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
+          {(amountCheck.item.labor35aCents ?? 0) > 0 && (
+            <div style={{ marginTop: 6 }}>
+              Lohnanteil der Position: <strong>{fmtEuro(amountCheck.item.labor35aCents ?? 0)}</strong> – stimmt er mit dem Beleg?{' '}
+              {onOpenItem && <button className="btn small ghost" onClick={() => { const it = amountCheck.item; setAmountCheck(null); onOpenItem(it) }}>Lohnanteil im Formular prüfen</button>}
+            </div>
+          )}
           {amountCheckMode(amountCheck.item) === 'form' ? (
             <div className="row" style={{ marginTop: 8, alignItems: 'center', gap: 8 }}>
               <span>Bei dieser Position prüfen Sie den Betrag im Formular: Er hängt an weiteren Angaben (Einzelbeträge oder Kosten der Gemeinschaft).</span>
