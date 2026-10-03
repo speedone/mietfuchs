@@ -988,7 +988,7 @@ app.post('/api/assessments/:id/book', async (req, res) => {
 // **Prüfsummen fehlender Zeilen werden nachgetragen, einmal und im Hintergrund** (`backfillUploads`):
 // Bis dahin ist `sha256` leer, und die Liste antwortet sofort. Vorher rechnete jeder Start sie
 // synchron und im Speicher neu, und eine große Altablage hielt dabei den ganzen Server an.
-const NO_LINKS: UploadLinks = { bookedItemIds: [], assessment: null }
+const NO_LINKS: UploadLinks = { bookedItemIds: [], bookedCents: {}, assessment: null }
 
 app.get('/api/uploads', async (req, res) => {
   const rows = await readData(uploadRows).catch(() => null)
