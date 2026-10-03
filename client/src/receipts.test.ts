@@ -308,6 +308,15 @@ describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer
     expect(duplicateHints(cards).size).toBe(0)
   })
 
+  it('die Karte eines Belegs mit gebuchten Zeilen nennt deren Summe, ein Beleg ohne Zeilen den Betrag der Position', () => {
+    const position = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '1_abschlag.pdf', amountCents: 162000 })
+    const mitZeilen = { ...abschlag, bookedItemIds: ['st'], bookedCents: { st: 150000 } }
+    const zweiter = { ...rest, bookedCents: { st: 12000 } }
+    const cards = receiptCards([mitZeilen, zweiter], [position])
+    expect(cards.map((c) => c.amountCents)).toEqual([150000, 12000])
+    expect(receiptCards([abschlag], [position])[0]?.amountCents).toBe(162000)
+  })
+
   it('E5: nach dem Lösen der Zeile von Beleg A zählt A nicht mehr, auch wenn Beleg B an der Position hängt', () => {
     // A hängt nur noch über seine Auswertung (offen, ohne gebuchte Zeile); B ist gebucht und der
     // Beleg der Position.

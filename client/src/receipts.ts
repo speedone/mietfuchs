@@ -75,7 +75,8 @@ export function receiptCards(uploads: ReceiptUpload[], items: CostItem[]): Recei
       upload,
       items: linked,
       vendor: linked.find((c) => c.vendor)?.vendor ?? null,
-      amountCents: linked.reduce((a, c) => a + c.amountCents, 0),
+      // Bei gebuchten Zeilen die Summe dieses Belegs, sonst der Betrag der Position (#170)
+      amountCents: linked.reduce((a, c) => a + (upload.bookedCents?.[c.id] ?? c.amountCents), 0),
       propertyIds: [...new Set(linked.map((c) => c.propertyId))],
       years: [...new Set(linked.map((c) => c.year))].sort((a, b) => b - a),
     }

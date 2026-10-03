@@ -639,6 +639,8 @@ export type UploadKind = 'receipt' | 'meterPhoto'
 // Belegordner liest beides aus `GET /api/uploads`.
 export type UploadLinks = {
   bookedItemIds: string[]
+  // Je Position die Summe der gebuchten Zeilen dieses Belegs, in Cent (eine nicht gelesene Zeile zählt 0)
+  bookedCents: Record<string, number>
   assessment: { id: string; propertyId: string | null; open: boolean } | null
 }
 export type UploadEntry = UploadInfo & UploadLinks
