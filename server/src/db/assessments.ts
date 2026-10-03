@@ -8,7 +8,7 @@ import type { Database, Executor } from './client.ts'
 import { assessmentLines, assessments } from './schema.ts'
 
 export type AssessmentRecord = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
-export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt'> & { lines: NewLine[] }
+export type NewAssessment = Omit<StoredAssessment, 'id' | 'createdAt' | 'nextIdx'> & { lines: NewLine[] }
 
 async function linesOf(db: Executor, assessmentId: string): Promise<StoredAssessmentLine[]> {
   return db.select().from(assessmentLines).where(eq(assessmentLines.assessmentId, assessmentId)).orderBy(asc(assessmentLines.idx))
@@ -49,19 +49,22 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
   const current = await readAssessmentOfFile(db, input.file)
   await db.transaction(async (tx) => {
     if (!current) {
-      await tx.insert(assessments).values({ ...head, id: ids.id, createdAt: ids.now })
+      await tx.insert(assessments).values({ ...head, id: ids.id, createdAt: ids.now, nextIdx: lines.length })
       await insertLines(tx, ids.id, lines, 0)
       return
     }
     const id = current.assessment.id
     const booked = current.lines.filter((l) => l.costItemId !== null)
-    const next = current.lines.reduce((max, l) => Math.max(max, l.idx + 1), 0)
+    // Ab der Hochwassermarke, nicht ab dem höchsten vorhandenen: Eine ersetzte Zeile hinterließe sonst
+    // ihre Nummer wieder frei.
+    const next = Math.max(current.assessment.nextIdx, current.lines.reduce((max, l) => Math.max(max, l.idx + 1), 0))
     await tx.delete(assessmentLines).where(and(eq(assessmentLines.assessmentId, id), isNull(assessmentLines.costItemId)))
-    await insertLines(tx, id, withoutBooked(lines, booked), next)
+    const added = withoutBooked(lines, booked)
+    await insertLines(tx, id, added, next)
     const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
-      amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, ...placement,
+      amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, nextIdx: next + added.length, ...placement,
     }).where(eq(assessments.id, id))
   })
   const saved = await readAssessmentOfFile(db, input.file)
