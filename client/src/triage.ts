@@ -2,17 +2,10 @@
 // Belegbuchung (#170) in shared/assessment.ts, weil der Server sie mitliefert, und das Verknüpfen
 // mit einer bestehenden Position plant der Server (server/src/bookingPlan.ts); hier bleiben die
 // Zählerstände.
-import type { CostItem, Meter, Reading, TrafficLight } from './types'
-import { sameCostCandidates } from '../../shared/duplicates.ts'
+import type { Meter, Reading, TrafficLight } from './types'
 import { createScorer } from '../../shared/assessment.ts'
-export { aiRowPreselected, candidateText, categoryDeviationPct, invoiceSumCheck, scorePosition, type PositionCtx } from '../../shared/assessment.ts'
-export type { TrafficLight } from './types'
-
-// Die Regel steht in shared/duplicates.ts. Das Jahr ist das des Belegs: Im Januar steht die
-// Auswahl oft noch auf dem Vorjahr.
-export function duplicateCandidates(items: readonly CostItem[], q: { category: string; description: string; vendor: string; year: number }): CostItem[] {
-  return sameCostCandidates(items, q)
-}
+// Für die Rückfrage im Kostenformular (Kosten.tsx)
+export { candidateText } from '../../shared/assessment.ts'
 
 // ---------- Zählerstand ----------
 

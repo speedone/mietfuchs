@@ -87,8 +87,6 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       setAssessments((list) => [...list.filter((x) => !x.open && !open.some((o) => o.id === x.id)), ...open])),
   ])
   useEffect(() => {
-    // Die in dieser Sitzung gebuchten Auswertungen des vorigen Objekts gehören nicht hierher.
-    setAssessments([])
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
@@ -186,6 +184,28 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     return t
   }, [assessments, readingScores])
   const totalRecognized = tally.gruen + tally.gelb + tally.rot
+  // Grün im Sinne von „Alle grünen übernehmen“: dieselbe Bedingung für die Zählung und die
+  // Übernahme, damit nie mehr angeboten wird, als gebucht würde.
+  const readingReady = (entry: QueueEntry): boolean =>
+    entry.status === 'fertig' && entry.data.kind === 'zaehler' && !!entry.data.reading?.checked && readingScores.get(entry.id)?.level === 'gruen'
+  const greenReady = assessments.reduce((n, v) => n + greenDecisions(v).length, 0) + queue.filter(readingReady).length
+
+  // Während eine Übernahme läuft, startet keine zweite: Ein Doppelklick legte sonst eine Ablesung
+  // zweimal an (Rechnungen schützt zusätzlich der Server). Der Verweis gilt sofort, der Zustand
+  // sperrt die Knöpfe.
+  const adoptingRef = useRef(false)
+  const [adopting, setAdopting] = useState(false)
+  async function exclusively(work: () => Promise<void>) {
+    if (adoptingRef.current) return
+    adoptingRef.current = true
+    setAdopting(true)
+    try {
+      await work()
+    } finally {
+      adoptingRef.current = false
+      setAdopting(false)
+    }
+  }
 
   // ---------- Übernehmen ----------
   async function postReading(entry: QueueEntry) {
@@ -208,12 +228,16 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     return true
   }
 
-  // Übernimmt den Zählerstand eines Eintrags. Rechnungen bucht „Auswertung prüfen“.
-  async function adoptReading(entry: QueueEntry) {
+  // Übernimmt den Zählerstand eines Eintrags auf ausdrücklichen Klick. Als übernommen gilt er
+  // erst, wenn er gesendet ist. Rechnungen bucht „Auswertung prüfen“.
+  const adoptReading = (entry: QueueEntry) => exclusively(async () => {
     setError('')
     setPending('')
     try {
-      if (entry.data.reading?.checked) await postReading(entry)
+      if (!(await postReading(entry))) {
+        setError('Nicht übernommen: Bitte ordnen Sie einen Zähler zu und geben Sie den Stand an, beim Zählerwechsel auch den Endstand des alten Zählers.')
+        return
+      }
     } catch (e) {
       setError(`Nicht übernommen: ${errorText(e)}`)
       await loadData()
@@ -221,12 +245,12 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     }
     patchEntry(entry.id, { status: 'übernommen' })
     await loadData()
-  }
+  })
 
   // Übernimmt alle grünen Vorschläge: je Auswertung Vorschau und Buchung auf dem Server, dann
   // die grünen Zählerstände. Nacheinander, damit der zweite Beleg derselben Kostenart die eben
   // angelegte Position als Kandidaten sieht und stehen bleibt, statt still doppelt angelegt zu werden.
-  async function adoptAllGreen() {
+  const adoptAllGreen = () => exclusively(async () => {
     setError('')
     setPending('')
     const left: string[] = []
@@ -250,8 +274,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       }
     }
     for (const entry of queue) {
-      if (entry.status !== 'fertig' || entry.data.kind !== 'zaehler' || !entry.data.reading?.checked) continue
-      if (readingScores.get(entry.id)?.level !== 'gruen') continue
+      if (!readingReady(entry)) continue
       try {
         if (await postReading(entry)) patchEntry(entry.id, { status: 'übernommen' })
       } catch (e) {
@@ -261,7 +284,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     }
     if (left.length > 0) setPending(`Übernommen ist, was grün war. Noch zu prüfen: ${left.join(', ')}. Bitte ansehen, „Vorschau“ und dann „Buchen“.`)
     await loadData()
-  }
+  })
 
   const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
   const hasAdopted = queue.some((x) => x.status === 'übernommen') || assessments.some((v) => v.lines.some((l) => l.state === 'created' || l.state === 'linked'))
@@ -315,11 +338,11 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           />
         </div>
 
-        {tally.gruen > 0 && (
+        {greenReady > 0 && (
           <div className="sticky-bar">
-            <strong>{tally.gruen}</strong> grüne Vorschläge bereit.
+            <strong>{greenReady}</strong> grüne Vorschläge bereit.
             <div className="grow" />
-            <button className="btn" onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>
+            <button className="btn" disabled={adopting} onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>
           </div>
         )}
       </div>
@@ -399,7 +422,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                   )}
                   <div className="row" style={{ marginTop: 10 }}>
                     <div className="grow" />
-                    <button className="btn" onClick={() => void adoptReading(entry)} disabled={!entry.data.reading.matchedMeterId || parseNum(entry.data.reading.value) === null}>
+                    <button className="btn" onClick={() => void adoptReading(entry)} disabled={adopting || !entry.data.reading.matchedMeterId || parseNum(entry.data.reading.value) === null}>
                       Ablesung übernehmen
                     </button>
                   </div>

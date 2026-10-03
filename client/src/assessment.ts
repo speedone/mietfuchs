@@ -3,6 +3,7 @@
 // genau das, was sie zeigt. Ohne DOM prüfbar (assessment.test.ts); die Komponente
 // components/AssessmentReview.tsx rendert nur.
 import type { AssessmentLine, AssessmentView, BookingPreview, CostKey, LineCandidate, LineDecision, LineFields } from './types'
+import { CATEGORIES } from './types'
 import type { Allocation } from '../../shared/allocation.ts'
 import { api, ApiError, fmtEuro, parseEuro } from './api'
 import { withProperty } from './property'
@@ -27,11 +28,17 @@ const centsText = (c: number | null): string =>
 // was fehlt.
 const cents = (raw: string): number | null => (raw.trim() ? parseEuro(raw) : null)
 
-// Vorab angehakt ist, was der Server vorschlägt (`preselected`); sonst entscheidet der Nutzer.
+// Vorab angehakt ist, was der Server vorschlägt (`preselected`); sonst entscheidet der Nutzer. Eine
+// verworfene Zeile steht als verworfen da: Angezeigt wird, was gespeichert ist.
+function initialAction(line: AssessmentLine): RowAction {
+  if (line.state === 'dismissed') return 'dismiss'
+  return line.state === 'open' && line.suggestion?.preselected ? 'create' : ''
+}
+
 export function initialRow(line: AssessmentLine): RowDraft {
   const f = line.suggestion?.fields
   return {
-    action: line.state === 'open' && line.suggestion?.preselected ? 'create' : '',
+    action: initialAction(line),
     description: f?.description ?? line.description,
     category: f?.category ?? line.category,
     amount: centsText(f ? f.amountCents : line.amountCents),
@@ -72,7 +79,8 @@ export function decisionsOf(view: AssessmentView, rows: Record<number, RowDraft>
     }
     if (line.state !== 'open' && line.state !== 'dismissed') continue
     if (row.action === 'create') out.push({ idx: line.idx, action: 'create', fields: fieldsOf(row) })
-    else if (row.action === 'dismiss') out.push({ idx: line.idx, action: 'dismiss' })
+    // Schon verworfen und dabei geblieben ist keine Entscheidung.
+    else if (row.action === 'dismiss') { if (line.state === 'open') out.push({ idx: line.idx, action: 'dismiss' }) }
     else out.push({ idx: line.idx, action: 'link', costItemId: row.action.slice('link:'.length), amountCents: cents(row.amount), labor35aCents: cents(row.labor35a) })
   }
   return out
@@ -101,14 +109,24 @@ export function withConfirmed(decisions: readonly LineDecision[], idxs: readonly
   return decisions.map((d) => (d.action === 'create' && idxs.includes(d.idx) ? { ...d, despiteCandidates: true } : d))
 }
 
-// „Alle grünen übernehmen“: offene Zeilen, die der Server vorab anhakt und grün bewertet, mit
-// seinem Vorschlag. Eingaben, die noch in einer Tabelle stehen, gelten dabei nicht; wer etwas
-// geändert hat, bucht diese Zeile mit „Vorschau“ und „Buchen“.
+// Grün im Sinne von „Alle grünen übernehmen“: offen, vom Server grün bewertet und vorab angehakt.
+// Die Zählung der Schnellerfassung und die Übernahme nehmen beide diese Bedingung, damit nie mehr
+// angezeigt wird, als gebucht würde.
+export const isGreen = (l: AssessmentLine): boolean =>
+  l.state === 'open' && !!l.suggestion?.preselected && l.suggestion.level === 'gruen'
+
+// „Alle grünen übernehmen“: die grünen Zeilen mit dem Vorschlag des Servers. Eingaben, die noch in
+// einer Tabelle stehen, gelten dabei nicht; wer etwas geändert hat, bucht diese Zeile mit
+// „Vorschau“ und „Buchen“.
 export function greenDecisions(view: AssessmentView): LineDecision[] {
-  return view.lines.flatMap((l): LineDecision[] =>
-    l.state === 'open' && l.suggestion?.preselected && l.suggestion.level === 'gruen'
-      ? [{ idx: l.idx, action: 'create', fields: l.suggestion.fields }]
-      : [])
+  return view.lines.flatMap((l): LineDecision[] => (isGreen(l) && l.suggestion ? [{ idx: l.idx, action: 'create', fields: l.suggestion.fields }] : []))
+}
+
+// Die Kostenarten zur Wahl, samt der gespeicherten, auch wenn es sie in der Liste nicht (mehr)
+// gibt (Altbestand aus dem Vorjahr): Sonst zeigte das Auswahlfeld den ersten Eintrag, und gebucht
+// würde etwas anderes als das Sichtbare (wie costKeyOptions und meterTypeOptions).
+export function categoryOptions(stored: string): string[] {
+  return CATEGORIES.includes(stored) ? [...CATEGORIES] : [...CATEGORIES, stored]
 }
 
 const laborText = (c: number | null): string => (c === null ? 'keiner' : fmtEuro(c))

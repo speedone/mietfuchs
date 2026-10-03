@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
-import { aiRowPreselected, categoryDeviationPct, duplicateCandidates, scorePosition, type PositionCtx } from './triage'
+// Die Ampel und die Doppelungsregel stehen in shared/ (Server und Browser benutzen sie, #170).
+import { aiRowPreselected, categoryDeviationPct, scorePosition, type PositionCtx } from '../../shared/assessment.ts'
+import { sameCostCandidates } from '../../shared/duplicates.ts'
 import type { CostItem } from './types'
 
 const ctx = (patch: Partial<PositionCtx>): PositionCtx => ({
@@ -27,10 +29,10 @@ test('Betrag 0 bleibt rot', () => {
 const schaetzung: CostItem = { id: 'gs', propertyId: 'p', year: 2026, category: 'Grundsteuer', description: 'Grundsteuer 2026', vendor: 'Stadt', amountCents: 61000, key: 'area' }
 
 test('A: eine KI-Zeile derselben Kostenart findet die übernommene Position, auch mit anderer Beschreibung', () => {
-  const found = duplicateCandidates([schaetzung], { category: 'Grundsteuer', description: 'Abgabenbescheid Q1–Q4', vendor: 'Stadt Musterstadt', year: 2026 })
+  const found = sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'Abgabenbescheid Q1–Q4', vendor: 'Stadt Musterstadt', year: 2026 })
   expect(found.map((i) => i.id)).toEqual(['gs'])
   // anderes Jahr: nichts
-  expect(duplicateCandidates([schaetzung], { category: 'Grundsteuer', description: 'x', vendor: '', year: 2025 })).toEqual([])
+  expect(sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'x', vendor: '', year: 2025 })).toEqual([])
 })
 
 test('A: mit Kandidaten ist die Ampel nicht grün und nennt die Position', () => {

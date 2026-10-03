@@ -1,7 +1,8 @@
 // Die Entscheidungen der Komponente „Auswertung prüfen“ (Belegbuchung, #170), ohne DOM.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AssessmentLine, AssessmentView, BookingPreview, LineCandidate, LineSuggestion } from './types'
-import { bookDecisions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { bookDecisions, categoryOptions, decisionsOf, greenDecisions, initialRow, initialRows, isAssessment, isGreen, isPreview, linkChoices, previewLines, shownRow, withConfirmed, type RowDraft } from './assessment'
+import { CATEGORIES } from './types'
 
 const suggestion = (patch: Partial<LineSuggestion> = {}): LineSuggestion => ({
   fields: { description: 'Frischwasser', category: 'Wasser/Abwasser', amountCents: 70000, labor35aCents: null, key: 'persons', allocation: null, externalTotalCents: null },
@@ -54,6 +55,26 @@ describe('Zeilenentwurf', () => {
     expect(shownRow(l, row).action).toBe('link:wa')
     expect(shownRow(l, { ...row, amount: '-50,00' }).action).toBe('')
     expect(shownRow(line(0), row).action).toBe('')
+  })
+
+  it('eine verworfene Zeile steht als verworfen da; unverändert geht nichts an den Server, neu anlegen schon', () => {
+    const dismissed = line(0, { dismissed: true, state: 'dismissed' })
+    expect(initialRow(dismissed).action).toBe('dismiss')
+    const v = view([dismissed, line(1, { dismissed: true, state: 'dismissed' })])
+    const rows = initialRows(v)
+    rows[1] = { ...rows[1], action: 'create' }
+    expect(decisionsOf(v, rows).map((d) => [d.idx, d.action])).toEqual([[1, 'create']])
+  })
+
+  it('grün heißt für Zählung und Übernahme dasselbe: offen, grün und vorab angehakt', () => {
+    const v = view([line(0), line(1, { suggestion: suggestion({ preselected: false }) }), line(2, { suggestion: suggestion({ level: 'gelb' }) })])
+    expect(v.lines.filter(isGreen).map((l) => l.idx)).toEqual([0])
+    expect(greenDecisions(v).map((d) => d.idx)).toEqual(v.lines.filter(isGreen).map((l) => l.idx))
+  })
+
+  it('Kostenart: eine Kostenart, die es in der Liste nicht gibt, steht trotzdem zur Wahl', () => {
+    expect(categoryOptions('Grundsteuer')).toEqual(CATEGORIES)
+    expect(categoryOptions('Hauswart (alt)')).toEqual([...CATEGORIES, 'Hauswart (alt)'])
   })
 
   it('bestätigte Rückfrage und „Alle grünen“', () => {
