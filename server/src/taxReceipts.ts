@@ -42,7 +42,11 @@ export type TaxArchivePlan = {
 
 // `names`: die Dateien im Belegordner mit ihrem Originalnamen. Ein Verweis auf eine Datei, die
 // dort fehlt, steht in der Übersicht als „Datei fehlt“.
-export function planTaxArchive(items: CostItem[], names: Map<string, string>): TaxArchivePlan {
+//
+// `booked`: je Position die Belege, die über gebuchte Zeilen einer Auswertung an ihr hängen
+// (Belegbuchung); sie liegen neben `invoiceFile` im Archiv, die Position steht trotzdem einmal in
+// der Übersicht, mit allen ihren Belegen in einer Zelle.
+export function planTaxArchive(items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map()): TaxArchivePlan {
   const rank = (group: string) => GROUPS.indexOf(group)
   const sorted = [...items].sort((a, b) =>
     rank(taxGroupOf(a.category)) - rank(taxGroupOf(b.category)) ||
@@ -55,28 +59,29 @@ export function planTaxArchive(items: CostItem[], names: Map<string, string>): T
   const rows: string[] = []
   for (const c of sorted) {
     const group = taxGroupOf(c.category)
-    let beleg = 'kein Beleg'
-    if (c.invoiceFile) {
-      const original = names.get(c.invoiceFile)
+    const parts: string[] = []
+    for (const file of new Set([c.invoiceFile, ...(booked.get(c.id) ?? [])].filter((f): f is string => !!f))) {
+      const original = names.get(file)
       if (original === undefined) {
-        beleg = 'Datei fehlt'
-      } else {
-        const key = `${group}|${c.invoiceFile}`
-        let zipPath = placed.get(key)
-        if (!zipPath) {
-          const folder = `${rank(group) + 1} ${group}`
-          const base = safeName(`${c.category} - ${original}`)
-          const dot = base.lastIndexOf('.')
-          const [stem, ext] = dot > 0 ? [base.slice(0, dot), base.slice(dot)] : [base, '']
-          zipPath = `${folder}/${base}`
-          for (let n = 2; taken.has(zipPath); n++) zipPath = `${folder}/${stem} (${n})${ext}`
-          taken.add(zipPath)
-          placed.set(key, zipPath)
-          files.push({ zipPath, file: c.invoiceFile })
-        }
-        beleg = zipPath
+        parts.push('Datei fehlt')
+        continue
       }
+      const key = `${group}|${file}`
+      let zipPath = placed.get(key)
+      if (!zipPath) {
+        const folder = `${rank(group) + 1} ${group}`
+        const base = safeName(`${c.category} - ${original}`)
+        const dot = base.lastIndexOf('.')
+        const [stem, ext] = dot > 0 ? [base.slice(0, dot), base.slice(dot)] : [base, '']
+        zipPath = `${folder}/${base}`
+        for (let n = 2; taken.has(zipPath); n++) zipPath = `${folder}/${stem} (${n})${ext}`
+        taken.add(zipPath)
+        placed.set(key, zipPath)
+        files.push({ zipPath, file })
+      }
+      parts.push(zipPath)
     }
+    const beleg = parts.length > 0 ? parts.join(' | ') : 'kein Beleg'
     rows.push([
       textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
       csvField(c.labor35aCents ? euro(c.labor35aCents) : ''), textField(beleg),
