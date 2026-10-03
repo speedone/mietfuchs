@@ -207,10 +207,11 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           // Schon im Belegordner: nur der Name, sonst läge er danach doppelt dort (#170)
           fd.delete('file')
           fd.append('existingFile', existing)
-        } else if (propertyId) {
-          // Bleibt der Beleg ohne Übernahme liegen, steht er im Posteingang dieses Objekts
-          fd.append('propertyId', propertyId)
         }
+        // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
+        // dieses Objekts, falls er ungebucht bleibt.
+        if (propertyId) fd.append('propertyId', propertyId)
+        fd.append('year', String(year))
         const res = await aiRequest<IntakeResult>('/api/intake', fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),
