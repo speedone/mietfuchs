@@ -12,6 +12,7 @@ import { createEntity, createProperty, removeEntity, updateEntity } from '../src
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment, type AssessmentRecord, type NewAssessment } from '../src/db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, type BookingOutcome } from '../src/db/booking.ts'
+import { parseDecisions } from '../src/bookingPlan.ts'
 import { recordUpload } from '../src/db/uploads.ts'
 import type { NewLine } from '../src/assessment.ts'
 
@@ -378,7 +379,7 @@ test('Eine verworfene Zeile mit älterer Vorschau anlegen ergibt einen veraltete
   })
 })
 
-test('Lösen der Zeile des Belegs, den die Position trägt, gibt ihr den Beleg der verbleibenden Zeile', async () => {
+test('Lösen der Zeile des Belegs, den die Position trägt, gibt ihr den Beleg der verbleibenden Zeile, mit Ansage', async () => {
   await withWorld(async (w) => {
     await estimate(w, 'wa')
     const a = await receipt(w, 'a.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
@@ -386,10 +387,247 @@ test('Lösen der Zeile des Belegs, den die Position trägt, gibt ihr den Beleg d
     const b = await receipt(w, 'b.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
     done(await book(w, b, [link(0, 'wa')]))
     assert.deepEqual([(await itemOf(w, 'wa')).amountCents, (await itemOf(w, 'wa')).invoiceFile], [150000, 'a.pdf'])
-    done(await book(w, a, [{ idx: 0, action: 'release' }]))
+    const p = await plan(w, a, [{ idx: 0, action: 'release' }])
+    assert.ok(p.notices.some((n) => /trägt künftig den Beleg „b\.pdf“/.test(n)), p.notices.join('\n'))
+    done(await book(w, a, [{ idx: 0, action: 'release' }], p.token))
     assert.deepEqual([(await itemOf(w, 'wa')).amountCents, (await itemOf(w, 'wa')).invoiceFile], [80000, 'b.pdf'])
     // Bleibt keine Zeile, behält die Position ihren Stand, auch den Beleg.
     done(await book(w, b, [{ idx: 0, action: 'release' }]))
     assert.deepEqual([(await itemOf(w, 'wa')).amountCents, (await itemOf(w, 'wa')).invoiceFile], [80000, 'b.pdf'])
+  })
+})
+
+test('Ein von Hand angehängter Beleg wird beim Lösen nie ersetzt', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa', { invoiceFile: 'hand.pdf' })
+    const a = await receipt(w, 'a.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    done(await book(w, a, [link(0, 'wa')]))
+    const b = await receipt(w, 'b.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
+    done(await book(w, b, [link(0, 'wa')]))
+    const p = await plan(w, a, [{ idx: 0, action: 'release' }])
+    assert.ok(!p.notices.some((n) => /trägt künftig/.test(n)), p.notices.join('\n'))
+    done(await book(w, a, [{ idx: 0, action: 'release' }], p.token))
+    assert.deepEqual([(await itemOf(w, 'wa')).amountCents, (await itemOf(w, 'wa')).invoiceFile], [80000, 'hand.pdf'])
+  })
+})
+
+test('Eine Position ohne Beleg bekommt beim Lösen den Beleg einer verbleibenden Zeile, nie den gelösten', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const a = await receipt(w, 'a.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    done(await book(w, a, [link(0, 'wa')]))
+    const b = await receipt(w, 'b.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
+    done(await book(w, b, [link(0, 'wa')]))
+    await w.opened.write((db) => updateEntity(db, 'costItems', 'wa', { invoiceFile: null }))
+    assert.equal((await itemOf(w, 'wa')).invoiceFile ?? null, null, 'Vorbedingung: Beleg von Hand entfernt')
+    done(await book(w, a, [{ idx: 0, action: 'release' }]))
+    assert.deepEqual([(await itemOf(w, 'wa')).amountCents, (await itemOf(w, 'wa')).invoiceFile], [80000, 'b.pdf'])
+  })
+})
+
+// ---------- Fixrunde 1 ----------
+
+test('Verknüpfen mit anders berichtigtem Betrag oder Lohnanteil ist ein Widerspruch, gleich berichtigt ohne Änderung', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    const erst: LineDecision = { idx: 0, action: 'link', costItemId: 'wa', amountCents: 72000, labor35aCents: 1000 }
+    done(await book(w, r, [erst]))
+    assert.equal(done(await book(w, r, [erst])).changed, false)
+    assert.equal(done(await book(w, r, [link(0, 'wa')])).changed, false, 'ohne Berichtigung gilt die gespeicherte')
+    assert.equal((await book(w, r, [{ ...erst, amountCents: 75000 }])).kind, 'conflict')
+    assert.equal((await book(w, r, [{ ...erst, labor35aCents: 2000 }])).kind, 'conflict')
+    assert.equal((await itemOf(w, 'wa')).amountCents, 72000)
+  })
+})
+
+test('Ein Widerspruch wird nicht von einer unveränderten Zeile derselben Anfrage verdeckt', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000), line('Abwasser', 'Wasser/Abwasser', 80000)])
+    done(await book(w, r, [link(0, 'wa'), link(1, 'wa')]))
+    const o = await book(w, r, [link(0, 'wa'), { idx: 1, action: 'link', costItemId: 'wa', amountCents: 81000 }])
+    assert.equal(o.kind, 'conflict')
+    assert.equal((await itemOf(w, 'wa')).amountCents, 150000)
+  })
+})
+
+test('Anlegen mit anderen Feldern als gebucht ist ein Widerspruch', async () => {
+  await withWorld(async (w) => {
+    await w.opened.write((db) => createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 60, participates: true }))
+    const r = await receipt(w, 'gs.pdf', [line('Grundsteuer', 'Grundsteuer', 61240)])
+    const gs = fields('Grundsteuer 2025', 'Grundsteuer', 61240)
+    done(await book(w, r, [{ idx: 0, action: 'create', fields: gs }]))
+    assert.equal(done(await book(w, r, [{ idx: 0, action: 'create', fields: gs }])).changed, false)
+    const anders: LineFields[] = [
+      { ...gs, amountCents: 61000 },
+      { ...gs, description: 'Grundsteuer B' },
+      { ...gs, category: 'Versicherung' },
+      { ...gs, labor35aCents: 100 },
+      { ...gs, key: 'units' },
+      { ...gs, key: 'direct', allocation: { key: 'direct', meterType: null, directUnitId: 'u2', customShares: null, participantUnitIds: null, externalBasis: null } },
+    ]
+    for (const f of anders) {
+      const o = await book(w, r, [{ idx: 0, action: 'create', fields: f }], 'egal')
+      assert.equal(o.kind, 'conflict', JSON.stringify(f))
+    }
+    assert.equal((await items(w)).length, 1)
+  })
+})
+
+test('Gutschrift-Zeile: Kandidaten sind nur Gutschrift-Positionen, in Ansicht und Vorschau dieselben', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'mp', { category: 'Müllabfuhr', description: 'Restmüll 2025', amountCents: 70000 })
+    await estimate(w, 'mg', { category: 'Müllabfuhr', description: 'Gutschrift Tonne', amountCents: -5000 })
+    const r = await receipt(w, 'm.pdf', [line('Gutschrift Tonnentausch', 'Müllabfuhr', -5000), line('Biomüll', 'Müllabfuhr', 30000)])
+    const v = await view(w, r)
+    const shown = v.lines.map((l) => (l.suggestion ?? assert.fail('kein Vorschlag')).candidates.map((c) => c.id))
+    assert.deepEqual(shown, [['mg'], ['mp']])
+    for (const l of v.lines) {
+      const s = l.suggestion ?? assert.fail('kein Vorschlag')
+      const p = await plan(w, r, [{ idx: l.idx, action: 'create', fields: s.fields }])
+      const msg = p.confirm[0]?.message ?? assert.fail('keine Rückfrage')
+      const named = [...msg.matchAll(/„([^“]+)“ \(/g)].map((m) => m[1])
+      assert.deepEqual(named, s.candidates.map((c) => c.description), msg)
+    }
+    const gutschrift = (await plan(w, r, [{ idx: 0, action: 'create', fields: fields('Gutschrift Tonnentausch', 'Müllabfuhr', -5000) }])).confirm[0]?.message ?? ''
+    assert.doesNotMatch(gutschrift, /verknüpf/)
+  })
+})
+
+test('Prüfmarke: ein anderer Schlüssel zwischen Vorschau und Buchung ergibt einen veralteten Stand', async () => {
+  await withWorld(async (w) => {
+    const r = await receipt(w, 'gs.pdf', [line('Grundsteuer', 'Grundsteuer', 61240)])
+    const p = await plan(w, r, [{ idx: 0, action: 'create', fields: fields('Grundsteuer 2025', 'Grundsteuer', 61240) }])
+    const o = await book(w, r, [{ idx: 0, action: 'create', fields: fields('Grundsteuer 2025', 'Grundsteuer', 61240, { key: 'units' }) }], p.token)
+    assert.equal(o.kind, 'stale')
+    assert.equal((await items(w)).length, 0)
+  })
+})
+
+test('Verknüpfen mit berichtigtem Betrag und Lohnanteil: Position und Zeile tragen die Berichtigung', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'gp', { category: 'Gartenpflege', description: 'Gartenpflege 2025', amountCents: 150000 })
+    const r = await receipt(w, 'g.pdf', [line('Gartenpflege', 'Gartenpflege', 140000, 30000)])
+    const d: LineDecision = { idx: 0, action: 'link', costItemId: 'gp', amountCents: 145000, labor35aCents: 40000 }
+    const p = await plan(w, r, [d])
+    assert.deepEqual(p.items.map((i) => [i.afterCents, i.afterLabor35aCents]), [[145000, 40000]])
+    done(await book(w, r, [d], p.token))
+    const gp = await itemOf(w, 'gp')
+    assert.deepEqual([gp.amountCents, gp.labor35aCents], [145000, 40000])
+    const l = (await view(w, r)).lines[0] ?? assert.fail('keine Zeile')
+    assert.deepEqual([l.state, l.amountCents, l.labor35aCents], ['linked', 145000, 40000])
+  })
+})
+
+test('Verknüpfen einer Zeile ohne gelesenen Betrag ist ein Fehler, bis der Betrag eingetragen ist', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', null)])
+    const p = await plan(w, r, [link(0, 'wa')])
+    assert.match(p.errors[0]?.message ?? '', /Betrag ist nicht gelesen/)
+    assert.equal((await book(w, r, [link(0, 'wa')], p.token)).kind, 'refused')
+    done(await book(w, r, [{ idx: 0, action: 'link', costItemId: 'wa', amountCents: 70000 }]))
+    assert.equal((await itemOf(w, 'wa')).amountCents, 70000)
+  })
+})
+
+test('Angelegte und verknüpfte Zeile an derselben Position: Lösen der verknüpften lässt die angelegte stehen', async () => {
+  await withWorld(async (w) => {
+    const a = await receipt(w, 'a.pdf', [line('Grundsteuer', 'Grundsteuer', 61240)])
+    done(await book(w, a, [{ idx: 0, action: 'create', fields: fields('Grundsteuer 2025', 'Grundsteuer', 61240) }]))
+    const id = (await items(w))[0]?.id ?? assert.fail('keine Position')
+    const b = await receipt(w, 'b.pdf', [line('Nachveranlagung', 'Grundsteuer', 1000)])
+    done(await book(w, b, [link(0, id)]))
+    assert.equal((await itemOf(w, id)).amountCents, 62240)
+    done(await book(w, b, [{ idx: 0, action: 'release' }]))
+    assert.deepEqual([(await itemOf(w, id)).amountCents, (await itemOf(w, id)).invoiceFile], [61240, 'a.pdf'])
+  })
+})
+
+test('Löschen einer verknüpften Position macht ihre Zeilen offen; neu verknüpft zählt nur, was verknüpft ist', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const r = await receipt(w, 'w.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000), line('Abwasser', 'Wasser/Abwasser', 80000)])
+    done(await book(w, r, [link(0, 'wa'), link(1, 'wa')]))
+    await w.opened.write((db) => removeEntity(db, 'costItems', 'wa'))
+    assert.deepEqual((await view(w, r)).lines.map((l) => l.state), ['open', 'open'])
+    await estimate(w, 'wa2', { amountCents: 100000 })
+    done(await book(w, r, [link(0, 'wa2')]))
+    assert.equal((await itemOf(w, 'wa2')).amountCents, 70000)
+  })
+})
+
+test('Scheitert ein Schritt mitten in der Buchung, ist nichts geschrieben', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    await estimate(w, 'andere', { category: 'Hauswart', description: 'Hauswart 2025', amountCents: 30000 })
+    const r = await receipt(w, 'x.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000), line('Grundsteuer', 'Grundsteuer', 61240), line('Versicherung', 'Versicherung', 40000)])
+    const decisions: LineDecision[] = [
+      link(0, 'wa'),
+      { idx: 1, action: 'create', fields: fields('Grundsteuer 2025', 'Grundsteuer', 61240) },
+      { idx: 2, action: 'create', fields: fields('Versicherung 2025', 'Versicherung', 40000) },
+    ]
+    const token = (await plan(w, r, decisions)).token
+    // Die zweite neue Position bekommt die Kennung einer vorhandenen, unbeteiligten: Das Einfügen
+    // scheitert, nachdem die erste schon eingefügt ist.
+    const ids = ['frisch', 'andere']
+    await assert.rejects(w.opened.write((db) => bookAssessment(db, r.assessment.id, decisions, token, { uploadDir: w.uploadDir, newId: () => ids.shift() ?? 'leer' })))
+    assert.deepEqual((await items(w)).map((i) => [i.id, i.amountCents]), [['wa', 150000], ['andere', 30000]])
+    assert.deepEqual((await view(w, r)).lines.map((l) => l.state), ['open', 'open', 'open'])
+  })
+})
+
+test('parseDecisions liest gültige Entscheidungen und lehnt unlesbare ab', () => {
+  const allocation = { key: 'direct', meterType: null, directUnitId: 'u1', customShares: null, participantUnitIds: null, externalBasis: null }
+  const f = { description: 'Grundsteuer', category: 'Grundsteuer', amountCents: 100, labor35aCents: null, key: 'direct', allocation, externalTotalCents: null }
+  assert.deepEqual(parseDecisions([
+    { idx: 0, action: 'create', fields: f, despiteCandidates: true },
+    { idx: 1, action: 'link', costItemId: 'c1', amountCents: 500, labor35aCents: null },
+    { idx: 2, action: 'link', costItemId: 'c1' },
+    { idx: 3, action: 'dismiss' },
+    { idx: 4, action: 'release' },
+  ]), { decisions: [
+    { idx: 0, action: 'create', fields: { ...f, key: 'direct', allocation: { ...allocation, key: 'direct' } }, despiteCandidates: true },
+    { idx: 1, action: 'link', costItemId: 'c1', amountCents: 500, labor35aCents: null },
+    { idx: 2, action: 'link', costItemId: 'c1' },
+    { idx: 3, action: 'dismiss' },
+    { idx: 4, action: 'release' },
+  ] })
+  const { meterType: _ohne, ...unvollstaendig } = allocation
+  const kaputt: unknown[] = [
+    'keine Liste',
+    [{ action: 'dismiss' }],
+    [{ idx: -1, action: 'dismiss' }],
+    [{ idx: 1.5, action: 'dismiss' }],
+    [{ idx: 0, action: 'buchen' }],
+    [{ idx: 0, action: 'link' }],
+    [{ idx: 0, action: 'link', costItemId: '' }],
+    [{ idx: 0, action: 'link', costItemId: 'c1', amountCents: 1.5 }],
+    [{ idx: 0, action: 'link', costItemId: 'c1', amountCents: '700' }],
+    [{ idx: 0, action: 'create', fields: { ...f, key: 'erfunden' } }],
+    [{ idx: 0, action: 'create', fields: { ...f, amountCents: 1.5 } }],
+    [{ idx: 0, action: 'create', fields: { ...f, allocation: unvollstaendig } }],
+    [{ idx: 0, action: 'create', fields: { ...f, allocation: { ...allocation, meterType: 'gas' } } }],
+    [{ idx: 0, action: 'create', fields: f, despiteCandidates: 'ja' }],
+  ]
+  for (const raw of kaputt) assert.ok('error' in parseDecisions(raw), JSON.stringify(raw))
+})
+
+test('Dasselbe Anlegen mit Verteilung (direkt, laut Gemeinschaftsabrechnung) noch einmal ist ohne Änderung', async () => {
+  await withWorld(async (w) => {
+    const none = { meterType: null, directUnitId: null, customShares: null, participantUnitIds: null, externalBasis: null }
+    const r = await receipt(w, 'x.pdf', [line('Reparatur', 'Sonstige Betriebskosten', 20000), line('Hausmeister', 'Hauswart', 12000)])
+    const decisions: LineDecision[] = [
+      { idx: 0, action: 'create', fields: fields('Reparatur EG', 'Sonstige Betriebskosten', 20000, { key: 'direct', allocation: { ...none, key: 'direct', directUnitId: 'u1' } }) },
+      { idx: 1, action: 'create', fields: fields('Hausmeister', 'Hauswart', 12000, {
+        key: 'external', allocation: { ...none, key: 'external', externalBasis: { measure: 'mea', total: 1000 } }, externalTotalCents: 1200000,
+      }) },
+    ]
+    const p = await plan(w, r, decisions)
+    assert.deepEqual([p.errors, p.confirm], [[], []])
+    done(await book(w, r, decisions, p.token))
+    assert.equal(done(await book(w, r, decisions)).changed, false)
+    assert.equal((await items(w)).length, 2)
   })
 })

@@ -100,6 +100,7 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
   const planned = planBooking({
     assessment: record.assessment, lines: record.lines, items: ctx.stock.costItems, booked: ctx.booked,
     units: scoped?.units ?? [], twinFiles: twinFilesOf(ctx, record.assessment.file),
+    fileNames: new Map(ctx.booked.map((l) => [l.file, nameOf(ctx, l.file)])),
   }, decisions, newId)
   return { record, ctx, planned }
 }

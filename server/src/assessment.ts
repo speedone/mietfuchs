@@ -38,6 +38,17 @@ export function carriesCredit(item: Pick<CostItem, 'id' | 'amountCents'>, booked
   return item.amountCents < 0 || booked.some((l) => l.costItemId === item.id && (l.amountCents ?? 0) < 0)
 }
 
+// Die Positionen, unter denen eine Zeile ihre Kandidaten (mögliche Doppelungen und Ziele zum
+// Verknüpfen) findet. Für eine Rechnungszeile nur Positionen ohne Gutschrift, für eine Gutschrift
+// nur solche mit: Eine Gutschrift wird nie verknüpft, ihre Doppelung ist dieselbe Gutschrift. Die
+// Ansicht (`suggestLine`) und die Rückfrage des Planers nehmen beide diese Menge.
+export function candidatePool<T extends Pick<CostItem, 'id' | 'amountCents'>>(
+  items: readonly T[], amountCents: number | null, booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[],
+): T[] {
+  const credit = amountCents !== null && amountCents < 0
+  return items.filter((i) => carriesCredit(i, booked) === credit)
+}
+
 // Die Positionen, die aus dieser Auswertung gebucht sind. Sie sind für ihre übrigen Zeilen keine
 // Doppelung: Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
 export const ownItemIds = (lines: readonly StoredAssessmentLine[]): string[] =>
@@ -138,14 +149,12 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     description: line.description, category: line.category, amountCents: line.amountCents, labor35aCents: line.labor35aCents,
     key: defaults.key, allocation: defaults.allocation, externalTotalCents: null,
   }
-  // Ziele zum Verknüpfen sind nur Positionen ohne Gutschrift. Für die Dublettenprüfung einer
-  // Gutschrift bleiben die übrigen stehen: Dieselbe Gutschrift zweimal ist eine Doppelung.
-  const targets = others.filter((i) => !carriesCredit(i, ctx.booked))
-  const candidates = a.propertyId === null ? [] : sameCostCandidates(targets, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor })
+  const pool = candidatePool(others, line.amountCents, ctx.booked)
+  const candidates = a.propertyId === null ? [] : sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor })
   const amount = line.amountCents ?? 0
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
-    matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: amount < 0 ? others : targets,
+    matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
     priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, amount),
   })
   const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, a.year)

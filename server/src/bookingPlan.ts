@@ -11,13 +11,13 @@
 // **Eine Zeile, die nicht offen ist, wird nie noch einmal gebucht.** Ist sie genau so gebucht,
 // ist das ohne Änderung (Doppelklick, Wiederholung); anders gebucht ist ein Widerspruch.
 import type {
-  AssessmentLineState, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
+  AssessmentLineState, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { amountProblem, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
-import { carriesCredit, changeOf, lineDraft, lineState, ownItemIds, type BookedLine, type LineChange } from './assessment.ts'
+import { candidatePool, carriesCredit, changeOf, lineDraft, lineState, ownItemIds, type BookedLine, type LineChange } from './assessment.ts'
 
 export type PlanInput = {
   assessment: StoredAssessment
@@ -30,6 +30,8 @@ export type PlanInput = {
   units: readonly Unit[]
   // Andere Belege mit gleichem Inhalt (Prüfsumme)
   twinFiles: readonly string[]
+  // Der Name eines Belegs, wie der Nutzer ihn kennt (für Hinweise); fehlt er, gilt der Dateiname
+  fileNames: ReadonlyMap<string, string>
 }
 
 export type BookingWrite =
@@ -65,6 +67,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
   const decided: { idx: number; state: AssessmentLineState }[] = []
   // Positionen, von denen eine Zeile gelöst wird (für den Beleg der Position, siehe unten)
   const released = new Set<string>()
+  const fileName = (file: string): string => quote(input.fileNames.get(file) ?? file)
   const after = new Map<number, LineChange>()
   const created: PreviewItem[] = []
   const createWrites: BookingWrite[] = []
@@ -99,7 +102,11 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     decided.push({ idx: d.idx, state })
 
     if (d.action === 'create') {
-      if (state === 'created') { unchanged.push(d.idx); continue }
+      if (state === 'created') {
+        if (sameCreate(d.fields, line, input, a)) unchanged.push(d.idx)
+        else conflicts.push(`${named(line)} ist schon mit anderen Angaben als eigene Position ${targetOf(line)} angelegt.`)
+        continue
+      }
       if (state === 'linked') { conflicts.push(`${named(line)} ist schon mit ${targetOf(line)} verknüpft.`); continue }
       if (a.propertyId === null) continue
       if (d.fields.key === 'amounts') {
@@ -113,11 +120,12 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       }
       const body = built.body
       if (!d.despiteCandidates) {
-        // Eine Position mit Gutschrift ist kein Ziel und damit auch keine Doppelung einer Rechnung;
-        // für eine Gutschrift bleibt sie es (dieselbe Gutschrift zweimal).
-        const pool = body.amountCents < 0 ? others : others.filter((i) => !carriesCredit(i, input.booked))
+        const pool = candidatePool(others, body.amountCents, input.booked)
         const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: body.category, description: body.description, vendor: a.vendor ?? '' })
-        if (candidates.length > 0) {
+        if (candidates.length > 0 && body.amountCents < 0) {
+          // Eine Gutschrift wird nie verknüpft; die Rückfrage rät deshalb nicht dazu.
+          confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, eine Gutschrift derselben Kostenart wie ${quote(body.description)}. Ist es dieselbe Gutschrift, legen Sie sie nicht noch einmal an, sonst wird sie zweimal abgezogen. Ist es eine zweite Gutschrift, legen Sie sie als neue Position an.` })
+        } else if (candidates.length > 0) {
           confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, dieselbe Kostenart wie ${quote(body.description)}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.` })
         } else if (twinBooked) {
           confirm.push({ idx: d.idx, message: `Ein Beleg mit gleichem Inhalt ist schon gebucht. Legen Sie ${quote(body.description)} nur an, wenn es wirklich eine zweite Rechnung ist.` })
@@ -137,7 +145,14 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     }
 
     if (d.action === 'link') {
-      if (state === 'linked' && line.costItemId === d.costItemId) { unchanged.push(d.idx); continue }
+      if (state === 'linked' && line.costItemId === d.costItemId) {
+        // Ohne Berichtigung gilt die gespeicherte; eine andere Berichtigung ginge sonst still verloren.
+        const sameAmount = d.amountCents === undefined || d.amountCents === line.amountCents
+        const sameLabor = d.labor35aCents === undefined || d.labor35aCents === line.labor35aCents
+        if (sameAmount && sameLabor) unchanged.push(d.idx)
+        else conflicts.push(`${named(line)} ist schon mit ${targetOf(line)} verknüpft, aber mit einem anderen Betrag oder Lohnanteil.`)
+        continue
+      }
       if (state === 'linked') { conflicts.push(`${named(line)} ist schon mit ${targetOf(line)} verknüpft.`); continue }
       if (state === 'created') { conflicts.push(`${named(line)} ist schon als eigene Position ${targetOf(line)} angelegt.`); continue }
       const target = itemById.get(d.costItemId)
@@ -255,12 +270,21 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       errors.push({ idx: null, message: `${quote(t.description)}: ${problem}` })
       continue
     }
-    // Der Beleg der Position: Trägt sie keinen, den dieses Belegs. Wird die Zeile gelöst, aus deren
-    // Beleg er stammt, und hängt aus ihm keine Zeile mehr an der Position, trägt sie den Beleg der
-    // ersten verbleibenden Zeile; sonst zeigte sie auf eine Rechnung, die nicht mehr in ihr steckt.
-    const invoiceFile = !t.invoiceFile ? a.file
-      : released.has(id) && !links.some((l) => l.file === t.invoiceFile) ? links[0]?.file
-        : undefined
+    // Der Beleg der Position. Beim Verknüpfen: Trägt sie keinen, den dieses Belegs. Beim Lösen
+    // wechselt er nur, wenn er der Beleg der gelösten Zeile ist und aus ihm keine Zeile mehr an der
+    // Position hängt; dann gilt der Beleg der ersten verbleibenden Zeile. Trägt sie keinen, ebenso,
+    // nie aber der gerade gelöste. Ein von Hand angehängter Beleg wird nie ersetzt.
+    let invoiceFile: string | undefined
+    if (released.has(id)) {
+      if (!t.invoiceFile || (t.invoiceFile === a.file && !links.some((l) => l.file === a.file))) invoiceFile = links[0]?.file
+      if (invoiceFile !== undefined && invoiceFile !== t.invoiceFile) {
+        notices.push(t.invoiceFile
+          ? `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}, denn mit ${fileName(t.invoiceFile)} ist keine Zeile mehr an ihr verknüpft.`
+          : `${quote(t.description)} trägt künftig den Beleg ${fileName(invoiceFile)}.`)
+      }
+    } else if (!t.invoiceFile) {
+      invoiceFile = a.file
+    }
     updateWrites.push({ kind: 'updateItem', id, patch: { amountCents: sum, labor35aCents: labor, ...(invoiceFile !== undefined ? { invoiceFile } : {}) } })
     touchedItems.push({
       costItemId: id, lines: ownLines, description: t.description, category: t.category, year: t.year, beforeCents: t.amountCents,
@@ -278,6 +302,28 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
   }
 }
 
+// Ist eine angelegte Zeile genau so angelegt, wie die Entscheidung sie verlangt? Beschreibung,
+// Kostenart, Betrag und Lohnanteil stehen an der Zeile, Schlüssel und Verteilung an der Position.
+// Was nicht mehr übernehmbar ist, ist nicht gleich.
+function sameCreate(fields: LineFields, line: StoredAssessmentLine, input: PlanInput, a: StoredAssessment): boolean {
+  const built = costItemBody(lineDraft(fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, a.year)
+  if ('error' in built) return false
+  const b = built.body
+  if (b.description !== line.description || b.category !== line.category || b.amountCents !== line.amountCents || fields.labor35aCents !== line.labor35aCents) return false
+  const item = input.items.find((i) => i.id === line.costItemId)
+  if (!item) return true
+  const filled = <T>(v: T | null | undefined): T | null => (v === undefined || v === null || (typeof v === 'object' && Object.keys(v).length === 0) ? null : v)
+  // Schlüssel der Objekte sortiert: Was aus der Datenbank kommt, muss nicht in derselben Reihenfolge stehen.
+  const sorted = (v: unknown): unknown => (Array.isArray(v) ? v.map(sorted)
+    : v !== null && typeof v === 'object'
+      ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([k, w]) => [k, sorted(w)]))
+      : v)
+  const allocation = (x: Pick<CostItemBody, 'key' | 'directUnitId' | 'meterType' | 'customShares' | 'participantUnitIds' | 'externalBasis'> | CostItem): string => JSON.stringify(sorted([
+    x.key, filled(x.directUnitId), filled(x.meterType), filled(x.customShares), filled(x.participantUnitIds), filled(x.externalBasis),
+  ]))
+  return allocation(b) === allocation(item)
+}
+
 // Woraus die Prüfmarke einer Vorschau entsteht: was sie zeigt und was sie an den Zeilen ändert,
 // ohne die Kennungen neuer Positionen (die entstehen erst beim Buchen). Der Server bildet daraus
 // eine SHA-256-Marke (db/booking.ts); ändert sich der Stand, ändert sich die Marke.
@@ -285,7 +331,10 @@ export function tokenSource(p: Planned): string {
   const lines = p.writes.flatMap((w) => w.kind === 'line'
     ? [[w.idx, w.change.booking, w.change.booking === 'created' ? null : w.change.costItemId, w.change.dismissed, w.change.amountCents, w.change.labor35aCents]]
     : [])
-  return JSON.stringify({ items: p.preview.items, notices: p.preview.notices, lines, decided: p.decided.map((d) => [d.idx, d.state]) })
+  // Neue Positionen mit allem, was sie werden (Schlüssel und Verteilung zeigt die Vorschau nicht,
+  // sie gehören aber zur Buchung), ohne ihre Kennung.
+  const creates = p.writes.flatMap((w) => (w.kind === 'createItem' ? [w.body] : []))
+  return JSON.stringify({ items: p.preview.items, notices: p.preview.notices, lines, creates, decided: p.decided.map((d) => [d.idx, d.state]) })
 }
 
 // Die Vorschau, wie die Routen sie zeigen: Widersprüche stehen bei den Fehlern vorn.

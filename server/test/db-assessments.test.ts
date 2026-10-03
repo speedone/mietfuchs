@@ -9,7 +9,7 @@ import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
 import { createEntity, removeEntity } from '../src/db/repository.ts'
 import {
-  bookedLines, forgetAssessment, placeAssessment, readAssessmentOfFile, saveAssessment, writeLine, type AssessmentRecord, type NewAssessment,
+  bookedLines, forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, writeLine, type AssessmentRecord, type NewAssessment,
 } from '../src/db/assessments.ts'
 import { changeOf, lineState, type NewLine } from '../src/assessment.ts'
 import { assessmentLines } from '../src/db/schema.ts'
@@ -106,7 +106,7 @@ test('Beleg vergessen nimmt die Auswertung samt Zeilen mit', async () => {
   })
 })
 
-test('Objekt einer Auswertung: änderbar, solange nichts gebucht ist; das Jahr bleibt änderbar', async () => {
+test('Objekt und Jahr einer Auswertung: änderbar, solange nichts gebucht ist', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => item(db, 'c1'))
     const saved = await opened.write((db) => saveAssessment(db, head('w.pdf', [line('Frischwasser', 70000)]), ids()))
@@ -115,7 +115,9 @@ test('Objekt einer Auswertung: änderbar, solange nichts gebucht ist; das Jahr b
     await opened.write((db) => placeAssessment(db, saved.assessment.id, { propertyId: 'objekt-1', year: 2025 }))
     await opened.write((db) => link(db, saved, 0, 'c1'))
     assert.equal(await opened.write((db) => placeAssessment(db, saved.assessment.id, { propertyId: null })), 'booked')
-    assert.equal(await opened.write((db) => placeAssessment(db, saved.assessment.id, { year: 2026 })), 'ok')
+    assert.equal(await opened.write((db) => placeAssessment(db, saved.assessment.id, { year: 2026 })), 'booked')
+    assert.equal(await opened.write((db) => placeAssessment(db, saved.assessment.id, { year: 2025 })), 'ok', 'dasselbe Jahr ist keine Änderung')
+    assert.equal((await opened.read((db) => readAssessment(db, saved.assessment.id)))?.assessment.year, 2025)
   })
 })
 
