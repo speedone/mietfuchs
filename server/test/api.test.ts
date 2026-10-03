@@ -4929,3 +4929,21 @@ test('Belegbuchung: der Belegordner kennt gebuchte Zeilen; Löschen der Position
     assert.equal((await fetch(`${s.base}/api/assessments/${b.id}`)).status, 404, 'die Auswertung geht mit dem Beleg')
   }, { invoices: RECHNUNGEN })
 })
+
+test('Belegbuchung: Backup und Wiederherstellen nehmen Auswertungen und gebuchte Zeilen mit', async () => {
+  await withOllama(async (s) => {
+    const g = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const w = assessmentOf(await evaluate(s, 'WASSER'))
+    const decisions = grundsteuer(g)
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${g.id}/plan`, { decisions }))
+    assert.equal((await postJson(s, `/api/assessments/${g.id}/book`, { decisions, token: preview.token })).status, 200)
+    const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
+    // Danach ändern, damit das Zurückspielen sichtbar wird: Die Position fällt weg, die Zeile wird offen.
+    const [position] = await s.api<CostItem[]>('/api/costItems')
+    assert.equal((await fetch(`${s.base}/api/costItems/${position?.id ?? ''}`, { method: 'DELETE' })).status, 200)
+    assert.equal((await s.api<AssessmentView[]>('/api/assessments?open=1')).length, 2)
+    assert.equal((await restore(s, backup)).status, 200)
+    assert.deepEqual((await s.api<AssessmentView[]>('/api/assessments?open=1')).map((a) => a.id), [w.id])
+    assert.deepEqual((await s.api<AssessmentView>(`/api/assessments/${g.id}`)).lines.map((l) => l.state), ['created'])
+  }, { invoices: RECHNUNGEN })
+})

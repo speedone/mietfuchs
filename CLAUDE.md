@@ -755,8 +755,8 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   entfernt, ein Fehler der Datenbank dagegen verhindert das Hochladen nicht.
 - **Ein Beleg aus dem Posteingang wird nicht erneut hochgeladen**: Die KI-Routen nehmen statt
   `file` das Feld `existingFile` (nur ein Name im Belegordner, `path.basename`), und ein Abbruch
-  löscht ihn nicht. Die Schnellerfassung bekommt die Belege über `handoff` aus App.tsx und prüft
-  sie damit auf demselben Weg auf eine schon erfasste Position (siehe Doppelte Kostenpositionen).
+  löscht ihn nicht. Die Schnellerfassung bekommt die Belege über `handoff` aus App.tsx; ihre
+  Auswertung läuft über die gespeicherte Auswertung (siehe Belegbuchung).
 - **Zuordnen an eine bestehende Position** (`attachChoices`, `amountCheckBody` in receipts.ts):
   Mehr als den Namen weiß der Posteingang über einen Beleg nicht; nennt er eine Kostenart
   (`matchCategory`), stehen die Positionen, die nach shared/duplicates.ts dazu passen, oben.
@@ -871,7 +871,7 @@ unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` 
 `/api/ai/consent` sowie `/api/ollama/status` für ältere Tabs (alles siehe
 KI-Belegauswertung), `/api/update` und `POST /api/update/check`
 (Update-Hinweis, siehe unten), `/api/uploads` (Belegordner: Liste mit Angaben, `PUT` für Objekt,
-Jahr und Rechnungsdatum im Posteingang, Löschen unverknüpfter Dateien, siehe Belegordner),
+Jahr und Rechnungsdatum im Posteingang, Löschen unverknüpfter Dateien, siehe Belegordner), `/api/assessments` (Belegbuchung, siehe dort),
 `/api/receipts/tax/:year` (Belege für die Steuer als ZIP), `/api/backup`/`/api/restore` (ZIP via adm-zip; das
 Wiederherstellen prüft die `db.json` im Archiv erst mit dem Validator und lehnt sie ab, bevor
 irgendetwas überschrieben wird, siehe Die Datenbank. Es setzt dabei **keinen vorhandenen Stand
@@ -995,31 +995,96 @@ dasselbe Objekt, Jahr und dieselbe Kostenart; bei den breiten Kostenarten (`LOOS
 Rechnungssteller (ohne Jahreszahlen und Satzzeichen, Präfixvergleich), weil dort ganz
 verschiedene Rechnungen nebeneinander stehen. Die Regel findet nur Kandidaten, entscheiden tut der
 Vermieter. Sie fragen: `alreadyCarried` (carryOver.ts, ausgenommen die genaue Übernahme einer
-Schwesterposition des Vorjahres), Schnellerfassung und KI-Auswertung der Kostenseite über
-`duplicateCandidates`/`aiRowPreselected`/`duplicateGroups` in [client/src/triage.ts](client/src/triage.ts)
-(nicht vorab angehakt, Rückfrage „Trotzdem anlegen“), das Kostenformular beim Neuanlegen
-(„Stattdessen … bearbeiten“) und der Hinweis `cost.possible-duplicate` in calc.ts.
-**Verknüpft wird je Gruppe**: Zeilen eines Belegs mit derselben Kostenart und denselben Kandidaten
-gehen zusammen, mit der Summe, sonst bekäme die Position den Betrag der ersten Zeile und die
-übrigen gingen verloren. Ziel ist eine Position ohne Beleg oder eine, die schon an **diesem** Beleg
-hängt (dann wird der Betrag erhöht). Hat die KI keinen §35a-Lohnanteil gelesen, wird ein
-vorhandener entfernt und das an der Wahl gesagt; ein stehengebliebener Schätzwert würde sonst den
-Mietern und in der Anlage V bescheinigt. Geprüft wird gegen den Lohnanteil, der danach gilt.
-Angelegte Zeilen gelten wie verknüpfte als erledigt (`created`) und fragen nicht mehr nach
-Doppelungen; die aus einem Beleg angelegten Positionen (`createdIds`) sind für dessen übrige Zeilen
-keine Kandidaten, sonst böte die eben angelegte Position „um ihren eigenen Betrag erhöhen“ an. Eine
-Gutschrift (negative Summe einer Gruppe) wird nie verrechnet, sondern als eigene Position angelegt,
-damit sie auf der Abrechnung sichtbar bleibt. Hat ein anderer Eintrag der Warteschlange mit
-demselben Beleg eine Position schon gefüllt, gibt es kein zweites „erhöhen“.
-Positionen mit `external` oder `amounts` werden nicht mit einem Klick verknüpft, ihr Betrag hängt
-an weiteren Angaben; dort öffnet ein Knopf das Formular. Die Hinweise stehen **unter** der Tabelle
-([DuplicateNotices.tsx](client/src/components/DuplicateNotices.tsx)), in einer Zeile scrollten sie
-auf dem Handy mit. Der Hinweis der Abrechnung (`possibleDuplicates`, Stufe `hint`, zählt in der
+Schwesterposition des Vorjahres), der Vorschlag jeder Zeile einer Auswertung (`describeAssessment`
+in server/src/assessment.ts, nicht vorab angehakt, Rückfrage „Trotzdem anlegen“ aus der Vorschau),
+das Kostenformular beim Neuanlegen („Stattdessen … bearbeiten“) und der Hinweis
+`cost.possible-duplicate` in calc.ts. Was beim Verknüpfen mit dem Betrag geschieht, steht in
+**Belegbuchung** unten; die Logik dafür lebt nicht mehr im Browser.
+Der Hinweis der Abrechnung (`possibleDuplicates`, Stufe `hint`, zählt in der
 Ampel) kommt nur, wenn eine Position der Gruppe keinen Beleg hat und dazu (a) eine einen Beleg
 hat oder (b) das Vorjahr Positionen dieser Art hatte und das Jahr mehr hat. Ohne Vorjahr und ganz
 ohne Belege bleibt er still, ebenso Restmüll und Biomüll, beide übernommen. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
 nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
 führt dafür `vendor` und `invoiceFile`; verteilt wird nach keinem.
+
+**Belegbuchung** (#170, Entwurf in
+[docs/superpowers/specs/2026-10-02-belegbuchung-design.md](docs/superpowers/specs/2026-10-02-belegbuchung-design.md)):
+Eine Rechnung landet genau einmal in den Kosten, weil der **Server** bucht und nicht die Seite.
+Das ersetzt die frühere Logik im Browser (Gruppen, Verknüpfen, Rückfragen in triage.ts und den
+beiden Seiten), die dreimal einen Geldfehler hatte.
+
+- **Eine Auswertung ist ein gespeicherter Gegenstand** (Tabellen `assessments` und
+  `assessment_lines`, Migration 0013): eine je Beleg, gespeichert nur nach Erfolg der KI (nach der
+  Antwort wird `signal.aborted` geprüft, ein Abbruch speichert nichts; schlägt die Prüfsumme fehl,
+  geht die Auswertung trotzdem ohne sie ein). Der Zustand einer Zeile wird **abgeleitet**
+  (`lineState` in server/src/assessment.ts): ohne `cost_item_id` offen oder verworfen („Ausblenden“
+  in der Oberfläche, die Auswertung bleibt), mit ihr angelegt oder verknüpft. `cost_item_id` ist
+  `ON DELETE SET NULL`, das Löschen einer Position macht ihre Zeilen von selbst wieder offen.
+  **Zeilennummern kommen aus einer Hochwassermarke** (`assessments.next_idx`) und werden nie
+  wiederverwendet: Erneutes Auswerten ersetzt nur offene und verworfene Zeilen, gebuchte bleiben
+  mit ihren Nummern, neue bekommen nie benutzte, und eine Zeile, die einer gebuchten gleicht,
+  kommt nicht wieder. Die Routen sprechen Zeilen über diese Nummer an, eine wiederverwendete
+  Nummer träfe die falsche Zeile.
+  Neben den Spalten der Spezifikation stehen `detected_year` (Ampel „Rechnungsjahr ≠ Zieljahr“),
+  `amounts_adjusted`/`labor_from_total` (die Hinweise #34 überleben das Neuladen) und
+  `category_guessed` (gelb, wenn die Kostenart nur aus der Beschreibung kam).
+- **Planen ist eine reine Funktion** (`planBooking` in server/src/bookingPlan.ts), Buchen führt
+  ihre Schreibliste in einer Transaktion durch die Schreibschlange aus (server/src/db/booking.ts).
+  **Summenregel**: Der Betrag einer Position mit Zeilen ist die Summe **aller** ihrer Zeilen,
+  angelegter wie verknüpfter, über alle Belege, aus dem gespeicherten Stand; der §35a-Lohnanteil
+  ist die Summe der gelesenen, und nennt keine einen, wird ein vorhandener entfernt (sonst würde
+  ein stehengebliebener Schätzwert Mietern und Anlage V bescheinigt). Eine Schätzung, ein von
+  Hand geänderter Betrag und ein ungelesener Beleg an der Position werden ersetzt, die Vorschau
+  sagt es in ganzen Sätzen vorher. Ziele sind nur Positionen im Objekt und Jahr der Auswertung;
+  `amounts` und `external` sind keine Ziele („Position öffnen“, ihr Betrag hängt an weiteren
+  Angaben). **Gutschrift-Positionen sind keine Verknüpfungsziele, und eine Gutschrift-Zeile
+  bekommt nur Gutschriften als Kandidaten**; sie wird nie verrechnet, damit sie auf der
+  Abrechnung sichtbar bleibt. Ein Beleg gleichen Inhalts (Prüfsumme) kann nicht ein zweites Mal an
+  dieselbe Position, der Doppelt-Hinweis erscheint bei gleichen Beträgen an einer Position.
+  **Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war**
+  (und keine Zeile dieser Datei bleibt); ein von Hand angehängter Beleg bleibt, die Vorschau
+  kündigt den Wechsel an.
+- **Eine Zeile wird nie zweimal gebucht.** „Genau so gebucht“ (Betrag, Lohnanteil, bei neu
+  angelegten auch Beschreibung, Kostenart, Schlüssel, Verteilung) ist ein Erfolg ohne Änderung
+  (Doppelklick, Wiederholung nach Netzfehler); **jede Abweichung ist ein 409 mit dem aktuellen
+  Stand**. **Die Vorschau trägt eine Prüfmarke** (`token`, SHA-256 über `tokenSource`, bei neu
+  angelegten Positionen mit Schlüssel und Verteilung): Weicht der Stand beim Buchen ab, antwortet
+  der Server mit 409 und der neuen Vorschau, statt still anders zu buchen. Gebucht wird immer im
+  Objekt der Auswertung, `?property=` gilt nur für die Liste. **Objekt und Jahr sind nach der
+  ersten gebuchten Zeile fest** (`placeAssessment` lehnt beides mit 409 ab, sonst entstünden
+  Verknüpfungen über Jahre). Solange nichts gebucht ist, ziehen sich Posteingang
+  (`PUT /api/uploads/:file`) und Auswertung (`PUT /api/assessments/:id`) Jahr und Objekt
+  gegenseitig nach, damit beide Listen übereinstimmen.
+- **Prüfungen in shared/**: `amountProblem` und `costItemBody` (shared/costItem.ts, nimmt Cent,
+  das Formular liest nur die Eingaben), Ampel, Vorauswahl und gemerkter Schlüssel einer KI-Zeile
+  (shared/assessment.ts), die Kostenarten (shared/categories.ts, client/src/types.ts reicht sie
+  weiter). `POST`/`PUT /api/costItems` prüfen bewusst noch nicht damit (eigener Schritt).
+- **Routen**: `/api/extract` und `/api/intake` liefern `assessment` mit Vorschlag je Zeile;
+  `GET /api/assessments?property=…&open=1`, `GET`/`PUT /api/assessments/:id`,
+  `POST …/plan` und `POST …/book`. `GET /api/uploads` nennt je Beleg `bookedItemIds`, die Summe
+  seiner eigenen gebuchten Zeilen je Position (`bookedCents`) und die Auswertung; ein Beleg, der
+  nur über eine gebuchte Zeile an einer Position hängt, steht nicht im Posteingang, zählt für die
+  Belegabdeckung, kommt in Belegmappe und Steuer-ZIP und lässt sich nicht löschen (die Karte zeigt
+  die Summe der eigenen Zeilen, nicht den Betrag der Position). Das Löschen prüft „in Gebrauch“
+  und vergisst die Auswertung in einem Schreibvorgang, erst danach geht die Datei. Eine
+  Auswertung, deren Datei fehlt, erscheint nicht in der Liste, und `plan`/`book` antworten 404.
+- **Oberfläche**: eine Komponente
+  ([AssessmentReview.tsx](client/src/components/AssessmentReview.tsx), Logik in
+  [client/src/assessment.ts](client/src/assessment.ts)) für Schnellerfassung und Kostenseite,
+  die Warteschlange dahinter ist der gemeinsame Hook `useEvaluationQueue`
+  ([client/src/evaluationQueue.ts](client/src/evaluationQueue.ts)). Beide Seiten zeigen dieselbe
+  Ampel: eine rote Zeile ist nicht vorab angehakt, das Jahr aus dem Beleg geht vor dem
+  gewählten. Der Posteingang führt mit „Weiter prüfen“ in die Schnellerfassung (ohne Objekt
+  wird zuerst das gewählte zugewiesen). „Alle grünen übernehmen“ bucht je Auswertung nacheinander,
+  damit der zweite Beleg derselben Kostenart die eben angelegte Position sieht; dieser Knopf und
+  „Ablesung übernehmen“ haben eine Sperre gegen Doppelklick (eine ausdrücklich übernommene rote
+  Ablesung wird gesendet, als übernommen gilt sie erst danach). Die jsdom-Tests rechnen mit dem
+  echten Planer ([client/src/testing/fakeBooking.ts](client/src/testing/fakeBooking.ts)). Für
+  Praxislauf (Fall 14) und Browserprobe gibt es ein nachgebautes Ollama mit den Abnahmefällen
+  ([scripts/fake-ollama.mjs](scripts/fake-ollama.mjs)).
+- **Testgriff `NKA_TEST_ASSESSMENT_DELAY_MS`**: verzögert das Speichern einer Auswertung um so
+  viele Millisekunden, nur für Tests (api.test.ts legt damit einen Abbruch in das Fenster zwischen
+  Antwort der KI und Speichern). Ohne die Variable gibt es keine Pause; ein Nutzer setzt sie nie.
 
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:

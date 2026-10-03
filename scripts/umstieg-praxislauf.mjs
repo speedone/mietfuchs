@@ -19,6 +19,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from '../server/node_modules/adm-zip/adm-zip.js'
+import { startFakeOllama } from './fake-ollama.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SERVER = path.join(ROOT, 'server', 'src', 'index.ts')
@@ -613,6 +614,51 @@ fall(13, 'Backup mit Belegen im Posteingang und ihren Angaben (#170)', async () 
     const u = (await holen(base, '/api/uploads'))[0]
     gleich([u?.propertyId, u?.year], ['objekt-1', 2024], 'zweiter Start: der Posteingang steht unverändert da')
   })
+})
+
+fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
+  // Seit der Belegbuchung steht das Ergebnis der KI in der Datenbank, mit dem Buchungsstand je
+  // Zeile. Ein Backup muss beides zurückbringen, und zwar so, dass eine gebuchte Zeile gebucht und
+  // eine offene offen bleibt; sonst böte die Schnellerfassung nach dem Wiederherstellen dieselbe
+  // Rechnung ein zweites Mal zum Anlegen an.
+  const ollama = await startFakeOllama()
+  const dataDir = tempDir()
+  const JSON_HEADERS = { 'content-type': 'application/json' }
+  const post = (base, pfad, body) => fetch(`${base}${pfad}`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
+  let wasserId = ''
+  try {
+    await withServer(dataDir, async ({ base }) => {
+      await fetch(`${base}/api/settings`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: 'probe' }) })
+      const auswerten = async (marker) => {
+        const fd = new FormData()
+        // Der Inhalt hängt am Kennwort (sonst gleiche Prüfsumme), die Textebene ist lang genug für „kein Scan“.
+        fd.append('file', new Blob([`%PDF-1.4 Probe ${marker}`], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
+        fd.append('pdfText', `Rechnung ${marker}: Positionen wie aufgeführt, Betrag in Euro, zahlbar binnen 14 Tagen.`)
+        return (await jsonOf(await fetch(`${base}/api/extract`, { method: 'POST', body: fd }))).assessment
+      }
+      const grund = await auswerten('GRUNDSTEUER')
+      const wasser = await auswerten('WASSER')
+      gleich([grund?.lines?.length, wasser?.lines?.length], [1, 2], 'zwei Auswertungen sind gespeichert')
+      wasserId = wasser?.id ?? ''
+      const decisions = [{ idx: 0, action: 'create', fields: grund?.lines?.[0]?.suggestion?.fields }]
+      const vorschau = await jsonOf(await post(base, `/api/assessments/${grund?.id}/plan`, { decisions }))
+      gleich((await post(base, `/api/assessments/${grund?.id}/book`, { decisions, token: vorschau.token })).status, 200, 'die Grundsteuer ist gebucht')
+      const zip = await backupHolen(base)
+      const [position] = await holen(base, '/api/costItems')
+      await fetch(`${base}/api/costItems/${position?.id}`, { method: 'DELETE' })
+      gleich((await holen(base, '/api/assessments?open=1')).length, 2, 'nach dem Löschen der Position sind beide Auswertungen offen')
+      const antwort = await backupEinspielen(base, zip)
+      gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
+      gleich((await holen(base, '/api/assessments?open=1')).map((a) => a.id), [wasserId], 'Wiederherstellen: nur Wasser ist offen, wie im Archiv')
+      gleich((await holen(base, `/api/assessments/${grund?.id}`)).lines?.map((l) => l.state), ['created'], 'Wiederherstellen: die Grundsteuer ist gebucht, wie im Archiv')
+      gleich((await holen(base, '/api/costItems')).length, 1, 'Wiederherstellen: die Position ist wieder da, genau einmal')
+    })
+    await withServer(dataDir, async ({ base }) => {
+      gleich((await holen(base, '/api/assessments?open=1')).map((a) => a.id), [wasserId], 'zweiter Start: die offene Auswertung steht unverändert da')
+    })
+  } finally {
+    ollama.stop()
+  }
 })
 
 // ---------- Lauf ----------
