@@ -4,6 +4,7 @@
 // der nur als Typ.
 
 import type { TermId } from './glossary.ts'
+import type { Allocation } from './allocation.ts'
 
 // Beteiligung einer Wohnung an der Kostenverteilung:
 //   'vermietet'  → participates: true — Anteil trägt der Mieter
@@ -729,4 +730,79 @@ export type StoredAssessmentLine = {
   booking: AssessmentBooking | null
   costItemId: string | null
   dismissed: boolean
+}
+
+// Die Angaben, die der Nutzer an einer Zeile vor dem Anlegen ändern kann.
+export type LineFields = {
+  description: string
+  category: string
+  amountCents: number | null
+  labor35aCents: number | null
+  key: CostKey
+  // Der gemerkte Schlüssel (shared/allocation.ts), wenn die Zeile ihn übernimmt
+  allocation: Allocation | null
+  // Kosten der Gemeinschaft bei „laut Gemeinschaftsabrechnung“
+  externalTotalCents: number | null
+}
+
+// Was der Browser je Zeile entscheidet. `despiteCandidates`: angelegt, obwohl es eine Position
+// gibt, die dieselbe Rechnung sein könnte; der Nutzer hat die Rückfrage bestätigt. Beim
+// Verknüpfen darf er einen falsch gelesenen Betrag berichtigen.
+export type LineDecision =
+  | { idx: number; action: 'create'; fields: LineFields; despiteCandidates?: boolean }
+  | { idx: number; action: 'link'; costItemId: string; amountCents?: number | null; labor35aCents?: number | null }
+  | { idx: number; action: 'dismiss' }
+  | { idx: number; action: 'release' }
+
+// Eine Position, die dieselbe Rechnung sein könnte (shared/duplicates.ts). `formOnly`: Ihr Betrag
+// hängt an weiteren Angaben (Einzelbeträge, Gemeinschaft), sie wird im Formular gepflegt.
+export type LineCandidate = { id: string; description: string; amountCents: number; invoiceFile: string | null; key: CostKey; formOnly: boolean }
+
+export type LineSuggestion = {
+  fields: LineFields
+  candidates: LineCandidate[]
+  level: TrafficLight
+  reasons: string[]
+  preselected: boolean
+}
+
+// Eine Zeile, wie der Server sie zeigt: mit Zustand, der Beschreibung der Position, an der sie
+// hängt, und für offene und verworfene Zeilen dem Vorschlag.
+export type AssessmentLine = Omit<StoredAssessmentLine, 'assessmentId'> & {
+  state: AssessmentLineState
+  itemDescription: string | null
+  suggestion: LineSuggestion | null
+}
+
+export type AssessmentView = StoredAssessment & {
+  originalName: string
+  lines: AssessmentLine[]
+  // Hat die Auswertung noch offene Zeilen?
+  open: boolean
+  sumWarning: string | null
+}
+
+// Je Position, die eine Buchung anlegt (`costItemId: null`) oder ändert: Betrag und Lohnanteil
+// vorher und nachher.
+export type PreviewItem = {
+  costItemId: string | null
+  lines: number[]
+  description: string
+  category: string
+  year: number
+  beforeCents: number | null
+  afterCents: number
+  beforeLabor35aCents: number | null
+  afterLabor35aCents: number | null
+}
+export type PreviewProblem = { idx: number | null; message: string; openItemId?: string }
+
+// Die Vorschau des Servers. `token` bindet eine Buchung an genau diesen Stand: Hat er sich bis
+// zum Buchen geändert, antwortet der Server mit 409 und einer neuen Vorschau.
+export type BookingPreview = {
+  items: PreviewItem[]
+  notices: string[]
+  errors: PreviewProblem[]
+  confirm: PreviewProblem[]
+  token: string
 }

@@ -868,6 +868,24 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
   })
 }
 
+// ---------- Für die Belegbuchung (#170) ----------
+//
+// Die Buchung legt Positionen an und ändert ihre Beträge **innerhalb ihrer eigenen Transaktion**
+// (db/booking.ts). `createEntity` und `updateEntity` öffnen jeweils eine eigene; SQLite kennt
+// keine geschachtelte. Deshalb hier dieselbe Verschmelzung, derselbe Wächter und dasselbe Schreiben,
+// nur ohne Transaktion: Ein Weg mit eigenen Regeln wäre ein zweiter, der auseinanderläuft.
+export async function insertCostItemIn(tx: Executor, id: string, body: unknown): Promise<void> {
+  const entity = mergeCostItem(emptyCostItem(id), body)
+  await guardCostItem(tx, null, entity)
+  await costItemCollection.insert(tx, entity)
+}
+
+export async function patchCostItemIn(tx: Executor, current: CostItem, body: unknown): Promise<void> {
+  const entity = mergeCostItem(current, body)
+  await guardCostItem(tx, current, entity)
+  await costItemCollection.replace(tx, entity)
+}
+
 // ---------- Der Mieterwechsel (#150) ----------
 //
 // **Alles oder nichts.** Der Assistent in Stammdaten.tsx schickte drei Anfragen nacheinander:
