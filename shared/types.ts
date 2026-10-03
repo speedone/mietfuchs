@@ -686,3 +686,45 @@ export type IntakeResult = { file: string } & (
 // Die Ampel einer ausgewerteten Rechnungsposition (Schnellerfassung, Belegbuchung #170): grün
 // heißt sicher, gelb prüfen, rot fehlt etwas. Steht hier, weil Server und Browser sie zeigen.
 export type TrafficLight = 'gruen' | 'gelb' | 'rot'
+
+// ---------- Belegbuchung (#170) ----------
+//
+// Eine Auswertung ist das gespeicherte Ergebnis der KI zu einem Beleg, eine je Datei. Ihre Zeilen
+// sind die Positionen der Rechnung. Ob eine Zeile gebucht ist, steht an ihr und nur dort; der
+// Zustand wird abgeleitet (server/src/assessment.ts, `lineState`): ohne `costItemId` offen oder
+// verworfen, mit ihr angelegt oder verknüpft. Löscht jemand die Position, macht der Fremdschlüssel
+// (`ON DELETE SET NULL`) die Zeile von selbst wieder offen.
+export type AssessmentBooking = 'created' | 'linked'
+export type AssessmentLineState = 'open' | 'dismissed' | 'created' | 'linked'
+
+export type StoredAssessment = {
+  id: string
+  file: string
+  propertyId: string | null
+  // Zieljahr der Buchung: das Jahr aus dem Beleg, sonst das gewählte; änderbar
+  year: number
+  // Das Jahr, das die KI aus dem Beleg gelesen hat (Leistungszeitraum, sonst Rechnungsdatum)
+  detectedYear: number | null
+  vendor: string | null
+  invoiceDate: string | null
+  totalGrossCents: number | null
+  // Vom Server gerechnet (#34): Positionen ohne Umsatzsteuer hochgerechnet, Lohnanteil verteilt
+  amountsAdjusted: 'netto' | null
+  laborFromTotal: boolean
+  createdAt: string
+}
+
+export type StoredAssessmentLine = {
+  assessmentId: string
+  idx: number
+  description: string
+  category: string
+  // Die Kostenart kam nur über die Beschreibung zustande (Ampel gelb)
+  categoryGuessed: boolean
+  // `null` heißt „nicht gelesen“, 0 ist eine Angabe
+  amountCents: number | null
+  labor35aCents: number | null
+  booking: AssessmentBooking | null
+  costItemId: string | null
+  dismissed: boolean
+}
