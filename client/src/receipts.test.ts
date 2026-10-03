@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CostItem, UploadInfo } from './types'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, coverageCheck, duplicateHints, filesByItem, inboxFor, inboxOf, matchesQuery, receiptCards } from './receipts'
 
 const upload = (file: string, extra: Partial<UploadInfo> = {}): UploadInfo => ({
   file, size: 10, mtime: '2026-01-02T10:00:00.000Z', originalName: file.replace(/^\d+_/, ''),
@@ -273,5 +273,45 @@ describe('Posteingang: einer Position zuordnen', () => {
     expect(amountCheckBody('612,40', item('gs'))).toEqual({ body: { amountCents: 61240 } })
     expect(amountCheckBody('0', item('gs'))).toMatchObject({ error: expect.stringMatching(/0 €/) })
     expect(amountCheckBody('abc', item('gs'))).toMatchObject({ error: expect.stringMatching(/Euro-Betrag/) })
+  })
+})
+
+describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer Position hängen', () => {
+  const abschlag = upload('1_abschlag.pdf')
+  const rest = { ...upload('2_rest.pdf'), bookedItemIds: ['st'], assessment: { id: 'a2', propertyId: 'p1', open: false } }
+  const offen = { ...upload('3_offen.pdf'), bookedItemIds: [], assessment: { id: 'a3', propertyId: 'p1', open: true } }
+  const st = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '1_abschlag.pdf', amountCents: 80000 })
+
+  it('die Karte nennt die Position, und der Beleg steht nicht im Posteingang', () => {
+    const cards = receiptCards([abschlag, rest, offen], [st])
+    expect(cards.find((c) => c.upload.file === '2_rest.pdf')?.items.map((i) => i.id)).toEqual(['st'])
+    expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).here.map((c) => c.upload.file)).toEqual(['3_offen.pdf'])
+  })
+
+  it('im Register stehen beide Belege der Position', () => {
+    const folder = buildFolder([abschlag, rest], [st], { propertyId: 'all', year: 'all' }, '')
+    expect(folder.groups[0]?.cards.map((c) => c.upload.file)).toEqual(['1_abschlag.pdf', '2_rest.pdf'])
+    expect(folder.groups[0]?.missing).toEqual([])
+  })
+
+  it('zählt für die Belegabdeckung wie der Beleg der Position, auch wenn dessen Datei fehlt', () => {
+    const ohneEigene = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '9_weg.pdf', amountCents: 80000 })
+    const present = new Set(['2_rest.pdf'])
+    expect(coverage([ohneEigene], { propertyId: 'all', year: 'all' }, present).covered).toBe(0)
+    expect(coverage([ohneEigene], { propertyId: 'all', year: 'all' }, present, filesByItem([rest])).covered).toBe(1)
+    expect(coverageCheck([ohneEigene], present, filesByItem([rest])).level).toBe('gruen')
+  })
+
+  it('E5: nach dem Lösen der Zeile von Beleg A zählt A nicht mehr, auch wenn Beleg B an der Position hängt', () => {
+    // A hängt nur noch über seine Auswertung (offen, ohne gebuchte Zeile); B ist gebucht und der
+    // Beleg der Position.
+    const a = { ...upload('1_a.pdf'), bookedItemIds: [], assessment: { id: 'a1', propertyId: 'p1', open: true } }
+    const b = { ...upload('2_b.pdf'), bookedItemIds: ['st'], assessment: { id: 'a2', propertyId: 'p1', open: false } }
+    const position = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '2_b.pdf', amountCents: 80000 })
+    const cards = receiptCards([a, b], [position])
+    expect(cards.find((c) => c.upload.file === '1_a.pdf')?.items).toEqual([])
+    expect(inboxOf(cards, { propertyId: 'all', year: 'all' }).here.map((c) => c.upload.file)).toEqual(['1_a.pdf'])
+    expect(buildFolder([a, b], [position], { propertyId: 'all', year: 'all' }, '').groups[0]?.cards.map((c) => c.upload.file)).toEqual(['2_b.pdf'])
+    expect(filesByItem([a, b]).get('st')).toEqual(['2_b.pdf'])
   })
 })

@@ -634,6 +634,15 @@ export type UploadInfo = {
 }
 export type UploadKind = 'receipt' | 'meterPhoto'
 
+// Was ein Beleg mit der Belegbuchung (#170) zu tun hat: an welchen Positionen er über gebuchte
+// Zeilen hängt (zusätzlich zu `cost_items.invoice_file`) und ob er eine Auswertung hat. Der
+// Belegordner liest beides aus `GET /api/uploads`.
+export type UploadLinks = {
+  bookedItemIds: string[]
+  assessment: { id: string; propertyId: string | null; open: boolean } | null
+}
+export type UploadEntry = UploadInfo & UploadLinks
+
 // Was mit einer Wohnung gelöscht würde (#142), für die Löschfrage der Oberfläche. Die Kaskade
 // erledigen die Fremdschlüssel (db/schema.ts); hier steht nur, wie viel sie träfe.
 // `costItemLinks`: vereinbarte Anteile, Teilnahmen und Einzel- oder Eigenbeträge an

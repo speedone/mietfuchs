@@ -25,7 +25,7 @@ import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
-  UpdateStatus, UploadInfo,
+  UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
 import type { MigratedSettings } from '../src/ai/settings.ts'
@@ -4583,6 +4583,7 @@ const RECHNUNGEN: Record<string, FakeInvoice> = {
   },
   // Weder Rechnungsdatum noch Leistungszeitraum: Das Jahr der Auswertung kommt aus dem Formular.
   HAUSMEISTER: { vendor: 'Hausmeisterdienst Muster', totalGrossEur: 300, positions: [{ description: 'Hausmeisterdienst', category: 'Hauswart', amountEur: 300 }] },
+  NACHTRAG: { vendor: 'Stadtwerke Musterstadt', invoiceDate: '2026-03-01', totalGrossEur: 120, positions: [{ description: 'Nachberechnung Abwasser', category: 'Wasser/Abwasser', amountEur: 120 }] },
 }
 
 type Evaluated = { file: string, assessment: AssessmentView | null }
@@ -4593,7 +4594,8 @@ const invoiceText = (marker: string): string => `Rechnung ${marker}: Positionen 
 async function evaluate(s: Server, marker: string, extra: Record<string, string> = {}): Promise<Evaluated> {
   const fd = new FormData()
   // Mit `existingFile` wertet der Server einen Beleg aus dem Posteingang aus, statt einen neuen anzunehmen.
-  if (!extra.existingFile) fd.append('file', new Blob([PDF], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
+  // Der Inhalt hängt an der Rechnung: gleiche Bytes ergäben gleiche Prüfsummen, und ein zweiter Beleg gälte als doppelt.
+  if (!extra.existingFile) fd.append('file', new Blob([PDF, `%${marker}\n`], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
   fd.append('pdfText', invoiceText(marker))
   for (const [k, v] of Object.entries(extra)) fd.append(k, v)
   const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
@@ -4895,5 +4897,34 @@ test('Belegbuchung: lässt sich die Prüfsumme nicht rechnen, wird die Auswertun
     } finally {
       fs.chmodSync(full, 0o644)
     }
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: der Belegordner kennt gebuchte Zeilen; Löschen der Position öffnet beide Belege wieder', async () => {
+  await withOllama(async (s) => {
+    const st = await jsonOf<CostItem>(await postJson(s, '/api/costItems', { year: 2026, category: 'Wasser/Abwasser', description: 'Wasser 2026', amountCents: 150000, key: 'area' }))
+    const a = assessmentOf(await evaluate(s, 'WASSER'))
+    const b = assessmentOf(await evaluate(s, 'NACHTRAG'))
+    const book = async (x: AssessmentView, decisions: LineDecision[]) => {
+      const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${x.id}/plan`, { decisions }))
+      const res = await postJson(s, `/api/assessments/${x.id}/book`, { decisions, token: preview.token })
+      assert.equal(res.status, 200, await res.clone().text())
+    }
+    await book(a, [{ idx: 0, action: 'link', costItemId: st.id }, { idx: 1, action: 'link', costItemId: st.id }])
+    await book(b, [{ idx: 0, action: 'link', costItemId: st.id }])
+    const entry = async (file: string): Promise<UploadEntry> =>
+      (await s.api<UploadEntry[]>('/api/uploads')).find((u) => u.file === file) ?? assert.fail(`kein Beleg ${file}`)
+    assert.deepEqual([(await entry(b.file)).bookedItemIds, (await entry(b.file)).assessment?.open], [[st.id], false])
+    const [position] = await s.api<CostItem[]>('/api/costItems')
+    assert.deepEqual([position?.amountCents, position?.invoiceFile], [162000, a.file], 'Summe beider Belege, die Position trägt den ersten')
+    const del = (file: string) => fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })
+    assert.equal((await del(b.file)).status, 409, 'ein Beleg mit gebuchter Zeile lässt sich nicht löschen')
+    assert.equal((await fetch(`${s.base}/api/costItems/${st.id}`, { method: 'DELETE' })).status, 200)
+    for (const f of [a.file, b.file]) {
+      const e = await entry(f)
+      assert.deepEqual([e.bookedItemIds, e.assessment?.open], [[], true], `${f} ist wieder offen`)
+    }
+    assert.equal((await del(b.file)).status, 200)
+    assert.equal((await fetch(`${s.base}/api/assessments/${b.id}`)).status, 404, 'die Auswertung geht mit dem Beleg')
   }, { invoices: RECHNUNGEN })
 })

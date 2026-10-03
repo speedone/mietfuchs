@@ -2,7 +2,7 @@
 // und `assessment_lines` in schema.ts. Hier steht nur der Zugriff; was eine Buchung bedeutet,
 // steht in bookingPlan.ts, und db/booking.ts verbindet beides.
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
-import type { StoredAssessment, StoredAssessmentLine } from '../../../shared/types.ts'
+import type { StoredAssessment, StoredAssessmentLine, UploadLinks } from '../../../shared/types.ts'
 import { withoutBooked, type BookedLine, type LineChange, type NewLine } from '../assessment.ts'
 import type { Database, Executor } from './client.ts'
 import { assessmentLines, assessments } from './schema.ts'
@@ -103,4 +103,20 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
   if (change.year === undefined && change.propertyId === undefined) return 'ok'
   await db.update(assessments).set(change).where(eq(assessments.id, id))
   return 'ok'
+}
+
+// Je Beleg mit Auswertung: die Positionen, an denen gebuchte Zeilen hängen, und ob noch eine Zeile
+// offen ist. Belege ohne Auswertung fehlen in der Liste; für sie gilt weiter `invoice_file`.
+export async function uploadLinks(db: Executor): Promise<Map<string, UploadLinks>> {
+  const all = await db.select().from(assessments)
+  const lines = await db.select().from(assessmentLines)
+  const links = new Map<string, UploadLinks>()
+  for (const a of all) {
+    const own = lines.filter((l) => l.assessmentId === a.id)
+    links.set(a.file, {
+      bookedItemIds: [...new Set(own.flatMap((l) => (l.costItemId ? [l.costItemId] : [])))],
+      assessment: { id: a.id, propertyId: a.propertyId, open: own.some((l) => l.costItemId === null && !l.dismissed) },
+    })
+  }
+  return links
 }

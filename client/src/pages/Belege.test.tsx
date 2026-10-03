@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import type { CostItem, Property, UploadInfo } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
+import type { ReceiptUpload } from '../receipts'
 import Belege from './Belege'
 
 const PROPS: Property[] = [
@@ -34,7 +35,7 @@ const ITEMS: Record<string, CostItem[]> = {
 
 let sent: { url: string; method: string; body: unknown }[]
 // Für einzelne Tests: weitere Belege im Posteingang und Positionen im ersten Objekt
-let extraUploads: UploadInfo[]
+let extraUploads: ReceiptUpload[]
 let extraItems: CostItem[]
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
@@ -307,4 +308,19 @@ test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Form
   expect(check.textContent).toMatch(/Lohnanteil der Position: 1\.000,00\s€ – stimmt er mit dem Beleg\?/)
   fireEvent.click(within(check).getByRole('button', { name: 'Lohnanteil im Formular prüfen' }))
   expect(onOpenItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'gp' }))
+})
+
+test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prüfen“ und führt zur Prüfung', async () => {
+  extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
+  const onContinue = vi.fn()
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: 'offen.pdf weiter prüfen' }))
+  expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '5_offen.pdf' }))
+  expect(screen.queryByRole('button', { name: 'offen.pdf per KI auswerten' })).toBeNull()
 })

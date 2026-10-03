@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import type { ReceiptUpload } from './receipts'
 import type { CostItem, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
 import { YearProvider, useYear, YEAR_OPTIONS } from './year'
@@ -186,6 +187,13 @@ function Shell() {
     setHandoff(list)
     setTab('schnellerfassung')
   }
+  // „Weiter prüfen“ (#170): Die Schnellerfassung zeigt die offenen Auswertungen des Objekts; dazu
+  // erst auf das Objekt der Auswertung umschalten, wie beim Auswerten.
+  const continueAssessment = async (u: ReceiptUpload) => {
+    const target = u.assessment?.propertyId
+    if (target && target !== property?.id && !(await switchProperty(target))) return
+    setTab('schnellerfassung')
+  }
   // „Position öffnen“ aus dem Belegordner: Der zeigt alle Objekte, die Seite Kosten nur das
   // gewählte. Gehört die Position zu einem anderen, wird erst umgeschaltet, wie oben.
   const openCostItem = async (item: CostItem) => {
@@ -317,7 +325,7 @@ function Shell() {
         {tab === 'kosten' && <Kosten units={units} settings={settings} tenancies={tenancies} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'mietkonto' && <Mietkonto focus={focus} onFocusDone={clearFocus} />}
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
-        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onOpenItem={(item) => void openCostItem(item)} />}
+        {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)} />}
         {tab === 'abrechnung' && (
           <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
         )}

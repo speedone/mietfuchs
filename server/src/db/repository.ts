@@ -32,7 +32,7 @@
 // der seine Erwartung aus den Spalten des Schemas ableitet: Eine Liste von Hand vergisst der
 // nächste, der eine Spalte hinzufügt.
 
-import { and, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
@@ -42,7 +42,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -1086,12 +1086,16 @@ export async function settlementHistory(db: Database, propertyId: string, year: 
 
 // ---------- Was die Sonderrouten brauchen ----------
 
-// Beim Löschen eines Belegs fragt die Route, ob er noch an einer Kostenposition hängt. Das stand
-// bisher als `some()` über den ganzen Bestand; hier ist es eine Abfrage.
+// Beim Löschen eines Belegs fragt die Route, ob er noch an einer Kostenposition hängt: über
+// `invoice_file` oder über eine gebuchte Zeile seiner Auswertung (Belegbuchung, #170). Ein
+// Beleg, der nur so an einer Position hängt, belegt sie genauso.
 export async function invoiceFilesInUse(db: Database, files: string[]): Promise<Set<string>> {
   if (files.length === 0) return new Set()
-  const rows = await db.select({ file: costItems.invoiceFile }).from(costItems).where(inArray(costItems.invoiceFile, files))
-  return new Set(rows.map((r) => r.file).filter((file) => file !== null))
+  const direct = await db.select({ file: costItems.invoiceFile }).from(costItems).where(inArray(costItems.invoiceFile, files))
+  const booked = await db.select({ file: assessments.file }).from(assessmentLines)
+    .innerJoin(assessments, eq(assessments.id, assessmentLines.assessmentId))
+    .where(and(inArray(assessments.file, files), isNotNull(assessmentLines.costItemId)))
+  return new Set([...direct, ...booked].map((r) => r.file).filter((file) => file !== null))
 }
 
 // Ob die Kaskade die vereinbarten Anteile einer gelöschten Wohnung wirklich weggeräumt hat,
