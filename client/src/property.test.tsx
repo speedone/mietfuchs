@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // Das gewählte Objekt (#92): Auswahl, Adresse der Abrufe und der Umschalter, der bei einem
 // einzigen Objekt gar nicht erscheint. Wer ein Haus vermietet, soll von den Objekten nichts sehen.
+import { useLayoutEffect } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Property } from './types'
-import { chooseProperty, PropertyProvider, PropertySwitcher, useProperty, withProperty } from './property'
+import { chooseProperty, PropertyProvider, PropertySwitcher, useOpenForm, useProperty, withProperty } from './property'
 
 const objekt = (id: string, name: string): Property => ({
   id, name, kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null,
@@ -68,4 +69,27 @@ test('der Provider lädt die Objekte, merkt sich die Wahl und fällt nach dem L�
   liste = [A]
   render(<PropertyProvider><Zeige /></PropertyProvider>)
   await waitFor(() => expect(screen.getByTestId('gewaehlt').textContent).toBe('Lindenstraße 7'))
+})
+
+// Ob ein Formular offen ist, muss zu dem passen, was gerade zu sehen ist (#145, Durchsicht zu
+// #170). Stand die Meldung in einem nachgelagerten Effekt, galt eine eben fertig ausgewertete
+// Rechnung noch kurz als offen, und ein Jahreswechsel in dieser Lücke fragte nach. Der
+// Layout-Effekt fragt genau dort: nach dem Einfügen, vor den nachgelagerten Effekten.
+function Offen({ open }: { open: boolean }) {
+  useOpenForm(open)
+  return null
+}
+function Frage({ seen }: { seen: boolean[] }) {
+  const { hasOpenForm } = useProperty()
+  useLayoutEffect(() => { seen.push(hasOpenForm()) })
+  return null
+}
+
+test('ein offenes Formular gilt ab dem Zeichnen als offen und danach sofort nicht mehr', async () => {
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify([A]), { status: 200, headers: { 'content-type': 'application/json' } }))
+  const seen: boolean[] = []
+  const { rerender } = render(<PropertyProvider><Offen open /><Frage seen={seen} /></PropertyProvider>)
+  await waitFor(() => expect(seen.length).toBeGreaterThan(0))
+  rerender(<PropertyProvider><Offen open={false} /><Frage seen={seen} /></PropertyProvider>)
+  expect(seen).toEqual([true, false])
 })

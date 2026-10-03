@@ -2,6 +2,7 @@
 // Die Belegbuchung im Browser (#170): Schnellerfassung und Kosten benutzen dieselbe Komponente
 // „Auswertung prüfen“, und die Zahlen kommen vom (nachgebauten) Server mit dem echten Planer.
 // Die vier Abnahmefälle der Spezifikation stehen hier als „Abnahme A“ bis „Abnahme D“.
+import { useLayoutEffect } from 'react'
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Unit } from '../types'
@@ -348,4 +349,20 @@ test('eine Kostenart, die es in der Liste nicht gibt, steht im Auswahlfeld als g
   const kostenart = screen.getByRole('combobox', { name: 'Kostenart' })
   if (!(kostenart instanceof HTMLSelectElement)) return assert.fail('die Kostenart ist kein Auswahlfeld')
   expect(kostenart.value).toBe('Hausmeister (alt)')
+})
+
+// Eine Eingabe, die nach dem Einfügen der Karte, aber vor Reacts nachgelagerten Effekten ankommt,
+// darf nicht verloren gehen. So geschah es: Der Effekt, der die Eingaben bei neuer Gestalt der
+// Zeilen zurücksetzt, lief auch beim ersten Einfügen und überschrieb, was schon eingegeben war.
+// Abnahme A buchte so nur „Abwasser“ (80000 statt 150000 Cent). Der Layout-Effekt setzt die
+// Eingabe genau in diese Lücke: nach dem Einfügen, vor den nachgelagerten Effekten.
+test('eine Eingabe gleich nach dem Erscheinen der Karte bleibt stehen', () => {
+  function EarlyInput() {
+    useLayoutEffect(() => {
+      fireEvent.change(screen.getByRole('combobox', { name: 'Was geschieht mit „Hausmeister“?' }), { target: { value: 'create' } })
+    }, [])
+    return null
+  }
+  render(<UIProvider><AssessmentReview assessment={crafted({})} units={UNITS} onChange={() => {}} /><EarlyInput /></UIProvider>)
+  expect(screen.getByRole('combobox', { name: 'Was geschieht mit „Hausmeister“?' })).toHaveProperty('value', 'create')
 })
