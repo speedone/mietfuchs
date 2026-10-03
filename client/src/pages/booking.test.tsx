@@ -4,12 +4,13 @@
 // Die vier Abnahmefälle der Spezifikation stehen hier als „Abnahme A“ bis „Abnahme D“.
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { CostItem, Extraction, Unit } from '../types'
+import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Unit } from '../types'
 import { YearProvider } from '../year'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Schnellerfassung from './Schnellerfassung'
 import Kosten from './Kosten'
+import AssessmentReview from '../components/AssessmentReview'
 import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
 
 vi.setConfig({ testTimeout: 20000 })
@@ -21,6 +22,10 @@ const YEAR = new Date().getFullYear() - 1
 let fake: FakeBooking
 let extraction: Extraction
 let evaluated: number
+// Hält eine Vorschau-Anfrage an, bis der Test sie freigibt (Sperre während `busy`).
+let hold: Promise<void> | null
+// Ersetzt die Liste der offenen Auswertungen, die der nachgebaute Server liefert.
+let openViews: AssessmentView[] | null
 
 const estimate = (id: string, category: string, amountCents: number, extra: Partial<CostItem> = {}): CostItem =>
   ({ id, propertyId: 'objekt-1', year: YEAR, category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
@@ -28,12 +33,16 @@ const invoice = (positions: Extraction['positions'], vendor = 'Stadtwerke'): Ext
 
 beforeEach(() => {
   evaluated = 0
+  hold = null
+  openViews = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
     if (url === '/api/intake' || url === '/api/extract') {
       const file = `beleg-${++evaluated}.pdf`
       return json({ file, kind: 'rechnung', extraction, assessment: fake.evaluate(file, extraction, { year: YEAR }) })
     }
+    if (hold && url.endsWith('/plan')) await hold
+    if (openViews && url.startsWith('/api/assessments?')) return json(openViews)
     const handled = await fake.handle(url, init)
     if (handled) return handled
     if (url.split('?')[0] === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
@@ -242,4 +251,101 @@ test('Kosten: eine ausgewertete Rechnung ist gespeichert, der Jahreswechsel frag
   fireEvent.change(jahr, { target: { value: String(YEAR - 1) } })
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Abrechnungsjahr' })).toHaveProperty('value', String(YEAR - 1)), SLOW)
   expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull()
+})
+
+test('eine verworfene Zeile zeigt „verworfen“ und nicht „offen lassen“', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }, { description: 'Mahngebühr', category: 'Grundsteuer', amountEur: 5 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Mahngebühr'), { target: { value: 'dismiss' } })
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  await screen.findByText(/✓ angelegt als „Grundsteuer B“/, {}, SLOW)
+  const mahn = await actionOf('Mahngebühr')
+  expect(mahn.value).toBe('dismiss')
+  expect(mahn.selectedOptions[0]?.textContent).toMatch(/verworfen/)
+  expect([...mahn.options].some((o) => o.value === '')).toBe(false)
+  // Unverändert verworfen ist keine Entscheidung: nichts zu zeigen, nichts zu buchen.
+  expect(screen.getByRole('button', { name: 'Vorschau' })).toHaveProperty('disabled', true)
+})
+
+test('ein anderes Jahr an der Karte verwirft die sichtbare Vorschau', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  await screen.findByLabelText('Vorschau', {}, SLOW)
+  fireEvent.change(screen.getByRole('combobox', { name: 'Jahr der Buchung' }), { target: { value: String(YEAR - 1) } })
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('value', String(YEAR - 1)), SLOW)
+  expect(screen.queryByLabelText('Vorschau')).toBeNull()
+})
+
+test('kommt eine neue Auswertung (eine andere Karte wird gebucht), verschwindet die Vorschau dieser Karte', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container, 2)
+  const [first, second] = await waitFor(() => {
+    const found = screen.getAllByRole('combobox', { name: 'Was geschieht mit „Grundsteuer B“?' }).map((el) => el.closest('.assessment-review'))
+    expect(found).toHaveLength(2)
+    return found
+  }, SLOW)
+  if (!(first instanceof HTMLElement) || !(second instanceof HTMLElement)) return assert.fail('die beiden Karten fehlen')
+  fireEvent.click(within(second).getByRole('button', { name: 'Vorschau' }))
+  await within(second).findByLabelText('Vorschau', {}, SLOW)
+  fireEvent.click(within(first).getByRole('button', { name: 'Vorschau' }))
+  await within(first).findByLabelText('Vorschau', {}, SLOW)
+  fireEvent.click(within(first).getByRole('button', { name: 'Buchen' }))
+  await within(first).findByLabelText('Gebucht', {}, SLOW)
+  await waitFor(() => expect(within(second).queryByLabelText('Vorschau')).toBeNull(), SLOW)
+})
+
+test('während die Vorschau läuft, lässt sich das Jahr der Karte nicht ändern', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  let release = () => {}
+  hold = new Promise<void>((resolve) => { release = resolve })
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('disabled', true))
+  release()
+  await screen.findByLabelText('Vorschau', {}, SLOW)
+  expect(screen.getByRole('combobox', { name: 'Jahr der Buchung' })).toHaveProperty('disabled', false)
+})
+
+test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehmen“ auch bucht', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  // Grün, aber nicht vorab angehakt: „Alle grünen“ bucht die Zeile nicht, also zählt sie dort nicht.
+  openViews = [crafted({}, { level: 'gruen', preselected: false })]
+  intake()
+  expect((await actionOf('Hausmeister')).value).toBe('')
+  expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull()
+})
+
+// Eine Auswertung, wie der Server sie liefern könnte, für Fälle, die der echte Planer heute nicht
+// erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
+const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
+  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, vendor: 'Hausmeisterdienst', invoiceDate: null,
+  totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
+  originalName: 'alt.pdf', open: true, sumWarning: null,
+  lines: [{
+    idx: 0, description: 'Hausmeister', category: 'Hauswart', categoryGuessed: false, amountCents: 30000, labor35aCents: null,
+    booking: null, costItemId: null, dismissed: false, state: 'open', itemDescription: null,
+    suggestion: {
+      fields: { description: 'Hausmeister', category: 'Hauswart', amountCents: 30000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null, ...fields },
+      candidates: [], level: 'gelb', reasons: [], preselected: false, ...extra,
+    },
+  }],
+})
+
+test('eine Kostenart, die es in der Liste nicht gibt, steht im Auswahlfeld als gewählt da', () => {
+  render(<UIProvider><AssessmentReview assessment={crafted({ category: 'Hausmeister (alt)' })} units={UNITS} onChange={() => {}} /></UIProvider>)
+  const kostenart = screen.getByRole('combobox', { name: 'Kostenart' })
+  if (!(kostenart instanceof HTMLSelectElement)) return assert.fail('die Kostenart ist kein Auswahlfeld')
+  expect(kostenart.value).toBe('Hausmeister (alt)')
 })

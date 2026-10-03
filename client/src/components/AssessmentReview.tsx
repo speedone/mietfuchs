@@ -4,10 +4,9 @@
 // prüfen“ in die Schnellerfassung. Die Entscheidungslogik steht in client/src/assessment.ts.
 import { Fragment, useEffect, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
-import { CATEGORIES } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, changeAssessmentYear, decisionsOf, initialRows, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, type RowAction, type RowDraft,
+  bookDecisions, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -40,8 +39,13 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   const shape = a.lines.map((l) => `${l.idx}:${l.state}`).join('|')
   useEffect(() => {
     setRows(initialRows(a))
-    setPreview(null)
   }, [shape])
+  // Eine Vorschau gilt nur für den Stand, den sie gesehen hat: Kommt die Auswertung neu (anderes
+  // Jahr, eine andere Karte gebucht, Neuladen), verschwindet sie. Gebucht würde ohnehin nicht an
+  // ihr vorbei (die Marke ergäbe „veraltet“), aber sie soll nichts zeigen, was nicht mehr gilt.
+  useEffect(() => {
+    setPreview(null)
+  }, [a])
   // Was gezeigt wird, wird gebucht (shownRow): ein nicht mehr angebotenes Ziel gilt als offen.
   const shown: Record<number, RowDraft> = {}
   for (const line of a.lines) {
@@ -110,10 +114,16 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   }
 
   async function changeYear(year: number) {
+    if (busy) return
+    setBusy(true)
+    setError('')
     try {
+      setPreview(null)
       onChange(await changeAssessmentYear(a.id, year))
     } catch (e) {
       setError(errorText(e))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -123,7 +133,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       <div className="row" style={{ alignItems: 'center', marginTop: 8 }}>
         <label className="field">
           Jahr der Buchung
-          <select aria-label="Jahr der Buchung" value={a.year} onChange={(e) => void changeYear(Number(e.target.value))}>
+          <select aria-label="Jahr der Buchung" value={a.year} disabled={busy} onChange={(e) => void changeYear(Number(e.target.value))}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </label>
@@ -188,19 +198,23 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
                   <td>
                     <select aria-label={`Was geschieht mit „${line.description}“?`} value={row.action}
                       onChange={(e) => { if (isAction(e.target.value)) patch(line.idx, { action: e.target.value }) }}>
-                      <option value="">— offen lassen —</option>
+                      {/* Eine verworfene Zeile steht als verworfen da. Wieder öffnen kennt der Server
+                          nicht; anlegen oder verknüpfen lässt sie sich weiterhin. */}
+                      {line.state === 'dismissed'
+                        ? <option value="dismiss">✗ verworfen</option>
+                        : <option value="">— offen lassen —</option>}
                       <option value="create">Neu anlegen</option>
                       {linkChoices(line, row).map((c) => (
                         <option key={c.id} value={`link:${c.id}`}>Mit „{c.description}“ ({fmtEuro(c.amountCents)}{c.invoiceFile ? '' : ', ohne Beleg'}) verknüpfen</option>
                       ))}
-                      <option value="dismiss">Verwerfen</option>
+                      {line.state !== 'dismissed' && <option value="dismiss">Verwerfen</option>}
                     </select>
                   </td>
                   <td><input aria-label="Beschreibung" value={row.description} onChange={(e) => patch(line.idx, { description: e.target.value })} style={{ width: '100%' }} /></td>
                   <td>
                     <select aria-label="Kostenart" value={row.category}
                       onChange={(e) => patch(line.idx, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, [], keyContext, row.description) })}>
-                      {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                      {categoryOptions(row.category).map((c) => <option key={c}>{c}</option>)}
                     </select>
                   </td>
                   <td><AiKeyCell position={row} units={units} onChange={(p) => patch(line.idx, p)} /></td>

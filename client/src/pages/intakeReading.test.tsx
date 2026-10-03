@@ -77,3 +77,35 @@ test('der Wert des Modells steht in deutscher Schreibweise da und bleibt derselb
   await waitFor(() => expect(posted).toHaveLength(1))
   expect(posted[0]).toMatchObject({ value: 1.234 })
 })
+
+// Doppelklick-Sperre und ehrliches „übernommen“ (Durchsicht zu #170)
+test('doppelt auf „Ablesung übernehmen“ legt die Ablesung einmal an', async () => {
+  reading = { meterNumber: '4711', value: 1000, dateOnImage: '2025-12-31' }
+  await evaluate()
+  const button = screen.getByRole('button', { name: /Ablesung übernehmen/ })
+  fireEvent.click(button)
+  fireEvent.click(button)
+  await screen.findByText('✓ übernommen', {}, { timeout: 5000 })
+  expect(posted).toHaveLength(1)
+})
+
+test('doppelt auf „Alle grünen übernehmen“ legt die Ablesung einmal an', async () => {
+  reading = { meterNumber: '4711', value: 1000, dateOnImage: '2025-12-31' }
+  await evaluate()
+  const button = await screen.findByRole('button', { name: /Alle grünen übernehmen/ })
+  fireEvent.click(button)
+  fireEvent.click(button)
+  await screen.findByText('✓ übernommen', {}, { timeout: 5000 })
+  expect(posted).toHaveLength(1)
+})
+
+test('was nicht gesendet wurde, steht nicht als übernommen da', async () => {
+  reading = { meterNumber: '4711', value: 1000, dateOnImage: '2025-12-31' }
+  await evaluate()
+  // Zählerwechsel ohne Endstand des alten Zählers: Die Ablesung lässt sich so nicht anlegen.
+  fireEvent.click(screen.getByLabelText(/Zählerwechsel/))
+  fireEvent.click(screen.getByRole('button', { name: /Ablesung übernehmen/ }))
+  expect(await screen.findByText(/Nicht übernommen/, {}, { timeout: 5000 })).toBeTruthy()
+  expect(posted).toHaveLength(0)
+  expect(screen.queryByText('✓ übernommen')).toBeNull()
+})
