@@ -1,19 +1,15 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, Extraction, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
-import { CATEGORIES, METER_TYPE_LABELS, matchCategory } from '../types'
-import { api, errorText, fmtEuro, fmtDate, parseEuro } from '../api'
-import { aiRequest, type AiProgress } from '../aiRequest'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { AssessmentView, CostItem, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
+import { api, errorText } from '../api'
 import { aiSummary } from '../aiForm'
-import { buildUpload } from '../pdfIntake'
-import { type DuplicateGroup, type LinkOffer, aiRowPreselected, autoMatchMeter, categoryDeviationPct, duplicateCandidates, duplicateGroups, invoiceSumCheck, scorePosition, scoreReading, type TrafficLight } from '../triage'
-import { aiPositionBody, aiPositionDefaults, aiPositionPreselect, aiPositionProblem, parseQuantity, type AiPosition, type KeyContext } from '../costForm'
-import AiKeyCell from '../components/AiKeyCell'
+import { autoMatchMeter, scoreReading } from '../triage'
+import { parseQuantity, type KeyContext } from '../costForm'
+import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } from '../assessment'
+import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
+import AssessmentReview from '../components/AssessmentReview'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
-import Table from '../components/Table'
-import DuplicateNotices from '../components/DuplicateNotices'
-import { useConfirm } from '../components/feedback'
 
 type Props = {
   units: Unit[]
@@ -24,17 +20,6 @@ type Props = {
   // schon im Ordner und gehen nur mit ihrem Namen an den Server.
   handoff?: UploadInfo[]
   onHandoffTaken?: () => void
-}
-
-// Editierbare Rechnungsposition (Felder als Strings, damit der Nutzer frei korrigieren kann), samt
-// Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141)
-type InvoicePosition = AiPosition & {
-  matchedByDesc: boolean
-  checked: boolean
-  // Mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
-  linked?: string
-  // Als neue Position angelegt; erledigt wie `linked` (dritte Durchsicht)
-  created?: boolean
 }
 
 type ReadingCandidate = {
@@ -48,36 +33,17 @@ type ReadingCandidate = {
   checked: boolean
 }
 
-type Status = 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'abgebrochen' | 'übernommen'
-
-// Ein Eintrag der Warteschlange. Vor der Auswertung ist `kind` noch unbekannt; danach trägt der
-// Eintrag entweder Rechnungspositionen oder einen Zählerstand-Kandidaten.
-type QueueEntry = {
-  id: number
-  fileName: string
-  status: Status
-  error?: string
-  kind?: 'rechnung' | 'zaehler'
-  serverFile?: string
-  exifDate?: string | null
-  // Rechnung
-  vendor?: string
-  detectedYear?: number | null
-  totalGrossCents?: number | null
-  positions?: InvoicePosition[]
-  // Aus diesem Beleg angelegte und mit ihm verknüpfte Positionen (Kennungen), für die Frage nach
-  // Doppelungen: Eigene sind keine, und derselbe Beleg zweimal füllt keine Position doppelt.
-  createdIds?: string[]
-  linkedIds?: string[]
-  // Was der Server gerechnet hat (#34), als Hinweis für die Prüfung
-  amountsAdjusted?: Extraction['amountsAdjusted']
-  laborFromTotal?: boolean
-  // Zähler
-  reading?: ReadingCandidate
-  // während der Auswertung: was das Modell gerade tut und seit wann
-  progress?: AiProgress | null
-  startedAt?: number
+// Was ein Eintrag der Warteschlange (evaluationQueue.ts) nach der Auswertung trägt: bei einer
+// Rechnung die Kennung der gespeicherten Auswertung (sie steht dann als Karte „Auswertung prüfen“
+// da), bei einem Zählerfoto den erkannten Stand.
+type Evaluated = {
+  kind: 'rechnung' | 'zaehler'
+  serverFile: string
+  exifDate: string | null
+  reading: ReadingCandidate
+  assessmentId: string
 }
+type QueueEntry = BaseEntry<Evaluated>
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
@@ -88,12 +54,7 @@ const parseNum = (s: string): number | null => parseQuantity(s)
 // würde als 1234 gelesen.
 const quantityInput = (n: number): string => n.toLocaleString('de-DE', { useGrouping: false, maximumFractionDigits: 6 })
 
-// Jahr aus den Extraktionsdaten ableiten: bevorzugt der Leistungszeitraum, sonst das Rechnungsdatum
-function yearFrom(periodStart?: string | null, invoiceDate?: string): number | null {
-  const src = (periodStart && periodStart.slice(0, 4)) || (invoiceDate && invoiceDate.slice(0, 4)) || ''
-  const y = Number(src)
-  return Number.isInteger(y) && y > 1990 && y < 2100 ? y : null
-}
+const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
 export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
@@ -103,10 +64,6 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   const switchYear = useSwitchYear()
   const { property } = useProperty()
   const propertyId = property?.id
-  const [queue, setQueue] = useState<QueueEntry[]>([])
-  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
-  // ein Zählerstand hängt an einem seiner Zähler (#145).
-  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
@@ -114,52 +71,68 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   const [error, setError] = useState('')
   // Was nach „Alle grünen übernehmen“ noch zu prüfen bleibt (#139)
   const [pending, setPending] = useState('')
-  const [linking, setLinking] = useState(false)
-  const confirm = useConfirm()
-
-  const filesRef = useRef(new Map<number, File>())
-  // Einträge aus dem Posteingang: Name des Belegs im Ordner je Eintrag (#170)
-  const existingRef = useRef(new Map<number, string>())
-  const nextIdRef = useRef(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
-  const abortRef = useRef(new Map<number, AbortController>())
 
-  // Der zuletzt geladene Stand der Positionen und das Laden selbst, für die Auswertung: Sie
-  // entscheidet beim Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was
-  // schon erfasst ist, auch wenn der Beleg schneller ausgewertet ist, als die Liste geladen war.
-  const itemsRef = useRef<CostItem[]>([])
-  const loadingRef = useRef<Promise<unknown> | null>(null)
-  const loadData = () => {
-    const loading = Promise.all([
-      api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setExistingItems(list) }),
-      api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
-      api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
-    ])
-    loadingRef.current = loading
-    return loading
-  }
+  // Gespeicherte Auswertungen dieses Objekts (#170): die offenen vom Server, dazu die in dieser
+  // Sitzung gebuchten, damit „✓ übernommen“ stehen bleibt.
+  const [assessments, setAssessments] = useState<AssessmentView[]>([])
+  const upsert = (v: AssessmentView) =>
+    setAssessments((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v]))
+
+  const loadData = () => Promise.all([
+    api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setExistingItems),
+    api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters),
+    api<Reading[]>(withProperty('/api/readings', propertyId)).then(setReadings),
+    loadOpenAssessments(propertyId).then((open) =>
+      setAssessments((list) => [...list.filter((x) => !x.open && !open.some((o) => o.id === x.id)), ...open])),
+  ])
   useEffect(() => {
+    // Die in dieser Sitzung gebuchten Auswertungen des vorigen Objekts gehören nicht hierher.
+    setAssessments([])
     loadData().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     // Neu laden, wenn das Objekt wechselt (#92).
   }, [propertyId])
-  // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
-  useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
-  function patchEntry(id: number, patch: Partial<QueueEntry>) {
-    setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...patch } : x)))
-  }
-
-  function addFiles(files: Iterable<File>) {
-    const entries: QueueEntry[] = []
-    for (const f of files) {
-      if (!/^(application\/pdf|image\/)/.test(f.type)) continue
-      const id = nextIdRef.current++
-      filesRef.current.set(id, f)
-      entries.push({ id, fileName: f.name, status: 'wartend' })
-    }
-    if (entries.length) setQueue((q) => [...q, ...entries])
-  }
+  const { queue, patchEntry, addFiles, addStored, remove, cancel } = useEvaluationQueue<IntakeResult, Evaluated>({
+    endpoint: '/api/intake',
+    pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
+    // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
+    // dieses Objekts, falls er ungebucht bleibt.
+    propertyId,
+    year,
+    finish: async (res, file): Promise<QueuePatch<Evaluated>> => {
+      if (res.kind === 'zaehler') {
+        const exifDate = await readExifDate(file)
+        const r = res.reading
+        const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
+        const value = r.value ?? null
+        const sc = scoreReading({
+          meterNumber: r.meterNumber ?? null,
+          value,
+          hasDate: !!(r.dateOnImage || exifDate),
+          matchedMeterId: matchedMeterId || null,
+          readings,
+        })
+        const reading: ReadingCandidate = {
+          meterNumber: r.meterNumber ?? '',
+          value: value != null ? quantityInput(value) : '',
+          date: r.dateOnImage || exifDate || todayISO(),
+          hasDate: !!(r.dateOnImage || exifDate),
+          matchedMeterId,
+          replacement: sc.replacementGuess,
+          oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',
+          checked: sc.level !== 'rot',
+        }
+        return { status: 'fertig', data: { kind: 'zaehler', serverFile: res.file, exifDate, reading } }
+      }
+      if (!res.assessment) return { status: 'fehler', error: NOT_SAVED }
+      upsert(res.assessment)
+      return { status: 'fertig', data: { kind: 'rechnung', serverFile: res.file, assessmentId: res.assessment.id } }
+    },
+  })
+  // Was beim Objektwechsel verloren ginge (#145): laufende Auswertungen und ein erkannter, noch
+  // nicht übernommener Zählerstand. Eine ausgewertete Rechnung ist gespeichert und bleibt.
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || (x.status === 'fertig' && x.data.kind === 'zaehler')))
 
   // Übernahme aus dem Posteingang (#170). Der Browser holt die Datei aus dem Ordner, denn ein PDF
   // liest er vor der Auswertung selbst (pdfIntake.ts); an den Server geht danach nur ihr Name.
@@ -170,260 +143,54 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     takenRef.current = handoff
     onHandoffTaken?.()
     void (async () => {
-      const entries: QueueEntry[] = []
+      const list: { file: File; stored: string }[] = []
       for (const u of handoff) {
         try {
           const res = await fetch(`/uploads/${encodeURIComponent(u.file)}`)
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           const blob = await res.blob()
-          const id = nextIdRef.current++
-          filesRef.current.set(id, new File([blob], u.originalName || u.file, { type: u.mimeType || blob.type }))
-          existingRef.current.set(id, u.file)
-          entries.push({ id, fileName: u.originalName || u.file, status: 'wartend' })
+          list.push({ file: new File([blob], u.originalName || u.file, { type: u.mimeType || blob.type }), stored: u.file })
         } catch (e) {
-          setError(`„${u.originalName || u.file}“ ließ sich nicht aus dem Belegordner holen: ${String((e as Error).message)}`)
+          setError(`„${u.originalName || u.file}“ ließ sich nicht aus dem Belegordner holen: ${errorText(e)}`)
         }
       }
-      if (entries.length) setQueue((q) => [...q, ...entries])
+      addStored(list)
     })()
   }, [handoff])
 
-  // Sequenzielle Abarbeitung: ein lokales Modell verarbeitet sinnvoll nur eine Anfrage gleichzeitig
-  useEffect(() => {
-    if (queue.some((x) => x.status === 'läuft')) return
-    const next = queue.find((x) => x.status === 'wartend')
-    if (!next) return
-    const controller = new AbortController()
-    abortRef.current.set(next.id, controller)
-    patchEntry(next.id, { status: 'läuft', startedAt: Date.now(), progress: null })
-    void (async () => {
-      const file = filesRef.current.get(next.id)!
-      try {
-        const exifDate = await readExifDate(file)
-        // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
-        const fd = await buildUpload(file, undefined, settings?.ai?.pageImageEdge ?? undefined)
-        const existing = existingRef.current.get(next.id)
-        if (existing) {
-          // Schon im Belegordner: nur der Name, sonst läge er danach doppelt dort (#170)
-          fd.delete('file')
-          fd.append('existingFile', existing)
-        }
-        // Objekt und Jahr für die Auswertung (#170); ein neuer Beleg steht damit im Posteingang
-        // dieses Objekts, falls er ungebucht bleibt.
-        if (propertyId) fd.append('propertyId', propertyId)
-        fd.append('year', String(year))
-        const res = await aiRequest<IntakeResult>('/api/intake', fd, {
-          signal: controller.signal,
-          onProgress: (progress) => patchEntry(next.id, { progress }),
-        })
-
-        await loadingRef.current?.catch(() => {})
-        if (res.kind === 'zaehler') {
-          const r = res.reading
-          const matchedMeterId = autoMatchMeter(r.meterNumber ?? null, meters) ?? ''
-          const value = r.value ?? null
-          const sc = scoreReading({
-            meterNumber: r.meterNumber ?? null,
-            value,
-            hasDate: !!(r.dateOnImage || exifDate),
-            matchedMeterId: matchedMeterId || null,
-            readings,
-          })
-          const reading: ReadingCandidate = {
-            meterNumber: r.meterNumber ?? '',
-            value: value != null ? quantityInput(value) : '',
-            date: r.dateOnImage || exifDate || todayISO(),
-            hasDate: !!(r.dateOnImage || exifDate),
-            matchedMeterId,
-            replacement: sc.replacementGuess,
-            oldEndValue: sc.suggestedOldEndValue != null ? quantityInput(sc.suggestedOldEndValue) : '',
-            checked: sc.level !== 'rot',
-          }
-          patchEntry(next.id, { status: 'fertig', kind: 'zaehler', serverFile: res.file, exifDate, reading })
-        } else {
-          const ex = res.extraction
-          // Der gemerkte Schlüssel (#141) kommt aus dem Vorjahr des Jahres, dem der Beleg zugeht.
-          const targetYear = yearFrom(ex.periodStart, ex.invoiceDate) ?? year
-          const known = itemsRef.current
-          const ctx: KeyContext = { items: known, year: targetYear, propertyKind: property?.kind ?? null }
-          const positions: InvoicePosition[] = (ex.positions || []).map((p) => {
-            // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls über die
-            // Beschreibung. matchedByDesc merkt sich, ob die Kategorie nur so zustande kam (→ gelb).
-            let category = matchCategory(p.category || '')
-            let matchedByDesc = false
-            if (category === 'Sonstige Betriebskosten') {
-              const byDesc = matchCategory(p.description || '')
-              if (byDesc !== 'Sonstige Betriebskosten') {
-                category = byDesc
-                matchedByDesc = true
-              }
-            }
-            // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
-            // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Die Ampel
-            // stellt die Position dann ohnehin auf rot („Betrag fehlt oder ist 0“).
-            const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
-            const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
-            return {
-              description: p.description,
-              category,
-              amount,
-              labor35a,
-              externalTotalAmount: '',
-              ...aiPositionDefaults(category, units, meters, ctx, p.description),
-              matchedByDesc,
-              checked: false,
-            }
-          }).map((p) => {
-            // Was sich nicht übernehmen lässt, rot ist oder dieselbe Rechnung sein könnte wie eine
-            // schon erfasste Position (shared/duplicates.ts), ist nicht vorab angehakt; die Ampel
-            // und die Zeile darunter sagen warum.
-            const amountCents = parseEuro(p.amount) ?? 0
-            const vendor = ex.vendor || next.fileName
-            const detectedYear = yearFrom(ex.periodStart, ex.invoiceDate)
-            const score = scorePosition({
-              category: p.category, description: p.description, amountCents, labor35aCents: 0, matchedByDesc: p.matchedByDesc,
-              vendor, detectedYear, targetYear: year, existingItems: known,
-            })
-            const candidates = duplicateCandidates(known, { category: p.category, description: p.description, vendor, year: targetYear })
-            return { ...p, checked: aiRowPreselected({ category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, targetYear), level: score.level, candidates }) }
-          })
-          patchEntry(next.id, {
-            status: 'fertig',
-            kind: 'rechnung',
-            serverFile: res.file,
-            vendor: ex.vendor || next.fileName,
-            detectedYear: yearFrom(ex.periodStart, ex.invoiceDate),
-            totalGrossCents: ex.totalGrossEur != null ? Math.round(ex.totalGrossEur * 100) : null,
-            amountsAdjusted: ex.amountsAdjusted,
-            laborFromTotal: ex.laborFromTotal,
-            positions,
-          })
-        }
-      } catch (e) {
-        // Selbst abgebrochen ist kein Fehler
-        if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
-        else patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
-      } finally {
-        filesRef.current.delete(next.id)
-        existingRef.current.delete(next.id)
-        abortRef.current.delete(next.id)
-      }
-    })()
-  }, [queue, meters, readings])
-
   // Woraus eine Position ihren Schlüssel vorgeschlagen bekommt (#141), je Jahr des Belegs.
   const keyCtx = (target: number): KeyContext => ({ items: existingItems, year: target, propertyKind: property?.kind ?? null })
-  // Was einer Übernahme entgegensteht (#139): dieselbe Prüfung wie im Kostenformular, samt
-  // gemerktem Schlüssel. Eine Gutschrift geht durch, 0 € und ein unlesbarer Betrag nicht.
-  const positionProblem = (entry: QueueEntry, p: InvoicePosition): string | null => aiPositionProblem(p, units, entry.detectedYear ?? year)
 
-  function updatePos(entryId: number, idx: number, patch: Partial<InvoicePosition>) {
-    setQueue((q) =>
-      q.map((x) => (x.id === entryId ? { ...x, positions: x.positions!.map((p, i) => (i === idx ? { ...p, ...patch } : p)) } : x)),
-    )
-  }
   function updateReading(entryId: number, patch: Partial<ReadingCandidate>) {
-    setQueue((q) => q.map((x) => (x.id === entryId ? { ...x, reading: { ...x.reading!, ...patch } } : x)))
+    const entry = queue.find((x) => x.id === entryId)
+    const reading = entry?.data.reading
+    if (reading) patchEntry(entryId, { data: { reading: { ...reading, ...patch } } })
   }
 
-  // ---------- Live-Bewertung (re-scort bei jeder Eingabe) ----------
-  // Verglichen wird im Jahr des Belegs und nicht im gewählten: Im Januar steht die Auswahl oft
-  // noch auf dem Vorjahr, angelegt wird die Position aber im Jahr des Belegs.
-  const entryYear = (entry: QueueEntry) => entry.detectedYear ?? year
-  // Was ein Eintrag mit Doppelungen vergleicht: alles außer den Positionen, die er selbst angelegt hat.
-  const itemsFor = (entry: QueueEntry): CostItem[] =>
-    entry.createdIds?.length ? existingItems.filter((i) => !entry.createdIds?.includes(i.id)) : existingItems
-  const receiptTaken = (entry: QueueEntry): string[] =>
-    queue.filter((x) => x.id !== entry.id && !!entry.serverFile && x.serverFile === entry.serverFile)
-      .flatMap((x) => [...(x.createdIds ?? []), ...(x.linkedIds ?? [])])
-  const candidatesOf = (entry: QueueEntry, p: InvoicePosition): CostItem[] =>
-    p.linked || p.created ? [] : duplicateCandidates(itemsFor(entry), { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) })
-
-  type PosScore = { level: TrafficLight; reasons: string[] }
-  type EntryScore = { posScores: PosScore[]; sumWarning: string | null; readingScore: ReturnType<typeof scoreReading> | null }
-  const scored = useMemo(() => {
-    const map = new Map<number, EntryScore>()
+  // ---------- Live-Bewertung der Zählerstände (re-scort bei jeder Eingabe) ----------
+  const readingScores = useMemo(() => {
+    const map = new Map<number, ReturnType<typeof scoreReading>>()
     for (const entry of queue) {
-      if (entry.status !== 'fertig') continue
-      if (entry.kind === 'rechnung' && entry.positions) {
-        let sum = 0
-        const posScores = entry.positions.map((p) => {
-          const amountCents = parseEuro(p.amount) ?? 0
-          // Eine Gutschrift auf der Rechnung mindert auch deren Summe.
-          sum += amountCents
-          const labor = p.labor35a.trim() ? parseEuro(p.labor35a) ?? 0 : 0
-          const devPct = categoryDeviationPct(existingItems, p.category, entryYear(entry), amountCents)
-          const score = scorePosition({
-            category: p.category,
-            description: p.description,
-            amountCents,
-            labor35aCents: labor,
-            matchedByDesc: p.matchedByDesc,
-            vendor: entry.vendor ?? '',
-            detectedYear: entry.detectedYear ?? null,
-            targetYear: year,
-            existingItems: itemsFor(entry),
-            priorYearDeviationPct: devPct,
-          })
-          const problem = positionProblem(entry, p)
-          if (problem !== null) return { level: 'rot' as const, reasons: [...score.reasons, `Nicht übernehmbar: ${problem}`] }
-          // Gemerkter Schlüssel nur für einzelne Wohnungen (Durchsicht zu #141): nie grün, damit
-          // „Alle grünen übernehmen“ ihn nicht ungeprüft übernimmt.
-          if (!aiPositionPreselect(p) && score.level === 'gruen') return { level: 'gelb' as const, reasons: [...score.reasons, 'Schlüssel aus dem Vorjahr nur für einzelne Wohnungen, bitte prüfen'] }
-          return score
-        })
-        map.set(entry.id, { posScores, sumWarning: invoiceSumCheck(sum, entry.totalGrossCents ?? null), readingScore: null })
-      } else if (entry.kind === 'zaehler' && entry.reading) {
-        const r = entry.reading
-        const rs = scoreReading({
-          meterNumber: r.meterNumber || null,
-          value: parseNum(r.value),
-          hasDate: r.hasDate,
-          matchedMeterId: r.matchedMeterId || null,
-          readings,
-        })
-        map.set(entry.id, { posScores: [], sumWarning: null, readingScore: rs })
-      }
+      if (entry.status !== 'fertig' || entry.data.kind !== 'zaehler' || !entry.data.reading) continue
+      const r = entry.data.reading
+      map.set(entry.id, scoreReading({ meterNumber: r.meterNumber || null, value: parseNum(r.value), hasDate: r.hasDate, matchedMeterId: r.matchedMeterId || null, readings }))
     }
     return map
-  }, [queue, existingItems, readings, year])
+  }, [queue, readings])
 
-  // Ampel-Zählung über alle fertigen Einträge
+  // Ampel-Zählung: offene Zeilen der Auswertungen (Vorschlag des Servers) und Zählerstände
   const tally = useMemo(() => {
     const t = { gruen: 0, gelb: 0, rot: 0 }
-    for (const entry of queue) {
-      const es = scored.get(entry.id)
-      if (!es) continue
-      if (entry.kind === 'rechnung') for (const ps of es.posScores) t[ps.level]++
-      else if (es.readingScore) t[es.readingScore.level]++
-    }
+    for (const v of assessments) for (const l of v.lines) if (l.state === 'open' && l.suggestion) t[l.suggestion.level]++
+    for (const rs of readingScores.values()) t[rs.level]++
     return t
-  }, [queue, scored])
+  }, [assessments, readingScores])
   const totalRecognized = tally.gruen + tally.gelb + tally.rot
 
   // ---------- Übernehmen ----------
-  // Gibt die Kennung der angelegten Position zurück (leer, wenn der Server keine nennt), oder null,
-  // wenn nichts angelegt wurde.
-  async function postPosition(entry: QueueEntry, p: InvoicePosition): Promise<string | null> {
-    // Über dieselbe Prüfung wie das Formular (#141); nicht umlagefähig ergibt dort die neutrale
-    // Vorgabe (#142). Nur noch Wächter: Die Aufrufer prüfen vorher mit positionProblem und sagen es.
-    const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, entry.detectedYear ?? year)
-    if ('error' in built) return null
-    const created = await api<{ id?: string } | null>(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
-    return created?.id ?? ''
-  }
-  // Angelegte Zeilen sind erledigt, nicht nur abgehakt (dritte Durchsicht): Sonst fänden sie nach
-  // dem Neuladen ihre eigene Position am selben Beleg und böten „um ihren Betrag erhöhen“ an.
-  function markCreated(entryId: number, done: { index: number; id: string }[]) {
-    if (done.length === 0) return
-    setQueue((q) => q.map((x) => (x.id !== entryId || !x.positions ? x : {
-      ...x,
-      positions: x.positions.map((p, i) => (done.some((d) => d.index === i) ? { ...p, checked: false, created: true } : p)),
-      createdIds: [...(x.createdIds ?? []), ...done.map((d) => d.id).filter(Boolean)],
-    })))
-  }
   async function postReading(entry: QueueEntry) {
-    const r = entry.reading!
+    const r = entry.data.reading
+    if (!r) return false
     const value = parseNum(r.value)
     if (!r.matchedMeterId || value == null) return false
     const oldEnd = r.replacement ? parseNum(r.oldEndValue) : null
@@ -441,142 +208,63 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     return true
   }
 
-  // Lehnt der Server eine Übernahme ab (#146), bricht sie ab und sagt warum. Was schon übernommen
-  // ist, wird abgehakt, damit ein zweiter Versuch es nicht doppelt anlegt.
-  function adoptFailed(entry: QueueEntry, done: { index: number; id: string }[], e: unknown) {
-    markCreated(entry.id, done)
-    setError(`Nicht übernommen: ${errorText(e)}`)
-  }
-
-  // Übernimmt einen kompletten Eintrag (alle angehakten Positionen / den Zählerstand)
-  async function adoptEntry(entry: QueueEntry) {
-    // Erst prüfen, dann übernehmen (#139): Eine angehakte Position, die sich nicht übernehmen
-    // lässt, wird genannt, statt still zu fehlen, während der Beleg als übernommen gälte.
-    const blocked = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && positionProblem(entry, p) !== null) : []
-    if (blocked.length > 0) {
-      setPending('')
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${positionProblem(entry, p)}`).join(' ')}`)
-      return
-    }
-    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen, sonst
-    // stünde sie zweimal in der Abrechnung (shared/duplicates.ts).
-    const twice = entry.kind === 'rechnung' ? (entry.positions ?? []).filter((p) => p.checked && candidatesOf(entry, p).length > 0) : []
-    if (twice.length > 0) {
-      const ok = await confirm({
-        title: 'Schon erfasst?',
-        message: `Für ${entryYear(entry)} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
-        confirmLabel: 'Trotzdem anlegen',
-        cancelLabel: 'Abbrechen',
-      })
-      if (!ok) return
-    }
+  // Übernimmt den Zählerstand eines Eintrags. Rechnungen bucht „Auswertung prüfen“.
+  async function adoptReading(entry: QueueEntry) {
     setError('')
     setPending('')
-    const done: { index: number; id: string }[] = []
     try {
-      if (entry.kind === 'rechnung') {
-        for (const [i, p] of (entry.positions ?? []).entries()) {
-          if (!p.checked) continue
-          const id = await postPosition(entry, p)
-          if (id !== null) done.push({ index: i, id })
-        }
-      } else if (entry.kind === 'zaehler') {
-        if (entry.reading?.checked) await postReading(entry)
-      }
+      if (entry.data.reading?.checked) await postReading(entry)
     } catch (e) {
-      adoptFailed(entry, done, e)
+      setError(`Nicht übernommen: ${errorText(e)}`)
       await loadData()
       return
     }
-    markCreated(entry.id, done)
     patchEntry(entry.id, { status: 'übernommen' })
     await loadData()
   }
 
-  // Übernimmt alle grünen, angehakten Vorschläge über sämtliche Einträge hinweg
+  // Übernimmt alle grünen Vorschläge: je Auswertung Vorschau und Buchung auf dem Server, dann
+  // die grünen Zählerstände. Nacheinander, damit der zweite Beleg derselben Kostenart die eben
+  // angelegte Position als Kandidaten sieht und stehen bleibt, statt still doppelt angelegt zu werden.
   async function adoptAllGreen() {
     setError('')
     setPending('')
     const left: string[] = []
-    // In diesem Lauf schon angelegt, je Beleg: Die Ampel rechnet mit dem Stand vor dem Lauf, und zwei
-    // Belege derselben Kostenart würden sonst beide angelegt (Durchsicht). Positionen desselben
-    // Belegs zählen nicht gegeneinander, Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
-    const posted: { entryId: number; item: CostItem }[] = []
-    for (const entry of queue) {
-      const es = scored.get(entry.id)
-      if (!es || entry.status !== 'fertig') continue
-      const done: { index: number; id: string }[] = []
-      let any = false
+    const named = (v: AssessmentView, idx: number) => `„${v.lines.find((l) => l.idx === idx)?.description ?? ''}“`
+    for (const v of assessments) {
+      const decisions = greenDecisions(v)
+      if (decisions.length === 0) continue
       try {
-        if (entry.kind === 'rechnung' && entry.positions) {
-          for (let i = 0; i < entry.positions.length; i++) {
-            const p = entry.positions[i]
-            if (p.checked && es.posScores[i]?.level === 'gruen') {
-              const others = posted.filter((x) => x.entryId !== entry.id).map((x) => x.item)
-              if (duplicateCandidates(others, { category: p.category, description: p.description, vendor: entry.vendor ?? '', year: entryYear(entry) }).length > 0) continue
-              const id = await postPosition(entry, p)
-              if (id !== null) {
-                any = true
-                done.push({ index: i, id })
-                posted.push({ entryId: entry.id, item: { id: `lauf-${entry.id}-${i}`, propertyId: propertyId ?? '', year: entryYear(entry), category: p.category, description: p.description, vendor: entry.vendor, amountCents: parseEuro(p.amount) ?? 0, key: p.key, invoiceFile: entry.serverFile } })
-              }
-            }
-          }
-        } else if (entry.kind === 'zaehler' && entry.reading?.checked && es.readingScore?.level === 'gruen') {
-          if (await postReading(entry)) any = true
+        const preview = await planDecisions(v.id, decisions)
+        if (preview.errors.length > 0 || preview.confirm.length > 0) {
+          left.push(...decisions.map((d) => named(v, d.idx)))
+          continue
         }
+        const result = await bookDecisions(v.id, decisions, preview.token)
+        if (result.kind === 'done' || result.kind === 'conflict') upsert(result.assessment)
+        if (result.kind !== 'done') left.push(...decisions.map((d) => named(v, d.idx)))
       } catch (e) {
-        adoptFailed(entry, done, e)
+        setError(`Nicht übernommen: ${errorText(e)}`)
         await loadData()
         return
       }
-      // Bleiben angehakte Positionen übrig, die nicht grün sind (etwa eine Gutschrift, die immer
-      // gelb ist), gilt der Beleg nicht als übernommen; sonst verschwänden sie mit ihm still (#139).
-      // Die übernommenen werden abgehakt, damit „Diese übernehmen“ sie nicht doppelt anlegt.
-      const rest = entry.kind === 'rechnung'
-        ? (entry.positions ?? []).filter((p, i) => p.checked && !done.some((d) => d.index === i)).map((p) => `„${p.description}“`)
-        : []
-      markCreated(entry.id, done)
-      if (rest.length > 0) left.push(...rest)
-      else if (any) patchEntry(entry.id, { status: 'übernommen' })
     }
-    if (left.length > 0) setPending(`Übernommen ist, was grün war. Angehakt und noch zu prüfen: ${left.join(', ')}. Bitte ansehen und mit „Diese übernehmen“ übernehmen.`)
+    for (const entry of queue) {
+      if (entry.status !== 'fertig' || entry.data.kind !== 'zaehler' || !entry.data.reading?.checked) continue
+      if (readingScores.get(entry.id)?.level !== 'gruen') continue
+      try {
+        if (await postReading(entry)) patchEntry(entry.id, { status: 'übernommen' })
+      } catch (e) {
+        setError(`Nicht übernommen: ${errorText(e)}`)
+        break
+      }
+    }
+    if (left.length > 0) setPending(`Übernommen ist, was grün war. Noch zu prüfen: ${left.join(', ')}. Bitte ansehen, „Vorschau“ und dann „Buchen“.`)
     await loadData()
   }
 
-  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
-    duplicateGroups(entry.positions ?? [], { items: existingItems, vendor: entry.vendor ?? '', year: entryYear(entry), invoiceFile: entry.serverFile, ownIds: entry.createdIds, receiptTaken: receiptTaken(entry) })
-
-  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
-  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bleibt bis nach dem
-  // Neuladen, sonst böte die Seite kurz die alte Wahl noch einmal an.
-  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
-    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
-    setError('')
-    setLinking(true)
-    try {
-      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
-      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
-      setQueue((q) => q.map((x) => {
-        if (x.id !== entry.id || !x.positions) return x
-        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
-        return { ...x, positions, linkedIds: [...(x.linkedIds ?? []), offer.target.id], ...(positions.every((y) => y.linked || y.created) ? { status: 'übernommen' as const } : {}) }
-      }))
-      await loadData()
-    } catch (e) {
-      setError(`Nicht verknüpft: ${errorText(e)}`)
-    } finally {
-      setLinking(false)
-    }
-  }
-
-  function removeEntry(id: number) {
-    filesRef.current.delete(id)
-    setQueue((q) => q.filter((x) => x.id !== id))
-  }
-
   const unitName = (id: string | null) => (id ? units.find((u) => u.id === id)?.name ?? '?' : 'Haus (Hauptzähler)')
-  const hasAdopted = queue.some((x) => x.status === 'übernommen')
+  const hasAdopted = queue.some((x) => x.status === 'übernommen') || assessments.some((v) => v.lines.some((l) => l.state === 'created' || l.state === 'linked'))
 
   return (
     <>
@@ -637,126 +325,47 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
       </div>
 
       {queue.map((entry) => {
-        const es = scored.get(entry.id)
+        // Eine ausgewertete Rechnung steht als Karte ihrer Auswertung da (unten).
+        if (entry.data.kind === 'rechnung' && entry.status === 'fertig') return null
+        const rs = readingScores.get(entry.id)
         return (
           <div className="card no-print" key={entry.id}>
             <div className="row" style={{ alignItems: 'center' }}>
-              <strong>{entry.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.vendor || entry.fileName}</strong>
+              <strong>{entry.data.kind === 'zaehler' ? '🔢 ' : '🧾 '}{entry.fileName}</strong>
               {entry.status === 'wartend' && <span className="badge gray">wartet …</span>}
               {entry.status === 'läuft' && (
                 <AiProgressBadge
                   progress={entry.progress ?? null}
                   startedAt={entry.startedAt ?? Date.now()}
-                  onCancel={() => abortRef.current.get(entry.id)?.abort()}
+                  onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && entry.kind === 'rechnung' && <span className="badge green">{entry.positions?.length || 0} Position(en)</span>}
-              {entry.status === 'fertig' && entry.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
+              {entry.status === 'fertig' && entry.data.kind === 'zaehler' && <span className="badge green">Zählerstand erkannt</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
-              {entry.detectedYear != null && entry.detectedYear !== year && (
-                <span className="badge gray">Jahr {entry.detectedYear}</span>
-              )}
               <div className="grow" />
               {entry.status !== 'läuft' && (
-                <button className="btn small ghost" onClick={() => removeEntry(entry.id)}>Entfernen</button>
+                <button className="btn small ghost" onClick={() => remove(entry.id)}>Entfernen</button>
               )}
             </div>
 
             {entry.status === 'fehler' && <div className="error" style={{ marginTop: 8 }}>{entry.error}</div>}
 
-            {/* ---------- Rechnung ---------- */}
-            {entry.status === 'fertig' && entry.kind === 'rechnung' && entry.positions && (
-              <>
-                {es?.sumWarning && <div className="warn" style={{ marginTop: 8 }}>⚠ {es.sumWarning}</div>}
-                {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
-                {entry.amountsAdjusted === 'netto' && (
-                  <div className="notice" style={{ marginTop: 8 }}>
-                    Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den
-                    Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
-                  </div>
-                )}
-                {entry.laborFromTotal && (
-                  <div className="notice" style={{ marginTop: 8 }}>
-                    Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs
-                    hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören
-                    streng genommen nicht dazu.
-                  </div>
-                )}
-                <Table style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr>
-                      <th><span className="sr-only">Übernehmen</span></th>
-                      <th></th>
-                      <th>Beschreibung</th>
-                      <th>Kostenart</th>
-                      <th>Umlageschlüssel</th>
-                      <th className="num">Betrag €</th>
-                      <th className="num">§35a €</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entry.positions.map((p, i) => {
-                      const ps = es?.posScores[i]
-                      return (
-                        <Fragment key={i}>
-                        <tr>
-                          <td><input type="checkbox" checked={p.checked} disabled={!!p.linked || !!p.created} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
-                          <td>
-                            <span className={`ampel ${ps?.level ?? 'gruen'}`} title={ps?.reasons.join('\n')} />
-                          </td>
-                          <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
-                          <td>
-                            <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx(entry.detectedYear ?? year), p.description), matchedByDesc: false })}>
-                              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                            </select>
-                          </td>
-                          <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
-                          <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
-                          <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 80, textAlign: 'right' }} placeholder="—" /></td>
-                        </tr>
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </Table>
-                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={entryYear(entry)} busy={linking}
-                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => onNavigate('kosten', { kind: 'costItem', id: item.id })} />
-                {/* Begründungen der nicht-grünen Positionen */}
-                {es?.posScores.some((s) => s.level !== 'gruen') && (
-                  <div style={{ marginTop: 6 }}>
-                    {es.posScores.map((s, i) =>
-                      s.level === 'gruen' ? null : s.reasons.map((r, j) => (
-                        <span key={`${i}-${j}`} className={`chip ${s.level}`}>{r}</span>
-                      )),
-                    )}
-                  </div>
-                )}
-                <div className="row" style={{ marginTop: 10 }}>
-                  <a href={`/uploads/${entry.serverFile}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
-                  <div className="grow" />
-                  <button className="btn" onClick={() => void adoptEntry(entry)} disabled={entry.positions.every((p) => !p.checked)}>
-                    Diese übernehmen
-                  </button>
-                </div>
-              </>
-            )}
-
             {/* ---------- Zählerstand ---------- */}
-            {entry.status === 'fertig' && entry.kind === 'zaehler' && entry.reading && (
+            {entry.status === 'fertig' && entry.data.kind === 'zaehler' && entry.data.reading && (
               <div className="row" style={{ marginTop: 10, alignItems: 'flex-start' }}>
-                {entry.serverFile && (
-                  <a href={`/uploads/${entry.serverFile}`} target="_blank" rel="noreferrer">
-                    <img src={`/uploads/${entry.serverFile}`} alt="Zählerfoto" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />
+                {entry.data.serverFile && (
+                  <a href={`/uploads/${entry.data.serverFile}`} target="_blank" rel="noreferrer">
+                    <img src={`/uploads/${entry.data.serverFile}`} alt="Zählerfoto" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--line)' }} />
                   </a>
                 )}
                 <div className="grow">
                   <div className="row" style={{ alignItems: 'center' }}>
-                    <span className={`ampel ${es?.readingScore?.level ?? 'gruen'}`} />
+                    <span className={`ampel ${rs?.level ?? 'gruen'}`} />
                     <label className="field">
                       Zähler
-                      <select value={entry.reading.matchedMeterId} onChange={(e) => updateReading(entry.id, { matchedMeterId: e.target.value })}>
+                      <select value={entry.data.reading.matchedMeterId} onChange={(e) => updateReading(entry.id, { matchedMeterId: e.target.value })}>
                         <option value="">— zuordnen —</option>
                         {meters.map((m) => (
                           <option key={m.id} value={m.id}>{m.name} · {unitName(m.unitId)}{m.meterNumber ? ` · Nr. ${m.meterNumber}` : ''}</option>
@@ -765,32 +374,32 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
                     </label>
                     <label className="field">
                       Stand
-                      <input value={entry.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} style={{ width: 110 }} />
+                      <input value={entry.data.reading.value} onChange={(e) => updateReading(entry.id, { value: e.target.value })} style={{ width: 110 }} />
                     </label>
                     <label className="field">
                       Datum
-                      <input type="date" value={entry.reading.date} onChange={(e) => updateReading(entry.id, { date: e.target.value, hasDate: true })} />
+                      <input type="date" value={entry.data.reading.date} onChange={(e) => updateReading(entry.id, { date: e.target.value, hasDate: true })} />
                     </label>
                     <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 9 }}>
-                      <input type="checkbox" checked={entry.reading.replacement} onChange={(e) => updateReading(entry.id, { replacement: e.target.checked })} />
+                      <input type="checkbox" checked={entry.data.reading.replacement} onChange={(e) => updateReading(entry.id, { replacement: e.target.checked })} />
                       Zählerwechsel
                     </label>
-                    {entry.reading.replacement && (
+                    {entry.data.reading.replacement && (
                       <label className="field">
                         Endstand alt
-                        <input value={entry.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} style={{ width: 110 }} />
+                        <input value={entry.data.reading.oldEndValue} onChange={(e) => updateReading(entry.id, { oldEndValue: e.target.value })} style={{ width: 110 }} />
                       </label>
                     )}
                   </div>
-                  {entry.reading.meterNumber && <div className="muted">Gelesene Zählernummer: {entry.reading.meterNumber}</div>}
-                  {es?.readingScore && es.readingScore.level !== 'gruen' && (
+                  {entry.data.reading.meterNumber && <div className="muted">Gelesene Zählernummer: {entry.data.reading.meterNumber}</div>}
+                  {rs && rs.level !== 'gruen' && (
                     <div style={{ marginTop: 6 }}>
-                      {es.readingScore.reasons.map((r, j) => <span key={j} className={`chip ${es.readingScore!.level}`}>{r}</span>)}
+                      {rs.reasons.map((r, j) => <span key={j} className={`chip ${rs.level}`}>{r}</span>)}
                     </div>
                   )}
                   <div className="row" style={{ marginTop: 10 }}>
                     <div className="grow" />
-                    <button className="btn" onClick={() => void adoptEntry(entry)} disabled={!entry.reading.matchedMeterId || parseNum(entry.reading.value) === null}>
+                    <button className="btn" onClick={() => void adoptReading(entry)} disabled={!entry.data.reading.matchedMeterId || parseNum(entry.data.reading.value) === null}>
                       Ablesung übernehmen
                     </button>
                   </div>
@@ -800,6 +409,21 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
           </div>
         )
       })}
+
+      {assessments.map((v) => (
+        <div className="card no-print" key={v.id}>
+          <div className="row" style={{ alignItems: 'center' }}>
+            <strong>🧾 {v.vendor || v.originalName}</strong>
+            {v.open
+              ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
+              : <span className="badge green">✓ übernommen</span>}
+            {v.detectedYear !== null && v.detectedYear !== year && <span className="badge gray">Jahr {v.detectedYear}</span>}
+          </div>
+          <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v.year)}
+            onChange={(next) => { upsert(next); void loadData() }}
+            onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} />
+        </div>
+      ))}
 
       {hasAdopted && (
         <div className="card no-print">

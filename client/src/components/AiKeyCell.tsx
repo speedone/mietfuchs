@@ -1,15 +1,19 @@
-// Die Zelle „Umlageschlüssel“ einer ausgewerteten Position (Kosten und Schnellerfassung, #141).
+// Die Zelle „Umlageschlüssel“ einer ausgewerteten Position („Auswertung prüfen“, #141, #170).
 // Die Auswahl zeigt den gemerkten Schlüssel als Eintrag, auch wenn er nicht unter den drei
 // einfachen steht: Angezeigt wird, was gespeichert wird. Bei „laut Gemeinschaftsabrechnung“ steht
 // darunter das Feld für die Kosten der Gemeinschaft im Jahr.
 import type { CostKey, Unit } from '../types'
 import { KEY_LABELS, METER_TYPE_LABELS, isNotAllocable } from '../types'
-import { aiKeyOptions, type AiPosition } from '../costForm'
+import type { Allocation } from '../../../shared/allocation.ts'
+import { aiKeyOptions } from '../costForm'
+
+// Was die Zelle von einer Zeile liest und ändert.
+export type KeyCellValue = { category: string; key: CostKey; allocation: Allocation | null; externalTotalAmount: string }
 
 type Props = {
-  position: AiPosition
+  position: KeyCellValue
   units: Unit[]
-  onChange: (patch: Partial<AiPosition>) => void
+  onChange: (patch: Partial<KeyCellValue>) => void
 }
 
 export default function AiKeyCell({ position: p, units, onChange }: Props) {
