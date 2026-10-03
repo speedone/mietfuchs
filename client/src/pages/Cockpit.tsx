@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadInfo } from '../types'
+import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { isNotAllocable, usageOf } from '../types'
 import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
-import { coverageCheck } from '../receipts'
+import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
@@ -51,6 +51,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   // Die Dateien im Belegordner, damit „Belege vollständig“ dasselbe sagt wie der Belegordner
   // (#170). Scheitert der Abruf, zählt der Verweis an der Position.
   const [uploadFiles, setUploadFiles] = useState<Set<string> | null>(null)
+  const [bookedFiles, setBookedFiles] = useState<Map<string, string[]>>(new Map())
 
   const load = useCallback(() => {
     return Promise.all([
@@ -65,7 +66,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
-    api<UploadInfo[]>('/api/uploads').then((list) => setUploadFiles(new Set(list.map((u) => u.file))), () => setUploadFiles(null))
+    api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
   }, [year, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
@@ -135,7 +136,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
-    const belege = coverageCheck(yearItems, uploadFiles)
+    const belege = coverageCheck(yearItems, uploadFiles, bookedFiles)
     list.push({ title: 'Belege vollständig', level: belege.level, detail: belege.detail,
       ...(belege.level === 'gelb' ? { tab: 'belege', cta: 'Belege nachreichen' } : {}) })
 
@@ -235,7 +236,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year, uploadFiles])
+  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

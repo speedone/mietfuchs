@@ -5,10 +5,10 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings } from '../../shared/types.ts'
+import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { parseDecisions } from './bookingPlan.ts'
-import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment } from './db/assessments.ts'
+import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
@@ -988,9 +988,14 @@ app.post('/api/assessments/:id/book', async (req, res) => {
 // **Prüfsummen fehlender Zeilen werden nachgetragen, einmal und im Hintergrund** (`backfillUploads`):
 // Bis dahin ist `sha256` leer, und die Liste antwortet sofort. Vorher rechnete jeder Start sie
 // synchron und im Speicher neu, und eine große Altablage hielt dabei den ganzen Server an.
+const NO_LINKS: UploadLinks = { bookedItemIds: [], assessment: null }
+
 app.get('/api/uploads', async (req, res) => {
   const rows = await readData(uploadRows).catch(() => null)
-  const list = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
+  // Ohne Datenbank bleibt die Liste vollständig, nur ohne Posteingang und ohne Buchungen.
+  const links = await readData(uploadLinks).catch(() => new Map<string, UploadLinks>())
+  const list: UploadEntry[] = describeFolder(UPLOAD_DIR, rows ?? new Map<string, UploadRow>())
+    .map((u) => ({ ...u, ...(links.get(u.file) ?? NO_LINKS) }))
   if (rows && list.some((u) => !u.sha256)) void backfillUploads()
   res.json(list)
 })
@@ -1082,8 +1087,13 @@ app.delete('/api/uploads/:file', async (req, res) => {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
   fs.unlinkSync(full)
-  // Die Angaben gehen mit. Scheitert das, bleibt eine Zeile ohne Datei, und die zeigt niemand an.
-  await writeData((db) => forgetUpload(db, name)).catch((err: unknown) => console.warn(`Angaben zu ${name} nicht entfernt: ${messageOf(err)}`))
+  // Die Angaben und eine Auswertung gehen mit (#170); gebucht ist keine ihrer Zeilen, das hat
+  // `invoiceFilesInUse` eben gesagt. Scheitert das, bleibt eine Zeile ohne Datei, und die zeigt
+  // niemand an (`GET /api/assessments` übergeht Auswertungen ohne Datei).
+  await writeData(async (db) => {
+    await forgetUpload(db, name)
+    await forgetAssessment(db, name)
+  }).catch((err: unknown) => console.warn(`Angaben zu ${name} nicht entfernt: ${messageOf(err)}`))
   res.json({ ok: true })
 })
 

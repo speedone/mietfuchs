@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, UploadInfo, Property, Settlement } from '../types'
+import type { CostItem, UploadEntry, UploadInfo, Property, Settlement } from '../types'
 import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
-import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard } from '../receipts'
+import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
 import PageHeader from '../components/PageHeader'
 import { useToast, useConfirm } from '../components/feedback'
 
@@ -186,18 +186,20 @@ type Props = {
   renderThumb?: typeof renderThumbnail
   // Belege aus dem Posteingang per KI auswerten: übergibt sie der Schnellerfassung (App.tsx)
   onEvaluate?: (uploads: UploadInfo[]) => void
+  // Ein Beleg mit offener Auswertung: weiter in der Prüfung der Schnellerfassung (#170)
+  onContinue?: (upload: ReceiptUpload) => void
   // Eine Position im Formular der Seite Kosten öffnen, etwa um Betrag und §35a dort zu pflegen
   onOpenItem?: (item: CostItem) => void
   // Für Tests: die Belegmappe erzeugen, ohne pdf.js und Download
   makeTenantFolder?: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
 }
 
-export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
+export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const { year: currentYear } = useYear()
   const { property, properties } = useProperty()
-  const [uploads, setUploads] = useState<UploadInfo[]>([])
+  const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [error, setError] = useState('')
   // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
@@ -220,7 +222,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOp
       api<Property[]>('/api/properties')
         .then((list) => Promise.all(list.map((p) => api<CostItem[]>(withProperty('/api/costItems', p.id)))))
         .then((lists) => lists.flat())
-    return Promise.all([api<UploadInfo[]>('/api/uploads'), allItems()])
+    return Promise.all([api<UploadEntry[]>('/api/uploads'), allItems()])
       .then(([u, c]) => { setUploads(u.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))); setCostItems(c); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [])
@@ -243,6 +245,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOp
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(0)
   const present = useMemo(() => new Set(uploads.map((u) => u.file)), [uploads])
+  const booked = useMemo(() => filesByItem(uploads), [uploads])
   const propertyName = (id: string) => properties.find((p) => p.id === id)?.name || 'Ohne Namen'
   const showProperty = filter.propertyId === 'all' && properties.length > 1
   // Mappen gibt es je Objekt und Jahr; bei einem einzigen Objekt ist es dieses.
@@ -257,9 +260,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOp
   const coverageRows = useMemo(() => {
     const ids = filter.propertyId === 'all' ? (properties.length > 0 ? properties.map((p) => p.id) : [...new Set(costItems.map((c) => c.propertyId))]) : [filter.propertyId]
     return ids
-      .map((id) => ({ id, cov: coverage(costItems, { propertyId: properties.length > 1 ? id : 'all', year: filter.year }, present) }))
+      .map((id) => ({ id, cov: coverage(costItems, { propertyId: properties.length > 1 ? id : 'all', year: filter.year }, present, booked) }))
       .filter((r) => r.cov.positions > 0)
-  }, [costItems, filter, present, properties])
+  }, [costItems, filter, present, booked, properties])
 
   // „Nachreichen“: einen Beleg an eine Position hängen, neu hochgeladen oder aus den Belegen, die
   // an keiner Position hängen. Hochgeladen wird mit Objekt und Jahr der Position, damit der Beleg
@@ -424,7 +427,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onOp
                   </select>
                 )
               })()}
-              {onEvaluate && (
+              {upload.assessment?.open && onContinue ? (
+                <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} onClick={() => onContinue(upload)}>Weiter prüfen</button>
+              ) : onEvaluate && (
                 <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
               )}
             </div>
