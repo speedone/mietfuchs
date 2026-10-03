@@ -5,7 +5,11 @@ import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import type { AiSettings, AiSlotName, AiStatus, Settings } from '../../shared/types.ts'
+import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings } from '../../shared/types.ts'
+import { detectedYear, linesFromExtraction } from './assessment.ts'
+import { parseDecisions } from './bookingPlan.ts'
+import { placeAssessment, saveAssessment } from './db/assessments.ts'
+import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
@@ -793,6 +797,50 @@ async function markMeterPhoto(file: string): Promise<void> {
   }
 }
 
+// Die Auswertung speichern (Belegbuchung, #170), erst nach Erfolg der KI; ein Abbruch speichert
+// nichts. Objekt: das des Belegs im Posteingang, sonst das mitgeschickte, sonst bei einem einzigen
+// Objekt dieses. Jahr: aus dem Beleg, sonst das mitgeschickte, sonst das des Belegs, sonst das
+// laufende. Misslingt das Speichern, kommt das Ergebnis trotzdem an, nur ohne Auswertung; die
+// Oberfläche sagt dann, dass sich nichts buchen lässt.
+//
+// **Das Jahr der Auswertung wird zum Jahr des Belegs**, solange keine Zeile gebucht ist: Der
+// Posteingang zeigt den Beleg sonst im Jahr des Formulars, obwohl die Auswertung ihn einem anderen
+// zuordnet (eine Rechnung von 2026, hochgeladen auf der Seite des Jahres 2024). Ist etwas gebucht,
+// ergibt sich das Jahr aus der Position und die Angabe am Beleg sagt nichts mehr.
+async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction): Promise<AssessmentView | null> {
+  const body = bodyObject(req)
+  const sent = yearOf(body.year)
+  try {
+    const sha256 = await hashFile(file.path)
+    return await writeData(async (db) => {
+      const row = (await uploadRows(db)).get(file.filename)
+      const properties = await listProperties(db)
+      const asked = typeof body.propertyId === 'string' && properties.some((p) => p.id === body.propertyId) ? body.propertyId : null
+      const [only, ...more] = properties
+      const detected = detectedYear(extraction)
+      const record = await saveAssessment(db, {
+        file: file.filename,
+        propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
+        year: detected ?? (sent || null) ?? row?.year ?? new Date().getUTCFullYear(),
+        detectedYear: detected,
+        vendor: extraction.vendor ?? null,
+        invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
+        totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,
+        amountsAdjusted: extraction.amountsAdjusted ?? null,
+        laborFromTotal: extraction.laborFromTotal === true,
+        lines: linesFromExtraction(extraction),
+      }, { id: newId(), now: new Date().toISOString() })
+      if (!record.lines.some((l) => l.costItemId !== null)) {
+        await placeUpload(db, file.filename, { year: record.assessment.year }, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
+      }
+      return viewRecord(db, record)
+    })
+  } catch (err) {
+    console.warn(`Die Auswertung zu ${file.filename} ließ sich nicht speichern: ${messageOf(err)}`)
+    return null
+  }
+}
+
 app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   const file = await documentOf(req, res)
   if (!file) return
@@ -801,7 +849,8 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   try {
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
-    answer.done({ file: file.filename, extraction: result, stats })
+    const assessment = await rememberAssessment(req, file, result)
+    answer.done({ file: file.filename, extraction: result, assessment, stats })
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
   }
@@ -828,11 +877,72 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
     } else {
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
       await rememberInvoiceDate(file.filename, extraction.invoiceDate)
-      answer.done({ file: file.filename, kind: 'rechnung', extraction, stats })
+      const assessment = await rememberAssessment(req, file, extraction)
+      answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
   }
+})
+
+// ---------- Belegbuchung (#170) ----------
+//
+// Vorschau und Buchung einer gespeicherten Auswertung. Gebucht wird **immer im Objekt der
+// Auswertung**, nie im Objekt, das die Oberfläche gerade zeigt: Ein Tab, der noch auf einem
+// anderen Objekt steht, bucht sonst ins falsche Haus. `?property=` gilt deshalb nur für die Liste.
+const decisionsFrom = (req: Request) => {
+  const parsed = parseDecisions(bodyObject(req).decisions)
+  if ('error' in parsed) throw new RouteProblem(400, parsed.error)
+  return parsed.decisions
+}
+
+app.get('/api/assessments', async (req, res) => {
+  res.json(await readData(async (db) => viewAssessments(db, await propertyOf(db, req), req.query.open === '1', UPLOAD_DIR)))
+})
+
+app.get('/api/assessments/:id', async (req, res) => {
+  res.json(await readData((db) => viewAssessment(db, req.params.id, UPLOAD_DIR)))
+})
+
+app.put('/api/assessments/:id', async (req, res) => {
+  const body = bodyObject(req)
+  res.json(await writeData(async (db) => {
+    const change: { year?: number, propertyId?: string | null } = {}
+    if (Object.hasOwn(body, 'year')) {
+      const year = yearOf(body.year)
+      if (year === false || year === null) throw new RouteProblem(400, 'Das Jahr muss eine ganze Zahl sein, etwa 2025.')
+      change.year = year
+    }
+    if (Object.hasOwn(body, 'propertyId')) change.propertyId = await placementProperty(db, body.propertyId)
+    const placed = await placeAssessment(db, req.params.id, change)
+    if (placed === 'missing') throw new RouteProblem(404, 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
+    if (placed === 'booked') throw new RouteProblem(409, 'Zeilen dieses Belegs sind schon gebucht. Objekt und Jahr lassen sich deshalb nicht mehr ändern. Lösen Sie zuerst die Buchung dieser Zeilen oder löschen Sie die Position, an der sie hängen.')
+    return viewAssessment(db, req.params.id, UPLOAD_DIR)
+  }))
+})
+
+app.post('/api/assessments/:id/plan', async (req, res) => {
+  const decisions = decisionsFrom(req)
+  res.json(await readData((db) => previewBooking(db, req.params.id, decisions, UPLOAD_DIR)))
+})
+
+app.post('/api/assessments/:id/book', async (req, res) => {
+  const decisions = decisionsFrom(req)
+  const token: unknown = bodyObject(req).token
+  if (typeof token !== 'string' || token === '') {
+    throw new RouteProblem(400, 'Gebucht wird nur, was die Vorschau gezeigt hat. Bitte zeigen Sie zuerst die Vorschau an.')
+  }
+  const { outcome, assessment } = await writeData(async (db) => {
+    const result = await bookAssessment(db, req.params.id, decisions, token, { uploadDir: UPLOAD_DIR, newId })
+    return { outcome: result, assessment: await viewAssessment(db, req.params.id, UPLOAD_DIR) }
+  })
+  if (outcome.kind === 'done') return res.json({ changed: outcome.changed, assessment, preview: outcome.preview })
+  if (outcome.kind === 'refused') {
+    const message = [...outcome.preview.errors, ...outcome.preview.confirm].map((p) => p.message).join(' ')
+    return res.status(400).json({ error: message, preview: outcome.preview })
+  }
+  if (outcome.kind === 'conflict') return res.status(409).json({ error: outcome.message, assessment })
+  res.status(409).json({ error: 'Seit der Vorschau hat sich der Stand geändert. Bitte prüfen Sie die neue Vorschau und buchen Sie dann.', preview: outcome.preview })
 })
 
 // Belegordner (#170): alle hochgeladenen Dateien mit Originalname, Hochladezeit und Prüfsumme.
@@ -1541,7 +1651,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
     return res.status(400).json({ error: message })
   }
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof TenantChangeError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof TenantChangeError || err instanceof BookingRefusal) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
