@@ -302,10 +302,18 @@ describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer
     expect(coverageCheck([ohneEigene], present, filesByItem([rest])).level).toBe('gruen')
   })
 
-  it('zwei Belege derselben Position gelten nicht als möglicherweise doppelt', () => {
+  it('zwei Belege derselben Position mit verschiedenen Zeilensummen gelten nicht als doppelt', () => {
     const position = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '1_abschlag.pdf', amountCents: 162000, vendor: 'Stadtwerke' })
-    const cards = receiptCards([abschlag, rest], [position])
-    expect(duplicateHints(cards).size).toBe(0)
+    const a = { ...abschlag, bookedItemIds: ['st'], bookedCents: { st: 150000 } }
+    const b = { ...rest, bookedCents: { st: 12000 } }
+    expect(duplicateHints(receiptCards([a, b], [position])).size).toBe(0)
+  })
+
+  it('derselbe Betrag zweimal an einer Position (Scan und PDF) ergibt den Hinweis', () => {
+    const position = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '1_abschlag.pdf', amountCents: 24000, vendor: 'Stadtwerke' })
+    const scan = { ...upload('1_scan.pdf'), bookedItemIds: ['st'], bookedCents: { st: 12000 } }
+    const pdf = { ...upload('2_pdf.pdf'), bookedItemIds: ['st'], bookedCents: { st: 12000 } }
+    expect([...duplicateHints(receiptCards([scan, pdf], [position])).keys()]).toEqual(['1_scan.pdf', '2_pdf.pdf'])
   })
 
   it('die Karte eines Belegs mit gebuchten Zeilen nennt deren Summe, ein Beleg ohne Zeilen den Betrag der Position', () => {

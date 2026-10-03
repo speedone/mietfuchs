@@ -67,9 +67,12 @@ export function planTenantFolder(
     const files = [...new Set(named.filter((f): f is string => !!f))]
     const present = files.flatMap((f) => byFile.get(f) ?? [])
     const upload = present[0] ?? null
-    const status: FolderEntryStatus = files.length === 0 ? 'none' : !upload ? 'missing' : isIndividualAmounts(item) && !includeIndividual ? 'excluded' : 'ok'
+    // Fehlt die Datei des invoiceFile, steht „missing“, auch wenn ein Zeilenbeleg da ist; der
+    // kommt trotzdem in die Mappe.
+    const gone = !!item.invoiceFile && !byFile.has(item.invoiceFile)
+    const status: FolderEntryStatus = files.length === 0 ? 'none' : !upload || gone ? 'missing' : isIndividualAmounts(item) && !includeIndividual ? 'excluded' : 'ok'
     entries.push({ item, status, upload })
-    if (status !== 'ok') continue
+    if (status === 'none' || (status === 'excluded')) continue
     for (const u of present) {
       const doc = documents.find((d) => d.upload.file === u.file)
       if (doc) doc.itemIds.push(item.id)
