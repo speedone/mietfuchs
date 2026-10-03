@@ -6,10 +6,8 @@ import type { CostItem, Meter, Unit } from './types'
 import {
   EMPTY_ITEM_FORM,
   aiKeyOptions,
-  aiPositionBody,
   aiPositionDefaults,
   aiPositionPreselect,
-  aiPositionProblem,
   buildCostItemBody,
   keyChangeNotice,
   lastExternalBasis,
@@ -160,27 +158,8 @@ describe('KI-Übernahme mit gemerktem Schlüssel', () => {
     expect(aiPositionDefaults('Heizung und Warmwasser', UNITS, METERS, ctx(items))).toEqual({ key: 'area', allocation: null })
     expect(aiPositionDefaults('Müllabfuhr', UNITS, METERS, ctx(items))).toEqual({ key: 'persons', allocation: null })
   })
-  test('der Rumpf trägt Teilnehmer, Beleg und Rechnungssteller', () => {
-    const d = aiPositionDefaults('Aufzug', UNITS, METERS, ctx(items))
-    const p = { description: 'Aufzugswartung', category: 'Aufzug', amount: '480,00', labor35a: '', externalTotalAmount: '', ...d }
-    const built = aiPositionBody(p, { vendor: 'Lift GmbH', invoiceFile: 'b.pdf' }, UNITS, 2026)
-    expect(built).toMatchObject({ body: { key: 'area', participantUnitIds: ['u1', 'u2'], amountCents: 48000, vendor: 'Lift GmbH', invoiceFile: 'b.pdf', year: 2026 } })
-  })
-  test('Gemeinschaftsabrechnung verlangt die Kosten der Gemeinschaft', () => {
-    const d = aiPositionDefaults('Hauswart', UNITS, METERS, ctx(items))
-    const p = { description: 'Hauswart', category: 'Hauswart', amount: '120,00', labor35a: '', externalTotalAmount: '', ...d }
-    expect(aiPositionProblem(p, UNITS, 2026)).toMatch(/Gemeinschaft/)
-    const ok = aiPositionBody({ ...p, externalTotalAmount: '120.000,00' }, { vendor: 'WEG' }, UNITS, 2026)
-    expect(ok).toMatchObject({ body: { externalBasis: { measure: 'mea', total: 1000, totalCents: 12000000 } } })
-  })
-  test('ohne Gedächtnis derselbe Rumpf wie bisher (nur der Schlüssel, Nebenfelder leer)', () => {
-    const p = { description: 'Müll', category: 'Müllabfuhr', amount: '60,00', labor35a: '', externalTotalAmount: '', key: 'persons' as const, allocation: null }
-    const built = aiPositionBody(p, { vendor: 'Stadt' }, UNITS, 2026)
-    const viaForm = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Müllabfuhr', description: 'Müll', vendor: 'Stadt', amount: '60,00', key: 'persons' }, UNITS, 2026)
-    expect(built).toEqual(viaForm)
-    // Wie bisher: 0 € ist keine Position (#139).
-    expect(aiPositionProblem({ ...p, amount: '0' }, UNITS, 2026)).toMatch(/0 €/)
-  })
+  // Der Rumpf einer KI-Zeile entsteht seit der Belegbuchung (#170) auf dem Server (lineDraft);
+  // die Fälle stehen in server/test/assessment.test.ts.
 })
 
 test('KI-Zeile: die Auswahl führt den gespeicherten Schlüssel, damit angezeigt wird, was gespeichert wird', () => {

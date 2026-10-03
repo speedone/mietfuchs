@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { CostItem, CostKey, Extraction, ExternalMeasure, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
-import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, matchCategory, usageOf } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
+import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
   basisUnitsOf,
@@ -17,10 +17,6 @@ import {
   PARTICIPANT_KEYS,
   categoryNotice,
   selfAmountUnits,
-  aiPositionBody,
-  aiPositionDefaults,
-  aiPositionPreselect,
-  aiPositionProblem,
   keyChangeNotice,
   newItemForm,
   externalTotalLabel,
@@ -28,16 +24,14 @@ import {
   showsKeyFields,
   withKey,
   withCategory,
-  type AiPosition,
   type ItemForm,
   type KeyContext,
 } from '../costForm'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
-import AiKeyCell from '../components/AiKeyCell'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { aiRequest, type AiProgress } from '../aiRequest'
 import { aiSummary } from '../aiForm'
-import { buildUpload } from '../pdfIntake'
+import { useEvaluationQueue } from '../evaluationQueue'
+import AssessmentReview from '../components/AssessmentReview'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, useSwitchYear, withProperty } from '../property'
 import Drawer from '../components/Drawer'
@@ -46,42 +40,21 @@ import Term from '../components/Term'
 import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
-import DuplicateNotices from '../components/DuplicateNotices'
-import { aiRowPreselected, candidateText, duplicateCandidates, duplicateGroups, type DuplicateGroup, type LinkOffer } from '../triage'
+import { candidateText } from '../triage'
 import { sameCostCandidates } from '../../../shared/duplicates.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
 type Props = { units: Unit[]; settings: Settings | null; tenancies?: Tenancy[] } & FocusProps
 
-// Eine ausgewertete Position samt Schlüssel, gegebenenfalls dem gemerkten aus dem Vorjahr (#141).
-// `linked`: mit einer bestehenden Position verknüpft statt neu angelegt (deren Beschreibung)
-// `created`: als neue Position angelegt; erledigt wie `linked` (dritte Durchsicht)
-type ExtractPos = AiPosition & { checked: boolean; linked?: string; created?: boolean }
-
 // Maßeinheit der Summe der Anteile, für die Vorlagenliste (#141)
 const EXTERNAL_UNIT_LABELS: Record<ExternalMeasure, string> = { mea: 'MEA', area: 'm²', units: 'Einheiten' }
 
-// Ein Eintrag der Upload-Warteschlange: Dateien werden nacheinander durch die KI geschickt
-// (ein lokales Modell verarbeitet ohnehin nur eine Anfrage sinnvoll gleichzeitig).
-type QueueEntry = {
-  id: number
-  fileName: string
-  status: 'wartend' | 'läuft' | 'fertig' | 'fehler' | 'abgebrochen' | 'übernommen'
-  error?: string
-  vendor?: string
-  serverFile?: string
-  // Was der Server gerechnet hat (#34)
-  amountsAdjusted?: Extraction['amountsAdjusted']
-  laborFromTotal?: boolean
-  positions: ExtractPos[]
-  // Aus diesem Beleg angelegte Positionen: Sie sind keine Doppelung der übrigen Zeilen.
-  createdIds?: string[]
-  // während der Auswertung: was das Modell gerade tut und seit wann
-  progress?: AiProgress | null
-  startedAt?: number
-}
+// Was ein Beleg der KI-Warteschlange (evaluationQueue.ts) nach der Auswertung trägt: die
+// gespeicherte Auswertung, die „Auswertung prüfen“ zeigt (#170).
+type Evaluated = { serverFile: string; assessment: AssessmentView }
 
+const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Sie es noch einmal; gebucht wurde nichts.'
 
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
@@ -98,32 +71,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [form, setForm] = useState<ItemForm | null>(null)
   const [error, setError] = useState('')
 
-  // KI-Auswertung: Warteschlange für einen oder mehrere Belege
-  const [queue, setQueue] = useState<QueueEntry[]>([])
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
   const [carry, setCarry] = useState<CarryRow[] | null>(null)
   useOpenForm(carry?.some((r) => r.amount.trim() !== '') ?? false)
-  // Ausgewertete, noch nicht übernommene Belege gehören zum Objekt, in dem sie hochgeladen wurden;
-  // ein Zählerstand hängt an einem seiner Zähler (#145).
-  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft' || x.status === 'fertig'))
   const [dragOver, setDragOver] = useState(false)
-  const filesRef = useRef(new Map<number, File>())
-  const nextIdRef = useRef(1)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  // Abbruch je laufender Auswertung; der Server stoppt dann auch das Modell
-  const abortRef = useRef(new Map<number, AbortController>())
-
-  // Der zuletzt geladene Stand und das Laden selbst, für die KI-Auswertung: Sie entscheidet beim
-  // Eintreffen, ob eine Zeile vorab angehakt ist, und muss dafür wissen, was schon erfasst ist.
-  const itemsRef = useRef<CostItem[]>([])
-  const loadingRef = useRef<Promise<unknown> | null>(null)
-  const [linking, setLinking] = useState(false)
-  const load = () => {
-    const loading = api<CostItem[]>(withProperty('/api/costItems', propertyId)).then((list) => { itemsRef.current = list; setItems(list) })
-    loadingRef.current = loading
-    return loading
-  }
+  const load = () => api<CostItem[]>(withProperty('/api/costItems', propertyId)).then(setItems)
   useEffect(() => {
     load().catch(() => setError('Server nicht erreichbar — läuft `npm run dev`?'))
     api<Meter[]>(withProperty('/api/meters', propertyId)).then(setMeters).catch(() => {})
@@ -142,8 +96,6 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   }, [year, propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Position zum Bearbeiten öffnen.
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
-  // Wer die Seite verlässt, wartet nicht mehr auf die Auswertung
-  useEffect(() => () => { for (const controller of abortRef.current.values()) controller.abort() }, [])
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
   const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
@@ -345,177 +297,22 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     toast(`„${i.description}" gelöscht.`)
   }
 
-  function addFiles(files: Iterable<File>) {
-    const entries: QueueEntry[] = []
-    for (const f of files) {
-      if (!/^(application\/pdf|image\/)/.test(f.type)) continue
-      const id = nextIdRef.current++
-      filesRef.current.set(id, f)
-      entries.push({ id, fileName: f.name, status: 'wartend', positions: [] })
-    }
-    if (entries.length) setQueue((q) => [...q, ...entries])
-  }
-
-  function patchEntry(id: number, patch: Partial<QueueEntry>) {
-    setQueue((q) => q.map((x) => (x.id === id ? { ...x, ...patch } : x)))
-  }
-
-  // Sequenzielle Abarbeitung: sobald nichts läuft, den nächsten wartenden Beleg starten
-  useEffect(() => {
-    if (queue.some((x) => x.status === 'läuft')) return
-    const next = queue.find((x) => x.status === 'wartend')
-    if (!next) return
-    const controller = new AbortController()
-    abortRef.current.set(next.id, controller)
-    patchEntry(next.id, { status: 'läuft', startedAt: Date.now(), progress: null })
-    void (async () => {
-      try {
-        // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
-        const fd = await buildUpload(filesRef.current.get(next.id)!, undefined, settings?.ai?.pageImageEdge ?? undefined)
-        // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr,
-        // gilt das gewählte (#170).
-        if (propertyId) fd.append('propertyId', propertyId)
-        fd.append('year', String(year))
-        const res = await aiRequest<{ file: string; extraction: Extraction }>('/api/extract', fd, {
-          signal: controller.signal,
-          onProgress: (progress) => patchEntry(next.id, { progress }),
-        })
-        const ex = res.extraction
-        await loadingRef.current?.catch(() => {})
-        const known = itemsRef.current
-        const ctx: KeyContext = { items: known, year, propertyKind: property?.kind ?? null }
-        const vendor = ex.vendor || next.fileName
-        const positions = (ex.positions || []).map((p) => {
-          // KI-Kategorie auf die bekannten Betriebskostenarten abbilden — notfalls
-          // über die Beschreibung (z. B. wenn das Modell eine eigene Kategorie erfindet)
-          let category = matchCategory(p.category || '')
-          if (category === 'Sonstige Betriebskosten') {
-            const byDesc = matchCategory(p.description || '')
-            if (byDesc !== 'Sonstige Betriebskosten') category = byDesc
-          }
-          // Ohne Betrag bleibt das Feld leer, damit es sich ausfüllen lässt: Das Modell muss
-          // ihn nicht gelesen haben (siehe toExtraction in server/src/extract.ts). Ohne Betrag
-          // ist die Position auch nicht vorgewählt, ebenso bei 0 € (#139).
-          const amount = p.amountEur?.toLocaleString('de-DE', { minimumFractionDigits: 2 }) ?? ''
-          const labor35a = p.labor35aEur ? p.labor35aEur.toLocaleString('de-DE', { minimumFractionDigits: 2 }) : ''
-          return {
-            description: p.description,
-            category,
-            amount,
-            labor35a,
-            externalTotalAmount: '',
-            ...aiPositionDefaults(category, units, meters, ctx, p.description),
-          }
-          // Könnte dieselbe Rechnung schon erfasst sein, etwa aus dem Vorjahr übernommen
-          // (shared/duplicates.ts)? Dann nicht vorab angehakt; die Zeile darunter bietet an, den
-          // Beleg mit der Position zu verknüpfen.
-        }).map((p) => ({
-          ...p,
-          checked: aiRowPreselected({
-            category: p.category, preselect: aiPositionPreselect(p), problem: aiPositionProblem(p, units, year), level: 'gruen',
-            candidates: duplicateCandidates(known, { category: p.category, description: p.description, vendor, year }),
-          }),
-        }))
-        patchEntry(next.id, { status: 'fertig', vendor, serverFile: res.file, positions, amountsAdjusted: ex.amountsAdjusted, laborFromTotal: ex.laborFromTotal })
-      } catch (e) {
-        // Selbst abgebrochen ist kein Fehler
-        if (controller.signal.aborted) patchEntry(next.id, { status: 'abgebrochen' })
-        else patchEntry(next.id, { status: 'fehler', error: String((e as Error).message) })
-      } finally {
-        filesRef.current.delete(next.id)
-        abortRef.current.delete(next.id)
-      }
-    })()
-  }, [queue])
-
-  async function adoptPositions(entry: QueueEntry) {
-    // Erst prüfen, dann übernehmen (#139), mit derselben Regel wie das Formular: Eine Gutschrift
-    // geht durch, eine angehakte Position mit 0 € oder ohne Betrag wird genannt statt still
-    // ausgelassen.
-    const blocked = entry.positions.filter((p) => p.checked && aiPositionProblem(p, units, year) !== null)
-    if (blocked.length > 0) {
-      setError(`Nicht übernommen: ${blocked.map((p) => `„${p.description}“: ${aiPositionProblem(p, units, year)}`).join(' ')}`)
-      return
-    }
-    // Angehakt, obwohl dieselbe Rechnung schon erfasst sein könnte: ausdrücklich nachfragen.
-    const twice = entry.positions.filter((p) => p.checked && candidatesOf(entry, p).length > 0)
-    if (twice.length > 0) {
-      const ok = await confirm({
-        title: 'Schon erfasst?',
-        message: `Für ${year} steht schon eine Position derselben Kostenart wie ${twice.map((p) => `„${p.description}“`).join(', ')}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.`,
-        confirmLabel: 'Trotzdem anlegen',
-        cancelLabel: 'Abbrechen',
-      })
-      if (!ok) return
-    }
-    setError('')
-    const done: { index: number; id: string }[] = []
-    // Angelegte Zeilen sind erledigt, nicht nur abgehakt: Sonst fänden sie nach dem Neuladen ihre
-    // eigene Position am selben Beleg und böten „um ihren Betrag erhöhen“ an.
-    const markCreated = () => setQueue((q) => q.map((x) => (x.id !== entry.id ? x : {
-      ...x,
-      positions: x.positions.map((y, i) => (done.some((d) => d.index === i) ? { ...y, checked: false, created: true } : y)),
-      createdIds: [...(x.createdIds ?? []), ...done.map((d) => d.id).filter(Boolean)],
-    })))
-    for (const [index, p] of entry.positions.entries()) {
-      if (!p.checked) continue
-      // Über dieselbe Prüfung wie das Formular (#141), samt gemerktem Schlüssel; nicht umlagefähig
-      // ergibt dort die neutrale Vorgabe (#142).
-      const built = aiPositionBody(p, { vendor: entry.vendor, invoiceFile: entry.serverFile }, units, year)
-      if ('error' in built) continue
-      try {
-        const created = await api<{ id?: string } | null>(withProperty('/api/costItems', propertyId), { method: 'POST', body: JSON.stringify(built.body) })
-        done.push({ index, id: created?.id ?? '' })
-      } catch (e) {
-        // Was bis hierher übernommen ist, steht in der Liste und gilt als erledigt, damit ein
-        // zweiter Versuch es nicht doppelt anlegt; der Beleg gilt noch nicht als übernommen.
-        markCreated()
-        setError(`„${p.description}“ wurde nicht übernommen: ${errorText(e)}`)
-        await load()
-        return
-      }
-    }
-    markCreated()
-    patchEntry(entry.id, { status: 'übernommen' })
-    await load()
-  }
-
-  const itemsFor = (entry: QueueEntry): CostItem[] =>
-    entry.createdIds?.length ? items.filter((i) => !entry.createdIds?.includes(i.id)) : items
-  const candidatesOf = (entry: QueueEntry, p: ExtractPos): CostItem[] =>
-    p.linked || p.created ? [] : duplicateCandidates(itemsFor(entry), { category: p.category, description: p.description, vendor: entry.vendor ?? '', year })
-
-  const groupsOf = (entry: QueueEntry): DuplicateGroup[] =>
-    duplicateGroups(entry.positions, { items, vendor: entry.vendor ?? '', year, invoiceFile: entry.serverFile, ownIds: entry.createdIds })
-
-  // Den Beleg mit einer bestehenden Position verknüpfen, statt eine zweite anzulegen, für alle
-  // Zeilen der Gruppe zugleich (duplicateGroups in triage.ts). Gesperrt bis nach dem Neuladen.
-  async function linkGroup(entry: QueueEntry, group: DuplicateGroup, offer: LinkOffer) {
-    if ('error' in offer.built) { setError(`Nicht verknüpft: ${offer.built.error}`); return }
-    setError('')
-    setLinking(true)
-    try {
-      await api(`/api/costItems/${offer.target.id}`, { method: 'PUT', body: JSON.stringify(offer.built.body) })
-      // Auf dem aktuellen Stand, nicht auf dem beim Klick: Eingaben während der Anfrage bleiben.
-      setQueue((q) => q.map((x) => {
-        if (x.id !== entry.id) return x
-        const positions = x.positions.map((y, i) => (group.rows.includes(i) ? { ...y, linked: offer.target.description, checked: false } : y))
-        return { ...x, positions, ...(positions.every((y) => y.linked || y.created) ? { status: 'übernommen' as const } : {}) }
-      }))
-      await load()
-      toast(`„${offer.target.description}“ mit dem Beleg verknüpft.`)
-    } catch (e) {
-      setError(`Nicht verknüpft: ${errorText(e)}`)
-    } finally {
-      setLinking(false)
-    }
-  }
-
-  function updatePos(entryId: number, idx: number, patch: Partial<ExtractPos>) {
-    setQueue((q) =>
-      q.map((x) => (x.id === entryId ? { ...x, positions: x.positions.map((p, i) => (i === idx ? { ...p, ...patch } : p)) } : x)),
-    )
-  }
+  // KI-Auswertung (#170): Die Warteschlange teilt sich die Kostenseite mit der Schnellerfassung.
+  // Eine ausgewertete Rechnung ist danach als Auswertung gespeichert und wird mit „Auswertung
+  // prüfen“ gebucht; verlässt der Nutzer die Seite, geht sie nicht verloren (Posteingang).
+  const { queue, patchEntry, addFiles, remove, cancel } = useEvaluationQueue<ExtractResult, Evaluated>({
+    endpoint: '/api/extract',
+    pageImageEdge: settings?.ai?.pageImageEdge ?? undefined,
+    // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr,
+    // gilt das gewählte (#170).
+    propertyId,
+    year,
+    finish: (res) => (res.assessment
+      ? { status: res.assessment.open ? 'fertig' : 'übernommen', data: { serverFile: res.file, assessment: res.assessment } }
+      : { status: 'fehler', error: NOT_SAVED }),
+  })
+  // Nur laufende und wartende Auswertungen gingen beim Objektwechsel verloren (#145).
+  useOpenForm(queue.some((x) => x.status === 'wartend' || x.status === 'läuft'))
 
   return (
     <>
@@ -680,75 +477,25 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                 <AiProgressBadge
                   progress={entry.progress ?? null}
                   startedAt={entry.startedAt ?? Date.now()}
-                  onCancel={() => abortRef.current.get(entry.id)?.abort()}
+                  onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && <span className="badge green">{entry.positions.length} Position(en) erkannt — bitte prüfen</span>}
+              {entry.status === 'fertig' && <span className="badge green">{entry.data.assessment?.lines.length ?? 0} Position(en) erkannt — bitte prüfen</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               <div className="grow" />
               {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
-                <button className="btn small ghost" onClick={() => { filesRef.current.delete(entry.id); setQueue((q) => q.filter((x) => x.id !== entry.id)) }}>
-                  {entry.status === 'fertig' ? 'Verwerfen' : 'Entfernen'}
+                <button className="btn small ghost" onClick={() => remove(entry.id)}>
+                  {entry.status === 'fertig' ? 'Ausblenden' : 'Entfernen'}
                 </button>
               )}
             </div>
             {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
-            {entry.status === 'fertig' && (
-              <>
-                {/* Gerechnetes benennen, damit es geprüft werden kann (#34) */}
-                {entry.amountsAdjusted === 'netto' && (
-                  <div className="notice" style={{ marginTop: 8 }}>
-                    Die Positionen standen ohne Umsatzsteuer auf der Rechnung. Mietfuchs hat sie auf den
-                    Rechnungsbetrag hochgerechnet. Bitte die Beträge kurz prüfen.
-                  </div>
-                )}
-                {entry.laborFromTotal && (
-                  <div className="notice" style={{ marginTop: 8 }}>
-                    Der Arbeitskostenanteil nach §35a stand nur als ein Betrag auf der Rechnung. Mietfuchs
-                    hat ihn nach Beträgen auf die Positionen verteilt; Fahrtkosten und Material gehören
-                    streng genommen nicht dazu.
-                  </div>
-                )}
-                <Table style={{ marginTop: 8 }}>
-                  <thead>
-                    <tr>
-                      <th><span className="sr-only">Übernehmen</span></th>
-                      <th>Beschreibung</th>
-                      <th>Kostenart</th>
-                      <th>Umlageschlüssel</th>
-                      <th className="num">Betrag €</th>
-                      <th className="num">§35a Lohn €</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entry.positions.map((p, i) => (
-                      <Fragment key={i}>
-                      <tr>
-                        <td><input type="checkbox" checked={p.checked} disabled={!!p.linked || !!p.created} onChange={(e) => updatePos(entry.id, i, { checked: e.target.checked })} /></td>
-                        <td><input value={p.description} onChange={(e) => updatePos(entry.id, i, { description: e.target.value })} style={{ width: '100%' }} /></td>
-                        <td>
-                          <select value={p.category} onChange={(e) => updatePos(entry.id, i, { category: e.target.value, externalTotalAmount: '', ...aiPositionDefaults(e.target.value, units, meters, keyCtx, p.description) })}>
-                            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                          </select>
-                        </td>
-                        <td><AiKeyCell position={p} units={units} onChange={(patch) => updatePos(entry.id, i, patch)} /></td>
-                        <td className="num"><input value={p.amount} onChange={(e) => updatePos(entry.id, i, { amount: e.target.value })} style={{ width: 100, textAlign: 'right' }} /></td>
-                        <td className="num"><input value={p.labor35a} onChange={(e) => updatePos(entry.id, i, { labor35a: e.target.value })} style={{ width: 90, textAlign: 'right' }} placeholder="—" /></td>
-                      </tr>
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </Table>
-                <DuplicateNotices groups={groupsOf(entry)} rows={entry.positions} year={year} busy={linking}
-                  onLink={(g, o) => void linkGroup(entry, g, o)} onOpen={(item) => { setError(''); setForm(itemToForm(item)) }} />
-                <div className="row" style={{ marginTop: 10 }}>
-                  <button className="btn" onClick={() => void adoptPositions(entry)} disabled={entry.positions.every((p) => !p.checked)}>
-                    Ausgewählte Positionen für {year} übernehmen
-                  </button>
-                </div>
-              </>
+            {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
+              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={{ ...keyCtx, year: entry.data.assessment.year }}
+                onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
+                onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
             )}
           </div>
         ))}

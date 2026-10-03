@@ -1,0 +1,245 @@
+// @vitest-environment jsdom
+// Die Belegbuchung im Browser (#170): Schnellerfassung und Kosten benutzen dieselbe Komponente
+// „Auswertung prüfen“, und die Zahlen kommen vom (nachgebauten) Server mit dem echten Planer.
+// Die vier Abnahmefälle der Spezifikation stehen hier als „Abnahme A“ bis „Abnahme D“.
+import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { CostItem, Extraction, Unit } from '../types'
+import { YearProvider } from '../year'
+import { PropertyProvider } from '../property'
+import { UIProvider } from '../components/feedback'
+import Schnellerfassung from './Schnellerfassung'
+import Kosten from './Kosten'
+import { fakeBooking, type FakeBooking } from '../testing/fakeBooking'
+
+vi.setConfig({ testTimeout: 20000 })
+const SLOW = { timeout: 5000 }
+const UNITS: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true }]
+// Die Seiten öffnen im Vorjahr des Kalenderjahres (year.tsx).
+const YEAR = new Date().getFullYear() - 1
+
+let fake: FakeBooking
+let extraction: Extraction
+let evaluated: number
+
+const estimate = (id: string, category: string, amountCents: number, extra: Partial<CostItem> = {}): CostItem =>
+  ({ id, propertyId: 'objekt-1', year: YEAR, category, description: `${category} ${YEAR}`, amountCents, key: 'area', ...extra })
+const invoice = (positions: Extraction['positions'], vendor = 'Stadtwerke'): Extraction => ({ vendor, invoiceDate: `${YEAR}-12-31`, positions })
+
+beforeEach(() => {
+  evaluated = 0
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const json = (data: unknown) => new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (url === '/api/intake' || url === '/api/extract') {
+      const file = `beleg-${++evaluated}.pdf`
+      return json({ file, kind: 'rechnung', extraction, assessment: fake.evaluate(file, extraction, { year: YEAR }) })
+    }
+    const handled = await fake.handle(url, init)
+    if (handled) return handled
+    if (url.split('?')[0] === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'mfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    return json((init?.method ?? 'GET') === 'GET' ? [] : { ok: true })
+  })
+})
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
+
+const intake = () => render(<YearProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></YearProvider>)
+const costs = () => render(<YearProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></YearProvider>)
+
+async function upload(container: HTMLElement, count = 1) {
+  const input = await waitFor(() => {
+    const found = container.querySelector('input[type="file"][multiple]')
+    if (!(found instanceof HTMLInputElement)) throw new Error('das Dateifeld ist noch nicht da')
+    return found
+  })
+  // Fotos statt PDFs: Ein PDF liest der Browser vor dem Hochladen mit pdf.js, das in jsdom nicht läuft.
+  const files = Array.from({ length: count }, (_, i) => new File(['JPEG'], `beleg-${i + 1}.jpg`, { type: 'image/jpeg' }))
+  fireEvent.change(input, { target: { files } })
+}
+const actionOf = async (description: string): Promise<HTMLSelectElement> => {
+  const el = await screen.findByRole('combobox', { name: `Was geschieht mit „${description}“?` }, SLOW)
+  if (!(el instanceof HTMLSelectElement)) throw new Error('kein Auswahlfeld')
+  return el
+}
+async function previewAndBook(): Promise<{ shown: string[] }> {
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  const panel = await screen.findByLabelText('Vorschau', {}, SLOW)
+  const shown = within(panel).getAllByRole('listitem').map((li) => li.textContent ?? '')
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  return { shown }
+}
+
+test('Abnahme A im Browser: Wasser 700 € + 800 € an die Schätzung über 1.500 €; eine Position, Vorschau gleich Ergebnis', async () => {
+  fake = fakeBooking({ items: [estimate('wa', 'Wasser/Abwasser', 150000)], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }, { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 800 }])
+  const { container } = intake()
+  await upload(container)
+  const frisch = await actionOf('Frischwasser')
+  expect(frisch.value).toBe('') // Kandidat: nicht vorab angehakt
+  fireEvent.change(frisch, { target: { value: 'link:wa' } })
+  fireEvent.change(await actionOf('Abwasser'), { target: { value: 'link:wa' } })
+  const { shown } = await previewAndBook()
+  const done = await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(done.textContent).toContain(shown.join(' · '))
+  expect(fake.items.filter((i) => i.category === 'Wasser/Abwasser').map((i) => [i.id, i.amountCents])).toEqual([['wa', 150000]])
+})
+
+// Eine Gutschrift wird nur mit Gutschriften als mögliche Doppelung verglichen (candidatePool in
+// server/src/assessment.ts); neben der Schätzung über 700 € gibt es keine, also auch keine Rückfrage.
+test('Abnahme B im Browser: Restmüll 700 € mit Gutschrift −50 €; die Gutschrift bietet kein Verknüpfen und wird ohne Rückfrage angelegt', async () => {
+  fake = fakeBooking({ items: [estimate('mu', 'Müllabfuhr', 70000)], units: UNITS })
+  extraction = invoice([{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 700 }, { description: 'Gutschrift Tonne', category: 'Müllabfuhr', amountEur: -50 }])
+  const { container } = intake()
+  await upload(container)
+  const gutschrift = await actionOf('Gutschrift Tonne')
+  expect([...gutschrift.options].map((o) => o.value).some((v) => v.startsWith('link:'))).toBe(false)
+  fireEvent.change(await actionOf('Restmüll'), { target: { value: 'link:mu' } })
+  fireEvent.change(gutschrift, { target: { value: 'create' } })
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(screen.queryByRole('button', { name: 'Trotzdem anlegen' })).toBeNull()
+  expect(fake.items.map((i) => i.amountCents).sort((a, b) => a - b)).toEqual([-5000, 70000])
+})
+
+test('Abnahme C im Browser: Schätzung mit §35a 1.000 €, Rechnung ohne Lohnanteil: die Vorschau sagt, dass er entfernt wird', async () => {
+  fake = fakeBooking({ items: [estimate('gp', 'Gartenpflege', 150000, { labor35aCents: 100000 })], units: UNITS })
+  extraction = invoice([{ description: 'Gartenpflege Saison', category: 'Gartenpflege', amountEur: 1450 }], 'Gärtnerei')
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Gartenpflege Saison'), { target: { value: 'link:gp' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  expect((await screen.findByLabelText('Vorschau', {}, SLOW)).textContent).toMatch(/Lohnanteil von 1\.000,00\s€ wird entfernt/)
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  const gp = fake.items.find((i) => i.id === 'gp')
+  expect([gp?.amountCents, gp?.labor35aCents]).toEqual([145000, undefined])
+})
+
+test('Abnahme D im Browser: doppelt auf „Buchen“ ergibt eine Position', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  expect((await actionOf('Grundsteuer B')).value).toBe('create')
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  await screen.findByLabelText('Vorschau', {}, SLOW)
+  const buchen = screen.getByRole('button', { name: 'Buchen' })
+  fireEvent.click(buchen)
+  fireEvent.click(buchen)
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  await waitFor(() => expect(fake.items).toHaveLength(1))
+})
+
+test('Weiter prüfen nach dem Neuladen: eine offene Auswertung steht ohne neue KI-Anfrage wieder da', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  fake.evaluate('alt.pdf', invoice([{ description: 'Hausmeister', category: 'Hauswart', amountEur: 300 }], 'Hausmeisterdienst'), { year: YEAR })
+  intake()
+  expect((await actionOf('Hausmeister')).value).toBe('create')
+  expect(evaluated).toBe(0)
+})
+
+test('Geänderter Stand zwischen Vorschau und Buchung: die Seite zeigt die neue Vorschau und bucht nichts', async () => {
+  fake = fakeBooking({ items: [estimate('wa', 'Wasser/Abwasser', 140000)], units: UNITS })
+  extraction = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }])
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Frischwasser'), { target: { value: 'link:wa' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  await screen.findByLabelText('Vorschau', {}, SLOW)
+  fake.patchItem('wa', { amountCents: 145000 })
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  expect(await screen.findByText(/Seit der Vorschau hat sich der Stand geändert/, {}, SLOW)).toBeTruthy()
+  expect((await screen.findByLabelText('Vorschau', {}, SLOW)).textContent).toMatch(/1\.450,00\s€ → 700,00\s€/)
+  expect(fake.items.find((i) => i.id === 'wa')?.amountCents).toBe(145000)
+})
+
+test('Position ohne Betrag: Feld leer, rot, nicht vorab angehakt; nicht umlagefähig ohne Schlüssel', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Unlesbar', category: 'Grundsteuer' }, { description: 'Heizungsreparatur', category: 'Nicht umlagefähig', amountEur: 200 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  const unlesbar = await actionOf('Unlesbar')
+  expect(unlesbar.value).toBe('')
+  const row = unlesbar.closest('tr')
+  expect(row?.querySelector('.ampel.rot')).toBeTruthy()
+  const betrag = within(row ?? document.body).getByRole('textbox', { name: 'Betrag €' })
+  if (!(betrag instanceof HTMLInputElement)) return assert.fail('das Feld „Betrag €“ ist kein Eingabefeld')
+  expect(betrag.value).toBe('')
+  expect(screen.getByText('— trägt der Vermieter')).toBeTruthy()
+})
+
+test('„Alle grünen übernehmen“: dieselbe Kostenart aus zwei Belegen wird nicht still zweimal angelegt', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container, 2)
+  await waitFor(() => expect(screen.getAllByRole('combobox', { name: 'Was geschieht mit „Grundsteuer B“?' })).toHaveLength(2), SLOW)
+  fireEvent.click(await screen.findByRole('button', { name: /Alle grünen übernehmen/ }, SLOW))
+  expect(await screen.findByText(/Noch zu prüfen: „Grundsteuer B“/, {}, SLOW)).toBeTruthy()
+  expect(fake.items).toHaveLength(1)
+})
+
+test('Kosten: dieselbe Komponente, die alte Übernahme gibt es nicht mehr', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = costs()
+  await upload(container)
+  expect((await actionOf('Grundsteuer B')).value).toBe('create')
+  expect(screen.queryByRole('button', { name: /Ausgewählte Positionen/ })).toBeNull()
+  await previewAndBook()
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(fake.items.map((i) => [i.amountCents, i.invoiceFile])).toEqual([[61240, 'beleg-1.pdf']])
+})
+
+test('Eingaben in einer Karte bleiben stehen, wenn eine andere gebucht wird', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container, 2)
+  const [first, second] = await waitFor(() => {
+    const found = screen.getAllByRole('combobox', { name: 'Was geschieht mit „Grundsteuer B“?' }).map((el) => el.closest('.assessment-review'))
+    expect(found).toHaveLength(2)
+    return found
+  }, SLOW)
+  if (!(first instanceof HTMLElement) || !(second instanceof HTMLElement)) return assert.fail('die beiden Karten fehlen')
+  fireEvent.change(within(second).getByRole('textbox', { name: 'Betrag €' }), { target: { value: '600,00' } })
+  fireEvent.click(within(first).getByRole('button', { name: 'Vorschau' }))
+  await within(first).findByLabelText('Vorschau', {}, SLOW)
+  fireEvent.click(within(first).getByRole('button', { name: 'Buchen' }))
+  await within(first).findByLabelText('Gebucht', {}, SLOW)
+  await waitFor(() => expect(fake.requests.filter((r) => r.path.endsWith('/book'))).toHaveLength(1))
+  // Die Seite hat nach der Buchung alle Auswertungen neu geladen; die Karte B ist dieselbe.
+  await waitFor(() => expect(screen.getByText(/✓ angelegt als/)).toBeTruthy())
+  const betrag = within(second).getByRole('textbox', { name: 'Betrag €' })
+  if (!(betrag instanceof HTMLInputElement)) return assert.fail('das Feld „Betrag €“ ist kein Eingabefeld')
+  expect(betrag.value).toBe('600,00')
+})
+
+test('Rückfrage vor dem Anlegen: gibt es schon eine Position derselben Kostenart, legt erst „Trotzdem anlegen“ an', async () => {
+  fake = fakeBooking({ items: [estimate('gs', 'Grundsteuer', 61000)], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  const action = await actionOf('Grundsteuer B')
+  expect(action.value).toBe('') // Kandidat: nicht vorab angehakt
+  fireEvent.change(action, { target: { value: 'create' } })
+  await previewAndBook()
+  fireEvent.click(await screen.findByRole('button', { name: 'Trotzdem anlegen' }, SLOW))
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(fake.items.map((i) => i.amountCents).sort((a, b) => a - b)).toEqual([61000, 61240])
+})
+
+test('Kosten: eine ausgewertete Rechnung ist gespeichert, der Jahreswechsel fragt deshalb nicht nach', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt')
+  const { container } = costs()
+  await upload(container)
+  await actionOf('Grundsteuer B')
+  const jahr = screen.getByRole('combobox', { name: 'Abrechnungsjahr' })
+  fireEvent.change(jahr, { target: { value: String(YEAR - 1) } })
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Abrechnungsjahr' })).toHaveProperty('value', String(YEAR - 1)), SLOW)
+  expect(screen.queryByText('Offene Eingaben verwerfen?')).toBeNull()
+})
