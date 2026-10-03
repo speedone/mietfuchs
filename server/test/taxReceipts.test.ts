@@ -72,3 +72,18 @@ test('Steuer-Belege: ein Feld, das mit = + - @ beginnt, wird nicht als Formel ge
   const gutschrift = planTaxArchive([item('g', { amountCents: -500 })], new Map()).overviewCsv
   assert.match(gutschrift, /;-5,00;/)
 })
+
+test('Steuer-Belege (#170): Abschlag und Restrechnung einer Position liegen beide im ZIP, die Position steht einmal in der Übersicht', () => {
+  const st = item('st', { category: 'Wasser/Abwasser', invoiceFile: '1_abschlag.pdf', amountCents: 162000 })
+  const plan = planTaxArchive([st], new Map([['1_abschlag.pdf', 'Abschlag.pdf'], ['2_rest.pdf', 'Rest.pdf']]), new Map([['st', ['2_rest.pdf', '1_abschlag.pdf']]]))
+  assert.deepEqual(plan.files.map((f) => f.file), ['1_abschlag.pdf', '2_rest.pdf'])
+  const zeilen = plan.overviewCsv.split('\r\n').filter((l) => l.includes('Position st'))
+  assert.equal(zeilen.length, 1, 'die Position steht nicht doppelt in der Übersicht')
+  assert.ok(zeilen[0]?.includes('Wasser-Abwasser - Abschlag.pdf | 2 Laufende Betriebskosten/Wasser-Abwasser - Rest.pdf'), zeilen[0])
+})
+
+test('Steuer-Belege (#170): eine Position ohne invoiceFile, deren Beleg nur an einer gebuchten Zeile hängt, hat ihn im ZIP', () => {
+  const plan = planTaxArchive([item('st', { category: 'Wasser/Abwasser' })], new Map([['2_rest.pdf', 'Rest.pdf']]), new Map([['st', ['2_rest.pdf']]]))
+  assert.deepEqual(plan.files.map((f) => f.file), ['2_rest.pdf'])
+  assert.ok(!plan.overviewCsv.includes('kein Beleg'))
+})

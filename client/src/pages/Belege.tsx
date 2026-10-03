@@ -335,6 +335,25 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     if (done > 0) toast(done === 1 ? 'Ein Beleg liegt im Posteingang.' : `${done} Belege liegen im Posteingang.`)
   }
 
+  // „Weiter prüfen“: Die Schnellerfassung zeigt nur die Auswertungen eines Objekts. Hat die
+  // Auswertung noch keins (der Beleg kam ohne Zuordnung), bekommt sie erst das gewählte; das geht,
+  // solange nichts gebucht ist. Scheitert es, bleibt die Seite, statt ins Leere zu führen.
+  async function continueChecking(u: ReceiptUpload) {
+    if (!onContinue) return
+    const current = u.assessment
+    if (current && current.propertyId === null && property) {
+      try {
+        await api(`/api/assessments/${encodeURIComponent(current.id)}`, { method: 'PUT', body: JSON.stringify({ propertyId: property.id }) })
+      } catch (e) {
+        setError(`Die Auswertung wurde nicht dem Objekt zugeordnet: ${errorText(e)}`)
+        return
+      }
+      onContinue({ ...u, assessment: { ...current, propertyId: property.id } })
+      return
+    }
+    onContinue(u)
+  }
+
   async function place(u: UploadInfo, changes: { propertyId?: string | null; year?: number | null }) {
     try {
       await api(`/api/uploads/${encodeURIComponent(u.file)}`, { method: 'PUT', body: JSON.stringify(changes) })
@@ -428,7 +447,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                 )
               })()}
               {upload.assessment?.open && onContinue ? (
-                <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} onClick={() => onContinue(upload)}>Weiter prüfen</button>
+                <button className="btn small" aria-label={`${receiptName(upload)} weiter prüfen`} onClick={() => void continueChecking(upload)}>Weiter prüfen</button>
               ) : onEvaluate && (
                 <button className="btn small" aria-label={`${receiptName(upload)} per KI auswerten`} onClick={() => onEvaluate([upload])}>Per KI auswerten</button>
               )}

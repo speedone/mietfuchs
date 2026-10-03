@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PDFDocument } from 'pdf-lib'
 import type { CostItem, Settlement, SettlementRow, UploadInfo } from './types'
+import type { ReceiptUpload } from './receipts'
 import { buildTenantFolderPdf, coverPageCount, pageRows, planTenantFolder, UNREADABLE_TEXT, winAnsiSafe } from './tenantFolder'
 
 const upload = (file: string, mimeType = 'application/pdf'): UploadInfo => ({
@@ -173,5 +174,22 @@ describe('Belegmappe für Mieter: nicht lesbare Belege (Durchsicht)', () => {
     expect(row.page).toBeNull()
     expect(row.unreadable).toBe(true)
     expect(UNREADABLE_TEXT).toBe('nicht übernehmbar, bitte gesondert beilegen')
+  })
+})
+
+describe('Belegmappe für Mieter (#170): Belege über gebuchte Zeilen', () => {
+  const abschlag = upload('1_abschlag.pdf')
+  const rest: ReceiptUpload = { ...upload('2_rest.pdf'), bookedItemIds: ['st'], assessment: { id: 'a2', propertyId: 'p1', open: false } }
+
+  it('Abschlag und Restrechnung einer Position liegen beide in der Mappe', () => {
+    const plan = planTenantFolder(settlement([['st']]), [item('st', { invoiceFile: '1_abschlag.pdf', amountCents: 162000 })], [abschlag, rest], { includeIndividual: false })
+    expect(plan.entries.map((e) => e.status)).toEqual(['ok'])
+    expect(plan.documents.map((d) => [d.upload.file, d.itemIds])).toEqual([['1_abschlag.pdf', ['st']], ['2_rest.pdf', ['st']]])
+  })
+
+  it('eine Position ohne invoiceFile, deren Beleg nur an einer Zeile hängt, hat ihn in der Mappe', () => {
+    const plan = planTenantFolder(settlement([['st']]), [item('st')], [rest], { includeIndividual: false })
+    expect(plan.entries.map((e) => e.status)).toEqual(['ok'])
+    expect(plan.documents.map((d) => d.upload.file)).toEqual(['2_rest.pdf'])
   })
 })

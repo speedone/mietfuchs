@@ -302,6 +302,12 @@ describe('Belegbuchung (#170): Belege, die über eine verknüpfte Zeile an einer
     expect(coverageCheck([ohneEigene], present, filesByItem([rest])).level).toBe('gruen')
   })
 
+  it('zwei Belege derselben Position gelten nicht als möglicherweise doppelt', () => {
+    const position = item('st', { category: 'Beleuchtung/Allgemeinstrom', invoiceFile: '1_abschlag.pdf', amountCents: 162000, vendor: 'Stadtwerke' })
+    const cards = receiptCards([abschlag, rest], [position])
+    expect(duplicateHints(cards).size).toBe(0)
+  })
+
   it('E5: nach dem Lösen der Zeile von Beleg A zählt A nicht mehr, auch wenn Beleg B an der Position hängt', () => {
     // A hängt nur noch über seine Auswertung (offen, ohne gebuchte Zeile); B ist gebucht und der
     // Beleg der Position.
