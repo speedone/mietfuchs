@@ -19,6 +19,7 @@ import { applyMigrations, connect, loadMigrations, type Database } from '../src/
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
+import { assessments as assessmentsTable } from '../src/db/schema.ts'
 import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
@@ -4580,15 +4581,20 @@ const RECHNUNGEN: Record<string, FakeInvoice> = {
     vendor: 'Stadtwerke Musterstadt', invoiceDate: '2026-02-01', totalGrossEur: 1500,
     positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }, { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 800 }],
   },
+  // Weder Rechnungsdatum noch Leistungszeitraum: Das Jahr der Auswertung kommt aus dem Formular.
+  HAUSMEISTER: { vendor: 'Hausmeisterdienst Muster', totalGrossEur: 300, positions: [{ description: 'Hausmeisterdienst', category: 'Hauswart', amountEur: 300 }] },
 }
 
 type Evaluated = { file: string, assessment: AssessmentView | null }
+// Lang genug für eine Textebene (unter 80 Zeichen gälte das PDF als Scan ohne Text).
+const invoiceText = (marker: string): string => `Rechnung ${marker}: Positionen wie aufgeführt, Betrag in Euro, zahlbar binnen 14 Tagen.`
 
 // Wie der Browser: ein PDF mit Textebene an /api/extract, ohne Strom. `marker` wählt die Rechnung.
 async function evaluate(s: Server, marker: string, extra: Record<string, string> = {}): Promise<Evaluated> {
   const fd = new FormData()
-  fd.append('file', new Blob([PDF], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
-  fd.append('pdfText', `Rechnung ${marker}: Positionen wie aufgeführt, Betrag in Euro, zahlbar binnen 14 Tagen.`)
+  // Mit `existingFile` wertet der Server einen Beleg aus dem Posteingang aus, statt einen neuen anzunehmen.
+  if (!extra.existingFile) fd.append('file', new Blob([PDF], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
+  fd.append('pdfText', invoiceText(marker))
   for (const [k, v] of Object.entries(extra)) fd.append(k, v)
   const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
   assert.equal(res.status, 200, await res.clone().text())
@@ -4685,6 +4691,11 @@ test('Belegbuchung: ist die Datei weg, fehlt die Auswertung in der Liste, und Vo
     const plan = await postJson(s, `/api/assessments/${a.id}/plan`, { decisions: grundsteuer(a) })
     assert.equal(plan.status, 404)
     assert.match((await jsonOf<{ error: string }>(plan)).error, /gibt es im Belegordner nicht mehr/)
+    const book = await postJson(s, `/api/assessments/${a.id}/book`, { decisions: grundsteuer(a), token: 'egal' })
+    assert.equal(book.status, 404)
+    assert.match((await jsonOf<{ error: string }>(book)).error, /gibt es im Belegordner nicht mehr/)
+    assert.equal((await fetch(`${s.base}/api/assessments/${a.id}`)).status, 404)
+    assert.deepEqual(await s.api<CostItem[]>('/api/costItems'), [], 'gebucht wurde nichts')
   }, { invoices: RECHNUNGEN })
 })
 
@@ -4741,5 +4752,148 @@ test('Belegbuchung: das Jahr der Auswertung wird zum Jahr des Belegs im Posteing
     assert.equal(a.year, 2026)
     const beleg = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === a.file) ?? assert.fail('der Beleg fehlt im Ordner')
     assert.equal(beleg.year, 2026, 'der Posteingang zeigt den Beleg im Jahr, das er selbst nennt')
+  }, { invoices: RECHNUNGEN })
+})
+
+// ---------- Belegbuchung (#170): Befunde der Durchsicht zu Task 4 ----------
+
+const putJson = (s: Server, urlPath: string, body: unknown): Promise<Response> =>
+  fetch(`${s.base}${urlPath}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const uploadOf = async (s: Server, file: string): Promise<UploadInfo> =>
+  (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === file) ?? assert.fail(`der Beleg ${file} fehlt im Ordner`)
+const storedAssessmentFiles = (s: Server): Promise<string[]> =>
+  inDatabase(s, async (db) => (await db.select({ file: assessmentsTable.file }).from(assessmentsTable)).map((r) => r.file))
+async function plainUpload(s: Server, name: string): Promise<string> {
+  const fd = new FormData()
+  fd.append('file', new Blob([PDF], { type: 'application/pdf' }), name)
+  const res = await fetch(`${s.base}/api/upload`, { method: 'POST', body: fd })
+  assert.equal(res.status, 200, await res.clone().text())
+  return (await jsonOf<{ file: string }>(res)).file
+}
+async function bookGrundsteuer(s: Server, a: AssessmentView): Promise<void> {
+  const decisions = grundsteuer(a)
+  const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+  assert.equal((await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })).status, 200)
+}
+
+// Ein Abbruch, der nach der Antwort der KI und vor dem Speichern ankommt. Herbeigeführt mit dem
+// Testgriff NKA_TEST_ASSESSMENT_DELAY_MS: Der Server wartet vor dem Speichern, und in diese Pause
+// fällt der Abbruch über die Kennung. Gewartet wird, bis der Durchgang der Kostenarten (die letzte
+// Anfrage an die KI) beantwortet ist.
+const PAUSE_MS = 2500
+async function evaluateAndCancel(s: Server, ollama: Ollama, marker: string, extra: Record<string, string>): Promise<void> {
+  const requestId = 'abcdef0123456789abcdef0123456789'
+  const fd = new FormData()
+  if (!extra.existingFile) fd.append('file', new Blob([PDF], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
+  fd.append('pdfText', invoiceText(marker))
+  fd.append('requestId', requestId)
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v)
+  const before = ollama.requests.length
+  const pending = fetch(`${s.base}/api/extract`, { method: 'POST', body: fd }).then((r) => r.text()).catch(() => '')
+  const deadline = Date.now() + 10_000
+  while (!ollama.requests.slice(before).some((r) => r.body.format?.properties?.categories)) {
+    if (Date.now() > deadline) assert.fail('der Durchgang der Kostenarten kam nicht an')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  assert.equal((await fetch(`${s.base}/api/ai/cancel/${requestId}`, { method: 'POST' })).status, 200, 'der Abbruch kam nicht mehr an')
+  await pending
+  // Die Pause des Servers abwarten: Erst danach würde er speichern.
+  await new Promise((resolve) => setTimeout(resolve, PAUSE_MS + 500))
+}
+
+test('Belegbuchung: ein Abbruch nach der Antwort der KI speichert keine Auswertung', async () => {
+  await withOllama(async (s, ollama) => {
+    await evaluateAndCancel(s, ollama, 'GRUNDSTEUER', {})
+    assert.deepEqual(await storedAssessmentFiles(s), [], 'nach dem Abbruch steht eine Auswertung in der Datenbank')
+  }, { invoices: RECHNUNGEN, env: { NKA_TEST_ASSESSMENT_DELAY_MS: String(PAUSE_MS) } })
+})
+
+test('Belegbuchung: ein Abbruch beim erneuten Auswerten eines Belegs aus dem Posteingang lässt die offenen Zeilen stehen', async () => {
+  await withOllama(async (s, ollama) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    await evaluateAndCancel(s, ollama, 'WASSER', { existingFile: a.file })
+    const after = await s.api<AssessmentView>(`/api/assessments/${a.id}`)
+    assert.deepEqual(after.lines.map((l) => [l.idx, l.description, l.amountCents]), [[0, 'Grundsteuer B 2025', 61240]])
+    assert.ok(fs.existsSync(path.join(s.dataDir, 'uploads', a.file)), 'der Beleg aus dem Posteingang ist weg')
+  }, { invoices: RECHNUNGEN, env: { NKA_TEST_ASSESSMENT_DELAY_MS: String(PAUSE_MS) } })
+})
+
+test('Belegbuchung: PUT auf die Auswertung zieht Jahr und Objekt des Belegs mit, solange nichts gebucht ist', async () => {
+  await withOllama(async (s) => {
+    const zweites = await jsonOf<Property>(await postJson(s, '/api/properties', { name: 'Zweites Haus' }))
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { propertyId: 'objekt-1' }))
+    assert.equal((await putJson(s, `/api/assessments/${a.id}`, { year: 2024, propertyId: zweites.id })).status, 200)
+    const beleg = await uploadOf(s, a.file)
+    assert.deepEqual([beleg.year, beleg.propertyId], [2024, zweites.id])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: Verschieben im Posteingang zieht die Auswertung mit, solange nichts gebucht ist; gebucht bleibt sie', async () => {
+  await withOllama(async (s) => {
+    const zweites = await jsonOf<Property>(await postJson(s, '/api/properties', { name: 'Zweites Haus' }))
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { propertyId: 'objekt-1' }))
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { year: 2023, propertyId: zweites.id })).status, 200)
+    const moved = await s.api<AssessmentView>(`/api/assessments/${a.id}`)
+    assert.deepEqual([moved.year, moved.propertyId], [2023, zweites.id])
+
+    const b = assessmentOf(await evaluate(s, 'WASSER', { propertyId: 'objekt-1' }))
+    const decisions: LineDecision[] = b.lines.map((l) => ({ idx: l.idx, action: 'create', fields: l.suggestion?.fields ?? assert.fail('kein Vorschlag') }))
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${b.id}/plan`, { decisions }))
+    assert.equal((await postJson(s, `/api/assessments/${b.id}/book`, { decisions, token: preview.token })).status, 200)
+    assert.equal((await putJson(s, `/api/uploads/${b.file}`, { year: 2023, propertyId: zweites.id })).status, 200)
+    const kept = await s.api<AssessmentView>(`/api/assessments/${b.id}`)
+    assert.deepEqual([kept.year, kept.propertyId], [b.year, 'objekt-1'])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: beim Speichern bekommt ein Beleg ohne Objekt das Objekt der Auswertung', async () => {
+  await withOllama(async (s) => {
+    const file = await plainUpload(s, 'ohne-objekt.pdf')
+    assert.equal((await uploadOf(s, file)).propertyId, null)
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { existingFile: file }))
+    assert.equal(a.propertyId, 'objekt-1')
+    const beleg = await uploadOf(s, file)
+    assert.deepEqual([beleg.year, beleg.propertyId], [2025, 'objekt-1'])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: nennt der Beleg kein Jahr, gilt das mitgeschickte', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'HAUSMEISTER', { year: '2023' }))
+    assert.deepEqual([a.detectedYear, a.year], [null, 2023])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: die Antwort als Strom trägt die Auswertung', async () => {
+  await withOllama(async (s) => {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'grundsteuer.pdf')
+    fd.append('pdfText', invoiceText('GRUNDSTEUER'))
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd, headers: { accept: 'application/x-ndjson' } })
+    assert.equal(res.status, 200)
+    const lines: { type: string, data?: Evaluated }[] = (await res.text()).split('\n').filter((l) => l !== '').map((l) => JSON.parse(l))
+    const result = lines.find((l) => l.type === 'result')?.data ?? assert.fail('keine Zeile result im Strom')
+    const a = assessmentOf(result)
+    assert.deepEqual(a.lines.map((l) => l.description), ['Grundsteuer B 2025'])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: lässt sich die Prüfsumme nicht rechnen, wird die Auswertung trotzdem gespeichert', async (t) => {
+  await withOllama(async (s) => {
+    const file = await plainUpload(s, 'unlesbar.pdf')
+    const full = path.join(s.dataDir, 'uploads', file)
+    fs.chmodSync(full, 0o000)
+    try {
+      let readable = true
+      try { fs.accessSync(full, fs.constants.R_OK) } catch { readable = false }
+      // Als root (oder unter Windows) lässt sich die Datei trotz fehlender Rechte lesen; dann gibt
+      // es den Fehlerfall nicht, den dieser Test herbeiführen will.
+      if (readable) return t.skip('die Datei bleibt lesbar, ein Lesefehler lässt sich hier nicht herbeiführen')
+      const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { existingFile: file }))
+      assert.equal(a.file, file)
+    } finally {
+      fs.chmodSync(full, 0o644)
+    }
   }, { invoices: RECHNUNGEN })
 })
