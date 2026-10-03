@@ -4915,6 +4915,7 @@ test('Belegbuchung: der Belegordner kennt gebuchte Zeilen; Löschen der Position
     const entry = async (file: string): Promise<UploadEntry> =>
       (await s.api<UploadEntry[]>('/api/uploads')).find((u) => u.file === file) ?? assert.fail(`kein Beleg ${file}`)
     assert.deepEqual([(await entry(b.file)).bookedItemIds, (await entry(b.file)).assessment?.open], [[st.id], false])
+    assert.deepEqual([(await entry(a.file)).bookedCents, (await entry(b.file)).bookedCents], [{ [st.id]: 150000 }, { [st.id]: 12000 }], 'je Beleg die Summe seiner gebuchten Zeilen')
     const [position] = await s.api<CostItem[]>('/api/costItems')
     assert.deepEqual([position?.amountCents, position?.invoiceFile], [162000, a.file], 'Summe beider Belege, die Position trägt den ersten')
     const del = (file: string) => fetch(`${s.base}/api/uploads/${encodeURIComponent(file)}`, { method: 'DELETE' })

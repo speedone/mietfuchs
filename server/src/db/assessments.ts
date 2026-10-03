@@ -113,8 +113,11 @@ export async function uploadLinks(db: Executor): Promise<Map<string, UploadLinks
   const links = new Map<string, UploadLinks>()
   for (const a of all) {
     const own = lines.filter((l) => l.assessmentId === a.id)
+    const bookedCents: Record<string, number> = {}
+    for (const l of own) if (l.costItemId) bookedCents[l.costItemId] = (bookedCents[l.costItemId] ?? 0) + (l.amountCents ?? 0)
     links.set(a.file, {
-      bookedItemIds: [...new Set(own.flatMap((l) => (l.costItemId ? [l.costItemId] : [])))],
+      bookedItemIds: Object.keys(bookedCents),
+      bookedCents,
       assessment: { id: a.id, propertyId: a.propertyId, open: own.some((l) => l.costItemId === null && !l.dismissed) },
     })
   }
