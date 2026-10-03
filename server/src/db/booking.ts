@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../../../shared/types.ts'
 import { describeAssessment, type BookedLine } from '../assessment.ts'
-import { decide, planBooking, previewWith, tokenSource, type Planned } from '../bookingPlan.ts'
+import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import { bookedLines, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
@@ -113,22 +113,15 @@ export async function previewBooking(db: Database, id: string, decisions: readon
   return previewWith(planned, tokenOf(planned))
 }
 
-export type BookingOutcome =
-  | { kind: 'done'; changed: boolean; preview: BookingPreview }
-  | { kind: 'refused'; preview: BookingPreview }
-  | { kind: 'conflict'; message: string }
-  | { kind: 'stale'; preview: BookingPreview }
+export type { BookingOutcome } from '../bookingPlan.ts'
 
 export async function bookAssessment(
   db: Database, id: string, decisions: readonly LineDecision[], token: string, options: { uploadDir: string; newId: () => string },
 ): Promise<BookingOutcome> {
   const { record, ctx, planned } = await plannedFor(db, id, decisions, options.uploadDir, options.newId)
   const preview = previewWith(planned, tokenOf(planned))
-  const decision = decide(planned, decisions.length, token, preview.token)
-  if (decision === 'conflict') return { kind: 'conflict', message: planned.conflicts.join(' ') }
-  if (decision === 'unchanged') return { kind: 'done', changed: false, preview }
-  if (decision === 'refused') return { kind: 'refused', preview }
-  if (decision === 'stale') return { kind: 'stale', preview }
+  const settled = settle(planned, decisions.length, token, preview)
+  if (settled) return settled
   // `Stock` schneidet zwei Listentypen; benannt, damit `map` die vollständigen Positionen sieht.
   const stockItems: readonly CostItem[] = ctx.stock.costItems
   const items = new Map(stockItems.map((i) => [i.id, i]))
