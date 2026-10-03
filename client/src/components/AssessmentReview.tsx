@@ -36,10 +36,15 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   // einer Buchung dieses Belegs. Nicht bei jeder neuen Antwort: Bucht der Nutzer einen anderen
   // Beleg, lädt die Seite alle Auswertungen neu, und was er hier gerade eingibt, bliebe sonst
   // nicht stehen (Durchsicht zu #170).
+  // Zurückgesetzt wird beim Rendern und nicht in einem Effekt: Ein Effekt lief auch beim ersten
+  // Einfügen der Karte und erst nach dem Zeichnen, und eine Eingabe, die in diese Lücke fiel, war
+  // danach still verschwunden (in Abnahme A wurde so nur eine von zwei Zeilen verknüpft).
   const shape = a.lines.map((l) => `${l.idx}:${l.state}`).join('|')
-  useEffect(() => {
+  const [rowsShape, setRowsShape] = useState(shape)
+  if (rowsShape !== shape) {
+    setRowsShape(shape)
     setRows(initialRows(a))
-  }, [shape])
+  }
   // Eine Vorschau gilt nur für den Stand, den sie gesehen hat: Kommt die Auswertung neu (anderes
   // Jahr, eine andere Karte gebucht, Neuladen), verschwindet sie. Gebucht würde ohnehin nicht an
   // ihr vorbei (die Marke ergäbe „veraltet“), aber sie soll nichts zeigen, was nicht mehr gilt.

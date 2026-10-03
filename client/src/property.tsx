@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { api } from './api'
 import { useConfirm } from './components/feedback'
 import type { Property } from './types'
@@ -71,9 +71,12 @@ const OpenFormsCtx = createContext<Set<symbol> | null>(null)
 
 // Meldet ein Formular an, solange `open` gilt. Der Drawer tut das von selbst; Formulare ohne
 // Drawer rufen es selbst auf. Außerhalb des Providers (Tests einzelner Teile) geschieht nichts.
+// Als Layout-Effekt, damit die Marke mit dem Gezeichneten übereinstimmt: Ein gewöhnlicher Effekt
+// läuft erst nach dem Zeichnen, und ein Wechsel in dieser Lücke fragte bei einem eben
+// geschlossenen Formular nach oder bei einem eben geöffneten nicht.
 export function useOpenForm(open: boolean): void {
   const forms = useContext(OpenFormsCtx)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !forms) return
     const mark = Symbol('Formular')
     forms.add(mark)
