@@ -4584,6 +4584,11 @@ const RECHNUNGEN: Record<string, FakeInvoice> = {
   // Weder Rechnungsdatum noch Leistungszeitraum: Das Jahr der Auswertung kommt aus dem Formular.
   HAUSMEISTER: { vendor: 'Hausmeisterdienst Muster', totalGrossEur: 300, positions: [{ description: 'Hausmeisterdienst', category: 'Hauswart', amountEur: 300 }] },
   NACHTRAG: { vendor: 'Stadtwerke Musterstadt', invoiceDate: '2026-03-01', totalGrossEur: 120, positions: [{ description: 'Nachberechnung Abwasser', category: 'Wasser/Abwasser', amountEur: 120 }] },
+  MUELL: {
+    vendor: 'Abfallwirtschaft Musterkreis', invoiceDate: '2026-12-15', totalGrossEur: 650,
+    positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 700 }, { description: 'Gutschrift Tonnentausch', category: 'Müllabfuhr', amountEur: -50 }],
+  },
+  GARTEN: { vendor: 'Gärtnerei Grün', invoiceDate: '2026-11-30', totalGrossEur: 1450, positions: [{ description: 'Gartenpflege Saison', category: 'Gartenpflege', amountEur: 1450, labor35aEur: null }] },
 }
 
 type Evaluated = { file: string, assessment: AssessmentView | null }
@@ -4945,5 +4950,60 @@ test('Belegbuchung: Backup und Wiederherstellen nehmen Auswertungen und gebuchte
     assert.equal((await restore(s, backup)).status, 200)
     assert.deepEqual((await s.api<AssessmentView[]>('/api/assessments?open=1')).map((a) => a.id), [w.id])
     assert.deepEqual((await s.api<AssessmentView>(`/api/assessments/${g.id}`)).lines.map((l) => l.state), ['created'])
+  }, { invoices: RECHNUNGEN })
+})
+
+// Ein Beleg aus dem Posteingang noch einmal auswerten, wie „Per KI auswerten“ es tut.
+async function evaluateAgain(s: Server, file: string, marker: string): Promise<Evaluated> {
+  const fd = new FormData()
+  fd.append('existingFile', file)
+  // Wie beim ersten Auswerten: Unter 80 Zeichen gälte die Textebene als fehlend.
+  fd.append('pdfText', invoiceText(marker))
+  const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
+  assert.equal(res.status, 200, await res.clone().text())
+  return jsonOf<Evaluated>(res)
+}
+
+test('Belegbuchung: die vier Abnahmefälle der Spezifikation über die Routen', async () => {
+  await withOllama(async (s) => {
+    const book = async (a: AssessmentView, decisions: LineDecision[]): Promise<{ changed: boolean }> => {
+      const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+      assert.deepEqual(preview.errors, [])
+      const res = await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })
+      assert.equal(res.status, 200, await res.clone().text())
+      return jsonOf<{ changed: boolean }>(res)
+    }
+    const fieldsAt = (a: AssessmentView, idx: number) => a.lines.find((l) => l.idx === idx)?.suggestion?.fields ?? assert.fail(`kein Vorschlag zu Zeile ${idx}`)
+    const newItem = async (body: Record<string, unknown>) => jsonOf<CostItem>(await postJson(s, '/api/costItems', body))
+
+    // A: Wasser 700 € + 800 € gegen eine Schätzung von 1.500 €
+    const wa = await newItem({ year: 2026, category: 'Wasser/Abwasser', description: 'Wasser 2026', amountCents: 150000, key: 'area' })
+    const wasser = assessmentOf(await evaluate(s, 'WASSER'))
+    const wasserDecisions: LineDecision[] = [{ idx: 0, action: 'link', costItemId: wa.id }, { idx: 1, action: 'link', costItemId: wa.id }]
+    await book(wasser, wasserDecisions)
+
+    // B: Restmüll 700 € mit Gutschrift −50 €
+    const muell = assessmentOf(await evaluate(s, 'MUELL'))
+    await book(muell, [{ idx: 0, action: 'create', fields: fieldsAt(muell, 0) }, { idx: 1, action: 'create', fields: fieldsAt(muell, 1) }])
+
+    // C: Schätzung mit §35a 1.000 €, Rechnung ohne Lohnanteil
+    const gp = await newItem({ year: 2026, category: 'Gartenpflege', description: 'Gartenpflege 2026', amountCents: 150000, labor35aCents: 100000, key: 'area' })
+    const garten = assessmentOf(await evaluate(s, 'GARTEN'))
+    const gartenDecisions: LineDecision[] = [{ idx: 0, action: 'link', costItemId: gp.id }]
+    const c = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${garten.id}/plan`, { decisions: gartenDecisions }))
+    assert.ok(c.notices.some((n) => /Lohnanteil von 1\.000,00\s€ wird entfernt/.test(n)), c.notices.join('\n'))
+    await book(garten, gartenDecisions)
+
+    // D: derselbe Beleg zweimal: wiederholte Buchung ohne Änderung, erneutes Auswerten ohne neue offene Zeile
+    assert.equal((await book(wasser, wasserDecisions)).changed, false)
+    const again = assessmentOf(await evaluateAgain(s, wasser.file, 'WASSER'))
+    assert.deepEqual([again.id, again.open, again.lines.map((l) => l.state)], [wasser.id, false, ['linked', 'linked']])
+
+    const items = await s.api<CostItem[]>('/api/costItems')
+    const byDescription = (d: string) => items.filter((i) => i.description === d).map((i) => [i.amountCents, i.labor35aCents ?? null])
+    assert.deepEqual(byDescription('Wasser 2026'), [[150000, null]], 'A: eine Position über 1.500 €')
+    assert.deepEqual([...byDescription('Restmüll'), ...byDescription('Gutschrift Tonnentausch')], [[70000, null], [-5000, null]], 'B: zwei Positionen')
+    assert.deepEqual(byDescription('Gartenpflege 2026'), [[145000, null]], 'C: Lohnanteil entfernt')
+    assert.equal(items.length, 4, 'D: nichts doppelt')
   }, { invoices: RECHNUNGEN })
 })
