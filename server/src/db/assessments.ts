@@ -91,12 +91,14 @@ export async function forgetAssessment(db: Executor, file: string): Promise<void
   await db.delete(assessments).where(eq(assessments.file, file))
 }
 
-// Objekt und Jahr ändern. Das Objekt nur, solange keine Zeile gebucht ist: Sonst hingen Zeilen
-// einer Auswertung an Positionen zweier Objekte.
+// Objekt und Jahr ändern, beides nur, solange keine Zeile gebucht ist: Sonst hingen Zeilen einer
+// Auswertung an Positionen zweier Objekte oder eines anderen Jahres, und ein weiteres Verknüpfen
+// mit derselben Position scheiterte an der Jahresprüfung des Planers.
 export async function placeAssessment(db: Database, id: string, change: { year?: number; propertyId?: string | null }): Promise<'ok' | 'missing' | 'booked'> {
   const current = await readAssessment(db, id)
   if (!current) return 'missing'
-  const moves = change.propertyId !== undefined && change.propertyId !== current.assessment.propertyId
+  const moves = (change.propertyId !== undefined && change.propertyId !== current.assessment.propertyId) ||
+    (change.year !== undefined && change.year !== current.assessment.year)
   if (moves && current.lines.some((l) => l.costItemId !== null)) return 'booked'
   if (change.year === undefined && change.propertyId === undefined) return 'ok'
   await db.update(assessments).set(change).where(eq(assessments.id, id))
