@@ -129,3 +129,15 @@ test('Die Datenbank lehnt eine gebuchte Zeile ohne Art ab', async () => {
     )
   })
 })
+
+test('Erneut auswerten vergibt nie eine Nummer zweimal, auch wenn die letzte Zeile zwischendurch weg war', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => item(db, 'c1'))
+    const first = await opened.write((db) => saveAssessment(db, head('w.pdf', [line('A', 70000), line('B', 80000)]), ids()))
+    await opened.write((db) => link(db, first, 0, 'c1'))
+    // Nur A ist noch da: B (Nummer 1) wird ersetzt, A bleibt gebucht und kommt nicht doppelt.
+    await opened.write((db) => saveAssessment(db, head('w.pdf', [line('A', 70000)]), ids()))
+    const third = await opened.write((db) => saveAssessment(db, head('w.pdf', [line('A', 70000), line('C', 90000)]), ids()))
+    assert.deepEqual(third.lines.map((l) => [l.idx, l.description]), [[0, 'A'], [2, 'C']], 'C darf nicht die frühere Nummer von B erben')
+  })
+})

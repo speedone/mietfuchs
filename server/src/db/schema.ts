@@ -743,6 +743,8 @@ export const assessments = sqliteTable(
     totalGrossCents: integer('total_gross_cents'),
     amountsAdjusted: text('amounts_adjusted', { enum: AMOUNTS_ADJUSTED }),
     laborFromTotal: integer('labor_from_total', { mode: 'boolean' }).notNull().default(false),
+    // Hochwassermarke der Zeilennummern: die nächste Nummer, die es in dieser Auswertung noch nie gab.
+    nextIdx: integer('next_idx').notNull().default(0),
     createdAt: text('created_at').notNull(),
   },
   (t) => [
@@ -750,6 +752,7 @@ export const assessments = sqliteTable(
     // Posteingang und Schnellerfassung fragen die offenen Auswertungen eines Objekts ab.
     index('assessments_property_idx').on(t.propertyId),
     check('assessments_year_positive', sql.raw('"year" > 0')),
+    notNegative('assessments_next_idx_not_negative', 'next_idx'),
     oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
   ],
 )
