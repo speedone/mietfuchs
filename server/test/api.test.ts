@@ -22,7 +22,7 @@ import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, CostItem, Extraction,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadInfo,
 } from '../../shared/types.ts'
@@ -1101,7 +1101,16 @@ const OFF_SCHEMA = {
 // weiter).
 // Ein Modell, wie der nachgebaute Dienst es kennt (Ollamas /api/tags und /api/show).
 type FakeModel = { name: string, size?: number, capabilities?: string[], remote_host?: string }
+// Eine erfundene Rechnung für die Belegbuchung (#170). Das nachgebaute Ollama wählt sie, wenn ihr
+// Kennwort im Text der Anfrage steht, und beantwortet den Durchgang der Kostenarten mit ihren.
+type FakeInvoice = {
+  vendor: string
+  invoiceDate?: string
+  totalGrossEur?: number
+  positions: { description: string, category: string, amountEur: number | null, labor35aEur?: number | null }[]
+}
 type FakeOllamaOptions = {
+  invoices?: Record<string, FakeInvoice>
   models?: FakeModel[]
   chat?: 'normal' | 'netto' | 'offSchema' | 'hang' | 'hangAfterFirstChunk' | 'length' | 'error' | 'rejectThinkOff' | 'meter'
   key?: string | null
@@ -1109,11 +1118,11 @@ type FakeOllamaOptions = {
   garbledShow?: boolean
 }
 
-async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false, garbledShow = false }: FakeOllamaOptions = {}) {
+async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['completion', 'vision'] }], chat = 'normal', key = null, echoKey = false, garbledShow = false, invoices }: FakeOllamaOptions = {}) {
   const http = await import('node:http')
   const requests: OllamaRequest[] = []
   const open = new Set<http.ServerResponse>()
-  const state = { closedEarly: 0 }
+  const state: { closedEarly: number, lastInvoice: FakeInvoice | null } = { closedEarly: 0, lastInvoice: null }
   // Steuert den nachgebauten Dienst während eines Tests, etwa für den Abbruch beim Laden
   const control = { pullHangs: false }
   const findModel = (name = '') => models.find((m) => m.name === (name.includes(':') ? name : `${name}:latest`))
@@ -1181,14 +1190,20 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
       }
       // Den zweiten Durchgang (nur Kategorien) erkennt man am Schema
       // 'meter': Das Foto ist ein Zählerstand (Schuhkarton der Schnellerfassung)
+      // Belegbuchung (#170): die Rechnung, deren Kennwort in der Anfrage steht. Der Durchgang
+      // der Kostenarten nennt die Positionen nicht beim Kennwort, er bekommt die zuletzt gewählte.
+      const chosen = invoices ? Object.entries(invoices).find(([marker]) => JSON.stringify(json.messages ?? []).includes(marker))?.[1] : undefined
+      if (chosen) state.lastInvoice = chosen
       const content = JSON.stringify(
         json.format?.properties?.docType
           ? { docType: chat === 'meter' ? 'zaehlerstand' : 'rechnung' }
           : json.format?.properties?.meterNumber
             ? { meterNumber: '4711', value: 123.4, dateOnImage: null }
         : json.format?.properties?.categories
-          ? { categories: ['Wasser/Abwasser'] }
-          : chat === 'offSchema'
+          ? { categories: invoices && state.lastInvoice ? state.lastInvoice.positions.map((p) => p.category) : ['Wasser/Abwasser'] }
+          : chosen
+            ? chosen
+            : chat === 'offSchema'
             ? OFF_SCHEMA
             : {
                 vendor: 'Stadtwerke Musterstadt',
@@ -1243,10 +1258,10 @@ async function fakeOllama({ models = [{ name: 'test:latest', capabilities: ['com
 }
 
 type Ollama = Awaited<ReturnType<typeof fakeOllama>>
-type WithOllamaOptions = { models?: FakeModel[], model?: string, chat?: FakeOllamaOptions['chat'], env?: NodeJS.ProcessEnv }
+type WithOllamaOptions = { models?: FakeModel[], model?: string, chat?: FakeOllamaOptions['chat'], env?: NodeJS.ProcessEnv, invoices?: Record<string, FakeInvoice> }
 
-async function withOllama(fn: (s: Server, ollama: Ollama) => Promise<void>, { models, model = 'test', chat, env = {} }: WithOllamaOptions = {}) {
-  const ollama = await fakeOllama({ models, chat })
+async function withOllama(fn: (s: Server, ollama: Ollama) => Promise<void>, { models, model = 'test', chat, env = {}, invoices }: WithOllamaOptions = {}) {
+  const ollama = await fakeOllama({ models, chat, invoices })
   const s = await startServerIn(fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-test-')), env)
   try {
     await s.api<ClientSettings>('/api/settings', { method: 'PUT', body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: model }) })
@@ -4555,4 +4570,176 @@ test('Schuhkarton (#170): ein Zählerfoto ist kein Beleg und steht nicht im Post
     const beleg = await uploadBelegFile(s, '%PDF-b', 'b.pdf')
     assert.equal((await listedUpload(s, beleg)).kind, 'receipt')
   }, { chat: 'meter' })
+})
+
+// ---------- Belegbuchung (#170): die Routen ----------
+
+const RECHNUNGEN: Record<string, FakeInvoice> = {
+  GRUNDSTEUER: { vendor: 'Stadt Musterstadt', invoiceDate: '2025-02-15', totalGrossEur: 612.4, positions: [{ description: 'Grundsteuer B 2025', category: 'Grundsteuer', amountEur: 612.4 }] },
+  WASSER: {
+    vendor: 'Stadtwerke Musterstadt', invoiceDate: '2026-02-01', totalGrossEur: 1500,
+    positions: [{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }, { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 800 }],
+  },
+}
+
+type Evaluated = { file: string, assessment: AssessmentView | null }
+
+// Wie der Browser: ein PDF mit Textebene an /api/extract, ohne Strom. `marker` wählt die Rechnung.
+async function evaluate(s: Server, marker: string, extra: Record<string, string> = {}): Promise<Evaluated> {
+  const fd = new FormData()
+  fd.append('file', new Blob([PDF], { type: 'application/pdf' }), `${marker.toLowerCase()}.pdf`)
+  fd.append('pdfText', `Rechnung ${marker}: Positionen wie aufgeführt, Betrag in Euro, zahlbar binnen 14 Tagen.`)
+  for (const [k, v] of Object.entries(extra)) fd.append(k, v)
+  const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
+  assert.equal(res.status, 200, await res.clone().text())
+  return jsonOf<Evaluated>(res)
+}
+const postJson = (s: Server, urlPath: string, body: unknown): Promise<Response> =>
+  fetch(`${s.base}${urlPath}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const assessmentOf = (e: Evaluated): AssessmentView => e.assessment ?? assert.fail('keine Auswertung gespeichert')
+const grundsteuer = (a: AssessmentView): LineDecision[] =>
+  [{ idx: 0, action: 'create', fields: a.lines[0]?.suggestion?.fields ?? assert.fail('kein Vorschlag') }]
+
+test('Belegbuchung: Auswerten speichert die Auswertung mit Vorschlag; nach dem Neuladen ist sie offen abrufbar', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
+    assert.equal(a.year, 2026, 'das Jahr aus dem Beleg geht vor dem gewählten')
+    assert.equal(a.propertyId, 'objekt-1', 'mit einem Objekt gilt dieses')
+    assert.deepEqual(a.lines.map((l) => [l.description, l.amountCents, l.state, l.suggestion?.preselected]), [
+      ['Frischwasser', 70000, 'open', true], ['Abwasser', 80000, 'open', true],
+    ])
+    const offen = await s.api<AssessmentView[]>('/api/assessments?open=1')
+    assert.deepEqual(offen.map((x) => x.id), [a.id])
+    assert.equal((await s.api<AssessmentView>(`/api/assessments/${a.id}`)).file, a.file)
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: eine gescheiterte Auswertung speichert nichts', async () => {
+  await withOllama(async (s) => {
+    const fd = new FormData()
+    fd.append('file', new Blob([PDF], { type: 'application/pdf' }), 'fehler.pdf')
+    fd.append('pdfText', 'Rechnung WASSER')
+    const res = await fetch(`${s.base}/api/extract`, { method: 'POST', body: fd })
+    assert.equal(res.status, 502)
+    assert.deepEqual(await s.api<AssessmentView[]>('/api/assessments'), [])
+  }, { invoices: RECHNUNGEN, chat: 'error' })
+})
+
+test('Belegbuchung: Doppelklick und zwei Tabs zugleich ergeben eine Position', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const decisions = grundsteuer(a)
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+    assert.deepEqual(preview.errors, [])
+    const [x, y] = await Promise.all([
+      postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token }),
+      postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token }),
+    ])
+    assert.deepEqual([x.status, y.status], [200, 200])
+    const changed = [(await jsonOf<{ changed: boolean }>(x)).changed, (await jsonOf<{ changed: boolean }>(y)).changed].sort()
+    assert.deepEqual(changed, [false, true])
+    const again = await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })
+    assert.equal((await jsonOf<{ changed: boolean }>(again)).changed, false, 'eine Wiederholung nach einem Netzfehler bucht nicht noch einmal')
+    const items = await s.api<CostItem[]>('/api/costItems')
+    assert.deepEqual(items.map((i) => [i.amountCents, i.invoiceFile]), [[61240, a.file]])
+    assert.deepEqual(await s.api<AssessmentView[]>('/api/assessments?open=1'), [], 'gebucht ist nicht mehr offen')
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: ohne Vorschau keine Buchung; anders gebucht ergibt 409 mit dem Stand; Unlesbares 400', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const decisions = grundsteuer(a)
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/book`, { decisions })).status, 400)
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/plan`, { decisions: [{ idx: 0, action: 'zaubern' }] })).status, 400)
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })).status, 200)
+    const anders = await postJson(s, `/api/assessments/${a.id}/book`, { decisions: [{ idx: 0, action: 'dismiss' }], token: 'egal' })
+    assert.equal(anders.status, 409)
+    const body = await jsonOf<{ error: string, assessment: AssessmentView }>(anders)
+    assert.match(body.error, /schon gebucht/)
+    assert.equal(body.assessment.lines[0]?.state, 'created')
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: gebucht wird im Objekt der Auswertung, nicht im gewählten; ihr Objekt ist danach fest', async () => {
+  await withOllama(async (s) => {
+    const zweites = await jsonOf<Property>(await postJson(s, '/api/properties', { name: 'Zweites Haus' }))
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { propertyId: 'objekt-1' }))
+    assert.equal(a.propertyId, 'objekt-1')
+    const decisions = grundsteuer(a)
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan?property=${zweites.id}`, { decisions }))
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/book?property=${zweites.id}`, { decisions, token: preview.token })).status, 200)
+    assert.equal((await s.api<CostItem[]>('/api/costItems?property=objekt-1')).length, 1)
+    assert.equal((await s.api<CostItem[]>(`/api/costItems?property=${zweites.id}`)).length, 0)
+    const put = await fetch(`${s.base}/api/assessments/${a.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ propertyId: zweites.id }) })
+    assert.equal(put.status, 409)
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: ist die Datei weg, fehlt die Auswertung in der Liste, und Vorschau wie Buchung antworten 404', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    fs.rmSync(path.join(s.dataDir, 'uploads', a.file))
+    assert.deepEqual(await s.api<AssessmentView[]>('/api/assessments?open=1'), [])
+    const plan = await postJson(s, `/api/assessments/${a.id}/plan`, { decisions: grundsteuer(a) })
+    assert.equal(plan.status, 404)
+    assert.match((await jsonOf<{ error: string }>(plan)).error, /gibt es im Belegordner nicht mehr/)
+  }, { invoices: RECHNUNGEN })
+})
+
+// Entscheidungen des Steuerers zu Task 4
+
+test('Belegbuchung: eine veraltete Vorschau ergibt 409 mit der neuen Vorschau, gebucht wird nichts', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const decisions = grundsteuer(a)
+    const fresh = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+    const res = await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: 'eine-alte-marke' })
+    assert.equal(res.status, 409)
+    const body = await jsonOf<{ error: string, preview?: BookingPreview }>(res)
+    assert.match(body.error, /neue Vorschau/)
+    const preview = body.preview ?? assert.fail('die neue Vorschau fehlt in der Antwort')
+    assert.equal(preview.token, fresh.token, 'mit der mitgeschickten Marke lässt sich ohne zweite Anfrage buchen')
+    assert.deepEqual(await s.api<CostItem[]>('/api/costItems'), [])
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })).status, 200)
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: nach einer Buchung lassen sich weder Objekt noch Jahr der Auswertung ändern, und die Meldung sagt beides', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const decisions = grundsteuer(a)
+    const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+    assert.equal((await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })).status, 200)
+    const put = await fetch(`${s.base}/api/assessments/${a.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: a.year + 1 }) })
+    assert.equal(put.status, 409)
+    const { error } = await jsonOf<{ error: string }>(put)
+    assert.match(error, /Objekt/)
+    assert.match(error, /Jahr/)
+    assert.match(error, /Lösen Sie/, 'sagt, was zu tun ist')
+    assert.equal((await s.api<AssessmentView>(`/api/assessments/${a.id}`)).year, a.year)
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: ohne Buchung ändert PUT Jahr und Objekt der Auswertung', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER'))
+    const put = await fetch(`${s.base}/api/assessments/${a.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: 2024 }) })
+    assert.equal(put.status, 200)
+    assert.equal((await jsonOf<AssessmentView>(put)).year, 2024)
+    const falsch = await fetch(`${s.base}/api/assessments/${a.id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: 'zwanzig' }) })
+    assert.equal(falsch.status, 400)
+    const fehlt = await fetch(`${s.base}/api/assessments/gibt-es-nicht`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ year: 2024 }) })
+    assert.equal(fehlt.status, 404)
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: das Jahr der Auswertung wird zum Jahr des Belegs im Posteingang, solange nichts gebucht ist', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
+    assert.equal(a.year, 2026)
+    const beleg = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === a.file) ?? assert.fail('der Beleg fehlt im Ordner')
+    assert.equal(beleg.year, 2026, 'der Posteingang zeigt den Beleg im Jahr, das er selbst nennt')
+  }, { invoices: RECHNUNGEN })
 })

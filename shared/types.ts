@@ -678,9 +678,13 @@ export type MeterReadingExtraction = {
   dateOnImage?: string | null
 }
 
+// Antwort von /api/extract. `assessment` ist die gespeicherte Auswertung (Belegbuchung, #170);
+// `null`, wenn sie sich nicht speichern ließ.
+export type ExtractResult = { file: string; extraction: Extraction; assessment: AssessmentView | null }
+
 // Antwort von /api/intake: erkennt automatisch Rechnung vs. Zählerfoto
 export type IntakeResult = { file: string } & (
-  | { kind: 'rechnung'; extraction: Extraction }
+  | { kind: 'rechnung'; extraction: Extraction; assessment: AssessmentView | null }
   | { kind: 'zaehler'; reading: MeterReadingExtraction }
 )
 

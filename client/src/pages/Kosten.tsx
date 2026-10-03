@@ -372,6 +372,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
       try {
         // PDFs liest der Browser selbst und schickt Text oder Seitenbilder mit (pdfIntake.ts)
         const fd = await buildUpload(filesRef.current.get(next.id)!, undefined, settings?.ai?.pageImageEdge ?? undefined)
+        // Bleibt der Beleg ungebucht, steht er im Posteingang dieses Objekts; nennt er kein Jahr,
+        // gilt das gewählte (#170).
+        if (propertyId) fd.append('propertyId', propertyId)
+        fd.append('year', String(year))
         const res = await aiRequest<{ file: string; extraction: Extraction }>('/api/extract', fd, {
           signal: controller.signal,
           onProgress: (progress) => patchEntry(next.id, { progress }),
