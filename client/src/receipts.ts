@@ -168,7 +168,7 @@ export function duplicateHints(cards: ReceiptCard[]): Map<string, string> {
     if (card.items.length === 0 || !card.vendor) continue
     const vendor = card.vendor.toLowerCase()
     const other = cards.find((o) =>
-      o !== card && o.items.length > 0 && !o.items.some((i) => card.items.includes(i)) && o.vendor?.toLowerCase() === vendor && o.amountCents === card.amountCents &&
+      o !== card && o.items.length > 0 && o.vendor?.toLowerCase() === vendor && o.amountCents === card.amountCents &&
       o.years.some((y) => card.years.includes(y)))
     if (other) {
       hints.set(card.upload.file, `gleicher Rechnungssteller, gleiche Summe und gleiches Jahr wie „${receiptName(other.upload)}“ — möglicherweise doppelt erfasst`)

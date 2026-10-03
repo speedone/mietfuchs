@@ -187,6 +187,12 @@ describe('Belegmappe für Mieter (#170): Belege über gebuchte Zeilen', () => {
     expect(plan.documents.map((d) => [d.upload.file, d.itemIds])).toEqual([['1_abschlag.pdf', ['st']], ['2_rest.pdf', ['st']]])
   })
 
+  it('fehlt die Datei des invoiceFile, steht „missing“, der Zeilenbeleg liegt trotzdem in der Mappe', () => {
+    const plan = planTenantFolder(settlement([['st']]), [item('st', { invoiceFile: '9_weg.pdf' })], [rest], { includeIndividual: false })
+    expect(plan.entries.map((e) => e.status)).toEqual(['missing'])
+    expect(plan.documents.map((d) => d.upload.file)).toEqual(['2_rest.pdf'])
+  })
+
   it('eine Position ohne invoiceFile, deren Beleg nur an einer Zeile hängt, hat ihn in der Mappe', () => {
     const plan = planTenantFolder(settlement([['st']]), [item('st')], [rest], { includeIndividual: false })
     expect(plan.entries.map((e) => e.status)).toEqual(['ok'])
