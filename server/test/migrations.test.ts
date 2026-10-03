@@ -62,6 +62,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Angaben zu Belegen (#170).
   // Vor der Veröffentlichung neu erzeugt (Spalte kind, Durchsicht); der Schritt hat den Arbeitszweig nie verlassen.
   '0012_belege': '02a985bcc59b65113f13754a77ce17b4800357f8149ce5b73690c4d8e4b7bf71',
+  // Belegbuchung (#170). Eingetragen vor dem Merge, wie 0001: Jeder Push auf main veröffentlicht
+  // das Image, und ab dann haben Nutzer den Schritt angewendet. Wird 0013 vor dem Push neu
+  // erzeugt, hier die neue Marke eintragen.
+  '0013_belegbuchung': 'b1b7167f9b461f55b8d76bf76c5e1aa4839859fb0465d7ad0c81e3f3e8a4fa7a',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

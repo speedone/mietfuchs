@@ -15,6 +15,7 @@ import type {
   AiJsonMode,
   AiProviderKind,
   AiSlotName,
+  AssessmentBooking,
   CostKey,
   CostModel,
   DepositStatus,
@@ -22,6 +23,7 @@ import type {
   MeterType,
   PropertyKind,
   Settings,
+  StoredAssessment,
   UploadKind,
 } from '../../../shared/types.ts'
 
@@ -710,5 +712,72 @@ export const uploads = sqliteTable(
     oneOf('uploads_kind_known', 'kind', UPLOAD_KINDS),
     // Ein Jahr 0 oder darunter wäre ein Tippfehler, kein Abrechnungsjahr.
     check('uploads_year_positive', sql.raw('"year" > 0')),
+  ],
+)
+
+// ---------- Belegbuchung (#170) ----------
+//
+// **Eine Auswertung je Beleg** (eindeutig über `file`). Wird derselbe Beleg erneut ausgewertet,
+// ersetzt die neue Auswertung nur die offenen und verworfenen Zeilen (db/assessments.ts).
+//
+// **Der Zustand einer Zeile steht nicht in einer Spalte**, er wird aus `cost_item_id`, `booking`
+// und `dismissed` abgeleitet. `cost_item_id` ist `SET NULL`: Löscht jemand die Position, ist die
+// Zeile von selbst wieder offen, und kein zweites Feld müsste nachgezogen werden. `booking` bleibt
+// dann stehen, sagt aber nichts mehr, denn ohne Position ist die Zeile offen.
+//
+// `property_id` ist `SET NULL` wie bei `uploads`: Ein Objekt wird nur leer gelöscht, und eine
+// Auswertung ohne Objekt lässt sich nicht buchen, bis jemand eines wählt.
+export const ASSESSMENT_BOOKINGS = exactly<AssessmentBooking>()(['created', 'linked'] as const)
+const AMOUNTS_ADJUSTED = exactly<NonNullable<StoredAssessment['amountsAdjusted']>>()(['netto'] as const)
+
+export const assessments = sqliteTable(
+  'assessments',
+  {
+    id: text('id').primaryKey().notNull(),
+    file: text('file').notNull(),
+    propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
+    year: integer('year').notNull(),
+    detectedYear: integer('detected_year'),
+    vendor: text('vendor'),
+    invoiceDate: text('invoice_date'),
+    totalGrossCents: integer('total_gross_cents'),
+    amountsAdjusted: text('amounts_adjusted', { enum: AMOUNTS_ADJUSTED }),
+    laborFromTotal: integer('labor_from_total', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('assessments_file_unique').on(t.file),
+    // Posteingang und Schnellerfassung fragen die offenen Auswertungen eines Objekts ab.
+    index('assessments_property_idx').on(t.propertyId),
+    check('assessments_year_positive', sql.raw('"year" > 0')),
+    oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
+  ],
+)
+
+export const assessmentLines = sqliteTable(
+  'assessment_lines',
+  {
+    assessmentId: text('assessment_id')
+      .notNull()
+      .references(() => assessments.id, { onDelete: 'cascade' }),
+    idx: integer('idx').notNull(),
+    description: text('description').notNull(),
+    category: text('category').notNull(),
+    categoryGuessed: integer('category_guessed', { mode: 'boolean' }).notNull().default(false),
+    // Ohne Vorzeichenbedingung: Eine Gutschrift ist negativ, wie bei `cost_items.amount_cents`.
+    amountCents: integer('amount_cents'),
+    labor35aCents: integer('labor_35a_cents'),
+    booking: text('booking', { enum: ASSESSMENT_BOOKINGS }),
+    costItemId: text('cost_item_id').references(() => costItems.id, { onDelete: 'set null' }),
+    dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.assessmentId, t.idx] }),
+    // Die Summenregel fragt je Position alle Zeilen, die an ihr hängen.
+    index('assessment_lines_cost_item_idx').on(t.costItemId),
+    notNegative('assessment_lines_idx_not_negative', 'idx'),
+    oneOf('assessment_lines_booking_known', 'booking', ASSESSMENT_BOOKINGS),
+    // Eine gebuchte Zeile sagt, wie sie gebucht ist.
+    check('assessment_lines_booking_complete', sql.raw('"cost_item_id" IS NULL OR "booking" IS NOT NULL')),
   ],
 )
