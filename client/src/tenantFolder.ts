@@ -14,6 +14,7 @@ import type { PDFDocument, PDFFont, PDFPage } from 'pdf-lib'
 import type { CostItem, Settlement, UploadInfo } from './types'
 import { isNotAllocable } from './types'
 import { fmtEuro } from './api'
+import type { ReceiptUpload } from './receipts'
 
 export type FolderEntryStatus =
   | 'ok' // Beleg liegt bei
@@ -45,7 +46,7 @@ export const isIndividualAmounts = (c: CostItem): boolean =>
 export function planTenantFolder(
   settlement: Settlement,
   items: CostItem[],
-  uploads: UploadInfo[],
+  uploads: ReceiptUpload[],
   { includeIndividual }: { includeIndividual: boolean },
 ): TenantFolderPlan {
   // Reihenfolge der Abrechnung: wie die Zeilen der Mieter stehen, über alle Mieter vereinigt.
@@ -60,13 +61,20 @@ export function planTenantFolder(
   for (const id of order) {
     const item = byId.get(id)
     if (!item || isNotAllocable(item.category)) continue
-    const upload = item.invoiceFile ? byFile.get(item.invoiceFile) ?? null : null
-    const status: FolderEntryStatus = !item.invoiceFile ? 'none' : !upload ? 'missing' : isIndividualAmounts(item) && !includeIndividual ? 'excluded' : 'ok'
+    // Der Beleg der Position und die Belege, die über gebuchte Zeilen ihrer Auswertungen an ihr
+    // hängen (Belegbuchung): Abschlag und Restrechnung gehören beide in die Mappe.
+    const named = [item.invoiceFile, ...uploads.filter((u) => u.bookedItemIds?.includes(item.id)).map((u) => u.file)]
+    const files = [...new Set(named.filter((f): f is string => !!f))]
+    const present = files.flatMap((f) => byFile.get(f) ?? [])
+    const upload = present[0] ?? null
+    const status: FolderEntryStatus = files.length === 0 ? 'none' : !upload ? 'missing' : isIndividualAmounts(item) && !includeIndividual ? 'excluded' : 'ok'
     entries.push({ item, status, upload })
-    if (status !== 'ok' || !upload) continue
-    const doc = documents.find((d) => d.upload.file === upload.file)
-    if (doc) doc.itemIds.push(item.id)
-    else documents.push({ upload, itemIds: [item.id] })
+    if (status !== 'ok') continue
+    for (const u of present) {
+      const doc = documents.find((d) => d.upload.file === u.file)
+      if (doc) doc.itemIds.push(item.id)
+      else documents.push({ upload: u, itemIds: [item.id] })
+    }
   }
   return { entries, documents }
 }

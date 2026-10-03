@@ -37,6 +37,7 @@ let sent: { url: string; method: string; body: unknown }[]
 // Für einzelne Tests: weitere Belege im Posteingang und Positionen im ersten Objekt
 let extraUploads: ReceiptUpload[]
 let extraItems: CostItem[]
+let failAssessmentPut = false
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -49,12 +50,14 @@ beforeEach(() => {
   sent = []
   extraUploads = []
   extraItems = []
+  failAssessmentPut = false
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
     if (method !== 'GET') {
       const body = init?.body instanceof FormData ? Object.fromEntries([...init.body.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : (v as File).name])) : JSON.parse(String(init?.body ?? '{}'))
       sent.push({ url: u.pathname, method, body })
+      if (failAssessmentPut && u.pathname.startsWith('/api/assessments/')) return new Response(JSON.stringify({ error: 'Zeilen sind schon gebucht.' }), { status: 409, headers: { 'content-type': 'application/json' } })
       const answer = u.pathname === '/api/upload' ? { file: '99_nachgereicht.pdf' } : { ok: true }
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
     }
@@ -323,4 +326,32 @@ test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prü
   fireEvent.click(await screen.findByRole('button', { name: 'offen.pdf weiter prüfen' }))
   expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '5_offen.pdf' }))
   expect(screen.queryByRole('button', { name: 'offen.pdf per KI auswerten' })).toBeNull()
+})
+
+const renderContinue = (onContinue: (u: ReceiptUpload) => void) => render(
+  <YearProvider>
+    <PropertyProvider>
+      <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
+    </PropertyProvider>
+  </YearProvider>,
+)
+
+test('Weiter prüfen (#170): eine Auswertung ohne Objekt bekommt zuerst das gewählte Objekt', async () => {
+  extraUploads = [{ ...up('6_ohne.pdf'), bookedItemIds: [], assessment: { id: 'a6', propertyId: null, open: true } }]
+  const onContinue = vi.fn()
+  renderContinue(onContinue)
+  fireEvent.click(await screen.findByRole('button', { name: 'ohne.pdf weiter prüfen' }))
+  await waitFor(() => expect(onContinue).toHaveBeenCalled())
+  expect(sent.filter((x) => x.url === '/api/assessments/a6')).toEqual([{ url: '/api/assessments/a6', method: 'PUT', body: { propertyId: 'p1' } }])
+  expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '6_ohne.pdf', assessment: expect.objectContaining({ propertyId: 'p1' }) }))
+})
+
+test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und die Seite wechselt nicht', async () => {
+  failAssessmentPut = true
+  extraUploads = [{ ...up('6_ohne.pdf'), bookedItemIds: [], assessment: { id: 'a6', propertyId: null, open: true } }]
+  const onContinue = vi.fn()
+  renderContinue(onContinue)
+  fireEvent.click(await screen.findByRole('button', { name: 'ohne.pdf weiter prüfen' }))
+  expect(await screen.findByText(/Zeilen sind schon gebucht/)).toBeTruthy()
+  expect(onContinue).not.toHaveBeenCalled()
 })

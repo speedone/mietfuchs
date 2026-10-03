@@ -1082,18 +1082,18 @@ app.delete('/api/uploads/:file', async (req, res) => {
   const name = path.basename(req.params.file) // verhindert Pfad-Ausbrüche
   const full = path.join(UPLOAD_DIR, name)
   if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' })
-  const inUse = await readData((db) => invoiceFilesInUse(db, [name]))
-  if (inUse.has(name)) {
+  // Prüfung und Vergessen in einem Schreibvorgang: Eine Buchung, die dazwischen ankäme, würde
+  // sonst mit der Auswertung gelöscht (Kaskade). Die Datei geht erst danach.
+  const inUse = await writeData(async (db) => {
+    if ((await invoiceFilesInUse(db, [name])).has(name)) return true
+    await forgetUpload(db, name)
+    await forgetAssessment(db, name)
+    return false
+  })
+  if (inUse) {
     return res.status(409).json({ error: 'Beleg ist noch mit Kostenpositionen verknüpft.' })
   }
   fs.unlinkSync(full)
-  // Die Angaben und eine Auswertung gehen mit (#170); gebucht ist keine ihrer Zeilen, das hat
-  // `invoiceFilesInUse` eben gesagt. Scheitert das, bleibt eine Zeile ohne Datei, und die zeigt
-  // niemand an (`GET /api/assessments` übergeht Auswertungen ohne Datei).
-  await writeData(async (db) => {
-    await forgetUpload(db, name)
-    await forgetAssessment(db, name)
-  }).catch((err: unknown) => console.warn(`Angaben zu ${name} nicht entfernt: ${messageOf(err)}`))
   res.json({ ok: true })
 })
 
@@ -1103,15 +1103,17 @@ app.delete('/api/uploads/:file', async (req, res) => {
 app.get('/api/receipts/tax/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { items, property, rows } = await readData(async (db) => {
+  const { items, property, rows, links } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
     const stock = narrowToProperty(await readStock(db), propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
-    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db) }
+    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db), links: await uploadLinks(db) }
   })
+  const booked = new Map<string, string[]>()
+  for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])
   const names = new Map<string, string>()
   for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
-  const plan = planTaxArchive(items, names)
+  const plan = planTaxArchive(items, names, booked)
   const zip = new AdmZip()
   for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
   zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
