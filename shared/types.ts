@@ -682,3 +682,7 @@ export type IntakeResult = { file: string } & (
   | { kind: 'rechnung'; extraction: Extraction }
   | { kind: 'zaehler'; reading: MeterReadingExtraction }
 )
+
+// Die Ampel einer ausgewerteten Rechnungsposition (Schnellerfassung, Belegbuchung #170): grün
+// heißt sicher, gelb prüfen, rot fehlt etwas. Steht hier, weil Server und Browser sie zeigen.
+export type TrafficLight = 'gruen' | 'gelb' | 'rot'
