@@ -8,7 +8,7 @@ import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
 import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
-import { etwByStatement, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
+import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -299,28 +299,11 @@ export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext):
   return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
 }
 
-export type AiPosition = AiPositionKey & { description: string; category: string; amount: string; labor35a: string; externalTotalAmount: string }
-
 // Die Auswahl der Zeile: die drei einfachen Schlüssel und der gespeicherte, damit angezeigt wird,
 // was gespeichert wird (Kosten.test.tsx).
 export function aiKeyOptions(stored: CostKey): CostKey[] {
   const simple: CostKey[] = ['area', 'persons', 'units']
   return simple.includes(stored) ? simple : [...simple, stored]
-}
-
-function aiPositionForm(p: AiPosition, extra: { vendor?: string; invoiceFile?: string }, units: Unit[]): ItemForm {
-  const base: ItemForm = { ...EMPTY_ITEM_FORM, category: p.category, description: p.description, vendor: extra.vendor ?? '', amount: p.amount, labor35a: p.labor35a, invoiceFile: extra.invoiceFile }
-  const withAlloc = p.allocation && p.allocation.key === p.key ? applyAllocation(base, p.allocation, units) : { ...base, key: p.key }
-  return { ...withAlloc, externalTotalAmount: p.externalTotalAmount }
-}
-
-// Der Rumpf einer übernommenen Position, über dieselbe Prüfung wie im Formular.
-export function aiPositionBody(p: AiPosition, extra: { vendor?: string; invoiceFile?: string }, units: Unit[], year: number): BuildResult {
-  return buildCostItemBody(aiPositionForm(p, extra, units), units, year)
-}
-export function aiPositionProblem(p: AiPosition, units: Unit[], year: number): string | null {
-  const built = aiPositionBody(p, {}, units, year)
-  return 'error' in built ? built.error : null
 }
 
 // Bei nicht umlagefähigen Kostenarten gibt es nichts zu verteilen (#142): Die Berechnung trägt sie

@@ -2,8 +2,10 @@
 // Zeilen wird und in welchem Zustand eine Zeile ist.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { detectedYear, lineState, linesFromExtraction, withoutBooked, type NewLine } from '../src/assessment.ts'
-import type { StoredAssessmentLine } from '../../shared/types.ts'
+import { detectedYear, lineDraft, lineState, linesFromExtraction, withoutBooked, type NewLine } from '../src/assessment.ts'
+import type { StoredAssessmentLine, Unit } from '../../shared/types.ts'
+import type { Allocation } from '../../shared/allocation.ts'
+import { costItemBody } from '../../shared/costItem.ts'
 
 test('Zeilen aus der KI: Kostenart zugeordnet, Cent, nicht gelesener Lohnanteil bleibt null, 0 bleibt 0', () => {
   const lines = linesFromExtraction({
@@ -49,4 +51,38 @@ test('Erneut ausgewertet: eine Zeile, die einer gebuchten gleicht, kommt nicht n
   // Die gebuchte Zeile trägt eine von Hand geänderte Beschreibung; gleich sind Betrag und Kostenart.
   const booked = [stored({ description: 'Wasser 2025 (geändert)', costItemId: 'c1', booking: 'created' })]
   assert.deepEqual(withoutBooked(fresh, booked).map((l) => l.description), ['Abwasser'])
+})
+
+// ---------- Entwurf einer KI-Zeile (bisher aiPositionBody in client/src/costForm.memory.test.ts) ----------
+
+const UNITS3: Unit[] = ['u1', 'u2', 'u3'].map((id) => ({ id, propertyId: 'objekt-1', name: id.toUpperCase(), areaM2: 50, participates: true }))
+const fieldsOf = (description: string, category: string, amountCents: number, key: Allocation['key'], allocation: Allocation | null, externalTotalCents: number | null = null) =>
+  ({ description, category, amountCents, labor35aCents: null, key, allocation, externalTotalCents })
+const ALLOC = (patch: Partial<Allocation>): Allocation => ({ key: 'area', meterType: null, directUnitId: null, customShares: null, participantUnitIds: null, externalBasis: null, ...patch })
+
+test('Entwurf einer KI-Zeile: Teilnehmer, Beleg und Rechnungssteller wie bisher bei der KI-Übernahme', () => {
+  const draft = lineDraft(fieldsOf('Aufzugswartung', 'Aufzug', 48000, 'area', ALLOC({ participantUnitIds: ['u1', 'u2'] })), { vendor: 'Lift GmbH', invoiceFile: 'b.pdf' }, UNITS3)
+  const built = costItemBody(draft, UNITS3, 2026)
+  if (!('body' in built)) return assert.fail(built.error)
+  assert.deepEqual([built.body.key, built.body.participantUnitIds, built.body.amountCents, built.body.vendor, built.body.invoiceFile, built.body.year], ['area', ['u1', 'u2'], 48000, 'Lift GmbH', 'b.pdf', 2026])
+})
+
+test('Entwurf einer KI-Zeile: die Gemeinschaftsabrechnung verlangt die Kosten der Gemeinschaft', () => {
+  const alloc = ALLOC({ key: 'external', externalBasis: { measure: 'mea', total: 1000 } })
+  const ohne = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, 2026)
+  assert.match('error' in ohne ? ohne.error : '', /Gemeinschaft/)
+  const mit = costItemBody(lineDraft(fieldsOf('Hauswart', 'Hauswart', 12000, 'external', alloc, 12000000), { vendor: 'WEG', invoiceFile: 'h.pdf' }, UNITS3), UNITS3, 2026)
+  assert.ok('body' in mit && JSON.stringify(mit.body.externalBasis) === JSON.stringify({ measure: 'mea', total: 1000, totalCents: 12000000 }))
+})
+
+test('Entwurf einer KI-Zeile ohne Gedächtnis: nur der Schlüssel, Nebenfelder leer; 0 € ist keine Position', () => {
+  const built = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 6000, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, 2026)
+  if (!('body' in built)) return assert.fail(built.error)
+  assert.deepEqual(built.body, {
+    year: 2026, category: 'Müllabfuhr', description: 'Müll', vendor: 'Stadt', amountCents: 6000, labor35aCents: undefined, key: 'persons',
+    directUnitId: null, meterType: null, customShares: null, participantUnitIds: null, externalBasis: null, tenancyAmounts: null,
+    selfAmounts: null, invoiceFile: 'm.pdf',
+  })
+  const null0 = costItemBody(lineDraft(fieldsOf('Müll', 'Müllabfuhr', 0, 'persons', null), { vendor: 'Stadt', invoiceFile: 'm.pdf' }, UNITS3), UNITS3, 2026)
+  assert.match('error' in null0 ? null0.error : '', /0 €/)
 })

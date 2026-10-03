@@ -1,4 +1,17 @@
 import { parseNumberDe } from './numbers'
+// Eine Ablehnung des Servers mit Status und Rumpf (#170): Die Buchung braucht bei 409 den Stand
+// oder die neue Vorschau aus der Antwort, nicht nur die Meldung. Für alle anderen Aufrufer bleibt
+// es ein `Error` mit derselben Meldung wie bisher.
+export class ApiError extends Error {
+  status: number
+  data: Record<string, unknown>
+  constructor(message: string, status: number, data: Record<string, unknown>) {
+    super(message)
+    this.status = status
+    this.data = data
+  }
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers =
     init?.body && !(init.body instanceof FormData)
@@ -6,8 +19,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       : init?.headers
   const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error((data as { error?: string }).error || `${res.status} ${res.statusText}`)
+    const raw: unknown = await res.json().catch(() => ({}))
+    const data: Record<string, unknown> = raw !== null && typeof raw === 'object' ? { ...raw } : {}
+    const message = typeof data.error === 'string' && data.error ? data.error : `${res.status} ${res.statusText}`
+    throw new ApiError(message, res.status, data)
   }
   return res.json() as Promise<T>
 }
