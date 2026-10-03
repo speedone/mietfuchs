@@ -1,12 +1,17 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, PropertyKind, Tenancy, Unit } from './types'
+import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
+import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
+import { etwByStatement, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
+// Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
+export { amountProblem, type BuildResult } from '../../shared/costItem.ts'
+export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
 
 export type ItemForm = {
   id?: string
@@ -77,7 +82,7 @@ export function itemToForm(i: CostItem): ItemForm {
   }
 }
 
-export const fmtPct = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
+export const fmtPct = pct
 const fmtCentsInput = (c: number) => (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // Bei diesen Schlüsseln wirken Teilnehmer (#94); bei Direktzuordnung und vereinbarten Anteilen
@@ -164,9 +169,6 @@ const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, strin
   return Object.fromEntries(Object.entries(form.selfAmounts).filter(([id]) => ids.has(id)))
 }
 
-// Summe der Einzelbeträge und was davon der Vermieter trägt.
-const CREDIT_WITH_AMOUNTS = 'Bei einer Gutschrift sind Einzelbeträge nicht möglich; verteilen Sie sie bitte nach einem anderen Schlüssel.'
-
 // Einzelbeträge nur der Mietverhältnisse, deren Feld das Formular zeigt (Durchsicht zu #105):
 // Wer eine Wohnung als Teilnehmerin abwählt, sähe den Betrag ihres Mieters sonst nicht mehr, er
 // zählte aber in die Summe und ließe sich nicht löschen. Ohne Mietverhältnisse keine Einschränkung.
@@ -193,7 +195,7 @@ export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenanc
 }
 
 // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
-export const basisUnitsOf = (units: Unit[]) => units.filter((u) => usageOf(u) !== 'ausgenommen')
+export const basisUnitsOf = (units: Unit[]) => units.filter(inBasis)
 
 // Auswahllisten. Beide halten dieselbe Regel ein: der gespeicherte Wert steht immer in der
 // Liste. Fehlt er, zeigt ein Select im Browser den ersten Eintrag an, während der State
@@ -218,22 +220,9 @@ export function withKey(form: ItemForm, key: CostKey, unitMeterTypes: MeterType[
 
 // ---------- Schlüssel merken (#141) ----------
 
-// Woraus der Vorschlag für eine neue Position entsteht: die Positionen des Objekts (alle Jahre),
-// das Abrechnungsjahr und die Art des Objekts.
-export type KeyContext = { items: readonly CostItem[]; year: number; propertyKind?: PropertyKind | null }
-
 const fmtQuantity = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 6 })
 const externalFields = (b: { measure: ExternalMeasure, total: number }): Pick<ItemForm, 'externalMeasure' | 'externalTotal'> =>
   ({ externalMeasure: b.measure, externalTotal: fmtQuantity(b.total) })
-
-// Maßstab und Summe der Anteile der zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ im
-// Objekt, jüngstes Jahr zuerst, sonst die zuletzt angelegte. Bis die Summe am Objekt steht (siehe
-// docs/superpowers/specs/2026-10-02-schluessel-merken-design.md), ist das ihre Quelle.
-export function lastExternalBasis(items: readonly CostItem[]): { measure: ExternalMeasure, total: number } | null {
-  let found: CostItem | null = null
-  for (const i of items) if (i.key === 'external' && i.externalBasis && (!found || i.year >= found.year)) found = i
-  return found?.externalBasis ? { measure: found.externalBasis.measure, total: found.externalBasis.total } : null
-}
 
 // Einen gemerkten Schlüssel ins Formular legen. Teilnehmer, Anteile und Wohnung nur, soweit es die
 // Wohnung noch gibt; der Betrag und die Kosten der Gemeinschaft bleiben, wie sie sind.
@@ -249,11 +238,6 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
     ...(a.externalBasis ? externalFields(a.externalBasis) : {}),
   }
 }
-
-// Bei einer Eigentumswohnung verteilt die Gemeinschaft (#102); die Grundsteuer setzt dagegen die
-// Gemeinde dem Eigentümer unmittelbar fest, sie steht nicht in der Hausgeldabrechnung.
-const etwByStatement = (category: string, ctx?: KeyContext): boolean =>
-  ctx?.propertyKind === 'etw' && !isNotAllocable(category) && category !== 'Grundsteuer'
 
 // Der Vorschlag für eine neue Position: der Schlüssel derselben Kostenart im Vorjahr, sonst bei
 // einer Eigentumswohnung „laut Gemeinschaftsabrechnung“, sonst `suggestedKey`.
@@ -313,38 +297,6 @@ export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext):
   // Ohne Rechtsauskunft im Einzelnen (die steht im Lexikon und in der Abrechnung): Eine Änderung
   // ist möglich, aber nicht beliebig (Durchsicht).
   return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
-}
-
-// KI-Übernahme (#141): der Schlüssel einer ausgewerteten Position. Einen gemerkten Schlüssel mit
-// Einzelbeträgen übernimmt die Zeile nicht, denn die Beträge je Mieter sind Zahlen des Jahres und
-// stehen dort nicht zur Eingabe.
-export type AiPositionKey = { key: CostKey; allocation: Allocation | null }
-// Ein gemerkter Schlüssel, dem inzwischen etwas fehlt (alle Teilnehmer gelöscht, die Wohnung der
-// Direktzuordnung weg), gilt in der KI-Zeile nicht: Sie hat kein Feld, das ihn ergänzen ließe
-// (Durchsicht). Dann gilt die feste Vorgabe.
-function stillComplete(a: Allocation, units: Unit[]): boolean {
-  const known = new Set(units.map((u) => u.id))
-  if (a.participantUnitIds && !a.participantUnitIds.some((id) => known.has(id))) return false
-  if (a.key === 'direct' && !(a.directUnitId && known.has(a.directUnitId))) return false
-  return true
-}
-
-export function aiPositionDefaults(category: string, units: Unit[], meters: Meter[], ctx?: KeyContext, description?: string): AiPositionKey {
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, description) : null
-  if (remembered && remembered.key !== 'amounts' && stillComplete(remembered, units)) return { key: remembered.key, allocation: remembered }
-  // Bei einer Eigentumswohnung nur, wenn die Summe der Anteile schon einmal erfasst ist: Ein Feld
-  // dafür hat die Zeile nicht, sie bliebe sonst unübernehmbar.
-  const last = ctx && etwByStatement(category, ctx) ? lastExternalBasis(ctx.items) : null
-  if (last) return { key: 'external', allocation: allocationOf({ year: 0, category, description: '', key: 'external', externalBasis: { ...last, totalCents: 0 } }) }
-  // Wie bisher nur der Schlüssel; die Auswahl der Zeile bietet die drei einfachen an.
-  return { key: defaultKeyFor(category), allocation: null }
-}
-
-// Eine KI-Zeile, deren gemerkter Schlüssel nur bestimmte Wohnungen trifft (Teilnehmer oder
-// Direktzuordnung), ist nie vorab angehakt: Passt der Beleg nicht zu der Position des Vorjahres,
-// zahlte sonst eine einzelne Wohnung, ohne dass jemand hingesehen hat (Durchsicht).
-export function aiPositionPreselect(d: AiPositionKey): boolean {
-  return !(d.allocation && (d.allocation.participantUnitIds || d.allocation.key === 'direct'))
 }
 
 export type AiPosition = AiPositionKey & { description: string; category: string; amount: string; labor35a: string; externalTotalAmount: string }
@@ -432,150 +384,41 @@ export function customSharesSumText(form: ItemForm, units: Unit[]): string {
     : `${fmtPct(sum)} %`
 }
 
-export type BuildResult = { error: string } | { body: Record<string, unknown> }
-
-// Betrag und §35a-Lohnanteil einer Kostenposition, wie das Formular sie prüft (#139). Dieselbe
-// Prüfung gilt für Positionen, die aus einer Belegauswertung übernommen werden, damit eine
-// Gutschrift dort nicht anders behandelt wird als hier. `null` bei einem Betrag heißt unlesbar.
-// Eine Gutschrift hat einen negativen Betrag; Berechnung und Datenbank kennen sie. Nur 0 ist
-// keine Kostenposition. Die Meldung nennt den Grund, statt „gültig“ offen zu lassen.
-export function amountProblem(amount: number | null, labor35a: number | null, category?: string): string | null {
-  if (amount === null) return 'Bitte den Betrag als Euro-Betrag angeben, z. B. 54,00 (eine Gutschrift mit Minus: -54,00).'
-  if (amount === 0) return 'Ein Betrag von 0 € ist keine Kostenposition. Bitte den Rechnungsbetrag eintragen.'
-  // § 35a EStG bescheinigt gezahlte Lohnkosten. Bei einer Gutschrift bescheinigte die Berechnung
-  // ohnehin nichts (calc.ts meldet den Lohnanteil als ungültig), die Steuerübersicht zählte ihn
-  // aber mit.
-  if (amount < 0 && labor35a !== 0) return 'Bei einer Gutschrift gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.'
-  // Die Zuführung zur Erhaltungsrücklage ist keine bezahlte Arbeit, sondern angespartes Geld
-  // (#143); einen Lohnanteil gibt es erst an der Rechnung, die die Gemeinschaft daraus bezahlt.
-  if (category === 'Zuführung Erhaltungsrücklage' && labor35a !== 0) {
-    return 'An der Zuführung zur Erhaltungsrücklage gibt es keinen §35a-Lohnanteil. Bitte das Feld leer lassen.'
+// Liest die Eingaben des Formulars in Cent und Prozent; was sich nicht lesen lässt, wird `null`,
+// und die Prüfung in shared/costItem.ts sagt es in Worten.
+function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number): CostItemDraft {
+  const parsed = (m: Record<string, string>): Record<string, number | null> =>
+    Object.fromEntries(Object.entries(m).filter(([, raw]) => raw.trim()).map(([id, raw]) => [id, parseEuro(raw)]))
+  const shares: Record<string, number | null> = {}
+  for (const u of basisUnitsOf(units)) {
+    const raw = form.customShares[u.id]?.trim()
+    if (!raw) continue
+    // Prozent in deutscher oder technischer Schreibweise; parseEuro liefert Hundertstel
+    const hundredths = parseEuro(raw)
+    shares[u.id] = hundredths === null ? null : hundredths / 100
   }
-  if (labor35a === null || labor35a < 0 || (amount > 0 && labor35a > amount)) {
-    return 'Der §35a-Lohnanteil muss eine gültige Zahl zwischen 0 und dem Gesamtbetrag sein.'
+  return {
+    category: form.category,
+    description: form.description,
+    vendor: form.vendor,
+    invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
+    amountCents: parseEuro(form.amount),
+    labor35aCents: form.labor35a.trim() ? parseEuro(form.labor35a) : 0,
+    key: form.key,
+    directUnitId: form.directUnitId || null,
+    meterType: form.meterType || null,
+    customShares: shares,
+    participants: form.participants,
+    external: { measure: form.externalMeasure, total: parseAmountNumber(form.externalTotal), totalCents: parseEuro(form.externalTotalAmount) },
+    tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, year)),
+    selfAmounts: parsed(visibleSelfAmounts(form, units)),
   }
-  return null
 }
 
-// Validiert das Formular und baut den API-Rumpf. Felder, die zum gewählten Schlüssel nicht
-// gehören, werden ausdrücklich auf null gesetzt: die generische PUT-Route übernimmt nur
-// vorhandene Felder, sonst blieben alte Zuordnungen in der Datei stehen.
+// Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
+// (shared/costItem.ts).
 export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
-  const amount = parseEuro(form.amount)
-  const labor35a = form.labor35a.trim() ? parseEuro(form.labor35a) : 0
-  if (!form.description.trim()) return { error: 'Bitte eine Beschreibung angeben.' }
-  const problem = amountProblem(amount, labor35a, form.category)
-  if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
-  // Nicht umlagefähig (#142): Gespeichert wird die neutrale Vorgabe ohne jede Zuordnung. Die
-  // Spalte verlangt einen Schlüssel, die Berechnung liest ihn hier aber nicht; eine Zuordnung, die
-  // aus einer früheren Kostenart im Formular stehengeblieben ist, bliebe sonst als tote Angabe in
-  // der Datenbank und tauchte nach einem Wechsel der Kostenart unbemerkt wieder auf.
-  if (isNotAllocable(form.category)) {
-    return {
-      body: {
-        year,
-        category: form.category,
-        description: form.description.trim(),
-        vendor: form.vendor.trim() || undefined,
-        amountCents: amount,
-        labor35aCents: labor35a || undefined,
-        key: 'area',
-        directUnitId: null,
-        meterType: null,
-        customShares: null,
-        participantUnitIds: null,
-        externalBasis: null,
-        tenancyAmounts: null,
-        selfAmounts: null,
-        invoiceFile: form.invoiceFile ?? null,
-      },
-    }
-  }
-  if (amount < 0 && form.key === 'amounts') return { error: CREDIT_WITH_AMOUNTS }
-  if (form.key === 'direct' && !form.directUnitId) {
-    return { error: 'Bei Direktzuordnung bitte eine Wohnung wählen.' }
-  }
-  if (form.key === 'meter' && !form.meterType) {
-    return { error: 'Bei Verbrauchsumlage bitte einen Zählertyp wählen.' }
-  }
-
-  let customShares: Record<string, number> | null = null
-  if (form.key === 'custom') {
-    customShares = {}
-    for (const u of basisUnitsOf(units)) {
-      const raw = form.customShares[u.id]?.trim()
-      if (!raw) continue
-      // Prozent in deutscher oder technischer Schreibweise; parseEuro liefert Hundertstel
-      const hundredths = parseEuro(raw)
-      if (hundredths === null || hundredths < 0) {
-        return { error: `Anteil für „${u.name}" bitte als Prozentzahl angeben (z. B. 33,33).` }
-      }
-      if (hundredths > 0) customShares[u.id] = hundredths / 100
-    }
-    const sum = Object.values(customShares).reduce((a, p) => a + p, 0)
-    if (sum <= 0) return { error: 'Bitte mindestens einen Anteil größer 0 % angeben.' }
-    if (sum > 100.0001) {
-      return { error: `Die Anteile ergeben ${fmtPct(sum)} % — mehr als 100 % sind nicht möglich.` }
-    }
-  }
-
-  // Teilnehmer: alle angehakt heißt null, damit auch künftig angelegte Wohnungen dazugehören.
-  let participantUnitIds: string[] | null = null
-  if (PARTICIPANT_KEYS.includes(form.key) && form.participants !== null) {
-    if (form.participants.length === 0) return { error: 'Bitte mindestens eine teilnehmende Wohnung wählen.' }
-    const alle = basisUnitsOf(units).map((u) => u.id)
-    participantUnitIds = alle.every((id) => form.participants?.includes(id)) ? null : form.participants
-  }
-
-  let externalBasis: { measure: ExternalMeasure, total: number, totalCents: number } | null = null
-  if (form.key === 'external') {
-    const total = parseAmountNumber(form.externalTotal)
-    const totalCents = parseEuro(form.externalTotalAmount)
-    if (total === null || !(total > 0) || totalCents === null) {
-      return { error: 'Bitte aus der Gemeinschaftsabrechnung die Summe der Anteile in der Anlage und die Kosten der Gemeinschaft eintragen.' }
-    }
-    externalBasis = { measure: form.externalMeasure, total, totalCents }
-  }
-
-  let tenancyAmounts: Record<string, number> | null = null
-  let selfAmounts: Record<string, number> | null = null
-  if (form.key === 'amounts') {
-    const read = (m: Record<string, string>): Record<string, number> | null => {
-      const out: Record<string, number> = {}
-      for (const [id, raw] of Object.entries(m)) {
-        if (!raw.trim()) continue
-        const cents = parseEuro(raw)
-        if (cents === null || cents < 0) return null
-        out[id] = cents
-      }
-      return out
-    }
-    tenancyAmounts = read(visibleTenancyAmounts(form, units, tenancies, year))
-    selfAmounts = read(visibleSelfAmounts(form, units))
-    if (!tenancyAmounts || !selfAmounts) return { error: 'Einzelbeträge bitte als Euro-Beträge angeben (z. B. 312,40).' }
-    const sum = [...Object.values(tenancyAmounts), ...Object.values(selfAmounts)].reduce((a, c) => a + c, 0)
-    if (sum > amount) return { error: 'Die Einzelbeträge ergeben zusammen mehr als der Rechnungsbetrag.' }
-  }
-
-  return {
-    body: {
-      year,
-      category: form.category,
-      description: form.description.trim(),
-      vendor: form.vendor.trim() || undefined,
-      amountCents: amount,
-      labor35aCents: labor35a || undefined,
-      key: form.key,
-      directUnitId: form.key === 'direct' ? form.directUnitId : null,
-      meterType: form.key === 'meter' ? form.meterType : null,
-      customShares,
-      participantUnitIds,
-      externalBasis,
-      tenancyAmounts,
-      selfAmounts,
-      invoiceFile: form.invoiceFile ?? null, // null löscht eine bestehende Zuordnung
-    },
-  }
+  return costItemBody(draftOf(form, units, tenancies, year), units, year)
 }
 
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
