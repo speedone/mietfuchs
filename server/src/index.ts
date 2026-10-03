@@ -8,7 +8,7 @@ import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
 import { parseDecisions } from './bookingPlan.ts'
-import { placeAssessment, saveAssessment } from './db/assessments.ts'
+import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
@@ -693,8 +693,12 @@ function aiResponse(req: Request, res: Response): AiAnswer {
     const upload = uploadedFile(req)
     if (upload) {
       fs.rmSync(upload.path, { force: true })
-      // Seine Angaben gehen mit (#170); ein Beleg aus dem Posteingang ist nie `upload`.
-      void writeData((db) => forgetUpload(db, upload.filename)).catch(() => undefined)
+      // Seine Angaben gehen mit (#170), ebenso eine Auswertung, die beim Abbruch gerade
+      // gespeichert wurde; ein Beleg aus dem Posteingang ist nie `upload`.
+      void writeData(async (db) => {
+        await forgetAssessment(db, upload.filename)
+        await forgetUpload(db, upload.filename)
+      }).catch(() => undefined)
     }
     // Die Verbindung beenden; hat der Browser sie schon geschlossen, schadet das nicht
     if (!res.writableEnded) res.end()
@@ -797,27 +801,43 @@ async function markMeterPhoto(file: string): Promise<void> {
   }
 }
 
+// Testgriff (#170): eine Pause vor dem Speichern der Auswertung, damit ein Test einen Abbruch genau
+// in das Fenster zwischen der Antwort der KI und dem Speichern legen kann. Von außen lässt sich
+// dieser Zeitpunkt sonst nicht treffen. Ohne die Variable gibt es keine Pause.
+const ASSESSMENT_DELAY_MS = Math.max(0, Number(process.env.NKA_TEST_ASSESSMENT_DELAY_MS) || 0)
+
 // Die Auswertung speichern (Belegbuchung, #170), erst nach Erfolg der KI; ein Abbruch speichert
 // nichts. Objekt: das des Belegs im Posteingang, sonst das mitgeschickte, sonst bei einem einzigen
 // Objekt dieses. Jahr: aus dem Beleg, sonst das mitgeschickte, sonst das des Belegs, sonst das
 // laufende. Misslingt das Speichern, kommt das Ergebnis trotzdem an, nur ohne Auswertung; die
 // Oberfläche sagt dann, dass sich nichts buchen lässt.
 //
-// **Das Jahr der Auswertung wird zum Jahr des Belegs**, solange keine Zeile gebucht ist: Der
-// Posteingang zeigt den Beleg sonst im Jahr des Formulars, obwohl die Auswertung ihn einem anderen
-// zuordnet (eine Rechnung von 2026, hochgeladen auf der Seite des Jahres 2024). Ist etwas gebucht,
-// ergibt sich das Jahr aus der Position und die Angabe am Beleg sagt nichts mehr.
-async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction): Promise<AssessmentView | null> {
+// **Ein Abbruch speichert nichts**, auch wenn er erst nach der Antwort der KI ankommt. Geprüft
+// wird im Schreibvorgang selbst, unmittelbar vor dem Speichern: Der Abbruch setzt `signal`
+// synchron, und die Schlange lässt zwischen Prüfung und Speichern keine andere Anfrage herein.
+// Bei einem Beleg aus dem Posteingang blieben sonst seine offenen Zeilen still ersetzt.
+//
+// **Jahr und Objekt der Auswertung werden zu denen des Belegs**, solange keine Zeile gebucht ist
+// (das Objekt nur, wenn der Beleg noch keines hat; sonst kam es ohnehin von dort): Der Posteingang
+// zeigt den Beleg sonst im Jahr des Formulars, obwohl die Auswertung ihn einem anderen zuordnet
+// (eine Rechnung von 2026, hochgeladen auf der Seite des Jahres 2024). Ist etwas gebucht, ergibt
+// sich beides aus der Position und die Angabe am Beleg sagt nichts mehr.
+async function rememberAssessment(req: Request, file: DocumentSource, extraction: Extraction, signal: AbortSignal): Promise<AssessmentView | null> {
   const body = bodyObject(req)
   const sent = yearOf(body.year)
   try {
-    const sha256 = await hashFile(file.path)
+    if (ASSESSMENT_DELAY_MS > 0) await new Promise((resolve) => setTimeout(resolve, ASSESSMENT_DELAY_MS))
+    // Die Prüfsumme braucht nur der Rückfall einer fehlenden Zeile; lässt sie sich nicht rechnen,
+    // entsteht die Zeile ohne, und der Belegordner trägt sie später nach.
+    const sha256 = await hashFile(file.path).catch(() => '')
     return await writeData(async (db) => {
+      if (signal.aborted) return null
       const row = (await uploadRows(db)).get(file.filename)
       const properties = await listProperties(db)
       const asked = typeof body.propertyId === 'string' && properties.some((p) => p.id === body.propertyId) ? body.propertyId : null
       const [only, ...more] = properties
       const detected = detectedYear(extraction)
+      if (signal.aborted) return null
       const record = await saveAssessment(db, {
         file: file.filename,
         propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
@@ -831,7 +851,8 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         lines: linesFromExtraction(extraction),
       }, { id: newId(), now: new Date().toISOString() })
       if (!record.lines.some((l) => l.costItemId !== null)) {
-        await placeUpload(db, file.filename, { year: record.assessment.year }, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
+        const placement: Placement = row?.propertyId ? { year: record.assessment.year } : { year: record.assessment.year, propertyId: record.assessment.propertyId }
+        await placeUpload(db, file.filename, placement, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
       }
       return viewRecord(db, record)
     })
@@ -849,7 +870,7 @@ app.post('/api/extract', fileWithPages, async (req: Request, res: Response) => {
   try {
     const result = await extractFromFile(file.path, file.mimetype, effectiveSettings(), { ...aiInput(req), signal, stats, onProgress })
     await rememberInvoiceDate(file.filename, result.invoiceDate)
-    const assessment = await rememberAssessment(req, file, result)
+    const assessment = await rememberAssessment(req, file, result, signal)
     answer.done({ file: file.filename, extraction: result, assessment, stats })
   } catch (err) {
     answer.fail({ file: file.filename, error: messageOf(err), stats })
@@ -877,7 +898,7 @@ app.post('/api/intake', fileWithPages, async (req: Request, res: Response) => {
     } else {
       const extraction = await extractFromFile(file.path, file.mimetype, settings, material)
       await rememberInvoiceDate(file.filename, extraction.invoiceDate)
-      const assessment = await rememberAssessment(req, file, extraction)
+      const assessment = await rememberAssessment(req, file, extraction, signal)
       answer.done({ file: file.filename, kind: 'rechnung', extraction, assessment, stats })
     }
   } catch (err) {
@@ -917,6 +938,14 @@ app.put('/api/assessments/:id', async (req, res) => {
     const placed = await placeAssessment(db, req.params.id, change)
     if (placed === 'missing') throw new RouteProblem(404, 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Seite neu.')
     if (placed === 'booked') throw new RouteProblem(409, 'Zeilen dieses Belegs sind schon gebucht. Objekt und Jahr lassen sich deshalb nicht mehr ändern. Lösen Sie zuerst die Buchung dieser Zeilen oder löschen Sie die Position, an der sie hängen.')
+    // Der Beleg zieht mit, solange nichts gebucht ist, sonst stünde er im Posteingang woanders als
+    // seine Auswertung. Ohne Zeile (Datenbankfehler beim Hochladen) entsteht sie hier; die
+    // Prüfsumme trägt der Belegordner nach.
+    const record = await readAssessment(db, req.params.id)
+    if (record && !record.lines.some((l) => l.costItemId !== null)) {
+      const { file, year, propertyId } = record.assessment
+      await placeUpload(db, file, { year, propertyId }, () => describeFile(UPLOAD_DIR, file))
+    }
     return viewAssessment(db, req.params.id, UPLOAD_DIR)
   }))
 })
@@ -932,6 +961,11 @@ app.post('/api/assessments/:id/book', async (req, res) => {
   if (typeof token !== 'string' || token === '') {
     throw new RouteProblem(400, 'Gebucht wird nur, was die Vorschau gezeigt hat. Bitte zeigen Sie zuerst die Vorschau an.')
   }
+  // Jede 409 bringt den Stand mit, mit dem die Oberfläche weitermacht. Die eine Ausnahme ist ein
+  // `BookingRefusal(409)` aus der Transaktion von bookAssessment (eine Position ist verschwunden):
+  // Er geht über die Fehlerbehandlung ohne Stand hinaus. Erreichbar ist er nicht, solange Planen
+  // und Schreiben im selben Vorgang der Schreibschlange geschehen; wer das trennt, ergänzt hier
+  // den Stand.
   const { outcome, assessment } = await writeData(async (db) => {
     const result = await bookAssessment(db, req.params.id, decisions, token, { uploadDir: UPLOAD_DIR, newId })
     return { outcome: result, assessment: await viewAssessment(db, req.params.id, UPLOAD_DIR) }
@@ -1015,7 +1049,18 @@ app.put('/api/uploads/:file', async (req, res) => {
   const sha256 = await hashFile(full)
   const row = await writeData(async (db) => {
     if (Object.hasOwn(body, 'propertyId')) changes.propertyId = await placementProperty(db, body.propertyId)
-    return placeUpload(db, name, changes, () => describeFile(UPLOAD_DIR, name, undefined, sha256))
+    const placed = await placeUpload(db, name, changes, () => describeFile(UPLOAD_DIR, name, undefined, sha256))
+    // Die Auswertung desselben Belegs zieht mit (Belegbuchung), solange keine Zeile gebucht ist;
+    // ist etwas gebucht, lehnt placeAssessment ab und sie bleibt, wie sie ist. Ein geleertes Jahr
+    // lässt ihr Jahr stehen, denn eine Auswertung hat immer eines.
+    const assessment = await readAssessmentOfFile(db, name)
+    if (assessment) {
+      const follow: { year?: number, propertyId?: string | null } = {}
+      if (typeof changes.year === 'number') follow.year = changes.year
+      if (changes.propertyId !== undefined) follow.propertyId = changes.propertyId
+      await placeAssessment(db, assessment.assessment.id, follow)
+    }
+    return placed
   })
   const info = row ? describeFile(UPLOAD_DIR, name, row) : null
   if (!info) return res.status(404).json({ error: 'Datei nicht gefunden' })
