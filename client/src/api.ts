@@ -16,8 +16,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Servers als Error; alles andere (Netz weg) kommt ebenfalls lesbar heraus.
 export const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-export const fmtEuro = (cents: number) =>
-  (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
+// Seit der Belegbuchung (#170) in shared/costItem.ts, weil der Server denselben Betrag ausschreibt.
+export { euro as fmtEuro } from '../../shared/costItem.ts'
 
 // Eine Wohnfläche mit ihrer Einheit. Zwei Nachkommastellen, wie Wohnflächen üblicherweise
 // angegeben werden; eine Vorschrift über die Genauigkeit gibt es nicht.
