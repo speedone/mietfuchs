@@ -65,7 +65,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Belegbuchung (#170). Eingetragen vor dem Merge, wie 0001: Jeder Push auf main veröffentlicht
   // das Image, und ab dann haben Nutzer den Schritt angewendet. Wird 0013 vor dem Push neu
   // erzeugt, hier die neue Marke eintragen.
-  '0013_belegbuchung': 'b1b7167f9b461f55b8d76bf76c5e1aa4839859fb0465d7ad0c81e3f3e8a4fa7a',
+  '0013_belegbuchung': '27f9a4b237e2694192cd754b6c168a754284b505fabfc6d02c305d662b82c8d7',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

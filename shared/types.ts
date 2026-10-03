@@ -711,6 +711,8 @@ export type StoredAssessment = {
   // Vom Server gerechnet (#34): Positionen ohne Umsatzsteuer hochgerechnet, Lohnanteil verteilt
   amountsAdjusted: 'netto' | null
   laborFromTotal: boolean
+  // Die nächste Zeilennummer, die es in dieser Auswertung noch nie gab (Hochwassermarke)
+  nextIdx: number
   createdAt: string
 }
 

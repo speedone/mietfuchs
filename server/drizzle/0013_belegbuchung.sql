@@ -29,9 +29,11 @@ CREATE TABLE `assessments` (
 	`total_gross_cents` integer,
 	`amounts_adjusted` text,
 	`labor_from_total` integer DEFAULT false NOT NULL,
+	`next_idx` integer DEFAULT 0 NOT NULL,
 	`created_at` text NOT NULL,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "assessments_year_positive" CHECK("year" > 0),
+	CONSTRAINT "assessments_next_idx_not_negative" CHECK("next_idx" >= 0),
 	CONSTRAINT "assessments_amounts_adjusted_known" CHECK("amounts_adjusted" IN ('netto'))
 );
 --> statement-breakpoint
