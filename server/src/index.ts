@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
 import type { AiSettings, AiSlotName, AiStatus, AssessmentView, Extraction, Settings, UploadEntry, UploadLinks } from '../../shared/types.ts'
 import { detectedYear, linesFromExtraction } from './assessment.ts'
-import { parseDecisions } from './bookingPlan.ts'
+import { bookingResponse, parseDecisions } from './bookingPlan.ts'
 import { forgetAssessment, placeAssessment, readAssessment, readAssessmentOfFile, saveAssessment, uploadLinks } from './db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, viewRecord } from './db/booking.ts'
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
@@ -970,13 +970,8 @@ app.post('/api/assessments/:id/book', async (req, res) => {
     const result = await bookAssessment(db, req.params.id, decisions, token, { uploadDir: UPLOAD_DIR, newId })
     return { outcome: result, assessment: await viewAssessment(db, req.params.id, UPLOAD_DIR) }
   })
-  if (outcome.kind === 'done') return res.json({ changed: outcome.changed, assessment, preview: outcome.preview })
-  if (outcome.kind === 'refused') {
-    const message = [...outcome.preview.errors, ...outcome.preview.confirm].map((p) => p.message).join(' ')
-    return res.status(400).json({ error: message, preview: outcome.preview })
-  }
-  if (outcome.kind === 'conflict') return res.status(409).json({ error: outcome.message, assessment })
-  res.status(409).json({ error: 'Seit der Vorschau hat sich der Stand geändert. Bitte prüfen Sie die neue Vorschau und buchen Sie dann.', preview: outcome.preview })
+  const reply = bookingResponse(outcome, assessment)
+  res.status(reply.status).json(reply.body)
 })
 
 // Belegordner (#170): alle hochgeladenen Dateien mit Originalname, Hochladezeit und Prüfsumme.

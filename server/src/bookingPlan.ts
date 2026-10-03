@@ -11,7 +11,7 @@
 // **Eine Zeile, die nicht offen ist, wird nie noch einmal gebucht.** Ist sie genau so gebucht,
 // ist das ohne Änderung (Doppelklick, Wiederholung); anders gebucht ist ein Widerspruch.
 import type {
-  AssessmentLineState, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
+  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { amountProblem, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
@@ -350,6 +350,42 @@ export function decide(p: Planned, decisionCount: number, token: string, expecte
   if (p.unchanged.length === decisionCount) return 'unchanged'
   if (p.preview.errors.length > 0 || p.preview.confirm.length > 0) return 'refused'
   return token === expected ? 'apply' : 'stale'
+}
+
+// Was aus einer Buchung wird. `done` mit `changed: false` ist die schon genau so gebuchte Anfrage.
+export type BookingOutcome =
+  | { kind: 'done'; changed: boolean; preview: BookingPreview }
+  | { kind: 'refused'; preview: BookingPreview }
+  | { kind: 'conflict'; message: string }
+  | { kind: 'stale'; preview: BookingPreview }
+
+// Das Ergebnis jeder Entscheidung außer „buchen“; `null` heißt, die Schreibliste ist auszuführen.
+// db/booking.ts und der nachgebaute Server der Browser-Tests (client/src/testing/fakeBooking.ts)
+// nehmen beide diese Zuordnung, damit sie nicht zweimal dasteht.
+export function settle(p: Planned, decisionCount: number, token: string, preview: BookingPreview): BookingOutcome | null {
+  const decision = decide(p, decisionCount, token, preview.token)
+  if (decision === 'conflict') return { kind: 'conflict', message: p.conflicts.join(' ') }
+  if (decision === 'unchanged') return { kind: 'done', changed: false, preview }
+  if (decision === 'refused') return { kind: 'refused', preview }
+  if (decision === 'stale') return { kind: 'stale', preview }
+  return null
+}
+
+const STALE = 'Seit der Vorschau hat sich der Stand geändert. Bitte prüfen Sie die neue Vorschau und buchen Sie dann.'
+
+// Die Antwort der Route „Buchen“, ebenfalls für Route und nachgebauten Server. Jede Ablehnung
+// bringt den Stand mit, mit dem die Oberfläche ohne zweite Anfrage weitermacht: 400 und die 409
+// einer veralteten Vorschau die (neue) Vorschau, die 409 eines Widerspruchs die aktuelle Auswertung.
+export function bookingResponse(outcome: BookingOutcome, assessment: AssessmentView): { status: 200 | 400 | 409; body: Record<string, unknown> } {
+  switch (outcome.kind) {
+    case 'done': return { status: 200, body: { changed: outcome.changed, assessment, preview: outcome.preview } }
+    case 'refused': {
+      const error = [...outcome.preview.errors, ...outcome.preview.confirm].map((p) => p.message).join(' ')
+      return { status: 400, body: { error, preview: outcome.preview } }
+    }
+    case 'conflict': return { status: 409, body: { error: outcome.message, assessment } }
+    case 'stale': return { status: 409, body: { error: STALE, preview: outcome.preview } }
+  }
 }
 
 // ---------- Die Entscheidungen aus dem Rumpf ----------
