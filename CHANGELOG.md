@@ -41,23 +41,39 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
 - **Dieselbe Rechnung wird nicht mehr still zweimal erfasst.** Steht für das Jahr des Belegs
   schon eine Position derselben Kostenart, etwa aus dem Vorjahr übernommen mit geschätztem
-  Betrag, ist eine KI-Zeile in der Schnellerfassung und bei der Auswertung auf der Seite Kosten
-  nicht mehr vorab angehakt. Angeboten wird stattdessen, den Beleg mit der bestehenden Position
-  zu verknüpfen und ihren Betrag zu setzen; Schlüssel und übrige Angaben bleiben. Wer bewusst
-  eine zweite Rechnung anlegt, wird gefragt. Umgekehrt erkennt „Aus dem Vorjahr übernehmen“ eine
-  schon per KI erfasste Rechnung auch dann, wenn die KI sie anders beschrieben hat. Bei
-  „Sonstige Betriebskosten“ und „Nicht umlagefähig“ zählt nur eine Position mit ähnlicher
-  Beschreibung oder vom selben Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin,
-  wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat, und rät
-  dann zum Löschen einer der beiden (nur den Beleg zuzuordnen ließe die Summe doppelt); die
-  Ampel im Cockpit zählt ihn mit, wenn eine Position mit und eine ohne Beleg dasteht oder es mehr
-  sind als im Vorjahr. Mehrere Zeilen eines Belegs derselben Kostenart (etwa Frischwasser und
-  Schmutzwasser) werden gemeinsam mit ihrer Summe verknüpft. Hat die Auswertung keinen
-  §35a-Lohnanteil gelesen, wird ein geschätzter entfernt, und die Wahl sagt das. Eine Position
-  laut Gemeinschaftsabrechnung oder mit Einzelbeträgen öffnet sich im Formular. Auch das
+  Betrag, legt die Schnellerfassung die Zeile nicht mehr vorab angehakt neu an, sondern bietet an,
+  den Beleg mit der bestehenden Position zu verknüpfen (siehe den Eintrag zur Belegbuchung
+  unten). Umgekehrt erkennt „Aus dem Vorjahr übernehmen“ eine schon per KI erfasste Rechnung auch
+  dann, wenn die KI sie anders beschrieben hat. Bei „Sonstige Betriebskosten“ und „Nicht
+  umlagefähig“ zählt nur eine Position mit ähnlicher Beschreibung oder vom selben
+  Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin, wenn zwei Positionen derselben
+  Kostenart im Jahr stehen und eine davon keinen Beleg hat, und rät dann zum Löschen einer der
+  beiden (nur den Beleg zuzuordnen ließe die Summe doppelt); die Ampel im Cockpit zählt ihn mit,
+  wenn eine Position mit und eine ohne Beleg dasteht oder es mehr sind als im Vorjahr. Auch das
   Kostenformular fragt beim Anlegen nach, wenn dieselbe Rechnung schon erfasst sein könnte. Im
   Januar vergleicht die Schnellerfassung mit dem Jahr des Belegs statt mit dem gewählten.
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
+- **Belege werden auf dem Server gebucht, und eine Rechnung landet genau einmal in den Kosten.**
+  Das Ergebnis einer KI-Auswertung wird gespeichert, mit Positionen, Beträgen und
+  Rechnungssteller, und bleibt nach dem Neuladen erhalten: Der Posteingang zeigt „Weiter
+  prüfen“, die Schnellerfassung die offenen Auswertungen des Objekts. Schnellerfassung, KI auf der
+  Kostenseite und Posteingang benutzen dieselbe Prüfung und dieselbe Ampel: je Zeile neu
+  anlegen, mit einer vorhandenen Position verknüpfen oder ausblenden (die Auswertung bleibt
+  gespeichert), dann zeigt die Vorschau, was mit jeder Position geschieht, und „Buchen“ tut
+  genau das. Eine rote Zeile ist nicht vorab angehakt, und das Jahr aus dem Beleg geht dem
+  gewählten vor. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen, auch
+  aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
+  Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt. Eine Gutschrift wird
+  nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
+  wiederholen bucht nichts zweimal: Was genau so gebucht ist, meldet Erfolg ohne Änderung; eine
+  Abweichung oder ein Stand, der sich seit der Vorschau geändert hat, antwortet mit dem
+  aktuellen Stand und einer neuen Vorschau, statt still anders zu buchen. Löst man eine Zeile,
+  sagt die Vorschau, ob der Beleg der Position wechselt. Objekt und Jahr einer Auswertung sind
+  nach der ersten Buchung fest; vorher ziehen Posteingang und Auswertung sie gegenseitig mit.
+  Belegmappe und Steuer-ZIP nehmen auch Belege auf, die nur über eine gebuchte Zeile an einer
+  Position hängen; die Karte im Belegordner zeigt die Summe der eigenen Zeilen, und der
+  Hinweis auf eine mögliche doppelte Rechnung erscheint bei gleichen Beträgen an einer Position.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ### Geändert
 
@@ -92,8 +108,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   eine Kostenart, stehen beim Zuordnen die passenden Positionen oben. Nach dem Zuordnen oder
   Nachreichen fragt der Belegordner nach dem Betrag der Position, denn eine aus dem Vorjahr
   übernommene trägt oft noch einen geschätzten. Bei Einzelbeträgen, „laut Gemeinschaftsabrechnung“
-  oder einem Lohnanteil über dem neuen Betrag öffnet sich dafür die Position im Formular. „Per KI auswerten“ bietet wie die
-  Schnellerfassung an, den Beleg mit einer schon erfassten Position zu verknüpfen.
+  oder einem Lohnanteil über dem neuen Betrag öffnet sich dafür die Position im Formular. „Per KI
+  auswerten“ führt in dieselbe Prüfung wie die Schnellerfassung.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
 - **Mappen packen.** „Belegmappe für Mieter“ erstellt je Objekt und Jahr eine PDF mit den Belegen
   der umgelegten Positionen in der Reihenfolge der Abrechnung und einem Deckblatt „Position →
@@ -112,6 +128,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Die Datenbank bekommt eine Tabelle mit Angaben zu Belegen (Migration `0012_belege`). Vorhandene
   Belege brauchen nichts: Sie stehen weiter im Belegordner, ihre Angaben liest Mietfuchs aus der
   Datei. Die Sicherung vor dem Update legt der Start wie gewohnt an.
+  ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- Die Datenbank bekommt beim ersten Start zwei weitere Tabellen für die gespeicherten
+  Auswertungen (Migration 0013). Bestehende Positionen und Belege bleiben, wie sie sind; für sie
+  gilt weiter der Beleg an der Position. Backup und Wiederherstellen nehmen die Auswertungen mit.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ## [0.9.0] – 2026-10-02
