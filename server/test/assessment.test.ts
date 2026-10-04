@@ -130,7 +130,7 @@ test('Ampel: Rechnung zu einer übernommenen Schätzung vergleicht den Stand nac
   assert.ok(!s.reasons.some((r) => /gegenüber Vorjahr/.test(r)), `keine Abweichung erwartet: ${s.reasons.join(' | ')}`)
 })
 
-test('Ampel: Ersetzt die Rechnung die Schätzung, zählt die Abweichung gegen das Vorjahr weiter', () => {
+test('Ampel: Ersetzt die Rechnung die Schätzung und weicht stark vom Vorjahr ab, nennt sie die Abweichung nach dem Verknüpfen', () => {
   // Schätzung 498 €, Rechnung 800 €: nach dem Verknüpfen 800 € gegen 498 €, +61 %, nicht +161 %.
   const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 80000 })
   const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
@@ -140,13 +140,72 @@ test('Ampel: Ersetzt die Rechnung die Schätzung, zählt die Abweichung gegen da
   assert.ok(view.lines[0]?.suggestion?.reasons.includes('+61 % gegenüber Vorjahr'), view.lines[0]?.suggestion?.reasons.join(' | '))
 })
 
-test('Ampel: Eine echte zweite Rechnung derselben Kostenart meldet die Abweichung weiter', () => {
-  // Die Position dieses Jahres trägt schon einen Beleg: Verknüpfen ersetzte nichts, es käme hinzu.
+test('Ampel: Trägt die Position des Jahres einen Beleg, zählt die Rechnung hinzu (zweite Rechnung)', () => {
+  // Beleg von Hand angehängt, keine gebuchte Zeile: Die Zeile ist eher eine zweite Rechnung.
   const s = describeWith([
     grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
     grundsteuer({ id: 'u', invoiceFile: 'gs-2026-a.pdf' }),
+  ])
+  assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), s.reasons.join(' | '))
+})
+
+test('Ampel: Hängt an der Position des Jahres schon eine gebuchte Zeile, zählt die Rechnung hinzu, auch ohne Beleg', () => {
+  // Verknüpfen addiert dann zur Summe der Zeilen (Summenregel), es ersetzt keine Schätzung.
+  const s = describeWith([
+    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'u' }),
   ], [{ costItemId: 'u', amountCents: 49800 }])
   assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), s.reasons.join(' | '))
+})
+
+test('Ampel: Eine Position mit Einzelbeträgen oder laut Gemeinschaftsabrechnung ist kein Ziel und wird nicht ersetzt', () => {
+  // Solche Positionen werden nur im Formular verknüpft (formOnly), die Zeile ersetzt sie nicht.
+  for (const key of ['amounts', 'external'] as const) {
+    const s = describeWith([
+      grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+      grundsteuer({ id: 'u', key }),
+    ])
+    assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), `${key}: ${s.reasons.join(' | ')}`)
+  }
+})
+
+test('Ampel: Passen zwei Schätzungen derselben Kostenart, wird keine abgezogen', () => {
+  // Restmüll 300 € und Biomüll 100 €, beide Müllabfuhr und ohne Beleg, Rechnung 310 €. Welche sie
+  // ersetzt, ist offen; ohne Abzug 710 € gegen 400 €, +78 %. Mit Abzug der ersten stünde +3 % da.
+  const muell = (patch: Partial<CostItem>): CostItem => grundsteuer({ category: 'Müllabfuhr', key: 'persons', vendor: 'Stadt Musterstadt', ...patch })
+  const line = stored({ description: 'Abfallgebühren 2026', category: 'Müllabfuhr', amountCents: 31000 })
+  const view = describeAssessment({ assessment: assessmentOf({ totalGrossCents: 31000 }), lines: [line] }, {
+    items: [
+      muell({ id: 'r25', year: 2025, description: 'Restmüll', amountCents: 30000, invoiceFile: 'm-2025.pdf' }),
+      muell({ id: 'b25', year: 2025, description: 'Biomüll', amountCents: 10000, invoiceFile: 'm-2025.pdf' }),
+      muell({ id: 'r', description: 'Restmüll', amountCents: 30000 }),
+      muell({ id: 'b', description: 'Biomüll', amountCents: 10000 }),
+    ],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'muell.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  const s = view.lines[0]?.suggestion
+  assert.deepEqual(s?.candidates.map((c) => c.id), ['r', 'b'])
+  assert.ok(s?.reasons.includes('+78 % gegenüber Vorjahr'), s?.reasons.join(' | '))
+})
+
+test('Ampel: Zielen zwei offene Zeilen auf dieselbe Schätzung, verschweigt keine die Abweichung', () => {
+  // Vorjahr 700 €, Schätzung 700 €, zwei Zeilen à 700 €: Verknüpft man beide, stehen 1.400 € da,
+  // +100 %. Jede Zeile für sich gegen die Schätzung gerechnet zeigte 0 %.
+  const lines = [
+    stored({ idx: 0, description: 'Grundsteuer A', category: 'Grundsteuer', amountCents: 70000 }),
+    stored({ idx: 1, description: 'Grundsteuer B', category: 'Grundsteuer', amountCents: 70000 }),
+  ]
+  const view = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 140000 }), lines }, {
+    items: [grundsteuer({ id: 'v', year: 2025, amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  for (const l of view.lines) assert.ok(l.suggestion?.reasons.includes('+100 % gegenüber Vorjahr'), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
+  // Ist die zweite verworfen, ersetzt die erste die Schätzung allein: 700 € gegen 700 €.
+  const one = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 140000 }), lines: [lines[0]!, { ...lines[1]!, dismissed: true }] }, {
+    items: [grundsteuer({ id: 'v', year: 2025, amountCents: 70000, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u', amountCents: 70000 })],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  assert.ok(!one.lines[0]?.suggestion?.reasons.some((r) => /gegenüber Vorjahr/.test(r)), one.lines[0]?.suggestion?.reasons.join(' | '))
 })
 
 test('Abweichung zum Vorjahr: ein ersetzter Betrag fällt aus der Summe des Jahres', () => {
