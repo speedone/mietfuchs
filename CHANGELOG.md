@@ -58,10 +58,19 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rechnungssteller, und bleibt nach dem Neuladen erhalten: Der Posteingang zeigt „Weiter
   prüfen“, die Schnellerfassung die offenen Auswertungen des Objekts. Schnellerfassung, KI auf der
   Kostenseite und Posteingang benutzen dieselbe Prüfung und dieselbe Ampel: je Zeile neu
-  anlegen, mit einer vorhandenen Position verknüpfen oder ausblenden (die Auswertung bleibt
-  gespeichert), dann zeigt die Vorschau, was mit jeder Position geschieht, und „Buchen“ tut
-  genau das. Eine rote Zeile ist nicht vorab angehakt, und das Jahr aus dem Beleg geht dem
-  gewählten vor. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen, auch
+  anlegen, mit einer vorhandenen Position verknüpfen oder verwerfen (die Auswertung bleibt
+  gespeichert), dann zeigt die Vorschau, was mit jeder Position geschieht, auch welche Zeilen
+  verworfen werden, und „Buchen“ tut genau das. „Ausblenden“ auf der Kostenseite nimmt nur die
+  Karte aus der Warteschlange; die Auswertung bleibt offen und steht in der Schnellerfassung.
+  Die KI auf der Kostenseite schickt Objekt und Jahr mit, ein nicht gebuchter Beleg wartet
+  deshalb im Posteingang des richtigen Objekts. Eine rote Zeile ist nicht vorab angehakt, und
+  das Jahr aus dem Beleg geht dem gewählten vor; das gewählte bleibt dabei gespeichert, und weicht
+  das Jahr aus dem Beleg davon ab (eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
+  nicht gelesen hat), ist die Zeile gelb und nicht vorab angehakt, „Alle grünen übernehmen“ bucht
+  sie nicht. Die Vorschau nennt das Jahr jeder neuen Position, und beide Seiten zeigen „Jahr …“ an
+  einem Beleg aus einem anderen Jahr. Hängt ein Beleg schon von Hand an einer Position, gilt sie
+  für jede seiner Zeilen als mögliche Doppelung, gleich welcher Kostenart: Die Zeile ist rot, und
+  angelegt wird sie nur nach ausdrücklicher Bestätigung. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen, auch
   aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
   Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt. Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage

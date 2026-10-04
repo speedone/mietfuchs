@@ -626,6 +626,7 @@ fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
   const JSON_HEADERS = { 'content-type': 'application/json' }
   const post = (base, pfad, body) => fetch(`${base}${pfad}`, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
   let wasserId = ''
+  let offenVorher = []
   try {
     await withServer(dataDir, async ({ base }) => {
       await fetch(`${base}/api/settings`, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify({ ollamaUrl: ollama.url, ollamaModel: 'probe' }) })
@@ -643,18 +644,29 @@ fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
       const decisions = [{ idx: 0, action: 'create', fields: grund?.lines?.[0]?.suggestion?.fields }]
       const vorschau = await jsonOf(await post(base, `/api/assessments/${grund?.id}/plan`, { decisions }))
       gleich((await post(base, `/api/assessments/${grund?.id}/book`, { decisions, token: vorschau.token })).status, 200, 'die Grundsteuer ist gebucht')
+      // Der Stand im Archiv, ganz: die offene Auswertung mit Zeilen, Beträgen und Vorschlägen, die gebuchte und ihre Position.
+      offenVorher = await holen(base, '/api/assessments?open=1')
+      const gebuchtVorher = await holen(base, `/api/assessments/${grund?.id}`)
       const zip = await backupHolen(base)
       const [position] = await holen(base, '/api/costItems')
+      gleich(gebuchtVorher.lines?.[0]?.costItemId, position?.id, 'die gebuchte Zeile zeigt auf die Position')
       await fetch(`${base}/api/costItems/${position?.id}`, { method: 'DELETE' })
       gleich((await holen(base, '/api/assessments?open=1')).length, 2, 'nach dem Löschen der Position sind beide Auswertungen offen')
       const antwort = await backupEinspielen(base, zip)
       gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
       gleich((await holen(base, '/api/assessments?open=1')).map((a) => a.id), [wasserId], 'Wiederherstellen: nur Wasser ist offen, wie im Archiv')
-      gleich((await holen(base, `/api/assessments/${grund?.id}`)).lines?.map((l) => l.state), ['created'], 'Wiederherstellen: die Grundsteuer ist gebucht, wie im Archiv')
-      gleich((await holen(base, '/api/costItems')).length, 1, 'Wiederherstellen: die Position ist wieder da, genau einmal')
+      gleich(await holen(base, '/api/assessments?open=1'), offenVorher, 'Wiederherstellen: die offene Auswertung steht mit Zeilen, Beträgen und Vorschlägen da wie im Archiv')
+      const gebuchtNachher = await holen(base, `/api/assessments/${grund?.id}`)
+      gleich(gebuchtNachher.lines?.map((l) => l.state), ['created'], 'Wiederherstellen: die Grundsteuer ist gebucht, wie im Archiv')
+      gleich(gebuchtNachher, gebuchtVorher, 'Wiederherstellen: die gebuchte Auswertung steht da wie im Archiv')
+      const positionen = await holen(base, '/api/costItems')
+      gleich(positionen, [position], 'Wiederherstellen: die Position ist wieder da, genau einmal und unverändert')
+      gleich([gebuchtNachher.lines?.[0]?.costItemId, gebuchtNachher.lines?.[0]?.itemDescription], [position?.id, position?.description],
+        'Wiederherstellen: die gebuchte Zeile zeigt auf die wiederhergestellte Position')
     })
     await withServer(dataDir, async ({ base }) => {
       gleich((await holen(base, '/api/assessments?open=1')).map((a) => a.id), [wasserId], 'zweiter Start: die offene Auswertung steht unverändert da')
+      gleich(await holen(base, '/api/assessments?open=1'), offenVorher, 'zweiter Start: Zeilen, Beträge und Vorschläge wie im Archiv')
     })
   } finally {
     ollama.stop()
