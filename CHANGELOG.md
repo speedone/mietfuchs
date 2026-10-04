@@ -179,7 +179,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **§35a-Bescheinigung: kein Cent mehr unter der Handrechnung.** Der Lohnanteil, den die
   Abrechnung je Mieter bescheinigt, ging vom schon auf Cent gerundeten Kostenanteil aus und konnte
   so einen Cent zu niedrig sein (etwa 45,20 € statt 300 € × 55/365 = 45,21 €). Jetzt folgt er dem
-  ungerundeten Anteil. **Es ändert sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um
+  ungerundeten Anteil und liegt dabei nie über dem Kostenanteil des Mieters: Ist eine Rechnung
+  ganz Lohn, ist der bescheinigte Lohnanteil genau sein Kostenanteil (etwa 109,15 € bei 109,15 €).
+  **Es ändert sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um
   höchstens einen Cent je Position; Kostenanteile, Nachzahlungen und Guthaben, Vermieter- und
   Eigenanteil sowie die Steuerübersicht bleiben unverändert. Abgeschlossene Abrechnungen bleiben,
   wie sie verschickt wurden.

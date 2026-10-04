@@ -2099,12 +2099,34 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     } else if (labor > 0) {
       const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
       const bookedRaw = booked.reduce((a, i) => a + targets[i].raw, 0)
-      const tenantLabor = Math.min(labor, Math.round((labor * bookedRaw) / item.amountCents))
-      const parts = largestRemainder(
-        tenantLabor,
-        booked.map((i) => (labor * targets[i].raw) / item.amountCents),
-        booked.map((i) => String(targets[i].t.id)),
-      )
+      const bookedShares = booked.reduce((a, i) => a + shares[i], 0)
+      // Tragen die Mieter die Rechnung ganz, bekommen sie den ganzen Lohnanteil bescheinigt.
+      const tenantLabor = bookedShares === item.amountCents
+        ? labor
+        : Math.min(labor, Math.round((labor * bookedRaw) / item.amountCents))
+      const exact = booked.map((i) => (labor * targets[i].raw) / item.amountCents)
+      const keys = booked.map((i) => String(targets[i].t.id))
+      const parts = largestRemainder(tenantLabor, exact, keys)
+      // **Nie mehr Lohnanteil als Kostenanteil** (Durchsicht von #196). Das Restverfahren kann einer
+      // Zeile den aufgerundeten Lohn geben, während ihr Kostenanteil abgerundet wurde; ist die
+      // Rechnung fast ganz Lohn, läge der Lohn dann einen Cent über dem, was der Mieter bezahlt
+      // (109,16 € bei 109,15 €). Gedeckelt wird je Zeile, und der Cent geht an eine Zeile mit Luft,
+      // in derselben Reihenfolge wie beim Restverfahren; gibt es keine, bleibt er beim Vermieter.
+      let spare = 0
+      booked.forEach((i, k) => {
+        const cap = Math.max(0, shares[i])
+        if (parts[k] > cap) { spare += parts[k] - cap; parts[k] = cap }
+      })
+      const order = exact
+        .map((x, k): [number, number] => [x - Math.floor(x), k])
+        .sort((a, b) => b[0] - a[0] || compareText(keys[a[1]], keys[b[1]]))
+      for (const [, k] of order) {
+        if (spare === 0) break
+        const room = Math.max(0, shares[booked[k]]) - parts[k]
+        const give = Math.min(room, spare)
+        parts[k] += give
+        spare -= give
+      }
       booked.forEach((i, k) => laborOf.set(i, parts[k]))
     }
     let distributed = 0
