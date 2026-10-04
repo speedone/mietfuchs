@@ -185,6 +185,26 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
 
 // ---------- Vorschläge und Ansicht ----------
 
+// Welchen Betrag ersetzt die Zeile, wenn sie mit dem vorgeschlagenen Ziel verknüpft wird? Für die
+// Abweichung zum Vorjahr in der Ampel. Der vorgesehene Ablauf ist „aus dem Vorjahr übernommen,
+// dann die Rechnung“: Die übernommene Position trägt einen geschätzten Betrag ohne Beleg, und die
+// Summenregel des Planers (bookingPlan.ts) setzt sie beim Verknüpfen auf die Summe der Zeilen. Der
+// Vergleich muss deshalb den Stand **nach** dem Verknüpfen zeigen, sonst zählte er Schätzung und
+// Rechnung zusammen und meldete „+103 % gegenüber Vorjahr“ für eine Grundsteuer, die um 3 %
+// gestiegen ist. Ersetzt wird nur eine Position derselben Kostenart und desselben Jahres ohne
+// Beleg und ohne gebuchte Zeile, und zwar die erste der Kandidaten, die die Ansicht als Ziel
+// anbietet. Trägt sie einen Beleg, ist die Zeile eher eine zweite Rechnung, und die Abweichung
+// zählt wie bisher beide. Eine Gutschrift wird nie verknüpft und ersetzt nichts.
+export function replacedByLinking(
+  candidates: readonly CostItem[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, year: number,
+  booked: readonly Pick<BookedLine, 'costItemId'>[],
+): number {
+  if (line.amountCents === null || line.amountCents <= 0) return 0
+  const target = candidates.find((c) =>
+    c.year === year && c.category === line.category && !c.invoiceFile && !booked.some((l) => l.costItemId === c.id))
+  return target?.amountCents ?? 0
+}
+
 export type DescribeContext = {
   // Die Positionen des Objekts der Auswertung, alle Jahre
   items: readonly CostItem[]
@@ -216,7 +236,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
     matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
-    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, amount),
+    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, amount, replacedByLinking(candidates, line, a.year, ctx.booked)),
   })
   // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
   // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI

@@ -91,11 +91,14 @@ export function aiRowPreselected(r: { category: string; preselect: boolean; prob
 }
 
 // Weicht die Summe der Kostenart im Jahr des Belegs, mit diesem Betrag, um wie viel Prozent vom
-// Jahr davor ab? `null` ohne Vorjahr.
-export function categoryDeviationPct(items: readonly CostItem[], category: string, year: number, amountCents: number): number | null {
+// Jahr davor ab? `null` ohne Vorjahr. `replacedCents` ist der Betrag, den die Zeile beim Verknüpfen
+// ersetzt (eine übernommene Schätzung, server/src/assessment.ts `replacedByLinking`): Er fällt aus
+// der Summe, sonst stünde die Rechnung neben der Schätzung, die sie ablöst, und der Vergleich
+// meldete rund das Doppelte des Vorjahres.
+export function categoryDeviationPct(items: readonly CostItem[], category: string, year: number, amountCents: number, replacedCents = 0): number | null {
   const sum = (y: number) => items.filter((i) => i.year === y && i.category === category).reduce((a, i) => a + i.amountCents, 0)
   const prior = sum(year - 1)
-  return prior > 0 ? ((sum(year) + amountCents - prior) / prior) * 100 : null
+  return prior > 0 ? ((sum(year) - replacedCents + amountCents - prior) / prior) * 100 : null
 }
 
 // Weicht die Summe der erkannten Positionen von der Rechnungs-Gesamtsumme ab, ist meist eine
