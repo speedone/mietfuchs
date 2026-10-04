@@ -385,6 +385,24 @@ test('Ein gewöhnlicher Bestand wandert vollständig hinüber', async () => {
   }
 })
 
+// #180: Beim zweiten Start liegt die db.json als db.json.abgeloest daneben. „Es gibt noch keine
+// db.json“ wäre dann falsch und klänge, als seien die Daten nie dagewesen.
+test('Zweiter Start nach dem Umstieg: die Meldung sagt, dass der Umstieg schon erfolgt ist', async () => {
+  const dataDir = tempDir()
+  try {
+    writeFile(dataDir, fullDb())
+    await changeoverIn(dataDir, async (result) => assert.equal(result.state, 'done', result.message))
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'none', result.message)
+      assert.doesNotMatch(result.message, /noch keine/)
+      assert.match(result.message, /bereits/)
+      assert.match(result.message, new RegExp(LEGACY_JSON_NAME.replace('.', '\\.')))
+    })
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 test('Ein leerer Bestand wandert ebenso hinüber', async () => {
   // Der erste Start nach dem Update bei jemandem, der Mietfuchs nur angesehen hat: Die db.json
   // gibt es, sie enthält aber nur die Vorgabewerte.

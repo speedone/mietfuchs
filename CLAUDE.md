@@ -873,7 +873,18 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   Liegt eine Sicherung gleichen Namens schon da (ein früher gescheitertes Update), wird sie als
   `….vom-JJJJ-MM-TT-HHMM` beiseitegelegt und neu gesichert, nie wiederverwendet: Sie hielte einen
   Stand fest, hinter dem seitdem gearbeitet wurde. Das Wegklicken merkt sich die Oberfläche je
-  Name und Zeitpunkt.
+  Name und Zeitpunkt. **Der Hinweis übersteht einen Neustart** (#180): Wer in Docker oder mit npm
+  neu startet, bevor er die Oberfläche öffnet, verlor ihn sonst. Gemerkt wird er in der kleinen
+  Datei `sicherung-vor-update.json` im Datenordner ([server/src/db/migrationNotice.ts](server/src/db/migrationNotice.ts)),
+  bewusst nicht in der Datenbank: Er gehört zum Update, nicht zum Bestand, und braucht so keine
+  Migration und kommt nicht ins Backup. Weg ist er, wenn „Verstanden“ ihn mit
+  `POST /api/database/migrated/seen` meldet (nur mit passendem Schlüssel `Name@Zeitpunkt`), wenn
+  ein Backup eingespielt wird oder wenn die genannte Sicherung fehlt. Die Konsole nennt die
+  Sicherung mit vollem Pfad, aber nur beim Start, der sie angelegt hat. **Entschieden wird erst
+  nach dem Umstieg** (`noteAfterChangeover` in index.ts): Lag eine leere Datenbank eines früher
+  gescheiterten Umstiegs neben der `db.json`, sichert das Nachholen der Schritte einen leeren
+  Stand; nach `done` gibt es deshalb weder Hinweis noch Merkdatei noch Konsolenzeile, nach
+  `failed` in diesem Lauf keinen Hinweis.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.

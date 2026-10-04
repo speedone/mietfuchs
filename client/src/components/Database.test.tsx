@@ -15,13 +15,19 @@ const state = (changeover: DatabaseState['changeover']): DatabaseState => ({
 let report: { version?: string, database?: DatabaseState }
 let failing = false
 let asked: string[]
+let posted: { url: string, body: unknown }[]
 
 beforeEach(() => {
   asked = []
+  posted = []
   failing = false
   report = { database: state({ state: 'done', message: 'Ihre Daten liegen jetzt in einer Datenbank.', notes: [] }) }
   localStorage.clear()
-  vi.stubGlobal('fetch', async (url: string) => {
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      posted.push({ url: String(url), body: JSON.parse(String(init.body)) })
+      return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     asked.push(String(url))
     if (failing) return new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } })
     return new Response(JSON.stringify(report), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -113,6 +119,11 @@ test('nach einem Update steht die Sicherung da, mit Link zur Anleitung, und blei
   fireEvent.click(screen.getByRole('button', { name: 'Verstanden' }))
   expect(screen.queryByText(/aktualisiert/)).toBeNull()
   expect(localStorage.getItem(UPDATE_DISMISS_KEY)).toBe('mietfuchs.sqlite.vor-0001_objekte@2026-10-01T10:00:00.000Z')
+  // Und der Server erfährt es (#180): Der Hinweis übersteht einen Neustart, bis er weggeklickt ist,
+  // und soll danach auch in keinem anderen Browser wiederkommen.
+  await waitFor(() => expect(posted).toEqual([
+    { url: '/api/database/migrated/seen', body: { key: 'mietfuchs.sqlite.vor-0001_objekte@2026-10-01T10:00:00.000Z' } },
+  ]))
 
   // Beim nächsten Öffnen der Oberfläche, solange derselbe Start läuft, kommt er nicht wieder.
   unmount()

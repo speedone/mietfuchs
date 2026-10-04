@@ -360,8 +360,9 @@ export type DatabaseState = {
     // db.json. Dann sperren die Datenrouten wie bei 'failed' (#89).
     pending?: boolean
   }
-  // Hat dieser Start Schritte am Aufbau einer vorhandenen Datenbank nachgeholt, also nach einem
-  // Update, nennt das die Sicherung davor (#154): nur ihr Name, sie liegt im Datenordner.
+  // Hat ein Update Schritte am Aufbau einer vorhandenen Datenbank nachgeholt, nennt das die
+  // Sicherung davor (#154): nur ihr Name, sie liegt im Datenordner. Das gilt auch nach einem
+  // Neustart, bis die Oberfläche den Hinweis wegklickt (#180, POST /api/database/migrated/seen).
   // Sonst null, auch nach einem Umstieg aus der db.json (deren Rückweg ist db.json.abgeloest)
   // und nach dem Wiederherstellen eines Backups (dort ist es mietfuchs.sqlite.vor-restore).
   // `at` ist der Zeitpunkt der Sicherung (ISO): Er unterscheidet sie von einer früheren gleichen

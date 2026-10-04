@@ -10,7 +10,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../../../shared/types.ts'
-import { describeAssessment, type BookedLine } from '../assessment.ts'
+import { describeAssessment, openTargets, type BookedLine, type OpenTarget } from '../assessment.ts'
 import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
 import type { Database } from './client.ts'
@@ -54,7 +54,50 @@ function twinFilesOf(ctx: Context, file: string): string[] {
 
 const scopeOf = (ctx: Context, propertyId: string | null) => (propertyId ? narrowToProperty(ctx.stock, propertyId) : null)
 
-function viewOf(record: AssessmentRecord, ctx: Context): AssessmentView {
+const twinNamesOf = (ctx: Context, file: string): Map<string, string> => new Map(twinFilesOf(ctx, file).map((f) => [f, nameOf(ctx, f)]))
+
+// Die offenen Zeilen der Auswertungen eines Objekts mit eindeutigem Ziel (#170): Kommt eine
+// Rechnung in zwei Belegen, ersetzen ihre Zeilen gemeinsam dieselbe Schätzung, und die Ampel rechnet
+// sie zusammen (`peerTargets` in assessment.ts). **Einmal je Auswertung berechnet** und für alle
+// Ansichten derselben Liste wiederverwendet (Durchsicht): Je Ansicht neu gerechnet wüchse die Liste
+// quadratisch, und das in der Leseschlange.
+type Peer = { id: string, file: string, targets: OpenTarget[] }
+
+function peersFrom(records: readonly AssessmentRecord[], ctx: Context): Peer[] {
+  return records.flatMap((r) => {
+    const scoped = scopeOf(ctx, r.assessment.propertyId)
+    if (!scoped) return []
+    return [{ id: r.assessment.id, file: r.assessment.file, targets: openTargets(r, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, r.assessment.file) }) }]
+  })
+}
+
+// Was davon für eine Auswertung zählt: nicht ihre eigenen Zeilen und nicht die eines Belegs mit
+// gleichem Inhalt (Durchsicht). Derselbe Beleg zweimal hochgeladen ist keine zweite Rechnung, das
+// zweite Verknüpfen lehnt der Planer ab; zusammengezählt zeigte die Ampel die doppelte Summe.
+function peerTargetsFor(record: AssessmentRecord, peers: readonly Peer[], ctx: Context): OpenTarget[] {
+  const twins = new Set(twinFilesOf(ctx, record.assessment.file))
+  // Sind zwei **andere** Belege untereinander Zwillinge, zählt nur einer davon (Integrations-
+  // durchsicht), und zwar der zuerst angelegte: `peers` folgt der Reihenfolge von listAssessments.
+  const seen = new Set<string>()
+  return peers.filter((p) => {
+    if (p.id === record.assessment.id || twins.has(p.file)) return false
+    const sha = ctx.uploads.get(p.file)?.sha256
+    if (!sha) return true
+    if (seen.has(sha)) return false
+    seen.add(sha)
+    return true
+  }).flatMap((p) => p.targets)
+}
+
+// Die Auswertungen des Objekts, deren Beleg noch im Belegordner liegt, wie in `viewAssessments`.
+async function peersOf(db: Database, record: AssessmentRecord, uploadDir: string, ctx: Context): Promise<Peer[]> {
+  const propertyId = record.assessment.propertyId
+  if (!propertyId) return []
+  const records = (await listAssessments(db, propertyId)).filter((r) => r.assessment.id !== record.assessment.id && exists(uploadDir, r.assessment.file))
+  return peersFrom(records, ctx)
+}
+
+function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly Peer[]): AssessmentView {
   const a = record.assessment
   const scoped = scopeOf(ctx, a.propertyId)
   const twins = twinFilesOf(ctx, a.file)
@@ -68,15 +111,17 @@ function viewOf(record: AssessmentRecord, ctx: Context): AssessmentView {
     twinOf: twin ? nameOf(ctx, twin.file) : null,
     twinNames: new Map(twins.map((f) => [f, nameOf(ctx, f)])),
     booked: ctx.booked,
+    peerTargets: peerTargetsFor(record, peers, ctx),
   })
 }
 
 // Die Auswertungen eines Objekts, ohne die, deren Datei nicht mehr im Belegordner liegt.
 export async function viewAssessments(db: Database, propertyId: string, openOnly: boolean, uploadDir: string): Promise<AssessmentView[]> {
   const ctx = await contextOf(db)
-  return (await listAssessments(db, propertyId))
-    .filter((r) => exists(uploadDir, r.assessment.file))
-    .map((r) => viewOf(r, ctx))
+  const records = (await listAssessments(db, propertyId)).filter((r) => exists(uploadDir, r.assessment.file))
+  const peers = peersFrom(records, ctx)
+  return records
+    .map((r) => viewOf(r, ctx, peers))
     .filter((v) => !openOnly || v.open)
 }
 
@@ -85,11 +130,12 @@ export async function viewAssessment(db: Database, id: string, uploadDir: string
   if (!record) throw new BookingRefusal(404, NOT_FOUND)
   const ctx = await contextOf(db)
   if (!exists(uploadDir, record.assessment.file)) throw new BookingRefusal(404, fileGone(nameOf(ctx, record.assessment.file)))
-  return viewOf(record, ctx)
+  return viewOf(record, ctx, await peersOf(db, record, uploadDir, ctx))
 }
 
-export async function viewRecord(db: Database, record: AssessmentRecord): Promise<AssessmentView> {
-  return viewOf(record, await contextOf(db))
+export async function viewRecord(db: Database, record: AssessmentRecord, uploadDir: string): Promise<AssessmentView> {
+  const ctx = await contextOf(db)
+  return viewOf(record, ctx, await peersOf(db, record, uploadDir, ctx))
 }
 
 async function plannedFor(db: Database, id: string, decisions: readonly LineDecision[], uploadDir: string, newId: () => string) {

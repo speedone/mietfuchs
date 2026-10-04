@@ -502,6 +502,8 @@ fall(10, 'Zweiter Start, der Umstieg ist schon gelaufen', async () => {
   await withServer(dataDir, async ({ base }) => {
     const bericht = await holen(base, '/healthz')
     gleich(bericht.database?.changeover?.state, 'none', 'zweiter Start: es gibt nichts mehr zu übernehmen')
+    // #180: nicht „noch keine db.json“, denn die abgelöste liegt daneben
+    enthaelt(bericht.database?.changeover?.message, 'bereits erfolgt', 'zweiter Start: die Meldung sagt, dass der Umstieg erfolgt ist')
     gleich(bericht.status, 'ok', 'zweiter Start: der Server ist gesund')
     await fachlichePruefung(base, 'zweiter Start')
   })
@@ -541,10 +543,17 @@ fall(11, 'Datenbank von v0.8.0, Update auf mehrere Objekte (#92)', async () => {
   })
   dateienImOrdner(dataDir, 'Update', { 'mietfuchs.sqlite.vor-0001_objekte': true })
 
-  // Ein zweiter Start hat nichts nachzuholen und legt keine weitere Sicherung an.
+  // Ein zweiter Start hat nichts nachzuholen und legt keine weitere Sicherung an. Den Hinweis
+  // nennt er weiter, denn niemand hat ihn weggeklickt (#180); erst danach ist er weg.
   await withServer(dataDir, async ({ base }) => {
     const bericht = await holen(base, '/healthz')
-    gleich(bericht.database?.migrated, null, 'Update, zweiter Start: keine Meldung mehr über eine Sicherung')
+    const genannt = bericht.database?.migrated
+    gleich(genannt?.backup, 'mietfuchs.sqlite.vor-0001_objekte', 'Update, zweiter Start: der Hinweis auf die Sicherung übersteht den Neustart')
+    const res = await fetch(`${base}/api/database/migrated/seen`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: `${genannt?.backup}@${genannt?.at}` }),
+    })
+    gleich(res.status, 200, 'Update, zweiter Start: der Hinweis lässt sich wegklicken')
+    gleich((await holen(base, '/healthz')).database?.migrated, null, 'Update, zweiter Start: weggeklickt ist er weg')
     await fachlichePruefung(base, 'Update, zweiter Start')
   })
   const sicherungen = fs.readdirSync(dataDir).filter((n) => n.includes('.vor-0'))
