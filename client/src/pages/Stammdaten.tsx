@@ -361,15 +361,19 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         </p>
         {tenancies.length === 0 && <div className="empty">Noch keine Mietverhältnisse angelegt.</div>}
         {tenancies.length > 0 && (
-          <Table>
+          // Die Tabelle muss in ihre Karte passen (#180): Bei 1.280 px war sie 1.234 px breit in einer
+          // Karte von 953 px, und Mieterwechsel, ✎ und 🗑 lagen nur durch Scrollen im Bild. Deshalb
+          // dürfen Kopfzeilen, Staffeln und die Aktionen umbrechen, jeweils nur an einer sinnvollen
+          // Stelle (zwischen „ab …:“ und dem Wert, zwischen Knopf und Symbolen).
+          <Table className="tenancy-table">
             <thead>
               <tr>
                 <th>Mieter</th>
                 <th>Wohnung</th>
                 <th className="num">Personen</th>
                 <th>Zeitraum</th>
-                <th className="num">Kaltmiete/Monat</th>
-                <th className="num">Vorauszahlung/Monat</th>
+                <th className="num">Kaltmiete je Monat</th>
+                <th className="num">Voraus{'\u00ad'}zahlung je Monat</th>
                 <th className="no-print"></th>
               </tr>
             </thead>
@@ -381,13 +385,15 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {/* Pauschale oder Inklusivmiete auf einen Blick (#142); die Abrechnung ist der Normalfall. */}
                     {costModelBadge(t.costModel, t.heatingModel) && (
                       <div style={{ marginTop: 2 }}>
-                        <span className="badge gray" style={{ whiteSpace: 'nowrap' }} title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
+                        <span className="badge gray" title="Nebenkostenmodell; ändern unter „Weitere Angaben“">
                           {costModelBadge(t.costModel, t.heatingModel)}
                         </span>
                       </div>
                     )}
                     {(t.email || t.phone) && (
-                      <div className="muted" style={{ fontSize: 12 }}>{[t.email, t.phone].filter(Boolean).join(' · ')}</div>
+                      <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+                        {t.email}{t.email && t.phone && ' · '}{t.phone && <span className="nowrap">{t.phone}</span>}
+                      </div>
                     )}
                     {t.depositCents != null && (
                       <div style={{ fontSize: 12, marginTop: 2 }}>
@@ -402,8 +408,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                   <td className="num">
                     {(t.personHistory ?? []).map((p, i) => (
                       <div key={i}>
-                        {(t.personHistory?.length ?? 0) > 1 && <span className="muted">ab {fmtDate(p.from)}: </span>}
-                        {p.persons}
+                        {(t.personHistory?.length ?? 0) > 1 && <><span className="muted nowrap">ab {fmtDate(p.from)}:</span>{' '}</>}
+                        <span className="nowrap">{p.persons}</span>
                       </div>
                     ))}
                   </td>
@@ -414,8 +420,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {(t.baseRents?.length ?? 0) === 0 && '—'}
                     {(t.baseRents ?? []).map((p, i) => (
                       <div key={i}>
-                        {(t.baseRents?.length ?? 0) > 1 && <span className="muted">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}: </span>}
-                        {fmtEuro(p.monthlyCents)}
+                        {(t.baseRents?.length ?? 0) > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
+                        <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
                       </div>
                     ))}
                   </td>
@@ -423,18 +429,19 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     {t.prepayments.length === 0 && '—'}
                     {t.prepayments.map((p, i) => (
                       <div key={i}>
-                        {t.prepayments.length > 1 && <span className="muted">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}: </span>}
-                        {fmtEuro(p.monthlyCents)}
+                        {t.prepayments.length > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
+                        <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
                       </div>
                     ))}
                   </td>
-                  <td className="actions no-print" style={{ whiteSpace: 'nowrap' }}>
+                  <td className="actions no-print">
                     {!t.end && (
                       <button className="btn small secondary" title="Geführter Ablauf: Auszug, Zwischenablesung, neuer Mieter" onClick={() => setWizardFor(t)}>
                         Mieterwechsel
                       </button>
                     )}
                     {' '}
+                    <span className="nowrap">
                     <button
                       className="icon-btn"
                       title="Bearbeiten"
@@ -447,6 +454,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                       ✎
                     </button>
                     <button className="icon-btn danger" title="Löschen" aria-label="Mietverhältnis löschen" onClick={() => deleteTenancy(t)}>🗑</button>
+                    </span>
                   </td>
                 </tr>
               ))}

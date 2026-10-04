@@ -584,6 +584,12 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
 tbody tr.clickable-row { cursor: pointer; }
 tbody tr.clickable-row:hover > td { background: var(--accent-soft); }
 td.actions { white-space: nowrap; text-align: right; }
+/* Mietverhältnisse in den Stammdaten (#180): Die Tabelle passt in ihre Karte, weil Kopfzeilen,
+   Staffeln und Aktionen umbrechen dürfen; was zusammengehört, hält `.nowrap` beisammen. */
+.nowrap { white-space: nowrap; }
+.tenancy-table th.num, .tenancy-table td.num, .tenancy-table td.actions { white-space: normal; }
+.tenancy-table td.actions .btn { margin-bottom: 4px; }
+.tenancy-table .badge { border-radius: 8px; }
 .icon-btn {
   all: unset;
   cursor: pointer;

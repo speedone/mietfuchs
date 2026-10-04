@@ -183,3 +183,26 @@ test('Nutzung „Eigennutzung“: der Hilfetext verweist auf den Begriff Einlieg
   const dialog = await openUnit([{ ...UNITS[0]!, participates: false, selfUsed: true }, UNITS[1]!])
   expect(within(dialog).getByRole('button', { name: 'Einliegerwohnung' })).toBeTruthy()
 })
+
+// Breite der Tabelle (#180): Bei 1.280 px war sie 1.234 px breit in einer Karte von 953 px, und
+// Mieterwechsel, ✎ und 🗑 lagen nur durch Scrollen im Bild. Die Breite selbst misst jsdom nicht
+// (nachgemessen im Browser: 909 von 909 px bei 1.280, 954 von 954 bei 1.440 und 1.920 px). Hier
+// steht, was sie ermöglicht: Nichts in der Tabelle verbietet den Umbruch pauschal; zusammen bleibt
+// nur, was zusammengehört (die beiden Symbole, ein Betrag, eine Telefonnummer).
+test('Mietverhältnisse: die Tabelle darf umbrechen, die Symbole bleiben beisammen', async () => {
+  const { container } = page([
+    tenancy('t1', 'Staffel', {
+      email: 'sehr.lange.adresse@example.org', phone: '0171 1234567', costModel: 'flatRate',
+      prepayments: [{ from: '2025-01', monthlyCents: 18000 }, { from: '2025-07', monthlyCents: 21000 }],
+    }),
+  ])
+  await screen.findByText('Staffel', undefined, SLOW)
+  const table = container.querySelector('table.tenancy-table')
+  if (!table) throw new Error('keine Tabelle der Mietverhältnisse')
+  const forced = [...table.querySelectorAll<HTMLElement>('[style]')].filter((e) => e.style.whiteSpace === 'nowrap')
+  expect(forced.map((e) => e.outerHTML.slice(0, 80))).toEqual([])
+  const icons = rowOf('Staffel').getByLabelText('Mietverhältnis bearbeiten').parentElement
+  expect(icons?.classList.contains('nowrap')).toBe(true)
+  expect(icons?.contains(rowOf('Staffel').getByLabelText('Mietverhältnis löschen'))).toBe(true)
+  expect(rowOf('Staffel').getByText('0171 1234567').classList.contains('nowrap')).toBe(true)
+})
