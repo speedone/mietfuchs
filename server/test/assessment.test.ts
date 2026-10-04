@@ -2,8 +2,9 @@
 // Zeilen wird und in welchem Zustand eine Zeile ist.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { detectedYear, lineDraft, lineState, linesFromExtraction, withoutBooked, type NewLine } from '../src/assessment.ts'
-import type { StoredAssessmentLine, Unit } from '../../shared/types.ts'
+import { describeAssessment, detectedYear, lineDraft, lineState, linesFromExtraction, withoutBooked, type DescribeContext, type NewLine } from '../src/assessment.ts'
+import { categoryDeviationPct } from '../../shared/assessment.ts'
+import type { CostItem, StoredAssessment, StoredAssessmentLine, Unit } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { costItemBody } from '../../shared/costItem.ts'
 
@@ -97,4 +98,59 @@ test('Entwurf einer KI-Zeile „Nicht umlagefähig“: ein gemerkter Schlüssel 
     if (!('body' in built)) return assert.fail(built.error)
     assert.deepEqual([built.body.key, built.body.directUnitId, built.body.participantUnitIds], ['area', null, null])
   }
+})
+
+// ---------- Abweichung zum Vorjahr beim Verknüpfen mit einer Schätzung ----------
+
+const assessmentOf = (patch: Partial<StoredAssessment> = {}): StoredAssessment => ({
+  id: 'a1', file: 'grundsteuer.pdf', propertyId: 'objekt-1', year: 2026, detectedYear: 2026, requestedYear: 2026, vendor: 'Stadt Musterstadt',
+  invoiceDate: '2026-02-15', totalGrossCents: 51240, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-02-20T10:00:00Z', ...patch,
+})
+const grundsteuer = (patch: Partial<CostItem>): CostItem => ({
+  id: 'x', propertyId: 'objekt-1', year: 2026, category: 'Grundsteuer', description: 'Grundsteuer', vendor: 'Stadt Musterstadt', amountCents: 49800, key: 'area', ...patch,
+})
+const describeWith = (items: CostItem[], booked: DescribeContext['booked'] = []) => {
+  const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 51240 })
+  const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
+    items, units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked,
+  })
+  const s = view.lines[0]?.suggestion
+  if (!s) return assert.fail('Die offene Zeile hat keinen Vorschlag')
+  return s
+}
+
+test('Ampel: Rechnung zu einer übernommenen Schätzung vergleicht den Stand nach dem Verknüpfen mit dem Vorjahr', () => {
+  // Vorjahr 498 €, dieses Jahr aus dem Vorjahr übernommen 498 € ohne Beleg, Rechnung 512,40 €.
+  // Verknüpft ersetzt die Rechnung die Schätzung (Summenregel): 512,40 € gegen 498 €, rund +3 %.
+  const s = describeWith([
+    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'u' }),
+  ])
+  assert.deepEqual(s.candidates.map((c) => c.id), ['u'])
+  assert.ok(!s.reasons.some((r) => /gegenüber Vorjahr/.test(r)), `keine Abweichung erwartet: ${s.reasons.join(' | ')}`)
+})
+
+test('Ampel: Ersetzt die Rechnung die Schätzung, zählt die Abweichung gegen das Vorjahr weiter', () => {
+  // Schätzung 498 €, Rechnung 800 €: nach dem Verknüpfen 800 € gegen 498 €, +61 %, nicht +161 %.
+  const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 80000 })
+  const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
+    items: [grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }), grundsteuer({ id: 'u' })],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  assert.ok(view.lines[0]?.suggestion?.reasons.includes('+61 % gegenüber Vorjahr'), view.lines[0]?.suggestion?.reasons.join(' | '))
+})
+
+test('Ampel: Eine echte zweite Rechnung derselben Kostenart meldet die Abweichung weiter', () => {
+  // Die Position dieses Jahres trägt schon einen Beleg: Verknüpfen ersetzte nichts, es käme hinzu.
+  const s = describeWith([
+    grundsteuer({ id: 'v', year: 2025, invoiceFile: 'gs-2025.pdf' }),
+    grundsteuer({ id: 'u', invoiceFile: 'gs-2026-a.pdf' }),
+  ], [{ costItemId: 'u', amountCents: 49800 }])
+  assert.ok(s.reasons.includes('+103 % gegenüber Vorjahr'), s.reasons.join(' | '))
+})
+
+test('Abweichung zum Vorjahr: ein ersetzter Betrag fällt aus der Summe des Jahres', () => {
+  const items = [grundsteuer({ id: 'v', year: 2025 }), grundsteuer({ id: 'u' })]
+  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', 2026, 51240) ?? 0) - 102.89) < 0.01)
+  assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', 2026, 51240, 49800) ?? 0) - 2.89) < 0.01)
 })
