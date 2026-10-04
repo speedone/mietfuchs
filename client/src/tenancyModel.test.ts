@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -81,4 +81,26 @@ test('Kennzeichen des Nebenkostenmodells in der Liste: nichts bei Abrechnung, so
   expect(costModelBadge('flatRate', null)).toBe('kalt pauschal · Heizung abgerechnet')
   expect(costModelBadge(null, 'inclusive')).toBe('kalt abgerechnet · Heizung inklusiv')
   expect(costModelBadge('inclusive', 'flatRate')).toBe('kalt inklusiv · Heizung pauschal')
+})
+
+// #204: Zwei Mietverhältnisse derselben Wohnung, die sich überschneiden, berechnen die Wohnung für
+// die gemeinsamen Tage doppelt. Beim Speichern fragt die Oberfläche nach; der Server lehnt nicht ab.
+test('Rückfrage bei Überschneidung: nennt Mieter und Zeitraum deutsch, gesiezt; sonst keine', () => {
+  const ten = (id: string, unitId: string, tenantName: string, start: string, end: string | null) =>
+    ({ id, unitId, tenantName, start, end }) as Tenancy
+  const bestand = [ten('x', 'A', 'Xaver', '2023-01-01', '2025-09-30'), ten('z', 'B', 'Zora', '2020-01-01', null)]
+  const q = overlapQuestion({ unitId: 'A', start: '2025-09-01', end: null }, bestand)
+  expect(q?.title).toBe('Mietverhältnisse überschneiden sich')
+  expect(q?.message).toContain('„Xaver“ vom 01.09.2025 bis 30.09.2025')
+  expect(q?.message).toContain('Trotzdem speichern?')
+  expect(q?.message).toMatch(/Sie/)
+  expect(q?.confirmLabel).toBe('Trotzdem speichern')
+  // offener gemeinsamer Zeitraum
+  expect(overlapQuestion({ unitId: 'B', start: '2025-03-01', end: null }, bestand)?.message).toContain('„Zora“ ab dem 01.03.2025')
+  // lückenlos, andere Wohnung, das Mietverhältnis selbst beim Bearbeiten: keine Rückfrage
+  expect(overlapQuestion({ unitId: 'A', start: '2025-10-01', end: null }, bestand)).toBeNull()
+  expect(overlapQuestion({ unitId: 'C', start: '2025-01-01', end: null }, bestand)).toBeNull()
+  expect(overlapQuestion({ id: 'x', unitId: 'A', start: '2023-01-01', end: '2025-12-31' }, bestand)).toBeNull()
+  // ohne Einzug (Formular unvollständig) keine Rückfrage, das meldet die Prüfung davor
+  expect(overlapQuestion({ unitId: 'A', start: '', end: null }, bestand)).toBeNull()
 })

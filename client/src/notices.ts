@@ -42,6 +42,15 @@ export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'w
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
 
+// Die Farbe der Cockpit-Zeile (#204): rot, sobald ein Hinweis der Stufe `error` dabei ist, denn
+// dann widersprechen sich die Angaben (Position nicht verteilt, Mietverhältnisse überschneiden
+// sich); gelb bei allem anderen, was etwas verlangt; sonst grün.
+export function attentionLevel(settlement: Pick<Settlement, 'notices' | 'warnings'>): 'rot' | 'gelb' | 'gruen' {
+  const open = noticesOf(settlement).filter((n) => !INFORMATIONAL.has(n.code))
+  if (open.some((n) => n.level === 'error')) return 'rot'
+  return open.length > 0 ? 'gelb' : 'gruen'
+}
+
 // Der Text der Cockpit-Zeile: nur, was etwas verlangt. Eine reine Auskunft steht vollständig auf
 // der Seite Abrechnung; im Cockpit wäre der Hinweis zur Fernablesbarkeit sonst ein Block von gut
 // 900 Zeichen in einer grünen Zeile.

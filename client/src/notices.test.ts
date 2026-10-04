@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { attentionDetail, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
+import { attentionDetail, attentionLevel, legalBasisLines, noticeClass, noticesNeedAttention, noticesOf, noticeTarget, NOTICE_LEVEL_LABELS } from './notices'
 import type { Notice, NoticeSubject } from './types'
 
 const n = (over: Partial<Notice>): Notice => ({ code: 'x', level: 'warning', title: 'Titel', text: 'Text', ...over })
@@ -91,6 +91,22 @@ describe('Cockpit: verlangen die Hinweise etwas?', () => {
   test('vor #112 abgeschlossen: die Texte gelten als Warnungen', () => {
     expect(noticesNeedAttention({ warnings: ['alt'] })).toBe(true)
     expect(noticesNeedAttention({ warnings: [] })).toBe(false)
+  })
+})
+
+// #204: Ein Fehler (etwa zwei Mietverhältnisse derselben Wohnung, die sich überschneiden) färbt die
+// Ampel rot und nicht nur gelb; Warnungen und Hinweise bleiben gelb, Auskünfte grün.
+describe('Cockpit: Farbe der Ampel „Hinweise der Berechnung“', () => {
+  test('ein Fehler: rot', () => {
+    expect(attentionLevel({ warnings: ['a', 'b'], notices: [n({ code: 'meter.main-gap', level: 'hint' }), n({ code: 'tenancy.overlap', level: 'error' })] })).toBe('rot')
+  })
+  test('Warnung oder Hinweis: gelb', () => {
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'basis.unit-no-area', level: 'warning' })] })).toBe('gelb')
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'cost.possible-duplicate', level: 'hint' })] })).toBe('gelb')
+  })
+  test('nur Auskünfte: grün; vor #112 abgeschlossen: gelb wie bisher', () => {
+    expect(attentionLevel({ warnings: ['a'], notices: [n({ code: 'basis.unit-zero', level: 'hint' })] })).toBe('gruen')
+    expect(attentionLevel({ warnings: ['alt'] })).toBe('gelb')
   })
 })
 

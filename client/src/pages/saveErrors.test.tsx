@@ -5,7 +5,7 @@
 // Jeder Test hier lässt den Server ablehnen und verlangt, dass seine Meldung zu sehen ist und
 // der Dialog offen bleibt, damit die Eingaben nicht verloren sind.
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { Meter, Tenancy, Unit } from '../types'
 import { YearProvider } from '../year'
@@ -127,8 +127,24 @@ test('Stammdaten: die Ablehnung eines Mietverhältnisses steht im Dialog', async
   fireEvent.change(screen.getByLabelText('Mieter'), { target: { value: 'Schmidt' } })
   fireEvent.change(screen.getByLabelText(/^Einzug/i), { target: { value: '2025-01-01' } })
   fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  // Müller wohnt seit 2020 in derselben Wohnung (#204): erst die Rückfrage, dann geht es zum Server.
+  fireEvent.click(await screen.findByRole('button', { name: /^Trotzdem speichern$/i }))
   await waitFor(() => expect(sent).toHaveLength(1))
   await expectShownInDialog()
+})
+
+test('Stammdaten: überschneidet sich das neue Mietverhältnis, fragt die Seite nach; „Abbrechen“ speichert nichts (#204)', async () => {
+  shell(<Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} />)
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/i }))
+  fireEvent.change(screen.getByLabelText('Mieter'), { target: { value: 'Schmidt' } })
+  fireEvent.change(screen.getByLabelText(/^Einzug/i), { target: { value: '2025-01-01' } })
+  fireEvent.click(screen.getByRole('button', { name: /^Anlegen$/i }))
+  expect(await screen.findByText(/überschneidet sich in derselben Wohnung mit „Müller“ ab dem 01\.01\.2025/)).toBeTruthy()
+  const frage = screen.getByRole('heading', { name: 'Mietverhältnisse überschneiden sich' }).closest('.dialog')
+  if (!(frage instanceof HTMLElement)) return expect.fail('keine Rückfrage')
+  fireEvent.click(within(frage).getByRole('button', { name: /^Abbrechen$/i }))
+  await waitFor(() => expect(screen.queryByText(/überschneidet sich/)).toBeNull())
+  expect(sent).toHaveLength(0)
 })
 
 test('Kosten: die Ablehnung beim Löschen ist zu sehen', async () => {
