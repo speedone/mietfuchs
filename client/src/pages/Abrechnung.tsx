@@ -18,6 +18,7 @@ import CalcSteps from '../components/CalcSteps'
 import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import { countOf } from '../../../shared/wording.ts'
 
 type Props = {
   settings: Settings | null
@@ -392,7 +393,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {year}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
-                    Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({st.days} Tage)
+                    Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
                   </div>
                 </div>
                 <button
