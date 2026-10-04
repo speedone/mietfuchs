@@ -104,9 +104,19 @@ export function shownRow(line: AssessmentLine, row: RowDraft): RowDraft {
   return linkChoices(line, row).some((c) => c.id === id) ? row : { ...row, action: '' }
 }
 
-// Nach „Trotzdem anlegen“: dieselben Entscheidungen, die bestätigten Zeilen ausdrücklich.
+// Nach „Trotzdem anlegen“ oder „Trotzdem verknüpfen“: dieselben Entscheidungen, die bestätigten
+// Zeilen ausdrücklich. Verknüpfen fragt nach, wenn eine erneut ausgewertete Zeile an eine schon aus
+// demselben Beleg gebuchte Position soll, denn das addiert ihren Betrag (Integrationsdurchsicht, H1).
 export function withConfirmed(decisions: readonly LineDecision[], idxs: readonly number[]): LineDecision[] {
-  return decisions.map((d) => (d.action === 'create' && idxs.includes(d.idx) ? { ...d, despiteCandidates: true } : d))
+  return decisions.map((d) => ((d.action === 'create' || d.action === 'link') && idxs.includes(d.idx) ? { ...d, despiteCandidates: true } : d))
+}
+
+// Die Beschriftung des Knopfs der Rückfrage, nach dem, was bestätigt wird.
+export function confirmLabel(decisions: readonly LineDecision[], idxs: readonly number[]): string {
+  const kinds = new Set(decisions.filter((d) => idxs.includes(d.idx)).map((d) => d.action))
+  if (kinds.size === 1 && kinds.has('link')) return 'Trotzdem verknüpfen'
+  if (kinds.has('link')) return 'Trotzdem buchen'
+  return 'Trotzdem anlegen'
 }
 
 // Grün im Sinne von „Alle grünen übernehmen“: offen, vom Server grün bewertet und vorab angehakt.

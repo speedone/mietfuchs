@@ -1035,7 +1035,9 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   1.550 €). Zeilen, die beim erneuten Auswerten **neben gebuchten** dazukommen, tragen deshalb
   `reassessed`; für sie sind die schon aus diesem Beleg gebuchten Positionen Kandidaten, gleich
   welcher Kostenart, die Zeile ist rot („Dieser Beleg ist schon gebucht …“), und Anlegen braucht
-  die Bestätigung. Für die Zeilen der ersten Auswertung gilt das nicht, sonst stünde Abwasser rot,
+  die Bestätigung. Ebenso das Verknüpfen mit einer solchen Position, denn es addiert den Betrag:
+  Ohne `despiteCandidates` an der Entscheidung antwortet der Planer mit einer Rückfrage und die
+  Buchung mit 400, die Oberfläche fragt „Trotzdem verknüpfen“ (`confirmLabel` in client/src/assessment.ts). Für die Zeilen der ersten Auswertung gilt das nicht, sonst stünde Abwasser rot,
   sobald Frischwasser gebucht ist.
   Neben den Spalten der Spezifikation stehen `detected_year` (Ampel „Rechnungsjahr ≠ Zieljahr“),
   `requested_year` (das gewählte Jahr: beim Auswerten mitgeschickt, nach einem `PUT` mit Jahr das

@@ -201,9 +201,12 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
         errors.push({ idx: d.idx, message: `${quote(target.description)} enthält diesen Beleg schon: Ein Beleg mit gleichem Inhalt ist mit ihr verknüpft. Ein zweites Verknüpfen zählte die Rechnung doppelt.` })
         continue
       }
-      if (line.reassessed && own.has(target.id)) {
-        // Erlaubt, denn es kann eine weitere Zeile derselben Rechnung sein; aber nie ungesagt (H1).
-        notices.push(`${quote(target.description)} enthält schon gebuchte Zeilen dieses Belegs. Ist ${named(line)} darin enthalten, zählt sie nach dem Verknüpfen doppelt; verwerfen Sie sie dann besser.`)
+      if (line.reassessed && own.has(target.id) && !d.despiteCandidates) {
+        // Erlaubt, denn es kann eine weitere Zeile derselben Rechnung sein; aber nur nach
+        // ausdrücklicher Bestätigung wie beim Anlegen, denn Verknüpfen addiert (H1).
+        const fromHere = input.booked.filter((l) => l.assessmentId === a.id && l.costItemId === target.id).reduce((s, l) => s + (l.amountCents ?? 0), 0)
+        const all = input.booked.filter((l) => l.costItemId === target.id).reduce((s, l) => s + (l.amountCents ?? 0), 0)
+        confirm.push({ idx: d.idx, message: `${quote(target.description)} ist schon aus diesem Beleg gebucht (${euro(fromHere)}). Verknüpfen addiert ${euro(amount)} auf ${euro(all + amount)}. Wählen Sie das nur, wenn die Rechnung diese Zeile zusätzlich enthält.` })
       }
       after.set(d.idx, { ...changeOf(line), booking: 'linked', costItemId: target.id, dismissed: false, amountCents: amount, labor35aCents: labor })
       if (!touched.includes(target.id)) touched.push(target.id)
@@ -479,8 +482,12 @@ export function parseDecisions(raw: unknown): { decisions: LineDecision[] } | { 
       const laborRaw = get(d, 'labor35aCents')
       const amount = amountRaw === undefined ? undefined : centsOrNull(amountRaw)
       const labor = laborRaw === undefined ? undefined : centsOrNull(laborRaw)
-      if (amount === false || labor === false) return { error: UNREADABLE }
-      out.push({ idx, action: 'link', costItemId, ...(amount !== undefined ? { amountCents: amount } : {}), ...(labor !== undefined ? { labor35aCents: labor } : {}) })
+      const despite = get(d, 'despiteCandidates')
+      if (amount === false || labor === false || (despite !== undefined && typeof despite !== 'boolean')) return { error: UNREADABLE }
+      out.push({
+        idx, action: 'link', costItemId, ...(amount !== undefined ? { amountCents: amount } : {}), ...(labor !== undefined ? { labor35aCents: labor } : {}),
+        ...(despite === true ? { despiteCandidates: true } : {}),
+      })
       continue
     }
     if (action === 'create') {

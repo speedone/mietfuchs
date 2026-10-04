@@ -435,3 +435,33 @@ test('M2: der Hinweis zu einer Position mit Einzelbeträgen sagt, die Zeile nach
   render(<UIProvider><AssessmentReview assessment={view} units={UNITS} onChange={() => {}} onOpenItem={() => {}} /></UIProvider>)
   expect(screen.getByText(/verwerfen Sie diese Zeile hier danach/)).toBeTruthy()
 })
+
+// ---------- Integrationsdurchsicht ----------
+
+test('H1: eine erneut ausgewertete Zeile an eine schon aus diesem Beleg gebuchte Position verknüpfen fragt mit „Trotzdem verknüpfen“ nach', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  const ex = invoice([{ description: 'Frischwasser', category: 'Wasser/Abwasser', amountEur: 700 }, { description: 'Abwasser', category: 'Wasser/Abwasser', amountEur: 800 }])
+  const first = fake.evaluate('w.pdf', ex, { year: YEAR })
+  const fieldsAt = (i: number): LineFields => first.lines[i]?.suggestion?.fields ?? assert.fail('kein Vorschlag')
+  const decisions = [
+    { idx: 0, action: 'create', fields: { ...fieldsAt(0), amountCents: 75000 } },
+    { idx: 1, action: 'create', fields: fieldsAt(1) },
+  ]
+  const post = (p: string, body: unknown) => fake.handle(p, { method: 'POST', body: JSON.stringify(body) })
+  const plan = await (await post(`/api/assessments/${first.id}/plan`, { decisions }))?.json()
+  expect((await post(`/api/assessments/${first.id}/book`, { decisions, token: plan.token }))?.status).toBe(200)
+  const frisch = fake.items.find((i) => i.description === 'Frischwasser') ?? assert.fail('Frischwasser fehlt')
+  const again = fake.evaluateAgain('w.pdf', ex)
+  render(<UIProvider><AssessmentReview assessment={again} units={UNITS} onChange={() => {}} /></UIProvider>)
+  const selects = await screen.findAllByRole('combobox', { name: 'Was geschieht mit „Frischwasser“?' }, SLOW)
+  const open = selects.find((el) => el instanceof HTMLSelectElement && [...el.options].some((o) => o.value === `link:${frisch.id}`))
+  if (!(open instanceof HTMLSelectElement)) return assert.fail('die gebuchte Position wird nicht zum Verknüpfen angeboten')
+  fireEvent.change(open, { target: { value: `link:${frisch.id}` } })
+  await previewAndBook()
+  const button = await screen.findByRole('button', { name: 'Trotzdem verknüpfen' }, SLOW)
+  expect(screen.getByText(/ist schon aus diesem Beleg gebucht \(750,00\s€\)/)).toBeTruthy()
+  expect(fake.items.find((i) => i.id === frisch.id)?.amountCents).toBe(75000)
+  fireEvent.click(button)
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(fake.items.find((i) => i.id === frisch.id)?.amountCents).toBe(145000)
+})
