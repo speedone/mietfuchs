@@ -33,30 +33,33 @@ Abrechnungsjahr 2025 (365 Tage), alle Mietverhältnisse ganzjährig.
 
 1. Die Verteilbasis umfasst vermietete **und** selbstgenutzte Wohnungen. Die Personentage der
    Eigennutzung sind Personenzahl × Tage des Jahres.
-2. Weil die Mieter den Betrag nicht ausschöpfen, wird jeder Mieteranteil für sich kaufmännisch
-   auf den Cent gerundet. Der Rest ist Vermieteranteil.
-3. Der Eigenanteil einer Position ist der Anteil der selbstgenutzten Wohnung, kaufmännisch
-   gerundet und höchstens so groß wie der Vermieteranteil dieser Position. Der Unterschied
-   zum Vermieteranteil ist Rundung.
+2. Seit #202 gilt eine Rundungsregel für jede Verteilung: Die Mieter und der Eigenanteil sind
+   Zeilen derselben Restverteilung (Hare/largest remainder). Jede Zeile wird abgerundet, die
+   fehlenden Cent gehen an die größten Nachkommaanteile, bei Gleichstand zuerst an den Vermieter,
+   dann nach Kennung. Die Zeilen ergeben zusammen genau den Betrag.
+3. Der Eigenanteil einer Position ist genau ihre Zeile in dieser Verteilung; einen Rundungsrest
+   daneben gibt es nicht mehr.
 
 ## Handrechnung
 
 **c1 — Fläche** (Basis 80 + 90 + 60 = 230 m²):
 
 ```
-t2    = 90.000 × 90/230 = 35.217,39 ct → 35.217 ct
-t3    = 90.000 × 60/230 = 23.478,26 ct → 23.478 ct
-Vermieter = 90.000 − 35.217 − 23.478   = 31.305 ct
-Eigenanteil = 90.000 × 80/230 = 31.304,35 ct → 31.304 ct   (1 ct Rundung beim Vermieter)
+t2          = 90.000 × 90/230 = 35.217,39 ct
+t3          = 90.000 × 60/230 = 23.478,26 ct
+Eigenanteil = 90.000 × 80/230 = 31.304,35 ct
+abgerundet 35.217 + 23.478 + 31.304 = 89.999 ct, 1 Restcent an den größten Rest (t2, 0,39)
+t2 = 35.218 ct    t3 = 23.478 ct    Vermieter = Eigenanteil = 31.304 ct
 ```
 
 **c2 — Personentage** (EG 2 × 365 = 730, t2 4 × 365 = 1.460, t3 3 × 365 = 1.095, Basis 3.285):
 
 ```
-t2    = 46.000 × 1.460/3.285 = 20.444,44 ct → 20.444 ct
-t3    = 46.000 × 1.095/3.285 = 15.333,33 ct → 15.333 ct
-Vermieter = 46.000 − 20.444 − 15.333       = 10.223 ct
-Eigenanteil = 46.000 × 730/3.285 = 10.222,22 ct → 10.222 ct   (1 ct Rundung beim Vermieter)
+t2          = 46.000 × 1.460/3.285 = 20.444,44 ct
+t3          = 46.000 × 1.095/3.285 = 15.333,33 ct
+Eigenanteil = 46.000 ×   730/3.285 = 10.222,22 ct
+abgerundet 20.444 + 15.333 + 10.222 = 45.999 ct, 1 Restcent an den größten Rest (t2, 0,44)
+t2 = 20.445 ct    t3 = 15.333 ct    Vermieter = Eigenanteil = 10.222 ct
 ```
 
 **c3 — Einheiten** (EG, OG links, OG rechts = 3):
@@ -69,27 +72,27 @@ Vermieter = Eigenanteil = 10.000 ct
 **Summen:**
 
 ```
-t2          = 35.217 + 20.444 + 10.000 = 65.661 ct =   656,61 €
+t2          = 35.218 + 20.445 + 10.000 = 65.663 ct =   656,63 €
 t3          = 23.478 + 15.333 + 10.000 = 48.811 ct =   488,11 €
-Vermieter   = 31.305 + 10.223 + 10.000 = 51.528 ct =   515,28 €
+Vermieter   = 31.304 + 10.222 + 10.000 = 51.526 ct =   515,26 €
 Eigenanteil = 31.304 + 10.222 + 10.000 = 51.526 ct =   515,26 €
-Kontrolle: 65.661 + 48.811 + 51.528 = 166.000 ct = Gesamtkosten ✓
+Kontrolle: 65.663 + 48.811 + 51.526 = 166.000 ct = Gesamtkosten ✓
 ```
 
 Zum Vergleich: Stünde das EG auf *nicht beteiligt* (wie in F01), trügen die beiden Mieter die
-drei Positionen vollständig: 1.660,00 € statt 1.144,72 €.
+drei Positionen vollständig: 1.660,00 € statt 1.144,74 €.
 
 **Vorauszahlungen und Salden** (positiv = Guthaben):
 
 ```
-t2 = 12 × 15.000 = 180.000 ct    Saldo = 180.000 − 65.661 = +114.339 ct
+t2 = 12 × 15.000 = 180.000 ct    Saldo = 180.000 − 65.663 = +114.337 ct
 t3 = 12 × 10.000 = 120.000 ct    Saldo = 120.000 − 48.811 =  +71.189 ct
 ```
 
 **Vorschlag neue Vorauszahlung** (ein Zwölftel, auf volle Euro gerundet):
 
 ```
-t2 = 65.661 / 12 = 5.471,75 ct → 54,72 € → 55,00 €
+t2 = 65.663 / 12 = 5.471,92 ct → 54,72 € → 55,00 €
 t3 = 48.811 / 12 = 4.067,58 ct → 40,68 € → 41,00 €
 ```
 
@@ -97,3 +100,20 @@ Keine Warnungen: Die selbstgenutzte Wohnung hat Fläche und Personenzahl.
 
 Diese Erwartung wurde von Hand hergeleitet und traf die Engine beim ersten Lauf cent-genau —
 eine unabhängige Bestätigung der Eigennutzung aus v0.3.0.
+
+## Geänderte Sollwerte (#202)
+
+Bis #202 rundete jeder Mieter für sich, und der Eigenanteil wurde getrennt gerundet; der Cent
+dazwischen stand als Rundung beim Vermieter. Seit #202 verteilt eine Restverteilung über Mieter
+und Eigenanteil zusammen. Geändert hat sich je Position genau eine Zeile um einen Cent:
+
+| Wert | vorher | jetzt | Grund |
+|---|---|---|---|
+| c1, t2 | 35.217 | 35.218 | t2 hat mit 0,39 den größten Rest und bekommt den einen Restcent |
+| c2, t2 | 20.444 | 20.445 | t2 hat mit 0,44 den größten Rest und bekommt den einen Restcent |
+| c1, Vermieter | 31.305 | 31.304 | der Rundungscent beim Vermieter entfällt, Vermieter = Eigenanteil |
+| c2, Vermieter | 10.223 | 10.222 | ebenso |
+| t2 gesamt / Saldo | 65.661 / 114.339 | 65.663 / 114.337 | Summe der beiden Zeilen |
+| Vermieter gesamt | 51.528 | 51.526 | Summe der beiden Zeilen |
+
+Der Eigenanteil (51.526 ct) bleibt unverändert, ebenso alle Werte von t3.

@@ -13,25 +13,25 @@
         "days": 365,
         "persons": 4,
         "personDays": 1460,
-        "totalShareCents": 65661,
+        "totalShareCents": 65663,
         "total35aCents": 0,
         "prepaymentCents": 180000,
         "prepaymentOverridden": false,
-        "balanceCents": 114339,
+        "balanceCents": 114337,
         "suggestedMonthlyCents": 5500,
         "rows": [
           {
             "costItemId": "c1",
             "key": "area",
             "totalCents": 90000,
-            "shareCents": 35217,
+            "shareCents": 35218,
             "labor35aCents": 0
           },
           {
             "costItemId": "c2",
             "key": "persons",
             "totalCents": 46000,
-            "shareCents": 20444,
+            "shareCents": 20445,
             "labor35aCents": 0
           },
           {
@@ -83,17 +83,17 @@
       }
     ],
     "landlord": {
-      "totalCents": 51528,
+      "totalCents": 51526,
       "rows": [
         {
           "costItemId": "c1",
           "totalCents": 90000,
-          "shareCents": 31305
+          "shareCents": 31304
         },
         {
           "costItemId": "c2",
           "totalCents": 46000,
-          "shareCents": 10223
+          "shareCents": 10222
         },
         {
           "costItemId": "c3",

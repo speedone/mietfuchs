@@ -417,7 +417,7 @@ export type SettlementRow = {
 //   `amountsRest`   bei Einzelbeträgen der Rest, den kein Mietverhältnis trägt
 //   `customRest`    bei vereinbarten Anteilen, was unter 100 % fehlt
 //   `mainMeterRest` beim Verbrauch der Teil des Hauptzählers, den kein Wohnungszähler misst
-//   `rounding`      Rundungsrest
+//   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
   | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'rounding'

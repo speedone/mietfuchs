@@ -69,15 +69,17 @@ test('Vermieteranteil: keine Verteilbasis', () => {
   assert.deepEqual(partsOf(s), [{ reason: 'noBasis', cents: 100000 }])
 })
 
-test('Vermieteranteil: Eigennutzung und Rundungsrest getrennt', () => {
-  // 1,00 € auf drei gleiche Wohnungen, eine davon selbstgenutzt: die Mieter je 33 Cent, der
-  // Eigenanteil 33 Cent, und der eine Cent, den niemand trägt, ist Rundung.
+test('Vermieteranteil: Eigennutzung bekommt bei Gleichstand den Restcent, einen Rundungsrest gibt es nicht mehr (#202)', () => {
+  // 1,00 € auf drei gleiche Wohnungen, eine davon selbstgenutzt: exakt je 33,33 Cent. Die drei
+  // Zeilen werden gemeinsam verteilt; bei gleichem Rest geht der Cent an den Vermieter, also die
+  // Mieter je 33 Cent und der Eigenanteil 34 Cent. Vorher stand der Cent als „Rundung“ daneben.
   const s = settle({
     units: [unit('a'), unit('b'), unit('eigen', { participates: false, selfUsed: true })],
     tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b')],
     costItems: [item({ amountCents: 100 })],
   })
-  assert.deepEqual(partsOf(s), [{ reason: 'selfUse', cents: 33 }, { reason: 'rounding', cents: 1 }])
+  assert.deepEqual(partsOf(s), [{ reason: 'selfUse', cents: 34 }])
+  assert.equal(s.selfUsedShareCents, 34)
 })
 
 test('Vermieteranteil: Rest nach Einzelbeträgen', () => {
