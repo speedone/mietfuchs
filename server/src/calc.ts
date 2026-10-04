@@ -2088,17 +2088,21 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // ganz, stimmt die Summe centgenau; bei Leerstand und Eigennutzung bleibt der
     // entsprechende Teil beim Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser
     // Berechnung, keine Vorgabe des §35a EStG.
+    // Gerechnet wird mit dem **ungerundeten** Kostenanteil (`raw`), nicht mit dem auf Cent
+    // gerundeten (#180): Wer 55/365 der Rechnung trägt, trägt 55/365 des Lohnanteils, und so rechnet
+    // der Mieter nach. Aus dem gerundeten Anteil konnte ein Cent fehlen (45,20 € statt 45,21 €).
+    // Die Kostenanteile selbst bleiben, wie sie sind.
     const labor = validLabor35aCents(item)
     const laborOf = new Map<number, number>()
     if (labor === null) {
       warn('labor35a.invalid', `„${item.description}“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
       const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
-      const bookedCents = booked.reduce((a, i) => a + shares[i], 0)
-      const tenantLabor = Math.min(labor, Math.round((labor * bookedCents) / item.amountCents))
+      const bookedRaw = booked.reduce((a, i) => a + targets[i].raw, 0)
+      const tenantLabor = Math.min(labor, Math.round((labor * bookedRaw) / item.amountCents))
       const parts = largestRemainder(
         tenantLabor,
-        booked.map((i) => (labor * shares[i]) / item.amountCents),
+        booked.map((i) => (labor * targets[i].raw) / item.amountCents),
         booked.map((i) => String(targets[i].t.id)),
       )
       booked.forEach((i, k) => laborOf.set(i, parts[k]))
