@@ -1055,7 +1055,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       const a = byArea(item)
       if (why) steps.push({ label: 'Hinweis', value: why })
       if (!a.ok) {
-        steps.push({ label: 'Zuordnung', value: `nicht aufteilbar: Für ${a.missing.map((u) => u.name).join(', ')} ist keine Fläche hinterlegt; der Betrag ist ungekürzt angesetzt`, term: 'mixedUse' })
+        steps.push({ label: 'Zuordnung', value: `nicht aufteilbar: Für ${andList(a.missing.map((u) => u.name))} ist keine Fläche hinterlegt; der Betrag ist ungekürzt angesetzt`, term: 'mixedUse' })
         return 'unsplittable'
       }
       privateCents = a.privateCents
