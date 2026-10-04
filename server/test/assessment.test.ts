@@ -188,6 +188,30 @@ test('Ampel: Passen zwei Schätzungen derselben Kostenart, wird keine abgezogen'
   assert.ok(s?.reasons.includes('+78 % gegenüber Vorjahr'), s?.reasons.join(' | '))
 })
 
+test('Ampel (Abnahme B2): Zeilen, die dieselbe Schätzung ersetzen, rechnen gemeinsam', () => {
+  // Wasser: Vorjahr 1.400 €, Schätzung 1.500 €, die Rechnung hat zwei Zeilen à 700 € und 800 €.
+  // Verknüpft ersetzen beide zusammen die Schätzung: 1.500 € gegen 1.400 €, +7 %. Jede Zeile für
+  // sich neben der Schätzung zeigte +57 % und +64 %.
+  const wasser = (patch: Partial<CostItem>): CostItem => grundsteuer({ category: 'Wasser/Abwasser', description: 'Wasser', vendor: 'Stadtwerke', ...patch })
+  const lines = [
+    stored({ idx: 0, description: 'Frischwasser', category: 'Wasser/Abwasser', amountCents: 70000 }),
+    stored({ idx: 1, description: 'Abwasser', category: 'Wasser/Abwasser', amountCents: 80000 }),
+  ]
+  const view = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 150000 }), lines }, {
+    items: [wasser({ id: 'v', year: 2025, amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'wasser.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  // +7 % liegt unter der Schwelle von 25 %, ein Hinweis entfällt also.
+  for (const l of view.lines) assert.ok(!l.suggestion?.reasons.some((r) => /gegenüber Vorjahr/.test(r)), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
+  // Mit einem Vorjahr von 1.000 € sichtbar: 1.500 € gegen 1.000 €, +50 % bei beiden Zeilen (vorher
+  // +120 % und +130 %).
+  const high = describeAssessment({ assessment: assessmentOf({ nextIdx: 2, totalGrossCents: 150000 }), lines }, {
+    items: [wasser({ id: 'v', year: 2025, amountCents: 100000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    units: UNITS3, meters: [], propertyKind: null, originalName: 'wasser.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  for (const l of high.lines) assert.ok(l.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
+})
+
 test('Ampel: Zielen zwei offene Zeilen auf dieselbe Schätzung, verschweigt keine die Abweichung', () => {
   // Vorjahr 700 €, Schätzung 700 €, zwei Zeilen à 700 €: Verknüpft man beide, stehen 1.400 € da,
   // +100 %. Jede Zeile für sich gegen die Schätzung gerechnet zeigte 0 %.
