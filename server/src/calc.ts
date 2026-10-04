@@ -2132,22 +2132,35 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Die Kostenanteile selbst bleiben, wie sie sind.
     const labor = validLabor35aCents(item)
     const laborOf = new Map<number, number>()
+    // Der rechnerische Lohnanteil je Zeile, für den Rechenweg; nur dort, wo er neu verteilt wird.
+    const laborExactOf = new Map<number, number>()
     if (labor === null) {
       warn('labor35a.invalid', `„${item.description}“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
       const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
-      const bookedRaw = booked.reduce((a, i) => a + targets[i].raw, 0)
       const bookedShares = booked.reduce((a, i) => a + shares[i], 0)
-      // Tragen die Mieter die Rechnung ganz, bekommen sie den ganzen Lohnanteil bescheinigt.
-      const tenantLabor = bookedShares === item.amountCents
-        ? labor
-        : Math.min(labor, Math.round((labor * bookedRaw) / item.amountCents))
-      const exact = booked.map((i) => (labor * targets[i].raw) / item.amountCents)
-      const keys = booked.map((i) => String(targets[i].t.id))
-      const parts = largestRemainder(tenantLabor, exact, keys)
-      // Nie mehr Lohnanteil als Kostenanteil (Durchsicht von #196), siehe `capToShares`.
-      const capped = capToShares(parts, exact, booked.map((i) => shares[i]), keys)
-      booked.forEach((i, k) => laborOf.set(i, capped[k]))
+      if (labor === item.amountCents && bookedShares <= labor) {
+        // Ist die Rechnung ganz Lohn, ist der Lohnanteil jeder Zeile genau ihr Kostenanteil: Der
+        // Mieter hat mit seinem Anteil nur Arbeit bezahlt. Die Summe zu runden und neu zu verteilen,
+        // nahm einem Mieter einen Cent, sobald zwei Kostenanteile aufgerundet wurden, ihre Summe aber
+        // ab (76,90 € bescheinigt bei 76,91 € Kostenanteil, 0.10.0-rc.1). Die zweite Bedingung hält
+        // die Zusage, nie mehr zu bescheinigen, als die Rechnung enthält: Werden die Anteile einzeln
+        // gerundet (die Mieter tragen nicht alles), könnten mehrere Aufrundungen zusammen über den
+        // Rechnungsbetrag reichen; dann gilt die Regel darunter.
+        for (const i of booked) laborOf.set(i, Math.max(0, shares[i]))
+      } else {
+        const bookedRaw = booked.reduce((a, i) => a + targets[i].raw, 0)
+        // Tragen die Mieter die Rechnung ganz, bekommen sie den ganzen Lohnanteil bescheinigt.
+        const tenantLabor = bookedShares === item.amountCents
+          ? labor
+          : Math.min(labor, Math.round((labor * bookedRaw) / item.amountCents))
+        const exact = booked.map((i) => (labor * targets[i].raw) / item.amountCents)
+        const keys = booked.map((i) => String(targets[i].t.id))
+        const parts = largestRemainder(tenantLabor, exact, keys)
+        // Nie mehr Lohnanteil als Kostenanteil (Durchsicht von #196), siehe `capToShares`.
+        const capped = capToShares(parts, exact, booked.map((i) => shares[i]), keys)
+        booked.forEach((i, k) => { laborOf.set(i, capped[k]); laborExactOf.set(i, exact[k]) })
+      }
     }
     let distributed = 0
     targets.forEach((x, i) => {
@@ -2198,7 +2211,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       steps.push(shares[i] !== Math.round(x.raw)
         ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(shares[i])} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(x.raw)}; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)`, term: 'largestRemainder' }
         : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(shares[i]) })
-      if (labor35a > 0) steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: fmtCents(labor35a), term: 'labor35a' })
+      if (labor35a > 0) {
+        // Wie beim Kostenanteil: Weicht der Lohnanteil von der gewöhnlichen Rundung seines
+        // rechnerischen Werts ab, steht der Grund dabei, sonst fehlte dem Mieter ein Cent ohne
+        // Erklärung (rc.1). Ist die Rechnung ganz Lohn, gibt es keinen eigenen Wert: Der Lohnanteil
+        // ist dann der Kostenanteil, und dessen Restcent steht schon im Schritt davor.
+        const exactLabor = laborExactOf.get(i)
+        steps.push(exactLabor !== undefined && labor35a !== Math.round(exactLabor)
+          ? { label: 'davon Lohnanteil nach § 35a EStG', value: `${fmtCents(labor35a)} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(exactLabor)}; damit die Lohnanteile zusammen nicht mehr ergeben als den Lohnanteil, der auf die Mieter entfällt, und keiner über seinem Kostenanteil liegt, weicht dieser Lohnanteil von der gewöhnlichen Rundung ab)`, term: 'labor35a' }
+          : { label: 'davon Lohnanteil nach § 35a EStG', value: fmtCents(labor35a), term: 'labor35a' })
+      }
       st.rows.push({
         costItemId: item.id,
         category: item.category,
