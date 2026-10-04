@@ -53,7 +53,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   beiden (nur den Beleg zuzuordnen ließe die Summe doppelt); die Ampel im Cockpit zählt ihn mit,
   wenn eine Position mit und eine ohne Beleg dasteht oder es mehr sind als im Vorjahr. Auch das
   Kostenformular fragt beim Anlegen nach, wenn dieselbe Rechnung schon erfasst sein könnte. Im
-  Januar vergleicht die Schnellerfassung mit dem Jahr des Belegs statt mit dem gewählten.
+  Januar vergleicht die Schnellerfassung mit dem Jahr des Belegs statt mit dem gewählten. Eine
+  Gutschrift gilt dabei nie als dieselbe Rechnung wie eine Rechnung derselben Kostenart (sonst
+  riete der Hinweis, eine der beiden zu löschen), nur zwei Gutschriften können es sein.
   ([#141](https://github.com/speedone/mietfuchs/issues/141))
 - **Belege werden auf dem Server gebucht, und eine Rechnung landet genau einmal in den Kosten.**
   Das Ergebnis einer KI-Auswertung wird gespeichert, mit Positionen, Beträgen und

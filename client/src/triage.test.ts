@@ -62,3 +62,15 @@ test('A im Januar: Vorjahresvergleich nach dem Jahr des Belegs, nicht nach dem g
 })
 
 // ---------- Verknüpfen je Gruppe (zweite Durchsicht) ----------
+
+// Befund gegen 0.10.0-rc.1: Eine Gutschrift ist nie dieselbe Rechnung wie eine Rechnung derselben
+// Kostenart. Die Ampel nannte die Rechnung als „schon erfasst“ und riet, die Gutschrift nicht
+// anzulegen; befolgt fehlte sie in der Abrechnung, und die Mieter zahlten sie mit.
+test('Gutschrift neben einer Rechnung derselben Kostenart: nicht „schon erfasst“ (rc.1)', () => {
+  const s = scorePosition(ctx({ category: 'Grundsteuer', description: 'Erstattung', vendor: 'Stadt', amountCents: -5745, detectedYear: 2026, targetYear: 2026, existingItems: [schaetzung] }))
+  expect(s.reasons.some((r) => /schon erfasst/.test(r))).toBe(false)
+  // Eine zweite Gutschrift derselben Art bleibt eine Rückfrage wert.
+  const gutschrift: CostItem = { ...schaetzung, id: 'g', amountCents: -5745 }
+  const t = scorePosition(ctx({ category: 'Grundsteuer', description: 'Erstattung', vendor: 'Stadt', amountCents: -5745, detectedYear: 2026, targetYear: 2026, existingItems: [schaetzung, gutschrift] }))
+  expect(t.reasons.some((r) => /schon erfasst/.test(r) && /dieselbe Gutschrift/.test(r))).toBe(true)
+})

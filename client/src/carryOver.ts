@@ -37,14 +37,15 @@ export type CarryRow = {
 // Ausgenommen ist eine Position, die genau die Übernahme einer anderen Vorjahresposition derselben
 // Kostenart ist: Wer Restmüll und Biomüll getrennt führt und Restmüll schon übernommen hat, soll
 // Biomüll nicht als erfasst sehen. Die Seite fragt das bei jeder Anzeige neu, damit eine über das
-// Formular angelegte Zeile gleich vermerkt ist.
+// Formular angelegte Zeile gleich vermerkt ist. Gefragt wird mit dem Vorzeichen der Vorlage: Eine
+// Gutschrift des Vorjahres ist nie durch eine Rechnung schon erfasst und umgekehrt (rc.1).
 export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'> & Partial<Pick<CarryRow, 'vendor'>>, year: number): boolean {
   const category = row.source.category
   const sisters = items
     .filter((i) => i.year === year - 1 && i.category === category && i.id !== row.source.id)
     .map((i) => normalizedText(i.description))
   const own = normalizedText(row.description)
-  return sameCostCandidates(items, { year, category, description: row.description, vendor: row.vendor ?? row.source.vendor })
+  return sameCostCandidates(items, { year, category, description: row.description, vendor: row.vendor ?? row.source.vendor, amountCents: row.source.amountCents })
     .some((i) => {
       const text = normalizedText(i.description)
       return text === own || !sisters.includes(text)

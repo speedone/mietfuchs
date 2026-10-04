@@ -20,6 +20,10 @@ export type CostQuery = {
   category: string
   description?: string
   vendor?: string
+  // Der Betrag der gesuchten Position, wenn er bekannt ist: Eine Gutschrift (negativ) ist nie
+  // dieselbe Rechnung wie eine Rechnung (positiv), siehe `oppositeSign`. Fehlt er oder ist er 0,
+  // zählt jede Position.
+  amountCents?: number | null
   // Die Position selbst, wenn nach einer schon gespeicherten gefragt wird
   excludeId?: string
 }
@@ -52,21 +56,31 @@ function similar(a: string | undefined | null, b: string | undefined | null): bo
   return x.startsWith(y) || y.startsWith(x)
 }
 
+// Gutschrift gegen Rechnung (Befund gegen 0.10.0-rc.1): Der Hinweis der Abrechnung paarte eine
+// Gutschrift mit der Rechnung derselben Kostenart und riet, die ohne Beleg zu löschen; befolgt
+// zahlten die Mieter die Gutschrift nicht gutgeschrieben oder die Rechnung gar nicht. Zwei
+// Gutschriften derselben Art können dagegen dieselbe sein, ebenso zwei Rechnungen.
+function oppositeSign(a: number | null | undefined, b: number | null | undefined): boolean {
+  return a != null && b != null && ((a < 0 && b > 0) || (a > 0 && b < 0))
+}
+
 // Die schon erfassten Positionen, die dieselbe Rechnung sein könnten: dasselbe Objekt, dasselbe
 // Jahr, dieselbe Kostenart, bei einer breiten Kostenart zusätzlich ähnliche Beschreibung oder
-// gleicher Rechnungssteller. In der Reihenfolge der Liste.
+// gleicher Rechnungssteller, und nie eine Gutschrift zu einer Rechnung oder umgekehrt. In der
+// Reihenfolge der Liste.
 export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[], q: CostQuery): T[] {
   const loose = LOOSE_CATEGORIES.includes(q.category)
   return items.filter((i) =>
     i.id !== q.excludeId &&
     i.year === q.year &&
     i.category === q.category &&
+    !oppositeSign(i.amountCents, q.amountCents) &&
     (q.propertyId == null || i.propertyId == null || i.propertyId === q.propertyId) &&
     (!loose || similar(i.description, q.description) || similar(i.vendor, q.vendor)))
 }
 
 const queryOf = (i: DuplicateItem, year = i.year): CostQuery => ({
-  propertyId: i.propertyId, year, category: i.category, description: i.description, vendor: i.vendor, excludeId: i.id,
+  propertyId: i.propertyId, year, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
 })
 
 // Die Gruppen möglicher Doppelungen eines Jahres, für den Hinweis der Abrechnung: zwei oder mehr
