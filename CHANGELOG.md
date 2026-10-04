@@ -82,7 +82,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   auch aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
   Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt; die Ampel vergleicht
   dann den Stand nach dem Verknüpfen mit dem Vorjahr und zählt Schätzung und Rechnung nicht
-  zusammen. Eine Gutschrift wird
+  zusammen; ersetzen mehrere Zeilen eines Belegs dieselbe Schätzung, rechnen sie dabei gemeinsam
+  und zeigen dieselbe Abweichung. Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
   wiederholen bucht nichts zweimal: Was genau so gebucht ist, meldet Erfolg ohne Änderung; eine
   Abweichung oder ein Stand, der sich seit der Vorschau geändert hat, antwortet mit dem
