@@ -81,3 +81,19 @@ test('L2: bei drei Positionen heißt es nicht „beide“', () => {
   assert.doesNotMatch(text, /beide/)
   assert.match(text, /„Grundsteuer 2026“ \(610,00 €, ohne Beleg\), „Bescheid“ \(612,40 €\) und „Nachtrag“ \(10,00 €, ohne Beleg\) stehen 2026 alle unter „Grundsteuer“/)
 })
+
+test('M1 Integrationsdurchsicht: der Rat führt nicht zum bloßen Zuordnen, das den Hinweis verstummen ließe', () => {
+  // Wer der Schätzung nur den Beleg zuordnet, lässt den Hinweis verschwinden (er verlangt eine
+  // Position ohne Beleg), die Summe bleibt aber doppelt. Der Rat muss deshalb zum Löschen führen.
+  const items = [
+    item({ id: 'schaetzung', year: 2026, amountCents: 150000 }),
+    item({ id: 'echt', year: 2026, description: 'Bescheid', amountCents: 150000, invoiceFile: 'gs.pdf' }),
+  ]
+  const text = dupes(items)[0]?.text ?? ''
+  assert.doesNotMatch(text, /Beleg zuordnen/)
+  assert.match(text, /eine der beiden Positionen löschen/)
+  // Der Mechanismus, gegen den der Rat schützt: bloßes Zuordnen bringt den Hinweis zum Schweigen.
+  const zugeordnet = items.map((i) => ({ ...i, invoiceFile: 'gs.pdf' }))
+  assert.equal(dupes(zugeordnet).length, 0)
+  assert.equal(settle(zugeordnet).totalCostsCents, 300000)
+})
