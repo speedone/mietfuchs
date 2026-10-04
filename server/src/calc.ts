@@ -978,8 +978,10 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // Übersicht heute und zählt sie für den Hinweis.
   const frozen = snapshot.closedSettlement
   const totals = frozen?.itemTotals ?? null
+  // Eine Position ohne Betrag fehlt in Archivstücken älterer Versionen, die für sie keine Zeile
+  // schrieben; geändert ist sie deshalb nicht (Durchsicht), und privat ist an 0 € ohnehin nichts.
   const asClosed = (c: SnapshotCostItem): boolean =>
-    !!frozen && (totals === null || (Object.hasOwn(totals, c.id) && totals[c.id] === c.amountCents))
+    !!frozen && (totals === null || (Object.hasOwn(totals, c.id) ? totals[c.id] === c.amountCents : c.amountCents === 0))
   const closedItemsChanged = frozen ? items.filter((c) => !asClosed(c)).length : 0
   let fromSettlement = (c: SnapshotCostItem) => liveOf(c.id)
   let closedSelfUseDiffers = false

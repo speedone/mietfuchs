@@ -356,6 +356,27 @@ test('Abgeschlossene Abrechnung: ein danach geänderter Betrag wird heute gerech
   assert.equal(r.closedItemsChanged, 1)
 })
 
+test('Abgeschlossene Abrechnung: eine 0-€-Position zählt nicht als nach dem Abschluss geändert (Durchsicht)', () => {
+  // Ältere Versionen schrieben für eine Position ohne Betrag keine Zeile aufs Papier; sie steht
+  // dann nicht in den eingefrorenen Beträgen. Geändert ist sie damit nicht, und privat ist an ihr
+  // nichts. Nachgestellt, indem ihre Zeilen aus dem eingefrorenen Stand entfernt werden.
+  const base = einlieger([item('gs', { amountCents: 60000 }), item('leer', { category: 'Sach- und Haftpflichtversicherung', amountCents: 0 })])
+  const settlement = computeSettlement(snapshotOf(base, 2025))
+  const ohneLeer = <T extends { costItemId: string }>(rows: T[]): T[] => rows.filter((row) => row.costItemId !== 'leer')
+  const alt = {
+    ...settlement,
+    statements: settlement.statements.map((st) => ({ ...st, rows: ohneLeer(st.rows) })),
+    landlord: { ...settlement.landlord, rows: ohneLeer(settlement.landlord.rows) },
+  }
+  const frozenAlt = frozenSettlementOf(alt)
+  if (frozenAlt.itemTotals === null || Object.hasOwn(frozenAlt.itemTotals, 'leer')) assert.fail('der nachgestellte Altbestand muss Beträge ohne die leere Position führen')
+  const r = tax({ ...base, closedSettlements: [{ year: 2025, ...frozenAlt }] })
+  assert.equal(r.closedItemsChanged, 0)
+  assert.deepEqual([split(r, 'leer').privat, split(r, 'leer').abziehbar], [0, 0])
+  // Wird sie danach mit einem Betrag erfasst, ist sie geändert.
+  assert.equal(tax(closedWith(base, [item('gs', { amountCents: 60000 }), item('leer', { category: 'Sach- und Haftpflichtversicherung', amountCents: 1000 })])).closedItemsChanged, 1)
+})
+
 test('Abgeschlossene Abrechnung von vor #142: die eingefrorene Summe wird auf die Positionen verteilt', () => {
   const { src, frozen } = closedSource()
   // Ein Archivstück ohne Zerlegung des Vermieteranteils, mit einer anderen Summe als heute.
