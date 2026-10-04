@@ -10,7 +10,7 @@ const suggestion = (patch: Partial<LineSuggestion> = {}): LineSuggestion => ({
 })
 const line = (idx: number, patch: Partial<AssessmentLine> = {}): AssessmentLine => ({
   idx, description: 'Frischwasser', category: 'Wasser/Abwasser', categoryGuessed: false, amountCents: 70000, labor35aCents: null,
-  booking: null, costItemId: null, dismissed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
+  booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
 })
 const view = (lines: AssessmentLine[]): AssessmentView => ({
   id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: null,

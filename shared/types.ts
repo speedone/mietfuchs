@@ -749,6 +749,9 @@ export type StoredAssessmentLine = {
   booking: AssessmentBooking | null
   costItemId: string | null
   dismissed: boolean
+  // Bei einer erneuten Auswertung dazugekommen, als aus dem Beleg schon Zeilen gebucht waren: Die
+  // schon gebuchten Positionen dieses Belegs sind dann mögliche Doppelungen (Integrationsdurchsicht, H1).
+  reassessed: boolean
 }
 
 // Die Angaben, die der Nutzer an einer Zeile vor dem Anlegen ändern kann.

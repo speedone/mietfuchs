@@ -31,7 +31,7 @@ test('Jahr aus dem Beleg: erst der Leistungszeitraum, dann das Rechnungsdatum, s
 
 const stored = (patch: Partial<StoredAssessmentLine>): StoredAssessmentLine => ({
   assessmentId: 'a1', idx: 0, description: 'Frischwasser', category: 'Wasser/Abwasser', categoryGuessed: false,
-  amountCents: 70000, labor35aCents: null, booking: null, costItemId: null, dismissed: false, ...patch,
+  amountCents: 70000, labor35aCents: null, booking: null, costItemId: null, dismissed: false, reassessed: false, ...patch,
 })
 
 test('Zustand einer Zeile: abgeleitet aus Position, Art und Verwerfen', () => {

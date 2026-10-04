@@ -32,10 +32,10 @@ export async function listAssessments(db: Executor, propertyId: string): Promise
   return out
 }
 
-async function insertLines(db: Executor, assessmentId: string, lines: readonly NewLine[], start: number): Promise<void> {
+async function insertLines(db: Executor, assessmentId: string, lines: readonly NewLine[], start: number, reassessed: boolean): Promise<void> {
   if (lines.length === 0) return
   await db.insert(assessmentLines).values(lines.map((l, i) => ({
-    ...l, assessmentId, idx: start + i, booking: null, costItemId: null, dismissed: false,
+    ...l, assessmentId, idx: start + i, booking: null, costItemId: null, dismissed: false, reassessed,
   })))
 }
 
@@ -50,7 +50,7 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
   await db.transaction(async (tx) => {
     if (!current) {
       await tx.insert(assessments).values({ ...head, id: ids.id, createdAt: ids.now, nextIdx: lines.length })
-      await insertLines(tx, ids.id, lines, 0)
+      await insertLines(tx, ids.id, lines, 0, false)
       return
     }
     const id = current.assessment.id
@@ -59,8 +59,11 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
     // ihre Nummer wieder frei.
     const next = Math.max(current.assessment.nextIdx, current.lines.reduce((max, l) => Math.max(max, l.idx + 1), 0))
     await tx.delete(assessmentLines).where(and(eq(assessmentLines.assessmentId, id), isNull(assessmentLines.costItemId)))
+    // `withoutBooked` erkennt nur Zeilen, die einer gebuchten gleichen. Eine von Hand berichtigte
+    // oder von der KI anders aufgeteilte käme sonst als neue, grüne Zeile wieder; deshalb sind die
+    // Zeilen einer erneuten Auswertung neben gebuchten gekennzeichnet (Integrationsdurchsicht, H1).
     const added = withoutBooked(lines, booked)
-    await insertLines(tx, id, added, next)
+    await insertLines(tx, id, added, next, booked.length > 0)
     const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
