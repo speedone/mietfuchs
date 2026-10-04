@@ -469,6 +469,7 @@ test('Nicht umlagefähig: die Position nennt die Einheiten, denen sie zugeordnet
       item('alt-og', { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'OG' }),
       item('dach', { category: 'Nicht umlagefähig', participantUnitIds: ['OG', 'DG'] }),
       item('gebaeude', { category: 'Nicht umlagefähig' }),
+      item('leer', { category: 'Nicht umlagefähig', participantUnitIds: [] }),
       item('wasser', { category: 'Wasser', key: 'direct', directUnitId: 'OG' }),
     ],
   }))
@@ -477,5 +478,6 @@ test('Nicht umlagefähig: die Position nennt die Einheiten, denen sie zugeordnet
   assert.deepEqual(itemOf(r, 'alt-og').taxUnits, [u('OG')])
   assert.deepEqual(itemOf(r, 'dach').taxUnits, [u('OG'), u('DG')])
   assert.equal(itemOf(r, 'gebaeude').taxUnits, null, 'ganzes Gebäude')
+  assert.equal(itemOf(r, 'leer').taxUnits, null, 'eine leere Liste nennt keine Einheit (Durchsicht)')
   assert.equal(itemOf(r, 'wasser').taxUnits, null, 'umlagefähig: die Zuordnung ist der Umlageschlüssel, nicht „Betrifft“')
 })

@@ -255,7 +255,9 @@ export type AssignedUnitItem = {
   description: string
   amountCents: number
   units: string[]
-  effect: 'private' | 'deductible' | 'area'
+  // `unsplittable`: Für eine betroffene Einheit fehlt die Fläche, die Position steht ungekürzt bei
+  // den abziehbaren Werbungskosten (wie `mixedUseAreaMissing`).
+  effect: 'private' | 'deductible' | 'area' | 'unsplittable'
 }
 
 export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
@@ -263,7 +265,8 @@ export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
     if (x.taxUnits === null) return []
     const effect: AssignedUnitItem['effect'] = x.allocation === 'direct-self' ? 'private'
       : x.allocation === 'direct-rented' || x.allocation === 'direct-outside' ? 'deductible'
-        : 'area'
+        : x.allocation === 'unsplittable' ? 'unsplittable'
+          : 'area'
     return [{ costItemId: x.costItemId, description: x.description, amountCents: x.amountCents, units: x.taxUnits.map((u) => u.unitName), effect }]
   })
 }

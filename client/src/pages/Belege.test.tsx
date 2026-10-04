@@ -368,7 +368,7 @@ test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt di
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
   const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
-  await within(check).findByText(`Die Abrechnung ${YEAR} ist abgeschlossen; die Änderung erscheint dort als Abweichung.`)
+  await within(check).findByText(`Die Abrechnung ${YEAR} ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.`)
 })
 
 test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen Abrechnung', async () => {

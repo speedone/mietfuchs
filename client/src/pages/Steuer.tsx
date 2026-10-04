@@ -452,7 +452,10 @@ export default function Steuer({ settings }: Props) {
                   <Fragment key={x.costItemId}>
                     {k > 0 && '; '}
                     „{x.description || 'ohne Beschreibung'}“ ({fmtEuro(x.amountCents)}): {andList(x.units)},{' '}
-                    {x.effect === 'private' ? 'ganz privat' : x.effect === 'deductible' ? 'ganz abziehbar' : 'nach der Fläche dieser Einheiten'}
+                    {x.effect === 'private' ? 'ganz privat'
+                      : x.effect === 'deductible' ? 'ganz abziehbar'
+                        : x.effect === 'unsplittable' ? 'nicht aufteilbar (Fläche fehlt), ungekürzt abziehbar'
+                          : 'nach der Fläche dieser Einheiten'}
                   </Fragment>
                 ))}.
                 Positionen aus Mietfuchs 0.8.0 oder älter können eine solche Zuordnung noch aus dem damaligen
