@@ -71,6 +71,36 @@ test('Rechenweg mit Lohnanteil: der § 35a-Anteil steht als letzter Schritt dabe
   assert.deepEqual([last?.label, last?.value, last?.term], ['davon Lohnanteil nach § 35a EStG', '400,00 €', 'labor35a'])
 })
 
+test('Rechenweg mit Lohnanteil: weicht der § 35a-Anteil von der gewöhnlichen Rundung ab, steht der Restcent dabei (rc.1)', () => {
+  // 300 € mit 200 € Lohnanteil auf drei gleiche Wohnungen: rechnerisch je 66,6667 €, gerundet je
+  // 66,67 €, zusammen aber 200,01 €. Eine Zeile bekommt 66,66 €, und ohne Erklärung fehlte ihr ein
+  // Cent, den niemand nachrechnen kann.
+  const s = settle({
+    units: [unit('a', 50), unit('b', 50), unit('c', 50)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c')],
+    costItems: [item('garten', { category: 'Gartenpflege', amountCents: 30000, labor35aCents: 20000 })],
+  })
+  const labor = ['t-a', 't-b', 't-c'].map((t) => rowOf(s, t, 'garten')?.steps?.at(-1))
+  const short = labor.filter((x) => x?.value.startsWith('66,66 €'))
+  assert.equal(short.length, 1, 'genau eine Zeile weicht ab')
+  assert.match(short[0]?.value ?? '', /Restcent-Verfahren: rechnerisch 66,6667 €/)
+  assert.equal(short[0]?.label, 'davon Lohnanteil nach § 35a EStG')
+  assert.equal(labor.filter((x) => x?.value === '66,67 €').length, 2, 'die übrigen ohne Zusatz')
+})
+
+test('Rechenweg mit Lohnanteil: ist die Rechnung ganz Lohn, steht kein eigener Restcent beim Lohnanteil (rc.1)', () => {
+  // Der Lohnanteil ist dann der Kostenanteil; dessen Restcent erklärt schon der Schritt davor.
+  const s = settle({
+    units: [unit('a', 50), unit('b', 50), unit('c', 50)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c')],
+    costItems: [item('garten', { category: 'Gartenpflege', amountCents: 10000, labor35aCents: 10000 })],
+  })
+  for (const t of ['t-a', 't-b', 't-c']) {
+    const row = rowOf(s, t, 'garten')
+    assert.equal(row?.steps?.at(-1)?.value, `${(row?.shareCents ?? 0) / 100}`.replace('.', ',') + ' €')
+  }
+})
+
 test('Rechenweg bei der Gemeinschaftsabrechnung: der Anteil innerhalb der eigenen Wohnungen steht dabei', () => {
   // Befund der Durchsicht: „60 von 1.000 MEA“ und danach „× 60 %“ ließ sich nicht nachrechnen,
   // weil innerhalb der eigenen Wohnungen verteilt wird.
