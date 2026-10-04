@@ -1168,9 +1168,20 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
-- Centgenaue Verteilung per **Hare/largest-remainder** (`largestRemainder`). Schöpfen die
-  Rohanteile die Summe nahezu voll aus, wird centgenau auf Mieter verteilt; sonst trägt der
-  **Vermieter** die Differenz (Leerstand, Eigenanteil, Rundungsrest, „Nicht umlagefähig").
+- **Eine Rundungsregel für jede Verteilung** (#202, `distributeCents`): Jede Position wird
+  genau einmal nach Hare/largest-remainder verteilt, über alle Empfänger zugleich, also die
+  Mieter **und je Grund eine Zeile des Vermieters** (Eigennutzung, Pauschale, Inklusivmiete,
+  außerhalb, Rest der Vereinbarung, Rest des Hauptzählers, zuletzt Leerstand bzw. Rest der
+  Einzelbeträge als Betrag minus alles übrige; `landlordRecipients`). Die exakten Werte ergeben
+  genau den Betrag, jede Zeile ist ihr Wert ab- oder aufgerundet, keine wechselt das Vorzeichen,
+  eine mit exakt 0 bekommt nie einen Cent. Gleichstand (mit Toleranz gegen Rauschen): erst der
+  Vermieter, dann die Kennung per `compareText`. Gutschriften als Spiegelbild. Der Eigenanteil
+  ist genau die Zeile `selfUse`, die Zeilen des Vermieters sind die `landlordParts`; einen
+  Grund `rounding` erzeugt die Berechnung nicht mehr. Der §35a-Lohn wird danach **innerhalb**
+  der Kostenanteile verteilt (`distributeLaborCents`): je Zeile ab- oder aufgerundet, nie über
+  dem Kostenanteil, zusammen genau L, bei L = A gleich dem Kostenanteil. Nicht Lohn und Rest
+  getrennt verteilen: zwei Rundungen zusammen können fast 2 Cent vom exakten Anteil abweichen.
+  Ein Test über Zufallsbestände prüft das über `onAllocation` in den Optionen.
 - **Umlageschlüssel** (`item.key`): `area` (Wohnfläche), `persons` (personentagesgenau),
   `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung),
   `custom` (vereinbarte Prozentanteile je Wohnung in `item.customShares`, absolut gerechnet —
@@ -1256,6 +1267,22 @@ die ganze fachliche Komplexität:
   Leerstand“), der gedruckte `basisText` die Summe („(davon N Leerstand)“). Beide Hinweise färben
   die Cockpit-Ampel nicht (`INFORMATIONAL` in client/src/notices.ts). Abgeschlossene Abrechnungen bleiben, `deviation` zeigt
   den Unterschied.
+- **Überschneidende Mietverhältnisse einer Wohnung** (#204): Wann sich zwei überschneiden (ein
+  gemeinsamer Tag, inklusive Grenzen), steht einmal in [shared/tenancyOverlap.ts](shared/tenancyOverlap.ts);
+  Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
+  Tagesanteil, aber mit Hinweis `tenancy.overlap` der Stufe `error` und beziffertem Mehrbetrag
+  (`overlapExtra` in calc.ts): je Position, was die Wohnung ohne die Überschneidungstage **eines**
+  der beiden weniger trüge, beide Lesarten gerechnet und beide genannt, wenn sie verschieden sind
+  (eine kann 0 sein, etwa neben einer Pauschale), denn welches Datum falsch ist, weiß nur der
+  Vermieter. Kosten (zu viel getragen) und Gutschriften (zu viel gutgeschrieben) werden getrennt
+  summiert; es ist die Summe der Überzahlungen je Position, kein Saldo. Je Position wird zur Seite
+  „zu viel“ geklemmt, eine Lesart von 0 heißt also nur „nicht zu viel“ und nie „keine Auswirkung“. Bei Schlüsseln mit fester Basis ist das der Anteil an
+  den doppelten Tagen (beim Verbrauch nach dem in der Zeit gemessenen Verbrauch); beim
+  Personenschlüssel stecken die Personentage auch in der Basis, dort wird neu geteilt
+  (S/P − (S − o)/(P − o)); bei Einzelbeträgen entsteht nichts doppelt. Die Stammdaten fragen beim
+  Speichern nach (`overlapQuestion` in client/src/tenancyModel.ts), der Server lehnt nicht ab, und
+  Validator, Umstieg und Backup rücken nichts gerade. Ein Hinweis der Stufe `error` färbt die
+  Cockpit-Ampel rot (`attentionLevel` in client/src/notices.ts).
 - **Beteiligung je Wohnung** (drei Zustände, siehe `UnitUsage` in shared/types.ts): `participates:
   true` = vermietet, Anteil trägt der Mieter · `selfUsed: true` = selbstgenutzt, zählt in die
   Verteilbasis von `area`/`units`/`persons` (dort mit `selfPersons`), Anteil fällt in den

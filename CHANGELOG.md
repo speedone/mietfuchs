@@ -8,6 +8,50 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
+- **Eine Rundungsregel für jede Verteilung.** Bisher rundete die Abrechnung je nach Lage
+  verschieden: Trugen die Mieter eine Rechnung ganz, nach dem Restcent-Verfahren, sonst jeder
+  Mieter für sich, und der Vermieter bekam den Rest. Dabei konnten die Anteile der Mieter
+  zusammen über dem Rechnungsbetrag liegen und der Vermieter bei −1 Cent stehen (1,00 € auf
+  67/67/65 m² vermietet und 1 m² selbstgenutzt: 34 + 34 + 33 Cent), und Eigenanteil und §35a-Lohn
+  wurden noch einmal getrennt gerundet und begrenzt. Jetzt wird jede Position einmal nach dem
+  Restcent-Verfahren verteilt, über die Mieter und die Anteile des Vermieters (Eigennutzung,
+  Leerstand, Pauschale und weitere Gründe) zugleich. Jeder Anteil ist sein rechnerischer Wert, auf-
+  oder abgerundet; die Summe ist genau der Rechnungsbetrag, und kein Anteil des Vermieters wechselt
+  das Vorzeichen. Bei gleichem Rest bekommt der Vermieter den Cent vor einem Mieter. Einen
+  „Rundungsrest“ weist der Vermieteranteil nicht mehr aus. Der §35a-Lohnanteil wird in denselben
+  Anteilen verteilt: Er liegt in keiner Zeile über dem Kostenanteil, und alle Zeilen zusammen
+  ergeben genau den Lohnanteil der Rechnung. In offenen Abrechnungen kann sich dadurch ein
+  Mieteranteil, ein Lohnanteil oder der Eigenanteil (auch in der Steuerübersicht) um einen Cent
+  je Position verschieben. In der Aufschlüsselung des Vermieteranteils können größere Beträge
+  zwischen Gründen wandern, bei gleicher Summe: Bei vereinbarten Anteilen, die zusammen mit
+  Wohnungen außerhalb der Abrechnungseinheit über 100 % ergeben, steht der Leerstand jetzt voll
+  da und „außerhalb der Abrechnungseinheit“ nur noch bis 100 %. Diese Zusagen („genau der
+  Lohnanteil der Rechnung“, „höchstens ein Cent je Mieter und Position“, „kein Anteil des
+  Vermieters wechselt das Vorzeichen“) gelten für widerspruchsfreie Daten; bei Datenfehlern, also
+  sich überschneidenden Mietverhältnissen (siehe
+  [#204](https://github.com/speedone/mietfuchs/issues/204)) oder einem rückwärts laufenden Zähler,
+  kann sich mehr ändern, etwa der Eigenanteil auf seinen exakten Wert.
+  Abgeschlossene Abrechnungen bleiben, wie sie sind; die Seite Abrechnung zeigt den Unterschied
+  zur heutigen Berechnung als Abweichung.
+  ([#202](https://github.com/speedone/mietfuchs/issues/202))
+- **Überschneidende Mietverhältnisse einer Wohnung werden gemeldet.** War etwa der Auszug am
+  30.09. eingetragen und der Nachmieter ab 01.09., bekamen beide für dieselben 30 Tage ihren vollen
+  Anteil, und der Leerstand des Vermieters wurde negativ, ohne dass es irgendwo stand. Jetzt nennt
+  die Abrechnung beide Mieter, den Zeitraum und den Betrag, den die Mieter dieser Wohnung im Jahr
+  bei den betroffenen Positionen zusammen zu viel tragen (1.200 € Grundsteuer nach Fläche, die
+  Wohnung mit 50 von 100 m²: 49,32 €), als Fehler mit „Hier beheben →“ zum Mietverhältnis. Das ist
+  die Summe der Positionen, bei denen zu viel berechnet wird, kein Saldo: Bei anderen Positionen
+  können die Mieter zugleich zu wenig tragen. Hängt der Betrag davon ab, welches der beiden Daten
+  falsch ist, etwa beim Personenschlüssel oder neben einer Pauschale, stehen beide Beträge da, oder
+  es heißt, dass die Mieter dadurch nicht zu viel tragen. Was bei Gutschriften zu viel
+  gutgeschrieben wird, steht getrennt von den Kosten. Gerechnet wird weiter wie erfasst.
+  Die Ampel „Hinweise der Berechnung“ im Cockpit wird bei jedem Hinweis der Stufe Fehler rot statt
+  gelb, also auch bei den beiden bisherigen Fällen: Einzelbeträge über dem Rechnungsbetrag und
+  vereinbarte Anteile über 100 %, bei denen eine Position gar nicht verteilt wird. Beim
+  Speichern eines Mietverhältnisses, das sich mit einem anderen derselben Wohnung überschneidet,
+  fragen die Stammdaten nach. Bestände mit Überschneidung bleiben ladbar und lassen sich wie
+  bisher sichern und wiederherstellen; abgeschlossene Abrechnungen bleiben, wie sie sind.
+  ([#204](https://github.com/speedone/mietfuchs/issues/204))
 - **Cockpit beim ersten Start: keine Zahl offener Punkte ohne Liste.** Solange für das Jahr nichts
   erfasst ist, zeigt das Cockpit statt der Checkliste nur die Knöpfe zum Anfangen; die Zeile
   darüber nannte trotzdem „Noch 4 Punkte offen“, ohne dass irgendwo stand, welche. Sie nennt jetzt

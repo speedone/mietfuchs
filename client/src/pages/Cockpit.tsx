@@ -9,7 +9,7 @@ import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
-import { attentionDetail, noticesNeedAttention } from '../notices'
+import { attentionDetail, attentionLevel } from '../notices'
 import { missingAreaCheck, zeroAreaUnits } from '../unitForm'
 import { UpdateConsent } from '../components/Update'
 
@@ -210,7 +210,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
     if (settlement.warnings.length > 0) {
-      list.push({ title: 'Hinweise der Berechnung', level: noticesNeedAttention(settlement) ? 'gelb' : 'gruen', tab: 'abrechnung', cta: 'Abrechnung ansehen',
+      list.push({ title: 'Hinweise der Berechnung', level: attentionLevel(settlement), tab: 'abrechnung', cta: 'Abrechnung ansehen',
         detail: attentionDetail(settlement) })
     }
 

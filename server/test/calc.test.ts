@@ -5,7 +5,8 @@ import path from 'node:path'
 import {
   compareName,
   compareText,
-  distributeLabor,
+  distributeCents,
+  distributeLaborCents,
   computeSettlement,
   computePrepaymentCents,
   consumptionInPeriod,
@@ -21,13 +22,14 @@ import {
   taxReport,
   validLabor35aCents,
 } from '../src/calc.ts'
-import type { ComputedSettlement } from '../src/calc.ts'
+import type { AllocationTrace, ComputedSettlement } from '../src/calc.ts'
 import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, type SnapshotSource } from '../src/snapshot.ts'
 import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
+import { compareWithFrozen } from '../src/settlementDiff.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -772,9 +774,11 @@ test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
 // Handrechnung zum folgenden Test (Gartenpflege, Flächenschlüssel):
 //    1. Rechnungsbetrag                          30.000 ct
 //    2. Lohnanteil                               10.000 ct
-//    3. Kostenanteil je Mietverhältnis           30.000 × 70/220 = 9.545,45 → 9.545 ct (t1 und t2)
-//                                                (EG mit 80 m² ist selbstgenutzt, sein Teil bleibt
-//                                                beim Vermieter: 30.000 − 2 × 9.545 = 10.910 ct)
+//    3. Kostenanteil je Mietverhältnis           30.000 × 70/220 = 9.545,45 ct (t1 und t2), Eigenanteil
+//                                                30.000 × 80/220 = 10.909,09 ct; abgerundet 29.999,
+//                                                der Restcent nach dem Restverfahren über alle drei
+//                                                Zeilen (#202): gleicher Rest bei t1 und t2, die
+//                                                Kennung entscheidet, t1 = 9.546, t2 = 9.545 ct
 //    4. Mieter-Lohn gesamt, exakt                10.000 × 140/220 = 6.363,64 ct
 //    5. … kaufmännisch gerundet                  6.364 ct (≤ 10.000 ct Lohnanteil)
 //    6. exakter Anteil je Mietverhältnis         10.000 × 70/220 = 3.181,82 ct (t1 und t2)
@@ -798,8 +802,9 @@ test('§35a: Mieter-Lohnanteil kaufmännisch gerundet, Rest-Cent nach Restverfah
   for (const order of [[1, 2], [2, 1]]) {
     const s = computeSettlement(snapshotFromDb(make(order), 2025))
     const st = (id: string) => statementOf(s, id)
-    assert.equal(st('t1').totalShareCents, 9545)
-    assert.equal(st('t2').totalShareCents, 9545)
+    assert.equal(st('t1').totalShareCents, 9546, `Reihenfolge ${order.join(', ')}`)
+    assert.equal(st('t2').totalShareCents, 9545, `Reihenfolge ${order.join(', ')}`)
+    assert.equal(s.selfUsedShareCents, 10909)
     assert.equal(st('t1').total35aCents, 3182, `Reihenfolge ${order.join(', ')}`)
     assert.equal(st('t2').total35aCents, 3182, `Reihenfolge ${order.join(', ')}`)
   }
@@ -823,8 +828,11 @@ test('§35a (#180): der Lohnanteil folgt dem ungerundeten Kostenanteil, nicht de
 test('§35a (Durchsicht von #196): der Lohnanteil eines Mieters liegt nie über seinem Kostenanteil', () => {
   // 500 € Hausmeister, ganz Lohn. OG 70 m² und DG 55 m² vermietet, EG 80 m² selbstgenutzt; im DG
   // wohnt t2 erst ab 10.03.2025. Kostenanteil t2: 500 € × 55/205 × 297/365 = 109,154… € → 109,15 €.
-  // Lohnanteil von Hand derselbe Betrag, denn die Rechnung ist ganz Lohn: 109,15 €. Die erste
-  // Fassung von #180 bescheinigte 109,16 €, einen Cent mehr, als t2 überhaupt bezahlt.
+  // Lohnanteil von Hand derselbe Betrag, denn die Rechnung ist ganz Lohn. Die erste Fassung von
+  // #180 bescheinigte 109,16 € bei einem Kostenanteil von 109,15 €, einen Cent mehr, als t2 bezahlt.
+  // Seit #202 wird über alle Zeilen gemeinsam verteilt (exakt t1 17.073,17, t2 10.915,47, Eigenanteil
+  // 19.512,20, Leerstand 2.499,16 ct): Der eine Restcent geht an den größten Rest, t2, dessen
+  // Kostenanteil damit 109,16 € ist, und der Lohnanteil ist derselbe Betrag.
   const db: Db = {
     ...emptyDb(),
     units: [
@@ -842,8 +850,8 @@ test('§35a (Durchsicht von #196): der Lohnanteil eines Mieters liegt nie über 
   for (const st of s.statements) {
     for (const r of st.rows) assert.ok((r.labor35aCents ?? 0) <= r.shareCents, `${st.tenancyId}: Lohn ${r.labor35aCents} > Anteil ${r.shareCents}`)
   }
-  assert.equal(statementOf(s, 't2').totalShareCents, 10915)
-  assert.equal(statementOf(s, 't2').total35aCents, 10915)
+  assert.equal(statementOf(s, 't2').totalShareCents, 10916)
+  assert.equal(statementOf(s, 't2').total35aCents, 10916)
   assert.equal(statementOf(s, 't1').total35aCents, statementOf(s, 't1').totalShareCents, 'ganz Lohn: Lohnanteil = Kostenanteil')
 })
 
@@ -888,8 +896,10 @@ test('§35a (S1 der Durchsicht von #201): bei voller Umlage geht kein Lohn-Cent 
 
 test('§35a (M1 der Durchsicht von #201): ganz Lohn ist genau der Kostenanteil, auch wenn die Anteile einzeln gerundet sind', () => {
   // 1,00 € Hauswart, ganz Lohn. 67/67/65 m² vermietet, 1 m² selbstgenutzt: Rohanteile 33,5 / 33,5 /
-  // 32,5 ct, einzeln gerundet 34/34/33 ct (dass das zusammen 101 ct sind, ist ein eigener Befund).
-  // Bezahlt hat jeder Mieter seinen Kostenanteil, und der ist ganz Lohn.
+  // 32,5 ct und 0,5 ct Eigenanteil. Bis #202 einzeln gerundet 34/34/33 ct (zusammen 101 ct); seit
+  // #202 gemeinsam nach dem Restverfahren, bei gleichem Rest erst der Vermieter, dann die Kennung:
+  // 34/33/32 ct und 1 ct Eigenanteil. Bezahlt hat jeder Mieter seinen Kostenanteil, und der ist ganz
+  // Lohn.
   const db: Db = {
     ...emptyDb(),
     units: [
@@ -903,7 +913,7 @@ test('§35a (M1 der Durchsicht von #201): ganz Lohn ist genau der Kostenanteil, 
   }
   const s = computeSettlement(snapshotFromDb(db, 2025))
   for (const t of ['ta', 'tb', 'tc']) assert.equal(statementOf(s, t).total35aCents, statementOf(s, t).totalShareCents, t)
-  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [34, 34, 33])
+  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [34, 33, 32])
 })
 
 test('§35a (rc.1): ist die Rechnung ganz Lohn, ist der Lohnanteil genau der Kostenanteil, auch ohne volle Umlage', () => {
@@ -2360,82 +2370,395 @@ test('Nicht umlagefähig: der gespeicherte Schlüssel ändert keine Zahl (#142)'
   assert.deepEqual(direkt.tax.slice(3), neutral.tax.slice(3).map((x) => x + (36000 - 15429)), 'weniger abziehbar, also mehr Überschuss')
 })
 
-// §35a je Mieter (Abnahme von rc.1): Jeder Lohnanteil wird gerundet wie von Hand,
-// round(L × raw / A), und liegt nie über dem Kostenanteil. Nur wenn die Summe dann über dem
-// Lohnanteil der Rechnung läge, verliert die Zeile mit dem größten Aufrundungsfehler einen Cent
-// (bei Gleichstand die nach `compareText` letzte, wie beim Restverfahren der Kosten).
-test('§35a: distributeLabor rundet je Zeile wie von Hand, deckelt und zieht nur bei Überschuss ab', () => {
-  // Von Hand: 2,32 → 2, 0,34 → 0, 2,85 → 3, 1,14 → 1. Keine Restverteilung mehr.
-  const r = distributeLabor(10, 12, [2.784, 0.408, 3.42, 1.368], [3, 0, 4, 1], ['a', 'b', 'c', 'd'])
-  assert.deepEqual(r.cents, [2, 0, 3, 1])
-  assert.deepEqual(r.adjusted, [false, false, false, false])
-  // Gedeckelt: Lohn 0,6 würde 1, der Kostenanteil ist 0.
-  const c = distributeLabor(9, 10, [0.667, 9.333], [0, 9], ['a', 'b'])
-  assert.deepEqual(c.cents, [0, 8])
-  assert.deepEqual(c.adjusted, [true, false])
-  // Überschuss: drei mal 66,67 € wären 200,01 € bei 200 € Lohn; die letzte Kennung gibt ab.
-  const o = distributeLabor(20000, 30000, [10000, 10000, 10000], [10000, 10000, 10000], ['t1', 't2', 't3'])
-  assert.deepEqual(o.cents, [6667, 6667, 6666])
-  assert.deepEqual(o.adjusted, [false, false, true])
-  // S1: volle Umlage, das Restverfahren gibt einer abgerundeten Zeile den Lohn-Cent, die Deckelung
-  // nimmt ihn; er geht an die Zeile mit Luft, statt verloren zu gehen. Zusammen genau L.
-  const raws = [40, 51, 103].map((a) => (30000 * a) / 194)
-  const shares = largestRemainder(30000, raws, ['a', 'b', 'c'])
-  const v = distributeLabor(29999, 30000, raws, shares, ['a', 'b', 'c'])
-  assert.equal(v.cents.reduce((x, y) => x + y, 0), 29999, `${shares} → ${v.cents}`)
-  v.cents.forEach((c, k) => assert.ok(c <= (shares[k] ?? 0)))
-  // Gründe je Zeile für den Rechenweg (L4): Eine Zeile kann gedeckelt und danach gekürzt sein, dann
-  // stehen beide da. In einer Abrechnung kommt das nicht vor (ein gedeckelter Cent hat den
-  // kleinsten Rundungsfehler und wird nie zuerst gekürzt), die Funktion muss es dennoch richtig
-  // benennen: Rohanteile über dem Betrag erzwingen hier mehrere Kürzungen.
-  const both = distributeLabor(4, 10, [10, 10], [3, 10], ['a', 'b'])
-  assert.deepEqual(both.cents, [2, 2])
-  assert.deepEqual(both.notes, [['capped', 'reduced'], ['reduced']])
-  // Bei voller Umlage heißt die Abweichung „Restcent der Rechnung“, nicht Kürzung.
-  assert.deepEqual(o.notes, [[], [], ['remainder']])
-  assert.deepEqual(c.notes, [['capped'], []])
-  // Ganz Lohn: genau der Kostenanteil, auch wenn die Kostenanteile einzeln gerundet über dem Betrag
-  // liegen (M1: 1,00 € auf 67/67/65 m² vermietet plus 1 m² selbstgenutzt, Anteile 34/34/33).
-  const g = distributeLabor(100, 100, [33.5, 33.5, 32.5], [34, 34, 33], ['a', 'b', 'c'])
-  assert.deepEqual(g.cents, [34, 34, 33])
+// Die Bausteine der einen Rundungsregel (#202) für sich: `distributeCents` verteilt den Betrag
+// über alle Empfänger, `distributeLaborCents` den Lohnanteil innerhalb der Kostenanteile.
+const tenant = (key: string, raw: number) => ({ key, landlord: false, raw })
+const landlordLine = (key: string, raw: number) => ({ key, landlord: true, raw })
+
+test('Restverfahren (#202): Gleichstand geht zuerst an den Vermieter, dann nach der Kennung, nie an eine Zeile mit 0', () => {
+  // 33,5 / 33,5 / 32,5 ct und 0,5 ct Eigenanteil: zwei Restcent, alle Reste 0,5.
+  assert.deepEqual(distributeCents(100, [tenant('tb', 33.5), tenant('ta', 33.5), tenant('tc', 32.5), landlordLine('selfUse', 0.5), landlordLine('vacancy', 0)]), [33, 34, 32, 1, 0])
+  // Reste, die nur durch Rauschen verschieden sind, gelten als gleich.
+  assert.deepEqual(distributeCents(2, [tenant('t1', 0.5000000001), landlordLine('selfUse', 0.4999999999), tenant('t2', 1)]), [0, 1, 1])
+  // Ein Rest des Vermieters aus Rauschen ist 0 und bekommt nichts, auch nicht als −1 + 1.
+  assert.deepEqual(distributeCents(100, [tenant('t1', 100 / 3), tenant('t2', 100 / 3), tenant('t3', 100 / 3), landlordLine('vacancy', -1e-12)]), [34, 33, 33, 0])
+  assert.deepEqual(distributeCents(100, [tenant('t1', 100 / 3), tenant('t2', 100 / 3), tenant('t3', 100 / 3), landlordLine('vacancy', 1e-12)]), [34, 33, 33, 0])
+  // Gutschrift: das Spiegelbild.
+  assert.deepEqual(distributeCents(-100, [tenant('tb', -33.5), tenant('ta', -33.5), tenant('tc', -32.5), landlordLine('selfUse', -0.5)]), [-33, -34, -32, -1])
 })
 
-test('§35a: distributeLabor an Zufallswerten — nie über dem Kostenanteil, Summe nie über dem Lohn, je Zeile wie von Hand', () => {
-  const rnd = makeRng(35180)
-  for (let i = 0; i < 5000; i++) {
-    const n = 1 + Math.floor(rnd() * 5)
-    const amount = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 200 : 200000))
-    // L nahe A gezielt (S1 der Durchsicht): Dort kommt eine Zeile am ehesten mit dem Lohn über ihren
-    // abgerundeten Kostenanteil, und ein gedeckelter Cent muss weiterwandern.
+test('§35a (#202): der Lohn wird innerhalb der Kostenanteile verteilt, zusammen genau L, ganz Lohn = Kostenanteil', () => {
+  const lines = [40, 51, 103].map((a, k) => tenant(`t${k}`, (30000 * a) / 194))
+  const shares = distributeCents(30000, lines)
+  assert.deepEqual(shares, [6185, 7887, 15928])
+  // 299,99 € Lohn: Der größte Rest (t0) hat keine Luft, der Cent geht an t1.
+  assert.deepEqual(distributeLaborCents(29999, 30000, lines, shares).cents, [6185, 7887, 15927])
+  assert.deepEqual(distributeLaborCents(30000, 30000, lines, shares).cents, shares)
+  // Mit Zeilen des Vermieters: der Lohn verteilt sich auch dorthin.
+  const mixed = [tenant('anna', 5447.073474470734), tenant('ben', 2734.7447073474473), landlordLine('selfUse', 21818.18181818182)]
+  const m = distributeCents(30000, mixed)
+  assert.deepEqual(m, [5447, 2735, 21818])
+  assert.deepEqual(distributeLaborCents(20000, 30000, mixed, m).cents, [3631, 1823, 14546])
+})
+
+test('Restverfahren und §35a (#202) an Zufallswerten: Summe, Rundung je Zeile, Lohn in den Kostenanteilen', () => {
+  const rnd = makeRng(202)
+  for (let i = 0; i < 20000; i++) {
+    const n = 1 + Math.floor(rnd() * 6)
+    const amount = 1 + Math.floor(rnd() * (rnd() < 0.4 ? 30 : 300000))
+    const weights = Array.from({ length: n }, () => (rnd() < 0.2 ? 0 : rnd() < 0.3 ? 1 : rnd()))
+    const wsum = weights.reduce((a, b) => a + b, 0)
+    if (wsum === 0) continue
+    const lines = weights.map((w, k) => ({ key: `r${k}`, landlord: rnd() < 0.4, raw: (amount * w) / wsum }))
+    const shares = distributeCents(amount, lines)
+    const fall = `Fall ${i}: ${JSON.stringify({ amount, lines, shares })}`
+    assert.equal(shares.reduce((a, b) => a + b, 0), amount, fall)
+    shares.forEach((c, k) => {
+      assert.ok(Math.abs(c - lines[k].raw) < 1, fall)
+      if (lines[k].raw === 0) assert.equal(c, 0, fall)
+    })
     const pick = rnd()
     const labor = pick < 0.3 ? amount : pick < 0.6 ? Math.max(1, amount - 1 - Math.floor(rnd() * 3)) : Math.max(1, Math.floor(amount * rnd()))
-    // Teils volle Umlage (Rohanteile ergeben den Betrag, Kosten nach dem Restverfahren), teils nicht.
-    const weights = Array.from({ length: n }, () => rnd())
-    const wsum = weights.reduce((a, b) => a + b, 0)
-    const full = rnd() < 0.5
-    const raws = weights.map((w) => full ? (amount * w) / wsum : (amount / n) * w)
-    const shares = full ? largestRemainder(amount, raws, raws.map((_, k) => `t${k}`)) : raws.map((r) => Math.round(r))
-    const keys = raws.map((_, k) => `t${k}`)
-    const r = distributeLabor(labor, amount, raws, shares, keys)
-    const sum = r.cents.reduce((a, b) => a + b, 0)
-    const fall = `Fall ${i}: ${JSON.stringify({ labor, amount, raws, shares, cents: r.cents })}`
-    if (labor === amount) {
-      assert.deepEqual(r.cents, shares, fall)
-      continue
-    }
-    assert.ok(sum <= labor, fall)
-    const fullyBorne = shares.reduce((a, b) => a + b, 0) === amount
-    r.cents.forEach((c, k) => {
-      const exact = (labor * raws[k]) / amount
-      assert.ok(c >= 0 && c <= shares[k], fall)
-      if (!r.adjusted[k]) assert.ok(Math.abs(c - exact) <= 0.5 + 1e-9, fall)
-      // Abgewichen heißt: weniger als von Hand, oder bei voller Umlage höchstens der Restcent darüber.
-      else if (c > Math.round(exact)) assert.ok(fullyBorne && c - exact < 1, `nur bei voller Umlage darüber: ${fall}`)
+    const l = distributeLaborCents(labor, amount, lines, shares)
+    assert.equal(l.cents.reduce((a, b) => a + b, 0), labor, `${fall} Lohn ${labor}: ${l.cents}`)
+    l.cents.forEach((c, k) => {
+      assert.ok(c >= 0 && c <= shares[k], `${fall} Lohn ${labor}: ${l.cents}`)
+      assert.ok(Math.abs(c - l.exact[k]) < 1, `${fall} Lohn ${labor}: ${l.cents}`)
     })
-    // Bei voller Umlage ergeben die Lohnanteile genau L. Weniger nur, wenn keine Zeile mehr Luft hat,
-    // also jede schon bei min(aufgerundeter Lohn, Kostenanteil) steht (S1: ein gedeckelter Cent ging
-    // verloren, obwohl eine andere Zeile ihn hätte tragen können).
-    const room = (k: number) => Math.min(Math.ceil((labor * raws[k]) / amount), Math.max(0, shares[k]))
-    if (fullyBorne && sum < labor) assert.ok(r.cents.every((c, k) => c >= room(k)), `volle Umlage: ein Cent ging verloren: ${fall}`)
+    if (labor === amount) assert.deepEqual(l.cents, shares, fall)
   }
+})
+
+// ---------- Eine Rundungsregel für jede Verteilung (#202) ----------
+// Jede Position wird genau einmal nach dem Restverfahren über alle Empfänger verteilt: die Zeilen
+// der Mieter und je Grund eine Zeile des Vermieters (Eigennutzung, Leerstand, Pauschale …). Damit
+// ergibt die Summe immer genau den Betrag, jede Zeile ist ihr exakter Wert auf- oder abgerundet,
+// und keine wechselt das Vorzeichen. Der §35a-Lohnanteil wird innerhalb derselben Zeilen verteilt.
+
+test('Eine Rundungsregel (#202): 1,00 € auf 67/67/65 m² vermietet und 1 m² selbstgenutzt, der Vermieter steht nie bei −1 Cent', () => {
+  // Exakt: 33,5 / 33,5 / 32,5 ct für die Mieter und 0,5 ct Eigenanteil, zusammen genau 100 ct.
+  // Abgerundet 33 + 33 + 32 + 0 = 98 ct, zwei Restcent. Alle vier Reste sind gleich (0,5); dann
+  // bekommt zuerst die Zeile des Vermieters einen Cent, danach entscheidet die Kennung (ta vor tb).
+  // Ergebnis 34 / 33 / 32 ct und 1 ct Eigenanteil. Vorher: jeder Mieter für sich gerundet,
+  // 34 / 34 / 33 ct = 1,01 €, und der Vermieter stand bei −1 Cent.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 100, key: 'area', labor35aCents: 100 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [34, 33, 32])
+  assert.equal(s.landlord.totalCents, 1)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'selfUse', cents: 1 }])
+  assert.equal(s.selfUsedShareCents, 1)
+  // Ganz Lohn: der Lohnanteil ist der Kostenanteil, zusammen 99 ct und nicht 1,01 €.
+  for (const t of ['ta', 'tb', 'tc']) assert.equal(statementOf(s, t).total35aCents, statementOf(s, t).totalShareCents, t)
+  // Der Rechenweg nennt bei tc, warum 32,5 ct zu 32 ct werden.
+  const step = statementOf(s, 'tc').rows[0]?.steps?.find((x) => x.label === 'Ergebnis, auf Cent gerundet')
+  assert.equal(step?.value, '0,32 € (Restcent-Verfahren: rechnerisch 0,325 €; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)')
+})
+
+test('Eine Rundungsregel (#202): 300,00 € mit 299,99 € Lohn auf 40/51/103 m², voll vermietet', () => {
+  // Kosten exakt 6.185,567 / 7.886,598 / 15.927,835 ct; abgerundet 29.998, zwei Restcent an die
+  // größten Reste (t2, t1): 6.185 / 7.887 / 15.928 ct. Lohn exakt × 29.999/30.000: 6.185,361 /
+  // 7.886,335 / 15.927,304; abgerundet 29.998, ein Restcent. Der größte Rest (t0) hat keine Luft,
+  // sein Kostenanteil ist 6.185; also t1: 6.185 / 7.887 / 15.927 ct, zusammen genau 29.999.
+  const db: Db = {
+    ...emptyDb(),
+    units: [40, 51, 103].map((a, n) => ({ id: `u${n}`, name: `W${n}`, areaM2: a, participates: true })),
+    tenancies: [0, 1, 2].map((n) => tenancy({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 30000, key: 'area', labor35aCents: 29999 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(['t0', 't1', 't2'].map((t) => statementOf(s, t).totalShareCents), [6185, 7887, 15928])
+  assert.deepEqual(['t0', 't1', 't2'].map((t) => statementOf(s, t).total35aCents), [6185, 7887, 15927])
+  assert.equal(s.landlord.rows.length, 0)
+  // Der Rechenweg nennt den Restcent des Lohns bei t1 (rechnerisch 78,86 €, bescheinigt 78,87 €).
+  const step = statementOf(s, 't1').rows[0]?.steps?.find((x) => x.label === 'davon Lohnanteil nach § 35a EStG')
+  assert.equal(step?.value, '78,87 € (rechnerisch 78,8634 €; Restcent: damit die Lohnanteile zusammen genau den Lohnanteil der Rechnung ergeben, ist dieser einen Cent höher als gewöhnlich gerundet)')
+})
+
+test('Eine Rundungsregel (#202): Mieterwechsel, 300 € mit 200 € Lohn, Wohnung 45 von 165 m²', () => {
+  // Anna bis 31.08. (243 Tage), Ben ab 01.09. (122 Tage), EG 120 m² selbstgenutzt.
+  // Kosten exakt: Anna 5.447,073, Ben 2.734,745, Eigenanteil 21.818,182 ct (zusammen 30.000).
+  // Abgerundet 29.999, der Restcent an den größten Rest (Ben, 0,745): 5.447 / 2.735 / 21.818.
+  // Lohn exakt × 2/3: Anna 3.631,382, Ben 1.823,163, Eigenanteil 14.545,455; abgerundet 19.999,
+  // der Restcent an den größten Rest (Eigenanteil, 0,455). Anna 36,31 €, Ben 18,23 € wie von Hand.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'w', name: 'Wohnung', areaM2: 45, participates: true },
+      { id: 'eg', name: 'EG', areaM2: 120, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: [
+      tenancy({ id: 'anna', unitId: 'w', tenantName: 'Anna', persons: 1, start: '2024-01-01', end: '2025-08-31' }),
+      tenancy({ id: 'ben', unitId: 'w', tenantName: 'Ben', persons: 1, start: '2025-09-01' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 30000, key: 'area', labor35aCents: 20000 }],
+  }
+  const traces: AllocationTrace[] = []
+  const s = computeSettlement(snapshotFromDb(db, 2025), { onAllocation: (a) => traces.push(a) })
+  assert.deepEqual([statementOf(s, 'anna').totalShareCents, statementOf(s, 'ben').totalShareCents, s.selfUsedShareCents], [5447, 2735, 21818])
+  assert.deepEqual([statementOf(s, 'anna').total35aCents, statementOf(s, 'ben').total35aCents], [3631, 1823])
+  const self = traces[0]?.lines.find((l) => l.recipient === 'selfUse')
+  assert.equal(self?.laborCents, 14546, 'der Restcent des Lohns liegt beim Eigenanteil')
+})
+
+test('Eine Rundungsregel (#202): volle Umlage mit Resten, die sich zu ganzen Cent ergänzen, ergibt keine Zeile des Vermieters', () => {
+  // 100 ct auf drei gleiche Flächen: exakt je 33,333… ct, der Rest des Vermieters ist rechnerisch 0
+  // und nur durch Gleitkomma-Rauschen nicht genau 0. Er bekommt keinen Cent: 34 / 33 / 33.
+  for (const [n, amount] of [[3, 100], [6, 100], [7, 100], [3, 1000001], [7, 99999], [11, 12345]] as const) {
+    const db: Db = {
+      ...emptyDb(),
+      units: Array.from({ length: n }, (_, k) => ({ id: `u${k}`, name: `W${k}`, areaM2: 33.3, participates: true })),
+      tenancies: Array.from({ length: n }, (_, k) => tenancy({ id: `t${k}`, unitId: `u${k}`, tenantName: `M${k}`, persons: 1 })),
+      costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: amount, key: 'area' }],
+    }
+    const traces: AllocationTrace[] = []
+    const s = computeSettlement(snapshotFromDb(db, 2025), { onAllocation: (a) => traces.push(a) })
+    assert.equal(s.landlord.rows.length, 0, `${n} Wohnungen, ${amount} ct: ${JSON.stringify(s.landlord.rows)}`)
+    for (const l of traces[0]?.lines ?? assert.fail('keine Verteilung')) if (l.landlord) assert.equal(l.exact, 0, `${n}, ${amount}: ${l.recipient} ${l.exact}`)
+    const shares = s.statements.map((st) => st.totalShareCents)
+    assert.equal(shares.reduce((a, b) => a + b, 0), amount)
+    assert.ok(Math.max(...shares) - Math.min(...shares) <= 1, `${shares}`)
+  }
+})
+
+test('Eine Rundungsregel (#202): eine selbstgenutzte Wohnung mit exakt 0 Anteil bekommt keinen Cent', () => {
+  // Selbstgenutzt mit 0 m²: Ihr exakter Anteil nach Fläche ist 0. 101 ct auf zwei gleiche
+  // vermietete Wohnungen: je 50,5 ct, der Restcent an t0. Weder Eigenanteil noch Vermieterzeile.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 50, participates: true },
+      { id: 'b', name: 'B', areaM2: 50, participates: true },
+      { id: 'e', name: 'E', areaM2: 0, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: [tenancy({ id: 't0', unitId: 'a', tenantName: 'A', persons: 1 }), tenancy({ id: 't1', unitId: 'b', tenantName: 'B', persons: 1 })],
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 101, key: 'area' }],
+  }
+  const traces: AllocationTrace[] = []
+  const s = computeSettlement(snapshotFromDb(db, 2025), { onAllocation: (a) => traces.push(a) })
+  assert.deepEqual(s.statements.map((st) => st.totalShareCents), [51, 50])
+  assert.equal(s.selfUsedShareCents, 0)
+  assert.equal(s.landlord.rows.length, 0)
+  for (const l of traces[0]?.lines.filter((x) => x.landlord) ?? assert.fail('keine Verteilung')) assert.deepEqual([l.exact, l.cents], [0, 0], l.recipient)
+})
+
+test('Eine Rundungsregel (#202): Gutschrift und Rechnung sind spiegelbildlich', () => {
+  const make = (amountCents: number): Db => ({
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents, key: 'area' }],
+  })
+  const plus = computeSettlement(snapshotFromDb(make(100), 2025))
+  const minus = computeSettlement(snapshotFromDb(make(-100), 2025))
+  assert.deepEqual(minus.statements.map((st) => st.totalShareCents), plus.statements.map((st) => -st.totalShareCents))
+  assert.equal(minus.selfUsedShareCents, -plus.selfUsedShareCents)
+  assert.deepEqual(minus.landlord.rows[0]?.landlordParts, [{ reason: 'selfUse', cents: -1 }])
+})
+
+// Der Zufallsbestand für die Rundungsregel: randomDb und randomLaborDb, als Schnappschuss erweitert
+// um das, was die db.json nicht kennt: Teilnehmer, Einzelbeträge (auch für die eigene Wohnung),
+// Gemeinschaftsabrechnung mit Miteigentumsanteilen, dazu eine selbstgenutzte Wohnung mit 1 oder 0 m².
+// Leerstand, Pauschale, Inklusivmiete, Hauptzähler, Gutschriften und Lohn nahe am Betrag bringen
+// randomDb und randomLaborDb mit.
+function randomRoundingSnapshot(rnd: Rng, i: number) {
+  const db = i % 2 === 0 ? randomDb(rnd) : randomLaborDb(rnd)
+  if (rnd() < 0.3) db.units.push({ id: 'klein', name: 'Klein', areaM2: rnd() < 0.5 ? 1 : 0, participates: false, selfUsed: true, selfPersons: 1 })
+  const snapshot = snapshotFromDb(db, 2025)
+  for (const u of snapshot.units) if (rnd() < 0.8) u.mea = Math.round(rnd() * 300)
+  for (const c of snapshot.costItems) {
+    if (isNotAllocable(c.category) || rnd() < 0.5) continue
+    const r = rnd()
+    if (r < 0.25) c.participantUnitIds = snapshot.units.filter(() => rnd() < 0.6).map((u) => u.id)
+    else if (r < 0.5 && c.amountCents > 0) {
+      c.key = 'amounts'
+      const given: Record<string, number> = {}
+      for (const t of snapshot.tenancies) if (rnd() < 0.7) given[t.id] = Math.floor((rnd() * c.amountCents) / (snapshot.tenancies.length + 1))
+      c.tenancyAmounts = given
+      const selfGiven: Record<string, number> = {}
+      for (const u of snapshot.units) if (u.selfUsed && rnd() < 0.7) selfGiven[u.id] = Math.floor((rnd() * c.amountCents) / (snapshot.units.length + 2))
+      c.selfAmounts = selfGiven
+    } else if (r < 0.75) {
+      c.key = 'external'
+      c.externalBasis = { measure: rnd() < 0.5 ? 'mea' : rnd() < 0.5 ? 'area' : 'units', total: 1 + Math.floor(rnd() * 3000), totalCents: Math.abs(c.amountCents) * 3 }
+    }
+  }
+  return snapshot
+}
+
+test('Invariante (#202): jede Zeile ist ihr exakter Wert gerundet, die Summe ist der Betrag, §35a liegt in den Kostenanteilen', () => {
+  const rnd = makeRng(2022026)
+  let traced = 0
+  let withLabor = 0
+  let landlordLines = 0
+  for (let i = 0; i < 1500; i++) {
+    const snapshot = randomRoundingSnapshot(rnd, i)
+    const traces: AllocationTrace[] = []
+    const s = computeSettlement(snapshot, { onAllocation: (a) => traces.push(a) })
+    const fall = `Fall ${i}\n${JSON.stringify(snapshot)}`
+    for (const item of snapshot.costItems) {
+      const trace = traces.find((x) => x.costItemId === item.id) ?? assert.fail(`${fall}: Position ${item.id} ohne Verteilung`)
+      traced++
+      const A = item.amountCents
+      assert.equal(trace.lines.reduce((a, l) => a + l.cents, 0), A, `${fall}: ${item.id} Summe`)
+      for (const l of trace.lines) {
+        const ctx = `${fall}: ${item.id} ${l.recipient} exakt ${l.exact} → ${l.cents}`
+        // Jede Zeile ist ihr exakter Wert, ab- oder aufgerundet.
+        assert.ok(Math.abs(l.cents - l.exact) < 1 + 1e-6, ctx)
+        // Exakt 0 ergibt 0 Cent.
+        if (Math.abs(l.exact) < 1e-6) assert.equal(l.cents, 0, ctx)
+        // Keine Zeile des Vermieters gegen das Vorzeichen der Position. Das gilt nur für
+        // widerspruchsfreie Daten, wie sie der Generator erzeugt; sich überschneidende
+        // Mietverhältnisse und rückwärts laufende Zähler durchbrechen es (Durchsicht #203).
+        if (l.landlord) {
+          assert.ok(l.cents === 0 || Math.sign(l.cents) === Math.sign(A), ctx)
+          if (l.cents !== 0) landlordLines++
+        }
+      }
+      // Was die Abrechnung ausweist, sind genau diese Zeilen.
+      const { tenants, landlord } = rowsOfItem(s, item.id)
+      assert.equal(tenants.reduce((a, r) => a + r.shareCents, 0) + landlord, A, `${fall}: ${item.id}`)
+      for (const st of s.statements) {
+        const row = st.rows.find((r) => r.costItemId === item.id)
+        if (!row) continue
+        const line = trace.lines.find((l) => l.recipient === st.tenancyId) ?? assert.fail(`${fall}: ${item.id} ${st.tenancyId} ohne Zeile`)
+        assert.equal(row.shareCents, line.cents, `${fall}: ${item.id} ${st.tenancyId}`)
+        assert.equal(row.labor35aCents, line.laborCents, `${fall}: ${item.id} ${st.tenancyId} Lohn`)
+      }
+      // §35a: in jeder Zeile zwischen 0 und dem Kostenanteil, zusammen genau L, ganz Lohn = Kosten.
+      const L = validLabor35aCents(item) ?? 0
+      if (L > 0) {
+        withLabor++
+        assert.equal(trace.lines.reduce((a, l) => a + l.laborCents, 0), L, `${fall}: ${item.id} Σ Lohn`)
+        for (const l of trace.lines) {
+          assert.ok(l.laborCents >= 0 && l.laborCents <= Math.max(0, l.cents), `${fall}: ${item.id} ${l.recipient} Lohn ${l.laborCents} bei Anteil ${l.cents}`)
+          if (L === A) assert.equal(l.laborCents, l.cents, `${fall}: ${item.id} ${l.recipient} ganz Lohn`)
+          else assert.ok(Math.abs(l.laborCents - l.laborExact) < 1 + 1e-6, `${fall}: ${item.id} ${l.recipient} Lohn ${l.laborCents} exakt ${l.laborExact}`)
+        }
+      } else {
+        for (const l of trace.lines) assert.equal(l.laborCents, 0, `${fall}: ${item.id} ohne Lohn`)
+      }
+    }
+    // Der Eigenanteil ist genau die Zeile der Eigennutzung, ohne eigenes Runden.
+    const self = traces.filter((x) => !x.forced).flatMap((x) => x.lines.filter((l) => l.recipient === 'selfUse')).reduce((a, l) => a + l.cents, 0)
+    assert.equal(s.selfUsedShareCents, self, `${fall}: Eigenanteil`)
+    assertLandlordParts(s, snapshot.tenancies.length, fall)
+  }
+  assert.ok(traced > 2000 && withLabor > 300 && landlordLines > 1000, `zu wenig geprüft: ${traced} Positionen, ${withLabor} mit Lohn, ${landlordLines} Vermieterzeilen`)
+})
+
+test('Eine Rundungsregel (#202): eine vorher abgeschlossene Abrechnung bleibt, die Abweichung wird gezeigt', () => {
+  // Eingefroren mit der alten Regel: 34 / 34 / 33 ct. Heute: 34 / 33 / 32 ct. Der eingefrorene
+  // Stand bleibt, wie er ist; der Vergleich nennt je Mieter den Cent zu seinen Gunsten.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 100, key: 'area' }],
+  }
+  const today = computeSettlement(snapshotFromDb(db, 2025))
+  const old = new Map([['ta', 34], ['tb', 34], ['tc', 33]])
+  const frozen = {
+    statements: today.statements.map((st) => {
+      const share = old.get(st.tenancyId) ?? assert.fail(`kein alter Anteil für ${st.tenancyId}`)
+      return { ...st, totalShareCents: share, balanceCents: st.balanceCents + st.totalShareCents - share }
+    }),
+  }
+  const r = compareWithFrozen(frozen, today, 2025, '2026-06-01')
+  assert.equal(r.comparable, true)
+  assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.differenceCents, d.direction]), [['tb', 1, 'tenant'], ['tc', 1, 'tenant']])
+})
+
+// ---------- Durchsicht von #203 ----------
+
+test('Eine Rundungsregel (Durchsicht #203): sich überschneidende Mietverhältnisse fressen den Eigenanteil nicht', () => {
+  // 4.949,60 € Grundsteuer nach Einheiten, fünf Einheiten, u0 selbstgenutzt. In u1 stehen zwei
+  // ganzjährige Mietverhältnisse, eines mit Pauschale: Die Mieter tragen rechnerisch 5 × 989,92 €,
+  // also schon den ganzen Betrag. Der Eigenanteil bleibt trotzdem genau A/5 = 989,92 €; der
+  // Überhang erscheint als negativer Leerstand. Vorher stand der Eigenanteil bei 0, und 989,92 €
+  // privater Kosten erschienen in der Steuerübersicht als abziehbar.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u0', name: 'Eigen', areaM2: 50, participates: false, selfUsed: true, selfPersons: 1 },
+      ...[1, 2, 3, 4].map((n) => ({ id: `u${n}`, name: `W${n}`, areaM2: 50, participates: true })),
+    ],
+    tenancies: [
+      ...[1, 2, 3, 4].map((n) => tenancy({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1 })),
+      tenancy({ id: 't1b', unitId: 'u1', tenantName: 'Doppelt', persons: 1, costModel: 'flatRate' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 494960, key: 'units' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(s.selfUsedShareCents, 98992)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [
+    { reason: 'selfUse', cents: 98992 }, { reason: 'flatRate', cents: 98992 }, { reason: 'vacancy', cents: -98992 },
+  ])
+  assert.equal(s.statements.reduce((a, st) => a + st.totalShareCents, 0) + s.landlord.totalCents, 494960)
+})
+
+test('Eine Rundungsregel (Durchsicht #203): der Rechenweg einer Gutschrift rundet kaufmännisch symmetrisch', () => {
+  // −1,00 € auf 67/67/65 m² und 1 m² selbstgenutzt: exakt −33,5 / −33,5 / −32,5 und −0,5 ct.
+  // Verteilt −34 / −33 / −32 und −1. Kaufmännisch gerundet wären es −34 / −34 / −33: Der Hinweis
+  // auf den Restcent gehört an tb und tc, nicht an ta.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Gutschrift', amountCents: -100, key: 'area' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [-34, -33, -32])
+  const hinted = (t: string) => statementOf(s, t).rows[0]?.steps?.find((x) => x.label === 'Ergebnis, auf Cent gerundet')?.value.includes('Restcent-Verfahren')
+  assert.deepEqual(['ta', 'tb', 'tc'].map(hinted), [false, true, true])
+})
+
+test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler außerhalb bleibt bei „außerhalb“', () => {
+  // Datenfehler: Der Zähler der Wohnung außerhalb läuft von 100 auf 50 zurück. Die Basis ist
+  // 100 − 50 = 50, der Mieter trägt rechnerisch 200 %, „außerhalb“ −100 %. Der negative Wert bleibt
+  // bei seinem Grund, statt als Leerstand zu erscheinen (die Meldung zum Zähler gibt es schon).
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'W1', areaM2: 50, participates: true },
+      { id: 'u2', name: 'Außen', areaM2: 50, participates: false },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'M1', persons: 1 })],
+    meters: [
+      { id: 'm1', unitId: 'u1', type: 'kaltwasser', name: 'm1', unit: 'm³' },
+      { id: 'm2', unitId: 'u2', type: 'kaltwasser', name: 'm2', unit: 'm³' },
+    ],
+    readings: [
+      ...readingsOf('m1', [{ date: '2024-12-31', value: 0 }, { date: '2025-12-31', value: 100 }]),
+      ...readingsOf('m2', [{ date: '2024-12-31', value: 100 }, { date: '2025-12-31', value: 50 }]),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 10000, key: 'meter', meterType: 'kaltwasser' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(statementOf(s, 't1').totalShareCents, 20000)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'outsideUnit', cents: -10000 }])
 })

@@ -113,15 +113,12 @@ test('Invariante (#93): Summen gehen auf, und ein Modell ändert den Eigenanteil
     for (const row of s.landlord.rows) assert.ok(row.shareCents >= 0, `Fall ${i}: negativer Vermieteranteil`)
     assertLandlordParts(s, tenancies.length, `Fall ${i}`)
     const ohneModelle = settle({ units, tenancies: tenancies.map((t) => ({ ...t, costModel: undefined, heatingModel: undefined })), costItems })
-    // Der ausgewiesene Eigenanteil ist je Position auf das begrenzt, was beim Vermieter gebucht
-    // ist. Ohne Pauschale kann diese Grenze einen Cent unter dem gerundeten Eigenanteil liegen,
-    // weil die Mieter aufgerundet haben; mit Pauschale wächst der Vermieteranteil, und die Grenze
-    // fällt weg. Jeder Mieter rundet höchstens einen halben Cent auf, die Grenze liegt also je
-    // Position höchstens (Mieter + 1) ÷ 2 Cent darunter. Ein Modell darf den Eigenanteil deshalb
-    // nie senken und höchstens um diese Rundung anheben.
+    // Der Eigenanteil ist je Position sein exakter Wert, ab- oder aufgerundet (#202), und der exakte
+    // Wert hängt nicht am Modell. Ob er auf- oder abgerundet wird, entscheidet das Restverfahren über
+    // alle Zeilen, und dort fasst ein Modell Mieter zu einer Zeile des Vermieters zusammen. Ein Modell
+    // verschiebt den Eigenanteil deshalb höchstens um einen Cent je Position, in beide Richtungen.
     const mehr = s.selfUsedShareCents - ohneModelle.selfUsedShareCents
-    const rundung = costItems.length * Math.ceil((tenancies.length + 1) / 2)
-    assert.ok(mehr >= 0 && mehr <= rundung, `Fall ${i}: Eigenanteil um ${mehr} Cent verschoben (Rundung höchstens ${rundung})`)
+    assert.ok(Math.abs(mehr) <= costItems.length, `Fall ${i}: Eigenanteil um ${mehr} Cent verschoben (höchstens ${costItems.length})`)
   }
 })
 

@@ -39,13 +39,16 @@ t2 = 100.000 ct × 40/100 × 275/366 = 30.054,6448 ct
 ```
 
 Die Rohanteile schöpfen den Betrag **nicht** aus — es fehlen 9.945,36 ct, nämlich der
-Leerstandsanteil. Damit greift nicht die Restverteilung nach Hare, sondern die kaufmännische
-Rundung je Anteil; die Differenz trägt der Vermieter:
+Leerstandsanteil. Er ist eine eigene Zeile der Restverteilung (#202), neben den Mietern:
 
 ```
+t1        = 60.000,0000 ct
+t2        = 30.054,6448 ct
+Leerstand =  9.945,3552 ct
+abgerundet 60.000 + 30.054 + 9.945 = 99.999 ct, 1 Restcent an den größten Rest (t2, 0,64)
 t1        = 60.000 ct = 600,00 €
-t2        = 30.055 ct = 300,55 €   (30.054,6448 kaufmännisch gerundet)
-Vermieter = 100.000 − 60.000 − 30.055 = 9.945 ct = 99,45 €
+t2        = 30.055 ct = 300,55 €
+Vermieter =  9.945 ct =  99,45 €
 ```
 
 Kontrolle: 60.000 + 30.055 + 9.945 = 100.000 ✓
