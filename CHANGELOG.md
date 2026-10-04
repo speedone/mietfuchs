@@ -25,7 +25,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   je Position verschieben. In der Aufschlüsselung des Vermieteranteils können größere Beträge
   zwischen Gründen wandern, bei gleicher Summe: Bei vereinbarten Anteilen, die zusammen mit
   Wohnungen außerhalb der Abrechnungseinheit über 100 % ergeben, steht der Leerstand jetzt voll
-  da und „außerhalb der Abrechnungseinheit“ nur noch bis 100 %.
+  da und „außerhalb der Abrechnungseinheit“ nur noch bis 100 %. Diese Zusagen („genau der
+  Lohnanteil der Rechnung“, „höchstens ein Cent je Mieter und Position“, „kein Anteil des
+  Vermieters wechselt das Vorzeichen“) gelten für widerspruchsfreie Daten; bei Datenfehlern, also
+  sich überschneidenden Mietverhältnissen (siehe
+  [#204](https://github.com/speedone/mietfuchs/issues/204)) oder einem rückwärts laufenden Zähler,
+  kann sich mehr ändern, etwa der Eigenanteil auf seinen exakten Wert.
   Abgeschlossene Abrechnungen bleiben, wie sie sind; die Seite Abrechnung zeigt den Unterschied
   zur heutigen Berechnung als Abweichung.
   ([#202](https://github.com/speedone/mietfuchs/issues/202))
