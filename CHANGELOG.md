@@ -21,7 +21,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Oberfläche geöffnet hatten (etwa in Docker), erfuhren Sie nichts von der Sicherung. Jetzt bleibt
   er stehen, bis Sie ihn mit „Verstanden“ schließen, dann auch in anderen Browsern. Gemerkt wird
   das in der Datei `sicherung-vor-update.json` im Datenordner. Außerdem nennt die Konsole die
-  Sicherung beim Update mit vollem Pfad.
+  Sicherung beim Update mit vollem Pfad. Nach dem Umstieg aus einer `db.json` gibt es beides
+  nicht: Die Sicherung davor wäre eine leere Datenbank, der Rückweg ist dort `db.json.abgeloest`.
   ([#180](https://github.com/speedone/mietfuchs/issues/180))
 - **Lange Objektnamen in der Seitenleiste.** Die Auswahl „Objekt“ schnitt lange Namen ab. Der
   Name steht jetzt vollständig da und bricht bei Bedarf in die nächste Zeile um; der Tooltip

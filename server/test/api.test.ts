@@ -4155,6 +4155,47 @@ test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, auch nac
   }
 })
 
+test('Update: nach einem gelungenen Umstieg aus der db.json nennt niemand die Sicherung der leeren Datenbank (Durchsicht zu #180)', async () => {
+  // Ein früher gescheiterter Umstieg hat eine leere Datenbank auf 0000 hinterlassen, daneben liegt
+  // die db.json. Die neue Version holt die Schritte nach (Sicherung der leeren Datei) und steigt
+  // dann um. Die Sicherung ist kein Rückweg: Sie enthielte nichts, die db.json heißt schon „abgelöst“.
+  const dataDir = await dataDirAtBaseline()
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: { houseName: 'Haus am Weg', address: 'Weg 1', landlordName: 'V', iban: '', paymentDeadlineDays: 30 },
+    units: [{ id: 'u1', name: 'EG', areaM2: 80, participates: true }],
+    tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [],
+  }))
+  // Eine Merkdatei aus einem früheren Update darf den Umstieg ebenso wenig überleben.
+  fs.writeFileSync(path.join(dataDir, 'sicherung-vor-update.json'), JSON.stringify({ steps: 1, backup: 'mietfuchs.sqlite.vor-0001_objekte', at: 'früher' }))
+  const erster = await startServerIn(dataDir)
+  try {
+    const report = await erster.api<HealthReport>('/healthz')
+    assert.equal(report.database?.changeover.state, 'done', JSON.stringify(report.database))
+    assert.equal(report.database?.migrated, null, JSON.stringify(report.database))
+    assert.ok(!erster.output().includes('Sicherung Ihrer Daten'), erster.output())
+    assert.equal(fs.existsSync(path.join(dataDir, 'sicherung-vor-update.json')), false, 'die Merkdatei liegt noch da')
+  } finally {
+    erster.child.kill()
+    await waitForExit(erster.child)
+  }
+  const zweiter = await startServerIn(dataDir)
+  try {
+    assert.equal((await zweiter.api<HealthReport>('/healthz')).database?.migrated, null)
+  } finally {
+    zweiter.stop()
+  }
+})
+
+test('Update: der gelesene Hinweis wird mit fehlendem Schlüssel abgelehnt', async () => {
+  const s = await startServer()
+  try {
+    const res = await fetch(`${s.base}/api/database/migrated/seen`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(res.status, 400)
+  } finally {
+    s.stop()
+  }
+})
+
 test('Update: nach dem Wiederherstellen nennt /healthz keine Sicherung, die zu diesem Stand nicht gehört', async () => {
   // Das Archiv von v0.8.0 wird auf einer Zwischenkopie migriert, ohne Sicherung davor; der
   // bisherige Stand liegt als mietfuchs.sqlite.vor-restore daneben.

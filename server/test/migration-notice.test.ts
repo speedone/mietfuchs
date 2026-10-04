@@ -23,9 +23,9 @@ test('Festgehalten, gelesen, weggeklickt', () => withDir((dir) => {
   assert.equal(readNotice(dir), null, 'ohne Merkdatei kein Hinweis')
   recordNotice(dir, notice)
   assert.deepEqual(readNotice(dir), notice)
-  assert.equal(acknowledgeNotice(dir, `${BACKUP}@1970-01-01T00:00:00.000Z`), false, 'ein fremder Schlüssel räumt nichts weg')
+  assert.equal(acknowledgeNotice(dir, `${BACKUP}@1970-01-01T00:00:00.000Z`), 'unchanged', 'ein fremder Schlüssel räumt nichts weg')
   assert.deepEqual(readNotice(dir), notice)
-  assert.equal(acknowledgeNotice(dir, noticeKey(notice)), true)
+  assert.equal(acknowledgeNotice(dir, noticeKey(notice)), 'cleared')
   assert.equal(readNotice(dir), null)
   assert.equal(fs.existsSync(path.join(dir, NOTICE_NAME)), false)
 }))
@@ -45,4 +45,14 @@ test('Eine unlesbare oder fremde Merkdatei ergibt keinen Hinweis und keinen Fehl
   }
   clearNotice(dir)
   clearNotice(dir) // zweimal geht auch
+}))
+
+test('Lässt sich die Merkdatei nicht entfernen, meldet das Wegklicken das, statt zu werfen', () => withDir((dir) => {
+  fs.writeFileSync(path.join(dir, BACKUP), '')
+  recordNotice(dir, notice)
+  const scheitert = () => { throw new Error('EACCES') }
+  assert.equal(acknowledgeNotice(dir, noticeKey(notice), scheitert), 'failed')
+  assert.deepEqual(readNotice(dir), notice, 'der Hinweis bleibt und kommt beim nächsten Start wieder')
+  assert.equal(acknowledgeNotice(dir, 'fremd'), 'unchanged')
+  assert.equal(acknowledgeNotice(dir, noticeKey(notice)), 'cleared')
 }))

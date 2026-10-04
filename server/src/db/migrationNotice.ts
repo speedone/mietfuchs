@@ -49,11 +49,18 @@ export function readNotice(dataDir: string): MigrationNotice | null {
 
 // Weggeklickt. Nur wenn der Schlüssel zu dem passt, was dasteht: Ein Tab von vor einem weiteren
 // Update soll den Hinweis auf die neuere Sicherung nicht wegräumen.
-export function acknowledgeNotice(dataDir: string, key: string): boolean {
+// Scheitert das Entfernen (Datenordner schreibgeschützt), ist das kein Fehler der Anfrage: Der
+// Hinweis kommt dann beim nächsten Start wieder, und `failed` sagt das dem Aufrufer, statt zu werfen.
+// `remove` ist für den Test hineingereicht.
+export function acknowledgeNotice(dataDir: string, key: string, remove: (dataDir: string) => void = clearNotice): 'cleared' | 'unchanged' | 'failed' {
   const notice = readNotice(dataDir)
-  if (!notice || noticeKey(notice) !== key) return false
-  clearNotice(dataDir)
-  return true
+  if (!notice || noticeKey(notice) !== key) return 'unchanged'
+  try {
+    remove(dataDir)
+  } catch {
+    return 'failed'
+  }
+  return 'cleared'
 }
 
 export function clearNotice(dataDir: string): void {

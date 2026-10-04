@@ -880,7 +880,11 @@ niemandem etwas. `umstieg-protokoll.txt` nennt, was übernommen wurde.
   Migration und kommt nicht ins Backup. Weg ist er, wenn „Verstanden“ ihn mit
   `POST /api/database/migrated/seen` meldet (nur mit passendem Schlüssel `Name@Zeitpunkt`), wenn
   ein Backup eingespielt wird oder wenn die genannte Sicherung fehlt. Die Konsole nennt die
-  Sicherung mit vollem Pfad, aber nur beim Start, der sie angelegt hat.
+  Sicherung mit vollem Pfad, aber nur beim Start, der sie angelegt hat. **Entschieden wird erst
+  nach dem Umstieg** (`noteAfterChangeover` in index.ts): Lag eine leere Datenbank eines früher
+  gescheiterten Umstiegs neben der `db.json`, sichert das Nachholen der Schritte einen leeren
+  Stand; nach `done` gibt es deshalb weder Hinweis noch Merkdatei noch Konsolenzeile, nach
+  `failed` in diesem Lauf keinen Hinweis.
 
 **API** ([server/src/index.ts](server/src/index.ts)): generische CRUD-Routen werden in einer
 Schleife für die Collections `units, tenancies, costItems, meters, readings, payments` erzeugt.
