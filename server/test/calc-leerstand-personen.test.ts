@@ -105,11 +105,14 @@ test('Leerstand beim Personenschlüssel: Teiljahr zwischen zwei Mietern', () => 
   // C: X bis 30.04. mit 1 Person (120 Tage), leer 01.05.–31.08. (123 Tage), Y ab 01.09. mit 2
   // Personen (122 Tage = 244 Personentage). Mit einer Person je Leerstandstag ist die Basis
   // 730 + 365 + 120 + 244 + 123 = 1.582:
-  //   A = 60.000 × 730/1.582 = 27.686,47 → 27.686 ct
-  //   B = 60.000 × 365/1.582 = 13.843,24 → 13.843 ct
-  //   X = 60.000 × 120/1.582 =  4.551,20 →  4.551 ct
-  //   Y = 60.000 × 244/1.582 =  9.254,11 →  9.254 ct
-  //   Leerstand = 60.000 × 123/1.582 = 4.664,98 → 4.665 ct, dazu 1 ct Rundung beim Vermieter.
+  //   A = 60.000 × 730/1.582 = 27.686,47 ct
+  //   B = 60.000 × 365/1.582 = 13.843,24 ct
+  //   X = 60.000 × 120/1.582 =  4.551,20 ct
+  //   Y = 60.000 × 244/1.582 =  9.254,11 ct
+  //   Leerstand = 60.000 × 123/1.582 = 4.664,98 ct
+  // Abgerundet 59.998 ct; die zwei Restcent gehen an die größten Reste (#202), den Leerstand (0,98)
+  // und A (0,47): A 27.687, B 13.843, X 4.551, Y 9.254, Leerstand 4.665 ct. Vorher rundete jeder
+  // Mieter für sich (A 27.686), und der eine Cent stand als Rundung beim Vermieter.
   const basis = 730 + 365 + 120 + 244 + 123 * V
   const s = settle({
     units: [unit('A'), unit('B'), unit('C')],
@@ -117,11 +120,10 @@ test('Leerstand beim Personenschlüssel: Teiljahr zwischen zwei Mietern', () => 
     costItems: [muell()],
   })
   assertSound(s, 4)
-  const expected = [730, 365, 120, 244].map((pd) => part(60000, pd, basis))
-  assert.deepEqual(['ta', 'tb', 'tx', 'ty'].map((id) => shareOf(s, id)), expected)
-  assert.equal(s.landlord.totalCents, 60000 - expected.reduce((x, y) => x + y, 0))
-  assert.equal(s.landlord.rows[0]?.landlordParts?.[0]?.reason, 'vacancy')
-  assert.equal(s.landlord.rows[0]?.landlordParts?.[0]?.cents, part(60000, 123 * V, basis))
+  assert.equal(basis, 1582, 'die Zahlen oben gelten für eine Person je Leerstandstag')
+  assert.deepEqual(['ta', 'tb', 'tx', 'ty'].map((id) => shareOf(s, id)), [27687, 13843, 4551, 9254])
+  assert.equal(s.landlord.totalCents, 4665)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'vacancy', cents: 4665 }])
   const row = s.statements.find((x) => x.tenancyId === 'ty')?.rows[0] ?? assert.fail('keine Zeile')
   assert.equal(row.steps?.find((x) => x.label === 'davon Leerstand')?.value, `C: 123 Tage × ${personen(V)} = ${123 * V} Personentage`)
 })

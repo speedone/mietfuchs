@@ -37,6 +37,10 @@ Die Summe der gerundeten Lohnanteile trifft hier den Ausgangsbetrag exakt. Bei R
 Zeile ist das **nicht garantiert**; #11 führt dafür ein Restverfahren ein und bringt einen
 eigenen Test mit Rundungsabweichung mit. Dieses Fixture ergibt mit und ohne #11 dasselbe.
 
+Seit #202 wird der Lohnanteil mit den Kosten verteilt: exakt 70.000 × 1/3 = 23.333,33 ct je
+Mieter, abgerundet 69.999 ct, der Restcent bei Gleichstand nach Kennung an t1. Dasselbe Ergebnis,
+700,00 € gehen genau auf.
+
 Gegenprobe zur falschen Rechnung: Eine Gleichverteilung des Lohnanteils ergäbe 23.333,33 →
 23.333 je Mieter und damit in Summe 69.999 ct — ein Cent des begünstigten Betrags ginge
 verloren.
