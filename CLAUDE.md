@@ -80,7 +80,9 @@ und pusht nach `ghcr.io/speedone/mietfuchs` (Tags: `X.Y.Z`, `X.Y`, `latest`, `ma
 läuft die App ohne Clone des Repos. Bei PRs, die Dockerfile, Abhängigkeiten oder den Workflow
 ändern, baut er nur zur Probe (ohne Login und Push). Die Laufzeit-Stufe übernimmt `server`,
 `client/dist` **und `shared`**. Der Server lädt aus dem Ordner seit #140 auch einen Helfer für die
-Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`); ohne den Ordner startete das Image nicht mehr, und die Prüfläufe
+Laufzeit (`shared/heating.ts`, seit #141 auch `shared/allocation.ts` und `shared/duplicates.ts`,
+seit #170 `shared/costItem.ts`, `shared/assessment.ts` und `shared/categories.ts`); ohne den
+Ordner startete das Image nicht mehr, und die Prüfläufe
 gegen den Start aus dem Quellcode bemerkten es nicht, nur die Prüfung des Images selbst.
 
 **Node-Versionen**: Docker-Image und Release-Build nutzen Node 24, die CI testet zusätzlich die
@@ -938,7 +940,8 @@ eine Regel ändert, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
 Erklärung, Beispiel mit Zahlen, Rechtsgrundlage und „Brauche ich das?“. Es war der **erste
 Laufzeitanteil in `shared/`**; der Client bündelt ihn (dafür `allowImportingTsExtensions` in
 client/tsconfig.json), der Server braucht nur den Typ `TermId`. Seit #140 lädt auch der Server
-einen Laufzeitanteil, [shared/heating.ts](shared/heating.ts): Heizkostenart, § 2 HeizkostenV
+Laufzeitanteile aus `shared/` (seit #141 `allocation.ts` und `duplicates.ts`, seit #170
+`costItem.ts`, `assessment.ts` und `categories.ts`), zuerst [shared/heating.ts](shared/heating.ts): Heizkostenart, § 2 HeizkostenV
 (eine Garage zählt nicht als Wohnung) und welche Wohnung bei welcher Heizposition ohne
 Verbrauchsanteil dasteht. Das Cockpit wendet die Regel nicht selbst an, sondern liest den Hinweis
 `heating.not-by-consumption` der Abrechnung (client/src/meterCheck.ts). Jeder Hinweis-Code in
@@ -1003,8 +1006,8 @@ das Kostenformular beim Neuanlegen („Stattdessen … bearbeiten“) und der Hi
 Der Hinweis der Abrechnung (`possibleDuplicates`, Stufe `hint`, zählt in der
 Ampel) kommt nur, wenn eine Position der Gruppe keinen Beleg hat und dazu (a) eine einen Beleg
 hat oder (b) das Vorjahr Positionen dieser Art hatte und das Jahr mehr hat. Ohne Vorjahr und ganz
-ohne Belege bleibt er still, ebenso Restmüll und Biomüll, beide übernommen. Gezählt wird im Jahr des Belegs (`entry.detectedYear`),
-nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
+ohne Belege bleibt er still, ebenso Restmüll und Biomüll, beide übernommen. Gezählt wird im Jahr des Belegs (`detectedYear` in
+server/src/assessment.ts, gespeichert als `assessments.detected_year`), nicht im gewählten, denn im Januar steht die Auswahl oft noch auf dem Vorjahr. Der Schnappschuss
 führt dafür `vendor` und `invoiceFile`; verteilt wird nach keinem.
 
 **Belegbuchung** (#170, Entwurf in
@@ -1025,7 +1028,15 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   wiederverwendet: Erneutes Auswerten ersetzt nur offene und verworfene Zeilen, gebuchte bleiben
   mit ihren Nummern, neue bekommen nie benutzte, und eine Zeile, die einer gebuchten gleicht,
   kommt nicht wieder. Die Routen sprechen Zeilen über diese Nummer an, eine wiederverwendete
-  Nummer träfe die falsche Zeile.
+  Nummer träfe die falsche Zeile. **„Gleicht einer gebuchten“ reicht dabei nicht** (`withoutBooked`
+  vergleicht Betrag und Beschreibung oder Kostenart): Eine von Hand berichtigte Zeile oder eine,
+  die die KI anders aufteilt, kam als neue grüne Zeile wieder und wurde mit „Alle grünen
+  übernehmen“ ein zweites Mal gebucht (Integrationsdurchsicht H1, nachgemessen 2.250 € statt
+  1.550 €). Zeilen, die beim erneuten Auswerten **neben gebuchten** dazukommen, tragen deshalb
+  `reassessed`; für sie sind die schon aus diesem Beleg gebuchten Positionen Kandidaten, gleich
+  welcher Kostenart, die Zeile ist rot („Dieser Beleg ist schon gebucht …“), und Anlegen braucht
+  die Bestätigung. Für die Zeilen der ersten Auswertung gilt das nicht, sonst stünde Abwasser rot,
+  sobald Frischwasser gebucht ist.
   Neben den Spalten der Spezifikation stehen `detected_year` (Ampel „Rechnungsjahr ≠ Zieljahr“),
   `requested_year` (das gewählte Jahr: beim Auswerten mitgeschickt, nach einem `PUT` mit Jahr das
   gesetzte; weicht `year` davon ab, ist die Zeile gelb und nicht vorab angehakt, und „Alle grünen
@@ -1051,6 +1062,10 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   gebucht ist, ist sie Kandidat jeder seiner Zeilen, unabhängig von der Kostenart
   (`lineCandidates` in server/src/assessment.ts, Ansicht und Rückfrage des Planers fragen dieselbe
   Regel): Die Zeile ist rot („Dieser Beleg hängt schon an …“), Anlegen braucht die Bestätigung.
+  **Dasselbe gilt für einen Beleg gleichen Inhalts** (gleiche Prüfsumme), der von Hand an einer
+  Position hängt (Integrationsdurchsicht H2): Vorher prüften `twinOf` und der Planer nur gebuchte
+  Zeilen, und las die KI eine andere Kostenart, stand dieselbe Rechnung grün und vorab angehakt
+  da.
   Verwerfen ergibt einen Hinweis je Zeile, damit Vorschau und Erfolgsmeldung nie leer sind.
   **Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war**
   (und keine Zeile dieser Datei bleibt); ein von Hand angehängter Beleg bleibt, die Vorschau

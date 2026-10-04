@@ -78,9 +78,9 @@ const bodyObject = (req: Request): Record<string, unknown> => (isObject(req.body
 const filesOf = (req: Request): Record<string, Express.Multer.File[]> =>
   req.files && !Array.isArray(req.files) ? req.files : {}
 
-// Belege landen im Belegarchiv auf der Platte. Seitenbilder, die der Browser aus einem
+// Belege landen im Belegordner auf der Platte. Seitenbilder, die der Browser aus einem
 // gescannten PDF rendert (Feld `pages`), braucht nur die KI-Auswertung: Sie bleiben im
-// Arbeitsspeicher und tauchen nie im Belegarchiv auf.
+// Arbeitsspeicher und tauchen nie im Belegordner auf.
 const diskStore = multer.diskStorage({
   destination: UPLOAD_DIR,
   filename: (req, file, cb) => {
@@ -1077,7 +1077,7 @@ app.put('/api/uploads/:file', async (req, res) => {
 // Beleg löschen — nur wenn keine Kostenposition mehr darauf verweist.
 //
 // **Gefragt wird die Datenbank und nicht die db.json.** Die Frage nach der Verknüpfung ist die
-// einzige Sicherung, die zwischen einem Klick im Belegarchiv und einer gelöschten Rechnung
+// einzige Sicherung, die zwischen einem Klick im Belegordner und einer gelöschten Rechnung
 // steht. Fragte sie weiter die Datei, sähe sie nach dem Umstieg einen leeren Bestand, jeder
 // Beleg gälte als unbenutzt, und der Klick löschte die Rechnung unter einer Kostenposition weg.
 app.delete('/api/uploads/:file', async (req, res) => {
@@ -1305,7 +1305,7 @@ function readBackup(buffer: Buffer): ReadBackup {
   return {
     dbText,
     // Die Zeit des Eintrags kommt mit (#142): Ohne sie trüge jeder Beleg danach das Datum der
-    // Wiederherstellung, und im Belegarchiv sähe eine alte Rechnung aus wie eben hochgeladen.
+    // Wiederherstellung, und im Belegordner sähe eine alte Rechnung aus wie eben hochgeladen.
     files: files.map(({ fileName, e }) => ({ fileName, content: e.getData(), time: e.header.time })),
     database: databaseEntry ? databaseEntry.getData() : null,
     origin: originText(info),

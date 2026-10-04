@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "81639625-cf7d-46d1-8b0f-55868dd6c507",
+  "id": "8be4d554-e23f-4f85-b0cb-2b45b9882877",
   "prevId": "bf580a7a-80c7-47a4-9a0d-ce7ac3c0f6de",
   "tables": {
     "ai_slots": {
@@ -155,6 +155,14 @@
         },
         "dismissed": {
           "name": "dismissed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "reassessed": {
+          "name": "reassessed",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

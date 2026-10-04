@@ -66,6 +66,7 @@ function viewOf(record: AssessmentRecord, ctx: Context): AssessmentView {
     propertyKind: ctx.stock.properties.find((p) => p.id === a.propertyId)?.kind ?? null,
     originalName: nameOf(ctx, a.file),
     twinOf: twin ? nameOf(ctx, twin.file) : null,
+    twinNames: new Map(twins.map((f) => [f, nameOf(ctx, f)])),
     booked: ctx.booked,
   })
 }
@@ -97,10 +98,11 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
   const ctx = await contextOf(db)
   if (!exists(uploadDir, record.assessment.file)) throw new BookingRefusal(404, fileGone(nameOf(ctx, record.assessment.file)))
   const scoped = scopeOf(ctx, record.assessment.propertyId)
+  const twinFiles = twinFilesOf(ctx, record.assessment.file)
   const planned = planBooking({
     assessment: record.assessment, lines: record.lines, items: ctx.stock.costItems, booked: ctx.booked,
-    units: scoped?.units ?? [], twinFiles: twinFilesOf(ctx, record.assessment.file),
-    fileNames: new Map(ctx.booked.map((l) => [l.file, nameOf(ctx, l.file)])),
+    units: scoped?.units ?? [], twinFiles,
+    fileNames: new Map([...ctx.booked.map((l) => l.file), ...twinFiles].map((f) => [f, nameOf(ctx, f)])),
   }, decisions, newId)
   return { record, ctx, planned }
 }

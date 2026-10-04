@@ -336,7 +336,7 @@ const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
     idx: 0, description: 'Hausmeister', category: 'Hauswart', categoryGuessed: false, amountCents: 30000, labor35aCents: null,
-    booking: null, costItemId: null, dismissed: false, state: 'open', itemDescription: null,
+    booking: null, costItemId: null, dismissed: false, reassessed: false, state: 'open', itemDescription: null,
     suggestion: {
       fields: { description: 'Hausmeister', category: 'Hauswart', amountCents: 30000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null, ...fields },
       candidates: [], level: 'gelb', reasons: [], preselected: false, ...extra,

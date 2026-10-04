@@ -23,7 +23,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
     records.flatMap((r) => r.lines.filter((l) => l.costItemId !== null).map((l) => ({ ...l, file: r.assessment.file })))
   const view = (r: Stored): AssessmentView => describeAssessment(r, {
     items: items.filter((i) => i.propertyId === propertyId), units: start.units, meters: start.meters ?? [], propertyKind: 'mfh',
-    originalName: r.assessment.file, twinOf: null, booked: booked(),
+    originalName: r.assessment.file, twinOf: null, twinNames: new Map(), booked: booked(),
   })
   const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 
@@ -60,7 +60,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
           amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
         },
-        lines: fresh.map((l, idx) => ({ ...l, assessmentId: id, idx, booking: null, costItemId: null, dismissed: false })),
+        lines: fresh.map((l, idx) => ({ ...l, assessmentId: id, idx, booking: null, costItemId: null, dismissed: false, reassessed: false })),
       }
       records.push(r)
       return view(r)

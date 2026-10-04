@@ -56,23 +56,55 @@ export function candidatePool<T extends Pick<CostItem, 'id' | 'amountCents'>>(
 // eine Zeile gebucht ist (Schlussdurchsicht, M3). Ohne diese Regel legte eine Zeile derselben
 // Rechnung still eine zweite Position an, wenn ihre Kostenart von der Position abweicht. Als Ziel
 // zum Verknüpfen taugen davon nur die aus derselben Menge und demselben Jahr; die Warnung nennt alle.
+//
+// Zwei weitere Arten, auf dieselbe Weise behandelt (Integrationsdurchsicht des Stapels):
+// - `twin`: Positionen, an denen von Hand ein **anderer Beleg mit gleichem Inhalt** hängt (H2).
+//   Gleiche Prüfsumme heißt dieselbe Rechnung, gleich welche Kostenart die KI diesmal liest.
+// - `own`: die schon aus **diesem** Beleg gebuchten Positionen, aber nur für eine Zeile, die bei
+//   einer erneuten Auswertung dazukam (`reassessed`, H1). `withoutBooked` erkennt eine von Hand
+//   berichtigte oder anders aufgeteilte Zeile nicht als gebucht; ohne diese Regel stünde sie grün
+//   und vorab angehakt da. Für die Zeilen der ersten Auswertung gilt sie nicht: Frischwasser und
+//   Abwasser sind zwei Zeilen einer Rechnung, auch wenn eine davon schon gebucht ist.
 // `others` sind die Positionen des Objekts ohne die aus dieser Auswertung gebuchten.
+export type ReceiptHolders<T> = { attached: T[]; twin: T[]; own: T[] }
 export function lineCandidates<T extends CostItem>(
   others: readonly T[],
   a: Pick<StoredAssessment, 'propertyId' | 'year' | 'vendor' | 'file'>,
   line: { category: string; description: string; amountCents: number | null },
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[],
-): { candidates: T[]; attached: T[] } {
-  if (a.propertyId === null) return { candidates: [], attached: [] }
+  receipt: { own: readonly T[]; twinFiles: readonly string[] } = { own: [], twinFiles: [] },
+): { candidates: T[] } & ReceiptHolders<T> {
+  if (a.propertyId === null) return { candidates: [], attached: [], twin: [], own: [] }
   const attached = others.filter((i) => i.invoiceFile === a.file)
+  const twin = others.filter((i) => !!i.invoiceFile && i.invoiceFile !== a.file && receipt.twinFiles.includes(i.invoiceFile))
+  const own = [...receipt.own]
   const pool = candidatePool(others, line.amountCents, booked)
+  const ownPool = candidatePool(own, line.amountCents, booked)
   const same = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor: a.vendor ?? '' })
-  const extra = attached.filter((i) => i.year === a.year && pool.includes(i) && !same.includes(i))
-  return { candidates: [...extra, ...same], attached }
+  const extra = [...own.filter((i) => ownPool.includes(i)), ...[...attached, ...twin].filter((i) => pool.includes(i))]
+    .filter((i) => i.year === a.year && !same.includes(i))
+  return { candidates: [...extra, ...same], attached, twin, own }
 }
 
 export const attachedText = (attached: readonly Pick<CostItem, 'description'>[]): string =>
   `Dieser Beleg hängt schon an ${attached.map((i) => `„${i.description}“`).join(', ')}.`
+
+const quoted = (items: readonly Pick<CostItem, 'description'>[]): string => items.map((i) => `„${i.description}“`).join(', ')
+
+// Die Begründungen zu `ReceiptHolders`, für die Ampel der Ansicht. `nameOf` nennt einen Beleg so,
+// wie der Nutzer ihn kennt.
+export function holderReasons(h: ReceiptHolders<Pick<CostItem, 'description' | 'invoiceFile'>>, nameOf: (file: string) => string): string[] {
+  const out: string[] = []
+  if (h.own.length > 0) out.push(`Dieser Beleg ist schon gebucht (an ${quoted(h.own)}). Ist die Zeile darin enthalten, verwerfen Sie sie.`)
+  if (h.attached.length > 0) out.push(attachedText(h.attached))
+  if (h.twin.length > 0) out.push(twinText(h.twin, nameOf))
+  return out
+}
+
+export function twinText(twin: readonly Pick<CostItem, 'description' | 'invoiceFile'>[], nameOf: (file: string) => string): string {
+  const files = [...new Set(twin.flatMap((i) => (i.invoiceFile ? [i.invoiceFile] : [])))]
+  return `Ein Beleg mit gleichem Inhalt (${files.map((f) => `„${nameOf(f)}“`).join(', ')}) hängt schon an ${quoted(twin)}.`
+}
 
 // Die Positionen, die aus dieser Auswertung gebucht sind. Sie sind für ihre übrigen Zeilen keine
 // Doppelung: Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
@@ -160,6 +192,8 @@ export type DescribeContext = {
   originalName: string
   // Name eines anderen Belegs mit gleichem Inhalt, der schon gebucht ist
   twinOf: string | null
+  // Alle anderen Belege mit gleichem Inhalt, Datei → Name (H2: auch von Hand angehängte)
+  twinNames: ReadonlyMap<string, string>
   // Alle gebuchten Zeilen (für `carriesCredit`)
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[]
 }
@@ -167,7 +201,7 @@ export type DescribeContext = {
 // Der Vorschlag zu einer offenen oder verworfenen Zeile: Schlüssel aus dem Vorjahr, Kandidaten
 // nach der Doppelungsregel, Ampel und ob die Zeile vorab angehakt ist. Dieselben Regeln wie
 // bisher in der Schnellerfassung, jetzt für alle drei Wege.
-function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ctx: DescribeContext): LineSuggestion {
+function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ownItems: readonly CostItem[], ctx: DescribeContext): LineSuggestion {
   const vendor = a.vendor ?? ''
   const defaults = aiPositionDefaults(line.category, ctx.units, ctx.meters, { items: ctx.items, year: a.year, propertyKind: ctx.propertyKind }, line.description)
   const fields: LineFields = {
@@ -175,7 +209,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     key: defaults.key, allocation: defaults.allocation, externalTotalCents: null,
   }
   const pool = candidatePool(others, line.amountCents, ctx.booked)
-  const { candidates, attached } = lineCandidates(others, a, line, ctx.booked)
+  const { candidates, ...holders } = lineCandidates(others, a, line, ctx.booked, { own: line.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
   const amount = line.amountCents ?? 0
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
@@ -194,9 +228,10 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     if (level === 'gruen') level = 'gelb'
     reasons.push(`Beleg aus ${a.year}, gewählt war ${a.requestedYear} — gebucht wird in ${a.year}; sonst das Jahr der Buchung ändern`)
   }
-  if (attached.length > 0) {
+  const held = holderReasons(holders, (f) => ctx.twinNames.get(f) ?? f)
+  if (held.length > 0) {
     level = 'rot'
-    reasons.push(attachedText(attached))
+    reasons.push(...held)
   }
   if (problem !== null) {
     level = 'rot'
@@ -226,6 +261,7 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
   const a = record.assessment
   const own = new Set(ownItemIds(record.lines))
   const others = ctx.items.filter((i) => !own.has(i.id))
+  const ownItems = ctx.items.filter((i) => own.has(i.id))
   const lines: AssessmentLine[] = record.lines.map((l) => {
     const state = lineState(l)
     const { assessmentId: _assessmentId, ...rest } = l
@@ -233,7 +269,7 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
       ...rest,
       state,
       itemDescription: l.costItemId ? ctx.items.find((i) => i.id === l.costItemId)?.description ?? null : null,
-      suggestion: state === 'open' || state === 'dismissed' ? suggestLine(l, a, others, ctx) : null,
+      suggestion: state === 'open' || state === 'dismissed' ? suggestLine(l, a, others, ownItems, ctx) : null,
     }
   })
   const sum = record.lines.reduce((s, l) => s + (l.amountCents ?? 0), 0)

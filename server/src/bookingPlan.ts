@@ -17,7 +17,7 @@ import type { Allocation } from '../../shared/allocation.ts'
 import { amountProblem, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
-import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, type BookedLine, type LineChange } from './assessment.ts'
+import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, twinText, type BookedLine, type LineChange } from './assessment.ts'
 
 export type PlanInput = {
   assessment: StoredAssessment
@@ -122,11 +122,16 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       if (!d.despiteCandidates) {
         const pool = candidatePool(others, body.amountCents, input.booked)
         const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: body.category, description: body.description, vendor: a.vendor ?? '' })
-        // Dieselbe Regel wie in der Ansicht (lineCandidates): Hängt dieser Beleg schon an einer
-        // Position, gleich welcher Kostenart, ist die Rechnung womöglich schon erfasst.
-        const { attached } = lineCandidates(others, a, body, input.booked)
-        if (attached.length > 0) {
-          confirm.push({ idx: d.idx, message: `${attachedText(attached)} Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verknüpfen Sie sie besser oder verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
+        // Dieselbe Regel wie in der Ansicht (lineCandidates): Hängt dieser Beleg, ein Beleg gleichen
+        // Inhalts oder (bei einer erneuten Auswertung) eine schon gebuchte Zeile dieses Belegs an
+        // einer Position, gleich welcher Kostenart, ist die Rechnung womöglich schon erfasst.
+        const ownItems = line.reassessed ? input.items.filter((i) => own.has(i.id)) : []
+        const held = lineCandidates(others, a, body, input.booked, { own: ownItems, twinFiles: input.twinFiles })
+        if (held.own.length > 0) {
+          confirm.push({ idx: d.idx, message: `Dieser Beleg ist schon gebucht (an ${held.own.map((i) => quote(i.description)).join(', ')}). Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
+        } else if (held.attached.length > 0 || held.twin.length > 0) {
+          const texts = [...(held.attached.length > 0 ? [attachedText(held.attached)] : []), ...(held.twin.length > 0 ? [twinText(held.twin, (f) => input.fileNames.get(f) ?? f)] : [])]
+          confirm.push({ idx: d.idx, message: `${texts.join(' ')} Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verknüpfen Sie sie besser oder verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
         } else if (candidates.length > 0 && body.amountCents < 0) {
           // Eine Gutschrift wird nie verknüpft; die Rückfrage rät deshalb nicht dazu.
           confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, eine Gutschrift derselben Kostenart wie ${quote(body.description)}. Ist es dieselbe Gutschrift, legen Sie sie nicht noch einmal an, sonst wird sie zweimal abgezogen. Ist es eine zweite Gutschrift, legen Sie sie als neue Position an.` })
@@ -195,6 +200,10 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       if (input.booked.some((l) => l.costItemId === target.id && input.twinFiles.includes(l.file))) {
         errors.push({ idx: d.idx, message: `${quote(target.description)} enthält diesen Beleg schon: Ein Beleg mit gleichem Inhalt ist mit ihr verknüpft. Ein zweites Verknüpfen zählte die Rechnung doppelt.` })
         continue
+      }
+      if (line.reassessed && own.has(target.id)) {
+        // Erlaubt, denn es kann eine weitere Zeile derselben Rechnung sein; aber nie ungesagt (H1).
+        notices.push(`${quote(target.description)} enthält schon gebuchte Zeilen dieses Belegs. Ist ${named(line)} darin enthalten, zählt sie nach dem Verknüpfen doppelt; verwerfen Sie sie dann besser.`)
       }
       after.set(d.idx, { ...changeOf(line), booking: 'linked', costItemId: target.id, dismissed: false, amountCents: amount, labor35aCents: labor })
       if (!touched.includes(target.id)) touched.push(target.id)

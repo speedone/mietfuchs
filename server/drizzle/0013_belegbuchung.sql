@@ -9,6 +9,7 @@ CREATE TABLE `assessment_lines` (
 	`booking` text,
 	`cost_item_id` text,
 	`dismissed` integer DEFAULT false NOT NULL,
+	`reassessed` integer DEFAULT false NOT NULL,
 	PRIMARY KEY(`assessment_id`, `idx`),
 	FOREIGN KEY (`assessment_id`) REFERENCES `assessments`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`cost_item_id`) REFERENCES `cost_items`(`id`) ON UPDATE no action ON DELETE set null,
