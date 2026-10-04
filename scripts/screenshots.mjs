@@ -66,7 +66,7 @@ async function startServer(dataDir, ollamaUrl) {
       NKA_DATA_DIR: dataDir,
       NKA_PORT: String(port),
       NKA_OLLAMA_URL: ollamaUrl,
-      NKA_OLLAMA_MODEL: 'probe:latest',
+      NKA_OLLAMA_MODEL: 'qwen3.5:4b',
       // Nach dem `...env` des Aufrufers, damit nichts davon überschrieben wird (CLAUDE.md)
       CI: '1',
       NKA_UPDATE_URL: 'http://127.0.0.1:9/',
