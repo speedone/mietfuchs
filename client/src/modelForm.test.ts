@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { AiModel } from './types'
-import { OTHER_MODEL, fmtSize, pullInstructions, modelHint, modelOptions } from './modelForm'
+import { OTHER_MODEL, fmtSize, pullInstructions, modelHint, modelOptions, modelsAvailableText } from './modelForm'
 
 const withVision: AiModel = { name: 'bild:4b', sizeBytes: 3_400_000_000, vision: true, remote: false }
 const textOnly: AiModel = { name: 'text:8b', sizeBytes: 5_000_000_000, vision: false, remote: false }
@@ -110,4 +110,11 @@ describe('OpenAI-kompatible Dienste', () => {
     expect(options[0]).toEqual({ value: 'eigenes-modell', label: 'eigenes-modell (nicht in der Liste des Dienstes)' })
     expect(modelHint(SERVICE, 'eigenes-modell', 'openai')).toBe('missing')
   })
+})
+
+// Abnahme B4: „ein Modell stehen zur Wahl“. Das Verb folgt der Anzahl.
+test('Antwort des Dienstes: Ein- und Mehrzahl stimmen', () => {
+  expect(modelsAvailableText(0)).toBe('Der Dienst antwortet, nennt aber kein Modell.')
+  expect(modelsAvailableText(1)).toBe('Der Dienst antwortet, ein Modell steht zur Wahl.')
+  expect(modelsAvailableText(3)).toBe('Der Dienst antwortet, 3 Modelle stehen zur Wahl.')
 })
