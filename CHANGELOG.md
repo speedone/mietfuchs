@@ -26,6 +26,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Lange Objektnamen in der Seitenleiste.** Die Auswahl „Objekt“ schnitt lange Namen ab. Der
   Name steht jetzt vollständig da und bricht bei Bedarf in die nächste Zeile um; der Tooltip
   bleibt. ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Ampel zum Vorjahr, wenn eine Rechnung in zwei Belegen kommt.** Zeilen, die dieselbe Schätzung
+  ersetzen, rechneten bisher nur innerhalb eines Belegs gemeinsam. Kommt etwa die Wasserrechnung in
+  zwei Belegen zu 700 € und 800 € gegen eine Schätzung von 1.500 €, zeigte jeder Beleg für sich eine
+  Abweichung, als ersetze er die Schätzung allein (bei 1.400 € im Vorjahr −50 % und −43 %). Jetzt
+  rechnen die offenen Zeilen aller Belege des Objekts zusammen, und beide zeigen dieselbe Zahl:
+  +7 %. ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ## [0.10.0] – 2026-10-04
 

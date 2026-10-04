@@ -10,7 +10,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { AssessmentView, BookingPreview, CostItem, LineDecision } from '../../../shared/types.ts'
-import { describeAssessment, type BookedLine } from '../assessment.ts'
+import { describeAssessment, openTargets, type BookedLine, type OpenTarget } from '../assessment.ts'
 import { planBooking, previewWith, settle, tokenSource, type BookingOutcome, type Planned } from '../bookingPlan.ts'
 import { narrowToProperty } from '../snapshot.ts'
 import type { Database } from './client.ts'
@@ -54,7 +54,27 @@ function twinFilesOf(ctx: Context, file: string): string[] {
 
 const scopeOf = (ctx: Context, propertyId: string | null) => (propertyId ? narrowToProperty(ctx.stock, propertyId) : null)
 
-function viewOf(record: AssessmentRecord, ctx: Context): AssessmentView {
+const twinNamesOf = (ctx: Context, file: string): Map<string, string> => new Map(twinFilesOf(ctx, file).map((f) => [f, nameOf(ctx, f)]))
+
+// Die offenen Zeilen der übrigen Auswertungen desselben Objekts mit eindeutigem Ziel (#170): Kommt
+// eine Rechnung in zwei Belegen, ersetzen ihre Zeilen gemeinsam dieselbe Schätzung, und die Ampel
+// rechnet sie zusammen (`peerTargets` in assessment.ts).
+function peerTargetsOf(record: AssessmentRecord, peers: readonly AssessmentRecord[], ctx: Context): OpenTarget[] {
+  const scoped = scopeOf(ctx, record.assessment.propertyId)
+  if (!scoped) return []
+  return peers
+    .filter((p) => p.assessment.id !== record.assessment.id && p.assessment.propertyId === record.assessment.propertyId)
+    .flatMap((p) => openTargets(p, { items: scoped.costItems, booked: ctx.booked, twinNames: twinNamesOf(ctx, p.assessment.file) }))
+}
+
+// Die Auswertungen des Objekts, deren Beleg noch im Belegordner liegt, wie in `viewAssessments`.
+async function peersOf(db: Database, record: AssessmentRecord, uploadDir: string): Promise<AssessmentRecord[]> {
+  const propertyId = record.assessment.propertyId
+  if (!propertyId) return []
+  return (await listAssessments(db, propertyId)).filter((r) => exists(uploadDir, r.assessment.file))
+}
+
+function viewOf(record: AssessmentRecord, ctx: Context, peers: readonly AssessmentRecord[]): AssessmentView {
   const a = record.assessment
   const scoped = scopeOf(ctx, a.propertyId)
   const twins = twinFilesOf(ctx, a.file)
@@ -68,15 +88,16 @@ function viewOf(record: AssessmentRecord, ctx: Context): AssessmentView {
     twinOf: twin ? nameOf(ctx, twin.file) : null,
     twinNames: new Map(twins.map((f) => [f, nameOf(ctx, f)])),
     booked: ctx.booked,
+    peerTargets: peerTargetsOf(record, peers, ctx),
   })
 }
 
 // Die Auswertungen eines Objekts, ohne die, deren Datei nicht mehr im Belegordner liegt.
 export async function viewAssessments(db: Database, propertyId: string, openOnly: boolean, uploadDir: string): Promise<AssessmentView[]> {
   const ctx = await contextOf(db)
-  return (await listAssessments(db, propertyId))
-    .filter((r) => exists(uploadDir, r.assessment.file))
-    .map((r) => viewOf(r, ctx))
+  const records = (await listAssessments(db, propertyId)).filter((r) => exists(uploadDir, r.assessment.file))
+  return records
+    .map((r) => viewOf(r, ctx, records))
     .filter((v) => !openOnly || v.open)
 }
 
@@ -85,11 +106,11 @@ export async function viewAssessment(db: Database, id: string, uploadDir: string
   if (!record) throw new BookingRefusal(404, NOT_FOUND)
   const ctx = await contextOf(db)
   if (!exists(uploadDir, record.assessment.file)) throw new BookingRefusal(404, fileGone(nameOf(ctx, record.assessment.file)))
-  return viewOf(record, ctx)
+  return viewOf(record, ctx, await peersOf(db, record, uploadDir))
 }
 
-export async function viewRecord(db: Database, record: AssessmentRecord): Promise<AssessmentView> {
-  return viewOf(record, await contextOf(db))
+export async function viewRecord(db: Database, record: AssessmentRecord, uploadDir: string): Promise<AssessmentView> {
+  return viewOf(record, await contextOf(db), await peersOf(db, record, uploadDir))
 }
 
 async function plannedFor(db: Database, id: string, decisions: readonly LineDecision[], uploadDir: string, newId: () => string) {

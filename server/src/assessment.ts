@@ -224,6 +224,39 @@ export type DescribeContext = {
   twinNames: ReadonlyMap<string, string>
   // Alle gebuchten Zeilen (für `carriesCredit`)
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[]
+  // Offene Zeilen **anderer** Auswertungen desselben Objekts, die eine Schätzung eindeutig ersetzen
+  // (`openTargets`). Sie rechnen mit den eigenen gemeinsam (#170, Abnahme): Kommt die Wasserrechnung
+  // in zwei Belegen, ersetzen beide zusammen dieselbe Schätzung.
+  peerTargets?: readonly OpenTarget[]
+}
+
+// Eine offene Zeile, die beim Verknüpfen genau eine Schätzung ersetzte (`replacedByLinking`).
+export type OpenTarget = { assessmentId: string, idx: number, costItemId: string, amountCents: number }
+
+type TargetContext = Pick<DescribeContext, 'items' | 'booked' | 'twinNames'>
+
+// Die Position, die jede offene oder verworfene Zeile beim Verknüpfen ersetzte, nach Zeile.
+function targetsOf(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext): Map<number, CostItem | null> {
+  const a = record.assessment
+  const own = new Set(ownItemIds(record.lines))
+  const others = ctx.items.filter((i) => !own.has(i.id))
+  const ownItems = ctx.items.filter((i) => own.has(i.id))
+  return new Map(record.lines.filter((l) => lineState(l) === 'open' || lineState(l) === 'dismissed').map((l) => {
+    const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
+    return [l.idx, replacedByLinking(candidates, l, a.year, ctx.booked)] as const
+  }))
+}
+
+// Die offenen Zeilen einer Auswertung mit eindeutigem Ziel, für `peerTargets` der anderen.
+// Verworfene zählen nicht mit, sie werden nie verknüpft.
+export function openTargets(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext): OpenTarget[] {
+  const targets = targetsOf(record, ctx)
+  return record.lines.flatMap((l) => {
+    const target = targets.get(l.idx)
+    return lineState(l) === 'open' && target
+      ? [{ assessmentId: record.assessment.id, idx: l.idx, costItemId: target.id, amountCents: l.amountCents ?? 0 }]
+      : []
+  })
 }
 
 // Der Vorschlag zu einer offenen oder verworfenen Zeile: Schlüssel aus dem Vorjahr, Kandidaten
@@ -297,16 +330,17 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
   // Zeilen) gegen das Vorjahr. Jede Zeile für sich neben der Schätzung zeigte zu viel (Wasser 700 €
   // und 800 € gegen eine Schätzung von 1.500 € bei 1.400 € im Vorjahr: +57 % und +64 % statt +7 %),
   // jede für sich an Stelle der Schätzung zu wenig (700 € und 700 € gegen 700 €: 0 % statt +100 %).
-  const targetOf = new Map(record.lines.filter((l) => lineState(l) === 'open' || lineState(l) === 'dismissed').map((l) => {
-    const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
-    return [l.idx, replacedByLinking(candidates, l, a.year, ctx.booked)] as const
-  }))
+  // Dasselbe über Belege hinweg (`peerTargets`): Kommen die 700 € und die 800 € in zwei Belegen,
+  // rechnen die offenen Zeilen beider Auswertungen gemeinsam.
+  const targetOf = targetsOf(record, ctx)
+  const peers = (ctx.peerTargets ?? []).filter((p) => p.assessmentId !== a.id)
   const deviationBasis = (l: StoredAssessmentLine): { amountCents: number, replacedCents: number } => {
     const own = l.amountCents ?? 0
     const target = targetOf.get(l.idx)
     if (!target) return { amountCents: own, replacedCents: 0 }
     const together = record.lines.filter((o) => o.idx !== l.idx && lineState(o) === 'open' && targetOf.get(o.idx)?.id === target.id)
-    return { amountCents: own + together.reduce((sum, o) => sum + (o.amountCents ?? 0), 0), replacedCents: target.amountCents }
+    const fromPeers = peers.filter((p) => p.costItemId === target.id).reduce((sum, p) => sum + p.amountCents, 0)
+    return { amountCents: own + together.reduce((sum, o) => sum + (o.amountCents ?? 0), 0) + fromPeers, replacedCents: target.amountCents }
   }
   const lines: AssessmentLine[] = record.lines.map((l) => {
     const state = lineState(l)

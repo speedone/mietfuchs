@@ -11,7 +11,7 @@ import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { closeSettlement, createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment, type AssessmentRecord, type NewAssessment } from '../src/db/assessments.ts'
-import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, type BookingOutcome } from '../src/db/booking.ts'
+import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, type BookingOutcome } from '../src/db/booking.ts'
 import { parseDecisions } from '../src/bookingPlan.ts'
 import { recordUpload } from '../src/db/uploads.ts'
 import type { NewLine } from '../src/assessment.ts'
@@ -706,5 +706,23 @@ test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt 
     await estimate(w, 'wb', { description: 'Wasser B' })
     const p2 = await plan(w, gleich, [link(0, 'wb')])
     assert.equal(p2.notices.some((n) => n.includes('abgeschlossen')), false, JSON.stringify(p2.notices))
+  })
+})
+
+test('Ampel über zwei Belege (#170): die Ansicht rechnet offene Zeilen beider Auswertungen gegen dieselbe Schätzung', async () => {
+  await withWorld(async (w) => {
+    // Vorjahr 1.000 €, Schätzung 1.500 €, die Rechnung kommt in zwei Belegen à 700 € und 800 €:
+    // zusammen 1.500 € gegen 1.000 €, +50 % bei beiden. Jeder für sich ergäbe −30 % und −20 %.
+    await estimate(w, 'vj', { year: 2024, amountCents: 100000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'wa')
+    const erster = await receipt(w, 'wasser-1.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    const zweiter = await receipt(w, 'wasser-2.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
+    for (const r of [erster, zweiter]) {
+      const reasons = (await view(w, r)).lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+      assert.ok(reasons.includes('+50 % gegenüber Vorjahr'), `${r.assessment.file}: ${reasons.join(' | ')}`)
+    }
+    const liste = await w.opened.read((db) => viewAssessments(db, 'objekt-1', true, w.uploadDir))
+    assert.equal(liste.length, 2)
+    for (const v of liste) assert.ok(v.lines[0]?.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `${v.file}: ${v.lines[0]?.suggestion?.reasons.join(' | ')}`)
   })
 })

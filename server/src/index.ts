@@ -873,7 +873,7 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         const placement: Placement = row?.propertyId ? { year: record.assessment.year } : { year: record.assessment.year, propertyId: record.assessment.propertyId }
         await placeUpload(db, file.filename, placement, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
       }
-      return viewRecord(db, record)
+      return viewRecord(db, record, UPLOAD_DIR)
     })
   } catch (err) {
     console.warn(`Die Auswertung zu ${file.filename} ließ sich nicht speichern: ${messageOf(err)}`)
