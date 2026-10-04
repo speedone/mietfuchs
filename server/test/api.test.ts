@@ -4485,6 +4485,44 @@ test('Belege für die Steuer (#170): ein ZIP je Objekt und Jahr nach Gruppen der
   })
 })
 
+test('Belege für die Steuer: die Übersicht teilt jede Position in privat und abziehbar wie die Steuerübersicht (#163)', async () => {
+  // Integrationsdurchsicht: Die CSV im ZIP nannte nur den Bruttobetrag. Bei teilweiser
+  // Eigennutzung weist die Steuerübersicht privat und abziehbar getrennt aus, und gerade diese
+  // Aufteilung braucht der Steuerberater neben den Belegen.
+  await withProperties(async (s) => {
+    const unit = (body: Record<string, unknown>) => s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify(body) })
+    const eigen = await unit({ name: 'Eigen', areaM2: 60, participates: false, selfUsed: true })
+    await unit({ name: 'Vermietet', areaM2: 40, participates: true })
+    const post = (body: Record<string, unknown>) =>
+      s.api<CostItem>('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({ year: 2025, key: 'area', amountCents: 10000, ...body }) })
+    await post({ category: 'Grundsteuer', description: 'GS', amountCents: 50000 })
+    await post({ category: 'Nicht umlagefähig', description: 'Dach', amountCents: 200000 })
+    await post({ category: 'Nicht umlagefähig', description: 'Bad Eigen', amountCents: 80000, key: 'direct', directUnitId: eigen.id })
+
+    const tax = await s.api<TaxReport>('/api/taxreport/2025?property=objekt-1')
+    assert.ok(tax.expenses.privateCents > 0, 'Vorbedingung: es gibt einen privaten Teil')
+    const res = await fetch(`${s.base}/api/receipts/tax/2025?property=objekt-1`)
+    assert.equal(res.status, 200)
+    const zip = new AdmZip(Buffer.from(await res.arrayBuffer()))
+    const [head, ...rows] = zip.readAsText('Übersicht.csv').replace(/^\uFEFF/, '').trim().split('\r\n').map((z) => z.split(';'))
+    if (!head) return assert.fail('Übersicht ohne Kopfzeile')
+    const col = (name: string) => {
+      const i = head.indexOf(name)
+      if (i < 0) assert.fail(`Spalte „${name}“ fehlt: ${head.join(';')}`)
+      return i
+    }
+    const cents = (v: string | undefined) => Math.round(Number((v ?? '').replace(',', '.')) * 100)
+    const [desc, priv, abz] = [col('Beschreibung'), col('privat (EUR)'), col('abziehbar (EUR)')]
+    for (const item of tax.expenses.items) {
+      const row = rows.find((r) => r[desc] === item.description)
+      if (!row) return assert.fail(`Position ${item.description} fehlt in der Übersicht`)
+      assert.deepEqual([cents(row[priv]), cents(row[abz])], [item.privateCents, item.deductibleCents], item.description)
+    }
+    const sum = (i: number) => rows.reduce((a, r) => a + cents(r[i]), 0)
+    assert.deepEqual([sum(priv), sum(abz)], [tax.expenses.privateCents, tax.expenses.deductibleCents])
+  })
+})
+
 test('Posteingang (#170): PUT nimmt nur einen Beleg im Ordner, keinen Verzeichnisnamen', async () => {
   // Durchsicht: „..“ besteht `basename` und `existsSync` und legte eine Zeile an.
   const s = await startServer()

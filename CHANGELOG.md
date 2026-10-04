@@ -134,8 +134,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vordruck („direkt“ oder anteilig mit dem abzugsfähigen Anteil in Prozent), mit Rechenweg zum
   Aufklappen; der Ausdruck taugt als gesonderte Aufstellung für das Finanzamt. Hinweise nennen,
   was nicht gerechnet wird (AfA, Schuldzinsen, § 82b EStDV, verbilligte Vermietung), und
-  beziffern den Unterschied, wo die Abrechnung nicht nach Fläche verteilt. Ohne selbstgenutzte
-  Wohnung ändert sich keine Zahl.
+  beziffern den Unterschied, wo die Abrechnung nicht nach Fläche verteilt. Die Übersicht im ZIP
+  „Belege für die Steuer“ nennt je Position ebenso den privaten und den abziehbaren Teil, mit
+  denselben Summen wie die Steuerübersicht. Ohne selbstgenutzte Wohnung ändert sich keine Zahl.
   ([#163](https://github.com/speedone/mietfuchs/issues/163))
 - **Kosten: „Nicht umlagefähig“ lässt sich für die Steuer einer Einheit zuordnen.** Die Auswahl
   „Betrifft (für die Steuer)“ ordnet etwa eine Badrenovierung der vermieteten Wohnung (voll
