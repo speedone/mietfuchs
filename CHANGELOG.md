@@ -192,15 +192,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zu niedrig sein (etwa 45,20 € statt 300 € × 55/365 = 45,21 €). Jetzt wird er je Mieter so
   gerundet, wie man ihn von Hand nachrechnet, Lohnanteil × ungerundeter Kostenanteil ÷
   Rechnungsbetrag, und liegt nie über dem Kostenanteil des Mieters. Ist eine Rechnung ganz Lohn,
-  ist der bescheinigte Lohnanteil genau sein Kostenanteil (etwa 109,15 € bei 109,15 €). Ergäben die
-  gerundeten Lohnanteile zusammen mehr als den Lohnanteil der Rechnung, bekommt ein Mieter einen
-  Cent weniger; tragen die Mieter die Rechnung ganz, ergeben ihre Lohnanteile zusammen genau den
-  Lohnanteil der Rechnung, und ein Mieter kann einen Cent mehr bekommen. Beides nennt der Rechenweg an der
-  Zeile, mit dem rechnerischen Wert, ebenso einen auf den Kostenanteil begrenzten Lohnanteil.
-  **Es ändert sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um
-  höchstens einen Cent je Position; Kostenanteile, Nachzahlungen und Guthaben, Vermieter- und
-  Eigenanteil sowie die Steuerübersicht bleiben unverändert. Abgeschlossene Abrechnungen bleiben,
-  wie sie verschickt wurden.
+  ist der bescheinigte Lohnanteil genau sein Kostenanteil (etwa 109,15 € bei 109,15 €). Ergäben
+  die gerundeten Lohnanteile zusammen mehr als den Lohnanteil der Rechnung, bekommen einzelne
+  Mieter je einen Cent weniger. Tragen die Mieter die Rechnung ganz, ergeben ihre Lohnanteile
+  zusammen genau den Lohnanteil der Rechnung, und einzelne Mieter können dafür einen Cent mehr oder
+  weniger bekommen als von Hand gerundet. Jede solche Abweichung nennt der Rechenweg an der Zeile,
+  mit dem rechnerischen Wert, ebenso einen auf den Kostenanteil begrenzten Lohnanteil. **Es ändert
+  sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um höchstens einen Cent je Mieter und
+  Position; Kostenanteile, Nachzahlungen und Guthaben, Vermieter- und Eigenanteil sowie die
+  Steuerübersicht bleiben unverändert. Abgeschlossene Abrechnungen bleiben, wie sie verschickt
+  wurden.
   ([#180](https://github.com/speedone/mietfuchs/issues/180))
 - **Stammdaten: Die Tabelle „Mietverhältnisse“ passt in ihre Karte.** „Mieterwechsel“, ✎ und 🗑
   waren auch auf großen Bildschirmen nur durch waagrechtes Scrollen erreichbar. Jetzt brechen
