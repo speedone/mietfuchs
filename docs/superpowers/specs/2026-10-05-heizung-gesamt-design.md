@@ -1,6 +1,6 @@
 # Spezifikation: Heizung gesamt (Meilenstein 0.11.0)
 
-- **Fassung:** dritte Fassung vom 05.10.2026, nach der Nachprüfung der zweiten Fassung und einer Prüfung mit frischem Blick. Die Änderungen stehen je Befund in 0.6 (gegenüber der zweiten) und 0.5 (gegenüber der ersten Fassung).
+- **Fassung:** vierte Fassung vom 05.10.2026, nach der Nachprüfung der dritten Fassung. Die Änderungen stehen je Befund in 0.7, 0.6 und 0.5.
 - **Ersetzt** die drei Teilentwürfe. Sie bleiben als Herleitung auf ihren Zweigen liegen, gelten aber nicht mehr:
   - CO₂-Kostenaufteilung, 3. Fassung (`feat/co2-kostenaufteilung`, `docs/superpowers/specs/2026-10-04-co2-kostenaufteilung-design.md`);
   - Abrechnungszeitraum (`feat/abrechnungszeitraum`, `…/2026-10-05-abrechnungszeitraum-design.md`);
@@ -197,6 +197,33 @@ Grundlage sind zwei Prüfungen vom 05.10.2026: **N** (Nachprüfung der Umsetzung
 - Der Parameter für die Wärmepumpe heißt `hkv.heat-pump.capture` (PR 10).
 - Der CO₂-Preis 2026 wird als Mittelwert des Korridors beschrieben (PR 17).
 
+### 0.7 Änderungen gegenüber der dritten Fassung
+
+Grundlage ist die Nachprüfung der dritten Fassung vom 05.10.2026 (Befunde A1–A11). Jeder Befund ist entschieden.
+
+| ID | Befund | Entscheidung | Abschnitt |
+|---|---|---|---|
+| A1 | Der § 560-Vorschlag kann in PR 3 nie nach Gradtagen rechnen, weil das Brennstoffmerkmal erst mit PR 10 kommt | **Weg (a):** Ein schmales Merkmal `cost_items.heating_part` (nullbar, nur Kostenart Heizung, Oberfläche zunächst nur „Brennstoff/Energie“) kommt mit **PR 3**; PR 10 macht es bei `heatingSystem` zur Pflicht. So hilft der Vorschlag schon beim häufigsten Fall, dem Winter-Rumpf beim Umstieg auf Mai–April. | 3.7, 5.1, 5.3, 13 |
+| A2 | `change_split` bei `manual` verschiebt offene Zahlen und teilt Warmwasser nach Gradtagen | Übernommen. Bei `manual` wirkt `change_split` nur auf Positionen „nur Heizung“ (ab PR 10). Kombinierte Positionen gehen nach Tagen, weil [G] § 9b Abs. 2 Warmwasser nur zeitanteilig teilt. Das Anlegen einer Anlage ändert damit keine Zahl; die Zusage in 11.2 stimmt wieder. | 5.3, 6.1, 12.2 |
+| A3 | Weg d: Auslegung, Modell unvollständig, H = P, § 560, 11.2 | Übernommen. Weg d steht als Auslegung in 15.1 Nr. 21, mit Zustimmungsvorbehalt. Gefragt wird nach getrennter **Abrechnung**, deshalb `separate_settlement` statt `separate_prepayment`. Ins Modell kommen `heating_prepayments`, `heating_prepayment_overrides` und **eigene Tabellen `closed_heating_settlements`** samt Verlauf; `closed_settlements` aus PR 2 bleibt unverändert. H = P: eine Gesamtabrechnung mit getrennt ausgewiesenen Vorauszahlungen. § 560-Vorschlag für die Heizvorauszahlung; `Statement.scope`. 11.2 Schritt 3 ist angeglichen. | 3.1, 3.7, 5.1, 5.7, 11.2, 13, 15.1 |
+| A4 | N1 rechtlich nachschärfen | Übernommen. Vor Fristablauf ist eine Berichtigung frei möglich ([R] VIII ZR 115/04, Datum klären). Danach nur bei nicht zu vertretender Verspätung (VIII ZR 264/12) und binnen drei Monaten ([R] VIII ZR 220/05). Eine negative Differenz ist eine Gutschrift an die Mieter und wird als warning gemeldet. Regel für das Wiederöffnen. Testfälle e und f; alle Fälle mit `fixed_cents = null`. | 8.2, 10.1, 12.2, 15.1 Nr. 19 |
+| A5 | Die Schätzung widerspricht „nie hochgerechnet“ | Übernommen als begründete Ausnahme: nur als ausdrücklich geschätzte Lieferung mit Vorbehalt (VIII ZR 156/11 Rn. 14). Sie zählt zur Abdeckung von E, und der Ausweis nennt sie. | W4, 3.3, 15.1 Nr. 10 |
+| A6 | R2 nicht überall nachgezogen; `manual` mit Gas | Übernommen. Abgegrenzt wird bei `self` und bei `manual` mit verknüpfter Lieferung oder Bestand. **`manual` mit Gas bekommt `fuelCarry`, wenn die Rechnung als Lieferung verknüpft ist**: Es ist dieselbe Rechtsgrundlage (VIII ZR 156/11) und dieselbe Mechanik. Ohne Verknüpfung bleibt die Warnung. C bei `manual` mit Bestand richtet sich nach dem Verbrauch. | W2, 3.2, 3.3, 6.1, 14.1 |
+| A7 | k und `fuelCarry`; Invariante 2; `fuelEstimateDiff` in 6.2; Test N2; Invariante 1 | Übernommen in allen fünf Punkten | 6.2, 12.2, 12.3 |
+| A8 | F1 schwach belegt; Wärmepumpe mit Warmwasserzähler ohne Gesamtwärmezähler | Übernommen: BT-Drs. 20/7619 als Beleg, die Spannung zu § 9 Abs. 1 S. 2 benannt. Für den fehlenden Fall gibt es den Fehler `heating.heat-pump-dhw-basis`. | 4.3, 8.3, 10.1, 12.2 |
+| A9 | 15 % ohne Erfassung nach dem 30.09.2025 ist Auslegung | Übernommen: 15.1 Nr. 22, Vermerk an Parameter und Test | 4.3, 4.7, 15.1 |
+| A10 | Restwidersprüche | Alle fünf berichtigt: 14.1 Bruttowarmmiete; 3.6 Summenaussage; Sperre für Ablesungen in abgeschlossener H; Lage der Frist in Fall a; Frage zu § 7 Abs. 1 S. 2 | 3.6, 5.4, 8.2, 11.2, 14.1 |
+| A11 | Jahresrechnungen im Rumpf werden hochgerechnet | Übernommen. Feste Heizpositionen mit Leistungszeitraum ab zwölf Monaten gehen als Jahresbetrag ein; ohne Leistungszeitraum gilt die letzte volle Periode. Neue Beispiele: 228 €, 262 € (Wartung nur Januar–April), 100 €. | 3.7, 12.1, 12.2 |
+| R1 (Rest) | Stufe 0 gegenüber `fixed_cents` | Der eingetragene Anteil gilt nur für den verbrauchsabhängigen Teil; feste Teile immer nach Tagen | 3.2 |
+
+**Folgen für PR 1 und PR 2:** keine. Das Register (Abschnitt 4, PR 1) und das Schema des Zeitraums (5.2, PR 2) bleiben, wie sie sind. Für Weg d kommen eigene Tabellen dazu, statt `closed_settlements` umzubauen. Neu in Abschnitt 4.3 sind nur Texte und Vermerke an Parametern späterer PRs (`hkv.dhw.factors` PR 11, `hkv.heat-pump.capture` PR 10).
+
+**Folgen für Phase A:**
+
+- **PR 3:** Merkmal `heating_part` und neue Regel für Jahresrechnungen; 5,5–6,5 T.
+- **PR 4:** `change_split` bei `manual` ohne Wirkung auf kombinierte Positionen.
+- **PR 5:** Weg d mit eigenen Tabellen und § 560-Vorschlag; 6–7 T.
+
 ---
 
 ## 1. Die Entscheidungen auf einen Blick
@@ -206,9 +233,9 @@ Grundlage sind zwei Prüfungen vom 05.10.2026: **N** (Nachprüfung der Umsetzung
 | # | Widerspruch | Entscheidung | Begründung, Quelle | Abschnitt |
 |---|---|---|---|---|
 | W1 | **Eigener Heizzeitraum:** #99 sagt nein, #217 sagt ja. | **Ja, in 0.11.0.** Eine Heizanlage kann einen eigenen Zeitraum haben, etwa Juli bis Juni oder Mai bis April, neben dem Zeitraum des Objekts für die übrigen Kosten. Jede Heizperiode gehört in die Gesamtabrechnung des Objektzeitraums, **in dem sie endet**. Die Frist richtet sich nach dem Zeitraum der Gesamtabrechnung. Mieter, die nur in der Heizperiode gewohnt haben, bekommen eine Abrechnung, die nur aus den Heizkosten besteht. | [R] BGH 30.04.2008, VIII ZR 240/07: Die Gesamtabrechnung ist formell wirksam, wenn über die Heizkosten **nicht getrennt** abzurechnen ist (einheitliche Vorauszahlung); die Frist beginnt mit dem Ende des Kalenderjahres der Gesamtabrechnung (geprüft 05.10.). Zweite Fassung: Weg b nur bei einheitlicher Vorauszahlung; eine Abrechnung nur mit Heizkosten für ein Jahr ohne Mietzeit ist offen (15.1 Nr. 2). | 3.0, 3.1 |
-| W2 | **Abgrenzung einer Brennstoffrechnung über den Zeitraumwechsel:** tagesgenau (CO₂-Entwurf, Fall F7) gegen Gradtage (#99). | **Ein Verfahren** für Brennstoffkosten, kg CO₂ und CO₂-Kosten, in dieser Reihenfolge: Zählerstand, Zwischenrechnung, Teilmengen laut Rechnung, Gradtage mit Ortswerten, Gradtage nach Tabelle; ein eingetragener Wert geht vor. Tagesgenau gibt es nicht. Zweite Fassung: Kosten und C werden nur bei `self` abgegrenzt, bei Messdienst und `manual` gilt, was im Topf berechnet ist (G-A3). | [R] VIII ZR 156/11 (Rn. 14: sachgerechte Schätzung). [G] § 5 Abs. 1 S. 5 CO2KostAufG. [G] § 12 Abs. 2 GasGVV analog. [M] Minol. | 3.2, 3.3 |
+| W2 | **Abgrenzung einer Brennstoffrechnung über den Zeitraumwechsel:** tagesgenau (CO₂-Entwurf, Fall F7) gegen Gradtage (#99). | **Ein Verfahren** für den verbrauchsabhängigen Teil, kg CO₂ und CO₂-Kosten: eingetragen, Zählerstand, Zwischenrechnung, Teilmengen laut Rechnung, Gradtage (Ortswerte oder Tabelle), Schätzung mit Vorbehalt; feste Preisbestandteile nach Tagen. Tagesgenau für den Verbrauch gibt es nicht. Kosten und C werden abgegrenzt bei `self` und bei **`manual` mit verknüpfter Lieferung oder Bestand** (A6); beim Messdienst gilt, was im Topf berechnet ist. | [R] VIII ZR 156/11 (Rn. 14: sachgerechte Schätzung). [G] § 5 Abs. 1 S. 5 CO2KostAufG. [G] § 12 Abs. 2 GasGVV analog. [M] Minol. | 3.2, 3.3, 8.2 |
 | W3 | **Kennung des Zeitraums:** `202505` in der vorhandenen Spalte `year` (#208) gegen eine eigene Kennung. | **Eigene Kennung** `period` als Text `JJJJ-MM`, der Monat des Beginns. Die Spalte `year` wird per Datenanweisung umgezogen (`2025` → `'2025-01'`). Die Zeiträume werden **berechnet** (Rhythmus und Wechsel am Objekt, wie #208) und nicht als Zeilen gespeichert. | Der Zahlenschlüssel macht aus jedem `year - 1` und jedem `year >= 2023` einen stillen Fehler. Mit einem eigenen Typ zeigt der Übersetzer jede Stelle. Steuer und Mietkonto bleiben beim Kalenderjahr als Zahl, also zwei Typen für zwei Bedeutungen. | 3.0, 5.2 |
-| W4 | **Hochrechnung bei Lücken** (CO₂ v3: hochrechnen, Abschlussprüfung: Grenze 75 %) | **Umgerechnet wird nur der Ausstoß E**, und nur für die Einstufung, nach § 5 Abs. 1 S. 5 mit demselben Verfahren wie W2. **Die CO₂-Kosten C und die Brennstoffkosten werden nicht hochgerechnet**; C ist bei `self` der abgegrenzte Teil, sonst der im Topf berechnete (G-A3). Eine Grenze gibt es nicht. Jede Lücke ergibt die Warnung `fuel.uncovered` mit Tagen und Promille. | Eine Grenze von 75 % ist nirgends belegt. Würde C hochgerechnet, bekäme der Mieter CO₂-Kosten gutgeschrieben, die ihm gar nicht berechnet wurden. | 3.3, 15.2 |
+| W4 | **Hochrechnung bei Lücken** (CO₂ v3: hochrechnen, Abschlussprüfung: Grenze 75 %) | **Umgerechnet wird nur der Ausstoß E**, für die Einstufung. **C und Brennstoffkosten werden nicht hochgerechnet, außer als ausdrücklich geschätzte Lieferung mit Vorbehalt** (8.2, A5). Eine geschätzte Lieferung zählt zur Abdeckung; der Ausweis nennt sie. | Eine Grenze von 75 % ist nirgends belegt; eine Schätzung ist nach VIII ZR 156/11 Rn. 14 nur als sachgerechte, ausgewiesene Schätzung zulässig. | 3.3, 8.2, 15.1 |
 | W5 | **Bestand und Lieferungen:** `co2_deliveries` (CO₂-Entwurf) gegen `cost_item_fuel` (#99). | **Eine Tabelle `fuel_deliveries` an der Heizanlage.** Kostenpositionen können auf eine Lieferung zeigen (`cost_items.fuel_delivery_id`, auch mehrere: Abschläge, Gutschrift; G-C4), oder sie steht für sich (beim Messdienst steckt der Brennstoff in dessen Beträgen, die Gasrechnung liefert nur kg und €). Den Bestand führt `heating_periods`, und zwar einmal. | Sonst stünde die Gasrechnung im Fall F3 doppelt als Kosten, einmal selbst und einmal in den Messdienstbeträgen. | 5.4 |
 | W6 | **Name der Anlage:** `heating_systems` (#99) gegen `heating_plants` (Abschlussprüfung). | `heating_plants`, `heating_plant_units`. | Die Abschlussprüfung hat das so festgelegt. | 5.3 |
 | W7 | **Wer legt welche Tabelle an, Sperren zwischen den PRs** | Es gibt **eine** Reihenfolge der PRs (Abschnitt 13). Jede Tabelle legt genau eine PR an. Funktionen, die erst eine spätere PR rechnet, lehnt der Server bis dahin mit 400 und einem Satz ab. | Keine Migration wird nach einem Rebase neu erzeugt, und keine Zahl ist zwischendurch falsch. | 13 |
@@ -232,7 +259,7 @@ Grundlage sind zwei Prüfungen vom 05.10.2026: **N** (Nachprüfung der Umsetzung
    - Steuer und Mietkonto rechnen weiter im Kalenderjahr.
 4. **Rechtsregister** in `shared/law/`: jeder Rechtswert mit Gültigkeit, Fundstelle und Zeitregel. Die benutzten Werte frieren mit der abgeschlossenen Abrechnung ein. Ein Wächtertest verbietet Rechtszahlen außerhalb des Registers.
 5. **Kürzungen** werden je Mieter beziffert und jede einzeln genannt, nie als Summe: 15 % (§ 12 Abs. 1 S. 1), 3 % (§ 12 Abs. 1 S. 2), 3 % (§ 12 Abs. 1 S. 3) und 3 % (§ 7 Abs. 4 CO2KostAufG).
-6. **Aufwand:** 23 PRs (0–22, PR 0 erledigt), rund **67–76 Arbeitstage** (Abschnitt 13). Das ist das größte Release bisher. Die Reihenfolge erlaubt es, nach jeder Phase auszuliefern.
+6. **Aufwand:** 23 PRs (0–22, PR 0 erledigt), rund **69–78 Arbeitstage** (Abschnitt 13). Das ist das größte Release bisher. Die Reihenfolge erlaubt es, nach jeder Phase auszuliefern.
 
 ---
 
@@ -348,11 +375,17 @@ Jede Zeile hat unten einen eigenen Unterabschnitt mit Zahlenbeispiel.
 | Weg | Rechtlich | Wann Mietfuchs ihn anbietet |
 |---|---|---|
 | a) Ganzes Objekt im Zeitraum des Messdienstes | zulässig (§ 556 Abs. 3 BGB); ein Wechsel nur aus sachlichem Grund und, wenn der Mietvertrag den Zeitraum festlegt, nur mit Zustimmung (3.6) | immer |
-| b) **Eigene Heizperiode in der Gesamtabrechnung**, übrige Kosten im Objektzeitraum | zulässig ([R] VIII ZR 240/07), **nur bei einheitlicher Vorauszahlung** | wenn `separate_prepayment = false` |
+| b) **Eigene Heizperiode in der Gesamtabrechnung**, übrige Kosten im Objektzeitraum | zulässig ([R] VIII ZR 240/07), **nur bei einheitlicher Vorauszahlung** | wenn `separate_settlement = false` |
 | c) Messdienstwerte auf das Kalenderjahr umrechnen | nach VIII ZR 240/07 nicht zumutbar; ohne Ablesungen der Wohnungen auch nicht möglich | nicht angeboten |
-| d) **Getrennte Heizkostenabrechnung** je Heizperiode, mit eigener Heizkostenvorauszahlung und eigener Frist | zulässig: § 556 Abs. 3 BGB verlangt die Abrechnung „über die Vorauszahlungen“; sind sie getrennt vereinbart, wird über jede für ihren Zeitraum abgerechnet. Leitsatz a von VIII ZR 240/07 setzt gerade voraus, dass nicht getrennt abzurechnen ist. Frist zwölf Monate nach Ende von H (§ 556 Abs. 3 S. 2). | wenn `separate_prepayment = true` (R3 der dritten Prüfung). Bisher wurde in diesem Fall nur Weg a empfohlen; das ließ Vermieter ohne zulässigen Weg, wenn der Vertrag den Zeitraum festlegt. |
+| d) **Getrennte Heizkostenabrechnung** je Heizperiode, mit eigener Heizkostenvorauszahlung und eigener Frist | **Auslegung** (15.1 Nr. 21): § 556 Abs. 3 S. 1 BGB verlangt die Abrechnung „über die Vorauszahlungen“; Teilabrechnungen sind erlaubt (§ 556 Abs. 3 S. 4, VIII ZR 240/07 Rn. 17–18); Leitsatz a setzt voraus, dass nicht getrennt abzurechnen ist (Umkehrschluss). Legt der Mietvertrag für die Heizkosten das Kalenderjahr fest, braucht eine Heizperiode Mai–April auch hier die Zustimmung der Mieter (3.6). | wenn `separate_settlement = true` **und H ≠ P** (A3). Gefragt wird, ob die Heizkosten **getrennt abgerechnet** werden, nicht nur, ob getrennt gezahlt wird. |
 
-**Weg d im Modell:** Staffel `heating_prepayments` am Mietverhältnis (wie `prepayments`, ab Monat); je H eine eigene Heizkostenabrechnung (`Statement` mit `scope: 'heating'`) mit den Heizvorauszahlungen der Monate von H und `settlementDeadline(H)`; die Gesamtabrechnung P rechnet die Heizkosten dann nicht ein. Das Mietkonto führt beide Vorauszahlungen im Soll. Die Frist ist zwölf Monate nach Ende von H. Abrechnung je H einzeln abschließbar (`closed_settlements` mit `plant_id`, PR 5).
+**Weg d im Modell** (A3):
+
+- Staffel `heating_prepayments(tenancy_id, from, cents ≥ 0)` am Mietverhältnis und Jahreskorrektur `heating_prepayment_overrides(tenancy_id, plant_id, period, cents)` (Schlüssel der Heizperiode).
+- Eigene Tabellen `closed_heating_settlements(plant_id, period, …)` und `closed_heating_settlement_history`, eindeutig `(plant_id, period)`. **`closed_settlements` aus PR 2 bleibt unverändert** und eindeutig `(property_id, period)`; so braucht PR 5 keinen Neubau dieser Tabelle.
+- `Statement.scope: 'all' \| 'heating'` (5.7). Je H ein Statement `heating` mit den Heizvorauszahlungen der Monate von H, Frist `settlementDeadline(H)`, Vorschlag nach § 560 Abs. 4 für die Heizvorauszahlung aus den Heizkosten von H (3.7). Die Gesamtabrechnung P enthält die Heizkosten dann nicht.
+- **H = P mit getrennter Vorauszahlung** (häufiger Formularvertrag mit Kalenderjahr): **eine** Gesamtabrechnung, die beide Vorauszahlungen getrennt ausweist und anrechnet; Weg d gilt nur bei H ≠ P.
+- Das Mietkonto führt beide Vorauszahlungen im Soll.
 
 **Rechenverfahren (Weg b).** Die Anlage hat H = Mai bis April, das Objekt P = Kalenderjahr.
 
@@ -398,8 +431,8 @@ Jede Zeile hat unten einen eigenen Unterabschnitt mit Zahlenbeispiel.
 
 **Wofür die Abgrenzung gilt** (G-A3):
 
-- **Kosten und CO₂-Kosten C** werden nur bei `self` abgegrenzt, denn nur dort bucht `fuelCarry` den Teil, der in eine andere Heizperiode gehört, auch tatsächlich hinaus (8.2).
-- Bei `service*` und `manual` gilt für Kosten und C, **was im Topf berechnet ist** (3.3).
+- **Kosten und CO₂-Kosten C** werden abgegrenzt bei `self` und bei **`manual`, wenn die Rechnung als Lieferung verknüpft ist (`fuel_delivery_id`) oder ein Bestand geführt wird** (A6). Dort bucht `fuelCarry` den Teil, der in eine andere Heizperiode gehört, tatsächlich hinaus (8.2). Bei `manual` mit Gas ohne verknüpfte Lieferung bleibt es bei der Warnung `fuel.manual-beyond-period`.
+- Bei `service*` gilt für Kosten und C, **was im Topf berechnet ist** (3.3).
 - **Der Ausstoß E** wird bei jeder Methode abgegrenzt, denn die Einstufung braucht die Emissionen von H (§ 5 Abs. 1 S. 5).
 
 **Praxis:**
@@ -410,7 +443,7 @@ Jede Zeile hat unten einen eigenen Unterabschnitt mit Zahlenbeispiel.
 
 **Verfahren.** Je Lieferung d und Heizperiode H gilt die erste zutreffende Stufe:
 
-0. **Eingetragen:** `share_permille` des Vermieters geht allem vor; der Ausweis sagt „Anteil vom Vermieter festgelegt“ (N9: in der zweiten Fassung als Stufe 6 geführt, obwohl sie alles überschreibt).
+0. **Eingetragen:** `share_permille` des Vermieters geht allen übrigen Stufen vor, und zwar für den **verbrauchsabhängigen** Teil; `fixed_cents` geht immer nach Tagen (Klärung zu R1). Der Ausweis sagt „Anteil vom Vermieter festgelegt“.
 1. **Gemessen:** Versorgungszähler der Anlage (Rolle `supply`) mit Ständen an den Grenzen von H und der Rechnung. Anteil = Menge in H ∩ Rechnungszeitraum / Menge der Rechnung. Hat die Rechnung Preisabschnitte, wird je Abschnitt geteilt.
 2. **Zwischenrechnung** des Versorgers als eigene Lieferung. Anteil 1 oder 0.
 3. **Teilmengen laut Rechnung** (Z-B4): Weist die Rechnung Teilzeiträume mit kWh und € aus, etwa bei Preisänderung, beim Wechsel der Umsatzsteuer oder bei der Preisbremse, werden diese als Unterzeilen erfasst. Jede Teilmenge wird für sich nach Stufe 4 oder 5 geteilt. Diese Mengen hat der Netzbetreiber nach § 12 Abs. 2 GasGVV selbst abgegrenzt.
@@ -439,7 +472,7 @@ Mit 6.500 € und H = 2025 sind das 4.038,39 € statt 5.200,00 €.
 
 - `fuel.share-by-degree-days` (hint): Abgrenzung nach Stufe 4 oder 5. Empfohlen werden der Zählerstand oder die Zwischenrechnung, und der Hinweis sagt, dass Versorger mit Ortswerten abgrenzen.
 - `fuel.uncovered` (warning).
-- `fuel.manual-beyond-period` (warning, nur `manual`): Eine Lieferung des Topfs reicht über H hinaus und wird ganz verteilt ([R] VIII ZR 156/11). Empfohlen wird der Weg `self` oder eine Zwischenrechnung.
+- `fuel.manual-beyond-period` (warning, nur `manual` ohne verknüpfte Lieferung): Eine Position reicht über H hinaus und wird ganz verteilt ([R] VIII ZR 156/11). Empfohlen wird, die Rechnung als Lieferung zu verknüpfen; dann grenzt Mietfuchs ab.
 
 ### 3.3 Lücken in der Abdeckung (zu Facette 2 und 9)
 
@@ -452,9 +485,9 @@ Mit 6.500 € und H = 2025 sind das 4.038,39 € statt 5.200,00 €.
 | Größe | Regel | Grund |
 |---|---|---|
 | **E** (kg, nur Einstufung) | auf H umgerechnet: E_H = Σ_d E_d · Anteil_d / Abdeckung, mit Anteil nach 3.2 und Abdeckung als Anteil der Gradtage von H, den die Rechnungen überdecken | § 5 Abs. 1 S. 5. Die Umrechnung über eine Lücke hinweg ist **Auslegung** des Wortes „umrechnen“ (15.1 Nr. 10). |
-| **C** bei `self` | C_H = Σ_d C_d · Anteil_d, nicht hochgerechnet | Die Mieter tragen genau diesen Teil der Lieferung (8.2). |
-| **C** bei `service*`, `manual` | C_H = Σ_d C_d der Lieferungen, die **im Topf berechnet** sind | Die Mieter haben die ganze Lieferung bezahlt. Bei `selfAfterService` fragt Mietfuchs, welche Lieferungen der Messdienst angesetzt hat (7.6). |
-| Brennstoffkosten | nie hochgerechnet | Was nicht in Rechnung steht, ist nicht entstanden. |
+| **C** bei `self` und bei `manual` mit Lieferung oder Bestand | C_H = Σ_d C_d · Anteil_d bzw. nach Verbrauch aus dem Bestand; nicht hochgerechnet, **außer als geschätzte Lieferung mit Vorbehalt** (8.2) | Die Mieter tragen genau diesen Teil der Lieferung. |
+| **C** bei `service*` und bei `manual` ohne Lieferung | C_H = Σ_d C_d der Lieferungen, die **im Topf berechnet** sind | Die Mieter haben die ganze Lieferung bezahlt. Bei `selfAfterService` fragt Mietfuchs, welche Lieferungen der Messdienst angesetzt hat (7.6). |
+| Brennstoffkosten | nicht hochgerechnet, **außer als ausdrücklich geschätzte Lieferung mit Vorbehalt**, wenn eine Rechnung beim Abschluss fehlt (8.2, A5) | Was nicht in Rechnung steht, ist nicht entstanden; eine sachgerechte Schätzung ist nach VIII ZR 156/11 Rn. 14 nur offen ausgewiesen zulässig. Eine geschätzte Lieferung zählt zur Abdeckung von E; der Ausweis nennt sie. |
 
 **Rechenfehler der ersten Fassung (G-A3), nachgerechnet:** F13-Lage mit C = 600 €, Stufe 40 %, Messdienst hat die Rechnung ganz angesetzt.
 
@@ -583,7 +616,7 @@ Die Festlegung der ersten Fassung „nur d oder d + 1, sonst § 9b Abs. 3“ ent
 
 - Ausgangslage: Kalenderjahr → Mai ab `2025-05`, Jahreskorrektur 2025 über 2.400 € (200 € im Monat).
 - Ohne Sperre würden im Rumpf 2.400 € statt 800 € angerechnet, also 1.600 € zu viel, und Mai bis Dezember in `2025-05` noch einmal.
-- Mit der Sperre ist die Summe der angerechneten Vorauszahlungen über beide Zeiträume gleich der vor dem Wechsel. Testfall in 12.2.
+- Mit der Neuerfassung in der Vorschau (N4) rechnet der Rumpf mit den eingegebenen Beträgen für Januar bis April und `2025-05` mit den eingegebenen für Mai 2025 bis April 2026; kein Monat wird doppelt oder zum Soll angerechnet. Testfall in 12.2.
 
 **Zahlenbeispiel:**
 
@@ -607,17 +640,21 @@ Die Festlegung der ersten Fassung „nur d oder d + 1, sonst § 9b Abs. 3“ ent
 - **Getrennte Heizkostenvorauszahlung (Weg d, 3.1):** Die Heizkostenabrechnung je H rechnet die Heizvorauszahlungen der Monate von H an, die Gesamtabrechnung P nur die übrigen.
 - **Vorschlag nach § 560 Abs. 4**, ein Zwölftel der voraussichtlichen Jahreskosten (Z-B5, R5 der dritten Prüfung):
   - Liegt eine **volle** Heizperiode bzw. ein voller Zeitraum davor, gelten dessen Kosten (VIII ZR 294/10: Grundlage ist die letzte Abrechnung).
-  - Sonst, im Rumpf, wird hochgerechnet. **Brennstoff** (Positionen mit `heating_part = 'fuel'` oder mit Lieferung) geht nach **Gradtagen**, alle übrigen Kosten, kalte wie feste Heizkosten (Wartung, Messdienst, Grundpreis), gehen nach **Tagen**.
-  - Ist in einem Rumpf keine Heizposition als Brennstoff gekennzeichnet, gibt es für den Heizanteil keinen Vorschlag, sondern den hint `prepayment.no-suggestion` („Kennzeichnen Sie die Brennstoffrechnung, damit der Vorschlag die Jahreszeit berücksichtigt“).
-  - Eine Abrechnung nur mit Heizkosten ergibt keinen Vorschlag.
+  - Sonst, im Rumpf, wird hochgerechnet:
+    - **Brennstoff** (Positionen mit `heating_part = 'fuel'`; das Merkmal kommt **schmal schon mit PR 3**, A1) nach **Gradtagen**;
+    - kalte Kosten, die nach 3.4 auf den Rumpf geteilt sind, nach **Tagen**;
+    - **feste Heizpositionen** (Wartung, Messdienst, Grundpreis) mit Leistungszeitraum von zwölf Monaten oder mehr gehen als **Jahresbetrag** ein, nicht hochgerechnet; mit kürzerem Leistungszeitraum nach dessen Tagen; ohne Leistungszeitraum gilt die letzte volle Periode, sonst kein Vorschlag für diese Position (A11).
+  - Ist in einem Rumpf keine Heizposition als Brennstoff gekennzeichnet, gibt es für den Heizanteil keinen Vorschlag, sondern `prepayment.no-suggestion` („Kennzeichnen Sie die Brennstoffrechnung, damit der Vorschlag die Jahreszeit berücksichtigt“).
+  - Eine Abrechnung nur mit Heizkosten **nach Auszug** (`heatingOnly`) ergibt keinen Vorschlag. Die Heizkostenabrechnung nach Weg d (`scope: 'heating'`) ergibt einen Vorschlag für die Heizvorauszahlung (A3).
 
 **Zahlenbeispiele** (Testfälle in 12.2):
 
 | Fall | Rechnung | je Monat |
 |---|---|---|
-| Winter-Rumpf 01.01.–30.04. (120 Tage, 530 ‰): kalt 400 €, Brennstoff 700 €, Wartung 200 € | 400 · 365/120/12 = 101,39; 700 / 0,530 / 12 = 110,06; 200 · 365/120/12 = 50,69 | 262,15 → **262 €** |
-| Sommer-Rumpf 01.05.–31.08. (123 Tage, 80 ‰): Brennstoff 80 €, Wartung 200 € | 80 / 0,080 / 12 = 83,33; 200 · 365/123/12 = 49,46 | 132,79 → **133 €** |
-| dasselbe, wenn alles nach Gradtagen ginge (zweite Fassung) | 280 / 0,080 / 12 | 291,67 € (Wartung verachtfacht) |
+| Winter-Rumpf 01.01.–30.04. (120 Tage, 530 ‰): kalt 400 € (Rumpfanteil), Brennstoff 700 €, Wartung 200 € als Jahresrechnung (Leistungszeitraum zwölf Monate) | 400 · 365/120/12 = 101,39; 700 / 0,530 / 12 = 110,06; 200 / 12 = 16,67 | 228,12 → **228 €** |
+| derselbe Rumpf, Wartung 200 € ist nur der Anteil Januar–April (Leistungszeitraum 01.01.–30.04.) | Wartung 200 · 365/120/12 = 50,69 | 262,15 → **262 €** |
+| Sommer-Rumpf 01.05.–31.08. (123 Tage, 80 ‰): Brennstoff 80 €, Wartung 200 € als Jahresrechnung | 80 / 0,080 / 12 = 83,33; 200 / 12 = 16,67 | 100,00 → **100 €** |
+| dasselbe, wenn alles nach Gradtagen ginge (zweite Fassung) bzw. die Jahreswartung nach Tagen (dritte Fassung) | 280 / 0,080 / 12 bzw. 83,33 + 200 · 365/123/12 | 291,67 € bzw. 132,79 € |
 
 **Praxis:** [M] Vorauszahlungen rechnet der Messdienst nur, wenn sie ihm gemeldet wurden (Marktvergleich 2.5).
 
@@ -803,9 +840,9 @@ Alle Werte stehen nur hier. **Ein Parameter kommt mit der PR ins Register, die i
 | `hkv.estimate-threshold` | „überschreitet 25 %“ | § 9a Abs. 2 | periodStart | geprüft 05.10. | 13 |
 | `hkv.dhw.volume-formula` | 2,5 · V · (t_w − 10) | § 9 Abs. 2 S. 2 | periodStart | geprüft 05.10. | 11 |
 | `hkv.dhw.area-formula` | 32 · A | § 9 Abs. 2 S. 4 | periodStart | geprüft 05.10. | 11 |
-| `hkv.dhw.factors` | nur für Formelwerte: Erdgas Hₛ × 1,11; Wärmelieferung ÷ 1,15; monovalente Wärmepumpe × 0,30 | § 9 Abs. 2 S. 6 | periodStart | geprüft 05.10. | 11 |
+| `hkv.dhw.factors` | nur für Formelwerte: Erdgas Hₛ × 1,11; Wärmelieferung ÷ 1,15; monovalente Wärmepumpe × 0,30 (ergibt **Strom**: BT-Drs. 20/7619, „für die Abrechnung von Strom für Wärmepumpen … Jahresarbeitszahl von 2,7 … Nutzungsgrad von 0,8“, 0,8/2,7 ≈ 0,30) | § 9 Abs. 2 S. 6 | periodStart | geprüft 05.10. | 11 |
 | `hkv.heating-values` | **nur hilfsweise und nur bei Heizkesseln**, wenn die Rechnung keinen Heizwert angibt: Heizöl EL 10 kWh/l, schweres Heizöl 10,9, Erdgas H 10 kWh/m³, L 9, Flüssiggas 13 kWh/kg, Koks 8, Braunkohle 5,5, Steinkohle 8, Holz 4,1, Pellets 5, Holzhackschnitzel 4 kWh/kg bzw. 650 kWh/SRm | § 9 Abs. 3 | periodStart | Werte geprüft 05.10.; **welche Hackschnitzelangabe gilt, ungeprüft** (BGBl. 2021 I S. 4964 vor PR 11 lesen) | 11 |
-| `hkv.heat-pump.capture` | Wird der Verbrauch aus Wärmepumpen am 01.10.2024 noch nicht erfasst, ist bis 30.09.2025 eine Erfassung zu installieren; die Verordnung gilt dann ab dem Zeitraum, der **nach der Installation der Erfassung** beginnt; ohne Erfassung nach dem 30.09.2025 gilt § 12 Abs. 1 S. 1 (15 %). Für eine Wärmepumpe mit Erfassung (auch neu nach dem 01.10.2024 eingebaut) gilt die Verordnung sofort. Bei Bruttowarmmiete Pflicht zur Bestimmung der Durchschnittskosten 2022–2024 (S. 3). | § 12 Abs. 3 | eventDate (Installation der Erfassung) | geprüft 05.10. (F5 der dritten Prüfung: die zweite Fassung las „Installation der Wärmepumpe“) | 10 |
+| `hkv.heat-pump.capture` | Wird der Verbrauch aus Wärmepumpen am 01.10.2024 noch nicht erfasst, ist bis 30.09.2025 eine Erfassung zu installieren; die Verordnung gilt ab dem Zeitraum, der **nach der Installation der Erfassung** beginnt (BT-Drs. 20/7619 bestätigt: Installation der Ausstattung). Ohne Erfassung nach dem 30.09.2025: 15 % nach § 12 Abs. 1 S. 1 als **Auslegung** (15.1 Nr. 22). Wärmepumpe mit Erfassung: sofort. Bei Bruttowarmmiete Durchschnittskosten 2022–2024 (S. 3). | § 12 Abs. 3 | eventDate (Installation der Erfassung) | geprüft 05.10. | 10 |
 | `hkv.degree-days` | Tabelle 3.5, Tageswerte Monatswert ÷ Tage | § 9b Abs. 2 („anerkannte Regeln der Technik“); Werte [M] ista, Berliner Mieterverein | periodStart | Werte geprüft 05.10.; Herkunft ⟨Norm offen: DIN 94680⟩ | **3** (Vorschlag nach § 560, N3) |
 | `co2.applicable-from` | 01.01.2023 | § 11 Abs. 2 S. 1 CO2KostAufG | periodStart | geprüft 05.10. | 6 |
 | `co2.costs-before` | 01.01.2023 (Rechnungsdatum) | § 11 Abs. 2 S. 2 | eventDate | geprüft 05.10. | 8 |
@@ -871,7 +908,7 @@ Betroffen sind heute der CO₂-Preis ab 2027 (UBA, spätestens zehn Werktage vor
 | `hkv.heat-pump.capture` | keine Erfassung am 01.10.2024, Erfassung installiert 01.06.2025, Zeitraum `2025-01` | Verordnung noch nicht anwendbar |
 | `hkv.heat-pump.capture` | dasselbe, Zeitraum `2026-01` | anwendbar |
 | `hkv.heat-pump.capture` | Wärmepumpe neu eingebaut 01.02.2025 mit Erfassung, Zeitraum `2025-01` | anwendbar (die zweite Fassung nahm sie aus) |
-| `hkv.heat-pump.capture` | keine Erfassung bis 30.09.2025, Zeitraum `2026-01` | 15 % nach § 12 Abs. 1 S. 1 |
+| `hkv.heat-pump.capture` | keine Erfassung bis 30.09.2025, Zeitraum `2026-01` | 15 % nach § 12 Abs. 1 S. 1 (Auslegung, 15.1 Nr. 22) |
 
 **Vollständigkeit:**
 
@@ -921,7 +958,9 @@ Alle Schritte sind erzeugt mit `npm --prefix server run db:generate`. Datenanwei
 | `heating_plants`, `heating_plant_units`, `heating_periods` | neu | 4 |
 | `heating_period_changes` | neu | 5 |
 | `cost_items.heating_plant_id` | neu | 4 |
-| `cost_items.heating_part`, `heating_target`; `key` + `'heatingSystem'` | neu bzw. Bedingung | 10 |
+| `cost_items.heating_part` (nullbar, nur Kostenart Heizung; die Oberfläche bietet zunächst nur „Brennstoff/Energie“) | neu | **3** (A1) |
+| `cost_items.heating_target`; `key` + `'heatingSystem'`; `heating_part` Pflicht bei `heatingSystem` | neu bzw. Bedingung | 10 |
+| `heating_prepayments`, `heating_prepayment_overrides`, `closed_heating_settlements`, `closed_heating_settlement_history` | neu | 5 |
 | `meters`: Typen `warmwasser`, `hkv`; `heating_plant_id`, `heating_role`, `remote_readable`, `installed_on` | neu bzw. Bedingung | 4 |
 | `meters.rating_factor`, `hca_scale` | neu | 12 |
 | `meters.calibrated_until` (nicht für `hkv`) | neu | 21 |
@@ -984,7 +1023,7 @@ Alle Schritte sind erzeugt mit `npm --prefix server run db:generate`. Datenanwei
 | `energy` | `gas \| oil \| lpg \| pellets \| wood \| districtHeating \| heatPump \| electric \| coal \| other`, Pflicht | Energieträger. Erfasst vom CO2KostAufG sind Brennstoffe mit Standard-Emissionsfaktor nach der EBeV (`gas`, `oil`, `lpg`, `coal`) und die Wärmelieferung „hinsichtlich der für die Wärmeerzeugung eingesetzten Brennstoffe“ ([G] § 2 Abs. 1 S. 2). Fernwärme ist deshalb nicht pauschal „fossil“; weist der Lieferant kein CO₂ aus (§ 3 Abs. 4), ist C = 0 (R-A28). |
 | `supply` | `central \| perUnit`, Vorgabe `central` | `perUnit` = Etagenheizungen mit Vertrag auf den Vermieter ([G] § 5 Abs. 1 S. 2 CO2KostAufG) |
 | `method` | `service \| self \| manual`, Vorgabe `manual` | Messdienst, Mietfuchs nach HeizkostenV, freie Schlüssel wie heute |
-| `separate_prepayment` | boolean, nullbar (unbekannt) | Getrennte Vorauszahlung nur für Heizung. `false`: Weg b möglich; `true`: Weg d, getrennte Heizkostenabrechnung (3.1, R-A3, R3). |
+| `separate_settlement` | boolean, nullbar (unbekannt) | Werden die Heizkosten getrennt abgerechnet, mit eigener Vorauszahlung? `false`: Weg b möglich; `true` und H ≠ P: Weg d; `true` und H = P: eine Gesamtabrechnung mit getrennt ausgewiesenen Vorauszahlungen (3.1, A3). |
 | `devices_remote` | `all \| none \| partial \| unknown`, Vorgabe `unknown` | Fernablesbarkeit, wenn Mietfuchs keine Zähler kennt (`service`, `manual`; G-C2) |
 | `devices_installed_after_2021_12` | `all \| some \| none \| unknown` | Geräte nach dem 01.12.2021 eingebaut? (§ 5 Abs. 2 HeizkostenV, R-A1) |
 | `hot_water` | `combined \| separate \| none`, Vorgabe `combined` | § 9 HeizkostenV |
@@ -994,7 +1033,7 @@ Alle Schritte sind erzeugt mit `npm --prefix server run db:generate`. Datenanwei
 | `capture_installed_on`, `captured_on_2024_10_01` | nullbar | Wärmepumpe: Erfassung am 01.10.2024 vorhanden? sonst Datum der Installation (§ 12 Abs. 3, F5) |
 | `warm_rent_average_2022_2024` | nullbar | § 12 Abs. 3 S. 3 bei Bruttowarmmiete; Aufgabe in der Einrichtung (L4) |
 | `area_basis_heat` | `area \| heatedArea`, Vorgabe `area` | nur für den Topf Heizung (§ 7 Abs. 1 S. 5). Warmwasser immer Wohn- oder Nutzfläche (§ 8 Abs. 1; R-A21). |
-| `change_split` | `degreeDays \| time`, Vorgabe `degreeDays` | § 9b Abs. 2, Wahl des Eigentümers; Vorgabe wie [M] ista. **Gilt auch bei `manual`** für Mieterwechsel und Leerstand bei Heizpositionen (R4 der dritten Prüfung); wer `time` wählt, sieht `heating.change-split-time` mit beiden Beträgen. |
+| `change_split` | `degreeDays \| time`, Vorgabe `degreeDays` | § 9b Abs. 2: Gradtage oder zeitanteilig **nur für die übrigen Wärmekosten**, Warmwasser immer zeitanteilig. Bei `self` wirkt es auf den Topf Heizung. **Bei `manual`** wirkt es nur auf Positionen, die erkennbar nur Heizung sind (`heating_target = 'heating'`, ab PR 10); kombinierte Positionen „Heizung und Warmwasser“ gehen nach Tagen, wie heute (A2). Damit ändert das Anlegen einer Anlage in PR 4 keine Zahl. Setzt der Vermieter später eine Position auf „nur Heizung“, zeigt die Vorschau die Verschiebung je Mieter. |
 | `exemption` | `none \| lowDemand \| disproportionate \| pre1981 \| renewable \| authority` | § 11 HeizkostenV |
 | `agreed_otherwise` | `null \| area \| fixedPercent \| consumption` | § 2 HeizkostenV, nur wenn `mayAgreeOtherwise` |
 | `non_residential` | boolean | § 8 CO2KostAufG |
@@ -1024,7 +1063,8 @@ Ist die H abgeschlossen, sind ihre Zeile und die Vorratswerte gesperrt (409; G-A
 | Spalte | PR | Bedeutung |
 |---|---|---|
 | `cost_items.heating_plant_id` | 4 | nullbar, RESTRICT; Schlüssel muss eine Heizperiode der Anlage sein (3.0) |
-| `heating_part` (`fuel \| operating \| metering`), `heating_target` (`both \| heating \| water`) | 10 | Pflicht genau bei `key = 'heatingSystem'` |
+| `heating_part` (`fuel \| operating \| metering`) | 3 | nullbar, nur Kostenart Heizung; Pflicht bei `key = 'heatingSystem'` ab PR 10 |
+| `heating_target` (`both \| heating \| water`) | 10 | Pflicht genau bei `key = 'heatingSystem'` |
 | `fuel_delivery_id` | 7 | 5.4 |
 
 **Zähler (PR 4):**
@@ -1110,7 +1150,7 @@ Bedingungen wie bisher. `co2_tenant_reliefs(statement_id, tenancy_id, cents ≥ 
 
 - `MeterType` + `'warmwasser' | 'hkv'`, `CostKey` + `'heatingSystem'`, `PropertyKind` + `'zfh'`.
 - `LandlordReason` + `'co2Share' | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'co2Refund'`.
-- `Statement.recommendedDeadline?`, `Settlement.deadline`.
+- `Statement.recommendedDeadline?`, `Statement.scope?: 'all' | 'heating'` (Weg d), `Settlement.deadline`.
 - `SettlementRow.kind?: 'co2Relief' | 'fuelCarry' | 'co2Refund'`. Diese Zeilen haben keine Kostenposition. Abrechnung.tsx (Belegsuche) und tenantFolder.ts sind darauf zu prüfen.
 - `Settlement.heating?: HeatingStatement[]` je Anlage und eingestellter H, mit Töpfen, Preisen, Werten, Gradtagsanteilen, Schätzungen, § 6a und CO₂-Bewertung.
 - `Settlement.period?`, `Settlement.legalBasis.values?`.
@@ -1169,7 +1209,7 @@ Eingebaut werden sie in `computeSettlement`, und zwar über die Empfänger aus #
    1. **Topf** = Positionen mit `heating_plant_id` = Anlage und `period` = H.
    2. **Brennstoff** (`fuel.ts`): Anteil jeder Lieferung an H (3.2), bei Vorrat die Bestandsrechnung (8.2), eingefrorene Überträge abgeschlossener Perioden. Ergebnis: Ausstoß E_H (immer umgerechnet, 3.3), Abdeckung; bei `self` zusätzlich die verbrauchten Brennstoffkosten F_H; CO₂-Kosten C_H nach Methode (bei `self` abgegrenzt, sonst wie im Topf berechnet, G-A3); Netzentgelte.
    3. **Verteilen nach `method`:**
-      - `manual`: jede Position nach ihrem Schlüssel wie heute, nur über die Tage von H; Mieterwechsel und Leerstand nach `change_split` (Vorgabe Gradtage, R4); Vorrat mit Bestandsrechnung und `fuelCarry`, wenn der Bestand eingetragen ist (R2); die Warnungen aus #140.
+      - `manual`: jede Position nach ihrem Schlüssel wie heute, nur über die Tage von H; Mieterwechsel und Leerstand nach Tagen, bei Positionen „nur Heizung“ nach `change_split` (A2); Lieferungen mit verknüpfter Position und Vorrat mit Bestand abgegrenzt über `fuelCarry`, C nach Verbrauch (A6); sonst die Warnungen aus #140 und `fuel.manual-beyond-period`.
       - `service`: Messdienstbeträge (`amounts`) wie heute; Mietverhältnisse aus H.
       - `self`: die Anlage berechnet je Empfänger exakte Gewichte g_r(z) (8.6), und jede Position wird damit **einmal** verteilt (`distributeCents`). Dazu kommen die Zeilen `fuelCarry` (8.2).
    4. **CO₂** (`co2.ts`) mit E_H, C_H und der Stufe:
@@ -1189,7 +1229,8 @@ Eingebaut werden sie in `computeSettlement`, und zwar über die Empfänger aus #
 - `flatRate`, `inclusive`, `outsideUnit`, `vacancy`/`amountsRest`;
 - neu `co2Share` (7.4, über `take()`);
 - neu `fuelCarry` (8.2);
-- neu `fuelClosedPeriod` (8.2).
+- neu `fuelClosedPeriod` (8.2);
+- neu `fuelEstimateDiff` (8.2), positiv oder **negativ** (zu hohe Schätzung, dann ist der Betrag eine Gutschrift an die Mieter der Vorperiode, A4).
 
 **§35a** läuft über `distributeLaborCents` mit denselben Rohwerten.
 
@@ -1201,7 +1242,7 @@ Eingebaut werden sie in `computeSettlement`, und zwar über die Empfänger aus #
 - **Jede Zeile** liegt höchstens 1 ct neben ihrem exakten Wert, Gleichstand nach Kennung.
 - **Die Nettosumme eines Mieters** (Heizzeilen minus Abzug) liegt höchstens **(k + 1) ct** neben ihrem exakten Wert, k = Zahl seiner Heizzeilen im Topf, denn jede Position und der Abzug werden getrennt gerundet (N2; die zweite Fassung nannte 2 ct, das gilt nur bei einer Heizzeile). Kürzungsbeträge rechnen auf den **gedruckten** Zeilen des Mieters (6.5), denn das Gesetz nennt den Anteil „gemäß der Heizkostenabrechnung“.
 
-**Die eine Ausnahme bei widerspruchsfreien Daten** ist `fuelCarry`: Diese Vermieterzeile darf das Vorzeichen wechseln (Vorrat oder Rechnungsteil aus der Vorperiode). Das steht am Kommentar von `landlordRecipients`.
+**Ausnahmen beim Vorzeichen bei widerspruchsfreien Daten:** `fuelCarry` (Vorrat oder Rechnungsteil aus einer anderen Periode) und `fuelEstimateDiff`. Auf der Mieterseite sind die `fuelCarry`-Zeilen „im Vorrat bzw. für den vorigen Zeitraum“ negativ; sie zählen in k der Rundungszusage mit (A7). Das steht am Kommentar von `landlordRecipients`.
 
 ### 6.3 Leerstand, Eigennutzung, Pauschale, außerhalb
 
@@ -1458,16 +1499,18 @@ Die Abschnitte 3 bis 8 des Teilentwurfs #99 sind übernommen. Hier steht, was gi
    - Sie wird in H hereingebucht (`fuelCarry`) und mit dem Abschluss eingefroren.
    - Die Abrechnung sagt: „Die Brennstoffkosten vom 15.03. bis 30.04.2026 sind geschätzt, weil die Rechnung des Versorgers noch nicht vorliegt. Eine Nachberechnung bleibt vorbehalten.“
    - Das ist die Vorgabe im Dialog „Trotzdem abschließen?“. Er nennt beide Beträge: geschätzt X €, oder ohne Schätzung tragen Sie X € selbst.
-3. **Kommt die echte Rechnung** (in H+1), bucht H+1 ihren Teil für H hinaus, und zwar den **tatsächlichen**. Den abgeschlossenen Zeitraum H ändert das nicht.
-   - Die Differenz (tatsächlich − geschätzt) steht in H+1 als Vermieterteil `fuelEstimateDiff`. So zahlt kein Mieter von H+1 für H.
-   - Hinweis `fuel.estimate-settled` mit Betrag: „Sie können innerhalb von drei Monaten eine Nachberechnung für {H} stellen (§ 556 Abs. 3 S. 3 BGB, BGH VIII ZR 264/12), wenn Sie die Verspätung nicht zu vertreten haben; dafür öffnen Sie die Abrechnung {H} wieder.“
-   - Ob eine Nachberechnung trägt, wenn eine Zwischenrechnung möglich gewesen wäre, ist offen (15.1 Nr. 19).
+3. **Kommt die echte Rechnung** (in H+1), bucht H+1 ihren Teil für H hinaus, und zwar den **tatsächlichen**. Den abgeschlossenen Zeitraum H ändert das nicht. Die Differenz (tatsächlich − geschätzt) steht in H+1 als Vermieterteil `fuelEstimateDiff`; so zahlt kein Mieter von H+1 für H.
+   - **Vor Ablauf der Frist von H** (Regelfall: die Folgerechnung kommt im März/April, die Frist von H endet bei Weg a am 30.04. des Folgejahres, bei Weg b am 31.12.): Eine Berichtigung ist ohne weitere Voraussetzung möglich, denn erst nach Fristablauf ist eine Korrektur zulasten des Mieters ausgeschlossen ([R] BGH VIII ZR 115/04, sekundär über iww und bmgev; **Datum 16. oder 17.11.2004 beim Lesen klären**). Hinweis `fuel.estimate-settled`: „Sie können die Abrechnung {H} bis {Frist} berichtigen.“
+   - **Nach Ablauf der Frist:** nur, wenn der Vermieter die Verspätung nicht zu vertreten hat ([G] § 556 Abs. 3 S. 3 BGB; Vorbehalt [R] VIII ZR 264/12, Leitsatz: „soweit er ohne Verschulden an einer rechtzeitigen Abrechnung gehindert ist“), und alsbald, in der Regel **binnen drei Monaten** nach Wegfall des Hindernisses ([R] BGH 05.07.2006, VIII ZR 220/05, sekundär). Wer freiwillig vor dem Fristende abgeschlossen hat, ist nicht „gehindert“; der Hinweis sagt das.
+   - **Negative Differenz** (Schätzung zu hoch, A4): Die Mieter von H haben zu viel gezahlt und einen Rückzahlungsanspruch; eine Berichtigung zugunsten der Mieter ist immer zulässig. Hinweis `fuel.estimate-overcharged` (**warning**) mit dem Betrag je Mieter von H und dem Weg: Abrechnung H wieder öffnen oder Gutschrift erfassen. Bis dahin steht der Betrag als negatives `fuelEstimateDiff` beim Vermieter und wird nicht still behalten.
+   - **Wiederöffnen von H** (#56): Die eingefrorenen Werte von H (`fuel_carry_frozen`) entfallen, die geschätzte Lieferung wird als „ersetzt“ markiert und nicht mehr gelesen, H liest den tatsächlichen Teil der echten Rechnung. Ist H+1 noch offen, verschwindet dort `fuelEstimateDiff`. Ist H+1 schon abgeschlossen, bleibt sein eingefrorenes `fuelEstimateDiff` stehen; es betraf nur den Vermieter, `deviation` von H+1 zeigt es.
+   - Ob eine Nachberechnung nach Fristablauf trägt, wenn eine Zwischenrechnung möglich gewesen wäre, ist offen (15.1 Nr. 19).
 4. **Ohne Schätzung**, also wenn der Vermieter sie abwählt, geht der Teil als `fuelClosedPeriod` an den Vermieter, wie bisher.
 
 **Einfrieren und Sperren:**
 
 - Der Abschluss einer H speichert je Lieferung, auch je geschätzter, was H herein- und hinausgebucht hat (`fuel_carry_frozen`), ebenso den bewerteten Endbestand. Eine spätere H liest das nicht neu.
-- Mengen, Zeiträume, Beträge und `share_permille` einer echten Lieferung, deren gebuchter Teil in einer abgeschlossenen H eingefroren ist, sind gesperrt (409). Das gilt nicht für den Teil, der nur geschätzt war.
+- Mengen, Zeiträume, Beträge und `share_permille` einer echten Lieferung, deren gebuchter Teil in einer abgeschlossenen H eingefroren ist, sind gesperrt (409); ebenso **Ablesungen des Versorgungszählers mit Datum in einer abgeschlossenen H** (A10). Das gilt nicht für den Teil, der nur geschätzt war.
 
 **Rechenbeispiele (N1, berichtigte Richtung), Testfälle in 12.2:**
 
@@ -1475,10 +1518,14 @@ Gasrechnung 6.500 € für 15.03.2025–14.03.2026, Position in H = `2025-05`; T
 
 | Fall | Lage | Ergebnis |
 |---|---|---|
-| a | H−1 offen, als die Rechnung kommt (sie datiert vom März 2026, die Frist von H−1 läuft bis 30.04.2026) | H−1 bucht +983,39 € herein, H −983,39 € hinaus; H trägt 5.516,61 €. Summe 6.500,00 € |
+| a | H−1 offen, als die Rechnung kommt (sie datiert vom März 2026; Frist von H−1 bei Weg a 30.04.2026, bei Weg b 31.12.2026) | H−1 bucht +983,39 € herein, H −983,39 € hinaus; H trägt 5.516,61 €. Summe 6.500,00 € |
 | b | H−1 vorher abgeschlossen, mit Schätzung aus der Vorjahresrechnung (6.000 € · 151,29 ‰ = **907,74 €**) | H−1 hat 907,74 € eingefroren. H bucht die tatsächlichen 983,39 € hinaus; `fuelEstimateDiff` 75,65 € beim Vermieter (Nachberechnung möglich). Summe 5.516,61 + 907,74 + 75,65 = 6.500,00 € |
 | c | H−1 abgeschlossen ohne Schätzung | `fuelClosedPeriod` 983,39 € beim Vermieter |
-| d | wie a, nach dem Abschluss von H−1 trägt der Vermieter einen Zählerstand nach (Anteil wäre 200 ‰) | 409; H−1 bleibt bei den eingefrorenen 983,39 €. Die erste Fassung hätte neu gerechnet, die Mieter hätten 316,61 € mehr als die Rechnung gezahlt. |
+| d | wie a, nach dem Abschluss von H−1 trägt der Vermieter einen Zählerstand des Versorgungszählers mit Datum in H−1 nach (Anteil wäre 200 ‰) | 409 (Ablesung in abgeschlossener H gesperrt); H−1 bleibt bei den eingefrorenen 983,39 €. Die erste Fassung hätte neu gerechnet: 316,61 € mehr als die Rechnung. |
+| e | H−1 abgeschlossen mit Schätzung **1.050,00 €**, tatsächlich 983,39 € | `fuelEstimateDiff` **−66,61 €**, `fuel.estimate-overcharged` mit den Beträgen je Mieter von H−1. Summe 5.516,61 + 1.050,00 − 66,61 = 6.500,00 € |
+| f | wie b, dann H−1 wieder geöffnet (H offen) | H−1 liest 983,39 €, Schätzung ersetzt, `fuelEstimateDiff` in H entfällt |
+
+Alle Fälle rechnen mit `fixed_cents = null`, also die ganzen 6.500 € nach Gradtagen, mit dem hint `fuel.fixed-unknown` (A4 Nr. 4).
 
 **Beispiel Heizöl** (nachgerechnet, 300 m²; kg der Lieferung vom 10.10. exakt 6.690,75):
 
@@ -1529,6 +1576,10 @@ Mietfuchs rechnet nach dem Wortlaut (15,0 %). Ob die technische Regel die gemess
 **Beispiel:** 60.000 kWh Hₛ, 200 m², 120 m³. Gemessen 9.000 kWh → **15,0 %**; Volumenformel → **27,75 %**; Flächenformel → **11,84 %**.
 
 **Beispiel Wärmepumpe (F1, Testfall):** 120 m³, t_w = 60 °C → Q = 15.000 kWh · 0,30 = 4.500 kWh; Strom 12.000 kWh, Wärme 36.000 kWh. α = 4.500 / 12.000 = **37,5 %**; die zweite Fassung hätte 4.500 / 36.000 = 12,5 % gerechnet.
+
+**Beleg zu F1 und eine Spannung** (A8): Der Wortlaut von § 9 Abs. 2 S. 6 Nr. 3 sagt nur „mit 0,30 zu multiplizieren“; § 9 Abs. 1 S. 2 verlangt bei Wärmepumpen die Aufteilung nach Anteilen am **Wärme**verbrauch. Entscheidend ist die Begründung, BT-Drs. 20/7619: Der Faktor gilt „für die Abrechnung von Strom für Wärmepumpen“ und ergibt sich aus einer Jahresarbeitszahl von 2,7 und dem Nutzungsgrad 0,8 in der Zahl 2,5 (0,8 / 2,7 ≈ 0,30). Das Formelergebnis ist also Strom, und α = Q · 0,30 / Strom.
+
+**Wärmepumpe mit Wärmezähler am Warmwasser, aber ohne Gesamtwärmezähler:** Gemessene Wärme geteilt durch Strom ergäbe etwa das Dreifache. Mietfuchs rechnet dann nicht, sondern meldet `heating.heat-pump-dhw-basis` (error) mit der Bitte, einen Gesamtwärmezähler anzugeben oder die Formel zu wählen. Testfall in 12.2.
 
 ### 8.4 Nutzerwechsel (§ 9b)
 
@@ -1777,7 +1828,9 @@ Jeder Code steht in `noticeKinds` und trägt mindestens einen Begriff.
 | `fuel.manual-beyond-period` | warning | – | 7 |
 | `fuel.closed-period-part` | hint | Betrag | 7 |
 | `fuel.estimated` | hint (Vorbehalt im Ausdruck) | geschätzter Betrag | 7 |
-| `fuel.estimate-settled` | warning | Differenz, Frist der Nachberechnung | 7 |
+| `fuel.estimate-settled` | warning | Differenz; vor oder nach Fristablauf | 7 |
+| `fuel.estimate-overcharged` | warning | Gutschrift je Mieter | 7 |
+| `heating.heat-pump-dhw-basis` | error | – | 11 |
 | `fuel.fixed-unknown` | hint | – | 7 |
 | `fuel.stock-date-differs` | hint | – | 8 |
 | `heating.change-split-time` | hint | beide Beträge | 4 |
@@ -1922,13 +1975,13 @@ Die Einrichtung ist ein geführter Ablauf in den Stammdaten des Objekts. Jede Fr
    - Ich selbst, mit Zählern oder Heizkostenverteilern → `self` (ab PR 10).
    - Niemand, die Heizkosten werden nach Fläche oder fest verteilt → `manual`, mit dem Satz zu § 12 (15 %) und beim Zweifamilienhaus zur Vereinbarung nach § 2.
 3. **„Für welchen Zeitraum rechnet sie ab?“** Vorgabe ist der Zeitraum des Objekts.
-   - Weicht er ab, bietet Mietfuchs die beiden Wege aus 3.1 an, mit Vorschau der Zeiträume und dem Hinweis auf den Mietvertrag.
-   - Vorgeschlagen wird die eigene Heizperiode, wenn schon Daten im Kalenderjahr vorhanden sind **und** die Frage „Zahlen Ihre Mieter eine eigene Vorauszahlung nur für Heizung?“ mit Nein beantwortet ist (R-A3). Sonst wird der ganze Objektzeitraum umgestellt.
+   - Weicht er ab, fragt Mietfuchs: „Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?“ Dann bietet es die Wege aus 3.1 an, mit Vorschau der Zeiträume und dem Hinweis auf den Mietvertrag.
+   - Vorgeschlagen wird: bei „getrennt abgerechnet“ **Weg d**; sonst die eigene Heizperiode (Weg b), wenn schon Daten im Kalenderjahr vorhanden sind; sonst die Umstellung des ganzen Objektzeitraums (Weg a). Legt der Vertrag den Zeitraum fest, nennt jeder Weg den Zustimmungsvorbehalt (A3).
    - Vorhandene Heizpositionen offener Zeiträume werden mit Vorschau umgeschlüsselt (3.0).
 4. **„Welche Wohnungen hängen an dieser Heizung?“** Vorgabe: alle Wohnungen.
 5. **„Sind die Zähler und Heizkostenverteiler aus der Ferne ablesbar? Wurden sie nach dem 01.12.2021 eingebaut?“** (`devices_remote`, `devices_installed_after_2021_12`; bei `self` je Zähler; R-A1, G-C2).
 6. **Nur bei Wärmepumpe:** „Wurde der Verbrauch am 01.10.2024 schon erfasst? Sonst: Seit wann?“ und bei Bruttowarmmiete die Aufgabe, die Durchschnittskosten 2022–2024 zu bestimmen (§ 12 Abs. 3; F5, L4).
-7. **Nur bei `self`:** „Mit welchem Anteil nach Verbrauch haben Sie bisher abgerechnet?“ (Vorgabe 70, § 6 Abs. 4; R-A7); die Frage nach § 7 Abs. 1 S. 2 als „Wurde das Haus vor 1995 gebaut und seither nicht nach heutigem Wärmeschutz saniert? Sind die frei liegenden Heizungsrohre überwiegend gedämmt?“ (Hinweis 5); Warmwasser (über dieselbe Heizung? Wärmezähler am Speicher?), Erfassung, dann legt der Ablauf die Zähler an.
+7. **Nur bei `self`:** „Mit welchem Anteil nach Verbrauch haben Sie bisher abgerechnet?“ (Vorgabe 70, § 6 Abs. 4; R-A7); die Frage nach § 7 Abs. 1 S. 2 als „Wurde das Haus vor 1995 gebaut und seither nicht mindestens auf den Stand von 1995 gedämmt? (unsicher → ‚weiß nicht‘) Sind die frei liegenden Heizungsrohre überwiegend gedämmt?“ (A10); Warmwasser (über dieselbe Heizung? Wärmezähler am Speicher? bei Wärmepumpe: Gesamtwärmezähler?), Erfassung, dann legt der Ablauf die Zähler an.
 
 **Eigentumswohnung:** Bei Objektart `etw` fragt Schritt 2 „Die Gemeinschaft (Hausverwaltung) rechnet ab“ und legt die Anlage mit `source = 'homeowners'` an (F2).
 
@@ -1980,7 +2033,7 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 | **F15 Techem-Muster mit Vorwegabzug** | Beispiel A | Probe exakt, `co2Share`, Steuer 3.933,01 € |
 | **F16 Eigene Heizkostenabrechnung** | Beispiel A aus 8.6 | 1.961,89 / 2.615,84 / 1.331,52 / 750,75 |
 | **F17 Heizöl mit Vorrat** | Beispiel 8.2 | 5.750,00 €, `fuelCarry` −100 €, E 15.254,91 kg, L 518,48 € |
-| **F18 Rumpfzeitraum** | Wechsel Kalenderjahr → Mai 2025; Rumpf `'2025-01'`; Grundsteuer zeitanteilig; Heizung 700 € Brennstoff + 200 € Wartung | 157,81 / 322,19 €, gekürzte CO₂-Tabelle, Frist 30.04.2026, Vorschlag **262 €** (3.7) |
+| **F18 Rumpfzeitraum** | Wechsel Kalenderjahr → Mai 2025; Rumpf `'2025-01'`; Grundsteuer zeitanteilig; Heizung 700 € Brennstoff (Merkmal aus PR 3) + 200 € Jahreswartung | 157,81 / 322,19 €, gekürzte CO₂-Tabelle, Frist 30.04.2026, Vorschlag **228 €** (3.7) |
 
 **F12, die reale Abrechnung.** Sie stammt aus einem Haus mit vier Einheiten und einer Messdienst-Komplettabrechnung. Namen, Adressen, Nutzernummern und Zählernummern werden **nicht** übernommen.
 
@@ -2018,7 +2071,7 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 | G-A1 / N4 | Wechsel Kalenderjahr → Mai ab `2025-05`; Mieter A mit Jahreskorrektur 2025 über **2.200 €** (Soll 2.400); Mieter B ganz im Rumpf (Auszug 28.02.2025) mit Korrektur 350 €; Ganzjahresposition 480 € | Vorschau verlangt für A „01–04/2025“ und „05/2025–04/2026“, speichert beides mit dem Wechsel in einer Transaktion; B bleibt unverändert; Rumpf rechnet für A mit den eingegebenen 700 € (01–04/2025), `2025-05` mit dem eingegebenen Betrag für 05/2025–04/2026; kein Monat wird doppelt oder zum Soll angerechnet; Position 157,81 / 322,19 € | Rumpf mit 2.400 € bzw. Mai–Dezember zum Soll |
 | G-A2 | Position `'2026-01'`, Anlage mit Beginn Mai | umgeschlüsselt auf `'2025-05'`, verteilt; direkter Schreibversuch mit `'2026-01'` → 400 | Position nirgends verteilt |
 | G-A3 | C = 600 €, Stufe 40 %, Anteil 848,71 ‰, `selfAfterService` | Entlastung 240,00 € | 203,69 € |
-| G-A4 / N1 a–d | Gasrechnung 6.500 € (15.03.2025–14.03.2026) in H = `2025-05`; Teil für H−1 = 983,39 € | a: H−1 offen +983,39; b: H−1 mit Schätzung 907,74, `fuelEstimateDiff` 75,65; c: `fuelClosedPeriod` 983,39; d: Zählerstand nach Abschluss → 409. Summe immer 6.500,00 € | Richtung H+1; 6.816,61 € |
+| G-A4 / N1 a–f | Gasrechnung 6.500 € (15.03.2025–14.03.2026) in H = `2025-05`; Teil für H−1 = 983,39 € (`fixed_cents = null`) | a: +983,39 in H−1; b: Schätzung 907,74, `fuelEstimateDiff` 75,65; c: `fuelClosedPeriod` 983,39; d: Ablesung in abgeschlossener H → 409; e: Schätzung 1.050, `fuelEstimateDiff` −66,61 mit `fuel.estimate-overcharged`; f: Wiederöffnen, Differenz entfällt. Summe immer 6.500,00 € | Richtung H+1; Zuviel blieb beim Vermieter |
 | N1 Abschlussdialog | H mit Lücke 15.03.–30.04.2026 | Dialog nennt Schätzung und den Betrag, den der Vermieter ohne Schätzung trägt; Vorgabe Schätzung | stiller Verlust beim Vermieter |
 | G-B2 | Rest 60 €, L_self 20 €, `co2Share` 80 € | L_self 20, `co2Share` 40, `amountsRest` 0 | 12 / 48 |
 | G-B3 | Betrag 3.933,01 €, S 3.845,51 €, L 87,50 €; Einzelbeträge mit vier Rundungen je Nutzer | bestanden; Einzelbeträge bis S + NE · 2 ct zulässig, NE · 2 ct + 1 ct darüber → Fehler | Toleranz zu eng |
@@ -2030,7 +2083,7 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 | Z-B1 | Stichtag 31.12., Ablesungen 02.01. und 05.01. | Werte wie abgelesen, hint mit 5 Tagen und 27,4 ‰; keine Schätzung | § 9a, Topf nach Fläche |
 | Z-B2 | Wechsel 30.09., keine Ablesung, „versäumt“ | § 9b Abs. 3; warning mit 15 % auf die Heizkosten von C1 | hint |
 | Z-B3 | Wechsel 30.09., Ablesung 03.10. | Wert verwendet, Grenze am 03.10., hint | § 9b Abs. 3 |
-| Z-B5 / R5 | Winter-Rumpf: kalt 400, Brennstoff 700, Wartung 200; Sommer-Rumpf Mai–August: Brennstoff 80, Wartung 200 | 262 € bzw. 133 € | 243 € (Wartung nach Gradtagen) bzw. 292 € |
+| Z-B5 / R5 / A11 | Winter-Rumpf: kalt 400, Brennstoff 700, Wartung 200 als Jahresrechnung; Variante Wartung nur Januar–April; Sommer-Rumpf: Brennstoff 80, Jahreswartung 200 | 228 € bzw. 262 € bzw. 100 € | 262 € (Jahreswartung × 365/120) bzw. 133 € |
 | R1 | Fernwärme 15.03.2025–14.03.2026, Grundpreis 2.000 €, H = 2025 | fester Teil 1.600,00 € | 1.242,58 € |
 | R2 | `manual`, Öl, Beispiel 8.2 mit Bestand | Mieter tragen 5.750 € nach Verbrauch, `fuelCarry` −100 € | nach Lieferung 5.650 € (mit 3.000 l Dezemberlieferung +3.150 €) |
 | R3 | getrennte Heizvorauszahlung, H Mai–April, P Kalenderjahr | eigene Heizkostenabrechnung je H mit Frist 30.04. des Folgejahres + 12 Monate; P ohne Heizkosten | nur Weg a |
@@ -2039,7 +2092,13 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 | F2/F3 | ETW, Gemeinschaft mit Vorwegabzug | `serviceDeducted`, Betrag S + L, `co2Share` in den Werbungskosten | ohne CO₂-Datensatz; Nettobetrag |
 | F4 | Zweifamilienhaus in Gemeinde mit Kappungsgrenzen-Verordnung, ohne Mietpreisbremse, ab 2028 | hälftige Teilung | Stufen |
 | F5 | Wärmepumpe neu 01.02.2025 mit Erfassung | Verordnung im Zeitraum 2025 anwendbar | ausgenommen |
-| N2 | Mieter mit vier Heizzeilen und Abzug | Nettosumme ≤ 5 ct neben exakt | Zusage 2 ct |
+| N2 / A7 | Mieter mit vier Heizzeilen, zwei `fuelCarry`-Zeilen und Abzug (k = 6) | Nettosumme < 7 ct neben exakt | Zusage 2 ct; k ohne `fuelCarry` |
+| A1 | Rumpf in PR 3, Brennstoffposition mit `heating_part = 'fuel'` | Vorschlag nach Gradtagen | in PR 3 nie ein Vorschlag |
+| A2 | `manual`, kombinierte Position „Heizung und Warmwasser“, Sommermieter Mai–September, Anlage angelegt | Anteil nach Tagen wie vor dem Anlegen; keine Zahl ändert sich | nach Gradtagen (Sommermieter zu wenig Warmwasser) |
+| A3 | Weg d mit H = P (Kalenderjahr, getrennte Vorauszahlung) | eine Gesamtabrechnung, beide Vorauszahlungen getrennt ausgewiesen | ungeregelt |
+| A3 | Weg d mit H Mai–April | Heizkostenabrechnung je H mit Vorschlag für die Heizvorauszahlung; Abschluss in `closed_heating_settlements` | kein Vorschlag |
+| A6 | `manual`, Gasrechnung als Lieferung verknüpft, reicht über H | abgegrenzt mit `fuelCarry`, C nach Anteil | ganz verteilt mit Warnung |
+| A8 | Wärmepumpe, Warmwasserwärmezähler, kein Gesamtwärmezähler | `heating.heat-pump-dhw-basis`, keine Verteilung des Topfs | Q / Strom ≈ dreifach |
 | N8 | Heizöl, ⅓ Eigennutzung | Abrechnung 1.916,67 €, Steuer 1.883,33 €, Erklärung auf der Steuerseite | ohne Festlegung |
 | R-A1 | Zähler eingebaut 15.12.2021, `remote_readable = false`, Zeitraum 2025 | 3 % | kein Hinweis vor 2027 |
 | R-A7 | Vorperiode 50 %, neue H mit 70 % | `heating.key-change`; Änderung für eine begonnene H → 400 | stillschweigend 70 |
@@ -2087,8 +2146,8 @@ Der Generator aus calc.test.ts und #202 bekommt einen festen Startwert. Er erzeu
 
 Geprüft wird:
 
-1. Σ aller Zeilen = Σ Kostenpositionen von P und den eingestellten H, mit `fuelCarry` und `fuelClosedPeriod`.
-2. **Je Zeile** ≤ 1 ct neben dem exakten Wert; keine Mieterzeile negativ bei positiven Kosten. **Je Mieter** ist die Nettosumme Heizung minus Abzug < (k + 1) ct neben dem exakten Wert, k = Zahl seiner Heizzeilen (N2).
+1. Σ aller Zeilen = Σ Kostenpositionen von P und den eingestellten H. Die Summe stimmt über die Gegenzeilen: `fuelCarry`, `fuelClosedPeriod`, `fuelEstimateDiff`; geschätzte Lieferungen haben keine Kostenposition und gehen nur über diese Gegenzeilen ein (A7).
+2. **Je Zeile** ≤ 1 ct neben dem exakten Wert; keine Mieterzeile negativ bei positiven Kosten, **ausgenommen Zeilen der Art `fuelCarry` und `co2Relief`** (A7). **Je Mieter** ist die Nettosumme Heizung minus Abzug < (k + 1) ct neben dem exakten Wert, k = Zahl seiner gerundeten Heizzeilen **einschließlich `fuelCarry`**.
 3. Zeitzerlegung: lückenlos, überschneidungsfrei, ≤ 12 Monate, Rumpf genau vor jedem Wechsel, Schlüssel eindeutig.
 4. Jede Heizposition trägt den Schlüssel einer Heizperiode ihrer Anlage. Jede Heizperiode landet in genau einer Gesamtabrechnung, jede Messdienstposition wird genau einmal verteilt.
 5. Über eine Folge abgeschlossener und offener H wird jede Lieferung genau einmal verbraucht, mit den eingefrorenen Überträgen (G-A4).
@@ -2148,16 +2207,16 @@ Geprüft wird:
 | **0** | Anleitung `meteringService`. **Erledigt mit #216** (auf `feat/heizung`); die Durchsicht von PR 6 prüft, dass Text und Probe zusammenpassen. | #209 | 0 T |
 | **1** | **Rechtsregister** `shared/law/` mit den Parametern, die der Bestand nutzt (Kabel, 15 %, 50/70, `VACANCY_PERSONS`, Umsatzsteuer, Fernablesung als `hkv.remote-reading.retrofit` und `hkv.cut.remote-reading`, unverändert in Text und Zahl), **eine Zeitregel je Parameter** (N6), Protokoll, `legalBasis.values`, `deviation` für Werte; Wächter mit erlaubten Stellen; Tests je Stichtag. Golden wortgleich. **Nicht** in PR 1: `hkv.degree-days` (PR 3), `hkv.remote-reading.new-devices` (PR 4). | #97, #110 | 2,5–3 T |
 | **2** | **Zeitraum, Kern:** `shared/period.ts`; 0014/0015 (`year` → `period` in vier Tabellen und `requested_period`, Rhythmus, Wechsel, Prüfbedingung mit Monat 1..12); `legacy/read.ts` erzeugt `period`; Schnappschuss und calc.ts über P; `ledgerRows`; `settlementDeadline`, `Settlement.deadline`; Alias nur beim reinen Kalenderobjekt. Golden unverändert, Gleichheitstest. | #208 | 4–5 T |
-| **3** | **Zeitraum, Bedienung:** Beginnmonat und Wechsel mit Vorschau schrumpfender Schlüssel; Jahreskorrekturen in der Vorschau neu erfasst, in einer Transaktion (N4); Rumpf, Leistungszeitraum, Aufteilen nur kalter Kosten, Jahr der Zahlung, Steuer über zwei Abrechnungen, `PeriodProvider`, Cockpit, `period.*`; **`hkv.degree-days` ins Register** und Vorschlag § 560 mit Brennstoff nach Gradtagen und allem anderen nach Tagen (N3, R5); Lexikon, F18, Praxislauf 15/16. | #208 | 5–6 T |
-| **4** | **Heizanlage, Grundlage:** `heating_plants` (samt `source`, Wärmepumpen-Erfassung), `heating_plant_units`, `heating_periods` (ohne Vorrat); `cost_items.heating_plant_id` mit Schreibprüfung; Zähler `warmwasser`, `hkv`, Rolle, `remote_readable`, `installed_on`; Fernablesbarkeit neuer Geräte (`hkv.remote-reading.new-devices`) und an der Anlage für den Messdienst; `change_split` auch für `manual` (R4); Wasserschlüssel; `zfh`; **Eigentumswohnung als Anlage `homeowners`** (F2); Einrichtung Schritte 1, 2, 4, 5, 6. **Sperren:** `self`, `perUnit`, zweite Anlage, eigene Heizperiode. | #99, #214, #180 | 4,5–5,5 T |
-| **5** | **Eigene Heizperiode:** Rhythmus der Anlage, Zuordnung H → P, Umschlüsseln mit Vorschau, Abrechnung nur mit Heizkosten mit Warnung, empfohlener Frist und Hinweis zur Anforderung beim Messdienst (L3), F14; **Weg d: getrennte Heizkostenabrechnung** mit `heating_prepayments`, eigener Frist und eigenem Abschluss je H (R3); Einrichtung Schritt 3. | #217 | 5,5–6,5 T |
+| **3** | **Zeitraum, Bedienung:** Beginnmonat und Wechsel mit Vorschau schrumpfender Schlüssel; Jahreskorrekturen in der Vorschau neu erfasst (N4); Rumpf, Leistungszeitraum, Aufteilen nur kalter Kosten, Jahr der Zahlung, Steuer über zwei Abrechnungen, `PeriodProvider`, Cockpit, `period.*`; **`hkv.degree-days`** und **schmales Merkmal `cost_items.heating_part`** (Oberfläche: „Brennstoff/Energie“, A1); Vorschlag § 560: Brennstoff nach Gradtagen, kalte Rumpfanteile nach Tagen, feste Jahresrechnungen als Jahresbetrag (A11); Lexikon, F18, Praxislauf 15/16. | #208 | 5,5–6,5 T |
+| **4** | **Heizanlage, Grundlage:** `heating_plants` (samt `source`, Wärmepumpen-Erfassung), `heating_plant_units`, `heating_periods` (ohne Vorrat); `cost_items.heating_plant_id` mit Schreibprüfung; Zähler `warmwasser`, `hkv`, Rolle, `remote_readable`, `installed_on`; Fernablesbarkeit neuer Geräte und an der Anlage für den Messdienst; `change_split` (wirkt bei `manual` erst auf Positionen „nur Heizung“, A2); Wasserschlüssel; `zfh`; Eigentumswohnung als Anlage `homeowners`; Einrichtung Schritte 1, 2, 4, 5, 6. **Sperren:** `self`, `perUnit`, zweite Anlage, eigene Heizperiode. | #99, #214, #180 | 4,5–5,5 T |
+| **5** | **Eigene Heizperiode und getrennte Heizkostenabrechnung:** Rhythmus der Anlage, Zuordnung H → P, Umschlüsseln mit Vorschau, Abrechnung nur mit Heizkosten (L3), F14; **Weg d** mit `heating_prepayments`, `heating_prepayment_overrides`, `closed_heating_settlements` samt Verlauf, `Statement.scope`, eigener Frist, Vorschlag § 560 für die Heizvorauszahlung, H = P als eine Gesamtabrechnung (A3); Einrichtung Schritt 3 mit Frage nach getrennter Abrechnung. | #217 | 6–7 T |
 
 ### Phase B: Messdienst und CO₂
 
 | PR | Inhalt | Refs | Aufwand |
 |---|---|---|---|
 | **6** | **CO₂ beim Messdienst und bei der Gemeinschaft:** `co2_statements`, `co2_tenant_reliefs`; `serviceDeducted`, `serviceShown`, `selfAfterService` ohne Lieferung; S als gedruckte Kostensumme, Musterabrechnungen je Messdienst und Rückfall „Zeile nicht gefunden“ (R6); Probe nur über Messdienstpositionen, Toleranz NE · 2 ct, G/V, L_self exakt; ETW brutto mit L (F3); Ausweis; `co2.missing` …; Warmwasser-Angabe mit 15 %; F06 angepasst, F12, F15. **Sperren:** Lieferungen, Methode `self`. | #97, #209, #211 | 5,5 T |
-| **7** | **Lieferungen, eigene Aufteilung (Gas, Fernwärme, Strom):** `fuel_deliveries` (mit `fixed_cents`, `estimated`), `fuel_delivery_parts`, `cost_items.fuel_delivery_id`, `fuel_carry_frozen`; Abgrenzung in den Stufen 0–6 samt Rolle `supply`, feste Bestandteile nach Tagen (R1); Teil einer Rechnung nach H−1, Schätzung mit Vorbehalt und `fuelEstimateDiff` (N1); E umgerechnet, C nach Methode; Einstufung, gekürzte Tabelle, § 8, § 9, ETS; Abzug nach Brennstoffanteil; Sperren; F13. **Sperre:** Vorratsenergien. | #97 | 5,5 T |
+| **7** | **Lieferungen, eigene Aufteilung (Gas, Fernwärme, Strom):** `fuel_deliveries` (mit `fixed_cents`, `estimated`), `fuel_delivery_parts`, `cost_items.fuel_delivery_id`, `fuel_carry_frozen`; Abgrenzung Stufen 0–6, feste Bestandteile nach Tagen; Abgrenzung auch bei `manual` mit verknüpfter Lieferung (A6); Teil einer Rechnung nach H−1, Schätzung mit Vorbehalt, `fuelEstimateDiff` mit Vorzeichen, Hinweise vor und nach Fristablauf, Wiederöffnen (N1, A4); Sperre von Ablesungen in abgeschlossener H; E umgerechnet, C nach Methode; Einstufung, gekürzte Tabelle, § 8, § 9, ETS; Abzug nach Brennstoffanteil; F13. **Sperre:** Vorratsenergien. | #97 | 6 T |
 | **8** | **Vorrat bei `selfAfterService` und `manual`** (R2): Bestand in `heating_periods` mit Peildatum, Bewertung nach Minol, Rundung je Posten, Vorbelegung, bei `manual` auch die Kosten nach Verbrauch mit `fuelCarry`; `fuel.stock-*`, `fuel.before-2023`, `fuel.manual-by-delivery` mit Einstufungshinweis. Bei `self` folgt der Vorrat mit PR 10. | #97, #99 | 3 T |
 | **9** | **Etagenheizung auf Vermietervertrag und mehrere Anlagen:** `perUnit`, zweite Anlage, `co2.item-spans-plants`. | #97 | 2 T |
 
@@ -2190,9 +2249,9 @@ Geprüft wird:
 
 | Umfang | Aufwand |
 |---|---|
-| alle PRs | **67–76 Arbeitstage** |
-| Phase A | 21,5–26 T |
-| Phase B | 16 T |
+| alle PRs | **69–78 Arbeitstage** |
+| Phase A | 23–27,5 T |
+| Phase B | 16,5 T |
 | Phase C | 15–19 T |
 | Phase D | 14,5 T |
 
@@ -2217,7 +2276,7 @@ Erweitert aus Abschnitt 15 des CO₂-Entwurfs. „Neues Issue nötig“ heißt: 
 | Messdienst ohne Aufteilung | Warnung mit 3 % je Mieter; eigene Aufteilung aus der Gasrechnung; Ausdruck für den Messdienst | 6, 7, 17 | #97, #210 |
 | Komplettabrechnung des Messdienstes | je Kostenart eine `amounts`-Position; KI liest alle Blöcke | 0, 20 | #103 |
 | **Zeitraum des Messdienstes ≠ Kalenderjahr** | ganzes Objekt im Zeitraum oder eigene Heizperiode | 2, 3, 5 | #208, #217 |
-| **Gasrechnung über den Zeitraumwechsel** | Zählerstand, Zwischenrechnung, Teilmengen laut Rechnung, Gradtage (Ortswerte oder Tabelle), eingetragen; Kosten nur bei `self` abgegrenzt, eingefroren beim Abschluss | 7, 10 | #97, #99 |
+| **Gasrechnung über den Zeitraumwechsel** | eingetragen, Zählerstand, Zwischenrechnung, Teilmengen, Gradtage, Schätzung mit Vorbehalt; feste Teile nach Tagen; abgegrenzt bei `self` und `manual` mit verknüpfter Lieferung, eingefroren beim Abschluss | 7, 10 | #97, #99 |
 | Selbstabrechnung mit Wärmezählern | vollständig | 10, 11, 13, 14 | #99 |
 | Selbstabrechnung mit elektronischen HKV | mit Bewertungsfaktor je Gerät | 12 | #99 |
 | Verdunster | über Werte eines Ablesedienstes | 12 | #99 |
@@ -2250,7 +2309,7 @@ Erweitert aus Abschnitt 15 des CO₂-Entwurfs. „Neues Issue nötig“ heißt: 
 | Ab 2028 Anlage nach § 43 GModG | hälftige Teilung anteilig | 18 | #215 |
 | Eichfrist | Hinweis mit Beweislast | 21 | #98 (in den Meilenstein aufnehmen) |
 | Gemeinschaftsräume mit hohem Verbrauch (Sauna, § 4 Abs. 3) | nicht gerechnet | – | Nicht-Ziel, selten |
-| Bruttowarmmiete bei Wärmepumpe (§ 12 Abs. 3) | Lexikonsatz | – | Nicht-Ziel |
+| Bruttowarmmiete bei Wärmepumpe (§ 12 Abs. 3 S. 3) | Aufgabe in der Einrichtung, Feld `warm_rent_average_2022_2024` (L4) | 4, 10 | #99 |
 
 ### 14.2 Die Issues des Meilensteins
 
@@ -2297,7 +2356,7 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 | 7 | § 12 nach Flächenverteilung gemäß § 9a Abs. 2; 3 % bei einem Zeitraum, der 2027 nur teilweise berührt (Altgeräte) | Wortlaut: Verteilung „nach der Verordnung“; keine Rechtsprechung | keine 15 %; „bis zu 3 %“ | Hinweistexte |
 | 8 | Reichweite des § 2 HeizkostenV | Überschrift „Vorrang“; Haufe: Vereinbarung nötig; Ratgeber: Bereichsausnahme (#85) | ohne Vereinbarung gilt die Verordnung | Schalter „vereinbart“ |
 | 9 | Gemessenes Q gegen Brennwert-kWh (G-B1) | § 9 Abs. 2 S. 6 nur für Formelwerte; Abs. 3: B = Q / Hᵢ, bei kWh keine Umrechnung in Brennstoffverbrauch. **Folge der Wortlautlesung:** Dasselbe Gas ergibt in kWh nach Brennwert abgerechnet 15,0 %, in m³ mit Heizwert abgerechnet 16,65 % (Nachprüfung). Die Gegenlesung (Hinweis 3 der dritten Prüfung): Der Satz erspart nur die Umrechnung in m³, nicht den Wechsel der Bezugsgröße. | nach Wortlaut, Q / abgerechnete kWh. Vor PR 10 neben VDI 2077 die amtliche Begründung der Änderungsverordnung lesen, die den Faktor 1,11 eingeführt hat. | Lexikon `hotWaterShare` nennt **beide Lesarten gleichwertig** mit beiden Werten |
-| 10 | Umrechnung von E über eine Lücke ohne Rechnung | § 5 Abs. 1 S. 5 spricht von den „auf den Rechnungen ausgewiesenen“ Emissionen | E auf H umgerechnet (sonst wäre die Stufe zu niedrig), C nie | `fuel.uncovered` |
+| 10 | Umrechnung von E über eine Lücke ohne Rechnung | § 5 Abs. 1 S. 5 spricht von den „auf den Rechnungen ausgewiesenen“ Emissionen | E auf H umgerechnet (sonst wäre die Stufe zu niedrig); C und Brennstoffkosten nie hochgerechnet, **außer als ausdrücklich geschätzte Lieferung mit Vorbehalt** (8.2) | `fuel.uncovered`, `fuel.estimated` |
 | 11 | Ist ein einseitiger Rumpf oder ein Rumpf nur der Heizperiode „vereinbart“ (§ 5 Abs. 1 S. 4)? | Wortlaut „vereinbart“; [S] NebenkostenFix kürzt nur bei Vereinbarung; Messdienste rechnen auf ihren Zeitraum | kürzen wie die Messdienste | `co2.short-period-agreed` nennt das Wort und verweist auf den Mietvertrag |
 | 12 | Einseitiger Wechsel des Zeitraums mit Rumpf | kein BGH; [M] Brunata: nur aus sachlichem Grund | Rumpf mit Hinweis | `period.short` |
 | 13 | CO₂-Kosten nach § 5a Abs. 3 Nr. 2 in einer Heizperiode über den 01.01.2028 | Abs. 3 Nr. 2 sagt nur „ab dem 1. Januar 2028“; „angefallen“ mit Umrechnung steht in Abs. 1 für Netzentgelte und Biobrennstoff | anteilig nach Anfall wie Abs. 1 | `co2.half-split` |
@@ -2306,8 +2365,10 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 | 16 | „Überwiegend dem Wohnen“ (§ 6 Abs. 1) | Maßstab offen | Schalter, Vorgabe Wohngebäude | Lexikon |
 | 17 | Fernwärme-Erstanschluss ohne ETS-Anlagen | BMWK-Rechner: 0 %; Gesetz nimmt nur ETS-Lieferungen aus | Wortlaut | Lexikon |
 | 18 | Ausweis der Messdienstbeträge über zwei Steuerjahre | § 11 Abs. 2 EStG verlangt den Abfluss; Positionen haben kein Zahlungsdatum | Vereinfachung „Jahr der Zahlung der Position“, benannt | Hinweis an der Steuerübersicht |
-| 19 | Nachberechnung nach einer geschätzten Brennstoffrechnung | [G] § 556 Abs. 3 S. 3 BGB („nicht zu vertreten“); [R] VIII ZR 264/12 (Vorbehalt bei unverschuldeter Verhinderung); [R] VIII ZR 156/11 Rn. 14 (sachgerechte Schätzung). Offen ist, ob der Vermieter die Verspätung „nicht zu vertreten“ hat, wenn er eine Zwischenrechnung des Versorgers hätte anfordern können ([M] ProCalor, Minol empfehlen sie). | schätzen mit Vorbehalt im Ausdruck; Differenz zunächst beim Vermieter; Nachberechnung als Möglichkeit mit Frist | `fuel.estimated`, `fuel.estimate-settled` |
+| 19 | Berichtigung nach einer geschätzten Brennstoffrechnung | Vor Fristablauf frei möglich ([R] VIII ZR 115/04); danach nur bei nicht zu vertretender Verspätung ([G] § 556 Abs. 3 S. 3 BGB, [R] VIII ZR 264/12) und binnen drei Monaten ([R] VIII ZR 220/05). Offen: Hat der Vermieter die Verspätung „nicht zu vertreten“, wenn er eine Zwischenrechnung hätte anfordern können ([M] ProCalor, Minol empfehlen sie)? Zugunsten der Mieter ist eine Berichtigung immer zulässig. | schätzen mit Vorbehalt; Hinweise vor und nach Fristablauf; Zuviel als Gutschrift melden | `fuel.estimated`, `fuel.estimate-settled`, `fuel.estimate-overcharged` |
 | 20 | Gilt die Mitteilungspflicht des § 5d Abs. 4 auch für Abs. 3? | Abs. 4 spricht von den „Voraussetzungen des Härtefalls“, die Überschrift des § 5d von Härtefällen | ja, als Auslegung: ohne Mitteilung hälftig (zulasten des Vermieters, also vorsichtig gegenüber dem Mieter) | `co2.half-split-two-family` |
+| 21 | Getrennte Heizkostenabrechnung (Weg d) | § 556 Abs. 3 S. 1, 4 BGB; VIII ZR 240/07 Rn. 17–22 (Teilabrechnungen erlaubt, Leitsatz a nur bei einheitlicher Vorauszahlung) – Umkehrschluss; ob eine im Vertrag getrennt ausgewiesene Vorauszahlung eine getrennte Abrechnung verlangt, ist Vertragsauslegung | Weg d nur bei getrennter Abrechnung und H ≠ P; Zustimmungsvorbehalt, wenn der Vertrag den Zeitraum festlegt | Einrichtung Schritt 3 |
+| 22 | 15 % bei Wärmepumpe ohne Erfassung nach dem 30.09.2025 | § 12 Abs. 3 S. 2: Verordnung erst ab dem Zeitraum nach der Installation; ohne Installation wörtlich nie; BT-Drs. 20/7619 schweigt zur Kürzung | Die Pflicht aus S. 1 ist verletzt, also gilt § 12 Abs. 1 S. 1 (15 %) | `heating.no-consumption` mit Vermerk „Auslegung“ |
 
 ### 15.2 Verbleibende Festlegungen ohne Primärquelle
 
