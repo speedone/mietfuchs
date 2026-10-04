@@ -1144,68 +1144,110 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
 
 // ---------- Hilfen ----------
 
-// **Der §35a-Lohnanteil je Mieter** (Abnahme von rc.1). Jede Zeile wird gerundet, wie der Mieter
-// es von Hand nachrechnet: round(L × raw / A), mit dem ungerundeten Kostenanteil `raw` (#180). Nie
-// mehr als ihr Kostenanteil (Durchsicht von #196): Bescheinigt wird, was der Mieter für Arbeit
-// bezahlt hat. Vorher wurde die gerundete Summe nach dem Restverfahren verteilt, und der Restcent
-// landete bei einem Mieter, der von Hand einen Cent weniger erhielt (36,32 € statt 36,31 €).
-// Läge die Summe über dem Lohnanteil der Rechnung, gibt die Zeile mit dem größten
-// Aufrundungsfehler einen Cent ab, bei Gleichstand die nach `compareText` letzte, wie beim
-// Restverfahren der Kosten. Tragen die Mieter die Rechnung ganz, gilt das Restverfahren über den
-// ganzen Lohnanteil (siehe unten). `adjusted` markiert die Zeilen, die von der Rundung von Hand
-// abweichen (gedeckelt, gekürzt oder mit dem Restcent); der Rechenweg erklärt sie.
-// Ist die Rechnung ganz Lohn (L = A), ist der Lohnanteil genau der Kostenanteil: Der Mieter hat mit
-// seinem Anteil nur Arbeit bezahlt. Das gilt auch, wenn die einzeln gerundeten Kostenanteile
-// zusammen über dem Betrag liegen (M1 der Durchsicht von #201, ein eigener Befund der Kosten).
-export type LaborNote = 'capped' | 'reduced' | 'remainder'
-export function distributeLabor(labor: number, amount: number, raws: number[], shares: number[], keys: string[]): { cents: number[], exact: number[], adjusted: boolean[], notes: LaborNote[][] } {
-  const exact = raws.map((r) => (labor * r) / amount)
-  const caps = shares.map((x) => Math.max(0, x))
-  if (labor === amount) return { cents: caps, exact, adjusted: shares.map(() => false), notes: shares.map(() => []) }
-  // Tragen die Mieter die Rechnung ganz, ergeben ihre Lohnanteile zusammen genau den der Rechnung,
-  // verteilt wie die Kosten nach dem Restverfahren (Prüfkatalog F08: 3 × 233,33 € wären 699,99 € von
-  // 700 €). Ein Cent über der Rundung von Hand ist dann kein Fehler, sondern der Rest der Rechnung,
-  // und der Rechenweg benennt ihn. Nimmt die Deckelung einer Zeile einen Cent, den ihr das
-  // Restverfahren gab (ihr Kostenanteil wurde abgerundet), geht er an eine Zeile mit Luft bis
-  // min(aufgerundeter Lohn, Kostenanteil), in der Reihenfolge des Restverfahrens (S1 der Durchsicht
-  // von #201: sonst fehlte er, 299,98 € bescheinigt bei 299,99 € Lohn).
-  const full = shares.reduce((a, b) => a + b, 0) === amount
-  const cents = (full ? largestRemainder(labor, exact, keys) : exact.map((x) => Math.round(x)))
-    .map((c, k) => Math.max(0, Math.min(c, caps[k])))
-  if (full) {
-    let spare = labor - cents.reduce((a, b) => a + b, 0)
-    const order = exact.map((x, k): [number, number] => [x - Math.floor(x), k])
-      .sort((p, q) => q[0] - p[0] || compareText(keys[p[1]], keys[q[1]]))
-    for (const [, k] of order) {
-      if (spare <= 0) break
-      const give = Math.min(Math.min(Math.ceil(exact[k]), caps[k]) - cents[k], spare)
-      if (give > 0) { cents[k] += give; spare -= give }
-    }
-  }
-  let over = cents.reduce((a, b) => a + b, 0) - labor
-  while (over > 0) {
-    let pick = -1
-    cents.forEach((c, k) => {
-      if (c <= 0) return
-      if (pick < 0) { pick = k; return }
-      const d = (c - exact[k]) - (cents[pick] - exact[pick])
-      if (d > 0 || (d === 0 && compareText(keys[k], keys[pick]) > 0)) pick = k
-    })
-    if (pick < 0) break
-    cents[pick]--
-    over--
-  }
-  // Warum eine Zeile von der Rundung von Hand abweicht, für den Rechenweg; es können zwei Gründe
-  // zugleich sein (L4 der Durchsicht von #201): auf den Kostenanteil begrenzt und danach gekürzt.
-  const notes = cents.map((c, k): LaborNote[] => {
-    const rounded = Math.round(exact[k])
-    const base = Math.min(rounded, caps[k])
-    const out: LaborNote[] = []
-    if (rounded > caps[k]) out.push('capped')
-    if (c !== base) out.push(full ? 'remainder' : 'reduced')
-    return out
+// ---------- Die eine Rundungsregel (#202) ----------
+//
+// Jede Kostenposition wird **genau einmal** nach dem Restverfahren verteilt, und zwar über alle
+// Empfänger zugleich: die Zeilen der Mieter und je Grund eine Zeile des Vermieters (Eigennutzung,
+// Leerstand, Pauschale, Inklusivmiete, außerhalb der Abrechnungseinheit, Rest der Vereinbarung,
+// Rest des Hauptzählers, Rest der Einzelbeträge). Die exakten Werte aller Zeilen ergeben zusammen
+// genau den Betrag; der Rest des Vermieters ist dafür definiert als Betrag minus alle übrigen.
+// Daraus folgt ohne Fallunterscheidung: Die Summe stimmt immer centgenau, jede Zeile ist ihr
+// exakter Wert ab- oder aufgerundet, und keine Zeile des Vermieters kann das Vorzeichen wechseln.
+// Vorher wurde bei voller Umlage nach dem Restverfahren verteilt, sonst jeder Mieter für sich
+// gerundet und der Vermieter bekam den Rest; der konnte bei −1 Cent landen (1,00 € auf 67/67/65 m²
+// vermietet und 1 m² selbstgenutzt: 34/34/33 ct, zusammen 1,01 €).
+//
+// Ein Empfänger: `key` ist die Kennung des Mietverhältnisses oder der Grund beim Vermieter, `raw`
+// sein exakter Anteil in Cent (mit dem Vorzeichen der Position).
+export type Recipient = { key: string, landlord: boolean, raw: number }
+
+// Was nur durch Gleitkomma-Rauschen von 0 oder einer ganzen Zahl abweicht, gilt als genau das. Ein
+// Rest des Vermieters von 1e-12 Cent ist rechnerisch 0 und darf beim Gleichstand nicht vorn liegen;
+// einer von −1e-12 Cent ergäbe abgerundet −1 und holte sich dann einen Cent zurück.
+const NOISE = 1e-6
+export const cleanRaw = (x: number): number => {
+  if (Math.abs(x) < NOISE) return 0
+  const r = Math.round(x)
+  return Math.abs(x - r) < NOISE ? r : x
+}
+
+// Reihenfolge, in der die Restcent vergeben werden: größter Nachkommaanteil zuerst. Gleich heißt
+// gleich bis auf Rauschen (0,4999999999 und 0,5); dann geht ein Cent zuerst an eine Zeile des
+// Vermieters und nicht an einen Mieter, unter Mietern entscheidet die Kennung wie seit #70, nie die
+// Reihenfolge in der Datei. Eine Zeile mit dem exakten Wert 0 kommt nicht vor: Sie bekommt nie
+// einen Cent.
+const TIE = 1e-9
+function remainderOrder(values: number[], recipients: Recipient[]): number[] {
+  const frac = (k: number) => values[k] - Math.floor(values[k])
+  return values.map((_, k) => k).filter((k) => values[k] !== 0).sort((i, j) => {
+    const d = frac(j) - frac(i)
+    if (Math.abs(d) > TIE) return d
+    if (recipients[i].landlord !== recipients[j].landlord) return recipients[i].landlord ? -1 : 1
+    return compareText(recipients[i].key, recipients[j].key)
   })
-  return { cents, exact, adjusted: notes.map((n) => n.length > 0), notes }
+}
+
+// Verteilt den Betrag über die Empfänger. Gerechnet wird mit dem Betrag ohne Vorzeichen, das
+// Vorzeichen kommt danach dazu; eine Gutschrift ist so das Spiegelbild der Rechnung.
+export function distributeCents(totalCents: number, recipients: Recipient[]): number[] {
+  const sign = totalCents < 0 ? -1 : 1
+  const values = recipients.map((r) => cleanRaw(r.raw * sign))
+  const cents = values.map((v) => Math.floor(v))
+  let rest = Math.abs(totalCents) - cents.reduce((a, b) => a + b, 0)
+  const order = remainderOrder(values, recipients)
+  if (order.length > 0) {
+    for (let k = 0; rest > 0; k++, rest--) cents[order[k % order.length]]++
+    for (let k = 0; rest < 0; k++, rest++) cents[order[order.length - 1 - (k % order.length)]]--
+  }
+  return cents.map((c) => (c * sign) || 0)
+}
+
+// **Der §35a-Lohnanteil wird mitverteilt** (#202), und zwar innerhalb der eben verteilten
+// Kostenanteile: Jede Zeile bekommt ihren exakten Lohn L × exakt / A ab- oder aufgerundet, nie
+// mehr als ihren Kostenanteil, und zusammen genau den Lohn der Rechnung, auch die Zeilen des
+// Vermieters. Ist die Rechnung ganz Lohn (L = A), sind die exakten Werte dieselben wie die der
+// Kosten, die Reihenfolge der Restcent ebenso, und der Lohnanteil jeder Zeile ist genau ihr
+// Kostenanteil.
+//
+// Warum nicht Lohn und Rest unabhängig verteilen und addieren: Zwei Rundungen zusammen können um
+// fast 2 Cent vom exakten Kostenanteil abweichen (0,5 + 0,5 exakt, beide aufgerundet, ergibt 2 statt
+// 1). Deshalb erst die Kosten, dann der Lohn darin.
+//
+// Dass der Lohn dabei immer Platz findet, ist gemessen (über 46 Millionen kleine Fälle erschöpfend
+// und 2 Millionen zufällige): Der erste Durchgang bis höchstens zur Aufrundung des Lohns ergab immer
+// genau L. Für den Fall, dass es doch einmal nicht reicht, gibt der zweite Durchgang bis zum
+// Kostenanteil nach; Platz gibt es dort immer, denn die Kostenanteile ergeben zusammen A ≥ L.
+// Die Zusagen „0 ≤ Lohn ≤ Kostenanteil“ und „Σ Lohn = L“ hängen also nicht an der Messung.
+export function distributeLaborCents(laborCents: number, totalCents: number, recipients: Recipient[], shares: number[]): { cents: number[], exact: number[] } {
+  const exact = recipients.map((r) => {
+    const e = cleanRaw(r.raw)
+    return laborCents === totalCents ? e : cleanRaw((e * laborCents) / totalCents)
+  })
+  const caps = shares.map((s) => Math.max(0, s))
+  const cents = exact.map((l, k) => (l > 0 ? Math.min(Math.floor(l), caps[k]) : 0))
+  let rest = laborCents - cents.reduce((a, b) => a + b, 0)
+  const order = remainderOrder(exact.map((l) => Math.max(0, l)), recipients)
+  for (const k of order) {
+    if (rest <= 0) break
+    if (cents[k] < Math.min(Math.ceil(exact[k]), caps[k])) { cents[k]++; rest-- }
+  }
+  for (const k of order) {
+    if (rest <= 0) break
+    const give = Math.min(caps[k] - cents[k], rest)
+    if (give > 0) { cents[k] += give; rest -= give }
+  }
+  return { cents, exact }
+}
+
+// Die Verteilung einer Position, für Prüfungen von außen (#202): je Empfänger der exakte Wert und
+// was er bekommen hat. `forced` heißt, die Position geht aus einem einzigen Grund ganz an den
+// Vermieter (nicht umlagefähig, keine Verteilbasis …); dann gilt dieser Grund und kein Eigenanteil.
+export type AllocationTrace = {
+  costItemId: string
+  amountCents: number
+  laborCents: number
+  forced: boolean
+  lines: { recipient: string, landlord: boolean, exact: number, cents: number, laborExact: number, laborCents: number }[]
 }
 
 // Verteilt totalCents exakt auf die gegebenen (float) Rohanteile (Hare/largest remainder).
@@ -1325,35 +1367,48 @@ export const looksLikeReserveContribution = (text: string): boolean =>
 export const NOT_ALLOCABLE_CATEGORIES: readonly string[] = ['Nicht umlagefähig', RESERVE_CATEGORY]
 export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEGORIES.includes(category)
 
-// Die Zerlegung des Vermieteranteils einer verteilten Position in ihre Gründe (#142). Sie
-// beschreibt den Betrag und verändert ihn nicht: Jeder Grund bekommt höchstens, was vom
-// Vermieteranteil noch übrig ist, und nur mit dessen Vorzeichen; was am Ende bleibt, ist
-// Rundung. Die Reihenfolge ist fest, damit dieselben Daten immer dieselbe Zeile ergeben.
-function landlordPartsOf(
+// Die Zeilen des Vermieters einer verteilten Position (#142, #202), in fester Reihenfolge: Jeder
+// Grund ist ein Empfänger der einen Verteilung, und was er dort bekommt, ist zugleich sein Teil in
+// der Zerlegung des Vermieteranteils. Nichts wird danach noch einmal gerundet oder begrenzt; einen
+// Grund „Rundung“ gibt es deshalb nicht mehr (in eingefrorenen Abrechnungen kann er stehen).
+//
+// Die Anteile der Mietverhältnisse mit Pauschale, Inklusivmiete oder ohne Abrechnung sind exakte
+// Anteile wie die der Mieter. Die übrigen Gründe beschreiben, was davon bleibt, und können sich
+// überschneiden (der Rest des Hauptzählers ist bei einer selbstgenutzten Wohnung ohne Zähler ihr
+// Eigenanteil; Anteile außerhalb und innerhalb können zusammen über 100 % vereinbart sein). Sie
+// bekommen deshalb der Reihe nach höchstens, was noch übrig ist, wie vor #202 in der Zerlegung,
+// nur jetzt vor dem Runden und nicht danach. Der letzte Grund ist der Rest: bei Einzelbeträgen der
+// Rest der Einzelabrechnung, sonst Leerstand. So ergeben die exakten Werte zusammen genau den
+// Betrag. Liegt er nur durch Rechenrauschen unter 0, ist er 0. Deutlich darunter liegt er nur, wenn
+// die Mieter rechnerisch mehr als den Betrag tragen, etwa bei zwei Mietverhältnissen derselben
+// Wohnung, die sich überschneiden; dann bleibt er stehen, wie er ist, und die Summe stimmt trotzdem.
+function landlordRecipients(
   item: SnapshotCostItem,
-  landlordCents: number,
-  p: { selfCents: number, notBooked: { reason: LandlordReason | CostModel, cents: number }[], customUnassignedRaw: number, outsideRaw: number, mainRestRaw: number, unassignedRaw: number },
-): LandlordPart[] {
-  const parts: LandlordPart[] = []
-  let left = landlordCents
-  const take = (reason: LandlordReason, cents: number) => {
-    if (cents === 0 || left === 0 || Math.sign(cents) !== Math.sign(left)) return
-    const c = Math.sign(left) * Math.min(Math.abs(cents), Math.abs(left))
-    const known = parts.find((x) => x.reason === reason)
-    if (known) known.cents += c
-    else parts.push({ reason, cents: c })
-    left -= c
+  p: { selfRaw: number, notBooked: { reason: LandlordReason | CostModel, raw: number }[], outsideRaw: number, customUnassignedRaw: number, mainRestRaw: number, bookedRaw: number },
+): Recipient[] {
+  const sign = item.amountCents < 0 ? -1 : 1
+  const sum = (reason: string) => p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.raw, 0)
+  let left = (item.amountCents - p.bookedRaw - p.notBooked.reduce((a, x) => a + x.raw, 0)) * sign
+  const take = (raw: number): number => {
+    const t = Math.max(0, Math.min(raw * sign, left))
+    left -= t
+    return t * sign
   }
-  take('selfUse', p.selfCents)
-  for (const reason of ['flatRate', 'inclusive', 'outsideUnit'] as const) {
-    take(reason, p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.cents, 0))
-  }
-  take('outsideUnit', Math.round(p.outsideRaw))
-  take('customRest', Math.round(p.customUnassignedRaw))
-  take('mainMeterRest', Math.round(p.mainRestRaw))
-  take(item.key === 'amounts' ? 'amountsRest' : 'vacancy', Math.round(p.unassignedRaw))
-  take('rounding', left)
-  return parts
+  const self = take(p.selfRaw)
+  const outside = take(p.outsideRaw)
+  const custom = take(p.customUnassignedRaw)
+  const mainRest = take(p.mainRestRaw)
+  let rest = cleanRaw(left * sign)
+  if (rest * sign < 0 && rest * sign > -0.5) rest = 0
+  return [
+    { key: 'selfUse', landlord: true, raw: self },
+    { key: 'flatRate', landlord: true, raw: sum('flatRate') },
+    { key: 'inclusive', landlord: true, raw: sum('inclusive') },
+    { key: 'outsideUnit', landlord: true, raw: sum('outsideUnit') + outside },
+    { key: 'customRest', landlord: true, raw: custom },
+    { key: 'mainMeterRest', landlord: true, raw: mainRest },
+    { key: item.key === 'amounts' ? 'amountsRest' : 'vacancy', landlord: true, raw: rest },
+  ]
 }
 
 // Welches Modell für eine Kostenposition gilt: das für Heizung bei der Heizkostenart, sonst das
@@ -1365,7 +1420,9 @@ const modelFor = (t: SnapshotTenancy, item: SnapshotCostItem): CostModel =>
 // Rückstand im Mietkonto (#133); die Route setzt ihn auf heute. Die Berechnung selbst fragt nie
 // nach dem heutigen Datum, sonst rechneten dieselben Daten an zwei Tagen verschieden. Ohne
 // Stichtag (Tests, Regression des Umstiegs) gilt das ganze Jahr als fällig.
-export type SettlementOptions = { asOf?: string }
+// `onAllocation` bekommt je Position ihre Verteilung (#202), für die Invarianten der Tests; die
+// Abrechnung selbst hängt nicht davon ab.
+export type SettlementOptions = { asOf?: string, onAllocation?: (trace: AllocationTrace) => void }
 
 // Der Schlüssel als Satzteil („2025 nach Personenzahl verteilt“), für den Hinweis unten.
 const KEY_PHRASES: Record<CostKey, string> = {
@@ -2056,8 +2113,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const outsidePct = Object.keys(item.customShares ?? {})
           .filter((id) => pctOf(id) > 0 && unitById.has(id) && !basisUnits.some((u) => u.id === id))
           .reduce((a, id) => a + pctOf(id), 0)
-        outsideRaw = item.amountCents * (outsidePct / 100)
-        customUnassignedRaw = item.amountCents * ((100 - pctSum - outsidePct) / 100)
+        // Über 100 % zusammen mit den Wohnungen innerhalb verfällt nur, was bis 100 % fehlt; mehr
+        // als den Betrag kann der Vermieter nicht tragen (#202, vorher an der Zerlegung begrenzt).
+        const outsideCapped = Math.min(outsidePct, Math.max(0, 100 - pctSum))
+        outsideRaw = item.amountCents * (outsideCapped / 100)
+        customUnassignedRaw = item.amountCents * (Math.max(0, 100 - pctSum - outsideCapped) / 100)
       }
     } else if (item.key === 'meter') {
       // `item.meterType` ist optional (string | null | undefined); die Indizierung selbst
@@ -2133,59 +2193,82 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         noBasis(`die direkt zugeordnete Wohnung ${target.name} gehört nicht zur Abrechnungseinheit`)
         forced = 'outsideUnit'
       }
+      const toSelf = selfUnits.some((u) => u.id === item.directUnitId)
       for (const t of tenancies.filter((t) => t.unitId === item.directUnitId)) {
+        // Ein Mietverhältnis ohne Abrechnung in der selbstgenutzten Wohnung zählt zur Eigennutzung,
+        // wie vor #202, als der ganze Vermieteranteil dort als Eigenanteil stand.
+        if (toSelf && !statements.has(t.id)) continue
         const raw = item.amountCents * (t.days / diy)
         targets.push({ t, raw, basisText: `Direktzuordnung ${t.unit.name}${t.days < diy ? ` · ${t.days}/${diy} Tage` : ''}` })
       }
       // Eigenanteil nur, soweit die Kosten nicht doch einem Mieter dieser Wohnung zufallen
       // (z. B. Mietverhältnis bis März, Eigennutzung ab April).
-      if (selfUnits.some((u) => u.id === item.directUnitId)) selfRaw = item.amountCents
+      // Seit #202 ist das der Betrag abzüglich der Mietverhältnisse dieser Wohnung mit Abrechnung;
+      // vorher stand hier der ganze Betrag, und erst die Begrenzung am Vermieteranteil machte daraus
+      // dasselbe.
+      if (toSelf) {
+        selfRaw = item.amountCents - targets.reduce((a, x) => a + x.raw, 0)
+        if (selfRaw * item.amountCents < 0) selfRaw = 0
+      }
     }
-    // Exakte Cent-Verteilung: wenn die Rohanteile die Gesamtsumme (nahezu) voll ausschöpfen,
-    // wird centgenau auf die Mieter verteilt; ansonsten trägt der Vermieter die Differenz
-    // (Leerstand, Eigenanteil, Rundungsrest).
-    const rawSum = targets.reduce((a, x) => a + x.raw, 0)
-    let shares: number[]
-    if (targets.length > 0 && Math.abs(item.amountCents - rawSum) < 0.5) {
-      shares = largestRemainder(item.amountCents, targets.map((x) => x.raw), targets.map((x) => String(x.t.id)))
-    } else {
-      shares = targets.map((x) => Math.round(x.raw))
+    // Die eine Verteilung (#202): Mieter und Gründe des Vermieters sind Empfänger derselben
+    // Restverteilung (siehe `distributeCents`). Ein Mietverhältnis mit Pauschale oder Inklusivmiete
+    // für diese Kostenart (#93) bleibt in der Verteilbasis, bekommt seinen Anteil aber nicht
+    // zugebucht: Er fällt dem Vermieter zu, als abziehbare Kosten und nicht als Eigenanteil. Ebenso
+    // ein Mietverhältnis in einer nicht beteiligten Wohnung (nur bei Direktzuordnung möglich), das
+    // keine Abrechnung hat. Solche Anteile werden je Grund zu einer Zeile des Vermieters.
+    const booked = targets.map((x) => bookable(x.t))
+    const tenantLines: Recipient[] = targets.flatMap((x, i) => (booked[i] ? [{ key: String(x.t.id), landlord: false, raw: x.raw }] : []))
+    const recipients: Recipient[] = [
+      ...tenantLines,
+      ...landlordRecipients(item, {
+        selfRaw,
+        notBooked: targets.flatMap((x, i) => booked[i] ? [] : [{ reason: statements.has(x.t.id) ? modelFor(x.t, item) : 'outsideUnit', raw: x.raw }]),
+        outsideRaw,
+        customUnassignedRaw,
+        mainRestRaw,
+        bookedRaw: tenantLines.reduce((a, l) => a + l.raw, 0),
+      }),
+    ]
+    const cents = distributeCents(item.amountCents, recipients)
+    // Die Zeile jedes Ziels; ein nicht zugebuchtes hat keine eigene.
+    const lineOf = new Map<number, number>()
+    {
+      let k = 0
+      targets.forEach((_, i) => { if (booked[i]) lineOf.set(i, k++) })
     }
-    // §35a-Lohnanteil, je Mieter wie von Hand gerundet und nie über dem Kostenanteil; die Regel und
-    // ihre beiden Ausnahmen (ganze Lohnrechnung, Summe über dem Lohnanteil der Rechnung) stehen bei
-    // `distributeLabor`. Gerechnet wird mit dem **ungerundeten** Kostenanteil (`raw`), nicht mit dem
-    // auf Cent gerundeten (#180): Wer 55/365 der Rechnung trägt, trägt 55/365 des Lohnanteils, und so
-    // rechnet der Mieter nach. Bei Leerstand und Eigennutzung bleibt der entsprechende Teil beim
-    // Vermieter. Die kaufmännische Rundung ist eine Festlegung dieser Berechnung, keine Vorgabe des
-    // §35a EStG. Die Kostenanteile selbst bleiben, wie sie sind.
+    const shareOf = (i: number): number => { const k = lineOf.get(i); return k === undefined ? 0 : cents[k] }
+    // §35a-Lohnanteil, mitverteilt in denselben Zeilen (siehe `distributeLaborCents`): Wer 55/365
+    // der Rechnung trägt, trägt 55/365 des Lohnanteils (#180), ab- oder aufgerundet, nie mehr als
+    // seinen Kostenanteil, und alle Zeilen zusammen, die des Vermieters eingeschlossen, genau den
+    // Lohnanteil der Rechnung. Die kaufmännische Rundung ist eine Festlegung dieser Berechnung,
+    // keine Vorgabe des §35a EStG. Die Kostenanteile selbst bleiben, wie sie sind.
     const labor = validLabor35aCents(item)
-    const laborOf = new Map<number, number>()
-    // Der rechnerische Lohnanteil der Zeilen, die von der Rundung von Hand abweichen, für den
-    // Rechenweg.
-    const laborAdjusted = new Map<number, { exact: number, notes: LaborNote[] }>()
+    let laborCents: number[] = recipients.map(() => 0)
+    let laborExact: number[] = recipients.map(() => 0)
     if (labor === null) {
       warn('labor35a.invalid', `„${item.description}“: der §35a-Lohnanteil muss zwischen 0 und dem Rechnungsbetrag liegen — es wird kein Lohnanteil bescheinigt.`, itemSubject(item))
     } else if (labor > 0) {
-      const booked = targets.map((_, i) => i).filter((i) => bookable(targets[i].t))
-      const d = distributeLabor(labor, item.amountCents, booked.map((i) => targets[i].raw), booked.map((i) => shares[i]), booked.map((i) => String(targets[i].t.id)))
-      booked.forEach((i, k) => {
-        laborOf.set(i, d.cents[k])
-        if (d.adjusted[k]) laborAdjusted.set(i, { exact: d.exact[k], notes: d.notes[k] })
-      })
+      const d = distributeLaborCents(labor, item.amountCents, recipients, cents)
+      laborCents = d.cents
+      laborExact = d.exact
     }
+    options.onAllocation?.({
+      costItemId: item.id,
+      amountCents: item.amountCents,
+      laborCents: labor ?? 0,
+      forced: forced !== null,
+      lines: recipients.map((r, k) => ({ recipient: r.key, landlord: r.landlord, exact: cleanRaw(r.raw), cents: cents[k], laborExact: laborExact[k], laborCents: laborCents[k] })),
+    })
     let distributed = 0
     targets.forEach((x, i) => {
-      // Ein Mietverhältnis mit Pauschale oder Inklusivmiete für diese Kostenart (#93) bleibt in der
-      // Verteilbasis, bekommt seinen Anteil aber nicht zugebucht: Er fällt dem Vermieter zu, als
-      // abziehbare Kosten und nicht als Eigenanteil.
-      if (!bookable(x.t)) return
+      const k = lineOf.get(i)
+      if (k === undefined) return
       const st = statements.get(x.t.id)
-      // Mietverhältnis in einer nicht beteiligten Wohnung (nur bei Direktzuordnung möglich):
-      // Der Anteil gilt als nicht verteilt, sonst fehlte er in der Abrechnung ganz — er muss
-      // in den Vermieteranteil laufen.
       if (!st) return
-      distributed += shares[i]
-      const labor35a = laborOf.get(i) ?? 0
+      const share = cents[k]
+      distributed += share
+      const labor35a = laborCents[k]
       // Der Rechenweg (#114): dieselben Zahlen, aus denen die Zeile entstand, als Text. Der
       // Restcent wird bei der Zeile benannt, die von der gewöhnlichen Rundung abweicht; sonst sähe
       // der Mieter einen Cent, den ihm niemand erklärt. Das ist nicht immer die Zeile, die einen
@@ -2219,23 +2302,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           steps.push({ label: 'Rechnung', value: `${fmtCents(item.amountCents)} × ${fmtPercent((x.raw / item.amountCents) * 100)} % = ${fmtExactEuro(x.raw)}` })
         }
       }
-      steps.push(shares[i] !== Math.round(x.raw)
-        ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(shares[i])} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(x.raw)}; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)`, term: 'largestRemainder' }
-        : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(shares[i]) })
+      const exact = cleanRaw(x.raw)
+      steps.push(share !== Math.round(exact)
+        ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(share)} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(x.raw)}; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)`, term: 'largestRemainder' }
+        : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(share) })
       // Wie beim Kostenanteil: Weicht der Lohnanteil von der Rundung seines rechnerischen Werts ab,
       // steht der Grund dabei, auch wenn er dadurch 0 wird (M3 der Durchsicht von #201); sonst fehlte
       // dem Mieter ein Cent ohne Erklärung. Bei ganzer Lohnrechnung ist der Lohnanteil der
       // Kostenanteil, und dessen Restcent erklärt schon der Schritt davor.
-      const adjustedLabor = laborAdjusted.get(i)
-      if (adjustedLabor !== undefined) {
-        const base = Math.min(Math.round(adjustedLabor.exact), Math.max(0, shares[i]))
-        const direction = labor35a > base ? 'höher' : 'geringer'
-        const why = adjustedLabor.notes.map((n) => n === 'capped'
+      const laborRounded = Math.round(laborExact[k])
+      if (labor !== null && labor > 0 && labor !== item.amountCents && labor35a !== laborRounded) {
+        const why = laborRounded > Math.max(0, share)
           ? 'ein Lohnanteil liegt nie über dem Kostenanteil, deshalb ist er auf diesen begrenzt'
-          : n === 'reduced'
-            ? 'Restcent: damit die Lohnanteile zusammen nicht mehr ergeben als der Lohnanteil der Rechnung, ist dieser einen Cent geringer als gewöhnlich gerundet'
-            : `Restcent: damit die Lohnanteile zusammen genau den Lohnanteil der Rechnung ergeben, ist dieser einen Cent ${direction} als gewöhnlich gerundet`)
-        steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: `${fmtCents(labor35a)} (rechnerisch ${fmtExactEuro(adjustedLabor.exact)}; ${why.join('; ')})`, term: 'labor35a' })
+          : `Restcent: damit die Lohnanteile zusammen genau den Lohnanteil der Rechnung ergeben, ist dieser einen Cent ${labor35a > laborRounded ? 'höher' : 'geringer'} als gewöhnlich gerundet`
+        steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: `${fmtCents(labor35a)} (rechnerisch ${fmtExactEuro(laborExact[k])}; ${why})`, term: 'labor35a' })
       } else if (labor35a > 0) {
         steps.push({ label: 'davon Lohnanteil nach § 35a EStG', value: fmtCents(labor35a), term: 'labor35a' })
       }
@@ -2247,11 +2327,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         key: item.key,
         keyLabel: KEY_LABELS[item.key] || item.key,
         basisText: x.basisText,
-        shareCents: shares[i],
+        shareCents: share,
         labor35aCents: labor35a,
         steps,
       })
-      st.totalShareCents += shares[i]
+      st.totalShareCents += share
       st.total35aCents += labor35a
     })
     // Heizung und Warmwasser ohne Verbrauchsanteil (#140): Die Verordnung verlangt 50 bis 70 % nach
@@ -2264,7 +2344,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // den Hinweis zur Fernablesbarkeit (#110), etwa ein Ergebnis des Messdienstes, das direkt bei
     // der vermieteten Wohnung eingetragen ist; Kürzungen nach § 12 Abs. 1 Satz 1 rechnet sie nicht.
     const heatingReceived = item.category === HEATING_CATEGORY
-      ? targets.flatMap((x, i) => (bookable(x.t) && statements.has(x.t.id) && shares[i] > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shares[i] }] : []))
+      ? targets.flatMap((x, i) => (booked[i] && statements.has(x.t.id) && shareOf(i) > 0 && !outsideHeating(x.t.unit) ? [{ x, share: shareOf(i) }] : []))
       : []
     if (heatingReceived.length > 0) heatingBilledItem ??= item
     if (item.category === HEATING_CATEGORY && item.key !== 'direct') {
@@ -2296,18 +2376,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     tenantCentsOf.set(item.id, distributed)
     const landlordCents = item.amountCents - distributed
-    // Der Eigenanteil ist ein Teil des Vermieteranteils dieser Position — deshalb an dem
-    // begrenzen, was tatsächlich beim Vermieter gebucht wurde. Sonst könnte der separat
-    // ausgewiesene Betrag durch Rundung über dem Vermieteranteil liegen.
-    let selfCents = 0
-    if (selfRaw > 0 && landlordCents > 0) {
-      selfCents = Math.min(Math.round(selfRaw), landlordCents)
-    } else if (selfRaw < 0 && landlordCents < 0) {
-      // Eine Gutschrift senkt den Eigenanteil ebenso (#129), höchstens um den Teil, den der
-      // Vermieter von ihr trägt; sonst stünde der private Anteil der Steuer zu hoch da.
-      selfCents = Math.max(Math.round(selfRaw), landlordCents)
-    }
-    selfUsedShareCents += selfCents
+    // Die Zeilen des Vermieters aus derselben Verteilung; zusammen ergeben sie genau den
+    // Vermieteranteil. Der Eigenanteil ist genau die Zeile der Eigennutzung (#202), ohne eigenes
+    // Runden und ohne Begrenzung: Er kann nicht über dem Vermieteranteil liegen und nicht das
+    // Vorzeichen wechseln, eine Gutschrift senkt ihn ebenso (#129). Geht die Position aus einem
+    // einzigen Grund ganz an den Vermieter, gilt dieser Grund und kein Eigenanteil.
+    const parts: LandlordPart[] = recipients.flatMap((r, k) => (r.landlord && cents[k] !== 0 ? [{ reason: r.key as LandlordReason, cents: cents[k] }] : []))
+    if (!forced) selfUsedShareCents += parts.find((p) => p.reason === 'selfUse')?.cents ?? 0
     if (landlordCents !== 0) {
       landlordRows.push({
         costItemId: item.id,
@@ -2316,20 +2391,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         totalCents: item.amountCents,
         keyLabel: KEY_LABELS[item.key] || item.key,
         shareCents: landlordCents,
-        landlordParts: forced
-          ? [{ reason: forced, cents: landlordCents }]
-          : landlordPartsOf(item, landlordCents, {
-            selfCents,
-            // Anteile, die einem Mietverhältnis zustehen, ihm aber nicht zugebucht werden: wegen
-            // Pauschale oder Inklusivmiete, oder weil seine Wohnung außerhalb der
-            // Abrechnungseinheit liegt (dann hat es keine Abrechnung).
-            notBooked: targets.flatMap((x, i) => bookable(x.t) ? [] : [{ reason: statements.has(x.t.id) ? modelFor(x.t, item) : 'outsideUnit', cents: shares[i] }]),
-            customUnassignedRaw,
-            outsideRaw,
-            mainRestRaw,
-            // Was die Rohanteile sonst nicht ausschöpfen: Leerstand, bei Einzelbeträgen der Rest.
-            unassignedRaw: item.amountCents - targets.reduce((a, x) => a + x.raw, 0) - selfRaw - customUnassignedRaw - outsideRaw - mainRestRaw,
-          }),
+        landlordParts: forced ? [{ reason: forced, cents: landlordCents }] : parts,
       })
     }
   }
