@@ -762,8 +762,10 @@ test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
 
 // §35a-Lohnanteil mit Restverfahren. Die Mieter bekommen zusammen den Lohnanteil, der auf ihre
 // gebuchten Kostenanteile entfällt — kaufmännisch auf den Cent gerundet, nie mehr als der
-// Lohnanteil der Rechnung. Diese Summe wird wie die Kosten nach dem größten Rest verteilt,
-// Gleichstand entscheidet die ID des Mietverhältnisses.
+// Lohnanteil der Rechnung. Gerechnet wird mit dem **ungerundeten** Kostenanteil (#180): Wer 70/220
+// der Rechnung trägt, trägt auch 70/220 des Lohnanteils, so wie man es von Hand nachrechnet. Diese
+// Summe wird wie die Kosten nach dem größten Rest verteilt, Gleichstand entscheidet die ID des
+// Mietverhältnisses.
 //
 // Handrechnung zum folgenden Test (Gartenpflege, Flächenschlüssel):
 //    1. Rechnungsbetrag                          30.000 ct
@@ -771,14 +773,15 @@ test('§35a: Lohnanteil wird anteilig je Mieter ausgewiesen', () => {
 //    3. Kostenanteil je Mietverhältnis           30.000 × 70/220 = 9.545,45 → 9.545 ct (t1 und t2)
 //                                                (EG mit 80 m² ist selbstgenutzt, sein Teil bleibt
 //                                                beim Vermieter: 30.000 − 2 × 9.545 = 10.910 ct)
-//    4. Summe der Mieterkosten                   19.090 ct
-//    5. Mieter-Lohn gesamt, exakt                10.000 × 19.090/30.000 = 6.363,33 ct
-//    6. … kaufmännisch gerundet                  6.363 ct (≤ 10.000 ct Lohnanteil)
-//    7. exakter Anteil je Mietverhältnis         10.000 × 9.545/30.000 = 3.181,67 ct (t1 und t2)
-//    8. ganze Cent vor der Restverteilung        3.181 + 3.181 = 6.362 ct → 1 Rest-Cent
-//    9. Reihenfolge der Reste                    beide 0,67 → Gleichstand, ID entscheidet: t1 vor t2
-//   10. §35a je Mietverhältnis                   t1 = 3.182 ct, t2 = 3.181 ct, Summe 6.363 ct
-// Bisher wurde je Zeile gerundet: 3.182 + 3.182 = 6.364 ct — ein Cent mehr als der Mieteranteil.
+//    4. Mieter-Lohn gesamt, exakt                10.000 × 140/220 = 6.363,64 ct
+//    5. … kaufmännisch gerundet                  6.364 ct (≤ 10.000 ct Lohnanteil)
+//    6. exakter Anteil je Mietverhältnis         10.000 × 70/220 = 3.181,82 ct (t1 und t2)
+//    7. ganze Cent vor der Restverteilung        3.181 + 3.181 = 6.362 ct → 2 Rest-Cent
+//    8. §35a je Mietverhältnis                   t1 = 3.182 ct, t2 = 3.182 ct, Summe 6.364 ct,
+//                                                wie von Hand: 100,00 € × 70/220 = 31,82 €
+// Bis #180 ging die Rechnung vom gerundeten Kostenanteil aus (10.000 × 9.545/30.000 = 3.181,67 ct,
+// Summe 6.363 ct), und t2 bekam 31,81 € bescheinigt, einen Cent unter der Handrechnung. Davor wurde
+// je Zeile gerundet, was mehr bescheinigen konnte, als die Rechnung enthält.
 test('§35a: Mieter-Lohnanteil kaufmännisch gerundet, Rest-Cent nach Restverfahren (Handrechnung)', () => {
   const make = (order: number[]): Db => ({
     ...emptyDb(),
@@ -796,8 +799,23 @@ test('§35a: Mieter-Lohnanteil kaufmännisch gerundet, Rest-Cent nach Restverfah
     assert.equal(st('t1').totalShareCents, 9545)
     assert.equal(st('t2').totalShareCents, 9545)
     assert.equal(st('t1').total35aCents, 3182, `Reihenfolge ${order.join(', ')}`)
-    assert.equal(st('t2').total35aCents, 3181, `Reihenfolge ${order.join(', ')}`)
+    assert.equal(st('t2').total35aCents, 3182, `Reihenfolge ${order.join(', ')}`)
   }
+})
+
+test('§35a (#180): der Lohnanteil folgt dem ungerundeten Kostenanteil, nicht dem auf Cent gerundeten', () => {
+  // 1.000 € Hausmeister mit 300 € Lohnanteil, Einzug am 07.11.2025, also 55 von 365 Tagen.
+  // Kostenanteil 1.000 € × 55/365 = 150,684… € → 150,68 €. Lohnanteil von Hand: 300 € × 55/365 =
+  // 45,205… € → 45,21 €. Aus dem gerundeten Kostenanteil gerechnet kamen 45,20 € heraus.
+  const db: Db = {
+    ...emptyDb(),
+    units: [{ id: 'u1', name: 'W1', areaM2: 60, participates: true }],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'M1', persons: 1, start: '2025-11-07' })],
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 100000, key: 'area', labor35aCents: 30000 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(statementOf(s, 't1').totalShareCents, 15068, 'der Kostenanteil bleibt')
+  assert.equal(statementOf(s, 't1').total35aCents, 4521)
 })
 
 test('§35a: tragen die Mieter die Rechnung ganz, ergibt ihr Lohnanteil genau den der Rechnung', () => {
@@ -1913,9 +1931,14 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
       const rows = s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === item.id))
       const costCents = rows.reduce((a, r) => a + r.shareCents, 0)
       const laborCents = rows.reduce((a, r) => a + (r.labor35aCents ?? 0), 0)
-      const expectedLabor = Math.min(itemLabor, Math.round((itemLabor * costCents) / item.amountCents))
+      // Der Lohnanteil folgt dem ungerundeten Kostenanteil (#180), und der steht nicht in der
+      // Abrechnung. Gegen die gerundeten Anteile gemessen weicht er deshalb höchstens um den
+      // Rundungscent der Summe ab und dazu um den Lohn auf die Rundung der Kostenanteile, die je
+      // Zeile unter einem Cent liegt. Genau festgehalten ist die Regel an Beispielen mit Handrechnung.
+      const proportional = (itemLabor * costCents) / item.amountCents
+      const tolerance = 0.5 + (itemLabor / item.amountCents) * rows.length
       assert.ok(laborCents <= itemLabor, `Fall ${i}: mehr bescheinigt (${laborCents}) als die Rechnung enthält (${itemLabor})`)
-      assert.equal(laborCents, expectedLabor, `Fall ${i}: Summe ${laborCents} ≠ gerundeter Mieteranteil ${expectedLabor}\n${JSON.stringify(db)}`)
+      assert.ok(Math.abs(laborCents - proportional) <= tolerance, `Fall ${i}: Summe ${laborCents} weit weg vom anteiligen Lohn ${proportional}\n${JSON.stringify(db)}`)
       if (costCents === item.amountCents) assert.equal(laborCents, itemLabor, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
     }
     // Reihenfolge ohne Einfluss
