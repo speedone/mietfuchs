@@ -4973,6 +4973,27 @@ test('Belegbuchung: aus dem Posteingang gilt das Jahr am Beleg als gewähltes, n
   }, { invoices: RECHNUNGEN })
 })
 
+// L1 der Durchsicht von #201: Nach der ersten Auswertung legt der Server den Beleg auf das Jahr aus
+// dem Beleg. Ein zweites „Per KI auswerten“ nahm dieses Jahr als gewähltes, die gelbe Zeile wurde
+// grün, und „Alle grünen übernehmen“ buchte ungesehen in das andere Jahr. Hat der Beleg schon eine
+// Auswertung, gilt deren gewähltes Jahr; ändert der Nutzer das Jahr am Beleg, zieht es mit.
+test('Belegbuchung: erneut ausgewertet bleibt das gewählte Jahr der früheren Auswertung', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
+    assert.deepEqual([a.year, a.requestedYear], [2026, 2024])
+    assert.equal((await uploadOf(s, a.file)).year, 2026, 'der Beleg liegt im Jahr aus dem Beleg')
+    const again = assessmentOf(await evaluate(s, 'WASSER', { existingFile: a.file, year: '2025' }))
+    assert.deepEqual([again.year, again.requestedYear], [2026, 2024])
+    assert.ok(again.lines.every((l) => l.suggestion?.level !== 'gruen' && l.suggestion?.preselected !== true), 'nicht grün, nicht angehakt')
+    assert.ok(again.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war 2024/.test(r))))
+    // Stellt der Nutzer das Jahr am Beleg um (Belegordner, Posteingang), gilt danach dieses.
+    assert.equal((await putJson(s, `/api/uploads/${a.file}`, { year: 2026 })).status, 200)
+    const moved = assessmentOf(await evaluate(s, 'WASSER', { existingFile: a.file, year: '2025' }))
+    assert.deepEqual([moved.year, moved.requestedYear], [2026, 2026])
+    assert.ok(!moved.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war/.test(r))))
+  }, { invoices: RECHNUNGEN })
+})
+
 test('Belegbuchung: nennt der Beleg kein Jahr, gilt das mitgeschickte', async () => {
   await withOllama(async (s) => {
     const a = assessmentOf(await evaluate(s, 'HAUSMEISTER', { year: '2023' }))
