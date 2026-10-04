@@ -105,3 +105,28 @@ test('Normalisierung: ein zerlegtes „ü“ (NFD, etwa aus macOS-Dateinamen) gi
   const x = item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Müllschlucker Wartung' })
   assert.equal(sameCostCandidates([x], { year: 2026, category: 'Sonstige Betriebskosten', description: 'Müllschlucker Wartung' }).length, 1)
 })
+
+// Befund aus der Update-Matrix gegen 0.10.0-rc.1: Der Hinweis paarte eine Gutschrift (mit Beleg)
+// mit der Rechnung derselben Kostenart (ohne Beleg) und riet, „in der Regel die ohne Beleg“ zu
+// löschen. Befolgt verschwand die Rechnung, oder umgekehrt die Gutschrift, und die Mieter zahlten
+// zu viel. Eine Gutschrift ist nie dieselbe Rechnung wie eine Rechnung.
+test('Mögliche Doppelung: eine Gutschrift wird nie mit einer Rechnung gepaart (rc.1)', () => {
+  const rechnung = item({ year: 2026, category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 })
+  const gutschrift = item({ year: 2026, category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745, invoiceFile: 'gs.pdf' })
+  assert.deepEqual(possibleDuplicates([rechnung, gutschrift], 2026, []), [])
+  assert.deepEqual(possibleDuplicates([gutschrift, { ...rechnung, invoiceFile: undefined }], 2026, [item({ year: 2025, category: 'Wasser', amountCents: 80000 })]), [])
+  // Zwei Gutschriften derselben Art bleiben ein Kandidat, wie bisher.
+  const zweite = item({ year: 2026, category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 })
+  assert.deepEqual(possibleDuplicates([rechnung, gutschrift, zweite], 2026, []).map((g) => g.map((i) => i.id)), [[gutschrift.id, zweite.id]])
+})
+
+test('Kandidaten: mit Betrag gefragt, passt eine Gutschrift nur zu Gutschriften und eine Rechnung nur zu Rechnungen (rc.1)', () => {
+  const rechnung = item({ year: 2026, category: 'Wasser', amountCents: 84000 })
+  const gutschrift = item({ year: 2026, category: 'Wasser', amountCents: -5745 })
+  const ask = (amountCents?: number) => sameCostCandidates([rechnung, gutschrift], { year: 2026, category: 'Wasser', amountCents }).map((i) => i.id)
+  assert.deepEqual(ask(-5745), [gutschrift.id])
+  assert.deepEqual(ask(84000), [rechnung.id])
+  // Ohne Betrag (oder mit 0, etwa bei einem leeren Formularfeld) wie bisher alle.
+  assert.deepEqual(ask(), [rechnung.id, gutschrift.id])
+  assert.deepEqual(ask(0), [rechnung.id, gutschrift.id])
+})
