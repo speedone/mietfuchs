@@ -777,6 +777,10 @@ export const assessmentLines = sqliteTable(
     booking: text('booking', { enum: ASSESSMENT_BOOKINGS }),
     costItemId: text('cost_item_id').references(() => costItems.id, { onDelete: 'set null' }),
     dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false),
+    // Die Zeile kam bei einer erneuten Auswertung dazu, als aus dem Beleg schon Zeilen gebucht waren
+    // (Integrationsdurchsicht, H1). Für sie sind die schon gebuchten Positionen dieses Belegs
+    // mögliche Doppelungen; für die Zeilen der ersten Auswertung nicht (Frischwasser und Abwasser).
+    reassessed: integer('reassessed', { mode: 'boolean' }).notNull().default(false),
   },
   (t) => [
     primaryKey({ columns: [t.assessmentId, t.idx] }),

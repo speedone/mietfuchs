@@ -68,10 +68,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   das Jahr aus dem Beleg davon ab (eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
   nicht gelesen hat), ist die Zeile gelb und nicht vorab angehakt, „Alle grünen übernehmen“ bucht
   sie nicht. Die Vorschau nennt das Jahr jeder neuen Position, und beide Seiten zeigen „Jahr …“ an
-  einem Beleg aus einem anderen Jahr. Hängt ein Beleg schon von Hand an einer Position, gilt sie
-  für jede seiner Zeilen als mögliche Doppelung, gleich welcher Kostenart: Die Zeile ist rot, und
-  angelegt wird sie nur nach ausdrücklicher Bestätigung. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen, auch
-  aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
+  einem Beleg aus einem anderen Jahr. Hängt ein Beleg oder ein Beleg gleichen Inhalts schon von
+  Hand an einer Position, gilt sie für jede seiner Zeilen als mögliche Doppelung, gleich welcher
+  Kostenart: Die Zeile ist rot, und angelegt wird sie nur nach ausdrücklicher Bestätigung. Ebenso
+  jede Zeile, die beim erneuten Auswerten eines schon gebuchten Belegs dazukommt, etwa weil ein
+  Betrag von Hand berichtigt war oder die KI die Rechnung anders aufteilt; sie nennt die schon
+  gebuchten Positionen. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen,
+  auch aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
   Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt. Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
   wiederholen bucht nichts zweimal: Was genau so gebucht ist, meldet Erfolg ohne Änderung; eine
@@ -83,20 +86,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Position hängen; die Karte im Belegordner zeigt die Summe der eigenen Zeilen, und der
   Hinweis auf eine mögliche doppelte Rechnung erscheint bei gleichen Beträgen an einer Position.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
-
-### Geändert
-
-- **Lexikon: Abrechnungsfrist bei verspätetem oder angefochtenem Grundsteuerbescheid.** Liegt der
-  Bescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn, den Grundsteuerwert-
-  oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der
-  endgültige Bescheid da oder über den Einspruch entschieden ist. Das Übrige rechnen Sie
-  fristgerecht ab und behalten sich die Grundsteuer ausdrücklich vor; gefordert wird sie im
-  Regelfall innerhalb von drei Monaten danach (BGH, Urteil vom 20.05.2026, VIII ZR 6/24). Bei der
-  Heizkostenverordnung nennt das Lexikon die Nachrüstfrist für fernablesbare Geräte zum
-  31.12.2026.
-  ([#110](https://github.com/speedone/mietfuchs/issues/110))
-
-- **Das Belegarchiv ist jetzt ein Belegordner.** Voreingestellt sind das gewählte Objekt und das
+- **Belegordner statt Belegarchiv.** Voreingestellt sind das gewählte Objekt und das
   Abrechnungsjahr, umschaltbar auf alle Objekte und alle Jahre. Je Kostenart gibt es ein Register
   mit Summe; jeder Beleg steht als Karte mit Vorschaubild, Rechnungssteller, Betrag, Rechnungsdatum
   (sofern die KI es gelesen hat) und den Positionen, an denen er hängt. Die Suche findet
@@ -132,15 +122,27 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Anlage V, einschließlich der nicht umlagefähigen, mit einer Übersicht als CSV.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
+### Geändert
+
+- **Lexikon: Abrechnungsfrist bei verspätetem oder angefochtenem Grundsteuerbescheid.** Liegt der
+  Bescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn, den Grundsteuerwert-
+  oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der
+  endgültige Bescheid da oder über den Einspruch entschieden ist. Das Übrige rechnen Sie
+  fristgerecht ab und behalten sich die Grundsteuer ausdrücklich vor; gefordert wird sie im
+  Regelfall innerhalb von drei Monaten danach (BGH, Urteil vom 20.05.2026, VIII ZR 6/24). Bei der
+  Heizkostenverordnung nennt das Lexikon die Nachrüstfrist für fernablesbare Geräte zum
+  31.12.2026.
+  ([#110](https://github.com/speedone/mietfuchs/issues/110))
+
 ### Hinweise zur Aktualisierung
 
-- Die Datenbank bekommt eine Tabelle mit Angaben zu Belegen (Migration `0012_belege`). Vorhandene
-  Belege brauchen nichts: Sie stehen weiter im Belegordner, ihre Angaben liest Mietfuchs aus der
-  Datei. Die Sicherung vor dem Update legt der Start wie gewohnt an.
-  ([#170](https://github.com/speedone/mietfuchs/issues/170))
-- Die Datenbank bekommt beim ersten Start zwei weitere Tabellen für die gespeicherten
-  Auswertungen (Migration 0013). Bestehende Positionen und Belege bleiben, wie sie sind; für sie
-  gilt weiter der Beleg an der Position. Backup und Wiederherstellen nehmen die Auswertungen mit.
+- Die Datenbank bekommt beim ersten Start drei Tabellen dazu: Angaben zu Belegen (Migration
+  `0012_belege`) und die gespeicherten Auswertungen (Migration `0013_belegbuchung`). Beim Update
+  von 0.9.0 laufen beide Schritte in einem Start, davor legt Mietfuchs eine Sicherung
+  `mietfuchs.sqlite.vor-0012_belege` an. Vorhandene Positionen und Belege brauchen nichts: Belege
+  stehen weiter im Belegordner, ihre Angaben liest Mietfuchs aus der Datei, und für bestehende
+  Positionen gilt weiter der Beleg an der Position. Backup und Wiederherstellen nehmen Angaben
+  und Auswertungen mit.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ## [0.9.0] – 2026-10-02

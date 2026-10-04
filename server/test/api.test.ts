@@ -23,7 +23,7 @@ import { assessments as assessmentsTable, uploads as uploadsTable } from '../src
 import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -5053,4 +5053,108 @@ test('Belegbuchung: die vier Abnahmefälle der Spezifikation über die Routen', 
     assert.deepEqual(byDescription('Gartenpflege 2026'), [[145000, null]], 'C: Lohnanteil entfernt')
     assert.equal(items.length, 4, 'D: nichts doppelt')
   }, { invoices: RECHNUNGEN })
+})
+
+// ---------- Integrationsdurchsicht des Stapels #174 → #175 → #184 ----------
+
+const NOCHMAL: Record<string, FakeInvoice> = {
+  ZWEIZEILEN: RECHNUNGEN.WASSER ?? assert.fail('Rechnung WASSER fehlt'),
+  EINEZEILE: { vendor: 'Stadtwerke Musterstadt', invoiceDate: '2026-02-01', totalGrossEur: 1500, positions: [{ description: 'Wasser und Abwasser', category: 'Wasser/Abwasser', amountEur: 1500 }] },
+  GARTENARBEITEN: { vendor: 'Hausmeisterdienst Muster', invoiceDate: '2026-06-30', totalGrossEur: 400, positions: [{ description: 'Gartenarbeiten', category: 'Gartenpflege', amountEur: 400 }] },
+}
+
+// Plan und Buchung wie die Oberfläche: erst die Vorschau, dann mit ihrer Marke buchen.
+async function planAndBook(s: Server, a: AssessmentView, decisions: LineDecision[]): Promise<{ preview: BookingPreview, status: number }> {
+  const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${a.id}/plan`, { decisions }))
+  const res = await postJson(s, `/api/assessments/${a.id}/book`, { decisions, token: preview.token })
+  return { preview, status: res.status }
+}
+const fieldsOfLine = (l: AssessmentLine | undefined): LineFields => l?.suggestion?.fields ?? assert.fail('kein Vorschlag')
+// „Alle grünen übernehmen“ der Oberfläche (client/src/assessment.ts, isGreen).
+const greenLines = (a: AssessmentView): AssessmentLine[] =>
+  a.lines.filter((l) => l.state === 'open' && !!l.suggestion?.preselected && l.suggestion.level === 'gruen')
+const totalOf = async (s: Server): Promise<number> => (await s.api<CostItem[]>('/api/costItems')).reduce((x, i) => x + i.amountCents, 0)
+
+test('H1: ein gebuchter Beleg, erneut ausgewertet, bucht eine berichtigte Zeile nicht still ein zweites Mal', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'ZWEIZEILEN'))
+    const [frisch, ab] = a.lines
+    // Frischwasser von Hand auf 750 € berichtigt, Abwasser wie gelesen.
+    const decisions: LineDecision[] = [
+      { idx: 0, action: 'create', fields: { ...fieldsOfLine(frisch), amountCents: 75000 } },
+      { idx: 1, action: 'create', fields: fieldsOfLine(ab) },
+    ]
+    assert.equal((await planAndBook(s, a, decisions)).status, 200)
+    assert.equal(await totalOf(s), 155000)
+
+    const again = assessmentOf(await evaluateAgain(s, a.file, 'ZWEIZEILEN'))
+    const fresh = again.lines.filter((l) => l.state === 'open')
+    assert.equal(fresh.length, 1, 'die berichtigte Zeile kommt mit dem gelesenen Betrag wieder')
+    const line = fresh[0] ?? assert.fail('keine offene Zeile')
+    assert.equal(line.amountCents, 70000)
+    assert.equal(line.suggestion?.level, 'rot')
+    assert.equal(line.suggestion?.preselected, false)
+    assert.ok(line.suggestion?.reasons.some((r) => /Dieser Beleg ist schon gebucht/.test(r) && /Frischwasser/.test(r) && /verwerfen Sie sie/.test(r)), line.suggestion?.reasons.join(' | '))
+    assert.deepEqual(greenLines(again), [], '„Alle grünen übernehmen“ bucht sie nicht')
+
+    // Direkt angelegt, ohne Bestätigung: Rückfrage, gebucht wird nichts.
+    const direct: LineDecision[] = [{ idx: line.idx, action: 'create', fields: fieldsOfLine(line) }]
+    const { preview, status } = await planAndBook(s, again, direct)
+    assert.equal(status, 400)
+    assert.ok(preview.confirm.some((c) => c.idx === line.idx && /schon gebucht/.test(c.message)), JSON.stringify(preview.confirm))
+    assert.equal(await totalOf(s), 155000, 'keine stille zweite Buchung')
+    // Mit ausdrücklicher Bestätigung legt sie an: Es kann eine weitere Zeile derselben Rechnung sein.
+    assert.equal((await planAndBook(s, again, [{ ...direct[0] as LineDecision & { action: 'create' }, despiteCandidates: true }])).status, 200)
+    assert.equal(await totalOf(s), 225000)
+  }, { invoices: NOCHMAL })
+})
+
+test('H1: erst eine Zeile über 1.500 € gebucht, erneut ausgewertet zwei Zeilen: beide rot, keine vorab angehakt', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'EINEZEILE'))
+    assert.equal((await planAndBook(s, a, [{ idx: 0, action: 'create', fields: fieldsOfLine(a.lines[0]) }])).status, 200)
+    const again = assessmentOf(await evaluateAgain(s, a.file, 'ZWEIZEILEN'))
+    const fresh = again.lines.filter((l) => l.state === 'open')
+    assert.deepEqual(fresh.map((l) => [l.amountCents, l.suggestion?.level, l.suggestion?.preselected]), [[70000, 'rot', false], [80000, 'rot', false]])
+    for (const l of fresh) assert.ok(l.suggestion?.candidates.some((c) => c.description === 'Wasser und Abwasser'), 'die gebuchte Position steht als Kandidat da')
+    assert.deepEqual(greenLines(again), [])
+    const decisions: LineDecision[] = fresh.map((l) => ({ idx: l.idx, action: 'create', fields: fieldsOfLine(l) }))
+    const { preview, status } = await planAndBook(s, again, decisions)
+    assert.equal(status, 400)
+    assert.equal(preview.confirm.length, 2)
+    assert.equal(await totalOf(s), 150000)
+  }, { invoices: NOCHMAL })
+})
+
+test('H1: im gewöhnlichen Ablauf (eine Zeile gebucht, die zweite derselben Auswertung offen) bleibt die zweite grün', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'ZWEIZEILEN'))
+    assert.equal((await planAndBook(s, a, [{ idx: 0, action: 'create', fields: fieldsOfLine(a.lines[0]) }])).status, 200)
+    const after = await s.api<AssessmentView>(`/api/assessments/${a.id}`)
+    const open = after.lines.find((l) => l.idx === 1) ?? assert.fail('Zeile 1 fehlt')
+    assert.equal(open.suggestion?.reasons.some((r) => /schon gebucht/.test(r)), false)
+    assert.notEqual(open.suggestion?.level, 'rot')
+  }, { invoices: NOCHMAL })
+})
+
+test('H2: ein Beleg gleichen Inhalts wie ein von Hand angehängter wird nicht still gebucht, auch mit anderer Kostenart', async () => {
+  await withOllama(async (s) => {
+    // Dieselben Bytes, wie evaluate sie hochlädt: gleiche Prüfsumme.
+    const alt = await uploadBelegFile(s, Buffer.concat([PDF, Buffer.from('%GARTENARBEITEN\n')]), 'alt.pdf')
+    const hm = await jsonOf<CostItem>(await postJson(s, '/api/costItems', { year: 2026, category: 'Hauswart', description: 'Hausmeisterdienst', amountCents: 40000, key: 'area', invoiceFile: alt }))
+    assert.equal(hm.invoiceFile, alt)
+    const a = assessmentOf(await evaluate(s, 'GARTENARBEITEN'))
+    assert.notEqual(a.file, alt)
+    const line = a.lines[0] ?? assert.fail('keine Zeile')
+    assert.equal(line.category, 'Gartenpflege')
+    assert.equal(line.suggestion?.level, 'rot')
+    assert.equal(line.suggestion?.preselected, false)
+    assert.ok(line.suggestion?.reasons.some((r) => /gleichem Inhalt/.test(r) && /Hausmeisterdienst/.test(r)), line.suggestion?.reasons.join(' | '))
+    assert.ok(line.suggestion?.candidates.some((c) => c.id === hm.id), 'die Position steht als Kandidat da')
+    assert.deepEqual(greenLines(a), [])
+    const { preview, status } = await planAndBook(s, a, [{ idx: 0, action: 'create', fields: fieldsOfLine(line) }])
+    assert.equal(status, 400)
+    assert.ok(preview.confirm.some((c) => /gleichem Inhalt/.test(c.message) && /Hausmeisterdienst/.test(c.message)), JSON.stringify(preview.confirm))
+    assert.equal(await totalOf(s), 40000, 'keine stille zweite Buchung')
+  }, { invoices: NOCHMAL })
 })
