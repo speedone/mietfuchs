@@ -24,30 +24,40 @@ Rechner.
 - 📄 **Fertige Abrechnung** je Mieter mit Saldo, §35a-Bescheinigung und Fristen-Hinweis (§556/§560 BGB) — der Rechenweg jeder Zeile lässt sich aufklappen
 - 💡 **Hinweise statt Rätselraten** — Mietfuchs erklärt, was auffällt (z. B. Rückstand, fehlender Endstand beim Zählerwechsel, Heizkostenverordnung), wo es eine gibt mit Rechtsgrundlage, und mit einem Lexikon der Fachbegriffe
 - 💶 **Mietkonto** — Soll/Ist je Monat, fällige Rückstände auf einen Blick
-- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr
+- 🧾 **Steuer-Übersicht (Anlage V)** — Einnahmen nach Zufluss, Werbungskosten und Überschuss aufs Jahr; wohnst du selbst im Haus, ist jede Position in abziehbar und privat aufgeteilt
+- 📁 **Belegordner** — je Objekt, Jahr und Kostenart, mit Posteingang für neue Belege, Belegabdeckung („85 % der Kosten belegt“), einer Belegmappe für Mieter als PDF und allen Belegen für die Steuer als ZIP
+- 🔁 **Kosten aus dem Vorjahr übernehmen** — Positionen samt Umlageschlüssel übernehmen und nur den neuen Betrag eintragen; den Schlüssel merkt sich Mietfuchs je Kostenart
+- 🧷 **Eine Rechnung landet genau einmal in den Kosten** — jede Zeile eines ausgewerteten Belegs wird neu angelegt, mit einer vorhandenen Position verknüpft oder verworfen, und die Vorschau zeigt vor dem Buchen, was geschieht
 - 🤖 **Optionale KI-Belegauswertung** mit [Ollama](https://ollama.com) auf dem eigenen Rechner oder einem Dienst deiner Wahl
+- 🧭 **Anleitungen je Vermietungsart** — vom Haus mit Einliegerwohnung über die vermietete Eigentumswohnung bis zum Mieterwechsel mit Leerstand, je mit Schritten, Beispiel und Rechtslage
 - 🐳 **In Minuten startklar** — `npm run dev` oder `docker compose up`
 
 ## Screenshots
 
-> Alle Abbildungen zeigen frei erfundene Beispieldaten („Beispielhaus Musterstraße 7, 12345
-> Musterstadt") — keine echten Personen, Adressen oder Kontodaten.
+> Alle Abbildungen zeigen frei erfundene Beispieldaten (ein Mehrfamilienhaus „Lindenweg 12,
+> 12345 Musterstadt“ mit selbstgenutzter Dachwohnung und Garage, dazu eine vermietete
+> Eigentumswohnung) — keine echten Personen, Adressen oder Kontodaten. Die Bilder entstehen mit
+> `npm run screenshots` neu.
 
 ![Cockpit — der Stand der Abrechnung auf einen Blick](docs/screenshots/cockpit.png)
 
-| Abrechnung je Mieter | Mietkonto (Soll/Ist je Monat) |
+| Abrechnung je Mieter, mit Rechenweg | Mietkonto (Soll/Ist je Monat) |
 | --- | --- |
 | [![Abrechnung](docs/screenshots/abrechnung.png)](docs/screenshots/abrechnung.png) | [![Mietkonto](docs/screenshots/mietkonto.png)](docs/screenshots/mietkonto.png) |
+
+| Belegordner mit Posteingang | Auswertung prüfen: verknüpfen statt doppelt erfassen |
+| --- | --- |
+| [![Belegordner](docs/screenshots/belegordner.png)](docs/screenshots/belegordner.png) | [![Auswertung prüfen](docs/screenshots/auswertung-pruefen.png)](docs/screenshots/auswertung-pruefen.png) |
 
 | Kosten & Belege | Kostenvergleich |
 | --- | --- |
 | [![Kosten & Belege](docs/screenshots/kosten.png)](docs/screenshots/kosten.png) | [![Kostenvergleich](docs/screenshots/kostenvergleich.png)](docs/screenshots/kostenvergleich.png) |
 
-| Steuer-Übersicht (Anlage V) | Zähler & Stände |
+| Steuer-Übersicht (Anlage V) mit Eigennutzung | Zähler & Stände |
 | --- | --- |
 | [![Steuer / Anlage V](docs/screenshots/steuer.png)](docs/screenshots/steuer.png) | [![Zähler](docs/screenshots/zaehler.png)](docs/screenshots/zaehler.png) |
 
-<sub>Weitere Ansicht: [Stammdaten](docs/screenshots/stammdaten.png).</sub>
+<sub>Weitere Ansichten: [Stammdaten](docs/screenshots/stammdaten.png), [Hilfe mit Anleitungen je Vermietungsart](docs/screenshots/hilfe.png).</sub>
 
 ## Herunterladen & starten (ohne Installation)
 
@@ -156,6 +166,8 @@ npm run dev        # startet Server (Port 3001) und Oberfläche (http://localhos
 ```
 
 Tests der Berechnungs-Engine: `npm test`. Typen prüfen: `npm run typecheck`.
+Die Bildschirmfotos oben erzeugt `npm run screenshots` neu (einmalig vorher
+`npx playwright install chromium`).
 
 Eigenständige Binaries selbst bauen (benötigt [Bun](https://bun.com)): `npm run package` →
 legt die Dateien für alle Plattformen in `dist-bin/` ab.
@@ -177,29 +189,54 @@ legt die Dateien für alle Plattformen in `dist-bin/` ab.
    Optional pro Position: **Lohnanteil nach §35a EStG** (wird dem Mieter bescheinigt). Eine
    Gutschrift wird mit Minus eingetragen. Die Zuführung zur Erhaltungsrücklage einer
    Eigentümergemeinschaft hat eine eigene Kostenart, weil sie steuerlich erst bei Verwendung zählt.
-3. **Zähler**: Zähler (Haupt- und Wohnungszähler) mit Ablesungen — Jahresablesung,
+   „Aus dem Vorjahr übernehmen“ legt die Positionen des Vorjahres mit Kostenart, Beschreibung,
+   Rechnungssteller und Umlageschlüssel neu an; du trägst je Zeile nur den neuen Betrag ein.
+   Eine neue Position bekommt den Schlüssel, den dieselbe Kostenart im Vorjahr hatte, und weicht
+   sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Reparatur („Nicht umlagefähig“)
+   lässt sich für die Steuer einer Einheit zuordnen.
+3. **Belegordner**: alle Belege je Objekt und Jahr, mit einem Register je Kostenart, Vorschaubild,
+   Betrag und den Positionen, an denen ein Beleg hängt. Neue Belege landen im **Posteingang**
+   (auch mehrere auf einmal oder per Ziehen) und werden von dort einer Position zugeordnet oder
+   per KI ausgewertet. Die **Belegabdeckung** zeigt, welcher Anteil der Kosten belegt ist, und an
+   jeder Position ohne Beleg lässt sich einer nachreichen. Denselben Beleg erkennt Mietfuchs am
+   Inhalt, auch unter anderem Namen. Zum Jahresende packt der Belegordner die **Belegmappe für
+   Mieter** (eine PDF mit Deckblatt „Position → Beleg, Seite“ für die Belegeinsicht nach § 556
+   Abs. 4 BGB; Belege mit Daten anderer Mieter nur auf ausdrückliche Wahl) und die **Belege für die
+   Steuer** (ein ZIP nach den Gruppen der Anlage V, mit einer Übersicht als CSV).
+4. **Zähler**: Zähler (Haupt- und Wohnungszähler) mit Ablesungen — Jahresablesung,
    Zwischenablesung beim Mieterwechsel (exakte Aufteilung), Zählerwechsel (Endstand alt +
    Startstand neu) mit Plausibilitätswarnung bei negativem Verbrauch.
-4. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
+5. **Abrechnung**: Pro Mieter die fertige Abrechnung mit Kostenaufstellung, Umlageschlüssel,
    Vorauszahlungen, Saldo, Zahlungsaufforderung (Vermieter, IBAN und Frist aus den Einstellungen
    oder abweichend am Objekt),
    §35a-Bescheinigung und Vorschlag zur Vorauszahlungsanpassung (§560 BGB). Dazu eine
    Erinnerung an die 12-Monats-Abrechnungsfrist (§556 BGB). Über „Drucken / PDF" speichern.
    Eine versendete Abrechnung wird **abgeschlossen** und damit eingefroren; ändert sich danach
    etwas, zeigt Mietfuchs die Abweichung je Mieter, und frühere Abschlüsse bleiben im Verlauf.
-5. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
+6. **Mietkonto**: Welche Monate sind bezahlt? Die Kaltmiete wird (wie die Vorauszahlung) als
    Staffel geführt; **Soll = Bruttomiete = Kaltmiete + NK-Vorauszahlung**. Erfasste
    Zahlungseingänge füllen die Monate der Reihe nach — ein Monatsraster zeigt *bezahlt /
    teilweise / offen*, im laufenden Jahr *noch nicht fällig* für den laufenden und die kommenden Monate, dazu
    Brutto/Netto-Aufschlüsselung und fällige Rückstände je Mieter. Zeigt das Mietkonto einen
    Rückstand, weist die Abrechnung darauf hin, denn angerechnet wird, was tatsächlich gezahlt wurde.
-6. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
+7. **Steuer (Anlage V)**: Jahresübersicht der Einkünfte aus Vermietung je Objekt — Einnahmen
    nach dem Zuflussprinzip (das vereinbarte Soll lässt sich zum Abgleich einblenden),
-   Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Bei gemischt genutztem Gebäude
-   werden Gesamtfläche und selbstgenutzte Fläche ausgewiesen, mit dem Hinweis, dass der
-   selbstgenutzte Teil nicht abziehbar ist; bei Inklusivmiete und Pauschale gibt es Hinweise zu
-   den Zeilen 24 und 20. Druckbar als PDF. Erweiterte Stammdaten (Kontakt,
+   Werbungskosten nach Anlage-V-Gruppen sowie der Überschuss. Wohnst du selbst im Haus, ist die
+   Hauptzahl die abziehbaren Werbungskosten, und jede Position steht mit Gesamtbetrag, privatem
+   und abziehbarem Teil da: Was einer Einheit direkt zugeordnet ist, gehört ganz zu ihr, Kosten
+   des ganzen Gebäudes werden nach Wohn- und Nutzfläche aufgeteilt, bei umlagefähigen Kosten
+   gilt der Eigenanteil aus der Nebenkostenabrechnung. Der Rechenweg je Position lässt sich
+   aufklappen, und der Ausdruck taugt als gesonderte Aufstellung für das Finanzamt. Hinweise
+   nennen, was nicht gerechnet wird (etwa AfA und Schuldzinsen). Bei Inklusivmiete und Pauschale
+   gibt es Hinweise zu den Zeilen 24 und 20. Druckbar als PDF. Erweiterte Stammdaten (Kontakt,
    Kaution, Vertragsdatum, Zimmer/Etage) lassen sich optional je Mieter und Wohnung hinterlegen.
+
+Wie du deine Lage anlegst, steht in Mietfuchs unter **Hilfe & Begriffe**: Anleitungen für das Haus
+mit Einliegerwohnung, das Mehrfamilienhaus, die vermietete Eigentumswohnung mit
+Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale oder Inklusivmiete, die
+fertige Abrechnung eines Messdienstes und den Mieterwechsel mit Leerstand. Jede nennt, ob sie auf
+dich zutrifft, die Schritte mit einem Knopf zur passenden Seite, ein nachgerechnetes Beispiel, die
+Rechtslage und was Mietfuchs noch nicht kann. Dazu kommt ein Lexikon der Fachbegriffe.
 
 ### Umlageschlüssel
 
@@ -236,6 +273,13 @@ Optional. Mietfuchs kann hochgeladene Belege von einem KI-Modell lesen lassen. D
 schlägt Positionen, Beträge und Kostenarten vor, übernommen wird erst, was du geprüft hast.
 Ohne KI funktioniert Mietfuchs vollständig.
 
+Die Auswertung wird gespeichert und bleibt nach dem Neuladen erhalten; offene Auswertungen stehen
+in der Schnellerfassung, der Posteingang des Belegordners führt mit „Weiter prüfen“ dorthin. Je
+Zeile entscheidest du: neu anlegen, mit einer vorhandenen Position verknüpfen (etwa der aus dem
+Vorjahr übernommenen mit geschätztem Betrag) oder verwerfen. Eine Ampel markiert, was schon
+erfasst sein könnte, die Vorschau zeigt, was mit jeder Position geschieht, und „Buchen“ tut genau
+das. Doppelt klicken oder neu laden bucht nichts zweimal.
+
 Zwei Wege stehen zur Wahl:
 
 - **Auf dem eigenen Rechner** mit [Ollama](https://ollama.com) oder LM Studio. Die Belege
@@ -259,7 +303,7 @@ Zwei Wege stehen zur Wahl:
    Lieber im Terminal? Dann `ollama pull qwen3.5:4b` (voreingestellt, 3,4 GB). Den passenden
    Befehl zeigt Mietfuchs auch an.
 4. **Ausprobieren:** unter *Kosten* oder in der *Schnellerfassung* einen Beleg in die Fläche
-   ziehen.
+   ziehen, oder im *Belegordner* bei einem Beleg im Posteingang „Per KI auswerten“ wählen.
 
 PDFs mit Textebene liest jedes Sprachmodell. Gescannte PDFs und Fotos brauchen ein Modell,
 das Bilder versteht. Bei Scans schickt der Browser die ersten vier Seiten als Bilder mit. Ein
@@ -373,7 +417,7 @@ Stufe der strukturierten Ausgabe, der Denkaufwand und zusätzliche Hinweise an d
 
 Dasselbe lässt sich über Umgebungsvariablen festlegen, etwa in einer `.env`-Datei neben der
 `docker-compose.yml`. Gesetzte Werte gelten vor den gespeicherten, das Feld in den Einstellungen
-ist dann gesperrt, und in die `db.json` gelangen sie nicht:
+ist dann gesperrt, und gespeichert werden sie nicht:
 
 | Variable | Wirkung |
 | --- | --- |
@@ -410,7 +454,9 @@ secrets:
 
 ## Daten & Backup
 
-Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und hochgeladene Belege in `uploads/`).
+Alles liegt in einem `data/`-Ordner (`mietfuchs.sqlite` und hochgeladene Belege in `uploads/`;
+Angaben zu den Belegen und gespeicherte KI-Auswertungen stehen in der Datenbank und kommen mit
+ins Backup).
 Bei der heruntergeladenen Programmdatei liegt er **neben der Datei**, beim Start aus dem
 Quellcode unter `server/data/`. Aus einem Linux-Paket installiert, liegen die Daten in
 `~/.local/share/mietfuchs` (unter macOS in `~/Library/Application Support/Mietfuchs`, unter
