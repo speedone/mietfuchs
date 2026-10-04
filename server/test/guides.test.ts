@@ -81,15 +81,25 @@ test('Anleitungen: Rechtliches nur mit Norm, und jede Norm nennt Paragraf oder A
   assert.ok(withNorm >= 8, `nur ${withNorm} belegte Rechtsaussagen`)
 })
 
-test('Anleitungen: offene Lücken verweisen auf ihr Issue, darunter die Heizkostenabrechnung, die Vorverteilung und der Belegordner', () => {
+test('Anleitungen: offene Lücken verweisen auf ihr Issue, darunter die Heizkostenabrechnung und die Vorverteilung', () => {
   const issues = new Set(ids.flatMap((id) => GUIDES[id].gaps.flatMap((g) => (g.issue ? [g.issue] : []))))
-  for (const n of [95, 97, 99, 170]) assert.ok(issues.has(n), `#${n} fehlt`)
-  // #141 ist auf diesem Stand nicht umgesetzt und nicht erwähnt.
-  assert.ok(!issues.has(141))
-  for (const id of ids) {
-    const all = JSON.stringify(GUIDES[id])
-    assert.doesNotMatch(all, /Vorjahr übernehmen|#141/, `${id} erwähnt #141`)
-  }
+  for (const n of [95, 97, 99]) assert.ok(issues.has(n), `#${n} fehlt`)
+  // Der Belegordner (#170) und das Übernehmen aus dem Vorjahr (#141) sind ausgeliefert und keine
+  // Lücke mehr; das alte Wort „Belegarchiv“ kennt die Oberfläche nicht mehr.
+  for (const n of [141, 170]) assert.ok(!issues.has(n), `#${n} ist keine Lücke mehr`)
+  for (const id of ids) assert.doesNotMatch(JSON.stringify(GUIDES[id]), /Belegarchiv/, `${id} nennt das Belegarchiv`)
+})
+
+test('Anleitungen: Belegordner, Vorjahr und Steuer-ZIP stehen dort, wo man sie braucht', () => {
+  const text = (id: GuideId) => JSON.stringify(GUIDES[id])
+  // Mehrere Objekte: Der Belegordner zeigt das gewählte Objekt und lässt sich umschalten.
+  assert.match(text('properties'), /Belegordner/)
+  assert.match(text('properties'), /„alle Objekte“/)
+  // Wer jedes Jahr dieselben Positionen hat, übernimmt sie aus dem Vorjahr.
+  for (const id of ['multiFamily', 'condo'] as const) assert.match(text(id), /Vorjahr/, `${id} ohne Übernahme aus dem Vorjahr`)
+  // Belege kommen über den Posteingang; die Steuer bekommt ihr ZIP.
+  assert.ok(GUIDES.multiFamily.steps.some((s) => s.page === 'belege' && s.text.includes('„Posteingang“')), 'Posteingang fehlt')
+  assert.ok(GUIDES.granny.steps.some((s) => s.page === 'belege' && s.text.includes('„Belege für die Steuer“')), 'Steuer-ZIP fehlt')
 })
 
 // ---------- Bedienangaben wörtlich ----------

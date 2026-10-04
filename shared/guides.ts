@@ -62,6 +62,7 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Erfassen Sie die Rechnungen mit „+ Kostenposition manuell erfassen“. Das Wasser verteilen Sie mit dem Umlageschlüssel „nach Verbrauch (Zähler)“ und dem Zählertyp „Kaltwasser“.' },
       { page: 'kosten', text: 'Reparaturen erfassen Sie als „Nicht umlagefähig“. Unter „Betrifft (für die Steuer)“ ordnen Sie eine Reparatur, die nur eine Wohnung betrifft, dieser Wohnung zu; für Dach, Fassade oder Heizung bleibt „das ganze Gebäude (nach Fläche)“ stehen.' },
       { page: 'steuer', text: 'Für die Anlage V drucken Sie die Steuerübersicht mit „🖨 Drucken / PDF“.' },
+      { page: 'belege', text: 'Die Belege dazu lädt der Belegordner mit „Belege für die Steuer“ als ZIP, geordnet nach den Gruppen der Anlage V; die Übersicht darin nennt je Position den privaten und den abziehbaren Teil wie die Steuerübersicht.' },
     ],
     result: [
       'Ihre Wohnung zählt in die Verteilbasis. Nach Fläche, Wohneinheiten und Personen trägt die Mieterin nur ihren Teil, der Rest ist Ihr Eigenanteil. Er steht auf der Seite Abrechnung unter „Vermieteranteil (nicht umgelegt)“ mit dem Grund „Eigennutzung“.',
@@ -91,11 +92,15 @@ const GUIDE_DATA = {
       { page: 'stammdaten', text: 'Legen Sie mit „+ Wohnung hinzufügen“ alle Wohnungen des Hauses an, auch eine selbstgenutzte („Eigennutzung — Anteil trägt der Vermieter“). Eine Einheit, die gesondert abgerechnet wird, etwa ein Laden, stellen Sie auf „nicht beteiligt — bleibt außen vor“.' },
       { page: 'stammdaten', text: 'Legen Sie je Mieter mit „+ Mietverhältnis hinzufügen“ ein Mietverhältnis an. Ändert sich später die Personenzahl oder die Vorauszahlung, ergänzen Sie die Staffel mit „+ Änderung ab Datum …“ oder „+ Erhöhung ab Monat …“, statt ein neues Mietverhältnis anzulegen.' },
       { page: 'zaehler', text: 'Legen Sie die Wohnungszähler mit ihrer Wohnung an und, wenn vorhanden, den Hauszähler als „Haus (Hauptzähler)“. Erfassen Sie für jeden Zähler den Stand zu Jahresbeginn (31.12. des Vorjahres) und zum Jahresende (31.12.) mit „Ablesung speichern“. Mit Wohnungszählern steht bei den Kosten der Schlüssel „nach Verbrauch (Zähler)“ zur Wahl.' },
+      { page: 'belege', text: 'Laden Sie Rechnungen im Belegordner mit „Belege hochladen“ hoch. Sie liegen dann im „Posteingang“; von dort ordnen Sie jede einer Position zu oder lassen sie mit „Per KI auswerten“ in Positionen zerlegen.' },
       { page: 'kosten', text: 'Erfassen Sie jede Rechnung mit Kostenart und Umlageschlüssel. Betrifft eine Rechnung nur einen Teil der Wohnungen, etwa den Aufzug im Hinterhaus, wählen Sie bei der Position „Weitere Optionen: nur bestimmte Wohnungen beteiligen“.' },
+      { page: 'kosten', text: 'Ab dem zweiten Jahr übernehmen Sie die Positionen des Vorjahres mit dem Knopf über der Liste (für 2026 heißt er Aus 2025 übernehmen …). Kostenart, Beschreibung und Umlageschlüssel kommen mit, Sie tragen je Zeile nur den neuen Betrag ein.' },
       { page: 'abrechnung', text: 'Prüfen Sie die Hinweise der Abrechnung; „Hier beheben →“ führt zum betroffenen Eintrag. Nach dem Versand schließen Sie die Abrechnung mit dem Knopf mit dem Schloss ab und tragen das Datum bei „versendet am“ ein.' },
     ],
     result: [
       'Jede Rechnung wird centgenau verteilt; der Rechenweg jeder Zeile steht auf der Seite Abrechnung unter „Rechenweg“.',
+      'Eine neue Position bekommt den Umlageschlüssel, den dieselbe Kostenart im Vorjahr hatte. Weicht sie davon ab, weisen Formular und Abrechnung darauf hin. Eine Rechnung, die schon als Position erfasst ist, legt die KI-Auswertung nicht still ein zweites Mal an, sondern bietet an, den Beleg mit der Position zu verknüpfen.',
+      'Für die Belegeinsicht Ihrer Mieter erstellt der Belegordner die „Belegmappe für Mieter“ als PDF.',
       'Was nicht auf Mieter entfällt, steht unter „Vermieteranteil (nicht umgelegt)“ mit seinem Grund, etwa Eigennutzung, Leerstand oder nicht umlagefähig.',
       'Werden Heizkosten nur nach Fläche verteilt, nennt die Abrechnung je Mieter den Betrag, um den er nach der Heizkostenverordnung kürzen darf.',
       'Wohnen Sie selbst im Haus, teilt die Steuerübersicht die Werbungskosten in privat und abziehbar, wie bei der Einliegerwohnung.',
@@ -124,10 +129,12 @@ const GUIDE_DATA = {
       { page: 'kosten', text: 'Übernehmen Sie aus der Hausgeldabrechnung jede umlagefähige Kostenart als eigene Position mit dem Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“. Unter „Betrag €“ steht Ihr Anteil laut Hausgeldabrechnung, darunter „Maßstab“, die Summe der Anteile in der Anlage und „Kosten der Gemeinschaft (ganze Anlage) €“.' },
       { page: 'kosten', text: 'Verwaltervergütung, Kontoführung und Reparaturen erfassen Sie als „Nicht umlagefähig“, die Zuführung zur Rücklage als „Zuführung Erhaltungsrücklage“.' },
       { page: 'kosten', text: 'Die Grundsteuer steht nicht in der Hausgeldabrechnung; erfassen Sie sie nach Ihrem Bescheid, etwa „nach Wohnfläche“.' },
+      { page: 'kosten', text: 'Mit der nächsten Hausgeldabrechnung übernehmen Sie die Positionen aus dem Vorjahr (Knopf über der Liste, für 2026 Aus 2025 übernehmen …) und tragen je Zeile Ihren neuen Anteil und die Kosten der Gemeinschaft ein; Maßstab und Summe der Anteile kommen mit.' },
       { page: 'abrechnung', text: 'Prüfen Sie die Abrechnung und den Rechenweg der Positionen, bevor Sie sie verschicken.' },
     ],
     result: [
       'Die Abrechnung zeigt dem Mieter den Rechenweg mit Ihren Miteigentumsanteilen und den Kosten der Gemeinschaft. Weicht Ihr eingetragener Betrag um mehr als 1 € vom rechnerischen Anteil ab, markiert das Kostenformular das, und verteilt wird der eingetragene Betrag.',
+      'Bei einer Eigentumswohnung schlägt das Kostenformular für eine neue Position ohne Vorjahr den Umlageschlüssel „laut Gemeinschaftsabrechnung (Eigentumswohnung)“ vor, außer bei der Grundsteuer; danach den Schlüssel derselben Kostenart im Vorjahr.',
       'Nicht umlagefähige Positionen trägt der Vermieter; die Zuführung zur Erhaltungsrücklage weist die Steuerübersicht getrennt von den Werbungskosten aus.',
       'Bei einer Eigentumswohnung erinnert die Steuerübersicht daran, dass für die Steuer das gezahlte Hausgeld zählt und nicht die Beträge der Hausgeldabrechnung.',
     ],
@@ -141,7 +148,7 @@ const GUIDE_DATA = {
       { text: 'Werbungskosten zählen im Jahr der Zahlung, also das gezahlte Hausgeld und eine Nachzahlung im Jahr, in dem Sie sie bezahlen.', norm: '§ 11 Abs. 2 EStG' },
     ],
     gaps: [
-      { text: 'Die Hausgeldabrechnung per KI in Positionen zerlegen; heute übertragen Sie jede Position von Hand.', issue: 102 },
+      { text: 'Die Hausgeldabrechnung per KI in Positionen mit Maßstab und Kosten der Gemeinschaft zerlegen; heute übertragen Sie die Beträge von Hand, ab dem zweiten Jahr in die Vorlagen aus dem Vorjahr.', issue: 102 },
       { text: 'Mietfuchs führt Kosten nach dem Jahr der Abrechnung, nicht nach dem Tag der Zahlung. Weichen beide ab, gleichen Sie die Zahlen für die Anlage V mit Ihren Kontoauszügen ab.' },
     ],
     terms: ['mea', 'homeownersStatement', 'homeownersFee', 'reserveFund', 'notAllocable'],
@@ -160,7 +167,7 @@ const GUIDE_DATA = {
     result: [
       'Jedes Objekt hat eigene Wohnungen, Zähler, Kosten und Abrechnungen, und jede Berechnung sieht nur ihr Objekt.',
       'Ein Zähler, eine Direktzuordnung oder ein Einzelbetrag kann nicht auf eine Wohnung eines anderen Objekts zeigen; Mietfuchs lehnt das beim Speichern ab.',
-      'Belegarchiv und Backup umfassen alle Objekte gemeinsam.',
+      'Der Belegordner zeigt die Belege des gewählten Objekts; mit „alle Objekte“ sehen Sie alle zusammen. Ein Beleg aus dem Posteingang wird nur innerhalb eines Objekts gebucht. Das Backup umfasst alle Objekte gemeinsam.',
       'Gelöscht werden kann nur ein leeres Objekt, und nie das letzte.',
     ],
     example: 'Eine Gebäudeversicherung über 1.500 € gilt für zwei Häuser mit 300 und 200 m² Wohnfläche. Sie teilen sie vorab selbst nach Fläche auf und erfassen 900 € im ersten und 600 € im zweiten Objekt; dort wird jeder Teil auf die Wohnungen verteilt.',
@@ -172,7 +179,6 @@ const GUIDE_DATA = {
     gaps: [
       { text: 'Eine Rechnung für mehrere Objekte einmal erfassen und automatisch vorverteilen.', issue: 95 },
       { text: 'Eine Steuer-Gesamtsicht über alle Objekte und weitere Kopfangaben der Anlage V je Objekt.', issue: 96 },
-      { text: 'Das Belegarchiv nach Objekt, Jahr und Kostenart ordnen.', issue: 170 },
     ],
     terms: ['billingUnit', 'settlementDeadline'],
   },
