@@ -85,7 +85,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   aktuellen Stand und einer neuen Vorschau, statt still anders zu buchen. Löst man eine Zeile,
   sagt die Vorschau, ob der Beleg der Position wechselt. Ändert das Verknüpfen oder „Betrag prüfen“
   im Belegordner den Betrag einer Position, deren Abrechnung schon abgeschlossen ist, sagen Vorschau
-  und Kasten es: Die Änderung erscheint dort als Abweichung. Objekt und Jahr einer Auswertung sind
+  und Kasten es: Die Abrechnung bleibt, wie sie verschickt wurde, und ändert sich der Saldo eines
+  Mieters, zeigt die Abrechnungsseite das als Abweichung. Objekt und Jahr einer Auswertung sind
   nach der ersten Buchung fest; vorher ziehen Posteingang und Auswertung sie gegenseitig mit.
   Belegmappe und Steuer-ZIP nehmen auch Belege auf, die nur über eine gebuchte Zeile an einer
   Position hängen; die Karte im Belegordner zeigt die Summe der eigenen Zeilen, und der

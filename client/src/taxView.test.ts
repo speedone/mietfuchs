@@ -248,6 +248,7 @@ describe('Teilweise Eigennutzung (#163)', () => {
       na({ costItemId: 'b', description: 'Bad', allocation: 'direct-rented', taxUnits: [{ unitId: 'OG', unitName: 'OG' }] }),
       na({ costItemId: 'c', description: 'Dach Hinterhaus', allocation: 'area', privateCents: 20000, deductibleCents: 80000, taxUnits: [{ unitId: 'OG', unitName: 'OG' }, { unitId: 'DG', unitName: 'DG' }] }),
       na({ costItemId: 'd', description: 'Gebäude', allocation: 'area', taxUnits: null }),
+      na({ costItemId: 'f', description: 'Dach Vorderhaus', allocation: 'unsplittable', taxUnits: [{ unitId: 'EG', unitName: 'EG' }, { unitId: 'OG', unitName: 'OG' }] }),
       pos({ costItemId: 'e', allocation: 'direct-rented' }),
     ])
     expect(taxHints(r, 'ist')).toContain('mixedUseAssignedUnits')
@@ -255,6 +256,8 @@ describe('Teilweise Eigennutzung (#163)', () => {
       { costItemId: 'a', description: 'Malerarbeiten', amountCents: 100000, units: ['EG'], effect: 'private' },
       { costItemId: 'b', description: 'Bad', amountCents: 100000, units: ['OG'], effect: 'deductible' },
       { costItemId: 'c', description: 'Dach Hinterhaus', amountCents: 100000, units: ['OG', 'DG'], effect: 'area' },
+      // Fehlt eine Fläche, ist die Position ungekürzt abziehbar, nicht nach Fläche (Durchsicht)
+      { costItemId: 'f', description: 'Dach Vorderhaus', amountCents: 100000, units: ['EG', 'OG'], effect: 'unsplittable' },
     ])
     // Ohne Zuordnung kein Hinweis, und ohne selbstgenutzte Einheit wirkt sie nicht.
     expect(taxHints(mixed([na({ taxUnits: null })]), 'ist')).not.toContain('mixedUseAssignedUnits')
