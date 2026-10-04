@@ -255,20 +255,48 @@ const checks: Record<GuideId, () => void> = {
     inOrder(GUIDES.flatRate.example, [eur(120000), eur(share(r, 'ta', 'gs')), eur(5000), eur(5000 * 12), eur(parts[0]?.cents ?? -1)], 'flatRate')
   },
   meteringService: () => {
+    // Abrechnung mit Vorwegabzug (#209): Der Messdienst hat den CO₂-Anteil des Vermieters schon
+    // von den Kosten abgezogen, die Nutzerbeträge sind netto. Als Betrag zählt, was bezahlt wurde.
     const base = {
       units: [rented('a', 70), rented('b', 60), own('c', 90)],
       tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
     }
-    const heat = (selfAmounts: Record<string, number> | null) => item('heiz', {
-      category: 'Heizung und Warmwasser', amountCents: 300000, key: 'amounts', tenancyAmounts: { ta: 124000, tb: 116000 }, selfAmounts,
+    const net = { ta: 120000, tb: 110000, c: 60000 }
+    const co2 = 10000
+    const sumNet = net.ta + net.tb + net.c
+    const ownCo2 = Math.round((co2 * net.c) / sumNet)
+    const heat = (amountCents: number, selfAmounts: Record<string, number> | null) => item('heiz', {
+      category: 'Heizung und Warmwasser', amountCents, key: 'amounts', tenancyAmounts: { ta: net.ta, tb: net.tb }, selfAmounts,
     })
-    const r = settle(source({ ...base, costItems: [heat({ c: 60000 })] }))
-    const without = settle(source({ ...base, costItems: [heat(null)] }))
-    assert.equal(r.selfUsedShareCents, 60000)
+    const gross = sumNet + co2
+    const src = source({ ...base, costItems: [heat(gross, { c: net.c + ownCo2 })] })
+    const r = settle(src)
+    const tax = taxReport(snapshotOf(src, 2025)).expenses.items.find((x) => x.costItemId === 'heiz')
+    if (!tax) return assert.fail('Heizposition fehlt in der Steuerübersicht')
+    // Die Mieter zahlen genau ihre Nettobeträge; der Vorwegabzug ändert für sie nichts.
+    assert.equal(share(r, 'ta', 'heiz'), net.ta)
+    assert.equal(share(r, 'tb', 'heiz'), net.tb)
+    assert.equal(r.selfUsedShareCents, net.c + ownCo2)
+    // Der CO₂-Anteil der vermieteten Wohnungen bleibt als Rest beim Vermieter und ist Werbungskosten.
+    const parts = landlordParts(r, 'heiz')
+    assert.deepEqual(parts.map((p) => p.reason), ['selfUse', 'amountsRest'])
+    const rest = parts.filter((p) => p.reason === 'amountsRest')
+    assert.equal(rest[0]?.cents, co2 - ownCo2)
+    assert.equal(tax.privateCents, net.c + ownCo2)
+    // Wer nur die Summe der Nutzerbeträge einträgt (der Fehler aus #209), verliert genau diesen Teil.
+    const netSrc = source({ ...base, costItems: [heat(sumNet, { c: net.c })] })
+    const netTax = taxReport(snapshotOf(netSrc, 2025)).expenses.items.find((x) => x.costItemId === 'heiz')
+    if (!netTax) return assert.fail('Heizposition fehlt in der Steuerübersicht')
+    assert.equal(tax.deductibleCents - netTax.deductibleCents, co2 - ownCo2)
     // Ohne den Betrag der eigenen Wohnung steht er als Rest beim Vermieter und nicht als Eigenanteil.
+    const without = settle(source({ ...base, costItems: [heat(gross, null)] }))
     assert.equal(without.selfUsedShareCents, 0)
     assert.deepEqual(landlordParts(without, 'heiz').map((p) => p.reason), ['amountsRest'])
-    inOrder(GUIDES.meteringService.example, [eur(300000), eur(share(r, 'ta', 'heiz')), eur(share(r, 'tb', 'heiz')), eur(r.selfUsedShareCents)], 'meteringService')
+    inOrder(GUIDES.meteringService.example, [
+      eur(net.ta), eur(net.tb), eur(net.c), eur(sumNet), eur(co2), eur(gross),
+      eur(share(r, 'ta', 'heiz')), eur(share(r, 'tb', 'heiz')),
+      eur(ownCo2), eur(r.selfUsedShareCents), eur(rest[0]?.cents ?? -1),
+    ], 'meteringService')
   },
   tenantChange: () => {
     const r = settle(source({
@@ -332,8 +360,61 @@ test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim 
     if (!c) return assert.fail(`${id}: kein Satz zur CO₂-Aufteilung`)
     assert.match(c.norm ?? '', /§ 7 Abs\. 3 und 4 CO2KostAufG/)
     assert.match(c.text, /3 Prozent/)
-    assert.match(c.text, /#97/)
   }
+  // Beim Mehrfamilienhaus rechnet Mietfuchs die Aufteilung noch nicht selbst (#97). Beim Messdienst
+  // rechnet sie der Messdienst; was gilt, wenn er es nicht tut, prüft der Test zu #209 unten. Die
+  // eigene Zeile bleibt eine Lücke mit Issue.
+  assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /#97/)
+  assert.ok(GUIDES.meteringService.gaps.some((g) => g.issue === 97), 'die eigene CO₂-Zeile bleibt eine Lücke')
+})
+
+test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der CO₂-Anteil des Vermieters wird dazugerechnet', () => {
+  const g = GUIDES.meteringService
+  const [amount, perTenancy, own] = g.steps.map((s) => s.text)
+  // Schritt 1: brutto, also vor dem Abzug, mit der Formel aus dem Entwurf (Abschnitt 5.4).
+  assert.match(amount ?? '', /bezahlt/)
+  assert.match(amount ?? '', /vor dem Abzug/)
+  assert.match(amount ?? '', /Summe aller Nutzerbeträge für Heizung und Warmwasser \(einschließlich Leerstand\) \+ CO₂-Anteil des Vermieters/)
+  assert.doesNotMatch(amount ?? '', /Gesamtbetrag der Abrechnung/, 'der Gesamtbetrag ist beim Vorwegabzug netto')
+  // Schritt 2: der Betrag, den der Mieter zahlen soll, also netto; weitere Kostenblöcke als eigene Positionen.
+  assert.match(perTenancy ?? '', /Tragen Sie den Betrag ein, den der Mieter zahlen soll, also nach Abzug des CO₂-Anteils des Vermieters\./)
+  assert.match(perTenancy ?? '', /Kaltwasser/)
+  assert.match(perTenancy ?? '', /eigene Positionen/)
+  // Schritt 3: zuerst der Betrag der Einzelabrechnung, die Formel nur als Näherung, wenn er fehlt.
+  assert.match(own ?? '', /Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen\./)
+  assert.match(own ?? '', /Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, gehört nichts davon ins Private\./)
+  assert.match(own ?? '', /Nur wenn sie gar keine Beträge je Wohnung nennt, rechnen Sie näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)
+  assert.doesNotMatch(own ?? '', /Nur wenn er fehlt/, 'die Näherung gilt nicht schon, wenn nur bei der eigenen Wohnung ein Betrag fehlt')
+  const order = ['Einzelabrechnung', 'ins Private', 'näherungsweise'].map((w) => own?.indexOf(w) ?? -1)
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'erst die Angabe des Messdienstes, dann „nichts privat“, zuletzt die Näherung')
+  assert.ok(!order.includes(-1))
+  // Was Mietfuchs daraus macht: der Rest ist Werbungskosten.
+  assert.match(g.result.join(' '), /CO₂-Anteil des Vermieters[^.]*Werbungskosten/)
+})
+
+test('Messdienst (#209): selbstgenutzte Wohnung ohne CO₂-Anteil, Abrechnung ohne Aufteilung, keine Pauschalaussage über Messdienste', () => {
+  const g = GUIDES.meteringService
+  const all = JSON.stringify(g)
+  // Nicht jeder Messdienst setzt für die eigene Wohnung einen Anteil an; dann bleibt nichts privat.
+  // Die Regel selbst steht in Schritt 3; der Hinweis wiederholt sie nicht.
+  const self = g.caveats.find((c) => /selbstgenutzte Wohnung/.test(c.text) && /CO₂/.test(c.text))
+  if (!self) return assert.fail('Hinweis zur selbstgenutzten Wohnung ohne CO₂-Anteil fehlt')
+  assert.match(self.text, /Nicht jeder Messdienst/)
+  assert.doesNotMatch(self.text, /ins Private|näherungsweise|Näherung/, 'steht schon in Schritt 3')
+  assert.doesNotMatch(self.text, /§/, 'keine Rechtsaussage')
+  // Weist die Abrechnung keinen Anteil aus: nachfragen, Mietfuchs rechnet es noch nicht, 3 % Kürzung.
+  const missing = g.caveats.find((c) => /keinen CO₂-Anteil des Vermieters aus/.test(c.text))
+  if (!missing) return assert.fail('Hinweis für eine Abrechnung ohne CO₂-Aufteilung fehlt')
+  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).')
+  // Das Kürzungsrecht von 3 Prozent steht genau einmal, im Hinweis zur CO₂-Aufteilung mit seiner Norm.
+  const threePercent = [...g.steps.map((x) => x.text), ...g.caveats.map((c) => c.text)].filter((t) => /3 (%|Prozent)/.test(t))
+  assert.equal(threePercent.length, 1, `3 % steht ${threePercent.length}-mal`)
+  // Über Messdienste nur, was für die großen belegt ist.
+  assert.match(all, /Die großen Messdienste teilen auf, wenn/)
+  assert.doesNotMatch(all, /Der Messdienst teilt auf/)
+  // Zitate aus der Messdienst-Abrechnung in deutschen Anführungszeichen, wie im übrigen Text.
+  assert.doesNotMatch(all, /‚|‘/)
+  assert.match(g.example, /„abzüglich CO₂-Kosten Vermieter“/)
 })
 
 test('Durchsicht: Garagenhof nach Wohneinheiten, denn nach Fläche gibt es bei 0 m² keine Verteilbasis', () => {
