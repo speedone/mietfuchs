@@ -203,12 +203,19 @@ export function PropertySwitcher({ properties, value, onChange }: {
   onChange: (id: string) => void
 }) {
   if (properties.length <= 1) return null
+  const current = properties.find((p) => p.id === value)
+  // Ein Auswahlfeld bricht seinen Text nicht um und schnitt lange Namen ab (#180). Der Name steht
+  // deshalb ganz als Text da, der umbrechen darf, und das Auswahlfeld liegt unsichtbar darüber:
+  // Klick, Tastatur und Vorleser bedienen weiter das echte Feld.
   return (
     <label className="year-switcher property-switcher no-print">
       <span>Objekt</span>
-      <select aria-label="Objekt wählen" title={properties.find((p) => p.id === value)?.name} value={value} onChange={(e) => onChange(e.target.value)}>
-        {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
-      </select>
+      <div className="property-select">
+        <span className="property-current" aria-hidden="true">{current ? current.name || 'Ohne Namen' : ''}</span>
+        <select aria-label="Objekt wählen" title={current?.name} value={value} onChange={(e) => onChange(e.target.value)}>
+          {properties.map((p) => <option key={p.id} value={p.id}>{p.name || 'Ohne Namen'}</option>)}
+        </select>
+      </div>
     </label>
   )
 }

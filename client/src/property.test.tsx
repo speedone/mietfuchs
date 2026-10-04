@@ -41,6 +41,23 @@ test('bei einem Objekt gibt es keinen Umschalter, bei zweien schon', () => {
   expect(onChange).toHaveBeenCalledWith('objekt-2')
 })
 
+// #180: Ein Auswahlfeld kann seinen Text nicht umbrechen und schnitt lange Namen in der schmalen
+// Seitenleiste ab. Der Name des gewählten Objekts steht deshalb ganz als Text da (die Regel zum
+// Umbrechen steht in index.css), das Auswahlfeld liegt bedienbar darüber und trägt den Tooltip.
+test('der Umschalter zeigt den ganzen Namen des gewählten Objekts als Text, mit Tooltip', () => {
+  const lang = objekt('objekt-3', 'Mehrfamilienhaus Am Alten Bahnhof 12–14, Hinterhaus')
+  const onChange = vi.fn()
+  const { container, rerender } = render(<PropertySwitcher properties={[A, lang]} value="objekt-3" onChange={onChange} />)
+  const shown = container.querySelector('.property-current')
+  expect(shown?.textContent).toBe(lang.name)
+  const select = screen.getByLabelText('Objekt wählen')
+  expect(select.getAttribute('title')).toBe(lang.name)
+  fireEvent.change(select, { target: { value: 'objekt-1' } })
+  expect(onChange).toHaveBeenCalledWith('objekt-1')
+  rerender(<PropertySwitcher properties={[A, objekt('objekt-3', '')]} value="objekt-3" onChange={onChange} />)
+  expect(container.querySelector('.property-current')?.textContent).toBe('Ohne Namen')
+})
+
 function Zeige() {
   const { property, setPropertyId } = useProperty()
   return (

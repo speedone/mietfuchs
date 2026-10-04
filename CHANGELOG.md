@@ -23,6 +23,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   das in der Datei `sicherung-vor-update.json` im Datenordner. Außerdem nennt die Konsole die
   Sicherung beim Update mit vollem Pfad.
   ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Lange Objektnamen in der Seitenleiste.** Die Auswahl „Objekt“ schnitt lange Namen ab. Der
+  Name steht jetzt vollständig da und bricht bei Bedarf in die nächste Zeile um; der Tooltip
+  bleibt. ([#180](https://github.com/speedone/mietfuchs/issues/180))
 
 ## [0.10.0] – 2026-10-04
 
