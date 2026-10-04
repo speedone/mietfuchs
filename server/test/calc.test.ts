@@ -2621,7 +2621,9 @@ test('Invariante (#202): jede Zeile ist ihr exakter Wert gerundet, die Summe ist
         assert.ok(Math.abs(l.cents - l.exact) < 1 + 1e-6, ctx)
         // Exakt 0 ergibt 0 Cent.
         if (Math.abs(l.exact) < 1e-6) assert.equal(l.cents, 0, ctx)
-        // Keine Zeile des Vermieters gegen das Vorzeichen der Position.
+        // Keine Zeile des Vermieters gegen das Vorzeichen der Position. Das gilt nur für
+        // widerspruchsfreie Daten, wie sie der Generator erzeugt; sich überschneidende
+        // Mietverhältnisse und rückwärts laufende Zähler durchbrechen es (Durchsicht #203).
         if (l.landlord) {
           assert.ok(l.cents === 0 || Math.sign(l.cents) === Math.sign(A), ctx)
           if (l.cents !== 0) landlordLines++
@@ -2684,4 +2686,79 @@ test('Eine Rundungsregel (#202): eine vorher abgeschlossene Abrechnung bleibt, d
   const r = compareWithFrozen(frozen, today, 2025, '2026-06-01')
   assert.equal(r.comparable, true)
   assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.differenceCents, d.direction]), [['tb', 1, 'tenant'], ['tc', 1, 'tenant']])
+})
+
+// ---------- Durchsicht von #203 ----------
+
+test('Eine Rundungsregel (Durchsicht #203): sich überschneidende Mietverhältnisse fressen den Eigenanteil nicht', () => {
+  // 4.949,60 € Grundsteuer nach Einheiten, fünf Einheiten, u0 selbstgenutzt. In u1 stehen zwei
+  // ganzjährige Mietverhältnisse, eines mit Pauschale: Die Mieter tragen rechnerisch 5 × 989,92 €,
+  // also schon den ganzen Betrag. Der Eigenanteil bleibt trotzdem genau A/5 = 989,92 €; der
+  // Überhang erscheint als negativer Leerstand. Vorher stand der Eigenanteil bei 0, und 989,92 €
+  // privater Kosten erschienen in der Steuerübersicht als abziehbar.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u0', name: 'Eigen', areaM2: 50, participates: false, selfUsed: true, selfPersons: 1 },
+      ...[1, 2, 3, 4].map((n) => ({ id: `u${n}`, name: `W${n}`, areaM2: 50, participates: true })),
+    ],
+    tenancies: [
+      ...[1, 2, 3, 4].map((n) => tenancy({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1 })),
+      tenancy({ id: 't1b', unitId: 'u1', tenantName: 'Doppelt', persons: 1, costModel: 'flatRate' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 494960, key: 'units' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(s.selfUsedShareCents, 98992)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [
+    { reason: 'selfUse', cents: 98992 }, { reason: 'flatRate', cents: 98992 }, { reason: 'vacancy', cents: -98992 },
+  ])
+  assert.equal(s.statements.reduce((a, st) => a + st.totalShareCents, 0) + s.landlord.totalCents, 494960)
+})
+
+test('Eine Rundungsregel (Durchsicht #203): der Rechenweg einer Gutschrift rundet kaufmännisch symmetrisch', () => {
+  // −1,00 € auf 67/67/65 m² und 1 m² selbstgenutzt: exakt −33,5 / −33,5 / −32,5 und −0,5 ct.
+  // Verteilt −34 / −33 / −32 und −1. Kaufmännisch gerundet wären es −34 / −34 / −33: Der Hinweis
+  // auf den Restcent gehört an tb und tc, nicht an ta.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Gutschrift', amountCents: -100, key: 'area' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [-34, -33, -32])
+  const hinted = (t: string) => statementOf(s, t).rows[0]?.steps?.find((x) => x.label === 'Ergebnis, auf Cent gerundet')?.value.includes('Restcent-Verfahren')
+  assert.deepEqual(['ta', 'tb', 'tc'].map(hinted), [false, true, true])
+})
+
+test('Eine Rundungsregel (Durchsicht #203): ein rückwärts laufender Zähler außerhalb bleibt bei „außerhalb“', () => {
+  // Datenfehler: Der Zähler der Wohnung außerhalb läuft von 100 auf 50 zurück. Die Basis ist
+  // 100 − 50 = 50, der Mieter trägt rechnerisch 200 %, „außerhalb“ −100 %. Der negative Wert bleibt
+  // bei seinem Grund, statt als Leerstand zu erscheinen (die Meldung zum Zähler gibt es schon).
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'u1', name: 'W1', areaM2: 50, participates: true },
+      { id: 'u2', name: 'Außen', areaM2: 50, participates: false },
+    ],
+    tenancies: [tenancy({ id: 't1', unitId: 'u1', tenantName: 'M1', persons: 1 })],
+    meters: [
+      { id: 'm1', unitId: 'u1', type: 'kaltwasser', name: 'm1', unit: 'm³' },
+      { id: 'm2', unitId: 'u2', type: 'kaltwasser', name: 'm2', unit: 'm³' },
+    ],
+    readings: [
+      ...readingsOf('m1', [{ date: '2024-12-31', value: 0 }, { date: '2025-12-31', value: 100 }]),
+      ...readingsOf('m2', [{ date: '2024-12-31', value: 100 }, { date: '2025-12-31', value: 50 }]),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 10000, key: 'meter', meterType: 'kaltwasser' }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(statementOf(s, 't1').totalShareCents, 20000)
+  assert.deepEqual(s.landlord.rows[0]?.landlordParts, [{ reason: 'outsideUnit', cents: -10000 }])
 })
