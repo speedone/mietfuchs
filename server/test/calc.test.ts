@@ -870,6 +870,22 @@ test('§35a (Abnahme rc.1): beim Mieterwechsel je Mieter wie von Hand gerundet, 
   assert.equal(statementOf(s, 'ben').total35aCents, 1823)
 })
 
+test('§35a (S1 der Durchsicht von #201): bei voller Umlage geht kein Lohn-Cent an der Deckelung verloren', () => {
+  // 300,00 € mit 299,99 € Lohn auf 40/51/103 m², voll vermietet. Kostenanteile 61,85 / 78,87 /
+  // 159,28 €. Das Restverfahren gab einer abgerundeten Zeile den Lohn-Cent, die Deckelung nahm ihn
+  // wieder: bescheinigt waren 299,98 €. Er gehört an eine Zeile mit Luft.
+  const db: Db = {
+    ...emptyDb(),
+    units: [40, 51, 103].map((a, n) => ({ id: `u${n}`, name: `W${n}`, areaM2: a, participates: true })),
+    tenancies: [0, 1, 2].map((n) => tenancy({ id: `t${n}`, unitId: `u${n}`, tenantName: `M${n}`, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 30000, key: 'area', labor35aCents: 29999 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.deepEqual(['t0', 't1', 't2'].map((t) => statementOf(s, t).totalShareCents), [6185, 7887, 15928])
+  assert.equal(s.statements.reduce((a, st) => a + st.total35aCents, 0), 29999)
+  for (const st of s.statements) assert.ok(st.total35aCents <= st.totalShareCents, st.tenancyId)
+})
+
 test('§35a (M1 der Durchsicht von #201): ganz Lohn ist genau der Kostenanteil, auch wenn die Anteile einzeln gerundet sind', () => {
   // 1,00 € Hauswart, ganz Lohn. 67/67/65 m² vermietet, 1 m² selbstgenutzt: Rohanteile 33,5 / 33,5 /
   // 32,5 ct, einzeln gerundet 34/34/33 ct (dass das zusammen 101 ct sind, ist ein eigener Befund).
@@ -2361,6 +2377,23 @@ test('§35a: distributeLabor rundet je Zeile wie von Hand, deckelt und zieht nur
   const o = distributeLabor(20000, 30000, [10000, 10000, 10000], [10000, 10000, 10000], ['t1', 't2', 't3'])
   assert.deepEqual(o.cents, [6667, 6667, 6666])
   assert.deepEqual(o.adjusted, [false, false, true])
+  // S1: volle Umlage, das Restverfahren gibt einer abgerundeten Zeile den Lohn-Cent, die Deckelung
+  // nimmt ihn; er geht an die Zeile mit Luft, statt verloren zu gehen. Zusammen genau L.
+  const raws = [40, 51, 103].map((a) => (30000 * a) / 194)
+  const shares = largestRemainder(30000, raws, ['a', 'b', 'c'])
+  const v = distributeLabor(29999, 30000, raws, shares, ['a', 'b', 'c'])
+  assert.equal(v.cents.reduce((x, y) => x + y, 0), 29999, `${shares} → ${v.cents}`)
+  v.cents.forEach((c, k) => assert.ok(c <= (shares[k] ?? 0)))
+  // Gründe je Zeile für den Rechenweg (L4): Eine Zeile kann gedeckelt und danach gekürzt sein, dann
+  // stehen beide da. In einer Abrechnung kommt das nicht vor (ein gedeckelter Cent hat den
+  // kleinsten Rundungsfehler und wird nie zuerst gekürzt), die Funktion muss es dennoch richtig
+  // benennen: Rohanteile über dem Betrag erzwingen hier mehrere Kürzungen.
+  const both = distributeLabor(4, 10, [10, 10], [3, 10], ['a', 'b'])
+  assert.deepEqual(both.cents, [2, 2])
+  assert.deepEqual(both.notes, [['capped', 'reduced'], ['reduced']])
+  // Bei voller Umlage heißt die Abweichung „Restcent der Rechnung“, nicht Kürzung.
+  assert.deepEqual(o.notes, [[], [], ['remainder']])
+  assert.deepEqual(c.notes, [['capped'], []])
   // Ganz Lohn: genau der Kostenanteil, auch wenn die Kostenanteile einzeln gerundet über dem Betrag
   // liegen (M1: 1,00 € auf 67/67/65 m² vermietet plus 1 m² selbstgenutzt, Anteile 34/34/33).
   const g = distributeLabor(100, 100, [33.5, 33.5, 32.5], [34, 34, 33], ['a', 'b', 'c'])
@@ -2372,7 +2405,10 @@ test('§35a: distributeLabor an Zufallswerten — nie über dem Kostenanteil, Su
   for (let i = 0; i < 5000; i++) {
     const n = 1 + Math.floor(rnd() * 5)
     const amount = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 200 : 200000))
-    const labor = rnd() < 0.3 ? amount : Math.max(1, Math.floor(amount * rnd()))
+    // L nahe A gezielt (S1 der Durchsicht): Dort kommt eine Zeile am ehesten mit dem Lohn über ihren
+    // abgerundeten Kostenanteil, und ein gedeckelter Cent muss weiterwandern.
+    const pick = rnd()
+    const labor = pick < 0.3 ? amount : pick < 0.6 ? Math.max(1, amount - 1 - Math.floor(rnd() * 3)) : Math.max(1, Math.floor(amount * rnd()))
     // Teils volle Umlage (Rohanteile ergeben den Betrag, Kosten nach dem Restverfahren), teils nicht.
     const weights = Array.from({ length: n }, () => rnd())
     const wsum = weights.reduce((a, b) => a + b, 0)
@@ -2389,15 +2425,17 @@ test('§35a: distributeLabor an Zufallswerten — nie über dem Kostenanteil, Su
     }
     assert.ok(sum <= labor, fall)
     const fullyBorne = shares.reduce((a, b) => a + b, 0) === amount
-    let capped = false
     r.cents.forEach((c, k) => {
       const exact = (labor * raws[k]) / amount
       assert.ok(c >= 0 && c <= shares[k], fall)
       if (!r.adjusted[k]) assert.ok(Math.abs(c - exact) <= 0.5 + 1e-9, fall)
       // Abgewichen heißt: weniger als von Hand, oder bei voller Umlage höchstens der Restcent darüber.
       else if (c > Math.round(exact)) assert.ok(fullyBorne && c - exact < 1, `nur bei voller Umlage darüber: ${fall}`)
-      if (c === shares[k] && Math.round(exact) > shares[k]) capped = true
     })
-    if (fullyBorne && !capped) assert.equal(sum, labor, `volle Umlage: ganzer Lohnanteil: ${fall}`)
+    // Bei voller Umlage ergeben die Lohnanteile genau L. Weniger nur, wenn keine Zeile mehr Luft hat,
+    // also jede schon bei min(aufgerundeter Lohn, Kostenanteil) steht (S1: ein gedeckelter Cent ging
+    // verloren, obwohl eine andere Zeile ihn hätte tragen können).
+    const room = (k: number) => Math.min(Math.ceil((labor * raws[k]) / amount), Math.max(0, shares[k]))
+    if (fullyBorne && sum < labor) assert.ok(r.cents.every((c, k) => c >= room(k)), `volle Umlage: ein Cent ging verloren: ${fall}`)
   }
 })
