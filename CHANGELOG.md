@@ -76,7 +76,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   gebuchten Positionen, und auch das Verknüpfen mit einer davon, das ihren Betrag erhöht,
   geschieht nur nach „Trotzdem verknüpfen“. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen,
   auch aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
-  Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt. Eine Gutschrift wird
+  Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt; die Ampel vergleicht
+  dann den Stand nach dem Verknüpfen mit dem Vorjahr und zählt Schätzung und Rechnung nicht
+  zusammen (vorher „+103 % gegenüber Vorjahr“ für eine Grundsteuer, die um 3 % stieg). Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
   wiederholen bucht nichts zweimal: Was genau so gebucht ist, meldet Erfolg ohne Änderung; eine
   Abweichung oder ein Stand, der sich seit der Vorschau geändert hat, antwortet mit dem
