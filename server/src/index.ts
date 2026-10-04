@@ -837,15 +837,19 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
       const asked = typeof body.propertyId === 'string' && properties.some((p) => p.id === body.propertyId) ? body.propertyId : null
       const [only, ...more] = properties
       const detected = detectedYear(extraction)
+      // Das gewählte Jahr: Steht der Beleg im Posteingang und hat dort ein Jahr, ist es dieses, und
+      // nicht das der Seitenleiste, das der Browser mitschickt (Abnahme B3). Wer ein Jahr am Beleg
+      // eingestellt hat, hat es für diesen Beleg gewählt.
+      const chosen = row?.year ?? (sent || null)
       if (signal.aborted) return null
       const record = await saveAssessment(db, {
         file: file.filename,
         propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
-        year: detected ?? (sent || null) ?? row?.year ?? new Date().getUTCFullYear(),
+        year: detected ?? chosen ?? new Date().getUTCFullYear(),
         detectedYear: detected,
         // Das gewählte Jahr bleibt gespeichert: Weicht das Jahr aus dem Beleg davon ab, ist die Ampel
         // gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht ungesehen in ein anderes Jahr.
-        requestedYear: sent || null,
+        requestedYear: chosen,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,

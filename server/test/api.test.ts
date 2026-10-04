@@ -4956,6 +4956,23 @@ test('Belegbuchung: beim Speichern bekommt ein Beleg ohne Objekt das Objekt der 
   }, { invoices: RECHNUNGEN })
 })
 
+// Abnahme B3: „Per KI auswerten“ aus dem Posteingang schickte das Jahr der Seitenleiste mit, und das
+// überschrieb das Jahr, das am Beleg eingestellt war. Das Jahr des Belegs ist das gewählte.
+test('Belegbuchung: aus dem Posteingang gilt das Jahr am Beleg als gewähltes, nicht das der Seitenleiste', async () => {
+  await withOllama(async (s) => {
+    const file = await plainUpload(s, 'hausmeister.pdf')
+    assert.equal((await putJson(s, `/api/uploads/${file}`, { year: 2023, propertyId: 'objekt-1' })).status, 200)
+    const a = assessmentOf(await evaluate(s, 'HAUSMEISTER', { existingFile: file, year: '2026' }))
+    assert.deepEqual([a.detectedYear, a.year, a.requestedYear], [null, 2023, 2023])
+    // Nennt der Beleg selbst ein Jahr, geht es weiter vor; verglichen wird mit dem Jahr am Beleg.
+    const other = await plainUpload(s, 'vorjahr.pdf')
+    assert.equal((await putJson(s, `/api/uploads/${other}`, { year: 2025, propertyId: 'objekt-1' })).status, 200)
+    const b = assessmentOf(await evaluate(s, 'VORJAHR', { existingFile: other, year: '2026' }))
+    assert.deepEqual([b.detectedYear, b.year, b.requestedYear], [2025, 2025, 2025])
+    assert.ok(!b.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war/.test(r))), 'kein Hinweis auf ein anderes Jahr')
+  }, { invoices: RECHNUNGEN })
+})
+
 test('Belegbuchung: nennt der Beleg kein Jahr, gilt das mitgeschickte', async () => {
   await withOllama(async (s) => {
     const a = assessmentOf(await evaluate(s, 'HAUSMEISTER', { year: '2023' }))

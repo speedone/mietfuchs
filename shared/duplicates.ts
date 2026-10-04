@@ -79,6 +79,8 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
     (!loose || similar(i.description, q.description) || similar(i.vendor, q.vendor)))
 }
 
+const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
+
 const queryOf = (i: DuplicateItem, year = i.year): CostQuery => ({
   propertyId: i.propertyId, year, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
 })
@@ -95,7 +97,13 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
   const groupOf = new Map<string, T[]>()
   const groups: T[][] = []
   for (const i of own) {
-    const linked = sameCostCandidates(own, queryOf(i)).map((c) => groupOf.get(c.id)).filter((g): g is T[] => !!g)
+    // Gruppiert wird je Seite: Gutschriften für sich, alles übrige für sich. Eine Position mit 0 €
+    // oder ohne Betrag passt nach `oppositeSign` zu beiden Seiten und verband sonst eine Gutschrift
+    // mit einer Rechnung zu einer Gruppe (N1 der Durchsicht von #201). Sie zählt zur Seite der
+    // Rechnungen, denn so steht eine aus dem Vorjahr übernommene Schätzung ohne Betrag da.
+    const linked = sameCostCandidates(own, queryOf(i))
+      .filter((c) => isCredit(c) === isCredit(i))
+      .map((c) => groupOf.get(c.id)).filter((g): g is T[] => !!g)
     const target = linked[0] ?? []
     if (!linked[0]) groups.push(target)
     // Verbindet die Position zwei bisher getrennte Gruppen, gehen sie in der ersten auf.
