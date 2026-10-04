@@ -1731,7 +1731,7 @@ Der Generator aus calc.test.ts und #202 bekommt einen festen Startwert und erzeu
 
 | PR | Inhalt | Refs | Aufwand |
 |---|---|---|---|
-| **0** | Anleitung `meteringService`: Betrag vor Vorwegabzug, Blöcke je Kostenart, berichtigtes Beispiel; guides.test.ts. Sofort möglich, ohne Abhängigkeit. | #209 | 0,5 T |
+| **0** | Anleitung `meteringService`: Betrag vor Vorwegabzug, Blöcke je Kostenart, berichtigtes Beispiel; guides.test.ts. **Erledigt mit #216** (auf `feat/heizung`); die Durchsicht von PR 6 prüft, dass Text und Probe zusammenpassen. | #209 | 0 T |
 | **1** | **Rechtsregister** `shared/law/` mit Parametern, Zeitregeln, Protokoll, `legalBasis.values`, `deviation` für Werte; Umzug aller bestehenden Rechtszahlen und Regeln; Wächter; Tests je Stichtag. Golden wortgleich. | #97, #110 | 2,5–3 T |
 | **2** | **Zeitraum, Kern:** `shared/period.ts`; Migration 0014/0015 (`year` → `period` mit Datenanweisung, Rhythmus, Wechsel); Schnappschuss und calc.ts über P; `ledgerRows`; `settlementDeadline`; API mit Alias. Golden unverändert, Gleichheitstest, Invarianten 3, 6, 11, 12. Ohne Oberfläche für den Wechsel; der Beginnmonat ist bis PR 3 nur 1. | #208 | 4–5 T |
 | **3** | **Zeitraum, Bedienung:** Beginnmonat und Wechsel mit Vorschau, Rumpf, Leistungszeitraum, Aufteilen beim Speichern, Steuerjahr, Steuer über zwei Abrechnungen, `PeriodProvider`, Cockpit, Hinweise `period.*`, Lexikon, F18, Praxislauf 15/16. | #208 | 4–5 T |
