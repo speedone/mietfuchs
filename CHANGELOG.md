@@ -6,6 +6,26 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Eine Rundungsregel für jede Verteilung.** Bisher rundete die Abrechnung je nach Lage
+  verschieden: Trugen die Mieter eine Rechnung ganz, nach dem Restcent-Verfahren, sonst jeder
+  Mieter für sich, und der Vermieter bekam den Rest. Dabei konnten die Anteile der Mieter
+  zusammen über dem Rechnungsbetrag liegen und der Vermieter bei −1 Cent stehen (1,00 € auf
+  67/67/65 m² vermietet und 1 m² selbstgenutzt: 34 + 34 + 33 Cent), und Eigenanteil und §35a-Lohn
+  wurden noch einmal getrennt gerundet und begrenzt. Jetzt wird jede Position einmal nach dem
+  Restcent-Verfahren verteilt, über die Mieter und die Anteile des Vermieters (Eigennutzung,
+  Leerstand, Pauschale und weitere Gründe) zugleich. Jeder Anteil ist sein rechnerischer Wert, auf-
+  oder abgerundet; die Summe ist genau der Rechnungsbetrag, und kein Anteil des Vermieters wechselt
+  das Vorzeichen. Bei gleichem Rest bekommt der Vermieter den Cent vor einem Mieter. Einen
+  „Rundungsrest“ weist der Vermieteranteil nicht mehr aus. Der §35a-Lohnanteil wird in denselben
+  Anteilen verteilt: Er liegt in keiner Zeile über dem Kostenanteil, und alle Zeilen zusammen
+  ergeben genau den Lohnanteil der Rechnung. In offenen Abrechnungen kann sich dadurch ein
+  einzelner Anteil um einen Cent verschieben, auch der Eigenanteil in der Steuerübersicht.
+  Abgeschlossene Abrechnungen bleiben, wie sie sind; die Seite Abrechnung zeigt den Unterschied
+  zur heutigen Berechnung als Abweichung.
+  ([#202](https://github.com/speedone/mietfuchs/issues/202))
+
 ## [0.10.0] – 2026-10-04
 
 ### Neu

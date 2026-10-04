@@ -1157,9 +1157,20 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
 **Berechnungs-Engine** ([server/src/calc.ts](server/src/calc.ts)) — das Herzstück, hier liegt
 die ganze fachliche Komplexität:
 - **Alle Beträge in Cent (Integer)**, niemals Euro-Floats — Gleitkomma-Fehler vermeiden.
-- Centgenaue Verteilung per **Hare/largest-remainder** (`largestRemainder`). Schöpfen die
-  Rohanteile die Summe nahezu voll aus, wird centgenau auf Mieter verteilt; sonst trägt der
-  **Vermieter** die Differenz (Leerstand, Eigenanteil, Rundungsrest, „Nicht umlagefähig").
+- **Eine Rundungsregel für jede Verteilung** (#202, `distributeCents`): Jede Position wird
+  genau einmal nach Hare/largest-remainder verteilt, über alle Empfänger zugleich, also die
+  Mieter **und je Grund eine Zeile des Vermieters** (Eigennutzung, Pauschale, Inklusivmiete,
+  außerhalb, Rest der Vereinbarung, Rest des Hauptzählers, zuletzt Leerstand bzw. Rest der
+  Einzelbeträge als Betrag minus alles übrige; `landlordRecipients`). Die exakten Werte ergeben
+  genau den Betrag, jede Zeile ist ihr Wert ab- oder aufgerundet, keine wechselt das Vorzeichen,
+  eine mit exakt 0 bekommt nie einen Cent. Gleichstand (mit Toleranz gegen Rauschen): erst der
+  Vermieter, dann die Kennung per `compareText`. Gutschriften als Spiegelbild. Der Eigenanteil
+  ist genau die Zeile `selfUse`, die Zeilen des Vermieters sind die `landlordParts`; einen
+  Grund `rounding` erzeugt die Berechnung nicht mehr. Der §35a-Lohn wird danach **innerhalb**
+  der Kostenanteile verteilt (`distributeLaborCents`): je Zeile ab- oder aufgerundet, nie über
+  dem Kostenanteil, zusammen genau L, bei L = A gleich dem Kostenanteil. Nicht Lohn und Rest
+  getrennt verteilen: zwei Rundungen zusammen können fast 2 Cent vom exakten Anteil abweichen.
+  Ein Test über Zufallsbestände prüft das über `onAllocation` in den Optionen.
 - **Umlageschlüssel** (`item.key`): `area` (Wohnfläche), `persons` (personentagesgenau),
   `units` (Wohneinheiten), `meter` (Verbrauch nach Zählertyp), `direct` (Direktzuordnung),
   `custom` (vereinbarte Prozentanteile je Wohnung in `item.customShares`, absolut gerechnet —
