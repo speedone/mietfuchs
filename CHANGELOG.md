@@ -6,6 +6,20 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
+  Steuerübersicht.** Die Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“ ließ als
+  Betrag den Gesamtbetrag der Abrechnung eintragen. Techem und ista ziehen den CO₂-Anteil, den der
+  Vermieter trägt, aber meist schon vorher ab; dann ist dieser Gesamtbetrag um ihn zu niedrig, und
+  der Anteil fehlte bei den Werbungskosten. Den Mietern wurde dabei nichts falsch berechnet. Die
+  Anleitung sagt jetzt: Als Betrag gilt, was Sie bezahlt haben, also die Summe aller Nutzerbeträge
+  plus den abgezogenen CO₂-Anteil; der Teil, der auf eine selbstgenutzte Wohnung entfällt, gehört
+  zu deren Betrag. Kaltwasser und weitere Nebenkosten derselben Abrechnung kommen als eigene
+  Positionen. Wer eine Messdienst-Abrechnung schon so erfasst hat, erhöht den Betrag der Position;
+  die Beträge der Mieter bleiben, wie sie sind
+  ([#209](https://github.com/speedone/mietfuchs/issues/209)).
+
 ## [0.10.1] – 2026-10-04
 
 ### Behoben
