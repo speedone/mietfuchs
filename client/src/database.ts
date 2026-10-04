@@ -42,8 +42,9 @@ export function databaseHint(database: DatabaseState | null | undefined, dismiss
 // (`mietfuchs.sqlite.vor-<Schritt>`, open.ts). Wer Mietfuchs aus dem Startmenü startet, sieht den
 // Datenordner nie; ohne diesen Satz wüsste er nicht, dass es den Rückweg gibt.
 //
-// Kommt nur nach einem Start, der wirklich nachgeholt hat: Beim nächsten liefert der Server
-// `migrated: null`, und dann ist der Hinweis weg, auch ohne dass ihn jemand weggeklickt hat.
+// Kommt nur nach einem Update, das wirklich nachgeholt hat. Der Server nennt die Sicherung dann
+// auch nach einem Neustart weiter (#180, server/src/db/migrationNotice.ts), bis „Verstanden“ sie
+// ihm meldet oder ein Backup eingespielt wird; danach liefert er `migrated: null`.
 
 export type UpdateHint = { dismissKey: string, message: string, guideUrl: string }
 

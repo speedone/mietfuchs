@@ -334,8 +334,14 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
   try {
     // Schritt 1: Gibt es überhaupt etwas zu übernehmen? Auf einem frischen Rechner entsteht die
     // db.json erst beim ersten Speichern.
+    // Liegt die abgelöste Datei daneben, ist es der zweite Start nach einem gelungenen Umstieg
+    // (#180): Dann wäre „noch keine db.json“ falsch. Der Zustand bleibt `none`, denn zu tun ist
+    // nichts; nur `/healthz` soll die Lage richtig beschreiben.
     if (!fs.existsSync(jsonFile)) {
-      return { state: 'none', message: 'Es gibt noch keine db.json; es ist nichts zu übernehmen.', notes: [], protocol: null, database: opened }
+      const message = fs.existsSync(path.join(dataDir, LEGACY_JSON_NAME))
+        ? `Der Umstieg in die Datenbank ist bereits erfolgt; die frühere db.json liegt als ${LEGACY_JSON_NAME} daneben.`
+        : 'Es gibt noch keine db.json; es ist nichts zu übernehmen.'
+      return { state: 'none', message, notes: [], protocol: null, database: opened }
     }
 
     // Schritt 2: Steht schon etwas in der Datenbank, ist der Umstieg gelaufen (oder eine neuere

@@ -350,8 +350,23 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
   font: inherit; font-size: 15px; font-weight: 600; padding: 7px 10px; border-radius: 8px;
   background: #262b4a; color: #fff; border: 1px solid #343b5c; cursor: pointer;
 }
-/* Objektnamen sind länger als Jahreszahlen (#157); etwas kleiner, damit mehr davon sichtbar bleibt */
-.sidebar .property-switcher select { font-size: 13.5px; }
+/* Objektnamen sind länger als Jahreszahlen (#157). Ein Auswahlfeld bricht nicht um und schnitt
+   sie ab (#180): Der Name steht deshalb als Text da, der umbricht, und das echte Auswahlfeld
+   liegt unsichtbar darüber und nimmt Klick und Tastatur an (property.tsx). */
+.sidebar .property-switcher .property-select { position: relative; }
+.sidebar .property-switcher .property-current {
+  display: block; font-size: 13.5px; font-weight: 600; line-height: 1.3;
+  letter-spacing: normal; text-transform: none; color: #fff;
+  padding: 7px 22px 7px 10px; border-radius: 8px; background: #262b4a; border: 1px solid #343b5c;
+  white-space: normal; overflow-wrap: break-word; hyphens: auto;
+}
+.sidebar .property-switcher .property-current::after {
+  content: "▾"; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: #7d86a5;
+}
+.sidebar .property-switcher select {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 13.5px;
+}
+.sidebar .property-switcher .property-select:focus-within .property-current { outline: 2px solid #ef6f2e; outline-offset: 2px; }
 .sidebar .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar .nav-section { font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: #5d6580; padding: 14px 12px 5px; }
 
@@ -388,6 +403,9 @@ label.field.checkline span { display: flex; align-items: center; gap: 6px; font-
      Umschalter zu erkennen. Das Jahr erklärt sich durch die Zahl. */
   .sidebar .property-switcher span { display: inline; }
   .sidebar .year-switcher select { padding: 5px 8px; font-size: 13px; }
+  /* Der angezeigte Name (#180) bleibt ein Block und darf auch hier umbrechen, höchstens so breit
+     wie der Platz neben der Beschriftung */
+  .sidebar .property-switcher .property-current { display: block; max-width: 60vw; padding: 5px 24px 5px 8px; font-size: 13px; }
   main { padding: 18px 14px 60px; }
   h1 { font-size: 20px; }
   .card { padding: 14px; }

@@ -11,7 +11,7 @@ import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { closeSettlement, createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment, type AssessmentRecord, type NewAssessment } from '../src/db/assessments.ts'
-import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, type BookingOutcome } from '../src/db/booking.ts'
+import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAssessments, type BookingOutcome } from '../src/db/booking.ts'
 import { parseDecisions } from '../src/bookingPlan.ts'
 import { recordUpload } from '../src/db/uploads.ts'
 import type { NewLine } from '../src/assessment.ts'
@@ -706,5 +706,68 @@ test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt 
     await estimate(w, 'wb', { description: 'Wasser B' })
     const p2 = await plan(w, gleich, [link(0, 'wb')])
     assert.equal(p2.notices.some((n) => n.includes('abgeschlossen')), false, JSON.stringify(p2.notices))
+  })
+})
+
+test('Ampel über zwei Belege (#170): die Ansicht rechnet offene Zeilen beider Auswertungen gegen dieselbe Schätzung', async () => {
+  await withWorld(async (w) => {
+    // Vorjahr 1.000 €, Schätzung 1.500 €, die Rechnung kommt in zwei Belegen à 700 € und 800 €:
+    // zusammen 1.500 € gegen 1.000 €, +50 % bei beiden. Jeder für sich ergäbe −30 % und −20 %.
+    await estimate(w, 'vj', { year: 2024, amountCents: 100000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'wa')
+    const erster = await receipt(w, 'wasser-1.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    const zweiter = await receipt(w, 'wasser-2.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
+    for (const r of [erster, zweiter]) {
+      const reasons = (await view(w, r)).lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+      assert.ok(reasons.includes('+50 % gegenüber Vorjahr'), `${r.assessment.file}: ${reasons.join(' | ')}`)
+    }
+    const liste = await w.opened.read((db) => viewAssessments(db, 'objekt-1', true, w.uploadDir))
+    assert.equal(liste.length, 2)
+    for (const v of liste) assert.ok(v.lines[0]?.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `${v.file}: ${v.lines[0]?.suggestion?.reasons.join(' | ')}`)
+  })
+})
+
+test('Ampel über zwei Belege (Durchsicht): derselbe Beleg zweimal hochgeladen rechnet nicht doppelt', async () => {
+  await withWorld(async (w) => {
+    // a.pdf und b.pdf haben denselben Inhalt, je 1.550 € gegen eine Schätzung von 1.500 € bei
+    // 1.500 € im Vorjahr. Das zweite Verknüpfen lehnt der Planer ohnehin ab; die Ampel darf die
+    // Zeilen deshalb nicht zusammenzählen (das ergäbe +107 %), sondern rechnet je Beleg: +3 %.
+    const row = (file: string) => ({ file, originalName: file, mimeType: 'application/pdf', size: 10, sha256: 'gleich', uploadedAt: '2026-10-02T00:00:00.000Z', propertyId: null, year: null, invoiceDate: null, kind: 'receipt' as const })
+    await w.opened.write((db) => recordUpload(db, row('a.pdf')))
+    await w.opened.write((db) => recordUpload(db, row('b.pdf')))
+    await estimate(w, 'vj', { year: 2024, amountCents: 150000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'wa')
+    const a = await receipt(w, 'a.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
+    await receipt(w, 'b.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
+    const reasons = (await view(w, a)).lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+    assert.ok(!reasons.some((r) => /gegenüber Vorjahr/.test(r)), reasons.join(' | '))
+    const liste = await w.opened.read((db) => viewAssessments(db, 'objekt-1', true, w.uploadDir))
+    assert.equal(liste.length, 2)
+    for (const v of liste) assert.ok(!v.lines[0]?.suggestion?.reasons.some((r) => /gegenüber Vorjahr/.test(r)), `${v.file}: ${v.lines[0]?.suggestion?.reasons.join(' | ')}`)
+  })
+})
+
+test('Ampel über zwei Belege (Integrationsdurchsicht): Zwillinge unter den anderen Belegen zählen einmal', async () => {
+  await withWorld(async (w) => {
+    // a.pdf und b.pdf haben denselben Inhalt (700 €), c.pdf ist der zweite Teil (800 €). Vorjahr
+    // 1.000 €, Schätzung 1.500 €: zusammen 1.500 €, +50 %. Zählten a und b beide, stünden bei c
+    // 2.200 € da, +120 %.
+    const row = (file: string, sha256: string) => ({ file, originalName: file, mimeType: 'application/pdf', size: 10, sha256, uploadedAt: '2026-10-02T00:00:00.000Z', propertyId: null, year: null, invoiceDate: null, kind: 'receipt' as const })
+    await w.opened.write((db) => recordUpload(db, row('a.pdf', 'gleich')))
+    await w.opened.write((db) => recordUpload(db, row('b.pdf', 'gleich')))
+    await w.opened.write((db) => recordUpload(db, row('c.pdf', 'anders')))
+    await estimate(w, 'vj', { year: 2024, amountCents: 100000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'wa')
+    await receipt(w, 'a.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    await receipt(w, 'b.pdf', [line('Frischwasser', 'Wasser/Abwasser', 70000)])
+    const c = await receipt(w, 'c.pdf', [line('Abwasser', 'Wasser/Abwasser', 80000)])
+    const einzeln = (await view(w, c)).lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+    assert.ok(einzeln.includes('+50 % gegenüber Vorjahr'), einzeln.join(' | '))
+    const liste = await w.opened.read((db) => viewAssessments(db, 'objekt-1', true, w.uploadDir))
+    const ausListe = liste.find((v) => v.file === 'c.pdf')?.lines[0]?.suggestion?.reasons ?? assert.fail('c.pdf fehlt in der Liste')
+    assert.ok(ausListe.includes('+50 % gegenüber Vorjahr'), ausListe.join(' | '))
+    // Und a.pdf rechnet mit c.pdf, nicht mit seinem Zwilling: ebenfalls +50 %.
+    const a = liste.find((v) => v.file === 'a.pdf')?.lines[0]?.suggestion?.reasons ?? assert.fail('a.pdf fehlt in der Liste')
+    assert.ok(a.includes('+50 % gegenüber Vorjahr'), a.join(' | '))
   })
 })

@@ -52,6 +52,31 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   fragen die Stammdaten nach. Bestände mit Überschneidung bleiben ladbar und lassen sich wie
   bisher sichern und wiederherstellen; abgeschlossene Abrechnungen bleiben, wie sie sind.
   ([#204](https://github.com/speedone/mietfuchs/issues/204))
+- **Cockpit beim ersten Start: keine Zahl offener Punkte ohne Liste.** Solange für das Jahr nichts
+  erfasst ist, zeigt das Cockpit statt der Checkliste nur die Knöpfe zum Anfangen; die Zeile
+  darüber nannte trotzdem „Noch 4 Punkte offen“, ohne dass irgendwo stand, welche. Sie nennt jetzt
+  den ersten Schritt: Stammdaten anlegen, dann Belege erfassen.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **`/healthz` nach dem Umstieg.** Beim zweiten Start meldete der Umstieg „Es gibt noch keine
+  db.json“, obwohl die frühere Datei als `db.json.abgeloest` daneben liegt. Jetzt steht dort, dass
+  der Umstieg bereits erfolgt ist. ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Der Hinweis auf die Sicherung vor dem Update übersteht einen Neustart.** Bisher kannte ihn nur
+  der Start, der die Datenbank aktualisiert hatte; wurde Mietfuchs neu gestartet, bevor Sie die
+  Oberfläche geöffnet hatten (etwa in Docker), erfuhren Sie nichts von der Sicherung. Jetzt bleibt
+  er stehen, bis Sie ihn mit „Verstanden“ schließen, dann auch in anderen Browsern. Gemerkt wird
+  das in der Datei `sicherung-vor-update.json` im Datenordner. Außerdem nennt die Konsole die
+  Sicherung beim Update mit vollem Pfad. Nach dem Umstieg aus einer `db.json` gibt es beides
+  nicht: Die Sicherung davor wäre eine leere Datenbank, der Rückweg ist dort `db.json.abgeloest`.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Lange Objektnamen in der Seitenleiste.** Die Auswahl „Objekt“ schnitt lange Namen ab. Der
+  Name steht jetzt vollständig da und bricht bei Bedarf in die nächste Zeile um; der Tooltip
+  bleibt. ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Ampel zum Vorjahr, wenn eine Rechnung in zwei Belegen kommt.** Zeilen, die dieselbe Schätzung
+  ersetzen, rechneten bisher nur innerhalb eines Belegs gemeinsam. Kommt etwa die Wasserrechnung in
+  zwei Belegen zu 700 € und 800 € gegen eine Schätzung von 1.500 €, zeigte jeder Beleg für sich eine
+  Abweichung, als ersetze er die Schätzung allein (bei 1.400 € im Vorjahr −50 % und −43 %). Jetzt
+  rechnen die offenen Zeilen aller Belege des Objekts zusammen, und beide zeigen dieselbe Zahl:
+  +7 %. Derselbe Beleg zweimal hochgeladen zählt dabei nur einmal. ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ## [0.10.0] – 2026-10-04
 

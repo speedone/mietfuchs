@@ -30,6 +30,7 @@ import { isProviderError } from './ai/errors.ts'
 import { databaseUnavailable, healthReport, NO_DATABASE, type DatabaseState } from './health.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from './db/open.ts'
 import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverResult } from './db/changeover.ts'
+import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readProperties, readSettings, readStock } from './db/read.ts'
@@ -872,7 +873,7 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         const placement: Placement = row?.propertyId ? { year: record.assessment.year } : { year: record.assessment.year, propertyId: record.assessment.propertyId }
         await placeUpload(db, file.filename, placement, () => describeFile(UPLOAD_DIR, file.filename, undefined, sha256))
       }
-      return viewRecord(db, record)
+      return viewRecord(db, record, UPLOAD_DIR)
     })
   } catch (err) {
     console.warn(`Die Auswertung zu ${file.filename} ließ sich nicht speichern: ${messageOf(err)}`)
@@ -1376,8 +1377,20 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
   if (fs.existsSync(target)) await replaceFile(target, path.join(DATA_DIR, DB_BEFORE_RESTORE))
   if (staged) await replaceFile(staged, target)
 
+  // Die Sicherung vor einem früheren Update gehört nicht zum wiederhergestellten Stand; der
+  // Rückweg ist jetzt mietfuchs.sqlite.vor-restore (#154, #180).
+  try {
+    clearNotice(DATA_DIR)
+  } catch {
+    // Kein Grund, das Wiederherstellen abzubrechen: Schlimmstenfalls nennt der nächste Start
+    // noch einmal eine Sicherung, die es wirklich gibt.
+  }
+  migrationNotice = null
+
   try {
     database = await openDatabase({ dataDir: DATA_DIR })
+    const freshAfterRestore = freshBackupOf(database)
+    if (freshAfterRestore) noteBackup(freshAfterRestore)
     openProblem = null
   } catch (err) {
     openProblem = messageOf(err)
@@ -1671,6 +1684,24 @@ app.get('/healthz', (req, res) => {
   res.status(report.status === 'ok' ? 200 : 503).json(report)
 })
 
+// Die Oberfläche hat den Hinweis auf die Sicherung vor dem Update weggeklickt (#180). Danach
+// nennt ihn /healthz nicht mehr, auch nicht nach einem Neustart und in keinem anderen Browser.
+// Der Schlüssel muss zu dem passen, was dasteht (siehe acknowledgeNotice); ein unpassender ist
+// kein Fehler, sondern ein Tab von vorher, und ändert nichts.
+app.post('/api/database/migrated/seen', (req, res) => {
+  const key = typeof req.body?.key === 'string' ? req.body.key : ''
+  if (!key) return res.status(400).json({ error: 'Es fehlt, welcher Hinweis gelesen wurde.' })
+  const outcome = acknowledgeNotice(DATA_DIR, key)
+  const matches = outcome !== 'unchanged' || (migrationNotice !== null && noticeKey(migrationNotice) === key)
+  if (matches) migrationNotice = null
+  if (outcome === 'failed') {
+    // In diesem Lauf ist er weg; beim nächsten Start kommt er wieder. Das ist hinnehmbar.
+    console.error(`Der Hinweis auf die Sicherung ließ sich nicht entfernen (${NOTICE_NAME} im Datenordner).`)
+    return res.status(204).end()
+  }
+  res.json({ ok: true, cleared: matches })
+})
+
 // Beenden aus der Oberfläche (#45). Nur in der Programmdatei: Aus einem Linux-Paket startet
 // Mietfuchs ohne Konsolenfenster, es fehlt also der gewohnte Weg zum Schließen. Im Container
 // und im npm-Betrieb beendet die Umgebung den Dienst, und ein Neustart käme dort von selbst.
@@ -1832,11 +1863,69 @@ if (startProblem) {
 // eines Backups. Aus dem Startmenü gestartet sähe der Vermieter dann gar nichts.
 let database: OpenedDatabase | null = null
 let openProblem: string | null = null
+
+// Der Hinweis auf die Sicherung vor einem Update (#154), für /healthz. Er übersteht einen
+// Neustart (#180, siehe db/migrationNotice.ts): Ohne frische Sicherung gilt, was die Merkdatei
+// sagt, bis die Oberfläche ihn wegklickt oder ein Backup eingespielt wird.
+let migrationNotice: MigrationNotice | null = null
+
+type FreshBackup = { file: string, steps: number }
+const freshBackupOf = (opened: OpenedDatabase | null): FreshBackup | null =>
+  opened?.backup ? { file: opened.backup, steps: opened.migrations } : null
+
+// Ohne frische Sicherung gilt die Merkdatei, mit einer frischen wird sie neu geschrieben.
+function noteBackup(fresh: FreshBackup | null): void {
+  if (!fresh) {
+    migrationNotice = readNotice(DATA_DIR)
+    return
+  }
+  // Nur der Name: Die Sicherung liegt immer im Datenordner, und die Oberfläche sagt es so.
+  migrationNotice = { steps: fresh.steps, backup: path.basename(fresh.file), at: backupTime(fresh.file) }
+  try {
+    recordNotice(DATA_DIR, migrationNotice)
+  } catch (err) {
+    // Dann gilt der Hinweis nur bis zum nächsten Start, wie vorher; ein Grund zum Abbruch ist es nicht.
+    console.error(`Der Hinweis auf die Sicherung ließ sich nicht festhalten: ${messageOf(err)}`)
+  }
+}
+
+// Kein Hinweis, auch nicht nach dem nächsten Start.
+function forgetNotice(): void {
+  migrationNotice = null
+  try {
+    clearNotice(DATA_DIR)
+  } catch (err) {
+    console.error(`Der Hinweis auf die Sicherung ließ sich nicht entfernen: ${messageOf(err)}`)
+  }
+}
+
+// Welcher Hinweis nach dem Umstieg gilt (Durchsicht zu #180). Ist der Umstieg aus der db.json
+// gelungen, war die Datenbank davor leer (ein früher gescheiterter Umstieg hatte sie angelegt), und
+// ihre Sicherung vor dem Update ist ein leerer Stand. Sie als Rückweg zu nennen hieße: Wer der
+// Anleitung folgt, setzt eine leere Datenbank ein, während die db.json schon „abgelöst“ heißt. Der
+// Rückweg ist dort db.json.abgeloest. Ist er gescheitert, trägt die Datenbank den Bestand nicht,
+// und ihre Sicherung ebenso wenig; dann gibt es in diesem Lauf keinen Hinweis.
+function noteAfterChangeover(state: ChangeoverResult['state'], fresh: FreshBackup | null): FreshBackup | null {
+  if (state === 'done') {
+    forgetNotice()
+    return null
+  }
+  if (state === 'failed') {
+    migrationNotice = null
+    return null
+  }
+  noteBackup(fresh)
+  return fresh
+}
+
 try {
   database = await openDatabase({ dataDir: DATA_DIR })
 } catch (err) {
   openProblem = messageOf(err)
 }
+// Die Sicherung, die dieser Start vor dem Nachholen angelegt hat, festgehalten **vor** dem
+// Umstieg: Öffnet der die Datenbank neu, ist sie an der neuen Verbindung nicht mehr vermerkt.
+const backupBeforeChangeover = freshBackupOf(database)
 
 // Der Umstieg der vorhandenen Daten, beim ersten Start der neuen Version (siehe
 // db/changeover.ts). Er läuft hier und nicht auf Zuruf, weil niemand einen Befehl eingeben soll,
@@ -1856,6 +1945,8 @@ let changeover: ChangeoverResult = database
   : changeoverWithoutDatabase(DATA_DIR, openProblem ?? 'unbekannter Grund')
 database = changeover.database
 if (!database) openProblem = openProblem ?? 'nach dem Umstieg nicht wieder geöffnet'
+// Erst jetzt, denn ob die Sicherung ein Rückweg ist, hängt am Ausgang des Umstiegs.
+const backupOfThisStart = noteAfterChangeover(changeover.state, backupBeforeChangeover)?.file ?? null
 
 // Die Einstellungen in den Arbeitsspeicher holen, siehe die Begründung am Zwischenspeicher.
 // **Nach** dem Umstieg: Vorher stünde dort die leere Zeile einer frischen Datenbank, und der
@@ -1886,11 +1977,7 @@ function backupTime(file: string): string {
 function databaseState(): DatabaseState {
   const wie = { state: changeover.state, message: changeover.message, notes: changeover.notes, ...(changeover.pending ? { pending: true } : {}) }
   if (database) {
-    // Die Sicherung nur mit Namen: Sie liegt immer im Datenordner, und die Oberfläche sagt es so.
-    const migrated = database.backup
-      ? { steps: database.migrations, backup: path.basename(database.backup), at: backupTime(database.backup) }
-      : null
-    return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie, migrated }
+    return { open: true, file: database.file, migrations: database.migrations, detail: 'geöffnet', changeover: wie, migrated: migrationNotice }
   }
   return { open: false, file: databaseFile(DATA_DIR), migrations: 0, detail: openProblem ?? 'nicht geöffnet', changeover: wie, migrated: null }
 }
@@ -1944,6 +2031,10 @@ const server = app.listen(PORT, (err) => {
   // Ordnung, und wer Ausgaben einsammelt, soll genau das auseinanderhalten können.
   else console.error(`Datenbank: nicht geöffnet. ${openProblem ?? ''}\nMietfuchs arbeitet weiter mit ${path.join(DATA_DIR, 'db.json')}; es geht nichts verloren.`)
   for (const warning of database?.warnings ?? []) console.error(`Hinweis: ${warning}`)
+  // Die Sicherung vor dem Update (#154) auch hier, mit vollem Pfad (#180): Im Container oder im
+  // npm-Betrieb liest das Protokoll, wer die Oberfläche vielleicht nie öffnet. Nur beim Start,
+  // der sie angelegt hat; danach steht sie nur noch in /healthz.
+  if (backupOfThisStart) console.log(`Vor dem Update wurde eine Sicherung Ihrer Daten angelegt: ${backupOfThisStart}`)
   // Der Umstieg der Daten (#55). Gelungen ist er einen Satz wert, gescheitert eine Erklärung auf
   // der Fehlerausgabe. Ohne Konsolenfenster (Linux-Paket) steht beides in der Oberfläche, die es
   // aus /healthz liest.

@@ -2,7 +2,7 @@
 // Zeilen wird und in welchem Zustand eine Zeile ist.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeAssessment, detectedYear, lineDraft, lineState, linesFromExtraction, withoutBooked, type DescribeContext, type NewLine } from '../src/assessment.ts'
+import { describeAssessment, detectedYear, lineDraft, lineState, linesFromExtraction, openTargets, withoutBooked, type DescribeContext, type NewLine } from '../src/assessment.ts'
 import { categoryDeviationPct } from '../../shared/assessment.ts'
 import type { CostItem, StoredAssessment, StoredAssessmentLine, Unit } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
@@ -210,6 +210,39 @@ test('Ampel (Abnahme B2): Zeilen, die dieselbe Schätzung ersetzen, rechnen geme
     units: UNITS3, meters: [], propertyKind: null, originalName: 'wasser.pdf', twinOf: null, twinNames: new Map(), booked: [],
   })
   for (const l of high.lines) assert.ok(l.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `Zeile ${l.idx}: ${l.suggestion?.reasons.join(' | ')}`)
+})
+
+test('Ampel (#170): offene Zeilen zweier Belege, die dieselbe Schätzung ersetzen, rechnen gemeinsam', () => {
+  // Die Wasserrechnung kommt in zwei Belegen, 700 € und 800 €, gegen eine Schätzung von 1.500 €
+  // und 1.400 € im Vorjahr. Zusammen ersetzen sie die Schätzung: +7 %. Jeder Beleg für sich an
+  // Stelle der Schätzung zeigte −50 % und −43 %.
+  const wasser = (patch: Partial<CostItem>): CostItem => grundsteuer({ category: 'Wasser/Abwasser', description: 'Wasser', vendor: 'Stadtwerke', ...patch })
+  const erster = { assessment: assessmentOf({ id: 'a1', file: 'wasser-1.pdf', vendor: 'Stadtwerke', totalGrossCents: 70000 }), lines: [stored({ assessmentId: 'a1', amountCents: 70000 })] }
+  const zweiter = { assessment: assessmentOf({ id: 'a2', file: 'wasser-2.pdf', vendor: 'Stadtwerke', totalGrossCents: 80000 }), lines: [stored({ assessmentId: 'a2', description: 'Abwasser', amountCents: 80000 })] }
+  const sieh = (vorjahr: number) => {
+    const items = [wasser({ id: 'v', year: 2025, amountCents: vorjahr, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })]
+    const base = { items, units: UNITS3, meters: [], propertyKind: null, twinOf: null, twinNames: new Map<string, string>(), booked: [] }
+    const peerTargets = [erster, zweiter].flatMap((r) => openTargets(r, base))
+    assert.deepEqual(peerTargets.map((t) => [t.assessmentId, t.costItemId, t.amountCents]), [['a1', 'u', 70000], ['a2', 'u', 80000]])
+    return [erster, zweiter].map((r) => describeAssessment(r, { ...base, originalName: r.assessment.file, peerTargets }))
+  }
+  for (const view of sieh(140000)) {
+    const reasons = view.lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+    assert.ok(!reasons.some((r) => /gegenüber Vorjahr/.test(r)), `${view.id}: ${reasons.join(' | ')}`)
+  }
+  // Mit einem Vorjahr von 1.000 € sichtbar: dieselbe Zahl in beiden Belegen, +50 %.
+  for (const view of sieh(100000)) {
+    assert.ok(view.lines[0]?.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `${view.id}: ${view.lines[0]?.suggestion?.reasons.join(' | ')}`)
+  }
+  // Ist der zweite Beleg verworfen, ersetzt der erste die Schätzung allein: 700 € gegen 1.400 €.
+  const base = {
+    items: [wasser({ id: 'v', year: 2025, amountCents: 140000, invoiceFile: 'w-2025.pdf' }), wasser({ id: 'u', amountCents: 150000 })],
+    units: UNITS3, meters: [], propertyKind: null, twinOf: null, twinNames: new Map<string, string>(), booked: [],
+  }
+  const verworfen = { ...zweiter, lines: [{ ...zweiter.lines[0]!, dismissed: true }] }
+  assert.deepEqual(openTargets(verworfen, base), [])
+  const allein = describeAssessment(erster, { ...base, originalName: 'wasser-1.pdf', peerTargets: openTargets(verworfen, base) })
+  assert.ok(allein.lines[0]?.suggestion?.reasons.includes('-50 % gegenüber Vorjahr'), allein.lines[0]?.suggestion?.reasons.join(' | '))
 })
 
 test('Ampel: Zielen zwei offene Zeilen auf dieselbe Schätzung, verschweigt keine die Abweichung', () => {
