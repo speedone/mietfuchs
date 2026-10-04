@@ -1216,8 +1216,11 @@ export function distributeCents(totalCents: number, recipients: Recipient[]): nu
 // Dass der Lohn dabei immer Platz findet, ist gemessen (über 46 Millionen kleine Fälle erschöpfend
 // und 2 Millionen zufällige): Der erste Durchgang bis höchstens zur Aufrundung des Lohns ergab immer
 // genau L. Für den Fall, dass es doch einmal nicht reicht, gibt der zweite Durchgang bis zum
-// Kostenanteil nach; Platz gibt es dort immer, denn die Kostenanteile ergeben zusammen A ≥ L.
-// Die Zusagen „0 ≤ Lohn ≤ Kostenanteil“ und „Σ Lohn = L“ hängen also nicht an der Messung.
+// Kostenanteil nach; Platz gibt es dort immer, denn die nicht negativen Kostenanteile ergeben
+// zusammen mindestens A ≥ L. Die Zusagen „0 ≤ Lohn ≤ Kostenanteil“ und „Σ Lohn = L“ hängen also
+// nicht an der Messung. An ihr hängt, dass jeder Lohnanteil höchstens um einen Cent von seinem
+// exakten Wert abweicht, und gemessen ist das nur für widerspruchsfreie Daten, deren exakte Werte
+// zusammen genau A ergeben; bei sich überschneidenden Mietverhältnissen gilt es nicht sicher.
 export function distributeLaborCents(laborCents: number, totalCents: number, recipients: Recipient[], shares: number[]): { cents: number[], exact: number[] } {
   const exact = recipients.map((r) => {
     const e = cleanRaw(r.raw)
@@ -1373,15 +1376,23 @@ export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE_CATEG
 // Grund „Rundung“ gibt es deshalb nicht mehr (in eingefrorenen Abrechnungen kann er stehen).
 //
 // Die Anteile der Mietverhältnisse mit Pauschale, Inklusivmiete oder ohne Abrechnung sind exakte
-// Anteile wie die der Mieter. Die übrigen Gründe beschreiben, was davon bleibt, und können sich
-// überschneiden (der Rest des Hauptzählers ist bei einer selbstgenutzten Wohnung ohne Zähler ihr
-// Eigenanteil; Anteile außerhalb und innerhalb können zusammen über 100 % vereinbart sein). Sie
-// bekommen deshalb der Reihe nach höchstens, was noch übrig ist, wie vor #202 in der Zerlegung,
-// nur jetzt vor dem Runden und nicht danach. Der letzte Grund ist der Rest: bei Einzelbeträgen der
+// Anteile wie die der Mieter, und ebenso der Eigenanteil: Er ist immer sein exakter Wert, auch
+// wenn andere Zeilen zusammen mehr als den Betrag ergeben (Durchsicht von #203: sonst fraß der
+// Überhang zweier sich überschneidender Mietverhältnisse den Eigenanteil, und der private Teil
+// erschien in der Steuerübersicht als abziehbar). Die übrigen Gründe beschreiben, was bleibt, und
+// können sich mit dem Eigenanteil überschneiden (der Rest des Hauptzählers ist bei einer
+// selbstgenutzten Wohnung ohne Zähler ihr Eigenanteil). Sie bekommen deshalb der Reihe nach
+// höchstens, was noch übrig ist, wie vor #202 in der Zerlegung, nur jetzt vor dem Runden. Ein
+// negativer Wert eines Grundes (ein rückwärts laufender Zähler außerhalb) bleibt bei seinem Grund
+// und erscheint nicht unter fremdem Namen. Der letzte Grund ist der Rest: bei Einzelbeträgen der
 // Rest der Einzelabrechnung, sonst Leerstand. So ergeben die exakten Werte zusammen genau den
-// Betrag. Liegt er nur durch Rechenrauschen unter 0, ist er 0. Deutlich darunter liegt er nur, wenn
-// die Mieter rechnerisch mehr als den Betrag tragen, etwa bei zwei Mietverhältnissen derselben
-// Wohnung, die sich überschneiden; dann bleibt er stehen, wie er ist, und die Summe stimmt trotzdem.
+// Betrag. Liegt er nur durch Rechenrauschen unter 0, ist er 0.
+//
+// Bei widerspruchsfreien Daten hat keine Zeile des Vermieters das umgekehrte Vorzeichen der
+// Position. Zwei Datenfehler durchbrechen das, und dann bleibt der Fehler sichtbar, statt einen
+// anderen Grund zu verbiegen: Überschneiden sich zwei Mietverhältnisse derselben Wohnung, tragen
+// die Mieter rechnerisch mehr als den Betrag, und der Rest (Leerstand) wird negativ; läuft ein
+// Zähler rückwärts, wird sein Grund negativ (dazu gibt es eine Meldung). Die Summe stimmt auch dann.
 function landlordRecipients(
   item: SnapshotCostItem,
   p: { selfRaw: number, notBooked: { reason: LandlordReason | CostModel, raw: number }[], outsideRaw: number, customUnassignedRaw: number, mainRestRaw: number, bookedRaw: number },
@@ -1390,11 +1401,13 @@ function landlordRecipients(
   const sum = (reason: string) => p.notBooked.filter((x) => x.reason === reason).reduce((a, x) => a + x.raw, 0)
   let left = (item.amountCents - p.bookedRaw - p.notBooked.reduce((a, x) => a + x.raw, 0)) * sign
   const take = (raw: number): number => {
+    if (raw * sign <= 0) { left -= raw * sign; return raw }
     const t = Math.max(0, Math.min(raw * sign, left))
     left -= t
     return t * sign
   }
-  const self = take(p.selfRaw)
+  const self = p.selfRaw
+  left -= self * sign
   const outside = take(p.outsideRaw)
   const custom = take(p.customUnassignedRaw)
   const mainRest = take(p.mainRestRaw)
@@ -2303,14 +2316,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         }
       }
       const exact = cleanRaw(x.raw)
-      steps.push(share !== Math.round(exact)
+      steps.push(share !== roundHalfAway(exact)
         ? { label: 'Ergebnis, auf Cent gerundet', value: `${fmtCents(share)} (Restcent-Verfahren: rechnerisch ${fmtExactEuro(x.raw)}; damit die Anteile zusammen genau den Rechnungsbetrag ergeben, weicht dieser Anteil um einen Cent von der gewöhnlichen Rundung ab)`, term: 'largestRemainder' }
         : { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(share) })
       // Wie beim Kostenanteil: Weicht der Lohnanteil von der Rundung seines rechnerischen Werts ab,
       // steht der Grund dabei, auch wenn er dadurch 0 wird (M3 der Durchsicht von #201); sonst fehlte
       // dem Mieter ein Cent ohne Erklärung. Bei ganzer Lohnrechnung ist der Lohnanteil der
       // Kostenanteil, und dessen Restcent erklärt schon der Schritt davor.
-      const laborRounded = Math.round(laborExact[k])
+      const laborRounded = roundHalfAway(laborExact[k])
       if (labor !== null && labor > 0 && labor !== item.amountCents && labor35a !== laborRounded) {
         const why = laborRounded > Math.max(0, share)
           ? 'ein Lohnanteil liegt nie über dem Kostenanteil, deshalb ist er auf diesen begrenzt'

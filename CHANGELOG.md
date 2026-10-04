@@ -21,7 +21,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   „Rundungsrest“ weist der Vermieteranteil nicht mehr aus. Der §35a-Lohnanteil wird in denselben
   Anteilen verteilt: Er liegt in keiner Zeile über dem Kostenanteil, und alle Zeilen zusammen
   ergeben genau den Lohnanteil der Rechnung. In offenen Abrechnungen kann sich dadurch ein
-  einzelner Anteil um einen Cent verschieben, auch der Eigenanteil in der Steuerübersicht.
+  Mieteranteil, ein Lohnanteil oder der Eigenanteil (auch in der Steuerübersicht) um einen Cent
+  je Position verschieben. In der Aufschlüsselung des Vermieteranteils können größere Beträge
+  zwischen Gründen wandern, bei gleicher Summe: Bei vereinbarten Anteilen, die zusammen mit
+  Wohnungen außerhalb der Abrechnungseinheit über 100 % ergeben, steht der Leerstand jetzt voll
+  da und „außerhalb der Abrechnungseinheit“ nur noch bis 100 %.
   Abgeschlossene Abrechnungen bleiben, wie sie sind; die Seite Abrechnung zeigt den Unterschied
   zur heutigen Berechnung als Abweichung.
   ([#202](https://github.com/speedone/mietfuchs/issues/202))
