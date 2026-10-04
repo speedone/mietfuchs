@@ -174,6 +174,34 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   des ganzen Gebäudes, bis Sie sie einer Einheit zuordnen.
   ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
+### Behoben
+
+- **§35a-Bescheinigung: kein Cent mehr unter der Handrechnung.** Der Lohnanteil, den die
+  Abrechnung je Mieter bescheinigt, ging vom schon auf Cent gerundeten Kostenanteil aus und konnte
+  so einen Cent zu niedrig sein (etwa 45,20 € statt 300 € × 55/365 = 45,21 €). Jetzt folgt er dem
+  ungerundeten Anteil. **Es ändert sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um
+  höchstens einen Cent je Position; Kostenanteile, Nachzahlungen und Guthaben, Vermieter- und
+  Eigenanteil sowie die Steuerübersicht bleiben unverändert. Abgeschlossene Abrechnungen bleiben,
+  wie sie verschickt wurden.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Stammdaten: Die Tabelle „Mietverhältnisse“ passt in ihre Karte.** „Mieterwechsel“, ✎ und 🗑
+  waren auch auf großen Bildschirmen nur durch waagrechtes Scrollen erreichbar. Jetzt brechen
+  Kopfzeilen, Staffeln und Aktionen um; am Handy ist die Tabelle deutlich schmaler.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Texte: Ein- und Mehrzahl, Aufzählungen und Anführungszeichen.** Statt „Wohnung(en)“,
+  „Mietverhältnis(se)“, „Position(en)“ oder „Belegdatei(en)“ stehen in Cockpit, Abrechnung und
+  Kosten die passenden Formen; eine Garage ohne Fläche heißt im Hinweis „Einheit“ statt
+  „Wohnung“. Aufzählungen in Hinweisen enden mit „und“, auch die Positionen beim Hinweis „Einheit
+  ohne Fläche“. Die Zählerwarnung nennt die Zählerart mit ihrer Beschriftung („Kaltwasser“ statt
+  „kaltwasser“). Anführungszeichen schließen typografisch („…“ statt „…"), etwa in den Warnungen zu
+  Kabel und Heizung, auf der Zählerseite und in den Fragen vor dem Wiederherstellen und Löschen.
+  Abgeschlossene Abrechnungen behalten ihren Wortlaut.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180),
+  [#142](https://github.com/speedone/mietfuchs/issues/142))
+- **Belegordner: Löschen eines Verzeichnisnamens antwortet „nicht gefunden“** statt mit einem
+  Serverfehler. Gelöscht wurde auch vorher nichts.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+
 ### Hinweise zur Aktualisierung
 
 - Die Datenbank bekommt beim ersten Start drei Tabellen dazu: Angaben zu Belegen (Migration
