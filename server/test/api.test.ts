@@ -4537,6 +4537,24 @@ test('Posteingang (#170): PUT nimmt nur einen Beleg im Ordner, keinen Verzeichni
   }
 })
 
+test('Belegarchiv (#180): DELETE auf einen Verzeichnisnamen antwortet 404 statt 500 und löscht nichts', async () => {
+  // „..“ besteht `basename` und `existsSync`; danach zielte `unlinkSync` auf den Datenordner und
+  // scheiterte mit 500. Ebenso ein Unterordner im Belegordner. Gelöscht wurde dabei nichts.
+  const s = await startServer()
+  try {
+    const file = await uploadBelegFile(s, '%PDF-x', 'x.pdf')
+    fs.mkdirSync(path.join(s.dataDir, 'uploads', 'unterordner'))
+    for (const name of ['%2E%2E', '%2E', 'unterordner']) {
+      const res = await fetch(`${s.base}/api/uploads/${name}`, { method: 'DELETE' })
+      assert.equal(res.status, 404, name)
+    }
+    assert.ok(fs.statSync(path.join(s.dataDir, 'uploads', 'unterordner')).isDirectory())
+    assert.deepEqual((await s.api<UploadInfo[]>('/api/uploads')).map((u) => u.file), [file])
+  } finally {
+    s.stop()
+  }
+})
+
 test('Belegordner (Durchsicht): ein Unterordner oder Fremdes im Belegordner bricht die Liste nicht ab', async () => {
   const s = await startServer()
   try {
