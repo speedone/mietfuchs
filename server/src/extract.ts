@@ -241,7 +241,7 @@ Wichtige Regeln:
 - Datumsangaben als YYYY-MM-DD.`
 
 // Zweiter, fokussierter Durchgang nur für die Kategorisierung: ein kleiner Prompt mit
-// Definitionen je Kostenart ist deutlich treffsicherer als die Zuordnung „nebenbei" während
+// Definitionen je Kostenart ist deutlich treffsicherer als die Zuordnung „nebenbei“ während
 // der Extraktion (dort muss das Modell gleichzeitig Positionen, Beträge und §35a erkennen).
 const CATEGORY_GUIDE = `- "Grundsteuer": Grundsteuer A/B (Position im Grundbesitzabgabenbescheid)
 - "Wasser/Abwasser": Frisch-/Trinkwasser, Schmutzwasser, Abwasser, Kanalgebühren, Grund-/Zählergebühr Wasser

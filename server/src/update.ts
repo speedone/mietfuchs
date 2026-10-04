@@ -1,6 +1,6 @@
 // Update-Hinweis: fragt das neueste Release bei GitHub ab und vergleicht es mit der eigenen
 // Version. Das passiert nur mit ausdrücklicher Zustimmung (settings.updateCheck === 'on').
-// Ohne sie geht keine Anfrage hinaus, und das Versprechen „kein externer Dienst" gilt
+// Ohne sie geht keine Anfrage hinaus, und das Versprechen „kein externer Dienst“ gilt
 // unverändert. Aus Mietfuchs werden dabei keine Daten übertragen, verglichen wird lokal.
 //
 // Ein Selbst-Update gibt es nicht. Ob und welcher Updater später dazukommt, ist offen. Die
@@ -77,7 +77,7 @@ type GithubRelease = {
   html_url?: string
   // Die Liste der Release-Dateien bleibt `unknown`, obwohl wir sie lesen: Ob überhaupt eine
   // Liste ankommt, prüft assetFor. Als Liste zugesichert ergäbe etwas anderes einen TypeError,
-  // und describeError bildet jeden TypeError auf „GitHub ist nicht erreichbar" ab — eine
+  // und describeError bildet jeden TypeError auf „GitHub ist nicht erreichbar“ ab — eine
   // Meldung, die den Nutzer an die falsche Stelle schickt, obwohl GitHub geantwortet hat.
   assets?: unknown
 }
@@ -217,7 +217,7 @@ export function createUpdateChecker({
     // /releases/latest liefert keine Vorabversionen. Falls doch, zählen sie nicht.
     if (release.draft || release.prerelease) return
     const version = parseVersion(release.tag_name)
-    if (!version) throw new Error(`Unbekanntes Versionsformat „${release.tag_name}".`)
+    if (!version) throw new Error(`Unbekanntes Versionsformat „${release.tag_name}“.`)
     // Ein Tag mit Vorabversion ohne das Kennzeichen: release.yml setzt es aus dem Bindestrich,
     // fehlte es doch einmal, wird der Kandidat trotzdem niemandem angeboten (#166).
     if (version.pre.length > 0) return
@@ -252,7 +252,7 @@ export function createUpdateChecker({
     if (pending) return pending
     if (backoff && (now() < backoff.blockedUntil || (!force && now() < backoff.until))) return backoff.result
     if (!force && cached && now() - cached.at < ttlMs) return cached.result
-    // Auch „Jetzt prüfen" fragt höchstens einmal pro Minute, wiederholtes Klicken bleibt lokal.
+    // Auch „Jetzt prüfen“ fragt höchstens einmal pro Minute, wiederholtes Klicken bleibt lokal.
     const last = backoff?.result ?? cached?.result
     if (force && last && now() - (lastQueriedAt ?? 0) < ONE_MINUTE) return last
     pending = query().finally(() => { pending = null })

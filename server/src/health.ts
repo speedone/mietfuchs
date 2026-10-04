@@ -1,6 +1,6 @@
 // Betriebszustand für Container-Orchestratoren (GET /healthz).
 //
-// Mehr als „der Prozess läuft": Die Anwendung muss ihren Datenbestand lesen und in den
+// Mehr als „der Prozess läuft“: Die Anwendung muss ihren Datenbestand lesen und in den
 // Datenordner schreiben können. Erkannt werden eine Datenbank, die nicht trägt (siehe unten),
 // eine beschädigte db.json aus der Zeit davor und ein schreibgeschützter oder falsch
 // berechtigter Datenordner. Ein nicht eingehängtes Volume erkennt die Prüfung nicht — Docker
@@ -56,7 +56,7 @@ export type { DatabaseState }
 //
 // Die Frage hat zwei Leser, und beide müssen dieselbe Antwort bekommen: der Zustandsbericht und
 // die Datenrouten in index.ts. Deshalb steht sie hier einmal und liefert gleich den Grund mit,
-// denn der Nutzer soll im Browser lesen, was los ist, und nicht nur ein „geht gerade nicht".
+// denn der Nutzer soll im Browser lesen, was los ist, und nicht nur ein „geht gerade nicht“.
 
 export const NO_DATABASE =
   'Mietfuchs hat keine Verbindung zu seiner Datenbank, deshalb lässt sich gerade nichts lesen ' +
@@ -94,10 +94,10 @@ export function databaseUnavailable(database: DatabaseState): string | null {
 }
 
 // Dasselbe als Eintrag für den Bericht. **Die Begründung darf nicht das Gegenteil sagen:**
-// `detail` lautet bei offener Datei „geöffnet", und genau dann ist der gescheiterte Umstieg der
-// Grund. Stünde dort „geöffnet", meldete der Bericht eine fehlgeschlagene Prüfung und nennte als
+// `detail` lautet bei offener Datei „geöffnet“, und genau dann ist der gescheiterte Umstieg der
+// Grund. Stünde dort „geöffnet“, meldete der Bericht eine fehlgeschlagene Prüfung und nennte als
 // Begründung, dass alles in Ordnung sei. Ließ sich die Datei gar nicht erst öffnen, trägt
-// `detail` den Grund bereits (etwa „ist beschädigt"), und dann bleibt er stehen.
+// `detail` den Grund bereits (etwa „ist beschädigt“), und dann bleibt er stehen.
 function checkDatabase(database: DatabaseState): Check {
   if (databaseUnavailable(database) === null) return { ok: true, detail: database.detail }
   if (!database.open) return { ok: false, detail: database.detail }
@@ -110,9 +110,9 @@ export function healthReport({ dataDir, version, database }: { dataDir: string, 
   // fachlichen Daten in der db.json lagen, arbeitete Mietfuchs ohne die Datenbank weiter, und
   // ein Fehler dort durfte keinen Container in eine Neustart-Schleife schicken. Seit die Routen
   // aus ihr lesen, ist ein Start ohne sie ein Start ohne Daten: Wer den Bericht abfragt, soll
-  // genau das erfahren und nicht ein „ok", hinter dem nichts steht.
+  // genau das erfahren und nicht ein „ok“, hinter dem nichts steht.
   //
-  // Gefragt wird nach demselben Grund, den auch die Routen nennen. Ein Bericht, der „ok" sagt,
+  // Gefragt wird nach demselben Grund, den auch die Routen nennen. Ein Bericht, der „ok“ sagt,
   // während jede Datenroute mit 503 antwortet, wäre die unbrauchbarste Auskunft von beiden.
   //
   // Ein Bericht **ohne** Angabe zur Datenbank bleibt in Ordnung: Den liefert nur, wer

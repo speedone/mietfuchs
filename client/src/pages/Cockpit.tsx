@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { isNotAllocable, usageOf } from '../types'
-import { meterTypesInUse, usesUnitBasis } from '../cockpitChecks'
+import { itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
+import { andList } from '../../../shared/wording.ts'
 import { useYear } from '../year'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
@@ -122,8 +123,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, year, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
-        detail: `${mietverhaeltnisse} Mietverhältnis(se)${ohneAbrechnung.length > 0 ? `, davon ${ohneAbrechnung.length} ohne Abrechnung` : ''} · ${participating.length} beteiligte Wohnung(en) · ` +
-          (zeroArea.length > 0 ? `0 m² und 0 Personen: ${zeroArea.map((u) => u.name).join(', ')}` : 'vollständig') })
+        detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name)) })
     }
 
     // 2. Belege & Kosten erfasst
@@ -132,7 +132,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         detail: `Für ${year} sind noch keine Kosten erfasst.` })
     } else {
       list.push({ title: 'Belege erfasst', level: 'gruen',
-        detail: `${yearItems.length} Position(en) · Summe ${fmtEuro(itemsSum)}${invoiceFileCount ? ` · ${invoiceFileCount} Belegdatei(en)` : ''}` })
+        detail: itemsDetail(yearItems.length, itemsSum, invoiceFileCount) })
     }
 
     // 2b. Belege vollständig (#170): höchstens gelb, ein fehlender Beleg ändert keine Zahl
@@ -148,7 +148,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     if (meterTypes.size === 0 && heatingWithout.length > 0) {
       // #140: Heizung ohne Verbrauchsschlüssel. Ablesungen wären nötig, nicht entbehrlich.
       list.push({ title: 'Zählerstände', level: 'gelb', tab: 'kosten', cta: 'Heizkosten prüfen',
-        detail: `${heatingWithout.map((c) => `„${c.description}“`).join(', ')} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um 15 % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
+        detail: `${andList(heatingWithout.map((c) => `„${c.description}“`))} ${heatingWithout.length === 1 ? 'wird' : 'werden'} nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt das (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV); sonst darf der Mieter seinen Anteil um 15 % kürzen. Nötig sind Ablesungen der Wärmezähler oder die Abrechnung des Messdienstes.` })
     } else if (meterTypes.size === 0) {
       list.push({ title: 'Zählerstände', level: 'leer',
         detail: 'Keine verbrauchsabhängige Umlage — Ablesungen nicht erforderlich.' })
@@ -156,7 +156,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       const { relevant, incomplete } = meterReadiness(meters, consumption, meterTypes)
       if (incomplete.length > 0) {
         list.push({ title: 'Zählerstände', level: 'rot', tab: 'zaehler', cta: 'Stände erfassen',
-          detail: `Anfang/Ende fehlt oder unplausibel bei: ${incomplete.map((m) => m.name).join(', ')}` })
+          detail: `Anfang/Ende fehlt oder unplausibel bei: ${andList(incomplete.map((m) => m.name))}` })
       } else {
         list.push({ title: 'Zählerstände', level: 'gruen',
           detail: `${relevant.length} Zähler mit Anfangs- und Endstand erfasst.` })
@@ -165,7 +165,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
     // 4. Verteilbasis: ausgenommene Wohnungen mit Wohnfläche sind fast immer ein Versehen.
     // Kosten für das ganze Haus dürfen nur anteilig auf die Mieter umgelegt werden — eine
-    // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung" in die Basis.
+    // selbstgenutzte Wohnung gehört deshalb als „Eigennutzung“ in die Basis.
     // Nur relevant, wenn im Jahr überhaupt ein Schlüssel vorkommt, dessen Basis die Wohnungen
     // bilden — bei reiner Verbrauchs- oder Direktumlage ändert die Nutzungsart nichts.
     // Auch die Gemeinschaftsabrechnung (#105): Sie verteilt über die Wohnungen der Einheit.
@@ -181,16 +181,16 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     const excluded = units.filter((u) => usageOf(u) === 'ausgenommen' && u.areaM2 > 0)
     if (excluded.length > 0 && basisKeys) {
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Nutzung prüfen',
-        detail: `Nicht beteiligt und damit ganz außen vor: ${excluded.map((u) => u.name).join(', ')} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung" stellen.` })
+        detail: `Nicht beteiligt und damit ganz außen vor: ${andList(excluded.map((u) => u.name))} — die Mieter tragen deren Anteil mit. Selbst bewohnte Wohnungen bitte auf „Eigennutzung“ stellen.` })
     } else if (meaMissing.length > 0) {
       // Ohne Miteigentumsanteile verteilt der Schlüssel der Gemeinschaft nicht (#105).
       const ohne = meaMissing
       list.push({ title: 'Verteilbasis', level: 'gelb', tab: 'stammdaten', cta: 'Anteile eintragen',
-        detail: `Für ${ohne.map((u) => u.name).join(', ')} fehlen die Miteigentumsanteile, die die Gemeinschaftsabrechnung braucht.` })
+        detail: `Für ${andList(ohne.map((u) => u.name))} fehlen die Miteigentumsanteile, die die Gemeinschaftsabrechnung braucht.` })
     } else if (units.some((u) => usageOf(u) === 'eigen')) {
       const selfUsedUnits = units.filter((u) => usageOf(u) === 'eigen')
       list.push({ title: 'Verteilbasis', level: 'gruen',
-        detail: `Eigennutzung in der Basis: ${selfUsedUnits.map((u) => u.name).join(', ')} — der Eigenanteil bleibt beim Vermieter.` })
+        detail: `Eigennutzung in der Basis: ${andList(selfUsedUnits.map((u) => u.name))} — der Eigenanteil bleibt beim Vermieter.` })
     }
 
     // 5. Plausibilität zum Vorjahr

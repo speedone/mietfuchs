@@ -8,7 +8,7 @@
 // Vorher las die Regression mit `db/read.ts`, also mit dem heutigen Schema; Drizzle erzeugt die
 // Spaltenliste daraus, und SQLite antwortet auf eine Spalte, die es in der Umstiegsdatei noch
 // nicht gibt, mit `no such column`. Der Fehler ist kein geordneter Abbruch, er landet im äußeren
-// Fangarm als „Unerwarteter Fehler", und weil ein gescheiterter Umstieg die Datenrouten sperrt,
+// Fangarm als „Unerwarteter Fehler“, und weil ein gescheiterter Umstieg die Datenrouten sperrt,
 // stünde danach **jeder** Nutzer mit einer alten db.json vor einem Programm ohne Daten, bei jedem
 // Start erneut. Beide unabhängigen Durchsichten dieses Zweiges haben genau das gefunden und
 // nachgestellt.
@@ -80,7 +80,7 @@ export type Stock = SnapshotSource & {
 
 // Ein fehlendes Feld kommt aus der Datenbank als NULL zurück. Im Datenmodell steht dort ein
 // optionales Feld, also `undefined`. Der Unterschied ist für die Berechnung keiner (beide sind
-// „nichts"), und `JSON.stringify` lässt ein `undefined` wieder ganz weg, sodass die Oberfläche
+// „nichts“), und `JSON.stringify` lässt ein `undefined` wieder ganz weg, sodass die Oberfläche
 // genau das sieht, was sie heute sieht. Wo das Datenmodell `null` ausdrücklich zulässt (das
 // offene Mietverhältnis, der Hauptzähler ohne Wohnung), bleibt das `null` stehen.
 const orUndefined = <T>(value: T | null): T | undefined => value ?? undefined

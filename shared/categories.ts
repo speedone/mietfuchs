@@ -31,7 +31,7 @@ export const NOT_ALLOCABLE: readonly string[] = ['Nicht umlagefähig', 'Zuführu
 export const isNotAllocable = (category: string): boolean => NOT_ALLOCABLE.includes(category)
 
 // Ordnet eine frei formulierte Kategorie (z. B. aus der KI-Auswertung) der
-// nächstliegenden Betriebskostenart zu, statt hart auf „Sonstige" zu fallen.
+// nächstliegenden Betriebskostenart zu, statt hart auf „Sonstige“ zu fallen.
 export function matchCategory(raw: string): string {
   if (CATEGORIES.includes(raw)) return raw
   const s = raw.toLowerCase()

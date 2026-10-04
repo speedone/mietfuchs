@@ -1,6 +1,6 @@
 // Die Vorgänge auf dem Datenbestand, die die Routen wirklich brauchen, und keiner mehr (#55).
 //
-// Bis hierher gab es nur „den ganzen Bestand lesen" und „den ganzen Bestand schreiben", weil der
+// Bis hierher gab es nur „den ganzen Bestand lesen“ und „den ganzen Bestand schreiben“, weil der
 // Umstieg nichts anderes braucht. Die Routen brauchen etwas anderes: eine Sammlung auflisten,
 // einen Datensatz anlegen, ändern, löschen.
 //
@@ -69,7 +69,7 @@ const asNumber = (value: unknown, fallback: number): number =>
 const asBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback)
 
 // Für Felder, die es auch gar nicht geben darf. `null` und ein fehlendes Feld sind dabei
-// dasselbe: Beides heißt „nichts eingetragen", und read.ts gibt für beides `undefined` zurück.
+// dasselbe: Beides heißt „nichts eingetragen“, und read.ts gibt für beides `undefined` zurück.
 const asOptionalText = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined)
 const asOptionalNumber = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined
@@ -113,7 +113,7 @@ const readSchedule = <T extends { from: string }>(value: unknown, entry: (row: u
   lastPerFrom(readEntries(value, entry))
 
 // **Die Personen-Staffel bekommt ihre eigene Regel**, und dafür braucht sie den Einzugstag:
-// „es gilt der letzte" würde hier Personentage verschieben, weil die erste Stufe ab Einzug gilt.
+// „es gilt der letzte“ würde hier Personentage verschieben, weil die erste Stufe ab Einzug gilt.
 // Die Begründung steht in schedule.ts und ist nachgemessen.
 const readPersonHistory = (value: unknown, start: string): PersonEntry[] =>
   straightenPersonHistory(readEntries(value, personEntry), start)
@@ -127,12 +127,12 @@ const moneyEntry = (row: unknown): PrepaymentEntry | null => {
   return from === undefined ? null : { from, monthlyCents: asNumber(raw(row, 'monthlyCents'), 0) }
 }
 
-// Jahr zu Betrag. In der Datei steht der Schlüssel als Text („2024"), in der Spalte als Zahl.
+// Jahr zu Betrag. In der Datei steht der Schlüssel als Text („2024“), in der Spalte als Zahl.
 //
 // **Verlangt wird genau eine vierstellige Jahreszahl**, dieselbe Grenze, die der Validator beim
 // Umstieg zieht. `Number.isInteger(Number(…))` genügte nicht und war zweifach undicht: `Number('')`
 // und `Number(' ')` sind 0, ein leerer Schlüssel ergäbe also eine Jahreskorrektur für das Jahr 0.
-// Und zwei verschiedene Schlüssel können auf dieselbe Zahl führen („2024" und „2024.0"), womit
+// Und zwei verschiedene Schlüssel können auf dieselbe Zahl führen („2024“ und „2024.0“), womit
 // der zusammengesetzte Primärschlüssel den ganzen Vorgang scheitern ließe: Das Mietverhältnis
 // wäre dann überhaupt nicht zu speichern.
 const YEAR_KEY = /^\d{4}$/
@@ -189,12 +189,12 @@ function readExternalBasis(value: unknown): ExternalBasis | null {
 }
 
 // Die Aufzählungen kommen aus schema.ts und stehen nicht noch einmal daneben. Beim ersten
-// Entwurf standen sie hier abgeschrieben, und drei der Listen waren falsch: „sonstiges" statt
-// „sonstig", ein erfundenes „warmwasser", ein fehlendes „teilweise". Der Übersetzer hat es
+// Entwurf standen sie hier abgeschrieben, und drei der Listen waren falsch: „sonstiges“ statt
+// „sonstig“, ein erfundenes „warmwasser“, ein fehlendes „teilweise“. Der Übersetzer hat es
 // gemeldet, aber genau dafür gibt es die eine Quelle; eine zweite Liste ist immer eine, die
 // irgendwann abweicht.
 //
-// Ein unbekannter Wert wird zu „nichts eingetragen" statt zu einem Fehler: Die Spalte ließe ihn
+// Ein unbekannter Wert wird zu „nichts eingetragen“ statt zu einem Fehler: Die Spalte ließe ihn
 // ohnehin nicht zu, und die Prüfbedingung meldete ihn dann als technischen Befund, wo ein leeres
 // Feld die ehrlichere Antwort ist.
 const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
@@ -216,7 +216,7 @@ function mergeUnit(current: Unit, body: unknown): Unit {
     propertyId: mergedProperty(body, current.propertyId),
     name: merged(body, 'name', current.name, (v) => asText(v, '')),
     areaM2: merged(body, 'areaM2', current.areaM2, (v) => asNumber(v, 0)),
-    // `typeof v === 'boolean'` und nicht `!!v`: In JavaScript wäre die Zeichenkette „false" wahr.
+    // `typeof v === 'boolean'` und nicht `!!v`: In JavaScript wäre die Zeichenkette „false“ wahr.
     participates: merged(body, 'participates', current.participates, (v) => asBoolean(v, false)),
     selfUsed: merged(body, 'selfUsed', current.selfUsed, asOptionalBoolean),
     selfPersons: merged(body, 'selfPersons', current.selfPersons, asOptionalNumber),

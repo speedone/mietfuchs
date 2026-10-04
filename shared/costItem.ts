@@ -156,7 +156,7 @@ export function costItemBody(d: CostItemDraft, units: readonly Unit[], year: num
     for (const u of basis) {
       if (!Object.hasOwn(d.customShares, u.id)) continue
       const percent = d.customShares[u.id] ?? null
-      if (percent === null || percent < 0) return { error: `Anteil für „${u.name}" bitte als Prozentzahl angeben (z. B. 33,33).` }
+      if (percent === null || percent < 0) return { error: `Anteil für „${u.name}“ bitte als Prozentzahl angeben (z. B. 33,33).` }
       if (percent > 0) customShares[u.id] = percent
     }
     const sum = Object.values(customShares).reduce((a, p) => a + p, 0)

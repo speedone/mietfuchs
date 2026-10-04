@@ -307,7 +307,7 @@ app.delete('/api/ai/consent/:slot', async (req, res) => {
 // Eine leere Liste wäre die schlimmste Antwort: Sie sähe aus wie „Sie haben noch nichts
 // erfasst". Deshalb 503 und nicht 500: Der Dienst ist vorübergehend nicht verfügbar, an den
 // Daten ist nichts kaputt.
-// Die Frage „trägt die Datenbank den Bestand?" und ihre beiden Gründe stehen in health.ts, damit
+// Die Frage „trägt die Datenbank den Bestand?“ und ihre beiden Gründe stehen in health.ts, damit
 // der Zustandsbericht und die Routen hier nicht Verschiedenes sagen können.
 const refuseData = <T>(reason: string): Promise<T> =>
   Promise.reject(Object.assign(new Error(reason), { status: 503 }))
@@ -476,8 +476,8 @@ const isDateOnly = (value: unknown): value is string => {
   return !Number.isNaN(ms) && new Date(ms).toISOString().slice(0, 10) === value
 }
 
-// Das Versanddatum aus dem Rumpf, geprüft: `null` heißt „noch nicht versendet" (so schickt es
-// die Oberfläche für ein leeres Feld), `false` heißt „keine gültige Angabe" und führt zu 400.
+// Das Versanddatum aus dem Rumpf, geprüft: `null` heißt „noch nicht versendet“ (so schickt es
+// die Oberfläche für ein leeres Feld), `false` heißt „keine gültige Angabe“ und führt zu 400.
 // An diesem Datum hängt die Frist aus §556 BGB, und die Oberfläche vergleicht es als
 // Zeichenkette mit dem 31.12. des Folgejahrs — ein beliebiger Wert aus `req.body` (`any`, siehe
 // bodyObject) dürfte hier also nie durchgereicht werden.
@@ -1294,7 +1294,7 @@ function readBackup(buffer: Buffer): ReadBackup {
     )
   }
   // Die Herkunftsangabe ist eine Auskunft und keine Prüfung: Ein unlesbares Feld darf das
-  // Wiederherstellen nicht verhindern, sondern führt nur zu „unbekannter Herkunft".
+  // Wiederherstellen nicht verhindern, sondern führt nur zu „unbekannter Herkunft“.
   let info: unknown = null
   if (infoEntry) {
     try {
@@ -1348,7 +1348,7 @@ async function restoreDatabase(staged: string | null): Promise<string[]> {
 
   // Die bisherige Datenbank beiseite, wie `db.json.vor-restore` daneben — und nur, wenn es
   // eine gab. Sie wandert und bleibt nicht liegen: Der Umstieg unten muss sie leer vorfinden,
-  // sonst greift seine Regel „steht schon etwas darin, passiert nichts", und genau die soll
+  // sonst greift seine Regel „steht schon etwas darin, passiert nichts“, und genau die soll
   // hier nicht weich werden.
   //
   // **Bewegt wird mit Wiederholungen** (`replaceFile`, dieselbe Funktion wie beim Umstieg). Unter
@@ -1443,7 +1443,7 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
   // der Routen fährt, hat eine lebende db.json und eine Datenbank, die auf dem Stand des
   // Umstiegstags stehengeblieben ist, und sein Archiv führt beides. Ebenso, wer ein Backup zieht,
   // während der Umstieg gescheitert ist: Dann ist die Datenbank im Archiv leer. Würde sie
-  // aktiviert, sähe der Vermieter nach der Bestätigung „ok" ein veraltetes oder leeres Haus,
+  // aktiviert, sähe der Vermieter nach der Bestätigung „ok“ ein veraltetes oder leeres Haus,
   // schriebe hinein, und ab dem Augenblick fände der Umstieg eine gefüllte Datenbank vor und
   // liefe nie wieder; die db.json wäre dauerhaft abgehängt. Genau der Ausgang, den die Sperre in
   // health.ts verhindern soll, und das Backup führte daran vorbei.
@@ -1526,9 +1526,9 @@ async function runRestore(backup: ReadBackup, res: Response): Promise<void> {
     notes = [
       `Ihre Daten sind aus dem Archiv geschrieben worden, die Datenbank ließ sich dabei aber ` +
         `nicht erneuern: ${messageOf(err)}. Gelöscht ist nichts; im Datenordner ` +
-        `(${DATA_DIR}) liegen der vorherige Stand als „mietfuchs.sqlite.vor-restore" und, falls ` +
+        `(${DATA_DIR}) liegen der vorherige Stand als „mietfuchs.sqlite.vor-restore“ und, falls ` +
         'das Archiv eine mitgebracht hat, die neue Datenbank noch unter einem Namen, der mit ' +
-        '„mietfuchs.sqlite.restore-" beginnt. Bitte melden Sie diesen Fehler, bevor Sie etwas ' +
+        '„mietfuchs.sqlite.restore-“ beginnt. Bitte melden Sie diesen Fehler, bevor Sie etwas ' +
         'von Hand verschieben.',
     ]
   }
@@ -1626,7 +1626,7 @@ app.get('/api/ollama/status', async (req, res) => {
 
 // ---------- Update-Hinweis ----------
 // Fragt GitHub nur, wenn der Nutzer zugestimmt hat (settings.updateCheck === 'on'), und
-// höchstens einmal am Tag; „Jetzt prüfen" fragt sofort, außer GitHub hat um eine Pause
+// höchstens einmal am Tag; „Jetzt prüfen“ fragt sofort, außer GitHub hat um eine Pause
 // gebeten (Rate-Limit). NKA_UPDATE_URL ersetzt die Adresse, damit Tests gegen einen
 // nachgebauten Server laufen statt gegen das echte GitHub.
 const updateChecker = createUpdateChecker({
@@ -1673,7 +1673,7 @@ app.post('/api/quit', (req, res) => {
   // `process.exit` schnitte ihn mitten in seiner Transaktion ab. Bestätigte Daten gingen dabei
   // nicht verloren, denn die Antwort kommt erst nach dem Festschreiben, aber die betroffene
   // Anfrage stürbe ohne Antwort. Das Leerlaufen kostet im Regelfall nichts, weil beim Klick auf
-  // „Beenden" nichts in der Schlange steht.
+  // „Beenden“ nichts in der Schlange steht.
   res.on('finish', () => {
     let schonBeendet = false
     const beenden = () => {

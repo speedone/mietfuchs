@@ -59,7 +59,7 @@ export default function Steuer({ settings }: Props) {
   return (
     <>
       <div className="no-print">
-        <PageHeader title="Steuer · Anlage V" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken".'} />
+        <PageHeader title="Steuer · Anlage V" subtitle={'Jahresübersicht für die Einkünfte aus Vermietung — Einnahmen, Werbungskosten und Überschuss. Als PDF speichern über „Drucken“.'} />
       </div>
       {error && <div className="error">{error}</div>}
 
@@ -162,11 +162,11 @@ export default function Steuer({ settings }: Props) {
                   <td className="num"><strong>{fmtEuro(data.income.sollCents)}</strong></td>
                 </tr>
                 <tr>
-                  {/* **Kein „davon" mehr.** Seit das Zugeflossene nach Datum summiert wird und
+                  {/* **Kein „davon“ mehr.** Seit das Zugeflossene nach Datum summiert wird und
                       nicht mehr über die Zeilen des Mietkontos, ist es kein Teil des Solls: Eine
                       Zahlung kann zu einem Mietverhältnis gehören, das im Jahr gar keine Zeile
                       hat. Gemessen steht dann Soll 0,00 € und eingegangen 800,00 €. Aus demselben
-                      Grund fehlt hier „(Rückstand offen)": Es verglich zwei verschiedene
+                      Grund fehlt hier „(Rückstand offen)“: Es verglich zwei verschiedene
                       Grundmengen. Wer wissen will, wer im Rückstand ist, fragt das Mietkonto. */}
                   <td>Tatsächlich eingegangen {year} (Zufluss)</td>
                   <td className="num">{fmtEuro(data.income.paidCents)}</td>
@@ -358,7 +358,7 @@ export default function Steuer({ settings }: Props) {
             )}
 
             {/* **Zwei verschiedene Lagen, zwei verschiedene Sätze** (#68). Vorher gab es nur
-                einen, und er fragte das zweiwertige „nicht vermietet" ab; damit schlug eine
+                einen, und er fragte das zweiwertige „nicht vermietet“ ab; damit schlug eine
                 ausdrücklich ausgenommene Wohnung als Eigennutzung durch, und der Vermieter sollte
                 einen privaten Anteil herausrechnen, den es nicht gibt.
                 **Genannt werden Quadratmeter und nicht nur ein Prozentsatz.** Genau diese beiden
@@ -508,7 +508,7 @@ export default function Steuer({ settings }: Props) {
                 Flächenanteil hier", und den zeigt nur jener Kasten. Ohne ihn zeigte er ins Leere
                 und behauptete von zwei nirgends angezeigten Zahlen, dass sie auseinandergehen —
                 ausgerechnet auf der Seite des Vermieters mit altem Bestand, den diese Behebung
-                schützen soll. „Können" statt „gehen", weil eine ausgenommene Wohnung ohne
+                schützen soll. „Können“ statt „gehen“, weil eine ausgenommene Wohnung ohne
                 erfasste Fläche beide Grundmengen gleich lässt. */}
             {data.selfOccupiedExists && data.excludedExists && (
               <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>

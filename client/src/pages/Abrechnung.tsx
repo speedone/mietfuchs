@@ -167,7 +167,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   useEffect(() => {
     if (!printId) return
     document.body.classList.add('print-one')
-    // Browser verwenden document.title als Dateinamen beim „Als PDF speichern"
+    // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
     if (st) document.title = `Nebenkostenabrechnung ${year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
@@ -196,7 +196,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   return (
     <>
       <div className="no-print">
-        <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken".'} />
+        <PageHeader title="Abrechnung" subtitle={'Die fertige Nebenkostenabrechnung pro Mieter — als PDF speichern über „Drucken“.'} />
       </div>
       {error && <div className="error">{error}</div>}
 

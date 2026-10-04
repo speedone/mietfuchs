@@ -82,12 +82,12 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     const name = meterForm.name.trim()
     setMeterForm(null)
     await load()
-    toast(editing ? `„${name}" übernommen.` : `Zähler „${name}" angelegt.`)
+    toast(editing ? `„${name}“ übernommen.` : `Zähler „${name}“ angelegt.`)
   }
 
   async function deleteMeter(m: Meter) {
     const ok = await confirm({
-      title: `Zähler „${m.name}" löschen?`,
+      title: `Zähler „${m.name}“ löschen?`,
       message: 'Der Zähler und alle zugehörigen Ablesungen werden gelöscht.',
       confirmLabel: 'Löschen',
       danger: true,
@@ -101,7 +101,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     }
     setError('')
     await load()
-    toast(`Zähler „${m.name}" gelöscht.`)
+    toast(`Zähler „${m.name}“ gelöscht.`)
   }
 
   async function saveReading(meterId: string) {
@@ -147,7 +147,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
     <>
       <PageHeader
         title="Zähler"
-        subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch".'}
+        subtitle={'Zählerstände dokumentieren — Jahresablesung, Zwischenablesung beim Mieterwechsel, Zählerwechsel. Wohnungszähler ermöglichen den Umlageschlüssel „nach Verbrauch“.'}
       />
       {error && !meterForm && <div className="error">{error}</div>}
 

@@ -44,7 +44,7 @@ test('Betrag und Lohnanteil: Gutschrift ja, 0 € nein, unlesbar nein', () => {
 })
 
 test('Verteilung: Anteile, Teilnehmer, Gemeinschaft und Einzelbeträge in Cent geprüft', () => {
-  assert.match(errorOf(costItemBody(draft({ key: 'custom', customShares: { u1: null } }), UNITS, 2025)), /Anteil für „EG"/)
+  assert.match(errorOf(costItemBody(draft({ key: 'custom', customShares: { u1: null } }), UNITS, 2025)), /Anteil für „EG“/)
   assert.match(errorOf(costItemBody(draft({ key: 'custom', customShares: { u1: 60, u2: 50 } }), UNITS, 2025)), /mehr als 100 %/)
   assert.match(errorOf(costItemBody(draft({ participants: [] }), UNITS, 2025)), /mindestens eine teilnehmende/)
   const alle = costItemBody(draft({ participants: ['u1', 'u2'] }), UNITS, 2025)

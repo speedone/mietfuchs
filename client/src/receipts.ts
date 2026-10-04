@@ -13,6 +13,7 @@ import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
+import { countOf } from '../../shared/wording.ts'
 
 // Ein Beleg, wie GET /api/uploads ihn liefert. Die Angaben der Belegbuchung (#170) fehlen bei
 // einem älteren Server und in Tests, die sie nicht brauchen.
@@ -234,12 +235,12 @@ export function coverageCheck(yearItems: CostItem[], present: Set<string> | null
   const fileGone = cov.missing.filter((c) => c.invoiceFile).length
   if (cov.positions === 0) return { level: 'leer', detail: 'Noch keine Kosten erfasst, also auch nichts zu belegen.' }
   if (cov.covered === cov.positions) {
-    return { level: 'gruen', detail: `Zu allen ${cov.positions} Position(en) liegt ein Beleg vor.` }
+    return { level: 'gruen', detail: cov.positions === 1 ? 'Zur einzigen Position liegt ein Beleg vor.' : `Zu allen ${cov.positions} Positionen liegt ein Beleg vor.` }
   }
   const ohne = cov.positions - cov.covered
   return {
     level: 'gelb',
-    detail: `${ohne} von ${cov.positions} Positionen ohne Beleg${fileGone > 0 ? ` (bei ${fileGone} fehlt die Datei im Belegordner)` : ''} · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
+    detail: `${ohne} von ${countOf(cov.positions, 'Position', 'Positionen')} ohne Beleg${fileGone > 0 ? ` (bei ${fileGone} fehlt die Datei im Belegordner)` : ''} · ${cov.percent} % der Kosten belegt. Das ändert keine Zahl der Abrechnung, aber Mieter dürfen die Belege einsehen.`,
   }
 }
 

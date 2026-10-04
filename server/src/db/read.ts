@@ -64,7 +64,7 @@ export type Stock = SnapshotSource & {
 
 // Ein fehlendes Feld kommt aus der Datenbank als NULL zurück. Im Datenmodell steht dort ein
 // optionales Feld, also `undefined`. Der Unterschied ist für die Berechnung keiner (beide sind
-// „nichts"), und `JSON.stringify` lässt ein `undefined` wieder ganz weg, sodass die Oberfläche
+// „nichts“), und `JSON.stringify` lässt ein `undefined` wieder ganz weg, sodass die Oberfläche
 // genau das sieht, was sie heute sieht. Wo das Datenmodell `null` ausdrücklich zulässt (das
 // offene Mietverhältnis, der Hauptzähler ohne Wohnung), bleibt das `null` stehen.
 const orUndefined = <T>(value: T | null): T | undefined => value ?? undefined
@@ -267,7 +267,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
     sentAt: c.sentAt,
     // Derselbe Auszug wie auf dem Weg über die Datei (snapshot.ts). Zwei Leser desselben
     // Archivstücks, die sich bei krummem Inhalt uneinig sind, wären genau die Sorte Unterschied,
-    // die beim Umstieg als „Abrechnung weicht ab" auffällt und die dann niemand erklären kann.
+    // die beim Umstieg als „Abrechnung weicht ab“ auffällt und die dann niemand erklären kann.
     ...frozenSettlementOf(c.settlement),
     settlement: c.settlement,
   }))

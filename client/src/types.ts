@@ -1,7 +1,7 @@
 // Oberflächenseite des Datenmodells: Beschriftungen und Helfer. Die Typen selbst stehen in
 // shared/types.ts und werden hier weitergereicht, damit die Importe im Client unverändert
 // bleiben (#48).
-import type { CostKey, DepositStatus, MeterType, PropertyKind, Unit, UnitUsage } from '../../shared/types.ts'
+import type { CostKey, DepositStatus, PropertyKind, Unit, UnitUsage } from '../../shared/types.ts'
 export type * from '../../shared/types.ts'
 
 // Die Arten eines Objekts (#92), wie sie die Oberfläche nennt.
@@ -30,12 +30,8 @@ export const DEPOSIT_STATUS_LABELS: Record<DepositStatus, string> = {
   'zurückgezahlt': 'zurückgezahlt',
 }
 
-export const METER_TYPE_LABELS: Record<MeterType, string> = {
-  kaltwasser: 'Kaltwasser',
-  strom: 'Strom (Allgemein)',
-  waerme: 'Wärme',
-  sonstig: 'Sonstiges',
-}
+// Die Beschriftungen der Zählerarten braucht auch die Berechnung für ihre Hinweise (#180).
+export { METER_TYPE_LABELS } from '../../shared/wording.ts'
 
 // Kostenarten, Zuordnung und Vorbelegung stehen seit der Belegbuchung (#170) in shared/, weil
 // der Server dieselbe Antwort braucht. Hier weitergereicht, damit die Importe der Seiten bleiben.

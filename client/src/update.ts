@@ -6,7 +6,7 @@ import type { Settings, UpdateStatus } from './types'
 // unbekannt, ob schon geantwortet wurde, dann bleibt die Frage aus.
 export const consentPending = (s: Settings | null): boolean => s !== null && s.updateCheck === undefined
 
-// „Später" gilt nur für die Version, bei der es geklickt wurde.
+// „Später“ gilt nur für die Version, bei der es geklickt wurde.
 export const hintVisible = (st: UpdateStatus | null, s: Settings | null): boolean =>
   !!st && st.enabled && st.available && st.latest !== s?.updateDismissed
 

@@ -31,7 +31,7 @@ export default function Einstellungen({ settings, reload, update }: Props) {
 
   async function restore(file: File) {
     const ok = await confirm({
-      title: `Backup „${file.name}" wiederherstellen?`,
+      title: `Backup „${file.name}“ wiederherstellen?`,
       message: 'Alle aktuellen Daten werden durch den Stand aus dem Backup ersetzt.',
       confirmLabel: 'Wiederherstellen',
       danger: true,

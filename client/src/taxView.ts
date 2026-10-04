@@ -54,8 +54,8 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        dann zu niedrig, und das sieht man ihr nicht an.
 //
 //                        **Ein Hinweis für beide Stärken des Falls, und das ist eine
-//                        Korrektur.** Vorher gab es zwei, und der für „gar nichts erfasst"
-//                        behauptete dazu „Deshalb stehen hier 0 €". Das stimmt seit der
+//                        Korrektur.** Vorher gab es zwei, und der für „gar nichts erfasst“
+//                        behauptete dazu „Deshalb stehen hier 0 €“. Das stimmt seit der
 //                        Umstellung nicht mehr: Eine Zahlung, die zu keiner Zeile des Jahres
 //                        gehört, zählt in `paidCents`, aber zu keinem Mietverhältnis der Liste.
 //                        Gemessen stand der Satz neben angesetzten Einnahmen von 800 €, und

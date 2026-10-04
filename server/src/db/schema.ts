@@ -54,11 +54,11 @@ const AI_JSON_MODES = exactly<AiJsonMode>()(['auto', 'schema', 'object', 'prompt
 const AI_SLOT_NAMES = exactly<AiSlotName>()(['text', 'images'] as const)
 export const UPDATE_CHECK = exactly<NonNullable<Settings['updateCheck']>>()(['on', 'off'] as const)
 
-// Prüfbedingung „dieser Betrag ist nicht negativ". Als Helfer, damit an jeder Stelle dasselbe
+// Prüfbedingung „dieser Betrag ist nicht negativ“. Als Helfer, damit an jeder Stelle dasselbe
 // steht und der Grund je Spalte daneben als Kommentar auftaucht statt als Wiederholung.
 const notNegative = (name: string, column: string) => check(name, sql.raw(`"${column}" >= 0`))
 
-// Prüfbedingung „dieser Wert ist einer aus der Liste".
+// Prüfbedingung „dieser Wert ist einer aus der Liste“.
 //
 // Nötig, weil `text(..., { enum: [...] })` allein **nur den Übersetzer** bindet und im
 // erzeugten SQL nichts hinterlässt. Für den Browser und für unseren Code reicht das, für die
@@ -245,7 +245,7 @@ export const flatRates = sqliteTable(
 )
 
 // Kaltmiete ab einem Monat ('YYYY-MM'). Gleiche Mechanik wie die Vorauszahlung, aber bewusst
-// eine eigene Tabelle: Ein gemeinsamer Tisch mit einer Spalte „welche Art" spart nichts und
+// eine eigene Tabelle: Ein gemeinsamer Tisch mit einer Spalte „welche Art“ spart nichts und
 // zwänge jede Abfrage, die Art mitzufiltern.
 export const baseRents = sqliteTable(
   'base_rents',
@@ -309,7 +309,7 @@ export const costItems = sqliteTable(
     //
     // Heute räumt das Löschen einer Wohnung in index.ts die vereinbarten Anteile weg, lässt
     // `directUnitId` aber stehen; calc.ts fängt den ins Leere zeigenden Verweis mit der Warnung
-    // „die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter" ab.
+    // „die direkt zugeordnete Wohnung gibt es nicht mehr — Betrag geht an den Vermieter“ ab.
     // `SET NULL` erhält genau dieses Verhalten, denn `null` trifft in der Nachschlagetabelle
     // ebenso ins Leere wie eine unbekannte Kennung.
     directUnitId: text('direct_unit_id').references(() => units.id, { onDelete: 'set null' }),
@@ -345,7 +345,7 @@ export const costItems = sqliteTable(
     ),
     // Hier steht bewusst **keine** Bedingung auf `amount_cents`. Eine Gutschrift ist ein
     // negativer Betrag, und calc.test.ts hält den Fall ausdrücklich fest (Position
-    // „Gutschrift" über -5000 Cent, die keine Warnung auslösen darf).
+    // „Gutschrift“ über -5000 Cent, die keine Warnung auslösen darf).
     //
     // Ebenso keine auf `labor_35a_cents`: calc.ts meldet einen Lohnanteil außerhalb von 0 bis
     // zum Rechnungsbetrag als Warnung und rechnet weiter. Eine Prüfbedingung machte daraus ein
@@ -661,7 +661,7 @@ export const aiSlots = sqliteTable(
     preset: text('preset').notNull(),
     url: text('url').notNull(),
     model: text('model').notNull(),
-    // null heißt „unbekannt": Ollama meldet selbst, ob das Modell Bilder versteht.
+    // null heißt „unbekannt“: Ollama meldet selbst, ob das Modell Bilder versteht.
     vision: integer('vision', { mode: 'boolean' }),
     consentUrl: text('consent_url'),
     consentModel: text('consent_model'),
