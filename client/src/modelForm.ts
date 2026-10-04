@@ -72,3 +72,11 @@ export function pullInstructions(name: string, ollamaUrl: string): { text: strin
     ? { text: 'Im Ordner mit der docker-compose.yml ausführen:', command: `docker compose exec ollama ${pull}` }
     : { text: 'Zum Laden im Terminal ausführen:', command: pull }
 }
+
+// Was die Prüfung der Verbindung meldet, in Ein- und Mehrzahl (Abnahme B4: „ein Modell stehen“).
+export function modelsAvailableText(count: number): string {
+  if (count === 0) return 'Der Dienst antwortet, nennt aber kein Modell.'
+  return count === 1
+    ? 'Der Dienst antwortet, ein Modell steht zur Wahl.'
+    : `Der Dienst antwortet, ${count} Modelle stehen zur Wahl.`
+}

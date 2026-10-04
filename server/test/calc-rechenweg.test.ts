@@ -83,9 +83,29 @@ test('Rechenweg mit Lohnanteil: weicht der § 35a-Anteil von der gewöhnlichen R
   const labor = ['t-a', 't-b', 't-c'].map((t) => rowOf(s, t, 'garten')?.steps?.at(-1))
   const short = labor.filter((x) => x?.value.startsWith('66,66 €'))
   assert.equal(short.length, 1, 'genau eine Zeile weicht ab')
-  assert.match(short[0]?.value ?? '', /Restcent-Verfahren: rechnerisch 66,6667 €/)
+  assert.equal(short[0]?.value, '66,66 € (rechnerisch 66,6667 €; Restcent: damit die Lohnanteile zusammen nicht mehr ergeben als der Lohnanteil der Rechnung, ist dieser einen Cent geringer als gewöhnlich gerundet)')
   assert.equal(short[0]?.label, 'davon Lohnanteil nach § 35a EStG')
   assert.equal(labor.filter((x) => x?.value === '66,67 €').length, 2, 'die übrigen ohne Zusatz')
+})
+
+test('Rechenweg mit Lohnanteil (M3): ein auf 0 gedeckelter Lohnanteil wird trotzdem erklärt', () => {
+  // 1,00 € Hauswart mit 0,99 € Lohn auf 0,7 / 0,7 / 0,7 / 97,9 m². Rohanteile 0,7 / 0,7 / 0,7 /
+  // 97,9 ct; das Restverfahren gibt t-a und t-b je 1 ct, t-c bekommt 0 ct. Ihr Lohnanteil wäre
+  // rechnerisch 0,693 ct, gerundet 1 ct, und liegt damit über dem Kostenanteil: 0 ct. Ohne
+  // Erklärung fehlte der Schritt ganz, weil der Lohnanteil 0 ist.
+  const s = settle({
+    units: [unit('a', 0.7), unit('b', 0.7), unit('c', 0.7), unit('d', 97.9)],
+    tenancies: [tenancy('t-a', 'a'), tenancy('t-b', 'b'), tenancy('t-c', 'c'), tenancy('t-d', 'd')],
+    costItems: [item('h', { category: 'Hauswart', amountCents: 100, labor35aCents: 99 })],
+  })
+  const row = rowOf(s, 't-c', 'h')
+  assert.equal(row?.shareCents, 0)
+  assert.equal(row?.labor35aCents, 0)
+  assert.deepEqual(row?.steps?.at(-1), {
+    label: 'davon Lohnanteil nach § 35a EStG',
+    value: '0,00 € (rechnerisch 0,0069 €; ein Lohnanteil liegt nie über dem Kostenanteil, deshalb ist er auf diesen begrenzt)',
+    term: 'labor35a',
+  })
 })
 
 test('Rechenweg mit Lohnanteil: ist die Rechnung ganz Lohn, steht kein eigener Restcent beim Lohnanteil (rc.1)', () => {
