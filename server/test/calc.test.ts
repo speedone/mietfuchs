@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   compareName,
   compareText,
+  capToShares,
   computeSettlement,
   computePrepaymentCents,
   consumptionInPeriod,
@@ -14,6 +15,7 @@ import {
   daysInYear,
   personDaysInPeriod,
   isNotAllocable,
+  largestRemainder,
   rentLedger,
   RESERVE_CATEGORY,
   taxReport,
@@ -2251,4 +2253,19 @@ test('Nicht umlagefähig: der gespeicherte Schlüssel ändert keine Zahl (#142)'
   const direkt = numbers(withKey({ key: 'direct', directUnitId: 'u2' }))
   assert.deepEqual({ ...direkt, tax: direkt.tax.slice(0, 3) }, { ...neutral, tax: neutral.tax.slice(0, 3) })
   assert.deepEqual(direkt.tax.slice(3), neutral.tax.slice(3).map((x) => x + (36000 - 15429)), 'weniger abziehbar, also mehr Überschuss')
+})
+
+test('§35a: ein gedeckelter Cent geht an die Zeile, die ihm am nächsten liegt (capToShares)', () => {
+  // Rechnung 12 ct, Lohn 10 ct, davon tragen die Mieter 7 ct. Genaue Lohnanteile 2,32 / 0,34 / 2,85 / 1,14, Kostenanteile 3 / 0 / 4 / 1.
+  // Das Restverfahren ergibt 2 / 1 / 3 / 1; die zweite Zeile wird auf 0 gedeckelt. Der freie Cent
+  // gehört zu 2,32 (2 → 3, noch unter dem Aufrunden), nicht zu 2,85, die ihren Aufrundungs-Cent
+  // schon hat (3 → 4 entfernte sie weiter vom genauen Wert).
+  const exact = [2.32, 0.34, 2.85, 1.14]
+  const keys = ['a', 'b', 'c', 'd']
+  const parts = largestRemainder(7, exact, keys)
+  assert.deepEqual(parts, [2, 1, 3, 1])
+  assert.deepEqual(capToShares(parts, exact, [3, 0, 4, 1], keys), [3, 0, 3, 1])
+  // Ohne Luft unterhalb des Aufrundens erst danach bis zum Kostenanteil; ohne jede Luft beim Vermieter.
+  assert.deepEqual(capToShares([2, 1], [1.6, 0.4], [3, 0], ['a', 'b']), [3, 0])
+  assert.deepEqual(capToShares([1, 1], [0.6, 0.4], [1, 0], ['a', 'b']), [1, 0])
 })

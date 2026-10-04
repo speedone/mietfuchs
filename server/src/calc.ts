@@ -1141,6 +1141,37 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
 // `keys` enthält je Rohanteil eine stabile Kennung (die ID des Mietverhältnisses). Sie
 // entscheidet, wer bei gleichem Nachkommaanteil den Rest-Cent bekommt — sonst hinge das an
 // der Reihenfolge in der Datei, und dieselben Daten könnten anders abgerechnet werden.
+// **Nie mehr Lohnanteil als Kostenanteil** (Durchsicht von #196). Das Restverfahren kann einer
+// Zeile den aufgerundeten Lohn geben, während ihr Kostenanteil abgerundet wurde; ist die Rechnung
+// fast ganz Lohn, läge der Lohn dann einen Cent über dem, was der Mieter bezahlt (109,16 € bei
+// 109,15 €). Gedeckelt wird je Zeile auf `caps` (den Kostenanteil). Ein so frei gewordener Cent geht
+// in der Reihenfolge des Restverfahrens an eine Zeile mit Luft, und zwar zuerst nur bis zum
+// Aufrunden ihres genauen Werts: Die oberen Zeilen dieser Reihenfolge haben ihren Aufrundungs-Cent
+// meist schon, ein weiterer rückte sie unnötig vom genauen Wert ab (Durchsicht: 2,85 → 4 statt
+// 2,32 → 3). Erst wenn es so keinen Platz gibt, bis zum Kostenanteil; gibt es auch dann keinen,
+// bleibt der Cent beim Vermieter.
+export function capToShares(parts: number[], exact: number[], caps: number[], keys: string[]): number[] {
+  const out = [...parts]
+  let spare = 0
+  out.forEach((p, k) => {
+    const cap = Math.max(0, caps[k])
+    if (p > cap) { spare += p - cap; out[k] = cap }
+  })
+  const order = exact
+    .map((x, k): [number, number] => [x - Math.floor(x), k])
+    .sort((a, b) => b[0] - a[0] || compareText(keys[a[1]], keys[b[1]]))
+  const nearest = (k: number) => Math.min(Math.max(0, caps[k]), Math.ceil(exact[k]))
+  const widest = (k: number) => Math.max(0, caps[k])
+  for (const limit of [nearest, widest]) {
+    for (const [, k] of order) {
+      if (spare === 0) break
+      const give = Math.min(limit(k) - out[k], spare)
+      if (give > 0) { out[k] += give; spare -= give }
+    }
+  }
+  return out
+}
+
 export function largestRemainder(totalCents: number, raws: number[], keys: string[]): number[] {
   if (raws.length === 0) return []
   const floors = raws.map((r) => Math.floor(r))
@@ -2107,27 +2138,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const exact = booked.map((i) => (labor * targets[i].raw) / item.amountCents)
       const keys = booked.map((i) => String(targets[i].t.id))
       const parts = largestRemainder(tenantLabor, exact, keys)
-      // **Nie mehr Lohnanteil als Kostenanteil** (Durchsicht von #196). Das Restverfahren kann einer
-      // Zeile den aufgerundeten Lohn geben, während ihr Kostenanteil abgerundet wurde; ist die
-      // Rechnung fast ganz Lohn, läge der Lohn dann einen Cent über dem, was der Mieter bezahlt
-      // (109,16 € bei 109,15 €). Gedeckelt wird je Zeile, und der Cent geht an eine Zeile mit Luft,
-      // in derselben Reihenfolge wie beim Restverfahren; gibt es keine, bleibt er beim Vermieter.
-      let spare = 0
-      booked.forEach((i, k) => {
-        const cap = Math.max(0, shares[i])
-        if (parts[k] > cap) { spare += parts[k] - cap; parts[k] = cap }
-      })
-      const order = exact
-        .map((x, k): [number, number] => [x - Math.floor(x), k])
-        .sort((a, b) => b[0] - a[0] || compareText(keys[a[1]], keys[b[1]]))
-      for (const [, k] of order) {
-        if (spare === 0) break
-        const room = Math.max(0, shares[booked[k]]) - parts[k]
-        const give = Math.min(room, spare)
-        parts[k] += give
-        spare -= give
-      }
-      booked.forEach((i, k) => laborOf.set(i, parts[k]))
+      // Nie mehr Lohnanteil als Kostenanteil (Durchsicht von #196), siehe `capToShares`.
+      const capped = capToShares(parts, exact, booked.map((i) => shares[i]), keys)
+      booked.forEach((i, k) => laborOf.set(i, capped[k]))
     }
     let distributed = 0
     targets.forEach((x, i) => {
