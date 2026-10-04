@@ -198,8 +198,8 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
 // - keine mit Einzelbeträgen oder laut Gemeinschaftsabrechnung, die nur im Formular verknüpft
 //   werden (`formOnly` der Ansicht);
 // - genau eine solche unter den Kandidaten. Bei Restmüll und Biomüll ist offen, welche gemeint ist.
-// Eine Gutschrift wird nie verknüpft und ersetzt nichts. Ob eine zweite offene Zeile auf dieselbe
-// Position zielt, entscheidet `describeAssessment`.
+// Eine Gutschrift wird nie verknüpft und ersetzt nichts. Zielen mehrere offene Zeilen auf dieselbe
+// Position, rechnen sie in `describeAssessment` gemeinsam.
 export function replacedByLinking<T extends CostItem>(
   candidates: readonly T[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, year: number,
   booked: readonly Pick<BookedLine, 'costItemId'>[],
@@ -229,7 +229,7 @@ export type DescribeContext = {
 // Der Vorschlag zu einer offenen oder verworfenen Zeile: Schlüssel aus dem Vorjahr, Kandidaten
 // nach der Doppelungsregel, Ampel und ob die Zeile vorab angehakt ist. Dieselben Regeln wie
 // bisher in der Schnellerfassung, jetzt für alle drei Wege.
-function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ownItems: readonly CostItem[], ctx: DescribeContext, replacedCents: number): LineSuggestion {
+function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ownItems: readonly CostItem[], ctx: DescribeContext, deviation: { amountCents: number, replacedCents: number }): LineSuggestion {
   const vendor = a.vendor ?? ''
   const defaults = aiPositionDefaults(line.category, ctx.units, ctx.meters, { items: ctx.items, year: a.year, propertyKind: ctx.propertyKind }, line.description)
   const fields: LineFields = {
@@ -242,7 +242,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
     matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
-    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, amount, replacedCents),
+    priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, deviation.amountCents, deviation.replacedCents),
   })
   // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
   // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
@@ -291,18 +291,22 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
   const others = ctx.items.filter((i) => !own.has(i.id))
   const ownItems = ctx.items.filter((i) => own.has(i.id))
   // Die Position, die jede offene oder verworfene Zeile beim Verknüpfen ersetzte (`replacedByLinking`).
-  // Zielen zwei **offene** Zeilen auf dieselbe, zieht keine sie ab: Jede für sich gegen die Schätzung
-  // gerechnet zeigte 0 %, verknüpft stünden beide in der Summe. Ohne Abzug ist die Zahl die des
-  // Stands, wenn beide dazukommen, und das ist auch der nach dem Verknüpfen beider.
+  // Zielen mehrere **offene** Zeilen auf dieselbe Schätzung, rechnen sie gemeinsam (Abnahme B2):
+  // Verknüpft man sie, setzt die Summenregel die Schätzung auf die Summe dieser Zeilen. Die
+  // Abweichung ist deshalb für alle dieselbe Zahl, (Summe der Kostenart − Schätzung + Summe der
+  // Zeilen) gegen das Vorjahr. Jede Zeile für sich neben der Schätzung zeigte zu viel (Wasser 700 €
+  // und 800 € gegen eine Schätzung von 1.500 € bei 1.400 € im Vorjahr: +57 % und +64 % statt +7 %),
+  // jede für sich an Stelle der Schätzung zu wenig (700 € und 700 € gegen 700 €: 0 % statt +100 %).
   const targetOf = new Map(record.lines.filter((l) => lineState(l) === 'open' || lineState(l) === 'dismissed').map((l) => {
     const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
     return [l.idx, replacedByLinking(candidates, l, a.year, ctx.booked)] as const
   }))
-  const replacedCents = (l: StoredAssessmentLine): number => {
+  const deviationBasis = (l: StoredAssessmentLine): { amountCents: number, replacedCents: number } => {
+    const own = l.amountCents ?? 0
     const target = targetOf.get(l.idx)
-    if (!target) return 0
-    const shared = record.lines.some((o) => o.idx !== l.idx && lineState(o) === 'open' && targetOf.get(o.idx)?.id === target.id)
-    return shared ? 0 : target.amountCents
+    if (!target) return { amountCents: own, replacedCents: 0 }
+    const together = record.lines.filter((o) => o.idx !== l.idx && lineState(o) === 'open' && targetOf.get(o.idx)?.id === target.id)
+    return { amountCents: own + together.reduce((sum, o) => sum + (o.amountCents ?? 0), 0), replacedCents: target.amountCents }
   }
   const lines: AssessmentLine[] = record.lines.map((l) => {
     const state = lineState(l)
@@ -311,7 +315,7 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
       ...rest,
       state,
       itemDescription: l.costItemId ? ctx.items.find((i) => i.id === l.costItemId)?.description ?? null : null,
-      suggestion: state === 'open' || state === 'dismissed' ? suggestLine(l, a, others, ownItems, ctx, replacedCents(l)) : null,
+      suggestion: state === 'open' || state === 'dismissed' ? suggestLine(l, a, others, ownItems, ctx, deviationBasis(l)) : null,
     }
   })
   const sum = record.lines.reduce((s, l) => s + (l.amountCents ?? 0), 0)

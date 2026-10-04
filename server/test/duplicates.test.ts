@@ -130,3 +130,22 @@ test('Kandidaten: mit Betrag gefragt, passt eine Gutschrift nur zu Gutschriften 
   assert.deepEqual(ask(), [rechnung.id, gutschrift.id])
   assert.deepEqual(ask(0), [rechnung.id, gutschrift.id])
 })
+
+// N1 der Durchsicht von #201: Eine Position mit 0 € (oder ohne Betrag) passt zu Rechnung wie
+// Gutschrift und verband beide zu einer Gruppe; der Hinweis riet dann wieder zum Löschen.
+test('Mögliche Doppelung: eine Position mit 0 € ist keine Brücke zwischen Gutschrift und Rechnung (N1)', () => {
+  const r = item({ year: 2026, category: 'Wasser', description: 'Wasser', amountCents: 84000 })
+  const g = item({ year: 2026, category: 'Wasser', description: 'Gutschrift', amountCents: -5745, invoiceFile: 'g.pdf' })
+  const z = item({ year: 2026, category: 'Wasser', description: 'Schätzung', amountCents: 0 })
+  for (const order of [[r, g, z], [z, r, g], [g, z, r], [r, z, g]]) {
+    for (const group of possibleDuplicates(order, 2026, [])) {
+      const ids = group.map((i) => i.id)
+      assert.ok(!(ids.includes(r.id) && ids.includes(g.id)), `Gutschrift und Rechnung in einer Gruppe: ${ids.join(', ')}`)
+    }
+  }
+  const zNull = { ...z, amountCents: undefined }
+  for (const group of possibleDuplicates([r, zNull, g], 2026, [])) {
+    const ids = group.map((i) => i.id)
+    assert.ok(!(ids.includes(r.id) && ids.includes(g.id)), ids.join(', '))
+  }
+})
