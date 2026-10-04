@@ -210,11 +210,17 @@ export function keyNotAreaDifference(report: TaxReport): { count: number; differ
 
 // Positionen, die wegen Einheiten außerhalb der Abrechnungseinheit nach der Gebäudefläche statt
 // laut Abrechnung aufgeteilt sind, und der Abstand zusammen (wie oben als Summe der Beträge).
-export function excludedAreaDifference(report: TaxReport): { count: number; differenceCents: number } {
+// **Die Richtung steht getrennt daneben** (Durchsicht): Beim Flächenschlüssel ergibt die
+// Gebäudefläche weniger privat als die Abrechnung, bei Personen, Einheiten oder vereinbarten
+// Anteilen kann es ebenso mehr sein, und ein fest eingebautes „weniger“ wäre dann falsch.
+export function excludedAreaDifference(report: TaxReport): { count: number; differenceCents: number; lessPrivateCents: number; morePrivateCents: number } {
   const differing = report.expenses.items.filter((x) => x.settlementPrivateCents !== null && x.settlementPrivateCents !== x.privateCents)
+  const delta = (x: TaxExpenseItem): number => x.privateCents - (x.settlementPrivateCents ?? x.privateCents)
   return {
     count: differing.length,
-    differenceCents: differing.reduce((a, x) => a + Math.abs((x.settlementPrivateCents ?? x.privateCents) - x.privateCents), 0),
+    differenceCents: differing.reduce((a, x) => a + Math.abs(delta(x)), 0),
+    lessPrivateCents: differing.reduce((a, x) => a + Math.max(0, -delta(x)), 0),
+    morePrivateCents: differing.reduce((a, x) => a + Math.max(0, delta(x)), 0),
   }
 }
 

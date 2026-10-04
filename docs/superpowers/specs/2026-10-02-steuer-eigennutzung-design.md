@@ -155,7 +155,10 @@ Schlüssel weiterhin nicht. Keine Migration.
   einer umlagefähigen Position, die nach Fläche, Einheiten, Personen, vereinbarten Anteilen oder
   laut Gemeinschaft verteilt wird, gilt für die Steuer der Flächenmaßstab über das ganze Gebäude
   (BFH-Regelmaßstab); der Eigenanteil der Abrechnung steht als `settlementPrivateCents` zum
-  Vergleich daneben, und ein Hinweis beziffert den Abstand. Verbrauch und Einzelbeträge bleiben
+  Vergleich daneben, und ein Hinweis beziffert den Abstand **samt Richtung**: Beim Flächenschlüssel
+  ergibt die Gebäudefläche weniger privat, bei Personen, Einheiten oder vereinbarten Anteilen kann
+  es auch mehr sein (eigene 100 m² mit 1 Person, vermietet 50 m² mit 4 Personen, 50 m² außerhalb,
+  Müll 1.000 € nach Personen: Abrechnung 200 € privat, Gebäudefläche 500 €). Verbrauch und Einzelbeträge bleiben
   bei der Abrechnung, denn sie ordnen eindeutig zu. Damit ist F1 eingeschränkt: „Abrechnung und
   Steuer sagen dasselbe“ gilt, solange alle Einheiten zur Abrechnungseinheit gehören.
 - **Abgeschlossene Abrechnung.** Der eingefrorene Eigenanteil gilt nur für Positionen, die mit
@@ -165,8 +168,12 @@ Schlüssel weiterhin nicht. Keine Migration.
   sie für einen Hinweis (`closedItemsChanged`).
 - **Nicht umlagefähig für bestimmte Einheiten.** Das Formular bietet neben „ganzes Gebäude“ und
   einer Einheit „bestimmte Einheiten“ (Teilnehmer), etwa für das Dach des Hinterhauses.
-- **Personenschlüssel.** Der Hinweis zum Abstand nennt Leerstand als typische Ursache; Kosten
-  einer leerstehenden Wohnung bleiben bei Vermietungsabsicht abziehbar.
+- **Personenschlüssel.** Der Hinweis zum Abstand erklärt, wie Leerstand dort zählt: Seit #177
+  (0.9.0) zählt eine leere Wohnung mit einer Person je Tag (`VACANCY_PERSONS` in calc.ts), und ihr
+  Anteil bleibt als Leerstand beim Vermieter; er ist nicht privat, fällt also nicht auf die
+  übrigen Bewohner und damit nicht auf die eigene Wohnung. Kosten einer leerstehenden Wohnung
+  bleiben bei Vermietungsabsicht abziehbar. (Der erste Entwurf nannte Leerstand als typische
+  Ursache des Abstands, weil die leere Wohnung damals keine Personen trug; das ist überholt.)
 
 ## Was nicht gerechnet wird
 
