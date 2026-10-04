@@ -48,7 +48,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   schon per KI erfasste Rechnung auch dann, wenn die KI sie anders beschrieben hat. Bei
   „Sonstige Betriebskosten“ und „Nicht umlagefähig“ zählt nur eine Position mit ähnlicher
   Beschreibung oder vom selben Rechnungssteller. Die Abrechnung weist als Hinweis darauf hin,
-  wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat; die
+  wenn zwei Positionen derselben Kostenart im Jahr stehen und eine davon keinen Beleg hat, und rät
+  dann zum Löschen einer der beiden (nur den Beleg zuzuordnen ließe die Summe doppelt); die
   Ampel im Cockpit zählt ihn mit, wenn eine Position mit und eine ohne Beleg dasteht oder es mehr
   sind als im Vorjahr. Mehrere Zeilen eines Belegs derselben Kostenart (etwa Frischwasser und
   Schmutzwasser) werden gemeinsam mit ihrer Summe verknüpft. Hat die Auswertung keinen

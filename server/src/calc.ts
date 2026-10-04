@@ -1537,7 +1537,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const outsideHeating = (u: SnapshotUnit) => isGarageLike(u) || (u.noConnection ?? []).includes('waerme')
 
   // Zwei Positionen derselben Kostenart, eine ohne Beleg: oft die Übernahme aus dem Vorjahr und
-  // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst.
+  // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
+  // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
+  // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
   for (const group of possibleDuplicates(items, year, snapshot.previousCostItems ?? [])) {
     const first = group.find((i) => !i.invoiceFile) ?? group[0]
     if (!first) continue
@@ -1545,7 +1547,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const named = list.length === 2 ? `${list[0]} und ${list[1]}` : `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`
     warn('cost.possible-duplicate',
       `${named} stehen ${list.length === 2 ? `beide ${year}` : `${year} alle`} unter „${first.category}“. ${list.length === 2 ? 'Ist das dieselbe Rechnung' : 'Ist darunter dieselbe Rechnung zweimal'}, etwa einmal aus dem Vorjahr übernommen und einmal aus dem Beleg erfasst, wird sie zweimal verteilt. ` +
-      'Dann bitte die Position ohne Beleg löschen oder ihr den Beleg zuordnen und den Betrag anpassen. Sind es zwei Rechnungen, ist nichts zu tun.',
+      (list.length === 2
+        ? 'Dann bitte eine der beiden Positionen löschen, in der Regel die ohne Beleg. Soll die ohne Beleg bleiben, setzen Sie ihren Betrag auf den der Rechnung und löschen die andere. '
+        : 'Dann bitte die doppelt erfasste Position löschen, in der Regel die ohne Beleg. ') +
+      'Nur den Beleg zuzuordnen genügt nicht: Die Rechnung stünde weiter zweimal in der Summe. Sind es verschiedene Rechnungen, ist nichts zu tun.',
       itemSubject(first))
   }
 
