@@ -8,7 +8,7 @@
 //
 // ---------- Was verglichen wird und was nicht ----------
 //
-// Verglichen wird alles: jede Zahl, jeder Zustand („bezahlt", „teilweise", „offen"), jeder
+// Verglichen wird alles: jede Zahl, jeder Zustand („bezahlt“, „teilweise“, „offen“), jeder
 // Umlageschlüssel, jede Kennung, jedes Datum. **Ausgenommen sind genau sieben Angaben**, und jede
 // einzelne ist eine, die das Geraderücken ausdrücklich verändern darf, ohne dass ein Cent
 // wandert (siehe `straightenForDatabase` in legacy/migrate.ts und die Tests in validate.test.ts):
@@ -51,7 +51,7 @@ const MAX_YEARS = 200
 // außerhalb wird trotzdem geprüft, reißt den Bereich aber nicht auf.
 //
 // **Ohne diese Grenze nähme ein einziges krummes Datum der Prüfung ihre Mitte.** `yearOfDate`
-// liest die ersten vier Zeichen als Zahl, aus „12" wird also das Jahr 12. Der Bereich 12 bis
+// liest die ersten vier Zeichen als Zahl, aus „12“ wird also das Jahr 12. Der Bereich 12 bis
 // heute überspannt mehr als MAX_YEARS, und der Rückfall darauf, nur die genannten Jahre zu
 // prüfen, ließe ausgerechnet die Jahre dazwischen aus — die, für die die Berechnung am meisten
 // herleitet und für die der Kommentar an `yearsToCheck` begründet, warum sie dazugehören. Der
@@ -83,7 +83,7 @@ const yearOfDate = (date: unknown): number | null => {
 // **Ein unbefristetes Mietverhältnis reicht bis ins laufende Jahr.** Sonst bliebe das Jahr, in
 // dem der Vermieter gerade arbeitet, ungeprüft, und das ist das einzige, das er sofort ansieht.
 //
-// Die Stichtage der Staffeln bleiben außen vor. Ein Eintrag „ab 2019" für ein Mietverhältnis,
+// Die Stichtage der Staffeln bleiben außen vor. Ein Eintrag „ab 2019“ für ein Mietverhältnis,
 // das 2024 beginnt, wirkt sich erst ab 2024 aus; seine Wirkung liegt also immer in den Jahren,
 // die ohnehin geprüft werden.
 export function yearsToCheck(db: Db, currentYear: number): number[] {
@@ -125,7 +125,7 @@ export function yearsToCheck(db: Db, currentYear: number): number[] {
 // Nach dem Umstieg sagen beide dasselbe.
 //
 // **Er steht hier ausdrücklich und nicht versteckt im Geraderücken.** Was der Vergleich
-// hinnimmt, muss man an einer Stelle lesen können; sonst wäre die Zusage „centgenau" eine mit
+// hinnimmt, muss man an einer Stelle lesen können; sonst wäre die Zusage „centgenau“ eine mit
 // unbekannten Ausnahmen. Der Eintrag selbst kommt aus derselben Funktion, die auch beim
 // Übernehmen entscheidet — zwei Fassungen davon ließen die Regression genau dort blind werden,
 // wo sie am meisten zu tun hat.
@@ -275,7 +275,7 @@ export function frozenDifference(before: FrozenSettlement[], after: FrozenSettle
 function shortValue(value: unknown): string {
   if (value === null || value === undefined) return 'nichts'
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (typeof value === 'string') return `„${value.length > 40 ? `${value.slice(0, 40)}…` : value}"`
+  if (typeof value === 'string') return `„${value.length > 40 ? `${value.slice(0, 40)}…` : value}“`
   const text = JSON.stringify(value) ?? String(value)
   return text.length > 60 ? `${text.slice(0, 60)}…` : text
 }

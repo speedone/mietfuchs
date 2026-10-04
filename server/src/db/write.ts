@@ -16,7 +16,7 @@ import type { MigratedSettings } from '../ai/settings.ts'
 import { aiSlots, settings } from './schema.ts'
 
 // `null` statt `undefined` an jeder Stelle, an der ein Feld fehlen darf. In SQL heißt NULL
-// „kein Wert", in JavaScript heißt `undefined` meist „hier fehlt etwas, das dastehen sollte";
+// „kein Wert“, in JavaScript heißt `undefined` meist „hier fehlt etwas, das dastehen sollte“;
 // client.ts wirft deshalb ausdrücklich, wenn ein `undefined` bis zur Datenbank durchkommt.
 const orNull = <T>(value: T | undefined | null): T | null => value ?? null
 

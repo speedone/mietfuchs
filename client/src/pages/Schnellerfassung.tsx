@@ -465,7 +465,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
 // ---------- EXIF-Datum (best effort) ----------
 // Liest das Aufnahmedatum (DateTimeOriginal) aus dem JPEG, damit der Nutzer das Ablesedatum nicht
-// tippen muss. Schlägt es fehl, greift im Aufrufer der Fallback „heute". Bewusst minimal gehalten.
+// tippen muss. Schlägt es fehl, greift im Aufrufer der Fallback „heute“. Bewusst minimal gehalten.
 async function readExifDate(file: File): Promise<string | null> {
   if (!/jpe?g/i.test(file.type)) return null
   try {

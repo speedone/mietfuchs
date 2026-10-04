@@ -45,7 +45,7 @@
 // -------------
 // Die Unterscheidung gehört hierher und an keine andere Stelle. Beide Laufzeiten bringen
 // SQLite selbst mit, nur unter verschiedenen Namen und mit verschiedenen Methoden für
-// „Zeilen als Werteliste". Erkannt wird Bun an `globalThis.Bun`, wie überall sonst im Projekt.
+// „Zeilen als Werteliste“. Erkannt wird Bun an `globalThis.Bun`, wie überall sonst im Projekt.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -81,8 +81,8 @@ export function toSqlValue(value: unknown): SqlValue {
   // Drizzle wandelt Wahrheitswerte eigentlich selbst in 0 und 1; hier steht es als Netz, damit
   // eine künftige Spalte nicht still an SQLite scheitert.
   if (typeof value === 'boolean') return value ? 1 : 0
-  // `undefined` bekommt ausdrücklich **kein** NULL. In SQL bedeutet NULL „kein Wert", in
-  // JavaScript bedeutet `undefined` meist „hier fehlt etwas, das dastehen sollte", etwa eine
+  // `undefined` bekommt ausdrücklich **kein** NULL. In SQL bedeutet NULL „kein Wert“, in
+  // JavaScript bedeutet `undefined` meist „hier fehlt etwas, das dastehen sollte“, etwa eine
   // Kennung, die der Aufrufer nicht gesetzt hat. Würde daraus stillschweigend NULL, liefe ein
   // Vergleich wie `eq(units.id, undefined)` auf `= NULL` hinaus, das in SQL nie wahr ist: Die
   // Abfrage käme leer zurück, und niemand erführe, warum. `node:sqlite` wirft an dieser Stelle
@@ -215,7 +215,7 @@ const BREAKPOINT = '--> statement-breakpoint'
 // Das ist keine Kosmetik. Git kann Textdateien beim Auschecken auf CRLF umstellen
 // (`core.autocrlf=true` ist unter Windows die Voreinstellung), und dann hätte dieselbe
 // Migration je nach Rechner einen anderen Inhalt. Ihre Marke wäre damit eine andere, der Test
-// „ein bereits veröffentlichter Schritt ist unverändert" schlüge unter Windows fehl und unter
+// „ein bereits veröffentlichter Schritt ist unverändert“ schlüge unter Windows fehl und unter
 // Linux nicht, und das eingebettete Modul sähe je nach Bau-Rechner anders aus. Eine Marke, die
 // vom Rechner abhängt, taugt aber nicht als Marke.
 const normalize = (sql: string): string => sql.replace(/\r\n/g, '\n')
@@ -247,11 +247,11 @@ type JournalEntry = { tag: string; when: number }
 // ohne dafür Dateien anzulegen.
 export function parseJournal(raw: unknown, file: string): JournalEntry[] {
   if (typeof raw !== 'object' || raw === null || !('entries' in raw)) {
-    throw new Error(`Die Buchführung der Migrationen (${file}) hat kein Feld „entries". Das kann nicht stimmen.`)
+    throw new Error(`Die Buchführung der Migrationen (${file}) hat kein Feld „entries“. Das kann nicht stimmen.`)
   }
   const entries = raw.entries
   if (!Array.isArray(entries)) {
-    throw new Error(`Das Feld „entries" in ${file} ist keine Liste.`)
+    throw new Error(`Das Feld „entries“ in ${file} ist keine Liste.`)
   }
   if (entries.length === 0) {
     throw new Error(`Die Buchführung in ${file} führt keinen einzigen Migrationsschritt. Das kann nicht stimmen.`)
@@ -259,14 +259,14 @@ export function parseJournal(raw: unknown, file: string): JournalEntry[] {
   return entries.map((entry: unknown, index: number) => {
     const wo = `Der ${index + 1}. Eintrag in ${file}`
     if (typeof entry !== 'object' || entry === null || !('tag' in entry) || !('when' in entry)) {
-      throw new Error(`${wo} braucht die Felder „tag" und „when".`)
+      throw new Error(`${wo} braucht die Felder „tag“ und „when“.`)
     }
     const { tag, when } = entry
     if (typeof tag !== 'string' || tag === '') {
-      throw new Error(`${wo} hat kein brauchbares „tag" (den Namen des Schrittes).`)
+      throw new Error(`${wo} hat kein brauchbares „tag“ (den Namen des Schrittes).`)
     }
     if (typeof when !== 'number' || !Number.isFinite(when)) {
-      throw new Error(`${wo} („${tag}") hat kein brauchbares „when" (den Zeitpunkt, der die Reihenfolge bestimmt).`)
+      throw new Error(`${wo} („${tag}“) hat kein brauchbares „when“ (den Zeitpunkt, der die Reihenfolge bestimmt).`)
     }
     return { tag, when }
   })
@@ -294,12 +294,12 @@ function migrationsFromDisk(): Migration[] {
   return readJournal(journalFile).map((entry) => {
     const file = path.join(migrationsDir, `${entry.tag}.sql`)
     if (!fs.existsSync(file)) {
-      throw new Error(`Die Buchführung nennt den Schritt „${entry.tag}", aber die Datei ${file} fehlt.`)
+      throw new Error(`Die Buchführung nennt den Schritt „${entry.tag}“, aber die Datei ${file} fehlt.`)
     }
     const sql = fs.readFileSync(file, 'utf8')
     const statements = splitStatements(sql)
     if (statements.length === 0) {
-      throw new Error(`Der Migrationsschritt „${entry.tag}" enthält keine einzige Anweisung.`)
+      throw new Error(`Der Migrationsschritt „${entry.tag}“ enthält keine einzige Anweisung.`)
     }
     return { tag: entry.tag, hash: hashOf(sql), folderMillis: entry.when, statements }
   })
@@ -363,7 +363,7 @@ const BOOKKEEPING = `CREATE TABLE IF NOT EXISTS __drizzle_migrations (
 // geschieht trotzdem.
 //
 // Deshalb hier das Verfahren, das SQLite selbst für Schemaänderungen vorschreibt
-// (lang_altertable.html, „Making Other Kinds Of Table Schema Changes"): abschalten **vor** der
+// (lang_altertable.html, „Making Other Kinds Of Table Schema Changes“): abschalten **vor** der
 // Transaktion, am Ende und noch **innerhalb** der Transaktion `PRAGMA foreign_key_check`
 // fragen, und erst danach wieder einschalten. Weil die Prüfung eine gewöhnliche Abfrage ist und
 // kein Pragma, wirkt sie in der Transaktion; ein kaputter Verweis führt also zum Rückrollen und

@@ -179,10 +179,10 @@ function itemTotalsOf(settlement: object): Record<string, number> | null {
 // `?? 0` und `?? []` heraus und die Datenbank mit geprüften Schritten. Bei sauberen Daten kam
 // dasselbe heraus, bei krummen nicht: `statements` als Objekt statt als Liste warf auf dem einen
 // Weg und ergab auf dem anderen 0. Zwei Leser desselben Archivstücks, die sich uneinig sind,
-// sind genau die Sorte Unterschied, die beim Umstieg als „Abrechnung weicht ab" auffällt und
+// sind genau die Sorte Unterschied, die beim Umstieg als „Abrechnung weicht ab“ auffällt und
 // dann niemand erklären kann.
 //
-// Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur". Das ist die richtige Antwort und keine
+// Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur“. Das ist die richtige Antwort und keine
 // Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
 // Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
 export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null } {
@@ -338,7 +338,7 @@ export function snapshotFor(source: PropertyScopedSource & { properties?: (Snaps
 //   Mietverhältnisse   Welche ins Jahr fallen, entscheidet `overlapDays` in der Berechnung:
 //                      inklusive Grenzen, `end: null` = offen. Ebenso wichtig sind die
 //                      Staffeln im Mietverhältnis selbst (Personenzahl, Vorauszahlung,
-//                      Kaltmiete). Sie gelten „ab diesem Datum", und der maßgebliche Eintrag
+//                      Kaltmiete). Sie gelten „ab diesem Datum“, und der maßgebliche Eintrag
 //                      kann Jahre alt sein. Beides bleibt unangetastet.
 //   Zahlungen          Welche Zahlung zum Jahr zählt, entscheidet das Mietkonto nach ihrem
 //                      Datum. Diese Regel bleibt dort, wo sie kommentiert und geprüft ist.

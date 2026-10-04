@@ -676,7 +676,7 @@ fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
 // ---------- Lauf ----------
 
 // **Eine leere Auswahl ist ein Abbruch und kein stiller Erfolg.** Ohne diese Zeilen meldete
-// `--nur 99` „Alle Prüfungen bestanden." und einen Rückgabewert von 0, obwohl es den Fall 99 gar
+// `--nur 99` „Alle Prüfungen bestanden.“ und einen Rückgabewert von 0, obwohl es den Fall 99 gar
 // nicht gibt und nichts gelaufen war. Das ist dieselbe Gestalt wie eine Matrix ohne Einträge, vor
 // der CLAUDE.md beim Prüfumfang warnt: keine Arbeit, kein Fehler, nur ein Überspringen. Wer eine
 // Nummer eintippt, die es nicht gibt, will nicht bestätigt bekommen, dass alles in Ordnung ist.

@@ -49,7 +49,7 @@ type TenancyForm = {
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
 
-// Leere erweiterte Mieter-Felder — bei „neu" und (mit Werten) beim Bearbeiten verwendet
+// Leere erweiterte Mieter-Felder — bei „neu“ und (mit Werten) beim Bearbeiten verwendet
 const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
@@ -142,14 +142,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     setUnitForm(null)
     await reload()
-    toast(editing ? `„${unitForm.name.trim()}" übernommen.` : `Wohnung „${unitForm.name.trim()}" angelegt.`)
+    toast(editing ? `„${unitForm.name.trim()}“ übernommen.` : `Wohnung „${unitForm.name.trim()}“ angelegt.`)
   }
 
   async function deleteUnit(u: Unit) {
     // Was mitgelöscht wird, mit Anzahl (#142); ohne Antwort die vollständige Liste ohne Zahlen.
     const deps = await api<UnitDependents>(`/api/units/${u.id}/dependents`).catch(() => null)
     const ok = await confirm({
-      title: `Wohnung „${u.name}" löschen?`,
+      title: `Wohnung „${u.name}“ löschen?`,
       message: unitDeleteMessage(deps),
       confirmLabel: 'Löschen',
       danger: true,
@@ -163,7 +163,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     setError('')
     await reload()
-    toast(`Wohnung „${u.name}" gelöscht.`)
+    toast(`Wohnung „${u.name}“ gelöscht.`)
   }
 
   async function saveTenancy() {
@@ -259,12 +259,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     const name = tenForm.tenantName.trim()
     setTenForm(null)
     await reload()
-    toast(editing ? `„${name}" übernommen.` : `Mietverhältnis „${name}" angelegt.`)
+    toast(editing ? `„${name}“ übernommen.` : `Mietverhältnis „${name}“ angelegt.`)
   }
 
   async function deleteTenancy(t: Tenancy) {
     const ok = await confirm({
-      title: `Mietverhältnis „${t.tenantName}" löschen?`,
+      title: `Mietverhältnis „${t.tenantName}“ löschen?`,
       message: 'Das Mietverhältnis und zugehörige Zahlungen werden gelöscht.',
       confirmLabel: 'Löschen',
       danger: true,
@@ -278,7 +278,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     }
     setError('')
     await reload()
-    toast(`Mietverhältnis „${t.tenantName}" gelöscht.`)
+    toast(`Mietverhältnis „${t.tenantName}“ gelöscht.`)
   }
 
   const participating = units.filter((u) => u.participates)
@@ -354,7 +354,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       <div className="card">
         <h2>Mietverhältnisse</h2>
         <p className="muted">
-          Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y") — Änderungen
+          Personenzahl und Vorauszahlung werden als Staffel erfasst („ab X gilt Y“) — Änderungen
           wie Geburt, Auszug einzelner Personen oder Vorauszahlungs-Erhöhungen brauchen kein
           neues Mietverhältnis. Nur bei echtem Mieterwechsel das alte Mietverhältnis beenden
           und ein neues anlegen.
@@ -929,11 +929,11 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
             </div>
           )}
           <div className="notice" style={{ marginTop: 10 }}>
-            Beim Abschluss passiert: Mietverhältnis „{tenancy.tenantName}" endet am {fmtDate(endDate)}
+            Beim Abschluss passiert: Mietverhältnis „{tenancy.tenantName}“ endet am {fmtDate(endDate)}
             {readCount > 0 && <> · {readCount} Zwischenablesung{readCount > 1 ? 'en werden' : ' wird'} gespeichert</>}
             {vacancy
               ? ' · die Wohnung bleibt ohne Mieter (Leerstandskosten trägt der Vermieter).'
-              : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}" ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
+              : newTenant.name.trim() ? <> · neues Mietverhältnis „{newTenant.name}“ ab {newTenant.start ? fmtDate(newTenant.start) : '—'}.</> : ' · neues Mietverhältnis wird angelegt.'}
           </div>
           <button className="btn" disabled={busy} onClick={() => void commit()}>
             {busy && <span className="spinner" />}Mieterwechsel durchführen

@@ -58,7 +58,7 @@ export function modelHint(models: AiModel[], current: string, provider: AiProvid
   return null
 }
 
-// Nur Ollama: wie man ein fehlendes Modell lädt. Im Compose-Profil „ki" läuft Ollama als
+// Nur Ollama: wie man ein fehlendes Modell lädt. Im Compose-Profil „ki“ läuft Ollama als
 // Dienst `ollama` im Container, dort geht der Befehl über docker compose.
 export function pullInstructions(name: string, ollamaUrl: string): { text: string; command: string } {
   let host = ''

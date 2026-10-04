@@ -177,6 +177,10 @@ describe('Belegabdeckung', () => {
     expect(gelb.detail).toMatch(/1 von 2 Positionen ohne Beleg/)
     expect(gelb.detail).toMatch(/50 %/)
     expect(coverageCheck([item('b')]).level).toBe('gelb')
+    // Ein- und Mehrzahl statt „Position(en)“ (#180).
+    expect(coverageCheck([item('a', { invoiceFile: 'x' })]).detail).toBe('Zur einzigen Position liegt ein Beleg vor.')
+    expect(coverageCheck([item('a', { invoiceFile: 'x' }), item('c', { invoiceFile: 'y' })]).detail).toBe('Zu allen 2 Positionen liegt ein Beleg vor.')
+    expect(coverageCheck([item('b')]).detail).toMatch(/^1 von 1 Position ohne Beleg/)
     expect(coverageCheck([]).level).toBe('leer')
   })
 })

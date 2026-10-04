@@ -377,7 +377,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   async function deleteFile(f: UploadInfo) {
     const ok = await confirm({
       title: 'Beleg endgültig löschen?',
-      message: `„${receiptName(f)}" wird unwiderruflich von der Festplatte entfernt.`,
+      message: `„${receiptName(f)}“ wird unwiderruflich von der Festplatte entfernt.`,
       confirmLabel: 'Löschen',
       danger: true,
     })

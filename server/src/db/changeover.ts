@@ -10,7 +10,7 @@
 //      liegen, Mietfuchs sagt, woran es lag, und beim nächsten Start wird es erneut versucht.
 //      Das ist wichtiger, als dass der Umstieg gelingt.
 //
-// **Zusage 2 lautete bis zum Umstellen der Routen „nie blockiert und nie Daten verloren".** Der
+// **Zusage 2 lautete bis zum Umstellen der Routen „nie blockiert und nie Daten verloren“.** Der
 // erste Teil ist entfallen, und das ist kein Nachlassen, sondern dieselbe Zusage unter neuen
 // Umständen. Solange die Routen die db.json lasen, hieß Weiterarbeiten auch Weiterarbeiten mit
 // den eigenen Daten. Jetzt gäbe eine offene, aber leere Datenbank keine Auskunft über einen
@@ -63,7 +63,7 @@ import { count } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import type { ChangeoverState } from '../../../shared/types.ts'
 
-// **Der Name ist die Zusage „ab hier gilt die Datenbank".** Nach einem gelungenen Umstieg heißt
+// **Der Name ist die Zusage „ab hier gilt die Datenbank“.** Nach einem gelungenen Umstieg heißt
 // die db.json nicht mehr so: Ihr Inhalt bleibt der Rückweg, aber unter einem Namen, den niemand
 // für den laufenden Stand hält. Seit die Routen die Datenbank schreiben, läge sie sonst tot im
 // Ordner und sähe doch aus wie vorher.
@@ -346,7 +346,7 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
       // Prozess zwischen dem Aktivieren und dem Umbenennen, bliebe eine unter altem Namen
       // zurück. Aber dieselbe Lage entsteht auch, wenn jemand eine alte db.json in einen Ordner
       // mit gefüllter Datenbank kopiert, und die beiden sind von hier aus nicht zu
-      // unterscheiden. Sie „abgelöst" zu nennen wäre dann eine Zusage, die niemand eingelöst
+      // unterscheiden. Sie „abgelöst“ zu nennen wäre dann eine Zusage, die niemand eingelöst
       // hat: Nichts an ihr ist je übernommen worden.
       //
       // **Gesagt wird es trotzdem, denn hierher kommt man nur mit einer db.json im Ordner**
@@ -472,9 +472,9 @@ export async function runChangeover(options: ChangeoverOptions): Promise<Changeo
     // Datenregel selbst: Heißt ein Auswahlwert künftig anders, steht das `UPDATE` in **einer**
     // Migration, und ein alter Bestand kommt auf demselben Weg dorthin wie eine vorhandene
     // Datenbank. Liefe die Kette vorher, müsste dieselbe Regel ein zweites Mal im Eingang
-    // stehen, und nur die erste der beiden wäre durch „ein Schritt wird nie geändert" geschützt.
+    // stehen, und nur die erste der beiden wäre durch „ein Schritt wird nie geändert“ geschützt.
     //
-    // Bei Django heißt das Muster „historische Modelle" und bei Flyway „Baseline". `applyMigrations`
+    // Bei Django heißt das Muster „historische Modelle“ und bei Flyway „Baseline“. `applyMigrations`
     // braucht dafür nichts Neues: Es arbeitet über Prüfsummen und wendet an, was in der
     // Buchführung fehlt, überspringt also den Ausgangsstand von selbst.
     //
@@ -589,7 +589,7 @@ function notesFor(stock: Db): string[] {
       'Vorauszahlungs-Staffel geworden, wie ihn die Abrechnung schon bisher gelesen hat. Neu ist, ' +
       'dass auch das Mietkonto und die Steuerübersicht damit rechnen: Das monatliche Soll steigt um ' +
       'die Vorauszahlung, dieselbe Zahlung deckt also weniger Monate, und ein Monat kann von ' +
-      '„bezahlt" auf „teilweise" wechseln. Gefordert wird damit, was die Abrechnung ohnehin ansetzt; ' +
+      '„bezahlt“ auf „teilweise“ wechseln. Gefordert wird damit, was die Abrechnung ohnehin ansetzt; ' +
       'bisher forderte das Mietkonto zu wenig.',
   ]
 }

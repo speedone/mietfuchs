@@ -47,6 +47,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { sameCostCandidates } from '../../../shared/duplicates.ts'
+import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
@@ -280,13 +281,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     if (!editing && formCarryId) removeCarried(new Set([formCarryId]))
     setForm(null)
     await load()
-    toast(editing ? `„${desc}" übernommen.` : `„${desc}" hinzugefügt.`)
+    toast(editing ? `„${desc}“ übernommen.` : `„${desc}“ hinzugefügt.`)
   }
 
   async function deleteItem(i: CostItem) {
     const ok = await confirm({
       title: `Kostenposition löschen?`,
-      message: `„${i.description}" (${fmtEuro(i.amountCents)}) wird gelöscht.`,
+      message: `„${i.description}“ (${fmtEuro(i.amountCents)}) wird gelöscht.`,
       confirmLabel: 'Löschen',
       danger: true,
     })
@@ -299,7 +300,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     setError('')
     await load()
-    toast(`„${i.description}" gelöscht.`)
+    toast(`„${i.description}“ gelöscht.`)
   }
 
   // KI-Auswertung (#170): Die Warteschlange teilt sich die Kostenseite mit der Schnellerfassung.
@@ -485,7 +486,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   onCancel={() => cancel(entry.id)}
                 />
               )}
-              {entry.status === 'fertig' && <span className="badge green">{entry.data.assessment?.lines.length ?? 0} Position(en) erkannt — bitte prüfen</span>}
+              {entry.status === 'fertig' && <span className="badge green">{countOf(entry.data.assessment?.lines.length ?? 0, 'Position', 'Positionen')} erkannt — bitte prüfen</span>}
               {entry.status === 'übernommen' && <span className="badge green">✓ übernommen</span>}
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
