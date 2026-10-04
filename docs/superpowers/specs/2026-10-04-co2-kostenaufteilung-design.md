@@ -1,13 +1,33 @@
 # Spezifikation: CO₂-Kostenaufteilung (#97, Entscheidung 2 aus #85)
 
-- **Fassung:** zweite Fassung vom 04.10.2026.
+- **Fassung:** dritte Fassung vom 04.10.2026 (nach der Nachprüfung der zweiten).
 - **Codestand:** `main` mit #203 (eine Rundungsregel; `distributeCents` und `landlordRecipients` liegen in calc.ts).
 - **Rechtsstand:** CO2KostAufG in der Fassung von Art. 5 G v. 23.07.2026 (BGBl. 2026 I Nr. 226), in Kraft seit 29.07.2026. Den Wortlaut habe ich am 04.10.2026 auf gesetze-im-internet.de gelesen.
 - **Grundlage der Überarbeitung:** zwei unabhängige Prüfungen, nämlich eine rechtliche und logische Gegenprüfung (19 Befunde) und ein Marktvergleich von Heizkosten-Software und Messdiensten (Techem, ista, Brunata; objego, immocloud, WISO, Immoware24, mibakus, NebenkostenFix). Jeder Befund ist unten entschieden.
 
 ---
 
-## 0. Änderungen gegenüber dem ersten Entwurf
+## 0. Änderungen
+
+### 0.1 Änderungen gegenüber der zweiten Fassung
+
+Die Nachprüfung der zweiten Fassung lautete „noch nicht umsetzungsreif“. Bestätigt hat sie den Befund A1 (doppelter Abzug), die Zahlenbeispiele und die PR-Reihenfolge. Jeder ihrer Befunde ist hier entschieden.
+
+| # | Befund der Nachprüfung | Entscheidung | Abschnitt |
+|---|---|---|---|
+| N1 | **Falsch:** Die Begründung zu A8 trägt nicht. `co2.amount-net` fängt den Irrtum nicht in beide Richtungen. Bei „ja“ trotz Bruttobeträgen rät die Prüfung, um L zu erhöhen, und die Werbungskosten stehen L zu hoch. Bei „nein“ trotz Abzug prüft nichts, und es wird doppelt abgezogen. | **Keine Vorgabe mehr.** Gefragt wird eine sichtbare Tatsache: „Steht in der Kostenaufstellung eine Zeile wie ‚Abzüglich CO₂-Kosten Vermieter‘ oder beim Mieter ‚vom Vermieter übernommen‘?“, mit Beispielzeile aus dem Techem-Muster. Neues **Pflichtfeld S**, die „Summe der Nutzerkosten Heizung und Warmwasser laut Messdienst“. Die **harte Probe** `co2.sum-check` (error) verlangt: Σ Topfbeträge = S + L bei Vorwegabzug, sonst = S. `co2.amount-net` entfällt. Die verbleibende Lücke (falsches „nein“ **und** Betrag = S) ist mit Zahlen allein nicht zu erkennen; sie ist benannt, und #103 liest die Abzugszeile künftig aus. | 3, 4.2, 5.4, 6.1 |
+| N2 | **Riskant:** Die Summenprüfung ist blind bei Leerstand, fremden Einheiten und fehlenden Eigenbeträgen. | Die Probe läuft gegen S, nicht gegen Σ der eingetragenen Einzelbeträge. Was S an Einzelbeträgen fehlt, ist der gewöhnliche Rest (Leerstand, außerhalb). L ist davon getrennt: L = Betrag − S. | 5.4 |
+| N3 | **Riskant:** Der Eigennutzungsteil von L wird ohne `take()` gebucht. Bei Nettoerfassung wird `amountsRest` negativ. | Beide Teile von L laufen über `take()` und sind damit durch das begrenzt, was übrig ist. | 5.4 |
+| N4 | **Riskant:** „Exakt, weil netto proportional zu brutto“ gilt nur bei einem linearen Schlüssel für alle Topfkosten. | Das ist jetzt eine **Näherung**. Gibt es den Wert des Messdienstes für die eigene Wohnung, wird er übernommen (`service_self_landlord_cents`). Die Probe läuft über **alle** Topfpositionen. Festgelegt ist, in welcher Position L gebucht wird (`service_cost_item_id`). | 4.2, 5.4 |
+| N5 | **Riskant:** Eine Gasrechnung vom 15.03. bis 14.03. deckt Mai bis April nur zu 318 Tagen. | Hinweis `co2.period-uncovered` mit den fehlenden Tagen. Bis die Folgerechnung da ist, wird **tagesgleich hochgerechnet**. Begründung: § 5 Abs. 1 S. 5 verlangt die Emissionen des ganzen Zeitraums. Weglassen senkte E und C und damit beides, was den Mieter entlastet. Hochrechnen wirkt im Zweifel zu seinen Gunsten. | 5.1 |
+| N6 | **Riskant:** `service-unsplit` färbt als `hint` die Ampel nicht, obwohl die 3 % sicher sind. | `co2.service-unsplit` ist eine **warning**, solange nicht selbst aufgeteilt wurde. Nach der eigenen Aufteilung (ab PR 2) bleibt der Hinweis `co2.service-unsplit-healed` (Rechtsfrage 11.13). | 7.1 |
+| N7 | **Lücke:** Sperren bis zum jeweiligen PR. | Öl und Flüssiggas mit `self*` lassen sich bis PR 3 nicht speichern (400); `co2.missing` bleibt bis dahin stehen. Eine zweite Heizanlage und Lieferzeilen je Wohnung (F8) sind bis PR 4 ebenso gesperrt. | 13 |
+| N8 | **Lücke:** Die Formel für F8 war nicht festgeschrieben. | r_t = ‰/1000 × C_u × x_t / A_u, **ohne** Normierung auf die Mietverhältnisse. Was auf Leerstand fällt, bleibt beim Vermieter. | 5.3 |
+| N9 | **Lücke:** Bei `serviceShown` mit Einzelwerten fehlte eine Prüfung. | Verlangt sind Σ r_t ≤ L und r_t ≤ x_t, sonst `co2.reliefs-invalid` (error) und proportionale Verteilung. | 5.3 |
+| N10 | **Kleinere Punkte.** | E = 15.254,8 kg (aus den gerundeten Tabellenwerten 15.254,9), der Wert 50,849… → 50,8. Für das Mietfuchs-Jahr 2023 ohne Datensatz gibt es nur den Hinweis `co2.missing-first-year` statt der Warnung, denn der Zeitraum kann 2022 begonnen haben. Eine Position über mehrere Heizanlagen ergibt `co2.item-spans-plants` (error). | 5.2, 7.1, 5.3 |
+| N11 | **Schnittstellen zu #99 und #208** für 0.11.0. | Die **Heizanlage** gehört #99. Der CO₂-Teil benennt die Felder, die er von ihr braucht (4.1). `properties.heating_energy` und `co2_statement_units` entfallen. Die Schnittstelle zu #208 ist auf ein Feld und eine Regel verdichtet (12). | 4.1, 12 |
+
+### 0.2 Änderungen gegenüber dem ersten Entwurf
 
 | # | Befund | Entscheidung | Abschnitt |
 |---|---|---|---|
@@ -174,15 +194,15 @@ Die **Methode** eines CO₂-Datensatzes beantwortet die Frage „Wer hat aufgete
 
 | # | Lage | Methode | Was Mietfuchs tut |
 |---|---|---|---|
-| **F1** | **Messdienst hat aufgeteilt und den Vermieteranteil vorab abgezogen.** Das ist der Standard bei Techem und ista im Mietshaus und der häufigste Fall. Die Einzelbeträge je Nutzer sind netto. | `serviceDeducted` (Vorgabe, sobald „Messdienst“ gewählt ist) | **Keine Abzugszeile.** Der Vermieteranteil L ist ein eigener Teil des Vermieteranteils der Heizposition (Grund `co2Share`). Der **Betrag der Heizposition ist brutto**: Σ Nettobeträge + L, dazu ein etwaiger Rest. Die Summenprüfung `co2.amount-net` meldet, wenn der Betrag L nicht enthält, und nennt den richtigen Betrag. Der Ausweis zeigt die Angaben des Messdienstes. |
-| **F2** | **Messdienst oder Hausverwaltung hat aufgeteilt, aber nur ausgewiesen.** So ist es bei der WEG in der Variante „informativ ohne Abzug“ und in der Buhl-Forum-Variante bei ista. | `serviceShown` | Abzugszeile je Mieter, mit den Einzelwerten des Messdienstes oder verteilt wie die Heizkosten (5.3). |
-| **F3** | **Messdienst hat gar nicht aufgeteilt.** Das ist der Fall der vorliegenden realen Abrechnung (siehe Kasten). | `selfAfterService` | Der Vermieter teilt selbst auf, aus der Gas-, Öl- oder Fernwärmerechnung. Die Messdienstbeträge bleiben brutto, der Abzug kommt als eigene Zeile. Zusätzlich gibt es den Hinweis `co2.service-unsplit` mit der 3-%-Kürzung je Mieter (siehe 7.1). |
+| **F1** | **Messdienst hat aufgeteilt und den Vermieteranteil vorab abgezogen.** Das ist der Standard bei Techem und ista im Mietshaus und der häufigste Fall. Die Einzelbeträge je Nutzer sind netto. | `serviceDeducted`, gewählt über die sichtbare Tatsache „Abzugszeile steht da“, **ohne Vorgabe** | **Keine Abzugszeile.** Der Vermieteranteil L ist ein eigener Teil des Vermieteranteils der Heizposition (Grund `co2Share`). Der **Betrag der Heizposition ist brutto**, also S + L. Die harte Probe `co2.sum-check` vergleicht die Summe der Topfbeträge mit S + L. Der Ausweis zeigt die Angaben des Messdienstes. |
+| **F2** | **Messdienst oder Hausverwaltung hat aufgeteilt, aber nur ausgewiesen.** So ist es bei der WEG in der Variante „informativ ohne Abzug“ und in der Buhl-Forum-Variante bei ista. | `serviceShown` | Abzugszeile je Mieter, mit den Einzelwerten des Messdienstes (geprüft: Σ ≤ L, je Mieter ≤ Heizanteil) oder verteilt wie die Heizkosten (5.3). Probe: Σ Topfbeträge = S. |
+| **F3** | **Messdienst hat gar nicht aufgeteilt.** Das ist der Fall der vorliegenden realen Abrechnung (siehe Kasten). | `selfAfterService` | Der Vermieter teilt selbst auf, aus der Gas-, Öl- oder Fernwärmerechnung. Die Messdienstbeträge bleiben brutto, der Abzug kommt als eigene Zeile. Solange nicht selbst aufgeteilt ist, gibt es die Warnung `co2.service-unsplit` mit der 3-%-Kürzung je Mieter, danach den Hinweis `co2.service-unsplit-healed` (7.1). |
 | **F4** | **Kein Messdienst**, Heizkosten selbst verteilt (nach Wärmezählern und Fläche, oder nur nach Fläche mit der 15-%-Warnung) | `self` | Wie F3, aber ohne den Hinweis. |
 | **F5** | **Fernwärme** | F1–F4 | Die Werte kommen von der Rechnung des Wärmelieferanten. Erstanschluss nach dem 01.01.2023 an ein Netz mit Anlagen im EU-Emissionshandel: keine Aufteilung (§ 2 Abs. 4 S. 2). |
 | **F6** | **Öl und Flüssiggas** | `self`, `selfAfterService` | Bestandsrechnung: Anfangsbestand + Lieferungen − Endbestand = Verbrauch, der Restbestand zu den jüngsten Lieferungen bewertet (5.2). Bestand, der vor 2023 in Rechnung gestellt wurde, zählt mit 0 €, aber mit seinen kg. |
-| **F7** | **Rechnungszeitraum ≠ Abrechnungszeitraum** (Gasrechnung 15.03.–14.03.) | `self`, `selfAfterService` | Je Lieferzeile ein Rechnungszeitraum. Mietfuchs schlägt den Anteil tagesgenau **auf den tatsächlichen Abrechnungszeitraum** vor, überschreibbar. |
+| **F7** | **Rechnungszeitraum ≠ Abrechnungszeitraum** (Gasrechnung 15.03.–14.03.) | `self`, `selfAfterService` | Je Lieferzeile ein Rechnungszeitraum (bei Gas und Fernwärme Pflicht). Mietfuchs schlägt den Anteil tagesgenau **auf den tatsächlichen Abrechnungszeitraum** vor, überschreibbar. Deckt keine Rechnung einen Teil des Zeitraums ab, wird hochgerechnet, und `co2.period-uncovered` nennt die fehlenden Tage (5.1). |
 | **F8** | **Gasetagenheizung, Vertrag auf den Vermieter**, umgelegt per Direktzuordnung (§ 5 Abs. 1 S. 2) | `self` | Lieferzeile **je Wohnung**. Einstufung über Σ kg / Σ Fläche aller vom Vermieter versorgten vermieteten Wohnungen. Abzug je Wohnung aus deren eigener Rechnung. |
-| **F9** | **Mehrere Gebäude mit getrennter Heizung** in einem Objekt | alle | Mehrere Datensätze („Heizanlage Vorderhaus“, „Hinterhaus“), jeder mit seinen Wohnungen. Die Mengen müssen sich ausschließen. |
+| **F9** | **Mehrere Gebäude mit getrennter Heizung** in einem Objekt | alle | Je Heizanlage (#99, 4.1) ein Datensatz mit eigener Einstufung. Eine Position, deren Verteilbasis in zwei Anlagen reicht, ergibt `co2.item-spans-plants`. |
 | **F10** | **Abrechnungszeitraum ≠ Kalenderjahr** (Messdienst 01.05.–30.04.) | alle | Der Datensatz führt den tatsächlichen Zeitraum. Er entscheidet über die Anwendbarkeit (Beginn ab 01.01.2023), die Tabellenkürzung und die Lieferanteile. Mietfuchs selbst rechnet weiter im Kalenderjahr (siehe 5.1 und #208, Schnittstelle in 12). |
 | **F11** | **Kürzerer Abrechnungszeitraum** (Erstbezug, Umstellung des Zeitraums) | alle | Die Tabellengrenzen werden gekürzt. **Kein** Teiljahr sind der Mieterwechsel und der Eigentümerwechsel; beide bekommen einen eigenen Test. |
 | **F12** | **Nichtwohngebäude, § 9** | `self*` | Schalter § 8 (50 %) und Auswahl § 9; diese Felder fragt auch der Messdienst ab. Bei `service*` stehen sie in der Messdienstabrechnung und werden dort abgeschrieben. |
@@ -207,22 +227,31 @@ Die **Methode** eines CO₂-Datensatzes beantwortet die Frage „Wer hat aufgete
 
 Migration `0014_co2.sql`, erzeugt mit `npm --prefix server run db:generate`. Sie enthält nur neue Tabellen und eine nullbare Spalte, also keine Datenanweisung. Der eingefrorene Eingang (`server/src/legacy/`) bleibt unberührt.
 
-### 4.1 `properties.heating_energy` (nullbar)
+### 4.1 Heizanlage: Schnittstelle zu #99
 
-Werte: `'gas' | 'oil' | 'lpg' | 'districtHeating' | 'coal' | 'heatPump' | 'biomass' | 'none' | 'other'`. `null` heißt unbekannt.
+Die **Heizanlage** ist ein Konzept von #99 (Zweig `feat/heizkostenabrechnung`). Die Tabelle legt an, wer zuerst gemergt wird, mit **genau diesen Feldern**; der andere ergänzt sie. Der CO₂-Teil braucht von ihr:
 
-Die Spalte entscheidet **ohne Datensatz** zwischen Warnung (`co2.missing`) und Hinweis (`co2.fuel-unknown`). Sie beschreibt die heutige Anlage; ein Heizungstausch steht im Datensatz des jeweiligen Jahres.
+| Feld | Zweck im CO₂-Teil |
+|---|---|
+| `id`, `property_id` | Bezug der CO₂-Datensätze (`co2_statements.plant_id`) |
+| `name` | Ausweis, erst ab der zweiten Anlage sichtbar |
+| `energy` (`'gas' \| 'oil' \| 'lpg' \| 'districtHeating' \| 'coal' \| 'heatPump' \| 'biomass' \| 'other'`, nullbar = unbekannt) | Ohne Datensatz die Wahl zwischen Warnung (`co2.missing`) und Hinweis (`co2.fuel-unknown`). Vorbelegung des Energieträgers im Datensatz. |
+| `supply` (`'central' \| 'perUnit'`) | `perUnit` = Etagenheizungen mit Vertrag auf den Vermieter (F8, § 5 Abs. 1 S. 2) |
+| versorgte Einheiten (eigene Zuordnungstabelle; ohne Zeilen alle Einheiten des Objekts) | Topf, Fläche und Mieter je Anlage (F9) |
+| Zuordnung Kostenposition → Anlage (`cost_items.heating_plant_id`, nullbar) | Topf. Ohne Zuordnung gilt die Anlage, deren Einheiten die Verteilbasis der Position enthalten; reicht die Basis in zwei Anlagen → `co2.item-spans-plants`. |
 
-### 4.2 `co2_statements`: eine Zeile je Heizanlage und Jahr
+**Ohne angelegte Anlage** gibt es eine gedachte Anlage je Objekt (alle Einheiten, zentral, Energieträger unbekannt). Das Formular legt sie an, sobald „Womit wird geheizt?“ beantwortet ist. **Später, nicht hier:** das Merkmal „Heizung nach § 43 GModG, eingebaut nach dem 29.07.2026“ für §§ 5a–5d.
+
+### 4.2 `co2_statements`: eine Zeile je Heizanlage und Jahr (eindeutig: `plant_id`, `year`)
 
 | Spalte | Typ | Bedeutung |
 |---|---|---|
 | `id` | text PK | |
 | `property_id` | text, `RESTRICT` | |
 | `year` | integer | Mietfuchs-Jahr, dem der Datensatz zugeordnet ist (Regel siehe 5.1) |
-| `name` | text, Vorgabe `''` | Anlage, nur nötig ab der zweiten („Vorderhaus“) |
+| `plant_id` | text, `RESTRICT` | Heizanlage (4.1) |
 | `method` | `'serviceDeducted' \| 'serviceShown' \| 'selfAfterService' \| 'self'` | siehe 3 |
-| `fuel` | wie `heating_energy`, ohne `null` | |
+| `fuel` | wie `energy` der Anlage, ohne `null` | Energieträger dieses Zeitraums, vorbelegt von der Anlage |
 | `period_from`, `period_to` | text, **Pflicht** | tatsächlicher Abrechnungszeitraum; das Formular belegt ihn mit dem 01.01.–31.12. des Jahres vor |
 | `area_m2` | real, nullbar, > 0 | Fläche für die Einstufung; `null` = Vorgabe (5.1) |
 | `non_residential` | boolean | § 8 |
@@ -233,17 +262,21 @@ Die Spalte entscheidet **ohne Datensatz** zwischen Warnung (`co2.missing`) und H
 | `service_landlord_permille` | integer, nullbar | `service*`: Vermieteranteil (z. B. 350 für 35 %) |
 | `service_total_cents` | integer, nullbar | `service*`: CO₂-Kosten gesamt |
 | `service_landlord_cents` | integer, nullbar | `service*`: **L**, Vermieteranteil in € |
+| `service_users_total_cents` | integer, nullbar; bei `service*` **Pflicht** | **S**: Summe der Nutzerkosten Heizung und Warmwasser laut Messdienst, so wie gedruckt (bei Vorwegabzug netto) |
+| `service_cost_item_id` | text, nullbar, `SET NULL` | Position, in der L gebucht wird (5.4). Pflicht, wenn der Topf mehr als eine Position hat. |
+| `service_self_landlord_cents` | integer, nullbar | Vermieteranteil der selbstgenutzten Wohnungen laut Messdienst, wenn ausgewiesen (5.4) |
 | `stock_unit` | `'l' \| 'kg'`, nullbar | Öl, Flüssiggas: Mengeneinheit |
 | `opening_quantity`, `opening_emissions_kg`, `opening_cost_cents` | nullbar | Anfangsbestand mit Bewertung, vorbelegt aus dem Endbestand des Vorjahres |
 | `closing_quantity` | real, nullbar | Endbestand |
 
 **Bedingungen:**
 
-- `service_*` nur bei `method` `service*`.
+- `service_*` nur bei `method` `service*`; dort sind S, L, ‰ und Wert Pflicht.
+- `method` hat **keine Vorgabe**: Die API lehnt einen Datensatz ohne Methode ab.
 - Bestandsfelder nur bei `oil` und `lpg`.
 - `period_from` ≤ `period_to`, und der Zeitraum dauert höchstens zwölf Monate.
 
-**Mehrere Anlagen (F9):** Die Zuordnung steht in `co2_statement_units` (`statement_id` `CASCADE`, `unit_id` `CASCADE`, Primärschlüssel beide). Ohne Zeilen umfasst der Datensatz alle Einheiten des Objekts. Hat ein Objekt mehrere Datensätze im selben Jahr, müssen alle Zeilen haben, und die Mengen müssen sich ausschließen. Das prüft der Server (400 mit Grund) und beim Wiederherstellen der Bestand.
+**Mehrere Anlagen (F9):** Je Anlage ein Datensatz. Die versorgten Einheiten kommen von der Anlage (4.1), nicht vom Datensatz. Sich überschneidende Anlagen lehnt der Server ab (400), ebenso das Wiederherstellen eines solchen Bestands.
 
 **Warum je Anlage und Jahr und nicht an der Kostenposition:** Die CO₂-Kosten stecken im **ganzen Topf** Heizung und Warmwasser. Bei eigener Verteilung sind das oft zwei Positionen (Verbrauch, Fläche), und § 7 Abs. 1 S. 2 verteilt nach der Mischung beider. NebenkostenFix kommt aus demselben Grund zum selben Schnitt: Die Anlage ist der Topf, nicht die Position.
 
@@ -263,7 +296,7 @@ Die Spalte entscheidet **ohne Datensatz** zwischen Warnung (`co2.missing`) und H
 | `energy_kwh`, `emission_factor` | real, nullbar | für Ausweis und Plausibilität |
 | `share_permille` | integer 0–1000, Vorgabe 1000 | nur bei Gas und Fernwärme: Anteil, der in den Abrechnungszeitraum fällt |
 
-`unit_id` darf nur auf eine Einheit desselben Objekts und derselben Anlage zeigen (`sameProperty`, 400).
+`unit_id` darf nur auf eine Einheit desselben Objekts und derselben Anlage zeigen (`sameProperty`, 400), und nur bei `supply = 'perUnit'`.
 
 ### 4.4 `co2_tenant_reliefs`: Angaben je Mietverhältnis laut Messdienst (optional)
 
@@ -290,7 +323,7 @@ Optional die Grundlagen aus der Mieterrechnung: `emissions_kg`, `co2_cost_cents`
 ### 4.6 Gemeinsames Modell (`shared/types.ts`)
 
 - `HeatingEnergy`, `Co2Method`, `Co2Restriction`, `Co2Statement`, `Co2Delivery`, `Co2Refund`.
-- `Property.heatingEnergy?: HeatingEnergy | null`.
+- `HeatingPlant` (4.1), mit #99 abgestimmt.
 - `LandlordReason` bekommt `'co2Share'` (und in der späten PR `'co2Refund'`).
 - `SettlementRow` bekommt `kind?: 'co2Relief' | 'co2Refund'`. Die Zeile hat keine Kostenposition; `costItemId` ist `co2:<statementId>`. Abrechnung.tsx (Belegsuche) und tenantFolder.ts sind darauf zu prüfen.
 - `Settlement.co2?: Co2Assessment[]` (je Anlage), optional für vorher abgeschlossene Abrechnungen. Inhalt:
@@ -305,7 +338,7 @@ Optional die Grundlagen aus der Mieterrechnung: `emissions_kg`, `co2_cost_cents`
 
 ### 4.7 Schnappschuss, Routen
 
-- **snapshot.ts:** Die Datensätze des Jahres samt Zeilen, Einheiten und Einzelwerten werden nach Objekt und `year` eingegrenzt; sie tragen ihr Jahr als Feld. Für die Vorbelegung des Anfangsbestands kommt der Endbestand des Vorjahres dazu. Außerdem `property.heatingEnergy`.
+- **snapshot.ts:** Die Datensätze des Jahres samt Zeilen, Einheiten und Einzelwerten werden nach Objekt und `year` eingegrenzt; sie tragen ihr Jahr als Feld. Für die Vorbelegung des Anfangsbestands kommt der Endbestand des Vorjahres dazu. Außerdem die Heizanlagen des Objekts samt Einheiten und der Zuordnung der Positionen.
 - **Routen:**
   - `GET` und `PUT /api/co2/:year?property=` als Liste der Datensätze des Jahres samt Zeilen. Geschrieben wird ganz oder gar nicht in einer Transaktion durch `writeData`.
   - `DELETE /api/co2/:year/:id`.
@@ -324,11 +357,16 @@ Neue Datei `server/src/co2.ts` mit reinen Funktionen. Der Einbau erfolgt in `com
 1. **Anwendbar?**
    - Regel `co2-split`, geprüft am **Beginn des tatsächlichen Zeitraums** (`period_from` ≥ 2023-01-01, § 11 Abs. 2 S. 1). Liegt der Beginn davor, wird nichts aufgeteilt und kein Hinweis gegeben. Damit feuert eine übernommene Abrechnung 05/2022–04/2023 nicht fälschlich.
    - Brennstoff fossil oder Fernwärme.
+   - **Ohne Datensatz** ist der Zeitraum unbekannt. Für das Mietfuchs-Jahr 2023 gibt es deshalb nur den Hinweis `co2.missing-first-year`, denn eine Abrechnung 05/2022–04/2023 liegt dort und fällt nicht unter das Gesetz. Ab 2024 beginnt jeder Zwölfmonatszeitraum, der in dem Jahr endet, nach dem 01.01.2023, und es gilt `co2.missing`.
    - Kein `district_ets_new` und kein § 9 `both`. Sonst wird nichts aufgeteilt, mit Grund im Ausweis.
 2. **Zuordnung zum Mietfuchs-Jahr:** Der Datensatz steht im Jahr derselben Heizpositionen, auf die er sich bezieht. Das Formular schlägt das Jahr vor, in dem der Zeitraum **endet**, denn dann wird abgerechnet. Die Regel steht im Lexikon (`co2Period`).
 3. **Fläche** = `area_m2` oder die Vorgabe: Σ `areaM2` der Einheiten der Anlage, die Wohnungen sind (`isDwelling`) und an einer Heizposition teilnehmen oder eine Lieferzeile nach F8 haben. Bei F8 zählen nur vermietete Wohnungen („vermietet er … deren Gesamtwohnfläche“). Garagen bleiben draußen. Die Herkunft der Fläche wird ausgewiesen.
 4. **Emissionen E und Kosten C**, je nach Brennstoff:
-   - **Gas, Fernwärme, Kohle:** Σ `emissions_kg × share/1000` und Σ `round(co2_cost_cents × share/1000)`. Der Anteil wird **auf den tatsächlichen Zeitraum** tagesgenau vorgeschlagen.
+   - **Gas, Fernwärme, Kohle:** Σ `emissions_kg × share/1000` und Σ `round(co2_cost_cents × share/1000)`. Der Anteil wird **auf den tatsächlichen Zeitraum** tagesgenau vorgeschlagen: Tage der Überschneidung / Tage der Rechnung. Bei Gas und Fernwärme ist der Rechnungszeitraum Pflicht.
+   - **Abdeckung:** D_c = Tage des Abrechnungszeitraums, die mindestens eine Rechnung abdeckt; D = alle Tage. Ist D_c < D, werden E und C **tagesgleich auf D hochgerechnet** (× D/D_c), und `co2.period-uncovered` nennt die fehlenden Tage mit der Bitte, die Folgerechnung einzutragen, sobald sie da ist.
+     - **Begründung:** § 5 Abs. 1 S. 5 verlangt die Emissionen des vereinbarten Zeitraums. Fehlende Tage wegzulassen ergäbe einen kleineren Wert (niedrigere Stufe) **und** kleinere Kosten C, beides zulasten des Mieters. Hochrechnen ist die einzige Umrechnung, die mit den vorhandenen Rechnungen den ganzen Zeitraum erfasst, und im Zweifel die mieterfreundliche. Der BMWK-Rechner verfährt bei Teilzeiträumen ebenso.
+     - Tagesgleich und nicht nach Gradtagen (11.4).
+     - **Beispiel:** Rechnung 15.03.2025–14.03.2026, Zeitraum 01.05.2025–30.04.2026. Überschneidung 318 Tage, Anteil 318/365 = 871 ‰, fehlend 47 Tage (15.03.–30.04.2026), Hochrechnung × 365/318. Im Ergebnis zählt die Rechnung voll, bis die Folgerechnung eingetragen ist.
    - **Öl, Flüssiggas:** Bestandsrechnung (5.2).
    - **Zeilen mit `invoice_date` vor 2023-01-01:** kg zählen, € zählen 0, dazu der Hinweis `co2.fuel-before-2023` (11.3).
 5. **Wert:** `tenths = Math.floor(E × 10 / Fläche + 0,5 + 1e-9)`, also kaufmännisch auf eine Stelle.
@@ -364,7 +402,7 @@ Gesetzesbegründung laut GdW-Arbeitshilfe: Bestand zu Beginn und Ende erfassen. 
 | **Endbestand** | 1.800 l | aus der Lieferung vom 10.10. | |
 
 - **Verbrauch:** 5.700 l, davon 700 l aus der Lieferung vom 10.10.
-- **E** = 15.254,8 kg, also 50,85 → **50,8** → Vermieter 80 %.
+- **E** = 15.254,8 kg (aus den gerundeten Tabellenwerten 15.254,9), also 50,849… → **50,8** → Vermieter 80 %.
 - **C** = 525,49 + 122,61 = **648,10 €**, **L = 518,48 €**.
 - Der Endbestand trägt 4.817,3 kg und 315,30 € ins Jahr 2026.
 - **Nach Lieferungen** gerechnet wären es 49,1 kg/m² (ebenfalls 80 %), aber C = 963,40 € und L = 770,72 €, also **252 € zu viel** zulasten des Vermieters. In einem Jahr ohne Lieferung wäre L = 0.
@@ -373,7 +411,7 @@ Gesetzesbegründung laut GdW-Arbeitshilfe: Bestand zu Beginn und Ende erfassen. 
 
 ### 5.3 Abzug als eigene Zeile (Methoden `serviceShown`, `selfAfterService`, `self`)
 
-**Topf** einer Anlage: Positionen der Kostenart `HEATING_CATEGORY` im Jahr, deren Verteilbasis in den Einheiten der Anlage liegt.
+**Topf** einer Anlage: Positionen der Kostenart `HEATING_CATEGORY` im Jahr, die der Anlage zugeordnet sind (4.1). Ohne Zuordnung zählen die Positionen, deren Verteilbasis in den Einheiten der Anlage liegt. Reicht die Basis einer Position in zwei Anlagen → `co2.item-spans-plants` (error): Die Position gehört dann zu keinem Topf und mindert keinen Abzug, und der Text bittet, sie je Anlage aufzuteilen (Teilnehmer) oder zuzuordnen.
 
 - Die Kostenart enthält **nur Heiz- und Warmwasserkosten** einschließlich Heiznebenkosten (Betriebsstrom, Wartung, Messdienst). Kaltwasser und Hausnebenkosten aus einer Komplettabrechnung gehören in ihre eigenen Kostenarten. So steht es im Formular und in der Anleitung (A8).
 - Direktzuordnungen gehören nur über F8 dazu.
@@ -385,13 +423,18 @@ Gesetzesbegründung laut GdW-Arbeitshilfe: Bestand zu Beginn und Ende erfassen. 
 - A = Σ der Topfbeträge;
 - r_t = ‰/1000 × C_zentral × x_t / A.
 
-Bei `serviceShown` mit Einzelwerten gilt r_t = der eingetragene Wert. Fehlt einer → `co2.reliefs-missing`, und der fehlende Wert wird proportional ergänzt.
+Bei `serviceShown` mit Einzelwerten gilt r_t = der eingetragene Wert. Vorher wird geprüft:
+
+- **Σ r_t ≤ L** und **r_t ≤ x_t** für jeden Mieter (kein Mieter bekommt mehr gutgeschrieben, als er an Heizkosten trägt).
+- Verletzt ein Wert das → `co2.reliefs-invalid` (error). Die Einzelwerte werden dann verworfen, und es gilt die proportionale Formel oben.
+- Fehlt ein Wert für einen Mieter → `co2.reliefs-missing` (warning), und dieser eine Wert wird proportional ergänzt.
 
 **Gesonderte Versorgung (F8):** Für jede Wohnung u mit Lieferzeilen gilt:
 
-- R_u = ‰/1000 × C_u,
-- verteilt auf die Mietverhältnisse der Wohnung im Verhältnis ihrer exakten Anteile an den Direktpositionen der Heizkostenart dieser Wohnung.
-- Fehlt eine solche Position → `co2.exceeds-heating` für diese Wohnung.
+- A_u = Σ der Beträge der Direktpositionen der Heizkostenart, die dieser Wohnung zugeordnet sind (ihre Gasrechnung);
+- x_t = exakter Anteil des Mietverhältnisses t an diesen Positionen;
+- **r_t = ‰/1000 × C_u × x_t / A_u**, ausdrücklich **ohne Normierung** auf die Mietverhältnisse. Fällt ein Teil von A_u auf Leerstand, bleibt der entsprechende Teil des Vermieteranteils ohne Buchung beim Vermieter, wie bei der zentralen Anlage.
+- Gibt es keine solche Position oder ist C_u > A_u → `co2.exceeds-heating` für diese Wohnung.
 
 **Gesamtbetrag und Rundung:**
 
@@ -406,39 +449,65 @@ Bei `serviceShown` mit Einzelwerten gilt r_t = der eingetragene Wert. Fehlt eine
 
 ### 5.4 Vorwegabzug durch den Messdienst (Methode `serviceDeducted`)
 
-Hier wird **nichts von Mietern abgezogen**. Die Einzelbeträge (`amounts`) sind die Nettobeträge des Messdienstes. Neu ist nur, wie der Rest beim Vermieter zerlegt wird.
+Hier wird **nichts von Mietern abgezogen**. Die Einzelbeträge (`amounts`) sind die Nettobeträge des Messdienstes. Neu ist, wie der Rest beim Vermieter zerlegt wird, und eine harte Probe.
 
-**Voraussetzung:** Die Topfposition hat den Schlüssel `amounts`, und es gibt **eine** Topfposition. Bei mehreren Positionen gilt die erste nach Kennung, dazu ein Hinweis. Bei anderem Schlüssel (`external`, `meter`, …) ist `serviceDeducted` nicht wählbar; der Server antwortet mit 400 und Begründung. Mit `external` bekäme der Mieter den ganzen eigenen Anteil, also brutto. Eine vermietete Eigentumswohnung mit Vorwegabzug der Gemeinschaft wird deshalb als `amounts` mit dem Nettobetrag des Nutzers erfasst; so sagt es die Anleitung.
+**Wie die Methode gewählt wird:** über eine **sichtbare Tatsache und ohne Vorgabe** (6.1). „Steht in der Kostenaufstellung eine Zeile wie ‚Abzüglich CO₂-Kosten Vermieter‘ oder beim Mieter ‚vom Vermieter übernommen‘?“
 
-**Empfänger:** In `landlordRecipients` kommt ein Grund **`co2Share`** dazu. Er wird mit `take()` **vor** `amountsRest` bedient:
+- **Ja** → `serviceDeducted`.
+- **Nein, die CO₂-Kosten sind nur ausgewiesen** → `serviceShown`.
 
-- Der rohe Wert ist L × (Σ Nettobeträge der Mietverhältnisse + Σ Nettobeträge leerer oder fremder Einheiten) / Σ alle Nettobeträge.
-- Der Teil von L, der auf **selbstgenutzte** Wohnungen entfällt, also L × selfNet / Σ Netto, geht zu `selfUse` und ist damit in der Steuer privat.
-- Weil der Messdienst netto **proportional zu brutto** kürzt (Netto_i = Brutto_i × (1 − L/A)), ist diese Zerlegung exakt und keine Näherung.
-- Gerundet wird mit allen anderen Empfängern in **einem** Restverfahren (#203).
+**Voraussetzung:** Die Position `service_cost_item_id` hat den Schlüssel `amounts`. Bei einem anderen Schlüssel (`external`, `meter` …) antwortet der Server mit 400 und Begründung. Mit `external` bekäme der Mieter den ganzen eigenen Anteil, also brutto. Eine vermietete Eigentumswohnung mit Vorwegabzug der Gemeinschaft wird deshalb als `amounts` mit dem Nettobetrag erfasst; so sagt es die Anleitung. Hat der Topf genau eine Position, ist sie die Vorgabe für `service_cost_item_id`.
 
-**Summenprüfung `co2.amount-net`** (warning):
+**Harte Probe `co2.sum-check`** (error), über **alle** Topfpositionen der Anlage, Toleranz 1 € für die Rundung des Messdienstes:
 
-- Liegt Betrag − Σ Einzelbeträge − Σ Eigenbeträge unter L − 1 €, enthält der Betrag den Vermieteranteil vermutlich nicht. Dann fehlen L in der Steuerübersicht, und `co2Share` könnte nicht ganz bedient werden.
-- Der Text nennt den richtigen Betrag (Σ + L) und die Fundstelle in der Messdienstabrechnung („Abzüglich CO₂-Kosten Vermieter“).
-- **Die Verteilung bleibt richtig**, denn die Mieter zahlen ihre Nettobeträge. Nur die Werbungskosten wären zu niedrig.
+- `serviceDeducted`: Σ Topfbeträge = **S + L**.
+- `serviceShown`: Σ Topfbeträge = **S**.
+- Zusätzlich: Σ eingetragene Einzel- und Eigenbeträge ≤ S + 1 €.
 
-**Ausweis:** Je Mieter steht der Mieteranteil („in Ihren Heizkosten enthalten“) und „vom Vermieter übernommen“. Die Werte kommen aus `co2_tenant_reliefs`, sonst gilt L × Netto_t / Σ Netto als Anzeigewert, gerundet und ohne Buchung. Dazu kommen Einstufung und Grundlagen laut Messdienst und der Satz „Der Anteil des Vermieters ist in den Heizkosten oben bereits abgezogen.“ Im Grundsatz genügt die Messdienstabrechnung als Anlage; Mietfuchs wiederholt den Ausweis trotzdem, weil er nichts kostet und die Anlage fehlen kann.
+**Scheitert die Probe**, wird die CO₂-Buchung dieser Anlage nicht ausgeführt: kein `co2Share`, keine Abzugszeilen. Die Mieter zahlen ihre Einzelbeträge wie eingetragen. Der Ausweis wird gedruckt. Der Text der Meldung nennt beide Deutungen mit Zahlen, zum Beispiel: „Ihre Positionen ergeben 3.845,51 €. Mit Abzugszeile müssten es S + L = 3.933,01 € sein, ohne Abzugszeile S = 3.845,51 €. Passt ‚ohne‘, ist die Antwort auf die Frage nach der Abzugszeile vermutlich ‚nein‘. Steht die Zeile wirklich da, erhöhen Sie den Betrag auf 3.933,01 €; das ist der bezahlte Betrag.“
 
-**Steuer:** Der Betrag ist brutto, also sind die Werbungskosten richtig, L eingeschlossen. Die Zeile `co2Share` steht im Vermieteranteil und ist abziehbar. Der Teil für die eigene Wohnung ist privat.
+Die Probe fängt damit:
+
+| Irrtum | Was die Probe sieht |
+|---|---|
+| „Ja“ bei Bruttobeträgen | Betrag = S, verlangt wäre S + L → Fehler |
+| „Ja“ bei Nettobetrag der Position (#209) | Betrag = S, verlangt wäre S + L → Fehler, mit dem richtigen Betrag |
+| „Nein“, obwohl abgezogen wurde, bei richtig erfasstem Bruttobetrag | Betrag = S + L, verlangt wäre S → Fehler |
+| Leerstand, fremde Einheiten, fehlende Eigenbeträge | spielen keine Rolle, denn die Probe läuft gegen S und nicht gegen die eingetragenen Einzelbeträge |
+
+**Was sie nicht fangen kann:** „Nein“, obwohl abgezogen wurde, **und** gleichzeitig Betrag = S. Dann ist alles in sich stimmig netto, und Mietfuchs zöge L ein zweites Mal ab. Zahlen allein unterscheiden das nicht. Dagegen helfen nur die Frage nach der sichtbaren Zeile mit Beispielzeile, der Hilfetext an der Heizposition („bezahlter Betrag vor Abzug“) und künftig das Auslesen der Abzugszeile durch die KI (#103).
+
+**Empfänger** in der Position `service_cost_item_id` (`landlordRecipients`, beide Teile über `take()` und damit durch das begrenzt, was nach den Einzel- und Eigenbeträgen übrig ist):
+
+1. **Eigennutzungsteil** L_self = `service_self_landlord_cents`, falls ausgewiesen. Sonst gilt die **Näherung** L × selfNet / S, wobei selfNet die Σ der Eigenbeträge ist. Die Näherung ist exakt nur, wenn alle Topfkosten nach demselben linearen Schlüssel verteilt sind. Nutzerbezogene Gebühren, Warmwasser und Strom in derselben Position oder mehrere Topfpositionen verschieben sie leicht. Gebucht wird über `take()` in `selfUse`, ist also in der Steuer privat.
+2. **`co2Share`** = L − L_self, über `take()`. Das ist der abziehbare Teil.
+3. **`amountsRest`** = was dann übrig ist, also der Anteil von S ohne Einzelbetrag (Leerstand, außerhalb). Er kann wegen `take()` nicht negativ werden.
+
+Gerundet wird mit allen anderen Empfängern in **einem** Restverfahren (#203).
+
+**Ausweis:** Je Mieter stehen der Mieteranteil („in Ihren Heizkosten enthalten“) und „vom Vermieter übernommen“. Die Werte kommen aus `co2_tenant_reliefs`. Sonst gilt die Anzeigenäherung L × Netto_t / S, gerundet und ohne Buchung. Dazu Einstufung und Grundlagen laut Messdienst und der Satz „Der Anteil des Vermieters ist in den Heizkosten oben bereits abgezogen.“
+
+**Steuer:** Bei bestandener Probe ist Σ Topf = S + L, also sind die Werbungskosten der bezahlte Betrag, L eingeschlossen. `co2Share` steht im Vermieteranteil und ist abziehbar, L_self ist privat.
 
 **Beispiel A (Techem-Muster, öffentlich):**
 
 - Anlieferung Brennstoff 3.540,00 €, abzüglich CO₂-Kosten Vermieter −87,50 € (250,00 € × 35 %; 46,4 kg/m² → 70 %, halbiert nach § 9).
-- Summe der Nutzerkosten Heizungsanlage 3.845,51 €.
-- **Betrag der Position** = 3.845,51 + 87,50 = **3.933,01 €**, Einzelbeträge Σ 3.845,51 €.
+- S = Summe der Nutzerkosten Heizungsanlage 3.845,51 €.
+- **Betrag der Position** = 3.933,01 €, Probe bestanden.
 - **Ergebnis:** `co2Share` 87,50 €, `amountsRest` 0, kein Mieter gekürzt.
 
-**Beispiel B (Eigennutzung):**
+**Beispiel B (Eigennutzung, Näherung):**
 
-- Messdienst netto: Mieterin A 1.200 €, Mieter B 1.100 €, eigene Wohnung 600 €; L = 100 €.
-- Betrag = 3.000 €.
-- **Ergebnis:** `co2Share` = 100 × 2.300 / 2.900 = 79,31 €; Eigenanteil = 600 + 20,69 = 620,69 €.
+- Messdienst netto: Mieterin A 1.200 €, Mieter B 1.100 €, eigene Wohnung 600 €; S = 2.900 €, L = 100 €, Betrag 3.000 €.
+- **Ergebnis:** L_self = 100 × 600 / 2.900 = 20,69 €, `co2Share` = 79,31 €, Eigenanteil = 620,69 €.
+- **Mit ausgewiesenem L_self = 25,00 €:** `co2Share` 75,00 €, Eigenanteil 625,00 €.
+
+**Beispiel C (Leerstand):**
+
+- Wie B, aber die dritte Wohnung steht leer, und ihr Messdienstbetrag von 600 € ist nicht eingetragen.
+- Probe: 3.000 = 2.900 + 100, bestanden.
+- **Ergebnis:** `co2Share` 100 €, `amountsRest` (Leerstand) 600 €.
+- Die Prüfung der zweiten Fassung hätte hier nichts gesehen.
 
 ### 5.5 Anteil des Mieters an den CO₂-Kosten (Ausweis)
 
@@ -491,15 +560,15 @@ Bei `serviceDeducted` trägt die Heizzeile des Mieters einen zusätzlichen Schri
 Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt in `client/src/co2Form.ts`, ohne DOM prüfbar; Auswahlfelder werden aus Optionslisten gespeist.
 
 1. **„Womit wird geheizt?“**
-   - Energieträger, vorbelegt aus dem Objekt und dort mitgespeichert, wenn es leer war.
+   - Energieträger, vorbelegt aus der Heizanlage (4.1) und dort mitgespeichert, wenn er leer war. Gibt es noch keine Anlage, legt die Antwort die gedachte Anlage des Objekts an.
    - Bei Wärmepumpe, Holz oder Pellets oder ohne Zentralheizung kommt ein Satz und Schluss.
 2. **„Wer hat die CO₂-Kosten aufgeteilt?“**
-   - **Der Messdienst oder die Hausverwaltung.** Dann die Pflichtfrage **„Hat er den Anteil des Vermieters schon von den Heizkosten abgezogen?“**:
-     - **Ja (Vorgabe).** Erkennbar an „Abzüglich CO₂-Kosten Vermieter“ in der Kostenaufstellung oder „vom Vermieter übernommen“ beim Mieter.
-     - **Nein, nur ausgewiesen.** So ist es oft bei Eigentümergemeinschaften.
+   - **Der Messdienst oder die Hausverwaltung.** Dann die Pflichtfrage, **ohne Vorauswahl**: **„Steht in der Kostenaufstellung eine Zeile wie ‚Abzüglich CO₂-Kosten Vermieter‘, oder in Ihrer Abrechnung je Mieter ‚vom Vermieter übernommen‘?“** Darunter steht eine Beispielzeile aus dem Techem-Muster: „Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50“.
+     - **Ja, eine solche Zeile steht da.**
+     - **Nein, die CO₂-Kosten sind nur ausgewiesen.** So ist es oft bei Eigentümergemeinschaften.
 
-     Danach folgen die Felder in der Reihenfolge der Messdienstabrechnung: Zeitraum, CO₂ gesamt (kg), Fläche, kg je m², Anteil Vermieter (%), CO₂-Kosten gesamt (€), davon Vermieter (€). Aufklappbar: „je Mieter, falls ausgewiesen“.
-   - **Niemand. Die Abrechnung des Messdienstes enthält keine CO₂-Aufteilung.** Dann ein Satz mit Betrag: „Ihre Mieter dürfen ihre Heizkosten um 3 % kürzen, zusammen … €. Sie können die Aufteilung hier selbst nachholen; melden Sie dem Messdienst künftig kg und € von der Lieferantenrechnung.“ Danach folgen die Rechnungsfelder wie unten.
+     Danach folgen die Felder in der Reihenfolge der Messdienstabrechnung: Zeitraum, **Summe der Nutzerkosten Heizung und Warmwasser (S, Pflicht)**, CO₂ gesamt (kg), Fläche, kg je m², Anteil Vermieter (%), CO₂-Kosten gesamt (€), davon Vermieter (€). Aufklappbar: „je Mieter, falls ausgewiesen“ und „Ihre eigene Wohnung: vom Vermieter übernommen“. Unter den Feldern steht live das Ergebnis der Probe („Ihre Positionen: … € · erwartet: … €“).
+   - **Niemand. Die Abrechnung des Messdienstes enthält keine CO₂-Aufteilung.** In PR 1 ist das zunächst nur die Methode samt Warnung, die Rechnungsfelder kommen mit PR 2. Dann ein Satz mit Betrag: „Ihre Mieter dürfen ihre Heizkosten um 3 % kürzen, zusammen … €. Sie können die Aufteilung hier selbst nachholen; melden Sie dem Messdienst künftig kg und € von der Lieferantenrechnung.“ Danach folgen die Rechnungsfelder wie unten.
    - **Ich rechne die Heizung selbst ab (ohne Messdienst).**
 3. **Rechnungen** (bei den beiden letzten Methoden):
    - **Gas, Fernwärme:** Tabelle der Rechnungen mit Bezeichnung, Rechnungsdatum, Rechnungszeitraum, „CO₂ in kg“ und „CO₂-Kosten in €“. Der vorgeschlagene Anteil im Abrechnungszeitraum ist überschreibbar.
@@ -516,7 +585,7 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
 **An der Heizposition** (Kostenformular, Kostenart „Heizung und Warmwasser“, Schlüssel `amounts`):
 
 - Der Hilfetext sagt: „Betrag: was Sie bezahlt haben, also die Gesamtkosten **vor** ‚Abzüglich CO₂-Kosten Vermieter‘. Je Mieter: ‚Ihre Heizkosten + Ihre Warmwasserkosten‘, ohne Kaltwasser und Hausnebenkosten.“
-- Ist für das Jahr `serviceDeducted` gewählt, zeigt die Summenzeile „davon Vermieteranteil CO₂: …“ neben „Rest beim Vermieter“.
+- Ist für das Jahr `serviceDeducted` gewählt, zeigt die Summenzeile „davon Vermieteranteil CO₂: …“ neben „Rest beim Vermieter“ und das Ergebnis der Probe gegen S.
 
 ### 6.2 Abrechnung
 
@@ -530,7 +599,7 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
 
 ### 6.3 Weitere Stellen
 
-- **Stammdaten, Karte Objekt:** Feld „Heizung“.
+- **Stammdaten:** Karte „Heizung“ mit der Heizanlage (Energieträger, Art der Versorgung, ab der zweiten Anlage die versorgten Wohnungen). Den Aufbau der Karte bestimmt #99; der CO₂-Teil braucht nur die Felder aus 4.1.
 - **Cockpit:** Die Ampel liest die Hinweise. `co2.fuel-unknown` zählt mit; Ankündigung im CHANGELOG und in der Anleitung (A17).
 - **Anleitungen** (`shared/guides.ts`):
   - `meteringService` wird berichtigt (14.1).
@@ -546,14 +615,18 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
 
 | Code | Stufe | Wann | Betrag |
 |---|---|---|---|
-| `co2.missing` | warning | Zeitraum ab 2023 (ohne Datensatz: das Kalenderjahr), Heizung an Mieter abgerechnet, Energieträger fossil oder Fernwärme, keine Anlage deckt die Wohnung | 3 % je Mieter |
+| `co2.missing` | warning | Mietfuchs-Jahr ab 2024 ohne Datensatz (bzw. Zeitraum ab 2023 mit unvollständigem Datensatz), Heizung an Mieter abgerechnet, Energieträger der Anlage fossil oder Fernwärme | 3 % je Mieter |
+| `co2.missing-first-year` | hint | wie `co2.missing`, aber Mietfuchs-Jahr 2023 ohne Datensatz: Der Zeitraum kann 2022 begonnen haben. Der Text bittet, den Zeitraum einzutragen; beginnt er ab 01.01.2023, gilt die Warnung. | „falls ab 2023: 3 % je Mieter …“ |
 | `co2.fuel-unknown` | hint | wie oben, Energieträger unbekannt | „falls fossil: 3 % je Mieter …“ |
-| `co2.service-unsplit` | hint | Methode `selfAfterService`. Mietfuchs zieht ab und weist aus; ob ein nachgeholter Ausweis die Kürzung ausschließt, ist nicht entschieden (11.13). Empfehlung: dem Messdienst künftig kg und € melden. | „bis zu 3 % je Mieter …“ |
+| `co2.service-unsplit` | **warning** | Methode `selfAfterService` **ohne** eigene Aufteilung (keine Rechnungszeilen; in PR 1 immer so). Die Kürzung ist sicher. | 3 % je Mieter |
+| `co2.service-unsplit-healed` | hint | `selfAfterService` mit eigener Aufteilung. Mietfuchs zieht ab und weist aus; ob ein nachgeholter Ausweis die Kürzung ausschließt, ist nicht entschieden (11.13). Empfehlung: dem Messdienst künftig kg und € melden. | „bis zu 3 % je Mieter …“ |
 | `co2.incomplete` | warning | Fläche, kg oder (bei `service*`) Wert, ‰ oder L fehlen | 3 % |
 | `co2.exceeds-heating` | error | C > Topf, kein Topf, oder F8 ohne Direktposition | 3 % |
 | `co2.stock-invalid` | error | Endbestand > Anfangsbestand + Lieferungen | 3 % |
-| `co2.amount-net` | warning | `serviceDeducted`: Betrag enthält L nicht (5.4) | nennt den richtigen Betrag |
-| `co2.deducted-needs-amounts` | – | kein Hinweis, sondern eine 400 beim Speichern | – |
+| `co2.sum-check` | error | `service*`: Σ Topfbeträge ≠ S + L (Vorwegabzug) bzw. ≠ S, oder Σ Einzelbeträge > S (5.4). Die CO₂-Buchung entfällt. | nennt beide Deutungen mit Zahlen |
+| `co2.period-uncovered` | hint | Rechnungen decken den Zeitraum nicht ganz ab, es wurde hochgerechnet (5.1) | fehlende Tage, Faktor |
+| `co2.reliefs-invalid` | error | `serviceShown`: Σ Einzelwerte > L oder ein Wert > Heizanteil des Mieters; die Werte werden verworfen, proportional verteilt | – |
+| `co2.item-spans-plants` | error | Verteilbasis einer Heizposition reicht in zwei Anlagen | – |
 | `co2.stage-mismatch` | hint | Messdienstangaben passen nicht zur Tabelle (5.1 Schritt 9) | – |
 | `co2.reliefs-missing` | warning | `serviceShown`: Einzelwerte für manche Mieter fehlen | – |
 | `co2.pool-keys` | hint | Topfpositionen mit gemischten Schlüsseln | – |
@@ -595,7 +668,7 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
 
 ## 8. Umstieg und Migration
 
-- `0014_co2` (erzeugt): `CREATE TABLE` × 5 (`co2_statements`, `co2_statement_units`, `co2_deliveries`, `co2_tenant_reliefs`, später `co2_refunds` als `0015`) und `ADD COLUMN` nullbar. Vorher legt `backupBeforeMigrating` die Sicherung an. Die Marke wird im Test festgehalten, `embed-migrations` neu erzeugt.
+- `0014_co2` (erzeugt): `CREATE TABLE` für `co2_statements`, `co2_deliveries`, `co2_tenant_reliefs` und, falls #99 noch nicht gemergt ist, die Heizanlage mit ihrer Einheitenzuordnung (4.1), dazu `cost_items.heating_plant_id` (`ADD COLUMN`, nullbar). Später `co2_refunds` als `0015`. Vorher legt `backupBeforeMigrating` die Sicherung an. Die Marke wird im Test festgehalten, `embed-migrations` neu erzeugt.
 - Keine Datenanweisung; der eingefrorene Eingang bleibt unverändert.
 - Praxislauf vor dem Release. Der Smoke-Test bekommt `PUT /api/co2/2025` mit Lesen.
 - CHANGELOG „Unveröffentlicht“ mit Link auf #97 und dem Hinweis auf die neue Ampelmeldung. MIGRATION.md bleibt unverändert.
@@ -627,14 +700,17 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
   - 01.05.2027–30.04.2028 → f = 1, nicht 366/365.
   - Erstbezug 01.07.–31.12.2025 → f = 184/365 → Grenzen 6,05 / 8,57 / 11,09; der Wert 10,0 → 20 %.
   - Mieterwechsel und Eigentümerwechsel: kein Teiljahr.
-- **Gaszeile mit Rechnungszeitraum 15.03.2025–14.03.2026** auf 01.05.2025–30.04.2026: Der vorgeschlagene Anteil ist 318/365 Tage; nachrechnen und in Promille festschreiben.
+- **Gaszeile mit Rechnungszeitraum 15.03.2025–14.03.2026** auf 01.05.2025–30.04.2026: Anteil 318/365 = 871 ‰; fehlend 47 Tage → `co2.period-uncovered`, Hochrechnung × 365/318. Mit der Folgerechnung ab 15.03.2026 entfällt der Hinweis, und es wird nicht mehr hochgerechnet.
+- **`co2.missing-first-year`:** Mietfuchs-Jahr 2023 ohne Datensatz → Hinweis, keine Warnung. 2024 → `co2.missing`. Datensatz 05/2022–04/2023 → nichts.
 - **Öl-Bestand** wie 5.2:
-  - E = 15.254,8 kg, C = 648,10 €, L = 518,48 €, Endbestand 4.817,3 kg / 315,30 €;
+  - E = 15.254,8 kg (50,849… → 50,8), C = 648,10 €, L = 518,48 €, Endbestand 4.817,3 kg / 315,30 €;
   - Jahr ohne Lieferung: Verbrauch nur aus dem Bestand, L > 0;
   - Endbestand zu groß → error;
   - Bestand aus 2022: € 0, kg zählen.
-- **F8:** zwei Wohnungen mit eigener Gasrechnung; Einstufung über Σ kg / Σ Fläche; Abzug je Wohnung; Mieterwechsel in einer Wohnung teilt nach Direktanteilen.
-- **F9:** zwei Anlagen mit zwei Stufen; überlappende Wohnungsmengen → 400.
+- **F8:** zwei Wohnungen mit eigener Gasrechnung; Einstufung über Σ kg / Σ Fläche; r_t = ‰ × C_u × x_t / A_u. Mieterwechsel mit zwei Monaten Leerstand dazwischen: Die Summe der Abzüge ist kleiner als ‰ × C_u, und der Leerstandsteil wird nicht gebucht (keine Normierung).
+- **F9:** zwei Anlagen mit zwei Stufen; überlappende Anlagen → 400; Position über beide Anlagen → `co2.item-spans-plants`, keine Minderung durch sie.
+- **`serviceShown` mit Einzelwerten:** Σ > L → `co2.reliefs-invalid` und proportional; ein Wert > Heizanteil → ebenso.
+- **Sperren:** Öl mit `self` in PR 2 → 400; zweite Anlage oder `perUnit` vor PR 4 → 400.
 - **Fernwärme** mit `district_ets_new` → keine Aufteilung. **Wärmepumpe** → nichts.
 
 ### 9.2 Nachgerechnete Beispiele
@@ -644,10 +720,15 @@ Die Karte erscheint ab 2023, sobald es eine Heizposition gibt. Die Logik liegt i
   - **Verteilung** auf drei Mieter mit Bruttobeträgen 3.600 / 3.000 / 2.400 € (Methode `self`): exakt 185,7096 / 154,758 / 123,8064 € → **185,71 / 154,76 / 123,80 €**, zusammen 464,27 €.
 - **B2 (Heizöl 2024):** 59,5 → 95 %; C = 1.433,15 €; L = 1.361,49 €.
 - **B3 (Brennwertfalle):** 38,9 → 60 % gegen 43,0 → 70 % (Plausibilitätsprüfung).
-- **Beispiel A (Techem-Muster), `serviceDeducted`:** Betrag 3.933,01 €, Einzelbeträge 3.845,51 € → `co2Share` 87,50 €, kein Mieter gekürzt, Werbungskosten 3.933,01 €.
-  - **Gegenprobe A′:** Derselbe Bestand mit `serviceShown` und einem Betrag von 3.933,01 €, aber Bruttobeträgen je Nutzer. Dann gibt es eine Abzugszeile, und die Summe der Abzüge ist 87,50 €.
-  - **Fehlerfall A″:** Betrag 3.845,51 € bei `serviceDeducted` → `co2.amount-net` mit „richtig: 3.933,01 €“.
-- **Beispiel B (Eigennutzung, Vorwegabzug):** `co2Share` 79,31 €, Eigenanteil 620,69 €; die Steuerübersicht nimmt 620,69 € als privat.
+- **Beispiel A (Techem-Muster), `serviceDeducted`:** S = 3.845,51 €, Betrag 3.933,01 € → Probe bestanden, `co2Share` 87,50 €, kein Mieter gekürzt, Werbungskosten 3.933,01 €.
+  - **Gegenprobe A′:** `serviceShown`, Bruttobeträge je Nutzer mit S = Betrag = 3.933,01 € → Probe bestanden, Abzugszeilen zusammen 87,50 €.
+  - **Fehlerfall A″ („ja“ bei Nettobetrag der Position, #209):** Betrag 3.845,51 € → `co2.sum-check` mit „erwartet 3.933,01 €“, keine CO₂-Buchung.
+  - **Fehlerfall A‴ („ja“ bei Bruttobeträgen):** S = Betrag = 3.933,01 € (brutto), Antwort ja → Probe verlangt 4.020,51 € → `co2.sum-check`, Deutung „ohne“ passt.
+  - **Fehlerfall A⁗ („nein“, obwohl abgezogen, Betrag brutto richtig):** S = 3.845,51 €, Betrag 3.933,01 €, Antwort nein → Probe verlangt 3.845,51 € → `co2.sum-check`, Deutung „mit“ passt.
+  - **Benannte Lücke:** „nein“ und Betrag = S = 3.845,51 € → Probe bestanden, doppelter Abzug. Der Test hält fest, dass das so ist, damit eine spätere Erkennung (#103) es rot werden lässt.
+- **Beispiel B (Eigennutzung, Vorwegabzug):** Näherung → `co2Share` 79,31 €, Eigenanteil 620,69 €; mit ausgewiesenem L_self 25 € → 75,00 / 625,00 €. Die Steuerübersicht nimmt den Eigenanteil als privat.
+- **Beispiel C (Leerstand, Vorwegabzug):** `co2Share` 100 €, `amountsRest` 600 €.
+- **`take()`-Grenze:** Betrag netto erfasst und Eigenbetrag eingetragen: `amountsRest` wird nie negativ; die Probe meldet den Fehler.
 - **Reale Abrechnung, anonymisiert (`selfAfterService`):**
   - Hinweis mit 3 % von 4.276,51 € = 128,30 € über vier Mieter.
   - Gasrechnung umgerechnet auf Mai bis April.
@@ -660,7 +741,7 @@ Der Generator von #203 wird um zufällige Datensätze erweitert: alle Methoden, 
 - Σ Zeilen = Gesamtkosten.
 - 0 ≤ Abzug ≤ Heizanteil je Mieter.
 - R ≤ L + 0,5 ct.
-- **`serviceDeducted`: Kein Mieter zahlt etwas anderes als seinen Einzelbetrag**, und `co2Share` + `amountsRest` + Eigenanteil = Betrag − Σ Einzelbeträge.
+- **`serviceDeducted`: Kein Mieter zahlt etwas anderes als seinen Einzelbetrag**, und `co2Share` + `amountsRest` + Eigenanteil = Betrag − Σ Einzelbeträge; keine Vermieterzeile wird negativ.
 - **Kein doppelter Abzug:** Bei `serviceDeducted` gibt es nie eine Zeile `co2Relief`.
 - Ohne Datensatz ist jede Zahl identisch zum Stand ohne die Funktion.
 - Zwei Objekte rechnen unabhängig.
@@ -678,7 +759,7 @@ Der Generator von #203 wird um zufällige Datensätze erweitert: alle Methoden, 
 - **Prüfungen von Schema und Migration:** `schema.test.ts`, Migrationsmarke, `db-golden`, `db-changeover`.
 - **`glossary.test.ts`**, **`guides.test.ts`** (mit dem berichtigten Beispiel `meteringService`), **`anrede.test.ts`**.
 - **Client:**
-  - `co2Form.test.ts`: Vorbelegung, Pflichtfrage Vorwegabzug, Bestandsvorschau, Übernahme ohne Beträge.
+  - `co2Form.test.ts`: Vorbelegung, Pflichtfrage nach der Abzugszeile **ohne Vorauswahl**, Pflichtfeld S, Live-Probe, Bestandsvorschau, Übernahme ohne Beträge.
   - jsdom: Auswahlfelder entsprechen dem gespeicherten Wert.
   - `notices.test.ts`: Ampel.
 
@@ -733,24 +814,18 @@ Jede mit der Übergangsregel, nach der Mietfuchs bis zur Klärung verfährt.
 
 ---
 
-## 12. Schnittstelle zum Folgevorhaben „Abrechnungszeitraum ≠ Kalenderjahr“ (#208)
+## 12. Schnittstelle zu #208 (Abrechnungszeitraum ≠ Kalenderjahr)
 
-Der abweichende Abrechnungszeitraum ist ein eigenes Vorhaben in #208 und nicht Teil von #97. Hier steht nur, wo der CO₂-Teil daran anschließt.
+Der abweichende Abrechnungszeitraum ist das eigene Vorhaben #208 (Zweig `feat/abrechnungszeitraum`). Die Schnittstelle besteht aus **einem Feldpaar und einer Regel**.
 
-**Was der CO₂-Teil bis dahin tut:**
+| | bis #208 | mit #208 |
+|---|---|---|
+| **Feldpaar** `co2_statements.period_from`, `period_to` (Pflicht) | vom Nutzer, Vorgabe 01.01.–31.12. des Mietfuchs-Jahres | Vorgabe ist der Abrechnungszeitraum des Objekts. Weicht er ab, gibt es den Hinweis `co2.period-not-calendar`, umbenannt in `co2.period-differs` (Rechtsfrage 11.14). |
+| **Regel** Zuordnung des Datensatzes | zum Mietfuchs-Jahr, in dem der Zeitraum endet (`year`) | `year` wird durch die Kennung des Abrechnungszeitraums ersetzt. Das ist eine Migration der Zuordnung, die Werte bleiben. |
 
-- Er führt den **tatsächlichen Zeitraum** je Datensatz (`period_from`, `period_to`, Pflicht).
-- Daran entscheidet er die Anwendbarkeit (Beginn ab 01.01.2023), den Kürzungsfaktor (zwölf Monate ab Beginn, Schaltjahre eingeschlossen) und die vorgeschlagenen Lieferanteile.
-- Den Datensatz ordnet er dem Mietfuchs-Jahr zu, in dem der Zeitraum endet, und sagt das mit `co2.period-not-calendar`.
-- `ruleCoverage` ruft er mit dem Zeitraum auf, nicht mit dem Jahr.
+**Gerechnet wird in beiden Fällen nur mit dem Feldpaar:** Anwendbarkeit (Beginn ab 01.01.2023), Kürzungsfaktor (zwölf Monate ab Beginn), Abdeckung und Lieferanteile. Dasselbe gilt für `ruleCoverage`.
 
-**Was #208 an dieser Stelle ändert:**
-
-- Aus der Zuordnung „Jahr, in dem der Zeitraum endet“ wird ein Verweis auf den Abrechnungszeitraum des Objekts.
-- Die Vorgabe für `period_from` und `period_to` kommt dann von dort statt vom 01.01. bis 31.12.
-- Die gespeicherten Daten bleiben gültig, eine Datenmigration für den CO₂-Teil ist nicht nötig.
-
-Offene Rechtsfrage 11.14 (abweichender Heizzeitraum ohne Vereinbarung) gehört zu #208.
+**Was der CO₂-Teil von #208 braucht:** je Objekt die Abrechnungszeiträume als [Beginn, Ende] mit einer Kennung. Mehr nicht.
 
 ---
 
@@ -761,15 +836,15 @@ Gestapelt auf `main`. Jede PR bekommt eine Durchsicht mit frischem Kontext, der 
 | PR | Inhalt | Schätzung |
 |---|---|---|
 | **0: Anleitung Messdienst** (`Refs #209`) | Text und Beispiel der Anleitung `meteringService` auf den bezahlten Betrag vor Vorwegabzug (14.2 Punkt 1), guides.test.ts. Unabhängig von allem anderen, kann sofort. | 0,5 Tage |
-| **1: Messdienst** (`Refs #97`, `Refs #209`) | Migration 0014 (alle Tabellen außer `co2_refunds`), Typen, Repository, Routen, Schnappschuss. Methoden `serviceDeducted` und `serviceShown`: `co2Share` in `landlordRecipients` mit dem Anteil der Eigennutzung, Summenprüfung `co2.amount-net`, Abzugszeile für `serviceShown`. Ausweis mit Druckblock. Hinweise `co2.missing`, `fuel-unknown`, `service-unsplit` (zunächst als Methode ohne eigene Rechnung, mit Betrag), `incomplete`, `stage-mismatch`, `reliefs-missing`, `period-not-calendar`. Zeitraum je Datensatz für die Anwendbarkeit. Feld am Objekt, Karte auf Kosten (Schritt 1, 2, 4, 5), Hilfetext an der Heizposition. **Berichtigung der Anleitung `meteringService`** (14.1). Regeln `co2-split`, Lexikon `co2Split`, `co2Stage`, `co2Deducted`, `co2Period`, `co2Area`. Tests: Beispiel A, A′, A″, B, Invarianten. | 4–5 Tage |
-| **2: Selbst aufteilen, Gas und Fernwärme** | Methoden `self` und `selfAfterService` mit Lieferzeilen, Umrechnung auf den Zeitraum, Einstufung, Kürzungsfaktor, Abzugszeile (5.3), § 8, § 9, Fernwärme-ETS, `pool-keys`, Bezug der 15 % (A9). Tests B1, Zeitraum, reale Abrechnung. | 2–3 Tage |
+| **1: Messdienst** (`Refs #97`, `Refs #209`) | Migration 0014 (alle Tabellen außer `co2_refunds`), Typen, Repository, Routen, Schnappschuss. Heizanlage mit den Feldern aus 4.1 (falls #99 sie noch nicht hat). Methoden `serviceDeducted` und `serviceShown`: Pflichtfrage ohne Vorgabe, S als Pflichtfeld, harte Probe `co2.sum-check`, `co2Share` und Eigennutzungsteil über `take()`, Abzugszeile für `serviceShown` mit `reliefs-invalid`. Ausweis mit Druckblock. Hinweise `co2.missing`, `missing-first-year`, `fuel-unknown`, `service-unsplit` (warning, Methode ohne eigene Rechnung), `incomplete`, `stage-mismatch`, `reliefs-missing`, `period-not-calendar`, `item-spans-plants`. **Sperren:** `self*`-Methoden außer der Wahl „nicht aufgeteilt“, eine zweite Anlage und `perUnit` → 400 bis PR 2 bzw. PR 4. Zeitraum je Datensatz für die Anwendbarkeit. Feld „Heizung“, Karte auf Kosten (Schritt 1, 2, 4, 5), Hilfetext an der Heizposition. **Berichtigung der Anleitung `meteringService`** (14.1). Regeln `co2-split`, Lexikon `co2Split`, `co2Stage`, `co2Deducted`, `co2Period`, `co2Area`. Tests: Beispiele A bis A⁗, B, C, benannte Lücke, Invarianten. | 4,5–5,5 Tage |
+| **2: Selbst aufteilen, Gas und Fernwärme** | Methoden `self` und `selfAfterService` mit Lieferzeilen, Umrechnung auf den Zeitraum, Einstufung, Kürzungsfaktor, Abdeckung und Hochrechnung mit `period-uncovered`, Abzugszeile (5.3), § 8, § 9, Fernwärme-ETS, `pool-keys`, `service-unsplit-healed`, Bezug der 15 % (A9). **Sperre:** Öl und Flüssiggas mit `self*` → 400 bis PR 3. Tests B1, Zeitraum, Abdeckung, reale Abrechnung. | 2,5–3 Tage |
 | **3: Öl und Flüssiggas** | Bestandsrechnung (5.2), Vorbelegung aus dem Vorjahr, `stock-invalid`, `fuel-before-2023`. | 1,5 Tage |
-| **4: Etagenheizung auf Vermietervertrag und mehrere Anlagen** | F8 und F9, `co2_statement_units`, Prüfung der Mengen. | 1,5–2 Tage |
+| **4: Etagenheizung auf Vermietervertrag und mehrere Anlagen** | F8 (`supply = 'perUnit'`, Formel ohne Normierung) und F9 über die Heizanlagen (4.1); Prüfung überlappender Anlagen; Sperren aufheben. | 1,5–2 Tage |
 | **5: Plausibilität** | Preise 2023–2026 und ETS-Preise als Daten mit Fundstelle, EBeV-Faktoren, Hinweis `co2.cost-implausible` mit Erklärung der Brennwertfalle. | 0,5–1 Tag |
 | **6: Selbstversorger-Erstattung** | `co2_refunds` (Migration 0015), Gutschriftzeile, drei Fristhinweise, § 8 und § 9 in der Rechenhilfe, Regel `co2-self-supply`, Lexikon `co2Refund`. | 2 Tage |
 | **7: KI (optional, an #103)** | Messdienst-PDF: Zeitraum, Nutzerzeilen getrennt nach Kostenblöcken, CO₂-Block gesamt und je Nutzer, **ob ein Vorwegabzug in der Kostenaufstellung steht** (füllt die Methode); Lieferantenrechnung: § 3 Abs. 1 Nr. 1–4. | 1–2 Tage |
 
-**Summe:** etwa 13,5–17,5 Arbeitstage. PR 1 allein schließt die Lücke beim häufigsten Fall und macht den fehlenden Abzug sichtbar. PR 1 und 2 decken F1–F5, F7, F10–F15 ab.
+**Summe:** etwa 14,5–18 Arbeitstage. PR 1 allein schließt die Lücke beim häufigsten Fall und macht den fehlenden Abzug sichtbar. PR 1 und 2 decken F1–F5, F7, F10–F15 ab.
 
 ---
 
@@ -790,7 +865,7 @@ Die Anleitung `meteringService` (shared/guides.ts) sagt: „Unter ‚Betrag €�
    - Schritt 2: „Je Mieter ‚Ihre Heizkosten‘ und ‚Ihre Warmwasserkosten‘; Kaltwasser und weitere Nebenkosten der Messdienstabrechnung als eigene Positionen mit ihrer Kostenart.“
    - Das Beispiel wird auf eine Abrechnung mit Vorwegabzug umgestellt; guides.test.ts rechnet es nach.
    - Unter „Worauf Sie achten müssen“ steht der CO₂-Satz ohne „rechnet das noch nicht“.
-2. **Die Summenprüfung `co2.amount-net`** (PR 1) findet bestehende Bestände, sobald jemand die CO₂-Angaben des Messdienstes einträgt. Sie nennt den Betrag, auf den die Position zu erhöhen ist.
+2. **Die harte Probe `co2.sum-check`** (PR 1) findet bestehende Bestände, sobald jemand die CO₂-Angaben des Messdienstes samt S einträgt. Sie nennt den Betrag S + L, auf den die Position zu erhöhen ist.
 3. **Der neue Grund `co2Share`** macht den Betrag im Vermieteranteil der Abrechnung sichtbar. Die Steuerübersicht nimmt ihn über den Bruttobetrag automatisch als Werbungskosten.
 4. **Für Jahre ohne CO₂-Datensatz** fragt der Hinweis `co2.missing` bzw. `fuel-unknown` ohnehin nach der Methode. Mit „Messdienst hat abgezogen“ greift Punkt 2.
 5. **Abgeschlossene Abrechnungen** bleiben eingefroren. Die Steuerübersicht eines abgeschlossenen Jahres rechnet die Werbungskosten aus den Kostenpositionen. Wer den Betrag nachträglich erhöht, ändert die Steuer, aber nicht die versandte Abrechnung, denn die Mieterbeträge bleiben gleich und `deviation` zeigt null. Ein Test hält das fest.
@@ -813,7 +888,7 @@ Der Nutzer wünscht eine möglichst breite Abdeckung. Deshalb steht hier jede g�
 
 | Lage | Nach diesem Entwurf | Danach fehlt | Issue |
 |---|---|---|---|
-| **Messdienst mit Vorwegabzug** (Techem- und ista-Standard im Mietshaus) | Einzelbeträge netto übernehmen. Vermieteranteil als `co2Share`, Eigennutzungsteil privat. Summenprüfung brutto/netto, Ausweis, Steuer richtig (PR 0, PR 1). | Auslesen der Messdienst-PDF statt Abtippen | #97, #209, KI: #103 |
+| **Messdienst mit Vorwegabzug** (Techem- und ista-Standard im Mietshaus) | Einzelbeträge netto übernehmen. Vermieteranteil als `co2Share`, Eigennutzungsteil privat. Harte Probe gegen S, Ausweis, Steuer richtig (PR 0, PR 1). Benannte Restlücke: falsches „nein“ bei Nettobetrag. | Auslesen der Messdienst-PDF statt Abtippen | #97, #209, KI: #103 |
 | **Messdienst nur ausweisend** (WEG „informativ“, ista ohne Abzug) | Abzugszeile je Mieter, mit Einzelwerten des Messdienstes oder verteilt wie die Heizkosten (PR 1). | – | #97 |
 | **Messdienst ohne Aufteilung** (reale Abrechnung) | Hinweis mit beziffertem 3-%-Kürzungsrecht (PR 1). Selbst nachholen aus der Lieferantenrechnung, mit Abzugszeile (PR 2). | Rechtsfrage 11.13, ob ein nachgeholter Ausweis heilt. Komfort: ein Ausdruck „Angaben für den Messdienst“ (kg, €, Fläche, § 9), den der Vermieter dem Messdienst schickt. | #97; Ausdruck: **neues Issue nötig** „CO₂-Angaben für den Messdienst als Ausdruck zusammenstellen“ |
 | **Komplettabrechnung des Messdienstes** (Heizung, Warmwasser, Kaltwasser und Hausnebenkosten je Nutzer) | Heute je Kostenart eine `amounts`-Position von Hand. Die Anleitung sagt, welche Blöcke wohin gehören (PR 0). | Übernahme aller Blöcke und Nutzerzeiträume in einem Schritt | #103 (dort auf alle Kostenblöcke und den CO₂-Block erweitern) |
@@ -833,7 +908,7 @@ Der Nutzer wünscht eine möglichst breite Abdeckung. Deshalb steht hier jede g�
 | **Vermietete Eigentumswohnung (WEG-Hausgeld)** | `serviceShown` mit den Werten der Gemeinschaft; bei Vorwegabzug der Gemeinschaft als `amounts` mit Nettobetrag (PR 1). Kürzungen nach § 12 gelten nicht zwischen Eigentümer und Gemeinschaft (§ 12 Abs. 1 S. 4). | – | #97; Anleitung `condo` |
 | **Gemischt genutztes Gebäude** | Schalter Nichtwohngebäude → 50 % (§ 8, PR 2). Gewerbe im Wohngebäude nach Stufen. | Maßstab „überwiegend“ (11.9) | #97 |
 | **Denkmal, Erhaltungssatzung, Anschlusszwang** | § 9: halbiert oder keine Aufteilung, mit Nachweishinweis (PR 2) | – | #97 |
-| **Mehrere Heizungen in einem Objekt** | Mehrere Datensätze mit eigenen Wohnungen und eigener Stufe (PR 4) | Zuordnung der Heizpositionen zur Anlage über die Teilnehmer; eine eigene Anlagen-Entität kommt erst mit #99 | #97, #99 |
+| **Mehrere Heizungen in einem Objekt** | Je Heizanlage (4.1) ein Datensatz mit eigener Stufe; Positionen über `heating_plant_id` oder über ihre Teilnehmer zugeordnet; `item-spans-plants` (PR 4) | Heizkostenabrechnung je Anlage | #97, #99 (Heizanlage) |
 | **Zweifamilienhaus mit Eigennutzung** | Aufteilung gilt (§ 7 Abs. 2); § 2 HeizkostenV als Hinweis gibt es schon | – | #97 |
 | **Abweichender Abrechnungszeitraum** (Mai bis April) | CO₂-Teil führt den tatsächlichen Zeitraum für Anwendbarkeit, Kürzung und Lieferanteile (PR 1, PR 2) | Die ganze Abrechnung im abweichenden Zeitraum | #208 |
 | **Kürzerer Zeitraum** (Erstbezug, Umstellung) | Gekürzte Stufengrenzen (PR 2) | Rumpfzeitraum der übrigen Abrechnung | #208 |
