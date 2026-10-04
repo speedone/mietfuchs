@@ -808,8 +808,9 @@ const ASSESSMENT_DELAY_MS = Math.max(0, Number(process.env.NKA_TEST_ASSESSMENT_D
 
 // Die Auswertung speichern (Belegbuchung, #170), erst nach Erfolg der KI; ein Abbruch speichert
 // nichts. Objekt: das des Belegs im Posteingang, sonst das mitgeschickte, sonst bei einem einzigen
-// Objekt dieses. Jahr: aus dem Beleg, sonst das mitgeschickte, sonst das des Belegs, sonst das
-// laufende. Misslingt das Speichern, kommt das Ergebnis trotzdem an, nur ohne Auswertung; die
+// Objekt dieses. Jahr: aus dem Beleg, sonst das gewählte (siehe `chosen` unten: das der früheren
+// Auswertung, sonst das am Beleg im Posteingang, sonst das mitgeschickte), sonst das laufende.
+// Misslingt das Speichern, kommt das Ergebnis trotzdem an, nur ohne Auswertung; die
 // Oberfläche sagt dann, dass sich nichts buchen lässt.
 //
 // **Ein Abbruch speichert nichts**, auch wenn er erst nach der Antwort der KI ankommt. Geprüft
@@ -837,10 +838,20 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
       const asked = typeof body.propertyId === 'string' && properties.some((p) => p.id === body.propertyId) ? body.propertyId : null
       const [only, ...more] = properties
       const detected = detectedYear(extraction)
-      // Das gewählte Jahr: Steht der Beleg im Posteingang und hat dort ein Jahr, ist es dieses, und
-      // nicht das der Seitenleiste, das der Browser mitschickt (Abnahme B3). Wer ein Jahr am Beleg
-      // eingestellt hat, hat es für diesen Beleg gewählt.
-      const chosen = row?.year ?? (sent || null)
+      // Das gewählte Jahr, in dieser Reihenfolge:
+      // 1. Hat der Beleg schon eine Auswertung, deren gewähltes Jahr (L1 der Durchsicht von #201).
+      //    Nach der ersten Auswertung liegt der Beleg im Jahr **aus dem Beleg**; nähme eine zweite
+      //    Auswertung dieses als gewähltes, würde eine gelbe Zeile grün und „Alle grünen übernehmen“
+      //    buchte ungesehen in ein anderes Jahr. Stellt der Nutzer das Jahr am Beleg um, zieht die
+      //    Auswertung mit (`placeAssessment` setzt `requestedYear`), sein Wille gilt also auch hier.
+      // 2. Sonst das Jahr am Beleg im Posteingang: Ohne Auswertung hat es der Nutzer oder der Ordner
+      //    gesetzt, nie eine Platzierung nach einer Auswertung (Abnahme B3). Das Jahr der
+      //    Seitenleiste, das der Browser mitschickt, überschreibt es nicht.
+      // 3. Sonst das mitgeschickte.
+      const previous = await readAssessmentOfFile(db, file.filename)
+      const chosen = previous
+        ? previous.assessment.requestedYear ?? (sent || null)
+        : row?.year ?? (sent || null)
       if (signal.aborted) return null
       const record = await saveAssessment(db, {
         file: file.filename,
