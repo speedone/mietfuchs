@@ -818,6 +818,33 @@ test('§35a (#180): der Lohnanteil folgt dem ungerundeten Kostenanteil, nicht de
   assert.equal(statementOf(s, 't1').total35aCents, 4521)
 })
 
+test('§35a (Durchsicht von #196): der Lohnanteil eines Mieters liegt nie über seinem Kostenanteil', () => {
+  // 500 € Hausmeister, ganz Lohn. OG 70 m² und DG 55 m² vermietet, EG 80 m² selbstgenutzt; im DG
+  // wohnt t2 erst ab 10.03.2025. Kostenanteil t2: 500 € × 55/205 × 297/365 = 109,154… € → 109,15 €.
+  // Lohnanteil von Hand derselbe Betrag, denn die Rechnung ist ganz Lohn: 109,15 €. Die erste
+  // Fassung von #180 bescheinigte 109,16 €, einen Cent mehr, als t2 überhaupt bezahlt.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'og', name: 'OG', areaM2: 70, participates: true },
+      { id: 'dg', name: 'DG', areaM2: 55, participates: true },
+      { id: 'eg', name: 'EG', areaM2: 80, participates: false, selfUsed: true, selfPersons: 2 },
+    ],
+    tenancies: [
+      tenancy({ id: 't1', unitId: 'og', tenantName: 'M1', persons: 1, start: '2024-01-01' }),
+      tenancy({ id: 't2', unitId: 'dg', tenantName: 'M2', persons: 1, start: '2025-03-10' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 50000, key: 'area', labor35aCents: 50000 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  for (const st of s.statements) {
+    for (const r of st.rows) assert.ok((r.labor35aCents ?? 0) <= r.shareCents, `${st.tenancyId}: Lohn ${r.labor35aCents} > Anteil ${r.shareCents}`)
+  }
+  assert.equal(statementOf(s, 't2').totalShareCents, 10915)
+  assert.equal(statementOf(s, 't2').total35aCents, 10915)
+  assert.equal(statementOf(s, 't1').total35aCents, statementOf(s, 't1').totalShareCents, 'ganz Lohn: Lohnanteil = Kostenanteil')
+})
+
 test('§35a: tragen die Mieter die Rechnung ganz, ergibt ihr Lohnanteil genau den der Rechnung', () => {
   // 300 € mit 200 € Lohnanteil auf drei gleiche Wohnungen: je 66,67 € einzeln gerundet wären 200,01 €
   const db: Db = {
@@ -1919,10 +1946,32 @@ test('Invariante: ein Anteil hat das Vorzeichen seiner Position, nicht Umlagefä
   }
 })
 
+// Der Zufallsbestand für §35a (Durchsicht von #196): randomDb erzeugt Lohnanteile nur als
+// beliebigen Bruchteil und Einzüge nur am Monatsersten. Gefährlich sind aber gerade die Fälle, in
+// denen der Lohn fast den ganzen Betrag ausmacht (80–100 %) und die Mieter nicht alles tragen
+// (Eigennutzung, Leerstand, Einzug mitten im Monat): Dort konnte der Lohnanteil eines Mieters über
+// seinem Kostenanteil liegen.
+function randomLaborDb(rnd: Rng): Db {
+  const db = randomDb(rnd)
+  if (rnd() < 0.5) db.units.push({ id: 'eigen', name: 'Eigen', areaM2: 20 + Math.round(rnd() * 100), participates: false, selfUsed: true, selfPersons: 1 + Math.floor(rnd() * 3) })
+  if (rnd() < 0.5) db.units.push({ id: 'leer', name: 'Leer', areaM2: 20 + Math.round(rnd() * 100), participates: true })
+  for (const t of db.tenancies) {
+    if (rnd() < 0.5) t.start = `2025-${String(1 + Math.floor(rnd() * 12)).padStart(2, '0')}-${String(1 + Math.floor(rnd() * 28)).padStart(2, '0')}`
+    if (t.end && t.end < t.start) t.end = null
+  }
+  for (const c of db.costItems) {
+    if (c.amountCents <= 0) continue
+    const r = rnd()
+    if (r < 0.35) c.labor35aCents = c.amountCents
+    else if (r < 0.7) c.labor35aCents = Math.round(c.amountCents * (0.8 + rnd() * 0.2))
+  }
+  return db
+}
+
 test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge, Kosten unberührt', () => {
   const rnd = makeRng(3552025)
-  for (let i = 0; i < 500; i++) {
-    const db = randomDb(rnd)
+  for (let i = 0; i < 1000; i++) {
+    const db = i % 2 === 0 ? randomDb(rnd) : randomLaborDb(rnd)
     const s = computeSettlement(snapshotFromDb(db, 2025))
     for (const item of db.costItems.filter((c) => c.year === 2025)) {
       // Nur ein gültiger Lohnanteil wird bescheinigt (#148); ein ungültiger ergibt eine Warnung.
@@ -1931,14 +1980,19 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
       const rows = s.statements.flatMap((st) => st.rows.filter((r) => r.costItemId === item.id))
       const costCents = rows.reduce((a, r) => a + r.shareCents, 0)
       const laborCents = rows.reduce((a, r) => a + (r.labor35aCents ?? 0), 0)
+      // Je Zeile nie mehr Lohnanteil als Kostenanteil (Durchsicht von #196): Bescheinigt wird, was
+      // der Mieter für Arbeit bezahlt hat, und mehr als seinen Anteil hat er nicht bezahlt.
+      for (const r of rows) {
+        assert.ok((r.labor35aCents ?? 0) <= r.shareCents, `Fall ${i}, ${item.id}: Lohnanteil ${r.labor35aCents} über dem Kostenanteil ${r.shareCents}\n${JSON.stringify(db)}`)
+      }
       // Der Lohnanteil folgt dem ungerundeten Kostenanteil (#180), und der steht nicht in der
-      // Abrechnung. Gegen die gerundeten Anteile gemessen weicht er deshalb höchstens um den
-      // Rundungscent der Summe ab und dazu um den Lohn auf die Rundung der Kostenanteile, die je
-      // Zeile unter einem Cent liegt. Genau festgehalten ist die Regel an Beispielen mit Handrechnung.
+      // Abrechnung. Gegen die gerundeten Anteile gemessen weicht die Summe höchstens um ihren
+      // eigenen Rundungscent ab und um den Lohn auf die Rundung der Kostenanteile, die zusammen
+      // unter einem halben Cent je Zeile liegt (mindestens ein halber).
       const proportional = (itemLabor * costCents) / item.amountCents
-      const tolerance = 0.5 + (itemLabor / item.amountCents) * rows.length
+      const tolerance = 0.5 + (itemLabor / item.amountCents) * Math.max(0.5, rows.length / 2)
       assert.ok(laborCents <= itemLabor, `Fall ${i}: mehr bescheinigt (${laborCents}) als die Rechnung enthält (${itemLabor})`)
-      assert.ok(Math.abs(laborCents - proportional) <= tolerance, `Fall ${i}: Summe ${laborCents} weit weg vom anteiligen Lohn ${proportional}\n${JSON.stringify(db)}`)
+      assert.ok(Math.abs(laborCents - proportional) <= tolerance, `Fall ${i}, ${item.id}: Summe ${laborCents} weit weg vom anteiligen Lohn ${proportional}\n${JSON.stringify(db)}`)
       if (costCents === item.amountCents) assert.equal(laborCents, itemLabor, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
     }
     // Reihenfolge ohne Einfluss
