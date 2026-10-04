@@ -1702,6 +1702,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // berechnet. Gemeldet wird jede Überschneidung, die das Abrechnungsjahr berührt, mit dem
   // Mehrbetrag je Lesart (`extra`: ohne die Tage des ersten, ohne die des zweiten; exakt in Cent,
   // gerundet erst für den Text), den die Verteilung unten je Position aufsummiert (`overlapExtra`).
+  // Getrennt nach Kosten (`cost`, was zu viel getragen wird) und Gutschriften (`credit`, was zu viel
+  // gutgeschrieben wird, als Betrag ohne Vorzeichen). Es ist die Summe der Überzahlungen je
+  // Position, kein Nettobetrag: Daneben kann eine Position stehen, bei der die Mieter zu wenig
+  // tragen (Integrationsdurchsicht), und eine Gutschrift gleicht keine Kosten aus.
   // Gemeldet und beziffert wird je Paar. Überschneiden sich drei Mietverhältnisse an denselben
   // Tagen, erscheinen drei Paare, und ihre Mehrbeträge können sich teilweise doppelt zählen: Jedes
   // Paar rechnet für sich, als gäbe es das dritte nicht. Der Fall ist selten und jedes Paar für
@@ -1709,7 +1713,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const overlaps = tenancyOverlaps(tenancies).flatMap((o) => {
     const inYear = commonPeriod({ start: o.from, end: o.to }, { start: yFrom, end: yTo })
     // Das Ende ist nie offen, weil das Jahr eines hat; `?? yTo` sagt das nur dem Übersetzer.
-    return inYear ? [{ ...o, inYear: { from: inYear.from, to: inYear.to ?? yTo }, extra: { first: 0, second: 0 } }] : []
+    return inYear ? [{ ...o, inYear: { from: inYear.from, to: inYear.to ?? yTo }, extra: { first: { cost: 0, credit: 0 }, second: { cost: 0, credit: 0 } } }] : []
   })
   // Was eine Position der Wohnung für die doppelt belegten Tage zu viel berechnet. „Zu viel“ heißt:
   // gegenüber derselben Verteilung ohne die Überschneidungstage eines der beiden Mietverhältnisse.
@@ -2343,8 +2347,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     })
     for (const o of overlaps) {
       const e = overlapExtra(item, b, targets, booked, o)
-      o.extra.first += e.first
-      o.extra.second += e.second
+      const side = item.amountCents < 0 ? 'credit' : 'cost'
+      o.extra.first[side] += Math.abs(e.first)
+      o.extra.second[side] += Math.abs(e.second)
     }
     let distributed = 0
     targets.forEach((x, i) => {
@@ -2491,25 +2496,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const span = o.to === null ? `seit dem ${fmtDay(o.from)}` : `vom ${fmtDay(o.from)} bis ${fmtDay(o.to)}`
     const yearDays = rangeOverlapDays(o.inYear.from, o.inYear.to, o.inYear.from, o.inYear.to)
     const whole = o.to !== null && o.from === o.inYear.from && o.to === o.inYear.to
-    // Je Lesart der Betrag; die Richtung folgt dem Nettobetrag (Kosten oder Gutschrift).
-    const byFirst = Math.round(o.extra.first)
-    const bySecond = Math.round(o.extra.second)
-    const clause = (c: number, inverted: boolean): string => {
-      const who = 'die Mieter dieser Wohnung'
-      const what = c >= 0
-        ? `${year} zusammen ${fmtCents(c)} mehr, als auf die Wohnung entfällt`
-        : `${year} zusammen ${fmtCents(-c)} mehr gutgeschrieben, als auf die Wohnung entfällt`
-      const verb = c >= 0 ? 'tragen' : 'bekommen'
-      return inverted ? `${verb} ${who} ${what}` : `Die Mieter dieser Wohnung ${verb} ${what}`
+    // Je Lesart, was zu viel getragen und was zu viel gutgeschrieben wird. Ist eine Lesart 0, heißt
+    // das nur, dass niemand zu viel trägt: Zugunsten der Mieter können sich die Anteile verschieben
+    // (wird je Position zur Seite „zu viel“ geklemmt), deshalb nie „wirkt sich nicht aus“.
+    const rounded = (l: { cost: number, credit: number }) => ({ cost: Math.round(l.cost), credit: Math.round(l.credit) })
+    const a = rounded(o.extra.first)
+    const c = rounded(o.extra.second)
+    const zero = (l: { cost: number, credit: number }) => l.cost === 0 && l.credit === 0
+    const who = 'die Mieter dieser Wohnung'
+    // Der Satzteil nach „Die Mieter dieser Wohnung“ bzw. nach „Ist …, “ (dann mit vorangestelltem Verb).
+    const clause = (l: { cost: number, credit: number }, inverted: boolean): string => {
+      const lead = (verb: string) => (inverted ? `${verb} ${who}` : `Die Mieter dieser Wohnung ${verb}`)
+      if (zero(l)) return `${lead('tragen')} dadurch ${year} nicht zu viel`
+      if (l.credit === 0) return `${lead('tragen')} ${year} bei den betroffenen Positionen zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt`
+      if (l.cost === 0) return `${lead('bekommen')} ${year} bei den betroffenen Gutschriften zusammen ${fmtCents(l.credit)} mehr gutgeschrieben, als auf die Wohnung entfällt`
+      return `${lead('tragen')} ${year} bei den betroffenen Kosten zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt, und bekommen ${fmtCents(l.credit)} mehr gutgeschrieben`
     }
-    const none = 'wirkt es sich auf die Anteile der Mieter nicht aus'
-    const amountText = byFirst === 0 && bySecond === 0
-      ? `Auf die Anteile der Mieter wirkt sich das ${year} nicht aus, die Angaben widersprechen sich aber. `
-      : byFirst === bySecond
-        ? `Für diese Zeit wird beiden der volle Anteil berechnet: ${clause(byFirst, false)}. `
-        : `Für diese Zeit wird beiden der volle Anteil berechnet. Wie viel zu viel, hängt davon ab, welches Datum falsch ist: Ist bei ${o.first.tenantName} ein Datum falsch, ${byFirst === 0 ? none : clause(byFirst, true)}; ist es bei ${o.second.tenantName} falsch, ${
-          bySecond === 0 ? none : byFirst !== 0 && Math.sign(byFirst) === Math.sign(bySecond) ? fmtCents(Math.abs(bySecond)) : clause(bySecond, true)
-        }. `
+    const amountText = a.cost === c.cost && a.credit === c.credit
+      ? zero(a) ? `${clause(a, false)}. ` : `Für diese Zeit wird beiden der volle Anteil berechnet: ${clause(a, false)}. `
+      : `Für diese Zeit wird beiden der volle Anteil berechnet. Wie viel zu viel, hängt davon ab, welches Datum falsch ist: Ist bei ${o.first.tenantName} ein Datum falsch, ${clause(a, true)}; ist es bei ${o.second.tenantName} falsch, ${
+        // Beide nur Kosten: der zweite Betrag allein, der Satz davor sagt schon, was er heißt.
+        a.credit === 0 && c.credit === 0 && a.cost > 0 && c.cost > 0 ? fmtCents(c.cost) : clause(c, true)
+      }. `
     warn('tenancy.overlap',
       `Die Mietverhältnisse von ${o.first.tenantName} (${period(o.first)}) und ${o.second.tenantName} (${period(o.second)}) in ${o.first.unit.name} überschneiden sich ${span} (${whole ? '' : 'davon '}${daysLabel(yearDays)}${whole ? '' : ` in ${year}`}). ` +
         amountText +

@@ -1263,7 +1263,9 @@ die ganze fachliche Komplexität:
   (`overlapExtra` in calc.ts): je Position, was die Wohnung ohne die Überschneidungstage **eines**
   der beiden weniger trüge, beide Lesarten gerechnet und beide genannt, wenn sie verschieden sind
   (eine kann 0 sein, etwa neben einer Pauschale), denn welches Datum falsch ist, weiß nur der
-  Vermieter; die Richtung (zu viel getragen oder zu viel gutgeschrieben) folgt dem Nettobetrag. Bei Schlüsseln mit fester Basis ist das der Anteil an
+  Vermieter. Kosten (zu viel getragen) und Gutschriften (zu viel gutgeschrieben) werden getrennt
+  summiert; es ist die Summe der Überzahlungen je Position, kein Saldo. Je Position wird zur Seite
+  „zu viel“ geklemmt, eine Lesart von 0 heißt also nur „nicht zu viel“ und nie „keine Auswirkung“. Bei Schlüsseln mit fester Basis ist das der Anteil an
   den doppelten Tagen (beim Verbrauch nach dem in der Zeit gemessenen Verbrauch); beim
   Personenschlüssel stecken die Personentage auch in der Basis, dort wird neu geteilt
   (S/P − (S − o)/(P − o)); bei Einzelbeträgen entsteht nichts doppelt. Die Stammdaten fragen beim
