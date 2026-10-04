@@ -186,15 +186,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Behoben
 
-- **§35a-Bescheinigung: kein Cent mehr unter der Handrechnung, ohne dass der Rechenweg ihn
-  erklärt.** Der Lohnanteil, den die Abrechnung je Mieter bescheinigt, ging vom schon auf Cent
-  gerundeten Kostenanteil aus und konnte so einen Cent zu niedrig sein (etwa 45,20 € statt 300 € ×
-  55/365 = 45,21 €). Jetzt folgt er dem ungerundeten Anteil und liegt dabei nie über dem Kostenanteil des Mieters: Ist eine Rechnung
-  ganz Lohn, ist der bescheinigte Lohnanteil genau sein Kostenanteil (etwa 109,15 € bei 109,15 €),
-  auch wenn die Mieter die Rechnung wegen einer selbstgenutzten Wohnung oder Leerstand nicht ganz
-  tragen (etwa 76,91 € bei 76,91 €). Ist nur ein Teil Lohn, müssen die Lohnanteile zusammen den
-  gerundeten Lohnanteil der Mieter ergeben; weicht ein einzelner deshalb von der gewöhnlichen
-  Rundung ab, nennt der Rechenweg dort das Restcent-Verfahren und den rechnerischen Wert.
+- **§35a-Bescheinigung: je Mieter wie von Hand gerundet.** Der Lohnanteil, den die Abrechnung je
+  Mieter bescheinigt, ging vom schon auf Cent gerundeten Kostenanteil aus und konnte so einen Cent
+  zu niedrig sein (etwa 45,20 € statt 300 € × 55/365 = 45,21 €). Jetzt wird er je Mieter so
+  gerundet, wie man ihn von Hand nachrechnet, Lohnanteil × ungerundeter Kostenanteil ÷
+  Rechnungsbetrag, und liegt nie über dem Kostenanteil des Mieters. Ist eine Rechnung ganz Lohn,
+  ist der bescheinigte Lohnanteil genau sein Kostenanteil (etwa 109,15 € bei 109,15 €). Ergäben die
+  gerundeten Lohnanteile zusammen mehr als den Lohnanteil der Rechnung, bekommt ein Mieter einen
+  Cent weniger; tragen die Mieter die Rechnung ganz, ergeben ihre Lohnanteile zusammen genau den
+  Lohnanteil der Rechnung, und ein Mieter kann einen Cent mehr bekommen. Beides nennt der Rechenweg an der
+  Zeile, mit dem rechnerischen Wert, ebenso einen auf den Kostenanteil begrenzten Lohnanteil.
   **Es ändert sich nur der §35a-Ausweis**, in noch offenen Abrechnungen um
   höchstens einen Cent je Position; Kostenanteile, Nachzahlungen und Guthaben, Vermieter- und
   Eigenanteil sowie die Steuerübersicht bleiben unverändert. Abgeschlossene Abrechnungen bleiben,
@@ -211,6 +212,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ohne Fläche“. Die Zählerwarnung nennt die Zählerart mit ihrer Beschriftung („Kaltwasser“ statt
   „kaltwasser“). Anführungszeichen schließen typografisch („…“ statt „…"), etwa in den Warnungen zu
   Kabel und Heizung, auf der Zählerseite und in den Fragen vor dem Wiederherstellen und Löschen.
+  Ebenso „1 grüner Vorschlag bereit“ in der Schnellerfassung, „ein Modell steht zur Wahl“ in den
+  KI-Einstellungen und „(1 Tag)“ im Zeitraum auf der Abrechnung; im Belegordner fehlte nach dem
+  Betrag der Position ein Leerzeichen vor „Stimmt er …“.
   Abgeschlossene Abrechnungen behalten ihren Wortlaut.
   ([#180](https://github.com/speedone/mietfuchs/issues/180),
   [#142](https://github.com/speedone/mietfuchs/issues/142))

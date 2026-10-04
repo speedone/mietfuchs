@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AiPreset, AiRecommendations, AiSettings as AiSettingsValues, AiSlot, AiSlotName, AiStatus, Settings } from '../types'
 import { api, fmtDate } from '../api'
 import { pullModel, type PullProgress } from '../aiRequest'
-import { OTHER_MODEL, modelHint, modelOptions, pullInstructions } from '../modelForm'
+import { OTHER_MODEL, modelHint, modelOptions, modelsAvailableText, pullInstructions } from '../modelForm'
 import {
   JSON_MODE_OPTIONS, SLOT_LABELS, VISION_OPTIONS, aiFormFrom, consentState, isFixed, keyState, pageEdgeHint,
   parseOptionalInt, presetGroups, pullText, recommendationsFor, switchPreset, visionFromValue, visionValue,
@@ -497,9 +497,7 @@ function SlotEditor(props: SlotProps) {
       {checking && <p className="muted">Verbindung wird geprüft …</p>}
       {!checking && status?.ok && (
         <div className="ok">
-          {models.length === 0
-            ? 'Der Dienst antwortet, nennt aber kein Modell.'
-            : `Der Dienst antwortet, ${models.length === 1 ? 'ein Modell' : `${models.length} Modelle`} stehen zur Wahl.`}
+          {modelsAvailableText(models.length)}
         </div>
       )}
       {!checking && status && !status.ok && (

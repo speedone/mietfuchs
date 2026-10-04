@@ -10,6 +10,7 @@ import AssessmentReview from '../components/AssessmentReview'
 import { useYear } from '../year'
 import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
+import { plural } from '../../../shared/wording.ts'
 
 type Props = {
   units: Unit[]
@@ -340,7 +341,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
         {greenReady > 0 && (
           <div className="sticky-bar">
-            <strong>{greenReady}</strong> grüne Vorschläge bereit.
+            <strong>{greenReady}</strong> {plural(greenReady, 'grüner Vorschlag', 'grüne Vorschläge')} bereit.
             <div className="grow" />
             <button className="btn" disabled={adopting} onClick={() => void adoptAllGreen()}>✓ Alle grünen übernehmen</button>
           </div>

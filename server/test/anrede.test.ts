@@ -403,3 +403,47 @@ test('Schreibweise-Wächter: erkennt beides', () => {
   assert.deepEqual(plurals, ['g(en)', 's(se)'])
   assert.deepEqual([...'„A“ und „B" und „C“'.matchAll(MIXED_QUOTES)].map((m) => m[0]), ['„B"'])
 })
+
+// Ein- und Mehrzahl nach einer Zahl und Leerzeichen zwischen Sätzen (Abnahme B4). Beides hängt im
+// Allgemeinen am Wert zur Laufzeit; zwei Muster im JSX lassen sich aber am Quelltext erkennen:
+// - Eine Zahl aus einer Variablen, unmittelbar gefolgt von einem Hauptwort („{n} grüne Vorschläge“):
+//   Bei 1 stünde „1 grüne Vorschläge“. Dafür gibt es `countOf` und `plural` aus shared/wording.ts.
+//   Hängt die Endung als eigener Ausdruck am Wort („Beleg{n === 1 ? '' : 'e'}“), ist es bedacht.
+// - Ein Satzende im JSX, danach eine Zeile nur mit einem Ausdruck und dann der nächste Satz: JSX
+//   streicht die Zeilenumbrüche um den Ausdruck, und es steht „520,00 €.Stimmt er“ da.
+const COUNT_NOUN = /(?<![\w$])\{([A-Za-z_][\w.]*)\}(?:<\/strong>)?[ \t]+(?:\p{Ll}+[ \t]+)?\p{Lu}\p{Ll}+(?![\p{L}{])/gu
+// Ausdrücke, die keine Anzahl sind (eine Adresse)
+const NOT_COUNTS = new Set(['status.found'])
+const GLUED_SENTENCE = /^(?!\s*(?:\/\/|\*|\/\*|\{\/\*))[^\n]*[^\s{}'"`;,(][.!?:]\n(?:\s*\{(?!' '\})[^\n]*\}\s*\n)+\s*\p{Lu}\p{Ll}/gmu
+
+function wordingFindings(sources: readonly { file: string, source: string }[]): Finding[] {
+  return sources.flatMap(({ file, source }) => {
+    const lineOf = (offset: number) => 1 + (source.slice(0, offset).match(/\n/g)?.length ?? 0)
+    const counts = [...source.matchAll(COUNT_NOUN)].filter((m) => !NOT_COUNTS.has(m[1] ?? ''))
+      .map((m) => ({ file, line: lineOf(m.index ?? 0), match: m[0] }))
+    const glued = [...source.matchAll(GLUED_SENTENCE)].map((m) => ({ file, line: lineOf(m.index ?? 0), match: m[0].trim().slice(-60) }))
+    return [...counts, ...glued]
+  })
+}
+
+test('Schreibweise (Abnahme B4): keine feste Mehrzahl nach einer Zahl, kein verklebter Satz im JSX', () => {
+  const sources = clientFiles().filter((f) => f.endsWith('.tsx')).map((file) => ({ file, source: fs.readFileSync(path.join(ROOT, file), 'utf8') }))
+  const findings = wordingFindings(sources)
+  assert.equal(findings.length, 0, `\n${report(findings)}`)
+})
+
+test('Schreibweise-Wächter (B4): erkennt beide Muster und lässt Bedachtes durch', () => {
+  const source = [
+    '<strong>{greenReady}</strong> grüne Vorschläge bereit.',
+    '{count} Positionen',
+    '{plan.documents.length} Beleg{plan.documents.length === 1 ? \'\' : \'e\'}',
+    '{countOf(n, \'Position\', \'Positionen\')}',
+    'Betrag: <strong>{x}</strong>.',
+    '  {closed && <div>…</div>}',
+    '  Stimmt er?',
+    'Erster Satz.',
+    "  {' '}",
+    '  Zweiter Satz.',
+  ].join('\n')
+  assert.deepEqual(wordingFindings([{ file: 'x.tsx', source }]).map((f) => f.line), [1, 2, 5])
+})
