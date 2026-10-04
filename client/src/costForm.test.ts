@@ -3,6 +3,7 @@ import type { CostKey, Meter, MeterType, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
+  sameCostOf,
   amountProblem,
   buildCostItemBody,
   costKeyOptions,
@@ -552,5 +553,19 @@ describe('Kostenart wechseln (Durchsicht zu #142)', () => {
     const verwaltung = form({ id: 'c', category: 'Nicht umlagefähig', key: 'area' })
     expect(withCategory(verwaltung, 'Wasser/Abwasser', units, meters)).toMatchObject({ key: 'meter', meterType: 'kaltwasser' })
     expect(withCategory(verwaltung, 'Zuführung Erhaltungsrücklage', units, meters)).toMatchObject({ key: 'area' })
+  })
+})
+
+// Rückfrage „Dieselbe Rechnung?“ beim Anlegen (Befund gegen 0.10.0-rc.1): Eine Gutschrift ist nie
+// dieselbe Rechnung wie eine Rechnung derselben Kostenart. Die Rückfrage riet sonst, statt der
+// Gutschrift die vorhandene Rechnung zu bearbeiten.
+describe('Rückfrage nach derselben Rechnung', () => {
+  const rechnung = { id: 'r', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Wasser 2026', amountCents: 84000 }
+  const gutschrift = { id: 'g', propertyId: 'p', year: 2026, category: 'Wasser', description: 'Gutschrift Wasser', amountCents: -5745 }
+  const body = (amountCents: number | null) => ({ category: 'Wasser', description: 'Wasser', vendor: '', amountCents })
+  test('eine Gutschrift fragt nur nach Gutschriften, eine Rechnung nur nach Rechnungen (rc.1)', () => {
+    expect(sameCostOf([rechnung, gutschrift], body(-5745), 'p', 2026).map((i) => i.id)).toEqual(['g'])
+    expect(sameCostOf([rechnung], body(-5745), 'p', 2026)).toEqual([])
+    expect(sameCostOf([rechnung, gutschrift], body(84000), 'p', 2026).map((i) => i.id)).toEqual(['r'])
   })
 })
