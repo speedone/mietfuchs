@@ -6,6 +6,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Behoben
+
+- **Cockpit beim ersten Start: keine Zahl offener Punkte ohne Liste.** Solange für das Jahr nichts
+  erfasst ist, zeigt das Cockpit statt der Checkliste nur die Knöpfe zum Anfangen; die Zeile
+  darüber nannte trotzdem „Noch 4 Punkte offen“, ohne dass irgendwo stand, welche. Sie nennt jetzt
+  den ersten Schritt: Stammdaten anlegen, dann Belege erfassen.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
+
 ## [0.10.0] – 2026-10-04
 
 ### Neu

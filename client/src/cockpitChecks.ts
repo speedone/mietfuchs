@@ -31,3 +31,14 @@ export function tenanciesDetail(tenancies: number, notSettled: number, participa
 export function itemsDetail(items: number, sumCents: number, files: number): string {
   return `${countOf(items, 'Position', 'Positionen')} · Summe ${fmtEuro(sumCents)}${files ? ` · ${countOf(files, 'Belegdatei', 'Belegdateien')}` : ''}`
 }
+
+// Unterzeile unter der Überschrift des Cockpits. Beim Erststart (#180) steht dort keine
+// Checkliste, sondern zwei Knöpfe zum Anfangen; eine Zahl offener Punkte, die nirgends
+// aufgezählt sind, sagte einem Vermieter ohne Vorkenntnisse nichts. Die Zeile nennt deshalb den
+// ersten Schritt, die Punkte kommen mit der Checkliste, sobald etwas erfasst ist.
+export function cockpitSubtitle({ loaded, fresh, openCount }: { loaded: boolean; fresh: boolean; openCount: number }): string {
+  if (!loaded) return 'Lade Abrechnungsstand …'
+  if (fresh) return 'Legen Sie zuerst Ihre Stammdaten an und erfassen Sie dann die Belege des Jahres.'
+  if (openCount === 0) return 'Alles bereit — die Abrechnung ist vollständig.'
+  return `Noch ${countOf(openCount, 'Punkt', 'Punkte')} offen, dann ist die Abrechnung versandfertig.`
+}

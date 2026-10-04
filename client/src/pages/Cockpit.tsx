@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, Meter, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { isNotAllocable, usageOf } from '../types'
-import { itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
+import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
 import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
@@ -260,11 +260,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         <div>
           <h1 style={{ marginBottom: 2 }}>Abrechnung {year}</h1>
           <p className="sub" style={{ margin: 0 }}>
-            {settlement
-              ? openCount === 0
-                ? 'Alles bereit — die Abrechnung ist vollständig.'
-                : `Noch ${openCount} ${openCount === 1 ? 'Punkt' : 'Punkte'} offen, dann ist die Abrechnung versandfertig.`
-              : 'Lade Abrechnungsstand …'}
+            {cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
