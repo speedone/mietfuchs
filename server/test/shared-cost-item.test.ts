@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { amountProblem, costItemBody, euro, type CostItemDraft } from '../../shared/costItem.ts'
 import { defaultKeyFor, isNotAllocable, matchCategory } from '../../shared/categories.ts'
 import { aiPositionDefaults, aiRowPreselected, scorePosition } from '../../shared/assessment.ts'
-import type { Unit } from '../../shared/types.ts'
+import type { CostItem, Unit } from '../../shared/types.ts'
 
 const UNITS: Unit[] = [
   { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true },
@@ -82,4 +82,17 @@ test('Kostenarten und Ampel stehen in shared/ und sagen dasselbe wie bisher', ()
   assert.equal(aiRowPreselected({ ...row, preselect: false }), false)
   assert.equal(aiRowPreselected({ ...row, problem: 'Betrag fehlt' }), false)
   assert.equal(aiRowPreselected({ ...row, candidates: [{}] }), false)
+})
+
+// Browserprobe zu #170: Eine Gutschrift wird nie verknüpft (Ruling zu Aufgabe 3), die Auswahl bietet
+// es nicht an. Ihr Hinweis darf deshalb nicht zum Verknüpfen raten, sonst sucht der Nutzer eine
+// Wahl, die es nicht gibt.
+test('Gutschrift schon erfasst: der Hinweis rät nicht zum Verknüpfen', () => {
+  const vorhanden: CostItem = { id: 'g', propertyId: 'objekt-1', year: 2025, category: 'Müllabfuhr', description: 'Gutschrift Tonnentausch', amountCents: -5000, key: 'persons' }
+  const credit = scorePosition({ category: 'Müllabfuhr', description: 'Gutschrift Tonnentausch', amountCents: -5000, labor35aCents: 0, matchedByDesc: false, vendor: 'Stadt', detectedYear: 2025, targetYear: 2025, existingItems: [vorhanden] })
+  const hint = credit.reasons.find((r) => r.startsWith('schon erfasst')) ?? assert.fail(`kein Hinweis auf die vorhandene Gutschrift: ${credit.reasons.join(' | ')}`)
+  assert.doesNotMatch(hint, /verknüpfen/)
+  assert.match(hint, /dieselbe Gutschrift/)
+  const rechnung = scorePosition({ category: 'Müllabfuhr', description: 'Restmüll', amountCents: 70000, labor35aCents: 0, matchedByDesc: false, vendor: 'Stadt', detectedYear: 2025, targetYear: 2025, existingItems: [{ ...vorhanden, id: 'r', description: 'Restmüll', amountCents: 70000 }] })
+  assert.ok(rechnung.reasons.some((r) => /schon erfasst: .* — verknüpfen oder bewusst als neue Position anlegen/.test(r)), 'eine Rechnungszeile behält den Rat')
 })
