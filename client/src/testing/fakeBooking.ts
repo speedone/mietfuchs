@@ -55,7 +55,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const fresh = linesFromExtraction(ex)
       const r: Stored = {
         assessment: {
-          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected, vendor: ex.vendor ?? null,
+          id, file, propertyId, year: detected ?? opts.year, detectedYear: detected, requestedYear: opts.year, vendor: ex.vendor ?? null,
           invoiceDate: ex.invoiceDate ?? null, totalGrossCents: typeof ex.totalGrossEur === 'number' ? Math.round(ex.totalGrossEur * 100) : null,
           amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
@@ -84,7 +84,8 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       if (!r) return json({ error: 'Diese Auswertung gibt es nicht (mehr). Bitte laden Sie die Seite neu.' }, 404)
       if (!m[2]) {
         const year = fieldOf(body, 'year')
-        if (method === 'PUT' && typeof year === 'number') r.assessment = { ...r.assessment, year }
+        // Wie placeAssessment: ein von Hand gesetztes Jahr ist zugleich das gewählte.
+        if (method === 'PUT' && typeof year === 'number') r.assessment = { ...r.assessment, year, requestedYear: year }
         return json(view(r))
       }
       requests.push({ path, body })

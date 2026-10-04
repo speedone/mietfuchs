@@ -331,7 +331,7 @@ test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehme
 // Eine Auswertung, wie der Server sie liefern könnte, für Fälle, die der echte Planer heute nicht
 // erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
 const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
-  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, vendor: 'Hausmeisterdienst', invoiceDate: null,
+  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, vendor: 'Hausmeisterdienst', invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
@@ -365,4 +365,73 @@ test('eine Eingabe gleich nach dem Erscheinen der Karte bleibt stehen', () => {
   }
   render(<UIProvider><AssessmentReview assessment={crafted({})} units={UNITS} onChange={() => {}} /><EarlyInput /></UIProvider>)
   expect(screen.getByRole('combobox', { name: 'Was geschieht mit „Hausmeister“?' })).toHaveProperty('value', 'create')
+})
+
+// ---------- Schlussdurchsicht ----------
+
+// Eine Jahresrechnung vom Februar ohne Leistungszeitraum: Das Jahr aus dem Beleg ist das Folgejahr.
+const februar = (): Extraction => ({ vendor: 'Hausmeisterdienst', invoiceDate: `${YEAR + 1}-02-10`, positions: [{ description: 'Hausmeister', category: 'Hauswart', amountEur: 300 }] })
+
+test('I1: ein Beleg aus einem anderen Jahr ist nicht vorab angehakt, und „Alle grünen übernehmen“ bucht ihn nicht', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = februar()
+  const { container } = intake()
+  await upload(container)
+  expect((await actionOf('Hausmeister')).value).toBe('')
+  expect(screen.getByText(`Jahr ${YEAR + 1}`)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /Alle grünen übernehmen/ })).toBeNull()
+  expect(fake.items).toHaveLength(0)
+})
+
+test('I1: die Kostenseite nennt das Jahr des Belegs, und die Vorschau das Jahr der neuen Position', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = februar()
+  const { container } = costs()
+  await upload(container)
+  const action = await actionOf('Hausmeister')
+  expect(action.value).toBe('')
+  expect(screen.getByText(`Jahr ${YEAR + 1}`)).toBeTruthy()
+  fireEvent.change(action, { target: { value: 'create' } })
+  const { shown } = await previewAndBook()
+  expect(shown[0]).toMatch(new RegExp(`^Neu für ${YEAR + 1}: „Hausmeister“`))
+  await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(fake.items.map((i) => i.year)).toEqual([YEAR + 1])
+})
+
+test('I2: nur Verwerfen zeigt in Vorschau und Erfolgsmeldung, was geschieht', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  extraction = invoice([{ description: 'Mahngebühr', category: 'Grundsteuer', amountEur: 5 }], 'Stadt')
+  const { container } = intake()
+  await upload(container)
+  fireEvent.change(await actionOf('Mahngebühr'), { target: { value: 'dismiss' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  const panel = await screen.findByLabelText('Vorschau', {}, SLOW)
+  expect(panel.textContent).toContain('„Mahngebühr“ wird verworfen.')
+  fireEvent.click(screen.getByRole('button', { name: 'Buchen' }))
+  const done = await screen.findByLabelText('Gebucht', {}, SLOW)
+  expect(done.textContent).toContain('„Mahngebühr“ wird verworfen.')
+})
+
+test('I2: ändert sich die Gestalt der Zeilen von außen, verschwinden Vorschau und Erfolgsmeldung', async () => {
+  fake = fakeBooking({ items: [], units: UNITS })
+  const view = fake.evaluate('g.pdf', invoice([{ description: 'Grundsteuer B', category: 'Grundsteuer', amountEur: 612.4 }], 'Stadt'), { year: YEAR })
+  let current = view
+  const { rerender } = render(<UIProvider><AssessmentReview assessment={current} units={UNITS} onChange={(next) => { current = next }} /></UIProvider>)
+  expect((await actionOf('Grundsteuer B')).value).toBe('create')
+  await previewAndBook()
+  await waitFor(() => expect(current.lines[0]?.state).toBe('created'), SLOW)
+  rerender(<UIProvider><AssessmentReview assessment={current} units={UNITS} onChange={(next) => { current = next }} /></UIProvider>)
+  expect(screen.getByLabelText('Gebucht')).toBeTruthy()
+  // Ein anderer Tab löscht die Position: Die Zeile ist wieder offen, die Meldung gilt nicht mehr.
+  await fake.handle(`/api/costItems/${current.lines[0]?.costItemId ?? ''}`, { method: 'DELETE' })
+  const reopened = await (await fake.handle(`/api/assessments/${view.id}`))?.json()
+  rerender(<UIProvider><AssessmentReview assessment={reopened} units={UNITS} onChange={() => {}} /></UIProvider>)
+  expect(screen.queryByLabelText('Gebucht')).toBeNull()
+  expect(screen.queryByLabelText('Vorschau')).toBeNull()
+})
+
+test('M2: der Hinweis zu einer Position mit Einzelbeträgen sagt, die Zeile nach dem Aktualisieren zu verwerfen', () => {
+  const view = crafted({}, { candidates: [{ id: 'hz', description: 'Heizung laut Messdienst', amountCents: 90000, invoiceFile: null, key: 'amounts', formOnly: true }] })
+  render(<UIProvider><AssessmentReview assessment={view} units={UNITS} onChange={() => {}} onOpenItem={() => {}} /></UIProvider>)
+  expect(screen.getByText(/verwerfen Sie diese Zeile hier danach/)).toBeTruthy()
 })

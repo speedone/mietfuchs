@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d676473f-5f73-4880-9b6a-6a6b46d9a66f",
+  "id": "81639625-cf7d-46d1-8b0f-55868dd6c507",
   "prevId": "bf580a7a-80c7-47a4-9a0d-ce7ac3c0f6de",
   "tables": {
     "ai_slots": {
@@ -262,6 +262,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "requested_year": {
+          "name": "requested_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "vendor": {
           "name": "vendor",
           "type": "text",
@@ -351,6 +358,10 @@
         "assessments_year_positive": {
           "name": "assessments_year_positive",
           "value": "\"year\" > 0"
+        },
+        "assessments_requested_year_positive": {
+          "name": "assessments_requested_year_positive",
+          "value": "\"requested_year\" IS NULL OR \"requested_year\" > 0"
         },
         "assessments_next_idx_not_negative": {
           "name": "assessments_next_idx_not_negative",
