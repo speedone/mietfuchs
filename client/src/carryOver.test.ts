@@ -119,6 +119,17 @@ describe('schon erfasst nach der gemeinsamen Regel', () => {
     expect(withCarryAmount(row, '610,00', row.already).checked).toBe(false)
   })
 
+  test('eine Gutschrift des Vorjahres gilt nicht als erfasst, weil es eine Rechnung derselben Art gibt (rc.1)', () => {
+    const items = [
+      item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
+      item({ year: 2025, category: 'Grundsteuer', description: 'Erstattung Grundsteuer', vendor: 'Stadt', amountCents: -5745 }),
+      item({ year: 2026, category: 'Grundsteuer', description: 'Abgabenbescheid', vendor: 'Stadt', invoiceFile: 'gs.pdf' }),
+    ]
+    const rows = carryOverRows(items, 2026)
+    expect(rowOf(rows, 'Grundsteuer 2025').already).toBe(true)
+    expect(rowOf(rows, 'Erstattung Grundsteuer').already).toBe(false)
+  })
+
   test('breite Kostenart mit anderer Beschreibung und anderem Steller: nicht erfasst', () => {
     const items = [
       item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025', vendor: 'Pumpen Huber' }),

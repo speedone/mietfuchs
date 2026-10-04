@@ -62,8 +62,9 @@ export function scorePosition(ctx: PositionCtx): { level: TrafficLight; reasons:
 
   // Schon eine Position, die dieselbe Rechnung sein könnte, etwa aus dem Vorjahr übernommen
   // (shared/duplicates.ts)? Nie grün: verknüpfen oder bewusst als neue Position anlegen.
-  const candidates = sameCostCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, year })
-  // Eine Gutschrift wird nie verknüpft (Belegbuchung, #170), der Rat lautet für sie anders.
+  const candidates = sameCostCandidates(ctx.existingItems, { category: ctx.category, description: ctx.description ?? '', vendor: ctx.vendor, year, amountCents: ctx.amountCents })
+  // Eine Gutschrift wird nie verknüpft (Belegbuchung, #170), der Rat lautet für sie anders. Gefragt
+  // wird mit dem Betrag: Eine Gutschrift ist nie dieselbe wie eine Rechnung (rc.1).
   if (candidates.length > 0) {
     s.bump('gelb', ctx.amountCents < 0
       ? `schon erfasst: ${candidates.map(candidateText).join(', ')} — ist es dieselbe Gutschrift, nicht noch einmal anlegen`
