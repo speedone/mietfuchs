@@ -1,6 +1,6 @@
 # Spezifikation: Heizung gesamt (Meilenstein 0.11.0)
 
-- **Fassung:** sechste Fassung vom 05.10.2026, nach der Nachprüfung der fünften Fassung. Die Änderungen stehen je Befund in 0.9 bis 0.5.
+- **Fassung:** siebte Fassung vom 05.10.2026, nach der Nachprüfung der sechsten Fassung. Die Änderungen stehen je Befund in 0.10 bis 0.5.
 - **Ersetzt** die drei Teilentwürfe. Sie bleiben als Herleitung auf ihren Zweigen liegen, gelten aber nicht mehr:
   - CO₂-Kostenaufteilung, 3. Fassung (`feat/co2-kostenaufteilung`, `docs/superpowers/specs/2026-10-04-co2-kostenaufteilung-design.md`);
   - Abrechnungszeitraum (`feat/abrechnungszeitraum`, `…/2026-10-05-abrechnungszeitraum-design.md`);
@@ -271,6 +271,26 @@ Grundlage ist die Nachprüfung der fünften Fassung vom 05.10.2026 (C1–C5, R1�
 - PR 1, PR 2 und PR 4 bleiben unverändert.
 - **PR 3 ändert sich durch C5** (Gradtagsanteil des eigenen Leistungszeitraums, ab zwölf Monaten Jahresbetrag), durch R11 (kein Vorschlag für den Heizanteil, wenn eine Brennstoffposition keinen hat) und durch R10 (zweiter Hinweistext).
 
+### 0.10 Änderungen gegenüber der sechsten Fassung
+
+Grundlage ist die Nachprüfung der sechsten Fassung vom 05.10.2026 (D1–D3, R-a bis R-h).
+
+| ID | Befund | Entscheidung | Abschnitt |
+|---|---|---|---|
+| D1 | Ausschalten von Weg d neben abgeschlossenen Abrechnungen | Übernommen. Das Ausschalten wirkt erst ab W, dem Beginn der ersten H, die weder abgeschlossen ist noch Monate in einem abgeschlossenen P hat; frühere H bleiben nach Weg d (409 bei früherem W). Regel in 6.1 Nr. 5: Jeder Monat der Heizstaffel wird genau einmal angerechnet. Tests 984 € und 492 €, Generator von Invariante 11 erweitert. | 3.1, 6.1, 12.2–12.4 |
+| D2 | Heizkorrektur je H über eine H, die über P hinausreicht | **Schlüssel bleibt je H** (statt Monatsbereich). Die Vorschau fragt eine Heizkorrektur nur für beendete H ab, deren Monate ab X ganz in P liegen. Für eine H, die über P hinausreicht, gilt die Staffel, bis die Korrektur beim Abrechnen dieser H erfasst wird, mit hint zum Restbetrag. Test mit 3.300 €. | 3.1, 10.1, 12.2 |
+| D3 | § 560 bei mehreren Brennstoffrechnungen | Übernommen: Σ Beträge / Gradtagsanteil der Vereinigung der Leistungszeiträume; feste Positionen nach den Tagen ihres Leistungszeitraums auf zwölf Monate, auch über zwölf Monate. Test 110,06 € statt 223,21 €. **Ändert PR 3** an dieser Stelle. | 3.7, 12.2, 13 |
+| R-a | Test B1/C1 | X = 05/2025 bei offenem P 2025 | 12.2 |
+| R-b | Restcent B8 | geht an A | 12.2 |
+| R-c | Aufwand | 70–78 T | 1.2, 13 |
+| R-d | PR 3 nennt R10, R11 nicht | ergänzt | 13 |
+| R-e | 11.2 Reihenfolge; „Zahlen ändern sich nicht“ | umgestellt; „außer bei Weg d“ | 11.2 |
+| R-f | api-Tests | ergänzt | 12.4 |
+| R-g | Frist je H in der Vorschau | ergänzt | 3.1 |
+| R-h | neue Stufe nur in `prepayments` | beide Staffeln nebeneinander, hint | 3.1, 10.1 |
+
+**Folgen für PR 1–4:** PR 1, 2 und 4 bleiben unverändert. PR 3 ändert sich nur durch D3 (Vereinigung der Leistungszeiträume, feste Positionen auch über zwölf Monate).
+
 ---
 
 ## 1. Die Entscheidungen auf einen Blick
@@ -306,7 +326,7 @@ Grundlage ist die Nachprüfung der fünften Fassung vom 05.10.2026 (C1–C5, R1�
    - Steuer und Mietkonto rechnen weiter im Kalenderjahr.
 4. **Rechtsregister** in `shared/law/`: jeder Rechtswert mit Gültigkeit, Fundstelle und Zeitregel. Die benutzten Werte frieren mit der abgeschlossenen Abrechnung ein. Ein Wächtertest verbietet Rechtszahlen außerhalb des Registers.
 5. **Kürzungen** werden je Mieter beziffert und jede einzeln genannt, nie als Summe: 15 % (§ 12 Abs. 1 S. 1), 3 % (§ 12 Abs. 1 S. 2), 3 % (§ 12 Abs. 1 S. 3) und 3 % (§ 7 Abs. 4 CO2KostAufG).
-6. **Aufwand:** 23 PRs (0–22, PR 0 erledigt), rund **70–79 Arbeitstage** (Abschnitt 13). Das ist das größte Release bisher. Die Reihenfolge erlaubt es, nach jeder Phase auszuliefern.
+6. **Aufwand:** 23 PRs (0–22, PR 0 erledigt), rund **70–78 Arbeitstage** (Abschnitt 13). Das ist das größte Release bisher. Die Reihenfolge erlaubt es, nach jeder Phase auszuliefern.
 
 ---
 
@@ -436,9 +456,14 @@ Jede Zeile hat unten einen eigenen Unterabschnitt mit Zahlenbeispiel.
 - **Aufteilen der bisherigen Vorauszahlung beim Umstellen auf Weg d** (B1, C1–C3). Bisher steht die ganze Vorauszahlung, Heizung eingeschlossen, in `prepayments`. Die Vorschau arbeitet je Mietverhältnis ab einem Monat X:
   - **X** ist vorbelegt mit dem Beginn der ersten H nach Weg d, **aber nie früher als der erste Monat nach dem letzten abgeschlossenen P** (C3). Einen früheren Monat lehnt der Server ab (409: „Die Vorauszahlungen bis Dezember 2025 sind in der abgeschlossenen Abrechnung 2025 angerechnet. Öffnen Sie sie wieder, wenn Sie früher beginnen wollen.“). Die Heizkostenabrechnung einer H, die vor X beginnt, rechnet nur die Heizvorauszahlungen ab X an und sagt für die Monate davor: „Die Vorauszahlungen Mai bis Dezember 2025 sind in der Abrechnung 2025 angerechnet.“
   - **Jede Stufe der Staffel ab X wird geteilt** (C1): Für jede Stufe Y_i fragt die Vorschau den Heizanteil Z_i ab, vorbelegt mit demselben Anteil (der Anteil der Heizkosten an allen Kosten der letzten Abrechnung, auf volle Euro). In einer Transaktion werden `prepayments` ab X auf Y_i − Z_i und `heating_prepayments` auf Z_i gesetzt. Die Summe je Monat bleibt Y_i.
-  - **Jahreskorrekturen** (`prepayment_overrides`) eines offenen P mit Monaten ab X werden in der Vorschau neu erfasst (C2): „davon übrige Vorauszahlungen“ für P und „davon Heizkostenvorauszahlung“ für `heating_prepayment_overrides` der betroffenen H. Bei Weg d enthält die Korrektur von P nur noch die übrigen Vorauszahlungen (3.7).
+  - **Jahreskorrekturen** (`prepayment_overrides`) eines offenen P mit Monaten ab X werden in der Vorschau neu erfasst (C2, D2): P bekommt „davon übrige Vorauszahlungen“. Die Heizkorrektur bleibt **je H** geschlüsselt und gilt **über alle Monate dieser H ab X**; die Vorschau fragt sie nur für eine H ab, die schon beendet ist und deren Monate ab X ganz in P liegen, und nennt diese Monate. Für eine H, die über P hinausreicht oder noch läuft, legt sie **keine** Korrektur an: Es gilt die Heizstaffel, bis die Korrektur beim Abrechnen dieser H erfasst wird; der hint `prepayment.heating-override-pending` nennt den aus der Korrektur von P folgenden Restbetrag. Bei Weg d enthält die Korrektur von P nur noch die übrigen Vorauszahlungen (3.7). Eine Korrektur mit Monatsbereich (`from`, `to`) wäre die größere Änderung und ist nicht nötig.
+  - **Fristen in der Vorschau** (R-g): Die Vorschau nennt je betroffener H ihre Frist und sagt, wenn sie schon abgelaufen ist; eine Nachforderung ist dann ausgeschlossen (§ 556 Abs. 3 S. 3 BGB).
   - Ohne Antwort wird nicht gespeichert (409). Steht im Mietvertrag eine getrennte Heizvorauszahlung, trägt der Vermieter deren Betrag ein.
-- **Ein- und Ausschalten von Weg d** (C4). Weg d ist abgeleitet (`separate_settlement = true` und H ≠ P) und kann sich durch eine andere Antwort oder einen Rhythmuswechsel ändern. **Jedes Ein- und Ausschalten läuft über dieselbe Vorschau.** Beim Ausschalten bietet sie an, beide Staffeln ab dem Wechsel wieder zu `prepayments` zusammenzuführen (Vorgabe). Unabhängig davon gilt in 6.1 Nr. 5: **Wer die Heizkosten abrechnet, rechnet auch `heating_prepayments` an.** Unter Weg b und bei H = P rechnet also die Gesamtabrechnung beide Staffeln an; keine Heizvorauszahlung geht verloren.
+- **Ein- und Ausschalten von Weg d** (C4, D1). Weg d ist abgeleitet (`separate_settlement = true` und H ≠ P) und kann sich durch eine andere Antwort oder einen Rhythmuswechsel ändern. **Jedes Ein- und Ausschalten läuft über dieselbe Vorschau.**
+  - **Ausschalten wirkt erst ab W**, dem Beginn der ersten H, die **weder abgeschlossen ist noch Monate in einem abgeschlossenen P hat** (D1, Spiegelbild von C3). Jede H vor W bleibt bis zu ihrem Ende eine Heizkostenabrechnung nach Weg d, mit eigener Frist und eigenem Abschluss; ihre Positionen wandern nicht in P, und keine Frist einer begonnenen H verlängert sich auf die spätere von P. Ein früheres W ergibt 409 („… öffnen Sie die Abrechnung wieder“).
+  - Ab W bietet die Vorschau an, beide Staffeln wieder zu `prepayments` zusammenzuführen (Vorgabe).
+  - **Jeder Monat der Heizstaffel wird genau einmal angerechnet** (6.1 Nr. 5): in der Heizkostenabrechnung nach Weg d, deren H ihn enthält und ihn ab X führt, sonst in P. So geht keine Heizvorauszahlung verloren und keine wird doppelt angerechnet.
+  - **Nach dem Einschalten** zeigt das Formular der Vorauszahlung beide Staffeln nebeneinander; steigt `prepayments` nach X, während `heating_prepayments` gleich bleibt, erscheint der hint `prepayment.heating-share-unchanged` (R-h).
 - **H = P mit getrennter Vorauszahlung, aber leerer Heizstaffel** (R13): Die Summe stimmt, der getrennte Ausweis zeigt aber 0 €. Hinweis `prepayment.heating-share-missing` (hint) mit dem Angebot der Vorschau zum Aufteilen.
 - **Eigener Rechen- und Fristweg** (B3). Weg d rechnet je (Anlage, H) eine eigene Abrechnung: Route `GET /api/heating-settlement/:plant/:period` (Berechnung) und `POST|PUT|DELETE …/close` (Abschluss in `closed_heating_settlements`, Verlauf wie #56). Sie hat ihr eigenes `Settlement.deadline = settlementDeadline(H)`. Die Gesamtabrechnung P lässt die Heizpositionen dieser Anlage und die Heizvorauszahlungen weg, und ihr Abschluss friert die Heizkostenabrechnung **nicht** mit ein; so wird nichts doppelt abgeschlossen. Das Cockpit führt jede Heizkostenabrechnung mit ihrer eigenen Frist.
 
@@ -696,9 +721,9 @@ Die Festlegung der ersten Fassung „nur d oder d + 1, sonst § 9b Abs. 3“ ent
 - **Vorschlag nach § 560 Abs. 4**, ein Zwölftel der voraussichtlichen Jahreskosten (Z-B5, R5 der dritten Prüfung):
   - Liegt eine **volle** Heizperiode bzw. ein voller Zeitraum davor, gelten dessen Kosten (VIII ZR 294/10: Grundlage ist die letzte Abrechnung).
   - Sonst, im Rumpf, wird hochgerechnet:
-    - **Brennstoff** (Positionen mit `heating_part = 'fuel'`; das Merkmal kommt schmal schon mit PR 3, A1) mit **Leistungszeitraum** (Verbrauchsrechnung): **Betrag / Gradtagsanteil seines eigenen Leistungszeitraums**, also auf zwölf Monate hochgerechnet nach der Jahreszeit, die die Rechnung abdeckt; mit Leistungszeitraum ab zwölf Monaten als **Jahresbetrag** (C5). Beispiel: Gas 01.03.2024–28.02.2025 über 2.400 €, gebucht im Rumpf `2025-01` → 200,00 € je Monat; nach der fünften Fassung (geteilt durch den Gradtagsanteil des Rumpfs) wären es 2.400 / 0,530 / 12 = 377,36 € gewesen, ein überhöhter Vorschlag (VIII ZR 294/10). Ohne Leistungszeitraum ist eine Brennstoffposition eine **Lieferung** (Öl, Flüssiggas, Pellets) und kein Verbrauch; sie geht nach der letzten vollen Periode, sonst ohne Vorschlag (B4).
+    - **Brennstoff** (Positionen mit `heating_part = 'fuel'`; das Merkmal kommt schmal schon mit PR 3, A1) mit **Leistungszeitraum** (Verbrauchsrechnung): **Σ der Beträge / Gradtagsanteil der Vereinigung ihrer Leistungszeiträume**, auf zwölf Monate bezogen (C5, D3). Genau zwölf Monate ergeben 1.000 ‰, also den Jahresbetrag (Gas 01.03.2024–28.02.2025 über 2.400 € → 200,00 € je Monat; fünfte Fassung 377,36 €). Mehrere Rechnungen werden nicht einzeln hochgerechnet und addiert: Fernwärme Januar–Februar 400 € (320 ‰) und März–April 300 € (210 ‰) ergeben 700 / 0,530 / 12 = **110,06 €** je Monat, nicht 1.250,00 + 1.428,57 = 2.678,57 € → 223,21 € (VIII ZR 294/10). Über zwölf Monate liegt der Gradtagsanteil über 1.000 ‰ und senkt den Betrag entsprechend. Ohne Leistungszeitraum ist eine Brennstoffposition eine **Lieferung** (Öl, Flüssiggas, Pellets) und kein Verbrauch; sie geht nach der letzten vollen Periode, sonst ohne Vorschlag (B4).
     - kalte Kosten, die nach 3.4 auf den Rumpf geteilt sind, nach **Tagen**;
-    - **feste Heizpositionen** (Wartung, Messdienst, Grundpreis) mit Leistungszeitraum von zwölf Monaten oder mehr gehen als **Jahresbetrag** ein, nicht hochgerechnet; mit kürzerem Leistungszeitraum nach dessen Tagen; ohne Leistungszeitraum gilt die letzte volle Periode, sonst kein Vorschlag für diese Position (A11).
+    - **feste Heizpositionen** (Wartung, Messdienst, Grundpreis) gehen nach den Tagen ihres Leistungszeitraums auf zwölf Monate: genau zwölf Monate ergeben den **Jahresbetrag**, kürzere werden hoch-, längere heruntergerechnet (D3); ohne Leistungszeitraum gilt die letzte volle Periode, sonst kein Vorschlag für diese Position (A11).
   - **Fehlt für eine Brennstoffposition ein Vorschlag**, gibt es für den ganzen Heizanteil keinen Vorschlag (R11), sonst wäre der Rest ohne Brennstoff zu niedrig. Hinweis `prepayment.no-suggestion` mit zwei Texten: „Kennzeichnen Sie die Brennstoffrechnung …“ bzw. bei einer Lieferung „Aus einer Lieferung lässt sich der Jahresverbrauch nicht ableiten; den Vorschlag gibt es nach der nächsten vollen Abrechnung“ (R10).
   - Eine Abrechnung nur mit Heizkosten **nach Auszug** (`heatingOnly`) ergibt keinen Vorschlag. Die Heizkostenabrechnung nach Weg d (`scope: 'heating'`) ergibt einen Vorschlag für die Heizvorauszahlung (A3).
 
@@ -1273,7 +1298,7 @@ Eingebaut werden sie in `computeSettlement`, und zwar über die Empfänger aus #
       - `serviceDeducted`: Zerlegung des Vermieterrests (7.4);
       - alle übrigen Methoden: Abzugszeilen `co2Relief` je Mieter nach dem Anteil am Brennstoff (9.4).
    5. **Kürzungsbeträge** je Mieter (6.5) und Hinweise.
-5. **Vorauszahlungen** der Monate von P, Saldo, Vorschlag nach § 560 Abs. 4 (3.7). **Wer die Heizkosten abrechnet, rechnet auch `heating_prepayments` an** (C4): P rechnet beide Staffeln an, außer die Heizkosten laufen nach Weg d in einer eigenen Heizkostenabrechnung; dann rechnet diese die Heizstaffel ab X an.
+5. **Vorauszahlungen** der Monate von P, Saldo, Vorschlag nach § 560 Abs. 4 (3.7). **Jeder Monat der Heizstaffel wird genau einmal angerechnet** (C4, D1): in der Heizkostenabrechnung nach Weg d, deren H ihn enthält und die ihn ab X führt; sonst in P. P rechnet die Heizstaffel deshalb nur für Monate an, die keiner solchen Heizkostenabrechnung gehören (nach dem Ausschalten: ab W).
 6. **Ausweis:** Druckblöcke Heizkostenabrechnung (8.8), CO₂ (9.5), § 6a (8.8), Rechtsstand mit benutzten Werten (4.4).
 7. **Weg d, je Anlage und H** (B3): eigene Berechnung mit den Schritten 4.1–4.5 für diese Anlage, Statements `scope: 'heating'` mit den Heizvorauszahlungen der Monate von H, Vorschlag nach § 560 für die Heizvorauszahlung, `Settlement.deadline = settlementDeadline(H)`, eigener Abschluss (3.1).
 
@@ -1875,6 +1900,8 @@ Jeder Code steht in `noticeKinds` und trägt mindestens einen Begriff.
 | `period.heating-differs` | hint (färbt nicht) | – | 5 |
 | `period.heating-only-statement` | **warning** | empfohlene Frist | 5 |
 | `prepayment.heating-share-missing` | hint | – | 5 |
+| `prepayment.heating-override-pending` | hint | Restbetrag | 5 |
+| `prepayment.heating-share-unchanged` | hint | – | 5 |
 | `period.no-heating-period` | warning | – | 5 |
 
 **Brennstoff:**
@@ -2033,9 +2060,9 @@ Die Einrichtung ist ein geführter Ablauf in den Stammdaten des Objekts. Jede Fr
    - Ich selbst, mit Zählern oder Heizkostenverteilern → `self` (ab PR 10).
    - Niemand, die Heizkosten werden nach Fläche oder fest verteilt → `manual`, mit dem Satz zu § 12 (15 %) und beim Zweifamilienhaus zur Vereinbarung nach § 2.
 3. **„Für welchen Zeitraum rechnet sie ab?“** Vorgabe ist der Zeitraum des Objekts.
-   - Wird Weg d gewählt (oder später ein- oder ausgeschaltet), folgt die Vorschau zum Aufteilen der Vorauszahlung: X, jede Stufe, Jahreskorrekturen offener Zeiträume (3.1, B1, C1–C4).
    - Weicht er ab, fragt Mietfuchs: „Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?“ Dann bietet es die Wege aus 3.1 an, mit Vorschau der Zeiträume und dem Hinweis auf den Mietvertrag.
    - Vorgeschlagen wird: bei „getrennt abgerechnet“ **Weg d**; sonst die eigene Heizperiode (Weg b), wenn schon Daten im Kalenderjahr vorhanden sind; sonst die Umstellung des ganzen Objektzeitraums (Weg a). Legt der Vertrag den Zeitraum fest, nennt jeder Weg den Zustimmungsvorbehalt (A3).
+   - Wird Weg d gewählt (oder später ein- oder ausgeschaltet), folgt die Vorschau zum Aufteilen der Vorauszahlung: X, jede Stufe, Jahreskorrekturen offener Zeiträume (3.1, B1, C1–C4).
    - Vorhandene Heizpositionen offener Zeiträume werden mit Vorschau umgeschlüsselt (3.0).
 4. **„Welche Wohnungen hängen an dieser Heizung?“** Vorgabe: alle Wohnungen.
 5. **„Sind die Zähler und Heizkostenverteiler aus der Ferne ablesbar? Wurden sie nach dem 01.12.2021 eingebaut?“** (`devices_remote`, `devices_installed_after_2021_12`; bei `self` je Zähler; R-A1, G-C2).
@@ -2046,7 +2073,7 @@ Die Einrichtung ist ein geführter Ablauf in den Stammdaten des Objekts. Jede Fr
 
 **Laienprobe** (Hinweis 7): Vor PR 7 werden die Formulare aus PR 4–6 mit drei Vermietern ohne technische Vorkenntnisse durchgespielt; Befunde gehen in PR 7.
 
-Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesbarkeit lassen sich später ergänzen; bis dahin gelten die Vorgaben und „unbekannt“. Bestehende Heizpositionen in **offenen** Zeiträumen werden ihr zugeordnet, mit Vorschau. Zahlen ändern sich dabei nicht, denn die Methode `manual`/`service` verteilt wie bisher.
+Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesbarkeit lassen sich später ergänzen; bis dahin gelten die Vorgaben und „unbekannt“. Bestehende Heizpositionen in **offenen** Zeiträumen werden ihr zugeordnet, mit Vorschau. Zahlen ändern sich dabei nicht, außer bei Weg d (P verliert dann die Heizkosten an die Heizkostenabrechnung), denn die Methode `manual`/`service` verteilt wie bisher.
 
 ### 11.3 Was ein Vermieter mit Messdienst mindestens tut
 
@@ -2147,16 +2174,19 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 | R2 | `manual`, Öl, Beispiel 8.2 mit Bestand | Mieter tragen 5.750 € nach Verbrauch, `fuelCarry` −100 € | nach Lieferung 5.650 € (mit 3.000 l Dezemberlieferung +3.150 €) |
 | R3 | getrennte Heizvorauszahlung, H Mai–April, P Kalenderjahr | eigene Heizkostenabrechnung je H mit Frist 30.04.2027 bei H = `2025-05`; P ohne Heizkosten | nur Weg a |
 | R4 / B5 | `manual`, **Position „nur Heizung“** (`heating_target = 'heating'`, PR 10), Wohnung leer November–März, Mieter April–Oktober | Mieter trägt 270 ‰ dieser Position (Gradtage); eine kombinierte Position „Heizung und Warmwasser“ bleibt bei 214/365 = 58,6 % (§ 9b Abs. 2) | 58,6 % für jede Position |
-| B1 / C1 | Weg d einschalten, Staffel 300 € ab 01/2025 und 330 € ab 01/2026, Heizanteil der letzten Abrechnung 41 %, X = 01/2026 | Vorschau teilt beide Stufen ab X: 177/123 €, dann 195/135 €; Mietkonto-Soll 300 bzw. 330 €, nie mehr | Soll 453 € ab 01/2026; 492 € zu viel in H `2025-05` |
+| B1 / C1 | Weg d einschalten, P 2025 offen, Staffel 300 € ab 01/2025 und 330 € ab 01/2026, Heizanteil der letzten Abrechnung 41 %, **X = 05/2025** | Vorschau teilt beide Stufen ab X: 177/123 €, dann 195/135 €; Mietkonto-Soll 300 bzw. 330 €, nie mehr | Soll 453 € ab 01/2026; 4 · 123 = 492 € zu viel in H `2025-05` |
 | B2 | Weg d, Heizperiode wechselt von Mai auf Januar (P = Kalenderjahr), Jahreskorrektur der Heizvorauszahlung 1.400 € unter `2025-05` | Vorschau verlangt Beträge für den Rumpf `2025-05` (Mai–Dezember 2025); danach ist H = P, Weg d endet, und `2026-01` rechnet als **eine** Gesamtabrechnung mit beiden Vorauszahlungen getrennt ausgewiesen | 1.400 € ganz auf den Rumpf |
-| C2 | P 2026 offen, Jahreskorrektur 3.300 € (Soll 3.600), Weg d ab X = 01/2026, Z = 123 € | Vorschau verlangt „davon übrige“ und „davon Heizung“; Summe der Anrechnung über P 2026 und H für Januar bis Dezember 2026 = 3.300 € | 3.300 € in P und zusätzlich 4 · 123 = 492 € in H |
+| C2 / D2 | P 2026 offen, Jahreskorrektur 3.300 € (Soll 3.600 = 12 · 300, geteilt 177/123), Weg d ab X = 01/2026 | Vorschau fragt: P 2026 „davon übrige“ (Eingabe 2.124 €), H `2025-05` „Heizung Januar–April 2026“ (Eingabe 300 €); für H `2026-05` (bis 04/2027) keine Korrektur, sie rechnet die Staffel 12 · 123 = 1.476 € an, hint mit Restbetrag 876 € für Mai–Dezember 2026. Je Abrechnung: P 2.124, H `2025-05` 300, H `2026-05` 1.476 | 3.300 in P und 492 € zusätzlich in H; oder Korrektur nur Mai–Dezember unter H `2026-05`, Januar–April 2027 (492 €) verloren |
 | C3 | P 2025 abgeschlossen, Einrichtung im Herbst 2026, Position auf H `2025-05` umgeschlüsselt | X frühestens 01/2026 (409 bei 05/2025); H `2025-05` rechnet nur Januar–April 2026 an (4 · 123 = 492 €) und nennt die Anrechnung Mai–Dezember 2025 in der Abrechnung 2025 | 984 € je Mieter doppelt angerechnet |
-| C4 | Weg d ausgeschaltet (Antwort auf „nein“), `heating_prepayments` gefüllt | Vorschau führt die Staffeln zusammen; ohne Zusammenführen rechnet die Gesamtabrechnung beide Staffeln an | Heizvorauszahlung nie angerechnet |
+| C4 | Weg d ausgeschaltet (Antwort auf „nein“), `heating_prepayments` gefüllt, nichts abgeschlossen | Vorschau führt die Staffeln ab W zusammen; ohne Zusammenführen rechnet P beide Staffeln an | Heizvorauszahlung nie angerechnet |
+| D1 Fall 1 | Weg d seit X = 05/2025, Z = 123 €; P 2025 abgeschlossen (nur übrige angerechnet); H `2025-05` offen; Ausschalten im Herbst 2026 | W = 05/2026; H `2025-05` bleibt nach Weg d und rechnet 12 · 123 = 1.476 € an; P 2026 rechnet die Heizstaffel ab 05/2026 an | 8 · 123 = **984 €** Heizvorauszahlung Mai–Dezember 2025 nirgends angerechnet |
+| D1 Fall 2 | H `2025-05` als Heizkostenabrechnung abgeschlossen, P 2026 offen, Ausschalten | Positionen von H `2025-05` stehen nicht in P 2026; P 2026 rechnet die Heizstaffel ab 05/2026 an | Heizkosten doppelt verteilt; 4 · 123 = **492 €** doppelt angerechnet |
+| D3 | Rumpf 01.01.–30.04., Fernwärme Januar–Februar 400 € und März–April 300 € | 110,06 € je Monat | 223,21 € |
 | C5 | Gas 01.03.2024–28.02.2025 über 2.400 € im Rumpf `2025-01` | Vorschlag 200,00 € je Monat für diese Position | 377,36 € |
 | R11 | Rumpf mit Gasrechnung (Vorschlag möglich) und Öllieferung ohne Leistungszeitraum | kein Vorschlag für den ganzen Heizanteil | Vorschlag nur aus Gas, zu niedrig |
 | B3 | Weg d, H = `2025-05`, P = 2026 | Heizkostenabrechnung mit Frist 30.04.2027, im Cockpit eigene Zeile; Abschluss von P friert sie nicht ein | Frist 31.12.2027 |
 | B4 | Rumpf 01.01.–30.04., Öllieferung 3.000 € als Brennstoff ohne Leistungszeitraum | kein hochgerechneter Vorschlag für diese Position, `prepayment.no-suggestion` | 5.660 € Jahresbasis |
-| B8 | `manual`, L = 464,27 €; Brennstoff 9.000 € mit `heating_part = 'fuel'` ohne Lieferung, verteilt A 50 %, B 30 %, C 20 %; Messkosten 1.000 € nach Einheiten (je ⅓) | x_t aus Brennstoff: A **232,14 €**, B 139,28 €, C 92,85 € (exakt 232,135 / 139,281 / 92,854; Restcent nach Bruchteil an C und A) | A 224,40 € (Topf) |
+| B8 | `manual`, L = 464,27 €; Brennstoff 9.000 € mit `heating_part = 'fuel'` ohne Lieferung, verteilt A 50 %, B 30 %, C 20 %; Messkosten 1.000 € nach Einheiten (je ⅓) | x_t aus Brennstoff: A **232,14 €**, B 139,28 €, C 92,85 € (exakt 232,135 / 139,281 / 92,854; der eine Restcent geht an A, Rest 0,5 > 0,4 > 0,1) | A 224,40 € (Topf) |
 | F1 | Wärmepumpe, Volumenformel, 4.500 kWh, Strom 12.000 kWh, Wärme 36.000 kWh | α = 37,5 % | 12,5 % |
 | F2/F3 | ETW, Gemeinschaft mit Vorwegabzug | `serviceDeducted`, Betrag S + L, `co2Share` in den Werbungskosten | ohne CO₂-Datensatz; Nettobetrag |
 | F4 | Zweifamilienhaus in Gemeinde mit Kappungsgrenzen-Verordnung, ohne Mietpreisbremse, ab 2028 | hälftige Teilung | Stufen |
@@ -2225,7 +2255,7 @@ Geprüft wird:
 8. `serviceDeducted`: kein Mieter zahlt anders als sein Einzelbetrag, nie eine `co2Relief`-Zeile. L_self ist exakt. `amountsRest` ist nur bei gescheiterter Probe negativ.
 9. 0 ≤ r_t ≤ x_t; |R − L_vermietet| ≤ 0,5 ct, **bei widerspruchsfreien Daten**. Bei sich überschneidenden Mietverhältnissen gilt das nicht, und der Kommentar sagt es (G-H).
 10. Steuer: Über alle Kalenderjahre steht jede Position genau einmal in den Werbungskosten; `fuelCarry` und `co2Relief` nie. Der private Teil ist Betrag × Gewicht ohne Übertrag.
-11. Vorauszahlungen: Ohne Jahreskorrektur ist die Summe der angerechneten Vorauszahlungen (bei Weg d: aus P **und** aus den Heizkostenabrechnungen) gleich der Summe beider Staffeln im Mietkonto über dieselben Monate, auch über einen Wechsel des Zeitraums oder der Heizperiode, über Stufen der Staffel nach X und bei einer Einrichtung von Weg d nach einem Abschluss (Generator erzeugt beides, C1, C3).
+11. Vorauszahlungen: Ohne Jahreskorrektur ist die Summe der angerechneten Vorauszahlungen (bei Weg d: aus P **und** aus den Heizkostenabrechnungen) gleich der Summe beider Staffeln im Mietkonto über dieselben Monate, auch über einen Wechsel des Zeitraums oder der Heizperiode, über Stufen der Staffel nach X und bei einer Einrichtung von Weg d nach einem Abschluss und beim Ausschalten nach einem Abschluss von P oder H (Generator erzeugt alle drei, C1, C3, D1). Jeder Monat der Heizstaffel wird genau einmal angerechnet.
 12. Ohne Anlage, ohne Rhythmus und ohne CO₂ ist jede Zahl gleich dem Stand vor 0.11.0.
 13. Zwei Objekte und zwei Anlagen rechnen unabhängig.
 14. Kürzungsbeträge je Mieter auf die gedruckten Zeilen nach Abzug.
@@ -2236,6 +2266,7 @@ Geprüft wird:
 
 - Zeiträume (404 mit Satz, `2025` als Alias).
 - Weg d: `/api/heating-settlement/:plant/:period` rechnet und schließt ab; Frist von H; Aufteilen der Vorauszahlung in einer Transaktion (409 ohne Antwort).
+- Weg d: 409 bei X vor dem letzten abgeschlossenen P (C3) und bei W vor einer abgeschlossenen oder über einen Abschluss reichenden H (D1); Ausschalten mit Zusammenführen (C4).
 - Anlage anlegen samt Zuordnung offener Positionen.
 - Sperren je PR (400).
 - Fremdes Objekt → 400. Überlappende Anlagen → 400. Abgeschlossener Zeitraum beim Wechsel → 409.
@@ -2277,9 +2308,9 @@ Geprüft wird:
 | **0** | Anleitung `meteringService`. **Erledigt mit #216** (auf `feat/heizung`); die Durchsicht von PR 6 prüft, dass Text und Probe zusammenpassen. | #209 | 0 T |
 | **1** | **Rechtsregister** `shared/law/` mit den Parametern, die der Bestand nutzt (Kabel, 15 %, 50/70, `VACANCY_PERSONS`, Umsatzsteuer, Fernablesung als `hkv.remote-reading.retrofit` und `hkv.cut.remote-reading`, unverändert in Text und Zahl), **eine Zeitregel je Parameter** (N6), Protokoll, `legalBasis.values`, `deviation` für Werte; Wächter mit erlaubten Stellen; Tests je Stichtag. Golden wortgleich. **Nicht** in PR 1: `hkv.degree-days` (PR 3), `hkv.remote-reading.new-devices` (PR 4). | #97, #110 | 2,5–3 T |
 | **2** | **Zeitraum, Kern:** `shared/period.ts`; 0014/0015 (`year` → `period` in vier Tabellen und `requested_period`, Rhythmus, Wechsel, Prüfbedingung mit Monat 1..12); `legacy/read.ts` erzeugt `period`; Schnappschuss und calc.ts über P; `ledgerRows`; `settlementDeadline`, `Settlement.deadline`; Alias nur beim reinen Kalenderobjekt. Golden unverändert, Gleichheitstest. | #208 | 4–5 T |
-| **3** | **Zeitraum, Bedienung:** Beginnmonat und Wechsel mit Vorschau schrumpfender Schlüssel; Jahreskorrekturen in der Vorschau neu erfasst (N4); Rumpf, Leistungszeitraum, Aufteilen nur kalter Kosten, Jahr der Zahlung, Steuer über zwei Abrechnungen, `PeriodProvider`, Cockpit, `period.*`; `hkv.degree-days` und schmales Merkmal `cost_items.heating_part` (A1); Vorschlag § 560: Brennstoff **mit Leistungszeitraum** nach dem Gradtagsanteil des eigenen Leistungszeitraums, ab zwölf Monaten als Jahresbetrag (C5), Lieferungen ohne Leistungszeitraum nach der letzten vollen Periode oder ohne Vorschlag (B4), kalte Rumpfanteile nach Tagen, feste Jahresrechnungen als Jahresbetrag (A11); Lexikon, F18, Praxislauf 15/16. | #208 | 5,5–6,5 T |
+| **3** | **Zeitraum, Bedienung:** Beginnmonat und Wechsel mit Vorschau schrumpfender Schlüssel; Jahreskorrekturen in der Vorschau neu erfasst (N4); Rumpf, Leistungszeitraum, Aufteilen nur kalter Kosten, Jahr der Zahlung, Steuer über zwei Abrechnungen, `PeriodProvider`, Cockpit, `period.*`; `hkv.degree-days` und schmales Merkmal `cost_items.heating_part` (A1); Vorschlag § 560: Brennstoff **mit Leistungszeitraum** nach dem Gradtagsanteil des eigenen Leistungszeitraums, mehrere Rechnungen über die Vereinigung ihrer Leistungszeiträume (C5, D3); fehlt für eine Brennstoffposition ein Vorschlag, keiner für den ganzen Heizanteil, mit zwei Hinweistexten (R10, R11), Lieferungen ohne Leistungszeitraum nach der letzten vollen Periode oder ohne Vorschlag (B4), kalte Rumpfanteile nach Tagen, feste Positionen nach den Tagen ihres Leistungszeitraums auf zwölf Monate (A11, D3); Lexikon, F18, Praxislauf 15/16. | #208 | 5,5–6,5 T |
 | **4** | **Heizanlage, Grundlage:** `heating_plants` (samt `source`, Wärmepumpen-Erfassung), `heating_plant_units`, `heating_periods` (ohne Vorrat); `cost_items.heating_plant_id` mit Schreibprüfung; Zähler `warmwasser`, `hkv`, Rolle, `remote_readable`, `installed_on`; Fernablesbarkeit neuer Geräte und an der Anlage für den Messdienst; `change_split` (wirkt bei `manual` erst auf Positionen „nur Heizung“, A2); Wasserschlüssel; `zfh`; Eigentumswohnung als Anlage `homeowners`; Einrichtung Schritte 1, 2, 4, 5, 6. **Sperren:** `self`, `perUnit`, zweite Anlage, eigene Heizperiode. | #99, #214, #180 | 4,5–5,5 T |
-| **5** | **Eigene Heizperiode und getrennte Heizkostenabrechnung:** Rhythmus der Anlage, Zuordnung H → P, Umschlüsseln mit Vorschau, Abrechnung nur mit Heizkosten (L3), F14; **Weg d** mit `heating_prepayments`, Aufteilen der bisherigen Vorauszahlung mit Vorschau über alle Stufen ab X, X nicht vor dem letzten Abschluss, Neuerfassung der Jahreskorrekturen offener P, Ein- und Ausschalten über dieselbe Vorschau, Anrechnung beider Staffeln, wer die Heizkosten abrechnet (B1, C1–C4), `heating_prepayment_overrides` samt Neuerfassung beim Rhythmuswechsel (B2), eigener Berechnung, Route, Frist und Abschluss je H in `closed_heating_settlements` (B3), `Statement.scope`, § 560-Vorschlag für die Heizvorauszahlung, H = P als eine Gesamtabrechnung; Einrichtung Schritt 3. | #217 | 7–8 T |
+| **5** | **Eigene Heizperiode und getrennte Heizkostenabrechnung:** Rhythmus der Anlage, Zuordnung H → P, Umschlüsseln mit Vorschau, Abrechnung nur mit Heizkosten (L3), F14; **Weg d** mit `heating_prepayments`, Aufteilen der bisherigen Vorauszahlung mit Vorschau über alle Stufen ab X, X nicht vor dem letzten Abschluss, Neuerfassung der Jahreskorrekturen offener P, Ein- und Ausschalten über dieselbe Vorschau, Ausschalten erst ab W (D1), Heizkorrektur je H nur für beendete H (D2), Anrechnung beider Staffeln, wer die Heizkosten abrechnet (B1, C1–C4), `heating_prepayment_overrides` samt Neuerfassung beim Rhythmuswechsel (B2), eigener Berechnung, Route, Frist und Abschluss je H in `closed_heating_settlements` (B3), `Statement.scope`, § 560-Vorschlag für die Heizvorauszahlung, H = P als eine Gesamtabrechnung; Einrichtung Schritt 3. | #217 | 7–8 T |
 
 ### Phase B: Messdienst und CO₂
 
@@ -2319,7 +2350,7 @@ Geprüft wird:
 
 | Umfang | Aufwand |
 |---|---|
-| alle PRs | **70–79 Arbeitstage** |
+| alle PRs | **70–78 Arbeitstage** |
 | Phase A | 23,5–28 T |
 | Phase B | 16,5 T |
 | Phase C | 15–19 T |
