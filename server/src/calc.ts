@@ -1702,6 +1702,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // berechnet. Gemeldet wird jede Überschneidung, die das Abrechnungsjahr berührt, mit dem
   // Mehrbetrag (`extra`, exakt in Cent, gerundet erst für den Text), den die Verteilung unten je
   // Position aufsummiert (`overlapExtra`).
+  // Gemeldet und beziffert wird je Paar. Überschneiden sich drei Mietverhältnisse an denselben
+  // Tagen, erscheinen drei Paare, und ihre Mehrbeträge können sich teilweise doppelt zählen: Jedes
+  // Paar rechnet für sich, als gäbe es das dritte nicht. Der Fall ist selten und jedes Paar für
+  // sich ein Fehler; der Betrag je Meldung stimmt für dieses Paar.
   const overlaps = tenancyOverlaps(tenancies).flatMap((o) => {
     const inYear = commonPeriod({ start: o.from, end: o.to }, { start: yFrom, end: yTo })
     return inYear && inYear.to !== null ? [{ ...o, inYear: { from: inYear.from, to: inYear.to }, extra: 0 }] : []

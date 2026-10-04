@@ -61,6 +61,21 @@ test('Weitergerechnet wie erfasst: Anteile unverändert, der Mehrbetrag steht al
   assert.equal(vacancy, -4932)
 })
 
+test('Neben einer selbstgenutzten Wohnung: der Eigenanteil bleibt exakt, der Überhang steht ganz im Leerstand (b19b698)', () => {
+  const snap = snapshotOf({
+    ...source([xaver, yvonne]),
+    units: [
+      { id: 'A', name: 'Wohnung A', areaM2: 50, participates: true },
+      { id: 'B', name: 'Wohnung B', areaM2: 50, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+  }, 2025)
+  const s = computeSettlement(snap)
+  const parts = s.landlord.rows[0]?.landlordParts ?? []
+  assert.equal(parts.find((p) => p.reason === 'selfUse')?.cents, 60000)
+  assert.equal(parts.find((p) => p.reason === 'vacancy')?.cents, -4932)
+  assert.match(overlapNotices(s)[0]?.text ?? '', /49,32 €/)
+})
+
 test('Personenschlüssel: Mehrbetrag aus der Verteilbasis nachgerechnet, angesetzt die kleinere der beiden Lesarten', () => {
   const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const s = settle([xaver, yvonne, zora], [muell])
