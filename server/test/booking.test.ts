@@ -691,7 +691,7 @@ test('M3: Hängt der Beleg schon von Hand an einer Position, ist sie Kandidat je
 
 // Integrationsdurchsicht vor 0.10 (N1): Verknüpfen ändert den Betrag einer Position. Liegt sie in
 // einem Jahr mit abgeschlossener Abrechnung, sagt die Vorschau es; geändert wird trotzdem, denn
-// die Abrechnung bleibt eingefroren und zeigt die Änderung als Abweichung.
+// die Abrechnung bleibt eingefroren; ändert sich ein Saldo, zeigt sie das als Abweichung.
 test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt es', async () => {
   await withWorld(async (w) => {
     await estimate(w, 'wa')
@@ -700,7 +700,7 @@ test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt 
     assert.equal(ohne.notices.some((n) => n.includes('abgeschlossen')), false, 'offenes Jahr: kein Hinweis')
     await w.opened.write((db) => closeSettlement(db, { id: 's', propertyId: 'objekt-1', year: 2025, closedAt: '2026-03-01T00:00:00.000Z', sentAt: null, settlement: {} }))
     const mit = await plan(w, r, [link(0, 'wa')])
-    assert.ok(mit.notices.includes('„Wasser/Abwasser 2025“: Die Abrechnung 2025 ist abgeschlossen; die Änderung erscheint dort als Abweichung.'), JSON.stringify(mit.notices))
+    assert.ok(mit.notices.includes('„Wasser/Abwasser 2025“: Die Abrechnung 2025 ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.'), JSON.stringify(mit.notices))
     // Bleibt der Betrag, wie er ist, ändert sich nichts, und es gibt nichts zu sagen.
     const gleich = await receipt(w, 'gleich.pdf', [line('Wasser', 'Wasser/Abwasser', 150000)])
     await estimate(w, 'wb', { description: 'Wasser B' })

@@ -1052,6 +1052,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       : direct ? [direct]
         : item.participantUnitIds ? units.filter((u) => item.participantUnitIds?.includes(u.id))
           : null
+    // Eine leere Liste nennt keine Einheit; die Seite zeigte sonst eine leere Aufzählung (Durchsicht).
 
     const directLabel = (u: SnapshotUnit) =>
       `direkt: ${u.name} (${isSelf(u) ? 'selbstgenutzt' : u.participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
@@ -1130,7 +1131,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       areaPrivateCents,
       settlementPrivateCents,
       steps,
-      taxUnits: taxUnits?.map((u) => ({ unitId: u.id, unitName: u.name })) ?? null,
+      taxUnits: taxUnits && taxUnits.length > 0 ? taxUnits.map((u) => ({ unitId: u.id, unitName: u.name })) : null,
     })
   }
 

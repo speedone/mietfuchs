@@ -365,6 +365,7 @@ test('„Nicht umlagefähig“ mit Zuordnung: Position, Einheit, Wirkung und der
     POS({ costItemId: 'a', allocation: 'direct-self', description: 'Malerarbeiten', amountCents: 100000, privateCents: 100000, deductibleCents: 0, deductiblePercent: null, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] }),
     POS({ costItemId: 'b', allocation: 'direct-rented', description: 'Bad', amountCents: 50000, privateCents: 0, deductibleCents: 50000, deductiblePercent: null, taxUnits: [{ unitId: 'OG', unitName: 'OG' }] }),
     POS({ costItemId: 'c', allocation: 'area', description: 'Dach Hinterhaus', taxUnits: [{ unitId: 'OG', unitName: 'OG' }, { unitId: 'DG', unitName: 'DG' }] }),
+    POS({ costItemId: 'd', allocation: 'unsplittable', description: 'Dach Vorderhaus', amountCents: 20000, privateCents: 0, deductibleCents: 20000, deductiblePercent: null, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] }),
   ]))
   const kasten = screen.getByText(/bestimmten Einheiten zugeordnet/).closest('.notice')
   if (!kasten) return expect.fail('kein Hinweiskasten')
@@ -373,6 +374,7 @@ test('„Nicht umlagefähig“ mit Zuordnung: Position, Einheit, Wirkung und der
   expect(text).toContain('„Malerarbeiten“ (1.000,00 €): EG, ganz privat')
   expect(text).toContain('„Bad“ (500,00 €): OG, ganz abziehbar')
   expect(text).toContain('„Dach Hinterhaus“ (3.300,00 €): OG und DG, nach der Fläche dieser Einheiten')
+  expect(text).toContain('„Dach Vorderhaus“ (200,00 €): EG, nicht aufteilbar (Fläche fehlt), ungekürzt abziehbar')
   expect(text).toMatch(/„das ganze Gebäude \(nach Fläche\)“/)
   expect(text).toMatch(/0\.8\.0 oder älter/)
 })
