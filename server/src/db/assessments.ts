@@ -61,7 +61,7 @@ export async function saveAssessment(db: Database, input: NewAssessment, ids: { 
     await tx.delete(assessmentLines).where(and(eq(assessmentLines.assessmentId, id), isNull(assessmentLines.costItemId)))
     const added = withoutBooked(lines, booked)
     await insertLines(tx, id, added, next)
-    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year }
+    const placement = booked.length > 0 ? {} : { propertyId: head.propertyId, year: head.year, requestedYear: head.requestedYear }
     await tx.update(assessments).set({
       detectedYear: head.detectedYear, vendor: head.vendor, invoiceDate: head.invoiceDate, totalGrossCents: head.totalGrossCents,
       amountsAdjusted: head.amountsAdjusted, laborFromTotal: head.laborFromTotal, createdAt: ids.now, nextIdx: next + added.length, ...placement,
@@ -93,7 +93,8 @@ export async function forgetAssessment(db: Executor, file: string): Promise<void
 
 // Objekt und Jahr ändern, beides nur, solange keine Zeile gebucht ist: Sonst hingen Zeilen einer
 // Auswertung an Positionen zweier Objekte oder eines anderen Jahres, und ein weiteres Verknüpfen
-// mit derselben Position scheiterte an der Jahresprüfung des Planers.
+// mit derselben Position scheiterte an der Jahresprüfung des Planers. Ein von Hand gesetztes Jahr
+// ist zugleich das gewählte: Wer es ausdrücklich setzt, hat über die Abweichung entschieden.
 export async function placeAssessment(db: Database, id: string, change: { year?: number; propertyId?: string | null }): Promise<'ok' | 'missing' | 'booked'> {
   const current = await readAssessment(db, id)
   if (!current) return 'missing'
@@ -101,7 +102,7 @@ export async function placeAssessment(db: Database, id: string, change: { year?:
     (change.year !== undefined && change.year !== current.assessment.year)
   if (moves && current.lines.some((l) => l.costItemId !== null)) return 'booked'
   if (change.year === undefined && change.propertyId === undefined) return 'ok'
-  await db.update(assessments).set(change).where(eq(assessments.id, id))
+  await db.update(assessments).set(change.year !== undefined ? { ...change, requestedYear: change.year } : change).where(eq(assessments.id, id))
   return 'ok'
 }
 

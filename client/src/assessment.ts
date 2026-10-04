@@ -131,17 +131,28 @@ export function categoryOptions(stored: string): string[] {
 
 const laborText = (c: number | null): string => (c === null ? 'keiner' : fmtEuro(c))
 
-// Die Vorschau in Sätzen, je Position eine Zeile.
+// Die Vorschau in Sätzen, je Position eine Zeile. Eine neue Position nennt ihr Jahr: Es ist das
+// Jahr aus dem Beleg und kann vom gewählten abweichen (Schlussdurchsicht, I1); nach dem Buchen
+// stünde sie sonst nicht in der Liste, die man gerade ansieht, und niemand wüsste, wo sie ist.
 export function previewLines(p: BookingPreview): string[] {
   return p.items.map((i) => {
     if (i.costItemId === null) {
-      return `Neu: „${i.description}“ (${i.category}) ${fmtEuro(i.afterCents)}${i.afterLabor35aCents ? `, davon §35a ${fmtEuro(i.afterLabor35aCents)}` : ''}`
+      return `Neu für ${i.year}: „${i.description}“ (${i.category}) ${fmtEuro(i.afterCents)}${i.afterLabor35aCents ? `, davon §35a ${fmtEuro(i.afterLabor35aCents)}` : ''}`
     }
     const labor = i.beforeLabor35aCents !== i.afterLabor35aCents ? `; §35a ${laborText(i.beforeLabor35aCents)} → ${laborText(i.afterLabor35aCents)}` : ''
     if (i.beforeCents === i.afterCents) return `„${i.description}“ bleibt bei ${fmtEuro(i.afterCents)}${labor}`
     return `„${i.description}“: ${fmtEuro(i.beforeCents ?? 0)} → ${fmtEuro(i.afterCents)}${labor}`
   })
 }
+
+// Was nach dem Buchen als erledigt dasteht: die Sätze der Vorschau und ihre Hinweise. Eine Buchung,
+// die nur verwirft, hat keine Position, aber einen Hinweis je verworfener Zeile; ohne ihn stünde
+// dort ein leeres „✓ Gebucht:“ (Schlussdurchsicht, I2).
+export const bookedLines = (p: BookingPreview): string[] => [...previewLines(p), ...p.notices]
+
+// Die Gestalt der Zeilen einer Auswertung: Nummer und Zustand je Zeile. Ändert sie sich, gelten
+// Eingaben, Vorschau und Erfolgsmeldung einer Karte nicht mehr.
+export const linesShape = (v: AssessmentView): string => v.lines.map((l) => `${l.idx}:${l.state}`).join('|')
 
 // ---------- Gestalt der Antworten ----------
 //

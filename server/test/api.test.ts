@@ -19,7 +19,7 @@ import { applyMigrations, connect, loadMigrations, type Database } from '../src/
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
-import { assessments as assessmentsTable } from '../src/db/schema.ts'
+import { assessments as assessmentsTable, uploads as uploadsTable } from '../src/db/schema.ts'
 import { RULES_AS_OF } from '../src/rules.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
@@ -4589,6 +4589,8 @@ const RECHNUNGEN: Record<string, FakeInvoice> = {
     positions: [{ description: 'Restmüll', category: 'Müllabfuhr', amountEur: 700 }, { description: 'Gutschrift Tonnentausch', category: 'Müllabfuhr', amountEur: -50 }],
   },
   GARTEN: { vendor: 'Gärtnerei Grün', invoiceDate: '2026-11-30', totalGrossEur: 1450, positions: [{ description: 'Gartenpflege Saison', category: 'Gartenpflege', amountEur: 1450, labor35aEur: null }] },
+  // Rechnungsdatum im Februar, kein Leistungszeitraum: Das Jahr aus dem Beleg ist das Folgejahr der Leistung.
+  VORJAHR: { vendor: 'Hausmeisterdienst Muster', invoiceDate: '2025-02-10', totalGrossEur: 300, positions: [{ description: 'Hausmeisterdienst', category: 'Hauswart', amountEur: 300 }] },
 }
 
 type Evaluated = { file: string, assessment: AssessmentView | null }
@@ -4618,8 +4620,9 @@ test('Belegbuchung: Auswerten speichert die Auswertung mit Vorschlag; nach dem N
     const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
     assert.equal(a.year, 2026, 'das Jahr aus dem Beleg geht vor dem gewählten')
     assert.equal(a.propertyId, 'objekt-1', 'mit einem Objekt gilt dieses')
-    assert.deepEqual(a.lines.map((l) => [l.description, l.amountCents, l.state, l.suggestion?.preselected]), [
-      ['Frischwasser', 70000, 'open', true], ['Abwasser', 80000, 'open', true],
+    // Aus einem anderen Jahr als dem gewählten: gelb und nicht vorab angehakt (Schlussdurchsicht, I1).
+    assert.deepEqual(a.lines.map((l) => [l.description, l.amountCents, l.state, l.suggestion?.level, l.suggestion?.preselected]), [
+      ['Frischwasser', 70000, 'open', 'gelb', false], ['Abwasser', 80000, 'open', 'gelb', false],
     ])
     const offen = await s.api<AssessmentView[]>('/api/assessments?open=1')
     assert.deepEqual(offen.map((x) => x.id), [a.id])
@@ -4759,6 +4762,38 @@ test('Belegbuchung: das Jahr der Auswertung wird zum Jahr des Belegs im Posteing
     assert.equal(a.year, 2026)
     const beleg = (await s.api<UploadInfo[]>('/api/uploads')).find((u) => u.file === a.file) ?? assert.fail('der Beleg fehlt im Ordner')
     assert.equal(beleg.year, 2026, 'der Posteingang zeigt den Beleg im Jahr, das er selbst nennt')
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: eine Rechnung vom Februar ohne Leistungszeitraum, ausgewertet aus dem Vorjahr, ist gelb und nicht vorab angehakt', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'VORJAHR', { year: '2024' }))
+    assert.deepEqual([a.detectedYear, a.year, a.requestedYear], [2025, 2025, 2024], 'gebucht wird im Jahr des Belegs, das gewählte ist gespeichert')
+    const s0 = a.lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
+    assert.deepEqual([s0.level, s0.preselected], ['gelb', false])
+    assert.ok(s0.reasons.some((r) => /2025/.test(r) && /2024/.test(r)), s0.reasons.join('\n'))
+    // Nach dem Neuladen derselbe Befund: Er hängt am gespeicherten Jahr, nicht am Tab.
+    const again = await s.api<AssessmentView>(`/api/assessments/${a.id}`)
+    assert.deepEqual([again.lines[0]?.suggestion?.level, again.lines[0]?.suggestion?.preselected], ['gelb', false])
+    // Wer das Jahr ausdrücklich wählt, hat entschieden: Danach weicht nichts mehr ab.
+    const put = await putJson(s, `/api/assessments/${a.id}`, { year: 2025 })
+    assert.equal(put.status, 200)
+    const chosen = await jsonOf<AssessmentView>(put)
+    assert.deepEqual([chosen.requestedYear, chosen.lines[0]?.suggestion?.level, chosen.lines[0]?.suggestion?.preselected], [2025, 'gruen', true])
+  }, { invoices: RECHNUNGEN })
+})
+
+test('Belegbuchung: PUT auf die Auswertung eines gelöschten Belegs antwortet 404 und schreibt nichts', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'GRUNDSTEUER', { year: '2025' }))
+    fs.rmSync(path.join(s.dataDir, 'uploads', a.file))
+    const res = await putJson(s, `/api/assessments/${a.id}`, { year: 2023 })
+    assert.equal(res.status, 404)
+    assert.match((await jsonOf<{ error: string }>(res)).error, /gibt es im Belegordner nicht mehr/)
+    const stored = await inDatabase(s, async (db) => db.select({ id: assessmentsTable.id, year: assessmentsTable.year }).from(assessmentsTable))
+    assert.deepEqual(stored.filter((r) => r.id === a.id).map((r) => r.year), [2025], 'das Jahr der Auswertung ist unverändert')
+    const row = await inDatabase(s, async (db) => db.select({ file: uploadsTable.file, year: uploadsTable.year }).from(uploadsTable))
+    assert.deepEqual(row.filter((r) => r.file === a.file).map((r) => r.year), [2025], 'die Zeile des Belegs ist nicht verschoben')
   }, { invoices: RECHNUNGEN })
 })
 
@@ -4942,14 +4977,26 @@ test('Belegbuchung: Backup und Wiederherstellen nehmen Auswertungen und gebuchte
     const decisions = grundsteuer(g)
     const preview = await jsonOf<BookingPreview>(await postJson(s, `/api/assessments/${g.id}/plan`, { decisions }))
     assert.equal((await postJson(s, `/api/assessments/${g.id}/book`, { decisions, token: preview.token })).status, 200)
+    // Der Stand im Archiv: die offene Auswertung samt Zeilen, Beträgen und Vorschlägen, die gebuchte Zeile und ihre Position.
+    const openBefore = await s.api<AssessmentView[]>('/api/assessments?open=1')
+    const bookedBefore = await s.api<AssessmentView>(`/api/assessments/${g.id}`)
+    const [position] = await s.api<CostItem[]>('/api/costItems')
+    if (!position) return assert.fail('die gebuchte Position fehlt')
+    assert.equal(bookedBefore.lines[0]?.costItemId, position.id)
     const backup = Buffer.from(await (await fetch(`${s.base}/api/backup`)).arrayBuffer())
     // Danach ändern, damit das Zurückspielen sichtbar wird: Die Position fällt weg, die Zeile wird offen.
-    const [position] = await s.api<CostItem[]>('/api/costItems')
-    assert.equal((await fetch(`${s.base}/api/costItems/${position?.id ?? ''}`, { method: 'DELETE' })).status, 200)
+    assert.equal((await fetch(`${s.base}/api/costItems/${position.id}`, { method: 'DELETE' })).status, 200)
     assert.equal((await s.api<AssessmentView[]>('/api/assessments?open=1')).length, 2)
     assert.equal((await restore(s, backup)).status, 200)
-    assert.deepEqual((await s.api<AssessmentView[]>('/api/assessments?open=1')).map((a) => a.id), [w.id])
-    assert.deepEqual((await s.api<AssessmentView>(`/api/assessments/${g.id}`)).lines.map((l) => l.state), ['created'])
+    const openAfter = await s.api<AssessmentView[]>('/api/assessments?open=1')
+    assert.deepEqual(openAfter.map((a) => a.id), [w.id])
+    assert.deepEqual(openAfter, openBefore, 'die offene Auswertung steht mit Zeilen, Beträgen und Vorschlägen da wie im Archiv')
+    const bookedAfter = await s.api<AssessmentView>(`/api/assessments/${g.id}`)
+    assert.deepEqual(bookedAfter, bookedBefore, 'die gebuchte Auswertung steht da wie im Archiv')
+    const restored = await s.api<CostItem[]>('/api/costItems')
+    assert.deepEqual(restored, [position], 'die Position ist wieder da, genau einmal und unverändert')
+    assert.deepEqual([bookedAfter.lines[0]?.state, bookedAfter.lines[0]?.costItemId, bookedAfter.lines[0]?.itemDescription], ['created', position.id, position.description],
+      'die gebuchte Zeile zeigt auf die wiederhergestellte Position')
   }, { invoices: RECHNUNGEN })
 })
 

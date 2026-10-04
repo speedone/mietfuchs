@@ -843,6 +843,9 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         propertyId: row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null),
         year: detected ?? (sent || null) ?? row?.year ?? new Date().getUTCFullYear(),
         detectedYear: detected,
+        // Das gewählte Jahr bleibt gespeichert: Weicht das Jahr aus dem Beleg davon ab, ist die Ampel
+        // gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht ungesehen in ein anderes Jahr.
+        requestedYear: sent || null,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,
@@ -928,6 +931,10 @@ app.get('/api/assessments/:id', async (req, res) => {
 app.put('/api/assessments/:id', async (req, res) => {
   const body = bodyObject(req)
   res.json(await writeData(async (db) => {
+    // Erst fragen, dann schreiben: Fehlt die Auswertung oder ihr Beleg, antwortet die Route mit 404,
+    // und zwar bevor Jahr oder Objekt geändert sind. Sonst stünde die Änderung, obwohl der Aufrufer
+    // einen Fehler sieht (Schlussdurchsicht, M4).
+    await viewAssessment(db, req.params.id, UPLOAD_DIR)
     const change: { year?: number, propertyId?: string | null } = {}
     if (Object.hasOwn(body, 'year')) {
       const year = yearOf(body.year)

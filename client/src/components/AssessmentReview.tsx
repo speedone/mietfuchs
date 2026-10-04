@@ -6,7 +6,7 @@ import { Fragment, useEffect, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, type RowAction, type RowDraft,
+  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linesShape, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -29,7 +29,8 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   const confirm = useConfirm()
   const [rows, setRows] = useState<Record<number, RowDraft>>(() => initialRows(a))
   const [preview, setPreview] = useState<BookingPreview | null>(null)
-  const [booked, setBooked] = useState<string[] | null>(null)
+  // Die Erfolgsmeldung samt der Gestalt der Zeilen, die die Buchung hinterlassen hat
+  const [booked, setBooked] = useState<{ lines: string[]; shape: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // Die Eingaben beginnen von vorn, wenn sich Zustand oder Nummern der Zeilen ändern, also nach
@@ -39,11 +40,16 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
   // Zurückgesetzt wird beim Rendern und nicht in einem Effekt: Ein Effekt lief auch beim ersten
   // Einfügen der Karte und erst nach dem Zeichnen, und eine Eingabe, die in diese Lücke fiel, war
   // danach still verschwunden (in Abnahme A wurde so nur eine von zwei Zeilen verknüpft).
-  const shape = a.lines.map((l) => `${l.idx}:${l.state}`).join('|')
+  // Vorschau und Erfolgsmeldung gehen mit: Eine Vorschau sah den alten Stand, und ein „✓ Gebucht“
+  // gilt nur für den Stand, den die eigene Buchung hinterlassen hat. Ändert sich die Gestalt von
+  // außen (ein anderer Tab löscht die Position), wäre er für einen Augenblick irreführend.
+  const shape = linesShape(a)
   const [rowsShape, setRowsShape] = useState(shape)
   if (rowsShape !== shape) {
     setRowsShape(shape)
     setRows(initialRows(a))
+    setPreview(null)
+    setBooked((b) => (b && b.shape === shape ? b : null))
   }
   // Eine Vorschau gilt nur für den Stand, den sie gesehen hat: Kommt die Auswertung neu (anderes
   // Jahr, eine andere Karte gebucht, Neuladen), verschwindet sie. Gebucht würde ohnehin nicht an
@@ -99,7 +105,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     try {
       const result = await bookDecisions(a.id, toSend, preview.token)
       if (result.kind === 'done') {
-        setBooked(previewLines(result.preview))
+        setBooked({ lines: bookedLines(result.preview), shape: linesShape(result.assessment) })
         setPreview(null)
         onChange(result.assessment)
       } else if (result.kind === 'conflict') {
@@ -240,7 +246,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
       </div>
       {a.lines.flatMap((l) => (l.state === 'open' ? (l.suggestion?.candidates ?? []).filter((c) => c.formOnly).map((c) => (
         <div key={`${l.idx}-${c.id}`} className="warn" style={{ marginTop: 6 }}>
-          „{l.description}“: „{c.description}“ wird {c.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'} verteilt; ihren Betrag pflegen Sie im Formular.{' '}
+          „{l.description}“: „{c.description}“ wird {c.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'} verteilt; ihren Betrag pflegen Sie im Formular. Haben Sie die Position dort aktualisiert, verwerfen Sie diese Zeile hier danach, damit der Beleg nicht offen bleibt.{' '}
           {onOpenItem && <button className="btn small" onClick={() => onOpenItem(c.id)}>Position öffnen</button>}
         </div>
       )) : []))}
@@ -261,7 +267,7 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
         </div>
       )}
       {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
-      {booked && <div className="notice" aria-label="Gebucht" style={{ marginTop: 8 }}>✓ Gebucht: {booked.join(' · ')}</div>}
+      {booked && <div className="notice" aria-label="Gebucht" style={{ marginTop: 8 }}>✓ Gebucht: {booked.lines.join(' · ')}</div>}
       <div className="row" style={{ marginTop: 10 }}>
         <a href={`/uploads/${encodeURIComponent(a.file)}`} target="_blank" rel="noreferrer">📎 Beleg ansehen</a>
         <div className="grow" />

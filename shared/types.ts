@@ -721,6 +721,10 @@ export type StoredAssessment = {
   year: number
   // Das Jahr, das die KI aus dem Beleg gelesen hat (Leistungszeitraum, sonst Rechnungsdatum)
   detectedYear: number | null
+  // Das gewählte Jahr: beim Auswerten mitgeschickt (die Seite, von der aus ausgewertet wurde),
+  // danach das von Hand gesetzte; `null`, wenn keines mitkam. Weicht `year` davon ab, steht die
+  // Ampel auf gelb und nichts ist vorab angehakt.
+  requestedYear: number | null
   vendor: string | null
   invoiceDate: string | null
   totalGrossCents: number | null

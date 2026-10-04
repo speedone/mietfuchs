@@ -440,7 +440,8 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
             {v.open
               ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
               : <span className="badge green">✓ übernommen</span>}
-            {v.detectedYear !== null && v.detectedYear !== year && <span className="badge gray">Jahr {v.detectedYear}</span>}
+            {/* Das Jahr, in das gebucht wird (nach einer Änderung von Hand nicht mehr das des Belegs) */}
+            {v.year !== year && <span className="badge gray">Jahr {v.year}</span>}
           </div>
           <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v.year)}
             onChange={(next) => { upsert(next); void loadData() }}

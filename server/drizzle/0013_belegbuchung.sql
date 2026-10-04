@@ -24,6 +24,7 @@ CREATE TABLE `assessments` (
 	`property_id` text,
 	`year` integer NOT NULL,
 	`detected_year` integer,
+	`requested_year` integer,
 	`vendor` text,
 	`invoice_date` text,
 	`total_gross_cents` integer,
@@ -33,6 +34,7 @@ CREATE TABLE `assessments` (
 	`created_at` text NOT NULL,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE set null,
 	CONSTRAINT "assessments_year_positive" CHECK("year" > 0),
+	CONSTRAINT "assessments_requested_year_positive" CHECK("requested_year" IS NULL OR "requested_year" > 0),
 	CONSTRAINT "assessments_next_idx_not_negative" CHECK("next_idx" >= 0),
 	CONSTRAINT "assessments_amounts_adjusted_known" CHECK("amounts_adjusted" IN ('netto'))
 );

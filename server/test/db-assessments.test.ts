@@ -28,7 +28,7 @@ async function withDatabase(work: (opened: OpenedDatabase) => Promise<void>): Pr
 const line = (description: string, amountCents: number | null, extra: Partial<NewLine> = {}): NewLine =>
   ({ description, category: 'Wasser/Abwasser', categoryGuessed: false, amountCents, labor35aCents: null, ...extra })
 const head = (file: string, lines: NewLine[], extra: Partial<NewAssessment> = {}): NewAssessment => ({
-  file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
+  file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
   totalGrossCents: 150000, amountsAdjusted: null, laborFromTotal: false, lines, ...extra,
 })
 let n = 0

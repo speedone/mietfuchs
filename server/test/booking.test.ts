@@ -42,7 +42,7 @@ const fields = (description: string, category: string, amountCents: number | nul
 async function receipt(w: World, file: string, lines: NewLine[], extra: Partial<NewAssessment> = {}): Promise<AssessmentRecord> {
   fs.writeFileSync(path.join(w.uploadDir, file), `%PDF ${file}`)
   return w.opened.write((db) => saveAssessment(db, {
-    file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
+    file, propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: '2026-02-15',
     totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, lines, ...extra,
   }, { id: `a-${file}`, now: new Date(Date.UTC(2026, 9, 2, 0, 0, ++seq)).toISOString() }))
 }
@@ -628,6 +628,63 @@ test('Dasselbe Anlegen mit Verteilung (direkt, laut Gemeinschaftsabrechnung) noc
     assert.deepEqual([p.errors, p.confirm], [[], []])
     done(await book(w, r, decisions, p.token))
     assert.equal(done(await book(w, r, decisions)).changed, false)
+    assert.equal((await items(w)).length, 2)
+  })
+})
+
+// ---------- Schlussdurchsicht ----------
+
+test('I1: Ein Beleg aus einem anderen Jahr als dem gewählten ist gelb und nicht vorab angehakt', async () => {
+  await withWorld(async (w) => {
+    // Rechnung vom 10.02.2025 ohne Leistungszeitraum, ausgewertet auf der Seite des Jahres 2024
+    const r = await receipt(w, 'wasser.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedYear: 2024, invoiceDate: '2025-02-10' })
+    const s = (await view(w, r)).lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
+    assert.equal(s.level, 'gelb')
+    assert.equal(s.preselected, false)
+    assert.ok(s.reasons.some((x) => /2025/.test(x) && /2024/.test(x)), s.reasons.join('\n'))
+    // Aus dem Jahr des Belegs ausgewertet: grün und vorab angehakt, wie bisher.
+    const g = await receipt(w, 'gleich.pdf', [line('Hausmeister', 'Hauswart', 30000)], { year: 2025, detectedYear: 2025, requestedYear: 2025 })
+    const t = (await view(w, g)).lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
+    assert.deepEqual([t.level, t.preselected], ['gruen', true])
+  })
+})
+
+test('I2: Verwerfen allein ergibt einen Hinweis in der Vorschau', async () => {
+  await withWorld(async (w) => {
+    const r = await receipt(w, 'gs.pdf', [line('Grundsteuer', 'Grundsteuer', 61240), line('Mahngebühr', 'Grundsteuer', 500)])
+    const p = await plan(w, r, [{ idx: 1, action: 'dismiss' }])
+    assert.deepEqual([p.items, p.errors, p.notices], [[], [], ['„Mahngebühr“ wird verworfen.']])
+    const o = await book(w, r, [{ idx: 1, action: 'dismiss' }], p.token)
+    if (o.kind !== 'done') return assert.fail(`nicht gebucht: ${o.kind}`)
+    assert.deepEqual(o.preview.notices, ['„Mahngebühr“ wird verworfen.'])
+  })
+})
+
+test('M2: Bei Einzelbeträgen und Gemeinschaftsabrechnung sagt die Vorschau, die Zeile danach zu verwerfen', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'hz', { category: 'Heizung und Warmwasser', description: 'Heizung laut Messdienst', amountCents: 90000, key: 'amounts', tenancyAmounts: {} })
+    const r = await receipt(w, 'x.pdf', [line('Heizung', 'Heizung und Warmwasser', 90000)])
+    const p = await plan(w, r, [link(0, 'hz')])
+    assert.match(p.errors[0]?.message ?? '', /verwerfen Sie diese Zeile/)
+  })
+})
+
+test('M3: Hängt der Beleg schon von Hand an einer Position, ist sie Kandidat jeder Zeile; rot, und Anlegen nur nach Bestätigung', async () => {
+  await withWorld(async (w) => {
+    // Nachgereicht: Der Beleg hängt an der Position, ohne dass eine Zeile gebucht ist. Andere Kostenart als die Zeile.
+    await estimate(w, 'hm', { category: 'Hauswart', description: 'Hausmeister 2025', amountCents: 30000, invoiceFile: 'beleg.pdf' })
+    const r = await receipt(w, 'beleg.pdf', [line('Treppenhausreinigung', 'Gebäudereinigung', 30000)])
+    const s = (await view(w, r)).lines[0]?.suggestion ?? assert.fail('kein Vorschlag')
+    assert.equal(s.level, 'rot')
+    assert.equal(s.preselected, false)
+    assert.ok(s.reasons.includes('Dieser Beleg hängt schon an „Hausmeister 2025“.'), s.reasons.join('\n'))
+    assert.deepEqual(s.candidates.map((c) => c.id), ['hm'])
+    const anlegen: LineDecision[] = [{ idx: 0, action: 'create', fields: fields('Treppenhausreinigung', 'Gebäudereinigung', 30000) }]
+    const p = await plan(w, r, anlegen)
+    assert.match(p.confirm[0]?.message ?? '', /hängt schon an „Hausmeister 2025“/)
+    assert.equal((await book(w, r, anlegen, p.token)).kind, 'refused')
+    assert.equal((await items(w)).length, 1, 'ohne Bestätigung entsteht keine zweite Position')
+    done(await book(w, r, [{ idx: 0, action: 'create', fields: fields('Treppenhausreinigung', 'Gebäudereinigung', 30000), despiteCandidates: true }]))
     assert.equal((await items(w)).length, 2)
   })
 })
