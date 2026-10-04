@@ -302,6 +302,10 @@ async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}) {
     child.kill()
     removeDataDir(dataDir)
   }
+  // Die ganze Konsolenausgabe, für Tests, die eine Meldung nach der Startzeile lesen (#180).
+  let printed = ''
+  child.stdout.on('data', (chunk: Buffer) => { printed += chunk })
+  const output = () => printed
   let base
   try {
     base = await readStartUrl(child)
@@ -322,7 +326,7 @@ async function startServerIn(dataDir: string, env: NodeJS.ProcessEnv = {}) {
     stop()
     assert.fail('NKA_DATA_DIR wird nicht beachtet')
   }
-  return { api, base, dataDir, stop, child }
+  return { api, base, dataDir, stop, child, output }
 }
 
 let srv: Awaited<ReturnType<typeof startServerIn>>
@@ -4099,29 +4103,55 @@ async function dataDirAtBaseline(): Promise<string> {
   return dataDir
 }
 
-test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, beim nächsten Start nicht mehr', async () => {
+test('Update: nach nachgeholten Schritten nennt /healthz die Sicherung, auch nach einem Neustart, bis die Oberfläche sie wegklickt', async () => {
   const dataDir = await dataDirAtBaseline()
   const schritte = (await loadMigrations()).length - 1
   const erster = await startServerIn(dataDir)
+  let genannt: { steps: number, backup: string, at: string }
   try {
     const report = await erster.api<HealthReport>('/healthz')
     // Nur der Name: Die Oberfläche sagt „im Datenordner“, einen Pfad braucht sie nicht.
-    const { at, ...rest } = report.database?.migrated ?? assert.fail('keine Sicherung genannt')
+    genannt = report.database?.migrated ?? assert.fail('keine Sicherung genannt')
+    const { at, ...rest } = genannt
     assert.deepEqual(rest, { steps: schritte, backup: 'mietfuchs.sqlite.vor-0001_objekte' })
     // Der Zeitpunkt der Sicherung unterscheidet sie von einer früheren gleichen Namens.
     assert.equal(at, fs.statSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')).mtime.toISOString())
     assert.ok(fs.existsSync(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')), 'die genannte Sicherung fehlt')
+    // #180: Auch auf der Konsole, mit vollem Pfad, denn dort liest es jemand, der die Datei sucht.
+    assert.ok(erster.output().includes(path.join(dataDir, 'mietfuchs.sqlite.vor-0001_objekte')), erster.output())
   } finally {
     erster.child.kill()
     await waitForExit(erster.child)
   }
-  // Der zweite Start hat nichts nachzuholen, und dann gibt es auch nichts zu sagen.
+  // #180: Ein Neustart, bevor jemand die Oberfläche geöffnet hat (Docker, npm), nimmt den Hinweis
+  // nicht mit. Er nennt dieselbe Sicherung mit demselben Zeitpunkt, die Konsole aber nicht noch
+  // einmal: Nachgeholt hat dieser Start nichts.
   const zweiter = await startServerIn(dataDir)
   try {
     const report = await zweiter.api<HealthReport>('/healthz')
-    assert.equal(report.database?.migrated, null, JSON.stringify(report.database))
+    assert.deepEqual(report.database?.migrated, genannt, JSON.stringify(report.database))
+    assert.ok(!zweiter.output().includes('vor-0001_objekte'), zweiter.output())
+    // Ein fremder Schlüssel (ein Tab von vor einem weiteren Update) räumt nichts weg.
+    const fremd = await fetch(`${zweiter.base}/api/database/migrated/seen`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'mietfuchs.sqlite.vor-0001_objekte@1970-01-01T00:00:00.000Z' }),
+    })
+    assert.equal(fremd.status, 200)
+    assert.deepEqual((await zweiter.api<HealthReport>('/healthz')).database?.migrated, genannt)
+    // Weggeklickt: danach nicht mehr, auch nicht nach dem nächsten Start.
+    const gesehen = await fetch(`${zweiter.base}/api/database/migrated/seen`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: `${genannt.backup}@${genannt.at}` }),
+    })
+    assert.equal(gesehen.status, 200)
+    assert.equal((await zweiter.api<HealthReport>('/healthz')).database?.migrated, null)
   } finally {
-    zweiter.stop()
+    zweiter.child.kill()
+    await waitForExit(zweiter.child)
+  }
+  const dritter = await startServerIn(dataDir)
+  try {
+    assert.equal((await dritter.api<HealthReport>('/healthz')).database?.migrated, null)
+  } finally {
+    dritter.stop()
   }
 })
 
@@ -4138,7 +4168,15 @@ test('Update: nach dem Wiederherstellen nennt /healthz keine Sicherung, die zu d
     assert.equal(r.status, 200, JSON.stringify(r.body))
     assert.equal((await s.api<HealthReport>('/healthz')).database?.migrated, null)
   } finally {
-    s.stop()
+    s.child.kill()
+    await waitForExit(s.child)
+  }
+  // Und ein Neustart holt den Hinweis auf die Sicherung vor dem Update nicht zurück (#180).
+  const danach = await startServerIn(dataDir)
+  try {
+    assert.equal((await danach.api<HealthReport>('/healthz')).database?.migrated, null)
+  } finally {
+    danach.stop()
   }
 })
 

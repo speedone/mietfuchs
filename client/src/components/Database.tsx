@@ -80,6 +80,9 @@ export default function DatabaseNotice() {
           <button className="btn" onClick={() => {
             remember(UPDATE_DISMISS_KEY, update.dismissKey)
             setUpdateDismissed(update.dismissKey)
+            // Der Server nennt die Sicherung auch nach einem Neustart, bis sie weggeklickt ist
+            // (#180). Scheitert das, bleibt der Hinweis in diesem Browser trotzdem zu.
+            api('/api/database/migrated/seen', { method: 'POST', body: JSON.stringify({ key: update.dismissKey }) }).catch(() => {})
           }}>Verstanden</button>
         </section>
       )}

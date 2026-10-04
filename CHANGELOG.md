@@ -13,6 +13,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   darüber nannte trotzdem „Noch 4 Punkte offen“, ohne dass irgendwo stand, welche. Sie nennt jetzt
   den ersten Schritt: Stammdaten anlegen, dann Belege erfassen.
   ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **`/healthz` nach dem Umstieg.** Beim zweiten Start meldete der Umstieg „Es gibt noch keine
+  db.json“, obwohl die frühere Datei als `db.json.abgeloest` daneben liegt. Jetzt steht dort, dass
+  der Umstieg bereits erfolgt ist. ([#180](https://github.com/speedone/mietfuchs/issues/180))
+- **Der Hinweis auf die Sicherung vor dem Update übersteht einen Neustart.** Bisher kannte ihn nur
+  der Start, der die Datenbank aktualisiert hatte; wurde Mietfuchs neu gestartet, bevor Sie die
+  Oberfläche geöffnet hatten (etwa in Docker), erfuhren Sie nichts von der Sicherung. Jetzt bleibt
+  er stehen, bis Sie ihn mit „Verstanden“ schließen, dann auch in anderen Browsern. Gemerkt wird
+  das in der Datei `sicherung-vor-update.json` im Datenordner. Außerdem nennt die Konsole die
+  Sicherung beim Update mit vollem Pfad.
+  ([#180](https://github.com/speedone/mietfuchs/issues/180))
 
 ## [0.10.0] – 2026-10-04
 
