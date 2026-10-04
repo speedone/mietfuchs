@@ -5,6 +5,7 @@ import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Uni
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
+import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
 import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
@@ -448,4 +449,15 @@ export function categoryNotice(category: string, year: number, cableBuiltBeforeD
   return year === 2024
     ? 'Kabelfernsehen (TV-Signal) ist nur bis zum 30.06.2024 umlagefähig, und nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde. Legen Sie für 2024 höchstens das erste Halbjahr um; den Rest bitte als „Nicht umlagefähig“ erfassen. Danach bleibt bei solchen Anlagen nur der Betriebsstrom umlagefähig, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'
     : 'Kabelfernsehen (TV-Signal) ist seit dem 01.07.2024 nicht mehr umlagefähig; bitte als „Nicht umlagefähig“ erfassen. Umlagefähig bleibt nur der Betriebsstrom einer Anlage, die vor dem 01.12.2021 errichtet wurde, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung durch eine Fachkraft.'
+}
+
+// Die Rückfrage „Dieselbe Rechnung?“ beim Anlegen einer Position (shared/duplicates.ts). Gefragt
+// wird mit dem Betrag, denn eine Gutschrift ist nie dieselbe Rechnung wie eine Rechnung derselben
+// Kostenart (Befund gegen 0.10.0-rc.1); sonst riet die Rückfrage, statt der Gutschrift die
+// vorhandene Rechnung zu bearbeiten.
+export function sameCostOf<T extends DuplicateItem>(
+  items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null },
+  propertyId: string | null | undefined, year: number,
+): T[] {
+  return sameCostCandidates(items, { propertyId, year, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
 }

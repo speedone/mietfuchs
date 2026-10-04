@@ -29,6 +29,7 @@ import {
   withTaxUnit,
   withKey,
   withCategory,
+  sameCostOf,
   type ItemForm,
   type KeyContext,
 } from '../costForm'
@@ -46,7 +47,6 @@ import { AiProgressBadge } from '../components/AiProgress'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { candidateText } from '../triage'
-import { sameCostCandidates } from '../../../shared/duplicates.ts'
 import { countOf } from '../../../shared/wording.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
@@ -253,7 +253,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
     // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
     if (!editing) {
-      const same = sameCostCandidates(items, { propertyId, year, category: form.category, description: form.description, vendor: form.vendor })
+      const same = sameCostOf(items, { category: form.category, description: form.description, vendor: form.vendor, amountCents: built.body.amountCents }, propertyId, year)
       const first = same[0]
       if (first) {
         let instead = false
