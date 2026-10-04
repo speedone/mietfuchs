@@ -1083,7 +1083,9 @@ app.put('/api/uploads/:file', async (req, res) => {
 app.delete('/api/uploads/:file', async (req, res) => {
   const name = path.basename(req.params.file) // verhindert Pfad-Ausbrüche
   const full = path.join(UPLOAD_DIR, name)
-  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei nicht gefunden' })
+  // Nur eine Datei im Belegordner, wie bei PUT: „..“ besteht `basename` und `existsSync`, und
+  // `unlinkSync` auf einen Ordner endete mit 500 (#180).
+  if (name !== req.params.file || !fs.existsSync(full) || !fs.statSync(full).isFile()) return res.status(404).json({ error: 'Datei nicht gefunden' })
   // Prüfung und Vergessen in einem Schreibvorgang: Eine Buchung, die dazwischen ankäme, würde
   // sonst mit der Auswertung gelöscht (Kaskade). Die Datei geht erst danach.
   const inUse = await writeData(async (db) => {
