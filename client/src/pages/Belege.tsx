@@ -483,7 +483,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
         <div className="notice no-print" role="status" aria-label="Betrag prüfen">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
           {amountCheck.closed && <div>{closedYearNotice(amountCheck.item.year)}</div>}
-          Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
+          {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
           {(amountCheck.item.labor35aCents ?? 0) > 0 && (

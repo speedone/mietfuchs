@@ -5,7 +5,7 @@ import path from 'node:path'
 import {
   compareName,
   compareText,
-  capToShares,
+  distributeLabor,
   computeSettlement,
   computePrepaymentCents,
   consumptionInPeriod,
@@ -845,6 +845,49 @@ test('§35a (Durchsicht von #196): der Lohnanteil eines Mieters liegt nie über 
   assert.equal(statementOf(s, 't2').totalShareCents, 10915)
   assert.equal(statementOf(s, 't2').total35aCents, 10915)
   assert.equal(statementOf(s, 't1').total35aCents, statementOf(s, 't1').totalShareCents, 'ganz Lohn: Lohnanteil = Kostenanteil')
+})
+
+test('§35a (Abnahme rc.1): beim Mieterwechsel je Mieter wie von Hand gerundet, ohne Restcent aus der Summe', () => {
+  // 300 € Hausmeister mit 200 € Lohnanteil, Wohnung 45 m² von 165 m², das EG mit 120 m² ist
+  // selbstgenutzt. Anna wohnt bis 31.08.2025 (243 Tage), Ben ab 01.09.2025 (122 Tage). Von Hand:
+  // Anna 200 € × 45/165 × 243/365 = 36,3138 € → 36,31 €, Ben 200 € × 45/165 × 122/365 = 18,2316 € →
+  // 18,23 €. rc.1 rundete die Summe (54,5454 → 54,55 €) und gab den Restcent Anna: 36,32 €.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'w', name: 'Wohnung', areaM2: 45, participates: true },
+      { id: 'eg', name: 'EG', areaM2: 120, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: [
+      tenancy({ id: 'anna', unitId: 'w', tenantName: 'Anna', persons: 1, start: '2024-01-01', end: '2025-08-31' }),
+      tenancy({ id: 'ben', unitId: 'w', tenantName: 'Ben', persons: 1, start: '2025-09-01' }),
+    ],
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hausmeister', amountCents: 30000, key: 'area', labor35aCents: 20000 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  assert.equal(statementOf(s, 'anna').totalShareCents, 5447, 'der Kostenanteil bleibt')
+  assert.equal(statementOf(s, 'anna').total35aCents, 3631)
+  assert.equal(statementOf(s, 'ben').total35aCents, 1823)
+})
+
+test('§35a (M1 der Durchsicht von #201): ganz Lohn ist genau der Kostenanteil, auch wenn die Anteile einzeln gerundet sind', () => {
+  // 1,00 € Hauswart, ganz Lohn. 67/67/65 m² vermietet, 1 m² selbstgenutzt: Rohanteile 33,5 / 33,5 /
+  // 32,5 ct, einzeln gerundet 34/34/33 ct (dass das zusammen 101 ct sind, ist ein eigener Befund).
+  // Bezahlt hat jeder Mieter seinen Kostenanteil, und der ist ganz Lohn.
+  const db: Db = {
+    ...emptyDb(),
+    units: [
+      { id: 'a', name: 'A', areaM2: 67, participates: true },
+      { id: 'b', name: 'B', areaM2: 67, participates: true },
+      { id: 'c', name: 'C', areaM2: 65, participates: true },
+      { id: 'e', name: 'E', areaM2: 1, participates: false, selfUsed: true, selfPersons: 1 },
+    ],
+    tenancies: ['a', 'b', 'c'].map((u) => tenancy({ id: `t${u}`, unitId: u, tenantName: u, persons: 1 })),
+    costItems: [{ id: 'c1', year: 2025, category: 'Hauswart', description: 'Hauswart', amountCents: 100, key: 'area', labor35aCents: 100 }],
+  }
+  const s = computeSettlement(snapshotFromDb(db, 2025))
+  for (const t of ['ta', 'tb', 'tc']) assert.equal(statementOf(s, t).total35aCents, statementOf(s, t).totalShareCents, t)
+  assert.deepEqual(['ta', 'tb', 'tc'].map((t) => statementOf(s, t).totalShareCents), [34, 34, 33])
 })
 
 test('§35a (rc.1): ist die Rechnung ganz Lohn, ist der Lohnanteil genau der Kostenanteil, auch ohne volle Umlage', () => {
@@ -2021,11 +2064,16 @@ test('Invariante: §35a-Lohnanteil der Mieter — Summe, Obergrenze, Reihenfolge
       // Abrechnung. Gegen die gerundeten Anteile gemessen weicht die Summe höchstens um ihren
       // eigenen Rundungscent ab und um den Lohn auf die Rundung der Kostenanteile, die zusammen
       // unter einem halben Cent je Zeile liegt (mindestens ein halber).
+      // Seit der Abnahme von rc.1 wird je Mieter gerundet wie von Hand; die Summe ist deshalb nicht
+      // mehr der gerundete Lohn aller Mieter, sondern weicht je Zeile höchstens um die Rundung ab.
       const proportional = (itemLabor * costCents) / item.amountCents
-      const tolerance = 0.5 + (itemLabor / item.amountCents) * Math.max(0.5, rows.length / 2)
-      assert.ok(laborCents <= itemLabor, `Fall ${i}: mehr bescheinigt (${laborCents}) als die Rechnung enthält (${itemLabor})`)
+      const tolerance = 0.5 + rows.length * (0.5 + (0.5 * itemLabor) / item.amountCents)
+      // Mehr als der Lohnanteil der Rechnung wird nie bescheinigt. Die eine Ausnahme ist die ganze
+      // Lohnrechnung: Dort ist der Lohnanteil der Kostenanteil, auch wenn die einzeln gerundeten
+      // Kostenanteile zusammen einen Cent über dem Betrag liegen (M1, eigener Befund).
+      if (itemLabor === item.amountCents) assert.equal(laborCents, costCents, `Fall ${i}: ganz Lohn`)
+      else assert.ok(laborCents <= itemLabor, `Fall ${i}: mehr bescheinigt (${laborCents}) als die Rechnung enthält (${itemLabor})`)
       assert.ok(Math.abs(laborCents - proportional) <= tolerance, `Fall ${i}, ${item.id}: Summe ${laborCents} weit weg vom anteiligen Lohn ${proportional}\n${JSON.stringify(db)}`)
-      if (costCents === item.amountCents) assert.equal(laborCents, itemLabor, `Fall ${i}: volle Umlage, aber Lohnanteil nicht vollständig`)
       // Je Zeile nahe am anteiligen Lohn (rc.1): weniger als ein Cent Rundung des Lohnanteils plus
       // die Rundung des Kostenanteils (höchstens ein halber Cent), auf den Lohn umgerechnet.
       for (const r of rows) {
@@ -2296,17 +2344,60 @@ test('Nicht umlagefähig: der gespeicherte Schlüssel ändert keine Zahl (#142)'
   assert.deepEqual(direkt.tax.slice(3), neutral.tax.slice(3).map((x) => x + (36000 - 15429)), 'weniger abziehbar, also mehr Überschuss')
 })
 
-test('§35a: ein gedeckelter Cent geht an die Zeile, die ihm am nächsten liegt (capToShares)', () => {
-  // Rechnung 12 ct, Lohn 10 ct, davon tragen die Mieter 7 ct. Genaue Lohnanteile 2,32 / 0,34 / 2,85 / 1,14, Kostenanteile 3 / 0 / 4 / 1.
-  // Das Restverfahren ergibt 2 / 1 / 3 / 1; die zweite Zeile wird auf 0 gedeckelt. Der freie Cent
-  // gehört zu 2,32 (2 → 3, noch unter dem Aufrunden), nicht zu 2,85, die ihren Aufrundungs-Cent
-  // schon hat (3 → 4 entfernte sie weiter vom genauen Wert).
-  const exact = [2.32, 0.34, 2.85, 1.14]
-  const keys = ['a', 'b', 'c', 'd']
-  const parts = largestRemainder(7, exact, keys)
-  assert.deepEqual(parts, [2, 1, 3, 1])
-  assert.deepEqual(capToShares(parts, exact, [3, 0, 4, 1], keys), [3, 0, 3, 1])
-  // Ohne Luft unterhalb des Aufrundens erst danach bis zum Kostenanteil; ohne jede Luft beim Vermieter.
-  assert.deepEqual(capToShares([2, 1], [1.6, 0.4], [3, 0], ['a', 'b']), [3, 0])
-  assert.deepEqual(capToShares([1, 1], [0.6, 0.4], [1, 0], ['a', 'b']), [1, 0])
+// §35a je Mieter (Abnahme von rc.1): Jeder Lohnanteil wird gerundet wie von Hand,
+// round(L × raw / A), und liegt nie über dem Kostenanteil. Nur wenn die Summe dann über dem
+// Lohnanteil der Rechnung läge, verliert die Zeile mit dem größten Aufrundungsfehler einen Cent
+// (bei Gleichstand die nach `compareText` letzte, wie beim Restverfahren der Kosten).
+test('§35a: distributeLabor rundet je Zeile wie von Hand, deckelt und zieht nur bei Überschuss ab', () => {
+  // Von Hand: 2,32 → 2, 0,34 → 0, 2,85 → 3, 1,14 → 1. Keine Restverteilung mehr.
+  const r = distributeLabor(10, 12, [2.784, 0.408, 3.42, 1.368], [3, 0, 4, 1], ['a', 'b', 'c', 'd'])
+  assert.deepEqual(r.cents, [2, 0, 3, 1])
+  assert.deepEqual(r.adjusted, [false, false, false, false])
+  // Gedeckelt: Lohn 0,6 würde 1, der Kostenanteil ist 0.
+  const c = distributeLabor(9, 10, [0.667, 9.333], [0, 9], ['a', 'b'])
+  assert.deepEqual(c.cents, [0, 8])
+  assert.deepEqual(c.adjusted, [true, false])
+  // Überschuss: drei mal 66,67 € wären 200,01 € bei 200 € Lohn; die letzte Kennung gibt ab.
+  const o = distributeLabor(20000, 30000, [10000, 10000, 10000], [10000, 10000, 10000], ['t1', 't2', 't3'])
+  assert.deepEqual(o.cents, [6667, 6667, 6666])
+  assert.deepEqual(o.adjusted, [false, false, true])
+  // Ganz Lohn: genau der Kostenanteil, auch wenn die Kostenanteile einzeln gerundet über dem Betrag
+  // liegen (M1: 1,00 € auf 67/67/65 m² vermietet plus 1 m² selbstgenutzt, Anteile 34/34/33).
+  const g = distributeLabor(100, 100, [33.5, 33.5, 32.5], [34, 34, 33], ['a', 'b', 'c'])
+  assert.deepEqual(g.cents, [34, 34, 33])
+})
+
+test('§35a: distributeLabor an Zufallswerten — nie über dem Kostenanteil, Summe nie über dem Lohn, je Zeile wie von Hand', () => {
+  const rnd = makeRng(35180)
+  for (let i = 0; i < 5000; i++) {
+    const n = 1 + Math.floor(rnd() * 5)
+    const amount = 1 + Math.floor(rnd() * (rnd() < 0.3 ? 200 : 200000))
+    const labor = rnd() < 0.3 ? amount : Math.max(1, Math.floor(amount * rnd()))
+    // Teils volle Umlage (Rohanteile ergeben den Betrag, Kosten nach dem Restverfahren), teils nicht.
+    const weights = Array.from({ length: n }, () => rnd())
+    const wsum = weights.reduce((a, b) => a + b, 0)
+    const full = rnd() < 0.5
+    const raws = weights.map((w) => full ? (amount * w) / wsum : (amount / n) * w)
+    const shares = full ? largestRemainder(amount, raws, raws.map((_, k) => `t${k}`)) : raws.map((r) => Math.round(r))
+    const keys = raws.map((_, k) => `t${k}`)
+    const r = distributeLabor(labor, amount, raws, shares, keys)
+    const sum = r.cents.reduce((a, b) => a + b, 0)
+    const fall = `Fall ${i}: ${JSON.stringify({ labor, amount, raws, shares, cents: r.cents })}`
+    if (labor === amount) {
+      assert.deepEqual(r.cents, shares, fall)
+      continue
+    }
+    assert.ok(sum <= labor, fall)
+    const fullyBorne = shares.reduce((a, b) => a + b, 0) === amount
+    let capped = false
+    r.cents.forEach((c, k) => {
+      const exact = (labor * raws[k]) / amount
+      assert.ok(c >= 0 && c <= shares[k], fall)
+      if (!r.adjusted[k]) assert.ok(Math.abs(c - exact) <= 0.5 + 1e-9, fall)
+      // Abgewichen heißt: weniger als von Hand, oder bei voller Umlage höchstens der Restcent darüber.
+      else if (c > Math.round(exact)) assert.ok(fullyBorne && c - exact < 1, `nur bei voller Umlage darüber: ${fall}`)
+      if (c === shares[k] && Math.round(exact) > shares[k]) capped = true
+    })
+    if (fullyBorne && !capped) assert.equal(sum, labor, `volle Umlage: ganzer Lohnanteil: ${fall}`)
+  }
 })
