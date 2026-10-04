@@ -83,7 +83,7 @@ test('Rechenweg mit Lohnanteil: weicht der § 35a-Anteil von der gewöhnlichen R
   const labor = ['t-a', 't-b', 't-c'].map((t) => rowOf(s, t, 'garten')?.steps?.at(-1))
   const short = labor.filter((x) => x?.value.startsWith('66,66 €'))
   assert.equal(short.length, 1, 'genau eine Zeile weicht ab')
-  assert.equal(short[0]?.value, '66,66 € (rechnerisch 66,6667 €; Restcent: damit die Lohnanteile zusammen nicht mehr ergeben als der Lohnanteil der Rechnung, ist dieser einen Cent geringer als gewöhnlich gerundet)')
+  assert.equal(short[0]?.value, '66,66 € (rechnerisch 66,6667 €; Restcent: damit die Lohnanteile zusammen genau den Lohnanteil der Rechnung ergeben, ist dieser einen Cent geringer als gewöhnlich gerundet)')
   assert.equal(short[0]?.label, 'davon Lohnanteil nach § 35a EStG')
   assert.equal(labor.filter((x) => x?.value === '66,67 €').length, 2, 'die übrigen ohne Zusatz')
 })
