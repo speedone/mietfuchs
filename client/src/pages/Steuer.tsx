@@ -399,9 +399,9 @@ export default function Steuer({ settings }: Props) {
                 Bei {keyDiff.count === 1 ? 'einer Position' : `${keyDiff.count} Positionen`} verteilt die
                 Nebenkostenabrechnung nach Personen, Wohneinheiten oder vereinbarten Anteilen, und der private Teil
                 folgt diesem Schlüssel. Nach Fläche wären es zusammen <strong>{fmtEuro(keyDiff.differenceCents)}</strong> anders.
-                Eine häufige Ursache ist Leerstand: Beim Personenschlüssel trägt eine leere Wohnung keine Personen,
-                ihr Anteil fällt dann auf die Personen der übrigen und damit auch auf Ihre. Kosten einer leerstehenden
-                Wohnung bleiben aber abziehbar, solange Sie sie vermieten wollen (Vermietungsabsicht).
+                Eine leerstehende Wohnung zählt beim Personenschlüssel mit einer Person je Tag; ihr Anteil bleibt als
+                Leerstand bei Ihnen und ist nicht privat. Kosten einer leerstehenden Wohnung bleiben abziehbar, solange
+                Sie sie vermieten wollen (Vermietungsabsicht).
                 Für Kosten, die sich nicht direkt zuordnen lassen, nennt der Bundesfinanzhof das Verhältnis der Wohn-
                 und Nutzflächen als Regelmaßstab; ob ein Umlageschlüssel als Maßstab anerkannt wird, ist nicht
                 entschieden. Mietfuchs übernimmt den Eigenanteil der Abrechnung, damit Abrechnung und Steuer dasselbe
@@ -412,11 +412,13 @@ export default function Steuer({ settings }: Props) {
             {hints.includes('mixedUseExcludedArea') && excludedDiff && (
               <div className="notice" style={{ marginTop: 10 }}>
                 Zum Gebäude gehören Einheiten außerhalb der Abrechnungseinheit. Die Nebenkostenabrechnung verteilt
-                nur über die Abrechnungseinheit; ihr Eigenanteil behandelte die Fläche dieser Einheiten wie privat.
-                Für die Steuer teilt diese Übersicht deshalb {excludedDiff.count === 1 ? 'eine Position' : `${excludedDiff.count} Positionen`} nach
-                der Fläche über das ganze Gebäude auf; gegenüber der Abrechnung sind das
-                zusammen <strong>{fmtEuro(excludedDiff.differenceCents)}</strong> weniger privat. Den Eigenanteil laut
-                Abrechnung zeigt der Rechenweg der Position.
+                nur über die Abrechnungseinheit; ihr Eigenanteil lässt diese Einheiten außen vor und ist deshalb kein
+                Anteil am ganzen Gebäude. Für die Steuer teilt diese Übersicht {excludedDiff.count === 1 ? 'eine Position' : `${excludedDiff.count} Positionen`} nach
+                der Fläche über das ganze Gebäude auf; gegenüber der Abrechnung sind das zusammen{' '}
+                {excludedDiff.lessPrivateCents > 0 && <><strong>{fmtEuro(excludedDiff.lessPrivateCents)}</strong> weniger</>}
+                {excludedDiff.lessPrivateCents > 0 && excludedDiff.morePrivateCents > 0 && ' und '}
+                {excludedDiff.morePrivateCents > 0 && <><strong>{fmtEuro(excludedDiff.morePrivateCents)}</strong> mehr</>}
+                {' '}privat. Den Eigenanteil laut Abrechnung zeigt der Rechenweg der Position.
               </div>
             )}
             {hints.includes('mixedUseClosedItemsChanged') && (

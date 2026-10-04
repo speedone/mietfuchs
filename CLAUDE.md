@@ -1256,14 +1256,19 @@ die ganze fachliche Komplexität:
   mit `selfUse`), damit Abrechnung und Steuer dasselbe sagen; **außer** es gibt unter den
   betroffenen Einheiten eine außerhalb der Abrechnungseinheit: Dann gilt bei den Schlüsseln über
   Wohnungen (Fläche, Einheiten, Personen, vereinbart, Gemeinschaft) die Gebäudefläche, denn der
-  Eigenanteil der Abrechnung behandelte die Fläche dieser Einheit wie privat
-  (`settlementPrivateCents` steht zum Vergleich daneben). Das ist eine Auslegung: Bei Personen,
+  Eigenanteil der Abrechnung lässt diese Einheit außen vor und ist kein Anteil am ganzen Gebäude
+  (`settlementPrivateCents` steht zum Vergleich daneben). Der Hinweis dazu nennt den Abstand **mit
+  Richtung** (`excludedAreaDifference`): Beim Flächenschlüssel ist es weniger privat, beim
+  Personenschlüssel kann es auch mehr sein. Das ist eine Auslegung: Bei Personen,
   Einheiten, vereinbarten Anteilen und Gemeinschaft rechnet `areaPrivateCents` zum Vergleich nach
-  Fläche, und ein Hinweis beziffert den Abstand. Hat die Abrechnung eine Position nicht verteilt
+  Fläche, und ein Hinweis beziffert den Abstand. Leerstand ist dabei keine Ursache mehr: Seit #177
+  bleibt der Anteil einer leeren Wohnung als `vacancy` beim Vermieter, ist nicht privat und bleibt
+  bei Vermietungsabsicht abziehbar; der Hinweis sagt das so. Hat die Abrechnung eine Position nicht verteilt
   (`noBasis`), gilt die Fläche. Bei abgeschlossener Abrechnung kommen die Eigenanteile je Position
   aus dem eingefrorenen Stand (`selfUseByItem` in `frozenSettlementOf`), aber nur für Positionen,
   die mit demselben Betrag darin stehen (`itemTotals`); nachgetragene oder geänderte rechnet sie
-  heute (`closedItemsChanged`). Ein Archivstück von vor
+  heute (`closedItemsChanged`); eine 0-€-Position, für die ältere Versionen keine Zeile schrieben,
+  zählt dabei nicht als geändert. Ein Archivstück von vor
   #142 oder eines, dessen Teile nicht die Summe ergeben, verteilt die eingefrorene Summe im
   Verhältnis der heutigen. `abziehbar = Betrag − privat` je Position, Rundung spiegelbildlich
   (und ohne negative Null, die Invariante fand sie). **Der Überschuss rechnet mit

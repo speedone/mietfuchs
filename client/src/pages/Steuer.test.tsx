@@ -324,11 +324,26 @@ test('Der Unterschied zum Flächenmaßstab wird beziffert (#163)', async () => {
   expect(screen.getByText(/Nach Fläche wären es/).textContent).toMatch(/250,00/)
 })
 
-test('Der Hinweis zum Personenschlüssel nennt den Leerstand als Ursache (#163, Durchsicht)', async () => {
+test('Der Hinweis zum Personenschlüssel beschreibt Leerstand wie die Abrechnung seit #177 (#163, Durchsicht)', async () => {
   await zeige(MIXED([POS({ allocation: 'settlement', category: 'Müllabfuhr', description: 'Müll', privateCents: 50000, deductibleCents: 50000, amountCents: 100000, areaPrivateCents: 25000 })]))
   const kasten = screen.getByText(/Nach Fläche wären es/)
-  expect(kasten.textContent).toMatch(/Leerstand/)
+  // Seit 0.9.0 zählt eine leere Wohnung mit einer Person je Tag, und ihr Anteil bleibt beim
+  // Vermieter; er fällt nicht mehr auf die übrigen Bewohner.
+  expect(kasten.textContent).not.toMatch(/trägt eine leere Wohnung keine Personen/)
+  expect(kasten.textContent).not.toMatch(/Personen der übrigen/)
+  expect(kasten.textContent).toMatch(/mit einer Person je Tag/)
   expect(kasten.textContent).toMatch(/Vermietungsabsicht/)
+})
+
+test('Einheiten außerhalb: der Abstand zur Abrechnung nennt die richtige Richtung (#163, Durchsicht)', async () => {
+  // Eigene Wohnung 100 m² mit 1 Person, vermietet 50 m² mit 4 Personen, dazu 50 m² außerhalb der
+  // Abrechnungseinheit; Müll 1.000 € nach Personen: Die Abrechnung sagt 200 € privat, die
+  // Gebäudefläche 500 €. Das sind 300 € mehr privat, nicht weniger.
+  await zeige(MIXED([POS({ allocation: 'area', category: 'Müllabfuhr', description: 'Müll', amountCents: 100000, privateCents: 50000, deductibleCents: 50000, settlementPrivateCents: 20000 })], { excludedExists: true }))
+  const kasten = screen.getByText(/über das ganze Gebäude/)
+  expect(kasten.textContent).toMatch(/300,00\s€\s*mehr privat/)
+  expect(kasten.textContent).not.toMatch(/weniger privat/)
+  expect(kasten.textContent).not.toMatch(/wie privat/)
 })
 
 test('Einheiten außerhalb: der Kasten sagt, dass die Aufteilung über das ganze Gebäude rechnet (#163, Durchsicht)', async () => {

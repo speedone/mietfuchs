@@ -232,7 +232,11 @@ describe('Teilweise Eigennutzung (#163)', () => {
   it('beziffert bei Einheiten außerhalb den Abstand zur Abrechnung (Durchsicht)', () => {
     const r = mixed([pos({ allocation: 'area', privateCents: 100000, deductibleCents: 200000, amountCents: 300000, settlementPrivateCents: 150000 })])
     expect(taxHints(r, 'ist')).toContain('mixedUseExcludedArea')
-    expect(excludedAreaDifference(r)).toEqual({ count: 1, differenceCents: 50000 })
+    expect(excludedAreaDifference(r)).toEqual({ count: 1, differenceCents: 50000, lessPrivateCents: 50000, morePrivateCents: 0 })
+    // Beim Personenschlüssel kann die Gebäudefläche mehr privat ergeben als die Abrechnung
+    // (eigene 100 m² mit 1 Person, vermietet 50 m² mit 4 Personen, 50 m² außerhalb).
+    const mehr = mixed([pos({ allocation: 'area', amountCents: 100000, privateCents: 50000, deductibleCents: 50000, settlementPrivateCents: 20000 })])
+    expect(excludedAreaDifference(mehr)).toEqual({ count: 1, differenceCents: 30000, lessPrivateCents: 0, morePrivateCents: 30000 })
     expect(taxHints(mixed([pos({})]), 'ist')).not.toContain('mixedUseExcludedArea')
   })
 
