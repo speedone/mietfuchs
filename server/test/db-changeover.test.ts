@@ -478,6 +478,26 @@ test('Ein vereinbarter Anteil auf eine gelöschte Wohnung: nur der Hinweis entf�
   }
 })
 
+test('„Nicht umlagefähig“ auf eine Wohnung ohne Namen: der Umstieg gelingt (Integrationsdurchsicht vor 0.10)', async () => {
+  // Die Steuerübersicht nennt die Einheiten, denen eine solche Position zugeordnet ist. Ein
+  // fehlender Name wird beim Übernehmen zum leeren; stünde er dort nicht unter `unitName`, das die
+  // Regression als Beschriftung ausnimmt, bräche der Umstieg an ihm ab, obwohl kein Cent wandert.
+  const dataDir = tempDir()
+  try {
+    const file = fullDb()
+    const ohneName = unit({ id: 'u3', areaM2: 40, participates: false, selfUsed: true })
+    Reflect.deleteProperty(ohneName, 'name')
+    file.units.push(ohneName)
+    file.costItems.push(costItem({ id: 'c5', category: 'Nicht umlagefähig', description: 'Maler', amountCents: 50000, key: 'direct', directUnitId: 'u3' }))
+    writeFile(dataDir, file)
+    await changeoverIn(dataDir, async (result) => {
+      assert.equal(result.state, 'done', result.message)
+    })
+  } finally {
+    removeDir(dataDir)
+  }
+})
+
 // ---------- Jeder Abbruch einzeln ----------
 
 test('Abbruch: eine unlesbare db.json', async () => {

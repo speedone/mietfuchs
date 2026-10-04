@@ -6,9 +6,10 @@ import { useProperty, withProperty, useSwitchYear } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
-import { allocationLabel, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints, type Basis } from '../taxView'
 import { StepList } from '../components/CalcSteps'
 import Term from '../components/Term'
+import { andList } from '../../../shared/wording.ts'
 
 type Props = { settings: Settings | null }
 
@@ -55,6 +56,7 @@ export default function Steuer({ settings }: Props) {
   const split = data ? showsSplit(data) : false
   const keyDiff = data ? keyNotAreaDifference(data) : null
   const excludedDiff = data ? excludedAreaDifference(data) : null
+  const assigned = data ? assignedUnitItems(data) : []
 
   return (
     <>
@@ -440,6 +442,23 @@ export default function Steuer({ settings }: Props) {
                 Mindestens eine Position ist einer Einheit außerhalb der Abrechnungseinheit zugeordnet. Mietfuchs
                 zählt sie als abziehbar. Nutzen Sie diese Einheit selbst, stellen Sie sie in den Stammdaten auf
                 Eigennutzung; sonst sind die abziehbaren Werbungskosten zu hoch.
+              </div>
+            )}
+            {hints.includes('mixedUseAssignedUnits') && (
+              <div className="notice" style={{ marginTop: 10 }}>
+                {assigned.length === 1 ? 'Eine Position' : `${assigned.length} Positionen`} „Nicht umlagefähig“{' '}
+                {assigned.length === 1 ? 'ist' : 'sind'} für die Steuer bestimmten Einheiten zugeordnet:{' '}
+                {assigned.map((x, k) => (
+                  <Fragment key={x.costItemId}>
+                    {k > 0 && '; '}
+                    „{x.description || 'ohne Beschreibung'}“ ({fmtEuro(x.amountCents)}): {andList(x.units)},{' '}
+                    {x.effect === 'private' ? 'ganz privat' : x.effect === 'deductible' ? 'ganz abziehbar' : 'nach der Fläche dieser Einheiten'}
+                  </Fragment>
+                ))}.
+                Positionen aus Mietfuchs 0.8.0 oder älter können eine solche Zuordnung noch aus dem damaligen
+                Umlageschlüssel tragen. Betrifft eine Position das ganze Gebäude, wählen Sie unter <em>Kosten</em> bei
+                „Betrifft (für die Steuer)“ „das ganze Gebäude (nach Fläche)“; dann wird sie nach dem Verhältnis der
+                Flächen aufgeteilt.
               </div>
             )}
             {hints.includes('mixedUseChangedInYear') && (

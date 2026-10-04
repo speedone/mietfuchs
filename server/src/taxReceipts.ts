@@ -14,7 +14,7 @@
 // beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
 // in den Werbungskosten und hat hier leere Felder.
 import type { CostItem, TaxExpenseItem } from '../../shared/types.ts'
-import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER } from './calc.ts'
+import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER, validLabor35aCents } from './calc.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
 const FALLBACK_GROUP = 'Sonstige Werbungskosten'
@@ -93,10 +93,13 @@ export function planTaxArchive(
     }
     const beleg = parts.length > 0 ? parts.join(' | ') : 'kein Beleg'
     const part = split.get(c.id)
+    // Derselbe Lohnanteil wie in der Steuerübersicht: ein ungültiger (über dem Betrag oder negativ)
+    // zählt dort nicht, und hier steht er dann ebenso wenig (Integrationsdurchsicht vor 0.10).
+    const labor = validLabor35aCents(c) ?? 0
     rows.push([
       textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
       part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '',
-      csvField(c.labor35aCents ? euro(c.labor35aCents) : ''), textField(beleg),
+      csvField(labor ? euro(labor) : ''), textField(beleg),
     ].join(';'))
   }
   const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg'

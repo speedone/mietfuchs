@@ -1047,6 +1047,11 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     let privateCents = 0
     let areaPrivateCents: number | null = null
     let settlementPrivateCents: number | null = null
+    // „Betrifft (für die Steuer)“: dieselben Einheiten, die die Zweige unten lesen.
+    const taxUnits = allocable ? null
+      : direct ? [direct]
+        : item.participantUnitIds ? units.filter((u) => item.participantUnitIds?.includes(u.id))
+          : null
 
     const directLabel = (u: SnapshotUnit) =>
       `direkt: ${u.name} (${isSelf(u) ? 'selbstgenutzt' : u.participates ? 'vermietete Einheit' : 'außerhalb der Abrechnungseinheit'})`
@@ -1125,6 +1130,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
       areaPrivateCents,
       settlementPrivateCents,
       steps,
+      taxUnits: taxUnits?.map((u) => ({ unitId: u.id, unitName: u.name })) ?? null,
     })
   }
 

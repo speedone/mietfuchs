@@ -8,7 +8,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { CostItem, LineDecision, LineFields } from '../../shared/types.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
-import { createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, createProperty, removeEntity, updateEntity } from '../src/db/repository.ts'
 import { readStock } from '../src/db/read.ts'
 import { saveAssessment, type AssessmentRecord, type NewAssessment } from '../src/db/assessments.ts'
 import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, type BookingOutcome } from '../src/db/booking.ts'
@@ -686,5 +686,25 @@ test('M3: Hängt der Beleg schon von Hand an einer Position, ist sie Kandidat je
     assert.equal((await items(w)).length, 1, 'ohne Bestätigung entsteht keine zweite Position')
     done(await book(w, r, [{ idx: 0, action: 'create', fields: fields('Treppenhausreinigung', 'Gebäudereinigung', 30000), despiteCandidates: true }]))
     assert.equal((await items(w)).length, 2)
+  })
+})
+
+// Integrationsdurchsicht vor 0.10 (N1): Verknüpfen ändert den Betrag einer Position. Liegt sie in
+// einem Jahr mit abgeschlossener Abrechnung, sagt die Vorschau es; geändert wird trotzdem, denn
+// die Abrechnung bleibt eingefroren und zeigt die Änderung als Abweichung.
+test('Verknüpfen in ein Jahr mit abgeschlossener Abrechnung: die Vorschau sagt es', async () => {
+  await withWorld(async (w) => {
+    await estimate(w, 'wa')
+    const r = await receipt(w, 'wasser.pdf', [line('Frischwasser', 'Wasser/Abwasser', 160000)])
+    const ohne = await plan(w, r, [link(0, 'wa')])
+    assert.equal(ohne.notices.some((n) => n.includes('abgeschlossen')), false, 'offenes Jahr: kein Hinweis')
+    await w.opened.write((db) => closeSettlement(db, { id: 's', propertyId: 'objekt-1', year: 2025, closedAt: '2026-03-01T00:00:00.000Z', sentAt: null, settlement: {} }))
+    const mit = await plan(w, r, [link(0, 'wa')])
+    assert.ok(mit.notices.includes('„Wasser/Abwasser 2025“: Die Abrechnung 2025 ist abgeschlossen; die Änderung erscheint dort als Abweichung.'), JSON.stringify(mit.notices))
+    // Bleibt der Betrag, wie er ist, ändert sich nichts, und es gibt nichts zu sagen.
+    const gleich = await receipt(w, 'gleich.pdf', [line('Wasser', 'Wasser/Abwasser', 150000)])
+    await estimate(w, 'wb', { description: 'Wasser B' })
+    const p2 = await plan(w, gleich, [link(0, 'wb')])
+    assert.equal(p2.notices.some((n) => n.includes('abgeschlossen')), false, JSON.stringify(p2.notices))
   })
 })
