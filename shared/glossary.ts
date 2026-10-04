@@ -227,7 +227,7 @@ export const GLOSSARY = {
   },
   largestRemainder: {
     title: 'Restcent-Verfahren',
-    short: 'Beim Runden auf Cent fehlen oder bleiben oft einzelne Cent übrig; Mietfuchs gibt sie an die Anteile mit dem größten Rest hinter dem Komma, damit die Summe genau dem Rechnungsbetrag entspricht.',
+    short: 'Beim Runden auf Cent fehlen oder bleiben oft einzelne Cent übrig; Mietfuchs gibt sie an die Anteile mit dem größten Rest hinter dem Komma, damit die Summe genau dem Rechnungsbetrag entspricht. Ihr eigener Anteil (Eigennutzung, Leerstand) zählt dabei mit; bei gleichem Rest bekommen Sie den Cent vor einem Mieter.',
     example: '100,00 € auf drei gleich große Wohnungen sind je 33,3333 €. Gerundet wären das zusammen 99,99 €; den fehlenden Cent bekommt eine der drei, die dann 33,34 € trägt.',
     needed: 'Nein, Mietfuchs erledigt das selbst. Es erklärt nur, warum ein Anteil einen Cent vom rechnerischen Wert abweicht.',
   },
