@@ -1261,8 +1261,9 @@ die ganze fachliche Komplexität:
   Server und Oberfläche fragen dieselbe Funktion. Gerechnet wird wie erfasst, jedes mit vollem
   Tagesanteil, aber mit Hinweis `tenancy.overlap` der Stufe `error` und beziffertem Mehrbetrag
   (`overlapExtra` in calc.ts): je Position, was die Wohnung ohne die Überschneidungstage **eines**
-  der beiden weniger trüge, beide Lesarten gerechnet und die kleinere genommen, denn welches
-  Datum falsch ist, weiß nur der Vermieter. Bei Schlüsseln mit fester Basis ist das der Anteil an
+  der beiden weniger trüge, beide Lesarten gerechnet und beide genannt, wenn sie verschieden sind
+  (eine kann 0 sein, etwa neben einer Pauschale), denn welches Datum falsch ist, weiß nur der
+  Vermieter; die Richtung (zu viel getragen oder zu viel gutgeschrieben) folgt dem Nettobetrag. Bei Schlüsseln mit fester Basis ist das der Anteil an
   den doppelten Tagen (beim Verbrauch nach dem in der Zeit gemessenen Verbrauch); beim
   Personenschlüssel stecken die Personentage auch in der Basis, dort wird neu geteilt
   (S/P − (S − o)/(P − o)); bei Einzelbeträgen entsteht nichts doppelt. Die Stammdaten fragen beim

@@ -1700,20 +1700,22 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // **Überschneidende Mietverhältnisse einer Wohnung (#204).** Beide werden wie erfasst gerechnet,
   // jedes mit seinem vollen Tagesanteil; für die gemeinsamen Tage wird die Wohnung also doppelt
   // berechnet. Gemeldet wird jede Überschneidung, die das Abrechnungsjahr berührt, mit dem
-  // Mehrbetrag (`extra`, exakt in Cent, gerundet erst für den Text), den die Verteilung unten je
-  // Position aufsummiert (`overlapExtra`).
+  // Mehrbetrag je Lesart (`extra`: ohne die Tage des ersten, ohne die des zweiten; exakt in Cent,
+  // gerundet erst für den Text), den die Verteilung unten je Position aufsummiert (`overlapExtra`).
   // Gemeldet und beziffert wird je Paar. Überschneiden sich drei Mietverhältnisse an denselben
   // Tagen, erscheinen drei Paare, und ihre Mehrbeträge können sich teilweise doppelt zählen: Jedes
   // Paar rechnet für sich, als gäbe es das dritte nicht. Der Fall ist selten und jedes Paar für
   // sich ein Fehler; der Betrag je Meldung stimmt für dieses Paar.
   const overlaps = tenancyOverlaps(tenancies).flatMap((o) => {
     const inYear = commonPeriod({ start: o.from, end: o.to }, { start: yFrom, end: yTo })
-    return inYear && inYear.to !== null ? [{ ...o, inYear: { from: inYear.from, to: inYear.to }, extra: 0 }] : []
+    // Das Ende ist nie offen, weil das Jahr eines hat; `?? yTo` sagt das nur dem Übersetzer.
+    return inYear ? [{ ...o, inYear: { from: inYear.from, to: inYear.to ?? yTo }, extra: { first: 0, second: 0 } }] : []
   })
   // Was eine Position der Wohnung für die doppelt belegten Tage zu viel berechnet. „Zu viel“ heißt:
   // gegenüber derselben Verteilung ohne die Überschneidungstage eines der beiden Mietverhältnisse.
-  // Welches Datum falsch ist, weiß nur der Vermieter; beide Lesarten werden gerechnet, und es gilt
-  // die kleinere, denn so viel ist in jedem Fall zu viel. Gerechnet wird mit den exakten Anteilen der
+  // Welches Datum falsch ist, weiß nur der Vermieter; beide Lesarten werden gerechnet und beide
+  // genannt (Durchsicht V1/V2), denn sie können verschieden sein, und eine kann 0 sein, wenn das
+  // Mietverhältnis die Kosten gar nicht trägt (Pauschale). Gerechnet wird mit den exakten Anteilen der
   // Zeilen (`raw`), nur was einem Mieter wirklich zugebucht wird, zählt:
   // - Bei allen Schlüsseln, deren Verteilbasis nicht von den Mietverhältnissen abhängt (Fläche,
   //   Einheiten, Direktzuordnung, vereinbarte Anteile, Gemeinschaft, Verbrauch), wäre ohne die Tage
@@ -1724,12 +1726,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   //   ((S − o)/(P − o)), mit S den zugebuchten Personentagen der Wohnung, P der Verteilbasis und o
   //   den Personentagen des einen Mietverhältnisses in der Überschneidung.
   // - Einzelbeträge teilt der Messdienst selbst auf; dort entsteht nichts doppelt.
-  // Ein Betrag unter null (wenn die andere Lesart die Mieter entlastete) wird zu null.
+  // Ein Betrag gegen die Richtung der Position (wenn ohne die Tage die Mieter mehr trügen, etwa beim
+  // Personenschlüssel neben einer Pauschale) wird zu null: Zu viel tragen sie dann nicht. Bei einer
+  // Gutschrift ist der Betrag negativ, die Mieter bekommen dann zu viel gutgeschrieben.
   type OverlapPeriod = (typeof overlaps)[number]
   const overlapExtra = (
     item: SnapshotCostItem, b: { basisPersonDays: number }, targets: Target[], booked: boolean[], o: OverlapPeriod,
-  ): number => {
-    if (item.key === 'amounts' || targets.length === 0) return 0
+  ): { first: number, second: number } => {
+    if (item.key === 'amounts' || targets.length === 0) return { first: 0, second: 0 }
     const { from, to } = o.inYear
     const reading = (t: TenancyWithUnit): number => {
       const i = targets.findIndex((x) => x.t.id === t.id)
@@ -1754,7 +1758,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return t.days > 0 ? x.raw * (rangeOverlapDays(from, to, from, to) / t.days) : 0
     }
     const sign = item.amountCents < 0 ? -1 : 1
-    return sign * Math.max(0, Math.min(reading(o.first) * sign, reading(o.second) * sign))
+    const towards = (v: number) => sign * Math.max(0, v * sign)
+    return { first: towards(reading(o.first)), second: towards(reading(o.second)) }
   }
   const landlordRows: SettlementRow[] = []
   const notices: Notice[] = []
@@ -2336,7 +2341,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       forced: forced !== null,
       lines: recipients.map((r, k) => ({ recipient: r.key, landlord: r.landlord, exact: cleanRaw(r.raw), cents: cents[k], laborExact: laborExact[k], laborCents: laborCents[k] })),
     })
-    for (const o of overlaps) o.extra += overlapExtra(item, b, targets, booked, o)
+    for (const o of overlaps) {
+      const e = overlapExtra(item, b, targets, booked, o)
+      o.extra.first += e.first
+      o.extra.second += e.second
+    }
     let distributed = 0
     targets.forEach((x, i) => {
       const k = lineOf.get(i)
@@ -2482,12 +2491,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const span = o.to === null ? `seit dem ${fmtDay(o.from)}` : `vom ${fmtDay(o.from)} bis ${fmtDay(o.to)}`
     const yearDays = rangeOverlapDays(o.inYear.from, o.inYear.to, o.inYear.from, o.inYear.to)
     const whole = o.to !== null && o.from === o.inYear.from && o.to === o.inYear.to
-    const extra = Math.round(o.extra)
+    // Je Lesart der Betrag; die Richtung folgt dem Nettobetrag (Kosten oder Gutschrift).
+    const byFirst = Math.round(o.extra.first)
+    const bySecond = Math.round(o.extra.second)
+    const clause = (c: number, inverted: boolean): string => {
+      const who = 'die Mieter dieser Wohnung'
+      const what = c >= 0
+        ? `${year} zusammen ${fmtCents(c)} mehr, als auf die Wohnung entfällt`
+        : `${year} zusammen ${fmtCents(-c)} mehr gutgeschrieben, als auf die Wohnung entfällt`
+      const verb = c >= 0 ? 'tragen' : 'bekommen'
+      return inverted ? `${verb} ${who} ${what}` : `Die Mieter dieser Wohnung ${verb} ${what}`
+    }
+    const none = 'wirkt es sich auf die Anteile der Mieter nicht aus'
+    const amountText = byFirst === 0 && bySecond === 0
+      ? `Auf die Anteile der Mieter wirkt sich das ${year} nicht aus, die Angaben widersprechen sich aber. `
+      : byFirst === bySecond
+        ? `Für diese Zeit wird beiden der volle Anteil berechnet: ${clause(byFirst, false)}. `
+        : `Für diese Zeit wird beiden der volle Anteil berechnet. Wie viel zu viel, hängt davon ab, welches Datum falsch ist: Ist bei ${o.first.tenantName} ein Datum falsch, ${byFirst === 0 ? none : clause(byFirst, true)}; ist es bei ${o.second.tenantName} falsch, ${
+          bySecond === 0 ? none : byFirst !== 0 && Math.sign(byFirst) === Math.sign(bySecond) ? fmtCents(Math.abs(bySecond)) : clause(bySecond, true)
+        }. `
     warn('tenancy.overlap',
       `Die Mietverhältnisse von ${o.first.tenantName} (${period(o.first)}) und ${o.second.tenantName} (${period(o.second)}) in ${o.first.unit.name} überschneiden sich ${span} (${whole ? '' : 'davon '}${daysLabel(yearDays)}${whole ? '' : ` in ${year}`}). ` +
-        (extra !== 0
-          ? `Für diese Zeit wird beiden der volle Anteil berechnet: Die Mieter dieser Wohnung tragen ${year} zusammen ${fmtCents(extra)} mehr, als auf die Wohnung entfällt. `
-          : `Auf die Anteile der Mieter wirkt sich das ${year} nicht aus, die Angaben widersprechen sich aber. `) +
+        amountText +
         'Meist ist ein Datum vertippt: Bitte Auszug und Einzug prüfen und das falsche Datum berichtigen. Bis dahin rechnet Mietfuchs wie erfasst.',
       { kind: 'tenancy', id: o.first.id })
   }

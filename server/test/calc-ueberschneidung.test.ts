@@ -76,26 +76,40 @@ test('Neben einer selbstgenutzten Wohnung: der Eigenanteil bleibt exakt, der Üb
   assert.match(overlapNotices(s)[0]?.text ?? '', /49,32 €/)
 })
 
-test('Personenschlüssel: Mehrbetrag aus der Verteilbasis nachgerechnet, angesetzt die kleinere der beiden Lesarten', () => {
+test('Personenschlüssel: Mehrbetrag aus der Verteilbasis nachgerechnet, beide Lesarten genannt (Durchsicht V2)', () => {
   const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const s = settle([xaver, yvonne, zora], [muell])
   // Personentage: Xaver 2 × 273 = 546, Yvonne 1 × 122 = 122, Zora 2 × 365 = 730, zusammen 1.398;
   // Wohnung A trägt 668/1.398. In den 30 Tagen zählen Xaver 60 und Yvonne 30 Personentage doppelt.
   // Beim Personenschlüssel stecken sie auch in der Verteilbasis, deshalb wird ohne sie neu geteilt:
   // Ohne Yvonnes 30 trüge A 638/1.368, ohne Xavers 60 trüge A 608/1.338. Welches Datum falsch ist,
-  // weiß nur der Vermieter; sicher zu viel ist der kleinere Unterschied:
-  // 730 € × (668/1.398 − 638/1.368) = 8,359… € → 8,36 €.
+  // weiß nur der Vermieter, deshalb stehen beide Beträge da:
+  // ohne Xavers Tage 730 € × (668/1.398 − 608/1.338) = 17,093… € → 17,09 €,
+  // ohne Yvonnes Tage 730 € × (668/1.398 − 638/1.368) = 8,359… € → 8,36 €.
+  assert.equal(Math.round(73000 * (668 / 1398 - 608 / 1338)), 1709)
   assert.equal(Math.round(73000 * (668 / 1398 - 638 / 1368)), 836)
-  assert.ok(73000 * (668 / 1398 - 638 / 1368) < 73000 * (668 / 1398 - 608 / 1338))
-  assert.match(overlapNotices(s)[0]?.text ?? '', /8,36 €/)
+  assert.match(overlapNotices(s)[0]?.text ?? '',
+    /Ist bei Xaver ein Datum falsch, tragen die Mieter dieser Wohnung 2025 zusammen 17,09 € mehr, als auf die Wohnung entfällt; ist es bei Yvonne falsch, 8,36 €\./)
+})
+
+test('Personenschlüssel mit Pauschale: nur eine Lesart wirkt, der Text sagt welche (Durchsicht V1)', () => {
+  const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
+  const pauschal = tenancy({ ...yvonne, costModel: 'flatRate' })
+  // Zugebucht wird nur Xaver (546 Personentage). Ohne seine 60 doppelten: 730 € × (546/1.398 − 486/1.338)
+  // = 19,950… € → 19,95 €. Ohne Yvonnes Tage trüge Xaver mehr, nicht weniger: kein Betrag zu viel.
+  assert.equal(Math.round(73000 * (546 / 1398 - 486 / 1338)), 1995)
+  const text = overlapNotices(settle([xaver, pauschal, zora], [muell]))[0]?.text ?? ''
+  assert.match(text, /Ist bei Xaver ein Datum falsch, tragen die Mieter dieser Wohnung 2025 zusammen 19,95 € mehr, als auf die Wohnung entfällt; ist es bei Yvonne falsch, wirkt es sich auf die Anteile der Mieter nicht aus\./)
 })
 
 test('Mehrere Positionen: der Mehrbetrag ist die Summe über alle, auf den Cent erst am Ende gerundet', () => {
   const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const s = settle([xaver, yvonne, zora], [grundsteuer, muell])
-  // 4.931,507 ct + 835,937 ct = 5.767,44 ct → 57,67 €
+  // Je Lesart summiert: ohne Xavers Tage 4.931,507 ct + 1.709,361 ct = 6.640,87 ct → 66,41 €,
+  // ohne Yvonnes Tage 4.931,507 ct + 835,937 ct = 5.767,44 ct → 57,67 €.
+  assert.equal(Math.round(60000 * 30 / 365 + 73000 * (668 / 1398 - 608 / 1338)), 6641)
   assert.equal(Math.round(60000 * 30 / 365 + 73000 * (668 / 1398 - 638 / 1368)), 5767)
-  assert.match(overlapNotices(s)[0]?.text ?? '', /57,67 €/)
+  assert.match(overlapNotices(s)[0]?.text ?? '', /Xaver.*66,41 €.*Yvonne falsch, 57,67 €/)
 })
 
 test('Kein Hinweis: lückenlos, andere Wohnung, Überschneidung nur in einem anderen Jahr', () => {
@@ -118,12 +132,27 @@ test('Über den Jahreswechsel: der Zeitraum steht ganz da, beziffert wird nur da
   assert.match(text, /50,96 €/)
 })
 
-test('Trägt eines der beiden die Kosten nicht (Pauschale), zahlen die Mieter nichts doppelt: der Hinweis bleibt, ohne Betrag', () => {
+test('Fläche mit Pauschale: zu viel nur, wenn Xavers Datum falsch ist; der Text sagt es so (Durchsicht V1)', () => {
   const pauschal = tenancy({ ...yvonne, costModel: 'flatRate' })
   const n = overlapNotices(settle([xaver, pauschal, zora]))[0]
   assert.equal(n?.level, 'error')
-  assert.doesNotMatch(n?.text ?? '', /€/)
-  assert.match(n?.text ?? '', /Auf die Anteile der Mieter wirkt sich das 2025 nicht aus/)
+  // Xaver trägt 1.200 € × 50/100 × 30/365 = 49,32 € für Tage, die vielleicht Yvonne gehören;
+  // Yvonne trägt mit Pauschale nichts, ist ihr Einzug falsch, zahlt kein Mieter zu viel.
+  assert.match(n?.text ?? '', /Ist bei Xaver ein Datum falsch, tragen die Mieter dieser Wohnung 2025 zusammen 49,32 € mehr, als auf die Wohnung entfällt; ist es bei Yvonne falsch, wirkt es sich auf die Anteile der Mieter nicht aus\./)
+  assert.doesNotMatch(n?.text ?? '', /Auf die Anteile der Mieter wirkt sich das 2025 nicht aus/)
+})
+
+test('Gutschrift: die Mieter bekommen zu viel gutgeschrieben, kein „−49,32 € mehr“ (Durchsicht V2)', () => {
+  const text = overlapNotices(settle([xaver, yvonne, zora], [{ ...grundsteuer, amountCents: -120000 }]))[0]?.text ?? ''
+  assert.match(text, /Die Mieter dieser Wohnung bekommen 2025 zusammen 49,32 € mehr gutgeschrieben, als auf die Wohnung entfällt\./)
+  assert.doesNotMatch(text, /−|-49/)
+})
+
+test('Kosten und Gutschrift zusammen: der Satz folgt dem Nettobetrag (Durchsicht V2)', () => {
+  // 1.200 € Kosten und 300 € Gutschrift nach Fläche: netto 900 € × 50/100 × 30/365 = 36,99 € zu viel getragen.
+  assert.equal(Math.round(90000 * 0.5 * 30 / 365), 3699)
+  const text = overlapNotices(settle([xaver, yvonne, zora], [grundsteuer, { ...grundsteuer, id: 'gut', amountCents: -30000 }]))[0]?.text ?? ''
+  assert.match(text, /Die Mieter dieser Wohnung tragen 2025 zusammen 36,99 € mehr, als auf die Wohnung entfällt\./)
 })
 
 test('Verbrauchsschlüssel: Mehrbetrag nach dem Verbrauch in der Überschneidung', () => {
@@ -139,6 +168,24 @@ test('Verbrauchsschlüssel: Mehrbetrag nach dem Verbrauch in der Überschneidung
   }, 2025)
   // In den 30 Tagen wurden in A 30 m³ gemessen, beiden zugerechnet: 365 € × 30/730 = 15,00 €.
   assert.match(overlapNotices(computeSettlement(snap))[0]?.text ?? '', /15,00 €/)
+})
+
+test('Verbrauchsschlüssel mit ungleichem Verbrauch: geteilt wird nach dem Verbrauch der Überschneidung, nicht nach Tagen (Durchsicht S1)', () => {
+  // Wohnung A: 243 m³ bis 31.08., 300 m³ im September, 92 m³ danach; B 365 m³. 1.000 € auf 1.000 m³.
+  // Beide bekommen die 300 m³ des Septembers: 1.000 € × 300/1.000 = 300,00 € zu viel, in beiden Lesarten.
+  // Nach Tagen gerechnet wären es 543 × 30/273 = 59,67 € und 392 × 30/122 = 96,39 €.
+  const wasser: SnapshotCostItem = { id: 'w', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' }
+  const snap = snapshotOf({
+    ...source([xaver, yvonne, zora], [wasser]),
+    meters: [{ id: 'mA', unitId: 'A', type: 'kaltwasser' }, { id: 'mB', unitId: 'B', type: 'kaltwasser' }],
+    readings: [
+      { meterId: 'mA', date: '2024-12-31', value: 0 }, { meterId: 'mA', date: '2025-08-31', value: 243 },
+      { meterId: 'mA', date: '2025-09-30', value: 543 }, { meterId: 'mA', date: '2025-12-31', value: 635 },
+      { meterId: 'mB', date: '2024-12-31', value: 0 }, { meterId: 'mB', date: '2025-12-31', value: 365 },
+    ],
+  }, 2025)
+  const text = overlapNotices(computeSettlement(snap))[0]?.text ?? ''
+  assert.match(text, /Die Mieter dieser Wohnung tragen 2025 zusammen 300,00 € mehr, als auf die Wohnung entfällt\./)
 })
 
 test('Einzelbeträge: der Messdienst teilt selbst auf, nichts doppelt', () => {

@@ -34,7 +34,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Anteil, und der Leerstand des Vermieters wurde negativ, ohne dass es irgendwo stand. Jetzt nennt
   die Abrechnung beide Mieter, den Zeitraum und den Betrag, den die Mieter dieser Wohnung im Jahr
   zusammen zu viel tragen (1.200 € Grundsteuer nach Fläche, die Wohnung mit 50 von 100 m²:
-  49,32 €), als Fehler mit „Hier beheben →“ zum Mietverhältnis. Gerechnet wird weiter wie erfasst.
+  49,32 €), als Fehler mit „Hier beheben →“ zum Mietverhältnis. Hängt der Betrag davon ab, welches
+  der beiden Daten falsch ist, etwa beim Personenschlüssel oder neben einer Pauschale, stehen beide
+  Beträge da; bei einer Gutschrift heißt es, was die Mieter zu viel gutgeschrieben bekommen.
+  Gerechnet wird weiter wie erfasst.
   Die Ampel „Hinweise der Berechnung“ im Cockpit wird bei jedem Hinweis der Stufe Fehler rot statt
   gelb, also auch bei den beiden bisherigen Fällen: Einzelbeträge über dem Rechnungsbetrag und
   vereinbarte Anteile über 100 %, bei denen eine Position gar nicht verteilt wird. Beim
