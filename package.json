@@ -37,6 +37,7 @@
     "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "playwright": "^1.63.0"
   }
 }

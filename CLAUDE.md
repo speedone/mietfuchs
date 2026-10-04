@@ -26,7 +26,23 @@ npm --prefix server run db:generate # neue Migration aus server/src/db/schema.ts
 npm start          # Produktivbetrieb: Server liefert App + API auf Port 3001
 npm run package    # baut eigenständige Binaries nach dist-bin/ (braucht Bun)
 npm run package:linux # baut daraus .deb/.rpm/Arch-Pakete (braucht nFPM oder Docker)
+npm run screenshots # Bildschirmfotos fürs README nach docs/screenshots (braucht Playwright-Chromium)
 ```
+
+**Bildschirmfotos fürs README**: [scripts/screenshots.mjs](scripts/screenshots.mjs) (`npm run
+screenshots`) erzeugt die Bilder in `docs/screenshots/` neu und gehört zu jedem Release. Es baut
+die Oberfläche (`--skip-build` lässt das aus), startet den Server wie `npm start` mit den drei
+Angaben jedes Prüfstarts (siehe unten) und das nachgebaute Ollama aus
+[scripts/fake-ollama.mjs](scripts/fake-ollama.mjs), legt per API einen Beispielbestand an und
+fotografiert mit Playwright bei 1440 × 900 im hellen Design. **Der Bestand ist erfunden**: ein
+Mehrfamilienhaus „Lindenweg 12, 12345 Musterstadt“ mit selbstgenutzter Dachwohnung, Garage,
+Mieterwechsel mit Leerstand, Zählern, Zahlungen und Belegen (vom selben Browser als PDF gedruckt),
+dazu eine vermietete Eigentumswohnung mit Kosten laut Hausgeldabrechnung; die IBAN ist absichtlich
+ungültig. Echte Namen, Adressen oder Belege gehören nie hinein. Das Abrechnungsjahr ist das
+Vorjahr, wie es die Oberfläche voreinstellt. Playwright ist devDependency im Wurzelpaket, den
+Browser lädt einmalig `npx playwright install chromium`. Meldet die Oberfläche einen Fehler oder
+steht eine Fehlermeldung im Bild, bricht das Skript ab; die Bilder trotzdem vor dem Commit
+ansehen. Bestehende Dateinamen beibehalten, das README verlinkt sie.
 
 **Eigenständige Binaries** (für Endanwender ohne Node): [scripts/package-binaries.mjs](scripts/package-binaries.mjs)
 kompiliert Server + eingebettetes Frontend per **Bun `--compile`** zu je einer Datei pro
