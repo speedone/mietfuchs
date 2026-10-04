@@ -38,6 +38,8 @@ let sent: { url: string; method: string; body: unknown }[]
 let extraUploads: ReceiptUpload[]
 let extraItems: CostItem[]
 let failAssessmentPut = false
+// Die abgeschlossene Abrechnung des Jahres, falls es eine gibt (Integrationsdurchsicht vor 0.10)
+let closed: { closedAt: string } | null = null
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -51,6 +53,7 @@ beforeEach(() => {
   extraUploads = []
   extraItems = []
   failAssessmentPut = false
+  closed = null
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -65,7 +68,7 @@ beforeEach(() => {
     if (u.pathname === '/api/properties') body = PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
-    else if (u.pathname.startsWith('/api/settlement/')) body = SETTLEMENT
+    else if (u.pathname.startsWith('/api/settlement/')) body = closed ? { ...SETTLEMENT, closed } : SETTLEMENT
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
 })
@@ -354,4 +357,26 @@ test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und d
   fireEvent.click(await screen.findByRole('button', { name: 'ohne.pdf weiter prüfen' }))
   expect(await screen.findByText(/Zeilen sind schon gebucht/)).toBeTruthy()
   expect(onContinue).not.toHaveBeenCalled()
+})
+
+// Integrationsdurchsicht vor 0.10 (N1): „Betrag prüfen“ ändert eine Position. Liegt sie in einem
+// Jahr mit abgeschlossener Abrechnung, sagt der Kasten es, bevor gespeichert wird.
+test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt die Abweichung', async () => {
+  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  closed = { closedAt: `${YEAR + 1}-03-01T00:00:00.000Z` }
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  await within(check).findByText(`Die Abrechnung ${YEAR} ist abgeschlossen; die Änderung erscheint dort als Abweichung.`)
+})
+
+test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen Abrechnung', async () => {
+  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  renderPage()
+  await screen.findByText('Wasser/Abwasser')
+  fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })
+  const check = await screen.findByRole('status', { name: 'Betrag prüfen' })
+  await new Promise((r) => setTimeout(r, 20))
+  expect(check.textContent).not.toMatch(/abgeschlossen/)
 })

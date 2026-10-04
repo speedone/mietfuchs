@@ -78,12 +78,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   auch aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
   Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt; die Ampel vergleicht
   dann den Stand nach dem Verknüpfen mit dem Vorjahr und zählt Schätzung und Rechnung nicht
-  zusammen (vorher „+103 % gegenüber Vorjahr“ für eine Grundsteuer, die um 3 % stieg). Eine Gutschrift wird
+  zusammen. Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
   wiederholen bucht nichts zweimal: Was genau so gebucht ist, meldet Erfolg ohne Änderung; eine
   Abweichung oder ein Stand, der sich seit der Vorschau geändert hat, antwortet mit dem
   aktuellen Stand und einer neuen Vorschau, statt still anders zu buchen. Löst man eine Zeile,
-  sagt die Vorschau, ob der Beleg der Position wechselt. Objekt und Jahr einer Auswertung sind
+  sagt die Vorschau, ob der Beleg der Position wechselt. Ändert das Verknüpfen oder „Betrag prüfen“
+  im Belegordner den Betrag einer Position, deren Abrechnung schon abgeschlossen ist, sagen Vorschau
+  und Kasten es: Die Änderung erscheint dort als Abweichung. Objekt und Jahr einer Auswertung sind
   nach der ersten Buchung fest; vorher ziehen Posteingang und Auswertung sie gegenseitig mit.
   Belegmappe und Steuer-ZIP nehmen auch Belege auf, die nur über eine gebuchte Zeile an einer
   Position hängen; die Karte im Belegordner zeigt die Summe der eigenen Zeilen, und der
@@ -146,7 +148,6 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   betroffenen Gebäudeteils; ohne Auswahl gilt das ganze Gebäude. Die
   Nebenkostenabrechnung bleibt davon unberührt.
   ([#163](https://github.com/speedone/mietfuchs/issues/163))
-
 - **Anleitungen je Vermietungsart auf „Hilfe & Begriffe“.** Für acht Lagen sagt Mietfuchs, wie
   Sie sie anlegen und was daraus wird: Haus mit Einliegerwohnung, Mehrfamilienhaus, vermietete
   Eigentumswohnung mit Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale
@@ -172,8 +173,10 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   er bei teilweiser Eigennutzung die vollen Kosten ab und fiel um den privaten Anteil zu niedrig
   aus. Für bestehende Daten: Wer eine selbstgenutzte Wohnung angelegt hat, sieht für vergangene
   Jahre einen höheren Überschuss; eine Zahl, die schon in einer Steuererklärung steht, gleichen
-  Sie bitte mit Ihrem Steuerberater ab. Ältere Positionen „Nicht umlagefähig“ gelten als Kosten
-  des ganzen Gebäudes, bis Sie sie einer Einheit zuordnen.
+  Sie bitte mit Ihrem Steuerberater ab. Ältere Positionen „Nicht umlagefähig“ ohne Zuordnung
+  gelten als Kosten des ganzen Gebäudes, bis Sie sie einer Einheit zuordnen. Trägt eine Position
+  aus einer älteren Version schon eine Zuordnung, gilt diese; die Steuerübersicht weist darauf hin
+  (siehe *Hinweise zur Aktualisierung*).
   ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
 ### Behoben
@@ -216,6 +219,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Positionen gilt weiter der Beleg an der Position. Backup und Wiederherstellen nehmen Angaben
   und Auswertungen mit.
   ([#170](https://github.com/speedone/mietfuchs/issues/170))
+- Bis Version 0.8.0 speicherte das Formular auch bei „Nicht umlagefähig“ einen Umlageschlüssel,
+  oft „direkt“ mit einer Wohnung. Wurde eine solche Position seitdem nicht neu gespeichert, gilt
+  diese Wohnung jetzt als „Betrifft (für die Steuer)“: Die Kosten sind dann ganz privat (eigene
+  Wohnung) oder ganz abziehbar (vermietete Wohnung) statt nach Fläche aufgeteilt. Gibt es eine
+  selbstgenutzte Wohnung, nennt die Steuerübersicht jede Position „Nicht umlagefähig“, die
+  bestimmten Einheiten zugeordnet ist. Betrifft eine davon das ganze Gebäude, wählen Sie unter
+  *Kosten* bei „Betrifft (für die Steuer)“ „das ganze Gebäude (nach Fläche)“. Eine bewusste
+  Zuordnung bleibt, wie sie ist.
+  ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
 ## [0.9.0] – 2026-10-02
 

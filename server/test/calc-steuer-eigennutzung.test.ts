@@ -455,3 +455,27 @@ test('Hinweis-Kennzeichen: Lohnanteil an einer Position mit privatem Teil', () =
   assert.equal(itemOf(r, 'garten').labor35aCents, 80000)
   assert.equal(r.expenses.labor35aCents, 80000, '§35a bleibt unverändert')
 })
+
+// Integrationsdurchsicht vor 0.10: Bis 0.8.0 speicherte das Formular auch bei „Nicht umlagefähig“
+// den Umlageschlüssel, oft `direct` mit einer Wohnung. Seit #163 heißt das „Betrifft (für die
+// Steuer)“. Ein Datenschritt räumt es bewusst nicht ab; die Seite nennt die Zuordnung, und dafür
+// führt jede Position die Einheiten, denen sie zugeordnet ist.
+test('Nicht umlagefähig: die Position nennt die Einheiten, denen sie zugeordnet ist', () => {
+  const r = tax(source({
+    units: [own('EG', 100), rented('OG', 150), rented('DG', 50)],
+    tenancies: [tenancy('t', 'OG'), tenancy('u', 'DG')],
+    costItems: [
+      item('alt-eg', { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'EG' }),
+      item('alt-og', { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'OG' }),
+      item('dach', { category: 'Nicht umlagefähig', participantUnitIds: ['OG', 'DG'] }),
+      item('gebaeude', { category: 'Nicht umlagefähig' }),
+      item('wasser', { category: 'Wasser', key: 'direct', directUnitId: 'OG' }),
+    ],
+  }))
+  const u = (id: string) => ({ unitId: id, unitName: id })
+  assert.deepEqual(itemOf(r, 'alt-eg').taxUnits, [u('EG')])
+  assert.deepEqual(itemOf(r, 'alt-og').taxUnits, [u('OG')])
+  assert.deepEqual(itemOf(r, 'dach').taxUnits, [u('OG'), u('DG')])
+  assert.equal(itemOf(r, 'gebaeude').taxUnits, null, 'ganzes Gebäude')
+  assert.equal(itemOf(r, 'wasser').taxUnits, null, 'umlagefähig: die Zuordnung ist der Umlageschlüssel, nicht „Betrifft“')
+})

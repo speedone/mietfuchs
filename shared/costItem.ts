@@ -12,6 +12,9 @@ import { isNotAllocable } from './categories.ts'
 
 // Ein Betrag wie in der Oberfläche (client/src/api.ts, fmtEuro): „612,40 €“.
 export const euro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
+// Ändert etwas den Betrag einer Position in einem Jahr mit abgeschlossener Abrechnung (Verknüpfen
+// in der Belegbuchung, „Betrag prüfen“ im Belegordner), sagen beide es mit diesem Satz.
+export const closedYearNotice = (year: number): string => `Die Abrechnung ${year} ist abgeschlossen; die Änderung erscheint dort als Abweichung.`
 export const pct = (n: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 
 // Gehört die Wohnung zur Abrechnungseinheit? Vermietet oder selbstgenutzt; dieselbe Regel wie

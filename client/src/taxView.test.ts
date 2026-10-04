@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TaxExpenseItem, TaxReport } from './types'
-import { allocationLabel, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
+import { allocationLabel, assignedUnitItems, DEFAULT_BASIS, excludedAreaDifference, incomeCentsFor, keyNotAreaDifference, prepaymentNote, showsSplit, surplusCentsFor, taxHints } from './taxView'
 
 // Ein Bericht, in dem nur das steht, was die Hinweise lesen. Die übrigen Felder füllt der Typ
 // ab, damit der Übersetzer mitprüft, dass die Hinweise wirklich einen TaxReport lesen.
@@ -172,7 +172,7 @@ describe('Teilweise Eigennutzung (#163)', () => {
   const pos = (over: Partial<TaxExpenseItem>): TaxExpenseItem => ({
     costItemId: 'c', category: 'Grundsteuer', group: 'Grundsteuer & öffentliche Abgaben', description: 'Grundsteuer',
     amountCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0,
-    allocation: 'settlement', deductiblePercent: 100, areaPrivateCents: null, settlementPrivateCents: null, steps: [], ...over,
+    allocation: 'settlement', deductiblePercent: 100, areaPrivateCents: null, settlementPrivateCents: null, steps: [], taxUnits: null, ...over,
   })
   const mixed = (items: TaxExpenseItem[], rest: Partial<TaxReport> = {}) => report({}, {
     selfOccupiedExists: true, selfUsedAreaM2: 50,
@@ -238,6 +238,28 @@ describe('Teilweise Eigennutzung (#163)', () => {
     const mehr = mixed([pos({ allocation: 'area', amountCents: 100000, privateCents: 50000, deductibleCents: 50000, settlementPrivateCents: 20000 })])
     expect(excludedAreaDifference(mehr)).toEqual({ count: 1, differenceCents: 30000, lessPrivateCents: 0, morePrivateCents: 30000 })
     expect(taxHints(mixed([pos({})]), 'ist')).not.toContain('mixedUseExcludedArea')
+  })
+
+  // Integrationsdurchsicht vor 0.10: „Nicht umlagefähig“ mit einer Zuordnung aus 0.8.0 oder älter.
+  it('nennt „Nicht umlagefähig“-Positionen, die bestimmten Einheiten zugeordnet sind, mit ihrer Wirkung', () => {
+    const na = (over: Partial<TaxExpenseItem>) => pos({ category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', deductiblePercent: null, ...over })
+    const r = mixed([
+      na({ costItemId: 'a', description: 'Malerarbeiten', allocation: 'direct-self', privateCents: 100000, deductibleCents: 0, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] }),
+      na({ costItemId: 'b', description: 'Bad', allocation: 'direct-rented', taxUnits: [{ unitId: 'OG', unitName: 'OG' }] }),
+      na({ costItemId: 'c', description: 'Dach Hinterhaus', allocation: 'area', privateCents: 20000, deductibleCents: 80000, taxUnits: [{ unitId: 'OG', unitName: 'OG' }, { unitId: 'DG', unitName: 'DG' }] }),
+      na({ costItemId: 'd', description: 'Gebäude', allocation: 'area', taxUnits: null }),
+      pos({ costItemId: 'e', allocation: 'direct-rented' }),
+    ])
+    expect(taxHints(r, 'ist')).toContain('mixedUseAssignedUnits')
+    expect(assignedUnitItems(r)).toEqual([
+      { costItemId: 'a', description: 'Malerarbeiten', amountCents: 100000, units: ['EG'], effect: 'private' },
+      { costItemId: 'b', description: 'Bad', amountCents: 100000, units: ['OG'], effect: 'deductible' },
+      { costItemId: 'c', description: 'Dach Hinterhaus', amountCents: 100000, units: ['OG', 'DG'], effect: 'area' },
+    ])
+    // Ohne Zuordnung kein Hinweis, und ohne selbstgenutzte Einheit wirkt sie nicht.
+    expect(taxHints(mixed([na({ taxUnits: null })]), 'ist')).not.toContain('mixedUseAssignedUnits')
+    const ohneEigene = report({}, { expenses: { groups: [], items: [na({ allocation: 'direct-rented', taxUnits: [{ unitId: 'OG', unitName: 'OG' }] })], totalCents: 100000, privateCents: 0, deductibleCents: 100000, labor35aCents: 0 } })
+    expect(taxHints(ohneEigene, 'ist')).not.toContain('mixedUseAssignedUnits')
   })
 
   it('meldet Positionen, die nach dem Abschluss erfasst oder geändert wurden (Durchsicht)', () => {

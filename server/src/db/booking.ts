@@ -103,6 +103,7 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
     assessment: record.assessment, lines: record.lines, items: ctx.stock.costItems, booked: ctx.booked,
     units: scoped?.units ?? [], twinFiles,
     fileNames: new Map([...ctx.booked.map((l) => l.file), ...twinFiles].map((f) => [f, nameOf(ctx, f)])),
+    closed: ctx.stock.closedSettlements,
   }, decisions, newId)
   return { record, ctx, planned }
 }

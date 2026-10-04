@@ -97,3 +97,18 @@ test('Steuer-Belege: privat und abziehbar je Position aus der Steuerübersicht, 
   assert.ok(zeilen.includes('Grundsteuer & öffentliche Abgaben;Grundsteuer;Position gs;;500,00;300,00;200,00;;kein Beleg'), zeilen.join('\n'))
   assert.ok(zeilen.includes('Erhaltungsrücklage (gesondert);Zuführung Erhaltungsrücklage;Position r;;300,00;;;;kein Beleg'), zeilen.join('\n'))
 })
+
+// Integrationsdurchsicht vor 0.10 (N2): Die Steuerübersicht setzt einen ungültigen Lohnanteil
+// (über dem Betrag oder negativ) nicht an (`validLabor35aCents`); die Übersicht im ZIP darf ihn
+// dann ebenso wenig nennen, sonst sagen beide Verschiedenes zur selben Position.
+test('Steuer-Belege: ein ungültiger §35a-Lohnanteil steht wie in der Steuerübersicht nicht in der Übersicht', () => {
+  const plan = planTaxArchive([
+    item('zuviel', { category: 'Gartenpflege', amountCents: 1000, labor35aCents: 2000 }),
+    item('negativ', { category: 'Hauswart', amountCents: 1000, labor35aCents: -100 }),
+    item('gut', { category: 'Gebäudereinigung', amountCents: 1000, labor35aCents: 600 }),
+  ], names)
+  const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position zuviel;;10,00;;;;kein Beleg'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Hauswart;Position negativ;;10,00;;;;kein Beleg'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gebäudereinigung;Position gut;;10,00;;;6,00;kein Beleg'), zeilen.join('\n'))
+})

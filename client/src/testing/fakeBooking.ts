@@ -106,7 +106,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const parsed = parseDecisions(fieldOf(body, 'decisions'))
       if ('error' in parsed) return json({ error: parsed.error }, 400)
       const planned = planBooking({
-        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(),
+        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(), closed: [],
       }, parsed.decisions, () => `neu-${++next}`)
       // Der echte Server bildet die Marke als SHA-256 der Quelle; für den Vergleich genügt die Quelle.
       const preview = previewWith(planned, tokenSource(planned))

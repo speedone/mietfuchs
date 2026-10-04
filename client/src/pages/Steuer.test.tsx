@@ -66,7 +66,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
 const POS = (over: Partial<TaxExpenseItem> = {}): TaxExpenseItem => ({
   costItemId: 'c1', category: 'Nicht umlagefähig', group: 'Verwaltung & Instandhaltung', description: 'Dachreparatur',
   amountCents: 330000, privateCents: 240000, deductibleCents: 90000, labor35aCents: 0,
-  allocation: 'area', deductiblePercent: 27.27, areaPrivateCents: null, settlementPrivateCents: null,
+  allocation: 'area', deductiblePercent: 27.27, areaPrivateCents: null, settlementPrivateCents: null, taxUnits: null,
   steps: [{ label: 'Rechnungsbetrag', value: '3.300,00 €' }, { label: 'Rechnung', value: '3.300,00 € × 120/165 = 2.400 €' }],
   ...over,
 })
@@ -176,6 +176,10 @@ const LAGEN: Record<TaxHint, Lage> = {
     text: /über das ganze Gebäude/,
   },
   mixedUseClosedItemsChanged: { report: MIXED([POS()], { closedItemsChanged: 1 }), text: /nach dem Abschluss der Abrechnung/ },
+  mixedUseAssignedUnits: {
+    report: MIXED([POS({ allocation: 'direct-self', description: 'Malerarbeiten', amountCents: 100000, privateCents: 100000, deductibleCents: 0, deductiblePercent: null, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] })]),
+    text: /bestimmten Einheiten zugeordnet/,
+  },
 }
 
 for (const hint of TAX_HINTS) {
@@ -351,4 +355,29 @@ test('Einheiten außerhalb: der Kasten sagt, dass die Aufteilung über das ganze
   const kasten = screen.getByText(/Wohnungen außerhalb der Abrechnungseinheit/i).closest('div')
   expect(kasten?.textContent).toMatch(/ganzen Gebäudes/)
   expect(kasten?.textContent).not.toMatch(/zählen sie bei der Aufteilung als\s+vermietet/)
+})
+
+// Integrationsdurchsicht vor 0.10: Positionen „Nicht umlagefähig“ aus 0.8.0 oder älter tragen oft
+// noch eine Direktzuordnung aus dem damaligen Umlageschlüssel. Die Seite nennt Position, Einheit
+// und Wirkung und den Weg zurück zum ganzen Gebäude.
+test('„Nicht umlagefähig“ mit Zuordnung: Position, Einheit, Wirkung und der Weg zum ganzen Gebäude', async () => {
+  await zeige(MIXED([
+    POS({ costItemId: 'a', allocation: 'direct-self', description: 'Malerarbeiten', amountCents: 100000, privateCents: 100000, deductibleCents: 0, deductiblePercent: null, taxUnits: [{ unitId: 'EG', unitName: 'EG' }] }),
+    POS({ costItemId: 'b', allocation: 'direct-rented', description: 'Bad', amountCents: 50000, privateCents: 0, deductibleCents: 50000, deductiblePercent: null, taxUnits: [{ unitId: 'OG', unitName: 'OG' }] }),
+    POS({ costItemId: 'c', allocation: 'area', description: 'Dach Hinterhaus', taxUnits: [{ unitId: 'OG', unitName: 'OG' }, { unitId: 'DG', unitName: 'DG' }] }),
+  ]))
+  const kasten = screen.getByText(/bestimmten Einheiten zugeordnet/).closest('.notice')
+  if (!kasten) return expect.fail('kein Hinweiskasten')
+  // Der Betrag steht mit geschütztem Leerzeichen vor dem €.
+  const text = (kasten.textContent ?? '').replace(/\u00a0/g, ' ')
+  expect(text).toContain('„Malerarbeiten“ (1.000,00 €): EG, ganz privat')
+  expect(text).toContain('„Bad“ (500,00 €): OG, ganz abziehbar')
+  expect(text).toContain('„Dach Hinterhaus“ (3.300,00 €): OG und DG, nach der Fläche dieser Einheiten')
+  expect(text).toMatch(/„das ganze Gebäude \(nach Fläche\)“/)
+  expect(text).toMatch(/0\.8\.0 oder älter/)
+})
+
+test('„Nicht umlagefähig“ ohne Zuordnung: kein Hinweis', async () => {
+  await zeige(MIXED([POS({ taxUnits: null })]))
+  expect(screen.queryByText(/bestimmten Einheiten zugeordnet/)).toBeNull()
 })
