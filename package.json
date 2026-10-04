@@ -34,7 +34,8 @@
     "package:linux": "node scripts/package-linux.mjs",
     "test:server": "npm --prefix server test",
     "test:client": "npm --prefix client test",
-    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck"
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
