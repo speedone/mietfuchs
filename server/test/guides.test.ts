@@ -362,10 +362,9 @@ test('Durchsicht: CO₂-Kosten mit belegter Norm beim Mehrfamilienhaus und beim 
     assert.match(c.text, /3 Prozent/)
   }
   // Beim Mehrfamilienhaus rechnet Mietfuchs die Aufteilung noch nicht selbst (#97). Beim Messdienst
-  // hat sie der Messdienst schon gerechnet; dort steht kein „noch nicht“ mehr, sondern wie der
-  // Anteil zu erfassen ist (#209). Die eigene Zeile bleibt eine Lücke mit Issue.
+  // rechnet sie der Messdienst; was gilt, wenn er es nicht tut, prüft der Test zu #209 unten. Die
+  // eigene Zeile bleibt eine Lücke mit Issue.
   assert.match(GUIDES.multiFamily.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /#97/)
-  assert.doesNotMatch(GUIDES.meteringService.caveats.find((x) => /CO₂/.test(x.text))?.text ?? '', /noch nicht/)
   assert.ok(GUIDES.meteringService.gaps.some((g) => g.issue === 97), 'die eigene CO₂-Zeile bleibt eine Lücke')
 })
 
@@ -375,15 +374,40 @@ test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der 
   // Schritt 1: brutto, also vor dem Abzug, mit der Formel aus dem Entwurf (Abschnitt 5.4).
   assert.match(amount ?? '', /bezahlt/)
   assert.match(amount ?? '', /vor dem Abzug/)
-  assert.match(amount ?? '', /Summe aller Nutzerbeträge \+ CO₂-Anteil des Vermieters/)
+  assert.match(amount ?? '', /Summe aller Nutzerbeträge für Heizung und Warmwasser \(einschließlich Leerstand\) \+ CO₂-Anteil des Vermieters/)
   assert.doesNotMatch(amount ?? '', /Gesamtbetrag der Abrechnung/, 'der Gesamtbetrag ist beim Vorwegabzug netto')
-  // Schritt 2: Heizung und Warmwasser zusammen, weitere Kostenblöcke als eigene Positionen.
+  // Schritt 2: der Betrag, den der Mieter zahlen soll, also netto; weitere Kostenblöcke als eigene Positionen.
+  assert.match(perTenancy ?? '', /Tragen Sie den Betrag ein, den der Mieter zahlen soll, also nach Abzug des CO₂-Anteils des Vermieters\./)
   assert.match(perTenancy ?? '', /Kaltwasser/)
   assert.match(perTenancy ?? '', /eigene Positionen/)
-  // Schritt 3: Der Teil des CO₂-Anteils, der auf die eigene Wohnung entfällt, ist privat.
-  assert.match(own ?? '', /CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge/)
+  // Schritt 3: zuerst der Betrag der Einzelabrechnung, die Formel nur als Näherung, wenn er fehlt.
+  assert.match(own ?? '', /Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen\./)
+  assert.match(own ?? '', /Nur wenn er fehlt, rechnen Sie näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)
+  assert.ok(own !== undefined && own.indexOf('Einzelabrechnung') < own.indexOf('näherungsweise'), 'erst die Angabe des Messdienstes, dann die Näherung')
   // Was Mietfuchs daraus macht: der Rest ist Werbungskosten.
   assert.match(g.result.join(' '), /CO₂-Anteil des Vermieters[^.]*Werbungskosten/)
+})
+
+test('Messdienst (#209): selbstgenutzte Wohnung ohne CO₂-Anteil, Abrechnung ohne Aufteilung, keine Pauschalaussage über Messdienste', () => {
+  const g = GUIDES.meteringService
+  const all = JSON.stringify(g)
+  // Nicht jeder Messdienst setzt für die eigene Wohnung einen Anteil an; dann bleibt nichts privat.
+  const self = g.caveats.find((c) => /selbstgenutzte Wohnung/.test(c.text) && /CO₂/.test(c.text))
+  if (!self) return assert.fail('Hinweis zur selbstgenutzten Wohnung ohne CO₂-Anteil fehlt')
+  assert.match(self.text, /Nicht jeder Messdienst/)
+  assert.match(self.text, /kein Teil des Abzugs ins Private/)
+  assert.doesNotMatch(self.text, /§/, 'keine Rechtsaussage')
+  // Weist die Abrechnung keinen Anteil aus: nachfragen, Mietfuchs rechnet es noch nicht, 3 % Kürzung.
+  const missing = g.caveats.find((c) => /keinen CO₂-Anteil des Vermieters aus/.test(c.text))
+  if (!missing) return assert.fail('Hinweis für eine Abrechnung ohne CO₂-Aufteilung fehlt')
+  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97). Fehlt die Aufteilung, darf der Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG).')
+  assert.equal(missing.norm, '§ 7 Abs. 4 CO2KostAufG')
+  // Über Messdienste nur, was für die großen belegt ist.
+  assert.match(all, /Die großen Messdienste teilen auf, wenn/)
+  assert.doesNotMatch(all, /Der Messdienst teilt auf/)
+  // Zitate aus der Messdienst-Abrechnung in deutschen Anführungszeichen, wie im übrigen Text.
+  assert.doesNotMatch(all, /‚|‘/)
+  assert.match(g.example, /„abzüglich CO₂-Kosten Vermieter“/)
 })
 
 test('Durchsicht: Garagenhof nach Wohneinheiten, denn nach Fläche gibt es bei 0 m² keine Verteilbasis', () => {

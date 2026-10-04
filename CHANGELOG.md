@@ -14,10 +14,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vermieter trägt, aber meist schon vorher ab; dann ist dieser Gesamtbetrag um ihn zu niedrig, und
   der Anteil fehlte bei den Werbungskosten. Den Mietern wurde dabei nichts falsch berechnet. Die
   Anleitung sagt jetzt: Als Betrag gilt, was Sie bezahlt haben, also die Summe aller Nutzerbeträge
-  plus den abgezogenen CO₂-Anteil; der Teil, der auf eine selbstgenutzte Wohnung entfällt, gehört
-  zu deren Betrag. Kaltwasser und weitere Nebenkosten derselben Abrechnung kommen als eigene
-  Positionen. Wer eine Messdienst-Abrechnung schon so erfasst hat, erhöht den Betrag der Position;
-  die Beträge der Mieter bleiben, wie sie sind
+  für Heizung und Warmwasser (einschließlich Leerstand) plus den abgezogenen CO₂-Anteil. Der Teil,
+  der auf eine selbstgenutzte Wohnung entfällt, gehört zu deren Betrag, und zwar wie ihn die
+  Einzelabrechnung nennt, nur ohne diese Angabe näherungsweise. Kaltwasser und weitere Nebenkosten
+  derselben Abrechnung kommen als eigene Positionen. Weist die Abrechnung keinen CO₂-Anteil aus,
+  rät die Anleitung zur Nachfrage beim Messdienst. Haben Sie eine Messdienst-Abrechnung mit
+  Vorwegabzug schon erfasst, erhöhen Sie den Betrag der Position um den abgezogenen CO₂-Anteil und,
+  wenn Sie selbst im Haus wohnen, den Betrag Ihrer Wohnung um deren Teil davon; die Beträge der
+  Mieter bleiben
   ([#209](https://github.com/speedone/mietfuchs/issues/209)).
 
 ## [0.10.1] – 2026-10-04
