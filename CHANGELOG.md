@@ -32,7 +32,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   zwei Belegen zu 700 € und 800 € gegen eine Schätzung von 1.500 €, zeigte jeder Beleg für sich eine
   Abweichung, als ersetze er die Schätzung allein (bei 1.400 € im Vorjahr −50 % und −43 %). Jetzt
   rechnen die offenen Zeilen aller Belege des Objekts zusammen, und beide zeigen dieselbe Zahl:
-  +7 %. ([#170](https://github.com/speedone/mietfuchs/issues/170))
+  +7 %. Derselbe Beleg zweimal hochgeladen zählt dabei nur einmal. ([#170](https://github.com/speedone/mietfuchs/issues/170))
 
 ## [0.10.0] – 2026-10-04
 

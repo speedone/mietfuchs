@@ -236,12 +236,12 @@ export type OpenTarget = { assessmentId: string, idx: number, costItemId: string
 type TargetContext = Pick<DescribeContext, 'items' | 'booked' | 'twinNames'>
 
 // Die Position, die jede offene oder verworfene Zeile beim Verknüpfen ersetzte, nach Zeile.
-function targetsOf(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext): Map<number, CostItem | null> {
+function targetsOf(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext, openOnly = false): Map<number, CostItem | null> {
   const a = record.assessment
   const own = new Set(ownItemIds(record.lines))
   const others = ctx.items.filter((i) => !own.has(i.id))
   const ownItems = ctx.items.filter((i) => own.has(i.id))
-  return new Map(record.lines.filter((l) => lineState(l) === 'open' || lineState(l) === 'dismissed').map((l) => {
+  return new Map(record.lines.filter((l) => lineState(l) === 'open' || (!openOnly && lineState(l) === 'dismissed')).map((l) => {
     const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()] })
     return [l.idx, replacedByLinking(candidates, l, a.year, ctx.booked)] as const
   }))
@@ -250,7 +250,8 @@ function targetsOf(record: { assessment: StoredAssessment; lines: readonly Store
 // Die offenen Zeilen einer Auswertung mit eindeutigem Ziel, für `peerTargets` der anderen.
 // Verworfene zählen nicht mit, sie werden nie verknüpft.
 export function openTargets(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext): OpenTarget[] {
-  const targets = targetsOf(record, ctx)
+  // Nur die offenen Zeilen prüfen: Die Kandidatensuche ist der teure Teil, und verworfene zählen nicht.
+  const targets = targetsOf(record, ctx, true)
   return record.lines.flatMap((l) => {
     const target = targets.get(l.idx)
     return lineState(l) === 'open' && target

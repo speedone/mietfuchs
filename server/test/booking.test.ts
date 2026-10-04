@@ -726,3 +726,23 @@ test('Ampel über zwei Belege (#170): die Ansicht rechnet offene Zeilen beider A
     for (const v of liste) assert.ok(v.lines[0]?.suggestion?.reasons.includes('+50 % gegenüber Vorjahr'), `${v.file}: ${v.lines[0]?.suggestion?.reasons.join(' | ')}`)
   })
 })
+
+test('Ampel über zwei Belege (Durchsicht): derselbe Beleg zweimal hochgeladen rechnet nicht doppelt', async () => {
+  await withWorld(async (w) => {
+    // a.pdf und b.pdf haben denselben Inhalt, je 1.550 € gegen eine Schätzung von 1.500 € bei
+    // 1.500 € im Vorjahr. Das zweite Verknüpfen lehnt der Planer ohnehin ab; die Ampel darf die
+    // Zeilen deshalb nicht zusammenzählen (das ergäbe +107 %), sondern rechnet je Beleg: +3 %.
+    const row = (file: string) => ({ file, originalName: file, mimeType: 'application/pdf', size: 10, sha256: 'gleich', uploadedAt: '2026-10-02T00:00:00.000Z', propertyId: null, year: null, invoiceDate: null, kind: 'receipt' as const })
+    await w.opened.write((db) => recordUpload(db, row('a.pdf')))
+    await w.opened.write((db) => recordUpload(db, row('b.pdf')))
+    await estimate(w, 'vj', { year: 2024, amountCents: 150000, invoiceFile: 'w-2024.pdf' })
+    await estimate(w, 'wa')
+    const a = await receipt(w, 'a.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
+    await receipt(w, 'b.pdf', [line('Wasser', 'Wasser/Abwasser', 155000)])
+    const reasons = (await view(w, a)).lines[0]?.suggestion?.reasons ?? assert.fail('kein Vorschlag')
+    assert.ok(!reasons.some((r) => /gegenüber Vorjahr/.test(r)), reasons.join(' | '))
+    const liste = await w.opened.read((db) => viewAssessments(db, 'objekt-1', true, w.uploadDir))
+    assert.equal(liste.length, 2)
+    for (const v of liste) assert.ok(!v.lines[0]?.suggestion?.reasons.some((r) => /gegenüber Vorjahr/.test(r)), `${v.file}: ${v.lines[0]?.suggestion?.reasons.join(' | ')}`)
+  })
+})
