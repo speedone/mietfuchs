@@ -5,7 +5,7 @@ import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, set
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PageHeader from '../components/PageHeader'
@@ -249,6 +249,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       flatRates,
     })
     const editing = !!tenForm.id
+    // Überschneidung mit einem anderen Mietverhältnis derselben Wohnung (#204): nachfragen, nicht
+    // verweigern; der Server nimmt es an, die Abrechnung meldet es.
+    const overlap = overlapQuestion({ id: tenForm.id, unitId: tenForm.unitId, start: tenForm.start, end: tenForm.end || null }, tenancies)
+    if (overlap && !(await confirm(overlap))) return
     try {
       if (editing) await api(`/api/tenancies/${tenForm.id}`, { method: 'PUT', body })
       else await api('/api/tenancies', { method: 'POST', body })

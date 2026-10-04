@@ -25,6 +25,17 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abgeschlossene Abrechnungen bleiben, wie sie sind; die Seite Abrechnung zeigt den Unterschied
   zur heutigen Berechnung als Abweichung.
   ([#202](https://github.com/speedone/mietfuchs/issues/202))
+- **Überschneidende Mietverhältnisse einer Wohnung werden gemeldet.** War etwa der Auszug am
+  30.09. eingetragen und der Nachmieter ab 01.09., bekamen beide für dieselben 30 Tage ihren vollen
+  Anteil, und der Leerstand des Vermieters wurde negativ, ohne dass es irgendwo stand. Jetzt nennt
+  die Abrechnung beide Mieter, den Zeitraum und den Betrag, den die Mieter dieser Wohnung im Jahr
+  zusammen zu viel tragen (1.200 € Grundsteuer nach Fläche, die Wohnung mit 50 von 100 m²:
+  49,32 €), als Fehler mit „Hier beheben →“ zum Mietverhältnis. Gerechnet wird weiter wie erfasst.
+  Die Ampel „Hinweise der Berechnung“ im Cockpit wird bei jedem Fehler rot statt gelb. Beim
+  Speichern eines Mietverhältnisses, das sich mit einem anderen derselben Wohnung überschneidet,
+  fragen die Stammdaten nach. Bestände mit Überschneidung bleiben ladbar und lassen sich wie
+  bisher sichern und wiederherstellen; abgeschlossene Abrechnungen bleiben, wie sie sind.
+  ([#204](https://github.com/speedone/mietfuchs/issues/204))
 
 ## [0.10.0] – 2026-10-04
 

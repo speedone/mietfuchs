@@ -93,6 +93,14 @@ export const GLOSSARY = {
     norm: 'BGH, Urteil vom 31.05.2006, VIII ZR 159/05 (Grundsatz, am Flächenschlüssel); zum Personenschlüssel BGH, Beschluss vom 08.01.2013, VIII ZR 180/12',
     needed: 'Mietfuchs rechnet ihn von selbst heraus. Sie müssen nur Ein- und Auszug richtig eintragen. Wie eine leere Wohnung beim Personenschlüssel anzusetzen ist, regelt kein Gesetz und ist nicht abschließend geklärt; nach dem BGH kommt es auf den Einzelfall an, und eine fiktive Person für die Zeit des Leerstands kommt in Betracht; im Einzelfall hält er es auch für vertretbar, den Leerstand ganz außer Acht zu lassen. Mietfuchs setzt eine Person je Leerstandstag an; das ist eine Auslegung von Mietfuchs. Bei Kosten, die von der Personenzahl abhängen (etwa Wasser nach Personen), kann eine andere Aufteilung angemessener sein, zum Beispiel in Grund- und Verbrauchskosten.',
   },
+  // #204: Der Hinweis „Mietverhältnisse überschneiden sich“ verweist hierher. Keine Rechtsgrundlage:
+  // Es geht um einen Fehler in den erfassten Daten, nicht um eine Regel.
+  tenancyOverlap: {
+    title: 'Überschneidende Mietverhältnisse',
+    short: 'Zwei Mietverhältnisse derselben Wohnung bestehen laut Ihren Angaben an mindestens einem Tag zugleich; für diese Zeit wird die Wohnung doppelt berechnet.',
+    example: 'Auszug am 30.09. eingetragen, Nachmieter ab 01.09.: Bei 1.200 € Grundsteuer und einer Wohnung mit 50 von 100 m² tragen beide Mieter für dieselben 30 Tage je 1.200 € × 50/100 × 30/365 = 49,32 €, die Wohnung also 49,32 € zu viel.',
+    needed: 'Nur wenn es Ihnen angezeigt wird. Meist ist ein Datum vertippt: Berichtigen Sie dann Auszug oder Einzug in den Stammdaten. Für den Wechsel gibt es dort den Mieterwechsel, der die Daten lückenlos setzt. Mietfuchs rechnet bis dahin wie erfasst.',
+  },
   personDays: {
     title: 'Personentage',
     short: 'Beim Personenschlüssel zählt, wie viele Personen wie viele Tage im Jahr in der Wohnung gewohnt haben.',
