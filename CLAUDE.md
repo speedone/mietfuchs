@@ -1017,8 +1017,9 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   `assessment_lines`, Migration 0013): eine je Beleg, gespeichert nur nach Erfolg der KI (nach der
   Antwort wird `signal.aborted` geprüft, ein Abbruch speichert nichts; schlägt die Prüfsumme fehl,
   geht die Auswertung trotzdem ohne sie ein). Der Zustand einer Zeile wird **abgeleitet**
-  (`lineState` in server/src/assessment.ts): ohne `cost_item_id` offen oder verworfen („Ausblenden“
-  in der Oberfläche, die Auswertung bleibt), mit ihr angelegt oder verknüpft. `cost_item_id` ist
+  (`lineState` in server/src/assessment.ts): ohne `cost_item_id` offen oder verworfen („Verwerfen“
+  an der Zeile, die Auswertung bleibt; „Ausblenden“ heißt nur der Knopf der Warteschlange auf der
+  Kostenseite, der die Karte wegnimmt und nichts verwirft), mit ihr angelegt oder verknüpft. `cost_item_id` ist
   `ON DELETE SET NULL`, das Löschen einer Position macht ihre Zeilen von selbst wieder offen.
   **Zeilennummern kommen aus einer Hochwassermarke** (`assessments.next_idx`) und werden nie
   wiederverwendet: Erneutes Auswerten ersetzt nur offene und verworfene Zeilen, gebuchte bleiben
@@ -1026,6 +1027,10 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   kommt nicht wieder. Die Routen sprechen Zeilen über diese Nummer an, eine wiederverwendete
   Nummer träfe die falsche Zeile.
   Neben den Spalten der Spezifikation stehen `detected_year` (Ampel „Rechnungsjahr ≠ Zieljahr“),
+  `requested_year` (das gewählte Jahr: beim Auswerten mitgeschickt, nach einem `PUT` mit Jahr das
+  gesetzte; weicht `year` davon ab, ist die Zeile gelb und nicht vorab angehakt, und „Alle grünen
+  übernehmen“ bucht sie nicht, sonst landete eine Jahresrechnung vom Februar ohne gelesenen
+  Leistungszeitraum ungesehen im Folgejahr; Schlussdurchsicht I1),
   `amounts_adjusted`/`labor_from_total` (die Hinweise #34 überleben das Neuladen) und
   `category_guessed` (gelb, wenn die Kostenart nur aus der Beschreibung kam).
 - **Planen ist eine reine Funktion** (`planBooking` in server/src/bookingPlan.ts), Buchen führt
@@ -1037,10 +1042,16 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   Hand geänderter Betrag und ein ungelesener Beleg an der Position werden ersetzt, die Vorschau
   sagt es in ganzen Sätzen vorher. Ziele sind nur Positionen im Objekt und Jahr der Auswertung;
   `amounts` und `external` sind keine Ziele („Position öffnen“, ihr Betrag hängt an weiteren
-  Angaben). **Gutschrift-Positionen sind keine Verknüpfungsziele, und eine Gutschrift-Zeile
+  Angaben; der Hinweis sagt, die Zeile nach dem Aktualisieren der Position zu verwerfen, sonst
+  bliebe der Beleg offen). **Gutschrift-Positionen sind keine Verknüpfungsziele, und eine Gutschrift-Zeile
   bekommt nur Gutschriften als Kandidaten**; sie wird nie verrechnet, damit sie auf der
   Abrechnung sichtbar bleibt. Ein Beleg gleichen Inhalts (Prüfsumme) kann nicht ein zweites Mal an
   dieselbe Position, der Doppelt-Hinweis erscheint bei gleichen Beträgen an einer Position.
+  **Hängt der Beleg schon von Hand (`invoice_file`) an einer Position**, ohne dass eine Zeile
+  gebucht ist, ist sie Kandidat jeder seiner Zeilen, unabhängig von der Kostenart
+  (`lineCandidates` in server/src/assessment.ts, Ansicht und Rückfrage des Planers fragen dieselbe
+  Regel): Die Zeile ist rot („Dieser Beleg hängt schon an …“), Anlegen braucht die Bestätigung.
+  Verwerfen ergibt einen Hinweis je Zeile, damit Vorschau und Erfolgsmeldung nie leer sind.
   **Beim Lösen einer Zeile wechselt der Beleg der Position nur, wenn der gelöste ihr Beleg war**
   (und keine Zeile dieser Datei bleibt); ein von Hand angehängter Beleg bleibt, die Vorschau
   kündigt den Wechsel an.
@@ -1067,14 +1078,17 @@ beiden Seiten), die dreimal einen Geldfehler hatte.
   Belegabdeckung, kommt in Belegmappe und Steuer-ZIP und lässt sich nicht löschen (die Karte zeigt
   die Summe der eigenen Zeilen, nicht den Betrag der Position). Das Löschen prüft „in Gebrauch“
   und vergisst die Auswertung in einem Schreibvorgang, erst danach geht die Datei. Eine
-  Auswertung, deren Datei fehlt, erscheint nicht in der Liste, und `plan`/`book` antworten 404.
+  Auswertung, deren Datei fehlt, erscheint nicht in der Liste, und `plan`, `book` und `PUT`
+  antworten 404 (`PUT` prüft das, bevor es schreibt).
 - **Oberfläche**: eine Komponente
   ([AssessmentReview.tsx](client/src/components/AssessmentReview.tsx), Logik in
   [client/src/assessment.ts](client/src/assessment.ts)) für Schnellerfassung und Kostenseite,
   die Warteschlange dahinter ist der gemeinsame Hook `useEvaluationQueue`
   ([client/src/evaluationQueue.ts](client/src/evaluationQueue.ts)). Beide Seiten zeigen dieselbe
   Ampel: eine rote Zeile ist nicht vorab angehakt, das Jahr aus dem Beleg geht vor dem
-  gewählten. Der Posteingang führt mit „Weiter prüfen“ in die Schnellerfassung (ohne Objekt
+  gewählten, und beide zeigen „Jahr …“, wenn das Jahr der Buchung vom gewählten abweicht; die
+  Vorschau nennt das Jahr neuer Positionen. Die Kostenseite schickt Objekt und Jahr mit. Der
+  Posteingang führt mit „Weiter prüfen“ in die Schnellerfassung (ohne Objekt
   wird zuerst das gewählte zugewiesen). „Alle grünen übernehmen“ bucht je Auswertung nacheinander,
   damit der zweite Beleg derselben Kostenart die eben angelegte Position sieht; dieser Knopf und
   „Ablesung übernehmen“ haben eine Sperre gegen Doppelklick (eine ausdrücklich übernommene rote
