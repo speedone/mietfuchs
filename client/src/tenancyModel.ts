@@ -1,4 +1,7 @@
 import type { CostModel, NotSettled, Tenancy, Unit } from './types'
+import { fmtDate } from './api'
+import { overlapsOf } from '../../shared/tenancyOverlap.ts'
+import { andList } from '../../shared/wording.ts'
 
 // Das Nebenkostenmodell am Mietverhältnis (#93) in der Oberfläche: Beschriftungen und der Rumpf.
 // Die Regeln der Berechnung stehen in calc.ts; hier steht nur, wie sie heißen.
@@ -80,4 +83,26 @@ export function defaultTenancyUnitId(units: Unit[], tenancies: Tenancy[], today:
   const rentable = units.filter((u) => u.participates)
   const occupied = new Set(tenancies.filter((t) => t.end === null || t.end >= today).map((t) => t.unitId))
   return (rentable.find((u) => !occupied.has(u.id)) ?? rentable[0] ?? units[0])?.id ?? ''
+}
+
+// Die Rückfrage beim Speichern eines Mietverhältnisses, das sich mit einem anderen derselben
+// Wohnung überschneidet (#204). Für die gemeinsamen Tage trügen beide Mieter die Nebenkosten der
+// Wohnung voll. Meist ist ein Datum vertippt; es kann aber gewollt sein (etwa ein Untermieter, der
+// als eigenes Mietverhältnis geführt wird), deshalb fragt die Oberfläche nur, und der Server lehnt
+// nicht ab. Die Regel, wann sich zwei überschneiden, steht in shared/tenancyOverlap.ts.
+export function overlapQuestion(
+  candidate: { id?: string | null, unitId: string, start: string, end: string | null },
+  tenancies: readonly Tenancy[],
+): { title: string, message: string, confirmLabel: string } | null {
+  if (!candidate.start || !candidate.unitId) return null
+  const found = overlapsOf({ ...candidate, end: candidate.end || null }, tenancies)
+  if (found.length === 0) return null
+  const parts = found.map((o) => `„${o.other.tenantName}“ ${o.to === null ? `ab dem ${fmtDate(o.from)}` : `vom ${fmtDate(o.from)} bis ${fmtDate(o.to)}`}`)
+  return {
+    title: 'Mietverhältnisse überschneiden sich',
+    message: `Dieses Mietverhältnis überschneidet sich in derselben Wohnung mit ${andList(parts)}. ` +
+      'Für diese Zeit trügen beide Mieter die Nebenkosten der Wohnung voll, und die Abrechnung meldet es als Fehler. ' +
+      'Ist ein Datum vertippt, korrigieren Sie bitte Einzug oder Auszug; für einen Wechsel nutzen Sie am besten den Mieterwechsel. Trotzdem speichern?',
+    confirmLabel: 'Trotzdem speichern',
+  }
 }

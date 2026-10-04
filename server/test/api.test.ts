@@ -21,6 +21,7 @@ import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
 import { assessments as assessmentsTable, uploads as uploadsTable } from '../src/db/schema.ts'
 import { RULES_AS_OF } from '../src/rules.ts'
+import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
   AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
@@ -4232,6 +4233,36 @@ test('Mieterwechsel (#150): scheitert der dritte Schritt, ist nichts gespeichert
     assert.match(await errorFrom(dritter), /bereits zum 30\.06\.2025 beendet/, "das Datum steht deutsch da")
     assert.equal((await s.api<Reading[]>('/api/readings?property=objekt-1')).length, 2)
     assert.equal((await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).length, 2)
+  } finally {
+    s.stop()
+  }
+})
+
+// #204: Der Mieterwechsel setzt die Daten lückenlos und erzeugt nie eine Überschneidung. Ein von
+// Hand angelegtes Mietverhältnis, das sich überschneidet, nimmt der Server an (die Oberfläche fragt
+// nach), und die Abrechnung meldet es als Fehler.
+test('Überschneidung (#204): Mieterwechsel lückenlos; ein überschneidendes Mietverhältnis wird angenommen und in der Abrechnung gemeldet', async () => {
+  const s = await startServer()
+  try {
+    const { unit, tenancy, wasser, haupt } = await changeStock(s)
+    await s.api('/api/costItems?property=objekt-1', { method: 'POST', body: JSON.stringify({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 120000, key: 'area' }) })
+    const res = await postChange(s, tenancy.id, { end: '2025-06-30', readings: [{ meterId: wasser.id, value: 1 }, { meterId: haupt.id, value: 2 }], newTenancy: { ...newTenancyBody(15000), costModel: null } })
+    assert.equal(res.status, 200, await res.clone().text())
+    assert.deepEqual(tenancyOverlaps(await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')), [])
+    const vorher = await s.api<Settlement>('/api/settlement/2025?property=objekt-1')
+    assert.equal(vorher.notices?.some((n) => n.code === 'tenancy.overlap'), false)
+
+    const anlegen = await fetch(`${s.base}/api/tenancies?property=objekt-1`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      unitId: unit.id, tenantName: 'Doppelt', persons: 1, personHistory: [{ from: '2025-06-01', persons: 1 }], start: '2025-06-01', end: '2025-08-31',
+      prepayments: [], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    assert.ok(anlegen.ok, `abgelehnt: ${anlegen.status} ${await anlegen.clone().text()}`)
+    const s2025 = await s.api<Settlement>('/api/settlement/2025?property=objekt-1')
+    const found = (s2025.notices ?? []).filter((n) => n.code === 'tenancy.overlap')
+    // Alt (bis 30.06.) mit Doppelt (01.06. bis 31.08.), Doppelt mit Neu (ab 01.07.)
+    assert.equal(found.length, 2)
+    assert.ok(found.every((n) => n.level === 'error' && n.subject?.kind === 'tenancy'))
+    assert.match(found[0]?.text ?? '', /Alt.*Doppelt.*vom 01\.06\.2025 bis 30\.06\.2025 \(30 Tage\)/)
   } finally {
     s.stop()
   }
