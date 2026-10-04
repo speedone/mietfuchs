@@ -6,7 +6,7 @@ import { Fragment, useEffect, useState } from 'react'
 import type { AssessmentView, BookingPreview, Unit } from '../types'
 import { errorText, fmtEuro } from '../api'
 import {
-  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linesShape, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, type RowAction, type RowDraft,
+  bookDecisions, bookedLines, categoryOptions, changeAssessmentYear, decisionsOf, initialRows, linesShape, linkChoices, planDecisions, previewLines, shownRow, withConfirmed, confirmLabel, type RowAction, type RowDraft,
 } from '../assessment'
 import { aiPositionDefaults, type KeyContext } from '../costForm'
 import AiKeyCell from './AiKeyCell'
@@ -91,14 +91,15 @@ export default function AssessmentReview({ assessment: a, units, keyContext, onC
     if (!preview || busy) return
     let toSend = decisions
     if (preview.confirm.length > 0) {
+      const idxs = preview.confirm.flatMap((c) => (c.idx === null ? [] : [c.idx]))
       const ok = await confirm({
         title: 'Schon erfasst?',
         message: preview.confirm.map((c) => c.message).join(' '),
-        confirmLabel: 'Trotzdem anlegen',
+        confirmLabel: confirmLabel(decisions, idxs),
         cancelLabel: 'Abbrechen',
       })
       if (!ok) return
-      toSend = withConfirmed(decisions, preview.confirm.flatMap((c) => (c.idx === null ? [] : [c.idx])))
+      toSend = withConfirmed(decisions, idxs)
     }
     setBusy(true)
     setError('')

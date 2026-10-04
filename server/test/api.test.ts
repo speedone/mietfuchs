@@ -5158,3 +5158,26 @@ test('H2: ein Beleg gleichen Inhalts wie ein von Hand angehängter wird nicht st
     assert.equal(await totalOf(s), 40000, 'keine stille zweite Buchung')
   }, { invoices: NOCHMAL })
 })
+
+test('H1: eine erneut ausgewertete Zeile mit einer schon aus diesem Beleg gebuchten Position zu verknüpfen braucht die Bestätigung', async () => {
+  await withOllama(async (s) => {
+    const a = assessmentOf(await evaluate(s, 'ZWEIZEILEN'))
+    const [frisch, ab] = a.lines
+    assert.equal((await planAndBook(s, a, [
+      { idx: 0, action: 'create', fields: { ...fieldsOfLine(frisch), amountCents: 75000 } },
+      { idx: 1, action: 'create', fields: fieldsOfLine(ab) },
+    ])).status, 200)
+    const target = (await s.api<CostItem[]>('/api/costItems')).find((i) => i.description === 'Frischwasser') ?? assert.fail('Frischwasser fehlt')
+    const again = assessmentOf(await evaluateAgain(s, a.file, 'ZWEIZEILEN'))
+    const line = again.lines.find((l) => l.state === 'open') ?? assert.fail('keine offene Zeile')
+    const link: LineDecision = { idx: line.idx, action: 'link', costItemId: target.id }
+    const { preview, status } = await planAndBook(s, again, [link])
+    assert.equal(status, 400)
+    const asked = preview.confirm.find((c) => c.idx === line.idx) ?? assert.fail(`keine Rückfrage: ${JSON.stringify(preview)}`)
+    assert.match(asked.message, /„Frischwasser“ ist schon aus diesem Beleg gebucht \(750,00\s€\)/)
+    assert.match(asked.message, /addiert 700,00\s€ auf 1\.450,00\s€/)
+    assert.equal(await totalOf(s), 155000, 'ohne Bestätigung keine Addition')
+    assert.equal((await planAndBook(s, again, [{ ...link, despiteCandidates: true }])).status, 200)
+    assert.equal(await totalOf(s), 225000)
+  }, { invoices: NOCHMAL })
+})

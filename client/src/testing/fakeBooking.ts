@@ -5,7 +5,7 @@
 // Fassung der Regeln, die es nur im Test gibt.
 // Bewusst kein `*.test.ts`: vitest führt diese Datei nicht als Test aus.
 import type { AssessmentView, CostItem, Extraction, Meter, StoredAssessment, StoredAssessmentLine, Unit } from '../types'
-import { describeAssessment, detectedYear, linesFromExtraction, type BookedLine } from '../../../server/src/assessment.ts'
+import { describeAssessment, detectedYear, linesFromExtraction, withoutBooked, type BookedLine } from '../../../server/src/assessment.ts'
 import { bookingResponse, parseDecisions, planBooking, previewWith, settle, tokenSource, type BookingWrite } from '../../../server/src/bookingPlan.ts'
 
 type Stored = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
@@ -63,6 +63,20 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
         lines: fresh.map((l, idx) => ({ ...l, assessmentId: id, idx, booking: null, costItemId: null, dismissed: false, reassessed: false })),
       }
       records.push(r)
+      return view(r)
+    },
+    // Wie saveAssessment beim erneuten Auswerten: offene Zeilen ersetzt, gebuchte bleiben, und neben
+    // gebuchten sind die neuen Zeilen `reassessed` (Integrationsdurchsicht, H1).
+    evaluateAgain(file: string, ex: Extraction): AssessmentView {
+      const r = records.find((x) => x.assessment.file === file)
+      if (!r) throw new Error(`keine Auswertung zu ${file}`)
+      const kept = r.lines.filter((l) => l.costItemId !== null)
+      const added = withoutBooked(linesFromExtraction(ex), kept)
+      const start = r.assessment.nextIdx
+      r.lines = [...kept, ...added.map((l, i) => ({
+        ...l, assessmentId: r.assessment.id, idx: start + i, booking: null, costItemId: null, dismissed: false, reassessed: kept.length > 0,
+      }))]
+      r.assessment = { ...r.assessment, nextIdx: start + added.length }
       return view(r)
     },
     // Beantwortet, was die Belegbuchung betrifft, sonst `null`.
