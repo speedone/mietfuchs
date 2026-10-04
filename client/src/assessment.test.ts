@@ -13,7 +13,7 @@ const line = (idx: number, patch: Partial<AssessmentLine> = {}): AssessmentLine 
   booking: null, costItemId: null, dismissed: false, state: 'open', itemDescription: null, suggestion: suggestion(), ...patch,
 })
 const view = (lines: AssessmentLine[]): AssessmentView => ({
-  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, vendor: 'Stadtwerke', invoiceDate: null,
+  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, vendor: 'Stadtwerke', invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: lines.length, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'w.pdf', lines, open: true, sumWarning: null,
 })
@@ -97,7 +97,8 @@ it('Vorschau in Sätzen: neu, geändert, unverändert, mit Lohnanteil', () => {
     notices: [], errors: [], confirm: [], token: 't',
   }
   const lines = previewLines(p)
-  expect(lines[0]).toMatch(/^Neu: „Restmüll“ \(Müllabfuhr\) 700,00\s€$/)
+  // Das Jahr der neuen Position steht dabei: Es kann vom gewählten abweichen (Schlussdurchsicht, I1).
+  expect(lines[0]).toMatch(/^Neu für 2025: „Restmüll“ \(Müllabfuhr\) 700,00\s€$/)
   expect(lines[1]).toMatch(/^„Gartenpflege 2025“: 1\.500,00\s€ → 1\.450,00\s€; §35a 1\.000,00\s€ → keiner$/)
   expect(lines[2]).toMatch(/^„Wasser 2025“ bleibt bei 1\.500,00\s€$/)
 })

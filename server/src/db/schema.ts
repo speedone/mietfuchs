@@ -738,6 +738,9 @@ export const assessments = sqliteTable(
     propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
     year: integer('year').notNull(),
     detectedYear: integer('detected_year'),
+    // Das gewählte Jahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Weicht das Jahr
+    // der Auswertung davon ab, ist ihre Ampel gelb (Schlussdurchsicht, I1).
+    requestedYear: integer('requested_year'),
     vendor: text('vendor'),
     invoiceDate: text('invoice_date'),
     totalGrossCents: integer('total_gross_cents'),
@@ -752,6 +755,7 @@ export const assessments = sqliteTable(
     // Posteingang und Schnellerfassung fragen die offenen Auswertungen eines Objekts ab.
     index('assessments_property_idx').on(t.propertyId),
     check('assessments_year_positive', sql.raw('"year" > 0')),
+    check('assessments_requested_year_positive', sql.raw('"requested_year" IS NULL OR "requested_year" > 0')),
     notNegative('assessments_next_idx_not_negative', 'next_idx'),
     oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
   ],

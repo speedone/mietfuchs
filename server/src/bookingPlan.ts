@@ -17,7 +17,7 @@ import type { Allocation } from '../../shared/allocation.ts'
 import { amountProblem, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
-import { candidatePool, carriesCredit, changeOf, lineDraft, lineState, ownItemIds, type BookedLine, type LineChange } from './assessment.ts'
+import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, type BookedLine, type LineChange } from './assessment.ts'
 
 export type PlanInput = {
   assessment: StoredAssessment
@@ -122,7 +122,12 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       if (!d.despiteCandidates) {
         const pool = candidatePool(others, body.amountCents, input.booked)
         const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: body.category, description: body.description, vendor: a.vendor ?? '' })
-        if (candidates.length > 0 && body.amountCents < 0) {
+        // Dieselbe Regel wie in der Ansicht (lineCandidates): Hängt dieser Beleg schon an einer
+        // Position, gleich welcher Kostenart, ist die Rechnung womöglich schon erfasst.
+        const { attached } = lineCandidates(others, a, body, input.booked)
+        if (attached.length > 0) {
+          confirm.push({ idx: d.idx, message: `${attachedText(attached)} Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verknüpfen Sie sie besser oder verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
+        } else if (candidates.length > 0 && body.amountCents < 0) {
           // Eine Gutschrift wird nie verknüpft; die Rückfrage rät deshalb nicht dazu.
           confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, eine Gutschrift derselben Kostenart wie ${quote(body.description)}. Ist es dieselbe Gutschrift, legen Sie sie nicht noch einmal an, sonst wird sie zweimal abgezogen. Ist es eine zweite Gutschrift, legen Sie sie als neue Position an.` })
         } else if (candidates.length > 0) {
@@ -174,7 +179,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       }
       if (FORM_ONLY.includes(target.key)) {
         const how = target.key === 'amounts' ? 'mit Einzelbeträgen je Mieter' : 'laut Gemeinschaftsabrechnung'
-        errors.push({ idx: d.idx, openItemId: target.id, message: `${quote(target.description)} wird ${how} verteilt; ihr Betrag hängt an weiteren Angaben. Öffnen Sie die Position und tragen Sie ihn dort ein.` })
+        errors.push({ idx: d.idx, openItemId: target.id, message: `${quote(target.description)} wird ${how} verteilt; ihr Betrag hängt an weiteren Angaben. Öffnen Sie die Position und tragen Sie ihn dort ein. Haben Sie die Position dort aktualisiert, verwerfen Sie diese Zeile hier danach, damit der Beleg nicht offen bleibt.` })
         continue
       }
       const amount = d.amountCents !== undefined ? d.amountCents : line.amountCents
@@ -200,6 +205,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       if (state === 'dismissed') { unchanged.push(d.idx); continue }
       if (state !== 'open') { conflicts.push(`${named(line)} ist schon gebucht. Lösen Sie die Zeile zuerst, wenn Sie sie verwerfen möchten.`); continue }
       after.set(d.idx, { ...changeOf(line), dismissed: true })
+      // Sonst zeigte eine Vorschau, die nur verwirft, nichts, und die Meldung nach dem Buchen ebenso.
+      notices.push(`${named(line)} wird verworfen.`)
       continue
     }
 

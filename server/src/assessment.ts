@@ -49,6 +49,31 @@ export function candidatePool<T extends Pick<CostItem, 'id' | 'amountCents'>>(
   return items.filter((i) => carriesCredit(i, booked) === credit)
 }
 
+// Die Kandidaten einer Zeile, für die Ansicht (`suggestLine`) und die Rückfrage des Planers
+// dieselben: nach der Doppelungsregel (shared/duplicates.ts) aus der Menge `candidatePool`, dazu
+// jede Position, an der **dieser Beleg** schon hängt (`attached`), unabhängig von der Kostenart.
+// Das ist der nachgereichte Beleg: von Hand per `invoiceFile` an eine Position gehängt, ohne dass
+// eine Zeile gebucht ist (Schlussdurchsicht, M3). Ohne diese Regel legte eine Zeile derselben
+// Rechnung still eine zweite Position an, wenn ihre Kostenart von der Position abweicht. Als Ziel
+// zum Verknüpfen taugen davon nur die aus derselben Menge und demselben Jahr; die Warnung nennt alle.
+// `others` sind die Positionen des Objekts ohne die aus dieser Auswertung gebuchten.
+export function lineCandidates<T extends CostItem>(
+  others: readonly T[],
+  a: Pick<StoredAssessment, 'propertyId' | 'year' | 'vendor' | 'file'>,
+  line: { category: string; description: string; amountCents: number | null },
+  booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[],
+): { candidates: T[]; attached: T[] } {
+  if (a.propertyId === null) return { candidates: [], attached: [] }
+  const attached = others.filter((i) => i.invoiceFile === a.file)
+  const pool = candidatePool(others, line.amountCents, booked)
+  const same = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor: a.vendor ?? '' })
+  const extra = attached.filter((i) => i.year === a.year && pool.includes(i) && !same.includes(i))
+  return { candidates: [...extra, ...same], attached }
+}
+
+export const attachedText = (attached: readonly Pick<CostItem, 'description'>[]): string =>
+  `Dieser Beleg hängt schon an ${attached.map((i) => `„${i.description}“`).join(', ')}.`
+
 // Die Positionen, die aus dieser Auswertung gebucht sind. Sie sind für ihre übrigen Zeilen keine
 // Doppelung: Frischwasser und Abwasser sind zwei Zeilen einer Rechnung.
 export const ownItemIds = (lines: readonly StoredAssessmentLine[]): string[] =>
@@ -150,17 +175,29 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     key: defaults.key, allocation: defaults.allocation, externalTotalCents: null,
   }
   const pool = candidatePool(others, line.amountCents, ctx.booked)
-  const candidates = a.propertyId === null ? [] : sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: line.category, description: line.description, vendor })
+  const { candidates, attached } = lineCandidates(others, a, line, ctx.booked)
   const amount = line.amountCents ?? 0
   const score = scorePosition({
     category: line.category, description: line.description, amountCents: amount, labor35aCents: line.labor35aCents ?? 0,
     matchedByDesc: line.categoryGuessed, vendor, detectedYear: a.detectedYear, targetYear: a.year, existingItems: pool,
     priorYearDeviationPct: categoryDeviationPct(ctx.items, line.category, a.year, amount),
   })
+  // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
+  // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
+  // nicht gelesen hat, landete sonst mit „Alle grünen übernehmen“ in der Abrechnung des Folgejahres.
+  const otherYear = a.requestedYear !== null && a.requestedYear !== a.year
   const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, a.year)
   const problem = 'error' in built ? built.error : null
   let level = score.level
   const reasons = [...score.reasons]
+  if (otherYear) {
+    if (level === 'gruen') level = 'gelb'
+    reasons.push(`Beleg aus ${a.year}, gewählt war ${a.requestedYear} — gebucht wird in ${a.year}; sonst das Jahr der Buchung ändern`)
+  }
+  if (attached.length > 0) {
+    level = 'rot'
+    reasons.push(attachedText(attached))
+  }
   if (problem !== null) {
     level = 'rot'
     reasons.push(`Nicht übernehmbar: ${problem}`)
@@ -181,7 +218,7 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     })),
     level,
     reasons,
-    preselected: ctx.twinOf === null && aiRowPreselected({ category: line.category, preselect: aiPositionPreselect(defaults), problem, level, candidates }),
+    preselected: ctx.twinOf === null && !otherYear && aiRowPreselected({ category: line.category, preselect: aiPositionPreselect(defaults), problem, level, candidates }),
   }
 }
 
