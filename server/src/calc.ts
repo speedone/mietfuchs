@@ -1220,11 +1220,14 @@ export function distributeCents(totalCents: number, recipients: Recipient[]): nu
 // Dass der Lohn dabei immer Platz findet, ist gemessen (über 46 Millionen kleine Fälle erschöpfend
 // und 2 Millionen zufällige): Der erste Durchgang bis höchstens zur Aufrundung des Lohns ergab immer
 // genau L. Für den Fall, dass es doch einmal nicht reicht, gibt der zweite Durchgang bis zum
-// Kostenanteil nach; Platz gibt es dort immer, denn die nicht negativen Kostenanteile ergeben
-// zusammen mindestens A ≥ L. Die Zusagen „0 ≤ Lohn ≤ Kostenanteil“ und „Σ Lohn = L“ hängen also
-// nicht an der Messung. An ihr hängt, dass jeder Lohnanteil höchstens um einen Cent von seinem
-// exakten Wert abweicht, und gemessen ist das nur für widerspruchsfreie Daten, deren exakte Werte
-// zusammen genau A ergeben; bei sich überschneidenden Mietverhältnissen gilt es nicht sicher.
+// Kostenanteil nach; Platz gibt es dort immer, denn die Kostenanteile ergeben zusammen A ≥ L.
+// „0 ≤ Lohn ≤ Kostenanteil“ gilt immer. „Σ Lohn = L“ hängt nicht an der Messung, solange keine
+// Zeile negativ ist, also bei widerspruchsfreien Daten. Bei sich überschneidenden
+// Mietverhältnissen ist der Leerstand negativ und bekommt Lohn 0, während die übrigen Zeilen
+// zusammen mehr als A tragen; dann liegt Σ Lohn über L. Beispiel: zwei Wohnungen à 50 m², in W1
+// zwei ganzjährige Mietverhältnisse, Garten 1.000 € mit 800 € Lohn: drei Mieter je 400 €, zusammen
+// 1.200 € Lohn. Ebenfalls an der Messung und an widerspruchsfreien Daten (exakte Werte zusammen
+// genau A) hängt, dass jeder Lohnanteil höchstens um einen Cent von seinem exakten Wert abweicht.
 export function distributeLaborCents(laborCents: number, totalCents: number, recipients: Recipient[], shares: number[]): { cents: number[], exact: number[] } {
   const exact = recipients.map((r) => {
     const e = cleanRaw(r.raw)
