@@ -769,10 +769,12 @@ export type LineFields = {
 
 // Was der Browser je Zeile entscheidet. `despiteCandidates`: angelegt, obwohl es eine Position
 // gibt, die dieselbe Rechnung sein könnte; der Nutzer hat die Rückfrage bestätigt. Beim
-// Verknüpfen darf er einen falsch gelesenen Betrag berichtigen.
+// Verknüpfen darf er einen falsch gelesenen Betrag berichtigen; `despiteCandidates` bestätigt dort
+// das Verknüpfen einer erneut ausgewerteten Zeile mit einer schon aus diesem Beleg gebuchten
+// Position (Integrationsdurchsicht, H1).
 export type LineDecision =
   | { idx: number; action: 'create'; fields: LineFields; despiteCandidates?: boolean }
-  | { idx: number; action: 'link'; costItemId: string; amountCents?: number | null; labor35aCents?: number | null }
+  | { idx: number; action: 'link'; costItemId: string; amountCents?: number | null; labor35aCents?: number | null; despiteCandidates?: boolean }
   | { idx: number; action: 'dismiss' }
   | { idx: number; action: 'release' }
 

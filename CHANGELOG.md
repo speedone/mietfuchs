@@ -73,7 +73,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Kostenart: Die Zeile ist rot, und angelegt wird sie nur nach ausdrücklicher Bestätigung. Ebenso
   jede Zeile, die beim erneuten Auswerten eines schon gebuchten Belegs dazukommt, etwa weil ein
   Betrag von Hand berichtigt war oder die KI die Rechnung anders aufteilt; sie nennt die schon
-  gebuchten Positionen. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen,
+  gebuchten Positionen, und auch das Verknüpfen mit einer davon, das ihren Betrag erhöht,
+  geschieht nur nach „Trotzdem verknüpfen“. Eine verknüpfte Position trägt die Summe aller Zeilen, die an ihr hängen,
   auch aus zwei Belegen wie Abschlag und Restrechnung; eine Schätzung aus dem Vorjahr wird mit
   Ansage ersetzt, ebenso ein §35a-Lohnanteil, den die Rechnung nicht nennt. Eine Gutschrift wird
   nie verrechnet und nie als Ziel angeboten. Doppelt klicken, neu laden oder eine Anfrage
