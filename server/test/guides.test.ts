@@ -382,8 +382,12 @@ test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der 
   assert.match(perTenancy ?? '', /eigene Positionen/)
   // Schritt 3: zuerst der Betrag der Einzelabrechnung, die Formel nur als Näherung, wenn er fehlt.
   assert.match(own ?? '', /Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen\./)
-  assert.match(own ?? '', /Nur wenn er fehlt, rechnen Sie näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)
-  assert.ok(own !== undefined && own.indexOf('Einzelabrechnung') < own.indexOf('näherungsweise'), 'erst die Angabe des Messdienstes, dann die Näherung')
+  assert.match(own ?? '', /Nennt die Abrechnung solche Beträge bei den Mietern, aber nicht bei Ihrer Wohnung, gehört nichts davon ins Private\./)
+  assert.match(own ?? '', /Nur wenn sie gar keine Beträge je Wohnung nennt, rechnen Sie näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)
+  assert.doesNotMatch(own ?? '', /Nur wenn er fehlt/, 'die Näherung gilt nicht schon, wenn nur bei der eigenen Wohnung ein Betrag fehlt')
+  const order = ['Einzelabrechnung', 'ins Private', 'näherungsweise'].map((w) => own?.indexOf(w) ?? -1)
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'erst die Angabe des Messdienstes, dann „nichts privat“, zuletzt die Näherung')
+  assert.ok(!order.includes(-1))
   // Was Mietfuchs daraus macht: der Rest ist Werbungskosten.
   assert.match(g.result.join(' '), /CO₂-Anteil des Vermieters[^.]*Werbungskosten/)
 })
@@ -392,16 +396,19 @@ test('Messdienst (#209): selbstgenutzte Wohnung ohne CO₂-Anteil, Abrechnung oh
   const g = GUIDES.meteringService
   const all = JSON.stringify(g)
   // Nicht jeder Messdienst setzt für die eigene Wohnung einen Anteil an; dann bleibt nichts privat.
+  // Die Regel selbst steht in Schritt 3; der Hinweis wiederholt sie nicht.
   const self = g.caveats.find((c) => /selbstgenutzte Wohnung/.test(c.text) && /CO₂/.test(c.text))
   if (!self) return assert.fail('Hinweis zur selbstgenutzten Wohnung ohne CO₂-Anteil fehlt')
   assert.match(self.text, /Nicht jeder Messdienst/)
-  assert.match(self.text, /kein Teil des Abzugs ins Private/)
+  assert.doesNotMatch(self.text, /ins Private|näherungsweise|Näherung/, 'steht schon in Schritt 3')
   assert.doesNotMatch(self.text, /§/, 'keine Rechtsaussage')
   // Weist die Abrechnung keinen Anteil aus: nachfragen, Mietfuchs rechnet es noch nicht, 3 % Kürzung.
   const missing = g.caveats.find((c) => /keinen CO₂-Anteil des Vermieters aus/.test(c.text))
   if (!missing) return assert.fail('Hinweis für eine Abrechnung ohne CO₂-Aufteilung fehlt')
-  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97). Fehlt die Aufteilung, darf der Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG).')
-  assert.equal(missing.norm, '§ 7 Abs. 4 CO2KostAufG')
+  assert.equal(missing.text, 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).')
+  // Das Kürzungsrecht von 3 Prozent steht genau einmal, im Hinweis zur CO₂-Aufteilung mit seiner Norm.
+  const threePercent = [...g.steps.map((x) => x.text), ...g.caveats.map((c) => c.text)].filter((t) => /3 (%|Prozent)/.test(t))
+  assert.equal(threePercent.length, 1, `3 % steht ${threePercent.length}-mal`)
   // Über Messdienste nur, was für die großen belegt ist.
   assert.match(all, /Die großen Messdienste teilen auf, wenn/)
   assert.doesNotMatch(all, /Der Messdienst teilt auf/)

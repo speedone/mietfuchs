@@ -16,7 +16,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Anleitung sagt jetzt: Als Betrag gilt, was Sie bezahlt haben, also die Summe aller Nutzerbeträge
   für Heizung und Warmwasser (einschließlich Leerstand) plus den abgezogenen CO₂-Anteil. Der Teil,
   der auf eine selbstgenutzte Wohnung entfällt, gehört zu deren Betrag, und zwar wie ihn die
-  Einzelabrechnung nennt, nur ohne diese Angabe näherungsweise. Kaltwasser und weitere Nebenkosten
+  Einzelabrechnung nennt; näherungsweise nur, wenn die Abrechnung gar keine Beträge je Wohnung
+  nennt. Kaltwasser und weitere Nebenkosten
   derselben Abrechnung kommen als eigene Positionen. Weist die Abrechnung keinen CO₂-Anteil aus,
   rät die Anleitung zur Nachfrage beim Messdienst. Haben Sie eine Messdienst-Abrechnung mit
   Vorwegabzug schon erfasst, erhöhen Sie den Betrag der Position um den abgezogenen CO₂-Anteil und,
