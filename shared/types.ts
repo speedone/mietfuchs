@@ -53,7 +53,7 @@ export type Unit = {
   noConnection?: MeterType[]
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung)
   rooms?: number // Zimmerzahl
-  floor?: string // Etage, z. B. „EG", „1. OG"
+  floor?: string // Etage, z. B. „EG“, „1. OG“
   notes?: string // freie Notiz zur Wohnung
 }
 
@@ -62,7 +62,7 @@ export type PrepaymentEntry = {
   monthlyCents: number
 }
 
-// Kaltmiete-Staffel — gleiche „ab Monat gilt Betrag"-Mechanik wie die Vorauszahlung.
+// Kaltmiete-Staffel — gleiche „ab Monat gilt Betrag“-Mechanik wie die Vorauszahlung.
 // Bruttomiete = Kaltmiete + NK-Vorauszahlung des jeweiligen Monats.
 export type RentEntry = {
   from: string // 'YYYY-MM'
@@ -240,7 +240,7 @@ export type Settings = {
   printAttachments?: boolean // Belegkopien als Anlage mit andrucken (Standard: nein)
   // Update-Hinweis: ohne Wert wurde noch nicht gefragt, 'on' erlaubt die Abfrage bei GitHub
   updateCheck?: 'on' | 'off'
-  updateDismissed?: string // Version, deren Hinweis mit „Später" ausgeblendet wurde
+  updateDismissed?: string // Version, deren Hinweis mit „Später“ ausgeblendet wurde
   // KI-Belegauswertung (#18), siehe server/src/ai/settings.ts. ollamaUrl und ollamaModel oben
   // spiegeln Adresse und Modell, solange Ollama der Standard-Anbieter ist.
   ai?: AiSettings
@@ -545,7 +545,7 @@ export type SettlementComparison = {
 // selbstgenutzte Wohnung ist `privateCents` 0.
 export type TaxExpenseCategory = { category: string; amountCents: number; labor35aCents: number; privateCents: number; deductibleCents: number }
 export type TaxExpenseGroup = {
-  group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten")
+  group: string // Anlage-V-nahe Gruppierung (z. B. „Laufende Betriebskosten“)
   amountCents: number
   labor35aCents: number
   privateCents: number
@@ -602,7 +602,7 @@ export type TaxReport = {
     // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
     // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70).
     prepaymentSettlementCents: number
-    // **Setzt die Abrechnung eine Jahreskorrektur an?** Bewusst nicht „ist eine erfasst": Eine
+    // **Setzt die Abrechnung eine Jahreskorrektur an?** Bewusst nicht „ist eine erfasst“: Eine
     // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
     // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
     prepaymentOverridden: boolean

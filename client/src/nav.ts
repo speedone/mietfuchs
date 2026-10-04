@@ -1,6 +1,6 @@
 // Die Seiten der Oberfläche und ihre Navigation, gruppiert nach Arbeitsphase statt als flache
-// Tab-Liste: erst der Überblick, dann „Sammeln" (übers Jahr laufend), „Abrechnen" (Jahresende)
-// und „Einrichten" (selten). Eigene Datei, damit die Anleitungen der Hilfe (#164) ihre Sprünge
+// Tab-Liste: erst der Überblick, dann „Sammeln“ (übers Jahr laufend), „Abrechnen“ (Jahresende)
+// und „Einrichten“ (selten). Eigene Datei, damit die Anleitungen der Hilfe (#164) ihre Sprünge
 // gegen dieselben Kennungen prüfen können.
 
 import type { GuidePage } from '../../shared/guides.ts'

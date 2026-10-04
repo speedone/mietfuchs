@@ -53,7 +53,7 @@ import { KEY_LABELS } from '../calc.ts'
 import { LEGACY_PREPAYMENT_FIELD, legacyPrepaymentCase } from './migrate.ts'
 
 export type Finding = {
-  // Der Ort: „Wohnung 2 („OG", Kennung u2)". Gemeint ist die Stelle in der Datei, und zwar so
+  // Der Ort: „Wohnung 2 („OG“, Kennung u2)". Gemeint ist die Stelle in der Datei, und zwar so
   // benannt, dass der Nutzer sie in der Oberfläche wiederfindet.
   where: string
   // Der Grund, als ganzer Satz.
@@ -92,23 +92,23 @@ const short = (text: string): string => (text.length > 40 ? `${text.slice(0, 40)
 const germanNumber = (value: number): string => String(value).replace('.', ',')
 
 // Ein Betrag in Cent, zusätzlich in Euro. Nur für die Meldung über einen krummen Cent-Betrag:
-// „12000,5" sagt niemandem etwas, „120,005 Euro" schon.
+// „12000,5“ sagt niemandem etwas, „120,005 Euro“ schon.
 const asEuro = (cents: number): string => germanNumber(cents / 100)
 
 // Was da steht, in der Sprache des Nutzers. Steht in jeder Meldung über einen falschen Typ,
 // damit der Nutzer die Stelle in der Datei wiedererkennt.
 //
 // Zwei Regeln gelten dabei. Erstens der Nominativ, weil jede Meldung, die ihn benutzt, mit
-// „dort steht" gebaut ist; ein Satz mit vertauschtem Fall liest sich, als hätte ihn eine
+// „dort steht“ gebaut ist; ein Satz mit vertauschtem Fall liest sich, als hätte ihn eine
 // Maschine zusammengesetzt. Zweitens **kein Wort aus der Programmierung**: Ein Vermieter kennt
-// keinen „Wahrheitswert" und kein „Objekt", und eine Meldung, die er nicht versteht, ist so
+// keinen „Wahrheitswert“ und kein „Objekt“, und eine Meldung, die er nicht versteht, ist so
 // wenig wert wie gar keine.
 function kindOf(value: unknown): string {
   if (value === null || value === undefined) return 'gar nichts'
   if (Array.isArray(value)) return 'eine Liste'
-  if (typeof value === 'string') return value.trim() === '' ? 'ein leerer Text' : `der Text „${short(value)}"`
+  if (typeof value === 'string') return value.trim() === '' ? 'ein leerer Text' : `der Text „${short(value)}“`
   if (typeof value === 'number') return `die Zahl ${germanNumber(value)}`
-  if (typeof value === 'boolean') return `der Wert „${value ? 'ja' : 'nein'}"`
+  if (typeof value === 'boolean') return `der Wert „${value ? 'ja' : 'nein'}“`
   if (typeof value === 'object') return 'ein einzelner Eintrag'
   return 'etwas, das Mietfuchs nicht lesen kann'
 }
@@ -117,14 +117,14 @@ function kindOf(value: unknown): string {
 // Datei stehen; die Beschriftung sagt, was er bedeutet. Die der Umlageschlüssel kommt aus
 // calc.ts, also von dort, wo sie auch auf der fertigen Abrechnung steht.
 const allowedText = (values: readonly string[], labels: Record<string, string> = {}): string =>
-  values.map((value) => (labels[value] ? `${labels[value]} („${value}")` : `„${value}"`)).join(', ')
+  values.map((value) => (labels[value] ? `${labels[value]} („${value}“)` : `„${value}“`)).join(', ')
 
 // Der Ort eines Datensatzes. Die laufende Nummer steht immer dabei, denn Name und Kennung
-// können beide fehlen, und dann bliebe sonst nur „irgendwo".
+// können beide fehlen, und dann bliebe sonst nur „irgendwo“.
 function place(kind: string, index: number, record: unknown, nameField?: string): string {
   const details: string[] = []
   const name = nameField === undefined ? undefined : fieldOf(record, nameField)
-  if (typeof name === 'string' && name.trim()) details.push(`„${name.trim()}"`)
+  if (typeof name === 'string' && name.trim()) details.push(`„${name.trim()}“`)
   const id = fieldOf(record, 'id')
   if (typeof id === 'string' && id.trim()) details.push(`Kennung ${id.trim()}`)
   return details.length > 0 ? `${kind} ${index + 1} (${details.join(', ')})` : `${kind} ${index + 1}`
@@ -148,9 +148,9 @@ type NumberOptions = {
 function fieldsOf(c: Collector, record: unknown, where: string) {
   const missing = (label: string, raw: unknown, expected: string): string =>
     raw === undefined || raw === null
-      ? `Das Feld „${label}" fehlt.`
-      : `Im Feld „${label}" steht ${kindOf(raw)}, erwartet wird ${expected}.`
-  const empty = (label: string): string => `Das Feld „${label}" ist leer.`
+      ? `Das Feld „${label}“ fehlt.`
+      : `Im Feld „${label}“ steht ${kindOf(raw)}, erwartet wird ${expected}.`
+  const empty = (label: string): string => `Das Feld „${label}“ ist leer.`
 
   const checkNumber = (raw: unknown, label: string, options: NumberOptions): number | null => {
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
@@ -162,13 +162,13 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
         c,
         where,
         options.cents
-          ? `Im Feld „${label}" steht ${germanNumber(raw)}. Beträge stehen hier in ganzen Cent, das wären ${asEuro(raw)} Euro, und runden würde den Betrag verändern.`
-          : `Im Feld „${label}" steht ${germanNumber(raw)}, erwartet wird eine ganze Zahl.`,
+          ? `Im Feld „${label}“ steht ${germanNumber(raw)}. Beträge stehen hier in ganzen Cent, das wären ${asEuro(raw)} Euro, und runden würde den Betrag verändern.`
+          : `Im Feld „${label}“ steht ${germanNumber(raw)}, erwartet wird eine ganze Zahl.`,
       )
       return null
     }
     if (!options.negative && raw < 0) {
-      problem(c, where, `Im Feld „${label}" steht ${germanNumber(raw)}. Ein Wert unter null ergibt hier keinen Sinn und verschöbe die Verteilung.`)
+      problem(c, where, `Im Feld „${label}“ steht ${germanNumber(raw)}. Ein Wert unter null ergibt hier keinen Sinn und verschöbe die Verteilung.`)
       return null
     }
     return raw
@@ -210,7 +210,7 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
       const raw = fieldOf(record, field)
       if (typeof raw === 'string') return
       if (raw === undefined || raw === null) {
-        adjust(c, where, `Das Feld „${label}" fehlt. Es wird leer übernommen; gerechnet wird damit ohnehin nicht.`)
+        adjust(c, where, `Das Feld „${label}“ fehlt. Es wird leer übernommen; gerechnet wird damit ohnehin nicht.`)
         return
       }
       problem(c, where, missing(label, raw, 'ein Text'))
@@ -226,7 +226,7 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
     optionalBoolean(field: string, label: string): void {
       const raw = fieldOf(record, field)
       if (raw === undefined || raw === null || typeof raw === 'boolean') return
-      // Bewusst streng: In JavaScript ist die Zeichenkette „false" wahr. Ein solcher Wert
+      // Bewusst streng: In JavaScript ist die Zeichenkette „false“ wahr. Ein solcher Wert
       // kehrte die Beteiligung einer Wohnung um, ohne dass irgendwo etwas danebenstünde.
       problem(c, where, missing(label, raw, 'ja oder nein'))
     },
@@ -237,12 +237,12 @@ function fieldsOf(c: Collector, record: unknown, where: string) {
       const raw = fieldOf(record, field)
       if (raw === undefined || raw === null) return
       if (typeof raw === 'string' && values.includes(raw)) return
-      problem(c, where, `Im Feld „${label}" steht ${kindOf(raw)}. Erlaubt sind nur: ${allowedText(values, labels)}.`)
+      problem(c, where, `Im Feld „${label}“ steht ${kindOf(raw)}. Erlaubt sind nur: ${allowedText(values, labels)}.`)
     },
     oneOf(field: string, label: string, values: readonly string[], labels?: Record<string, string>): void {
       const raw = fieldOf(record, field)
       if (typeof raw === 'string' && values.includes(raw)) return
-      problem(c, where, `Im Feld „${label}" steht ${kindOf(raw)}. Erlaubt sind nur: ${allowedText(values, labels)}.`)
+      problem(c, where, `Im Feld „${label}“ steht ${kindOf(raw)}. Erlaubt sind nur: ${allowedText(values, labels)}.`)
     },
   }
 }
@@ -269,13 +269,13 @@ type Collection = { entries: unknown[], usable: boolean }
 function collectionOf(c: Collector, db: unknown, name: string, many: string): Collection {
   const raw = fieldOf(db, name)
   if (raw === undefined) {
-    adjust(c, `Die Sammlung „${many}"`, 'Sie fehlt in der Datei und wird leer angelegt.')
+    adjust(c, `Die Sammlung „${many}“`, 'Sie fehlt in der Datei und wird leer angelegt.')
     return { entries: [], usable: true }
   }
   if (Array.isArray(raw)) return { entries: raw, usable: true }
   problem(
     c,
-    `Die Sammlung „${many}"`,
+    `Die Sammlung „${many}“`,
     `Dort steht ${kindOf(raw)}, erwartet wird eine Liste. Mietfuchs könnte damit nicht arbeiten und käme nach dem Übernehmen gar nicht mehr hoch.`,
   )
   return { entries: [], usable: false }
@@ -292,7 +292,7 @@ function idsOf(c: Collector, collection: Collection, kind: string, nameField?: s
       problem(
         c,
         place(kind, index, entry, nameField),
-        `Die Kennung „${id}" kommt mehrfach vor. Von zwei Datensätzen mit derselben Kennung käme nur einer an, und der andere fehlte, ohne dass es auffiele.`,
+        `Die Kennung „${id}“ kommt mehrfach vor. Von zwei Datensätzen mit derselben Kennung käme nur einer an, und der andere fehlte, ohne dass es auffiele.`,
       )
       return
     }
@@ -312,18 +312,18 @@ function checkReference(
   target: string,
 ): void {
   if (typeof value !== 'string' || !value.trim()) {
-    problem(c, where, `Das Feld „${label}" fehlt oder ist leer. Ohne ${target} gehört der Datensatz nirgendwohin.`)
+    problem(c, where, `Das Feld „${label}“ fehlt oder ist leer. Ohne ${target} gehört der Datensatz nirgendwohin.`)
     return
   }
   // Ist die Zielsammlung selbst unbrauchbar, ist darüber schon alles gesagt; jeder Verweis
   // dorthin ergäbe sonst eine zweite Meldung über dieselbe Ursache.
   if (!usable || known.has(value)) return
-  problem(c, where, `${target} mit der Kennung „${value}" kommt in der Datei nicht vor.`)
+  problem(c, where, `${target} mit der Kennung „${value}“ kommt in der Datei nicht vor.`)
 }
 
 // ---------- Die Staffeln ----------
 
-// Personenzahl, Vorauszahlung und Kaltmiete stehen als „ab Datum gilt Wert". Alle drei werden
+// Personenzahl, Vorauszahlung und Kaltmiete stehen als „ab Datum gilt Wert“. Alle drei werden
 // gleich geprüft, nur der Betrag heißt jeweils anders.
 function checkSchedule(
   c: Collector,
@@ -389,14 +389,14 @@ function checkUnits(c: Collector, units: Collection): void {
       fields.number('areaM2', 'Wohnfläche')
     }
     if (fieldOf(entry, 'participates') === undefined) {
-      adjust(c, where, 'Es ist nicht vermerkt, ob die Wohnung zur Abrechnungseinheit gehört. Übernommen wird „nein", so wie die Abrechnung es heute schon liest.')
+      adjust(c, where, 'Es ist nicht vermerkt, ob die Wohnung zur Abrechnungseinheit gehört. Übernommen wird „nein“, so wie die Abrechnung es heute schon liest.')
     } else {
       fields.optionalBoolean('participates', 'Gehört zur Abrechnungseinheit')
     }
     fields.optionalBoolean('selfUsed', 'Selbstgenutzt')
     // Hier steht bewusst **keine** Ganzzahligkeit, obwohl das Schema beide als ganze Zahl
     // führt: Das Formular lässt für beide eine Kommazahl zu (`Number(…replace(',', '.'))` in
-    // unitForm.ts, geprüft wird nur das Vorzeichen), und „2,5 Zimmer" ist nichts Ungewöhnliches.
+    // unitForm.ts, geprüft wird nur das Vorzeichen), und „2,5 Zimmer“ ist nichts Ungewöhnliches.
     // Wer das hier abwiese, wiese einen Bestand ab, der über die Oberfläche entstanden ist.
     // Die Spalte nimmt ihn an, SQLite legt eine Kommazahl auch in einer Integer-Spalte ab.
     fields.optionalNumber('selfPersons', 'Personen im eigenen Haushalt')
@@ -453,7 +453,7 @@ function checkTenancies(c: Collector, tenancies: Collection, units: Collection, 
     // Vorauszahlung verschieden); der Umstieg behebt sie hier nebenbei, weil es für das alte
     // Feld keinen Platz mehr gibt. Für den Vermieter heißt es: Das Soll steigt um die
     // Vorauszahlung, dieselbe Zahlung deckt also weniger Monate, und ein Monat kann von
-    // „bezahlt" auf „teilweise" wechseln. Gefordert wird damit, was die Abrechnung ohnehin
+    // „bezahlt“ auf „teilweise“ wechseln. Gefordert wird damit, was die Abrechnung ohnehin
     // ansetzt; bisher forderte das Mietkonto zu wenig. Der Hinweis sagt das, statt es zu
     // verschweigen.
     //
@@ -510,7 +510,7 @@ function checkOverrides(c: Collector, tenancy: unknown, where: string): void {
   for (const year of Object.keys(raw)) {
     const at = `${where}, gezahlte Vorauszahlung ${year}`
     if (!/^\d{4}$/.test(year)) {
-      problem(c, at, `„${short(year)}" ist keine Jahreszahl. Der Betrag ließe sich keinem Abrechnungsjahr zuordnen.`)
+      problem(c, at, `„${short(year)}“ ist keine Jahreszahl. Der Betrag ließe sich keinem Abrechnungsjahr zuordnen.`)
       continue
     }
     fieldsOf(c, raw, at).number(year, `Gezahlte Vorauszahlung ${year}`, { cents: true })
@@ -547,7 +547,7 @@ function checkCostItems(c: Collector, costItems: Collection, units: Collection, 
     // schlägt eine unbekannte Kennung genauso vergeblich nach wie `null`.
     const direct = fieldOf(entry, 'directUnitId')
     if (typeof direct === 'string' && direct.trim() && units.usable && !unitIds.has(direct)) {
-      adjust(c, where, `Die Direktzuordnung zeigt auf die Wohnung „${direct}", die es nicht mehr gibt. Sie wird als „keine Zuordnung" übernommen; der Betrag geht wie bisher an den Vermieter.`)
+      adjust(c, where, `Die Direktzuordnung zeigt auf die Wohnung „${direct}“, die es nicht mehr gibt. Sie wird als „keine Zuordnung“ übernommen; der Betrag geht wie bisher an den Vermieter.`)
     } else {
       fields.optionalText('directUnitId', 'Direkt zugeordnete Wohnung')
     }
@@ -600,21 +600,21 @@ function checkMeters(c: Collector, meters: Collection, units: Collection, unitId
     // Eine leere Kennung liest die Abrechnung schon heute wie gar keine: `m.unitId && …` in
     // calc.ts nimmt nur Zähler mit einer Kennung in die Verbrauchsbasis auf, und die leere
     // Zeichenkette zählt dort nicht. Sie wird also zum Hauptzähler, ohne dass sich eine Zahl
-    // bewegt. **Nur die wirklich leere**: „  " ist in JavaScript wahr, käme damit in die Basis
+    // bewegt. **Nur die wirklich leere**: „  “ ist in JavaScript wahr, käme damit in die Basis
     // und zeigte doch auf keine Wohnung; das ist ein Verweis ins Leere und steht unten.
     if (unitId === '') {
       adjust(c, where, 'Die Wohnung ist nicht ausgefüllt. Der Zähler wird als Hauptzähler für das ganze Haus übernommen, so wie die Abrechnung ihn heute schon liest.')
       return
     }
     if (typeof unitId !== 'string') {
-      problem(c, where, `Im Feld „Wohnung" steht ${kindOf(unitId)}, erwartet wird die Kennung einer Wohnung oder gar nichts, wenn es ein Hauptzähler für das ganze Haus ist.`)
+      problem(c, where, `Im Feld „Wohnung“ steht ${kindOf(unitId)}, erwartet wird die Kennung einer Wohnung oder gar nichts, wenn es ein Hauptzähler für das ganze Haus ist.`)
       return
     }
     if (units.usable && !unitIds.has(unitId)) {
       problem(
         c,
         where,
-        `Die Wohnung mit der Kennung „${unitId}" kommt in der Datei nicht vor. Den Zähler stattdessen als Hauptzähler zu übernehmen ginge nicht ohne Folgen: Er zählte dann nicht mehr in die Verbrauchsbasis, und die Abrechnung verteilte andere Beträge als bisher.`,
+        `Die Wohnung mit der Kennung „${unitId}“ kommt in der Datei nicht vor. Den Zähler stattdessen als Hauptzähler zu übernehmen ginge nicht ohne Folgen: Er zählte dann nicht mehr in die Verbrauchsbasis, und die Abrechnung verteilte andere Beträge als bisher.`,
       )
     }
   })
@@ -633,7 +633,7 @@ function readingPlace(index: number, entry: unknown, meters: Collection): string
   const meterId = fieldOf(entry, 'meterId')
   const meter = typeof meterId === 'string' ? meters.entries.find((m) => fieldOf(m, 'id') === meterId) : undefined
   const name = fieldOf(meter, 'name')
-  if (typeof name === 'string' && name.trim()) details.push(`Zähler „${name.trim()}"`)
+  if (typeof name === 'string' && name.trim()) details.push(`Zähler „${name.trim()}“`)
   else if (typeof meterId === 'string' && meterId.trim()) details.push(`Zähler ${meterId.trim()}`)
   const date = fieldOf(entry, 'date')
   if (typeof date === 'string' && date.trim()) details.push(`vom ${date.trim()}`)
@@ -663,7 +663,7 @@ function checkReadings(c: Collector, readings: Collection, meters: Collection, m
       problem(
         c,
         where,
-        `Der Zählerstand ist ${germanNumber(value)}. Ein abgelesener Stand läuft nicht unter null. Bitte berichtigen Sie die Ablesung in der Oberfläche unter „Zähler & Stände".`,
+        `Der Zählerstand ist ${germanNumber(value)}. Ein abgelesener Stand läuft nicht unter null. Bitte berichtigen Sie die Ablesung in der Oberfläche unter „Zähler & Stände“.`,
       )
     } else {
       fields.number('value', 'Zählerstand')

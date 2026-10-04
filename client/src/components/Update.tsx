@@ -24,12 +24,12 @@ export type UpdateState = {
 }
 
 // Holt den Stand, sobald die Einstellungen geladen sind, und erneut, wenn sich die Zustimmung
-// ändert. So erscheint der Hinweis direkt nach dem „Ja", ohne die Seite neu zu laden.
+// ändert. So erscheint der Hinweis direkt nach dem „Ja“, ohne die Seite neu zu laden.
 export function useUpdateStatus(settings: Settings | null): UpdateState {
   const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [checking, setChecking] = useState(false)
   // Jede Anfrage bekommt eine Nummer. Übernommen wird nur die Antwort der zuletzt gestellten,
-  // sonst könnte ein langsames GET das Ergebnis von „Jetzt prüfen" überschreiben.
+  // sonst könnte ein langsames GET das Ergebnis von „Jetzt prüfen“ überschreiben.
   const requestCounter = useRef(0)
   const loaded = settings !== null
   const consent = settings?.updateCheck

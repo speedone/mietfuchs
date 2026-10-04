@@ -58,7 +58,7 @@ const FIELD_NAMES: Record<string, string> = {
   deposit_status: 'Stand der Kaution',
 }
 
-const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}"`
+const fieldName = (column: string): string => FIELD_NAMES[column] ?? `„${column}“`
 
 // Der Feldname aus dem Namen einer Prüfbedingung. Die Namen sind durchgehend
 // `<tabelle>_<feld>_not_negative`, `_known`, `_positive` oder `_complete`, und ein Test hält
@@ -72,7 +72,7 @@ function fieldOfConstraint(name: string, suffix: string): string {
   const treffer = Object.keys(FIELD_NAMES)
     .filter((feld) => rest.endsWith(`_${feld}`))
     .sort((a, b) => b.length - a.length)[0]
-  return treffer ? fieldName(treffer) : `„${rest}"`
+  return treffer ? fieldName(treffer) : `„${rest}“`
 }
 
 // ---------- Die einzelnen Lagen ----------
@@ -82,7 +82,7 @@ const FOREIGN_KEY =
   'Zähler, der inzwischen gelöscht wurde. Bitte laden Sie die Seite neu und versuchen Sie es ' +
   'noch einmal.'
 
-// „UNIQUE constraint failed: prepayments.tenancy_id, prepayments.from" und Verwandte.
+// „UNIQUE constraint failed: prepayments.tenancy_id, prepayments.from“ und Verwandte.
 function uniqueMessage(details: string): string {
   const spalten = details.split(',').map((eintrag) => eintrag.trim().split('.').pop() ?? '')
   if (spalten.includes('from')) {
@@ -212,7 +212,7 @@ function wrappedByDrizzle(err: unknown): boolean {
 // **Die Frage steht vor dem Einordnen und nicht dahinter**, und das war einmal andersherum.
 // Zwei der Muster in `classify` sind nicht datenbankeigen: Ein schreibgeschützter Datenträger
 // meldet `EROFS` auch beim Ablegen eines Belegs, eine volle Platte `ENOSPC`. Eingeordnet wurde
-// das als „In die Datenbank lässt sich nicht schreiben", und der Vermieter las eine Auskunft
+// das als „In die Datenbank lässt sich nicht schreiben“, und der Vermieter las eine Auskunft
 // über die Datenbank, während in Wahrheit sein Beleg nicht abgelegt werden konnte.
 export function databaseProblem(err: unknown): DatabaseProblem | null {
   if (!wrappedByDrizzle(err)) return null

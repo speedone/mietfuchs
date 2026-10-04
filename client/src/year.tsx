@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
-// Das Abrechnungsjahr ist der rote Faden der App: die ganze Oberfläche ist immer „in" einem Jahr.
+// Das Abrechnungsjahr ist der rote Faden der App: die ganze Oberfläche ist immer „in“ einem Jahr.
 // Statt auf jeder Seite ein eigenes Jahr zu führen, liegt es hier zentral — der Umschalter in der
 // Sidebar (und die Selects auf den Einzelseiten) verstellen denselben Wert.
 type YearCtx = { year: number; setYear: (y: number) => void }

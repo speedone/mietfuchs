@@ -33,9 +33,9 @@ export function lastPerFrom<T extends { from: string }>(entries: T[]): T[] {
 
 // ---------- Die Personen-Staffel ist anders, und das ist gemessen ----------
 //
-// **Für sie trägt „es gilt der letzte" nicht.** `personDaysInPeriod` in calc.ts baut seine
+// **Für sie trägt „es gilt der letzte“ nicht.** `personDaysInPeriod` in calc.ts baut seine
 // Stufen aus allen Einträgen, und die erste gilt **ab Einzug** und nicht erst ab ihrem eigenen
-// Stichtag; im Quelltext steht es als Kommentar an der Zeile („erste Stufe gilt ab Einzug"), und
+// Stichtag; im Quelltext steht es als Kommentar an der Zeile („erste Stufe gilt ab Einzug“), und
 // `personsAt` nimmt vor dem ersten Stichtag ebenfalls den ersten Eintrag. Wirft man also den
 // ersten von zwei Einträgen zum selben Stichtag weg, übernimmt der zweite rückwirkend die ganze
 // Zeit davor.

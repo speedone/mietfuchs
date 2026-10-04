@@ -1,4 +1,4 @@
-// Geometrischer Fuchskopf — die Marke „Mietfuchs". Flaches Low-Poly-Design, funktioniert hell
+// Geometrischer Fuchskopf — die Marke „Mietfuchs“. Flaches Low-Poly-Design, funktioniert hell
 // wie dunkel. Dieselbe Geometrie zeichnet das Icon-Skript (server/scripts/make-icons.mjs) für die
 // PWA-Icons nach — bei Änderungen hier dort mitziehen.
 export default function FoxLogo({ size = 28 }: { size?: number }) {

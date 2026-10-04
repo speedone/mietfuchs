@@ -22,7 +22,7 @@ export type DatabaseHint = {
 }
 
 // Unter diesem Schlüssel merkt sich der Browser, welche Meldung schon weggeklickt wurde.
-// Gespeichert wird die Meldung selbst und nicht bloß ein „gelesen": Scheitert der Umstieg beim
+// Gespeichert wird die Meldung selbst und nicht bloß ein „gelesen“: Scheitert der Umstieg beim
 // nächsten Start aus einem **anderen** Grund, soll der neue Satz wieder erscheinen.
 export const DISMISS_KEY = 'nka-umstieg-gelesen'
 

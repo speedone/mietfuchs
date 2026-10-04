@@ -368,3 +368,38 @@ test('Anrede-Wächter (7): weitere Imperative in Du-Form', () => {
     .map((t, i) => `const t${i} = '${t}'`).join('\n')
   assert.deepEqual(matches(source, 'client'), ['Nutze', 'Verwende', 'Tippe', 'Schicke', 'Lies', 'Sieh', 'Lass'])
 })
+
+// Schreibweise (#180), am selben Scanner wie die Anrede: In Texten an den Nutzer steht keine
+// Ein- und Mehrzahl in Klammern („Wohnung(en)“, „Mietverhältnis(se)“), sondern die passende Form
+// (Helfer in shared/wording.ts). Und ein typografisch geöffnetes Anführungszeichen wird auch
+// typografisch geschlossen. Das prüft der rohe Quelltext samt Kommentaren, denn ein Zitat in einer
+// Vorlage wie `„${name}"` zerfällt im Scanner in zwei Stücke. Ausgenommen sind die drei
+// eingefrorenen Dateien des Eingangs (server/src/legacy/README.md): Ihre Prüfsumme hängt am Text.
+const PAREN_PLURAL = /\p{L}\((?:en|se|n|e|s)\)/gu
+const MIXED_QUOTES = /„[^“"\n]*"/gu
+const FROZEN = new Set(['schema.ts', 'write.ts', 'migrate.ts'].map((f) => path.join('server', 'src', 'legacy', f)))
+
+function spellingFindings(): Finding[] {
+  const files = [...clientFiles(), ...sourceFiles('server/src')].filter((f) => !FROZEN.has(f))
+  return files.flatMap((file) => {
+    const source = fs.readFileSync(path.join(ROOT, file), 'utf8')
+    const lineOf = (offset: number) => 1 + (source.slice(0, offset).match(/\n/g)?.length ?? 0)
+    const kind: Kind = file.startsWith('server') ? 'server' : 'client'
+    const plurals = scan(source, kind === 'client' && file.endsWith('.tsx')).strings
+      .flatMap((s) => [...s.text.matchAll(PAREN_PLURAL)].map((m) => ({ file, line: s.line, match: m[0] })))
+    const quotes = [...source.matchAll(MIXED_QUOTES)].map((m) => ({ file, line: lineOf(m.index ?? 0), match: m[0] }))
+    return [...plurals, ...quotes]
+  })
+}
+
+test('Schreibweise: keine Mehrzahl in Klammern, keine gemischten Anführungszeichen (#180)', () => {
+  const findings = spellingFindings()
+  assert.equal(findings.length, 0, `\n${report(findings)}`)
+})
+
+test('Schreibweise-Wächter: erkennt beides', () => {
+  const plurals = scan("const a = `${n} Wohnung(en) und ${m} Mietverhältnis(se)`\nconst Person = f(x)(en)").strings
+    .flatMap((s) => [...s.text.matchAll(PAREN_PLURAL)].map((m) => m[0]))
+  assert.deepEqual(plurals, ['g(en)', 's(se)'])
+  assert.deepEqual([...'„A“ und „B" und „C“'.matchAll(MIXED_QUOTES)].map((m) => m[0]), ['„B"'])
+})
