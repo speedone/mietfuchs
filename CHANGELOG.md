@@ -145,6 +145,16 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Nebenkostenabrechnung bleibt davon unberührt.
   ([#163](https://github.com/speedone/mietfuchs/issues/163))
 
+- **Anleitungen je Vermietungsart auf „Hilfe & Begriffe“.** Für acht Lagen sagt Mietfuchs, wie
+  Sie sie anlegen und was daraus wird: Haus mit Einliegerwohnung, Mehrfamilienhaus, vermietete
+  Eigentumswohnung mit Hausgeldabrechnung, mehrere Objekte, Garage oder Stellplatz, Pauschale
+  oder Inklusivmiete, die fertige Abrechnung eines Messdienstes und Mieterwechsel mit Leerstand.
+  Jede Anleitung nennt, ob sie auf Sie zutrifft, die Schritte mit einem Knopf zur passenden Seite,
+  ein nachgerechnetes Beispiel, worauf Sie rechtlich achten müssen (mit Norm) und was Mietfuchs
+  noch nicht kann (mit Verweis auf das Issue). Die Suche der Seite findet Anleitungen und Begriffe
+  und klappt die Treffer auf.
+  ([#164](https://github.com/speedone/mietfuchs/issues/164))
+
 ### Geändert
 
 - **Lexikon: Abrechnungsfrist bei verspätetem oder angefochtenem Grundsteuerbescheid.** Liegt der
