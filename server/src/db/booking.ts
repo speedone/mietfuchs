@@ -76,7 +76,17 @@ function peersFrom(records: readonly AssessmentRecord[], ctx: Context): Peer[] {
 // zweite Verknüpfen lehnt der Planer ab; zusammengezählt zeigte die Ampel die doppelte Summe.
 function peerTargetsFor(record: AssessmentRecord, peers: readonly Peer[], ctx: Context): OpenTarget[] {
   const twins = new Set(twinFilesOf(ctx, record.assessment.file))
-  return peers.filter((p) => p.id !== record.assessment.id && !twins.has(p.file)).flatMap((p) => p.targets)
+  // Sind zwei **andere** Belege untereinander Zwillinge, zählt nur einer davon (Integrations-
+  // durchsicht), und zwar der zuerst angelegte: `peers` folgt der Reihenfolge von listAssessments.
+  const seen = new Set<string>()
+  return peers.filter((p) => {
+    if (p.id === record.assessment.id || twins.has(p.file)) return false
+    const sha = ctx.uploads.get(p.file)?.sha256
+    if (!sha) return true
+    if (seen.has(sha)) return false
+    seen.add(sha)
+    return true
+  }).flatMap((p) => p.targets)
 }
 
 // Die Auswertungen des Objekts, deren Beleg noch im Belegordner liegt, wie in `viewAssessments`.
