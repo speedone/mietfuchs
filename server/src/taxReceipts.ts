@@ -8,8 +8,12 @@
 // Erhaltungsrücklage steht dort gesondert (#143) und hier in einem eigenen Ordner.
 //
 // Daneben eine Übersicht als CSV mit jeder Position, auch denen ohne Beleg: Was fehlt, soll der
-// Steuerberater sehen und nicht erst vermissen.
-import type { CostItem } from '../../shared/types.ts'
+// Steuerberater sehen und nicht erst vermissen. Bei teilweiser Eigennutzung trägt jede Position
+// ihren privaten und ihren abziehbaren Teil (#163), entnommen der Steuerübersicht
+// (`taxReport(...).expenses.items`) und nicht hier ein zweites Mal gerechnet: Die Summen der
+// beiden Spalten sind deshalb genau die der Übersicht. Die Zuführung zur Rücklage steht dort nicht
+// in den Werbungskosten und hat hier leere Felder.
+import type { CostItem, TaxExpenseItem } from '../../shared/types.ts'
 import { ANLAGE_V_GROUP, ANLAGE_V_GROUP_ORDER } from './calc.ts'
 
 const RESERVE_GROUP = 'Erhaltungsrücklage (gesondert)'
@@ -46,7 +50,13 @@ export type TaxArchivePlan = {
 // `booked`: je Position die Belege, die über gebuchte Zeilen einer Auswertung an ihr hängen
 // (Belegbuchung); sie liegen neben `invoiceFile` im Archiv, die Position steht trotzdem einmal in
 // der Übersicht, mit allen ihren Belegen in einer Zelle.
-export function planTaxArchive(items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map()): TaxArchivePlan {
+//
+// `split`: je Position privat und abziehbar aus der Steuerübersicht (#163).
+export type TaxSplitOfItem = Pick<TaxExpenseItem, 'privateCents' | 'deductibleCents'>
+export function planTaxArchive(
+  items: CostItem[], names: Map<string, string>, booked: ReadonlyMap<string, readonly string[]> = new Map(),
+  split: ReadonlyMap<string, TaxSplitOfItem> = new Map(),
+): TaxArchivePlan {
   const rank = (group: string) => GROUPS.indexOf(group)
   const sorted = [...items].sort((a, b) =>
     rank(taxGroupOf(a.category)) - rank(taxGroupOf(b.category)) ||
@@ -82,11 +92,13 @@ export function planTaxArchive(items: CostItem[], names: Map<string, string>, bo
       parts.push(zipPath)
     }
     const beleg = parts.length > 0 ? parts.join(' | ') : 'kein Beleg'
+    const part = split.get(c.id)
     rows.push([
       textField(group), textField(c.category), textField(c.description), textField(c.vendor ?? ''), csvField(euro(c.amountCents)),
+      part ? csvField(euro(part.privateCents)) : '', part ? csvField(euro(part.deductibleCents)) : '',
       csvField(c.labor35aCents ? euro(c.labor35aCents) : ''), textField(beleg),
     ].join(';'))
   }
-  const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);Lohnanteil § 35a (EUR);Beleg'
+  const header = 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg'
   return { files, overviewCsv: `﻿${[header, ...rows].join('\r\n')}\r\n` }
 }

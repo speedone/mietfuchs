@@ -35,11 +35,11 @@ test('Steuer-Belege: Ordner je Gruppe der Anlage V in deren Reihenfolge, nicht u
     ['6 Erhaltungsrücklage (gesondert)/Zuführung Erhaltungsrücklage - Rücklage.pdf', '4_ruecklage.pdf'],
   ])
   const zeilen = plan.overviewCsv.replace(/^﻿/, '').trim().split('\r\n')
-  assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);Lohnanteil § 35a (EUR);Beleg')
+  assert.equal(zeilen[0], 'Gruppe;Kostenart;Beschreibung;Rechnungssteller;Betrag (EUR);privat (EUR);abziehbar (EUR);Lohnanteil § 35a (EUR);Beleg')
   assert.equal(zeilen.length, 8)
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position ohne;;50,00;;kein Beleg'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Müllabfuhr;Position weg;;100,00;;Datei fehlt'))
-  assert.ok(zeilen.includes('Laufende Betriebskosten;Wasser/Abwasser;Abwasser;;100,00;;2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Gartenpflege;Position ohne;;50,00;;;;kein Beleg'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Müllabfuhr;Position weg;;100,00;;;;Datei fehlt'))
+  assert.ok(zeilen.includes('Laufende Betriebskosten;Wasser/Abwasser;Abwasser;;100,00;;;;2 Laufende Betriebskosten/Wasser-Abwasser - Wasser.pdf'))
   assert.ok(plan.overviewCsv.startsWith('﻿'), 'mit BOM, damit Excel die Umlaute richtig liest')
 })
 
@@ -86,4 +86,14 @@ test('Steuer-Belege (#170): eine Position ohne invoiceFile, deren Beleg nur an e
   const plan = planTaxArchive([item('st', { category: 'Wasser/Abwasser' })], new Map([['2_rest.pdf', 'Rest.pdf']]), new Map([['st', ['2_rest.pdf']]]))
   assert.deepEqual(plan.files.map((f) => f.file), ['2_rest.pdf'])
   assert.ok(!plan.overviewCsv.includes('kein Beleg'))
+})
+
+test('Steuer-Belege: privat und abziehbar je Position aus der Steuerübersicht, die Rücklage ohne (#163)', () => {
+  const plan = planTaxArchive([
+    item('gs', { amountCents: 50000 }),
+    item('r', { category: 'Zuführung Erhaltungsrücklage', amountCents: 30000 }),
+  ], names, new Map(), new Map([['gs', { privateCents: 30000, deductibleCents: 20000 }]]))
+  const zeilen = plan.overviewCsv.replace(/^\uFEFF/, '').trim().split('\r\n')
+  assert.ok(zeilen.includes('Grundsteuer & öffentliche Abgaben;Grundsteuer;Position gs;;500,00;300,00;200,00;;kein Beleg'), zeilen.join('\n'))
+  assert.ok(zeilen.includes('Erhaltungsrücklage (gesondert);Zuführung Erhaltungsrücklage;Position r;;300,00;;;;kein Beleg'), zeilen.join('\n'))
 })

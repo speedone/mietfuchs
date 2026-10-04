@@ -1105,17 +1105,20 @@ app.delete('/api/uploads/:file', async (req, res) => {
 app.get('/api/receipts/tax/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { items, property, rows, links } = await readData(async (db) => {
+  const { items, property, rows, links, split } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
-    const stock = narrowToProperty(await readStock(db), propertyId)
+    const whole = await readStock(db)
+    const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
-    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db), links: await uploadLinks(db) }
+    // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163)
+    const split = new Map(taxReport(snapshotFor(whole, propertyId, year)).expenses.items.map((i) => [i.costItemId, i]))
+    return { items: stock.costItems.filter((c) => c.year === year), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])
   const names = new Map<string, string>()
   for (const u of describeFolder(UPLOAD_DIR, rows)) names.set(u.file, u.originalName)
-  const plan = planTaxArchive(items, names, booked)
+  const plan = planTaxArchive(items, names, booked, split)
   const zip = new AdmZip()
   for (const { zipPath, file } of plan.files) zip.addFile(zipPath, fs.readFileSync(path.join(UPLOAD_DIR, file)))
   zip.addFile('Übersicht.csv', Buffer.from(plan.overviewCsv, 'utf8'))
