@@ -41,6 +41,7 @@ export const TAX_HINTS = [
   'reserveContribution', 'reserveSuspected', 'etwHousingMoney',
   'mixedUseSplit', 'mixedUseKeyNotArea', 'mixedUseAreaMissing', 'mixedUseDirectOutside', 'mixedUseChangedInYear',
   'mixedUseClosedChanged', 'mixedUseLabor35a', 'mixedUseNotCalculated', 'mixedUseExcludedArea', 'mixedUseClosedItemsChanged',
+  'mixedUseAssignedUnits',
 ] as const
 
 export type TaxHint = (typeof TAX_HINTS)[number]
@@ -110,6 +111,14 @@ export type TaxHint = (typeof TAX_HINTS)[number]
 //                        der Hinweis beziffert den Abstand zum Eigenanteil der Abrechnung.
 //   `mixedUseClosedItemsChanged` Positionen nach dem Abschluss erfasst oder im Betrag geändert;
 //                        sie sind heute gerechnet und nicht aus dem eingefrorenen Stand.
+//   `mixedUseAssignedUnits` Eine Position „Nicht umlagefähig“ ist bestimmten Einheiten zugeordnet
+//                        („Betrifft (für die Steuer)“). Die Seite nennt Position, Einheit und
+//                        Wirkung. Grund (Integrationsdurchsicht vor 0.10): Bis 0.8.0 speicherte das
+//                        Formular auch bei dieser Kostenart den Umlageschlüssel, oft „direkt“ mit
+//                        einer Wohnung, und seit #163 gilt genau das als Zuordnung. Ein Datenschritt
+//                        räumt es bewusst nicht ab, denn eine bewusste Zuordnung ist am Datensatz
+//                        nicht von einer stehengebliebenen zu unterscheiden; der Hinweis legt sie
+//                        offen. Ohne selbstgenutzte Einheit wirkt die Zuordnung nicht.
 //   `mixedUseNotCalculated` Was Mietfuchs nicht rechnet: AfA, Schuldzinsen, § 82b EStDV,
 //                        verbilligte Vermietung.
 
@@ -133,6 +142,7 @@ export function taxHints(report: TaxReport, basis: Basis, propertyKind?: Propert
     if (report.closedItemsChanged > 0) hints.push('mixedUseClosedItemsChanged')
     if (excludedAreaDifference(report).count > 0) hints.push('mixedUseExcludedArea')
     if (items.some((x) => x.labor35aCents > 0 && x.privateCents !== 0)) hints.push('mixedUseLabor35a')
+    if (assignedUnitItems(report).length > 0) hints.push('mixedUseAssignedUnits')
     hints.push('mixedUseNotCalculated')
   }
   if (basis === 'soll') {
@@ -236,4 +246,24 @@ export function allocationLabel(item: TaxExpenseItem): string {
     case 'direct-outside': return 'direkt, außerhalb der Abrechnungseinheit'
     case 'unsplittable': return 'nicht aufteilbar, Fläche fehlt'
   }
+}
+
+// Positionen „Nicht umlagefähig“, die bestimmten Einheiten zugeordnet sind, und was das für die
+// Steuer bewirkt: ganz privat, ganz abziehbar, oder nach der Fläche nur dieser Einheiten.
+export type AssignedUnitItem = {
+  costItemId: string
+  description: string
+  amountCents: number
+  units: string[]
+  effect: 'private' | 'deductible' | 'area'
+}
+
+export function assignedUnitItems(report: TaxReport): AssignedUnitItem[] {
+  return report.expenses.items.flatMap((x) => {
+    if (x.taxUnits === null) return []
+    const effect: AssignedUnitItem['effect'] = x.allocation === 'direct-self' ? 'private'
+      : x.allocation === 'direct-rented' || x.allocation === 'direct-outside' ? 'deductible'
+        : 'area'
+    return [{ costItemId: x.costItemId, description: x.description, amountCents: x.amountCents, units: x.taxUnits.map((u) => u.unitName), effect }]
+  })
 }

@@ -584,6 +584,13 @@ export type TaxExpenseItem = {
   settlementPrivateCents: number | null
   // Der Rechenweg (#114), als „gesonderte Aufstellung“ der Anleitung zur Anlage V.
   steps: CalcStep[]
+  // Nur bei „Nicht umlagefähig“: die Einheiten, denen die Position unter „Betrifft (für die
+  // Steuer)“ zugeordnet ist, sonst null (ganzes Gebäude, oder umlagefähig). Die Seite nennt sie in
+  // einem Hinweis, denn Positionen aus 0.8.0 oder älter können eine solche Zuordnung noch aus dem
+  // damaligen Umlageschlüssel tragen (Integrationsdurchsicht vor 0.10). Mit Kennung und Namen
+  // unter `unitName`, damit die Regression des Umstiegs den Namen wie überall als Beschriftung
+  // ausnimmt (regression.ts): Eine Wohnung ohne Namen in der db.json heißt danach ''.
+  taxUnits: { unitId: string; unitName: string }[] | null
 }
 
 export type TaxReport = {

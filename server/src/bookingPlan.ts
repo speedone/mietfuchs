@@ -14,7 +14,7 @@ import type {
   AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
-import { amountProblem, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
+import { amountProblem, closedYearNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, twinText, type BookedLine, type LineChange } from './assessment.ts'
@@ -32,6 +32,9 @@ export type PlanInput = {
   twinFiles: readonly string[]
   // Der Name eines Belegs, wie der Nutzer ihn kennt (für Hinweise); fehlt er, gilt der Dateiname
   fileNames: ReadonlyMap<string, string>
+  // Abgeschlossene Abrechnungen aller Objekte (Integrationsdurchsicht vor 0.10): Ändert die Buchung
+  // den Betrag einer Position in einem solchen Jahr, sagt die Vorschau es
+  closed: readonly { propertyId: string; year: number }[]
 }
 
 export type BookingWrite =
@@ -288,6 +291,12 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     if (problem !== null) {
       errors.push({ idx: null, message: `${quote(t.description)}: ${problem}` })
       continue
+    }
+    // Gesperrt wird nicht: Die Abrechnung bleibt eingefroren, und die Abweichung zeigt sie selbst.
+    // Gesagt wird es, denn das Jahr aus dem Beleg geht dem gewählten vor, und eine Rechnung vom
+    // Vorjahr landet leicht in einem abgeschlossenen.
+    if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.year === t.year)) {
+      notices.push(`${quote(t.description)}: ${closedYearNotice(t.year)}`)
     }
     // Der Beleg der Position. Beim Verknüpfen: Trägt sie keinen, den dieses Belegs. Beim Lösen
     // wechselt er nur, wenn er der Beleg der gelösten Zeile ist und aus ihm keine Zeile mehr an der

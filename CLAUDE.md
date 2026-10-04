@@ -1271,8 +1271,8 @@ die ganze fachliche Komplexität:
   mit `noConnection` für den Zählertyp (#117, Tabelle `unit_no_connection`) fehlt kein Zähler,
   etwa die vermietete Garage ohne Wasser. `computeSettlement` liefert den auf `selfUsed`-Wohnungen
   entfallenden Teil separat als `selfUsedShareCents` (für die Anlage V privat, nicht
-  abziehbar); `load()` migriert bewusst **nicht** automatisch, weil ein gesetztes Kennzeichen
-  die Verteilung bereits abgerechneter Jahre verändern würde.
+  abziehbar). Ein Datenschritt setzt das Kennzeichen bewusst **nicht** automatisch, weil es die
+  Verteilung bereits abgerechneter Jahre verändern würde.
 - **Mietkonto** (`rentLedger`): Kaltmiete-Staffel (`baseRents`) + Vorauszahlung ergeben das
   monatliche Soll (Bruttomiete); Zahlungseingänge (`payments`) werden Jan→Dez FIFO auf die
   Monate verteilt (Status bezahlt/teilweise/offen).

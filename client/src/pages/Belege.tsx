@@ -3,6 +3,7 @@ import type { CostItem, UploadEntry, UploadInfo, Property, Settlement } from '..
 import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
+import { closedYearNotice } from '../../../shared/costItem.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
@@ -204,7 +205,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const [error, setError] = useState('')
   // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
   // übernommene Position trägt einen geschätzten Betrag, der sonst still stehen bliebe.
-  const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string; form?: boolean } | null>(null)
+  // `closed`: Die Abrechnung des Jahres der Position ist abgeschlossen; eine Änderung erscheint dort
+  // als Abweichung (Integrationsdurchsicht vor 0.10).
+  const [amountCheck, setAmountCheck] = useState<{ item: CostItem; file: string; amount: string; problem: string; form?: boolean; closed?: boolean } | null>(null)
   // Voreinstellung: das gewählte Objekt und das Abrechnungsjahr (#170). Umschalten wirkt nur
   // hier; das Objekt der übrigen Seiten bleibt, wie es ist.
   const [filterProperty, setFilterProperty] = useState<string>(property?.id ?? 'all')
@@ -270,6 +273,12 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   async function attach(c: CostItem, invoiceFile: string) {
     await api(`/api/costItems/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify({ invoiceFile }) })
     setAmountCheck({ item: c, file: invoiceFile, amount: '', problem: '' })
+    // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
+    // nur der Satz; das Zuordnen ist schon gespeichert.
+    try {
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${c.year}`, c.propertyId))
+      if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
+    } catch { /* ohne Auskunft kein Satz */ }
   }
   async function saveCheckedAmount() {
     if (!amountCheck) return
@@ -473,6 +482,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       {amountCheck && (
         <div className="notice no-print" role="status" aria-label="Betrag prüfen">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
+          {amountCheck.closed && <div>{closedYearNotice(amountCheck.item.year)}</div>}
           Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
