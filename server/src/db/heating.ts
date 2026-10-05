@@ -28,7 +28,7 @@ import { readHeatingPlants, readProperties, readUnits } from './read.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  CHANGE_SPLITS, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  CHANGE_SPLITS, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -214,6 +214,7 @@ export type PlantRemoval =
   | { removed: false; reason: 'missing' }
   | { removed: false; reason: 'meters'; meters: string[] }
   | { removed: false; reason: 'separate' }
+  | { removed: false; reason: 'co2'; periods: string[] }
 
 // Entfernt wird eine Anlage samt Liste der Wohnungen und Heizperioden (CASCADE). Ihre
 // Kostenpositionen bleiben, nur ohne Anlage; an Beträgen und Verteilung ändert das in dieser Version
@@ -225,6 +226,14 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
   return db.transaction(async (tx): Promise<PlantRemoval> => {
     const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
     if (!plant) return { removed: false, reason: 'missing' }
+    // CO₂-Angaben (Heizung PR 6) fielen mit den Heizperioden (CASCADE). Sie sind erfasste Arbeit des
+    // Vermieters; entfernen soll er sie selbst, wenn die Anlage wirklich entfällt.
+    const co2 = await tx
+      .select({ period: heatingPeriods.period })
+      .from(co2Statements)
+      .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+      .where(eq(heatingPeriods.plantId, id))
+    if (co2.length > 0) return { removed: false, reason: 'co2', periods: co2.map((c) => String(c.period)) }
     // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
     // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
     // die Betriebskostenabrechnung zurück.

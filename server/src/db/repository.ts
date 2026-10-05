@@ -47,7 +47,7 @@ import {
   readUnits, type StoredClosedSettlement,
 } from './read.ts'
 import {
-  aiSlots, assessmentLines, assessments, baseRents, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  aiSlots, assessmentLines, assessments, baseRents, co2Statements, co2TenantReliefs, heatingPeriods, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
   HEATING_PARTS, HEATING_ROLES, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
@@ -888,10 +888,12 @@ async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Ten
     (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
   if ((await objektVon(before.unitId)) === (await objektVon(after.unitId))) return
   const betraege = await db.select({ n: count() }).from(costItemAmounts).where(eq(costItemAmounts.tenancyId, after.id))
-  if ((betraege[0]?.n ?? 0) === 0) return
+  // CO₂-Beträge „vom Vermieter übernommen“ (Heizung PR 6) gehören ebenso zur Heizanlage des alten Objekts.
+  const co2 = await db.select({ n: count() }).from(co2TenantReliefs).where(eq(co2TenantReliefs.tenancyId, after.id))
+  if ((betraege[0]?.n ?? 0) === 0 && (co2[0]?.n ?? 0) === 0) return
   throw new CrossPropertyError(
     `Das Mietverhältnis „${after.tenantName}“ kann nicht in eine Wohnung eines anderen Objekts wechseln, weil noch ` +
-      'Einzelbeträge von Kostenpositionen des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
+      'Einzelbeträge von Kostenpositionen oder CO₂-Angaben des bisherigen Objekts an ihm hängen. Bitte lösen Sie diese Verweise zuerst.',
   )
 }
 
@@ -1020,6 +1022,26 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
   for (const h of heiz) {
     if (anlagen.get(h.plantId) !== h.propertyId) befunde.push(`Die Korrektur der Heizvorauszahlung von „${h.tenantName}“ zeigt auf die Heizanlage eines anderen Objekts.`)
   }
+  // CO₂-Angaben (Heizung PR 6): Beträge für Mietverhältnisse und die Position mit L gehören zum
+  // Objekt der Heizanlage.
+  const co2 = await db
+    .select({ tenantName: tenancies.tenantName })
+    .from(co2TenantReliefs)
+    .innerJoin(co2Statements, eq(co2TenantReliefs.statementId, co2Statements.heatingPeriodId))
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(tenancies, eq(co2TenantReliefs.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const c of co2) befunde.push(`Ein CO₂-Betrag „vom Vermieter übernommen“ für ${c.tenantName} gehört zu einer Heizanlage eines anderen Objekts.`)
+  const co2Position = await db
+    .select({ description: costItems.description })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+    .innerJoin(costItems, eq(co2Statements.serviceCostItemId, costItems.id))
+    .where(ne(costItems.propertyId, heatingPlants.propertyId))
+  for (const c of co2Position) befunde.push(`Die CO₂-Angaben einer Heizanlage verweisen auf die Kostenposition „${c.description}“ eines anderen Objekts.`)
   return befunde
 }
 
