@@ -10,7 +10,8 @@ export default function HeatingPeriodSelect({ options, value, onChange }: { opti
       </select>
     </label>
       {/* Laienprobe B16: Zu einem Abrechnungszeitraum gehören die Heizperioden, die in ihm enden (BGH VIII ZR 240/07). */}
-      <small className="muted">Hier stehen die Heizperioden, die in diesem Abrechnungszeitraum enden. Die Rechnung einer späteren Heizperiode erfassen Sie im Abrechnungszeitraum, in dem sie endet.</small>
+      {/* Sichtprüfung E23: zuerst, warum das Feld da ist. */}
+      <small className="muted">Ihre Heizung rechnet in einem eigenen Zeitraum ab, der Heizperiode. Wählen Sie die Heizperiode, die die Rechnung abdeckt; mit ihr wird die Position abgerechnet. Hier stehen die Heizperioden, die in diesem Abrechnungszeitraum enden. Die Rechnung einer späteren Heizperiode erfassen Sie im Abrechnungszeitraum, in dem sie endet.</small>
     </>
   )
 }

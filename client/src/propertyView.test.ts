@@ -52,12 +52,13 @@ test('Hinweis nach dem Wechsel: nur in einem Objekt ohne Wohnungen, mit dem vori
 test('Abschlussdialog: bei mehreren Objekten mit Objekt, bei einem wie bisher', () => {
   expect(closeSettlementTitle(2025, [A], A)).toBe('Abrechnung 2025 abschließen?')
   expect(closeSettlementTitle(2025, [A, B], B)).toBe('Abrechnung 2025 für „Haus B“ abschließen?')
+  expect(closeSettlementTitle(2026, [A, B], B, 'Heizkostenabrechnung 2025/2026')).toBe('Heizkostenabrechnung 2025/2026 für „Haus B“ abschließen?')
 })
 
 test('die Seite Abrechnung fragt mit diesem Titel', () => {
   // Die Abrechnung bräuchte für den Knopf einen vollständigen Rechenstand; geprüft wird deshalb
   // am Quelltext, dass der Abschlussdialog den Titel von hier nimmt.
-  expect(abrechnungSource).toMatch(/title: closeSettlementTitle\(label, properties, property\)/)
+  expect(abrechnungSource).toMatch(/title: closeSettlementTitle\(label, properties, property, docLabel\)/)
 })
 
 test('leere Wohnungsliste: bei einer Eigentumswohnung nur die eigene Wohnung anlegen', () => {

@@ -66,7 +66,7 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten' | 'abrechnung'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
@@ -76,6 +76,9 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
   // Heizung PR 6: die CO₂-Angaben und das Warmwasser stehen auf der Seite Heizkosten.
   heatingCosts: { tab: 'heizkosten', page: 'Heizkosten' },
+  // Sichtprüfung E45: eine Heizkostenabrechnung nach Weg d, „Anlage|Heizperiode“. Kein Hinweis der
+  // Berechnung trägt sie; das Cockpit führt damit zu ihrem Reiter.
+  heatingSettlement: { tab: 'abrechnung', page: 'Abrechnung' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an

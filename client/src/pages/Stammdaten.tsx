@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CostModel, DepositStatus, HeatingPlant, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
@@ -6,7 +6,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PeriodCard from '../components/PeriodCard'
@@ -476,11 +476,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     ))}
                   </td>
                   <td className="num">
-                    {t.prepayments.length === 0 && '—'}
-                    {t.prepayments.map((p, i) => (
+                    {prepaymentColumn(t).length === 0 && '—'}
+                    {prepaymentColumn(t).map((line, i) => (
                       <div key={i}>
-                        {t.prepayments.length > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
-                        <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
+                        {line.label !== null && <><span className="muted nowrap">{line.label}</span>{' '}</>}
+                        <span className="nowrap">{line.amount}</span>
                       </div>
                     ))}
                   </td>
@@ -872,6 +872,14 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const [saved, setSaved] = useState(false)
   // Der Mieterwechsel hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(true)
+  // Sichtprüfung E18: Der Assistent steht am Seitenende. Beim Öffnen holt er sich ins Bild und setzt
+  // den Cursor ins Auszugsdatum, sonst sah man nach dem Klick nichts passieren.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const endRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    rootRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    endRef.current?.focus({ preventScroll: true })
+  }, [])
 
   // Zähler der Wohnung + Hauptzähler (Dokumentation) laden, aus dem Objekt der Wohnung (#92)
   const { property } = useProperty()
@@ -933,7 +941,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   const readCount = meters.filter((m) => parseMeterValue(meterValues[m.id] ?? '') !== null).length
 
   return (
-    <div className="card" style={{ borderColor: 'var(--accent)' }}>
+    <div ref={rootRef} className="card" style={{ borderColor: 'var(--accent)' }}>
       <h2>Mieterwechsel: {tenancy.tenantName} ({unit?.name ?? '—'})</h2>
       {error && <div className="error">{error}</div>}
       {saved && (
@@ -949,7 +957,7 @@ function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
         <div className="row" style={{ marginTop: 8 }}>
           <label className="field">
             Auszugsdatum (letzter Miettag)
-            <input type="date" value={endDate} disabled={step > 1} onChange={(e) => setEndDate(e.target.value)} />
+            <input ref={endRef} type="date" value={endDate} disabled={step > 1} onChange={(e) => setEndDate(e.target.value)} />
           </label>
           {step === 1 && <button className="btn" onClick={goToStep2}>Weiter</button>}
         </div>

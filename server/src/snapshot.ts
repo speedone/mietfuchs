@@ -19,7 +19,8 @@
 
 import type { BillingPeriod, Co2Statement, CostItem, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
-import { heatingPeriodsEndingIn, plantRules, settledSeparately, type PlantWay } from '../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -121,6 +122,12 @@ export type SnapshotHeatingPart = {
   previous: BillingPeriod
   items: SnapshotCostItem[]
   previousItems: SnapshotCostItem[]
+  // Für den Vergleich mit dem Vorjahr (#141, Schlüssel und Doppelungen): die Heizpositionen, die im
+  // Abrechnungszeitraum vor P abgerechnet wurden (`settlementKeyOf`), mit dem Schlüssel der
+  // Vorperiode, damit der Vergleich sie findet. Meist sind das genau `previousItems`; dazu kommt eine
+  // Heizposition ohne Anlage aus einem Zeitraum, der vor dem Einrichten der eigenen Heizperiode
+  // abgeschlossen war und deshalb nie umgeschlüsselt wurde (Entwurf 3.0).
+  comparableItems: SnapshotCostItem[]
   separate: boolean
 }
 
@@ -284,6 +291,10 @@ export type Snapshot = {
   // anderen Schlüssel hat als dieselbe Kostenart im Vorjahr. Verteilt wird nichts davon. Fehlt
   // die Angabe, etwa in einem von Hand gebauten Schnappschuss, entfällt nur der Hinweis.
   previousCostItems?: SnapshotCostItem[]
+  // Nur in der Teilrechnung einer Heizperiode: womit der Vergleich mit dem Vorjahr statt mit
+  // `previousCostItems` rechnet (`SnapshotHeatingPart.comparableItems`). `previousCostItems` bleibt
+  // die Vorperiode der Heizung, denn mit ihr rechnet der Vorschlag nach § 560 einen Rumpf hoch.
+  comparableCostItems?: SnapshotCostItem[]
   // Die Heizanlagen des Objekts (Heizung PR 4). Fehlt die Angabe (db.json, Regression, ein von Hand
   // gebauter Schnappschuss), rechnet die Berechnung wie ohne Anlage, und dasselbe gilt für eine
   // leere Liste.
@@ -408,12 +419,17 @@ export function snapshotFor(
     const way = wayOf(plant)
     const rules = plantRules(way, objectRules)
     const mine = narrowed.costItems.filter((c) => c.heatingPlantId === plant.id)
+    const priorP = previousPeriod(objectRules, period).key
+    const ways = own.map((p) => ({ ...wayOf(p), id: p.id }))
+    const prior = narrowed.costItems.filter((c) =>
+      (c.heatingPlantId === plant.id || (!c.heatingPlantId && c.category === HEATING_CATEGORY)) && settlementKeyOf(c, objectRules, ways).key === priorP)
     return heatingPeriodsEndingIn(rules, period).map((h): SnapshotHeatingPart => {
       const previous = previousPeriod(rules, h)
       return {
         plantId: plant.id, period: h, previous,
         items: mine.filter((c) => c.period === h.key),
         previousItems: mine.filter((c) => c.period === previous.key),
+        comparableItems: prior.map((c) => (c.period === previous.key ? c : { ...c, period: previous.key })),
         separate: settledSeparately(way, objectRules, h),
       }
     })

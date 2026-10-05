@@ -286,7 +286,7 @@ function Shell() {
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
         <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
-          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
+          <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t, f) => setTab(t as Tab, f ?? null)} />
         )}
         {tab === 'schnellerfassung' && (
           <Schnellerfassung units={units} settings={settings} onNavigate={(t, f) => setTab(t as Tab, f ?? null)}
@@ -301,7 +301,7 @@ function Shell() {
         {tab === 'zaehler' && <Zaehler units={units} focus={focus} onFocusDone={clearFocus} />}
         {tab === 'belege' && <Belege onEvaluate={(list) => void evaluateFromInbox(list)} onContinue={(u) => void continueAssessment(u)} onOpenItem={(item) => void openCostItem(item)} />}
         {tab === 'abrechnung' && (
-          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} />
+          <Abrechnung settings={settings} units={units} tenancies={tenancies} reload={reload} onNavigate={(t, f) => setTab(t, f ?? null)} focus={focus} onFocusDone={clearFocus} />
         )}
         {tab === 'heizkosten' && <Heizkosten units={units} tenancies={tenancies} />}
         {tab === 'steuer' && <Steuer settings={settings} />}

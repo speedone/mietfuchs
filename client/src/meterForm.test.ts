@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { expect, test } from 'vitest'
-import { asksRemote, defaultMeterUnit, emptyMeterForm, meterBody, meterToForm, oldEndText, withMeterType } from './meterForm'
+import { asksRemote, defaultMeterUnit, emptyMeterForm, heatingRoleLabel, heatingRoleOptions, meterBody, meterToForm, oldEndText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -65,5 +65,40 @@ test('Bearbeiten: was gespeichert ist, steht wieder im Formular', () => {
   expect(meterToForm({
     id: 'm1', propertyId: 'objekt-1', name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh',
     heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01',
-  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01' })
+  })).toEqual({ id: 'm1', name: 'Speicher', unitId: '', type: 'waerme', meterNumber: '', unit: 'kWh', heatingRole: 'dhwHeat', keptRole: 'dhwHeat', remote: 'no', installedOn: '2022-03-01' })
+})
+
+// Sichtprüfung E19: „Gehört zur Heizanlage?“ stand auch bei Kaltwasser. Ein Wasserzähler ist weder
+// Versorgungszähler noch Wärmezähler der Anlage; der Server verlangt für die Wärmezähler die Sparte
+// „Wärme“. Gefragt wird nur, wo eine Rolle möglich ist, und nur mit den passenden Rollen.
+test('die Rolle an der Heizanlage nur, wo sie möglich ist', () => {
+  const haus = { ...emptyMeterForm(), name: 'Haus' }
+  expect(heatingRoleOptions(haus, true)).toEqual([])
+  expect(heatingRoleOptions({ ...haus, type: 'warmwasser' }, true)).toEqual([])
+  expect(heatingRoleOptions({ ...haus, type: 'waerme' }, true)).toEqual(['supply', 'dhwHeat', 'totalHeat'])
+  expect(heatingRoleOptions({ ...haus, type: 'sonstig' }, true)).toEqual(['supply'])
+  expect(heatingRoleOptions({ ...haus, type: 'strom' }, true)).toEqual(['supply'])
+  expect(heatingRoleOptions({ ...haus, type: 'waerme' }, false)).toEqual([])
+  expect(heatingRoleOptions({ ...haus, type: 'waerme', unitId: 'eg' }, true)).toEqual([])
+  // Eine stehengebliebene Rolle nach dem Wechsel auf Kaltwasser wird nicht gespeichert.
+  expect(meterBody({ ...haus, heatingRole: 'supply' }, 'hp1')).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
+  expect(meterBody({ ...haus, type: 'sonstig', heatingRole: 'dhwHeat' }, 'hp1')).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
+})
+
+// Durchsicht M1: Eine gespeicherte Rolle, die das Auswahlfeld für die Sparte nicht mehr anbietet
+// (etwa ein Warmwasserzähler der Anlage als Versorgungszähler), fiel beim nächsten Speichern weg,
+// auch bei bloßer Umbenennung; die Berechnung las den Zähler dann als Hauptzähler. Sie bleibt und
+// steht als eigene Option da; sie fällt nur bei einem Spartenwechsel oder mit „Nein“.
+test('eine gespeicherte Rolle bleibt beim Speichern, bis die Sparte wechselt oder „Nein“ gewählt wird', () => {
+  const stored = meterToForm({ id: 'm9', propertyId: 'objekt-1', name: 'WW Speicher', unitId: null, type: 'warmwasser', unit: 'm³', heatingPlantId: 'p1', heatingRole: 'supply' })
+  expect(meterBody({ ...stored, name: 'neu' }, 'p1')).toMatchObject({ body: { heatingPlantId: 'p1', heatingRole: 'supply' } })
+  expect(heatingRoleOptions(stored, true)).toEqual(['supply'])
+  expect(heatingRoleLabel(stored, 'supply')).toBe('bisher: Versorgungszähler der Heizanlage (etwa der Gaszähler)')
+  expect(meterBody({ ...stored, heatingRole: '' }, 'p1')).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
+  const kalt = withMeterType(stored, 'kaltwasser')
+  expect(heatingRoleOptions(kalt, true)).toEqual([])
+  expect(meterBody(kalt, 'p1')).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
+  // Eine Rolle, die die Sparte ohnehin anbietet, heißt ohne „bisher“.
+  const gas = meterToForm({ id: 'g', propertyId: 'objekt-1', name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: 'p1', heatingRole: 'supply' })
+  expect(heatingRoleLabel(gas, 'supply')).toBe('Versorgungszähler der Heizanlage (etwa der Gaszähler)')
 })

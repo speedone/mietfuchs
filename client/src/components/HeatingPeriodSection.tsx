@@ -7,7 +7,7 @@ import Term from './Term'
 import { hasOwnRhythm } from '../../../shared/heatingPeriod.ts'
 import {
   PERIOD_CHOICE_OPTIONS, SEPARATE_OPTIONS, heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers,
-  heatingWays, initialSeparateAnswers, isCalendarObject, separateAnswersOf, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
+  heatingWays, initialSeparateAnswers, isCalendarObject, separateAnswersOf, separatePanelIntro, suggestedWay, type HeatingPeriodAnswerForm, type HeatingPeriodForm, type PeriodChoice, type SeparateAnswerForm,
   type SeparateChoice,
 } from '../heatingPeriodForm'
 
@@ -41,6 +41,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const [month, setMonth] = useState('')
   const [understood, setUnderstood] = useState(false)
   const [periodUnderstood, setPeriodUnderstood] = useState(false)
+  // Der Bereich „getrennt“ als zweiter Schritt nach dem Zeitraum (E7)
+  const [secondStep, setSecondStep] = useState(false)
   const [error, setError] = useState('')
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
@@ -48,6 +50,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
 
   function close() {
     setOpen('none')
+    setSecondStep(false)
     setError('')
     setPeriodPreview(null)
     setSeparatePreview(null)
@@ -94,6 +97,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     if (form.choice === 'own' && form.separate === 'yes' && !openSpan) {
       notify('Zeitraum der Heizung gespeichert. Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung: Prüfen Sie unten die Aufteilung der Vorauszahlung und klicken Sie „Übernehmen“.')
       setOpen('separate')
+      setSecondStep(true)
       await loadSeparatePreview(true)
       return
     }
@@ -276,10 +280,14 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         </div>
       )}
 
-      {open === 'separate' && (
+      {open === 'separate' && (() => {
+        const intro = separatePanelIntro({ separateOn, own, afterPeriodChange: secondStep })
+        return (
         <div className="panel">
+          <h3>{intro.title}</h3>
+          <p className="muted">{intro.text}</p>
           <label className="field">
-            {separateOn && own ? 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)' : 'Ab welchem Monat?'}
+            {intro.monthLabel}
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
           </label>
           <div className="row">
@@ -345,7 +353,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
             </div>
           )}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }

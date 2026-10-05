@@ -1,6 +1,6 @@
 // Nebenkostenmodell am Mietverhältnis (#93), die Seite der Oberfläche.
 import { expect, test } from 'vitest'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, showsFlatRates } from './tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, notSettledText, overlapQuestion, parsePersons, prepaymentColumn, showsFlatRates } from './tenancyModel'
 import type { Tenancy, Unit } from './types'
 
 test('die Staffel der Pauschale erscheint nur bei einer Pauschale', () => {
@@ -103,4 +103,20 @@ test('Rückfrage bei Überschneidung: nennt Mieter und Zeitraum deutsch, gesiezt
   expect(overlapQuestion({ id: 'x', unitId: 'A', start: '2023-01-01', end: '2025-12-31' }, bestand)).toBeNull()
   // ohne Einzug (Formular unvollständig) keine Rückfrage, das meldet die Prüfung davor
   expect(overlapQuestion({ unitId: 'A', start: '', end: null }, bestand)).toBeNull()
+})
+
+// Sichtprüfung E12: Nach dem Aufteilen für die getrennte Heizkostenabrechnung zeigte die Spalte
+// „Vorauszahlung je Monat“ nur die übrige Vorauszahlung, und es sah aus, als sei sie gesunken.
+test('die Spalte Vorauszahlung nennt die Heizvorauszahlung daneben', () => {
+  const t = { prepayments: [{ from: '2024-01', monthlyCents: 28000 }, { from: '2025-05', monthlyCents: 16500 }], heatingPrepayments: [{ from: '2025-05', monthlyCents: 11500 }] }
+  expect(prepaymentColumn(t)).toEqual([
+    { label: 'ab 01/2024:', amount: '280,00\u00a0€' },
+    { label: 'ab 05/2025:', amount: '165,00\u00a0€' },
+    { label: '+ Heizung ab 05/2025:', amount: '115,00\u00a0€' },
+  ])
+  expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 28000 }] })).toEqual([{ label: null, amount: '280,00\u00a0€' }])
+  expect(prepaymentColumn({ prepayments: [{ from: '2024-01', monthlyCents: 28000 }], heatingPrepayments: [{ from: '2024-01', monthlyCents: 9000 }] })).toEqual([
+    { label: null, amount: '280,00\u00a0€' },
+    { label: '+ Heizung:', amount: '90,00\u00a0€' },
+  ])
 })

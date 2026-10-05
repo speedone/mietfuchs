@@ -218,3 +218,21 @@ test('Weg d ohne Heizstaffel: Einzug mitten im Monat zählt den Monat mit, eine 
   ] })
   assert.deepEqual(hints(settle(korrigiert, '2026-01')), [], 'Die Heizkorrekturen nennen, was gezahlt wurde')
 })
+
+// Der Vergleich mit dem Vorjahr (#141) nach derselben Regel wie Kostenvergleich und Übernahme
+// (shared/heatingPeriod.ts, `settlementKeyOf`): Das Vorjahr einer Heizposition ist der
+// Abrechnungszeitraum davor, und dort zählen die Heizpositionen, die darin abgerechnet wurden, auch
+// eine ohne Anlage aus einem Jahr, das vor dem Einrichten der eigenen Heizperiode abgeschlossen war.
+test('Schlüssel wie im Vorjahr: Heizposition gegen die Heizposition des vorigen Abrechnungszeitraums', () => {
+  const geaendert = (s: ComputedSettlement) => (s.notices ?? []).filter((n) => n.code === 'key.changed-from-previous-year')
+  // Beide unter der Anlage: 2023/2024 steht in 2024, 2024/2025 in 2025.
+  const beide = haus({ costItems: [heizung('h24', '2023-05', 400000), heizung('h25', '2024-05', 480000, { key: 'units' })] })
+  assert.equal(geaendert(settle(beide, '2025-01')).length, 1)
+  // Das Vorjahr ohne Anlage (abgeschlossen, nie umgeschlüsselt, Entwurf 3.0).
+  const alt = haus({ costItems: [position('h24', '2024-01', 400000, { category: HEATING_CATEGORY }), heizung('h25', '2024-05', 480000, { key: 'units' })] })
+  const s = settle(alt, '2025-01')
+  assert.deepEqual(geaendert(s).map((n) => n.subject?.id), ['h25'])
+  // Gleicher Schlüssel: kein Hinweis.
+  const gleich = haus({ costItems: [position('h24', '2024-01', 400000, { category: HEATING_CATEGORY }), heizung('h25', '2024-05', 480000)] })
+  assert.equal(geaendert(settle(gleich, '2025-01')).length, 0)
+})

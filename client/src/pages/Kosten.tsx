@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { filedUnderSettlement } from '../costPeriods'
 import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
@@ -100,6 +101,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
   const heatingOptions = heatingItemPeriods(plants, view.rules, period)
+  // Die Positionen mit dem Zeitraum ihrer Abrechnung, für Vorjahr und „schon erfasst“ (costPeriods.ts).
+  const filedItems = useMemo(() => filedUnderSettlement(items, () => view.rules, () => plants), [items, view.rules, plants])
   const heatingKeys = heatingOptions.flatMap((h) => h.options.map((o) => ({ plantId: h.plantId, key: o.value })))
   const ownPlant = heatingOptions[0]
   // Beim Öffnen einer bestehenden Position ihre Heizperiode, sonst die Vorgabe der Auswahl.
@@ -184,11 +187,13 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const yearItems = useMemo(() => itemsOfPeriod(items, key, JSON.parse(heatingKeysText) as { plantId: string; key: string }[]), [items, key, heatingKeysText])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
-  const keyCtx: KeyContext = useMemo(() => ({ items, year, at, propertyKind: property?.kind ?? null }), [items, year, at, property?.kind])
+  // Mit dem Zeitraum der Abrechnung je Position: Eine Heizposition mit eigener Heizperiode zählt dort,
+  // wo ihre Heizperiode endet, wie in der Übernahme aus dem Vorjahr.
+  const keyCtx: KeyContext = useMemo(() => ({ items: filedItems, year, at, propertyKind: property?.kind ?? null }), [filedItems, year, at, property?.kind])
   // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
   const keyCtxOf = (v: AssessmentView): KeyContext => {
     const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
-    return target ? { items, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items, year: v.year, propertyKind: property?.kind ?? null }
+    return target ? { items: filedItems, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items: filedItems, year: v.year, propertyKind: property?.kind ?? null }
   }
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
@@ -216,7 +221,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // Die Vorlagen gehören zum gewählten Jahr und Objekt; wechselt eines davon, schließt die Liste.
   useEffect(() => { setCarry(null) }, [key, propertyId])
-  const previousCount = useMemo(() => items.filter((i) => i.period === at.previous).length, [items, at.previous])
+  const previousCount = useMemo(() => filedItems.filter((i) => i.period === at.previous).length, [filedItems, at.previous])
 
   function updateCarry(index: number, patch: Partial<CarryRow>) {
     setCarry((rows) => rows && rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -253,7 +258,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     // Schon im Jahr erfasst und trotzdem angehakt: ausdrücklich nachfragen (Durchsicht), sonst
     // stünde dieselbe Rechnung zweimal in der Abrechnung.
-    const twice = chosen.filter((row) => alreadyCarried(items, row, at))
+    const twice = chosen.filter((row) => alreadyCarried(filedItems, row, at))
     if (twice.length > 0) {
       const ok = await confirm({
         title: 'Schon erfasst',
@@ -440,7 +445,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <div className="row">
           <PeriodSelect />
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period)) }}>
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period, { rules: view.rules, plants })) }}>
               Aus {at.previousLabel} übernehmen …
             </button>
           )}
@@ -485,11 +490,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   </td>
                   <td>
                     {r.source.category}
-                    {alreadyCarried(items, r, at) && <div><span className="badge gray">schon für {label} erfasst</span></div>}
+                    {alreadyCarried(filedItems, r, at) && <div><span className="badge gray">schon für {label} erfasst</span></div>}
                   </td>
                   <td className="num">
                     {r.inline && (
-                      <input aria-label={`Betrag ${label} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(items, r, at)))}
+                      <input aria-label={`Betrag ${label} für ${r.description}`} value={r.amount} onChange={(e) => updateCarry(i, withCarryAmount(r, e.target.value, alreadyCarried(filedItems, r, at)))}
                         placeholder="—" inputMode="decimal" style={{ width: 100, textAlign: 'right' }} />
                     )}
                     {r.checked && !r.amount.trim() && <div><span className="badge red">Betrag fehlt</span></div>}
@@ -501,7 +506,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   {/* Reicht der Zeitraum über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (#208, Durchsicht von #226, I2). */}
                   {spansTwoYears(period) && (
                     <td>
-                      {r.inline && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
+                      {r.inline && r.heating && r.taxYear && <span className="muted">{r.taxYear}</span>}
+                      {r.inline && !r.heating && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
                     </td>
                   )}
                   <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
@@ -531,7 +537,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                         style={{ width: 170, marginTop: 4 }}
                       />
                     )}
-                    {!r.inline && <div className="muted">Einzelbeträge je Mieter bitte im Formular eintragen.</div>}
+                    {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
+                    {r.heatingNote && <div className="muted">{r.heatingNote}</div>}
                   </td>
                   <td>
                     <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>

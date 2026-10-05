@@ -198,14 +198,20 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[]):
   }
 }
 
-// Die Zeilen der Karte, wenn eine Anlage eingerichtet ist.
-export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name'>[]): string[] {
+// Sichtprüfung E9: Warum eine Einheit beim Einrichten nicht angehakt ist.
+export const connectionNote = (u: Pick<Unit, 'noConnection'>): string | null =>
+  (u.noConnection ?? []).includes('waerme') ? 'ohne Wärmeanschluss laut Wohnungsdaten' : null
+
+// Die Zeilen der Karte, wenn eine Anlage eingerichtet ist. Ohne Liste versorgt die Anlage jede
+// Einheit mit Wärmeanschluss (`servesUnit`); die übrigen nennt die Zeile, sonst hieße es „alle“.
+export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, 'id' | 'name' | 'noConnection'>[]): string[] {
   const energy = ENERGY_OPTIONS.find((o) => o.value === plant.energy)?.label ?? plant.energy
   const who = plant.source === 'homeowners'
     ? 'Die Gemeinschaft (Hausverwaltung) rechnet ab'
     : (whoOptions('mfh').find((o) => o.value === plant.method)?.label ?? plant.method)
+  const without = units.filter((u) => connectionNote(u) !== null).map((u) => u.name)
   const served = plant.units === null
-    ? 'alle Wohnungen'
+    ? `alle Wohnungen${without.length > 0 ? ` außer ${without.join(', ')} (ohne Wärmeanschluss)` : ''}`
     : plant.units.length === 0
       ? 'keine Wohnung'
       : plant.units.map((u) => units.find((x) => x.id === u.unitId)?.name ?? u.unitId).join(', ')

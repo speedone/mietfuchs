@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, PeriodKey, Settlement } from '../types'
+import type { CostItem, HeatingPlant, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
 import { usePeriod } from '../period'
-import { labelOfKey } from '../periodForm'
+import { periodCosts } from '../costPeriods'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
@@ -20,30 +20,33 @@ export default function Uebersicht({ onNavigate }: Props) {
   const propertyId = property?.id
   const [costItems, setCostItems] = useState<CostItem[]>([])
   const [settlement, setSettlement] = useState<Settlement | null>(null)
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
     return Promise.all([
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
+      // Die Anlagen sagen, in welchem Zeitraum eine Heizposition abgerechnet wird (E48). Fehlen sie
+      // (älterer Server), bleibt jede Position bei ihrem Schlüssel.
+      api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).catch(() => []),
     ])
-      .then(([c, s]) => { setCostItems(c); setSettlement(s); setError('') })
+      .then(([c, s, h]) => { setCostItems(c); setSettlement(s); setPlants(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
   }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
 
-  // Summe je Kostenart für einen Abrechnungszeitraum (#208)
-  const byCategory = useCallback((k: PeriodKey) => {
-    const map = new Map<string, number>()
-    for (const c of costItems.filter((c) => c.period === k)) {
-      map.set(c.category, (map.get(c.category) ?? 0) + c.amountCents)
-    }
-    return map
-  }, [costItems])
-
-  const cur = useMemo(() => byCategory(key), [byCategory, key])
-  const prev = useMemo(() => byCategory(at.previous), [byCategory, at.previous])
+  // Die Kosten je Abrechnungszeitraum (#208), Heizpositionen im Zeitraum, in dem ihre Heizperiode
+  // endet (E48), wie auf der Seite Kosten und in der Abrechnung.
+  const periods = useMemo(() => periodCosts(costItems, rules, plants), [costItems, rules, plants])
+  const cur = useMemo(() => periods.find((p) => p.key === key)?.byCategory ?? new Map<string, number>(), [periods, key])
+  const prev = useMemo(() => periods.find((p) => p.key === at.previous)?.byCategory ?? new Map<string, number>(), [periods, at.previous])
+  // Nach Weg d stehen die Heizkosten in einer eigenen Heizkostenabrechnung; die Kennzahl zählt sie
+  // mit, sonst wiche sie von der Summe der Kostenarten ab.
+  const separateCents = periods.find((p) => p.key === key)?.separateCents ?? 0
+  // Die Salden gehören zur Betriebskostenabrechnung; ohne deren Kosten sind sie kein Ergebnis (#142).
+  const settledCosts = (periods.find((p) => p.key === key)?.totalCents ?? 0) - separateCents !== 0
   // Ohne Kosten im Jahr gibt es nichts zu vergleichen (#142): Jede Kostenart des Vorjahres stünde
   // sonst mit „−100 %“ da, und das hieße nur, dass noch nichts erfasst ist.
   const hasCosts = cur.size > 0
@@ -62,13 +65,7 @@ export default function Uebersicht({ onNavigate }: Props) {
     return Math.abs(k - p) / p * 100 >= NOTABLE_CHANGE_PCT
   })
 
-  // Überblick über alle erfassten Abrechnungszeiträume (#208)
-  const years = useMemo(() => {
-    const map = new Map<PeriodKey, number>()
-    for (const c of costItems) map.set(c.period, (map.get(c.period) ?? 0) + c.amountCents)
-    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-  }, [costItems])
-  const maxYearCents = Math.max(1, ...years.map(([, v]) => v))
+  const maxYearCents = Math.max(1, ...periods.map((p) => p.totalCents))
 
   const distributed = settlement ? settlement.totalCostsCents - settlement.landlord.totalCents : 0
 
@@ -112,7 +109,7 @@ export default function Uebersicht({ onNavigate }: Props) {
       {settlement && (
         <div className="kpis">
           <div className="kpi">
-            <div className="v">{fmtEuro(settlement.totalCostsCents)}</div>
+            <div className="v">{fmtEuro(settlement.totalCostsCents + separateCents)}</div>
             <div className="l">Gesamtkosten {label}</div>
           </div>
           <div className="kpi">
@@ -124,7 +121,7 @@ export default function Uebersicht({ onNavigate }: Props) {
             <div className="l">Vermieteranteil</div>
           </div>
           {/* Ohne Kosten erstattete die Berechnung die volle Vorauszahlung (#142); das ist kein Ergebnis. */}
-          {hasCosts && settlement.statements.map((st) => (
+          {settledCosts && settlement.statements.map((st) => (
             <div className="kpi" key={st.tenancyId}>
               <div className="v" style={{ color: st.balanceCents >= 0 ? 'var(--green)' : 'var(--red)' }}>
                 {fmtEuro(Math.abs(st.balanceCents))}
@@ -133,6 +130,12 @@ export default function Uebersicht({ onNavigate }: Props) {
             </div>
           ))}
         </div>
+      )}
+      {settlement && separateCents > 0 && (
+        <p className="muted">
+          Darin {fmtEuro(separateCents)} Heizkosten, die eine eigene Heizkostenabrechnung abrechnet. „Auf Mieter umgelegt“,
+          „Vermieteranteil“ und die Salden gelten für die Betriebskostenabrechnung {label} ohne diese Heizkosten.
+        </p>
       )}
 
       <div className="card">
@@ -187,18 +190,18 @@ export default function Uebersicht({ onNavigate }: Props) {
         )}
       </div>
 
-      {years.length > 1 && (
+      {periods.length > 1 && (
         <div className="card">
           <h2>Gesamtkosten im Verlauf</h2>
           <Table className="chart-table">
             <tbody>
-              {years.map(([y, v]) => (
-                <tr key={y}>
-                  <td style={{ width: 140 }}>{labelOfKey(rules, y)}</td>
+              {periods.map((p) => (
+                <tr key={p.key}>
+                  <td style={{ width: 140 }}>{p.label}</td>
                   <td>
-                    <div className={`bar${y === key ? '' : ' prev'}`} style={{ width: `${(v / maxYearCents) * 100}%` }} />
+                    <div className={`bar${p.key === key ? '' : ' prev'}`} style={{ width: `${(p.totalCents / maxYearCents) * 100}%` }} />
                   </td>
-                  <td className="num" style={{ width: 120 }}>{fmtEuro(v)}</td>
+                  <td className="num" style={{ width: 120 }}>{fmtEuro(p.totalCents)}</td>
                 </tr>
               ))}
             </tbody>

@@ -1948,7 +1948,28 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const plant = plants.find((p) => servesUnit(p, t.unit))
     if (!plant) return computePrepaymentCents(t, period)
     const way = wayOf(plant)
-    return computePrepaymentCents(t, period, { ownerOf: (m) => separateOwner(way, objectRules, m)?.key ?? null })
+    const pp = computePrepaymentCents(t, period, { ownerOf: (m) => separateOwner(way, objectRules, m)?.key ?? null })
+    // Sichtprüfung E42: Die Heizvorauszahlungen von Monaten, die einer getrennt abgerechneten
+    // Heizperiode gehören, stehen hier nicht. Ohne Satz las der Mieter „davon Heizvorauszahlung
+    // 0,00 €“ und fragte, wo sie geblieben ist.
+    const schedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
+    const byOwner = new Map<string, { label: string, months: string[] }>()
+    // Dieselbe Quelle wie die Anrechnung dort (`heatingPrepaymentCents`): ein Monat zählt, wenn die
+    // Staffel etwas verlangt oder eine Heizkorrektur der Heizperiode ihn abdeckt (Durchsicht N1).
+    const overrides = (t.heatingPrepaymentOverrides ?? []).filter((o) => o.plantId === plant.id)
+    for (const m of periodMonths(period)) {
+      if (t.start > `${m}-01` || (t.end && t.end < `${m}-01`)) continue
+      const owner = separateOwner(way, objectRules, m)
+      if (owner === null) continue
+      const override = overrides.find((o) => o.period === owner.key)
+      const covered = override !== undefined && (!override.provisional || (override.fromMonth !== null && override.toMonth !== null && m >= override.fromMonth && m <= override.toMonth))
+      if (rateAtMonth(schedule, m) === 0 && !covered) continue
+      const entry = byOwner.get(owner.key) ?? { label: periodLabel(owner), months: [] }
+      entry.months.push(m)
+      byOwner.set(owner.key, entry)
+    }
+    const note = [...byOwner.values()].map((e) => `Ihre Heizkostenvorauszahlungen ${monthSpanText(e.months)} sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung ${e.label} abgerechnet.`).join(' ')
+    return note ? { ...pp, note } : pp
   }
   const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
@@ -2282,7 +2303,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
   // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
-  for (const group of possibleDuplicates(items, at, snapshot.previousCostItems ?? [])) {
+  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [])) {
     const first = group.find((i) => !i.invoiceFile) ?? group[0]
     if (!first) continue
     const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
@@ -2301,7 +2322,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
-    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], at, basisUnitIds)
+    const keyChange = keyChangeText(item, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], at, basisUnitIds)
     if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
@@ -3346,6 +3367,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           year: Number(part.period.from.slice(0, 4)),
           costItems: part.items,
           previousCostItems: part.previousItems,
+          comparableCostItems: part.comparableItems,
           heatingParts: [],
           closedSettlement: null,
           scope: { kind: 'heatingPart', plant },

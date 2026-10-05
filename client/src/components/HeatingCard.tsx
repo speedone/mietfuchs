@@ -10,7 +10,7 @@ import HeatingPeriodSection from './HeatingPeriodSection'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, REMOTE_OPTIONS, asksNewInstall, emptyHeatingForm, heatingPlantBody,
-  heatingSummary, heatingToForm, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type WhoSettles,
+  connectionNote, heatingSummary, heatingToForm, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type WhoSettles,
 } from '../heatingForm'
 
 // Die Karte „Heizung“ in den Stammdaten (Heizung PR 4, Entwurf 11.2). Ohne Anlage ein Satz und der
@@ -208,6 +208,7 @@ export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { 
                         onChange={(e) => setForm({ ...form, unitIds: e.target.checked ? [...form.unitIds, u.id] : form.unitIds.filter((id) => id !== u.id) })}
                       />
                       {u.name}
+                      {connectionNote(u) && <small className="muted"> ({connectionNote(u)})</small>}
                     </label>
                   ))}
                 </div>
