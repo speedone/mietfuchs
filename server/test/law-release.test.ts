@@ -46,6 +46,9 @@ test('Release-Sperre: der Schritt in release.yml prüft, dass der Sperrtest nich
   const step = yml.slice(start, yml.indexOf('\n      - ', start + 1))
   assert.match(step, /if: github\.ref_type == 'tag'/)
   assert.match(step, /MIETFUCHS_RELEASE: '1'/)
+  // Ohne `shell: bash` läuft die Pipe ohne pipefail, und ein anderer gescheiterter Test der Datei
+  // ginge in `tee` unter (Nachprüfung von #221).
+  assert.match(step, /\n\s+shell: bash\n/)
   assert.match(step, /--test-reporter=tap test\/law-release\.test\.ts/)
   assert.match(step, /grep -qx '# skipped 0'/)
   assert.match(step, /grep -qE '\^ok \[0-9\]\+ - Release: kein ungeprüfter Wert im Rechtsregister\$'/)
