@@ -22,9 +22,10 @@ import { degreeDayPermille, unionOf, type DayRange } from '../../shared/degreeDa
 import { formatDayRange, parsePeriodKey, periodContaining, periodOfKey, periodsBetween } from '../../shared/period.ts'
 import type { BillingPeriod, FuelDelivery, FuelDeliveryLine, FuelGap, FuelMethod, HeatingEnergy, HeatingMethod, PeriodRules } from '../../shared/types.ts'
 
-// Lieferungen mit Vorrat brauchen die Bestandsrechnung (PR 8); mit Rechnungszeitraum abgegrenzt werden
-// Gas, Fernwärme und Strom.
-export const STOCK_ENERGIES: readonly HeatingEnergy[] = ['oil', 'lpg', 'pellets', 'wood', 'coal']
+// Lieferungen mit Vorrat gehen in die Bestandsrechnung (Heizung PR 8, fuelStock.ts); die Liste steht
+// seither in shared/fuelStock.ts, weil die Oberfläche sie braucht. Mit Rechnungszeitraum abgegrenzt
+// werden Gas, Fernwärme und Strom.
+export { STOCK_ENERGIES } from '../../shared/fuelStock.ts'
 export const METERED_ENERGIES: readonly HeatingEnergy[] = ['gas', 'districtHeating', 'heatPump', 'electric']
 
 export type FuelReading = { date: string; value: number; replacement?: boolean; oldEndValue?: number | null }
