@@ -221,7 +221,7 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
 
 export type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean }
 
-// Beim Vorwegabzug mit bestandener Probe, oder mit geschätztem S, die Zerlegung des Vermieterrests
+// Beim Vorwegabzug mit bestandener Probe (mit geschätztem S im weiteren Spielraum) die Zerlegung des Vermieterrests
 // in der Position, in der L steckt: L_self (laut Messdienst, sonst L · Eigenbeträge / S) und den
 // abziehbaren Rest. Die Eigenbeträge sind die der selbstgenutzten Wohnungen in den
 // Messdienstpositionen des Topfs. `applicable` fragt das Register (`co2.applicable-from`), und nur
@@ -232,7 +232,9 @@ export function co2DeductionsOf(pots: readonly Co2Pot[], units: readonly Snapsho
   for (const pot of pots) {
     const st = pot.statement
     if (!st || st.method !== 'serviceDeducted' || !pot.probe || pot.carrierId === null) continue
-    if (!pot.probe.ok && !st.serviceUsersTotalApprox) continue
+    // Ein geschätztes S weitet nur den Spielraum der Probe (serviceProbe); geht sie nicht auf, wird
+    // nichts gebucht (Durchsicht I-2: sonst stand der CO₂-Teil der eigenen Wohnung zweimal privat).
+    if (!pot.probe.ok) continue
     if (!applicable(pot.period)) continue
     const L = st.serviceLandlordCents ?? 0
     const S = st.serviceUsersTotalCents ?? 0

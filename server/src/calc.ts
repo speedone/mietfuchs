@@ -2861,25 +2861,27 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
               'Eine Gutschrift des Versorgers oder eine Wartung darf so daneben stehen. Gehört sie zu den Kosten, die der Messdienst verteilt hat, übernehmen Sie sie als Einzelbeträge.',
             itemSubject(c))
         }
+        // Ein geschätztes S weitet nur den Spielraum der Probe; geht sie trotzdem nicht auf, ist das
+        // derselbe Fehler wie mit gedrucktem S, und gebucht wird nichts (Durchsicht I-2). Ein
+        // sichtbarer Fehler ist besser als ein Anteil, der still zweimal privat steht.
+        const approxText = st.serviceUsersTotalApprox ? ' S ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag.' : ''
         if (!pot.probe.ok) {
           const lines = `Ihre Positionen ergeben ${fmtCents(pot.probe.itemsCents)}. Mit Abzugszeile müssten es S + L = ${fmtCents(S + L)} sein, ohne Abzugszeile S = ${fmtCents(S)}.`
           const entered = pot.probe.enteredOk
             ? ''
             : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als S und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
-          if (st.serviceUsersTotalApprox) {
-            warn('co2.sum-check-approx',
-              `${where}: S ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten. ${lines}${entered} Mietfuchs bucht die CO₂-Aufteilung trotzdem; bitte prüfen Sie die Beträge.`,
-              plantSubject)
-          } else {
-            const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
-            warn('co2.sum-check',
-              `${where}: Die Probe der CO₂-Angaben geht nicht auf. ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
-                `Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
-                'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
-              plantSubject)
-          }
+          const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+          warn('co2.sum-check',
+            `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
+              `Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+              'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
+            plantSubject)
+        } else if (st.serviceUsersTotalApprox) {
+          warn('co2.sum-check-approx',
+            `${where}:${approxText} Die Probe geht in diesem Spielraum auf, und Mietfuchs bucht die CO₂-Aufteilung. Bitte prüfen Sie die Beträge der leeren oder nicht eingetragenen Einheiten.`,
+            plantSubject)
         }
-        booked = pot.probe.ok || st.serviceUsersTotalApprox
+        booked = pot.probe.ok
         // Nur ausgewiesen (Entwurf 7.5): Abzugszeilen je Mieter, mit den Werten laut Messdienst oder
         // nach dem Anteil an den Messdienstbeträgen (9.4). R = round(Σ r) wird als eine Verteilung
         // gerundet; der Vermieter trägt R als `co2Share`. L − R entfällt auf Eigennutzung, Leerstand,

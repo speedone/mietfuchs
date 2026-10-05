@@ -85,13 +85,32 @@ test('Beispiel C: die Wohnung mit 600 € steht leer statt selbstgenutzt: co2Sha
   assert.deepEqual(partsOf(r), [{ reason: 'co2Share', cents: 10000 }, { reason: 'amountsRest', cents: 60000 }])
 })
 
-test('G-B2: Rest 60 €, L_self 20 €, co2Share 80 € → L_self 20 €, co2Share 40 €, Rest 0 (erste Fassung: 12 / 48)', () => {
-  // „Ich finde diese Zeile nicht“: S ist geschätzt, die Probe meldet nur einen Hinweis, gebucht wird.
-  const s = { units: [unit('a'), own('c')], tenancies: [tenancy('ta', 'a')], costItems: [messdienst(300000, { ta: 294000 })] }
-  const r = settle(s, [co2({ serviceUsersTotalCents: 290000, serviceUsersTotalApprox: true, serviceLandlordCents: 10000, serviceSelfLandlordCents: 2000, serviceUnitsCount: 2 })])
-  assert.deepEqual(partsOf(r), [{ reason: 'selfUse', cents: 2000 }, { reason: 'co2Share', cents: 4000 }])
-  assert.ok(codes(r).includes('co2.sum-check-approx'))
+test('G-B2: reicht der Rest nicht, kappt take() den co2Share, L_self bleibt exakt im Eigenanteil (erste Fassung kürzte beide)', () => {
+  // Drei Nutzeinheiten, Spielraum 6 ct: Die Einzelbeträge liegen 6 ct über S, die Probe besteht.
+  const s = { units: [unit('a'), unit('b'), own('c')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [messdienst(300000, { ta: 120000, tb: 110006 }, { selfAmounts: { c: 60000 } })] }
+  const r = settle(s, [co2({ serviceUsersTotalCents: 290000, serviceLandlordCents: 10000, serviceSelfLandlordCents: 2000, serviceUnitsCount: 3 })])
   assert.ok(!codes(r).includes('co2.sum-check'))
+  assert.deepEqual(partsOf(r), [{ reason: 'selfUse', cents: 62000 }, { reason: 'co2Share', cents: 7994 }])
+  assert.equal(r.selfUsedShareCents, 62000)
+})
+
+test('S geschätzt („Ich finde diese Zeile nicht“): weitet nur den Spielraum; geht die Probe nicht auf, wird nichts gebucht (Durchsicht I-2)', () => {
+  // Der CO₂-Teil der eigenen Wohnung steht schon im Eigenbetrag (620,69 €), S ist aus den
+  // Einzelbeträgen geschätzt: Gebucht hätte das den Anteil ein zweites Mal privat.
+  const s = { units: [unit('a'), unit('b'), own('c')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [messdienst(300000, { ta: 120000, tb: 110000 }, { selfAmounts: { c: 62069 } })] }
+  const r = settle(s, [co2({ serviceUsersTotalCents: 292069, serviceUsersTotalApprox: true, serviceLandlordCents: 10000, serviceUnitsCount: 3 })])
+  assert.equal(r.notices.find((n) => n.code === 'co2.sum-check')?.level, 'error')
+  assert.ok(!codes(r).includes('co2.sum-check-approx'))
+  assert.match(textOf(r, 'co2.sum-check'), /S ist geschätzt/)
+  assert.deepEqual(partsOf(r), [{ reason: 'selfUse', cents: 62069 }, { reason: 'amountsRest', cents: 7931 }])
+  assert.equal(r.heating?.[0]?.co2?.booked, false)
+  // Geht sie mit geschätztem S auf (leere Wohnung mit 600 €), wird gebucht, mit einem Hinweis.
+  const leer = settle(
+    { units: [unit('a'), unit('b'), unit('e')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [messdienst(300000, { ta: 120000, tb: 110000 })] },
+    [co2({ serviceUsersTotalCents: 290000, serviceUsersTotalApprox: true, serviceLandlordCents: 10000, serviceUnitsCount: 3 })],
+  )
+  assert.equal(leer.notices.find((n) => n.code === 'co2.sum-check-approx')?.level, 'hint')
+  assert.deepEqual(partsOf(leer), [{ reason: 'co2Share', cents: 10000 }, { reason: 'amountsRest', cents: 60000 }])
 })
 
 test('G-B3: Einzelbeträge bis S + NE · 2 ct, ein Cent mehr ist ein Fehler; Betrag ± 1 ct', () => {
