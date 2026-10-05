@@ -24,8 +24,8 @@ import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
-  aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, heatingPlants, heatingPlantUnits, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  aiSlots, baseRents, closedHeatingSettlements, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -61,6 +61,7 @@ export type Stock = SnapshotSource & {
   readings: Reading[]
   payments: Payment[]
   closedSettlements: StoredClosedSettlement[]
+  closedHeatingSettlements: StoredClosedHeatingSettlement[]
   settings: MigratedSettings
 }
 
@@ -158,6 +159,14 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   // angeschriebene Rückgabetyp macht daraus ein Paar statt einer Liste, ohne etwas zu behaupten:
   // Er beschreibt, was danebensteht, und der Übersetzer rechnet es nach.
   const overrides = groupBy(overrideRows, (r) => r.tenancyId, (r): [string, number] => [r.period, r.amountCents])
+  // Heizstaffel und Heizkorrekturen (Heizung PR 5). Wie die Pauschale nur, wenn es Zeilen gibt: So
+  // bleibt ein Mietverhältnis ohne getrennte Heizvorauszahlung genau so, wie es vorher gelesen wurde.
+  const heizstaffel = groupBy(await db.select().from(heatingPrepayments).orderBy(INSERTION_ORDER), (r) => r.tenancyId, (r) => ({ from: r.from, monthlyCents: r.monthlyCents }))
+  const heizkorrekturen = groupBy(
+    await db.select().from(heatingPrepaymentOverrides).orderBy(INSERTION_ORDER),
+    (r) => r.tenancyId,
+    (r) => ({ plantId: r.plantId, period: r.period, cents: r.cents, provisional: r.provisional, fromMonth: r.fromMonth, toMonth: r.toMonth }),
+  )
 
   return rows.map((t) => ({
     id: t.id,
@@ -170,6 +179,8 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
     prepayments: prepaid.get(t.id) ?? [],
     // Nur mit Einträgen, wie die übrigen Angaben aus #93: Die db.json kennt das Feld nicht.
     ...(flat.has(t.id) ? { flatRates: flat.get(t.id) } : {}),
+    ...(heizstaffel.has(t.id) ? { heatingPrepayments: heizstaffel.get(t.id) ?? [] } : {}),
+    ...(heizkorrekturen.has(t.id) ? { heatingPrepaymentOverrides: heizkorrekturen.get(t.id) ?? [] } : {}),
     prepaymentOverrides: Object.fromEntries(overrides.get(t.id) ?? []),
     baseRents: rents.get(t.id) ?? [],
     email: orUndefined(t.email),
@@ -262,6 +273,9 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
   const rows = await db.select().from(heatingPlants).orderBy(INSERTION_ORDER)
   const zeilen = await db.select().from(heatingPlantUnits).orderBy(INSERTION_ORDER)
   const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2 }))
+  // Wechsel und Spannen nach Weg d (Heizung PR 5), aufsteigend.
+  const wechsel = groupBy(await db.select().from(heatingPeriodChanges).orderBy(heatingPeriodChanges.fromMonth), (w) => w.plantId, (w) => w.fromMonth)
+  const spannen = groupBy(await db.select().from(heatingSeparateSpans).orderBy(heatingSeparateSpans.from), (s) => s.plantId, (s) => ({ from: s.from, until: s.until }))
   return rows.map((p) => ({
     id: p.id,
     propertyId: p.propertyId,
@@ -279,8 +293,8 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
     warmRentAverageCents: p.warmRentAverageCents,
     changeSplit: p.changeSplit,
     periodStartMonth: p.periodStartMonth,
-    periodChanges: [],
-    separateSpans: [],
+    periodChanges: wechsel.get(p.id) ?? [],
+    separateSpans: spannen.get(p.id) ?? [],
     units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
   }))
 }
@@ -325,6 +339,23 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
   }))
 }
 
+// Die abgeschlossenen Heizkostenabrechnungen nach Weg d (Heizung PR 5), mit demselben Auszug aus dem
+// Archivstück wie bei den Abrechnungen des Objekts.
+export type StoredClosedHeatingSettlement = Omit<StoredClosedSettlement, 'propertyId'> & { plantId: string }
+
+export async function readClosedHeatingSettlements(db: Database): Promise<StoredClosedHeatingSettlement[]> {
+  const rows = await db.select().from(closedHeatingSettlements).orderBy(INSERTION_ORDER)
+  return rows.map((c) => ({
+    id: c.id,
+    plantId: c.plantId,
+    period: c.period,
+    closedAt: c.closedAt,
+    sentAt: c.sentAt,
+    ...frozenSettlementOf(c.settlement),
+    settlement: c.settlement,
+  }))
+}
+
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
 // vergleicht (der Umstieg und sein Gleichstand).
 export async function readStock(db: Database): Promise<Stock> {
@@ -338,6 +369,7 @@ export async function readStock(db: Database): Promise<Stock> {
     readings: await readReadings(db),
     payments: await readPayments(db),
     closedSettlements: await readClosedSettlements(db),
+    closedHeatingSettlements: await readClosedHeatingSettlements(db),
     settings: await readSettings(db),
   }
 }

@@ -515,6 +515,13 @@ app.delete('/api/heating-plants/:id', async (req, res) => {
   const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
   if (result.removed) return res.json({ ok: true, released: result.released })
   if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  if (result.reason === 'separate') {
+    return res.status(409).json({
+      error: 'Die Heizkosten dieser Anlage werden getrennt abgerechnet, oder es gibt abgeschlossene Heizkostenabrechnungen oder Korrekturen der ' +
+        'Heizvorauszahlung. Schalten Sie zuerst die getrennte Heizkostenabrechnung aus. Abgeschlossene Heizkostenabrechnungen bleiben als Archiv; ' +
+        'solange es sie gibt, bleibt die Anlage bestehen.',
+    })
+  }
   res.status(409).json({
     error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
       'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
