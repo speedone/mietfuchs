@@ -13,9 +13,10 @@ ALTER TABLE `prepayment_overrides` ADD `period` text;--> statement-breakpoint
 ALTER TABLE `properties` ADD `period_start_month` integer DEFAULT 1 NOT NULL;--> statement-breakpoint
 -- Ab hier von Hand angehängt (#208), siehe „Datenanweisungen“ in README.md: Der Aufbau darüber
 -- ist erzeugt; welchen Zeitraum die vorhandenen Zeilen bekommen, kann drizzle-kit nicht wissen.
--- Jedes vorhandene Jahr ist ein Kalenderjahr, sein Zeitraum beginnt im Januar ('JJJJ-01'). Ein
--- gewähltes Jahr einer Auswertung ohne Objekt entfällt: Ein Zeitraum ist nur am Objekt bestimmt
--- (Prüfbedingung in 0015, G-B7).
+-- Jedes vorhandene Jahr ist ein Kalenderjahr, sein Zeitraum beginnt im Januar ('JJJJ-01'). Eine
+-- Auswertung ohne Objekt bekommt keinen gewählten Zeitraum, denn ein Zeitraum ist nur am Objekt
+-- bestimmt (Prüfbedingung in 0015, G-B7); ihr gewähltes Jahr bleibt in `requested_year` stehen, und
+-- beim Zuordnen zu einem Objekt entsteht daraus der Zeitraum.
 UPDATE `cost_items` SET `period` = printf('%04d-01', `year`);--> statement-breakpoint
 UPDATE `closed_settlements` SET `period` = printf('%04d-01', `year`);--> statement-breakpoint
 UPDATE `closed_settlement_history` SET `period` = printf('%04d-01', `year`);--> statement-breakpoint

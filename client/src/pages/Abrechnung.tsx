@@ -157,9 +157,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
     const ten = tenancies.find((t) => t.id === tenancyId)
-    const overrides = { ...(ten?.prepaymentOverrides ?? {}) }
-    // Die Korrektur steht unter dem Zeitraum (#208).
+    // Die Korrektur steht unter dem Zeitraum (#208). Bei einem Kalenderobjekt nennt der Server sie
+    // nach Jahreszahl, für Tabs von vor dem Update; geschickt werden hier nur Zeiträume, sonst gälten
+    // die Jahreszahlen als vollständiger Stand und die neue Korrektur fiele weg.
     // Brücke Kalenderjahr (#208): bis PR 3
+    const overrides: Record<string, number> = Object.fromEntries(Object.entries(ten?.prepaymentOverrides ?? {})
+      .map(([schluessel, betrag]) => [/^\d{4}$/.test(schluessel) ? calendarPeriod(Number(schluessel)) : schluessel, betrag]))
     const key = calendarPeriod(year)
     if (cents === null) delete overrides[key]
     else overrides[key] = cents

@@ -155,7 +155,13 @@ function readOverrides(value: unknown): Record<string, number> {
     const key = parsePeriodKey(schluessel)
     if (key !== null) rows[key] = zahl
   }
-  return { ...rows, ...legacy }
+  // Schickt der Tab Jahreszahlen, gilt sein Stand vollständig für die Kalenderzeiträume (Durchsicht
+  // von #222, M1): Ein 'JJJJ-01' daneben hat er so vom Server bekommen und nicht gemeint, und ein
+  // Kalenderzeitraum ohne Jahreszahl ist gelöscht. Sonst bliebe eine zurückgesetzte Korrektur stehen,
+  // und die Oberfläche meldete trotzdem „zurückgesetzt“.
+  if (Object.keys(legacy).length === 0) return rows
+  const others = Object.fromEntries(Object.entries(rows).filter(([key]) => !key.endsWith('-01')))
+  return { ...others, ...legacy }
 }
 
 // Wohnungs-Kennung zu Prozentanteil. Ein Anteil, der keine Zahl ist, fällt weg.
@@ -271,9 +277,14 @@ function mergeTenancy(current: Tenancy, body: unknown): Tenancy {
 
 // Der Zeitraum einer Kostenposition (#208). `period` geht vor; ein Tab von vor dem Update schickt
 // stattdessen `year`, und das ist der Kalenderzeitraum dieses Jahres. Ob das Objekt den Zeitraum
-// hat, prüft `guardCostItem`.
+// hat, prüft `guardCostItem`. Ein ungültiger Zeitraum wird abgelehnt und nicht still durch den
+// bisherigen ersetzt (Durchsicht von #222, M3): Gespeichert wäre dann etwas anderes als geschickt.
 function mergedPeriod(body: unknown, current: PeriodKey): PeriodKey {
-  if (has(body, 'period')) return parsePeriodKey(raw(body, 'period')) ?? current
+  if (has(body, 'period')) {
+    const key = parsePeriodKey(raw(body, 'period'))
+    if (key === null) throw new PeriodError('Ungültiger Zeitraum: erwartet wird der Monat des Beginns als JJJJ-MM, etwa 2025-05.')
+    return key
+  }
   const year = raw(body, 'year')
   return typeof year === 'number' && Number.isInteger(year) && year > 0 && year < 10000 ? calendarPeriod(year) : current
 }

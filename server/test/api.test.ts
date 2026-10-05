@@ -5501,3 +5501,50 @@ test('Zeitraum (#208): eine vor dem Update abgeschlossene Abrechnung bekommt Zei
     s.stop()
   }
 })
+
+// Durchsicht von #222 (I1): Eine Auswertung ohne Objekt verlor das gewählte Jahr. Später einem Objekt
+// zugeordnet, war die Zeile grün und vorab angehakt, und „Alle grünen übernehmen“ buchte ungesehen in
+// das Jahr aus dem Beleg. Das gewählte Kalenderjahr bleibt ohne Objekt stehen; beim Zuordnen wird
+// daraus der Zeitraum.
+test('Belegbuchung: ohne Objekt ausgewertet, danach zugeordnet, bleibt das gewählte Jahr (#208)', async () => {
+  await withOllama(async (s) => {
+    await s.api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name: 'Gartenweg 3', kind: 'mfh', address: '' }) })
+    const a = assessmentOf(await evaluate(s, 'WASSER', { year: '2024' }))
+    assert.deepEqual([a.propertyId, a.year, a.requestedYear, a.requestedPeriod], [null, 2026, 2024, null])
+    const zugeordnet = await s.api<AssessmentView>(`/api/assessments/${a.id}`, { method: 'PUT', body: JSON.stringify({ propertyId: 'objekt-1' }) })
+    assert.deepEqual([zugeordnet.requestedYear, zugeordnet.requestedPeriod], [2024, '2024-01'])
+    assert.ok(zugeordnet.lines.every((l) => l.suggestion?.level !== 'gruen' && l.suggestion?.preselected !== true), 'nicht grün, nicht angehakt')
+    // Gelöst und wieder zugeordnet: dasselbe.
+    const geloest = await s.api<AssessmentView>(`/api/assessments/${a.id}`, { method: 'PUT', body: JSON.stringify({ propertyId: null }) })
+    assert.deepEqual([geloest.requestedYear, geloest.requestedPeriod], [2024, null])
+    const wieder = await s.api<AssessmentView>(`/api/assessments/${a.id}`, { method: 'PUT', body: JSON.stringify({ propertyId: 'objekt-1' }) })
+    assert.deepEqual([wieder.requestedYear, wieder.requestedPeriod], [2024, '2024-01'])
+    assert.ok(wieder.lines.some((l) => l.suggestion?.reasons.some((r) => /gewählt war 2024/.test(r))))
+  }, { invoices: RECHNUNGEN })
+})
+
+// Durchsicht von #222 (M1): Ein Tab von vor dem Update setzt die Jahreskorrektur zurück, indem er den
+// Schlüssel „2025“ löscht und den Rest schickt. Damit das wirkt, nennt die Liste der Mietverhältnisse
+// einem Kalenderobjekt die Jahreskorrektur weiter nach Jahreszahl, wie vor dem Update; die Oberfläche
+// dieser Version schickt Zeiträume. Dazu M3: ein ungültiger Zeitraum ist eine 400.
+test('Alter Tab: Jahreskorrektur nach Jahreszahl lesen und zurücksetzen; ungültiger Zeitraum ist 400 (#208)', async () => {
+  const s = await startServer()
+  try {
+    const u = await s.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: u.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2025-01': 2000 } }) })
+    const [liste] = await s.api<Tenancy[]>('/api/tenancies')
+    assert.deepEqual(liste?.prepaymentOverrides, { 2025: 2000 }, 'der alte Tab liest die Jahreszahl')
+    // So setzt ihn der alte Tab zurück: Schlüssel „2025“ gelöscht, der Rest (nichts) geschickt.
+    await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: {} }) })
+    const [danach] = await s.api<Tenancy[]>('/api/tenancies')
+    assert.deepEqual(danach?.prepaymentOverrides, {})
+    const kaputt = await fetch(`${s.base}/api/costItems`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ period: '2025-13', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }),
+    })
+    assert.equal(kaputt.status, 400)
+    assert.match(await errorFrom(kaputt), /Ungültiger Zeitraum/)
+  } finally {
+    s.stop()
+  }
+})

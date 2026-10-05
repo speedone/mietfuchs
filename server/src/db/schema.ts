@@ -766,9 +766,13 @@ export const assessments = sqliteTable(
     propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
     year: integer('year').notNull(),
     detectedYear: integer('detected_year'),
-    // Der gewählte Abrechnungszeitraum (#208): beim Auswerten mitgeschickt, danach der von Hand
-    // gesetzte. Nur mit Objekt (G-B7): Ein Zeitraum ist nur am Objekt bestimmt. Weicht das Jahr der
-    // Auswertung davon ab, ist ihre Ampel gelb (Schlussdurchsicht, I1).
+    // Das gewählte Kalenderjahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Es bleibt
+    // auch ohne Objekt stehen (Durchsicht von #222, I1): Sonst wäre eine später zugeordnete Auswertung
+    // grün, obwohl ihr Beleg aus einem anderen Jahr stammt. Weicht das Jahr der Auswertung davon ab,
+    // ist ihre Ampel gelb (Schlussdurchsicht, I1).
+    requestedYear: integer('requested_year'),
+    // Der gewählte Abrechnungszeitraum (#208), aus dem gewählten Jahr gebildet, sobald es ein Objekt
+    // gibt. Nur mit Objekt (G-B7): Ein Zeitraum ist nur am Objekt bestimmt.
     requestedPeriod: text('requested_period').$type<PeriodKey>(),
     vendor: text('vendor'),
     invoiceDate: text('invoice_date'),
@@ -784,6 +788,7 @@ export const assessments = sqliteTable(
     // Posteingang und Schnellerfassung fragen die offenen Auswertungen eines Objekts ab.
     index('assessments_property_idx').on(t.propertyId),
     check('assessments_year_positive', sql.raw('"year" > 0')),
+    check('assessments_requested_year_positive', sql.raw('"requested_year" IS NULL OR "requested_year" > 0')),
     check('assessments_requested_period_with_property', sql.raw('"requested_period" IS NULL OR "property_id" IS NOT NULL')),
     periodKeyCheck('assessments_requested_period_valid', 'requested_period'),
     notNegative('assessments_next_idx_not_negative', 'next_idx'),

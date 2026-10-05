@@ -70,8 +70,8 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Abrechnungszeitraum (#208). Eingetragen vor dem Merge, wie 0001: Jeder Push auf main
   // veröffentlicht das Image, und ab dann haben Nutzer die Schritte angewendet. Werden 0014 oder
   // 0015 vor dem Push neu erzeugt, hier die neue Marke eintragen.
-  '0014_zeitraum': 'd7537785804b0d48f68b1ec8b1dc0544ec7ad9b1421e20e77c83a62c16198368',
-  '0015_zeitraum_pflicht': '0e645b5382735298a0bd2295256e1fb5dd361508d5b93002cdd9e080972c5c49',
+  '0014_zeitraum': '1ecbae16aa915909c1ad530ab2bbc8d2696df0fb1caca86539d0f618fc2727bf',
+  '0015_zeitraum_pflicht': 'e535b04eab6a8bee3e0c3acaf25e89c5592c8166490e89b670aed4f928d19442',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

@@ -7,7 +7,7 @@ import type {
   StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
-import { calendarContext, calendarPeriod, startYearOf } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
@@ -284,8 +284,8 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
   // Das Jahr aus dem Beleg weicht vom gewählten ab (Schlussdurchsicht, I1): Gebucht wird im Jahr
   // des Belegs, aber nie ungesehen. Eine Jahresrechnung vom Februar, deren Leistungszeitraum die KI
   // nicht gelesen hat, landete sonst mit „Alle grünen übernehmen“ in der Abrechnung des Folgejahres.
-  // Brücke Kalenderjahr (#208): bis PR 3. Gewählt ist ein Kalenderzeitraum; verglichen wird sein Jahr.
-  const requestedYear = a.requestedPeriod === null ? null : startYearOf(a.requestedPeriod)
+  // Verglichen wird das gewählte Kalenderjahr, das auch ohne Objekt feststeht (#208).
+  const requestedYear = a.requestedYear
   const otherYear = requestedYear !== null && requestedYear !== a.year
   // Brücke Kalenderjahr (#208): bis PR 3
   const built = costItemBody(lineDraft(fields, { vendor, invoiceFile: a.file }, ctx.units), ctx.units, calendarPeriod(a.year))

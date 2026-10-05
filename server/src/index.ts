@@ -402,12 +402,19 @@ for (const coll of COLLECTIONS) {
       const propertyId = await propertyOf(db, req)
       const stock = await readStock(db)
       const scoped = narrowToProperty(stock, propertyId)
-      if (coll !== 'costItems') return scoped[coll]
+      if (coll !== 'costItems' && coll !== 'tenancies') return scoped[coll]
       // Ein Tab von vor dem Update filtert die Kostenpositionen nach `year` (#208). Bei einem reinen
       // Kalenderobjekt bekommt er es weiter; sonst sähe er eine leere Liste und erfasste alles noch
       // einmal. Bei einem anderen Rhythmus gibt es kein Jahr, das stimmte; dort lehnt das Schreiben ab.
       const calendar = isCalendarRules(rulesOf(stock.properties.find((p) => p.id === propertyId)))
-      return calendar ? scoped.costItems.map((c) => ({ ...c, year: startYearOf(c.period) })) : scoped.costItems
+      if (coll === 'costItems') return calendar ? scoped.costItems.map((c) => ({ ...c, year: startYearOf(c.period) })) : scoped.costItems
+      // Ebenso die Jahreskorrektur (Durchsicht von #222, M1): Ein alter Tab setzt sie zurück, indem er
+      // den Schlüssel des Jahres löscht und den Rest schickt. Nennt er Jahreszahlen, gilt sein Stand
+      // vollständig (repository.ts, `readOverrides`). Die Oberfläche dieser Version schickt Zeiträume.
+      // Brücke Kalenderjahr (#208): bis PR 3
+      return calendar
+        ? scoped.tenancies.map((t) => ({ ...t, prepaymentOverrides: Object.fromEntries(Object.entries(t.prepaymentOverrides).map(([key, cents]) => [key.slice(0, 4), cents])) }))
+        : scoped.tenancies
     }))
   })
   app.post(`/api/${coll}`, async (req, res) => {
@@ -890,15 +897,14 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
       //    Nach der ersten Auswertung liegt der Beleg im Jahr **aus dem Beleg**; nähme eine zweite
       //    Auswertung dieses als gewähltes, würde eine gelbe Zeile grün und „Alle grünen übernehmen“
       //    buchte ungesehen in ein anderes Jahr. Stellt der Nutzer das Jahr am Beleg um, zieht die
-      //    Auswertung mit (`placeAssessment` setzt `requestedPeriod`), sein Wille gilt also auch hier.
+      //    Auswertung mit (`placeAssessment` setzt `requestedYear`), sein Wille gilt also auch hier.
       // 2. Sonst das Jahr am Beleg im Posteingang: Ohne Auswertung hat es der Nutzer oder der Ordner
       //    gesetzt, nie eine Platzierung nach einer Auswertung (Abnahme B3). Das Jahr der
       //    Seitenleiste, das der Browser mitschickt, überschreibt es nicht.
       // 3. Sonst das mitgeschickte.
       const previous = await readAssessmentOfFile(db, file.filename)
-      const previousYear = previous?.assessment.requestedPeriod ? startYearOf(previous.assessment.requestedPeriod) : null
       const chosen = previous
-        ? previousYear ?? (sent || null)
+        ? previous.assessment.requestedYear ?? (sent || null)
         : row?.year ?? (sent || null)
       const propertyId = row?.propertyId ?? asked ?? (only && more.length === 0 ? only.id : null)
       if (signal.aborted) return null
@@ -907,11 +913,10 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         propertyId,
         year: detected ?? chosen ?? new Date().getUTCFullYear(),
         detectedYear: detected,
-        // Das gewählte Jahr bleibt gespeichert, als Kalenderzeitraum am Objekt (#208): Weicht das
-        // Jahr aus dem Beleg davon ab, ist die Ampel gelb, und „Alle grünen übernehmen“ bucht die
-        // Zeile nicht ungesehen in ein anderes Jahr.
-        // Brücke Kalenderjahr (#208): bis PR 3
-        requestedPeriod: chosen !== null && propertyId !== null ? calendarPeriod(chosen) : null,
+        // Das gewählte Jahr bleibt gespeichert, auch ohne Objekt (#208): Weicht das Jahr aus dem
+        // Beleg davon ab, ist die Ampel gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht
+        // ungesehen in ein anderes Jahr. Den Zeitraum bildet saveAssessment.
+        requestedYear: chosen,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,

@@ -816,10 +816,13 @@ export type StoredAssessment = {
   year: number
   // Das Jahr, das die KI aus dem Beleg gelesen hat (Leistungszeitraum, sonst Rechnungsdatum)
   detectedYear: number | null
-  // Der gewählte Abrechnungszeitraum (#208): beim Auswerten mitgeschickt (die Seite, von der aus
-  // ausgewertet wurde), danach der von Hand gesetzte. Nur mit Objekt, denn ein Zeitraum ist nur am
-  // Objekt bestimmt (G-B7); `null`, wenn keiner gewählt ist. Weicht `year` davon ab, steht die Ampel
-  // auf gelb und nichts ist vorab angehakt.
+  // Das gewählte Kalenderjahr: beim Auswerten mitgeschickt (die Seite, von der aus ausgewertet
+  // wurde), danach das von Hand gesetzte; `null`, wenn keines mitkam. Es bleibt auch ohne Objekt
+  // stehen (Durchsicht von #222, I1). Weicht `year` davon ab, steht die Ampel auf gelb und nichts ist
+  // vorab angehakt.
+  requestedYear: number | null
+  // Der gewählte Abrechnungszeitraum (#208), aus `requestedYear` gebildet, sobald es ein Objekt gibt;
+  // ohne Objekt `null`, denn ein Zeitraum ist nur am Objekt bestimmt (G-B7).
   requestedPeriod: PeriodKey | null
   vendor: string | null
   invoiceDate: string | null

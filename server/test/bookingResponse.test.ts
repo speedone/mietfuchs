@@ -13,7 +13,7 @@ const PREVIEW: BookingPreview = {
   confirm: [{ idx: 1, message: 'Schon erfasst?' }],
 }
 const VIEW: AssessmentView = {
-  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedPeriod: calendarPeriod(2025), vendor: null, invoiceDate: null,
+  id: 'a1', file: 'w.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, requestedPeriod: calendarPeriod(2025), vendor: null, invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 0, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'w.pdf', lines: [], open: false, sumWarning: null,
 }

@@ -756,7 +756,9 @@ Rhythmus ab. **Der Zeitraum ist ein eigener Schlüssel** `PeriodKey` (`'JJJJ-MM'
 Markentyp in shared/types.ts), und kein Jahr: `cost_items.period`, `closed_settlements.period`,
 `closed_settlement_history.period`, `prepayment_overrides.period` und `assessments.requested_period`
 (nur mit Objekt). `uploads.year`, `assessments.year` und `detected_year` bleiben Kalenderjahre, denn
-sie sind Tatsachen über den Beleg. **Die Zeiträume werden berechnet und nie gespeichert**
+sie sind Tatsachen über den Beleg; ebenso `assessments.requested_year`, das gewählte Jahr, das auch
+ohne Objekt stehen bleibt und beim Zuordnen den Zeitraum ergibt (sonst wäre eine später zugeordnete
+Auswertung grün und „Alle grünen übernehmen“ buchte ungesehen in ein anderes Jahr). **Die Zeiträume werden berechnet und nie gespeichert**
 ([shared/period.ts](shared/period.ts)): aus `properties.period_start_month` und `period_changes`
 entstehen lückenlose Zeiträume von höchstens zwölf Monaten (`bgb.max-period-months`), vor jedem
 Wechsel ein Rumpf. Aus Text wird ein Schlüssel nur dort (Wächter in period.test.ts). Der
@@ -767,7 +769,10 @@ Steuer bleiben Kalenderjahr**; die Abrechnung teilt sich mit dem Mietkonto die M
 gilt nur bei einem reinen Kalenderobjekt**, sonst 404 mit einem Satz, der den gemeinten Zeitraum
 nennt, damit ein alter Tab nie still einen Rumpf bekommt. Dasselbe beim Schreiben: `year` statt
 `period` oder eine vierstellige Jahreskorrektur nimmt repository.ts nur beim Kalenderobjekt an
-(`PeriodError`), und die Liste der Kostenpositionen nennt einem alten Tab dort weiter `year`. Ein
+(`PeriodError`), und die Listen nennen einem alten Tab dort weiter `year` an den Kostenpositionen
+und die Jahreskorrektur nach Jahreszahl. Schickt ein Tab Jahreszahlen, gilt sein Stand vollständig
+für die Kalenderzeiträume, sonst bliebe eine zurückgesetzte Korrektur stehen. Ein ungültiger
+`period` ist eine 400 und wird nicht still ersetzt. Ein
 Schlüssel, den es für sein Objekt nicht gibt, wird beim Schreiben abgelehnt und beim Wiederherstellen
 eines Archivs ebenso (`orphanPeriodKeys`). Die Frist kommt vom Server (`Settlement.deadline`,
 `settlementDeadline` mit `bgb.deadline-months`) und friert mit ein. **Bedienung fehlt noch** (PR 3

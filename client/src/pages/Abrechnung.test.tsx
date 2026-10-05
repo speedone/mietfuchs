@@ -114,3 +114,29 @@ test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
   const kopf = document.querySelector('.card.statement > .muted')
   expect(kopf?.textContent?.trim()).toBe('A')
 })
+
+// Durchsicht von #222 (M1): Bei einem Kalenderobjekt nennt der Server die Jahreskorrektur nach
+// Jahreszahl, damit ein Tab von vor dem Update sie zurücksetzen kann. Diese Seite schickt Zeiträume;
+// „zurücksetzen“ muss die Korrektur des Jahres wirklich entfernen.
+test('„zurücksetzen“ entfernt die Korrektur auch, wenn der Server sie nach Jahreszahl nennt (#208)', async () => {
+  const puts: unknown[] = []
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT' && url.startsWith('/api/tenancies/')) {
+      puts.push(JSON.parse(String(init.body)))
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return inner(url, init)
+  })
+  const mitJahr: Tenancy[] = TENANCIES.map((t) => ({ ...t, prepaymentOverrides: { [String(YEAR - 1)]: 40000, [String(YEAR)]: 50000 } }))
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={null} units={[]} tenancies={mitJahr} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /^zurücksetzen$/ }, SLOW))
+  await waitFor(() => expect(puts).toHaveLength(1), SLOW)
+  expect(puts[0]).toEqual({ prepaymentOverrides: { [calendarPeriod(YEAR - 1)]: 40000 } })
+})

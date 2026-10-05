@@ -1,32 +1,4 @@
 PRAGMA foreign_keys=OFF;--> statement-breakpoint
-CREATE TABLE `__new_assessments` (
-	`id` text PRIMARY KEY NOT NULL,
-	`file` text NOT NULL,
-	`property_id` text,
-	`year` integer NOT NULL,
-	`detected_year` integer,
-	`requested_period` text,
-	`vendor` text,
-	`invoice_date` text,
-	`total_gross_cents` integer,
-	`amounts_adjusted` text,
-	`labor_from_total` integer DEFAULT false NOT NULL,
-	`next_idx` integer DEFAULT 0 NOT NULL,
-	`created_at` text NOT NULL,
-	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE set null,
-	CONSTRAINT "assessments_year_positive" CHECK("year" > 0),
-	CONSTRAINT "assessments_requested_period_with_property" CHECK("requested_period" IS NULL OR "property_id" IS NOT NULL),
-	CONSTRAINT "assessments_requested_period_valid" CHECK("requested_period" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("requested_period", 6, 2) AS INTEGER) BETWEEN 1 AND 12),
-	CONSTRAINT "assessments_next_idx_not_negative" CHECK("next_idx" >= 0),
-	CONSTRAINT "assessments_amounts_adjusted_known" CHECK("amounts_adjusted" IN ('netto'))
-);
---> statement-breakpoint
-INSERT INTO `__new_assessments`("id", "file", "property_id", "year", "detected_year", "requested_period", "vendor", "invoice_date", "total_gross_cents", "amounts_adjusted", "labor_from_total", "next_idx", "created_at") SELECT "id", "file", "property_id", "year", "detected_year", "requested_period", "vendor", "invoice_date", "total_gross_cents", "amounts_adjusted", "labor_from_total", "next_idx", "created_at" FROM `assessments`;--> statement-breakpoint
-DROP TABLE `assessments`;--> statement-breakpoint
-ALTER TABLE `__new_assessments` RENAME TO `assessments`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
-CREATE UNIQUE INDEX `assessments_file_unique` ON `assessments` (`file`);--> statement-breakpoint
-CREATE INDEX `assessments_property_idx` ON `assessments` (`property_id`);--> statement-breakpoint
 CREATE TABLE `__new_closed_settlement_history` (
 	`id` text PRIMARY KEY NOT NULL,
 	`property_id` text NOT NULL,
@@ -43,6 +15,7 @@ CREATE TABLE `__new_closed_settlement_history` (
 INSERT INTO `__new_closed_settlement_history`("id", "property_id", "period", "closed_at", "sent_at", "reopened_at", "settlement") SELECT "id", "property_id", "period", "closed_at", "sent_at", "reopened_at", "settlement" FROM `closed_settlement_history`;--> statement-breakpoint
 DROP TABLE `closed_settlement_history`;--> statement-breakpoint
 ALTER TABLE `__new_closed_settlement_history` RENAME TO `closed_settlement_history`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE INDEX `closed_settlement_history_property_period_idx` ON `closed_settlement_history` (`property_id`,`period`);--> statement-breakpoint
 CREATE TABLE `__new_closed_settlements` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -104,6 +77,35 @@ CREATE TABLE `__new_prepayment_overrides` (
 INSERT INTO `__new_prepayment_overrides`("tenancy_id", "period", "amount_cents") SELECT "tenancy_id", "period", "amount_cents" FROM `prepayment_overrides`;--> statement-breakpoint
 DROP TABLE `prepayment_overrides`;--> statement-breakpoint
 ALTER TABLE `__new_prepayment_overrides` RENAME TO `prepayment_overrides`;--> statement-breakpoint
+CREATE TABLE `__new_assessments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`file` text NOT NULL,
+	`property_id` text,
+	`year` integer NOT NULL,
+	`detected_year` integer,
+	`requested_year` integer,
+	`requested_period` text,
+	`vendor` text,
+	`invoice_date` text,
+	`total_gross_cents` integer,
+	`amounts_adjusted` text,
+	`labor_from_total` integer DEFAULT false NOT NULL,
+	`next_idx` integer DEFAULT 0 NOT NULL,
+	`created_at` text NOT NULL,
+	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE set null,
+	CONSTRAINT "assessments_year_positive" CHECK("year" > 0),
+	CONSTRAINT "assessments_requested_year_positive" CHECK("requested_year" IS NULL OR "requested_year" > 0),
+	CONSTRAINT "assessments_requested_period_with_property" CHECK("requested_period" IS NULL OR "property_id" IS NOT NULL),
+	CONSTRAINT "assessments_requested_period_valid" CHECK("requested_period" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("requested_period", 6, 2) AS INTEGER) BETWEEN 1 AND 12),
+	CONSTRAINT "assessments_next_idx_not_negative" CHECK("next_idx" >= 0),
+	CONSTRAINT "assessments_amounts_adjusted_known" CHECK("amounts_adjusted" IN ('netto'))
+);
+--> statement-breakpoint
+INSERT INTO `__new_assessments`("id", "file", "property_id", "year", "detected_year", "requested_year", "requested_period", "vendor", "invoice_date", "total_gross_cents", "amounts_adjusted", "labor_from_total", "next_idx", "created_at") SELECT "id", "file", "property_id", "year", "detected_year", "requested_year", "requested_period", "vendor", "invoice_date", "total_gross_cents", "amounts_adjusted", "labor_from_total", "next_idx", "created_at" FROM `assessments`;--> statement-breakpoint
+DROP TABLE `assessments`;--> statement-breakpoint
+ALTER TABLE `__new_assessments` RENAME TO `assessments`;--> statement-breakpoint
+CREATE UNIQUE INDEX `assessments_file_unique` ON `assessments` (`file`);--> statement-breakpoint
+CREATE INDEX `assessments_property_idx` ON `assessments` (`property_id`);--> statement-breakpoint
 CREATE TABLE `__new_period_changes` (
 	`property_id` text NOT NULL,
 	`from_month` text NOT NULL,

@@ -57,7 +57,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const r: Stored = {
         assessment: {
           id, file, propertyId, year: detected ?? opts.year, detectedYear: detected,
-          requestedPeriod: propertyId === null ? null : calendarPeriod(opts.year), vendor: ex.vendor ?? null,
+          requestedYear: opts.year, requestedPeriod: propertyId === null ? null : calendarPeriod(opts.year), vendor: ex.vendor ?? null,
           invoiceDate: ex.invoiceDate ?? null, totalGrossCents: typeof ex.totalGrossEur === 'number' ? Math.round(ex.totalGrossEur * 100) : null,
           amountsAdjusted: ex.amountsAdjusted ?? null, laborFromTotal: ex.laborFromTotal === true, nextIdx: fresh.length,
           createdAt: new Date(Date.UTC(2026, 9, 2, 0, 0, next)).toISOString(),
@@ -102,7 +102,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
         const year = fieldOf(body, 'year')
         // Wie placeAssessment: ein von Hand gesetztes Jahr ist zugleich das gewählte.
         if (method === 'PUT' && typeof year === 'number') {
-          r.assessment = { ...r.assessment, year, requestedPeriod: r.assessment.propertyId === null ? null : calendarPeriod(year) }
+          r.assessment = { ...r.assessment, year, requestedYear: year, requestedPeriod: r.assessment.propertyId === null ? null : calendarPeriod(year) }
         }
         return json(view(r))
       }

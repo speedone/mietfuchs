@@ -81,7 +81,11 @@ test('Kette: Eine Datenbank von 0.10.1 bekommt Zeiträume, jedes Jahr wird sein 
       assert.ok(!columns.includes('year'), `${table} hat noch eine Spalte year`)
       assert.ok(columns.includes('period'), `${table} hat keine Spalte period`)
     }
-    assert.ok(!rows('PRAGMA table_info(assessments)').map((r) => r[1]).includes('requested_year'))
+    // Das gewählte Kalenderjahr bleibt, auch ohne Objekt (Durchsicht von #222, I1): Wird die
+    // Auswertung später einem Objekt zugeordnet, entsteht daraus ihr Zeitraum.
+    assert.deepEqual(rows('SELECT id, requested_year FROM assessments ORDER BY id'), [['a-leer', null], ['a-mit', 2024], ['a-ohne', 2024]])
+    assert.equal(await placeAssessment(connection.db, 'a-ohne', { propertyId: 'objekt-1' }), 'ok')
+    assert.deepEqual(rows("SELECT requested_year, requested_period FROM assessments WHERE id = 'a-ohne'"), [[2024, '2024-01']])
     assert.deepEqual(rows('PRAGMA foreign_key_check'), [])
     connection.close()
   } finally {
@@ -139,7 +143,7 @@ test('Lesen und Schreiben: Position, Jahreskorrektur und Objekt tragen ihren Zei
   try {
     await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
     await opened.write((db) => createEntity(db, 'tenancies', 't1', {
-      unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024-01': 1000, '2025': 2000 },
+      unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024': 1000, '2025': 2000 },
     }))
     const neu = await opened.write((db) => createEntity(db, 'costItems', 'c1', {
       propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area',
@@ -164,18 +168,24 @@ test('Auswertung: ohne Objekt kein gewählter Zeitraum, mit Objekt der Kalenderz
   const opened = await openDatabase({ dataDir: dir })
   try {
     await opened.write(async (db) => {
-      await db.insert(assessments).values({ id: 'a1', file: 'a.pdf', propertyId: 'objekt-1', year: 2025, requestedPeriod: periodKey('2024-01'), createdAt: '2026-01-01T00:00:00Z' })
+      await db.insert(assessments).values({ id: 'a1', file: 'a.pdf', propertyId: 'objekt-1', year: 2025, requestedYear: 2024, requestedPeriod: periodKey('2024-01'), createdAt: '2026-01-01T00:00:00Z' })
     })
     const stand = async () => {
       const [row] = await opened.read((db) => db.select().from(assessments))
-      return [row?.propertyId, row?.year, row?.requestedPeriod]
+      return [row?.propertyId, row?.year, row?.requestedYear, row?.requestedPeriod]
     }
+    // Vom Objekt gelöst: Der Zeitraum entfällt, das gewählte Jahr bleibt (Durchsicht von #222, I1).
     assert.equal(await opened.write((db) => placeAssessment(db, 'a1', { propertyId: null })), 'ok')
-    assert.deepEqual(await stand(), [null, 2025, null])
+    assert.deepEqual(await stand(), [null, 2025, 2024, null])
+    // Wieder zugeordnet, ohne das Jahr anzufassen: Der Zeitraum kommt aus dem gewählten Jahr.
+    assert.equal(await opened.write((db) => placeAssessment(db, 'a1', { propertyId: 'objekt-1' })), 'ok')
+    assert.deepEqual(await stand(), ['objekt-1', 2025, 2024, '2024-01'])
+    assert.equal(await opened.write((db) => placeAssessment(db, 'a1', { propertyId: null })), 'ok')
+    // Ein von Hand gesetztes Jahr ist zugleich das gewählte, auch ohne Objekt.
     assert.equal(await opened.write((db) => placeAssessment(db, 'a1', { year: 2023 })), 'ok')
-    assert.deepEqual(await stand(), [null, 2023, null])
+    assert.deepEqual(await stand(), [null, 2023, 2023, null])
     assert.equal(await opened.write((db) => placeAssessment(db, 'a1', { propertyId: 'objekt-1', year: 2024 })), 'ok')
-    assert.deepEqual(await stand(), ['objekt-1', 2024, '2024-01'])
+    assert.deepEqual(await stand(), ['objekt-1', 2024, 2024, '2024-01'])
   } finally {
     opened.close()
     fs.rmSync(dir, { recursive: true, force: true })
@@ -239,11 +249,12 @@ test('Ein Objekt löschen, an dem eine Auswertung mit gewähltem Zeitraum hängt
   try {
     await opened.write((db) => createProperty(db, 'objekt-2', { name: 'Gartenweg 3', kind: 'mfh', address: '' }))
     await opened.write(async (db) => {
-      await db.insert(assessments).values({ id: 'a2', file: 'b.pdf', propertyId: 'objekt-2', year: 2025, requestedPeriod: periodKey('2025-01'), createdAt: '2026-01-01T00:00:00Z' })
+      await db.insert(assessments).values({ id: 'a2', file: 'b.pdf', propertyId: 'objekt-2', year: 2025, requestedYear: 2025, requestedPeriod: periodKey('2025-01'), createdAt: '2026-01-01T00:00:00Z' })
     })
     assert.deepEqual(await opened.write((db) => removeProperty(db, 'objekt-2')), { removed: true })
     const [row] = await opened.read((db) => db.select().from(assessments))
-    assert.deepEqual([row?.propertyId, row?.requestedPeriod], [null, null])
+    // Das gewählte Jahr bleibt (Durchsicht von #222, I1).
+    assert.deepEqual([row?.propertyId, row?.requestedYear, row?.requestedPeriod], [null, 2025, null])
   } finally {
     opened.close()
     fs.rmSync(dir, { recursive: true, force: true })
@@ -258,6 +269,47 @@ test('Der Rhythmus lässt sich in dieser Version nicht über die Objekte setzen 
   try {
     const p = await opened.write((db) => updateProperty(db, 'objekt-1', { periodRules: { startMonth: 5, changes: ['2026-05'] }, periodStartMonth: 5 }))
     assert.deepEqual(p?.periodRules, { startMonth: 1, changes: [] })
+  } finally {
+    opened.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht von #222 (M1, M2): Ein alter Tab schickt die Jahreskorrektur nach Jahreszahl. Dann gilt
+// sein Stand vollständig für die Kalenderzeiträume: Ein Kalenderzeitraum, zu dem er keine Jahreszahl
+// schickt, ist gelöscht, und eine Jahreszahl geht dem gleichzeitig mitgeschickten 'JJJJ-01' vor.
+test('Jahreskorrektur aus einem alten Tab: die Jahreszahlen gelten vollständig, was fehlt, ist gelöscht', async () => {
+  const dir = tempDir()
+  const opened = await openDatabase({ dataDir: dir })
+  try {
+    const korrektur = async () => Reflect.get((await opened.read(readStock)).tenancies[0] ?? {}, 'prepaymentOverrides')
+    await opened.write((db) => createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }))
+    await opened.write((db) => createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2024-01': 1000, '2025-01': 2000 } }))
+    // Vorrang (M2): Jahreszahl und Kalenderzeitraum desselben Jahres, die Jahreszahl gilt.
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { prepaymentOverrides: { '2024-01': 1000, '2025-01': 2000, '2025': 2500 } }))
+    assert.deepEqual(await korrektur(), { '2025-01': 2500 })
+    // Zurücksetzen (M1): Der alte Tab hat „2025“ gelöscht und schickt den Rest, darunter einen
+    // Kalenderzeitraum, den er so vom Server bekam. Gelöscht ist gelöscht.
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { prepaymentOverrides: { '2024': 1000, '2025-01': 2500 } }))
+    assert.deepEqual(await korrektur(), { '2024-01': 1000 })
+  } finally {
+    opened.close()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// Durchsicht von #222 (M3): Ein ungültiger Zeitraum wird abgelehnt und nicht still ersetzt.
+test('Schreiben: ein ungültiger Zeitraum einer Position wird abgelehnt, beim Anlegen wie beim Ändern', async () => {
+  const dir = tempDir()
+  const opened = await openDatabase({ dataDir: dir })
+  try {
+    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c1', position({ period: '2025-13' }))),
+      (err: unknown) => err instanceof PeriodError && /Ungültiger Zeitraum/.test(err.message))
+    await opened.write((db) => createEntity(db, 'costItems', 'c2', position({ period: '2025-01' })))
+    for (const bad of ['abc', '2025', 2025, null]) {
+      await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c2', { period: bad, amountCents: 7 })), PeriodError, String(bad))
+    }
+    assert.equal(Reflect.get(await opened.read((db) => findEntity(db, 'costItems', 'c2')) ?? {}, 'period'), '2025-01')
   } finally {
     opened.close()
     fs.rmSync(dir, { recursive: true, force: true })

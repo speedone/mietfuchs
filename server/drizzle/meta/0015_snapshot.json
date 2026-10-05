@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f058e5a2-7a9c-429d-be58-f75c9a687b64",
+  "id": "9a4892ee-9394-478e-aa46-88016c796d3b",
   "prevId": "0f5be286-e2f9-4006-a807-24c21b497911",
   "tables": {
     "ai_slots": {
@@ -270,6 +270,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "requested_year": {
+          "name": "requested_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "requested_period": {
           "name": "requested_period",
           "type": "text",
@@ -366,6 +373,10 @@
         "assessments_year_positive": {
           "name": "assessments_year_positive",
           "value": "\"year\" > 0"
+        },
+        "assessments_requested_year_positive": {
+          "name": "assessments_requested_year_positive",
+          "value": "\"requested_year\" IS NULL OR \"requested_year\" > 0"
         },
         "assessments_requested_period_with_property": {
           "name": "assessments_requested_period_with_property",

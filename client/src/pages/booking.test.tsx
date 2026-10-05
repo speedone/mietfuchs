@@ -332,7 +332,7 @@ test('„grüne Vorschläge bereit“ zählt nur, was „Alle grünen übernehme
 // Eine Auswertung, wie der Server sie liefern könnte, für Fälle, die der echte Planer heute nicht
 // erzeugt (eine Kostenart aus dem Altbestand, ein grüner Vorschlag ohne Vorauswahl).
 const crafted = (fields: Partial<LineFields>, extra: Partial<LineSuggestion> = {}): AssessmentView => ({
-  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedPeriod: calendarPeriod(YEAR), vendor: 'Hausmeisterdienst', invoiceDate: null,
+  id: 'a1', file: 'alt.pdf', propertyId: 'objekt-1', year: YEAR, detectedYear: YEAR, requestedYear: YEAR, requestedPeriod: calendarPeriod(YEAR), vendor: 'Hausmeisterdienst', invoiceDate: null,
   totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false, nextIdx: 1, createdAt: '2026-10-02T00:00:00.000Z',
   originalName: 'alt.pdf', open: true, sumWarning: null,
   lines: [{
