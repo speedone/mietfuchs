@@ -111,7 +111,7 @@ Jeder Befund ist entschieden. Eine Ablehnung nennt ihre Quelle.
 | G-A2 | Heizpositionen verwaisen bei eigener Heizperiode | **Übernommen.** Umschlüsseln mit Vorschau; die Schreibprüfung lehnt einen Schlüssel ohne Heizperiode ab (400) | 3.0, 5.3, 12.2 |
 | G-A3 | C wird bei Messdienst und `manual` abgegrenzt, die Mieter haben aber die ganze Lieferung bezahlt | **Übernommen.** C folgt dem, was im Topf berechnet ist; abgegrenzt wird nur E | 3.3, 7.6, 9.4 |
 | G-A4 | `fuelCarry` ist nicht eingefroren und wird zweimal oder gar nicht gebucht | **Übernommen.** Übertrag frieren, Lieferung sperren, Anteil einer abgeschlossenen Periode beim Vermieter | 8.2 |
-| G-A5 | Golden F06 bleibt nicht wortgleich | **Übernommen.** F06 ändert in PR 6 einen Hinweis, keine Zahl, und das ist begründet | 1.2, 12.1 |
+| G-A5 | Golden F06 bleibt nicht wortgleich | **Übernommen.** F06 ändert in PR 6 einen Hinweis, keine Zahl, und das ist begründet. **Nachtrag nach PR 6: F06 bleibt doch wortgleich** (Kostenart „Heizung“ ist keine Heizposition, siehe 12.1) | 1.2, 12.1 |
 | G-B1 | Gemessenes Q gegen Hᵢ | **Abgelehnt.** § 9 Abs. 2 S. 6 gilt nach dem Wortlaut nur für „die nach den Zahlenwertgleichungen in Satz 2 oder 4 bestimmte Wärmemenge“, und § 9 Abs. 3 letzter Satz: „Soweit die Abrechnung über Kilowattstunden-Werte erfolgt, ist eine Umrechnung in Brennstoffverbrauch nicht erforderlich“ (geprüft 05.10.). Offene Frage 15.1 Nr. 9 mit Hinweis, ⟨Norm offen: VDI 2077⟩ | 8.3, 15.1 |
 | G-B2 | L_self anteilig zu kürzen widerspricht #203 | **Übernommen.** L_self ist exakt, nur `co2Share` läuft über `take()`. W10 der ersten Fassung ist aufgehoben | 7.4 |
 | G-B3 | Toleranz der Probe zu eng hergeleitet, S unklar | **Übernommen.** S ist die gedruckte Kostensumme, Betrag = S + L exakt ± 1 ct; Toleranz nur für die Einzelbeträge | 5.5, 7.3 |
@@ -383,7 +383,7 @@ Grundlage sind die Prüfungen der Pläne PR 10–22 vom 05.10.2026 und die Ände
 
 ### 1.2 Was sich insgesamt ergibt
 
-1. **Wer nichts einstellt, merkt nichts.** Ohne Heizanlage, ohne CO₂-Angaben und mit Kalenderjahr bleibt jede Zahl centgenau gleich. Golden F01–F11 bleiben bis PR 5 wortgleich, ebenso die db.json-Fixtures. Ab PR 6 bekommt **F06** (Heizposition 2025 ohne Anlage) den Hinweis `co2.fuel-unknown`; damit ändert sich die Liste `warnings` um einen Text, keine Zahl. Die Änderung steht begründet im README von F06 (G-A5). Der Hinweis wird im CHANGELOG angekündigt.
+1. **Wer nichts einstellt, merkt nichts.** Ohne Heizanlage, ohne CO₂-Angaben und mit Kalenderjahr bleibt jede Zahl centgenau gleich. Golden F01–F11 bleiben bis PR 5 wortgleich, ebenso die db.json-Fixtures. Ab PR 6 bekommt **F06** (Heizposition 2025 ohne Anlage) den Hinweis `co2.fuel-unknown`; damit ändert sich die Liste `warnings` um einen Text, keine Zahl. Die Änderung steht begründet im README von F06 (G-A5). Der Hinweis wird im CHANGELOG angekündigt. **Nachtrag nach PR 6:** F06 bleibt wortgleich. Seine Position trägt die Kostenart „Heizung“, nicht „Heizung und Warmwasser“ (`HEATING_CATEGORY`), und ist für die Berechnung keine Heizposition, wie schon für die Regeln aus #140; den Hinweis `co2.fuel-unknown` halten Tests in calc-co2.test.ts wörtlich fest.
 2. **Drei Wege durch die Heizung**, gewählt an der Anlage. `method` legt den Weg fest:
    - `service`: Messdienst oder Hausverwaltung liefern Einzelbeträge;
    - `self`: eigene Heizkostenabrechnung nach HeizkostenV;
@@ -2177,7 +2177,7 @@ Nach Schritt 2 legt Mietfuchs die Anlage an. Zeitraum, Wohnungen und Fernablesba
 **Bestehende Fixtures:**
 
 - F01–F11 bleiben bis PR 5 wortgleich (db.json und expected.json).
-- **Ab PR 6 ändert sich F06** (Heizposition 2025 nach Zählern, ohne Anlage): `warnings` und `notices` bekommen `co2.fuel-unknown`. Keine Zahl ändert sich. README und Commit nennen den Grund (G-A5).
+- **Ab PR 6 ändert sich F06** (Heizposition 2025 nach Zählern, ohne Anlage): `warnings` und `notices` bekommen `co2.fuel-unknown`. Keine Zahl ändert sich. README und Commit nennen den Grund (G-A5). **Nachtrag nach PR 6:** F06 bleibt wortgleich. Seine Position trägt die Kostenart „Heizung“, nicht „Heizung und Warmwasser“ (`HEATING_CATEGORY`), und ist für die Berechnung keine Heizposition, wie schon für die Regeln aus #140; den Hinweis `co2.fuel-unknown` halten Tests in calc-co2.test.ts wörtlich fest.
 - Ein Gleichheitstest prüft, dass `snapshotFor` mit Regeln `{ startMonth: 1, changes: [] }` und ohne Anlage dasselbe ergibt wie `snapshotOf(…, year)`, über das ganze Ergebnis außer `legalBasis.values` und den neuen CO₂-Hinweisen.
 
 **Neue Fixtures:**
