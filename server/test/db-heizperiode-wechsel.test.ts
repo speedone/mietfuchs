@@ -193,3 +193,22 @@ test('Eine veraltete Vorschau schreibt nichts (Marke wie beim Wechsel des Objekt
   })
 })
 
+test('Rhythmuswechsel bei Weg d ab Monat X: gefragt werden nur Monate, die die Heizperiode anrechnet (Durchsicht von #231, Minor 5)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await eigeneHeizperiode(db, 5)
+      await db.insert(heatingSeparateSpans).values({ plantId: 'hp1', from: '2026-01', until: null })
+      await updateEntity(db, 'tenancies', 't1', {
+        heatingPrepayments: [{ from: '2026-01', monthlyCents: 12300 }],
+        heatingPrepaymentOverrides: [{ plantId: 'hp1', period: '2025-05', cents: 40000, provisional: false, fromMonth: null, toMonth: null }],
+      })
+    })
+    // Neu ab November 2025: Die Heizperiode 11/2025–10/2026 reicht über X, ihre Monate November und
+    // Dezember 2025 rechnet aber die Abrechnung 2025 an.
+    const v = await preview(opened, { startMonth: 5, changes: ['2025-11'] })
+    const asks = v.overrides.flatMap((o) => o.ask.map((a) => [a.kind, a.period, a.months]))
+    assert.deepEqual(asks.filter(([kind]) => kind === 'heating'), [['heating', '2025-11', '01–10/2026']], JSON.stringify(asks))
+  })
+})

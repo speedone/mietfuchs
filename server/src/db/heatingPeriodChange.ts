@@ -184,8 +184,16 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
       e.dropHeating.add(o.period)
       e.from.push({ kind: 'heating', key: o.period, label: periodLabel(a.old), cents: o.cents })
       for (const x of withMonths) {
-        if (separateNow(x.period)) e.ask.set(`heating:${x.period.key}`, { kind: 'heating', period: x.period, months: x.months })
-        else for (const p of periodsBetween(objectRules, `${x.months[0] ?? x.period.from.slice(0, 7)}-01`, x.period.to)) askTotal(t, p)
+        // Gefragt werden nur die Monate, die die getrennte Heizperiode danach anrechnet, wie beim
+        // Einschalten (Durchsicht von #231); ihre Monate vor X rechnet eine Abrechnung P an.
+        const owned = separateNow(x.period) ? x.months.filter((m) => separateOwner(nextPlant, objectRules, m)?.key === x.period.key) : []
+        if (owned.length > 0) e.ask.set(`heating:${x.period.key}`, { kind: 'heating', period: x.period, months: owned })
+        const rest = x.months.filter((m) => !owned.includes(m))
+        const firstRest = rest[0]
+        const lastRest = rest[rest.length - 1]
+        if (firstRest !== undefined && lastRest !== undefined) {
+          for (const p of periodsBetween(objectRules, `${firstRest}-01`, `${lastRest}-01`)) askTotal(t, p)
+        }
       }
     }
     for (const schluessel of Object.keys(t.prepaymentOverrides)) {
