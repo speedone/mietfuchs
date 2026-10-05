@@ -182,6 +182,9 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
     external: { measure: a?.externalBasis?.measure ?? 'mea', total: a?.externalBasis?.total ?? null, totalCents: fields.externalTotalCents },
     tenancyAmounts: {},
     selfAmounts: {},
+    // Die Belegbuchung kennt keinen Leistungszeitraum je Zeile (#208); das Jahr der Zahlung setzt
+    // die Buchung (bookingPlan.ts).
+    serviceFrom: null, serviceTo: null, taxYear: null, heatingPart: null,
   }
 }
 

@@ -1,16 +1,17 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, Meter, MeterType, PeriodKey, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, Meter, MeterType, PeriodKey, SplitPreviewPart, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
 import { sameCostCandidates, type DuplicateItem } from '../../shared/duplicates.ts'
 import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
-import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
+import { CREDIT_WITH_AMOUNTS, costItemBody, euro, type CostItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
-import { calendarContext, calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod, calendarYearPeriod, spansTwoYears } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -38,6 +39,13 @@ export type ItemForm = {
   tenancyAmounts: Record<string, string>
   // Beträge selbstgenutzter Wohnungen (#104): Wohnungs-ID → Betrags-Eingabe
   selfAmounts: Record<string, string>
+  // Leistungszeitraum als 'JJJJ-MM-TT' aus <input type="date">, leer heißt keine Angabe (#208)
+  serviceFrom: string
+  serviceTo: string
+  // Jahr der Zahlung als Text der Auswahl, leer heißt keine Angabe (#208)
+  taxYear: string
+  // „Brennstoff/Energie“, nur bei Heizkosten (#208, A1)
+  heatingFuel: boolean
   invoiceFile?: string
 }
 
@@ -57,6 +65,10 @@ export const EMPTY_ITEM_FORM: ItemForm = {
   externalTotalAmount: '',
   tenancyAmounts: {},
   selfAmounts: {},
+  serviceFrom: '',
+  serviceTo: '',
+  taxYear: '',
+  heatingFuel: false,
 }
 
 // Formular aus einer gespeicherten Position füllen
@@ -80,6 +92,10 @@ export function itemToForm(i: CostItem): ItemForm {
     externalTotalAmount: i.externalBasis ? fmtCentsInput(i.externalBasis.totalCents) : '',
     tenancyAmounts: Object.fromEntries(Object.entries(i.tenancyAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
     selfAmounts: Object.fromEntries(Object.entries(i.selfAmounts ?? {}).map(([id, c]) => [id, fmtCentsInput(c)])),
+    serviceFrom: i.serviceFrom ?? '',
+    serviceTo: i.serviceTo ?? '',
+    taxYear: i.taxYear !== undefined ? String(i.taxYear) : '',
+    heatingFuel: i.heatingPart === 'fuel',
     invoiceFile: i.invoiceFile ?? undefined,
   }
 }
@@ -431,6 +447,10 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     external: { measure: form.externalMeasure, total: parseAmountNumber(form.externalTotal), totalCents: parseEuro(form.externalTotalAmount) },
     tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, period)),
     selfAmounts: parsed(visibleSelfAmounts(form, units)),
+    serviceFrom: form.serviceFrom || null,
+    serviceTo: form.serviceTo || null,
+    taxYear: form.taxYear === '' ? null : Number(form.taxYear),
+    heatingPart: form.heatingFuel ? 'fuel' : null,
   }
 }
 
@@ -467,3 +487,33 @@ export function sameCostOf<T extends DuplicateItem>(
 ): T[] {
   return sameCostCandidates(items, { propertyId, period: typeof period === 'number' ? calendarPeriod(period) : period, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
 }
+
+// ---------- Leistungszeitraum und Aufteilen (#208, Entwurf 3.4, 3.10) ----------
+
+// Nur eine kalte Rechnung mit Leistungszeitraum kann zwei Zeiträume berühren; Heizkosten werden nie
+// nach Tagen geteilt (G-C1).
+// Ein schon aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung: Bleiben
+// Leistungszeitraum und Zeitraum gegenüber der gespeicherten Position (`before`) gleich, wird nur
+// berichtigt und nicht erneut aufgeteilt; der Server nimmt das ebenso an (repository.ts).
+export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'serviceFrom' | 'serviceTo' | 'period'> | null): boolean {
+  if (body.serviceFrom === null || body.serviceTo === null || body.category === HEATING_CATEGORY) return false
+  return !(before && before.serviceFrom === body.serviceFrom && before.serviceTo === body.serviceTo && before.period === body.period)
+}
+
+// Die Rückfrage vor dem Aufteilen, oder warum nicht aufgeteilt werden kann.
+export function splitDecision(parts: readonly SplitPreviewPart[], taxYear: string): { message: string } | { error: string; needsTaxYear: boolean } {
+  const closed = parts.find((p) => p.closed)
+  if (closed) return { error: `Die Abrechnung ${closed.label} ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.`, needsTaxYear: false }
+  const twoYears = parts.find((p) => p.needsTaxYear)
+  if (twoYears && taxYear === '') {
+    return { error: `Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum ${twoYears.label}, der über zwei Kalenderjahre reicht.`, needsTaxYear: true }
+  }
+  return { message: `Die Rechnung betrifft ${parts.length} Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: ${parts.map((p) => `${p.label}: ${euro(p.amountCents)}`).join(', ')}.` }
+}
+
+// Das Jahr der Zahlung zeigt das Formular nur, wenn der Zeitraum über zwei Kalenderjahre reicht oder
+// ein Teil einer aufgeteilten Rechnung dorthin gehört (Entwurf 3.10, 11.4).
+export const showsTaxYear = (period: Pick<BillingPeriod, 'from' | 'to'>, needsTaxYear: boolean): boolean => needsTaxYear || spansTwoYears(period)
+
+// Vom Jahr des Beginns bis ein Jahr nach dem Ende (dieselbe Spanne prüft der Server).
+export const taxYearOptions = (startYear: number): number[] => [startYear, startYear + 1, startYear + 2]

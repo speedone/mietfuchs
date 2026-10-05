@@ -1,6 +1,6 @@
 // „Aus dem Vorjahr übernehmen“ (#141): Die Positionen des Vorjahres werden zur Vorlage, ohne
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, contextOf, periodKey, periodOfKey } from '../../shared/period.ts'
 import { describe, expect, test } from 'vitest'
 import type { CostItem, Unit } from './types'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
@@ -160,4 +160,25 @@ describe('Nicht umlagefähig mit Einheit für die Steuer (#163)', () => {
     const row = withCarryAmount(rowOf(carryOverRows(items, 2026), 'Wartung Therme EG'), '180,00')
     expect(carryOverBody(row, UNITS, 2026)).toMatchObject({ body: { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' } })
   })
+})
+
+test('Mai bis April: die Übernahme verschiebt das Jahr der Zahlung um ein Jahr, sonst lehnte der Server jede Zeile ab (#208)', () => {
+  // Ein Zeitraum über zwei Kalenderjahre verlangt das Jahr der Zahlung. Die Liste zeigt das Feld
+  // nicht; übernommen wird der Rhythmus der Vorlage: 2024/2025 im Jahr 2025 gezahlt, also
+  // 2025/2026 im Jahr 2026.
+  const MAI = { startMonth: 5, changes: [] }
+  const vorjahr = periodOfKey(MAI, periodKey('2024-05')) ?? expect.unreachable('2024-05')
+  const jetzt = periodOfKey(MAI, periodKey('2025-05')) ?? expect.unreachable('2025-05')
+  const items = [item({ period: periodKey('2024-05'), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48000, key: 'area', taxYear: 2025 })]
+  const [row] = carryOverRows(items, contextOf(jetzt, vorjahr))
+  if (!row) return expect.unreachable('keine Zeile')
+  const built = carryOverBody(withCarryAmount(row, '480,00'), UNITS, jetzt)
+  if ('error' in built) return expect.unreachable(built.error)
+  expect([built.body.period, built.body.taxYear]).toEqual(['2025-05', 2026])
+  // Ohne Jahr der Zahlung an der Vorlage (Kalenderjahr) bleibt es leer.
+  const [kalender] = carryOverRows([item({ period: calendarPeriod(2024), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 48000, key: 'area' })], 2025)
+  if (!kalender) return expect.unreachable('keine Zeile')
+  const k = carryOverBody(withCarryAmount(kalender, '480,00'), UNITS, 2025)
+  if ('error' in k) return expect.unreachable(k.error)
+  expect(k.body.taxYear).toBeNull()
 })

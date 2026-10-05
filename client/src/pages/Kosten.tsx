@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, Tenancy, Unit } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -30,9 +30,15 @@ import {
   withKey,
   withCategory,
   sameCostOf,
+  needsSplitCheck,
+  splitDecision,
+  showsTaxYear,
+  taxYearOptions,
   type ItemForm,
   type KeyContext,
 } from '../costForm'
+import CostPeriodFields from '../components/CostPeriodFields'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { aiSummary } from '../aiForm'
@@ -77,6 +83,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const [items, setItems] = useState<CostItem[]>([])
   const [meters, setMeters] = useState<Meter[]>([])
   const [form, setForm] = useState<ItemForm | null>(null)
+  // Verlangt die Vorschau des Aufteilens das Jahr der Zahlung (#208), zeigt das Formular das Feld
+  // auch bei einem Zeitraum in einem Kalenderjahr.
+  const [needsTaxYear, setNeedsTaxYear] = useState(false)
+  useEffect(() => { if (!form) setNeedsTaxYear(false) }, [form])
   const [error, setError] = useState('')
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
@@ -252,6 +262,41 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     setError('')
     const body = JSON.stringify(built.body)
     const editing = !!form.id
+    // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau,
+    // dann nach Rückfrage alle Teile auf einmal.
+    if (needsSplitCheck(built.body, editing ? items.find((i) => i.id === form.id) : null)) {
+      let parts: SplitPreviewPart[]
+      try {
+        parts = (await api<{ parts: SplitPreviewPart[] }>(
+          editing ? `/api/costItems/${form.id}/split/preview` : withProperty('/api/costItems/split/preview', propertyId),
+          { method: 'POST', body },
+        )).parts
+      } catch (e) {
+        setError(errorText(e))
+        return
+      }
+      if (parts.length > 1) {
+        const decision = splitDecision(parts, form.taxYear)
+        if ('error' in decision) {
+          setNeedsTaxYear(decision.needsTaxYear)
+          setError(decision.error)
+          return
+        }
+        const ok = await confirm({ title: 'Rechnung aufteilen?', message: decision.message, confirmLabel: 'Aufteilen und speichern', cancelLabel: 'Abbrechen' })
+        if (!ok) return
+        try {
+          await api(editing ? `/api/costItems/${form.id}/split` : withProperty('/api/costItems/split', propertyId), { method: editing ? 'PUT' : 'POST', body })
+        } catch (e) {
+          setError(errorText(e))
+          return
+        }
+        const desc = form.description.trim()
+        setForm(null)
+        await load()
+        toast(`„${desc}“ auf ${parts.length} Abrechnungszeiträume aufgeteilt.`)
+        return
+      }
+    }
     // Eine neue Position, für die dieselbe Rechnung schon erfasst sein könnte (shared/duplicates.ts):
     // nachfragen, wie in der Schnellerfassung. Nur beim Neuanlegen; wer bearbeitet, meint diese.
     if (!editing) {
@@ -646,6 +691,10 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
+            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || showsTaxYear(period, needsTaxYear))}>
+              <summary>Weitere Angaben — Leistungszeitraum{showsTaxYear(period, needsTaxYear) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showsTaxYear(period, needsTaxYear)} years={taxYearOptions(year)} />
+            </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (
               <div className="field grow muted">

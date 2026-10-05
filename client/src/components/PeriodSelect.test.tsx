@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 // Der angezeigte Wert des Umschalters entspricht dem gewählten Zeitraum (CLAUDE.md, Tests Ebene 3).
-import { describe, expect, test } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, test } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
 import { PeriodSelectView } from './PeriodSelect'
 import { periodView } from '../periodForm'
 import { CALENDAR_RULES } from '../../../shared/period.ts'
+
+
+afterEach(cleanup)
 
 describe('Zeitraumumschalter (#208)', () => {
   test('Kalenderobjekt: „Abrechnungsjahr“ mit der Jahreszahl', () => {

@@ -11,7 +11,7 @@ import type { BillingPeriod, CostItem, Tenancy, Unit } from './types'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
-import { calendarContext, type PeriodContext } from '../../shared/period.ts'
+import { calendarContext, spansTwoYears, type PeriodContext } from '../../shared/period.ts'
 
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
@@ -29,6 +29,9 @@ export type CarryRow = {
   already: boolean
   // Einzelbeträge je Mieter lassen sich nicht in einer Zeile eintragen, nur im Formular.
   inline: boolean
+  // Das Jahr der Zahlung (#208), um den Abstand der Zeiträume verschoben: Wer 2024/2025 im Jahr
+  // 2025 gezahlt hat, zahlt 2025/2026 im Jahr 2026. Leer, wenn die Vorlage keines trägt.
+  taxYear?: string
 }
 
 // Steht im Jahr schon eine Position, die dieselbe Rechnung sein könnte? Die Regel ist die gemeinsame
@@ -70,6 +73,7 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
       checked: false,
       already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, ctx),
       inline: source.key !== 'amounts',
+      taxYear: source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : '',
     }
   })
 }
@@ -114,6 +118,10 @@ export function carryOverForm(row: CarryRow): ItemForm {
     externalTotalAmount: row.externalTotalAmount,
     tenancyAmounts: {},
     selfAmounts: {},
+    // Ein Leistungszeitraum oder ein Jahr der Zahlung des Vorzeitraums gilt nicht für den neuen (#208).
+    // Das Jahr der Zahlung kommt verschoben aus der Zeile (carryOverRows).
+    serviceFrom: '', serviceTo: '', taxYear: row.taxYear ?? '',
+    heatingFuel: row.source.heatingPart === 'fuel',
     invoiceFile: undefined,
   }
 }
@@ -122,5 +130,8 @@ export function carryOverForm(row: CarryRow): ItemForm {
 export function carryOverBody(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
   if (!row.inline) return { error: 'Einzelbeträge je Mieter bitte im Formular eintragen („Im Formular öffnen“).' }
   if (!row.amount.trim()) return { error: 'Betrag fehlt.' }
-  return buildCostItemBody(carryOverForm(row), units, period, tenancies)
+  const form = carryOverForm(row)
+  // Liegt der neue Zeitraum in einem Kalenderjahr (etwa ein Rumpf nach einem Wechsel), ist es dieses (#208).
+  const twoYears = typeof period !== 'number' && spansTwoYears(period)
+  return buildCostItemBody(twoYears ? form : { ...form, taxYear: '' }, units, period, tenancies)
 }
