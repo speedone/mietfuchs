@@ -1,11 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import {
-  adjustedPrepaymentLabel, heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, separateHeatingNote, settlementPaths, settlementTitle, totalLabel,
+  adjustedPrepaymentLabel, heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
+import { useFocusTarget } from '../focus'
+import { settledInvoiceFiles } from '../costPeriods'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
@@ -34,9 +36,12 @@ type Props = {
   reload: () => Promise<void>
   // Für „Hier beheben →“ an einem Hinweis (#112), mit dem betroffenen Eintrag (#142)
   onNavigate?: (tab: NoticeTab, focus?: NoticeSubject) => void
+  // Sichtprüfung E45: aus dem Cockpit eine Heizkostenabrechnung („Anlage|Heizperiode“) vorwählen.
+  focus?: NoticeSubject | null
+  onFocusDone?: () => void
 }
 
-export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
+export default function Abrechnung({ settings, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
   const { key, label, param, calendar, period } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
@@ -65,6 +70,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const separateHeating = target === null && heatingList.length > 0
   // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
   useEffect(() => { setTarget(null) }, [param, propertyId])
+  // Das Ziel aus dem Cockpit, sobald die Liste da ist und es darin steht (E45).
+  useFocusTarget(focus, 'heatingSettlement', heatingList, (h) => `${h.plantId}|${h.period.key}`, (h) => setTarget({ plantId: h.plantId, period: h.period.key }), onFocusDone)
 
   const printAdjust = settings?.printAdjustSuggestion !== false // Standard: an
   const printAttachments = settings?.printAttachments === true // Standard: aus
@@ -106,16 +113,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     await reload()
   }
 
-  // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
-  const invoiceFiles = useMemo(
-    () => [...new Set(costItems.filter((c) => c.period === key && c.invoiceFile).map((c) => c.invoiceFile!))],
-    [costItems, key],
-  )
+  // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
+  // Heizperiode, die darin abgerechnet wird
+  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems) : []), [data, costItems])
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.period === key && c.invoiceFile === f)
+    const linked = costItems.filter((c) => c.invoiceFile === f && invoiceFiles.includes(f))
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -543,17 +548,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                       </td>
                       <td className="num" style={{ fontWeight: 400 }}>− {fmtEuro(st.prepaymentCents)}</td>
                     </tr>
-                    {prepaymentSplit(st, separateHeating).map((line) => (
+                    {prepaymentSplit(st).map((line) => (
                       <tr key={line.label}>
                         <td colSpan={3} className="muted">{line.label}</td>
                         <td className="num muted">{fmtEuro(line.cents)}</td>
                       </tr>
                     ))}
-                    {separateHeatingNote(st, separateHeating) && (
-                      <tr>
-                        <td colSpan={4} className="muted">{separateHeatingNote(st, separateHeating)}</td>
-                      </tr>
-                    )}
                     <tr>
                       <td colSpan={3}>
                         {st.balanceCents >= 0 ? 'Guthaben zu Ihren Gunsten' : 'Nachzahlung zu Ihren Lasten'}

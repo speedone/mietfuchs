@@ -60,6 +60,18 @@ test('R3/B3/A3: eigene Heizkostenabrechnung je Heizperiode, Frist 30.04.2027, Vo
   assert.deepEqual(p.separateHeating?.map((x) => [x.period.key, x.deadline]), [['2025-05', '2027-04-30']])
 })
 
+// Sichtprüfung E42: In der Betriebskostenabrechnung 2025 stand „davon Heizvorauszahlung 0,00 €“ ohne
+// Erklärung. Die Heizvorauszahlung ab Mai 2025 gehört der Heizkostenabrechnung 2025/2026; das sagt die
+// Abrechnung jetzt in einem Satz. Vor der getrennten Heizvorauszahlung (2024) gibt es nichts zu sagen.
+test('E42: die Betriebskostenabrechnung nennt, wo die Heizvorauszahlungen ihrer Monate abgerechnet werden', () => {
+  const src = haus({ tenancies: [mieter('A', 'u1', [{ from: '2025-05', monthlyCents: 12300 }])] })
+  const p25 = st(computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))), 'A')
+  assert.equal(p25.heatingPrepaymentCents, 0)
+  assert.equal(p25.prepaymentNote, 'Ihre Heizkostenvorauszahlungen Mai bis Dezember 2025 sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung 2025/2026 abgerechnet.')
+  const p24 = st(computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2024-01'))), 'A')
+  assert.equal(p24.prepaymentNote, undefined)
+})
+
 test('C2/D2: vorläufige Heizkorrektur 876 € für Mai–Dezember 2026, Staffel Januar–April 2027: 1.368 € angerechnet', () => {
   const src = haus({
     heatingPlants: [anlage(ab2026)],

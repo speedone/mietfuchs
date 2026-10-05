@@ -1948,7 +1948,22 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const plant = plants.find((p) => servesUnit(p, t.unit))
     if (!plant) return computePrepaymentCents(t, period)
     const way = wayOf(plant)
-    return computePrepaymentCents(t, period, { ownerOf: (m) => separateOwner(way, objectRules, m)?.key ?? null })
+    const pp = computePrepaymentCents(t, period, { ownerOf: (m) => separateOwner(way, objectRules, m)?.key ?? null })
+    // Sichtprüfung E42: Die Heizvorauszahlungen von Monaten, die einer getrennt abgerechneten
+    // Heizperiode gehören, stehen hier nicht. Ohne Satz las der Mieter „davon Heizvorauszahlung
+    // 0,00 €“ und fragte, wo sie geblieben ist.
+    const schedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
+    const byOwner = new Map<string, { label: string, months: string[] }>()
+    for (const m of periodMonths(period)) {
+      if (t.start > `${m}-01` || (t.end && t.end < `${m}-01`) || rateAtMonth(schedule, m) === 0) continue
+      const owner = separateOwner(way, objectRules, m)
+      if (owner === null) continue
+      const entry = byOwner.get(owner.key) ?? { label: periodLabel(owner), months: [] }
+      entry.months.push(m)
+      byOwner.set(owner.key, entry)
+    }
+    const note = [...byOwner.values()].map((e) => `Ihre Heizkostenvorauszahlungen ${monthSpanText(e.months)} sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung ${e.label} abgerechnet.`).join(' ')
+    return note ? { ...pp, note } : pp
   }
   const statements = new Map<string, Statement>()
   for (const t of partTenancies) {

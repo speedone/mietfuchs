@@ -718,7 +718,7 @@ export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
 // `heatingPlant` (Heizung PR 5): die Heizanlage in den Stammdaten; `id` leer heißt, es gibt noch keine,
 // und der Knopf führt zur Einrichtung (PR 6). `heatingCosts` (Heizung PR 6): die CO₂-Angaben und das
 // Warmwasser einer Anlage auf der Seite Heizkosten; `id` ist die Anlage.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant' | 'heatingCosts'; id: string }
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant' | 'heatingCosts' | 'heatingSettlement'; id: string }
 export type Notice = {
   code: string
   level: NoticeLevel

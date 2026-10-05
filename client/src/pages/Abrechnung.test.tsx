@@ -140,3 +140,30 @@ test('„zurücksetzen“ entfernt die Korrektur auch, wenn der Server sie nach 
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)
   expect(puts[0]).toEqual({ prepaymentOverrides: { [calendarPeriod(YEAR - 1)]: 40000 } })
 })
+
+// Sichtprüfung E45: „Heizkostenabrechnung … – Zur Abrechnung →“ im Cockpit wechselt in den Zeitraum,
+// in dem die Heizperiode endet, und die Seite wählt dort die Heizkostenabrechnung aus.
+test('ein Ziel „Heizkostenabrechnung“ wählt ihren Reiter', async () => {
+  const h = { plantId: 'hp1', plantName: '', deadline: `${YEAR + 1}-04-30`, closed: null,
+    period: { key: `${YEAR - 1}-05`, from: `${YEAR - 1}-05-01`, to: `${YEAR}-04-30`, short: false, label: `${YEAR - 1}/${YEAR}` } }
+  const calls: string[] = []
+  const base = globalThis.fetch
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const path = url.split('?')[0] ?? url
+    calls.push(path)
+    if (path === '/api/heating-settlements') return json([h])
+    if (path === `/api/heating-settlement/hp1/${YEAR - 1}-05`) return json({ ...settlement, period: h.period, scope: { kind: 'heating', plantId: 'hp1', plantName: '' } })
+    return base(url, init)
+  })
+  const done = vi.fn()
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} focus={{ kind: 'heatingSettlement', id: `hp1|${YEAR - 1}-05` }} onFocusDone={done} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  await waitFor(() => expect(calls).toContain(`/api/heating-settlement/hp1/${YEAR - 1}-05`), SLOW)
+  expect(done).toHaveBeenCalled()
+})
