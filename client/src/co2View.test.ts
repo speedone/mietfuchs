@@ -1,0 +1,40 @@
+import { expect, test } from 'vitest'
+import { fmtEuro } from './api'
+import { co2Block } from './co2View'
+import { periodKey } from '../../shared/period.ts'
+import type { Co2Assessment, HeatingStatement } from './types'
+
+// `node:assert` gibt es im Client nicht; für die eine Stelle, die ohne Block abbrechen soll.
+const assert = { fail: (text: string): never => { throw new Error(text) } }
+const TABELLE = [[0, 12, 0], [12, 17, 10], [17, 22, 20], [22, 27, 30], [27, 32, 40], [32, 37, 50], [37, 42, 60], [42, 47, 70], [47, 52, 80], [52, null, 95]]
+  .map(([from, to, landlordPercent]) => ({ from: from ?? 0, to: to ?? null, landlordPercent: landlordPercent ?? 0 }))
+const bewertung = (over: Partial<Co2Assessment> = {}): Co2Assessment => ({
+  method: 'serviceDeducted', booked: true, deducted: true, totalCents: 25000, landlordCents: 8750, landlordPermille: 350, kgPerM2: 46.4,
+  emissionsKg: null, areaM2: null, stage: { from: 42, to: 47, landlordPercent: 70 }, table: TABELLE, shortened: false,
+  selfLandlordCents: null, selfApproximated: false, tenants: [{ tenancyId: 'ta', landlordCents: 2511, tenantCents: 4662, approximated: true }], ...over,
+})
+const anlage = (co2: Co2Assessment | null): HeatingStatement => ({ plantId: 'hp', plantName: 'Gas', energy: 'gas', period: periodKey('2025-01'), from: '2025-01-01', to: '2025-12-31', co2 })
+
+test('Druckblock (§ 7 Abs. 3 CO2KostAufG): Anteil des Mieters, Einstufung mit markierter Stufe, Grundlagen laut Messdienst', () => {
+  const v = co2Block(anlage(bewertung()), 'ta') ?? assert.fail('kein Block')
+  expect(v.title).toBe('CO₂-Kostenaufteilung')
+  expect(v.lines.map((l) => l.label)).toEqual([
+    'Energieträger', 'Heizperiode', 'CO₂-Ausstoß je m² und Jahr', 'Anteil des Vermieters laut Abrechnung', 'CO₂-Kosten insgesamt',
+    'davon trägt der Vermieter', 'Ihr Anteil an den CO₂-Kosten', 'vom Vermieter übernommen (bereits abgezogen)',
+  ])
+  expect(v.lines.find((l) => l.label === 'CO₂-Ausstoß je m² und Jahr')?.value).toBe('46,4 kg')
+  expect(v.lines.find((l) => l.label === 'Anteil des Vermieters laut Abrechnung')?.value).toBe('35 %')
+  expect(v.lines.find((l) => l.label === 'vom Vermieter übernommen (bereits abgezogen)')?.value).toBe(`${fmtEuro(2511)} (nach Ihrem Anteil an den Heizkosten)`)
+  expect(v.table.filter((s) => s.marked)).toEqual([{ range: '42 bis unter 47 kg', percent: '70 %', marked: true }])
+  expect(v.table.at(-1)).toEqual({ range: 'ab 52 kg', percent: '95 %', marked: false })
+  expect(v.notes).toEqual(['Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).'])
+})
+
+test('Kein Block ohne Buchung, ohne Angaben oder für einen Mieter ohne Heizkosten; kurze Heizperiode mit Hinweis', () => {
+  expect(co2Block(anlage(null), 'ta')).toBeNull()
+  expect(co2Block(anlage(bewertung({ booked: false })), 'ta')).toBeNull()
+  expect(co2Block(anlage(bewertung()), 'tx')).toBeNull()
+  const kurz = co2Block(anlage(bewertung({ shortened: true, deducted: false, method: 'serviceShown' })), 'ta') ?? assert.fail('kein Block')
+  expect(kurz.notes).toContain('Die Heizperiode ist kürzer als ein Jahr; die Grenzen der Stufentabelle sind anteilig gekürzt (§ 5 Abs. 1 Satz 4 CO2KostAufG).')
+  expect(kurz.lines.at(-1)?.label).toBe('vom Vermieter übernommen (eigene Zeile)')
+})
