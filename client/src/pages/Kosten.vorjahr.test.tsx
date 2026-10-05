@@ -5,7 +5,7 @@ import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Kosten from './Kosten'
@@ -54,13 +54,13 @@ afterEach(() => {
 
 const renderPage = async () => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Kosten units={UNITS} settings={null} />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   // Großzügig gewartet: Unter Last (volle Testläufe parallel) kommen Objekt und Kosten später.
   await waitFor(() => expect(screen.getByRole('button', { name: new RegExp(`Aus ${PREV} übernehmen`) })).toBeTruthy(), { timeout: 5000 })

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 
@@ -49,11 +49,11 @@ afterEach(() => {
 
 const openForm = async () => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   // Auf die geladenen Zähler warten, sonst fehlt der Verbrauchsschlüssel in der Auswahl
   await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
@@ -206,11 +206,11 @@ test('Objekt: mit zwei Objekten lädt die Seite erst, wenn das Objekt feststeht 
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(gets).toContain('/api/costItems?property=objekt-1'))
   expect(gets.filter((u) => u === '/api/costItems' || u === '/api/meters')).toEqual([])
@@ -221,11 +221,11 @@ test('Einzelbeträge (#94): je Mieter ein Feld, gespeichert wird genau das Einge
     { id: 't1', unitId: 'u2', tenantName: 'Meier', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] },
   ]
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} tenancies={mieter} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i })).toBeTruthy())
   fireEvent.click(screen.getByRole('button', { name: /Kostenposition manuell erfassen/i }))

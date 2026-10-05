@@ -7,8 +7,9 @@ import { parseQuantity, type KeyContext } from '../costForm'
 import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } from '../assessment'
 import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 
@@ -60,9 +61,9 @@ const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Si
 export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
+  // bekommt es, und die Belegbuchung leitet daraus den Zeitraum ab.
+  const { year } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
@@ -303,14 +304,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'center' }}>
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           <div className="grow" />
           {totalRecognized > 0 && (
             <div className="muted" style={{ textAlign: 'right' }}>

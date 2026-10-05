@@ -2,8 +2,9 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import { landlordReasonText } from '../landlordReasons'
 import { notSettledText } from '../tenancyModel'
@@ -31,9 +32,7 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { year, period } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  const { key, label, param, calendar } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -56,18 +55,18 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       // Frühere Abschlüsse (#56). Fehlt die Route (älterer Server), bleibt die Liste leer.
       // Nur ein älterer Server ohne die Route (404) heißt „keine“; jeder andere Fehler wird gezeigt.
-      api<HistoryEntry[]>(withProperty(`/api/settlement/${year}/history`, propertyId)).catch((e: unknown) => {
+      api<HistoryEntry[]>(withProperty(`/api/settlement/${param}/history`, propertyId)).catch((e: unknown) => {
         if (/\b404\b/.test(String((e as Error).message))) return []
         throw e
       }),
     ])
       .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -92,14 +91,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
   const invoiceFiles = useMemo(
-    () => [...new Set(costItems.filter((c) => c.period === period && c.invoiceFile).map((c) => c.invoiceFile!))],
-    [costItems, period],
+    () => [...new Set(costItems.filter((c) => c.period === key && c.invoiceFile).map((c) => c.invoiceFile!))],
+    [costItems, key],
   )
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.period === period && c.invoiceFile === f)
+    const linked = costItems.filter((c) => c.period === key && c.invoiceFile === f)
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -128,28 +127,28 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   async function closeSettlement() {
     const ok = await confirm({
       // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
-      title: closeSettlementTitle(year, properties, property),
+      title: closeSettlementTitle(label, properties, property),
       message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
     await load()
-    toast(`Abrechnung ${year} abgeschlossen.`)
+    toast(`Abrechnung ${label} abgeschlossen.`)
   }
   async function reopenSettlement() {
     const ok = await confirm({
-      title: `Abrechnung ${year} wieder öffnen?`,
+      title: `Abrechnung ${label} wieder öffnen?`,
       message: 'Es gilt wieder die laufende Berechnung. Der bisherige Stand bleibt unter „Frühere Abschlüsse“ erhalten. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
       confirmLabel: 'Wieder öffnen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'DELETE' })))) return
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'DELETE' })))) return
     await load()
-    toast(`Abrechnung ${year} wieder geöffnet.`)
+    toast(`Abrechnung ${label} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${year}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
+    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
     await load()
   }
   const isClosed = !!data?.closed
@@ -160,10 +159,8 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Die Korrektur steht unter dem Zeitraum (#208). Bei einem Kalenderobjekt nennt der Server sie
     // nach Jahreszahl, für Tabs von vor dem Update; geschickt werden hier nur Zeiträume, sonst gälten
     // die Jahreszahlen als vollständiger Stand und die neue Korrektur fiele weg.
-    // Brücke Kalenderjahr (#208): bis PR 3
     const overrides: Record<string, number> = Object.fromEntries(Object.entries(ten?.prepaymentOverrides ?? {})
       .map(([schluessel, betrag]) => [/^\d{4}$/.test(schluessel) ? calendarPeriod(Number(schluessel)) : schluessel, betrag]))
-    const key = calendarPeriod(year)
     if (cents === null) delete overrides[key]
     else overrides[key] = cents
     if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
@@ -178,7 +175,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `Nebenkostenabrechnung ${data?.period.label ?? year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
+    if (st) document.title = `Nebenkostenabrechnung ${data?.period.label ?? label} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
       document.title = prevTitle
@@ -192,7 +189,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       document.body.classList.remove('print-one')
       document.title = prevTitle
     }
-  }, [printId, data, year])
+  }, [printId, data, label])
 
   const distributed = data ? data.totalCostsCents - data.landlord.totalCents : 0
 
@@ -211,14 +208,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
       <div className="card no-print">
         <div className="row">
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           <label className="field checkline" title="Absatz mit dem Vorschlag zur Anpassung der monatlichen Vorauszahlung (§560 Abs. 4 BGB) andrucken">
             <span>
               <input
@@ -271,7 +261,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
                 </div>
                 <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
-                  🔒 Abrechnung {year} abschließen
+                  🔒 Abrechnung {label} abschließen
                 </button>
               </>
             )}
@@ -351,7 +341,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           <div className="kpis no-print">
             <div className="kpi">
               <div className="v">{fmtEuro(data.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {year}</div>
+              <div className="l">Gesamtkosten {label}</div>
             </div>
             <div className="kpi">
               <div className="v">{fmtEuro(distributed)}</div>
@@ -364,7 +354,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
           </div>
 
           {data.statements.length === 0 && (data.notSettled ?? []).length === 0 && (
-            <div className="card"><div className="empty">Keine Mietverhältnisse im Jahr {year} — bitte Stammdaten prüfen.</div></div>
+            <div className="card"><div className="empty">Keine Mietverhältnisse im {calendar ? 'Jahr' : 'Zeitraum'} {label} — bitte Stammdaten prüfen.</div></div>
           )}
 
           {/* Mietverhältnisse mit Pauschale oder Inklusivmiete bekommen keine Abrechnung (#93);
@@ -405,7 +395,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
               <div className="statement-head">
                 <div>
-                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {data?.period.label ?? year}</h2>
+                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {data?.period.label ?? label}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
@@ -422,7 +412,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
 
               {st.rows.length === 0 ? (
-                <div className="empty">Keine Kostenpositionen für {year} erfasst.</div>
+                <div className="empty">Keine Kostenpositionen für {label} erfasst.</div>
               ) : (
                 <Table style={{ marginTop: 14 }}>
                   <thead>
@@ -580,7 +570,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                 </>
               )}
               <p className="muted" style={{ marginTop: 14 }}>
-                {costBasisText(year)}
+                {costBasisText(label, calendar)}
                 {printAttachments && stFiles.length > 0
                   ? ` Kopien der zugrunde liegenden Belege sind als Anlage beigefügt (${stFiles.length} Beleg${stFiles.length > 1 ? 'e' : ''}).`
                   : ' Die zugrunde liegenden Belege können nach Terminvereinbarung eingesehen werden.'}
@@ -594,7 +584,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
                         <div className="attachment-caption">
-                          Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? year}: {fileLabel(f)}
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? label}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
                           <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />

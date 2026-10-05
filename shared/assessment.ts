@@ -120,8 +120,9 @@ export function invoiceSumCheck(positionsSumCents: number, totalGrossCents: numb
 // ---------- Der gemerkte Schlüssel einer KI-Zeile (#141) ----------
 
 // Woraus der Vorschlag für eine neue Position entsteht: die Positionen des Objekts (alle Jahre),
-// das Abrechnungsjahr und die Art des Objekts.
-export type KeyContext = { items: readonly CostItem[]; year: number; propertyKind?: PropertyKind | null }
+// das Abrechnungsjahr und die Art des Objekts. `at` ist der Zeitraum, in dem gebucht wird, mit
+// seinem Vorzeitraum (#208); fehlt er, ist es das Kalenderjahr `year` (Tests, Kalenderobjekt).
+export type KeyContext = { items: readonly CostItem[]; year: number; at?: PeriodContext; propertyKind?: PropertyKind | null }
 
 // Maßstab und Summe der Anteile der zuletzt erfassten Position „laut Gemeinschaftsabrechnung“ im
 // Objekt, jüngstes Jahr zuerst, sonst die zuletzt angelegte.
@@ -153,8 +154,7 @@ function stillComplete(a: Allocation, units: readonly Unit[]): boolean {
 // `meters` bleibt in der Unterschrift, damit die Aufrufer unverändert bleiben.
 export function aiPositionDefaults(category: string, units: readonly Unit[], meters: readonly Meter[], ctx?: KeyContext, description?: string): AiPositionKey {
   void meters
-  // Brücke Kalenderjahr (#208): bis PR 3. KeyContext trägt das Jahr der Oberfläche.
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, calendarContext(ctx.year), description) : null
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.at ?? calendarContext(ctx.year), description) : null
   if (remembered && remembered.key !== 'amounts' && stillComplete(remembered, units)) return { key: remembered.key, allocation: remembered }
   // Bei einer Eigentumswohnung nur, wenn die Summe der Anteile schon einmal erfasst ist: Ein Feld
   // dafür hat die Zeile nicht, sie bliebe sonst unübernehmbar.

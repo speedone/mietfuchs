@@ -7,8 +7,7 @@ import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
-import { calendarPeriod } from '../../../shared/period.ts'
-import { useYear } from '../year'
+import { usePeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
@@ -44,7 +43,7 @@ type Check = {
 const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
-  const { year, period } = useYear()
+  const { key, label, param, at, period, calendar } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -59,22 +58,22 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       api<Meter[]>(withProperty('/api/meters', propertyId)),
-      api<Consumption[]>(withProperty(`/api/consumption/${year}`, propertyId)),
+      api<Consumption[]>(withProperty(`/api/consumption/${param}`, propertyId)),
     ])
       .then(([s, c, m, k]) => { setSettlement(s); setCostItems(c); setMeters(m); setConsumption(k); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
-  const yearItems = useMemo(() => costItems.filter((c) => c.period === period), [costItems, period])
+  const yearItems = useMemo(() => costItems.filter((c) => c.period === key), [costItems, key])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
@@ -86,9 +85,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       for (const c of costItems) if (c.period === key) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
       return m
     }
-    const cur = sumByCat(period)
-    // Brücke Kalenderjahr (#208): bis PR 3
-    const prev = sumByCat(calendarPeriod(year - 1))
+    const cur = sumByCat(key)
+    const prev = sumByCat(at.previous)
     if (prev.size === 0) return { hasPrev: false, list: [] as { cat: string; pct: number }[] }
     const list: { cat: string; pct: number }[] = []
     for (const [cat, k] of cur) {
@@ -98,7 +96,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
     return { hasPrev: true, list }
-  }, [costItems, year, period])
+  }, [costItems, key, at.previous])
 
   // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums. Die
   // Frist kommt vom Server (#208); vor dem Laden gibt es keine.
@@ -122,10 +120,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     const mietverhaeltnisse = settlement.statements.length + ohneAbrechnung.length
     if (mietverhaeltnisse === 0) {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'rot', tab: 'stammdaten', cta: 'Stammdaten prüfen',
-        detail: `Keine Mietverhältnisse im Jahr ${year} — ohne sie lässt sich nichts verteilen.` })
+        detail: `Keine Mietverhältnisse im ${calendar ? 'Jahr' : 'Zeitraum'} ${label} — ohne sie lässt sich nichts verteilen.` })
     } else if (noArea.length > 0) {
       // Bei einer leeren Einheit eine Frage statt eines Befehls (Endprüfung rc.4, missingAreaCheck).
-      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, year, yearItems) })
+      list.push({ title: 'Mietverhältnisse & Flächen', level: 'gelb', tab: 'stammdaten', ...missingAreaCheck(noArea, tenancies, period, yearItems) })
     } else {
       list.push({ title: 'Mietverhältnisse & Flächen', level: 'gruen',
         detail: tenanciesDetail(mietverhaeltnisse, ohneAbrechnung.length, participating.length, zeroArea.map((u) => u.name)) })
@@ -134,7 +132,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     // 2. Belege & Kosten erfasst
     if (yearItems.length === 0) {
       list.push({ title: 'Belege erfasst', level: 'rot', tab: 'schnellerfassung', cta: 'Belege erfassen',
-        detail: `Für ${year} sind noch keine Kosten erfasst.` })
+        detail: `Für ${label} sind noch keine Kosten erfasst.` })
     } else {
       list.push({ title: 'Belege erfasst', level: 'gruen',
         detail: itemsDetail(yearItems.length, itemsSum, invoiceFileCount) })
@@ -202,7 +200,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     if (yearItems.length === 0) {
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: 'Noch keine Kosten zum Vergleichen.' })
     } else if (!notable.hasPrev) {
-      list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${year - 1}) zum Vergleichen erfasst.` })
+      list.push({ title: 'Plausibilität zum Vorjahr', level: 'leer', detail: `Kein Vorjahr (${at.previousLabel}) zum Vergleichen erfasst.` })
     } else if (notable.list.length > 0) {
       const txt = notable.list
         .map((a) => `${a.cat} (${a.pct > 0 ? '+' : ''}${Math.round(a.pct)} %)`)
@@ -210,7 +208,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Plausibilität zum Vorjahr', level: 'gelb', tab: 'uebersicht', cta: 'Vergleich ansehen',
         detail: `Auffällige Abweichung: ${txt} — Beleg prüfen, Mieter ggf. erklären.` })
     } else {
-      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${year - 1}.` })
+      list.push({ title: 'Plausibilität zum Vorjahr', level: 'gruen', detail: `Keine auffälligen Sprünge gegenüber ${at.previousLabel}.` })
     }
 
     // 6. Hinweise der Berechnung (z. B. negativer Verbrauch)
@@ -241,7 +239,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, year, uploadFiles, bookedFiles])
+  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
@@ -263,7 +261,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     <>
       <div className="statement-head">
         <div>
-          <h1 style={{ marginBottom: 2 }}>Abrechnung {year}</h1>
+          <h1 style={{ marginBottom: 2 }}>Abrechnung {label}</h1>
           <p className="sub" style={{ margin: 0 }}>
             {cockpitSubtitle({ loaded: !!settlement, fresh: !!fresh, openCount })}
           </p>
@@ -285,7 +283,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       {fresh ? (
         <div className="card">
           <div className="empty">
-            <p>Noch nichts für {year} erfasst. So fangen Sie an:</p>
+            <p>Noch nichts für {label} erfasst. So fangen Sie an:</p>
             <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
               <button className="btn secondary" onClick={() => onNavigate('stammdaten')}>🏠 Stammdaten anlegen</button>
               <button className="btn" onClick={() => onNavigate('schnellerfassung')}>📥 Belege zur Schnellerfassung</button>
@@ -339,7 +337,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
           <div className="kpis">
             <div className="kpi">
               <div className="v">{fmtEuro(settlement.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {year}</div>
+              <div className="l">Gesamtkosten {label}</div>
             </div>
             <div className="kpi">
               <div className="v">{fmtEuro(distributed)}</div>
@@ -358,7 +356,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
               {/* Ohne Kosten im Jahr erstattete die Berechnung jedem die volle Vorauszahlung (#142);
                   das ist kein voraussichtliches Guthaben, sondern ein noch leeres Jahr. */}
               {yearItems.length === 0 ? (
-                <div className="empty">Noch keine Kosten für {year} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
+                <div className="empty">Noch keine Kosten für {label} erfasst — ein voraussichtliches Ergebnis gibt es, sobald Kosten da sind.</div>
               ) : (
               <div className="tenant-cards">
                 {settlement.statements.map((st) => {

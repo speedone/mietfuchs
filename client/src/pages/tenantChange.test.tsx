@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Meter, Tenancy, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Stammdaten from './Stammdaten'
@@ -51,11 +51,11 @@ afterEach(() => {
 
 const runWizard = async (reload: () => Promise<void>) => {
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={reload} /></UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
   fireEvent.change(screen.getByLabelText(/Auszugsdatum/i), { target: { value: '2025-06-30' } })

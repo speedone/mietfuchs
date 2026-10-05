@@ -1,7 +1,7 @@
 // Entscheidungslogik des Kostenposition-Formulars, bewusst getrennt von der Darstellung:
 // Auswahllisten, Validierung und der Rumpf, der an die API geht. Diese Stelle bestimmt, was
 // tatsächlich gespeichert wird — sie ist in client/src/costForm.test.ts geprüft.
-import type { CostItem, CostKey, ExternalMeasure, Meter, MeterType, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, CostKey, ExternalMeasure, Meter, MeterType, PeriodKey, Tenancy, Unit } from './types'
 import { CATEGORIES, KEY_LABELS, defaultKeyFor, isNotAllocable } from './types'
 import { PARTICIPANT_KEYS as SHARED_PARTICIPANT_KEYS, allocationOf, comparablePrevious, previousAllocation, sameAllocation, type Allocation } from '../../shared/allocation.ts'
 import { parseEuro } from './api'
@@ -10,7 +10,7 @@ import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
 import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
-import { calendarContext, calendarPeriod } from '../../shared/period.ts'
+import { calendarContext, calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -121,9 +121,12 @@ const parseAmountNumber = parseQuantity
 // Die Mietverhältnisse, die einen Einzelbetrag bekommen können: im Jahr und in einer Wohnung, die
 // zur Abrechnung gehört.
 // Mit Teilnehmern (#105) nur deren Mietverhältnisse, wie in der Abrechnung.
-export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], year: number, participants: string[] | null = null): Tenancy[] {
+// `period`: eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt), sonst der gewählte
+// Abrechnungszeitraum (#208).
+export function tenanciesForAmounts(tenancies: Tenancy[], units: Unit[], period: number | Pick<BillingPeriod, 'from' | 'to'>, participants: string[] | null = null): Tenancy[] {
+  const span = typeof period === 'number' ? calendarYearPeriod(period) : period
   const vermietet = new Set(units.filter((u) => u.participates && (participants === null || participants.includes(u.id))).map((u) => u.id))
-  return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= `${year}-12-31` && (t.end === null || t.end >= `${year}-01-01`))
+  return tenancies.filter((t) => vermietet.has(t.unitId) && t.start <= span.to && (t.end === null || t.end >= span.from))
 }
 
 // Der rechnerische Anteil laut Gemeinschaftsabrechnung, zum Vergleich mit dem eingetragenen
@@ -174,18 +177,18 @@ const visibleSelfAmounts = (form: ItemForm, units: Unit[]): Record<string, strin
 // Einzelbeträge nur der Mietverhältnisse, deren Feld das Formular zeigt (Durchsicht zu #105):
 // Wer eine Wohnung als Teilnehmerin abwählt, sähe den Betrag ihres Mieters sonst nicht mehr, er
 // zählte aber in die Summe und ließe sich nicht löschen. Ohne Mietverhältnisse keine Einschränkung.
-const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number | undefined): Record<string, string> => {
-  if (!tenancies || year === undefined) return form.tenancyAmounts
-  const ids = new Set(tenanciesForAmounts(tenancies, units, year, form.participants).map((t) => t.id))
+const visibleTenancyAmounts = (form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: number | BillingPeriod | undefined): Record<string, string> => {
+  if (!tenancies || period === undefined) return form.tenancyAmounts
+  const ids = new Set(tenanciesForAmounts(tenancies, units, period, form.participants).map((t) => t.id))
   return Object.fromEntries(Object.entries(form.tenancyAmounts).filter(([id]) => ids.has(id)))
 }
 
-export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], year?: number): string {
+export function amountsSumText(form: ItemForm, units: Unit[], tenancies?: Tenancy[], period?: number | BillingPeriod): string {
   const amount = parseEuro(form.amount) ?? 0
   // Eine Gutschrift (#105): Einzelbeträge sind nie negativ, die Summenprüfung ergäbe Unsinn.
   if (amount < 0) return CREDIT_WITH_AMOUNTS
   const sumOf = (m: Record<string, string>) => Object.values(m).reduce((a, raw) => a + Math.max(0, parseEuro(raw.trim() || '0') ?? 0), 0)
-  const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, year))
+  const tenants = sumOf(visibleTenancyAmounts(form, units, tenancies, period))
   const own = sumOf(visibleSelfAmounts(form, units))
   const sum = tenants + own
   if (sum > amount) return `${fmtCentsInput(sum)} € — mehr als der Rechnungsbetrag ist nicht möglich`
@@ -248,8 +251,7 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, calendarContext(ctx.year), form.description) : null
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.at ?? calendarContext(ctx.year), form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
   if (etwByStatement(category, ctx)) {
     const last = ctx ? lastExternalBasis(ctx.items) : null
@@ -291,15 +293,15 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
 export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
   if (isNotAllocable(form.category)) return ''
   const basis = basisUnitsOf(units).map((u) => u.id)
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const before = comparablePrevious(ctx.items, form.category, calendarContext(ctx.year), form.description).map((i) => allocationOf(i, basis))
+  const at = ctx.at ?? calendarContext(ctx.year)
+  const before = comparablePrevious(ctx.items, form.category, at, form.description).map((i) => allocationOf(i, basis))
   const first = before[0]
   const now = formAllocation(form, units)
   if (!first || before.some((a) => sameAllocation(a, now))) return ''
   const how = first.key === now.key ? `ebenfalls ${KEY_LABELS[first.key]}, aber mit anderen Angaben` : KEY_LABELS[first.key]
   // Ohne Rechtsauskunft im Einzelnen (die steht im Lexikon und in der Abrechnung): Eine Änderung
   // ist möglich, aber nicht beliebig (Durchsicht).
-  return `${ctx.year - 1} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
+  return `${at.previousLabel} wurde „${form.category}“ ${how} verteilt. Ein vereinbarter Umlageschlüssel gilt weiter, bis er mit Zustimmung der Mieter oder durch eine zulässige Erklärung geändert ist; ist das geschehen, ist nichts zu tun.`
 }
 
 // Die Auswahl der Zeile: die drei einfachen Schlüssel und der gespeicherte, damit angezeigt wird,
@@ -403,7 +405,7 @@ export function customSharesSumText(form: ItemForm, units: Unit[]): string {
 
 // Liest die Eingaben des Formulars in Cent und Prozent; was sich nicht lesen lässt, wird `null`,
 // und die Prüfung in shared/costItem.ts sagt es in Worten.
-function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, year: number): CostItemDraft {
+function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined, period: BillingPeriod): CostItemDraft {
   const parsed = (m: Record<string, string>): Record<string, number | null> =>
     Object.fromEntries(Object.entries(m).filter(([, raw]) => raw.trim()).map(([id, raw]) => [id, parseEuro(raw)]))
   const shares: Record<string, number | null> = {}
@@ -427,16 +429,17 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
     customShares: shares,
     participants: form.participants,
     external: { measure: form.externalMeasure, total: parseAmountNumber(form.externalTotal), totalCents: parseEuro(form.externalTotalAmount) },
-    tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, year)),
+    tenancyAmounts: parsed(visibleTenancyAmounts(form, units, tenancies, period)),
     selfAmounts: parsed(visibleSelfAmounts(form, units)),
   }
 }
 
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
-export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
-  // Brücke Kalenderjahr (#208): bis PR 3
-  return costItemBody(draftOf(form, units, tenancies, year), units, calendarPeriod(year))
+export function buildCostItemBody(form: ItemForm, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
+  // Eine Jahreszahl ist das Kalenderjahr (Tests, Kalenderobjekt); sonst der gewählte Zeitraum (#208).
+  const p = typeof period === 'number' ? calendarYearPeriod(period) : period
+  return costItemBody(draftOf(form, units, tenancies, p), units, p.key)
 }
 
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
@@ -460,8 +463,7 @@ export function categoryNotice(category: string, year: number, cableBuiltBeforeD
 // vorhandene Rechnung zu bearbeiten.
 export function sameCostOf<T extends DuplicateItem>(
   items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null },
-  propertyId: string | null | undefined, year: number,
+  propertyId: string | null | undefined, period: number | PeriodKey,
 ): T[] {
-  // Brücke Kalenderjahr (#208): bis PR 3
-  return sameCostCandidates(items, { propertyId, period: calendarPeriod(year), category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
+  return sameCostCandidates(items, { propertyId, period: typeof period === 'number' ? calendarPeriod(period) : period, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
 }

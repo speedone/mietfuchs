@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { Settings, TaxExpenseItem, TaxReport } from '../types'
 import { api, fmtArea, fmtEuro } from '../api'
-import { useYear, YEAR_OPTIONS } from '../year'
-import { useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { CalendarYearSelect } from '../components/PeriodSelect'
+import { useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
@@ -14,9 +15,8 @@ import { andList } from '../../../shared/wording.ts'
 type Props = { settings: Settings | null }
 
 export default function Steuer({ settings }: Props) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Die Steuer rechnet im Kalenderjahr (#208, Entwurf 3.10).
+  const { calendarYear: year } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -68,12 +68,7 @@ export default function Steuer({ settings }: Props) {
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'flex-end' }}>
-          <label className="field">
-            Jahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </label>
+          <CalendarYearSelect />
           <label className="field">
             Einnahmen ansetzen als
             <select value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>

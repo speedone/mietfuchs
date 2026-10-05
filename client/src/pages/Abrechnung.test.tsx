@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settlement, Statement, Tenancy } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
@@ -54,11 +54,11 @@ afterEach(() => {
 })
 
 const show = () => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <UIProvider><Abrechnung settings={null} units={[]} tenancies={TENANCIES} reload={async () => {}} /></UIProvider>
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('„(manuell angepasst)“ steht nur am Bildschirm, nicht auf dem Papier des Mieters', async () => {
@@ -130,11 +130,11 @@ test('„zurücksetzen“ entfernt die Korrektur auch, wenn der Server sie nach 
   })
   const mitJahr: Tenancy[] = TENANCIES.map((t) => ({ ...t, prepaymentOverrides: { [String(YEAR - 1)]: 40000, [String(YEAR)]: 50000 } }))
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider><Abrechnung settings={null} units={[]} tenancies={mitJahr} reload={async () => {}} /></UIProvider>
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: /^zurücksetzen$/ }, SLOW))
   await waitFor(() => expect(puts).toHaveLength(1), SLOW)

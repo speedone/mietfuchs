@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Settlement } from '../types'
-import { startYearOf } from '../../../shared/period.ts'
+import type { CostItem, PeriodKey, Settlement } from '../types'
 import { api, fmtEuro } from '../api'
-import { useYear } from '../year'
-import { useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { labelOfKey } from '../periodForm'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Table from '../components/Table'
 
@@ -14,9 +15,7 @@ const NOTABLE_CHANGE_PCT = 25
 type Props = { onNavigate: (tab: string) => void }
 
 export default function Uebersicht({ onNavigate }: Props) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  const { key, label, param, at, rules } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [costItems, setCostItems] = useState<CostItem[]>([])
@@ -26,26 +25,25 @@ export default function Uebersicht({ onNavigate }: Props) {
   const load = useCallback(() => {
     return Promise.all([
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
-      api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId)),
+      api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
     ])
       .then(([c, s]) => { setCostItems(c); setSettlement(s); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [year, propertyId])
+  }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
 
-  // Summe je Kostenart für ein Jahr
-  const byCategory = useCallback((y: number) => {
+  // Summe je Kostenart für einen Abrechnungszeitraum (#208)
+  const byCategory = useCallback((k: PeriodKey) => {
     const map = new Map<string, number>()
-    // Brücke Kalenderjahr (#208): bis PR 3. Die Seite vergleicht Kalenderjahre.
-    for (const c of costItems.filter((c) => startYearOf(c.period) === y)) {
+    for (const c of costItems.filter((c) => c.period === k)) {
       map.set(c.category, (map.get(c.category) ?? 0) + c.amountCents)
     }
     return map
   }, [costItems])
 
-  const cur = useMemo(() => byCategory(year), [byCategory, year])
-  const prev = useMemo(() => byCategory(year - 1), [byCategory, year])
+  const cur = useMemo(() => byCategory(key), [byCategory, key])
+  const prev = useMemo(() => byCategory(at.previous), [byCategory, at.previous])
   // Ohne Kosten im Jahr gibt es nichts zu vergleichen (#142): Jede Kostenart des Vorjahres stünde
   // sonst mit „−100 %“ da, und das hieße nur, dass noch nichts erfasst ist.
   const hasCosts = cur.size > 0
@@ -64,12 +62,11 @@ export default function Uebersicht({ onNavigate }: Props) {
     return Math.abs(k - p) / p * 100 >= NOTABLE_CHANGE_PCT
   })
 
-  // Jahresüberblick über alle erfassten Jahre
+  // Überblick über alle erfassten Abrechnungszeiträume (#208)
   const years = useMemo(() => {
-    const map = new Map<number, number>()
-    // Brücke Kalenderjahr (#208): bis PR 3
-    for (const c of costItems) map.set(startYearOf(c.period), (map.get(startYearOf(c.period)) ?? 0) + c.amountCents)
-    return [...map.entries()].sort((a, b) => a[0] - b[0])
+    const map = new Map<PeriodKey, number>()
+    for (const c of costItems) map.set(c.period, (map.get(c.period) ?? 0) + c.amountCents)
+    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   }, [costItems])
   const maxYearCents = Math.max(1, ...years.map(([, v]) => v))
 
@@ -91,14 +88,7 @@ export default function Uebersicht({ onNavigate }: Props) {
 
       <div className="card">
         <div className="row">
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           {settlement?.closed ? (
             <div className="field" style={{ justifyContent: 'flex-end', paddingBottom: 8 }}>
               <span><span className="badge green">Abrechnung abgeschlossen</span></span>
@@ -123,7 +113,7 @@ export default function Uebersicht({ onNavigate }: Props) {
         <div className="kpis">
           <div className="kpi">
             <div className="v">{fmtEuro(settlement.totalCostsCents)}</div>
-            <div className="l">Gesamtkosten {year}</div>
+            <div className="l">Gesamtkosten {label}</div>
           </div>
           <div className="kpi">
             <div className="v">{fmtEuro(distributed)}</div>
@@ -146,10 +136,10 @@ export default function Uebersicht({ onNavigate }: Props) {
       )}
 
       <div className="card">
-        <h2>Kostenarten {year}{hasCosts && hasPrev ? ` im Vergleich zu ${year - 1}` : ''}</h2>
+        <h2>Kostenarten {label}{hasCosts && hasPrev ? ` im Vergleich zu ${at.previousLabel}` : ''}</h2>
         {categories.length === 0 ? (
           <div className="empty">
-            Für {year} sind noch keine Kosten erfasst —{' '}
+            Für {label} sind noch keine Kosten erfasst —{' '}
             <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('kosten') }}>jetzt Belege erfassen</a>.
           </div>
         ) : (
@@ -158,8 +148,8 @@ export default function Uebersicht({ onNavigate }: Props) {
               <tr>
                 <th>Kostenart</th>
                 <th style={{ width: '40%' }}>Verlauf</th>
-                <th className="num">{year - 1}</th>
-                <th className="num">{year}</th>
+                <th className="num">{at.previousLabel}</th>
+                <th className="num">{label}</th>
                 <th className="num">Δ</th>
               </tr>
             </thead>
@@ -172,8 +162,8 @@ export default function Uebersicht({ onNavigate }: Props) {
                   <tr key={c}>
                     <td>{c}</td>
                     <td>
-                      {hasPrev && <div className="bar prev" style={{ width: `${(p / maxCents) * 100}%` }} title={`${year - 1}: ${fmtEuro(p)}`} />}
-                      <div className="bar" style={{ width: `${(k / maxCents) * 100}%` }} title={`${year}: ${fmtEuro(k)}`} />
+                      {hasPrev && <div className="bar prev" style={{ width: `${(p / maxCents) * 100}%` }} title={`${at.previousLabel}: ${fmtEuro(p)}`} />}
+                      <div className="bar" style={{ width: `${(k / maxCents) * 100}%` }} title={`${label}: ${fmtEuro(k)}`} />
                     </td>
                     <td className="num muted">{hasPrev ? (p ? fmtEuro(p) : '—') : '—'}</td>
                     <td className="num">{k ? fmtEuro(k) : '—'}</td>
@@ -199,14 +189,14 @@ export default function Uebersicht({ onNavigate }: Props) {
 
       {years.length > 1 && (
         <div className="card">
-          <h2>Gesamtkosten im Jahresverlauf</h2>
+          <h2>Gesamtkosten im Verlauf</h2>
           <Table className="chart-table">
             <tbody>
               {years.map(([y, v]) => (
                 <tr key={y}>
-                  <td style={{ width: 60 }}>{y}</td>
+                  <td style={{ width: 140 }}>{labelOfKey(rules, y)}</td>
                   <td>
-                    <div className={`bar${y === year ? '' : ' prev'}`} style={{ width: `${(v / maxYearCents) * 100}%` }} />
+                    <div className={`bar${y === key ? '' : ' prev'}`} style={{ width: `${(v / maxYearCents) * 100}%` }} />
                   </td>
                   <td className="num" style={{ width: 120 }}>{fmtEuro(v)}</td>
                 </tr>

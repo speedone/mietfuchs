@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import type { Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
@@ -43,14 +43,14 @@ async function upload(container: HTMLElement) {
 }
 
 test('Kosten: die KI-Auswertung schickt Objekt und Jahr mit', async () => {
-  const { container } = render(<YearProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></YearProvider>)
+  const { container } = render(<PeriodProvider><PropertyProvider><Kosten units={UNITS} settings={null} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('propertyId')).toBe('objekt-1')
   expect(sent[0]?.get('year')).toBe(String(YEAR))
 })
 
 test('Schnellerfassung: ebenso, auch für einen Beleg aus dem Posteingang', async () => {
-  const { container } = render(<YearProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></YearProvider>)
+  const { container } = render(<PeriodProvider><PropertyProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></PropertyProvider></PeriodProvider>)
   await upload(container)
   expect(sent[0]?.get('propertyId')).toBe('objekt-1')
   expect(sent[0]?.get('year')).toBe(String(YEAR))

@@ -7,11 +7,11 @@
 // Betrag wäre dort eine 0, die in jede Rechnung einginge, oder ein Entwurfs-Kennzeichen, das jede
 // Rechnung kennen müsste (siehe docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
 // Gespeichert wird nur, was durch `buildCostItemBody` geht, also dieselbe Prüfung wie im Formular.
-import type { CostItem, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, Tenancy, Unit } from './types'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarContext, type PeriodContext } from '../../shared/period.ts'
 
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
@@ -40,25 +40,26 @@ export type CarryRow = {
 // Biomüll nicht als erfasst sehen. Die Seite fragt das bei jeder Anzeige neu, damit eine über das
 // Formular angelegte Zeile gleich vermerkt ist. Gefragt wird mit dem Vorzeichen der Vorlage: Eine
 // Gutschrift des Vorjahres ist nie durch eine Rechnung schon erfasst und umgekehrt (rc.1).
-export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'> & Partial<Pick<CarryRow, 'vendor'>>, year: number): boolean {
+// `at`: der gewählte Zeitraum mit seinem Vorzeitraum (#208); eine Jahreszahl ist das Kalenderjahr.
+export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'> & Partial<Pick<CarryRow, 'vendor'>>, at: number | PeriodContext): boolean {
+  const ctx = typeof at === 'number' ? calendarContext(at) : at
   const category = row.source.category
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const previous = calendarPeriod(year - 1)
+  const previous = ctx.previous
   const sisters = items
     .filter((i) => i.period === previous && i.category === category && i.id !== row.source.id)
     .map((i) => normalizedText(i.description))
   const own = normalizedText(row.description)
-  return sameCostCandidates(items, { period: calendarPeriod(year), category, description: row.description, vendor: row.vendor ?? row.source.vendor, amountCents: row.source.amountCents })
+  return sameCostCandidates(items, { period: ctx.key, category, description: row.description, vendor: row.vendor ?? row.source.vendor, amountCents: row.source.amountCents })
     .some((i) => {
       const text = normalizedText(i.description)
       return text === own || !sisters.includes(text)
     })
 }
 
-export function carryOverRows(items: readonly CostItem[], year: number): CarryRow[] {
-  // Brücke Kalenderjahr (#208): bis PR 3
-  return items.filter((i) => i.period === calendarPeriod(year - 1)).map((source) => {
-    const description = replaceYear(source.description, year - 1, year)
+export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext): CarryRow[] {
+  const ctx = typeof at === 'number' ? calendarContext(at) : at
+  return items.filter((i) => i.period === ctx.previous).map((source) => {
+    const description = replaceYear(source.description, ctx.previousYear, ctx.year)
     return {
       source,
       description,
@@ -67,7 +68,7 @@ export function carryOverRows(items: readonly CostItem[], year: number): CarryRo
       labor35a: '',
       externalTotalAmount: '',
       checked: false,
-      already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, year),
+      already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, ctx),
       inline: source.key !== 'amounts',
     }
   })
@@ -117,8 +118,9 @@ export function carryOverForm(row: CarryRow): ItemForm {
   }
 }
 
-export function carryOverBody(row: CarryRow, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
+// `period`: der Zeitraum, in den übernommen wird (#208); eine Jahreszahl ist das Kalenderjahr.
+export function carryOverBody(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
   if (!row.inline) return { error: 'Einzelbeträge je Mieter bitte im Formular eintragen („Im Formular öffnen“).' }
   if (!row.amount.trim()) return { error: 'Betrag fehlt.' }
-  return buildCostItemBody(carryOverForm(row), units, year, tenancies)
+  return buildCostItemBody(carryOverForm(row), units, period, tenancies)
 }

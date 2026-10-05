@@ -6,7 +6,7 @@ import { useLayoutEffect } from 'react'
 import { afterEach, assert, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { AssessmentView, CostItem, Extraction, LineFields, LineSuggestion, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Schnellerfassung from './Schnellerfassung'
@@ -57,8 +57,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const intake = () => render(<YearProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></YearProvider>)
-const costs = () => render(<YearProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></YearProvider>)
+const intake = () => render(<PeriodProvider><PropertyProvider><UIProvider><Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} /></UIProvider></PropertyProvider></PeriodProvider>)
+const costs = () => render(<PeriodProvider><PropertyProvider><UIProvider><Kosten units={UNITS} settings={null} /></UIProvider></PropertyProvider></PeriodProvider>)
 
 async function upload(container: HTMLElement, count = 1) {
   const input = await waitFor(() => {

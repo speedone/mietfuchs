@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Kosten from './Kosten'
 import Schnellerfassung from './Schnellerfassung'
@@ -50,22 +50,22 @@ async function uploadAndCancel(container: HTMLElement) {
 
 test('Kosten: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Kosten units={UNITS} settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await uploadAndCancel(container)
 })
 
 test('Schnellerfassung: „Abbrechen“ stoppt die Auswertung', async () => {
   const { container } = render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Schnellerfassung units={UNITS} settings={null} onNavigate={() => {}} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await uploadAndCancel(container)
 })

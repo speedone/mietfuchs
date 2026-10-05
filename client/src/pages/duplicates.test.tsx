@@ -6,7 +6,7 @@ import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CostItem, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Kosten from './Kosten'
@@ -56,13 +56,13 @@ afterEach(() => {
 const estimate = (year: number): CostItem => ({ id: 'gs', propertyId: 'objekt-1', period: calendarPeriod(year), category: 'Grundsteuer', description: `Grundsteuer ${year}`, vendor: 'Stadt', amountCents: 61000, key: 'area' })
 
 const kostenPage = () => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <UIProvider>
         <Kosten units={UNITS} settings={null} />
       </UIProvider>
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 async function fillNewGrundsteuer() {

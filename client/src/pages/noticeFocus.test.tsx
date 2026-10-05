@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { CostItem, Meter, NoticeSubject, RentLedger, Settlement, Tenancy, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
@@ -71,11 +71,11 @@ afterEach(() => {
 })
 
 const wrap = (node: ReactNode) => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <UIProvider>{node}</UIProvider>
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('Abrechnung: „Hier beheben →“ reicht Seite und Eintrag weiter', async () => {
