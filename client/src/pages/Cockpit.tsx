@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, Meter, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, HeatingSettlementInfo, Meter, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import { cockpitHeatingRows } from '../heatingSettlementView'
+import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
 import { coverageCheck, filesByItem } from '../receipts'
@@ -55,6 +57,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   // (#170). Scheitert der Abruf, zählt der Verweis an der Position.
   const [uploadFiles, setUploadFiles] = useState<Set<string> | null>(null)
   const [bookedFiles, setBookedFiles] = useState<Map<string, string[]>>(new Map())
+  // Heizung PR 5: die Heizkostenabrechnungen nach Weg d, jede mit ihrer eigenen Frist.
+  const [heatingList, setHeatingList] = useState<HeatingSettlementInfo[]>([])
 
   const load = useCallback(() => {
     return Promise.all([
@@ -68,6 +72,9 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   }, [param, propertyId])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([]))
+  }, [propertyId])
   useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
   }, [param, propertyId])
@@ -237,9 +244,13 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Zur Abrechnung',
         detail: `Noch im Entwurf. ${deadlineText}` })
     }
+    // Jede beendete Heizperiode nach Weg d mit ihrer eigenen Frist (Heizung PR 5, Entwurf 3.1, B3).
+    for (const row of cockpitHeatingRows(heatingList, localToday())) {
+      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung' }) })
+    }
 
     return list
-  }, [settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
+  }, [heatingList, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length

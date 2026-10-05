@@ -3,7 +3,7 @@
 // client/src/costForm.ts); seit der Server die Auswertung speichert und ihre Vorschläge
 // mitliefert, braucht er dieselbe Antwort. Reine Logik ohne Netz und DOM.
 import type { BillingPeriod, CostItem, ExternalMeasure, Meter, PeriodKey, PeriodRules, PropertyKind, StoredAssessment, TrafficLight, Unit } from './types.ts'
-import { calendarContext, calendarPeriod, calendarYearPeriod, isCalendarRules, periodOfKey, periodsBetween, spansTwoYears, type PeriodContext } from './period.ts'
+import { calendarContext, calendarPeriod, calendarYearPeriod, isCalendarRules, periodOfKey, periodsBetween, spansTwoYears, type PeriodContext, paymentYear } from './period.ts'
 import { allocationOf, previousAllocation, type Allocation } from './allocation.ts'
 import { defaultKeyFor, isNotAllocable } from './categories.ts'
 import { sameCostCandidates } from './duplicates.ts'
@@ -203,10 +203,7 @@ export function bookingPeriod(rules: PeriodRules, a: Pick<StoredAssessment, 'yea
 // nach dem Ende, wie in server/src/db/repository.ts), sonst das Jahr des Belegs, sonst der Beginn.
 export function bookingTaxYear(period: BillingPeriod, a: Pick<StoredAssessment, 'year' | 'invoiceDate'>): number | null {
   if (!spansTwoYears(period)) return null
-  const start = Number(period.from.slice(0, 4))
-  const end = Number(period.to.slice(0, 4)) + 1
-  const fits = (y: number): boolean => y >= start && y <= end
-  const fromInvoice = a.invoiceDate !== null ? Number(a.invoiceDate.slice(0, 4)) : null
-  if (fromInvoice !== null && fits(fromInvoice)) return fromInvoice
-  return fits(a.year) ? a.year : start
+  // Dieselbe Regel wie bei Heizpositionen (`paymentYear`, Durchsicht von #231); ohne Rechnungsdatum
+  // gilt hier das Jahr des Belegs.
+  return paymentYear(period, a.invoiceDate, a.year).year
 }

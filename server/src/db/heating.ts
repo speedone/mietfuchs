@@ -24,11 +24,12 @@ import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../.
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readHeatingPlants, readProperties } from './read.ts'
-import { asNullableFilled, asNullableText, asText, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { readHeatingPlants, readProperties, readUnits } from './read.ts'
+import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  CHANGE_SPLITS, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, meters, units,
+  CHANGE_SPLITS, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -36,8 +37,8 @@ const LATER = {
   self: 'Die eigene Heizkostenabrechnung nach der Heizkostenverordnung kommt mit einer späteren Version. Wählen Sie bis dahin „Ein Messdienst oder die Hausverwaltung“ oder „Niemand“; an Ihren Beträgen ändert sich dadurch nichts.',
   perUnit: 'Etagenheizungen mit Vertrag auf den Vermieter kommen mit einer späteren Version. Bis dahin erfassen Sie ihre Kosten wie bisher, etwa direkt bei der Wohnung.',
   second: 'Eine zweite Heizanlage im selben Objekt kommt mit einer späteren Version. Bis dahin gehören alle Heizpositionen zur ersten.',
-  ownPeriod: 'Eine eigene Heizperiode neben dem Abrechnungszeitraum des Objekts kommt mit einer späteren Version. Bis dahin gilt für die Heizung der Zeitraum des Objekts.',
-  separate: 'Eine getrennte Heizkostenabrechnung mit eigener Vorauszahlung kommt mit einer späteren Version. Bis dahin rechnet Mietfuchs die Heizkosten in der Betriebskostenabrechnung ab.',
+  rhythm: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen unter „Zeitraum der Heizung“ ein; eine Vorschau zeigt, was mit Ihren Heizpositionen geschieht.',
+  separateVia: 'Ob die Heizkosten getrennt abgerechnet werden, stellen Sie bei einer eigenen Heizperiode unter „Getrennte Heizkostenabrechnung“ ein; eine Vorschau zeigt, wie die Vorauszahlung aufgeteilt wird.',
   heatedArea: 'Die beheizte Fläche je Wohnung braucht erst die eigene Heizkostenabrechnung; sie kommt mit einer späteren Version.',
 }
 
@@ -84,6 +85,9 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     warmRentAverageCents: merged(body, 'warmRentAverageCents', current.warmRentAverageCents, nullableNumber),
     changeSplit: merged(body, 'changeSplit', current.changeSplit, (v) => oneOfOrUndefined(CHANGE_SPLITS, v) ?? current.changeSplit),
     periodStartMonth: merged(body, 'periodStartMonth', current.periodStartMonth, nullableNumber),
+    // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
+    periodChanges: current.periodChanges,
+    separateSpans: current.separateSpans,
     units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v))),
   }
 }
@@ -92,15 +96,21 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
 const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   id, propertyId, name: '', energy: 'other', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
-  capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
-  newDevicesInstall: null,
+  capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
+  periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
   if (after.method === 'self') throw new HeatingError(400, LATER.self)
   if (after.supply === 'perUnit') throw new HeatingError(400, LATER.perUnit)
-  if (after.periodStartMonth !== null) throw new HeatingError(400, LATER.ownPeriod)
-  if (after.separateSettlement !== null) throw new HeatingError(400, LATER.separate)
+  // Den Rhythmus setzt nur der Wechsel mit Vorschau (heatingPeriodChange.ts, Heizung PR 5).
+  if ((before?.periodStartMonth ?? null) !== after.periodStartMonth) throw new HeatingError(400, LATER.rhythm)
+  // Mit eigener Heizperiode ändert die Antwort auf „getrennt abgerechnet?“ die Anrechnung der
+  // Vorauszahlungen; das geht nur über die Vorschau (separateSettlement.ts). Ohne eigene Heizperiode
+  // ist H = P, und die Antwort ist eine Angabe.
+  if (before !== null && after.periodStartMonth !== null && before.separateSettlement !== after.separateSettlement) {
+    throw new HeatingError(400, LATER.separateVia)
+  }
   if ((after.units ?? []).some((u) => u.heatedAreaM2 !== null)) throw new HeatingError(400, LATER.heatedArea)
   if (after.source === 'homeowners' && after.method !== 'service') {
     throw new HeatingError(400, 'Rechnet die Gemeinschaft der Eigentümer ab, übernehmen Sie ihre Abrechnung wie die eines Messdienstes, als Einzelbeträge. Wählen Sie dafür „Die Gemeinschaft (Hausverwaltung) rechnet ab“.')
@@ -187,8 +197,11 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   const current = (await readHeatingPlants(db)).find((p) => p.id === id)
   if (!current) return null
   const next = mergeHeatingPlant(current, body)
+  // Welche Wohnungen die Anlage danach anders versorgt (Durchsicht von #231, Critical 1).
+  const changed = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(current, u) !== servesUnit(next, u)).map((u) => u.id)
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
+    await guardServedChange(tx, id, changed)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
     await writePlantUnits(tx, next)
@@ -196,7 +209,11 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
 }
 
-export type PlantRemoval = { removed: true; released: number } | { removed: false; reason: 'missing' } | { removed: false; reason: 'meters'; meters: string[] }
+export type PlantRemoval =
+  | { removed: true; released: number }
+  | { removed: false; reason: 'missing' }
+  | { removed: false; reason: 'meters'; meters: string[] }
+  | { removed: false; reason: 'separate' }
 
 // Entfernt wird eine Anlage samt Liste der Wohnungen und Heizperioden (CASCADE). Ihre
 // Kostenpositionen bleiben, nur ohne Anlage; an Beträgen und Verteilung ändert das in dieser Version
@@ -208,6 +225,13 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
   return db.transaction(async (tx): Promise<PlantRemoval> => {
     const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
     if (!plant) return { removed: false, reason: 'missing' }
+    // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
+    // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
+    // die Betriebskostenabrechnung zurück.
+    const anzahl = async (table: typeof heatingSeparateSpans | typeof heatingPrepaymentOverrides | typeof closedHeatingSettlements | typeof closedHeatingSettlementHistory) =>
+      (await tx.select({ n: count() }).from(table).where(eq(table.plantId, id)))[0]?.n ?? 0
+    const getrennt = (await anzahl(heatingSeparateSpans)) + (await anzahl(heatingPrepaymentOverrides)) + (await anzahl(closedHeatingSettlements)) + (await anzahl(closedHeatingSettlementHistory))
+    if (getrennt > 0) return { removed: false, reason: 'separate' }
     const zaehler = await tx.select({ name: meters.name }).from(meters).where(eq(meters.heatingPlantId, id))
     if (zaehler.length > 0) return { removed: false, reason: 'meters', meters: zaehler.map((z) => z.name) }
     const [n] = await tx.select({ n: count() }).from(costItems).where(eq(costItems.heatingPlantId, id))

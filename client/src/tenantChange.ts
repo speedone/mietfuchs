@@ -10,7 +10,9 @@ import { parseEuro } from './api'
 import { PERSONS_HINT, parsePersons } from './tenancyModel'
 import type { Meter, Tenancy } from './types'
 
-export type NewTenantForm = { name: string; start: string; persons: string; baseRent: string; prepayment: string }
+// `heatingPrepayment` nur bei getrennter Heizkostenabrechnung (Heizung PR 5): dann ist `prepayment`
+// die übrige Vorauszahlung.
+export type NewTenantForm = { name: string; start: string; persons: string; baseRent: string; prepayment: string; heatingPrepayment?: string }
 
 export const EMPTY_NEW_TENANT: NewTenantForm = { name: '', start: '', persons: '2', baseRent: '', prepayment: '' }
 
@@ -25,6 +27,7 @@ export type TenantChangeBody = {
     baseRents: { from: string; monthlyCents: number }[]
     prepayments: { from: string; monthlyCents: number }[]
     prepaymentOverrides: Record<string, number>
+    heatingPrepayments?: { from: string; monthlyCents: number }[]
   } | null
 }
 
@@ -68,6 +71,9 @@ export function buildTenantChange(input: {
   meterValues: Record<string, string>
   vacancy: boolean
   newTenant: NewTenantForm
+  // Die Anlage der Wohnung rechnet die Heizkosten getrennt ab (Durchsicht von #231): Dann gehört zum
+  // Nachmieter auch seine Heizvorauszahlung, sonst wiese die Heizkostenabrechnung 0 € aus.
+  askHeating?: boolean
 }): { error: string } | { body: TenantChangeBody } {
   const { tenancy, endDate, meters, meterValues, vacancy, newTenant } = input
   const ende = endProblem(endDate, tenancy)
@@ -91,6 +97,9 @@ export function buildTenantChange(input: {
   const prepayment = newTenant.prepayment.trim() ? parseEuro(newTenant.prepayment) : null
   if (newTenant.baseRent.trim() && baseRent === null) return { error: 'Die Kaltmiete bitte als Betrag angeben, z. B. 800,00.' }
   if (newTenant.prepayment.trim() && prepayment === null) return { error: 'Die Vorauszahlung bitte als Betrag angeben, z. B. 150,00.' }
+  const heatingText = (newTenant.heatingPrepayment ?? '').trim()
+  const heating = input.askHeating ? (heatingText ? parseEuro(heatingText) : null) : null
+  if (input.askHeating && (heating === null || heating < 0)) return { error: 'Bitte die Heizvorauszahlung des neuen Mieters angeben (0,00, wenn er keine zahlt).' }
   const month = newTenant.start.slice(0, 7)
   return {
     body: {
@@ -104,6 +113,7 @@ export function buildTenantChange(input: {
         baseRents: baseRent !== null ? [{ from: month, monthlyCents: baseRent }] : [],
         prepayments: prepayment !== null ? [{ from: month, monthlyCents: prepayment }] : [],
         prepaymentOverrides: {},
+        ...(input.askHeating && heating !== null ? { heatingPrepayments: [{ from: month, monthlyCents: heating }] } : {}),
       },
     },
   }

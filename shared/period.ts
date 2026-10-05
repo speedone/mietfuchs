@@ -223,3 +223,17 @@ export function formatDayRange(from: string, to: string): string {
   if (from === to) return germanDate(from)
   return from.slice(0, 4) === to.slice(0, 4) ? `${from.slice(8, 10)}.${from.slice(5, 7)}.–${germanDate(to)}` : `${germanDate(from)}–${germanDate(to)}`
 }
+
+// Das Jahr der Zahlung einer Rechnung zu einem Zeitraum über zwei Kalenderjahre (Entwurf 3.10,
+// Durchsicht von #231): das Jahr des Rechnungsdatums, sonst die Vorgabe des Aufrufers, sonst das Jahr
+// des Endes (eine Messdienstabrechnung 2025/2026 wird typischerweise 2026 bezahlt); immer geklemmt in
+// die Spanne, die repository.ts annimmt, vom ersten Jahr bis ein Jahr nach dem Ende. `clamped` sagt,
+// ob der gewählte Wert außerhalb lag. Eine Regel für Formular, Belegbuchung und Repository.
+export function paymentYear(span: Pick<BillingPeriod, 'from' | 'to'>, invoiceDate: string | null | undefined, fallbackYear?: number): { year: number, clamped: boolean } {
+  const first = Number(span.from.slice(0, 4))
+  const last = Number(span.to.slice(0, 4)) + 1
+  const fromInvoice = invoiceDate && /^\d{4}/.test(invoiceDate) ? Number(invoiceDate.slice(0, 4)) : undefined
+  const wanted = fromInvoice ?? fallbackYear ?? Number(span.to.slice(0, 4))
+  const year = Math.min(last, Math.max(first, wanted))
+  return { year, clamped: year !== wanted }
+}

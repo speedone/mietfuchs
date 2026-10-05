@@ -18,6 +18,7 @@ import type { Database } from './client.ts'
 import { bookedLines, listAssessments, readAssessment, writeLine, type AssessmentRecord } from './assessments.ts'
 import { readStock, type Stock } from './read.ts'
 import { insertCostItemIn, patchCostItemIn } from './repository.ts'
+import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { uploadRows, type UploadRow } from './uploads.ts'
 
 // Eine Ablehnung mit einer Meldung für den Nutzer; die Fehlerbehandlung in index.ts gibt sie
@@ -66,6 +67,12 @@ type Peer = { id: string, file: string, targets: OpenTarget[] }
 
 // Die Regeln der Zeiträume des Objekts einer Auswertung (#208); ohne Objekt das Kalenderjahr.
 const rulesFor = (ctx: Context, propertyId: string | null) => rulesOf(ctx.stock.properties.find((p) => p.id === propertyId))
+// Die eigene Heizperiode der einzigen Anlage (Heizung PR 5), sonst `null`; wie `defaultHeatingPlant`.
+const heatingRulesFor = (ctx: Context, propertyId: string | null) => {
+  const plants = ctx.stock.heatingPlants.filter((p) => p.propertyId === propertyId)
+  const only = plants.length === 1 ? plants[0] : undefined
+  return only && only.periodStartMonth !== null ? plantRules(only, rulesFor(ctx, propertyId)) : null
+}
 
 function peersFrom(records: readonly AssessmentRecord[], ctx: Context): Peer[] {
   return records.flatMap((r) => {
@@ -156,6 +163,7 @@ async function plannedFor(db: Database, id: string, decisions: readonly LineDeci
     fileNames: new Map([...ctx.booked.map((l) => l.file), ...twinFiles].map((f) => [f, nameOf(ctx, f)])),
     closed: ctx.stock.closedSettlements,
     rules: rulesFor(ctx, record.assessment.propertyId),
+    heatingRules: heatingRulesFor(ctx, record.assessment.propertyId),
   }, decisions, newId)
   return { record, ctx, planned }
 }
@@ -183,7 +191,7 @@ export async function bookAssessment(
   await db.transaction(async (tx) => {
     for (const w of planned.writes) {
       if (w.kind === 'createItem') {
-        await insertCostItemIn(tx, w.id, w.body)
+        await insertCostItemIn(tx, w.id, w.body, { invoiceDate: record.assessment.invoiceDate })
       } else if (w.kind === 'updateItem') {
         const current = items.get(w.id)
         if (!current) throw new BookingRefusal(409, 'Eine Position ist während der Buchung verschwunden. Bitte laden Sie die Seite neu.')

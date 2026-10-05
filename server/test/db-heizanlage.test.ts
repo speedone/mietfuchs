@@ -49,6 +49,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
       newDevicesInstall: null,
+      periodChanges: [], separateSpans: [],
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
   })
@@ -67,8 +68,8 @@ test('Sperren: was spätere Versionen rechnen, lehnt der Server mit einem Satz a
     const faelle: [Record<string, unknown>, RegExp][] = [
       [{ method: 'self' }, /eigene Heizkostenabrechnung .* kommt mit einer späteren Version/],
       [{ supply: 'perUnit' }, /Etagenheizungen .* kommen mit einer späteren Version/],
-      [{ periodStartMonth: 5 }, /eigene Heizperiode .* kommt mit einer späteren Version/],
-      [{ separateSettlement: true }, /getrennte Heizkostenabrechnung .* kommt mit einer späteren Version/],
+      // Heizung PR 5: den Rhythmus setzt nur der Wechsel mit Vorschau.
+      [{ periodStartMonth: 5 }, /Zeitraum der Heizung/],
       [{ units: [{ unitId: 'u1', heatedAreaM2: 60 }] }, /beheizte Fläche .* kommt mit einer späteren Version/],
       [{ source: 'homeowners', method: 'manual' }, /Gemeinschaft/],
       [{ captureInstalledOn: '01.06.2025' }, /kein Datum/],

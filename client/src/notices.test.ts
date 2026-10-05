@@ -158,3 +158,7 @@ test('Ein Rumpfzeitraum färbt die Ampel nicht (#208)', () => {
   expect(noticesNeedAttention(s)).toBe(false)
   expect(attentionLevel(s)).toBe('gruen')
 })
+
+test('Hinweis an der Heizanlage führt in die Stammdaten (Heizung PR 5)', () => {
+  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingPlant', id: 'hp1' } })
+})

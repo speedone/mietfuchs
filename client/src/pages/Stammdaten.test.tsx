@@ -24,11 +24,13 @@ const DEPS: UnitDependents = { tenancies: 2, meters: 1, readings: 4, payments: 1
 let kind: PropertyKind = 'mfh'
 let meters: Meter[] = []
 let sent: { url: string; method: string; body: Record<string, unknown> }[] = []
+let plants: unknown[] = []
 
 beforeEach(() => {
   kind = 'mfh'
   meters = []
   sent = []
+  plants = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0] ?? url
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -37,6 +39,7 @@ beforeEach(() => {
       return json({ ok: true })
     }
     if (path === '/api/meters') return json(meters)
+    if (path === '/api/heating-plants') return json(plants)
     if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'A', kind, address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
     if (path === '/api/units/u1/dependents') return json(DEPS)
     return json([])
@@ -205,4 +208,16 @@ test('Mietverhältnisse: die Tabelle darf umbrechen, die Symbole bleiben beisamm
   expect(icons?.classList.contains('nowrap')).toBe(true)
   expect(icons?.contains(rowOf('Staffel').getByLabelText('Mietverhältnis löschen'))).toBe(true)
   expect(rowOf('Staffel').getByText('0171 1234567').classList.contains('nowrap')).toBe(true)
+})
+
+test('Mietverhältnis an einer Anlage mit getrennter Heizkostenabrechnung: die Heizvorauszahlung wird abgefragt (Durchsicht von #231)', async () => {
+  plants = [{
+    id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: true,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [{ from: '2025-05', until: null }], units: null, newDevicesInstall: null,
+  }]
+  page()
+  fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/ }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  expect(await within(dialog).findByText(/Heizvorauszahlung je Monat \(neben der übrigen Vorauszahlung\)/, undefined, SLOW)).toBeTruthy()
 })

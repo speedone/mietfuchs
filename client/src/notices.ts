@@ -37,7 +37,8 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Und die Erinnerung an fernablesbare Geräte ab 2027 (#110): Welche Geräte eingebaut sind, erfasst
 // Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
 // mit Heizabrechnung dauerhaft auf Gelb.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short'])
+// Ebenso die eigene Heizperiode (Heizung PR 5): zulässig und nur eine Auskunft.
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short', 'period.heating-differs'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }
@@ -72,6 +73,7 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
   meter: { tab: 'zaehler', page: 'Zähler' },
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
+  heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an

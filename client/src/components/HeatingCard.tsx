@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingPlant, NewDevicesInstall, Unit } from '../types'
 import { api, errorText, fmtEuro } from '../api'
 import { useProperty, withProperty } from '../property'
@@ -6,6 +6,8 @@ import { periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import Term from './Term'
+import HeatingPeriodSection from './HeatingPeriodSection'
+import { useFocusTarget, type FocusProps } from '../focus'
 import {
   CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, REMOTE_OPTIONS, asksNewInstall, emptyHeatingForm, heatingPlantBody,
   heatingSummary, heatingToForm, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type WhoSettles,
@@ -15,7 +17,7 @@ import {
 // Knopf „Heizung einrichten“; nichts davon ist Pflicht, und an keiner Zahl ändert sich etwas (11.1).
 // Beim Anlegen zeigt die Einrichtung, welche Heizpositionen zur Anlage kommen (Vorschau, 3.0); der
 // Server nimmt genau diese, oder er lehnt ab, wenn sich die Liste inzwischen geändert hat.
-export default function HeatingCard({ units }: { units: Unit[] }) {
+export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit[] } & FocusProps) {
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -25,6 +27,9 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [assignable, setAssignable] = useState<AssignableHeatingItem[]>([])
   const [error, setError] = useState('')
+  // „Hier beheben →“ an einem Hinweis zur Heizanlage (Heizung PR 5): die Karte ins Bild holen.
+  const cardRef = useRef<HTMLDivElement>(null)
+  useFocusTarget(focus, 'heatingPlant', plants, (p) => p.id, () => cardRef.current?.scrollIntoView?.({ block: 'start' }), onFocusDone)
 
   const load = useCallback(async () => {
     setPlants(await api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)))
@@ -115,7 +120,7 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
   }
 
   return (
-    <div className="card">
+    <div className="card" ref={cardRef}>
       <h2><Term id="heatingSystem">Heizung</Term></h2>
       {error && !form && <div className="error">{error}</div>}
       {plants.length === 0 && (
@@ -130,6 +135,13 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
       {plants.map((p) => (
         <div key={p.id}>
           <ul>{heatingSummary(p, units).map((line) => <li key={line}>{line}</li>)}</ul>
+          <HeatingPeriodSection
+            plant={p}
+            objectRules={rulesOf(property)}
+            hasCalendarData={assignable.length > 0 || units.length > 0}
+            onChanged={load}
+            notify={toast}
+          />
           <div className="row">
             <button className="btn ghost" onClick={() => openEdit(p)}>Ändern</button>
             <button className="btn ghost" onClick={() => remove(p)}>Entfernen</button>

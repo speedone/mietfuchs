@@ -11,7 +11,8 @@ import { CALENDAR_RULES, periodKey } from '../../shared/period.ts'
 import type { CostItem, LineDecision, PeriodRules } from '../../shared/types.ts'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { createEntity, orphanPeriodKeys } from '../src/db/repository.ts'
-import { properties } from '../src/db/schema.ts'
+import { heatingPlants, properties } from '../src/db/schema.ts'
+import { createHeatingPlant } from '../src/db/heating.ts'
 import { readStock } from '../src/db/read.ts'
 import { placeAssessment, saveAssessment } from '../src/db/assessments.ts'
 import { bookAssessment, previewBooking, viewAssessment } from '../src/db/booking.ts'
@@ -31,7 +32,8 @@ test('Jahr der Zahlung einer Buchung: aus dem Rechnungsdatum, nur bei einem Zeit
   const p = periodForYear(MAI, 2025)
   assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2026-02-10' }), 2026)
   assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: null }), 2025)
-  assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2031-01-01' }), 2025, 'außerhalb der erlaubten Spanne gilt das Jahr des Belegs')
+  // Seit der Durchsicht von #231 eine Regel mit der Heizposition: außerhalb der Spanne geklemmt.
+  assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2031-01-01' }), 2027, 'außerhalb der erlaubten Spanne geklemmt')
   assert.equal(bookingTaxYear(periodForYear(CALENDAR_RULES, 2025), { year: 2025, invoiceDate: '2026-02-10' }), null)
 })
 
@@ -105,5 +107,60 @@ test('Mai bis April: Eine Auswertung mit gewähltem Jahr bekommt einen Zeitraum 
     }, { id: 'a-d', now: '2026-10-02T00:00:00Z' }))
     assert.equal((await opened.read((db) => viewAssessment(db, 'a-d', uploadDir))).requestedPeriod, '2025-05')
     assert.deepEqual(await opened.read(orphanPeriodKeys), [])
+  })
+})
+
+test('Heizposition mit eigener Heizperiode: das Jahr der Zahlung kommt aus dem Rechnungsdatum, geklemmt in die Heizperiode (Entwurf 3.10)', async () => {
+  // Kalenderobjekt, Anlage Mai bis April: Die Buchung unter 2026 kommt in die Heizperiode 2025/2026
+  // (Zahlung 2025 bis 2027 zulässig).
+  const faelle: [string | null, number][] = [['2025-11-20', 2025], ['2029-01-15', 2027], [null, 2026]]
+  for (const [i, [invoiceDate, erwartet]] of faelle.entries()) {
+    await withWorld(async (opened, uploadDir) => {
+      await opened.write(async (db) => {
+        await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+        await db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp1'))
+      })
+      fs.writeFileSync(path.join(uploadDir, 'messdienst.pdf'), '%PDF messdienst')
+      const r = await opened.write((db) => saveAssessment(db, {
+        file: 'messdienst.pdf', propertyId: 'objekt-1', year: 2026, detectedYear: 2026, requestedYear: 2026, requestedPeriod: periodKey('2026-01'), vendor: 'Messdienst', invoiceDate,
+        totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false,
+        lines: [{ description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', categoryGuessed: false, amountCents: 100000, labor35aCents: null }],
+      }, { id: `a-${i}`, now: '2026-10-02T00:00:00Z' }))
+      const decisions: LineDecision[] = [{ idx: 0, action: 'create', fields: { description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', amountCents: 100000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null } }]
+      const preview = await opened.read((db) => previewBooking(db, r.assessment.id, decisions, uploadDir))
+      // Die Vorschau nennt Heizperiode und Jahr der Zahlung, und ob geklemmt wurde.
+      const satz = preview.notices.join(' ')
+      assert.match(satz, new RegExp(`Heizperiode 2025/2026, Jahr der Zahlung ${erwartet}`), satz)
+      assert.equal(/liegt außerhalb/.test(satz), invoiceDate === '2029-01-15', satz)
+      const outcome = await opened.write((db) => bookAssessment(db, r.assessment.id, decisions, preview.token, { uploadDir, newId: () => `neu-${i}` }))
+      assert.equal(outcome.kind, 'done')
+      const item = (await opened.read(readStock)).costItems.find((c: CostItem) => c.id === `neu-${i}`) ?? assert.fail('keine Position')
+      assert.deepEqual([item.period, item.heatingPlantId, item.taxYear], ['2025-05', 'hp1', erwartet], `Rechnungsdatum ${invoiceDate}`)
+    })
+  }
+})
+
+test('Objekt Juli bis Juni, Heizperiode Mai bis April, ohne Rechnungsdatum: Vorschau und Buchung nennen dasselbe Jahr der Zahlung (Durchsicht von #231)', async () => {
+  await withWorld(async (opened, uploadDir) => {
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 7 }).where(eq(properties.id, 'objekt-1'))
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp1'))
+    })
+    fs.writeFileSync(path.join(uploadDir, 'messdienst.pdf'), '%PDF messdienst')
+    const r = await opened.write((db) => saveAssessment(db, {
+      file: 'messdienst.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, requestedPeriod: periodKey('2025-07'), vendor: 'Messdienst', invoiceDate: null,
+      totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false,
+      lines: [{ description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', categoryGuessed: false, amountCents: 100000, labor35aCents: null }],
+    }, { id: 'a-jj', now: '2026-10-02T00:00:00Z' }))
+    const decisions: LineDecision[] = [{ idx: 0, action: 'create', fields: { description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', amountCents: 100000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null } }]
+    const preview = await opened.read((db) => previewBooking(db, r.assessment.id, decisions, uploadDir))
+    const satz = preview.notices.join(' ')
+    const vorschau = /Heizperiode 2025\/2026, Jahr der Zahlung (\d{4})/.exec(satz)?.[1] ?? assert.fail(satz)
+    const outcome = await opened.write((db) => bookAssessment(db, r.assessment.id, decisions, preview.token, { uploadDir, newId: () => 'neu-jj' }))
+    assert.equal(outcome.kind, 'done')
+    const item = (await opened.read(readStock)).costItems.find((c: CostItem) => c.id === 'neu-jj') ?? assert.fail('keine Position')
+    assert.deepEqual([item.period, item.taxYear], ['2025-05', Number(vorschau)])
+    assert.equal(vorschau, '2026', 'ohne Rechnungsdatum das Jahr des Endes der Heizperiode')
   })
 })

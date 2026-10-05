@@ -408,6 +408,33 @@ async function heatingPlant() {
     'die Abrechnung bleibt mit Heizanlage dieselbe', { vorher: vorher.totalCostsCents, nachher: nachher.totalCostsCents })
 }
 
+// Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5): Zeitraum der Heizung über die
+// Vorschau, Weg d ab 05/2025 einschalten, Heizkostenabrechnung 2025/2026 mit eigener Frist lesen.
+async function heatingPeriod() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  // Jede Vorschau trägt eine Marke; der Wechsel schreibt nur mit ihr (wie beim Abrechnungszeitraum).
+  const regeln = { rules: { startMonth: 5, changes: [] } }
+  const zeitraum = await request(`/api/heating-plants/${anlage.id}/period/preview`, json('POST', regeln))
+  assert(zeitraum.status === 200 && typeof zeitraum.body.token === 'string', 'Vorschau des Zeitraums der Heizung', zeitraum.body)
+  const wechsel = await request(`/api/heating-plants/${anlage.id}/period`, json('PUT', { ...regeln, answers: { token: zeitraum.body.token } }))
+  assert(wechsel.status === 200 && wechsel.body.periodStartMonth === 5, 'Zeitraum der Heizung Mai bis April', wechsel.body)
+  const vorschau = await request(`/api/heating-plants/${anlage.id}/separate/preview`, json('POST', { separate: true, month: '2025-05' }))
+  assert(vorschau.status === 200 && vorschau.body.way === 'separate', 'Vorschau der getrennten Heizkostenabrechnung', vorschau.body)
+  // Die Antworten aus der Vorschau: Heizanteil wie vorgeschlagen; jede Jahreskorrektur bleibt ganz bei
+  // den übrigen Vorauszahlungen, die Heizkorrekturen 0 €.
+  const steps = Object.fromEntries(vorschau.body.steps.map((s) => [s.tenancyId, Object.fromEntries(s.rows.map((r) => [r.from, r.heatingCents]))]))
+  const totals = {}
+  const overrides = {}
+  for (const o of vorschau.body.overrides) {
+    totals[o.tenancyId] = { ...(totals[o.tenancyId] ?? {}), [o.period]: o.cents ?? 0 }
+    for (const a of o.asks) if (a.kind !== 'total') overrides[o.tenancyId] = { ...(overrides[o.tenancyId] ?? {}), [a.period]: 0 }
+  }
+  const ein = await request(`/api/heating-plants/${anlage.id}/separate`, json('PUT', { separate: true, month: '2025-05', answers: { steps, totals, overrides, token: vorschau.body.token } }))
+  assert(ein.status === 200 && ein.body.separateSpans?.length === 1, 'getrennte Heizkostenabrechnung eingeschaltet', ein.body)
+  const heiz = await request(`/api/heating-settlement/${anlage.id}/2025-05`)
+  assert(heiz.status === 200 && heiz.body.deadline === '2027-04-30' && heiz.body.scope?.kind === 'heating', 'Heizkostenabrechnung 2025/2026 mit eigener Frist', heiz.body)
+}
+
 async function backupAndRestore(unit) {
   const backup = await request('/api/backup')
   assert(backup.status === 200 && backup.body.subarray(0, 2).toString() === 'PK', 'Backup als ZIP herunterladen')
@@ -425,6 +452,7 @@ async function backupAndRestore(unit) {
   assert(r.status === 200 && units.length === 1 && units[0].id === unit.id, 'Backup wiederherstellen bringt die Daten zurück', r.body)
   const anlagen = (await request('/api/heating-plants')).body
   assert(Array.isArray(anlagen) && anlagen.length === 1, 'die Heizanlage ist nach der Wiederherstellung da', anlagen)
+  assert(anlagen[0]?.periodStartMonth === 5 && anlagen[0]?.separateSpans?.length === 1, 'Heizperiode und getrennte Abrechnung sind nach der Wiederherstellung da', anlagen)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
   // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
@@ -469,6 +497,7 @@ async function main() {
   await openAiExtraction()
   const unit = await uploadsAndSettlement()
   await heatingPlant()
+  await heatingPeriod()
   await backupAndRestore(unit)
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }
