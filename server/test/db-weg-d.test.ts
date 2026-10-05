@@ -10,8 +10,8 @@ import { eq } from 'drizzle-orm'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
 import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
-import { closeSettlement, createEntity, findEntity } from '../src/db/repository.ts'
-import { createHeatingPlant, listHeatingPlants } from '../src/db/heating.ts'
+import { closeSettlement, createEntity, findEntity, HeatingError, updateEntity } from '../src/db/repository.ts'
+import { createHeatingPlant, listHeatingPlants, updateHeatingPlant } from '../src/db/heating.ts'
 import { readStock } from '../src/db/read.ts'
 import { closedHeatingSettlements, heatingPlants } from '../src/db/schema.ts'
 import { computeSettlement, rentLedger } from '../src/calc.ts'
@@ -248,5 +248,26 @@ test('Eine veraltete Vorschau schreibt nichts', async () => {
     assert.ok(r && 'error' in r)
     assert.match(r.error, /nicht mehr aktuell/)
     assert.deepEqual((await opened.read((db) => listHeatingPlants(db, 'objekt-1')))[0]?.separateSpans, [])
+  })
+})
+
+test('Weg d mit Heizstaffel: Die Liste der versorgten Wohnungen ändert sich nicht still (Durchsicht von #231, Critical 1)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, {})
+      await createEntity(db, 'units', 'u2', { propertyId: 'objekt-1', name: 'OG', areaM2: 40, participates: true })
+      await createEntity(db, 'tenancies', 't2', { unitId: 'u2', tenantName: 'Schmidt', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] })
+    })
+    const v = await preview(opened, { separate: true, month: '2026-01' })
+    const steps = Object.fromEntries(v.steps.map((s) => [s.tenancyId, Object.fromEntries(s.rows.map((r) => [r.from, 10000]))]))
+    const r = await apply(opened, { separate: true, month: '2026-01', answers: { steps } })
+    assert.ok(r && 'plant' in r, JSON.stringify(r))
+    const abgelehnt = (e: unknown) => e instanceof HeatingError && e.status === 409 && /Schmidt/.test(e.message) && /Heizvorauszahlung/.test(e.message)
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp1', { units: [{ unitId: 'u1', heatedAreaM2: null }] })), abgelehnt)
+    await assert.rejects(opened.write((db) => updateEntity(db, 'units', 'u2', { noConnection: ['waerme'] })), abgelehnt)
+    assert.equal((await opened.read((db) => listHeatingPlants(db, 'objekt-1')))[0]?.units, null, 'nichts geschrieben')
+    // Ohne Heizstaffel in der Wohnung darf die Liste sich ändern.
+    await opened.write((db) => createEntity(db, 'units', 'u3', { propertyId: 'objekt-1', name: 'Garage', areaM2: 0, participates: true }))
+    await opened.write((db) => updateEntity(db, 'units', 'u3', { noConnection: ['waerme'] }))
   })
 })

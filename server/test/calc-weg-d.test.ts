@@ -124,3 +124,22 @@ test('Wohnungen ohne Heizposition fehlen in der Heizkostenabrechnung', () => {
   })
   assert.deepEqual(heizkosten(src, '2025-05').statements.map((s) => s.tenancyId), ['A'])
 })
+
+test('Eine Wohnung, die die Anlage nicht versorgt, rechnet ihre Heizstaffel nur in P an (Durchsicht von #231, Critical 1)', () => {
+  // Weg d ab 01/2026; die Anlage versorgt nur u1. B wohnt in u2 und hat trotzdem eine Heizstaffel.
+  const eg = { id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }
+  const og = { id: 'u2', propertyId: 'objekt-1', name: 'OG', areaM2: 40, participates: true }
+  for (const plantUnits of [[{ unitId: 'u1', heatedAreaM2: null }], null]) {
+    const src = haus({
+      heatingPlants: [anlage(ab2026, plantUnits)],
+      units: plantUnits === null ? [eg, { ...og, noConnection: ['waerme'] }] : [eg, og],
+      tenancies: [mieter('A', 'u1', [{ from: '2026-01', monthlyCents: 10000 }]), mieter('B', 'u2', [{ from: '2026-01', monthlyCents: 10000 }])],
+      costItems: [heizung('H25', '2025-05', 150000, { taxYear: 2026, participantUnitIds: ['u1'] }), heizung('H26', '2026-05', 150000, { taxYear: 2027, participantUnitIds: ['u1'] })],
+    } as Partial<Source>)
+    const h25 = heizkosten(src, '2025-05').statements.find((s) => s.tenancyId === 'B')
+    const h26 = heizkosten(src, '2026-05').statements.find((s) => s.tenancyId === 'B')
+    assert.equal((h25?.prepaymentCents ?? 0) + (h26?.prepaymentCents ?? 0), 0, `B ist nicht an der Anlage (${plantUnits === null ? 'kein Anschluss' : 'Liste'})`)
+    const p = computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2026-01')))
+    assert.equal(st(p, 'B').heatingPrepaymentCents, 12 * 10000, 'P rechnet die ganze Heizstaffel von B an')
+  }
+})

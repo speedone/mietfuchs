@@ -24,8 +24,9 @@ import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../.
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readHeatingPlants, readProperties } from './read.ts'
-import { asNullableFilled, asNullableText, asText, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { readHeatingPlants, readProperties, readUnits } from './read.ts'
+import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
+import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
   CHANGE_SPLITS, closedHeatingSettlementHistory, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
@@ -196,8 +197,11 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   const current = (await readHeatingPlants(db)).find((p) => p.id === id)
   if (!current) return null
   const next = mergeHeatingPlant(current, body)
+  // Welche Wohnungen die Anlage danach anders versorgt (Durchsicht von #231, Critical 1).
+  const changed = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(current, u) !== servesUnit(next, u)).map((u) => u.id)
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
+    await guardServedChange(tx, id, changed)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
     await writePlantUnits(tx, next)

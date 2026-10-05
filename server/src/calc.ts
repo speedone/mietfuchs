@@ -1875,8 +1875,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // danach steht die Warnung im eingefrorenen Stand, und eine neue Abrechnung gibt es nicht.
   const heatingScopePrepayment = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents: number, note?: string } => {
     const plant = snapshot.scope?.plant
-    const way = plant ? wayOf(plant) : null
-    const r = heatingPrepaymentCents(t, plant?.id ?? '', period, (m) => way !== null && separateOwner(way, objectRules, m)?.key === period.key)
+    // Nur, wen die Anlage versorgt (Durchsicht von #231): Die Heizstaffel einer Wohnung ohne Anschluss
+    // an diese Anlage rechnet P an (`prepaymentOf`), sonst stünde sie in beiden Abrechnungen.
+    if (!plant || !servesUnit(plant, t.unit)) return { cents: 0, overridden: false, heatingCents: 0 }
+    const way = wayOf(plant)
+    const r = heatingPrepaymentCents(t, plant?.id ?? '', period, (m) => separateOwner(way, objectRules, m)?.key === period.key)
     const byPeriod = new Map<string, { label: string, months: string[] }>()
     for (const m of r.elsewhere) {
       const p = periodContaining(objectRules, `${m}-01`)
@@ -1903,6 +1906,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const prepaymentOf = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents?: number, note?: string } => {
     if (scope === 'heatingPart') return { cents: 0, overridden: false }
     if (scope === 'heating') return heatingScopePrepayment(t)
+    // Die Anlage, die die Wohnung versorgt, ausdrücklich (vorbereitend auf mehrere Anlagen, PR 9):
+    // Nur deren getrennte Heizperioden nehmen P Monate der Heizstaffel ab.
     const plant = plants.find((p) => servesUnit(p, t.unit))
     if (!plant) return computePrepaymentCents(t, period)
     const way = wayOf(plant)

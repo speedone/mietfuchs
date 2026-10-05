@@ -35,7 +35,7 @@
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
 import { CALENDAR_RULES, calendarPeriod, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
-import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, spanOf } from '../../../shared/heatingPeriod.ts'
+import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
@@ -788,7 +788,39 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
 // Mietverhältnis nimmt sie mit, denn es erbt das Objekt über sie; ein Zähler, eine
 // Direktzuordnung oder ein vereinbarter Anteil gehören dagegen zum alten Objekt.
+// Welche Wohnungen eine Anlage mit getrennter Heizkostenabrechnung versorgt, entscheidet, welche
+// Abrechnung eine Heizvorauszahlung anrechnet (`separateOwner` nur für versorgte Wohnungen, sonst P).
+// Wechselte das still, stünde eine schon angerechnete Heizvorauszahlung in einer anderen Abrechnung
+// als bisher, auch in einer abgeschlossenen (Durchsicht von #231, Critical 1). Deshalb abgelehnt, solange
+// eine betroffene Wohnung ein Mietverhältnis mit Heizvorauszahlung hat und die Anlage Spannen nach
+// Weg d führt. Eine Vorschau, die die Staffeln zusammenführt, verschöbe dieselben Monate ebenso; die
+// Ablehnung mit Satz ist die ehrlichere Antwort.
+export async function guardServedChange(db: Executor, plantId: string, unitIds: readonly string[]): Promise<void> {
+  if (unitIds.length === 0) return
+  const spans = await db.select({ from: heatingSeparateSpans.from }).from(heatingSeparateSpans).where(eq(heatingSeparateSpans.plantId, plantId))
+  if (spans.length === 0) return
+  const rows = await db
+    .select({ name: tenancies.tenantName })
+    .from(heatingPrepayments)
+    .innerJoin(tenancies, eq(heatingPrepayments.tenancyId, tenancies.id))
+    .where(and(inArray(tenancies.unitId, [...unitIds]), sql`${heatingPrepayments.monthlyCents} > 0`))
+  const names = [...new Set(rows.map((r) => r.name))]
+  if (names.length === 0) return
+  throw new HeatingError(409,
+    `Für ${andList(names.map((n) => `„${n}“`))} ist eine Heizvorauszahlung erfasst, und die Heizkosten werden getrennt abgerechnet. ` +
+      'Ob die Heizanlage diese Wohnung versorgt, entscheidet, welche Abrechnung die Heizvorauszahlung anrechnet; nach der Änderung stünde sie in einer anderen als bisher, auch in einer schon abgeschlossenen. ' +
+      'Das lässt Mietfuchs deshalb nicht zu, solange es diese Heizvorauszahlung gibt. Stimmt die Zuordnung nicht, tragen Sie bei diesen Mietverhältnissen die Heizvorauszahlung als übrige Vorauszahlung ein (Stammdaten → Mietverhältnis) und prüfen dabei die abgeschlossenen Abrechnungen. Gespeichert wurde nichts.')
+}
+
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
+  // „Kein Anschluss: Wärme“ ändert, welche Anlage ohne Liste die Wohnung versorgt (#117, Heizung PR 5).
+  if (before && before.propertyId === after.propertyId) {
+    const plants = await db.select({ id: heatingPlants.id }).from(heatingPlants)
+      .where(and(eq(heatingPlants.propertyId, after.propertyId), eq(heatingPlants.unitsLimited, false)))
+    for (const plant of plants) {
+      if (servesUnit({ units: null }, before) !== servesUnit({ units: null }, after)) await guardServedChange(db, plant.id, [after.id])
+    }
+  }
   if (!before || before.propertyId === after.propertyId) return
   // An einer Heizanlage (Heizung PR 4, Durchsicht von #230): Die Anlage gehört zum bisherigen
   // Objekt; wechselte die Wohnung mit, versorgte sie eine Anlage über die Objektgrenze, und das
