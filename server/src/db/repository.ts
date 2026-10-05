@@ -1139,8 +1139,10 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
 
 // Schreibt eine aufgeteilte Rechnung neu (Nachprüfung von #226, 2): `members` sind ihre bisherigen
 // Teile, `parts` die neuen. Ein Teil behält die Kennung des bisherigen Teils desselben Zeitraums,
-// sonst die eines übrigen; was übrig bleibt, wird gelöscht (gebuchte Zeilen einer Belegauswertung
-// werden dann wieder offen, `SET NULL`). Ohne Transaktion, der Aufrufer läuft in einer.
+// sonst die eines übrigen; was übrig bleibt, wird gelöscht. Vorher wandern die gebuchten Zeilen
+// einer Belegauswertung und der Beleg auf einen verbleibenden Teil derselben Rechnung: Mit
+// `SET NULL` stünde die schon gebuchte Rechnung sonst wieder offen im Posteingang und ließe sich ein
+// zweites Mal buchen (#184). Ohne Transaktion, der Aufrufer läuft in einer.
 export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string): Promise<string[]> {
   const first = members[0]
   if (first === undefined) return []
@@ -1168,7 +1170,18 @@ export async function rewriteCostItemFamily(tx: Executor, members: readonly Cost
       written.push(id)
     }
   }
-  for (const m of unused) await costItemCollection.remove(tx, m.id)
+  const keep = chosen.find((m) => m !== undefined)
+  for (const m of unused) {
+    const booked = await tx.select({ idx: assessmentLines.idx }).from(assessmentLines).where(eq(assessmentLines.costItemId, m.id))
+    if (keep === undefined && (booked.length > 0 || m.invoiceFile !== undefined)) {
+      throw new PeriodConflict(`An „${m.description}“ hängen ein Beleg oder gebuchte Zeilen einer Belegauswertung, und nach dem Wechsel bliebe kein Teil dieser Rechnung, der sie übernehmen könnte. Gespeichert wurde nichts.`)
+    }
+    if (keep !== undefined) {
+      await tx.update(assessmentLines).set({ costItemId: keep.id }).where(eq(assessmentLines.costItemId, m.id))
+      if (m.invoiceFile !== undefined && keep.invoiceFile === undefined) await tx.update(costItems).set({ invoiceFile: m.invoiceFile }).where(eq(costItems.id, keep.id))
+    }
+    await costItemCollection.remove(tx, m.id)
+  }
   return written
 }
 

@@ -34,7 +34,7 @@ import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodKey, PeriodRul
 import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database } from './client.ts'
 import { readClosedSettlements, readCostItems, readProperties, readTenancies, readUnits } from './read.ts'
-import { PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
+import { PeriodConflict, PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
 import { assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
@@ -427,6 +427,7 @@ export async function applyPeriodChange(
     // Eine Schreibprüfung, die im Wechsel scheitert, ist ein Konflikt mit dem Bestand und keine
     // falsche Anfrage (I1): 409 mit der Vorschau, die Transaktion hat nichts geschrieben.
     if (err instanceof PeriodError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: plan.preview }
+    if (err instanceof PeriodConflict) return { error: err.message, preview: plan.preview }
     throw err
   }
   const property = (await readProperties(db)).find((p) => p.id === propertyId)

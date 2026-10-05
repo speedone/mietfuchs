@@ -9,8 +9,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { applyPeriodChange, monthsText, previewPeriodChange } from '../src/db/periodChange.ts'
-import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, updateEntity } from '../src/db/repository.ts'
-import { assessments } from '../src/db/schema.ts'
+import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
+import { eq } from 'drizzle-orm'
+import { assessmentLines, assessments, properties } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem, PeriodChangePreview, Tenancy } from '../../shared/types.ts'
 
@@ -213,5 +214,32 @@ test('Ein schon aufgeteilter Teil wird beim nächsten Wechsel nur über seinen e
     // Mai und Juni: 61 von 245 Tagen des Teils über 32.219 Cent.
     assert.deepEqual(grundsteuer, [['2025-01', 15781], ['2025-01', 8022], ['2025-07', 24197]])
     await everythingSaves(opened)
+  })
+})
+
+// Nachprüfung von #226 (Ruling 3): Fällt beim Neuaufteilen ein Teil weg, wandern die gebuchten Zeilen
+// einer Belegauswertung auf einen verbleibenden Teil. Sonst stünde die schon gebuchte Rechnung wieder
+// offen im Posteingang und ließe sich ein zweites Mal buchen (#184).
+test('Ein Wechsel, der die Teile einer Rechnung verringert, behält die gebuchte Belegzeile', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => { await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1')) })
+    const teile = await opened.write((db) => saveCostItemSplit(db, 'objekt-1', {
+      category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025, invoiceFile: 'gs.pdf',
+    }, null, ids))
+    const zweiter = teile.find((c) => c.period === '2025-05') ?? assert.fail('kein Teil 2025-05')
+    await opened.write(async (db) => {
+      await db.insert(assessments).values({ id: 'a1', file: 'gs.pdf', propertyId: 'objekt-1', year: 2025, requestedPeriod: periodKey('2025-05'), createdAt: '2026-03-01T00:00:00Z' })
+      await db.insert(assessmentLines).values({ assessmentId: 'a1', idx: 0, description: 'Grundsteuer', category: 'Grundsteuer', amountCents: 32219, booking: 'linked', costItemId: zweiter.id })
+    })
+    const kalender = { startMonth: 1, changes: [] }
+    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', kalender, {
+      groups: {}, token: (await previewPeriodChange(db, 'objekt-1', kalender, TODAY))?.token,
+    }, ids, TODAY))
+    assert.ok(r && 'property' in r, r && 'error' in r ? r.error : 'kein Objekt')
+    const nachher = await items(opened)
+    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents]), [['2025-01', 48000]])
+    const [zeile] = await opened.read((db) => db.select().from(assessmentLines))
+    assert.deepEqual([zeile?.booking, zeile?.costItemId], ['linked', nachher[0]?.id], 'die Zeile bleibt gebucht, am verbleibenden Teil')
+    assert.equal(nachher[0]?.invoiceFile, 'gs.pdf')
   })
 })
