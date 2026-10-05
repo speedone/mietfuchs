@@ -83,3 +83,19 @@ test('Rechtswerte: ein unlesbarer eingefrorener Eintrag fällt weg, statt eine �
   )
   assert.deepEqual(r.valueChanges, [])
 })
+
+// Durchsicht von #221 (M1): Ein Zeitraum über eine Grenze benutzt zwei Fassungen desselben Werts. Sie
+// werden je Fassung (Kennung und Beginn) verglichen, nicht die zweite eingefrorene mit der ersten
+// heutigen.
+test('Rechtswerte: zwei Fassungen desselben Werts werden je Fassung verglichen', () => {
+  const v = (validFrom: string | undefined, value: number) => ({ ...applied('ustg.standard-rate', value, `${value} %`), ...(validFrom ? { validFrom } : {}) })
+  const both = [v(undefined, 15), v('2020-07-01', 12)]
+  const same = compareWithFrozen({ statements: [statement('t', 0)], legalBasis: { values: both } }, { statements: [statement('t', 0)], legalBasis: { values: both } }, 2025, '2026-10-01')
+  assert.deepEqual(same.valueChanges, [])
+  const changed = compareWithFrozen(
+    { statements: [statement('t', 0)], legalBasis: { values: both } },
+    { statements: [statement('t', 0)], legalBasis: { values: [v(undefined, 15), v('2020-07-01', 13)] } },
+    2025, '2026-10-01',
+  )
+  assert.deepEqual(changed.valueChanges.map((c) => `${c.frozenText}→${c.currentText}`), ['12 %→13 %'])
+})
