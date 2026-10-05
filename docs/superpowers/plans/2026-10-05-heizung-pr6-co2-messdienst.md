@@ -34,8 +34,8 @@ G-B3, G-B5, B8, F2/F3, `co2.test.ts`), 12.3 Nr. 1, 8, 9, 14, 12.4, 13 (PR 0, PR 
 **Baut auf:** PR 1 (Code auf `feat/heizung-pr1-rechtsregister`, Plan
 `docs/superpowers/plans/2026-10-05-heizung-pr1-rechtsregister.md`), PR 2 (Code teilweise auf
 `feat/heizung-pr2-zeitraum`, Plan `…-pr2-zeitraum-kern.md`), PR 3 (`…-pr3-zeitraum-bedienung.md`),
-PR 4 (`…-pr4-heizanlage.md`) und PR 5 (`…-pr5-…`, **zum Zeitpunkt dieses Plans noch nicht
-geschrieben**; die Annahmen stehen unten benannt). Gearbeitet wird auf `feat/heizung-pr6-co2`,
+PR 4 (`…-pr4-heizanlage.md`) und PR 5 (`…-pr5-heizperiode.md`, Commit `7a3d9b0`; seine Schnittstellen
+stehen unten). Gearbeitet wird auf `feat/heizung-pr6-co2`,
 abgezweigt von der Spitze von PR 5; der PR wird gestapelt auf PR 5 gestellt und nach dessen Merge
 auf `main` umgestellt.
 
@@ -73,8 +73,8 @@ auf `main` umgestellt.
 - **Migrationen:** nur mit `npm --prefix server run db:generate -- --name co2_messdienst`, nie von
   Hand. Ein Schritt, denn es entstehen nur neue Tabellen (keine geänderte Bedingung an einer
   bestehenden Tabelle; README „Neue Spalten und geänderte Bedingungen nie in einem Schritt“). Er
-  folgt auf die Schritte von PR 5; ist PR 5 bei 0020/0021 geblieben, heißt er
-  `0022_co2_messdienst` (die Nummer vergibt drizzle-kit, der Plan nennt sie nur zur Orientierung).
+  folgt auf `0020_heizperiode` (PR 5, ein Schritt) und heißt deshalb `0021_co2_messdienst` (die Nummer
+  vergibt drizzle-kit).
   Die Marke kommt in `server/test/migrations.test.ts`.
 - **Eingefrorener Eingang:** `server/src/legacy/{schema,write,migrate,validate}.ts` bleiben
   unverändert; die db.json kennt keine CO₂-Angaben.
@@ -119,9 +119,9 @@ auf `main` umgestellt.
 | Datei | Verantwortung | Task |
 |---|---|---|
 | `shared/law/co2kostaufg.ts` (neu), `shared/law/params.ts`, `shared/law/rules.ts` | Parameter des CO2KostAufG, Regeln `co2-split` und `heating-dhw-split` | 1 |
-| `shared/types.ts` | `Co2Method`, `Co2Statement`, `Co2TenantRelief`, `Co2Assessment`, `Co2TenantLine`, `HeatingStatement`, `HeatingPeriodView`; `SettlementRow.kind`, `LandlordReason` + `co2Share`, `NoticeSubject` + `heatingPlant`, `Settlement.heating` | 2 |
-| `server/src/db/schema.ts`, `server/drizzle/00NN_co2_messdienst.sql`, `meta/*` (erzeugt) | Tabellen `co2_statements`, `co2_tenant_reliefs` | 2 |
-| `client/src/landlordReasons.ts`, `client/src/notices.ts` | Beschriftung `co2Share`, Ziel `heatingPlant` | 2 |
+| `shared/types.ts` | `Co2Method`, `Co2Statement`, `Co2TenantRelief`, `Co2Assessment`, `Co2TenantLine`, `HeatingStatement`, `HeatingPeriodView`; `SettlementRow.kind`, `LandlordReason` + `co2Share`, `NoticeSubject` + `heatingCosts`, `Settlement.heating` | 2 |
+| `server/src/db/schema.ts`, `server/drizzle/0021_co2_messdienst.sql`, `meta/*` (erzeugt) | Tabellen `co2_statements`, `co2_tenant_reliefs` | 2 |
+| `client/src/landlordReasons.ts`, `client/src/notices.ts` | Beschriftung `co2Share`, Ziele `heatingCosts` und „Heizung einrichten →“ | 2 |
 | `shared/glossary.ts` | Begriffe `co2Split`, `co2Stage`, `co2Area`, `co2Deducted`, `hotWaterShare` | 3 |
 | `shared/co2Probe.ts` (neu) | Die Probe nach 7.3, für Server und Oberfläche | 4 |
 | `server/src/co2.ts` (neu) | Einstufung, Nachstufung, Eigenanteil, Abzugsbeträge, Töpfe | 4, 7 |
@@ -182,25 +182,42 @@ bis PR 4; Namen genau so:
   Zuordnung offener Heizpositionen, und die Abrechnung bleibt gleich“; im Smoke-Test
   `heatingPlant()`.
 
-**Annahmen zu PR 5** (Plan noch nicht vorhanden; geplant gegen den Entwurf 3.0, 5.3, 5.8, 6.1).
-Weicht PR 5 im Namen ab, gilt sein Name; die Bedeutung legt der Entwurf fest. Wo eine Annahme
-greift, steht im Task „(Annahme PR 5)“:
+**Aus dem Plan von PR 5** (`docs/superpowers/plans/2026-10-05-heizung-pr5-heizperiode.md`, Commit
+`7a3d9b0`); die früheren Annahmen A1–A6 dieses Plans sind damit ersetzt:
 
-- **A1** `Snapshot.heatingPeriods?: { plantId: string; key: PeriodKey; from: string; to: string;
-  short: boolean }[]`: die in P eingestellten Heizperioden H je Anlage (5.8). Fehlen Einträge für
-  eine Anlage, rechnet dieser Plan mit H = P (der Stand vor PR 5).
-- **A2** `SnapshotCostItem` enthält `heatingPlantId` (der Topf in 6.1 Nr. 4.1 braucht es). Fehlt
-  es nach PR 5, ergänzt Task 7 Step 3 es.
-- **A3** Tabelle `heatingPeriodChanges` (`heating_period_changes(plant_id, from_month)`) in
-  schema.ts mit den Spalten `plantId`, `fromMonth` (5.3).
-- **A4** Tabelle `closedHeatingSettlements` (`closed_heating_settlements`) mit `plantId` und
-  `period` für den eigenen Abschluss einer Heizperiode nach Weg d (5.1, B3).
-- **A5** Bei Weg d lässt der Schnappschuss von P die Heizperioden dieser Anlage weg (A1 ohne
-  Eintrag für sie **und** ohne Positionen dieser Anlage mit dem Schlüssel von P); die eigene
-  Berechnung der Heizkostenabrechnung ruft `computeSettlement` mit einem Schnappschuss, dessen
-  `heatingPeriods` genau diese H enthält. Damit greift die CO₂-Rechnung dieses Plans in beiden
-  Zweigen ohne eigenen Code.
-- **A6** Die Migrationen von PR 5 heißen 0020/0021; dann ist der Schritt hier 0022.
+- **Schnappschuss (statt A1, A5):** `snapshotFor` legt die Positionen einer Anlage **mit eigener
+  Heizperiode** nicht in `costItems`, sondern je Heizperiode, die in P endet, in
+  `Snapshot.heatingParts?: SnapshotHeatingPart[]` (`{ plantId, period, previous, items, previousItems,
+  separate }`). `computeSettlement` rechnet jede nicht getrennte davon für sich, mit
+  `scope: { kind: 'heatingPart', plant }`, `period: part.period` und `costItems: part.items`, und
+  führt das Ergebnis mit `mergeHeatingPart(sub, part)` in P zusammen; eine Heizperiode mit
+  `separate: true` (Weg d) steht nicht in P, sondern hat ihren eigenen Schnappschuss
+  `heatingSnapshotFor(source, propertyId, plantId, h)` mit `scope: { kind: 'heating', plant }`.
+  `Snapshot.scope?: SnapshotScope`, `Snapshot.objectRules?: PeriodRules`. **Folge für diesen Plan:**
+  In jeder Berechnung ist die Heizperiode der Zeitraum der Berechnung (`snapshot.period`), und der Topf
+  einer Anlage sind die Positionen in `items` mit ihrer Kennung und dem Schlüssel dieses Zeitraums. Die
+  CO₂-Rechnung braucht deshalb keine eigene Liste von Heizperioden; sie läuft in P, in der
+  Teilabrechnung nach Weg b und in der Heizkostenabrechnung nach Weg d gleich. Was sie in einer
+  Teilabrechnung erzeugt (Zeilen, Hinweise, Rechtswerte), führt `mergeHeatingPart` zusammen; nur
+  `heating` ergänzt Task 7 dort.
+- **`SnapshotCostItem` enthält `heatingPlantId`** (A2, erfüllt).
+- **`SnapshotHeatingPlant`** ist `Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' |
+  'devicesInstalledAfter2021' | 'units'> & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' |
+  'periodChanges' | 'separateSpans' | 'separateSettlement'>>`; dieser Plan nimmt `energy` in den
+  Pflichtteil auf.
+- **Rhythmus der Anlage (statt A3):** `HeatingPlant.periodChanges: string[]` (aus
+  `heating_period_changes`, `readHeatingPlants` füllt es) und `HeatingPlant.separateSpans`
+  (`heating_separate_spans`); in `shared/heatingPeriod.ts` `plantRules(plant, objectRules)`,
+  `heatingPeriodsEndingIn(rules, p)` und `settledSeparately(way, objectRules, h)`; `wayOf(p)` in
+  snapshot.ts.
+- **Abschluss nach Weg d (statt A4):** Tabelle `closedHeatingSettlements` (`closed_heating_settlements`,
+  `plantId`, `period`). Eine getrennt abgerechnete Heizperiode schließt **nur** über sie, der Abschluss
+  von P friert sie nicht ein (B3); die übrigen über die Abrechnung von P, die ihr Ende enthält.
+- **Hinweisziel:** PR 5 hat `NoticeSubject['kind']` schon um `'heatingPlant'` ergänzt und
+  `TARGETS.heatingPlant` auf die Stammdaten gesetzt (für `period.no-heating-period` u. a., deren
+  Behebung dort liegt). Dieser Plan lässt das so und gibt den CO₂-Hinweisen ein eigenes Ziel
+  `'heatingCosts'` (Seite Heizkosten).
+- **Migration (statt A6):** PR 5 erzeugt nur `0020_heizperiode`; der Schritt hier ist `0021`.
 
 ## Abweichungen vom Entwurf und Festlegungen dieses Plans
 
@@ -227,7 +244,7 @@ entscheidet.
    Einschränkungen kennt, meldet `co2.stage-mismatch` das als Hinweis und nennt § 8 und § 9.
 8. **Musterabrechnungen:** Nur das Techem-Muster liegt vor; ista, Brunata, Minol und KALO nennt die
    Anleitung ohne Muster, wie der Entwurf (7.3) es für diesen Fall vorsieht.
-9. **Ein Migrationsschritt statt zwei:** Es entstehen nur neue Tabellen.
+9. **Ein Migrationsschritt statt zwei** (`0021_co2_messdienst`): Es entstehen nur neue Tabellen.
 10. **Smoke-Test liest `2025`** statt `2025-05` (12.4), weil sein Objekt im Kalenderjahr rechnet; Mai
     bis April prüfen F12 und api.test.ts.
 
@@ -498,7 +515,7 @@ die Typen, die Berechnung, Routen und Oberfläche teilen.
 
 **Files:**
 - Modify: `shared/types.ts`, `server/src/db/schema.ts`, `client/src/landlordReasons.ts`, `client/src/notices.ts`
-- Create (erzeugt): `server/drizzle/00NN_co2_messdienst.sql` (nach PR 5 voraussichtlich `0022`), `server/drizzle/meta/00NN_snapshot.json`; Modify (erzeugt): `server/drizzle/meta/_journal.json`
+- Create (erzeugt): `server/drizzle/0021_co2_messdienst.sql`, `server/drizzle/meta/0021_snapshot.json`; Modify (erzeugt): `server/drizzle/meta/_journal.json`
 - Test: `server/test/schema.test.ts`, `server/test/migrations.test.ts`, `client/src/landlordReasons.test.ts`, `client/src/notices.test.ts`
 
 **Interfaces:**
@@ -507,9 +524,9 @@ die Typen, die Berechnung, Routen und Oberfläche teilen.
   - `Co2Method = 'serviceDeducted' | 'serviceShown' | 'selfAfterService' | 'self'`
   - `Co2TenantRelief = { tenancyId: string; cents: number }`
   - `Co2Statement` (Felder in Step 3), `Co2TenantLine`, `Co2Assessment`, `HeatingStatement`, `HeatingPeriodView`
-  - `SettlementRow.kind?: 'co2Relief'`; `LandlordReason` + `'co2Share'`; `NoticeSubject['kind']` + `'heatingPlant'`; `Settlement.heating?: HeatingStatement[]`
+  - `SettlementRow.kind?: 'co2Relief'`; `LandlordReason` + `'co2Share'`; `NoticeSubject['kind']` + `'heatingCosts'` (`'heatingPlant'` kommt aus PR 5); `Settlement.heating?: HeatingStatement[]`
   - schema.ts: `CO2_METHODS`, `co2Statements`, `co2TenantReliefs`
-  - Client: `noticeTarget({ kind: 'heatingPlant', id: '' })` → Stammdaten, „Heizung einrichten →“; mit Kennung bis Task 11 Stammdaten, danach Heizkosten
+  - Client: `noticeTarget({ kind: 'heatingPlant', id: '' })` → Stammdaten, „Heizung einrichten →“; `heatingCosts` bis Task 11 Stammdaten, danach Heizkosten
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -601,10 +618,12 @@ test('CO₂-Anteil des Vermieters beim Vorwegabzug (Heizung PR 6)', () => {
 nicht vorhanden):
 
 ```ts
-test('Heizanlage als Ziel: ohne Anlage zur Einrichtung (Heizung PR 6)', () => {
+test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben vorerst in den Stammdaten (Heizung PR 6)', () => {
   expect(noticeTarget({ kind: 'heatingPlant', id: '' })).toEqual({ tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: 'heatingPlant', id: '' } })
-  // Bis es die Seite Heizkosten gibt (Task 11), führt der Knopf mit Anlage zur Karte „Heizung“.
-  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingPlant', id: 'hp1' } })
+  // Mit Anlage bleibt das Ziel aus PR 5 (Zeitraum der Heizung in den Stammdaten).
+  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })?.tab).toBe('stammdaten')
+  // Bis es die Seite Heizkosten gibt (Task 11), führen die CO₂-Hinweise ebenfalls zur Karte „Heizung“.
+  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingCosts', id: 'hp1' } })
 })
 ```
 
@@ -612,7 +631,7 @@ test('Heizanlage als Ziel: ohne Anlage zur Einrichtung (Heizung PR 6)', () => {
 
 Run: `npm run typecheck`
 Expected: FAIL mit `Property 'co2Statements' does not exist` (schema.test.ts), `Type '"co2Share"' is
-not assignable to type 'LandlordReason'` (landlordReasons.test.ts) und `Type '"heatingPlant"' is not
+not assignable to type 'LandlordReason'` (landlordReasons.test.ts) und `Type '"heatingCosts"' is not
 assignable` (notices.test.ts).
 
 - [ ] **Step 3: Typen (`shared/types.ts`)**
@@ -639,10 +658,13 @@ export type LandlordReason =
 
 `NoticeSubject`:
 
+(PR 5 hat `'heatingPlant'` ergänzt.) Ersetzen durch:
+
 ```ts
-// `heatingPlant` (Heizung PR 6): die Heizanlage; `id` leer heißt, es gibt noch keine, und der Knopf
-// führt zur Einrichtung.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant'; id: string }
+// `heatingPlant` (Heizung PR 5): die Heizanlage in den Stammdaten; `id` leer heißt, es gibt noch keine,
+// und der Knopf führt zur Einrichtung (PR 6). `heatingCosts` (Heizung PR 6): die CO₂-Angaben und das
+// Warmwasser einer Anlage auf der Seite Heizkosten; `id` ist die Anlage.
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant' | 'heatingCosts'; id: string }
 ```
 
 In `Settlement` hinter `garageLikeUnitIds?: string[]`:
@@ -832,8 +854,8 @@ export const co2TenantReliefs = sqliteTable(
 
 Run: `npm --prefix server run db:generate -- --name co2_messdienst`
 
-Expected: eine neue Datei `server/drizzle/00NN_co2_messdienst.sql` (nach den Schritten von PR 5,
-voraussichtlich `0022`) mit genau zwei `CREATE TABLE` (`co2_statements`, `co2_tenant_reliefs`) samt
+Expected: eine neue Datei `server/drizzle/0021_co2_messdienst.sql` (hinter `0020_heizperiode` aus
+PR 5) mit genau zwei `CREATE TABLE` (`co2_statements`, `co2_tenant_reliefs`) samt
 ihren Bedingungen und Fremdschlüsseln. **Kein** `__new_`, kein `ALTER TABLE`. Steht ein Neubau
 darin, ist eine Bedingung an einer bestehenden Tabelle mitgekommen: Datei, Journal-Eintrag und
 Momentaufnahme löschen, Schema berichtigen, neu erzeugen. Fragt drizzle-kit nach einer Umbenennung,
@@ -847,7 +869,7 @@ Run:
 node --input-type=module -e "const { loadMigrations } = await import('./server/src/db/client.ts'); for (const m of await loadMigrations()) if (m.tag.includes('co2_messdienst')) console.log(\`  '\${m.tag}': '\${m.hash}',\`)"
 ```
 
-In `server/test/migrations.test.ts` in `VEROEFFENTLICHT` hinter der letzten Marke von PR 5 die
+In `server/test/migrations.test.ts` in `VEROEFFENTLICHT` hinter der Marke `0020_heizperiode` (PR 5) die
 ausgegebene Zeile einfügen, darüber:
 
 ```ts
@@ -865,18 +887,13 @@ In `LABELS` von `landlordReasons.ts` vor `rounding`:
   co2Share: 'CO₂-Anteil des Vermieters',
 ```
 
-`client/src/notices.ts`: `TARGETS` ersetzen und `noticeTarget` um den Sonderfall ergänzen:
+`client/src/notices.ts`: in `TARGETS` hinter der Zeile `heatingPlant` (PR 5) ergänzen und
+`noticeTarget` um den Sonderfall erweitern:
 
 ```ts
-const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
-  costItem: { tab: 'kosten', page: 'Kosten' },
-  unit: { tab: 'stammdaten', page: 'Stammdaten' },
-  tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
-  meter: { tab: 'zaehler', page: 'Zähler' },
-  rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
-  // Heizung PR 6: vorerst die Karte „Heizung“ in den Stammdaten. Ohne Anlage siehe unten.
-  heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
-}
+  // Heizung PR 6: die CO₂-Angaben; vorerst die Karte „Heizung“ in den Stammdaten, mit Task 11 die
+  // Seite Heizkosten.
+  heatingCosts: { tab: 'stammdaten', page: 'Stammdaten' },
 ```
 
 In `noticeTarget` direkt hinter `if (!subject) return null`:
@@ -889,8 +906,7 @@ In `noticeTarget` direkt hinter `if (!subject) return null`:
   }
 ```
 
-`NoticeTab` bleibt in diesem Task, wie er ist; die Seite Heizkosten und ihr Ziel kommen mit
-Task 11.
+`NoticeTab` bleibt in diesem Task, wie er ist; die Seite Heizkosten kommt mit Task 11.
 
 - [ ] **Step 7: Run tests to verify they pass**
 
@@ -1457,7 +1473,7 @@ Beträge je Mietverhältnis und das Entfernen einer Anlage mit CO₂-Angaben.
 - Test: `server/test/db-co2.test.ts` (neu), `server/test/db-stock.test.ts`
 
 **Interfaces:**
-- Consumes (Task 1, 2; PR 2, PR 4; Annahmen A3, A4): `co2Statements`, `co2TenantReliefs`, `CO2_METHODS`, `DHW_METHODS`, `heatingPeriods`, `heatingPlants`, `closedSettlements`, `heatingPeriodChanges`, `closedHeatingSettlements`, `costItems`, `tenancies`, `units`; `readHeatingPlants`, `readProperties`, `readCostItems`; `HeatingError`, `CrossPropertyError`, `has`, `raw`, `merged`, `oneOfOrUndefined`, `asNullableFilled`; `newId` (store.ts); `co2ApplicableFrom`, `co2FirstPeriodStart`, `germanDate`, `valueAt`; aus shared/period.ts `parsePeriodKey`, `periodContaining`, `periodLabel`, `periodOfKey`, `periodsBetween`, `resolvePeriodParam`, `rulesOf`, `periodKey`.
+- Consumes (Task 1, 2; PR 2, PR 4, PR 5): `co2Statements`, `co2TenantReliefs`, `CO2_METHODS`, `DHW_METHODS`, `heatingPeriods`, `heatingPlants`, `closedSettlements`, `closedHeatingSettlements`; aus `shared/heatingPeriod.ts` `plantRules`, `heatingPeriodsEndingIn`, `settledSeparately`; `HeatingPlant.periodChanges`, `HeatingPlant.separateSpans`; `costItems`, `tenancies`, `units`; `readHeatingPlants`, `readProperties`, `readCostItems`; `HeatingError`, `CrossPropertyError`, `has`, `raw`, `merged`, `oneOfOrUndefined`, `asNullableFilled`; `newId` (store.ts); `co2ApplicableFrom`, `co2FirstPeriodStart`, `germanDate`, `valueAt`; aus shared/period.ts `parsePeriodKey`, `periodContaining`, `periodLabel`, `periodOfKey`, `periodsBetween`, `resolvePeriodParam`, `rulesOf`, `periodKey`.
 - Produces:
   - read.ts: `readCo2Statements(db: Database): Promise<Co2Statement[]>`, `readHeatingPeriodRows(db: Database): Promise<HeatingPeriodData[]>`; `Stock.co2Statements`, `Stock.heatingPeriodRows`
   - db/co2.ts: `heatingPeriodViews(db: Database, plantId: string, periodParam: string): Promise<HeatingPeriodView[] | null>`, `saveCo2Statement(db: Database, plantId: string, period: string, body: unknown): Promise<Co2Statement | null>`, `removeCo2Statement(db: Database, plantId: string, period: string): Promise<boolean | null>`, `saveHotWater(db: Database, plantId: string, period: string, body: unknown): Promise<HeatingPeriodView['hotWater'] | null>` (`null` heißt: Anlage gibt es nicht)
@@ -1698,14 +1714,15 @@ import type { BillingPeriod, Co2Statement, Co2TenantRelief, HeatingPeriodView, H
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { co2ApplicableFrom, co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate, valueAt } from '../../../shared/law/register.ts'
-import { parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, resolvePeriodParam, rulesOf } from '../../../shared/period.ts'
+import { heatingPeriodsEndingIn, plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
+import { parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf } from '../../../shared/period.ts'
 import { newId } from '../store.ts'
 import type { Database, Executor } from './client.ts'
 import { readCo2Statements, readCostItems, readHeatingPlants, readProperties } from './read.ts'
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
 import {
-  closedHeatingSettlements, closedSettlements, CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriodChanges,
-  heatingPeriods, tenancies, units,
+  closedHeatingSettlements, closedSettlements, CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies,
+  units,
 } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
@@ -1717,15 +1734,13 @@ const closedText = (h: BillingPeriod) =>
 type PlantContext = { plant: HeatingPlant; objectRules: PeriodRules; plantRules: PeriodRules }
 
 // Die Anlage mit dem Rhythmus ihres Objekts und ihrem eigenen. Ohne eigenen Beginnmonat folgt die
-// Heizperiode dem Objekt samt seinen Wechseln (Entwurf 3.0); mit eigenem gelten die Wechsel aus
-// `heating_period_changes` (PR 5, Annahme A3).
+// Heizperiode dem Objekt samt seinen Wechseln (Entwurf 3.0); mit eigenem gelten Beginnmonat und
+// Wechsel der Anlage (`plantRules`, PR 5; `periodChanges` füllt `readHeatingPlants`).
 async function plantContext(db: Database, plantId: string): Promise<PlantContext | null> {
   const plant = (await readHeatingPlants(db)).find((p) => p.id === plantId)
   if (!plant) return null
   const objectRules = rulesOf((await readProperties(db)).find((p) => p.id === plant.propertyId))
-  if (plant.periodStartMonth === null) return { plant, objectRules, plantRules: objectRules }
-  const changes = await db.select({ fromMonth: heatingPeriodChanges.fromMonth }).from(heatingPeriodChanges).where(eq(heatingPeriodChanges.plantId, plantId))
-  return { plant, objectRules, plantRules: { startMonth: plant.periodStartMonth, changes: changes.map((c) => String(c.fromMonth)) } }
+  return { plant, objectRules, plantRules: plantRules(plant, objectRules) }
 }
 
 function heatingPeriodOf(ctx: PlantContext, text: string): BillingPeriod {
@@ -1735,20 +1750,23 @@ function heatingPeriodOf(ctx: PlantContext, text: string): BillingPeriod {
   return h
 }
 
-// Abgeschlossen ist eine Heizperiode, wenn die Abrechnung des Objektzeitraums, der ihr Ende enthält,
-// abgeschlossen ist, oder ihre eigene Heizkostenabrechnung nach Weg d (PR 5, Annahme A4).
+// Abgeschlossen ist eine Heizperiode nach Weg d mit ihrer eigenen Heizkostenabrechnung
+// (`closed_heating_settlements`, PR 5); der Abschluss von P friert sie nicht ein (B3). Jede andere mit
+// der Abrechnung des Objektzeitraums, der ihr Ende enthält (W1).
 async function heatingPeriodClosed(db: Executor, ctx: PlantContext, h: BillingPeriod): Promise<boolean> {
+  if (settledSeparately(ctx.plant, ctx.objectRules, h)) {
+    const [heizung] = await db
+      .select({ n: count() })
+      .from(closedHeatingSettlements)
+      .where(and(eq(closedHeatingSettlements.plantId, ctx.plant.id), eq(closedHeatingSettlements.period, h.key)))
+    return (heizung?.n ?? 0) > 0
+  }
   const p = periodContaining(ctx.objectRules, h.to)
   const [gesamt] = await db
     .select({ n: count() })
     .from(closedSettlements)
     .where(and(eq(closedSettlements.propertyId, ctx.plant.propertyId), eq(closedSettlements.period, p.key)))
-  if ((gesamt?.n ?? 0) > 0) return true
-  const [heizung] = await db
-    .select({ n: count() })
-    .from(closedHeatingSettlements)
-    .where(and(eq(closedHeatingSettlements.plantId, ctx.plant.id), eq(closedHeatingSettlements.period, h.key)))
-  return (heizung?.n ?? 0) > 0
+  return (gesamt?.n ?? 0) > 0
 }
 
 async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {
@@ -1770,7 +1788,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
   const resolved = resolvePeriodParam(ctx.objectRules, periodParam)
   if ('error' in resolved) throw new HeatingError(400, resolved.error)
   const p = resolved.period
-  const hs = periodsBetween(ctx.plantRules, p.from, p.to).filter((h) => h.to >= p.from && h.to <= p.to)
+  const hs = heatingPeriodsEndingIn(ctx.plantRules, p)
   const statements = (await readCo2Statements(db)).filter((s) => s.plantId === plantId)
   const rows = await db.select().from(heatingPeriods).where(eq(heatingPeriods.plantId, plantId))
   const items = (await readCostItems(db)).filter((c) => c.heatingPlantId === plantId && c.category === HEATING_CATEGORY)
@@ -1963,9 +1981,9 @@ export async function saveHotWater(db: Database, plantId: string, period: string
 ```
 
 `resolvePeriodParam` liefert `{ period }` oder `{ status, error }` (PR 2); die Unterscheidung über
-`'error' in resolved` hält beide Fälle auseinander. Hat PR 5 eigene Funktionen für den Rhythmus einer
-Anlage oder den Abschluss einer Heizperiode angelegt (Annahmen A3, A4), nimmt `plantContext`
-bzw. `heatingPeriodClosed` diese, und die Abfragen hier entfallen.
+`'error' in resolved` hält beide Fälle auseinander. Rhythmus, Heizperioden in P und Weg d kommen aus
+`shared/heatingPeriod.ts` (PR 5); `HeatingPlant` erfüllt dort `PlantWay` (Beginnmonat, Wechsel,
+Spannen nach Weg d).
 
 - [ ] **Step 5: Objektgrenze (`server/src/db/repository.ts`)**
 
@@ -2202,10 +2220,10 @@ der Probe und die Bewertung für den Druckblock (`Settlement.heating`).
 - Test: `server/test/calc-co2.test.ts` (neu), `server/test/calc-heizanlage.test.ts`, `server/test/api.test.ts`
 
 **Interfaces:**
-- Consumes (Task 1–4; PR 4; Annahmen A1, A2): `co2ApplicableFrom`, `co2StageTable`, `co2RoundingDecimals`, `co2CutMissing`; `serviceProbe`, `ProbeResult`; `restage`, `stageRanges`, `tableFactor`, `selfLandlordRaw`, `ReliefShare`; `Snapshot.heatingPlants`, `Snapshot.heatingPeriods` (A1), `SnapshotCostItem.heatingPlantId` (A2); in calc.ts `landlordRecipients`, `take`, `warn`, `itemSubject`, `fmtCents`, `statements`, `landlordRows`, `lawLog`.
+- Consumes (Task 1–4; PR 4, PR 5): `co2ApplicableFrom`, `co2StageTable`, `co2RoundingDecimals`, `co2CutMissing`; `serviceProbe`, `ProbeResult`; `restage`, `stageRanges`, `tableFactor`, `selfLandlordRaw`, `ReliefShare`; `Snapshot.heatingPlants`, `SnapshotCostItem.heatingPlantId`, `snapshotFor` und `heatingSnapshotFor` (PR 5), `mergeHeatingPart` in `computeSettlement` (PR 5); in calc.ts `landlordRecipients`, `take`, `warn`, `itemSubject`, `fmtCents`, `statements`, `landlordRows`, `lawLog`.
 - Produces:
-  - snapshot.ts: `SnapshotHeatingPlant` + `'name' | 'energy'`; `SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>`; `Snapshot.co2Statements?: Co2Statement[]`, `Snapshot.heatingPeriodRows?: SnapshotHeatingPeriodRow[]`; `snapshotFor` füllt beide für die Anlagen des Objekts
-  - co2.ts: `type Co2Pot`, `periodsOfPlant(snapshot, plantId): BillingPeriod[]`, `co2PotsOf(snapshot, items): Co2Pot[]`, `type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean }`, `co2DeductionsOf(pots, units, applicable): Map<string, Co2Deduction>`, `tenantLines(st, shares, printed): Co2TenantLine[]`, `co2Assessment(st, re, p): Co2Assessment`
+  - snapshot.ts: `SnapshotHeatingPlant` + `'energy'` (Pflicht; `name` bleibt optional wie in PR 5); `SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>`; `Snapshot.co2Statements?: Co2Statement[]`, `Snapshot.heatingPeriodRows?: SnapshotHeatingPeriodRow[]`; `snapshotFor` und `heatingSnapshotFor` füllen beide für die Anlagen des Objekts
+  - co2.ts: `type Co2Pot`, `co2PotsOf(snapshot, items): Co2Pot[]` (ein Topf je Anlage im Zeitraum der Berechnung), `type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean }`, `co2DeductionsOf(pots, units, applicable): Map<string, Co2Deduction>`, `tenantLines(st, shares, printed): Co2TenantLine[]`, `co2Assessment(st, re, p): Co2Assessment`
   - calc.ts: Codes `co2.sum-check` (error), `co2.sum-check-approx` (hint), `co2.pool-foreign-item` (hint); `landlordRecipients` mit `co2ShareRaw: number | null`; `Settlement.heating`
   - server/testing/co2.ts: `withoutCo2<T>(settlement: T): Omit<T, 'heating'>`
 
@@ -2328,7 +2346,7 @@ test('Irrtümer der Probe (Entwurf 7.3): „Ja“ mit Betrag S, „Nein“ obwoh
   const text = textOf(netto, 'co2.sum-check')
   assert.match(text, /Ihre Positionen ergeben 3\.845,51 €\. Mit Abzugszeile müssten es S \+ L = 3\.933,01 € sein, ohne Abzugszeile S = 3\.845,51 €\./)
   assert.match(text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 33,10 €, tb \(b\) 28,76 €, tc \(c\) 30,45 € und td \(d\) 23,06 €/)
-  assert.deepEqual(netto.notices.find((n) => n.code === 'co2.sum-check')?.subject, { kind: 'heatingPlant', id: 'hp' })
+  assert.deepEqual(netto.notices.find((n) => n.code === 'co2.sum-check')?.subject, { kind: 'heatingCosts', id: 'hp' })
   assert.deepEqual(partsOf(netto), [])
   // „Nein“, obwohl abgezogen, Betrag brutto: Betrag = S + L, verlangt S.
   assert.ok(codes(settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ method: 'serviceShown' })])).includes('co2.sum-check'))
@@ -2385,7 +2403,29 @@ test('Vor 2023 gibt es keine Aufteilung, auch nicht mit Datensatz (§ 11 Abs. 2 
   assert.deepEqual(partsOf(r), [{ reason: 'amountsRest', cents: 8750 }])
   assert.equal(r.heating?.[0]?.co2 ?? null, null)
 })
+
+test('Eigene Heizperiode nach Weg b (PR 5): die Teilabrechnung bucht den Vorwegabzug, die Bewertung kommt in P an', () => {
+  // Objekt im Kalenderjahr, Anlage Mai bis April: Die Heizperiode 2025/2026 endet in P = 2026 (W1).
+  const H = periodKey('2025-05')
+  const quelle = {
+    properties: [{ id: 'objekt-1', kind: 'mfh' as const, cableBuiltBeforeDec2021: null }],
+    units: vier.units.map((u) => ({ ...u, propertyId: 'objekt-1' })),
+    tenancies: vier.tenancies,
+    costItems: [{ ...messdienst(393301, TECHEM, { period: H }), propertyId: 'objekt-1' }],
+    meters: [], readings: [], payments: [], closedSettlements: [],
+    heatingPlants: [{ ...plant({ periodStartMonth: 5, periodChanges: [], separateSpans: [], separateSettlement: false }), propertyId: 'objekt-1' }],
+    co2Statements: [techem({ period: H })],
+  }
+  const zeitraum = periodOfKey({ startMonth: 1, changes: [] }, periodKey('2026-01')) ?? assert.fail('kein Zeitraum 2026')
+  const r = computeSettlement(snapshotFor(quelle, 'objekt-1', zeitraum))
+  assert.deepEqual(partsOf(r), [{ reason: 'co2Share', cents: 8750 }])
+  assert.deepEqual(r.heating?.map((h) => [h.period, h.co2?.booked]), [['2025-05', true]])
+})
 ```
+
+Für den letzten Test `snapshotFor` aus `'../src/snapshot.ts'` und `periodKey, periodOfKey` aus
+`'../../shared/period.ts'` importieren. Verlangt der Quelltyp von `snapshotFor` (PR 2, PR 5) weitere
+Felder, nennt sie der Übersetzer; sie werden ergänzt wie in `calc-heizperiode.test.ts` (PR 5).
 
 `server/test/calc-heizanlage.test.ts` (PR 4): Der Helfer `plant()` bekommt die beiden neuen Felder
 des Schnappschusses:
@@ -2400,7 +2440,8 @@ const plant = (over: Partial<SnapshotHeatingPlant> = {}): SnapshotHeatingPlant =
 
 Run: `npm --prefix server test -- test/calc-co2.test.ts`
 Expected: FAIL. `partsOf(r)` ist `[{ reason: 'amountsRest', cents: 8750 }]` statt `co2Share`, `r.heating`
-ist `undefined`, die Hinweise fehlen. Der Typfehler in `calc-heizanlage.test.ts` zeigt sich erst mit
+ist `undefined`, die Hinweise fehlen; im Test zu Weg b fehlt `heating`, bis `mergeHeatingPart` es
+übernimmt. Der Typfehler in `calc-heizanlage.test.ts` zeigt sich erst mit
 `npm run typecheck` nach Step 3.
 
 - [ ] **Step 3: Schnappschuss (`server/src/snapshot.ts`)**
@@ -2408,16 +2449,15 @@ ist `undefined`, die Hinweise fehlen. Der Typfehler in `calc-heizanlage.test.ts`
 Den Typimport um `Co2Statement` und `HeatingPeriodData` ergänzen. `SnapshotHeatingPlant` ersetzen:
 
 ```ts
-// Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest: was über
-// die Fernablesbarkeit bekannt ist, welche Wohnungen angeschlossen sind, und seit PR 6 Name,
-// Energieträger und Abrechnungsweg für die CO₂-Aufteilung.
-export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'name' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'units'>
+// Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
+// Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
+// gebauter Schnappschuss), folgt die Anlage dem Objekt und rechnet nichts getrennt ab. Seit PR 6 der
+// Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind.
+export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'units'>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement'>>
 // Die Angabe zum Warmwasser je Heizperiode (Heizung PR 6, #211).
 export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>
 ```
-
-Fehlt in `SnapshotCostItem` nach PR 5 noch `'heatingPlantId'` (Annahme A2), es in die Liste des
-`Pick` aufnehmen.
 
 In `Snapshot` hinter `heatingPlants?`:
 
@@ -2434,21 +2474,30 @@ In `Snapshot` hinter `heatingPlants?`:
 co2Statements?: Co2Statement[], heatingPeriodRows?: SnapshotHeatingPeriodRow[]
 ```
 
-und im Rumpf die Zeile `heatingPlants: (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId),`
-ersetzen durch drei Zeilen, vor dem `return` die Anlagen einmal eingrenzen:
+und im Rumpf (Fassung von PR 5) hinter `const plants = (source.heatingPlants ?? []).filter(…)`:
 
 ```ts
-  // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; ihre CO₂-Angaben und
-  // Heizperioden erben es über die Anlage.
-  const plants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId)
+  // CO₂-Angaben und Heizperioden erben das Objekt über die Anlage.
   const plantIds = new Set(plants.map((p) => p.id))
 ```
 
+sowie im zurückgegebenen Objekt hinter `heatingPlants: plants,`:
+
 ```ts
-    heatingPlants: plants,
     co2Statements: (source.co2Statements ?? []).filter((c) => plantIds.has(c.plantId)),
     heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => plantIds.has(r.plantId)),
 ```
+
+`heatingSnapshotFor` (PR 5, Heizkostenabrechnung nach Weg d) im zurückgegebenen Objekt hinter
+`heatingPlants: plants,` ebenso, nur für die eine Anlage:
+
+```ts
+    co2Statements: (source.co2Statements ?? []).filter((c) => c.plantId === plantId),
+    heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => r.plantId === plantId),
+```
+
+Die Teilabrechnung nach Weg b (`scope: 'heatingPart'`) baut ihren Schnappschuss mit `...snapshot`
+aus dem von P und bekommt beide Felder damit von selbst.
 
 - [ ] **Step 4: Töpfe und Zerlegung (`server/src/co2.ts`)**
 
@@ -2488,16 +2537,16 @@ export type Co2Pot = {
   reliefKey: string
 }
 
-// Die Heizperioden einer Anlage in dieser Abrechnung (Entwurf 3.0, 5.8): aus dem Schnappschuss
-// (PR 5), sonst der Zeitraum des Objekts.
-export function periodsOfPlant(snapshot: Pick<Snapshot, 'period' | 'heatingPeriods'>, plantId: string): BillingPeriod[] {
-  const own = (snapshot.heatingPeriods ?? []).filter((h) => h.plantId === plantId)
-  return own.length > 0 ? own.map((h) => ({ key: h.key, from: h.from, to: h.to, short: h.short })) : [snapshot.period]
-}
-
+// Ein Topf je Anlage im Zeitraum dieser Berechnung (Entwurf 6.1 Nr. 4.1). Seit Heizung PR 5 rechnet
+// `computeSettlement` jede Heizperiode einer Anlage mit eigener Heizperiode für sich: nach Weg b als
+// Teilabrechnung (`scope: 'heatingPart'`), nach Weg d als Heizkostenabrechnung (`heatingSnapshotFor`);
+// der Zeitraum der Berechnung ist dann die Heizperiode, und ihre Positionen stehen in `items`. Ohne
+// eigene Heizperiode ist die Heizperiode der Zeitraum des Objekts. In jedem Fall ist der Topf: die
+// Positionen der Anlage mit dem Schlüssel des Zeitraums. In P ist der Topf einer Anlage mit eigener
+// Heizperiode deshalb leer, denn ihre Positionen stehen in `heatingParts` (snapshot.ts).
 export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]): Co2Pot[] {
-  return (snapshot.heatingPlants ?? []).flatMap((plant) =>
-    periodsOfPlant(snapshot, plant.id).map((period): Co2Pot => {
+  const period = snapshot.period
+  return (snapshot.heatingPlants ?? []).map((plant): Co2Pot => {
       const pot = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plant.id && c.period === period.key)
       const serviceItems = pot.filter((c) => c.key === 'amounts')
       const statement = (snapshot.co2Statements ?? []).find((s) => s.plantId === plant.id && s.period === period.key) ?? null
@@ -2519,7 +2568,7 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
       const largest = serviceItems.reduce<SnapshotCostItem | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)
       return {
         plantId: plant.id,
-        plantName: plant.name,
+        plantName: plant.name ?? '',
         energy: plant.energy,
         method: plant.method,
         source: plant.source,
@@ -2533,8 +2582,7 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
         carrierId: (chosen ?? largest)?.id ?? null,
         reliefKey: `co2:${plant.id}:${period.key}`,
       }
-    }),
-  )
+  })
 }
 
 // ---------- Vorwegabzug (Entwurf 7.4) ----------
@@ -2611,8 +2659,8 @@ export function co2Assessment(
 }
 ```
 
-`snapshot.heatingPeriods` ist das Feld aus PR 5 (Annahme A1). Heißt es dort anders, gilt dessen
-Name.
+Die Einrückung im Rumpf von `co2PotsOf` rückt beim Übernehmen um zwei Stellen nach links; am Inhalt
+ändert das nichts.
 
 - [ ] **Step 5: Berechnung (`server/src/calc.ts`)**
 
@@ -2725,7 +2773,7 @@ Im Aufruf `...landlordRecipients(item, { selfRaw, …` hinter `selfRaw,` ergänz
     const hPeriod = { from: pot.period.from, to: pot.period.to }
     const where = `${pot.plantName ? `Heizanlage „${pot.plantName}“` : 'Heizanlage'}, Heizperiode ${periodLabel(pot.period)}`
     const ids = new Set<string>([...pot.items.map((c) => c.id), pot.reliefKey])
-    const plantSubject: NoticeSubject = { kind: 'heatingPlant', id: pot.plantId }
+    const plantSubject: NoticeSubject = { kind: 'heatingCosts', id: pot.plantId }
     const report: HeatingStatement = { plantId: pot.plantId, plantName: pot.plantName, energy: pot.energy, period: pot.period.key, from: pot.period.from, to: pot.period.to, co2: null }
     heatingStatements.push(report)
     const applicable = (st !== null || heatingSettled) && law(co2ApplicableFrom, { period: hPeriod }, lawLog)
@@ -2776,7 +2824,16 @@ Im Aufruf `...landlordRecipients(item, { selfRaw, …` hinter `selfRaw,` ergänz
   }
 ```
 
-(f) Im Ergebnisobjekt `result` hinter `garageLikeUnitIds: …,`:
+(f) In `mergeHeatingPart` (PR 5) hinter `landlordRows.push(...sub.landlord.rows)`:
+
+```ts
+    // Die Bewertung je Anlage aus der Teilabrechnung nach Weg b (Heizung PR 6).
+    heatingStatements.push(...(sub.heating ?? []))
+```
+
+`heatingStatements` steht im CO₂-Block (e), der vor dem Block „Eigene Heizperiode“ von PR 5 liegt.
+
+(g) Im Ergebnisobjekt `result` hinter `garageLikeUnitIds: …,`:
 
 ```ts
     // Je Heizanlage und Heizperiode, was der Druckblock braucht (Heizung PR 6, Entwurf 9.5); ohne
@@ -2843,7 +2900,7 @@ PR 5, etwa zum Umschlüsseln), werden genauso umgestellt; der Lauf in Step 7 nen
 - [ ] **Step 7: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-co2.test.ts test/co2.test.ts test/calc.test.ts test/calc-heizanlage.test.ts test/settlement-golden.test.ts test/calc-eigenbetrag.test.ts test/api.test.ts && npm run typecheck`
-Expected: PASS (`calc-co2.test.ts`: 11 Tests). Golden unverändert: Ohne Anlage entsteht weder ein
+Expected: PASS (`calc-co2.test.ts`: 12 Tests). Golden unverändert: Ohne Anlage entsteht weder ein
 Topf noch das Feld `heating`.
 
 - [ ] **Step 8: Run all tests and commit**
@@ -3043,7 +3100,7 @@ Im CO₂-Block (Task 7) im Zweig `if (pot.probe) { … }` direkt hinter
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-co2.test.ts test/calc.test.ts test/settlement-golden.test.ts && npm run typecheck`
-Expected: PASS (`calc-co2.test.ts`: 15 Tests).
+Expected: PASS (`calc-co2.test.ts`: 16 Tests).
 
 - [ ] **Step 5: Commit**
 
@@ -3091,7 +3148,7 @@ const vollstaendig = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents:
 test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizzeilen, Knopf zur Heizanlage', () => {
   const r = settle({ ...zwei, costItems: [gas()] }, [])
   const n = r.notices.find((x) => x.code === 'co2.missing') ?? assert.fail(`kein Hinweis: ${codes(r).join(', ')}`)
-  assert.deepEqual([n.level, n.subject, n.rule], ['warning', { kind: 'heatingPlant', id: 'hp' }, 'co2-split'])
+  assert.deepEqual([n.level, n.subject, n.rule], ['warning', { kind: 'heatingCosts', id: 'hp' }, 'co2-split'])
   assert.match(n.text, /^Heizanlage „Gas“, Heizperiode 2025: Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen/)
   assert.match(n.text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €\./)
   assert.match(n.text, /Tragen Sie auf der Seite Heizkosten die CO₂-Angaben aus der Abrechnung des Messdienstes ein\./)
@@ -3160,7 +3217,7 @@ test('Warmwasser beim Messdienst (#211, Entwurf 7.7): Formel ohne bestätigten A
   })
   const r = mit({ dhwMethod: 'volumeFormula' })
   const n = r.notices.find((x) => x.code === 'heating.dhw-not-metered') ?? assert.fail('kein Hinweis')
-  assert.deepEqual([n.level, n.rule, n.subject], ['warning', 'heating-dhw-split', { kind: 'heatingPlant', id: 'hp' }])
+  assert.deepEqual([n.level, n.rule, n.subject], ['warning', 'heating-dhw-split', { kind: 'heatingCosts', id: 'hp' }])
   assert.match(n.text, /um 15 % kürzen \(BGH VIII ZR 151\/20\), hier: ta \(a\) 90,00 € und tb \(b\) 60,00 €/)
   assert.ok(r.legalBasis.values?.some((v) => v.id === 'hkv.cut.not-by-consumption'))
   const keine: Partial<SnapshotHeatingPeriodRow>[] = [{ dhwMethod: 'volumeFormula', dhwUnmeasurable: true }, { dhwMethod: 'heatMeter' }, { dhwMethod: null }]
@@ -3405,7 +3462,7 @@ Hinweis zu `lawPeriod`: Es ist der Zeitraum P der Abrechnung (PR 1, PR 2) mit `f
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-co2.test.ts test/api.test.ts && npm run typecheck`
-Expected: PASS (`calc-co2.test.ts`: 22 Tests).
+Expected: PASS (`calc-co2.test.ts`: 23 Tests).
 
 - [ ] **Step 6: Golden bleibt wortgleich, auch F06**
 
@@ -3714,7 +3771,7 @@ Heizanlage in der Navigation steht. Die Logik liegt DOM-frei in `client/src/co2F
   - `co2Form.ts`: `type Co2Answer = '' | 'deducted' | 'shown' | 'unsplit'`, `CO2_QUESTION`, `CO2_EXAMPLE`, `CO2_ANSWER_OPTIONS`, `type Co2Form`, `type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number }`, `parseDecimal(text)`, `co2ToForm(st, ctx)`, `usersTotalOf(form, ctx)`, `co2Body(form, ctx): { body: Record<string, unknown> } | { error: string }`, `probeLine(form, ctx): { text: string; ok: boolean } | null`
   - `heatingForm.ts`: `type HotWaterChoice = DhwMethod | ''`, `HOT_WATER_OPTIONS`, `isFormula(choice)`, `hotWaterBody(choice, unmeasurable)`
   - `nav.ts`: `Tab` + `'heizkosten'`, `navFor(hasHeatingPlant: boolean)`; `GUIDE_PAGES` + `'heizkosten'`
-  - `notices.ts`: `NoticeTab` + `'heizkosten'`; `heatingPlant` mit Kennung → Heizkosten
+  - `notices.ts`: `NoticeTab` + `'heizkosten'`; `heatingCosts` → Heizkosten (`heatingPlant` bleibt bei den Stammdaten, PR 5)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3886,11 +3943,11 @@ test('Die Seite Heizkosten erscheint erst mit einer Heizanlage (Heizung PR 6, En
 })
 ```
 
-`client/src/notices.test.ts`: im Test „Heizanlage als Ziel …“ (Task 2) die zweite Erwartung ersetzen
-durch
+`client/src/notices.test.ts`: im Test „Heizanlage als Ziel …“ (Task 2) die Erwartung zu `heatingCosts`
+ersetzen durch
 
 ```ts
-  expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingPlant', id: 'hp1' } })
+  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingCosts', id: 'hp1' } })
 ```
 
 und den Kommentar darüber streichen.
@@ -4104,11 +4161,11 @@ export function navFor(hasHeatingPlant: boolean): typeof NAV {
 ```
 
 `client/src/notices.ts`: `NoticeTab` um `| 'heizkosten'` ergänzen und in `TARGETS` die Zeile
-`heatingPlant` ersetzen durch
+`heatingCosts` (Task 2) ersetzen durch
 
 ```ts
-  // Heizung PR 6: die CO₂-Angaben stehen auf der Seite Heizkosten; ohne Anlage siehe unten.
-  heatingPlant: { tab: 'heizkosten', page: 'Heizkosten' },
+  // Heizung PR 6: die CO₂-Angaben und das Warmwasser stehen auf der Seite Heizkosten.
+  heatingCosts: { tab: 'heizkosten', page: 'Heizkosten' },
 ```
 
 - [ ] **Step 5: Komponenten**
@@ -5092,7 +5149,7 @@ Refs #97, #209, #211"
 
 Danach Durchsicht mit frischem Kontext (CLAUDE.md „Durchsicht vor jedem PR“). Sie prüft ausdrücklich,
 dass die Anleitung `meteringService` (#216) zu Text und Probe passt (Entwurf 13, PR 0), dass die
-Annahmen A1–A6 zu PR 5 zutreffen, und entscheidet über die Abweichung bei F06. Befunde mit einem vorher
+Schnittstellen aus PR 5 so umgesetzt sind wie im Plan von PR 5, und entscheidet über die Abweichung bei F06. Befunde mit einem vorher
 roten Test beheben; PR gestapelt auf PR 5 mit `Refs #97, #209, #211` und den Befunden in der
 Beschreibung. Vor PR 7 die Laienprobe der Formulare aus PR 4–6 (Entwurf 11.2, Hinweis 7).
 
