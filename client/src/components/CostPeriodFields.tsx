@@ -41,6 +41,15 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
             {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
           <small className="muted">Maßgeblich ist, wann Sie gezahlt haben (§ 11 Abs. 2 EStG).</small>
+          {/* Laienprobe B15: Eine Position hat ein Jahr; Abschläge über zwei Jahre gehören in zwei. */}
+          {form.category === HEATING_CATEGORY && (
+            <small className="muted">
+              Haben Sie Gas, Öl oder Fernwärme in monatlichen Abschlägen über zwei Kalenderjahre bezahlt, gehört jeder Abschlag in das Jahr,
+              in dem Sie ihn gezahlt haben, und die Nachzahlung oder Erstattung in das Jahr ihrer Zahlung. Mietfuchs ordnet eine Position nur
+              einem Jahr zu: Wählen Sie das Jahr, in dem Sie den größten Teil gezahlt haben, und übertragen Sie den Rest in Ihrer Steuererklärung
+              selbst in das andere Jahr.
+            </small>
+          )}
         </label>
       )}
     </>

@@ -46,14 +46,21 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
         <div key={plant.id}>
           {plant.method !== 'service' ? (
             <div className="card">
-              <p>Die Karten dieser Seite gelten für eine Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Verteilen Sie die Heizkosten selbst nach einem Umlageschlüssel <Term id="allocationKey" /> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf.</p>
+              <p>Die Karten dieser Seite gelten für eine Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Verteilen Sie die Heizkosten selbst nach einem <Term id="allocationKey">Umlageschlüssel</Term> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf.</p>
+              {/* Kleinigkeit aus der Laienprobe: Was bis dahin zu tun ist, damit niemand kürzen darf. */}
+              <p>
+                Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut Gas- oder Ölrechnung, geteilt durch die Wohnfläche, ergibt die
+                Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Ziehen Sie Ihren Anteil von den
+                Heizkosten der Mieter ab und legen Sie der Abrechnung ein Blatt mit dem Anteil des Mieters, der Einstufung und den Berechnungsgrundlagen bei;
+                fehlt das, dürfen die Mieter ihren Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG).
+              </p>
             </div>
           ) : (
             (views[plant.id] ?? []).map((v) => (
               <div key={v.period}>
                 <h2>{plant.name || 'Heizanlage'}, Heizperiode {v.label}</h2>
                 {v.from >= first ? (
-                  <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={plant.units?.length ?? units.length} onSaved={() => void load()} />
+                  <Co2Card key={`${v.period}:${v.co2?.method ?? ''}`} view={v} tenancies={tenancies} unitsCount={plant.units?.length ?? units.length} hasSelfUsed={units.some((u) => u.selfUsed === true)} onSaved={() => void load()} />
                 ) : (
                   <div className="card"><p className="muted">Für Heizperioden, die vor dem {germanDate(first)} beginnen, sind die CO₂-Kosten nicht aufzuteilen.</p></div>
                 )}

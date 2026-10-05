@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
 import {
-  heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle,
+  adjustedPrepaymentLabel, heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, separateHeatingNote, settlementPaths, settlementTitle, totalLabel,
 } from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
@@ -60,6 +60,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const [target, setTarget] = useState<{ plantId: string; period: PeriodKey } | null>(null)
   const paths = settlementPaths(param, target)
   const choices = heatingChoices(heatingList, period)
+  // Laienprobe B17, B18: Die Betriebskostenabrechnung eines Zeitraums, dessen Heizkosten eigene
+  // Heizkostenabrechnungen haben, rechnet die Heizvorauszahlung nicht an und schlägt nur die übrige vor.
+  const separateHeating = target === null && heatingList.length > 0
   // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
   useEffect(() => { setTarget(null) }, [param, propertyId])
 
@@ -495,7 +498,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={3}>Summe Ihrer Betriebskosten</td>
+                      <td colSpan={3}>{totalLabel(st)}</td>
                       <td className="num">{fmtEuro(st.totalShareCents)}</td>
                     </tr>
                     <tr>
@@ -540,12 +543,17 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                       </td>
                       <td className="num" style={{ fontWeight: 400 }}>− {fmtEuro(st.prepaymentCents)}</td>
                     </tr>
-                    {prepaymentSplit(st).map((line) => (
+                    {prepaymentSplit(st, separateHeating).map((line) => (
                       <tr key={line.label}>
                         <td colSpan={3} className="muted">{line.label}</td>
                         <td className="num muted">{fmtEuro(line.cents)}</td>
                       </tr>
                     ))}
+                    {separateHeatingNote(st, separateHeating) && (
+                      <tr>
+                        <td colSpan={4} className="muted">{separateHeatingNote(st, separateHeating)}</td>
+                      </tr>
+                    )}
                     <tr>
                       <td colSpan={3}>
                         {st.balanceCents >= 0 ? 'Guthaben zu Ihren Gunsten' : 'Nachzahlung zu Ihren Lasten'}
@@ -580,7 +588,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                   </p>
                   {printAdjust && st.suggestedMonthlyCents > 0 && (
                     <p>
-                      Auf Basis dieser Abrechnung wird die monatliche Nebenkostenvorauszahlung gemäß
+                      Auf Basis dieser Abrechnung wird die {adjustedPrepaymentLabel(st, separateHeating)} gemäß
                       §560 Abs. 4 BGB ab dem übernächsten Monat auf <strong>{fmtEuro(st.suggestedMonthlyCents)}</strong> angepasst
                       ({suggestionBasis(st, data.daysInYear)}).
                     </p>

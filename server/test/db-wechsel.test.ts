@@ -68,7 +68,7 @@ test('Vorschau G-A1/N4: Rumpf, Aufteilen, Zuordnen und Neuerfassen der Jahreskor
     assert.deepEqual(v.blocked, [])
     assert.deepEqual(v.moves.map((m) => [m.costItemId, m.parts.map((p) => [p.period, p.amountCents])]), [['gs', [['2025-01', 15781], ['2025-05', 32219]]]])
     assert.deepEqual(v.groups.map((g) => [g.from, g.fromLabel, g.items.map((i) => i.costItemId), g.options.map((o) => o.key), g.suggested]),
-      [['2025-01', '2025', ['mu'], ['2025-01', '2025-05'], '2025-01']])
+      [['2025-01', '2025', ['mu'], ['2025-01', '2025-05'], 'split']], 'Laienprobe B2: ohne Leistungszeitraum vorbelegt mit dem Aufteilen nach Tagen')
     assert.deepEqual(v.overrides, [{
       tenancyId: 't-a', tenantName: 'A',
       from: [{ key: '2025-01', label: '2025', cents: 220000 }],
@@ -241,5 +241,66 @@ test('Ein Wechsel, der die Teile einer Rechnung verringert, behält die gebuchte
     const [zeile] = await opened.read((db) => db.select().from(assessmentLines))
     assert.deepEqual([zeile?.booking, zeile?.costItemId], ['linked', nachher[0]?.id], 'die Zeile bleibt gebucht, am verbleibenden Teil')
     assert.equal(nachher[0]?.invoiceFile, 'gs.pdf')
+  })
+})
+
+// Laienprobe B2/B3: Zweifamilienhaus, EG vermietet (80 m², 250 € Vorauszahlung), OG selbst bewohnt
+// (90 m²). Grundsteuer und Erdgas 2025 ohne Leistungszeitraum. Wechsel ab 07/2025 am 05.10.2026.
+async function birkenweg(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+    await createEntity(db, 'units', 'og', { propertyId: 'objekt-1', name: 'OG', areaM2: 90, participates: false, selfUsed: true })
+    await createEntity(db, 'tenancies', 't-bsp', { unitId: 'eg', tenantName: 'Familie Beispiel', persons: 3, start: '2020-03-01', prepayments: [{ from: '2020-03', monthlyCents: 25000 }] })
+    await createEntity(db, 'costItems', 'gs25', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 42000, key: 'area' })
+    await createEntity(db, 'costItems', 'gas25', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Erdgas 2025', amountCents: 260000, key: 'area' })
+  })
+}
+const JULI_AB_2025 = { startMonth: 1, changes: ['2025-07'] }
+
+test('Laienprobe B2: Kalte Jahresrechnungen ohne Leistungszeitraum werden nach Tagen aufgeteilt (Vorgabe), Heizkosten stehen in eigener Gruppe', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    const v = await preview(opened, JULI_AB_2025)
+    assert.deepEqual(v.groups.map((g) => [g.id, g.heating, g.items.map((i) => i.costItemId), g.suggested]), [
+      ['2025-01', false, ['gs25'], 'split'],
+      ['2025-01|heizung', true, ['gas25'], '2025-01'],
+    ])
+    const kalt = v.groups[0] ?? assert.fail('keine Gruppe')
+    assert.equal(kalt.split?.range, '01.01.–31.12.2025')
+    // 181 von 365 Tagen: 420 € · 181/365 = 208,27 €, der Rest 211,73 €.
+    assert.deepEqual(kalt.split?.items, [{ costItemId: 'gs25', parts: [
+      { period: '2025-01', label: '01.01.–30.06.2025', amountCents: 20827 },
+      { period: '2025-07', label: '2025/2026', amountCents: 21173 },
+    ] }])
+    assert.equal(v.groups[1]?.split, null, 'Heizkosten nie nach Tagen')
+    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', JULI_AB_2025, {
+      groups: { '2025-01': 'split', '2025-01|heizung': '2025-01' }, taxYears: {},
+      token: (await previewPeriodChange(db, 'objekt-1', JULI_AB_2025, TODAY))?.token,
+    }, ids, TODAY))
+    assert.ok(ok && 'property' in ok, JSON.stringify(ok))
+    const nachher = (await items(opened)).filter((c) => c.category === 'Grundsteuer')
+    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, c.serviceFrom, c.serviceTo]).sort(), [
+      ['2025-01', 20827, '2025-01-01', '2025-12-31'], ['2025-07', 21173, '2025-01-01', '2025-12-31'],
+    ])
+  })
+})
+
+test('Laienprobe B3: Die Vorschau nennt den Rumpf mit abgelaufener Frist und beziffert, was nicht mehr verlangt werden darf', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    const v = await preview(opened, JULI_AB_2025)
+    const rumpf = v.effects.find((e) => e.label === '01.01.–30.06.2025') ?? assert.fail(JSON.stringify(v.effects))
+    assert.deepEqual([rumpf.deadline, rumpf.passed, rumpf.replaces], ['2026-06-30', true, [{ label: '2025', deadline: '2026-12-31' }]])
+    const bsp = rumpf.tenants.find((t) => t.tenantName === 'Familie Beispiel') ?? assert.fail('kein Mieter')
+    assert.ok(bsp.beforeCents !== null)
+    // Vorher Abrechnung 2025: 12 · 250 € gegen 80/170 von 3.020 €; nachher im Rumpf 6 · 250 € gegen
+    // die halbe Grundsteuer und das ganze Erdgas.
+    assert.equal(bsp.beforeCents, 300000 - Math.round((42000 + 260000) * 80 / 170))
+    assert.equal(bsp.afterCents, 150000 - Math.round((20827 + 260000) * 80 / 170))
+    assert.equal(rumpf.lostClaimsCents, Math.max(0, -bsp.afterCents))
+    const folge = v.effects.find((e) => e.label === '2025/2026') ?? assert.fail('2025/2026 fehlt')
+    assert.deepEqual([folge.deadline, folge.passed, folge.lostClaimsCents], ['2027-06-30', false, 0])
+    assert.equal((await items(opened)).length, 2, 'der Probelauf hat nichts gespeichert')
+    assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
   })
 })

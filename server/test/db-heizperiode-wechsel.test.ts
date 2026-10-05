@@ -212,3 +212,26 @@ test('Rhythmuswechsel bei Weg d ab Monat X: gefragt werden nur Monate, die die H
     assert.deepEqual(asks.filter(([kind]) => kind === 'heating'), [['heating', '2025-11', '01–10/2026']], JSON.stringify(asks))
   })
 })
+
+// Laienprobe B12: „Erdgas 2024“ (Kalenderjahr, ohne Leistungszeitraum) kam beim Umstellen auf Mai bis
+// April still in die Heizperiode 05/2023–04/2024, mit der es nur vier Monate teilt. Vorbelegt bleibt
+// sie (sie endet in 2024, so steht die Position weiter in der Abrechnung 2024); wählbar ist jede
+// Heizperiode, die 2024 berührt, mit Tagen beschriftet, und die Vorschau bittet um Prüfung.
+test('Laienprobe B12: Heizpositionen ohne Leistungszeitraum: Auswahl der Heizperiode mit Tagen, Hinweis zum Prüfen', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'manual' })
+      await heizposition(db, 'gas2024', '2024-01', { description: 'Erdgas 2024' })
+    })
+    const v = await preview(opened, MAI)
+    const m = v.moves.find((x) => x.costItemId === 'gas2024') ?? assert.fail('keine Verschiebung')
+    assert.deepEqual([m.to, m.toRange, m.fromRange, m.check], ['2023-05', '01.05.2023–30.04.2024', '01.01.–31.12.2024', true])
+    assert.deepEqual(m.options.map((o) => [o.key, o.range]), [['2023-05', '01.05.2023–30.04.2024'], ['2024-05', '01.05.2024–30.04.2025']])
+    const r = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' } })
+    assert.ok(r && 'plant' in r, JSON.stringify(r))
+    assert.equal((await items(opened)).find((c) => c.id === 'gas2024')?.period, '2024-05')
+    const falsch = await wechseln(opened, { startMonth: 9, changes: [] }, { moves: { gas2024: '1999-05' } })
+    assert.ok(falsch && 'error' in falsch && /Heizperiode für „Erdgas 2024“ wählen/.test(falsch.error))
+  })
+})

@@ -5,7 +5,7 @@
 // Test grün war.
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { UIProvider, useToast } from './feedback'
+import { UIProvider, useConfirm, useToast } from './feedback'
 
 afterEach(() => {
   cleanup()
@@ -33,4 +33,15 @@ test('beim Abbauen läuft kein Zeitgeber eines Toasts weiter', () => {
   expect(vi.getTimerCount()).toBeGreaterThan(0)
   unmount()
   expect(vi.getTimerCount()).toBe(0)
+})
+
+function Ask() {
+  const confirm = useConfirm()
+  return <button onClick={() => void confirm({ title: 'Rechnung aufteilen?', message: 'Zwei Teile.' })}>Fragen</button>
+}
+
+test('Laienprobe (Kleinigkeit): die Rückfrage ist ein Dialog mit Namen', async () => {
+  render(<UIProvider><Ask /></UIProvider>)
+  fireEvent.click(screen.getByRole('button', { name: 'Fragen' }))
+  expect(await screen.findByRole('dialog', { name: 'Rechnung aufteilen?' })).toBeTruthy()
 })

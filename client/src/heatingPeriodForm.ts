@@ -50,7 +50,7 @@ export function suggestedWay(input: { differs: boolean; separate: SeparateChoice
   if (!input.differs) return null
   const contract = ' Legt Ihr Mietvertrag den Abrechnungszeitraum fest, braucht die Änderung die Zustimmung der Mieter.'
   if (input.separate === 'yes') {
-    return { way: 'd', text: 'Vorgeschlagen: eine eigene Heizkostenabrechnung je Heizperiode, mit eigener Frist. Mietfuchs teilt dafür die bisherige Vorauszahlung auf; die Vorschau zeigt jeden Betrag. Das ist eine Auslegung des Gesetzes.' + contract }
+    return { way: 'd', text: 'Vorgeschlagen: eine eigene Heizkostenabrechnung je Heizperiode, mit eigener Frist. Dafür teilt Mietfuchs die bisherige Vorauszahlung auf: Nach „Übernehmen“ folgt gleich ein zweiter Schritt mit jedem Betrag, und erst wenn Sie ihn übernehmen, ist die getrennte Abrechnung eingeschaltet. Das ist eine Auslegung des Gesetzes.' + contract }
   }
   if (input.hasCalendarData) {
     return { way: 'b', text: 'Vorgeschlagen: Die Heizkosten einer Heizperiode stehen in der Betriebskostenabrechnung des Zeitraums, in dem sie endet. Das ist bei einer gemeinsamen Vorauszahlung zulässig (BGH, Urteil vom 30.04.2008, VIII ZR 240/07).' + contract }
@@ -83,7 +83,7 @@ export function heatingWays(input: { objectCalendar: boolean; separate: Separate
   const basis = input.objectCalendar ? 'Ihre Nebenkosten laufen nach Kalenderjahr' : 'Ihre Nebenkosten laufen in einem eigenen Zeitraum'
   const why = input.separate === 'no'
     ? `Vorgabe, weil ${basis.charAt(0).toLowerCase()}${basis.slice(1)} und eine gemeinsame Vorauszahlung gilt: Dann darf die Heizperiode des Messdienstes in der Betriebskostenabrechnung stehen, und die Frist richtet sich nach dem Zeitraum der Betriebskostenabrechnung (BGH, Urteil vom 30.04.2008, VIII ZR 240/07).`
-    : `Vorgabe, sofern eine gemeinsame Vorauszahlung für alle Nebenkosten gilt (${basis}): Dann darf die Heizperiode des Messdienstes in der Betriebskostenabrechnung stehen (BGH, Urteil vom 30.04.2008, VIII ZR 240/07). Bitte beantworten Sie dazu die Frage unten.`
+    : `Vorgabe, sofern Ihre Mieter eine einzige Vorauszahlung für alle Nebenkosten zahlen, die Heizung eingeschlossen: Dann darf die Heizperiode des Messdienstes in der Betriebskostenabrechnung stehen (BGH, Urteil vom 30.04.2008, VIII ZR 240/07). Bitte beantworten Sie dazu die Frage unten.`
   return [
     {
       id: 'own',
@@ -98,7 +98,10 @@ export function heatingWays(input: { objectCalendar: boolean; separate: Separate
         'Wer ausgezogen ist, bekommt im Jahr danach noch eine Abrechnung nur mit Heizkosten. Ob dafür die spätere Frist gilt, ist nicht entschieden; Mietfuchs empfiehlt die frühere.',
         'Legt Ihr Mietvertrag fest, dass auch die Heizkosten nach Kalenderjahr abgerechnet werden, braucht die eigene Heizperiode die Zustimmung der Mieter.',
       ],
-      example: 'Beispiel: Der Messdienst rechnet von Mai bis April ab. Die Heizperiode 01.05.2025–30.04.2026 steht in der Betriebskostenabrechnung 2026, dem Jahr, in dem sie endet.',
+      // Laienprobe B14: Das Beispiel passt zum Zeitraum des Objekts.
+      example: input.objectCalendar
+        ? 'Beispiel: Der Messdienst rechnet von Mai bis April ab. Die Heizperiode 01.05.2025–30.04.2026 steht in der Betriebskostenabrechnung 2026, dem Jahr, in dem sie endet.'
+        : 'Beispiel: Der Messdienst rechnet von Mai bis April ab. Die Heizperiode 01.05.2025–30.04.2026 steht in der Betriebskostenabrechnung des Zeitraums, in dem der 30.04.2026 liegt.',
       why,
       recommended: common,
     },
@@ -149,10 +152,10 @@ const monthText = (month: string): string => `${month.slice(5, 7)}/${month.slice
 // ---------- Antworten zur Vorschau „Zeitraum der Heizung“ ----------
 
 // Beträge je Frage unter dem Schlüssel `Mietverhältnis|Art|Zeitraum`, „keine Korrektur“ eigens.
-export type HeatingPeriodAnswerForm = { groups: Record<string, string>; amounts: Record<string, string>; none: Record<string, boolean> }
+export type HeatingPeriodAnswerForm = { groups: Record<string, string>; moves: Record<string, string>; amounts: Record<string, string>; none: Record<string, boolean> }
 
 export function initialHeatingPeriodAnswers(p: HeatingPeriodChangePreview): HeatingPeriodAnswerForm {
-  return { groups: Object.fromEntries(p.groups.map((g) => [g.from, g.suggested])), amounts: {}, none: {} }
+  return { groups: Object.fromEntries(p.groups.map((g) => [g.from, g.suggested])), moves: Object.fromEntries(p.moves.map((m) => [m.costItemId, m.to])), amounts: {}, none: {} }
 }
 
 export function heatingPeriodAnswersOf(p: HeatingPeriodChangePreview, form: HeatingPeriodAnswerForm): HeatingPeriodChangeAnswers | { error: string } {
@@ -167,7 +170,7 @@ export function heatingPeriodAnswersOf(p: HeatingPeriodChangePreview, form: Heat
       target[o.tenancyId] = { ...(target[o.tenancyId] ?? {}), [a.period]: cents }
     }
   }
-  return { groups: form.groups, overrides, totals, token: p.token }
+  return { groups: form.groups, moves: form.moves, overrides, totals, token: p.token }
 }
 
 // ---------- Antworten zur Vorschau „getrennte Heizkostenabrechnung“ ----------

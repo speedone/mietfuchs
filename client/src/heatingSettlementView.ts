@@ -4,7 +4,7 @@
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
 import { fmtDate, parseEuro } from './api'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
-import { paymentYear, periodLabel } from '../../shared/period.ts'
+import { formatDayRange, paymentYear, periodLabel } from '../../shared/period.ts'
 import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy, Unit } from './types'
 
 const sameDays = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
@@ -35,14 +35,29 @@ export const prepaymentLabel = (st: Pick<Statement, 'scope'>): string =>
   st.scope === 'heating' ? 'abzüglich geleisteter Heizvorauszahlungen' : 'abzüglich geleisteter Vorauszahlungen'
 
 // Bei getrennter Heizvorauszahlung weist die Gesamtabrechnung beide aus (A3); die
-// Heizkostenabrechnung hat nur die eine.
-export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>): { label: string; cents: number }[] {
+// Heizkostenabrechnung hat nur die eine. Laienprobe B18: Wird die Heizung in einer eigenen
+// Heizkostenabrechnung abgerechnet (`separate`), stand hier „davon Heizvorauszahlung 0,00 €“, und der
+// Mieter fragte, wo seine Heizvorauszahlung geblieben ist; dann sagt `separateHeatingNote` es.
+export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>, separate = false): { label: string; cents: number }[] {
   if (st.scope === 'heating' || st.heatingPrepaymentCents === undefined) return []
+  if (separate && st.heatingPrepaymentCents === 0) return []
   return [
     { label: 'davon Heizvorauszahlung', cents: st.heatingPrepaymentCents },
     { label: 'davon übrige Vorauszahlungen', cents: st.prepaymentCents - st.heatingPrepaymentCents },
   ]
 }
+
+export const separateHeatingNote = (st: Pick<Statement, 'scope' | 'heatingPrepaymentCents'>, separate: boolean): string | null =>
+  separate && st.scope !== 'heating' && (st.heatingPrepaymentCents ?? 0) === 0
+    ? 'Ihre Heizkostenvorauszahlung ist hier nicht enthalten; sie wird in einer eigenen Heizkostenabrechnung abgerechnet.'
+    : null
+
+// Laienprobe B17: Die Heizkostenabrechnung sprach von „Betriebskosten“ und „Nebenkostenvorauszahlung“,
+// während die Betriebskostenabrechnung desselben Zeitraums eine andere „Nebenkostenvorauszahlung“
+// nannte. Jede Abrechnung benennt jetzt, was sie abrechnet.
+export const totalLabel = (st: Pick<Statement, 'scope'>): string => (st.scope === 'heating' ? 'Summe Ihrer Heizkosten' : 'Summe Ihrer Betriebskosten')
+export const adjustedPrepaymentLabel = (st: Pick<Statement, 'scope'>, separate: boolean): string =>
+  st.scope === 'heating' ? 'monatliche Heizkostenvorauszahlung' : separate ? 'monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)' : 'monatliche Nebenkostenvorauszahlung'
 
 // Die Heizkostenabrechnungen, deren Heizperiode im gewählten Zeitraum endet: Sie gehören zu diesem
 // Abrechnungsjahr, auch wenn sie ihre eigene Frist haben.
@@ -88,7 +103,8 @@ export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules:
   return plants.filter((plant) => hasOwnRhythm(plant)).map((plant) => ({
     plantId: plant.id,
     options: heatingPeriodsEndingIn(plantRules(plant, objectRules), p).map((h) => ({
-      value: h.key, label: `Heizperiode ${periodLabel(h)}`, startYear: Number(h.from.slice(0, 4)), endYear: Number(h.to.slice(0, 4)),
+      // Laienprobe B13: mit Tagen, denn „2025/2026“ heißt beim Objekt etwas anderes als bei der Heizung.
+      value: h.key, label: `Heizperiode ${periodLabel(h)}${h.short ? '' : ` (${formatDayRange(h.from, h.to)})`}`, startYear: Number(h.from.slice(0, 4)), endYear: Number(h.to.slice(0, 4)),
     })),
   }))
 }
@@ -131,8 +147,10 @@ export function heatingTaxYear(h: { startYear: number; endYear: number }, taxYea
   if (h.startYear === h.endYear) return { show: false, years: [], fallback: '', valid: true }
   const years: number[] = []
   for (let y = h.startYear; y <= h.endYear + 1; y++) years.push(y)
-  // Vorbelegt nach derselben Regel wie Belegbuchung und Repository (`paymentYear`, Durchsicht von
-  // #231): Rechnungsdatum des Belegs, sonst das Jahr des Endes, geklemmt.
-  const fallback = paymentYear({ from: `${h.startYear}-01-01`, to: `${h.endYear}-12-31` }, invoiceDate).year
-  return { show: true, years, fallback: String(fallback), valid: years.includes(Number(taxYear)) && taxYear !== '' }
+  // Vorbelegt nur mit dem Rechnungsdatum des Belegs (Entwurf 3.10), nach derselben Regel wie
+  // Belegbuchung und Repository (`paymentYear`), geklemmt. Ohne Beleg bleibt das Feld leer
+  // (Laienprobe B15): Ein still vorbelegtes Jahr des Endes stellte Abschläge, die im Jahr des Beginns
+  // gezahlt wurden, in die Anlage V des Folgejahres, und niemand hätte es gewählt.
+  const fallback = invoiceDate ? String(paymentYear({ from: `${h.startYear}-01-01`, to: `${h.endYear}-12-31` }, invoiceDate).year) : ''
+  return { show: true, years, fallback, valid: years.includes(Number(taxYear)) && taxYear !== '' }
 }

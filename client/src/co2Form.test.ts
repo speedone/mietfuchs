@@ -79,7 +79,9 @@ test('Probe ✗ nennt beide Lesarten (Durchsicht M3)', () => {
   const f = { ...co2ToForm(gespeichert, ctx), answer: 'shown' as const }
   const p = probeLine(f, ctx)
   expect(p?.ok).toBe(false)
-  expect(p?.text).toContain(`mit Abzugszeile erwartet S + L = ${fmtEuro(393301)}, ohne Abzugszeile S = ${fmtEuro(384551)}`)
+  // Laienprobe B20: in Worten, ohne Formelbuchstaben.
+  expect(p?.text).toContain(`mit Abzugszeile erwartet: Summe der Nutzer ${fmtEuro(384551)} + Anteil Vermieter ${fmtEuro(8750)} = ${fmtEuro(393301)}; ohne Abzugszeile: ${fmtEuro(384551)}.`)
+  expect(p?.text).not.toMatch(/\bS \+ L\b|\bS = /)
 })
 
 test('Die Frage fragt nur nach der Zeile in der Kostenaufstellung; „vom Vermieter übernommen“ ist kein Erkennungszeichen (Durchsicht I1)', () => {

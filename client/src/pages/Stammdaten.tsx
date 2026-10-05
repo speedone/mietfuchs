@@ -17,6 +17,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 
 type Props = {
   units: Unit[]
@@ -50,6 +51,8 @@ type TenancyForm = {
   // Nebenkostenmodell (#93)
   costModel: CostModel
   heatingModel: CostModel
+  // Die Marke des Stands, aus dem das Formular gefüllt wurde (Laienprobe B1, shared/tenancyStamp.ts).
+  stamp?: string
 }
 
 const EMPTY_UNIT: UnitForm = EMPTY_UNIT_FORM
@@ -106,6 +109,7 @@ function tenancyToForm(t: Tenancy): TenancyForm {
       from: p.from,
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
+    stamp: tenancyStamp(t),
   }
 }
 
@@ -131,6 +135,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
   // Die Heizanlagen (Heizung PR 5): Rechnet die Anlage einer Wohnung die Heizkosten getrennt ab, fragen
   // Mietverhältnis und Mieterwechsel die Heizvorauszahlung mit ab (Durchsicht von #231).
   const [plants, setPlants] = useState<HeatingPlant[]>([])
+  const [plantsVersion, setPlantsVersion] = useState(0)
   useEffect(() => {
     if (!propertyId) return
     let alive = true
@@ -138,7 +143,14 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       .then((all) => { if (alive) setPlants(Array.isArray(all) ? all : []) })
       .catch(() => { if (alive) setPlants([]) })
     return () => { alive = false }
-  }, [propertyId])
+  }, [propertyId, plantsVersion])
+  // Laienprobe B1: Das Einschalten der getrennten Heizkostenabrechnung teilt die Staffeln der
+  // Mietverhältnisse auf, ein Wechsel des Zeitraums schreibt ihre Jahreskorrekturen neu. Danach lädt
+  // die Seite beides neu; sonst zeigte das Formular den alten Stand und schriebe ihn beim Speichern zurück.
+  async function afterHeatingOrPeriodChange() {
+    setPlantsVersion((v) => v + 1)
+    await reload()
+  }
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
   useFocusTarget(focus, 'unit', units, (u) => u.id, (u) => { setError(''); setUnitForm(unitToForm(u)) }, onFocusDone)
   useFocusTarget(focus, 'tenancy', tenancies, (t) => t.id, (t) => { setError(''); setTenForm(tenancyToForm(t)) }, onFocusDone)
@@ -275,6 +287,8 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
       flatRates,
       heatingPrepayments: heating,
+      // Laienprobe B1: Hat sich der Stand inzwischen geändert, lehnt der Server ab, statt ihn zu ersetzen.
+      ...(tenForm.stamp ? { ifUnchanged: tenForm.stamp } : {}),
     })
     const editing = !!tenForm.id
     // Überschneidung mit einem anderen Mietverhältnis derselben Wohnung (#204): nachfragen, nicht
@@ -325,7 +339,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       {error && !unitForm && !tenForm && <div className="error">{error}</div>}
 
       <PropertyCard />
-      <PeriodCard />
+      <PeriodCard onChanged={afterHeatingOrPeriodChange} />
 
       <div className="card">
         <h2>Wohnungen</h2>
@@ -385,7 +399,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       </div>
 
       {/* Heizung PR 4: optional, nach den Wohnungen, weil Schritt 4 nach ihnen fragt. */}
-      <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} />
+      <HeatingCard units={units} focus={focus} onFocusDone={onFocusDone} onChanged={afterHeatingOrPeriodChange} />
 
       <div className="card">
         <h2>Mietverhältnisse</h2>

@@ -23,6 +23,7 @@ import { assessments as assessmentsTable, periodChanges as periodChangesTable, p
 import { eq } from 'drizzle-orm'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
+import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
@@ -5748,8 +5749,8 @@ test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder ex
     assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
     for (const startMonth of [1, 5, 9, 5]) {
       const regeln = { startMonth, changes: [] }
-      const vorschau = await s.api<{ token: string; groups: { from: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
-      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.from, g.suggested]))
+      const vorschau = await s.api<{ token: string; groups: { id: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.id, g.suggested]))
       await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { token: vorschau.token, groups } }) })
       const summe = (await s.api<CostItem[]>('/api/costItems')).reduce((a, c) => a + c.amountCents, 0)
       assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
@@ -5997,4 +5998,26 @@ test('Abrechnung mit CO₂ über die Routen: ohne Angaben co2.missing, mit Vorwe
   } finally {
     s.stop()
   }
+})
+
+// Laienprobe B1 über die Route: Die Marke eines älteren Stands ergibt 409 mit Satz, nicht 500, und
+// gespeichert wird nichts.
+test('Laienprobe B1: PUT mit veralteter Marke antwortet 409 und ändert nichts', async () => {
+  await withProperties(async (s) => {
+    const u = await s.api<Unit>('/api/units?property=objekt-1', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 80, participates: true }) })
+    const t = await s.api<Tenancy>('/api/tenancies?property=objekt-1', { method: 'POST', body: JSON.stringify({
+      unitId: u.id, tenantName: 'Beispiel', persons: 1, personHistory: [], start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 25000 }], prepaymentOverrides: {}, baseRents: [],
+    }) })
+    const alt = tenancyStamp(t)
+    await s.api(`/api/tenancies/${t.id}`, { method: 'PUT', body: JSON.stringify({ prepayments: [{ from: '2025-01', monthlyCents: 3500 }], heatingPrepayments: [{ from: '2025-01', monthlyCents: 21500 }] }) })
+    const r = await fetch(`${s.base}/api/tenancies/${t.id}`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prepayments: [{ from: '2025-01', monthlyCents: 25000 }], heatingPrepayments: [], ifUnchanged: alt }),
+    })
+    assert.equal(r.status, 409)
+    assert.match((await jsonOf<{ error: string }>(r)).error, /inzwischen an anderer Stelle geändert/)
+    const jetzt = (await s.api<Tenancy[]>('/api/tenancies?property=objekt-1')).find((x) => x.id === t.id) ?? assert.fail('weg')
+    assert.deepEqual(jetzt.heatingPrepayments, [{ from: '2025-01', monthlyCents: 21500 }])
+  })
 })

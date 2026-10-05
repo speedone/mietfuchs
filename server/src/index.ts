@@ -41,7 +41,7 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
@@ -586,7 +586,7 @@ app.put('/api/heating-plants/:id/period', async (req, res) => {
 // Getrennte Heizkostenabrechnung ein- und ausschalten (Heizung PR 5, Entwurf 3.1): Vorschau, dann
 // Speichern mit den Antworten in einer Transaktion. Begründung in db/separateSettlement.ts.
 app.post('/api/heating-plants/:id/separate/preview', async (req, res) => {
-  const preview = await readData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
+  const preview = await writeData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
   if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
   res.json(preview)
 })
@@ -692,8 +692,10 @@ app.delete('/api/heating-settlement/:plant/:period/close', async (req, res) => {
 // den Antworten, in einer Transaktion. Fehlt eine Antwort oder träfe der Wechsel eine
 // abgeschlossene Abrechnung, antwortet der Server mit 409 und der neuen Vorschau, gespeichert ist
 // nichts. Begründung in db/periodChange.ts.
+// Die Vorschau läuft durch die Schreibschlange: Sie rechnet Fristen und Ergebnisse in einem
+// Probelauf, der in einer Transaktion schreibt und zurückrollt (db/dryRun.ts, Laienprobe B3).
 app.post('/api/properties/:id/period/preview', async (req, res) => {
-  const preview = await readData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  const preview = await writeData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
   if (!preview) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
   res.json(preview)
 })
@@ -2048,7 +2050,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
     return res.status(400).json({ error: message })
   }
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

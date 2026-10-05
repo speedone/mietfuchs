@@ -131,7 +131,7 @@ export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, 
     serviceAreaM2: area !== null && area > 0 ? area : null,
     serviceLandlordPermille: percent === null ? null : Math.round(percent * 10),
     serviceTotalCents: cents(form.totalCo2, 'CO₂-Kosten insgesamt'),
-    serviceSelfLandlordCents: cents(form.selfLandlord, 'davon für Ihre Wohnung'),
+    serviceSelfLandlordCents: cents(form.selfLandlord, 'davon für Ihre selbst bewohnte Wohnung'),
     serviceFuelGrossCents: cents(form.fuelGross, 'Brennstoffkosten laut Abrechnung (vor Abzug)'),
     serviceFuelNetCents: cents(form.fuelNet, 'davon verteilt'),
     serviceCostItemId: form.costItemId === '' ? null : form.costItemId,
@@ -162,9 +162,9 @@ export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: b
   const units = Number(form.unitsCount)
   if (S === null || L === null || !Number.isInteger(units) || units < 1) return null
   const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
-  const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als S`
+  const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als die Summe der Kosten aller Nutzer`
   // Geht sie nicht auf, nennt die Zeile beide Lesarten (Durchsicht M3): Oft ist nur die Antwort auf
-  // die Frage nach der Abzugszeile falsch.
-  const both = p.itemsOk ? '' : ` · mit Abzugszeile erwartet S + L = ${fmtEuro(S + L)}, ohne Abzugszeile S = ${fmtEuro(S)}`
+  // die Frage nach der Abzugszeile falsch. Laienprobe B20: in Worten, ohne S und L.
+  const both = p.itemsOk ? '' : ` · mit Abzugszeile erwartet: Summe der Nutzer ${fmtEuro(S)} + Anteil Vermieter ${fmtEuro(L)} = ${fmtEuro(S + L)}; ohne Abzugszeile: ${fmtEuro(S)}. Den Betrag ändern Sie an der Position auf der Seite Kosten.`
   return { text: `Ihre Positionen: ${fmtEuro(p.itemsCents)} · erwartet: ${fmtEuro(p.expectedCents)} ${p.ok ? '✓' : '✗'}${both}${entered}`, ok: p.ok }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit,
+  adjustedPrepaymentLabel, cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, separateHeatingNote, totalLabel,
   heatingTaxYear, recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
@@ -39,6 +39,18 @@ describe('Überschrift und Druckkopf (Entwurf 3.1)', () => {
     expect(prepaymentLabel(statement({ scope: 'heating' }))).toBe('abzüglich geleisteter Heizvorauszahlungen')
     expect(prepaymentLabel(statement())).toBe('abzüglich geleisteter Vorauszahlungen')
   })
+  test('Laienprobe B17, B18: Beschriftungen nach Art der Abrechnung, keine Heizvorauszahlung von 0,00 €', () => {
+    expect(totalLabel(statement({ scope: 'heating' }))).toBe('Summe Ihrer Heizkosten')
+    expect(totalLabel(statement())).toBe('Summe Ihrer Betriebskosten')
+    expect(adjustedPrepaymentLabel(statement({ scope: 'heating' }), false)).toBe('monatliche Heizkostenvorauszahlung')
+    expect(adjustedPrepaymentLabel(statement(), true)).toBe('monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)')
+    expect(adjustedPrepaymentLabel(statement(), false)).toBe('monatliche Nebenkostenvorauszahlung')
+    const ohneHeizung = statement({ prepaymentCents: 42000, heatingPrepaymentCents: 0 })
+    expect(prepaymentSplit(ohneHeizung, true)).toEqual([])
+    expect(separateHeatingNote(ohneHeizung, true)).toBe('Ihre Heizkostenvorauszahlung ist hier nicht enthalten; sie wird in einer eigenen Heizkostenabrechnung abgerechnet.')
+    expect(separateHeatingNote(ohneHeizung, false)).toBe(null)
+    expect(prepaymentSplit(ohneHeizung, false)).toHaveLength(2)
+  })
 })
 
 describe('Heizkostenabrechnungen auswählen, abschließen, korrigieren', () => {
@@ -73,7 +85,7 @@ describe('Heizkostenabrechnungen auswählen, abschließen, korrigieren', () => {
 describe('Kostenformular und Mietverhältnis', () => {
   test('Heizperioden einer eigenen Heizperiode im Zeitraum, und die Positionen dazu', () => {
     expect(heatingItemPeriods([plant(), plant({ id: 'hp2', periodStartMonth: null })], CALENDAR_RULES, p2026)).toEqual([
-      { plantId: 'hp1', options: [{ value: '2025-05', label: 'Heizperiode 2025/2026', startYear: 2025, endYear: 2026 }] },
+      { plantId: 'hp1', options: [{ value: '2025-05', label: 'Heizperiode 2025/2026 (01.05.2025–30.04.2026)', startYear: 2025, endYear: 2026 }] },
     ])
     const items = [
       { id: 'a', period: k('2026-01'), heatingPlantId: undefined },
@@ -103,13 +115,13 @@ describe('Heizvorauszahlung im Mietverhältnis (Durchsicht von #231, Important 2
 
 describe('Jahr der Zahlung einer Heizposition (Durchsicht von #231, Important 3)', () => {
   test('Heizperiode über zwei Jahre: sichtbar, Jahre vom Beginn bis ein Jahr nach dem Ende, Vorgabe das Jahr des Beginns', () => {
-    // Vorgabe ist das Jahr des Endes, wie in Belegbuchung und Repository (Durchsicht von #231, I-1).
-    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '')).toEqual({ show: true, years: [2025, 2026, 2027], fallback: '2026', valid: false })
+    // Laienprobe B15: ohne Beleg keine Vorgabe; mit Beleg das Jahr des Rechnungsdatums (Entwurf 3.10).
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '')).toEqual({ show: true, years: [2025, 2026, 2027], fallback: '', valid: false })
     expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '', '2025-11-20')).toMatchObject({ fallback: '2025' })
     expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '', '2029-01-15')).toMatchObject({ fallback: '2027' })
     expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '2026')).toMatchObject({ valid: true })
     // Ein Wert aus dem Objektzeitraum (Juli–Juni, 2027 erlaubt dort), den es für die Heizperiode nicht gibt.
-    expect(heatingTaxYear({ startYear: 2024, endYear: 2025 }, '2027')).toMatchObject({ valid: false, fallback: '2025' })
+    expect(heatingTaxYear({ startYear: 2024, endYear: 2025 }, '2027')).toMatchObject({ valid: false, fallback: '' })
   })
   test('Heizperiode in einem Kalenderjahr: kein Feld, kein Wert', () => {
     expect(heatingTaxYear({ startYear: 2026, endYear: 2026 }, '2027')).toEqual({ show: false, years: [], fallback: '', valid: true })

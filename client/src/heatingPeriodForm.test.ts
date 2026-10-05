@@ -42,7 +42,7 @@ describe('Zeitraum der Heizung (Entwurf 11.2 Schritt 3)', () => {
 describe('Antworten zu den Vorschauen', () => {
   const wechsel: HeatingPeriodChangePreview = {
     rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], moves: [], endsSeparate: [], token: 'w1',
-    groups: [{ from: k('2026-01'), fromLabel: '2026', items: [{ costItemId: 'c1', description: 'Gas', amountCents: 100000 }], options: [{ key: k('2025-05'), label: '2025/2026' }], suggested: k('2025-05') }],
+    groups: [{ from: k('2026-01'), fromLabel: '2026', items: [{ costItemId: 'c1', description: 'Gas', amountCents: 100000 }], options: [{ key: k('2025-05'), label: '2025/2026', range: '01.05.2025–30.04.2026' }], suggested: k('2025-05') }],
     overrides: [{ tenancyId: 't1', tenantName: 'A', from: [], ask: [{ kind: 'heating', period: k('2025-05'), label: '01.05.–31.12.2025', months: '05–12/2025' }, { kind: 'total', period: k('2026-01'), label: '2026', months: '01–12/2026' }] }],
   }
   test('Wechsel: Gruppen vorbelegt, Beträge oder „keine Korrektur“', () => {
@@ -50,10 +50,10 @@ describe('Antworten zu den Vorschauen', () => {
     expect(form.groups).toEqual({ '2026-01': '2025-05' })
     expect(heatingPeriodAnswersOf(wechsel, form)).toEqual({ error: 'Bitte tragen Sie für A den Betrag 05–12/2025 ein oder setzen Sie „keine Korrektur“.' })
     const ok = heatingPeriodAnswersOf(wechsel, { ...form, amounts: { 't1|heating|2025-05': '900,00' }, none: { 't1|total|2026-01': true } })
-    expect(ok).toEqual({ groups: { '2026-01': '2025-05' }, overrides: { t1: { '2025-05': 90000 } }, totals: { t1: { '2026-01': null } }, token: 'w1' })
+    expect(ok).toEqual({ groups: { '2026-01': '2025-05' }, moves: {}, overrides: { t1: { '2025-05': 90000 } }, totals: { t1: { '2026-01': null } }, token: 'w1' })
   })
   const ein: SeparatePreview = {
-    separate: true, way: 'separate', month: '2026-01', earliestMonth: null, until: null, earliestUntil: null, share: null, keep: [], merge: [], blocked: [], deadlines: [], token: 's1',
+    separate: true, way: 'separate', month: '2026-01', earliestMonth: null, until: null, earliestUntil: null, share: null, keep: [], merge: [], blocked: [], deadlines: [], effects: [], token: 's1',
     steps: [{ tenancyId: 't1', tenantName: 'A', rows: [{ from: '2026-01', totalCents: 30000, heatingCents: 12300 }] }],
     overrides: [{ tenancyId: 't1', tenantName: 'A', period: k('2026-01'), label: '2026', cents: 330000,
       asks: [{ kind: 'total', period: k('2026-01'), label: '2026', months: '01–12/2026' }, { kind: 'heating', period: k('2025-05'), label: '2025/2026', months: '01–04/2026' }],
@@ -90,7 +90,9 @@ describe('Drei Wege, wenn der Messdienst anders abrechnet (Nutzerwunsch, BGH VII
   })
   test('Ohne Antwort zur Vorauszahlung bleibt Weg 1 die Vorgabe, mit Vorbehalt; bei getrennter Abrechnung keine Vorgabe unter den drei', () => {
     expect(heatingWays({ objectCalendar: true, separate: '' }).filter((w) => w.recommended).map((w) => w.id)).toEqual(['own'])
-    expect(heatingWays({ objectCalendar: true, separate: '' })[0]?.why).toMatch(/sofern/)
+    expect(heatingWays({ objectCalendar: true, separate: '' })[0]?.why).toMatch(/sofern Ihre Mieter eine einzige Vorauszahlung für alle Nebenkosten zahlen/)
+    // Laienprobe B14: das Beispiel nach dem Zeitraum des Objekts.
+    expect(heatingWays({ objectCalendar: false, separate: '' })[0]?.example).toMatch(/des Zeitraums, in dem der 30\.04\.2026 liegt/)
     expect(heatingWays({ objectCalendar: true, separate: 'yes' }).some((w) => w.recommended)).toBe(false)
   })
 })

@@ -9,7 +9,7 @@ import Term from './Term'
 import HeatingPeriodSection from './HeatingPeriodSection'
 import { useFocusTarget, type FocusProps } from '../focus'
 import {
-  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, REMOTE_OPTIONS, asksNewInstall, emptyHeatingForm, heatingPlantBody,
+  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, HOW_TO_TELL, asksRemote, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, REMOTE_OPTIONS, asksNewInstall, emptyHeatingForm, heatingPlantBody,
   heatingSummary, heatingToForm, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type WhoSettles,
 } from '../heatingForm'
 
@@ -17,7 +17,9 @@ import {
 // Knopf „Heizung einrichten“; nichts davon ist Pflicht, und an keiner Zahl ändert sich etwas (11.1).
 // Beim Anlegen zeigt die Einrichtung, welche Heizpositionen zur Anlage kommen (Vorschau, 3.0); der
 // Server nimmt genau diese, oder er lehnt ab, wenn sich die Liste inzwischen geändert hat.
-export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit[] } & FocusProps) {
+// `onChanged` (Laienprobe B1): Die Seite lädt danach Mietverhältnisse und Anlagen neu, denn das
+// Aufteilen der Vorauszahlung und das Umschlüsseln ändern Daten außerhalb dieser Karte.
+export default function HeatingCard({ units, focus, onFocusDone, onChanged }: { units: Unit[]; onChanged?: () => Promise<void> } & FocusProps) {
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -34,6 +36,10 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
   const load = useCallback(async () => {
     setPlants(await api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)))
   }, [propertyId])
+  const loadAll = useCallback(async () => {
+    await load()
+    await onChanged?.()
+  }, [load, onChanged])
 
   useEffect(() => {
     load().catch((e) => setError(errorText(e)))
@@ -90,7 +96,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
     }
     const created = editingId === null
     close()
-    await load()
+    await loadAll()
     toast(created ? 'Heizung eingerichtet. An Ihren Beträgen ändert sich nichts.' : 'Heizung gespeichert.')
   }
 
@@ -109,7 +115,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
       return
     }
     setError('')
-    await load()
+    await loadAll()
     toast('Heizanlage entfernt.')
   }
 
@@ -139,7 +145,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
             plant={p}
             objectRules={rulesOf(property)}
             hasCalendarData={assignable.length > 0 || units.length > 0}
-            onChanged={load}
+            onChanged={loadAll}
             notify={toast}
           />
           <div className="row">
@@ -171,6 +177,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
               {ENERGY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
+          <small className="muted">{HOW_TO_TELL.energy}</small>
           {form.energy === 'perUnit' ? (
             <label className="field grow">
               Wer hat den Vertrag für die Heizung in der Wohnung?
@@ -188,6 +195,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
                   {whoOptions(kind).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
+              <small className="muted">{HOW_TO_TELL.who}</small>
               {whoHint(form.who, kind) && <p className="muted">{whoHint(form.who, kind)}</p>}
               <fieldset className="field grow no-connection">
                 <legend className="field-legend">Welche Wohnungen hängen an dieser Heizung?</legend>
@@ -203,7 +211,9 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
                     </label>
                   ))}
                 </div>
+                <small className="muted">{HOW_TO_TELL.units}</small>
               </fieldset>
+              {asksRemote(form.who) && (<>
               <label className="field grow">
                 Sind die Zähler und Heizkostenverteiler aus der Ferne ablesbar?
                 <select value={form.remote} onChange={(e) => setForm({ ...form, remote: e.target.value as DevicesRemote })}>
@@ -226,6 +236,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
                   <small className="muted">Einzeln ersetzt: Die Pflicht zur Fernablesbarkeit gilt dann erst mit der Frist für ältere Geräte. Als Ganzes neu: schon ab dem Einbau. Im Zweifel fragen Sie Ihren Messdienst.</small>
                 </label>
               )}
+              </>)}
               {form.energy === 'heatPump' && (
                 <>
                   <label className="field grow">
@@ -247,6 +258,7 @@ export default function HeatingCard({ units, focus, onFocusDone }: { units: Unit
                   </label>
                 </>
               )}
+              {!editingId && <p className="muted">{HOW_TO_TELL.after}</p>}
               {!editingId && assignable.length > 0 && (
                 <div className="muted">
                   {assignable.length === 1 ? 'Diese Heizposition kommt zur Anlage' : `Diese ${assignable.length} Heizpositionen kommen zur Anlage`}; an den Beträgen ändert sich nichts:

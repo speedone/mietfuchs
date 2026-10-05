@@ -41,6 +41,7 @@ import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import { splitByService } from '../serviceSplit.ts'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readHeatingPlants, readMeters, readPayments, readProperties, readReadings, readTenancies,
@@ -552,6 +553,14 @@ async function guardCostItemHeating(db: Executor, before: CostItem | null, after
   }
 }
 
+// Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
+// (Laienprobe B1, shared/tenancyStamp.ts). Gespeichert wird dann nichts: Das Formular schickt alle
+// Staffeln, und ein Ersetzen mit dem alten Stand löschte, was ein anderer Weg inzwischen geschrieben
+// hat, etwa die Heizvorauszahlung nach dem Aufteilen.
+export class StaleTenancyError extends Error {
+  status = 409
+}
+
 // Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
 // bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
 export class PeriodConflict extends Error {
@@ -869,6 +878,17 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
 }
 
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
+  // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
+  // ändert nur, was er nennt, und braucht sie nicht.
+  const expected = raw(body, 'ifUnchanged')
+  if (before && typeof expected === 'string' && expected !== tenancyStamp(before)) {
+    throw new StaleTenancyError(
+      `Das Mietverhältnis „${before.tenantName}“ wurde inzwischen an anderer Stelle geändert, etwa beim Aufteilen der Vorauszahlung ` +
+        'für die Heizung oder beim Wechsel des Abrechnungszeitraums. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht. ' +
+        'Bitte schließen Sie das Formular, öffnen Sie das Mietverhältnis erneut und tragen Sie Ihre Änderung noch einmal ein.',
+    )
+  }
   // Die Jahreskorrektur (#208): jeder Schlüssel ein Zeitraum des Objekts der Wohnung. Eine
   // vierstellige Jahreszahl im Rumpf schickt nur ein alter Tab.
   const sent = raw(body, 'prepaymentOverrides')

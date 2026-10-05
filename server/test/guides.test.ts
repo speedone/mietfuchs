@@ -431,7 +431,7 @@ test('Messdienst mit Vorwegabzug (#209): Der Betrag ist, was bezahlt wurde, der 
   assert.match(perTenancy ?? '', /eigene Positionen/)
   // Schritt 3: Eigenbetrag wie in der Abrechnung; der CO₂-Teil der eigenen Wohnung in die Karte.
   assert.match(own ?? '', /ohne etwas dazuzurechnen/)
-  assert.match(own ?? '', /„davon für Ihre Wohnung“/)
+  assert.match(own ?? '', /„davon für Ihre selbst bewohnte Wohnung“/)
   assert.match(own ?? '', /Steht auf der Einzelabrechnung Ihrer Wohnung ein vom Vermieter übernommener CO₂-Betrag, nehmen Sie diesen\./)
   assert.match(own ?? '', /tragen Sie 0 ein; dann gehört nichts davon ins Private\./)
   assert.match(own ?? '', /Nur wenn sie gar keine Beträge je Wohnung nennt, lassen Sie das Feld leer, und Mietfuchs rechnet näherungsweise: CO₂-Anteil × Betrag Ihrer Wohnung ÷ Summe aller Nutzerbeträge für Heizung und Warmwasser\./)

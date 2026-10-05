@@ -23,7 +23,7 @@
 import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { heatingPeriodsEndingIn, plantRules, separateOwner, servesUnit, settledSeparately, type PlantWay } from '../../../shared/heatingPeriod.ts'
-import { parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant, PeriodKey, PeriodRules, Tenancy } from '../../../shared/types.ts'
 import type { Database } from './client.ts'
 import { checkRules, monthsText } from './periodChange.ts'
@@ -70,7 +70,7 @@ type Plan = {
   preview: HeatingPeriodChangePreview
   plant: HeatingPlant
   own: PeriodRules | null
-  moves: { item: CostItem; to: BillingPeriod }[]
+  moves: { item: CostItem; to: BillingPeriod; options: BillingPeriod[] }[]
   groups: Map<PeriodKey, { items: CostItem[]; options: BillingPeriod[] }>
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
@@ -142,7 +142,13 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     const candidates = heatingPeriodsEndingIn(next, periodContaining(objectRules, a.old.to))
     const only = candidates.length === 1 ? candidates[0] : undefined
     if (only) {
-      if (only.key !== item.period) moves.push({ item, to: only })
+      // Laienprobe B12: Vorbelegt bleibt die Heizperiode, die im bisherigen Zeitraum endet; so steht die
+      // Position weiter in derselben Gesamtabrechnung (Weg b). Wählbar ist jede Heizperiode, die den
+      // bisherigen Zeitraum berührt, denn eine Versorgerrechnung über ein Kalenderjahr ist nicht die
+      // Abrechnung einer Heizperiode, und welche es ist, weiß nur der Vermieter.
+      const options = periodsBetween(next, a.old.from, a.old.to)
+      if (!options.some((o) => o.key === only.key)) options.push(only)
+      if (only.key !== item.period) moves.push({ item, to: only, options })
       continue
     }
     const g = groups.get(a.key) ?? { items: [], options: candidates.length > 0 ? candidates : periodsBetween(next, a.old.from, a.old.to) }
@@ -222,17 +228,23 @@ async function planHeatingPeriodChange(db: Database, plantId: string, rawRules: 
     periods: periods.map((p) => ({ key: p.key, label: periodLabel(p), short: p.short, separate: separateNow(p) })),
     newShort: periods.filter((p) => p.short && !wasShort(p)).map((p) => ({ key: p.key, label: periodLabel(p) })),
     blocked: [...blocked],
-    moves: moves.map(({ item, to }) => ({
-      costItemId: item.id, description: item.description, amountCents: item.amountCents,
-      from: item.period, fromLabel: periodLabel(changed(item.period)?.old ?? to), to: to.key, toLabel: periodLabel(to),
-    })),
+    moves: moves.map(({ item, to, options }) => {
+      const old = changed(item.period)?.old ?? to
+      return {
+        costItemId: item.id, description: item.description, amountCents: item.amountCents,
+        from: item.period, fromLabel: periodLabel(old), to: to.key, toLabel: periodLabel(to),
+        fromRange: formatDayRange(old.from, old.to), toRange: formatDayRange(to.from, to.to),
+        options: options.map((o) => ({ key: o.key, label: periodLabel(o), range: formatDayRange(o.from, o.to) })),
+        check: item.serviceFrom === undefined || item.serviceTo === undefined,
+      }
+    }),
     groups: [...groups.entries()].map(([from, g]) => {
       const old = changed(from)?.old ?? g.options[0]
       if (old === undefined) throw new Error(`Heizperiode ${from} ohne Befund in der Vorschau`)
       return {
         from, fromLabel: periodLabel(old),
         items: g.items.map((i) => ({ costItemId: i.id, description: i.description, amountCents: i.amountCents })),
-        options: g.options.map((p) => ({ key: p.key, label: periodLabel(p) })),
+        options: g.options.map((p) => ({ key: p.key, label: periodLabel(p), range: formatDayRange(p.from, p.to) })),
         suggested: bestFor(old, g.options).key,
       }
     }),
@@ -270,6 +282,11 @@ export async function applyHeatingPeriodChange(
     return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: plan.preview }
   }
   const groupAnswers = objectOr(answers.groups)
+  const moveAnswers = objectOr(answers.moves)
+  const moveTarget = (m: Plan['moves'][number]): BillingPeriod | undefined => {
+    const chosen = moveAnswers[m.item.id]
+    return chosen === undefined ? m.to : m.options.find((o) => o.key === chosen)
+  }
   const overrideAnswers = objectOr(answers.overrides)
   const totalAnswers = objectOr(answers.totals)
   const missing: string[] = []
@@ -288,14 +305,16 @@ export async function applyHeatingPeriodChange(
       }
     }
   }
+  for (const m of plan.moves) if (moveTarget(m) === undefined) missing.push(`Heizperiode für „${m.item.description}“ wählen.`)
   if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
 
   await db.transaction(async (tx) => {
     await tx.update(heatingPlants).set({ periodStartMonth: plan.own?.startMonth ?? null }).where(eq(heatingPlants.id, plantId))
     await tx.delete(heatingPeriodChanges).where(eq(heatingPeriodChanges.plantId, plantId))
     if (plan.own && plan.own.changes.length > 0) await tx.insert(heatingPeriodChanges).values(plan.own.changes.map((fromMonth) => ({ plantId, fromMonth })))
-    for (const { item, to } of plan.moves) {
-      await tx.update(costItems).set({ period: to.key, taxYear: taxYearIn(to, item) }).where(eq(costItems.id, item.id))
+    for (const m of plan.moves) {
+      const to = moveTarget(m) ?? m.to
+      await tx.update(costItems).set({ period: to.key, taxYear: taxYearIn(to, m.item) }).where(eq(costItems.id, m.item.id))
     }
     for (const g of plan.groups.values()) {
       const from = g.items[0]?.period

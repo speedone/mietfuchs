@@ -12,10 +12,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Objekt im Kalenderjahr oder etwa von Mai bis April abrechnet. Ein Wechsel zeigt vorher, was
   geschieht: den Rumpfzeitraum davor, welche Rechnungen nach Tagen aufgeteilt werden, und er fragt
   die tatsächlich gezahlten Vorauszahlungen neu ab, wo eine Jahreskorrektur nicht mehr passt.
-  Abgeschlossene Abrechnungen bleiben unangetastet. Rechnungen tragen auf Wunsch ihren
+  Abgeschlossene Abrechnungen bleiben unangetastet. Vorgabe ist der Wechsel ab dem laufenden Monat;
+  „von Anfang an“ sagt, dass es auch frühere Abrechnungen ändert. Rechnungen ohne Leistungszeitraum
+  teilt der Wechsel nach Tagen auf die neuen Zeiträume auf, statt eine Jahresrechnung ganz in den
+  Rumpf zu legen; Heizkosten nicht, dort warnen Vorschau und Abrechnung mit Betrag. Die Vorschau
+  nennt für jede schon begonnene Abrechnung Frist und Ergebnis je Mieter vorher und nachher; ist die
+  Frist eines Rumpfs schon abgelaufen, steht das rot da, mit der Nachzahlung, die nicht mehr verlangt
+  werden darf, und gespeichert wird erst nach Bestätigung. Rechnungen tragen auf Wunsch ihren
   Leistungszeitraum; kalte Betriebskosten über zwei Abrechnungszeiträume teilt Mietfuchs beim
   Speichern nach Tagen auf, Heizkosten nicht. Reicht ein Zeitraum über zwei Kalenderjahre, fragt das
-  Formular nach dem Jahr der Zahlung, und die Steuerübersicht bleibt beim Kalenderjahr. Im
+  Formular nach dem Jahr der Zahlung (vorbelegt nur mit dem Rechnungsdatum eines Belegs; bei
+  Heizkosten mit dem Hinweis, was für Abschläge über zwei Jahre gilt), und die Steuerübersicht bleibt
+  beim Kalenderjahr. Im
   Rumpfzeitraum gibt es einen Vorschlag für die neue Vorauszahlung, Brennstoff nach
   Gradtagen. Wer im Kalenderjahr abrechnet, merkt davon nichts
   ([#208](https://github.com/speedone/mietfuchs/issues/208)).
@@ -52,7 +60,14 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit eigener Frist und
   eigenem Abschluss. Beim Einschalten teilt eine Vorschau die bisherige Vorauszahlung in
   Heizvorauszahlung und übrige Vorauszahlung, erfasst Jahreskorrekturen neu und nennt die Fristen;
-  ausgeschaltet wird erst ab der ersten Heizperiode, die nicht abgeschlossen ist. Jeder Monat der
+  ausgeschaltet wird erst ab der ersten Heizperiode, die nicht abgeschlossen ist. Wer bei der Frage
+  nach dem Zeitraum der Heizung „getrennt“ antwortet, kommt gleich zur Aufteilung; ändert das
+  Aufteilen schon begonnene Abrechnungen, nennt die Vorschau Frist und Ergebnis vorher und nachher.
+  Ein Mietverhältnis, das in einem älteren Stand geöffnet war, überschreibt die aufgeteilten
+  Vorauszahlungen nicht mehr: Mietfuchs lädt nach jeder Änderung an der Heizung neu und lehnt das
+  Speichern eines veralteten Formulars ab, statt die Heizvorauszahlung still zu löschen. Die
+  Heizkostenabrechnung spricht von Heizkosten und Heizkostenvorauszahlung, die
+  Betriebskostenabrechnung daneben von der Vorauszahlung für die übrigen Nebenkosten. Jeder Monat der
   Vorauszahlung wird genau einmal angerechnet. Mietkonto und Mietverhältnis zeigen beide
   Vorauszahlungen, das Cockpit jede Heizkostenabrechnung mit ihrer Frist
   ([#217](https://github.com/speedone/mietfuchs/issues/217)).
@@ -64,7 +79,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorwegabzug steht der CO₂-Anteil des Vermieters als eigener Grund beim Vermieter und in der
   Steuerübersicht als Werbungskosten, der Teil Ihrer eigenen Wohnung im Eigenanteil; weist der
   Messdienst die CO₂-Kosten nur aus, bekommt jeder Mieter eine eigene Abzugszeile. Die Abrechnung
-  druckt die Einstufung und die Grundlagen mit (§ 7 Abs. 3 CO2KostAufG)
+  druckt die Einstufung und die Grundlagen mit (§ 7 Abs. 3 CO2KostAufG); fehlen der CO₂-Ausstoß
+  insgesamt oder die Wohnfläche, sagt die Abrechnung, dass Mieter kürzen dürfen. Das Kostenformular
+  nennt, welcher Betrag der Messdienstabrechnung gemeint ist, und die Probe rechnet in Worten vor
   ([#97](https://github.com/speedone/mietfuchs/issues/97), [#209](https://github.com/speedone/mietfuchs/issues/209)).
 - **Warmwasser laut Messdienst.** Hat der Messdienst die Wärme für das Warmwasser mit einer Formel
   bestimmt, ohne dass deren Voraussetzung vorliegt (§ 9 Abs. 2 Satz 2 bzw. 4 HeizkostenV), nennt die

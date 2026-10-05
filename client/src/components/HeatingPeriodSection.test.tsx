@@ -22,7 +22,7 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     render(<HeatingPeriodSection plant={plant({ separateSettlement: false })} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
     expect((screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }) as HTMLSelectElement).value).toBe('own')
-    expect((screen.getByRole('combobox', { name: 'Ab Monat' }) as HTMLSelectElement).value).toBe('5')
+    expect((screen.getByRole('combobox', { name: 'Heizperiode beginnt im' }) as HTMLSelectElement).value).toBe('5')
     expect((screen.getByRole('combobox', { name: 'Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?' }) as HTMLSelectElement).value).toBe('no')
   })
 
@@ -32,7 +32,8 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
       calls.push({ url, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : undefined })
       if (url.endsWith('/period/preview')) {
         return json({ rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [],
-          token: 'w1', moves: [{ costItemId: 'c1', description: 'Messdienst 2025/2026', amountCents: 100000, from: '2025-05', fromLabel: '2025/2026', to: '2026-01', toLabel: '2026' }] })
+          token: 'w1', moves: [{ costItemId: 'c1', description: 'Messdienst 2025/2026', amountCents: 100000, from: '2025-05', fromLabel: '2025/2026', to: '2026-01', toLabel: '2026',
+            fromRange: '01.05.2025–30.04.2026', toRange: '01.01.–31.12.2026', options: [{ key: '2026-01', label: '2026', range: '01.01.–31.12.2026' }], check: false }] })
       }
       return json(plant({ periodStartMonth: null }))
     }))
@@ -41,12 +42,12 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
     fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'object' } })
     fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
-    await screen.findByText(/Messdienst 2025\/2026: von 2025\/2026 nach 2026/)
+    await screen.findByRole('combobox', { name: /Heizperiode für „Messdienst 2025\/2026“ \(1\.000,00.€, bisher 01\.05\.2025–30\.04\.2026\)/ })
     fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }))
     await waitFor(() => expect(changed).toHaveBeenCalled())
     expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
       ['POST', '/api/heating-plants/hp1/period/preview', { rules: null }],
-      ['PUT', '/api/heating-plants/hp1/period', { rules: null, answers: { groups: {}, overrides: {}, totals: {}, token: 'w1' } }],
+      ['PUT', '/api/heating-plants/hp1/period', { rules: null, answers: { groups: {}, moves: { c1: '2026-01' }, overrides: {}, totals: {}, token: 'w1' } }],
     ])
   })
 
@@ -59,5 +60,37 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     expect(screen.getByText('Alles auf den Zeitraum des Messdienstes umstellen')).toBeTruthy()
     expect(screen.getByText('Den Messdienst auf den 31.12. umstellen lassen')).toBeTruthy()
     expect(screen.getAllByText('Vorgabe')).toHaveLength(1)
+  })
+})
+
+describe('Laienprobe B11, B3a', () => {
+  const separatePreview = {
+    separate: true, way: 'separate', month: '2025-05', earliestMonth: null, until: null, earliestUntil: null, share: { permille: 861, source: 'Abrechnung 2024' },
+    steps: [{ tenancyId: 't1', tenantName: 'Familie Beispiel', rows: [{ from: '2025-05', totalCents: 25000, heatingCents: 21500 }] }],
+    overrides: [], deadlines: [], keep: [], merge: [], blocked: [], token: 's1',
+    effects: [{ label: '01.01.–30.06.2025', deadline: '2026-06-30', passed: true, replaces: [], tenants: [{ tenantName: 'Familie Beispiel', beforeCents: 17846, afterCents: -25154 }], lostClaimsCents: 25154 }],
+  }
+  test('„Ja, getrennt“: nach dem Zeitraum öffnet sich gleich die Aufteilung; mit abgelaufener Frist erst nach der Bestätigung übernehmbar', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if (url.endsWith('/period/preview')) return json({ rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], token: 'w1', moves: [] })
+      if (url.endsWith('/separate/preview')) return json(separatePreview)
+      return json(plant())
+    }))
+    const notes: string[] = []
+    render(<HeatingPeriodSection plant={plant({ periodStartMonth: null })} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={(t) => notes.push(t)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'own' } })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Rechnen Sie die Heizkosten getrennt ab, mit eigener Heizkostenvorauszahlung?' }), { target: { value: 'yes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Übernehmen' }))
+    await screen.findByText(/Familie Beispiel: vorher Guthaben 178,46 €, nachher Nachzahlung 251,54 €/)
+    expect(calls).toContain('POST /api/heating-plants/hp1/separate/preview')
+    expect(notes.at(-1)).toMatch(/Noch nicht eingeschaltet ist die getrennte Heizkostenabrechnung/)
+    const uebernehmen = screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement
+    expect(uebernehmen.disabled).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))
+    expect(uebernehmen.disabled).toBe(false)
   })
 })

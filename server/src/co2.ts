@@ -87,10 +87,22 @@ export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], dec
 }
 
 // Was für den Ausweis nach § 7 Abs. 3 fehlt (Einstufung und Berechnungsgrundlagen), als Satzteile.
+//
+// Laienprobe B21: § 7 Abs. 3 CO2KostAufG verlangt „den auf den Mieter entfallenden Anteil an den
+// Kohlendioxidkosten, die Einstufung des Gebäudes … im Sinne von § 5 Absatz 1 Satz 1 oder 2 sowie
+// die Berechnungsgrundlagen“. Die Einstufung ist der Ausstoß in kg CO₂ je m² Wohnfläche und Jahr (§ 5
+// Abs. 1 S. 1); ihre Berechnungsgrundlagen sind der Ausstoß insgesamt und die Wohnfläche. Der Wert je
+// m² allein nennt das Ergebnis, nicht seine Grundlagen. Ob er genügt, hat kein Gericht entschieden;
+// Mietfuchs verlangt beide Zahlen, denn ohne sie darf jeder Mieter um 3 % kürzen (Abs. 4).
 export function ausweisGaps(st: ServiceValues): string[] {
   const gaps: string[] = []
   const area = st.serviceAreaM2 ?? st.areaM2
   if (st.serviceKgPerM2 === null && (st.serviceEmissionsKg === null || area === null)) gaps.push('der CO₂-Ausstoß je Quadratmeter (oder Ausstoß und Fläche)')
+  else if (st.serviceEmissionsKg === null || area === null) {
+    gaps.push(st.serviceEmissionsKg === null && area === null
+      ? 'der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche, aus denen der Wert je Quadratmeter berechnet ist'
+      : st.serviceEmissionsKg === null ? 'der CO₂-Ausstoß insgesamt (kg), aus dem der Wert je Quadratmeter berechnet ist' : 'die Wohnfläche, auf die der Wert je Quadratmeter bezogen ist')
+  }
   if (st.serviceLandlordPermille === null) gaps.push('der Anteil des Vermieters in Prozent')
   if (st.serviceTotalCents === null) gaps.push('die CO₂-Kosten insgesamt')
   return gaps

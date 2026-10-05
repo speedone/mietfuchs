@@ -273,6 +273,7 @@ const noticeKinds = {
   'period.short': { level: 'hint', title: 'Rumpfzeitraum', terms: ['shortPeriod', 'billingPeriod'] },
   'period.item-outside': { level: 'warning', title: 'Leistungszeitraum außerhalb des Abrechnungszeitraums', terms: ['accrualPrinciple', 'billingPeriod'] },
   'period.heating-mismatch': { level: 'warning', title: 'Heizkosten aus einem anderen Zeitraum', terms: ['accrualPrinciple', 'heatingCostOrdinance'] },
+  'period.short-heating-whole': { level: 'warning', title: 'Heizrechnung ganz im Rumpfzeitraum', terms: ['shortPeriod', 'accrualPrinciple'] },
   'period.split-by-days-meter': { level: 'hint', title: 'Verbrauch nach Tagen aufgeteilt', terms: ['accrualPrinciple', 'meterReading'] },
   'prepayment.no-suggestion': { level: 'hint', title: 'Kein Vorschlag für die Vorauszahlung', terms: ['prepayment', 'degreeDays'] },
   'prepayment.annual-assumed': { level: 'hint', title: 'Rechnung ohne Leistungszeitraum im Rumpf', terms: ['prepayment', 'shortPeriod', 'accrualPrinciple'] },
@@ -2886,12 +2887,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         // Ein geschätztes S weitet nur den Spielraum der Probe; geht sie trotzdem nicht auf, ist das
         // derselbe Fehler wie mit gedrucktem S, und gebucht wird nichts (Durchsicht I-2). Ein
         // sichtbarer Fehler ist besser als ein Anteil, der still zweimal privat steht.
-        const approxText = st.serviceUsersTotalApprox ? ' S ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag.' : ''
+        // Laienprobe B20: ohne Formelbuchstaben, mit den Namen der Positionen und der Rechnung in Worten.
+        const approxText = st.serviceUsersTotalApprox ? ' Die Summe der Kosten aller Nutzer ist geschätzt als Summe der Einzelbeträge aller Nutzeinheiten; dafür gilt der Rundungsspielraum auch für den Betrag.' : ''
         if (!pot.probe.ok && settledHere) {
-          const lines = `Ihre Positionen ergeben ${fmtCents(pot.probe.itemsCents)}. Mit Abzugszeile müssten es S + L = ${fmtCents(S + L)} sein, ohne Abzugszeile S = ${fmtCents(S)}.`
+          const names = andList(pot.serviceItems.map((c) => `„${c.description}“`))
+          const lines = `${pot.serviceItems.length === 1 ? 'Ihre Position' : 'Ihre Positionen'} ${names} ${pot.serviceItems.length === 1 ? 'hat' : 'haben zusammen'} ${fmtCents(pot.probe.itemsCents)}. ` +
+            `Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer (${fmtCents(S)}) plus den CO₂-Anteil des Vermieters (${fmtCents(L)}) sein, also ${fmtCents(S + L)}; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, ${fmtCents(S)}.`
           const entered = pot.probe.enteredOk
             ? ''
-            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als S und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
+            : ` Die eingetragenen Einzel- und Eigenbeträge ergeben zusammen ${fmtCents(pot.probe.enteredCents)}, mehr als die Summe der Kosten aller Nutzer und der Rundungsspielraum von ${fmtCents(pot.probe.toleranceCents)}; steht der CO₂-Anteil Ihrer Wohnung schon im Eigenbetrag, tragen Sie dort nur den Betrag der Abrechnung ein.`
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
           warn('co2.sum-check',
             `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
@@ -3233,6 +3237,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('period.short', scope === 'heatingPart'
       ? `Die Heizperiode ${label} ist ein Rumpfzeitraum wegen der Umstellung der Heizung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`
       : `Rumpfzeitraum ${label} wegen der Umstellung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`)
+  }
+  // Laienprobe B2: Eine Heizrechnung ohne Leistungszeitraum steht ganz im Rumpf, etwa weil sie beim
+  // Wechsel des Zeitraums dorthin kam. Ist sie eine Jahresrechnung, zahlen die Mieter hier die Wärme
+  // eines ganzen Jahres gegen wenige Monate Vorauszahlung. Mit Leistungszeitraum greift der Hinweis
+  // darunter (`period.heating-mismatch`), liegt er im Rumpf, ist alles in Ordnung.
+  if (period.short && scope !== 'heatingPart') {
+    for (const item of items) {
+      if (item.category !== HEATING_CATEGORY || item.serviceFrom !== undefined || item.serviceTo !== undefined) continue
+      warn('period.short-heating-whole',
+        `„${item.description}“ (${fmtCents(item.amountCents)}) steht ohne Leistungszeitraum ganz im Rumpfzeitraum ${label}. Heizkosten gehören in den Zeitraum, in dem die Wärme verbraucht wurde (BGH VIII ZR 156/11); ist es eine Jahresrechnung, zahlen die Mieter hier die Heizkosten eines ganzen Jahres gegen die Vorauszahlungen weniger Monate. ` +
+          'Tragen Sie unter „Weitere Angaben“ den Leistungszeitraum der Rechnung ein. Reicht er über den Rumpf hinaus, lassen Sie die Rechnung zum Stichtag abgrenzen (Zählerstand oder Zwischenrechnung des Versorgers).',
+        itemSubject(item))
+    }
   }
   for (const item of items) {
     if (item.serviceFrom === undefined || item.serviceTo === undefined) continue

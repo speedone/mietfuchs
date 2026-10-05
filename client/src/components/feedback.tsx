@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 // Zentrale Rückmeldungs-Schicht: kurze Toasts (Speichern/Löschen bestätigt) und ein gestylter
 // Bestätigungsdialog als Ersatz für das native confirm(). Beides wird über die Hooks useToast()
@@ -26,6 +26,9 @@ export const useConfirm = () => useContext(ConfirmCtx)
 export function UIProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const idRef = useRef(1)
+  // Der Name der Rückfrage für Bildschirmleser (Laienprobe, Kleinigkeit): Ohne ihn stand sie
+  // namenlos im Barrierebaum, etwa „Rechnung aufteilen?“ über dem Kostenformular.
+  const titleId = useId()
   // Laufende Zeitgeber der Toasts, damit sie beim Abbauen nicht mehr feuern: Ein Zeitgeber, der
   // nach dem Ende eines Komponententests läuft, trifft auf eine abgebaute Testumgebung
   // („window is not defined“) und lässt den ganzen Lauf scheitern, obwohl jeder Test grün war.
@@ -84,8 +87,8 @@ export function UIProvider({ children }: { children: ReactNode }) {
         </div>
         {dialog && (
           <div className="dialog-backdrop no-print" onMouseDown={() => close(false)}>
-            <div className="dialog" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-              <h2>{dialog.title}</h2>
+            <div className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} onMouseDown={(e) => e.stopPropagation()}>
+              <h2 id={titleId}>{dialog.title}</h2>
               {dialog.message && <div className="dialog-msg">{dialog.message}</div>}
               <div className="dialog-actions">
                 <button className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
