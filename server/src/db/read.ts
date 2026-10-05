@@ -18,14 +18,14 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, CostItem, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, CostItem, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
 import type { Database } from './client.ts'
 import {
   aiSlots, baseRents, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
-  flatRates, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
+  flatRates, heatingPlants, heatingPlantUnits, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
 // Eine abgeschlossene Abrechnung, wie sie in der Datenbank steht. `settlement` bleibt
@@ -57,6 +57,7 @@ export type Stock = SnapshotSource & {
   tenancies: Tenancy[]
   costItems: CostItem[]
   meters: Meter[]
+  heatingPlants: HeatingPlant[]
   readings: Reading[]
   payments: Payment[]
   closedSettlements: StoredClosedSettlement[]
@@ -230,6 +231,8 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
       ...(c.serviceTo !== null ? { serviceTo: c.serviceTo } : {}),
       ...(c.taxYear !== null ? { taxYear: c.taxYear } : {}),
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
+      // Die Heizanlage (Heizung PR 4), ebenso nur, wenn es sie gibt.
+      ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
     }
   })
 }
@@ -244,6 +247,32 @@ export async function readMeters(db: Database): Promise<Meter[]> {
     type: m.type,
     meterNumber: orUndefined(m.meterNumber),
     unit: m.unit,
+  }))
+}
+
+// Die Heizanlagen (Heizung PR 4). Die Liste der Wohnungen gibt es nur, wenn die Anlage eine hat
+// (`units_limited`); sonst versorgt sie alle Wohnungen ihres Objekts.
+export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
+  const rows = await db.select().from(heatingPlants).orderBy(INSERTION_ORDER)
+  const zeilen = await db.select().from(heatingPlantUnits).orderBy(INSERTION_ORDER)
+  const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2 }))
+  return rows.map((p) => ({
+    id: p.id,
+    propertyId: p.propertyId,
+    name: p.name,
+    energy: p.energy,
+    supply: p.supply,
+    method: p.method,
+    separateSettlement: p.separateSettlement,
+    devicesRemote: p.devicesRemote,
+    devicesInstalledAfter2021: p.devicesInstalledAfter2021,
+    source: p.source,
+    captureInstalledOn: p.captureInstalledOn,
+    capturedOnOct2024: p.capturedOnOct2024,
+    warmRentAverageCents: p.warmRentAverageCents,
+    changeSplit: p.changeSplit,
+    periodStartMonth: p.periodStartMonth,
+    units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
   }))
 }
 
@@ -296,6 +325,7 @@ export async function readStock(db: Database): Promise<Stock> {
     tenancies: await readTenancies(db),
     costItems: await readCostItems(db),
     meters: await readMeters(db),
+    heatingPlants: await readHeatingPlants(db),
     readings: await readReadings(db),
     payments: await readPayments(db),
     closedSettlements: await readClosedSettlements(db),

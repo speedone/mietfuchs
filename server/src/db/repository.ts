@@ -47,7 +47,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS,
+  HEATING_PARTS, heatingPlants,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -62,11 +62,13 @@ export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Pay
 // `typeof` und `Reflect.get`, wie im Validator: Ein angeschriebenes Typprädikat wäre nur eine
 // Behauptung, deren Rumpf niemand nachrechnet.
 
+// Die Helfer hier lesen auch den Rumpf einer Heizanlage (db/heating.ts) und sind deshalb
+// exportiert; heating.ts importiert von hier, nie umgekehrt.
 const isObject = (body: unknown): boolean => body !== null && typeof body === 'object'
-const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
-const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
+export const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
+export const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
 
-const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
+export const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
 // `Number.isFinite` schließt NaN und Unendlich aus; beides ergäbe in einer Spalte einen Wert,
 // mit dem niemand rechnen kann.
 const asNumber = (value: unknown, fallback: number): number =>
@@ -82,10 +84,18 @@ const asOptionalBoolean = (value: unknown): boolean | undefined => (typeof value
 
 // Das offene Mietverhältnis und der Hauptzähler ohne Wohnung: Dort ist `null` ein ausdrücklicher
 // Wert und kein fehlendes Feld, deshalb eine eigene Lesart.
-const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+export const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+
+// Wie `asNullableText`, aber ein leeres Feld ist keine Angabe (Kennungen, Daten aus einem Formular).
+export const asNullableFilled = (value: unknown): string | null => {
+  const text = asNullableText(value)
+  return text === '' ? null : text
+}
+
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 // Nimmt den Wert aus dem Rumpf, wenn der Schlüssel dasteht, sonst den bisherigen.
-function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
+export function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
   return has(body, key) ? read(raw(body, key)) : current
 }
 
@@ -217,7 +227,7 @@ function readExternalBasis(value: unknown): ExternalBasis | null {
 // Ein unbekannter Wert wird zu „nichts eingetragen“ statt zu einem Fehler: Die Spalte ließe ihn
 // ohnehin nicht zu, und die Prüfbedingung meldete ihn dann als technischen Befund, wo ein leeres
 // Feld die ehrlichere Antwort ist.
-const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
+export const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
   const text = asOptionalText(value)
   return known.find((eintrag) => eintrag === text)
 }
@@ -405,6 +415,18 @@ export class PeriodError extends Error {
   status = 400
 }
 
+// Eine Ablehnung rund um die Heizanlage (Heizung PR 4): 400, wenn eine Angabe nicht passt oder eine
+// Funktion erst mit einer späteren Version kommt; 409, wenn sich der Bestand inzwischen geändert hat
+// oder ein abgeschlossener Zeitraum betroffen ist. Die Meldung ist für den Nutzer geschrieben; die
+// Route gibt sie weiter wie `CrossPropertyError`.
+export class HeatingError extends Error {
+  status: 400 | 409
+  constructor(status: 400 | 409, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 // Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
 // bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
 export class PeriodConflict extends Error {
@@ -540,7 +562,7 @@ async function propertyName(db: Executor, propertyId: string): Promise<string> {
 
 // Wirft, wenn eine der Wohnungen zu einem anderen Objekt gehört. `what` beschreibt den
 // Datensatz, der verweist, für die Meldung.
-async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
+export async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
   if (unitIds.length === 0) return
   const fremd = await db
     .select({ name: units.name, propertyId: units.propertyId })
@@ -793,12 +815,13 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   const alle = await readProperties(db)
   if (!alle.some((p) => p.id === id)) return { removed: false, reason: 'missing' }
   if (alle.length === 1) return { removed: false, reason: 'last' }
-  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory) =>
+  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory | typeof heatingPlants) =>
     (await db.select({ n: count() }).from(table).where(eq(table.propertyId, id)))[0]?.n ?? 0
   const teile = [
     [await zahl(units), 'Wohnung', 'Wohnungen'],
     [await zahl(meters), 'Zähler', 'Zähler'],
     [await zahl(costItems), 'Kostenposition', 'Kostenpositionen'],
+    [await zahl(heatingPlants), 'Heizanlage', 'Heizanlagen'],
     [await zahl(closedSettlements), 'abgeschlossene Abrechnung', 'abgeschlossene Abrechnungen'],
     [await zahl(closedSettlementHistory), 'früherer Abschluss', 'frühere Abschlüsse'],
   ] as const
@@ -1269,7 +1292,6 @@ export class TenantChangeError extends Error {
 
 export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 // „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
 const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
 const isIsoDate = (value: unknown): value is string =>
