@@ -482,10 +482,26 @@ export type Notice = {
 // Eine Regel, wie sie in einer Abrechnung als Rechtsstand steht: ohne Kurzfassung, denn die
 // gehört zur Erklärung und nicht zum Archivstück.
 export type AppliedRule = { code: string; title: string; norm: string; validFrom?: string; validTo?: string }
-// Datum des Regelverzeichnisses und die Regeln, die im Abrechnungsjahr gelten. Wird mit der
-// Abrechnung eingefroren, damit eine spätere Rechtsänderung eine versandte Abrechnung nicht
-// rückwirkend anders erklärt.
-export type LegalBasis = { asOf: string; rules: AppliedRule[] }
+// Ein Wert aus dem Rechtsregister (shared/law/), wie ihn JSON speichern kann.
+export type LawValue = number | string | boolean | null | readonly LawValue[] | { readonly [key: string]: LawValue }
+// Ein Rechtswert, mit dem eine Abrechnung gerechnet hat (Heizung PR 1, Entwurf 4.4). `text` ist
+// der Wert in Worten („15 %“), so wie er beim Rechnen dastand; er friert mit ein, damit eine
+// spätere Fassung des Registers eine versandte Abrechnung nicht anders beschreibt.
+export type AppliedValue = {
+  id: string
+  title: string
+  norm: string
+  cite: string
+  value: LawValue
+  text: string
+  validFrom?: string
+  validTo?: string
+}
+// Datum des Rechtsregisters, die Regeln, die im Abrechnungsjahr gelten, und die Rechtswerte, mit
+// denen gerechnet wurde. Wird mit der Abrechnung eingefroren, damit eine spätere Rechtsänderung
+// eine versandte Abrechnung nicht rückwirkend anders erklärt. `values` ist optional, weil eine vor
+// 0.11.0 abgeschlossene Abrechnung es nicht kennt.
+export type LegalBasis = { asOf: string; rules: AppliedRule[]; values?: AppliedValue[] }
 
 export type Settlement = {
   year: number
