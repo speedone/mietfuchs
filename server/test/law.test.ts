@@ -224,3 +224,11 @@ test('Stichtag ustg.standard-rate: 16 % nur vom 01.07. bis 31.12.2020', () => {
   assert.equal(valueAt(ustgStandardRate, '2007-01-01'), 19)
   assert.throws(() => valueAt(ustgStandardRate, '2006-12-31'), /Kein Rechtswert/)
 })
+
+// Durchsicht von #221 (M5): Die Fassung für das zweite Halbjahr 2020 nennt die Norm, wie sie
+// zitiert wird, und verweist auf die amtliche Quelle.
+test('Fundstelle ustg.standard-rate: § 28 Abs. 1 UStG auf gesetze-im-internet.de', () => {
+  const v = versionAt(ustgStandardRate, '2020-08-01')
+  assert.equal(v.source.cite, '§ 28 Abs. 1 UStG')
+  assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/ustg_1980/__28.html')
+})
