@@ -6,6 +6,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ## [Unveröffentlicht]
 
+### Geändert
+
+- **Rechtsregister.** Jede Rechtszahl, mit der Mietfuchs rechnet oder die es nennt (Kabel-TV bis
+  30.06.2024, 50 bis 70 % nach Verbrauch, die Kürzungen um 15 % und 3 %, die Fernablesbarkeit ab
+  2027, ein Leerstandstag mit einer Person, der Regelsatz der Umsatzsteuer), steht jetzt an einer
+  Stelle, mit Gültigkeit und Fundstelle. Eine abgeschlossene Abrechnung friert die Werte ein, mit
+  denen sie gerechnet wurde; die Abrechnung zeigt sie unter „Rechtsstand“, und weicht ein Wert
+  später ab, sagt es der Vergleich mit der heutigen Berechnung. Abgeschlossene Abrechnungen
+  bleiben unverändert; bei einer Abrechnung von vor dieser Version steht „Rechtswerte nicht
+  gespeichert“. Keine Zahl und kein Text einer Abrechnung ändert sich.
+  ([#97](https://github.com/speedone/mietfuchs/issues/97), [#110](https://github.com/speedone/mietfuchs/issues/110))
+- **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
+  ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an
+  16 %. Passt der Abstand nicht, bleiben die Positionen wie auf dem Beleg stehen.
+
 ### Behoben
 
 - **Messdienst-Abrechnung mit Vorwegabzug: der CO₂-Anteil des Vermieters fehlte in der
