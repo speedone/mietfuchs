@@ -27,7 +27,7 @@ import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, HeatingPeriodView, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, Co2Statement, DegreeDayValue, FuelDelivery, FuelGapQuestion, Notice, HeatingPeriodView, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -5961,7 +5961,7 @@ test('CO₂-Angaben über die Routen: speichern, lesen, entfernen, Sperren und 4
     assert.deepEqual([view?.period, view?.co2?.method, view?.items.length], ['2025-01', 'serviceDeducted', 1])
     const selbst = await send(`${base}/2025-01/co2`, { method: 'PUT', body: JSON.stringify({ method: 'self' }) })
     assert.equal(selbst.status, 400)
-    assert.match(await errorFrom(selbst), /späteren Version/)
+    assert.match(await errorFrom(selbst), /Frage nach der Abzugszeile/)
     const wasser = await send(`${base}/2025-01/hot-water`, { method: 'PUT', body: JSON.stringify({ dhwMethod: 'areaFormula' }) })
     assert.deepEqual(await jsonOf<unknown>(wasser), { dhwMethod: 'areaFormula', dhwUnmeasurable: null })
     const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
@@ -6049,6 +6049,39 @@ test('Review Runde 2: Weg d ab 05/2025 am 02.01.2027: ohne Bestätigung 409 mit 
   }
 })
 
+// ---------- Lieferungen (Heizung PR 7) ----------
+
+test('Lieferungen über die Routen: anlegen, lesen, ändern, Sperre, entfernen; Ortswerte', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    const angelegt = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'Gas', invoiceFrom: '2025-03-15', invoiceTo: '2026-03-14', emissionsKg: 5406.17 }))
+    assert.equal(angelegt.status, 201)
+    const d = await jsonOf<FuelDelivery>(angelegt)
+    assert.deepEqual((await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)).map((x) => x.id), [d.id])
+    const geaendert = await send(`/api/fuel-deliveries/${d.id}`, { method: 'PUT', body: JSON.stringify({ fixedCents: 12000 }) })
+    assert.equal((await jsonOf<FuelDelivery>(geaendert)).fixedCents, 12000)
+    const etage = await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'x', unitId: 'egal', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31' }))
+    assert.equal(etage.status, 400)
+    assert.match(await errorFrom(etage), /späteren Version/)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/deliveries', { method: 'GET' })).status, 404)
+    assert.equal((await send('/api/fuel-deliveries/gibt-es-nicht', { method: 'PUT', body: '{}' })).status, 404)
+    const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
+    assert.equal(blockiert.status, 409)
+    assert.match(await errorFrom(blockiert), /Lieferung/)
+    assert.deepEqual(await jsonOf<unknown>(await send(`/api/fuel-deliveries/${d.id}`, { method: 'DELETE' })), { ok: true })
+    assert.equal((await send(`/api/fuel-deliveries/${d.id}`, { method: 'DELETE' })).status, 404)
+    const ortswerte = await send(`/api/properties/${plant.propertyId}/degree-days`, { method: 'PUT', body: JSON.stringify({ values: [{ month: '2025-01', value: 412.5 }] }) })
+    assert.deepEqual(await jsonOf<DegreeDayValue[]>(ortswerte), [{ month: '2025-01', value: 412.5 }])
+    assert.deepEqual(await s.api<DegreeDayValue[]>(`/api/properties/${plant.propertyId}/degree-days`), [{ month: '2025-01', value: 412.5 }])
+    assert.equal((await send('/api/properties/gibt-es-nicht/degree-days', { method: 'GET' })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
 // Review Runde 3 (N1): Der Testgriff NKA_TEST_TODAY nur mit einem echten Kalenderdatum; sonst bricht
 // der Start ab. Ist er gesetzt, sagt es die Konsole.
 test('Start: NKA_TEST_TODAY mit ungültigem Datum bricht ab; ein gültiges nennt die Konsole', async () => {
@@ -6070,5 +6103,42 @@ test('Start: NKA_TEST_TODAY mit ungültigem Datum bricht ab; ein gültiges nennt
   } finally {
     ok.child.kill()
     removeDataDir(okDir)
+  }
+})
+
+test('Abschluss mit Lücke: Rückfrage (409), Schätzung, Sperre der eingefrorenen Lieferung, Wiederöffnen gibt frei', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'manual' })))
+    // Die erste Rechnung des Jahres reicht bis Ende Juni; für das zweite Halbjahr fehlt sie.
+    const d = await jsonOf<FuelDelivery>(await send(`/api/heating-plants/${plant.id}/deliveries`, jsonPost({ label: 'Gas 1. Halbjahr', invoiceFrom: '2025-01-01', invoiceTo: '2025-06-30' })))
+    await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 300000, key: 'area', heatingPlantId: plant.id, fuelDeliveryId: d.id }))
+    const gefragt = await send('/api/settlement/2025/close', jsonPost({}))
+    assert.equal(gefragt.status, 409)
+    const body = await jsonOf<{ error: string; fuelGaps: FuelGapQuestion[] }>(gefragt)
+    assert.match(body.error, /fehlt eine Rechnung/)
+    assert.equal(body.fuelGaps[0]?.deadline, '2026-12-31', 'die Frist der Abrechnung, für die Wahl „Abwarten“')
+    assert.deepEqual(body.fuelGaps.map((g) => [g.plantId, g.period, g.from, g.to]), [[plant.id, '2025-01', '2025-07-01', '2025-12-31']])
+    assert.ok((body.fuelGaps[0]?.amountCents ?? 0) > 0)
+    assert.equal((await send('/api/settlement/2025/close', jsonPost({ fuelEstimates: 'vielleicht' }))).status, 400)
+    assert.equal((await send('/api/settlement/2025/close', jsonPost({ fuelEstimates: 'estimate' }))).status, 201)
+    const liste = await s.api<FuelDelivery[]>(`/api/heating-plants/${plant.id}/deliveries`)
+    const schaetzung = liste.find((x) => x.estimated) ?? assert.fail('keine Schätzung angelegt')
+    assert.match(schaetzung.label, /^Schätzung 01\.07\.–31\.12\.2025: [\d,]+ ‰ der Rechnung „Gas 1\. Halbjahr“ nach Gradtagen$/)
+    assert.equal(schaetzung.amountCents, body.fuelGaps[0]?.amountCents)
+    // Die Schätzung erscheint in der eingefrorenen Abrechnung mit ihrem Vorbehalt.
+    const zu = await s.api<{ notices: Notice[] }>('/api/settlement/2025')
+    assert.ok(zu.notices.some((n) => n.code === 'fuel.estimated'))
+    const gesperrt = await send(`/api/fuel-deliveries/${d.id}`, { method: 'PUT', body: JSON.stringify({ fixedCents: 100 }) })
+    assert.equal(gesperrt.status, 409)
+    assert.match(await errorFrom(gesperrt), /eingefroren/)
+    await s.api('/api/settlement/2025/close', { method: 'DELETE' })
+    assert.equal((await send(`/api/fuel-deliveries/${d.id}`, { method: 'PUT', body: JSON.stringify({ fixedCents: 100 }) })).status, 200)
+    // Erneut abschließen fragt nicht mehr: Die Schätzung deckt die Lücke.
+    assert.equal((await send('/api/settlement/2025/close', jsonPost({}))).status, 201)
+  } finally {
+    s.stop()
   }
 })

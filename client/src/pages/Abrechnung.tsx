@@ -25,6 +25,9 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import Co2Block from '../components/Co2Block'
+import FuelBlock from '../components/FuelBlock'
+import { fuelBlock } from '../fuelView'
+import { closeWithFuelQuestion } from '../fuelClose'
 import { co2Block } from '../co2View'
 import { countOf } from '../../../shared/wording.ts'
 import { calendarPeriod } from '../../../shared/period.ts'
@@ -163,7 +166,21 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
+    // Bei einer Lücke ohne Rechnung fragt der Server nach (Heizung PR 7, Entwurf 8.2); Vorgabe ist die
+    // Schätzung mit Vorbehalt.
+    let closed = false
+    if (!(await attempt(async () => {
+      closed = await closeWithFuelQuestion(
+        (body) => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify(body) }),
+        // Drei Wege; Abwarten ist die Vorgabe (Enter, Fokus), „Ohne Schätzung“ die dritte Wahl.
+        (q) => new Promise((resolve) => {
+          let without = false
+          void confirm({ ...q, defaultChoice: 'cancel', onAlternative: () => { without = true } })
+            .then((ok) => resolve(ok ? 'estimate' : without ? 'none' : 'wait'))
+        }),
+      )
+    }))) return
+    if (!closed) return
     await load()
     toast(`${docLabel} abgeschlossen.`)
   }
@@ -578,6 +595,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
               )}
               {/* Der Ausweis nach § 7 Abs. 3 CO2KostAufG (Heizung PR 6) wird mitgedruckt. */}
               {(data?.heating ?? []).map((h) => <Co2Block key={`${h.plantId}:${h.period}`} view={co2Block(h, st.tenancyId)} />)}
+              {(data?.heating ?? []).map((h) => <FuelBlock key={`fuel:${h.plantId}:${h.period}`} view={fuelBlock(h)} />)}
               {st.rows.length > 0 && (
                 <>
                   <p style={{ marginTop: 16 }}>

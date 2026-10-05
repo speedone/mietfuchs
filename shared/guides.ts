@@ -122,11 +122,11 @@ const GUIDE_DATA = {
       { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
-      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Selbst rechnet Mietfuchs die Aufteilung noch nicht (#97); rechnet ein Messdienst ab, übernehmen Sie seine Angaben auf der Seite Heizkosten.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
+      { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Verteilen Sie die Heizkosten selbst nach einem Schlüssel, teilt Mietfuchs die CO₂-Kosten auf, wenn Sie die Rechnungen Ihres Versorgers auf der Seite Heizkosten als Lieferungen eintragen; rechnet ein Messdienst ab, übernehmen Sie seine Angaben dort.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
     ],
     gaps: [
       { text: 'Eine eigene Heizkostenabrechnung mit Wärmemengenzählern nach Grund- und Verbrauchskosten.', issue: 99 },
-      { text: 'Die Aufteilung der CO₂-Kosten zwischen Mieter und Vermieter.', issue: 97 },
+      { text: 'Die CO₂-Kosten bei Heizöl, Flüssiggas und Pellets, die eine Bestandsrechnung brauchen.', issue: 97 },
       { text: 'Die Differenz zwischen Hauptzähler und Wohnungszählern als eigener Posten, Eichfristen und geschätzte Ablesungen.', issue: 98 },
     ],
     terms: ['allocationKey', 'distributionBasis', 'billingUnit', 'participants', 'ownShare', 'heatingCostOrdinance'],
@@ -271,13 +271,12 @@ const GUIDE_DATA = {
       { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Beim Mieterwechsel muss eine Zwischenablesung stattfinden; melden Sie dem Messdienst den Auszug rechtzeitig.', norm: '§ 9b HeizkostenV' },
       { text: `Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um ${CO2_CUT} Prozent kürzen. Die großen Messdienste teilen auf, wenn Sie ihnen die CO₂-Angaben Ihrer Brennstoffrechnung melden, und weisen die Angaben in ihrer Abrechnung aus; legen Sie sie dem Mieter mit Ihrer Abrechnung bei.`, norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
-      { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).' },
+      { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen. Oder beantworten Sie die Frage nach der Abzugszeile mit „gar nicht aufgeteilt“ und tragen die Rechnung des Versorgers auf der Seite Heizkosten als Lieferung ein, „vom Messdienst angesetzt“; dann teilt Mietfuchs selbst auf.' },
       { text: 'Nicht jeder Messdienst setzt für eine selbstgenutzte Wohnung einen vom Vermieter übernommenen CO₂-Anteil an. Sehen Sie deshalb in die Einzelabrechnung Ihrer Wohnung, bevor Sie in der Karte „CO₂-Kosten“ etwas eintragen (Schritt 3).' },
       { text: 'Wo in der Abrechnung die Summe der Kosten aller Nutzer steht, beschreibt die Anleitung zum Aufteilen der CO₂-Kosten.' },
     ],
     gaps: [
       { text: 'Die Abrechnung des Messdienstes per KI auslesen und den Mietverhältnissen zuordnen; heute tragen Sie die Beträge von Hand ein.', issue: 103 },
-      { text: 'Die CO₂-Kosten selbst aus der Brennstoffrechnung aufteilen, wenn der Messdienst es nicht tut.', issue: 97 },
       { text: 'Die Heizkosten ohne Messdienst selbst nach der Heizkostenverordnung abrechnen.', issue: 99 },
     ],
     terms: ['individualAmounts', 'heatingCostOrdinance', 'ownShare', 'labor35a', 'co2Deducted'],
@@ -308,7 +307,7 @@ const GUIDE_DATA = {
       { text: 'Ist ein Abrechnungszeitraum von unter einem Jahr vereinbart, werden die Grenzen der Stufentabelle anteilig gekürzt.', norm: '§ 5 Abs. 1 Satz 4 CO2KostAufG' },
     ],
     gaps: [
-      { text: 'Die CO₂-Kosten selbst aus der Brennstoffrechnung aufteilen, auch ohne Messdienst.', issue: 97 },
+      { text: 'Die CO₂-Kosten bei Heizöl, Flüssiggas und Pellets aus der Bestandsrechnung.', issue: 97 },
       { text: 'Die CO₂-Angaben für den Messdienst ausdrucken.', issue: 210 },
       { text: 'Die Abrechnung des Messdienstes per KI auslesen.', issue: 103 },
     ],
@@ -361,12 +360,39 @@ const GUIDE_DATA = {
     example: 'Umstellung ab Mai 2025: Der Rumpfzeitraum läuft vom 01.01. bis 30.04.2025 und muss bis 30.04.2026 abgerechnet sein. Die Grundsteuer 2025 über 480 € teilt Mietfuchs in 157,81 € für den Rumpf und 322,19 € für 2025/2026.',
     caveats: [
       { text: 'Eine Verkürzung des Abrechnungszeitraums braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter. Länger als zwölf Monate darf kein Zeitraum sein.', norm: '§ 556 Abs. 3 Satz 1 BGB' },
-      { text: 'Heizkosten müssen den Verbrauch im Abrechnungszeitraum abbilden; eine Gasrechnung über einen anderen Zeitraum teilt Mietfuchs nicht nach Tagen auf, sondern weist darauf hin.', norm: 'BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+      { text: 'Heizkosten müssen den Verbrauch im Abrechnungszeitraum abbilden; eine Gasrechnung über einen anderen Zeitraum teilt Mietfuchs nicht nach Tagen auf. Tragen Sie sie auf der Seite Heizkosten als Lieferung ein, grenzt Mietfuchs sie nach Zählerstand oder Gradtagen ab; sonst weist es darauf hin.', norm: 'BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
     ],
     gaps: [
       { text: 'Eine Gas- oder Fernwärmerechnung über einen anderen Zeitraum nach Gradtagen auf die Heizperiode abgrenzen; bis dahin weist Mietfuchs nur darauf hin.', issue: 97 },
     ],
     terms: ['billingPeriod', 'shortPeriod', 'accrualPrinciple'],
+  },
+  // Heizung PR 7 (#97, Durchsicht von #233): eine Versorgerrechnung über die Heizperiode hinaus.
+  supplierInvoice: {
+    title: 'Gasrechnung über die Heizperiode hinaus',
+    applies: 'Ihr Versorger rechnet Gas, Fernwärme oder den Strom der Wärmepumpe über einen anderen Zeitraum ab als Ihre Heizperiode, etwa von März bis März, und Sie verteilen die Heizkosten selbst nach einem Schlüssel.',
+    steps: [
+      { page: 'stammdaten', text: 'Richten Sie in der Karte „Heizung“ die Heizanlage ein, falls noch nicht geschehen; bei der Frage, wer abrechnet, wählen Sie „Niemand“.' },
+      { page: 'kosten', text: 'Erfassen Sie die Rechnung wie gewohnt mit „+ Kostenposition manuell erfassen“ und der Kostenart „Heizung und Warmwasser“, und zwar im Zeitraum, in dem die Rechnung endet.' },
+      { page: 'heizkosten', text: 'Klicken Sie auf der Seite Heizkosten in der Karte „Lieferungen“ auf „Lieferung eintragen“, tragen Sie den Rechnungszeitraum laut Rechnung ein und, wenn die Rechnung sie ausweist, die festen Preisbestandteile und die CO₂-Angaben, dann „Lieferung speichern“.' },
+      { page: 'heizkosten', text: 'Wählen Sie darunter bei „Welche Position gehört zu welcher Rechnung?“ an Ihrer Position die Lieferung. Ohne diese Verknüpfung grenzt Mietfuchs nichts ab und verteilt die Position ganz in ihrem Zeitraum.' },
+      { page: 'zaehler', text: 'Genauer als nach Gradtagen wird es mit einem Zählerstand des Versorgungszählers zum Ende der Heizperiode; erfassen Sie ihn mit „Ablesung speichern“.' },
+    ],
+    result: [
+      'Die Position bleibt in voller Höhe in ihrem Zeitraum. Der Teil der Heizperiode davor steht dort als eigene Zeile bei den Mietern, mit dem Schlüssel der Position, und hier als Gegenbuchung; über beide Zeiträume ist die Rechnung genau einmal verteilt.',
+      'Fehlt beim Abschließen die Rechnung für einen Teil der Heizperiode, fragt Mietfuchs nach: abwarten, mit Vorbehalt schätzen oder ohne Schätzung abschließen.',
+      'Die Abrechnung druckt den Block „Brennstoff“ mit dem Anteil jeder Rechnung und dem Verfahren.',
+    ],
+    example: 'Gasrechnung 15.03.2025–14.03.2026 über 6.500 €, Heizperiode Mai bis April, zwei Wohnungen mit 60 und 40 m² nach Wohnfläche: Nach Gradtagen gehören 848,71 ‰ in 2025/2026, das sind 5.516,61 € (Mieter A 3.309,97 €, Mieter B 2.206,64 €); 983,39 € gehören in 2024/2025 (Mieter A 590,03 €, Mieter B 393,36 €).',
+    caveats: [
+      { text: 'Umgelegt werden die Kosten des im Abrechnungszeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; eine Abrechnung nach diesem Leistungsprinzip darf auf einer sachgerechten Schätzung beruhen.', norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11, Rn. 14' },
+      { text: 'Die Abrechnung muss dem Mieter bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; eine Nachforderung danach gibt es nur, wenn Sie die Verspätung nicht zu vertreten haben. Kommt die Rechnung des Versorgers spät, warten Sie mit dem Abschluss, solange die Frist läuft.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
+    ],
+    gaps: [
+      { text: 'Lieferungen mit Vorrat (Heizöl, Flüssiggas, Pellets) mit Bestandsrechnung.', issue: 97 },
+      { text: 'Lieferungen je Wohnung bei Etagenheizungen auf Vertrag des Vermieters.' },
+    ],
+    terms: ['fuelDelivery', 'degreeDays', 'fixedPriceComponent', 'fuelEstimate'],
   },
 } satisfies Record<string, Guide>
 

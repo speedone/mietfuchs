@@ -968,8 +968,9 @@ stehen in [shared/law/co2kostaufg.ts](shared/law/co2kostaufg.ts), am Wortlaut au
 gesetze-im-internet.de gegengelesen.
 
 - **Die Methode ist eine Antwort, keine Vorgabe** (Entwurf 7.2): `serviceDeducted` (Abzugszeile),
-  `serviceShown` (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt); `self` kommt mit PR 7 und
-  wird bis dahin abgelehnt, ebenso CO₂-Angaben an einer Anlage mit freien Schlüsseln.
+  `serviceShown` (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt). Bei freien Schlüsseln gibt
+  es nur `self`, und der Datensatz hält nur die Fläche der Einstufung (Heizung PR 7); der Topf führt
+  ihn nicht (`co2PotsOf` kennt nur Angaben laut Messdienst), die eigene Aufteilung liest ihn eigens.
 - **S ist die gedruckte Kostensumme** (G-B3), nicht die Summe der gerundeten Nutzerzeilen. Die Probe
   läuft nur über die Messdienstpositionen (Schlüssel `amounts`, W9): Vorwegabzug Σ = S + L ± 1 ct, nur
   ausgewiesen Σ = S, beide Einzel- und Eigenbeträge ≤ S + NE · 2 ct. Scheitert sie, wird **nichts**
@@ -993,8 +994,8 @@ gesetze-im-internet.de gegengelesen.
   nach Formel (`heating.dhw-not-metered`). Alle Rechtswerte aus `shared/law/co2kostaufg.ts`.
 - **Nachstufung** (9.2): Mietfuchs ordnet den Wert laut Messdienst in die Stufentabelle ein (gerundet
   auf eine Nachkommastelle, bei kurzer Heizperiode mit gekürzten Grenzen, ein ganzzahlig gedruckter
-  Wert als Spanne) und meldet eine Abweichung als Hinweis (`co2.stage-mismatch`); § 8 und § 9 kennt
-  die Berechnung erst mit PR 7.
+  Wert als Spanne) und meldet eine Abweichung als Hinweis (`co2.stage-mismatch`). § 8 und § 9
+  rechnet die Berechnung nur bei der eigenen Aufteilung (PR 7, Merkmale an der Anlage).
 - **Töpfe und eigene Heizperiode:** Ein Topf ist je Anlage die Menge ihrer Heizpositionen mit dem
   Schlüssel des Zeitraums der Berechnung. Bei eigener Heizperiode rechnet die Teilabrechnung (Weg b)
   bzw. die Heizkostenabrechnung (Weg d) den Topf; `mergeHeatingPart` übernimmt `heating`.
@@ -1010,6 +1011,88 @@ gesetze-im-internet.de gegengelesen.
 - **Kostenart „Heizung“ ist keine Heizposition.** CO₂-Hinweise erscheinen wie alle Heizregeln nur bei
   der Kostenart „Heizung und Warmwasser“ (`HEATING_CATEGORY`); deshalb bleibt Golden F06 (Kostenart
   „Heizung“) wortgleich, anders als im Entwurf (12.1) angenommen.
+
+**Lieferungen** (Heizung PR 7, #97): Rechnungen des Versorgers an der Heizanlage in `fuel_deliveries`
+(Teilmengen in `fuel_delivery_parts`), Positionen zeigen über `cost_items.fuel_delivery_id` darauf,
+mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
+[server/src/fuel.ts](server/src/fuel.ts) (`plantFuel`), gelesen und geschrieben in
+[server/src/db/fuel.ts](server/src/db/fuel.ts); die Gradtagzahlen des Orts je Objekt und Monat in
+`degree_day_values`. Die CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG) stehen an der Anlage
+(`non_residential`, `restriction`, `district_ets_new`), ihre Rechtswerte im Register.
+
+- **Stufen, tagesgenau gibt es nicht** (Entwurf 3.2): eingetragener Anteil, Zählerstand (genau ein
+  Versorgungszähler, Stände genau an den Grenzen), Zwischenrechnung, Teilmengen, Ortswerte, Tabelle
+  `hkv.degree-days`; feste Preisbestandteile (`fixed_cents`) immer nach Tagen. Die Tabelle wird nur
+  gefragt, wenn eine Anlage Lieferungen hat; sonst stünde sie im Rechtsstand jeder Abrechnung.
+- **Die Positionen stehen in der Heizperiode, die das Ende der Rechnung enthält** (die Verknüpfung
+  wird sonst abgelehnt, `guardFuelLink`). Der Teil einer anderen Heizperiode ist eine Zeile ohne
+  Position (`kind: 'fuelCarry'`, Kennung `fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`), mit dem
+  Schlüssel der Position verteilt, und eine Gegenzeile beim Vermieter (`fuelCarry`, Kennung
+  `fuel:<Lieferung>:<Heizperiode>:<andere>`). Über die Zeiträume hinweg ist jede Rechnung genau einmal
+  verteilt; eine Invariante in calc-fuel.test.ts prüft das an Zufallsbeständen, auch über einen
+  Abschluss. Eine Heizperiode ohne eigene Positionen rechnet trotzdem, wenn die Anlage Lieferungen
+  hat (Topf und Teilabrechnung nach Weg b), sonst fehlte ihr der Übertrag.
+- **Abgeschlossenes bleibt** (G-A4): Der Abschluss friert je Lieferung und Heizperiode in
+  `fuel_carry_frozen` ein, was sie herein- oder hinausgebucht hat; gelesen wird das nur für eine
+  abgeschlossene Heizperiode, das Wiederöffnen gibt es frei (`unfreezeFuelCarries`, im selben
+  Vorgang wie das Wiederöffnen, danach `dropIfEmpty`). Kommt der Teil einer Rechnung in eine
+  abgeschlossene Heizperiode, trägt ihn der Vermieter (`fuelClosedPeriod`), oder er ersetzt eine
+  Schätzung (`fuelEstimateDiff` mit Vorzeichen). Eine Schätzung zählt, solange keine echte Rechnung
+  ihre Tage abdeckt; gespeichert wird „ersetzt“ nicht. Gesperrt (409) sind eine Lieferung mit
+  eingefrorenem Teil (außer der Bezeichnung) und Ablesungen des Versorgungszählers mit Datum in
+  einer abgeschlossenen Heizperiode (`guardSupplyReading`, `heatingPeriodAt`).
+- **Rückfrage beim Abschluss:** Bei einer Lücke mit Schätzvorschlag antwortet der Abschluss mit 409
+  und `fuelGaps` (samt Frist); `fuelEstimates: 'estimate' | 'none'` entscheidet. In der Oberfläche
+  ist **Abwarten** die Vorgabe (`defaultChoice: 'cancel'` im Bestätigungsdialog), weil die Schätzung
+  einer noch fehlenden Versorgerrechnung höchstrichterlich nicht entschieden ist; die Schätzung
+  trägt ihre Grundlage in der Bezeichnung. Eine Heizposition der Anlage ohne Lieferung deckt mit
+  ihrem Leistungszeitraum ab; ohne Leistungszeitraum gibt es keinen Schätzvorschlag, sondern
+  `fuel.loose-item`. Eine Schätzung, deren Tage eine echte Rechnung teilweise abdeckt, zählt nur für
+  die übrigen Tage. Rechnen, Schätzungen anlegen,
+  neu rechnen, Abschließen und Einfrieren laufen in **einer** Transaktion (`closeWithFuel` in
+  index.ts); deshalb nehmen die Leser in read.ts ein `Executor`, und `readStock(tx)` sieht die eben
+  angelegten Schätzungen.
+- **Eigene CO₂-Aufteilung:** C bei freien Schlüsseln abgegrenzt, beim Messdienst ohne Aufteilung die
+  angesetzten Rechnungen ganz (G-A3); E immer umgerechnet. Der Abzug folgt dem Schlüssel des
+  Brennstoffs (G-B5, `bookReliefs`), § 8 und § 9 aus dem Register (`co2.non-residential`,
+  `co2.restriction`), Wärme aus dem Emissionshandel bei Anschluss nach dem Stichtag
+  (`co2.district-ets-new`) ohne Aufteilung.
+- **Was die Durchsicht von #233 festhält:** Eine mit 0 eingefrorene Lieferung (beim Abschluss noch
+  ohne Position) lässt sich verknüpfen; ihr Teil der abgeschlossenen Heizperiode geht an den
+  Vermieter (`fuelClosedPeriod`). Hat eine abgeschlossene Heizperiode einen Teil ungleich 0
+  eingefroren, sind Lösen, Umhängen, Verschieben und Löschen nur der **letzten** Position der
+  Lieferung gesperrt (409); weitere Positionen (Abschlag, Gutschrift) sind erlaubt. Der eingefrorene
+  Stand führt die Überträge je Lieferung (`frozenFuelCarriesOf`): Eine offene Heizperiode nimmt
+  genau, was die abgeschlossene Heizperiode der Positionen ihr hinausgebucht hat. Eine Position zeigt nur auf eine Lieferung ihres Objekts. Die Kennung einer
+  Übertragszeile nennt beide Heizperioden (`fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`),
+  Hinweise an ihr führen zur Position. Die CO₂-Aufteilung gilt nur für Brennstoffe mit Standardwerten
+  (§ 2 Abs. 1 CO2KostAufG): nicht für Strom einer Wärmepumpe, bei Fernwärme nur mit ausgewiesenen
+  CO₂-Kosten. Die Nachstufung beim Messdienst erwartet § 8 und § 9 nach den Angaben zum Gebäude.
+  **Storno nach Abschluss** (W1): Ergeben die Positionen einer Lieferung 0, wird nichts gesperrt und
+  nichts verteilt; hat eine abgeschlossene Heizperiode einen Teil hereingebucht oder die
+  abgeschlossene Heizperiode der Positionen einen hinausgebucht, steht beim Vermieter die
+  Gegenbuchung und ihr Gegenteil als `fuelClosedPeriod` (Summe 0, ausgewiesen), dazu die Warnung
+  `fuel.cancelled-after-close`; das Gegenstück nennt, was die Mieter der abgeschlossenen Heizperiode zu
+  viel getragen haben (dafür führt der eingefrorene Übertrag `totalCents`). War die andere Heizperiode
+  mit Schätzung abgeschlossen, steht die Schätzung als `fuelEstimateDiff` gegen. Eine stornierte
+  Rechnung (Positionen mit Summe 0) verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in
+  der Bewertung; die Lücke steht wieder da. Weil das auch eine echte Rechnung über 0 € treffen kann,
+  sagt es der Hinweis `fuel.zero-invoice`, `fuel.uncovered` und die Rückfrage beim Abschluss nennen die
+  Rechnung (`zeroInvoices` an der Lücke). Eine Schätzung ohne Rechnung mit Positionen als Vorlage für
+  ihren Schlüssel wird nicht verteilt und meldet `fuel.estimate-undistributed` statt `fuel.estimated`. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
+  BGB (ausgeschlossen ist nur die Nachforderung durch den Vermieter). Wurde eine Position erst nach
+  dem Abschluss ihrer Heizperiode verknüpft, nimmt die andere nichts und sagt es
+  (`fuel.owner-closed-unlinked`, Stufe `hint`).
+  Eine Invariante über Zufallsbestände mit Abschluss (auch mit Schätzung), Wiederöffnen, Verknüpfen,
+  Gutschriften bis zum Storno, geänderten Beträgen und später eintreffenden Rechnungen
+  (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete Sperren)
+  prüft, dass jede Rechnung genau einmal verteilt ist: Die Mieter tragen die Positionen bis auf die
+  ausgewiesenen Teile, nach oben wie nach unten, und je Lieferung und Paar von Heizperioden heben sich
+  die Gegenbuchungen auf oder ein ausgewiesener Teil desselben Paars deckt sie genau (eine Summe über
+  alle Lieferungen ließe eine falsche Gegenbuchung hinter einem berechtigten Teil verschwinden). Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
+  Rücknahme der Befunde der Durchsicht macht sie rot (Mutationsprobe).
+- **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
+  und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
 - **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das
   Techem-Muster mit Vorwegabzug, F12 eine anonymisierte reale Abrechnung Mai bis April. In F12 sind
   nur die Gesamtwerte und der eine Nutzer des Belegs echt; die übrigen drei Nutzer sind synthetisch und
@@ -1102,7 +1185,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/heating-plants/:id/deliveries`, `/api/fuel-deliveries/:id` und `/api/properties/:id/degree-days` (siehe Lieferungen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und

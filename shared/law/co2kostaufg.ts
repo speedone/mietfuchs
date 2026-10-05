@@ -2,7 +2,7 @@
 // gesetze-im-internet.de: Gesetz vom 05.12.2022 (BGBl. I S. 2154), geändert durch Art. 5 G v.
 // 23.07.2026 (BGBl. 2026 I Nr. 226). Die übrigen Parameter des Gesetzes kommen mit der PR, die sie
 // nutzt (G-C7): § 8 und § 9 mit PR 7, Preise mit PR 17, §§ 5a, 5b, 5d mit PR 18, § 6 mit PR 19.
-import type { LawParam, Source } from './register.ts'
+import { germanDate, type LawParam, type Source } from './register.ts'
 
 const ENACTED = 'CO2KostAufG vom 05.12.2022 (BGBl. I S. 2154), geändert durch Art. 5 G v. 23.07.2026 (BGBl. 2026 I Nr. 226)'
 const BASE = 'https://www.gesetze-im-internet.de/co2kostaufg/'
@@ -81,4 +81,46 @@ export const co2CutMissing: LawParam<number, 'periodStart'> = {
   timing: 'periodStart',
   versions: [{ value: 3, source: checked('§ 7 Abs. 4 CO2KostAufG', '__7.html'), enacted: ENACTED }],
   describe: (v) => `${v} %`,
+}
+
+// ---------- Heizung PR 7 ----------
+
+// Nichtwohngebäude (§ 8 Abs. 1 CO2KostAufG): Vereinbarungen, nach denen der Mieter mehr als 50 Prozent
+// der CO₂-Kosten trägt, sind unwirksam; ein Nichtwohngebäude dient nach seiner Zweckbestimmung nicht
+// überwiegend dem Wohnen (Satz 2). Der Wert ist der Anteil des Vermieters in Promille, wie
+// `service_landlord_permille`.
+export const co2NonResidential: LawParam<number, 'periodStart'> = {
+  id: 'co2.non-residential',
+  title: 'Anteil des Vermieters im Nichtwohngebäude',
+  norm: '§ 8 Abs. 1 CO2KostAufG',
+  timing: 'periodStart',
+  versions: [{ value: 500, source: checked('§ 8 Abs. 1 CO2KostAufG', '__8.html'), enacted: ENACTED }],
+  describe: (v) => `Vermieter mindestens ${v} ‰ (Mieter höchstens die Hälfte)`,
+}
+
+// Beschränkungen bei energetischen Verbesserungen (§ 9 CO2KostAufG): Stehen öffentlich-rechtliche
+// Vorgaben einer wesentlichen energetischen Verbesserung des Gebäudes oder einer wesentlichen
+// Verbesserung der Wärme- und Warmwasserversorgung entgegen, ist der prozentuale Anteil des Vermieters
+// nach § 5, 6, 7 oder 8 um die Hälfte zu kürzen (Abs. 1); stehen sie beidem entgegen, erfolgt keine
+// Aufteilung (Abs. 2). Berufen darf sich der Vermieter darauf nur mit Nachweis (Abs. 3); das sagt der
+// Hinweis, gerechnet wird mit der Angabe an der Anlage.
+export const co2Restriction: LawParam<{ readonly factor: number; readonly bothSplit: boolean }, 'periodStart'> = {
+  id: 'co2.restriction',
+  title: 'Beschränkung bei energetischen Verbesserungen',
+  norm: '§ 9 CO2KostAufG',
+  timing: 'periodStart',
+  versions: [{ value: { factor: 0.5, bothSplit: false }, source: checked('§ 9 CO2KostAufG', '__9.html'), enacted: ENACTED }],
+  describe: (v) => `Anteil des Vermieters × ${String(v.factor).replace('.', ',')}; bei beiden Vorgaben ${v.bothSplit ? 'Aufteilung' : 'keine Aufteilung'}`,
+}
+
+// Wärme aus Anlagen im Europäischen Emissionshandel (§ 2 Abs. 4 CO2KostAufG): Das Gesetz gilt auch für
+// sie (Satz 1), aber nicht für Gebäude, die erstmals nach dem 1. Januar 2023 einen Wärmeanschluss
+// erhalten haben (Satz 2). Der Stichtag steht hier, weil die Frage an der Anlage ihn nennt.
+export const co2DistrictEtsNew: LawParam<{ readonly connectedAfter: string }, 'periodStart'> = {
+  id: 'co2.district-ets-new',
+  title: 'Wärme aus dem Emissionshandel bei neuem Anschluss',
+  norm: '§ 2 Abs. 4 Satz 2 CO2KostAufG',
+  timing: 'periodStart',
+  versions: [{ value: { connectedAfter: '2023-01-01' }, source: checked('§ 2 Abs. 4 Satz 2 CO2KostAufG', '__2.html'), enacted: ENACTED }],
+  describe: (v) => `nicht anzuwenden bei erstem Wärmeanschluss nach dem ${germanDate(v.connectedAfter)}`,
 }

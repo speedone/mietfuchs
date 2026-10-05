@@ -45,3 +45,20 @@ test('Kein Block ohne Buchung, ohne Angaben oder für einen Mieter ohne Heizkost
   expect(kurz.notes).toContain('Die Heizperiode ist kürzer als ein Jahr; die Grenzen der Stufentabelle sind anteilig gekürzt (§ 5 Abs. 1 Satz 4 CO2KostAufG).')
   expect(kurz.lines.at(-1)?.label).toBe('vom Vermieter übernommen (eigene Zeile)')
 })
+
+test('Eigene Aufteilung: berechnet aus den Rechnungen, Ausstoß umgerechnet, Fläche mit Herkunft, § 8 und § 9', () => {
+  const eigen = bewertung({
+    method: 'self', deducted: false, basis: 'deliveries', coveragePermille: 848.71, emissionsKg: 24105.6, areaM2: 600, areaSource: 'served',
+    kgPerM2: 40.2, landlordPermille: 300, totalCents: 77379, landlordCents: 23214, stage: { from: 37, to: 42, landlordPercent: 60 },
+    adjustments: ['restrictionHalf'], tenants: [{ tenancyId: 'ta', landlordCents: 11607, tenantCents: 27083, approximated: false }],
+  })
+  const v = co2Block(anlage(eigen), 'ta') ?? assert.fail('kein Block')
+  expect(v.lines.find((l) => l.label === 'CO₂-Ausstoß, umgerechnet auf die Heizperiode')?.value).toBe('24.105,6 kg (die Rechnungen decken 848,7 ‰ der Gradtage ab)')
+  expect(v.lines.find((l) => l.label === 'Wohnfläche der Einstufung')?.value).toBe('600 m² (versorgte Wohnungen)')
+  expect(v.lines.find((l) => l.label === 'Anteil des Vermieters')?.value).toBe('30 %')
+  expect(v.lines.at(-1)).toEqual({ label: 'vom Vermieter übernommen (eigene Zeile)', value: `${fmtEuro(11607)} (nach Ihrem Anteil an den Brennstoffkosten)` })
+  expect(v.notes).toEqual([
+    'Berechnet von Mietfuchs aus den Rechnungen des Versorgers (§ 7 Abs. 3 CO2KostAufG); der Ausstoß ist auf die Heizperiode umgerechnet (§ 5 Abs. 1 Satz 5 CO2KostAufG).',
+    'Der Anteil des Vermieters ist wegen öffentlich-rechtlicher Vorgaben um die Hälfte gekürzt (§ 9 Abs. 1 CO2KostAufG).',
+  ])
+})

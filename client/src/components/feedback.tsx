@@ -19,6 +19,9 @@ type ConfirmOpts = {
   // die Rückfrage wie Abbrechen (das Versprechen liefert false) und ruft vorher `onAlternative`.
   alternativeLabel?: string
   onAlternative?: () => void
+  // Was Enter und der Fokus wählen: vorgegeben die Bestätigung. `cancel` macht Abbrechen zur Vorgabe,
+  // etwa wenn keine der Möglichkeiten zu bestätigen sicher ist (Rückfrage zur Schätzung, Heizung PR 7).
+  defaultChoice?: 'confirm' | 'cancel'
 }
 const ConfirmCtx = createContext<(opts: ConfirmOpts) => Promise<boolean>>(async () => false)
 export const useConfirm = () => useContext(ConfirmCtx)
@@ -66,7 +69,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
     // schützen soll; Strg+S speicherte ihn hinter der Rückfrage.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); close(false) }
-      else if (e.key === 'Enter') { e.stopPropagation(); close(true) }
+      else if (e.key === 'Enter') { e.stopPropagation(); close(dialog.defaultChoice !== 'cancel') }
       else if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.stopPropagation(); e.preventDefault() }
     }
     window.addEventListener('keydown', onKey, true)
@@ -91,11 +94,11 @@ export function UIProvider({ children }: { children: ReactNode }) {
               <h2 id={titleId}>{dialog.title}</h2>
               {dialog.message && <div className="dialog-msg">{dialog.message}</div>}
               <div className="dialog-actions">
-                <button className="btn ghost" onClick={() => close(false)}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
+                <button className="btn ghost" onClick={() => close(false)} autoFocus={dialog.defaultChoice === 'cancel'}>{dialog.cancelLabel ?? 'Abbrechen'}</button>
                 {dialog.alternativeLabel && (
                   <button className="btn secondary" onClick={() => { dialog.onAlternative?.(); close(false) }}>{dialog.alternativeLabel}</button>
                 )}
-                <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus>
+                <button className={`btn ${dialog.danger ? 'danger' : ''}`} onClick={() => close(true)} autoFocus={dialog.defaultChoice !== 'cancel'}>
                   {dialog.confirmLabel ?? 'OK'}
                 </button>
               </div>

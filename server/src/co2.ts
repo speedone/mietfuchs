@@ -2,7 +2,7 @@
 // Rechtswerte reicht der Aufrufer aus dem Register herein (`law()` protokolliert sie); hier steht
 // keine Zahl der Stufentabelle und kein Datum (law-literals.test.ts).
 import type { Co2Stage } from '../../shared/law/co2kostaufg.ts'
-import type { BillingPeriod, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Adjustment, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
 import { serviceProbe, type ProbeResult } from '../../shared/co2Probe.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit } from './snapshot.ts'
@@ -68,7 +68,9 @@ type ServiceValues = Pick<Co2Statement, 'serviceKgPerM2' | 'serviceEmissionsKg' 
 // die Tabelle ein. Ein ganzzahlig gedruckter Wert kann jeder Wert in [w − 0,5; w + 0,5) gewesen
 // sein; passt der Anteil laut Messdienst zu einer Stufe darin, ist er stimmig. Dazu muss L zu C · ‰
 // passen. `null` heißt: nicht zu prüfen, weil eine Angabe fehlt.
-export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number): Restage {
+// `adjust`: § 8 und § 9 CO2KostAufG nach den Angaben zum Gebäude (Heizung PR 7, Durchsicht von #233); aus
+// dem Anteil der Stufe in Promille der erwartete Anteil.
+export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], decimals: number, adjust: (permille: number) => number = (x) => x): Restage {
   const area = st.serviceAreaM2 ?? st.areaM2
   const printed = st.serviceKgPerM2 ?? (st.serviceEmissionsKg !== null && area !== null && area > 0 ? st.serviceEmissionsKg / area : null)
   if (printed === null) return { value: null, stage: null, percentOk: null, sumOk: null }
@@ -79,7 +81,7 @@ export function restage(st: ServiceValues, ranges: readonly Co2StageRange[], dec
   const candidates = st.serviceKgPerM2 !== null && Number.isInteger(st.serviceKgPerM2)
     ? ranges.filter((r) => r.from < value + 0.5 && (r.to === null || r.to > value - 0.5))
     : [stage]
-  const percentOk = candidates.some((r) => r.landlordPercent * 10 === permille)
+  const percentOk = candidates.some((r) => adjust(r.landlordPercent * 10) === permille)
   const sumOk = st.serviceTotalCents === null || st.serviceLandlordCents === null
     ? null
     : Math.abs(st.serviceLandlordCents - (st.serviceTotalCents * permille) / 1000) <= L_TOLERANCE_CENTS
@@ -314,4 +316,48 @@ export function co2Assessment(
     selfApproximated: p.deduction?.selfApproximated ?? false,
     tenants: p.tenants,
   }
+}
+
+// ---------- Eigene Aufteilung (Heizung PR 7, Entwurf 7.6, 9.2) ----------
+
+// Wie weit die Brennstoffkosten laut Messdienst (V) neben den angesetzten Rechnungen (G) liegen dürfen,
+// ohne dass Mietfuchs nachfragt. Eine Festlegung ohne Rechtsfolge (Entwurf 7.6, 15.2 F6).
+export const SERVICE_FUEL_TOLERANCE_CENTS = 100
+
+export type SelfSplitInput = {
+  emissionsKg: number | null
+  co2Cents: number
+  areaM2: number | null
+  ranges: readonly Co2StageRange[]
+  decimals: number
+  // § 8 Abs. 1: der Anteil des Vermieters im Nichtwohngebäude aus dem Register, sonst null.
+  nonResidentialPermille: number | null
+  // § 9: der Faktor aus dem Register; `both`, wenn Vorgaben beidem entgegenstehen.
+  restriction: { factor: number; bothSplit: boolean; both: boolean } | null
+}
+
+export type SelfSplit = { value: number | null; stage: Co2StageRange | null; permille: number | null; landlordRaw: number | null; adjustments: Co2Adjustment[] }
+
+// Einstufung und Anteil des Vermieters (Entwurf 9.2): Wert = round(E / Fläche), Stufe aus der
+// (gekürzten) Tabelle, danach § 8 und § 9. § 9 Abs. 1 kürzt den Anteil „nach § 5, 6, 7 oder 8“, also
+// auch den aus § 8. L = C · ‰ / 1000 exakt; gerundet wird erst bei der Verteilung.
+export function selfSplit(i: SelfSplitInput): SelfSplit {
+  const value = i.emissionsKg !== null && i.areaM2 !== null && i.areaM2 > 0 ? roundSpecific(i.emissionsKg / i.areaM2, i.decimals) : null
+  const stage = value === null ? null : stageOf(value, i.ranges)
+  const adjustments: Co2Adjustment[] = []
+  let permille = stage ? stage.landlordPercent * 10 : null
+  if (i.nonResidentialPermille !== null) {
+    permille = i.nonResidentialPermille
+    adjustments.push('nonResidential')
+  }
+  if (permille !== null && i.restriction) {
+    if (i.restriction.both) {
+      permille = i.restriction.bothSplit ? permille * i.restriction.factor : 0
+      adjustments.push('restrictionNone')
+    } else {
+      permille = permille * i.restriction.factor
+      adjustments.push('restrictionHalf')
+    }
+  }
+  return { value, stage, permille, landlordRaw: permille === null ? null : (i.co2Cents * permille) / 1000, adjustments }
 }

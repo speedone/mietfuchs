@@ -290,7 +290,7 @@ test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizze
   assert.ok(!codes(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'heatPump' })])).some((c) => c.startsWith('co2.')))
   assert.equal(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'other' })]).notices.find((x) => x.code === 'co2.fuel-unknown')?.subject?.id, 'hp')
   assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ source: 'homeowners' })]), 'co2.missing'), /aus der Abrechnung der Gemeinschaft ein\./)
-  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ method: 'manual' })]), 'co2.missing'), /mit einer späteren Version/)
+  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ method: 'manual' })]), 'co2.missing'), /als Lieferungen ein; dann teilt Mietfuchs die CO₂-Kosten selbst auf/)
 })
 
 test('Ohne Heizanlage: co2.fuel-unknown, im ersten Jahr co2.missing-first-year, nichts vor 2023 und nichts bei Warmmiete', () => {
@@ -489,4 +489,13 @@ test('Laienprobe B20: co2.sum-check nennt die Position und rechnet ohne Formelbu
   assert.match(t, /Ihre Position „Heizung und Warmwasser laut Messdienst“ hat 1\.000,00.€\./)
   assert.match(t, /Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer \(1\.000,00.€\) plus den CO₂-Anteil des Vermieters \(5,00.€\) sein, also 1\.005,00.€; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, 1\.000,00.€\./)
   assert.doesNotMatch(t, /\bS \+ L\b|\bS = /)
+})
+
+test('Durchsicht Recht I4: Die Nachstufung beim Messdienst berücksichtigt § 8 und § 9 aus den Angaben zum Gebäude', () => {
+  // 46,4 kg → Stufe 70 %; die Abrechnung nennt 35 %: halbiert nach § 9 Abs. 1, also passend.
+  const halb = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()], [plant({ restriction: 'building' })])
+  assert.ok(!codes(halb).includes('co2.stage-mismatch'), codes(halb).join(', '))
+  // Im Nichtwohngebäude erwartet Mietfuchs 50 %; 35 % passt nicht, und der Hinweis sagt warum.
+  const nichtWohnen = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()], [plant({ nonResidential: true })])
+  assert.match(textOf(nichtWohnen, 'co2.stage-mismatch'), /Nach Ihren Angaben zum Gebäude \(§ 8 CO2KostAufG\) gehören dazu 50 %/)
 })

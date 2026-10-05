@@ -58,6 +58,13 @@ const FIELD_NAMES: Record<string, string> = {
   period_start_month: 'Beginnmonat der Abrechnungszeiträume',
   from_month: 'Monat des Wechsels',
   category: 'Kostenart',
+  // Lieferungen (Heizung PR 7)
+  fixed: 'festen Preisbestandteil',
+  emissions: 'CO₂-Ausstoß',
+  co2: 'CO₂-Kosten',
+  energy: 'Energie',
+  quantity: 'Menge',
+  heating_value: 'Heizwert',
   key: 'Umlageschlüssel',
   type: 'Zählertyp',
   deposit_status: 'Stand der Kaution',
@@ -136,6 +143,19 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   co2_statements_service_complete:
     'Zu den CO₂-Angaben des Messdienstes gehören die Summe der Kosten aller Nutzer, der CO₂-Anteil des Vermieters und die Zahl der Nutzeinheiten. Bitte tragen Sie alle drei ein.',
   co2_statements_permille_valid: 'Der Anteil des Vermieters an den CO₂-Kosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  // Lieferungen (Heizung PR 7)
+  heating_plants_ets_district_valid: 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.',
+  cost_items_fuel_delivery_category_valid: 'Eine Lieferung gehört nur zu einer Position der Kostenart „Heizung und Warmwasser“.',
+  fuel_deliveries_invoice_complete: 'Zum Rechnungszeitraum einer Lieferung gehören Beginn und Ende. Bitte tragen Sie beide ein.',
+  fuel_deliveries_invoice_from_valid: 'Der Beginn des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_to_valid: 'Das Ende des Rechnungszeitraums ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_date_valid: 'Das Rechnungsdatum ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_delivered_at_valid: 'Das Lieferdatum ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_deliveries_invoice_order_valid: 'Der Rechnungszeitraum der Lieferung endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
+  fuel_deliveries_share_valid: 'Der eingetragene Anteil einer Lieferung liegt zwischen 0 und 1000 ‰.',
+  fuel_delivery_parts_from_valid: 'Der Beginn einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_delivery_parts_to_valid: 'Das Ende einer Teilmenge ist kein Datum in der Form JJJJ-MM-TT. Bitte wählen Sie es im Kalender.',
+  fuel_delivery_parts_order_valid: 'Eine Teilmenge endet vor ihrem Beginn. Bitte prüfen Sie die beiden Daten.',
 }
 
 function checkMessage(name: string): string {
