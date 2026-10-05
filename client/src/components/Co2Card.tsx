@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
-import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Form } from '../co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
@@ -82,6 +82,7 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
         </select>
       </label>
       <p className="muted">{CO2_EXAMPLE} <Term id="co2Deducted" /></p>
+      <p className="muted">{CO2_NOT_A_SIGN}</p>
       {form.answer === 'unsplit' && (
         <p className="notice">Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten kürzen; die Abrechnung nennt die Beträge. Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung.</p>
       )}

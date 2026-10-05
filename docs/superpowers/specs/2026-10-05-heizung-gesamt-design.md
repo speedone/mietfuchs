@@ -1453,7 +1453,7 @@ Die Anleitung `meteringService` wird sofort berichtigt (PR 0).
 
 ### 7.2 Die Methode: eine sichtbare Tatsache, ohne Vorgabe
 
-Die Frage lautet: „Steht in der Kostenaufstellung eine Zeile wie ‚Abzüglich CO₂-Kosten Vermieter‘, oder bei Ihren Mietern ‚vom Vermieter übernommen‘?“ Darunter steht die Beispielzeile aus dem Techem-Muster: „Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50“ ([M] Techem-Musterabrechnung, übernommen).
+Die Frage lautet: „Steht in der Kostenaufstellung der Heizkosten eine Zeile, die den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa ‚Abzüglich CO₂-Kosten Vermieter‘?“ Darunter steht ausdrücklich, dass ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern kein Zeichen dafür ist, denn den weisen Messdienste auch ohne Abzug aus (Nachtrag nach der Durchsicht von PR 6, I1: Die erste Fassung nannte ihn als Erkennungszeichen, und ein Laie antwortete dann bei einer nur ausweisenden Abrechnung „Ja“). Dazu steht die Beispielzeile aus dem Techem-Muster: „Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50“ ([M] Techem-Musterabrechnung, übernommen).
 
 Die Antworten führen zu diesen Methoden:
 

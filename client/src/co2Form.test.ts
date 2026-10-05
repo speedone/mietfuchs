@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { fmtEuro } from './api'
-import { CO2_ANSWER_OPTIONS, co2Body, co2ToForm, parseDecimal, probeLine, usersTotalOf, type Co2Context } from './co2Form'
+import { CO2_ANSWER_OPTIONS, CO2_NOT_A_SIGN, CO2_QUESTION, co2Body, co2ToForm, parseDecimal, probeLine, usersTotalOf, type Co2Context } from './co2Form'
 import { periodKey } from '../../shared/period.ts'
 import type { Co2Statement } from './types'
 
@@ -80,4 +80,11 @@ test('Probe ✗ nennt beide Lesarten (Durchsicht M3)', () => {
   const p = probeLine(f, ctx)
   expect(p?.ok).toBe(false)
   expect(p?.text).toContain(`mit Abzugszeile erwartet S + L = ${fmtEuro(393301)}, ohne Abzugszeile S = ${fmtEuro(384551)}`)
+})
+
+test('Die Frage fragt nur nach der Zeile in der Kostenaufstellung; „vom Vermieter übernommen“ ist kein Erkennungszeichen (Durchsicht I1)', () => {
+  expect(CO2_QUESTION).not.toContain('vom Vermieter übernommen')
+  expect(CO2_QUESTION).toContain('vor der Verteilung')
+  expect(CO2_NOT_A_SIGN).toContain('vom Vermieter übernommen')
+  expect(CO2_NOT_A_SIGN).toContain('kein Zeichen')
 })

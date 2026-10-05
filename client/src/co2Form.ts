@@ -13,7 +13,11 @@ const METHOD_OF: Record<Exclude<Co2Answer, ''>, Co2Method> = { deducted: 'servic
 const answerOf = (m: Co2Method): Co2Answer =>
   m === 'serviceDeducted' ? 'deducted' : m === 'serviceShown' ? 'shown' : m === 'selfAfterService' ? 'unsplit' : ''
 
-export const CO2_QUESTION = 'Steht in der Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“, oder bei Ihren Mietern „vom Vermieter übernommen“?'
+// Gefragt wird nur nach der Zeile in der Kostenaufstellung, die den Anteil vor der Verteilung abzieht
+// (Durchsicht I1). „Vom Vermieter übernommen“ bei den einzelnen Nutzern weisen Messdienste auch ohne
+// Abzug aus; wer daran „Ja“ festmacht, antwortet falsch.
+export const CO2_QUESTION = 'Steht in der Kostenaufstellung der Heizkosten eine Zeile, die den CO₂-Anteil des Vermieters vor der Verteilung abzieht, etwa „Abzüglich CO₂-Kosten Vermieter“?'
+export const CO2_NOT_A_SIGN = 'Ein Betrag „vom Vermieter übernommen“ bei den einzelnen Mietern ist dafür kein Zeichen: Den weisen Messdienste auch aus, wenn sie nichts vorab abziehen.'
 // Die Beispielzeile aus dem Techem-Muster (Entwurf 7.2).
 export const CO2_EXAMPLE = 'Beispiel aus einer Musterabrechnung: Anlieferung Brennstoff 3.540,00 · Abzüglich CO₂-Kosten Vermieter −87,50 · Verbrauch 3.452,50'
 export const CO2_ANSWER_OPTIONS: readonly { value: Co2Answer; label: string }[] = [
