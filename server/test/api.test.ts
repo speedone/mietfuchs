@@ -5873,3 +5873,26 @@ test('Zeitraum der Heizung (Heizung PR 5): Vorschau und Wechsel über HTTP, PUT 
     s.stop()
   }
 })
+
+test('Getrennte Heizkostenabrechnung (Heizung PR 5): Vorschau und Einschalten über HTTP, 409 ohne Antworten', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    const mieter = await s.api<{ id: string }>('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const zeitraum = await jsonOf<{ token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
+    await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: zeitraum.token } })
+    const vorschau = await jsonOf<{ way: string; token: string; steps: { rows: { from: string }[] }[] }>(await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: true, month: '2025-05' }))
+    assert.deepEqual([vorschau.way, vorschau.steps[0]?.rows.map((r) => r.from)], ['separate', ['2025-05']])
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05' })).status, 409)
+    const ok = await send(`/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: vorschau.token } })
+    assert.equal(ok.status, 200)
+    assert.deepEqual((await jsonOf<HeatingPlant>(ok)).separateSpans, [{ from: '2025-05', until: null }])
+    assert.equal((await send(`/api/heating-plants/${plant.id}/separate/preview`, 'POST', { separate: 'ja' })).status, 400)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/separate/preview', 'POST', { separate: true })).status, 404)
+  } finally {
+    s.stop()
+  }
+})

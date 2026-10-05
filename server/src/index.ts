@@ -43,6 +43,7 @@ import {
 } from './db/repository.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
+import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -541,6 +542,19 @@ app.post('/api/heating-plants/:id/period/preview', async (req, res) => {
 app.put('/api/heating-plants/:id/period', async (req, res) => {
   const body = bodyObject(req)
   const result = await writeData((db) => applyHeatingPeriodChange(db, req.params.id, body.rules, body.answers, today()))
+  if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.plant)
+})
+// Getrennte Heizkostenabrechnung ein- und ausschalten (Heizung PR 5, Entwurf 3.1): Vorschau, dann
+// Speichern mit den Antworten in einer Transaktion. Begründung in db/separateSettlement.ts.
+app.post('/api/heating-plants/:id/separate/preview', async (req, res) => {
+  const preview = await readData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
+  if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  res.json(preview)
+})
+app.put('/api/heating-plants/:id/separate', async (req, res) => {
+  const result = await writeData((db) => applySeparate(db, req.params.id, bodyObject(req), today()))
   if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
   if ('error' in result) return res.status(409).json(result)
   res.json(result.plant)

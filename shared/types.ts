@@ -356,6 +356,53 @@ export type HeatingPeriodChangeAnswers = {
   token?: string
 }
 
+// Die Vorschau zum Ein- und Ausschalten der getrennten Heizkostenabrechnung (Heizung PR 5, Entwurf
+// 3.1). `way`: 'separate' bei eigener Heizperiode, die kein Abrechnungszeitraum ist (Weg d), sonst
+// 'samePeriod' (H = P, nur getrennter Ausweis). Einschalten: `month` ist X, `steps` jede Stufe ab X
+// mit dem vorgeschlagenen Heizanteil, `overrides` die Jahreskorrekturen offener Abrechnungen mit
+// Monaten ab X, `deadlines` die Fristen der getrennten Heizperioden (R-g). Ausschalten: `until` ist
+// W, `keep` die Heizperioden, die getrennt bleiben, `merge` die zusammengeführte Staffel ab `month`,
+// `overrides` die Jahreskorrekturen, die neu erfasst werden.
+export type SeparatePreview = {
+  separate: boolean
+  way: 'separate' | 'samePeriod'
+  month: string | null
+  earliestMonth: string | null
+  until: PeriodKey | null
+  earliestUntil: PeriodKey | null
+  share: { permille: number; source: string } | null
+  steps: { tenancyId: string; tenantName: string; rows: { from: string; totalCents: number; heatingCents: number }[] }[]
+  overrides: {
+    tenancyId: string
+    tenantName: string
+    period: PeriodKey
+    label: string
+    cents: number | null
+    asks: { kind: 'total' | 'heating' | 'provisional'; period: PeriodKey; label: string; months: string }[]
+    remainder: { period: PeriodKey; label: string; months: string } | null
+  }[]
+  deadlines: { period: PeriodKey; label: string; deadline: string; passed: boolean }[]
+  keep: { period: PeriodKey; label: string; deadline: string }[]
+  merge: { tenancyId: string; tenantName: string; rows: { from: string; prepaymentCents: number }[] }[]
+  blocked: string[]
+  // Die Marke dieser Vorschau (wie beim Wechsel des Zeitraums): Stimmt sie beim Speichern nicht
+  // mehr, gibt es 409 mit der neuen Vorschau.
+  token: string
+}
+
+// Die Antworten, Beträge in Cent: je Mietverhältnis und Stufe der Heizanteil (`steps`), je
+// Heizperiode die Heizkorrektur (`overrides`, endgültig; bei einer Frage der Art `provisional`
+// vorläufig für deren Monate), je Abrechnung P die Jahreskorrektur (`totals`; beim Einschalten
+// „davon übrige“, beim Ausschalten „insgesamt“; `null` heißt keine Korrektur). `merge` false lässt
+// beim Ausschalten beide Staffeln stehen.
+export type SeparateAnswers = {
+  steps?: Record<string, Record<string, number>>
+  overrides?: Record<string, Record<string, number>>
+  totals?: Record<string, Record<string, number | null>>
+  merge?: boolean
+  token?: string
+}
+
 export type Settings = {
   houseName: string
   address: string
