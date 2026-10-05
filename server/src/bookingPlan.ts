@@ -11,12 +11,12 @@
 // **Eine Zeile, die nicht offen ist, wird nie noch einmal gebucht.** Ist sie genau so gebucht,
 // ist das ohne Änderung (Doppelklick, Wiederholung); anders gebucht ist ein Widerspruch.
 import type {
-  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PeriodKey, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
+  AssessmentLineState, AssessmentView, BillingPeriod, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PeriodKey, PeriodRules, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
-import { calendarPeriod, startYearOf } from '../../shared/period.ts'
+import { CALENDAR_RULES, periodLabel, periodOfKey, startYearOf } from '../../shared/period.ts'
 import { amountProblem, closedPeriodNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
-import { candidateText } from '../../shared/assessment.ts'
+import { bookingPeriod, bookingTaxYear, candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, twinText, type BookedLine, type LineChange } from './assessment.ts'
 
@@ -36,6 +36,16 @@ export type PlanInput = {
   // Abgeschlossene Abrechnungen aller Objekte (Integrationsdurchsicht vor 0.10): Ändert die Buchung
   // den Betrag einer Position in einem solchen Zeitraum, sagt die Vorschau es
   closed: readonly { propertyId: string; period: PeriodKey }[]
+  // Die Regeln der Zeiträume des Objekts der Auswertung (#208); fehlen sie, gilt das Kalenderjahr.
+  rules?: PeriodRules
+}
+
+// Der Zeitraum, in den eine Auswertung bucht (#208, `bookingPeriod`), und die Bezeichnung eines
+// Schlüssels nach den Regeln des Objekts.
+const targetOfPlan = (input: PlanInput): BillingPeriod => bookingPeriod(input.rules ?? CALENDAR_RULES, input.assessment)
+const labelOfKey = (input: PlanInput, key: PeriodKey): string => {
+  const p = periodOfKey(input.rules ?? CALENDAR_RULES, key)
+  return p ? periodLabel(p) : key
 }
 
 export type BookingWrite =
@@ -63,6 +73,7 @@ type Link = { assessmentId: string; idx: number; file: string; amountCents: numb
 
 export function planBooking(input: PlanInput, decisions: readonly LineDecision[], newId: () => string): Planned {
   const a = input.assessment
+  const targetPeriod = targetOfPlan(input)
   const errors: PreviewProblem[] = []
   const confirm: PreviewProblem[] = []
   const notices: string[] = []
@@ -117,8 +128,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
         errors.push({ idx: d.idx, message: `${named(line)}: Einzelbeträge je Mieter tragen Sie bitte im Formular der Position ein.` })
         continue
       }
-      // Brücke Kalenderjahr (#208): bis PR 3
-      const built = costItemBody(lineDraft(d.fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, calendarPeriod(a.year))
+      const built = costItemBody(lineDraft(d.fields, { vendor: a.vendor ?? '', invoiceFile: a.file, taxYear: bookingTaxYear(targetPeriod, a) }, input.units), input.units, targetPeriod.key)
       if ('error' in built) {
         errors.push({ idx: d.idx, message: `${quote(d.fields.description || line.description)}: ${built.error}` })
         continue
@@ -126,12 +136,12 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       const body = built.body
       if (!d.despiteCandidates) {
         const pool = candidatePool(others, body.amountCents, input.booked)
-        const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, period: calendarPeriod(a.year), category: body.category, description: body.description, vendor: a.vendor ?? '' })
+        const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, period: targetPeriod.key, category: body.category, description: body.description, vendor: a.vendor ?? '' })
         // Dieselbe Regel wie in der Ansicht (lineCandidates): Hängt dieser Beleg, ein Beleg gleichen
         // Inhalts oder (bei einer erneuten Auswertung) eine schon gebuchte Zeile dieses Belegs an
         // einer Position, gleich welcher Kostenart, ist die Rechnung womöglich schon erfasst.
         const ownItems = line.reassessed ? input.items.filter((i) => own.has(i.id)) : []
-        const held = lineCandidates(others, a, body, input.booked, { own: ownItems, twinFiles: input.twinFiles })
+        const held = lineCandidates(others, a, body, input.booked, { own: ownItems, twinFiles: input.twinFiles, target: targetPeriod.key })
         if (held.own.length > 0) {
           confirm.push({ idx: d.idx, message: `Dieser Beleg ist schon gebucht (an ${held.own.map((i) => quote(i.description)).join(', ')}). Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
         } else if (held.attached.length > 0 || held.twin.length > 0) {
@@ -139,9 +149,9 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
           confirm.push({ idx: d.idx, message: `${texts.join(' ')} Ist ${quote(body.description)} dort schon enthalten, legen Sie die Zeile nicht noch einmal an, sonst wird die Rechnung zweimal verteilt; verknüpfen Sie sie besser oder verwerfen Sie sie. Legen Sie sie nur an, wenn sie dort nicht enthalten ist.` })
         } else if (candidates.length > 0 && body.amountCents < 0) {
           // Eine Gutschrift wird nie verknüpft; die Rückfrage rät deshalb nicht dazu.
-          confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, eine Gutschrift derselben Kostenart wie ${quote(body.description)}. Ist es dieselbe Gutschrift, legen Sie sie nicht noch einmal an, sonst wird sie zweimal abgezogen. Ist es eine zweite Gutschrift, legen Sie sie als neue Position an.` })
+          confirm.push({ idx: d.idx, message: `Für ${periodLabel(targetPeriod)} steht schon ${candidates.map(candidateText).join(', ')}, eine Gutschrift derselben Kostenart wie ${quote(body.description)}. Ist es dieselbe Gutschrift, legen Sie sie nicht noch einmal an, sonst wird sie zweimal abgezogen. Ist es eine zweite Gutschrift, legen Sie sie als neue Position an.` })
         } else if (candidates.length > 0) {
-          confirm.push({ idx: d.idx, message: `Für ${a.year} steht schon ${candidates.map(candidateText).join(', ')}, dieselbe Kostenart wie ${quote(body.description)}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.` })
+          confirm.push({ idx: d.idx, message: `Für ${periodLabel(targetPeriod)} steht schon ${candidates.map(candidateText).join(', ')}, dieselbe Kostenart wie ${quote(body.description)}. Ist es dieselbe Rechnung, verknüpfen Sie den Beleg besser mit ihr, sonst wird sie zweimal verteilt. Ist es eine zweite Rechnung, legen Sie sie als neue Position an.` })
         } else if (twinBooked) {
           confirm.push({ idx: d.idx, message: `Ein Beleg mit gleichem Inhalt ist schon gebucht. Legen Sie ${quote(body.description)} nur an, wenn es wirklich eine zweite Rechnung ist.` })
         }
@@ -179,9 +189,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
         errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu einem anderen Objekt. Verknüpft wird nur innerhalb des Objekts dieses Belegs.` })
         continue
       }
-      // Brücke Kalenderjahr (#208): bis PR 3
-      if (target.period !== calendarPeriod(a.year)) {
-        errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu ${startYearOf(target.period)}, der Beleg zu ${a.year}. Ändern Sie das Jahr des Belegs oder legen Sie eine neue Position an.` })
+      if (target.period !== targetPeriod.key) {
+        errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu ${labelOfKey(input, target.period)}, der Beleg zu ${periodLabel(targetPeriod)}. Ändern Sie das Jahr des Belegs oder legen Sie eine neue Position an.` })
         continue
       }
       if (carriesCredit(target, input.booked)) {
@@ -299,7 +308,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     // Gesagt wird es, denn das Jahr aus dem Beleg geht dem gewählten vor, und eine Rechnung vom
     // Vorjahr landet leicht in einem abgeschlossenen.
     if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.period === t.period)) {
-      notices.push(`${quote(t.description)}: ${closedPeriodNotice(String(startYearOf(t.period)))}`)
+      notices.push(`${quote(t.description)}: ${closedPeriodNotice(labelOfKey(input, t.period))}`)
     }
     // Der Beleg der Position. Beim Verknüpfen: Trägt sie keinen, den dieses Belegs. Beim Lösen
     // wechselt er nur, wenn er der Beleg der gelösten Zeile ist und aus ihm keine Zeile mehr an der
@@ -337,8 +346,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
 // Kostenart, Betrag und Lohnanteil stehen an der Zeile, Schlüssel und Verteilung an der Position.
 // Was nicht mehr übernehmbar ist, ist nicht gleich.
 function sameCreate(fields: LineFields, line: StoredAssessmentLine, input: PlanInput, a: StoredAssessment): boolean {
-  // Brücke Kalenderjahr (#208): bis PR 3
-  const built = costItemBody(lineDraft(fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, calendarPeriod(a.year))
+  const target = targetOfPlan(input)
+  const built = costItemBody(lineDraft(fields, { vendor: a.vendor ?? '', invoiceFile: a.file, taxYear: bookingTaxYear(target, a) }, input.units), input.units, target.key)
   if ('error' in built) return false
   const b = built.body
   if (b.description !== line.description || b.category !== line.category || b.amountCents !== line.amountCents || fields.labor35aCents !== line.labor35aCents) return false

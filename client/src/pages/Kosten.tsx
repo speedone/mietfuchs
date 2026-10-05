@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
+import { calendarPeriod, periodContext, periodOfKey } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -148,6 +149,11 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
   const keyCtx: KeyContext = useMemo(() => ({ items, year, at, propertyKind: property?.kind ?? null }), [items, year, at, property?.kind])
+  // Der Vorschlag zu einer Belegauswertung sieht in den Zeitraum, in den sie bucht (#208).
+  const keyCtxOf = (v: AssessmentView): KeyContext => {
+    const target = periodOfKey(view.rules, v.targetPeriod ?? calendarPeriod(v.year))
+    return target ? { items, year: v.year, at: periodContext(view.rules, target), propertyKind: property?.kind ?? null } : { items, year: v.year, propertyKind: property?.kind ?? null }
+  }
   const totalCents = yearItems.reduce((a, i) => a + i.amountCents, 0)
 
   // Nach Beleg (Rechnung) gruppiert — alle Positionen eines Belegs stehen zusammen, mit
@@ -360,6 +366,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // gilt das gewählte (#170).
     propertyId,
     year,
+    period: key,
     finish: (res) => (res.assessment
       ? { status: res.assessment.open ? 'fertig' : 'übernommen', data: { serverFile: res.file, assessment: res.assessment } }
       : { status: 'fehler', error: NOT_SAVED }),
@@ -531,7 +538,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               {entry.status === 'fehler' && <span className="badge red">Fehler</span>}
               {entry.status === 'abgebrochen' && <span className="badge gray">abgebrochen</span>}
               {/* Gebucht wird im Jahr des Belegs; weicht es vom gewählten ab, steht es hier, wie in der Schnellerfassung (I1). */}
-              {entry.data.assessment && entry.data.assessment.year !== year && <span className="badge gray">Jahr {entry.data.assessment.year}</span>}
+              {entry.data.assessment && (entry.data.assessment.targetPeriod ?? calendarPeriod(entry.data.assessment.year)) !== key && <span className="badge gray">{view.calendar ? `Jahr ${entry.data.assessment.year}` : entry.data.assessment.targetLabel ?? `Jahr ${entry.data.assessment.year}`}</span>}
               <div className="grow" />
               {(entry.status === 'wartend' || entry.status === 'fertig' || entry.status === 'fehler' || entry.status === 'abgebrochen' || entry.status === 'übernommen') && (
                 <button className="btn small ghost" onClick={() => remove(entry.id)}>
@@ -541,7 +548,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
             </div>
             {entry.status === 'fehler' && <div className="error">{entry.error}</div>}
             {entry.data.assessment && (entry.status === 'fertig' || entry.status === 'übernommen') && (
-              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={entry.data.assessment.year === year ? keyCtx : { items, year: entry.data.assessment.year, propertyKind: property?.kind ?? null }}
+              <AssessmentReview assessment={entry.data.assessment} units={units} keyContext={keyCtxOf(entry.data.assessment)}
                 onChange={(next) => { patchEntry(entry.id, { status: next.open ? 'fertig' : 'übernommen', data: { assessment: next } }); void load() }}
                 onOpenItem={(id) => { const it = items.find((i) => i.id === id); if (it) { setError(''); setForm(itemToForm(it)) } }} />
             )}

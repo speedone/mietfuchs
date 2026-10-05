@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, calendarYearPeriod, isCalendarRules, periodLabel, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodLabel, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod } from '../../shared/types.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
@@ -417,8 +417,8 @@ for (const coll of COLLECTIONS) {
       if (coll === 'costItems') return calendar ? scoped.costItems.map((c) => ({ ...c, year: startYearOf(c.period) })) : scoped.costItems
       // Ebenso die Jahreskorrektur (Durchsicht von #222, M1): Ein alter Tab setzt sie zurück, indem er
       // den Schlüssel des Jahres löscht und den Rest schickt. Nennt er Jahreszahlen, gilt sein Stand
-      // vollständig (repository.ts, `readOverrides`). Die Oberfläche dieser Version schickt Zeiträume.
-      // Brücke Kalenderjahr (#208): bis PR 3
+      // vollständig (repository.ts, `readOverrides`). Die Oberfläche dieser Version liest beides und
+      // schickt Zeiträume (Abrechnung.tsx, `savePpOverride`); die Jahreszahlen bleiben für alte Tabs.
       return calendar
         ? scoped.tenancies.map((t) => ({ ...t, prepaymentOverrides: Object.fromEntries(Object.entries(t.prepaymentOverrides).map(([key, cents]) => [key.slice(0, 4), cents])) }))
         : scoped.tenancies
@@ -941,6 +941,10 @@ async function rememberAssessment(req: Request, file: DocumentSource, extraction
         // Beleg davon ab, ist die Ampel gelb, und „Alle grünen übernehmen“ bucht die Zeile nicht
         // ungesehen in ein anderes Jahr. Den Zeitraum bildet saveAssessment.
         requestedYear: chosen,
+        // Der gewählte Zeitraum (#208): der einer früheren Auswertung, sonst der mitgeschickte (die
+        // Seite, von der aus ausgewertet wurde), solange der Beleg kein eigenes Jahr trägt. Er gilt
+        // nur, wenn es ihn für das Objekt gibt; sonst bildet saveAssessment ihn aus dem Jahr.
+        requestedPeriod: previous ? previous.assessment.requestedPeriod : row?.year == null ? parsePeriodKey(body.period) : null,
         vendor: extraction.vendor ?? null,
         invoiceDate: isDateOnly(extraction.invoiceDate) ? extraction.invoiceDate : null,
         totalGrossCents: typeof extraction.totalGrossEur === 'number' ? Math.round(extraction.totalGrossEur * 100) : null,

@@ -965,6 +965,10 @@ export type AssessmentView = StoredAssessment & {
   // Hat die Auswertung noch offene Zeilen?
   open: boolean
   sumWarning: string | null
+  // Der Zeitraum, in den die Auswertung bucht, und seine Bezeichnung (#208, `bookingPeriod`).
+  // Optional, weil Testattrappen und ältere Antworten ihn nicht tragen.
+  targetPeriod?: PeriodKey
+  targetLabel?: string
 }
 
 // Je Position, die eine Buchung anlegt (`costItemId: null`) oder ändert: Betrag und Lohnanteil
