@@ -38,7 +38,8 @@ import type {
 // entscheidet dort die Ablage und nicht hier.
 import { rulesFor } from '../../shared/law/rules.ts'
 import { co2ApplicableFrom, co2CutMissing, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
-import { co2Assessment, co2DeductionsOf, co2PotsOf, restage, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
+import { co2Assessment, co2DeductionsOf, co2PotsOf, L_TOLERANCE_CENTS, restage, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
@@ -246,6 +247,9 @@ const noticeKinds = {
   'co2.sum-check': { level: 'error', title: 'CO₂-Angaben passen nicht zu den Positionen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.sum-check-approx': { level: 'hint', title: 'CO₂-Angaben mit geschätzter Summe', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.pool-foreign-item': { level: 'hint', title: 'Position ohne Einzelbeträge bei der Heizanlage', terms: ['individualAmounts', 'co2Split'] },
+  'co2.reliefs-invalid': { level: 'error', title: 'Beträge „vom Vermieter übernommen“ passen nicht', rule: 'co2-split', terms: ['co2Split'] },
+  'co2.reliefs-missing': { level: 'warning', title: 'Betrag „vom Vermieter übernommen“ fehlt', rule: 'co2-split', terms: ['co2Split'] },
+  'co2.probably-deducted': { level: 'warning', title: 'CO₂-Anteil vermutlich schon abgezogen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -2857,6 +2861,80 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           }
         }
         booked = pot.probe.ok || st.serviceUsersTotalApprox
+        // Nur ausgewiesen (Entwurf 7.5): Abzugszeilen je Mieter, mit den Werten laut Messdienst oder
+        // nach dem Anteil an den Messdienstbeträgen (9.4). R = round(Σ r) wird als eine Verteilung
+        // gerundet; der Vermieter trägt R als `co2Share`. L − R entfällt auf Eigennutzung, Leerstand,
+        // Pauschale und Wohnungen außerhalb, deren Beträge der Vermieter ohnehin trägt.
+        if (booked && st.method === 'serviceShown') {
+          const shares = sharesOf(pot)
+          const reliefs = shownReliefs(L, S, shares, st.reliefs)
+          const nameOf = (id: string): string => {
+            const x = statements.get(id)
+            return x ? `${x.tenantName} (${x.unitName})` : (snapshot.tenancies.find((t) => t.id === id)?.tenantName ?? 'ein Mietverhältnis')
+          }
+          const total = Math.round(reliefs.raws.reduce((a, x) => a + x.raw, 0))
+          const cents = distributeCents(total, reliefs.raws.map((x) => ({ key: x.tenancyId, landlord: false, raw: x.raw })))
+          reliefs.raws.forEach((x, k) => {
+            const c = cents[k] ?? 0
+            const target = statements.get(x.tenancyId)
+            if (c === 0 || !target) return
+            const share = shares.find((y) => y.tenancyId === x.tenancyId)?.cents ?? 0
+            target.rows.push({
+              costItemId: pot.reliefKey,
+              kind: 'co2Relief',
+              category: HEATING_CATEGORY,
+              description: CO2_RELIEF_LABEL,
+              totalCents: -total,
+              keyLabel: 'CO₂-Kostenaufteilung',
+              basisText: x.approximated ? 'nach Ihrem Anteil an den Heizkosten' : 'laut Abrechnung des Messdienstes',
+              shareCents: -c,
+              labor35aCents: 0,
+              steps: [
+                { label: 'CO₂-Anteil des Vermieters laut Abrechnung', value: fmtCents(L), term: 'co2Split' },
+                x.approximated
+                  ? { label: 'Ihr Teil davon', value: `${fmtCents(L)} × ${fmtCents(share)} ÷ ${fmtCents(S)} = ${fmtExactEuro(x.raw)}` }
+                  : { label: 'Ihr Teil davon', value: `${fmtCents(c)} laut Abrechnung des Messdienstes` },
+                { label: 'Ergebnis, auf Cent gerundet', value: fmtCents(-c) },
+              ],
+            })
+            target.totalShareCents -= c
+            printed.set(x.tenancyId, { cents: c, approximated: x.approximated })
+          })
+          if (total !== 0) {
+            landlordRows.push({
+              costItemId: pot.reliefKey, category: HEATING_CATEGORY, description: CO2_RELIEF_LABEL, totalCents: total,
+              keyLabel: 'CO₂-Kostenaufteilung', shareCents: total, landlordParts: [{ reason: 'co2Share', cents: total }],
+            })
+          }
+          if (reliefs.problem) {
+            const p = reliefs.problem
+            const why = p.kind === 'sum'
+              ? `Die eingetragenen Beträge „vom Vermieter übernommen“ ergeben zusammen ${fmtCents(p.givenCents)} und damit mehr als den CO₂-Anteil des Vermieters von ${fmtCents(L)}.`
+              : `Für ${nameOf(p.tenancyId)} ist „vom Vermieter übernommen“ ${fmtCents(p.givenCents)} eingetragen, ${p.shareCents > 0 ? `mehr als die Heizkosten von ${fmtCents(p.shareCents)}` : 'aber in dieser Heizperiode kein Einzelbetrag'}.`
+            warn('co2.reliefs-invalid',
+              `${where}: ${why} Mietfuchs rechnet deshalb für alle Mieter nach ihrem Anteil an den Heizkosten (${fmtCents(L)} × Betrag des Mieters ÷ ${fmtCents(S)}). Bitte prüfen Sie die Beträge auf der Seite Heizkosten.`,
+              plantSubject)
+          }
+          if (reliefs.missing.length > 0) {
+            const list = reliefs.missing.map((id) => `${nameOf(id)} ${fmtCents(printed.get(id)?.cents ?? 0)}`)
+            warn('co2.reliefs-missing',
+              `${where}: Für ${andList(reliefs.missing.map(nameOf))} fehlt der Betrag „vom Vermieter übernommen“. Mietfuchs ergänzt ihn nach dem Anteil an den Heizkosten (${andList(list)}); ` +
+                'steht er in der Abrechnung, tragen Sie ihn auf der Seite Heizkosten ein.',
+              plantSubject)
+          }
+        }
+        // Die Lücke „Nein, obwohl abgezogen, und Betrag = S“ sieht die Probe nicht (7.4). Liegen die
+        // Brennstoffkosten der Abrechnung (G) genau um L über den verteilten (V), spricht das für
+        // einen Vorwegabzug; dann würden die Mieter doppelt entlastet.
+        const G = st.serviceFuelGrossCents
+        const V = st.serviceFuelNetCents
+        if (st.method === 'serviceShown' && L > 0 && G !== null && V !== null && Math.abs(G - V - L) <= L_TOLERANCE_CENTS) {
+          warn('co2.probably-deducted',
+            `${where}: Sie haben angegeben, dass die Abrechnung die CO₂-Kosten nur ausweist. Die Brennstoffkosten der Abrechnung (${fmtCents(G)}) liegen aber genau um den CO₂-Anteil des Vermieters (${fmtCents(L)}) über den verteilten Brennstoffkosten (${fmtCents(V)}); ` +
+              'das spricht für einen Vorwegabzug. Dann würden die Mieter doppelt entlastet: einmal in der Kostenaufstellung und einmal mit der eigenen Zeile. ' +
+              'Prüfen Sie, ob die Kostenaufstellung eine Zeile „Abzüglich CO₂-Kosten Vermieter“ enthält.',
+            plantSubject)
+        }
       }
       const deduction = pot.carrierId === null ? undefined : co2Deductions.get(pot.carrierId)
       const service = st.method === 'serviceDeducted' || st.method === 'serviceShown'

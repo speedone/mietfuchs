@@ -187,3 +187,57 @@ test('Eigene Heizperiode nach Weg b (PR 5): die Teilabrechnung bucht den Vorwega
   assert.deepEqual(partsOf(r), [{ reason: 'co2Share', cents: 8750 }])
   assert.deepEqual(r.heating?.map((h) => [h.period, h.co2?.booked]), [['2025-05', true]])
 })
+
+// ---------- Nur ausgewiesen (Entwurf 7.5) ----------
+
+// Dieselbe Abrechnung, die Beträge je Nutzer aber brutto: S = Betrag = 3.933,01 €.
+const BRUTTO = { ta: 112837, tb: 98045, tc: 103794, td: 78625 }
+const KEY = `co2:hp:${P}`
+const reliefRows = (r: ComputedSettlement): [string, number][] =>
+  r.statements.flatMap((st) => st.rows.filter((row) => row.kind === 'co2Relief').map((row): [string, number] => [st.tenancyId, row.shareCents]))
+const shownStatement = (over: Partial<Co2Statement> = {}) => techem({ method: 'serviceShown', serviceUsersTotalCents: 393301, ...over })
+
+test('Nur ausgewiesen: eine Abzugszeile je Mieter nach seinem Anteil, zusammen 87,50 €; der Vermieter trägt sie als co2Share', () => {
+  const r = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement()])
+  // 87,50 € × Betrag / 3.933,01 €: 25,1035 / 21,8127 / 23,0917 / 17,4922; der Restcent geht an ta.
+  assert.deepEqual(reliefRows(r), [['ta', -2511], ['tb', -2181], ['tc', -2309], ['td', -1749]])
+  assert.ok(r.statements.every((st) => st.rows.filter((row) => row.kind === 'co2Relief').every((row) => row.costItemId === KEY)))
+  assert.deepEqual(partsOf(r, KEY), [{ reason: 'co2Share', cents: 8750 }])
+  assert.equal(r.statements.find((st) => st.tenancyId === 'ta')?.totalShareCents, 112837 - 2511)
+  // Σ aller Zeilen = Σ der Positionen (Entwurf 12.3 Nr. 1).
+  assert.equal(r.statements.reduce((a, st) => a + st.totalShareCents, 0) + r.landlord.totalCents, 393301)
+  const zeile = r.statements[0]?.rows.find((row) => row.kind === 'co2Relief') ?? assert.fail('keine Abzugszeile')
+  assert.deepEqual([zeile.description, zeile.category, zeile.basisText], ['CO₂-Kosten: Anteil des Vermieters', HEATING_CATEGORY, 'nach Ihrem Anteil an den Heizkosten'])
+  assert.match(textOf(r, 'co2.reliefs-missing'), /ta \(a\) 25,11 €, tb \(b\) 21,81 €, tc \(c\) 23,09 € und td \(d\) 17,49 €/)
+  const ausweis = r.heating?.[0]?.co2?.tenants.find((t) => t.tenancyId === 'ta')
+  assert.deepEqual(ausweis, { tenancyId: 'ta', landlordCents: 2511, tenantCents: Math.round(((25000 - 8750) * 112837) / 393301), approximated: true })
+})
+
+test('Nur ausgewiesen: die Werte laut Messdienst gelten; zu viel heißt alle nach Anteil (co2.reliefs-invalid)', () => {
+  const laut = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement({
+    reliefs: [{ tenancyId: 'ta', cents: 2500 }, { tenancyId: 'tb', cents: 2200 }, { tenancyId: 'tc', cents: 2300 }, { tenancyId: 'td', cents: 1750 }],
+  })])
+  assert.deepEqual(reliefRows(laut), [['ta', -2500], ['tb', -2200], ['tc', -2300], ['td', -1750]])
+  assert.ok(!codes(laut).includes('co2.reliefs-missing'))
+  assert.equal(laut.statements[0]?.rows.find((row) => row.kind === 'co2Relief')?.basisText, 'laut Abrechnung des Messdienstes')
+  const zuviel = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement({ reliefs: [{ tenancyId: 'ta', cents: 9000 }] })])
+  assert.equal(zuviel.notices.find((n) => n.code === 'co2.reliefs-invalid')?.level, 'error')
+  assert.deepEqual(reliefRows(zuviel), [['ta', -2511], ['tb', -2181], ['tc', -2309], ['td', -1749]])
+})
+
+test('Nur ausgewiesen mit Heizpauschale eines Mieters: nur wer eine Heizzeile hat, bekommt einen Abzug (Review Focus 3)', () => {
+  const s = { units: [unit('a'), unit('b')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b', { heatingModel: 'flatRate' })], costItems: [messdienst(300000, { ta: 200000, tb: 100000 })] }
+  const r = settle(s, [co2({ method: 'serviceShown', serviceUsersTotalCents: 300000, serviceLandlordCents: 6000, serviceUnitsCount: 2 })])
+  assert.deepEqual(reliefRows(r), [['ta', -4000]])
+  assert.deepEqual(partsOf(r, KEY), [{ reason: 'co2Share', cents: 4000 }])
+  assert.equal(r.statements.reduce((a, st) => a + st.totalShareCents, 0) + r.landlord.totalCents, 300000)
+})
+
+test('Lücke abgesichert über G und V (Entwurf 7.4): „Nein“, aber G − V = L → co2.probably-deducted', () => {
+  const r = settle({ ...vier, costItems: [messdienst(384551, TECHEM)] }, [techem({ method: 'serviceShown', serviceFuelGrossCents: 354000, serviceFuelNetCents: 345250 })])
+  const n = r.notices.find((x) => x.code === 'co2.probably-deducted') ?? assert.fail(`kein Hinweis: ${codes(r).join(', ')}`)
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /3\.540,00 €.*87,50 €.*3\.452,50 €/s)
+  const ohne = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement({ serviceFuelGrossCents: 354000, serviceFuelNetCents: 354000 })])
+  assert.ok(!codes(ohne).includes('co2.probably-deducted'))
+})
