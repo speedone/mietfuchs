@@ -184,7 +184,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Mietfuchs nichts: Der Teil, den die Mieter der abgeschlossenen Abrechnung zu viel getragen haben,
   steht beim Vermieter, und eine Warnung nennt den Betrag und rät, jene Abrechnung wieder zu öffnen und
   neu abzuschließen; das gilt auch, wenn jene Abrechnung mit einer Schätzung abgeschlossen wurde. Die
-  stornierte Rechnung deckt danach keine Tage mehr ab, die Lücke wird wieder gemeldet.
+  stornierte Rechnung deckt danach keine Tage mehr ab, die Lücke wird wieder gemeldet; ein Hinweis nennt
+  die Rechnung und rät, eine echte Rechnung über 0 € nicht zu schätzen.
   Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
   verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
 

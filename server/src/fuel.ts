@@ -240,6 +240,12 @@ export type FuelResult = {
   // Lieferungen, deren Heizperiode der Positionen abgeschlossen ist, ohne hierher etwas hinausgebucht zu
   // haben, obwohl heute `cents` hierher gehörten.
   ownerClosedUnlinked: { deliveryId: string; owner: BillingPeriod; cents: number }[]
+  // Rechnungen, deren Positionen zusammen 0 € ergeben und die die Heizperiode berühren: Mietfuchs
+  // behandelt sie als storniert (Nachprüfung von 5bee89f, M-b).
+  zeroInvoices: { deliveryId: string; label: string }[]
+  // Schätzungen, die keine Rechnung mit Positionen als Vorlage für ihren Schlüssel haben und deshalb
+  // nicht verteilt werden (Nachprüfung von 5bee89f, G-a).
+  estimatesWithoutTemplate: { deliveryId: string; cents: number }[]
 }
 
 // Die Lieferungen einer Anlage in einer Heizperiode. `null`, wenn keine die Heizperiode berührt und
@@ -348,6 +354,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // Überträge (8.2), nur bei freien Schlüsseln: Dort sind die Rechnungen Positionen.
   const carries: FuelCarry[] = []
   const ownerClosedUnlinked: FuelResult['ownerClosedUnlinked'] = []
+  const estimatesWithoutTemplate: FuelResult['estimatesWithoutTemplate'] = []
   if (withItems) {
     // Die Schätzungen einer abgeschlossenen Heizperiode, die eine echte Rechnung ersetzt, mit ihrem
     // eingefrorenen Betrag im Verhältnis der Gradtage, die die Rechnung von ihnen abdeckt.
@@ -371,8 +378,12 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       if (d.estimated) {
         if (!touchesH(d)) continue
         const template = templateFor(r.from)
-        if (!template) continue
         const f = frozenOf(d.id, h.key)
+        if (!template) {
+          const cents = f ? f.cents : totalOf(d)
+          if (cents !== 0) estimatesWithoutTemplate.push({ deliveryId: d.id, cents })
+          continue
+        }
         const cents = f ? f.cents : totalOf(d)
         const T = totalOf(template)
         if (cents === 0) continue
@@ -497,6 +508,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
   // Lücken (3.3) und, bei freien Schlüsseln, der Vorschlag einer Schätzung aus der letzten Rechnung
   // (8.2 Nr. 2): verbrauchsabhängiger Teil nach dem eigenen Zählerstand, sonst nach Gradtagen; fester
   // Teil nach Tagen; kg und CO₂-Kosten im Verhältnis des verbrauchsabhängigen Teils.
+  const zeroInvoices = ranged.filter((d) => cancelled(d) && touchesH(d)).map((d) => ({ deliveryId: d.id, label: labelOf(d), range: rangeFor(d) }))
   const gaps: FuelGap[] = billCoverage.gaps.map((g) => {
     const permille = degreeDayPermille([g], ctx.table)
     let estimate: FuelGap['estimate'] = null
@@ -518,7 +530,8 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         basedOn: labelOf(t), byMeter, factorPermille: Math.round(factor * 100000) / 100,
       }
     }
-    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate }
+    const zero = zeroInvoices.filter((z) => intersect(z.range, g) !== null).map((z) => z.label)
+    return { from: g.from, to: g.to, days: daysOf(g), permille, estimate, ...(zero.length > 0 ? { zeroInvoices: zero } : {}) }
   })
 
   return {
@@ -526,5 +539,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     co2Cents: co2Known ? roundHalf(co2) : null, serviceCo2Cents, serviceGrossCents, missingCo2,
     looseWithoutRange: looseWithoutRange && gaps.length > 0,
     ownerClosedUnlinked,
+    zeroInvoices: zeroInvoices.map(({ deliveryId, label }) => ({ deliveryId, label })),
+    estimatesWithoutTemplate,
   }
 }

@@ -1076,7 +1076,10 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   viel getragen haben (dafür führt der eingefrorene Übertrag `totalCents`). War die andere Heizperiode
   mit Schätzung abgeschlossen, steht die Schätzung als `fuelEstimateDiff` gegen. Eine stornierte
   Rechnung (Positionen mit Summe 0) verdrängt keine Schätzung, deckt keine Tage ab und zählt nicht in
-  der Bewertung; die Lücke steht wieder da. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
+  der Bewertung; die Lücke steht wieder da. Weil das auch eine echte Rechnung über 0 € treffen kann,
+  sagt es der Hinweis `fuel.zero-invoice`, `fuel.uncovered` und die Rückfrage beim Abschluss nennen die
+  Rechnung (`zeroInvoices` an der Lücke). Eine Schätzung ohne Rechnung mit Positionen als Vorlage für
+  ihren Schlüssel wird nicht verteilt und meldet `fuel.estimate-undistributed` statt `fuel.estimated`. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
   BGB (ausgeschlossen ist nur die Nachforderung durch den Vermieter). Wurde eine Position erst nach
   dem Abschluss ihrer Heizperiode verknüpft, nimmt die andere nichts und sagt es
   (`fuel.owner-closed-unlinked`, Stufe `hint`).

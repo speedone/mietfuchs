@@ -1572,7 +1572,8 @@ export type FuelEstimateProposal = {
   factorPermille: number
 }
 
-export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null }
+// `zeroInvoices`: Rechnungen im Zeitraum der Lücke, deren Positionen zusammen 0 € ergeben (als storniert behandelt).
+export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[] }
 
 export type FuelAssessment = {
   coveragePermille: number
@@ -1585,4 +1586,4 @@ export type FuelAssessment = {
 
 // Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).
 // `deadline`: bis wann die Abrechnung, die abgeschlossen werden soll, den Mietern zugehen muss (Abwarten).
-export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number; deadline: string }
+export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number; deadline: string; zeroInvoices?: string[] }

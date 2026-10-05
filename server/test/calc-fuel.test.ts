@@ -4,6 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
+import { fuelGapQuestions } from '../src/db/fuel.ts'
 import { frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodContaining, periodKey, periodOfKey } from '../../shared/period.ts'
@@ -464,7 +465,7 @@ test('Durchsicht Recht I1: Ohne Schätzung abgeschlossen heißt nicht „tragen 
 })
 
 test('Durchsicht Recht I2: Die Schätzung nennt ihre Grundlage und sagt, dass ihre Zulässigkeit nicht entschieden ist', () => {
-  const h = settle('2024-05', { fuelDeliveries: [lieferung({ id: 'e', label: 'Schätzung 15.03.–30.04.2025: 151,29 ‰ der Rechnung „Gas 2024/2025“ nach Gradtagen', invoiceFrom: '2025-03-15', invoiceTo: '2025-04-30', amountCents: 90774, estimated: true })], costItems: [] })
+  const h = settle('2024-05', { fuelDeliveries: [lieferung({ id: 'e', label: 'Schätzung 15.03.–30.04.2025: 151,29 ‰ der Rechnung „Gas 2024/2025“ nach Gradtagen', invoiceFrom: '2025-03-15', invoiceTo: '2025-04-30', amountCents: 90774, estimated: true }), lieferung({ id: 'd1', label: 'Gas 2024/2025', invoiceFrom: '2024-03-15', invoiceTo: '2025-03-14' })], costItems: [position({ id: 'gas1', fuelDeliveryId: 'd1', period: periodKey('2024-05') })] })
   const t = textOf(h, 'fuel.estimated')
   assert.match(t, /Grundlage: Schätzung 15\.03\.–30\.04\.2025: 151,29 ‰ der Rechnung „Gas 2024\/2025“ nach Gradtagen/)
   assert.match(t, /höchstrichterlich nicht entschieden/)
@@ -605,4 +606,45 @@ test('Nachprüfung G1: Storno ohne abgeschlossene andere Heizperiode: die Rechnu
   // Eine Rechnung ohne Positionen (noch nicht verknüpft) deckt weiter ab.
   const offen = settle('2025-05', { costItems: [] })
   assert.match(textOf(offen, 'fuel.uncovered'), /Für 15\.03\.–30\.04\.2026/)
+})
+
+// ---------- Nachprüfung von 5bee89f (Korrekturrunde 5) ----------
+
+// Eine weitere Rechnung mit Position, aus der eine Schätzung ihren Schlüssel nehmen kann.
+const spaeter = lieferung({ id: 'd2', label: 'Gas 2026/2027', invoiceFrom: '2026-03-15', invoiceTo: '2027-03-14' })
+const spaeterePosition = position({ id: 'gas2', fuelDeliveryId: 'd2', period: periodKey('2026-05') })
+
+test('Nachprüfung M-b: Rechnung, deren Positionen 0 € ergeben: Hinweis, die Lücke nennt sie, die Rückfrage beim Abschluss ebenfalls', () => {
+  const h = settle('2025-05', {
+    fuelDeliveries: [lieferung(), spaeter],
+    costItems: [position({ id: 'gas' }), position({ id: 'gs', description: 'Gutschrift', amountCents: -650000 }), spaeterePosition],
+  })
+  const n = h.notices.find((x) => x.code === 'fuel.zero-invoice') ?? assert.fail(codes(h).join(', '))
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /Die Positionen der Rechnung „Gas 2025\/2026“ ergeben zusammen 0 €\. Mietfuchs behandelt sie als storniert und rechnet ihren Zeitraum als nicht abgedeckt\. Ist es eine echte Rechnung über 0 €/)
+  const lucke = textOf(h, 'fuel.uncovered')
+  assert.match(lucke, /liegt nur die Rechnung „Gas 2025\/2026“ vor, deren Positionen zusammen 0 € ergeben/)
+  assert.doesNotMatch(lucke, /liegt keine Rechnung vor/)
+  const fragen = fuelGapQuestions(h)
+  assert.ok(fragen.length > 0)
+  assert.deepEqual(fragen.map((q) => q.zeroInvoices), fragen.map(() => ['Gas 2025/2026']))
+})
+
+test('Nachprüfung M-a: Schätzung in offener Heizperiode, die Rechnung ist storniert: die Schätzung zählt wieder', () => {
+  const h = settle('2024-05', {
+    fuelDeliveries: [lieferung(), schaetzung(90774), spaeter],
+    costItems: [position({ id: 'gas', amountCents: 0 }), spaeterePosition],
+  })
+  assert.ok(h.heating?.[0]?.fuel?.deliveries.some((d) => d.deliveryId === 'e'), 'die Schätzung fehlt in der Bewertung')
+  assert.ok(codes(h).includes('fuel.estimated'), codes(h).join(', '))
+  assert.ok(mieterSumme(h) > 0)
+})
+
+test('Nachprüfung G-a: Schätzung ohne Rechnung, aus der sie ihren Schlüssel nehmen kann: Warnung statt „geschätzt“', () => {
+  const h = settle('2024-05', { fuelDeliveries: [lieferung(), schaetzung(90774)], costItems: [position({ id: 'gas', amountCents: 0 })] })
+  assert.equal(mieterSumme(h), 0)
+  assert.ok(!codes(h).includes('fuel.estimated'), codes(h).join(', '))
+  const n = h.notices.find((x) => x.code === 'fuel.estimate-undistributed') ?? assert.fail(codes(h).join(', '))
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /Die Schätzung „Schätzung“ \(907,74 €\) verteilt Mietfuchs nicht/)
 })

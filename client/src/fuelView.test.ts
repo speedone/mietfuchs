@@ -33,3 +33,9 @@ test('Kein Block ohne Lieferungen; eine Lücke steht als Hinweis', () => {
   const luecke = fuelBlock(anlage({ ...brennstoff, deliveries: brennstoff.deliveries.slice(0, 1), gaps: [{ from: '2026-03-15', to: '2026-04-30', days: 47, permille: 151.29, estimate: null }] })) ?? assert.fail('kein Block')
   expect(luecke.notes).toEqual(['Für 15.03.–30.04.2026 lag keine Rechnung vor; diese Kosten sind nicht enthalten, eine Nachberechnung bleibt vorbehalten.'])
 })
+
+test('Nachprüfung G-b: Nur eine Lücke, keine Rechnung und kein Übertrag: der Block steht trotzdem mit dem Vorbehalt', () => {
+  const nurLuecke = fuelBlock(anlage({ ...brennstoff, deliveries: [], carries: [], emissionsKg: null, gaps: [{ from: '2025-05-01', to: '2026-04-30', days: 365, permille: 1000, estimate: null }] })) ?? assert.fail('kein Block')
+  expect(nurLuecke.rows).toEqual([])
+  expect(nurLuecke.notes).toEqual(['Für 01.05.2025–30.04.2026 lag keine Rechnung vor; diese Kosten sind nicht enthalten, eine Nachberechnung bleibt vorbehalten.'])
+})

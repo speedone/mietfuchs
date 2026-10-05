@@ -74,7 +74,7 @@ const pairOf = (rowId: unknown): string | null => {
   return d && p && o ? `${d}|${[p, o].sort().join('|')}` : null
 }
 
-function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number }> } {
+function totals(s: unknown): { tenants: number; landlord: number; carry: number; up: number; down: number; pairs: Map<string, { carry: number; flagged: number; estimate: boolean }> } {
   const num = (v: unknown): number => (typeof v === 'number' ? v : 0)
   const list = (o: unknown, key: string): unknown[] => {
     const v: unknown = o !== null && typeof o === 'object' ? Reflect.get(o, key) : undefined
@@ -86,12 +86,13 @@ function totals(s: unknown): { tenants: number; landlord: number; carry: number;
   const parts = rows.flatMap((r) => list(r, 'landlordParts'))
   const reasonOf = (p: unknown): unknown => (p !== null && typeof p === 'object' ? Reflect.get(p, 'reason') : undefined)
   const centsOf = (p: unknown): number => num(p !== null && typeof p === 'object' ? Reflect.get(p, 'cents') : 0)
-  const pairs = new Map<string, { carry: number; flagged: number }>()
+  const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
   for (const r of rows) {
     const key = pairOf(r !== null && typeof r === 'object' ? Reflect.get(r, 'costItemId') : undefined)
     if (!key) continue
-    const acc = pairs.get(key) ?? { carry: 0, flagged: 0 }
+    const acc = pairs.get(key) ?? { carry: 0, flagged: 0, estimate: false }
     for (const p of list(r, 'landlordParts')) {
+      if (reasonOf(p) === 'fuelEstimateDiff') acc.estimate = true
       if (reasonOf(p) === 'fuelCarry') acc.carry += centsOf(p)
       else if (flaggedReason(reasonOf(p))) acc.flagged += centsOf(p)
     }
@@ -274,7 +275,7 @@ for (const variant of VARIANTS) {
         let positions = 0
         let tenants = 0
         let landlord = 0
-        const pairs = new Map<string, { carry: number; flagged: number }>()
+        const pairs = new Map<string, { carry: number; flagged: number; estimate: boolean }>()
         let up = 0
         let down = 0
         const live = new Map<string, ReturnType<typeof computeSettlement>>()
@@ -289,9 +290,10 @@ for (const variant of VARIANTS) {
           tenants += t.tenants
           landlord += t.landlord
           for (const [k, v] of t.pairs) {
-            const acc = pairs.get(k) ?? { carry: 0, flagged: 0 }
+            const acc = pairs.get(k) ?? { carry: 0, flagged: 0, estimate: false }
             acc.carry += v.carry
             acc.flagged += v.flagged
+            acc.estimate ||= v.estimate
             pairs.set(k, acc)
           }
           up += t.up
@@ -311,9 +313,14 @@ for (const variant of VARIANTS) {
         }
         // (iii) je Lieferung und Paar von Heizperioden: Die Gegenbuchungen heben sich auf, oder ein
         // ausgewiesener Teil deckt sie genau (Nachprüfung von 47f2373, H1: über alle Lieferungen summiert
-        // deckte ein berechtigter Teil einer Lieferung die falsche Gegenbuchung einer anderen).
-        if (estimates.length === 0) {
-          for (const [k, v] of pairs) assert.ok(v.carry === 0 || v.carry === -v.flagged, `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
+        // deckte ein berechtigter Teil einer Lieferung die falsche Gegenbuchung einer anderen). Ausgelassen
+        // sind nur die Paare einer Schätzung und die, in denen eine Rechnung eine Schätzung ersetzt
+        // (`fuelEstimateDiff`): Dort steht die Gegenbuchung der Schätzung unter deren Kennung, nicht unter der
+        // der Rechnung (Nachprüfung von 5bee89f, M-a).
+        const estimateIds = new Set(estimates.map((e) => e.id))
+        for (const [k, v] of pairs) {
+          if (v.estimate || estimateIds.has(k.split('|')[0] ?? '')) continue
+          assert.ok(v.carry === 0 || v.carry === -v.flagged, `${fall}; (iii) ${k}: Gegenbuchungen ${v.carry}, ausgewiesen ${v.flagged}`)
         }
         // Zuordnung (I1): eine mit 0 eingefrorene Heizperiode bekommt trotzdem ihren Teil hinausgebucht.
         const frozen = await opened.read((db) => readFuelCarryFrozen(db))

@@ -27,7 +27,8 @@ const basisOf = (label: string): string => {
 
 export function fuelBlock(h: HeatingStatement): FuelBlockView | null {
   const f = h.fuel
-  if (!f || (f.deliveries.length === 0 && f.carries.length === 0)) return null
+  // Auch eine Lücke allein steht im Druck, mit ihrem Vorbehalt (Nachprüfung von 5bee89f, G-b).
+  if (!f || (f.deliveries.length === 0 && f.carries.length === 0 && f.gaps.length === 0)) return null
   const rows = f.deliveries.map((d) => {
     const range = d.from && d.to ? ` (${formatDayRange(d.from, d.to)})` : ''
     const label = `${(d.estimated ? d.label.split(': ')[0] : d.label) || 'Lieferung'}${range}`

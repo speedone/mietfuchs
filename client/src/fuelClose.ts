@@ -16,7 +16,8 @@ const isGap = (g: unknown): g is FuelGapQuestion =>
   'plantId' in g && typeof g.plantId === 'string' && 'plantName' in g && typeof g.plantName === 'string' &&
   'period' in g && typeof g.period === 'string' && 'from' in g && typeof g.from === 'string' &&
   'to' in g && typeof g.to === 'string' && 'amountCents' in g && typeof g.amountCents === 'number' &&
-  'deadline' in g && typeof g.deadline === 'string'
+  'deadline' in g && typeof g.deadline === 'string' &&
+  (!('zeroInvoices' in g) || g.zeroInvoices === undefined || (Array.isArray(g.zeroInvoices) && g.zeroInvoices.every((z: unknown) => typeof z === 'string')))
 
 // Die Lücken aus einer Ablehnung, `null` bei jeder anderen.
 export function fuelGapsOf(e: unknown): FuelGapQuestion[] | null {
@@ -33,10 +34,15 @@ export function fuelQuestion(gaps: readonly FuelGapQuestion[]): FuelQuestion {
   const wait = deadline
     ? `Sicher ist abzuwarten: Die Abrechnung muss den Mietern bis ${fmtDate(deadline)} zugehen; kommt die Rechnung vorher, braucht es keine Schätzung.`
     : 'Sicher ist abzuwarten, bis die Rechnung da ist, solange die Frist der Abrechnung läuft.'
+  // Nachprüfung von 5bee89f (M-b): Eine eingetragene Rechnung, deren Positionen 0 € ergeben, gilt als
+  // storniert; ist sie eine echte Rechnung über 0 €, wäre eine Schätzung bezahlter Brennstoff.
+  const zero = gaps.filter((g) => (g.zeroInvoices ?? []).length > 0).map((g) =>
+    `Für ${g.plantName || 'Heizanlage'}: ${formatDayRange(g.from, g.to)} ist ${(g.zeroInvoices ?? []).length === 1 ? 'die Rechnung' : 'sind die Rechnungen'} ${(g.zeroInvoices ?? []).map((z) => `„${z}“`).join(', ')} eingetragen, ihre Positionen ergeben aber zusammen 0 €; Mietfuchs behandelt sie als storniert. ` +
+    'Ist es eine echte Rechnung über 0 €, ist dort nichts zu verteilen: Schätzen Sie dann nicht. ')
   return {
     title: 'Rechnung des Versorgers fehlt',
     message:
-      `Für einen Teil der Heizperiode fehlt die Rechnung des Versorgers: ${listOf(gaps)}. ${wait} ` +
+      `Für einen Teil der Heizperiode fehlt die Rechnung des Versorgers: ${listOf(gaps)}. ${zero.join('')}${wait} ` +
       'Mit Schätzung weist Mietfuchs diese Kosten aus der letzten Rechnung mit Vorbehalt aus und nennt die Grundlage; ob eine solche Schätzung zulässig ist, ist höchstrichterlich nicht entschieden. ' +
       'Ohne Schätzung steht dieser Teil zunächst bei Ihnen. Nachfordern können Sie mit einer berichtigten Abrechnung bis zum Ende der Frist, danach nur, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB).',
     cancelLabel: 'Abwarten (nicht abschließen)',

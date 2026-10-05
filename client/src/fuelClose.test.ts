@@ -40,3 +40,13 @@ test('Ablauf: ohne Lücke einmal; mit Lücke Schätzung, ohne Schätzung oder Ab
   expect(await lauf('wait', 'luecke')).toEqual({ ok: false, bodies: [{}] })
   await expect(closeWithFuelQuestion(async () => { throw new Error('Netz weg') }, async () => 'estimate')).rejects.toThrow('Netz weg')
 })
+
+test('Nachprüfung M-b: Eine Rechnung über 0 € im Zeitraum der Lücke nennt der Dialog, mit dem Rat, sie dann nicht zu schätzen', () => {
+  const nullRechnung: FuelGapQuestion = { ...luecke, zeroInvoices: ['Gas 2025/2026'] }
+  expect(fuelGapsOf(new ApiError('x', 409, { fuelGaps: [nullRechnung] }))).toEqual([nullRechnung])
+  const q = fuelQuestion([nullRechnung])
+  expect(q.message).toContain('Für Gas: 15.03.–30.04.2026 ist die Rechnung „Gas 2025/2026“ eingetragen, ihre Positionen ergeben aber zusammen 0 €; Mietfuchs behandelt sie als storniert.')
+  expect(q.message).toContain('Ist es eine echte Rechnung über 0 €, ist dort nichts zu verteilen: Schätzen Sie dann nicht.')
+  expect(q.cancelLabel).toBe('Abwarten (nicht abschließen)')
+  expect(fuelQuestion([luecke]).message).not.toContain('0 €')
+})

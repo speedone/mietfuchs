@@ -281,7 +281,7 @@ type WithHeating = { heating?: HeatingStatement[]; deadline?: string }
 export function fuelGapQuestions(s: WithHeating): FuelGapQuestion[] {
   return (s.heating ?? []).flatMap((h) =>
     (h.fuel?.gaps ?? []).flatMap((g) =>
-      g.estimate ? [{ plantId: h.plantId, plantName: h.plantName, period: h.period, from: g.from, to: g.to, amountCents: g.estimate.amountCents, deadline: s.deadline ?? '' }] : []))
+      g.estimate ? [{ plantId: h.plantId, plantName: h.plantName, period: h.period, from: g.from, to: g.to, amountCents: g.estimate.amountCents, deadline: s.deadline ?? '', ...(g.zeroInvoices ? { zeroInvoices: g.zeroInvoices } : {}) }] : []))
 }
 
 // Je Lücke mit Vorschlag eine geschätzte Lieferung, ohne Kostenposition: verteilt wird sie mit dem
