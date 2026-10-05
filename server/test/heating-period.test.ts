@@ -95,3 +95,13 @@ test('Monate in Worten', () => {
   assert.equal(monthSpanText(['2025-05']), 'Mai 2025')
   assert.equal(monthSpanText([]), '')
 })
+
+test('Jahr der Zahlung (Entwurf 3.10, Durchsicht von #231): Rechnungsdatum, sonst Ende der Heizperiode, geklemmt', async () => {
+  const { paymentYear } = await import('../../shared/period.ts')
+  const h = { from: '2025-05-01', to: '2026-04-30' }
+  assert.deepEqual(paymentYear(h, '2025-11-20'), { year: 2025, clamped: false })
+  assert.deepEqual(paymentYear(h, null), { year: 2026, clamped: false }, 'ohne Rechnungsdatum das Jahr des Endes')
+  assert.deepEqual(paymentYear(h, '2029-01-15'), { year: 2027, clamped: true })
+  assert.deepEqual(paymentYear(h, '2023-12-01'), { year: 2025, clamped: true })
+  assert.deepEqual(paymentYear(h, null, 2025), { year: 2025, clamped: false }, 'eine andere Vorgabe, etwa das Jahr des Belegs')
+})

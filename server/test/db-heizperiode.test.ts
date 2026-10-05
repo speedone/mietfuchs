@@ -151,3 +151,4 @@ test('Wiederherstellen: eine Heizkorrektur unter einer fremden Heizperiode ist e
     assert.ok(befunde.some((b) => /Heizvorauszahlung von „Müller“ steht unter der Heizperiode 2026-01/.test(b)), befunde.join(' | '))
   })
 })
+

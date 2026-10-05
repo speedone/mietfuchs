@@ -101,10 +101,13 @@ describe('Heizvorauszahlung im Mietverhältnis (Durchsicht von #231, Important 2
 
 describe('Jahr der Zahlung einer Heizposition (Durchsicht von #231, Important 3)', () => {
   test('Heizperiode über zwei Jahre: sichtbar, Jahre vom Beginn bis ein Jahr nach dem Ende, Vorgabe das Jahr des Beginns', () => {
-    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '')).toEqual({ show: true, years: [2025, 2026, 2027], fallback: '2025', valid: false })
+    // Vorgabe ist das Jahr des Endes, wie in Belegbuchung und Repository (Durchsicht von #231, I-1).
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '')).toEqual({ show: true, years: [2025, 2026, 2027], fallback: '2026', valid: false })
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '', '2025-11-20')).toMatchObject({ fallback: '2025' })
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '', '2029-01-15')).toMatchObject({ fallback: '2027' })
     expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '2026')).toMatchObject({ valid: true })
     // Ein Wert aus dem Objektzeitraum (Juli–Juni, 2027 erlaubt dort), den es für die Heizperiode nicht gibt.
-    expect(heatingTaxYear({ startYear: 2024, endYear: 2025 }, '2027')).toMatchObject({ valid: false, fallback: '2024' })
+    expect(heatingTaxYear({ startYear: 2024, endYear: 2025 }, '2027')).toMatchObject({ valid: false, fallback: '2025' })
   })
   test('Heizperiode in einem Kalenderjahr: kein Feld, kein Wert', () => {
     expect(heatingTaxYear({ startYear: 2026, endYear: 2026 }, '2027')).toEqual({ show: false, years: [], fallback: '', valid: true })

@@ -34,7 +34,7 @@
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import type { BillingPeriod, CostItem, ExternalBasis, HeatingPrepaymentOverride, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, SplitPreviewPart, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
-import { CALENDAR_RULES, calendarPeriod, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod, paymentYear, formatDayRange, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf } from '../../../shared/period.ts'
 import { heatingPeriodsEndingIn, isObjectPeriod, plantRules, servesUnit, spanOf } from '../../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
@@ -510,8 +510,7 @@ export async function itemPeriodClosed(db: Executor, c: CostItem): Promise<boole
 // Anlage nicht gibt. Endet dort keine oder mehr als eine Heizperiode, bleibt sie ohne Anlage, und
 // der Vermieter ordnet sie zu.
 // `invoiceDate` (Belegbuchung): Das Jahr der Zahlung einer Heizperiode über zwei Kalenderjahre ist das
-// Jahr des Rechnungsdatums, geklemmt in ihre Spanne (erstes Jahr bis ein Jahr nach dem Ende, Entwurf
-// 3.10); ohne Rechnungsdatum das erste Jahr des Abrechnungszeitraums wie bisher.
+// Jahr des Rechnungsdatums, geklemmt in ihre Spanne (Entwurf 3.10, `paymentYear`).
 async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: string | null): Promise<Pick<CostItem, 'heatingPlantId' | 'period' | 'taxYear'>> {
   const none = { heatingPlantId: null, period: c.period, taxYear: c.taxYear }
   if (c.category !== HEATING_CATEGORY) return none
@@ -524,10 +523,11 @@ async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: stri
   const enden = p === null ? [] : heatingPeriodsEndingIn(heating.rules, p)
   const h = enden.length === 1 ? enden[0] : undefined
   if (h === undefined) return none
-  const first = Number(h.from.slice(0, 4))
-  const last = Number(h.to.slice(0, 4)) + 1
-  const fromInvoice = invoiceDate && /^\d{4}/.test(invoiceDate) ? Math.min(last, Math.max(first, Number(invoiceDate.slice(0, 4)))) : undefined
-  const neu = { heatingPlantId: einzige.id, period: h.key, taxYear: spansTwoYears(h) ? (c.taxYear ?? fromInvoice ?? startYearOf(c.period)) : undefined }
+  // Eine Regel mit Formular und Belegbuchung (`paymentYear`, Durchsicht von #231): Aus der Buchung
+  // (mit `invoiceDate`) das Rechnungsdatum, geklemmt in die Heizperiode; sonst ein angegebenes Jahr,
+  // ohne Angabe das Jahr des Endes der Heizperiode.
+  const year = invoiceDate !== undefined ? paymentYear(h, invoiceDate, c.taxYear).year : c.taxYear ?? paymentYear(h, null).year
+  const neu = { heatingPlantId: einzige.id, period: h.key, taxYear: spansTwoYears(h) ? year : undefined }
   return (await itemPeriodClosed(db, { ...c, ...neu })) ? none : neu
 }
 
@@ -1450,7 +1450,7 @@ export async function insertCostItemIn(tx: Executor, id: string, body: unknown, 
   const merged = mergeCostItem(emptyCostItem(id), body)
   // Mit Rechnungsdatum (Belegbuchung) schon hier die Anlage und ihre Heizperiode, damit das Jahr der
   // Zahlung aus dem Beleg kommt; die Schreibprüfung sieht dann die Heizperiode.
-  const entity = hints.invoiceDate && merged.heatingPlantId === undefined ? { ...merged, ...(await defaultHeatingPlant(tx, merged, hints.invoiceDate)) } : merged
+  const entity = hints.invoiceDate !== undefined && merged.heatingPlantId === undefined ? { ...merged, ...(await defaultHeatingPlant(tx, merged, hints.invoiceDate)) } : merged
   await guardCostItem(tx, null, entity, body)
   await costItemCollection.insert(tx, entity)
 }

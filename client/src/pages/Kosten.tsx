@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
+import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit, UploadEntry } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
 import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
 import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
@@ -106,10 +106,18 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const formId = form?.id
   useEffect(() => { setHeatingPeriod(formId ? items.find((i) => i.id === formId)?.period ?? '' : '') }, [formId, items])
   // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
-  // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld.
+  // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld. Vorbelegt mit dem Jahr
+  // des Rechnungsdatums des angehängten Belegs, wenn der Belegordner eines kennt, sonst mit dem Jahr
+  // des Endes der Heizperiode; dieselbe Regel wie Belegbuchung und Server (`paymentYear`).
+  const [invoiceDates, setInvoiceDates] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    api<UploadEntry[]>('/api/uploads')
+      .then((list) => setInvoiceDates(new Map((Array.isArray(list) ? list : []).flatMap((u) => (u.invoiceDate ? [[u.file, u.invoiceDate] as const] : [])))))
+      .catch(() => setInvoiceDates(new Map()))
+  }, [propertyId])
   const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
     ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
-  const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear) : null
+  const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined) : null
   useEffect(() => {
     if (form && heatTax?.show && !heatTax.valid) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
@@ -293,9 +301,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
     setError('')
     // Eine Heizposition der Anlage mit eigener Heizperiode steht unter deren Heizperiode (G-A2). Reicht
-    // die Heizperiode über zwei Kalenderjahre und fehlt das Jahr der Zahlung, gilt das Jahr dieses
-    // Abrechnungszeitraums: In ihm endet die Heizperiode, und das Feld ist bei einem Zeitraum in einem
-    // Kalenderjahr ausgeblendet.
+    // die Heizperiode über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (vorbelegt, siehe
+    // `heatTax`); liegt sie in einem Kalenderjahr, gibt es keines.
     if (heatTax?.show && !heatTax.valid) {
       setError('Bitte geben Sie das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG); die Heizperiode reicht über zwei Kalenderjahre.')
       return

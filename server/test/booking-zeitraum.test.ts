@@ -32,7 +32,8 @@ test('Jahr der Zahlung einer Buchung: aus dem Rechnungsdatum, nur bei einem Zeit
   const p = periodForYear(MAI, 2025)
   assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2026-02-10' }), 2026)
   assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: null }), 2025)
-  assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2031-01-01' }), 2025, 'außerhalb der erlaubten Spanne gilt das Jahr des Belegs')
+  // Seit der Durchsicht von #231 eine Regel mit der Heizposition: außerhalb der Spanne geklemmt.
+  assert.equal(bookingTaxYear(p, { year: 2025, invoiceDate: '2031-01-01' }), 2027, 'außerhalb der erlaubten Spanne geklemmt')
   assert.equal(bookingTaxYear(periodForYear(CALENDAR_RULES, 2025), { year: 2025, invoiceDate: '2026-02-10' }), null)
 })
 
@@ -127,6 +128,10 @@ test('Heizposition mit eigener Heizperiode: das Jahr der Zahlung kommt aus dem R
       }, { id: `a-${i}`, now: '2026-10-02T00:00:00Z' }))
       const decisions: LineDecision[] = [{ idx: 0, action: 'create', fields: { description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', amountCents: 100000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null } }]
       const preview = await opened.read((db) => previewBooking(db, r.assessment.id, decisions, uploadDir))
+      // Die Vorschau nennt Heizperiode und Jahr der Zahlung, und ob geklemmt wurde.
+      const satz = preview.notices.join(' ')
+      assert.match(satz, new RegExp(`Heizperiode 2025/2026, Jahr der Zahlung ${erwartet}`), satz)
+      assert.equal(/liegt außerhalb/.test(satz), invoiceDate === '2029-01-15', satz)
       const outcome = await opened.write((db) => bookAssessment(db, r.assessment.id, decisions, preview.token, { uploadDir, newId: () => `neu-${i}` }))
       assert.equal(outcome.kind, 'done')
       const item = (await opened.read(readStock)).costItems.find((c: CostItem) => c.id === `neu-${i}`) ?? assert.fail('keine Position')
