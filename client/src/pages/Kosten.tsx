@@ -118,6 +118,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
     ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
   const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear, form.invoiceFile ? invoiceDates.get(form.invoiceFile) : undefined) : null
+  // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
+  // auch wenn das Rechnungsdatum später ein anderes nahelegt.
   useEffect(() => {
     if (form && heatTax?.show && !heatTax.valid) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])

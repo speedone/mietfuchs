@@ -947,6 +947,10 @@ async function plantServes(db: Executor, plantId: string, unitsLimited: boolean,
 // Ein Mietverhältnis mit Heizvorauszahlung wechselt in eine Wohnung, die eine Anlage mit Spannen nach
 // Weg d anders versorgt als die bisherige (Durchsicht von #231, Minor 5): wie `guardServedChange`,
 // denn auch dann stünde eine angerechnete Heizvorauszahlung danach in einer anderen Abrechnung.
+// Bei H = P (Anlage ohne eigene Heizperiode, getrennte Vorauszahlung nur ausgewiesen) gibt es keine
+// Spannen und damit keinen Monat, den eine eigene Heizkostenabrechnung anrechnet (`separateOwner` ist
+// dort immer `null`): Jede Heizvorauszahlung rechnet die Abrechnung P an, gleich welche Wohnung die
+// Anlage versorgt. Ein Wohnungswechsel verschiebt dann nichts; geprüft wird nur bei Spannen.
 async function guardHeatingMove(db: Executor, before: Tenancy, after: Tenancy): Promise<void> {
   if (!(after.heatingPrepayments ?? before.heatingPrepayments ?? []).some((e) => e.monthlyCents > 0)) return
   const propertyIds = (await db.select({ propertyId: units.propertyId }).from(units).where(inArray(units.id, [before.unitId, after.unitId]))).map((u) => u.propertyId)

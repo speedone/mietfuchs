@@ -59,6 +59,12 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- **Jahr der Zahlung bei der Belegbuchung.** Reicht der Abrechnungszeitraum über zwei
+  Kalenderjahre, liegt das Jahr der Zahlung immer zwischen dem ersten Jahr und dem Jahr nach dem
+  Ende des Zeitraums: Ein Rechnungsdatum außerhalb wird auf die nächste Grenze gesetzt, auch bei
+  Positionen ohne Heizbezug, und die Vorschau sagt das. Bei einer Heizposition mit eigener
+  Heizperiode gilt ohne Rechnungsdatum das Jahr, in dem die Heizperiode endet
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
 - Abrechnungszeiträume werden intern als Zeitraum geführt und nicht mehr als Kalenderjahr:
   Kostenpositionen, abgeschlossene Abrechnungen und gezahlte Vorauszahlungen hängen an einem
   Zeitraum, der im Kalenderjahr wie bisher heißt. Wer im Kalenderjahr abrechnet, merkt davon

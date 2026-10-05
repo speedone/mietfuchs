@@ -139,3 +139,28 @@ test('Heizposition mit eigener Heizperiode: das Jahr der Zahlung kommt aus dem R
     })
   }
 })
+
+test('Objekt Juli bis Juni, Heizperiode Mai bis April, ohne Rechnungsdatum: Vorschau und Buchung nennen dasselbe Jahr der Zahlung (Durchsicht von #231)', async () => {
+  await withWorld(async (opened, uploadDir) => {
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 7 }).where(eq(properties.id, 'objekt-1'))
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await db.update(heatingPlants).set({ periodStartMonth: 5 }).where(eq(heatingPlants.id, 'hp1'))
+    })
+    fs.writeFileSync(path.join(uploadDir, 'messdienst.pdf'), '%PDF messdienst')
+    const r = await opened.write((db) => saveAssessment(db, {
+      file: 'messdienst.pdf', propertyId: 'objekt-1', year: 2025, detectedYear: 2025, requestedYear: 2025, requestedPeriod: periodKey('2025-07'), vendor: 'Messdienst', invoiceDate: null,
+      totalGrossCents: null, amountsAdjusted: null, laborFromTotal: false,
+      lines: [{ description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', categoryGuessed: false, amountCents: 100000, labor35aCents: null }],
+    }, { id: 'a-jj', now: '2026-10-02T00:00:00Z' }))
+    const decisions: LineDecision[] = [{ idx: 0, action: 'create', fields: { description: 'Heizkosten 2025/2026', category: 'Heizung und Warmwasser', amountCents: 100000, labor35aCents: null, key: 'area', allocation: null, externalTotalCents: null } }]
+    const preview = await opened.read((db) => previewBooking(db, r.assessment.id, decisions, uploadDir))
+    const satz = preview.notices.join(' ')
+    const vorschau = /Heizperiode 2025\/2026, Jahr der Zahlung (\d{4})/.exec(satz)?.[1] ?? assert.fail(satz)
+    const outcome = await opened.write((db) => bookAssessment(db, r.assessment.id, decisions, preview.token, { uploadDir, newId: () => 'neu-jj' }))
+    assert.equal(outcome.kind, 'done')
+    const item = (await opened.read(readStock)).costItems.find((c: CostItem) => c.id === 'neu-jj') ?? assert.fail('keine Position')
+    assert.deepEqual([item.period, item.taxYear], ['2025-05', Number(vorschau)])
+    assert.equal(vorschau, '2026', 'ohne Rechnungsdatum das Jahr des Endes der Heizperiode')
+  })
+})

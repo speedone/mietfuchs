@@ -168,13 +168,17 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       const heatingTarget = body.category === HEATING_CATEGORY && input.heatingRules ? heatingPeriodsEndingIn(input.heatingRules, targetPeriod) : []
       const h = heatingTarget.length === 1 ? heatingTarget[0] : undefined
       const yearSpan = h && spansTwoYears(h) ? h : !h && spansTwoYears(targetPeriod) ? targetPeriod : undefined
+      // Bei einer Heizposition rechnet der Planer das Jahr einmal, und die Buchung schreibt genau diesen
+      // Wert (Durchsicht von #231): Vorschau und gebuchte Position sagen dasselbe.
+      let heatingTaxYear: number | undefined
       if (yearSpan) {
         const py = paymentYear(yearSpan, a.invoiceDate, h ? undefined : a.year)
+        if (h) heatingTaxYear = py.year
         notices.push(`${quote(body.description)}: ${h ? `Heizperiode ${periodLabel(h)}, ` : ''}Jahr der Zahlung ${py.year}.` +
           (py.clamped && a.invoiceDate ? ` Das Rechnungsdatum ${a.invoiceDate.slice(8, 10)}.${a.invoiceDate.slice(5, 7)}.${a.invoiceDate.slice(0, 4)} liegt außerhalb der Jahre, die zu ${periodLabel(yearSpan)} passen; prüfen Sie das Jahr der Zahlung im Formular.` : ''))
       }
       const id = newId()
-      createWrites.push({ kind: 'createItem', id, body: { ...body, propertyId: a.propertyId } })
+      createWrites.push({ kind: 'createItem', id, body: { ...body, ...(heatingTaxYear !== undefined ? { taxYear: heatingTaxYear } : {}), propertyId: a.propertyId } })
       after.set(d.idx, {
         booking: 'created', costItemId: id, dismissed: false, description: body.description, category: body.category,
         amountCents: body.amountCents, labor35aCents: d.fields.labor35aCents,
