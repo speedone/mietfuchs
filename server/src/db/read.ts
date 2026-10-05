@@ -279,6 +279,8 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
     warmRentAverageCents: p.warmRentAverageCents,
     changeSplit: p.changeSplit,
     periodStartMonth: p.periodStartMonth,
+    periodChanges: [],
+    separateSpans: [],
     units: p.unitsLimited ? (byPlant.get(p.id) ?? []) : null,
   }))
 }

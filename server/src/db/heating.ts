@@ -84,6 +84,9 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     warmRentAverageCents: merged(body, 'warmRentAverageCents', current.warmRentAverageCents, nullableNumber),
     changeSplit: merged(body, 'changeSplit', current.changeSplit, (v) => oneOfOrUndefined(CHANGE_SPLITS, v) ?? current.changeSplit),
     periodStartMonth: merged(body, 'periodStartMonth', current.periodStartMonth, nullableNumber),
+    // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
+    periodChanges: current.periodChanges,
+    separateSpans: current.separateSpans,
     units: merged(body, 'units', current.units, (v) => (v === null ? null : readPlantUnits(v))),
   }
 }
@@ -92,8 +95,8 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
 const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   id, propertyId, name: '', energy: 'other', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
-  capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
-  newDevicesInstall: null,
+  capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
+  periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {

@@ -141,6 +141,13 @@
       "when": 1791194860170,
       "tag": "0019_heizanlage_bedingungen",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791196319383,
+      "tag": "0020_heizperiode",
+      "breakpoints": true
     }
   ]
 }

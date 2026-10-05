@@ -72,6 +72,7 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   tenancy: { tab: 'stammdaten', page: 'Stammdaten' },
   meter: { tab: 'zaehler', page: 'Zähler' },
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
+  heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an

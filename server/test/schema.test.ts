@@ -16,7 +16,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { AiSettings, AiSlot, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
+import type { AiSettings, AiSlot, CostItem, HeatingPeriodData, HeatingPlant, HeatingPlantUnit, HeatingPrepaymentOverride, SeparateSpan, PeriodKey, PeriodRules, Meter, Payment, PersonEntry, PrepaymentEntry, Reading, RentEntry, Settings, Tenancy, Unit, ExternalBasis, UploadInfo, StoredAssessment, StoredAssessmentLine } from '../../shared/types.ts'
 import type { ClosedSettlement } from '../src/store.ts'
 import { applyMigrations, connect, loadMigrations } from '../src/db/client.ts'
 import * as schema from '../src/db/schema.ts'
@@ -77,7 +77,8 @@ type _Units = Assert<Matches<typeof schema.units.$inferSelect, Omit<Unit, 'noCon
 // Dass sie hier aufgezählt sind, ist Absicht: Wer eine davon wieder in die Zeile holt oder eine
 // weitere hinzufügt, muss diese Zeile anfassen und stolpert über die Entscheidung. Die fünfte ist
 // die Pauschale (#93).
-type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates'>
+// Heizstaffel und Heizkorrektur (Heizung PR 5) stehen ebenfalls in eigenen Tabellen.
+type TenancyColumns = Omit<Tenancy, 'personHistory' | 'prepayments' | 'baseRents' | 'prepaymentOverrides' | 'flatRates' | 'heatingPrepayments' | 'heatingPrepaymentOverrides'>
 type _Tenancies = Assert<Matches<typeof schema.tenancies.$inferSelect, TenancyColumns>>
 
 type _PersonHistory = Assert<Matches<Omit<typeof schema.personHistory.$inferSelect, 'tenancyId'>, PersonEntry>>
@@ -126,10 +127,17 @@ type _Payments = Assert<Matches<typeof schema.payments.$inferSelect, Payment>>
 // Die angeschlossenen Wohnungen stehen in heating_plant_units. Ob es eine Liste gibt, sagt
 // `units_limited`, wie `participants_limited` bei den Kostenpositionen (#94): Ohne die Spalte
 // sähe eine Anlage, deren letzte Wohnung gelöscht wurde, aus wie eine ohne Liste.
-type HeatingPlantColumns = Omit<HeatingPlant, 'units'> & { unitsLimited: boolean }
+// Die Wechsel der eigenen Heizperiode und die Spannen nach Weg d stehen in eigenen Tabellen
+// (Heizung PR 5), wie die Wohnungen in heating_plant_units.
+type HeatingPlantColumns = Omit<HeatingPlant, 'units' | 'periodChanges' | 'separateSpans'> & { unitsLimited: boolean }
 type _HeatingPlants = Assert<Matches<typeof schema.heatingPlants.$inferSelect, HeatingPlantColumns>>
 type _HeatingPlantUnits = Assert<Matches<Omit<typeof schema.heatingPlantUnits.$inferSelect, 'plantId'>, HeatingPlantUnit>>
 type _HeatingPeriods = Assert<Matches<typeof schema.heatingPeriods.$inferSelect, HeatingPeriodData>>
+
+// --- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5) ---
+type _HeatingPrepayments = Assert<Matches<Omit<typeof schema.heatingPrepayments.$inferSelect, 'tenancyId'>, PrepaymentEntry>>
+type _HeatingPrepaymentOverrides = Assert<Matches<Omit<typeof schema.heatingPrepaymentOverrides.$inferSelect, 'tenancyId'>, HeatingPrepaymentOverride>>
+type _HeatingSeparateSpans = Assert<Matches<Omit<typeof schema.heatingSeparateSpans.$inferSelect, 'plantId'>, SeparateSpan>>
 
 // --- Abgeschlossene Abrechnungen ---
 // `ClosedSettlement` steht in store.ts und nicht in shared/types.ts, weil nur der Server sie
@@ -234,6 +242,8 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'assessment_lines',
       'assessments',
       'base_rents',
+      'closed_heating_settlement_history',
+      'closed_heating_settlements',
       'closed_settlement_history',
       'closed_settlements',
       'cost_item_amounts',
@@ -242,9 +252,13 @@ test('Migration lässt sich anwenden und legt alle Tabellen an', async () => {
       'cost_item_shares',
       'cost_items',
       'flat_rates',
+      'heating_period_changes',
       'heating_periods',
       'heating_plant_units',
       'heating_plants',
+      'heating_prepayment_overrides',
+      'heating_prepayments',
+      'heating_separate_spans',
       'meters',
       'payments',
       'period_changes',
@@ -710,6 +724,71 @@ test('Heizanlage: Wohnungen und Heizperioden fallen mit, eine Kostenposition hä
     connection.exec("DELETE FROM cost_items WHERE id = 'c1'")
     connection.exec("DELETE FROM heating_plants WHERE id = 'hp1'")
     assert.equal(zahl('heating_periods'), 0, 'die Heizperioden fallen mit der Anlage')
+  } finally {
+    cleanup()
+  }
+})
+
+// ---------- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5) ----------
+
+const einMieter = "INSERT INTO tenancies (id, unit_id, tenant_name, persons, start) VALUES ('t1', 'u1', 'A', 1, '2024-01-01')"
+
+test('Heizperiode: Wechsel und Spannen nach Weg d gehören zur Anlage und fallen mit ihr', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    assert.equal(rejects(connection, "INSERT INTO heating_period_changes (plant_id, from_month) VALUES ('hp1', '2026-01')"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_period_changes (plant_id, from_month) VALUES ('hp1', '2026-13')"), 'Monat 13')
+    assert.equal(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2026-01', NULL)"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2027-05', '2026-05')"), 'Ende vor Beginn')
+    assert.ok(rejects(connection, "INSERT INTO heating_separate_spans (plant_id, from_month, until_period) VALUES ('hp1', '2025-5', NULL)"), 'kein Monat')
+    connection.exec("DELETE FROM heating_plants WHERE id = 'hp1'")
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    assert.equal(zahl('heating_period_changes'), 0)
+    assert.equal(zahl('heating_separate_spans'), 0)
+  } finally {
+    cleanup()
+  }
+})
+
+test('Heizstaffel und Heizkorrektur: nie negativ, vorläufig nur mit Monaten, endgültig ohne', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(einWohnung)
+    connection.exec(einMieter)
+    connection.exec(eineAnlage)
+    assert.equal(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2025-05', 12300)"), null)
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2026-01', -1)"), 'negativ')
+    const korrektur = (werte: string) => `INSERT INTO heating_prepayment_overrides (tenancy_id, plant_id, period, amount_cents, provisional, from_month, to_month) VALUES ${werte}`
+    assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2025-05', 30000, 0, NULL, NULL)")), null)
+    assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2026-05', 87600, 1, '2026-05', '2026-12')")), null)
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2027-05', 100, 1, NULL, NULL)")), 'vorläufig ohne Monate')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2028-05', 100, 0, '2028-05', '2028-12')")), 'endgültig mit Monaten')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2029-05', 100, 1, '2029-12', '2029-05')")), 'Ende vor Beginn')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2030-05', -1, 0, NULL, NULL)")), 'negativ')
+    assert.ok(rejects(connection, korrektur("('t1', 'hp1', '2025-05', 1, 0, NULL, NULL)")), 'je Heizperiode eine')
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'eine Heizkorrektur hält die Anlage')
+    connection.exec("DELETE FROM tenancies WHERE id = 't1'")
+    const zahl = (table: string) => Number(connection.rows(`SELECT count(*) FROM ${table}`)[0]?.[0])
+    assert.equal(zahl('heating_prepayments'), 0, 'die Staffel fällt mit dem Mietverhältnis')
+    assert.equal(zahl('heating_prepayment_overrides'), 0, 'die Korrektur fällt mit dem Mietverhältnis')
+  } finally {
+    cleanup()
+  }
+})
+
+test('Abgeschlossene Heizkostenabrechnung: eindeutig je Anlage und Heizperiode, JSON, hält die Anlage', async () => {
+  const { connection, cleanup } = await freshDb()
+  try {
+    connection.exec(eineAnlage)
+    const abschluss = (id: string, period: string, inhalt = "'{}'") =>
+      `INSERT INTO closed_heating_settlements (id, plant_id, period, closed_at, settlement) VALUES ('${id}', 'hp1', '${period}', '2027-01-10', ${inhalt})`
+    assert.equal(rejects(connection, abschluss('a1', '2025-05')), null)
+    assert.ok(rejects(connection, abschluss('a2', '2025-05')), 'zweimal dieselbe Heizperiode')
+    assert.ok(rejects(connection, abschluss('a3', '2026-05', "'kein json'")), 'kein JSON')
+    assert.ok(rejects(connection, abschluss('a4', '2026-13')), 'Monat 13')
+    assert.equal(rejects(connection, "INSERT INTO closed_heating_settlement_history (id, plant_id, period, closed_at, reopened_at, settlement) VALUES ('v1', 'hp1', '2025-05', '2027-01-10', '2027-02-01', '{}')"), null)
+    assert.ok(rejects(connection, "DELETE FROM heating_plants WHERE id = 'hp1'"), 'ein Abschluss hält die Anlage')
   } finally {
     cleanup()
   }

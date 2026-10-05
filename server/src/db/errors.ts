@@ -123,6 +123,13 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   meters_heating_role_plant_valid:
     'Ein Zähler der Heizanlage braucht seine Rolle (Versorgung, Warmwasserspeicher oder Gesamtwärme), und nur ein Zähler der Anlage hat eine. Bitte wählen Sie beides oder keines.',
   meters_heating_plant_unit_valid: 'Ein Zähler der Heizanlage hängt an keiner Wohnung. Bitte wählen Sie entweder die Anlage oder eine Wohnung.',
+  // Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5)
+  heating_separate_spans_order_valid:
+    'Die getrennte Heizkostenabrechnung endet vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
+  heating_prepayment_overrides_provisional_complete:
+    'Eine vorläufige Korrektur der Heizvorauszahlung nennt den ersten und den letzten Monat, eine endgültige keinen. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
+  heating_prepayment_overrides_months_order_valid:
+    'Die Monate der Korrektur der Heizvorauszahlung enden vor ihrem Beginn. Bitte laden Sie die Seite neu; gespeichert wurde nichts.',
   heating_periods_heat_pct_valid: 'Der Verbrauchsanteil der Heizkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
   heating_periods_water_pct_valid: 'Der Verbrauchsanteil der Warmwasserkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
 }

@@ -450,6 +450,134 @@ export const heatingPeriods = sqliteTable(
   ],
 )
 
+// ---------- Eigene Heizperiode und getrennte Heizkostenabrechnung (Heizung PR 5, Entwurf 3.1, 5.3) ----------
+
+// Die Wechsel der eigenen Heizperiode einer Anlage, wie `period_changes` beim Objekt (#208). Der
+// Beginnmonat steht in `heating_plants.period_start_month`; `null` dort heißt „wie das Objekt“, und
+// dann gibt es hier keine Zeile.
+export const heatingPeriodChanges = sqliteTable(
+  'heating_period_changes',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    fromMonth: text('from_month').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.plantId, t.fromMonth] }), periodKeyCheck('heating_period_changes_from_month_valid', 'from_month')],
+)
+
+// Die Zeitspannen nach Weg d (siehe `SeparateSpan`): Eine Spanne entsteht beim Einschalten ab dem
+// Monat X und wird beim Ausschalten bei der Heizperiode W geschlossen (C3, D1). Ohne sie ließe sich
+// nicht sagen, welche Heizperiode vor einem Ausschalten getrennt war und ab welchem Monat ihre
+// Heizstaffel ihr gehört.
+export const heatingSeparateSpans = sqliteTable(
+  'heating_separate_spans',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    from: text('from_month').notNull(),
+    until: text('until_period').$type<PeriodKey>(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.from] }),
+    periodKeyCheck('heating_separate_spans_from_valid', 'from_month'),
+    periodKeyCheck('heating_separate_spans_until_valid', 'until_period'),
+    check('heating_separate_spans_order_valid', sql.raw('"until_period" IS NULL OR "until_period" > "from_month"')),
+  ],
+)
+
+// Die Heizvorauszahlung je Mietverhältnis (Weg d und H = P mit getrennter Vorauszahlung), eine
+// Staffel wie `prepayments`.
+export const heatingPrepayments = sqliteTable(
+  'heating_prepayments',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    monthlyCents: integer('monthly_cents').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.from] }),
+    notNegative('heating_prepayments_monthly_not_negative', 'monthly_cents'),
+  ],
+)
+
+// Die Korrektur der Heizvorauszahlung je Heizperiode (D2). `RESTRICT` auf die Anlage: Eine Anlage
+// mit Korrekturen wird nicht still entfernt (removeHeatingPlant lehnt vorher mit einem Satz ab).
+export const heatingPrepaymentOverrides = sqliteTable(
+  'heating_prepayment_overrides',
+  {
+    tenancyId: text('tenancy_id')
+      .notNull()
+      .references(() => tenancies.id, { onDelete: 'cascade' }),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    cents: integer('amount_cents').notNull(),
+    provisional: integer('provisional', { mode: 'boolean' }).notNull().default(false),
+    fromMonth: text('from_month'),
+    toMonth: text('to_month'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tenancyId, t.plantId, t.period] }),
+    periodKeyCheck('heating_prepayment_overrides_period_valid', 'period'),
+    periodKeyCheck('heating_prepayment_overrides_from_valid', 'from_month'),
+    periodKeyCheck('heating_prepayment_overrides_to_valid', 'to_month'),
+    notNegative('heating_prepayment_overrides_amount_not_negative', 'amount_cents'),
+    // Vorläufig genau dann, wenn Monate genannt sind, und dann beide (D2).
+    check('heating_prepayment_overrides_provisional_complete', sql.raw('("provisional" = 1) = ("from_month" IS NOT NULL) AND ("from_month" IS NULL) = ("to_month" IS NULL)')),
+    check('heating_prepayment_overrides_months_order_valid', sql.raw('"to_month" IS NULL OR "to_month" >= "from_month"')),
+  ],
+)
+
+// Die abgeschlossene Heizkostenabrechnung einer Heizperiode (Weg d, B3), ein Archivstück wie
+// `closed_settlements` und aus demselben Grund JSON. `closed_settlements` bleibt unverändert: So
+// braucht diese PR keinen Neubau dieser Tabelle, und der Abschluss von P friert die
+// Heizkostenabrechnung nicht ein.
+export const closedHeatingSettlements = sqliteTable(
+  'closed_heating_settlements',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    closedAt: text('closed_at').notNull(),
+    sentAt: text('sent_at'),
+    settlement: text('settlement', { mode: 'json' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('closed_heating_settlements_plant_period_idx').on(t.plantId, t.period),
+    periodKeyCheck('closed_heating_settlements_period_valid', 'period'),
+    // Unqualifiziert, wie bei closed_settlements (macOS-SQLite nach dem Umbenennen).
+    check('closed_heating_settlements_settlement_is_json', sql.raw('json_valid("settlement")')),
+  ],
+)
+
+// Frühere Abschlüsse einer Heizkostenabrechnung (#56), wie `closed_settlement_history`.
+export const closedHeatingSettlementHistory = sqliteTable(
+  'closed_heating_settlement_history',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    closedAt: text('closed_at').notNull(),
+    sentAt: text('sent_at'),
+    reopenedAt: text('reopened_at').notNull(),
+    settlement: text('settlement', { mode: 'json' }).notNull(),
+  },
+  (t) => [
+    index('closed_heating_settlement_history_plant_period_idx').on(t.plantId, t.period),
+    periodKeyCheck('closed_heating_settlement_history_period_valid', 'period'),
+    check('closed_heating_settlement_history_settlement_is_json', sql.raw('json_valid("settlement")')),
+  ],
+)
+
 // ---------- Kostenpositionen ----------
 
 export const costItems = sqliteTable(
