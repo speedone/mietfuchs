@@ -45,6 +45,7 @@ import {
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
+import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
@@ -538,6 +539,32 @@ app.delete('/api/heating-plants/:id', async (req, res) => {
     error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
       'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
   })
+})
+
+// ---------- Heizperioden: CO₂ und Warmwasser (Heizung PR 6) ----------
+// Was gespeichert wird und was nicht, steht in db/co2.ts. `:period` ist der Schlüssel der
+// Heizperiode (JJJJ-MM), `?period=` beim Lesen der Zeitraum des Objekts wie bei den übrigen Routen.
+const NO_PLANT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.get('/api/heating-plants/:id/periods', async (req, res) => {
+  const period = typeof req.query.period === 'string' ? req.query.period : ''
+  const views = await readData((db) => heatingPeriodViews(db, req.params.id, period))
+  if (!views) return res.status(404).json({ error: NO_PLANT })
+  res.json(views)
+})
+app.put('/api/heating-plants/:id/periods/:period/co2', async (req, res) => {
+  const saved = await writeData((db) => saveCo2Statement(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
+})
+app.delete('/api/heating-plants/:id/periods/:period/co2', async (req, res) => {
+  const removed = await writeData((db) => removeCo2Statement(db, req.params.id, req.params.period))
+  if (removed === null) return res.status(404).json({ error: NO_PLANT })
+  res.json({ ok: true, removed })
+})
+app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) => {
+  const saved = await writeData((db) => saveHotWater(db, req.params.id, req.params.period, bodyObject(req)))
+  if (!saved) return res.status(404).json({ error: NO_PLANT })
+  res.json(saved)
 })
 
 // Zeitraum der Heizung (Heizung PR 5, Entwurf 3.0, 3.6): erst die Vorschau, dann der Wechsel mit den
