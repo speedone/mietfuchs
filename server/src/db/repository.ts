@@ -478,12 +478,16 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
   // Ein Teil einer aufgeteilten Rechnung wird nur berichtigt (Durchsicht von #226, C1): Mit einem
   // anderen Leistungszeitraum oder Zeitraum stimmte sein Anteil nicht mehr zum Schnitt nach Tagen,
   // und die Geschwisterteile blieben stehen. Den Wechsel des Rhythmus (`splitPart`) betrifft das nicht.
+  // Auch nicht zur Heizposition (Nachprüfung von #226): Heizkosten werden nie nach Tagen geteilt.
   if (before !== null && !options.splitPart && isSplitPart(rules, before) &&
-    (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period)) {
+    (before.serviceFrom !== from || before.serviceTo !== to || before.period !== after.period || after.category === HEATING_CATEGORY)) {
     throw new PeriodError(splitPartMessage(before))
   }
   if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
-  const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period
+  // Wird aus einer Heizposition eine kalte, ist das keine unveränderte Position (Nachprüfung von
+  // #226): Die Heizposition durfte über zwei Zeiträume reichen, die kalte muss aufgeteilt werden.
+  const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period &&
+    before.category !== HEATING_CATEGORY
   if (unchanged) return
   const touched = periodsBetween(rules, from, to)
   if (touched.length > 1) {

@@ -5709,3 +5709,27 @@ test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachse
     s.stop()
   }
 })
+
+// Nachprüfung von #226 (1): Ein Wechsel der Kostenart zwischen Heizung und kalten Kosten ist kein
+// „unverändert“. Sonst stünde eine Heizposition über zwei Zeiträume als kalte ungeteilt in einem,
+// und ein Teil einer aufgeteilten Rechnung würde zur Heizposition.
+test('Aufteilen (#208): Heizung ↔ kalt über die Kostenart, nicht am Aufteilen vorbei', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const json = { 'content-type': 'application/json' }
+    const heizung = await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2024-05', category: 'Heizung und Warmwasser', description: 'Wartung', amountCents: 100000, key: 'area', taxYear: 2025, serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }) })
+    const kalt = await fetch(`${s.base}/api/costItems/${heizung.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ category: 'Grundsteuer' }) })
+    assert.equal(kalt.status, 400)
+    assert.match(await errorFrom(kalt), /„Aufteilen und speichern“/)
+    // Über das Aufteilen geht es.
+    const geteilt = await s.api<CostItem[]>(`/api/costItems/${heizung.id}/split`, { method: 'PUT', body: JSON.stringify({ category: 'Grundsteuer' }) })
+    assert.deepEqual(geteilt.map((c) => [c.period, c.amountCents]).sort(), [['2024-05', 32877], ['2025-05', 67123]])
+    const teil = geteilt.find((c) => c.period === '2025-05') ?? assert.fail('kein Teil')
+    const warm = await fetch(`${s.base}/api/costItems/${teil.id}`, { method: 'PUT', headers: json, body: JSON.stringify({ category: 'Heizung und Warmwasser' }) })
+    assert.equal(warm.status, 400)
+    assert.match(await errorFrom(warm), /ist ein Teil einer aufgeteilten Rechnung/)
+  } finally {
+    s.stop()
+  }
+})

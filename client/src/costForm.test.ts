@@ -639,8 +639,17 @@ test('Ein schon aufgeteilter Teil, dessen Leistungszeitraum und Zeitraum bleiben
   const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
   const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Grundsteuer 2025 (anteilig 01.01.–30.04.2025)', amount: '157,81', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
   if ('error' in built) return expect.unreachable(built.error)
-  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025) }
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Grundsteuer' }
   expect(needsSplitCheck(built.body, before)).toBe(false)
   expect(needsSplitCheck(built.body, { ...before, serviceTo: '2025-06-30' })).toBe(true)
   expect(needsSplitCheck(built.body, { ...before, period: periodKey('2024-01') })).toBe(true)
+})
+
+test('Eine Heizposition, die zur kalten wird, geht durch die Rückfrage zum Aufteilen (Nachprüfung von #226)', () => {
+  const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Wartung', amount: '1000,00', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Heizung und Warmwasser' }
+  expect(needsSplitCheck(built.body, before)).toBe(true)
+  expect(needsSplitCheck(built.body, { ...before, category: 'Grundsteuer' })).toBe(false)
 })

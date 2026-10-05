@@ -495,9 +495,10 @@ export function sameCostOf<T extends DuplicateItem>(
 // Ein schon aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung: Bleiben
 // Leistungszeitraum und Zeitraum gegenüber der gespeicherten Position (`before`) gleich, wird nur
 // berichtigt und nicht erneut aufgeteilt; der Server nimmt das ebenso an (repository.ts).
-export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'serviceFrom' | 'serviceTo' | 'period'> | null): boolean {
+// Eine Heizposition, die zur kalten wird, zählt nicht als unverändert (Nachprüfung von #226).
+export function needsSplitCheck(body: CostItemBody, before?: Pick<CostItem, 'serviceFrom' | 'serviceTo' | 'period' | 'category'> | null): boolean {
   if (body.serviceFrom === null || body.serviceTo === null || body.category === HEATING_CATEGORY) return false
-  return !(before && before.serviceFrom === body.serviceFrom && before.serviceTo === body.serviceTo && before.period === body.period)
+  return !(before && before.category !== HEATING_CATEGORY && before.serviceFrom === body.serviceFrom && before.serviceTo === body.serviceTo && before.period === body.period)
 }
 
 // Die Rückfrage vor dem Aufteilen, oder warum nicht aufgeteilt werden kann.
