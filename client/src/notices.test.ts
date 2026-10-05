@@ -51,9 +51,20 @@ describe('Hinweise (#112)', () => {
     ] })).toEqual({
       head: 'Rechtsstand 30.09.2026',
       rules: ['Kabelfernsehen (§ 2 BetrKV), gilt bis 30.06.2024', 'Heizung (§ 2 HeizkostenV)'],
+      values: [],
+      valuesNote: 'Rechtswerte nicht gespeichert (vor 0.11.0)',
     })
     expect(legalBasisLines(undefined).head).toMatch(/nicht erfasst/)
     expect(legalBasisLines(undefined).rules).toEqual([])
+  })
+
+  test('Rechtsstand: die Rechtswerte, mit denen gerechnet wurde, je eine Zeile mit Fundstelle (Heizung PR 1)', () => {
+    const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [
+      { id: 'hkv.cut.not-by-consumption', title: 'Kürzung bei nicht verbrauchsabhängiger Abrechnung', norm: '§ 12 Abs. 1 Satz 1 HeizkostenV', cite: '§ 12 Abs. 1 Satz 1 HeizkostenV', value: 15, text: '15 %' },
+    ] })
+    expect(lines.values).toEqual(['Kürzung bei nicht verbrauchsabhängiger Abrechnung: 15 % (§ 12 Abs. 1 Satz 1 HeizkostenV)'])
+    expect(lines.valuesNote).toBeNull()
+    expect(legalBasisLines({ asOf: '2026-10-05', rules: [], values: [] }).valuesNote).toBeNull()
   })
 })
 
