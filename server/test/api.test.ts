@@ -26,7 +26,7 @@ import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { calendarPeriod } from '../../shared/period.ts'
 import type { JsonSchema } from '../src/ai/ollama.ts'
 import type {
-  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
+  AiKeyInfo, AiPreset, AiRecommendations, AiSettings, AiSlot, AiSlotName, AiStatus, AssessmentLine, AssignableHeatingItem, HeatingPlant, AssessmentView, BookingPreview, CostItem, Extraction, LineDecision, LineFields,
   Meter, MeterReadingExtraction, OllamaStatus, Payment, Property, Reading, Settings, Settlement, TaxReport, Tenancy, Unit, UnitDependents,
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
@@ -5754,6 +5754,99 @@ test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder ex
       assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
     }
     assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+  } finally {
+    s.stop()
+  }
+})
+
+// ---------- Heizanlage (Heizung PR 4) ----------
+
+// Ein POST-Rumpf als Anfrage; `postJson` weiter oben schickt schon ab und gibt die Antwort.
+const jsonPost = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) })
+
+test('Heizanlage: anlegen samt Zuordnung offener Heizpositionen, und die Abrechnung bleibt gleich', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'EG', areaM2: 80, participates: true }))
+    await s.api('/api/tenancies', jsonPost({
+      unitId: unit.id, tenantName: 'Mieter', personHistory: [{ from: '2025-01-01', persons: 2 }], start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 10000 }], prepaymentOverrides: {}, baseRents: [],
+    }))
+    const heizung = await s.api<CostItem>('/api/costItems', jsonPost({ period: '2025-01', category: 'Heizung und Warmwasser', description: 'Gas', amountCents: 120000, key: 'area' }))
+    const vorher = await s.api<Settlement>('/api/settlement/2025-01')
+    assert.deepEqual((await s.api<AssignableHeatingItem[]>('/api/heating-plants/assignable')).map((i) => i.id), [heizung.id])
+    const res = await fetch(`${s.base}/api/heating-plants`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ energy: 'gas', method: 'service', assignItemIds: [heizung.id] }),
+    })
+    assert.equal(res.status, 201)
+    const { plant, assigned } = await jsonOf<{ plant: HeatingPlant; assigned: number }>(res)
+    assert.equal(assigned, 1)
+    assert.deepEqual(await s.api<HeatingPlant[]>('/api/heating-plants'), [plant])
+    const [gespeichert] = await s.api<CostItem[]>('/api/costItems')
+    assert.equal(gespeichert?.heatingPlantId, plant.id)
+    // Entwurf 11.2: Das Anlegen ändert keine Zahl und keinen Hinweis.
+    assert.deepEqual(await s.api<Settlement>('/api/settlement/2025-01'), vorher)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const selbst = await send('/api/heating-plants', jsonPost({ energy: 'gas', method: 'self' }))
+    assert.equal(selbst.status, 400)
+    assert.match(await errorFrom(selbst), /eigene Heizkostenabrechnung/)
+    const angelegt = await send('/api/heating-plants', jsonPost({ energy: 'districtHeating', method: 'manual' }))
+    assert.equal(angelegt.status, 201)
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(angelegt)
+    const zweite = await send('/api/heating-plants', jsonPost({ energy: 'gas' }))
+    assert.equal(zweite.status, 400)
+    assert.match(await errorFrom(zweite), /zweite Heizanlage/)
+
+    const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    const fremd = await send(`/api/meters?property=${objekt2.id}`, jsonPost({ name: 'Gas', unitId: null, type: 'sonstig', unit: 'm³', heatingPlantId: plant.id, heatingRole: 'supply' }))
+    assert.equal(fremd.status, 400)
+    assert.match(await errorFrom(fremd), /Heizanlage aber zu/)
+
+    const geaendert = await send(`/api/heating-plants/${plant.id}`, { method: 'PUT', body: JSON.stringify({ devicesRemote: 'all' }) })
+    assert.equal(geaendert.status, 200)
+    assert.equal((await jsonOf<HeatingPlant>(geaendert)).devicesRemote, 'all')
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht', { method: 'PUT', body: '{}' })).status, 404)
+
+    const zaehler = await send(`/api/meters?property=${plant.propertyId}`, jsonPost({ name: 'Fernwärme', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: plant.id, heatingRole: 'supply' }))
+    assert.equal(zaehler.status, 201)
+    const blockiert = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
+    assert.equal(blockiert.status, 409)
+    assert.match(await errorFrom(blockiert), /„Fernwärme“/)
+    await send(`/api/meters/${(await jsonOf<Meter>(zaehler)).id}`, { method: 'DELETE' })
+    const weg = await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })
+    assert.equal(weg.status, 200)
+    assert.deepEqual(await jsonOf<{ ok: boolean; released: number }>(weg), { ok: true, released: 0 })
+    assert.equal((await send(`/api/heating-plants/${plant.id}`, { method: 'DELETE' })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
+
+test('Heizanlage: eine angeschlossene Wohnung wechselt nicht still das Objekt (Durchsicht von #230)', async () => {
+  // Sonst stünde sie in der Liste einer Anlage des alten Objekts, und das eigene Backup würde beim
+  // Einspielen abgelehnt.
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'G', areaM2: 50, participates: true }))
+    const angelegt = await send('/api/heating-plants', jsonPost({ energy: 'gas', units: [{ unitId: unit.id, heatedAreaM2: null }] }))
+    assert.equal(angelegt.status, 201)
+    const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    const wechsel = await send(`/api/units/${unit.id}`, { method: 'PUT', body: JSON.stringify({ propertyId: objekt2.id }) })
+    assert.equal(wechsel.status, 400)
+    assert.match(await errorFrom(wechsel), /Heizanlage/)
+    const archiv = await fetch(`${s.base}/api/backup`)
+    const fd = new FormData()
+    fd.append('file', new Blob([await archiv.arrayBuffer()], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200, 'das eigene Backup lässt sich einspielen')
   } finally {
     s.stop()
   }

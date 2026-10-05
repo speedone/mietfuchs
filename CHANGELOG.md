@@ -19,6 +19,25 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Rumpfzeitraum gibt es einen Vorschlag für die neue Vorauszahlung, Brennstoff nach
   Gradtagen. Wer im Kalenderjahr abrechnet, merkt davon nichts
   ([#208](https://github.com/speedone/mietfuchs/issues/208)).
+- **Heizanlage in den Stammdaten.** Unter „Heizung“ geben Sie an, womit geheizt wird, wer die
+  Heizkostenabrechnung erstellt (ein Messdienst, bei einer Eigentumswohnung die Gemeinschaft, oder
+  niemand), welche Wohnungen angeschlossen sind und ob die Zähler und Heizkostenverteiler aus der
+  Ferne ablesbar sind. Vorhandene Heizpositionen offener Zeiträume kommen beim Einrichten zur
+  Anlage, neue von selbst. An keinem Betrag ändert sich dadurch etwas; stehen an Zählern schon
+  Angaben zur Fernablesbarkeit, können Hinweise dazukommen
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- **Fernablesbarkeit nach Einbaudatum, beziffert.** Zähler kennen jetzt die Sparten Warmwasser und
+  Heizkostenverteiler, dazu „aus der Ferne ablesbar“ und das Einbaudatum; beim Messdienst genügt die
+  Angabe an der Heizanlage. Ist ein Gerät nicht fernablesbar, obwohl es das sein muss (nach dem
+  01.12.2021 eingebaut: ab dem Einbau, ältere ab 2027), nennt die Abrechnung die Kürzung von 3 %
+  der Heizkosten je Mieter; ist das nur möglich, etwa weil ein einzelnes Gerät in einem sonst nicht
+  fernablesbaren System ersetzt wurde (§ 5 Abs. 2 Satz 4 HeizkostenV), sagt sie „bis zu“. Ob die
+  Geräte einzeln ersetzt oder als Ganzes neu eingebaut wurden, fragt die Heizanlage, wenn es darauf
+  ankommt. Ohne Angaben bleibt es beim
+  bisherigen Hinweis ([#214](https://github.com/speedone/mietfuchs/issues/214)).
+- **Zweifamilienhaus als Art des Objekts**, mit einem Hinweis, wenn die angelegten Wohnungen nicht
+  dazu passen; ob die Ausnahme des § 2 HeizkostenV gilt, richtet sich weiter nach den Wohnungen
+  ([#180](https://github.com/speedone/mietfuchs/issues/180)).
 
 ### Geändert
 
@@ -42,6 +61,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **KI-Belegauswertung:** Ob der Abstand zwischen Positionen und Rechnungsbetrag Umsatzsteuer
   ist, misst Mietfuchs jetzt am Satz des Rechnungsdatums, für das zweite Halbjahr 2020 also an
   16 %. Passt der Abstand nicht, bleiben die Positionen wie auf dem Beleg stehen.
+- **Wasser nach Zählern: Warmwasserzähler zählen mit.** Beim Kaltwasser nach Verbrauch gehen die
+  Warmwasserzähler der Wohnungen in die Verteilung ein, denn die Wasserkosten des Warmwassers
+  gehören dazu. Ob eine Wohnung einen Zähler hat, sagt aber nur ein Kaltwasserzähler; mit nur einem
+  Warmwasserzähler gilt für ihr Kaltwasser der Rest des Hauptzählers. Zähler, die zur Heizanlage
+  selbst gehören (etwa ein Wärmezähler am Speicher), gelten nicht als Hauptzähler des Hauses. Beides
+  betrifft nur Bestände mit diesen neuen Zählern, keine bisherige Abrechnung
+  ([#99](https://github.com/speedone/mietfuchs/issues/99)).
+- Ein Kostenschlüssel „nach Verbrauch“ mit Heizkostenverteilern wird abgelehnt, bis Mietfuchs deren
+  Bewertungsfaktoren kennt; übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.
 
 ### Behoben
 

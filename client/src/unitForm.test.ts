@@ -209,6 +209,12 @@ describe('Anschlüsse einer Einheit', () => {
     expect(connectionSummary(['kaltwasser', 'waerme'])).toBe('ohne Wasser- und Wärmeanschluss')
     expect(connectionSummary(['sonstig'])).toBe('ohne Anschluss für Sonstiges')
   })
+
+  test('Warmwasser ist ein eigener Anschluss, Heizkostenverteiler sind keiner (Heizung PR 4)', () => {
+    const m = (type: MeterType, unitId: string | null = 'u1') => ({ type, unitId })
+    expect(connectionTypes([m('warmwasser'), m('kaltwasser'), m('hkv')], [])).toEqual(['kaltwasser', 'warmwasser'])
+    expect(connectionSummary(['warmwasser'])).toBe('ohne Warmwasseranschluss')
+  })
 })
 
 describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc.4)', () => {

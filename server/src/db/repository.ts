@@ -47,7 +47,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS,
+  HEATING_PARTS, HEATING_ROLES, heatingPlants, heatingPlantUnits,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -62,11 +62,13 @@ export type CollectionEntity = Unit | Tenancy | CostItem | Meter | Reading | Pay
 // `typeof` und `Reflect.get`, wie im Validator: Ein angeschriebenes Typprädikat wäre nur eine
 // Behauptung, deren Rumpf niemand nachrechnet.
 
+// Die Helfer hier lesen auch den Rumpf einer Heizanlage (db/heating.ts) und sind deshalb
+// exportiert; heating.ts importiert von hier, nie umgekehrt.
 const isObject = (body: unknown): boolean => body !== null && typeof body === 'object'
-const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
-const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
+export const has = (body: unknown, key: string): boolean => isObject(body) && Object.hasOwn(Object(body), key)
+export const raw = (body: unknown, key: string): unknown => (isObject(body) ? Reflect.get(Object(body), key) : undefined)
 
-const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
+export const asText = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback)
 // `Number.isFinite` schließt NaN und Unendlich aus; beides ergäbe in einer Spalte einen Wert,
 // mit dem niemand rechnen kann.
 const asNumber = (value: unknown, fallback: number): number =>
@@ -82,10 +84,18 @@ const asOptionalBoolean = (value: unknown): boolean | undefined => (typeof value
 
 // Das offene Mietverhältnis und der Hauptzähler ohne Wohnung: Dort ist `null` ein ausdrücklicher
 // Wert und kein fehlendes Feld, deshalb eine eigene Lesart.
-const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+export const asNullableText = (value: unknown): string | null => (typeof value === 'string' ? value : null)
+
+// Wie `asNullableText`, aber ein leeres Feld ist keine Angabe (Kennungen, Daten aus einem Formular).
+export const asNullableFilled = (value: unknown): string | null => {
+  const text = asNullableText(value)
+  return text === '' ? null : text
+}
+
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 // Nimmt den Wert aus dem Rumpf, wenn der Schlüssel dasteht, sonst den bisherigen.
-function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
+export function merged<T>(body: unknown, key: string, current: T, read: (value: unknown) => T): T {
   return has(body, key) ? read(raw(body, key)) : current
 }
 
@@ -217,7 +227,7 @@ function readExternalBasis(value: unknown): ExternalBasis | null {
 // Ein unbekannter Wert wird zu „nichts eingetragen“ statt zu einem Fehler: Die Spalte ließe ihn
 // ohnehin nicht zu, und die Prüfbedingung meldete ihn dann als technischen Befund, wo ein leeres
 // Feld die ehrlichere Antwort ist.
-const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
+export const oneOfOrUndefined = <T extends string>(known: readonly T[], value: unknown): T | undefined => {
   const text = asOptionalText(value)
   return known.find((eintrag) => eintrag === text)
 }
@@ -300,11 +310,12 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
   const external = merged(body, 'externalBasis', current.externalBasis, readExternalBasis)
   const amounts = merged(body, 'tenancyAmounts', current.tenancyAmounts, (v) => (v === null ? null : readAmounts(v)))
   const selfAmounts = merged(body, 'selfAmounts', current.selfAmounts, (v) => (v === null ? null : readAmounts(v)))
+  const category = merged(body, 'category', current.category, (v) => asText(v, ''))
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
     period,
-    category: merged(body, 'category', current.category, (v) => asText(v, '')),
+    category,
     description: merged(body, 'description', current.description, (v) => asText(v, '')),
     vendor: merged(body, 'vendor', current.vendor, asOptionalText),
     amountCents: merged(body, 'amountCents', current.amountCents, (v) => asNumber(v, 0)),
@@ -327,10 +338,21 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
     taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
+    // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
+    // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. `undefined` heißt „nicht
+    // angegeben“: bei einer neuen Position und bei einer, die gerade zur Heizposition wird
+    // (Durchsicht von #230). Dann setzen `insert` und `replace` die Anlage des Objekts
+    // (`defaultHeatingPlant`); eine Heizposition, die schon eine Kostenart Heizung hatte, behält ihre.
+    heatingPlantId: category !== HEATING_CATEGORY
+      ? null
+      : has(body, 'heatingPlantId')
+        ? asNullableFilled(raw(body, 'heatingPlantId'))
+        : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
   }
 }
 
 function mergeMeter(current: Meter, body: unknown): Meter {
+  const heatingPlantId = merged(body, 'heatingPlantId', current.heatingPlantId ?? null, asNullableFilled)
   return {
     id: current.id,
     propertyId: mergedProperty(body, current.propertyId),
@@ -341,6 +363,12 @@ function mergeMeter(current: Meter, body: unknown): Meter {
     type: merged(body, 'type', current.type, (v) => oneOfOrUndefined(METER_TYPES, v) ?? current.type),
     meterNumber: merged(body, 'meterNumber', current.meterNumber, asOptionalText),
     unit: merged(body, 'unit', current.unit, (v) => asText(v, '')),
+    // Zähler der Heizanlage selbst (Heizung PR 4). Ohne Anlage keine Rolle.
+    heatingPlantId,
+    heatingRole: heatingPlantId === null ? null : merged(body, 'heatingRole', current.heatingRole ?? null, (v) => oneOfOrUndefined(HEATING_ROLES, v) ?? null),
+    // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); `null` heißt unbekannt.
+    remoteReadable: merged(body, 'remoteReadable', current.remoteReadable ?? null, (v) => (typeof v === 'boolean' ? v : null)),
+    installedOn: merged(body, 'installedOn', current.installedOn ?? null, asNullableFilled),
   }
 }
 
@@ -403,6 +431,68 @@ export class CrossPropertyError extends Error {
 // sie mit 400 weiter wie `CrossPropertyError`.
 export class PeriodError extends Error {
   status = 400
+}
+
+// Eine Ablehnung rund um die Heizanlage (Heizung PR 4): 400, wenn eine Angabe nicht passt oder eine
+// Funktion erst mit einer späteren Version kommt; 409, wenn sich der Bestand inzwischen geändert hat
+// oder ein abgeschlossener Zeitraum betroffen ist. Die Meldung ist für den Nutzer geschrieben; die
+// Route gibt sie weiter wie `CrossPropertyError`.
+export class HeatingError extends Error {
+  status: 400 | 409
+  constructor(status: 400 | 409, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
+const PLANT_GONE = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
+
+// Nach Heizkostenverteilern verteilt Mietfuchs erst mit deren Bewertungsfaktoren (PR 12); rohe
+// Einheiten verschiedener Heizkörper sind nicht vergleichbar.
+const HKV_KEY =
+  'Nach Heizkostenverteilern verteilt Mietfuchs noch nicht selbst; dafür braucht es die Bewertungsfaktoren der Geräte, und die kommen mit einer späteren Version. ' +
+  'Übernehmen Sie bis dahin die Abrechnung des Messdienstes als Einzelbeträge (Schlüssel „Einzelbeträge“).'
+
+async function plantOf(db: Executor, plantId: string): Promise<{ propertyId: string } | undefined> {
+  return (await db.select({ propertyId: heatingPlants.propertyId }).from(heatingPlants).where(eq(heatingPlants.id, plantId)))[0]
+}
+
+async function isPeriodClosed(db: Executor, propertyId: string, period: CostItem['period']): Promise<boolean> {
+  const rows = await db.select({ id: closedSettlements.id }).from(closedSettlements)
+    .where(and(eq(closedSettlements.propertyId, propertyId), eq(closedSettlements.period, period)))
+  return rows.length > 0
+}
+
+// Die Anlage, die eine neue Heizposition ohne Angabe bekommt: die einzige ihres Objekts, außer ihr
+// Zeitraum ist abgeschlossen (dort bleibt der eingefrorene Stand maßgeblich, Entwurf 3.0). So gehört
+// auch eine Position, die ein Tab von vor dem Update oder die Belegbuchung anlegt, zur Anlage, und ab
+// PR 5 steht sie im Topf ihrer Heizperiode. Bei mehreren Anlagen (PR 9) entscheidet der Vermieter.
+async function defaultHeatingPlant(db: Executor, c: CostItem): Promise<string | null> {
+  if (c.category !== HEATING_CATEGORY) return null
+  const [einzige, ...weitere] = await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
+  if (!einzige || weitere.length > 0) return null
+  return (await isPeriodClosed(db, c.propertyId, c.period)) ? null : einzige.id
+}
+
+// Eine Heizposition an der Anlage (Heizung PR 4): dieselbe Objektgrenze wie bei den Wohnungen, und in
+// einem abgeschlossenen Zeitraum keine neue Zuordnung.
+async function guardCostItemHeating(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
+  if (after.key === 'meter' && after.meterType === 'hkv') throw new HeatingError(400, HKV_KEY)
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Die Kostenposition gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Eine Heizposition gehört zur Heizanlage ihres eigenen Objekts.`,
+    )
+  }
+  if ((before?.heatingPlantId ?? null) !== plantId && (await isPeriodClosed(db, after.propertyId, after.period))) {
+    throw new HeatingError(409,
+      'Die Abrechnung dieses Zeitraums ist abgeschlossen; ihre Positionen bekommen keine Heizanlage mehr, denn der eingefrorene Stand bleibt maßgeblich. ' +
+        'Öffnen Sie die Abrechnung wieder, wenn Sie die Position zuordnen wollen.')
+  }
 }
 
 // Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
@@ -540,7 +630,7 @@ async function propertyName(db: Executor, propertyId: string): Promise<string> {
 
 // Wirft, wenn eine der Wohnungen zu einem anderen Objekt gehört. `what` beschreibt den
 // Datensatz, der verweist, für die Meldung.
-async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
+export async function sameProperty(db: Executor, propertyId: string, unitIds: string[], what: string): Promise<void> {
   if (unitIds.length === 0) return
   const fremd = await db
     .select({ name: units.name, propertyId: units.propertyId })
@@ -559,6 +649,34 @@ const noGuard = async (): Promise<void> => {}
 
 async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Promise<void> {
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
+  if (after.type === 'hkv' && !after.unitId) {
+    throw new HeatingError(400, 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie bei der Zuordnung die Wohnung.')
+  }
+  if (after.installedOn && !ISO_DATE.test(after.installedOn)) {
+    throw new HeatingError(400, 'Das Einbaudatum ist kein Datum. Bitte wählen Sie es im Kalender oder lassen Sie das Feld leer.')
+  }
+  const plantId = after.heatingPlantId
+  if (!plantId) return
+  // Ein Zähler der Anlage hängt an keiner Wohnung; sonst lehnte die Prüfbedingung ab, ohne Satz.
+  if (after.unitId) {
+    throw new HeatingError(400,
+      'Ein Zähler an einer Wohnung gehört nicht zur Heizanlage selbst. Zur Anlage gehören nur Zähler ohne Wohnung, etwa der Gaszähler oder ein Wärmezähler am Warmwasserspeicher. ' +
+        'Wählen Sie „Haus (Hauptzähler)“ oder nehmen Sie den Zähler aus der Anlage.')
+  }
+  const plant = await plantOf(db, plantId)
+  if (!plant) throw new HeatingError(400, PLANT_GONE)
+  if (plant.propertyId !== after.propertyId) {
+    throw new CrossPropertyError(
+      `Der Zähler gehört zu Objekt ${await propertyName(db, after.propertyId)}, die Heizanlage aber zu ` +
+        `${await propertyName(db, plant.propertyId)}. Ein Zähler gehört zur Heizanlage seines eigenen Objekts.`,
+    )
+  }
+  if (!after.heatingRole) {
+    throw new HeatingError(400, 'Was misst der Zähler an der Heizanlage? Bitte wählen Sie Versorgungszähler, Wärmezähler Warmwasser oder Gesamtwärmezähler.')
+  }
+  if (after.heatingRole !== 'supply' && after.type !== 'waerme') {
+    throw new HeatingError(400, 'Ein Wärmezähler an der Heizanlage hat die Sparte „Wärme“.')
+  }
 }
 
 async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
@@ -578,6 +696,7 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
     ...Object.keys(after.selfAmounts ?? {}),
   ]
   await sameProperty(db, after.propertyId, ziele, 'Die Kostenposition')
+  await guardCostItemHeating(db, before, after)
 }
 
 // Eine Wohnung darf das Objekt wechseln, solange nichts Objektgebundenes an ihr hängt. Ihr
@@ -585,6 +704,20 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
 // Direktzuordnung oder ein vereinbarter Anteil gehören dagegen zum alten Objekt.
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
   if (!before || before.propertyId === after.propertyId) return
+  // An einer Heizanlage (Heizung PR 4, Durchsicht von #230): Die Anlage gehört zum bisherigen
+  // Objekt; wechselte die Wohnung mit, versorgte sie eine Anlage über die Objektgrenze, und das
+  // eigene Backup würde beim Einspielen abgelehnt.
+  const anlagen = await db
+    .select({ name: heatingPlants.name })
+    .from(heatingPlantUnits)
+    .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
+    .where(eq(heatingPlantUnits.unitId, after.id))
+  if (anlagen.length > 0) {
+    throw new CrossPropertyError(
+      `Die Wohnung „${after.name}“ hängt an der Heizanlage des bisherigen Objekts und kann deshalb nicht in ein anderes Objekt wechseln. ` +
+        'Nehmen Sie sie zuerst in den Stammdaten unter „Heizung“ aus der Liste der angeschlossenen Wohnungen.',
+    )
+  }
   const haengt: string[] = []
   const zaehler = await db.select({ n: count() }).from(meters).where(eq(meters.unitId, after.id))
   if ((zaehler[0]?.n ?? 0) > 0) haengt.push('Zähler')
@@ -793,12 +926,13 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   const alle = await readProperties(db)
   if (!alle.some((p) => p.id === id)) return { removed: false, reason: 'missing' }
   if (alle.length === 1) return { removed: false, reason: 'last' }
-  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory) =>
+  const zahl = async (table: typeof units | typeof meters | typeof costItems | typeof closedSettlements | typeof closedSettlementHistory | typeof heatingPlants) =>
     (await db.select({ n: count() }).from(table).where(eq(table.propertyId, id)))[0]?.n ?? 0
   const teile = [
     [await zahl(units), 'Wohnung', 'Wohnungen'],
     [await zahl(meters), 'Zähler', 'Zähler'],
     [await zahl(costItems), 'Kostenposition', 'Kostenpositionen'],
+    [await zahl(heatingPlants), 'Heizanlage', 'Heizanlagen'],
     [await zahl(closedSettlements), 'abgeschlossene Abrechnung', 'abgeschlossene Abrechnungen'],
     [await zahl(closedSettlementHistory), 'früherer Abschluss', 'frühere Abschlüsse'],
   ] as const
@@ -837,9 +971,11 @@ const costItemRow = (c: CostItem) => ({
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
   serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
+  heatingPlantId: c.heatingPlantId ?? null,
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,
+  heatingPlantId: m.heatingPlantId ?? null, heatingRole: m.heatingRole ?? null, remoteReadable: m.remoteReadable ?? null, installedOn: m.installedOn ?? null,
 })
 const readingRow = (r: Reading) => ({
   id: r.id, meterId: r.meterId, date: r.date, value: r.value,
@@ -968,12 +1104,17 @@ const costItemCollection: Collection<CostItem> = {
   empty: emptyCostItem,
   merge: mergeCostItem,
   insert: async (db, c) => {
-    await db.insert(costItems).values(costItemRow(c))
-    await writeCostItemShares(db, c)
+    // Eine neue Heizposition ohne Angabe gehört zur Anlage ihres Objekts (Heizung PR 4). `undefined`
+    // heißt „nicht angegeben“, `null` „ausdrücklich ohne“; nur das Erste wird ergänzt.
+    const entity = c.heatingPlantId === undefined ? { ...c, heatingPlantId: await defaultHeatingPlant(db, c) } : c
+    await db.insert(costItems).values(costItemRow(entity))
+    await writeCostItemShares(db, entity)
   },
   replace: async (db, c) => {
-    await db.update(costItems).set(costItemRow(c)).where(eq(costItems.id, c.id))
-    await writeCostItemShares(db, c)
+    // Wird eine Position zur Heizposition, bekommt sie die Anlage wie beim Anlegen (Durchsicht von #230).
+    const entity = c.heatingPlantId === undefined ? { ...c, heatingPlantId: await defaultHeatingPlant(db, c) } : c
+    await db.update(costItems).set(costItemRow(entity)).where(eq(costItems.id, entity.id))
+    await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => { await db.delete(costItems).where(eq(costItems.id, id)) },
 }
@@ -1269,7 +1410,6 @@ export class TenantChangeError extends Error {
 
 export type TenantChange = { ended: Tenancy, newTenancy: Tenancy | null, readings: Reading[] }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 // „2025-06-30“ als „30.06.2025“, für Meldungen an den Nutzer.
 const isoToGerman = (iso: string): string => iso.split('-').reverse().join('.')
 const isIsoDate = (value: unknown): value is string =>

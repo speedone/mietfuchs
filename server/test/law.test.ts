@@ -10,7 +10,7 @@ import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVers
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { ustgStandardRate } from '../../shared/law/ustg.ts'
 
@@ -174,7 +174,7 @@ test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARA
     .flatMap((f) => [...fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/^export const (\w+): LawParam</gm)].map((m) => m[1]))
   assert.ok(declared.length >= 7, `nur ${declared.length} Parameter gefunden`)
   const listed = new Set<unknown>(LAW_PARAMS)
-  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
+  const modules = { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths, hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit, practiceVacancyPersons, ustgStandardRate }
   for (const name of declared) {
     assert.ok(name && Object.hasOwn(modules, name), `${name} fehlt in diesem Test`)
     assert.ok(listed.has(Reflect.get(modules, name)), `${name} fehlt in LAW_PARAMS`)
@@ -231,4 +231,17 @@ test('Fundstelle ustg.standard-rate: § 28 Abs. 1 UStG auf gesetze-im-internet.d
   const v = versionAt(ustgStandardRate, '2020-08-01')
   assert.equal(v.source.cite, '§ 28 Abs. 1 UStG')
   assert.equal(v.source.url, 'https://www.gesetze-im-internet.de/ustg_1980/__28.html')
+})
+
+test('Stichtag hkv.remote-reading.new-devices: Einbau bis 01.12.2021 ohne, ab 02.12.2021 mit Pflicht ab Einbau', () => {
+  const log = createLawLog()
+  assert.equal(law(hkvRemoteReadingNewDevices, { date: '2015-03-01' }, log).required, false)
+  assert.equal(law(hkvRemoteReadingNewDevices, { date: '2021-12-01' }, log).required, false)
+  assert.equal(law(hkvRemoteReadingNewDevices, { date: '2021-12-02' }, log).required, true)
+  assert.equal(law(hkvRemoteReadingNewDevices, { date: '2030-01-01' }, log).installedAfter, '2021-12-01')
+  // Jede Fassung steht einmal im Protokoll, auch wenn sie mehrfach abgefragt wurde.
+  assert.deepEqual(log.values.map((v) => [v.id, v.validFrom ?? '', v.text]), [
+    ['hkv.remote-reading.new-devices', '', 'Einbau bis 01.12.2021: keine Pflicht ab Einbau'],
+    ['hkv.remote-reading.new-devices', '2021-12-02', 'Einbau nach dem 01.12.2021: fernablesbar ab Einbau'],
+  ])
 })
