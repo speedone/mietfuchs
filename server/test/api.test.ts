@@ -5829,3 +5829,25 @@ test('Heizanlage: Sperren, Objektgrenze, Ändern und Entfernen über die Routen'
     s.stop()
   }
 })
+
+test('Heizanlage: eine angeschlossene Wohnung wechselt nicht still das Objekt (Durchsicht von #230)', async () => {
+  // Sonst stünde sie in der Liste einer Anlage des alten Objekts, und das eigene Backup würde beim
+  // Einspielen abgelehnt.
+  const s = await startServer()
+  try {
+    const send = (url: string, init: RequestInit) => fetch(`${s.base}${url}`, { ...init, headers: { 'content-type': 'application/json' } })
+    const unit = await s.api<Unit>('/api/units', jsonPost({ name: 'G', areaM2: 50, participates: true }))
+    const angelegt = await send('/api/heating-plants', jsonPost({ energy: 'gas', units: [{ unitId: unit.id, heatedAreaM2: null }] }))
+    assert.equal(angelegt.status, 201)
+    const objekt2 = await s.api<Property>('/api/properties', jsonPost({ name: 'Zweites Haus', kind: 'mfh', address: '' }))
+    const wechsel = await send(`/api/units/${unit.id}`, { method: 'PUT', body: JSON.stringify({ propertyId: objekt2.id }) })
+    assert.equal(wechsel.status, 400)
+    assert.match(await errorFrom(wechsel), /Heizanlage/)
+    const archiv = await fetch(`${s.base}/api/backup`)
+    const fd = new FormData()
+    fd.append('file', new Blob([await archiv.arrayBuffer()], { type: 'application/zip' }), 'backup.zip')
+    assert.equal((await fetch(`${s.base}/api/restore`, { method: 'POST', body: fd })).status, 200, 'das eigene Backup lässt sich einspielen')
+  } finally {
+    s.stop()
+  }
+})

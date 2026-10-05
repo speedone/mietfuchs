@@ -47,7 +47,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  HEATING_PARTS, HEATING_ROLES, heatingPlants,
+  HEATING_PARTS, HEATING_ROLES, heatingPlants, heatingPlantUnits,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -698,6 +698,20 @@ async function guardCostItem(db: Executor, before: CostItem | null, after: CostI
 // Direktzuordnung oder ein vereinbarter Anteil gehören dagegen zum alten Objekt.
 async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promise<void> {
   if (!before || before.propertyId === after.propertyId) return
+  // An einer Heizanlage (Heizung PR 4, Durchsicht von #230): Die Anlage gehört zum bisherigen
+  // Objekt; wechselte die Wohnung mit, versorgte sie eine Anlage über die Objektgrenze, und das
+  // eigene Backup würde beim Einspielen abgelehnt.
+  const anlagen = await db
+    .select({ name: heatingPlants.name })
+    .from(heatingPlantUnits)
+    .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
+    .where(eq(heatingPlantUnits.unitId, after.id))
+  if (anlagen.length > 0) {
+    throw new CrossPropertyError(
+      `Die Wohnung „${after.name}“ hängt an der Heizanlage des bisherigen Objekts und kann deshalb nicht in ein anderes Objekt wechseln. ` +
+        'Nehmen Sie sie zuerst in den Stammdaten unter „Heizung“ aus der Liste der angeschlossenen Wohnungen.',
+    )
+  }
   const haengt: string[] = []
   const zaehler = await db.select({ n: count() }).from(meters).where(eq(meters.unitId, after.id))
   if ((zaehler[0]?.n ?? 0) > 0) haengt.push('Zähler')
