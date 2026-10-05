@@ -3,6 +3,7 @@ import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Uni
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
+import { scheduleOf } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
@@ -35,6 +36,8 @@ type TenancyForm = {
   prepayments: { from: string; amount: string }[]
   // Pauschale je Monat (#93), eigene Staffel
   flatRates: { from: string; amount: string }[]
+  // Heizvorauszahlung je Monat (Heizung PR 5): nach dem Aufteilen bei getrennter Heizkostenabrechnung
+  heatingPrepayments: { from: string; amount: string }[]
   // erweiterte Stammdaten (optional)
   email: string
   phone: string
@@ -56,6 +59,7 @@ const EMPTY_TENANCY_EXTRA = {
   email: '', phone: '', correspondenceAddress: '', iban: '', contractDate: '', deposit: '', depositStatus: 'offen' as DepositStatus, notes: '',
   costModel: 'settlement' as CostModel, heatingModel: 'settlement' as CostModel,
   flatRates: [] as { from: string; amount: string }[],
+  heatingPrepayments: [] as { from: string; amount: string }[],
 }
 
 // Heute als JJJJ-MM-TT, örtlich: „läuft noch“ ist eine Frage an den Kalender des Nutzers.
@@ -95,6 +99,10 @@ function tenancyToForm(t: Tenancy): TenancyForm {
     costModel: t.costModel ?? 'settlement',
     heatingModel: t.heatingModel ?? 'settlement',
     flatRates: (t.flatRates ?? []).map((p) => ({
+      from: p.from,
+      amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
+    })),
+    heatingPrepayments: (t.heatingPrepayments ?? []).map((p) => ({
       from: p.from,
       amount: (p.monthlyCents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2 }),
     })),
@@ -216,6 +224,12 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         flatRates.push({ from, monthlyCents: cents })
       }
     }
+    // Heizung PR 5: die Heizstaffel neben der übrigen Vorauszahlung (nach dem Aufteilen, Entwurf 3.1).
+    const heating = scheduleOf(tenForm.heatingPrepayments)
+    if ('error' in heating) {
+      setError(heating.error)
+      return
+    }
     let depositCents: number | null = null
     if (tenForm.deposit.trim()) {
       depositCents = parseEuro(tenForm.deposit)
@@ -249,6 +263,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
       notes: tenForm.notes.trim() || null,
       ...costModelBody(tenForm.costModel, tenForm.heatingModel),
       flatRates,
+      heatingPrepayments: heating,
     })
     const editing = !!tenForm.id
     // Überschneidung mit einem anderen Mietverhältnis derselben Wohnung (#204): nachfragen, nicht
@@ -581,6 +596,23 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </div>
               ))}
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
+              {tenForm.heatingPrepayments.length > 0 && (
+                <>
+                  <div className="field-group-label">davon Heizvorauszahlung je Monat — Staffel</div>
+                  <p className="muted">Die Heizkosten rechnen Sie getrennt ab. Ändert sich die Vorauszahlung, tragen Sie die neue Heizvorauszahlung ab demselben Monat hier ein.</p>
+                  {tenForm.heatingPrepayments.map((p, i) => (
+                    <div key={i} className="row">
+                      <label className="field">ab Monat
+                        <input type="month" value={p.from} onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: tenForm.heatingPrepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                      </label>
+                      <label className="field">€ je Monat
+                        <input value={p.amount} onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: tenForm.heatingPrepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                      </label>
+                    </div>
+                  ))}
+                  <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...tenForm.heatingPrepayments, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
+                </>
+              )}
             </div>
 
             <details className="extra-details" style={{ width: '100%' }}>

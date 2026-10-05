@@ -1,5 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, NoticeSubject, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import type { CostItem, HeatingSettlementInfo, NoticeSubject, PeriodKey, Settings, Settlement, SettlementRow, Tenancy, Unit } from '../types'
+import {
+  heatingChoices, heatingOnlyNote, heatingOverridesWith, prepaymentLabel, prepaymentSplit, recommendedDeadlineText, settlementPaths, settlementTitle,
+} from '../heatingSettlementView'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
@@ -32,7 +35,7 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { key, label, param, calendar } = usePeriod()
+  const { key, label, param, calendar, period } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -49,24 +52,33 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
   const [attachmentsLoading, setAttachmentsLoading] = useState(false)
+  // Heizung PR 5: die Heizkostenabrechnungen nach Weg d, deren Heizperiode in diesem Zeitraum endet.
+  // Gewählt ist entweder die Betriebskostenabrechnung (`null`) oder eine von ihnen.
+  const [heatingList, setHeatingList] = useState<HeatingSettlementInfo[]>([])
+  const [target, setTarget] = useState<{ plantId: string; period: PeriodKey } | null>(null)
+  const paths = settlementPaths(param, target)
+  const choices = heatingChoices(heatingList, period)
+  // Ein anderer Zeitraum oder ein anderes Objekt: wieder die Betriebskostenabrechnung.
+  useEffect(() => { setTarget(null) }, [param, propertyId])
 
   const printAdjust = settings?.printAdjustSuggestion !== false // Standard: an
   const printAttachments = settings?.printAttachments === true // Standard: aus
 
   const load = useCallback(() => {
     return Promise.all([
-      api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId)),
+      api<Settlement>(withProperty(paths.load, propertyId)),
       api<CostItem[]>(withProperty('/api/costItems', propertyId)),
       // Frühere Abschlüsse (#56). Fehlt die Route (älterer Server), bleibt die Liste leer.
       // Nur ein älterer Server ohne die Route (404) heißt „keine“; jeder andere Fehler wird gezeigt.
-      api<HistoryEntry[]>(withProperty(`/api/settlement/${param}/history`, propertyId)).catch((e: unknown) => {
+      api<HistoryEntry[]>(withProperty(paths.history, propertyId)).catch((e: unknown) => {
         if (/\b404\b/.test(String((e as Error).message))) return []
         throw e
       }),
     ])
       .then(([d, c, h]) => { setData(d); setCostItems(c); setHistory(h); setError('') })
       .catch((e) => setError(String((e as Error).message)))
-  }, [param, propertyId])
+      .then(() => api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([])))
+  }, [paths.load, paths.history, propertyId])
 
   useEffect(() => { void load() }, [load])
 
@@ -132,7 +144,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
+    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
     await load()
     toast(`Abrechnung ${label} abgeschlossen.`)
   }
@@ -143,12 +155,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       confirmLabel: 'Wieder öffnen',
     })
     if (!ok) return
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'DELETE' })))) return
+    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'DELETE' })))) return
     await load()
     toast(`Abrechnung ${label} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
-    if (!(await attempt(() => api(withProperty(`/api/settlement/${param}/close`, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
+    if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
     await load()
   }
   const isClosed = !!data?.closed
@@ -163,7 +175,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
       .map(([schluessel, betrag]) => [/^\d{4}$/.test(schluessel) ? calendarPeriod(Number(schluessel)) : schluessel, betrag]))
     if (cents === null) delete overrides[key]
     else overrides[key] = cents
-    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
+    // In der Heizkostenabrechnung ist „✎ anpassen“ die endgültige Heizkorrektur der Heizperiode (D2, Heizung PR 5).
+    const body = target
+      ? { heatingPrepaymentOverrides: heatingOverridesWith(ten ?? {}, target.plantId, target.period, cents) }
+      : { prepaymentOverrides: overrides }
+    if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify(body) })))) return
     setPpEdit(null)
     await Promise.all([load(), reload()])
     toast(cents === null ? 'Vorauszahlung zurückgesetzt.' : 'Gezahlte Vorauszahlung übernommen.')
@@ -175,7 +191,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `Nebenkostenabrechnung ${data?.period.label ?? label} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
+    if (st) document.title = `${data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
       document.title = prevTitle
@@ -231,6 +247,19 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             </span>
           </label>
         </div>
+        {choices.length > 0 && (
+          <div className="row no-print">
+            <button className={target === null ? 'btn' : 'btn ghost'} onClick={() => setTarget(null)}>{`Betriebskosten ${label}`}</button>
+            {choices.map((h) => (
+              <button key={`${h.plantId}|${h.period.key}`} className={target?.period === h.period.key ? 'btn' : 'btn ghost'} onClick={() => setTarget({ plantId: h.plantId, period: h.period.key })}>
+                {`Heizkosten ${h.period.label} (eigene Abrechnung, Frist ${fmtDate(h.deadline)})`}
+              </button>
+            ))}
+          </div>
+        )}
+        {data?.separateHeating && data.separateHeating.length > 0 && target === null && (
+          <div className="info no-print">{`Die Heizkosten ${data.separateHeating.map((h) => h.period.label).join(', ')} rechnen Sie getrennt ab; sie stehen nicht in dieser Abrechnung.`}</div>
+        )}
       </div>
 
       {data && (
@@ -395,11 +424,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
               <div className="statement-head">
                 <div>
-                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {data?.period.label ?? label}</h2>
+                  <h2 style={{ marginBottom: 2 }}>{data ? settlementTitle(data) : `Nebenkostenabrechnung ${label}`}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
                   </div>
+                  {heatingOnlyNote(st) && <p>{heatingOnlyNote(st)}</p>}
+                  {recommendedDeadlineText(st) && <p className="muted no-print">{recommendedDeadlineText(st)}</p>}
+                  {st.prepaymentNote && <p className="muted">{st.prepaymentNote}</p>}
                 </div>
                 <button
                   className="btn secondary no-print"
@@ -466,7 +498,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     </tr>
                     <tr>
                       <td colSpan={3} style={{ fontWeight: 400 }}>
-                        abzüglich geleisteter Vorauszahlungen
+                        {prepaymentLabel(st)}
                         {/* Ein Vermerk für den Vermieter, nicht für den Mieter (#142): nur am Bildschirm. */}
                         {st.prepaymentOverridden && <span className="muted no-print"> (manuell angepasst)</span>}
                         {!isClosed && <span className="no-print">
@@ -506,6 +538,12 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                       </td>
                       <td className="num" style={{ fontWeight: 400 }}>− {fmtEuro(st.prepaymentCents)}</td>
                     </tr>
+                    {prepaymentSplit(st).map((line) => (
+                      <tr key={line.label}>
+                        <td colSpan={3} className="muted">{line.label}</td>
+                        <td className="num muted">{fmtEuro(line.cents)}</td>
+                      </tr>
+                    ))}
                     <tr>
                       <td colSpan={3}>
                         {st.balanceCents >= 0 ? 'Guthaben zu Ihren Gunsten' : 'Nachzahlung zu Ihren Lasten'}

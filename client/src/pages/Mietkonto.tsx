@@ -263,6 +263,12 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
                       <td>NK-Vorauszahlung</td>
                       <td className="num">{fmtEuro(r.prepaymentYearCents)}</td>
                     </tr>
+                    {r.heatingPrepaymentYearCents !== undefined && (
+                      <tr>
+                        <td>Heizvorauszahlung</td>
+                        <td className="num">{fmtEuro(r.heatingPrepaymentYearCents)}</td>
+                      </tr>
+                    )}
                     {r.flatRateYearCents > 0 && (
                       <tr>
                         <td>NK-Pauschale (ohne Abrechnung)</td>
