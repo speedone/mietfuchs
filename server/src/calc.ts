@@ -1050,10 +1050,14 @@ export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyI
   if (isCalendarRules(rules) && ownPlants.length === 0) return null
   const jahr = calendarYearPeriod(year)
   const vorjahr = calendarYearPeriod(year - 1)
-  const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, jahr.to).flatMap((p) => {
+  // Eine Heizperiode, die in diesem Jahr beginnt, kann in der Abrechnung des Folgejahres stehen (Weg b)
+  // und doch in diesem Jahr bezahlt sein (Durchsicht von #231): Mit eigener Heizperiode reicht die Suche
+  // deshalb bis ins Folgejahr, dort aber nur nach deren Heizpositionen.
+  const bis = ownPlants.length > 0 ? calendarYearPeriod(year + 1).to : jahr.to
+  const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, bis).flatMap((p) => {
     const snap = snapshotFor(source, propertyId, p)
     const items = [
-      ...snap.costItems.filter((c) => taxYearOf(c, p) === year),
+      ...(p.from > jahr.to ? [] : snap.costItems.filter((c) => taxYearOf(c, p) === year)),
       ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => taxYearOf(c, x.period) === year)),
     ]
     const touches = p.from <= jahr.to && p.to >= jahr.from

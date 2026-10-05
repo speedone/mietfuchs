@@ -82,10 +82,14 @@ export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today
 
 // Die Heizperioden, die das Kostenformular bei einer Heizposition anbietet: je Anlage mit eigener
 // Heizperiode die, die im gewählten Zeitraum enden (Entwurf 3.0).
-export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>): { plantId: string; options: { value: string; label: string }[] }[] {
+export type HeatingItemOption = { value: string; label: string; startYear: number; endYear: number }
+
+export function heatingItemPeriods(plants: readonly HeatingPlant[], objectRules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>): { plantId: string; options: HeatingItemOption[] }[] {
   return plants.filter((plant) => hasOwnRhythm(plant)).map((plant) => ({
     plantId: plant.id,
-    options: heatingPeriodsEndingIn(plantRules(plant, objectRules), p).map((h) => ({ value: h.key, label: `Heizperiode ${periodLabel(h)}` })),
+    options: heatingPeriodsEndingIn(plantRules(plant, objectRules), p).map((h) => ({
+      value: h.key, label: `Heizperiode ${periodLabel(h)}`, startYear: Number(h.from.slice(0, 4)), endYear: Number(h.to.slice(0, 4)),
+    })),
   }))
 }
 
@@ -114,4 +118,16 @@ export function separateHeatingFor(unit: Pick<Unit, 'id' | 'noConnection'>, plan
   const plant = plants.find((p) => servesUnit(p, unit))
   if (!plant) return false
   return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true)
+}
+
+// Das Jahr der Zahlung einer Heizposition unter ihrer Heizperiode (Entwurf 3.10, Durchsicht von #231):
+// Reicht die Heizperiode über zwei Kalenderjahre, ist es Pflicht und liegt zwischen ihrem ersten Jahr
+// und dem Jahr nach ihrem Ende, wie der Server prüft; vorbelegt wird das erste Jahr. Liegt sie in
+// einem Kalenderjahr, gibt es kein Feld, auch wenn der Abrechnungszeitraum des Objekts über zwei
+// Jahre reicht: Ein Wert aus dessen Spanne lehnte der Server ab.
+export function heatingTaxYear(h: { startYear: number; endYear: number }, taxYear: string): { show: boolean; years: number[]; fallback: string; valid: boolean } {
+  if (h.startYear === h.endYear) return { show: false, years: [], fallback: '', valid: true }
+  const years: number[] = []
+  for (let y = h.startYear; y <= h.endYear + 1; y++) years.push(y)
+  return { show: true, years, fallback: String(h.startYear), valid: years.includes(Number(taxYear)) && taxYear !== '' }
 }

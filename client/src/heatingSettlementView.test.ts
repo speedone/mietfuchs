@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit,
-  recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
+  heatingTaxYear, recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -73,7 +73,7 @@ describe('Heizkostenabrechnungen auswählen, abschließen, korrigieren', () => {
 describe('Kostenformular und Mietverhältnis', () => {
   test('Heizperioden einer eigenen Heizperiode im Zeitraum, und die Positionen dazu', () => {
     expect(heatingItemPeriods([plant(), plant({ id: 'hp2', periodStartMonth: null })], CALENDAR_RULES, p2026)).toEqual([
-      { plantId: 'hp1', options: [{ value: '2025-05', label: 'Heizperiode 2025/2026' }] },
+      { plantId: 'hp1', options: [{ value: '2025-05', label: 'Heizperiode 2025/2026', startYear: 2025, endYear: 2026 }] },
     ])
     const items = [
       { id: 'a', period: k('2026-01'), heatingPlantId: undefined },
@@ -96,5 +96,17 @@ describe('Heizvorauszahlung im Mietverhältnis (Durchsicht von #231, Important 2
     expect(separateHeatingFor(unit, [plant({ separateSpans: [{ from: '2025-05', until: k('2026-05') }] })])).toBe(false)
     expect(separateHeatingFor(unit, [plant({ periodStartMonth: null, separateSettlement: true })])).toBe(true)
     expect(separateHeatingFor(unit, [plant({ separateSpans: [{ from: '2025-05', until: null }], units: [{ unitId: 'u2', heatedAreaM2: null }] })])).toBe(false)
+  })
+})
+
+describe('Jahr der Zahlung einer Heizposition (Durchsicht von #231, Important 3)', () => {
+  test('Heizperiode über zwei Jahre: sichtbar, Jahre vom Beginn bis ein Jahr nach dem Ende, Vorgabe das Jahr des Beginns', () => {
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '')).toEqual({ show: true, years: [2025, 2026, 2027], fallback: '2025', valid: false })
+    expect(heatingTaxYear({ startYear: 2025, endYear: 2026 }, '2026')).toMatchObject({ valid: true })
+    // Ein Wert aus dem Objektzeitraum (Juli–Juni, 2027 erlaubt dort), den es für die Heizperiode nicht gibt.
+    expect(heatingTaxYear({ startYear: 2024, endYear: 2025 }, '2027')).toMatchObject({ valid: false, fallback: '2024' })
+  })
+  test('Heizperiode in einem Kalenderjahr: kein Feld, kein Wert', () => {
+    expect(heatingTaxYear({ startYear: 2026, endYear: 2026 }, '2027')).toEqual({ show: false, years: [], fallback: '', valid: true })
   })
 })

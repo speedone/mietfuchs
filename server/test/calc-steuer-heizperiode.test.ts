@@ -50,3 +50,14 @@ test('Weg d: Die Heizposition kommt aus der Heizkostenabrechnung, die Vorauszahl
   assert.equal(r2026.income.prepaymentSettlementCents, null)
   assert.ok(r2026.expenses.items.some((i) => i.costItemId === 'grundsteuer'))
 })
+
+test('Weg b: Eine Heizposition, gezahlt im Jahr, in dem ihre Heizperiode beginnt, steht in der Anlage V dieses Jahres (Durchsicht von #231, Important 3)', () => {
+  for (const spans of [[], [{ from: '2025-05', until: null }]] as SeparateSpan[][]) {
+    const src = haus(spans)
+    const item = src.costItems.find((c) => c.id === 'heizung') ?? assert.fail('keine Heizposition')
+    item.taxYear = 2025
+    const r2025 = taxReportFor(src, 'objekt-1', 2025)
+    assert.ok(r2025.expenses.items.some((i) => i.costItemId === 'heizung'), `2025, Spannen ${JSON.stringify(spans)}`)
+    assert.equal(taxReportFor(src, 'objekt-1', 2026).expenses.items.some((i) => i.costItemId === 'heizung'), false, '2026 nicht')
+  }
+})

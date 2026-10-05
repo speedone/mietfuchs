@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, HeatingPlant, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
 import HeatingPeriodSelect from '../components/HeatingPeriodSelect'
-import { heatingItemPeriods, itemsOfPeriod } from '../heatingSettlementView'
-import { calendarPeriod, periodContext, periodOfKey, spansTwoYears, startYearOf } from '../../../shared/period.ts'
+import { heatingItemPeriods, heatingTaxYear, itemsOfPeriod } from '../heatingSettlementView'
+import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -105,6 +105,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Beim Öffnen einer bestehenden Position ihre Heizperiode, sonst die Vorgabe der Auswahl.
   const formId = form?.id
   useEffect(() => { setHeatingPeriod(formId ? items.find((i) => i.id === formId)?.period ?? '' : '') }, [formId, items])
+  // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (Durchsicht von #231):
+  // Pflicht und vorbelegt, wenn sie über zwei Jahre reicht, sonst kein Feld.
+  const heatingOption = form?.category === HEATING_CATEGORY && ownPlant
+    ? ownPlant.options.find((o) => o.value === (heatingPeriod || ownPlant.options[0]?.value)) : undefined
+  const heatTax = heatingOption && form ? heatingTaxYear(heatingOption, form.taxYear) : null
+  useEffect(() => {
+    if (form && heatTax?.show && !heatTax.valid) setForm({ ...form, taxYear: heatTax.fallback })
+  }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
   // Beträge gehen beim Verlassen verloren, deshalb zählt die Liste als offenes Formular.
@@ -288,9 +296,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     // die Heizperiode über zwei Kalenderjahre und fehlt das Jahr der Zahlung, gilt das Jahr dieses
     // Abrechnungszeitraums: In ihm endet die Heizperiode, und das Feld ist bei einem Zeitraum in einem
     // Kalenderjahr ausgeblendet.
-    const heatingKey = ownPlant && ownPlant.options.length > 0 ? heatingPeriod || (ownPlant.options[0]?.value ?? '') : ''
-    const heating = form.category === HEATING_CATEGORY && ownPlant && heatingKey
-      ? { period: heatingKey, heatingPlantId: ownPlant.plantId, ...(built.body.taxYear == null ? { taxYear: startYearOf(key) } : {}) }
+    if (heatTax?.show && !heatTax.valid) {
+      setError('Bitte geben Sie das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG); die Heizperiode reicht über zwei Kalenderjahre.')
+      return
+    }
+    const heating = heatingOption && ownPlant
+      ? { period: heatingOption.value, heatingPlantId: ownPlant.plantId, taxYear: heatTax?.show ? Number(form.taxYear) : null }
       : {}
     const body = JSON.stringify({ ...built.body, ...heating })
     const editing = !!form.id
@@ -734,9 +745,9 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>
               <input value={form.labor35a} onChange={(e) => setForm({ ...form, labor35a: e.target.value })} placeholder="optional" />
             </label>
-            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || showsTaxYear(period, needsTaxYear))}>
-              <summary>Weitere Angaben — Leistungszeitraum{showsTaxYear(period, needsTaxYear) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
-              <CostPeriodFields form={form} onChange={setForm} showTaxYear={showsTaxYear(period, needsTaxYear)} years={taxYearOptions(year)} />
+            <details className="field grow" style={{ flexBasis: '100%' }} open={!!(form.serviceFrom || form.serviceTo || form.taxYear || form.heatingFuel || (heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)))}>
+              <summary>Weitere Angaben — Leistungszeitraum{(heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)) ? ', Jahr der Zahlung' : ''}{form.category === HEATING_CATEGORY ? ', Brennstoff/Energie' : ''} (optional)</summary>
+              <CostPeriodFields form={form} onChange={setForm} showTaxYear={heatTax ? heatTax.show : showsTaxYear(period, needsTaxYear)} years={heatTax?.show ? heatTax.years : taxYearOptions(year)} />
             </details>
             {/* Nicht umlagefähig (#142): nichts zu verteilen, also keine Auswahl, die etwas anderes verspräche. */}
             {!showsKeyFields(form.category) && (
