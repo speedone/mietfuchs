@@ -50,7 +50,6 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'client/src/components/HeatingCard.tsx', match: '2024', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10' },
   { file: 'shared/glossary.ts', match: '100 Prozent', reason: 'Summe vereinbarter Quoten, keine Rechtsfolge' },
   { file: 'shared/glossary.ts', match: '20 Prozent', reason: '§ 35a Abs. 2 EStG, Steuer des Mieters; kein Parameter des Entwurfs (4.3)' },
-  { file: 'shared/guides.ts', match: '3 Prozent', reason: 'CO₂-Kürzung nach § 7 Abs. 4 CO2KostAufG; `co2.cut.missing` kommt mit PR 6 ins Register (4.3, G-C7)' },
   { file: 'server/src/calc.ts', match: '31.05.2006', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 159/05), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '08.01.2013', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 180/12), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '30.04.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 240/07, eigene Heizperiode), kein Rechtswert' },
