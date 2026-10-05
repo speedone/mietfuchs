@@ -424,3 +424,24 @@ test('Vorwegabzug in der falschen Position: Kappt take() den co2Share über den 
   assert.ok(!codes(gewaehlt).includes('co2.share-capped'))
   assert.deepEqual(partsOf(gewaehlt, 'B'), [{ reason: 'co2Share', cents: 10000 }])
 })
+
+test('Hinweise je Anlage nur, wenn jemand über ihre Heizkosten abgerechnet wird (Durchsicht M-1, M2)', () => {
+  // Zwei Anlagen: hp versorgt nur die Wohnung mit Heizpauschale, hp2 die abgerechnete.
+  const s = {
+    units: [unit('a'), unit('b')],
+    tenancies: [tenancy('ta', 'a', { heatingModel: 'flatRate' }), tenancy('tb', 'b')],
+    costItems: [messdienst(100000, { ta: 100000 }), messdienst(100000, { tb: 100000 }, { id: 'hz2', heatingPlantId: 'hp2' })],
+  }
+  const anlagen = [plant({ units: [{ unitId: 'a', heatedAreaM2: null }] }), plant({ id: 'hp2', name: 'Gas 2', units: [{ unitId: 'b', heatedAreaM2: null }] })]
+  const r = settle(s, [], anlagen)
+  assert.deepEqual(r.notices.filter((n) => n.code === 'co2.missing').map((n) => n.subject?.id), ['hp2'])
+  // Nur Pauschale: auch eine gescheiterte Probe und das Warmwasser nach Formel kürzt niemand.
+  const nurPauschale = computeSettlement({
+    ...snap({ units: [unit('a')], tenancies: [tenancy('ta', 'a', { heatingModel: 'flatRate' })], costItems: [messdienst(100000, { ta: 100000 })] },
+      [co2({ serviceUsersTotalCents: 90000, serviceLandlordCents: 500, serviceUnitsCount: 1, serviceKgPerM2: 46.4, serviceLandlordPermille: 350 })]),
+    heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: 'volumeFormula', dhwUnmeasurable: null }],
+  })
+  for (const code of ['co2.sum-check', 'co2.stage-mismatch', 'heating.dhw-not-metered', 'co2.missing']) {
+    assert.ok(!codes(nurPauschale).includes(code), `${code}: ${codes(nurPauschale).join(', ')}`)
+  }
+})
