@@ -75,7 +75,9 @@ const VAT_ROUNDING_PERCENT = 0.5
 // Der Tag, nach dem sich der Regelsatz richtet: das Rechnungsdatum, wenn das Modell eines im
 // Format JJJJ-MM-TT geliefert hat, sonst heute. Zeitregel `eventDate` wie im Register. Vor der
 // ersten Fassung des Registers (01.01.2007) gibt es keinen Satz; auch dann gilt heute, statt dass
-// die Auswertung am Fehler des Registers abbricht.
+// die Auswertung am Fehler des Registers abbricht. Rechtlich maßgeblich ist der Tag der Leistung
+// (§ 27 Abs. 1 UStG); das Rechnungsdatum ist für diese Plausibilitätsprüfung nur eine Näherung,
+// siehe shared/law/ustg.ts.
 const FIRST_RATE_DAY = ustgStandardRate.versions[0]?.validFrom ?? ''
 const rateDate = (invoiceDate: unknown, today: string): string =>
   typeof invoiceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) && invoiceDate >= FIRST_RATE_DAY ? invoiceDate : today

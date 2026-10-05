@@ -14,6 +14,12 @@
 //   Bemessungsgrundlage beträgt.“ (Wortlaut auf buzer.de). Den ermäßigten Satz (7, in derselben
 //   Zeit 5 Prozent, § 28 Abs. 2 a. F.) braucht Mietfuchs nicht; er steht nicht im Register.
 //
+// Welcher Satz gilt, hängt nach § 27 Abs. 1 Satz 1 UStG am Tag, an dem die Leistung ausgeführt
+// wird, nicht am Rechnungsdatum. Mietfuchs fragt mit dem Rechnungsdatum, weil es auf dem Beleg steht
+// und der Tag der Leistung oft nicht; für die Plausibilitätsprüfung der KI-Auswertung ist das eine
+// Näherung, an der keine Abrechnungszahl hängt. Eine Rechnung über eine Leistung vom Juni 2020,
+// gestellt im Juli, wird so mit 16 statt 19 % geprüft und im Zweifel nicht hochgerechnet.
+//
 // Die erste Fassung beginnt am 01.01.2007. Für die Zeit davor führt das Register keinen Wert (bis
 // 2006 galten 16 Prozent, davor andere Sätze); wer einen Tag davor abfragt, bekommt den Fehler des
 // Registers. invoiceAmounts.ts nimmt dann den Satz von heute, wie ohne lesbares Rechnungsdatum.
@@ -34,7 +40,7 @@ export const ustgStandardRate: LawParam<number, 'eventDate'> = {
       validFrom: '2020-07-01',
       validTo: '2020-12-31',
       value: 16,
-      source: checked('§ 28 Abs. 1 UStG a. F.', 'https://www.buzer.de/3_Zweites_Corona-Steuerhilfegesetz.htm'),
+      source: checked('§ 28 Abs. 1 UStG', 'https://www.gesetze-im-internet.de/ustg_1980/__28.html'),
       enacted: '§ 28 Abs. 1 UStG, Fassung Art. 3 Zweites Corona-Steuerhilfegesetz v. 29.06.2020 (BGBl. I S. 1512)',
     },
     { validFrom: '2021-01-01', value: 19, source: RATE, enacted: ENACTED },
