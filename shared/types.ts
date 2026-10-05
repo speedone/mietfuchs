@@ -1266,3 +1266,5 @@ export type HeatingPrepaymentOverride = {
 export type HeatingPeriodRef = { plantId: string; period: SettlementPeriod }
 export type SeparateHeatingRef = { plantId: string; plantName: string; period: SettlementPeriod; deadline: string }
 export type HeatingScopeRef = { kind: 'heating'; plantId: string; plantName: string }
+// Eine Heizkostenabrechnung nach Weg d in der Liste für Cockpit und Abrechnungsseite (Heizung PR 5).
+export type HeatingSettlementInfo = SeparateHeatingRef & { closed: { closedAt: string; sentAt: string | null } | null }

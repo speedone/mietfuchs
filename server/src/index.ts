@@ -13,10 +13,11 @@ import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAss
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
-import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor } from './calc.ts'
-import { narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodLabel, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
-import type { BillingPeriod } from '../../shared/types.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor, type ComputedSettlement } from './calc.ts'
+import { heatingSnapshotFor, narrowToProperty, snapshotFor } from './snapshot.ts'
+import { calendarPeriod, calendarYearPeriod, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
+import type { BillingPeriod, HeatingPlant } from '../../shared/types.ts'
+import { plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -35,7 +36,10 @@ import { changeoverWithoutDatabase, replaceFile, runChangeover, type ChangeoverR
 import { acknowledgeNotice, clearNotice, NOTICE_NAME, noticeKey, readNotice, recordNotice, type MigrationNotice } from './db/migrationNotice.ts'
 import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
-import { readProperties, readSettings, readStock } from './db/read.ts'
+import { readHeatingPlants, readProperties, readSettings, readStock, type Stock } from './db/read.ts'
+import {
+  closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
+} from './db/heatingSettlements.ts'
 import {
   changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
@@ -558,6 +562,97 @@ app.put('/api/heating-plants/:id/separate', async (req, res) => {
   if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
   if ('error' in result) return res.status(409).json(result)
   res.json(result.plant)
+})
+
+// ---------- Heizkostenabrechnung nach Weg d (Heizung PR 5, Entwurf 3.1, 6.1 Nr. 7, B3) ----------
+// Je Anlage und getrennt abgerechneter Heizperiode eine eigene Abrechnung mit eigener Frist und
+// eigenem Abschluss. Eine Heizperiode, die in der Betriebskostenabrechnung steht, hat keine; die
+// Antwort sagt dann, wo ihre Heizkosten stehen.
+async function heatingTargetOf(db: Database, req: Request): Promise<{ plant: HeatingPlant, period: BillingPeriod }> {
+  const plant = (await readHeatingPlants(db)).find((p) => p.id === req.params.plant)
+  if (!plant) throw new RouteProblem(404, PLANT_GONE_TEXT)
+  const objectRules = rulesOf((await listProperties(db)).find((p) => p.id === plant.propertyId))
+  const key = parsePeriodKey(String(req.params.period ?? ''))
+  const period = key === null ? null : periodOfKey(plantRules(plant, objectRules), key)
+  if (period === null) throw new RouteProblem(404, 'Diese Heizperiode gibt es für die Heizanlage nicht.')
+  if (!settledSeparately(plant, objectRules, period)) {
+    throw new RouteProblem(404,
+      `Die Heizkosten ${periodLabel(period)} stehen in der Betriebskostenabrechnung ${periodLabel(periodContaining(objectRules, period.to))}; eine eigene Heizkostenabrechnung gibt es dafür nicht.`)
+  }
+  return { plant, period }
+}
+
+function computeHeating(stock: Stock, plant: HeatingPlant, period: BillingPeriod): ComputedSettlement {
+  const snapshot = heatingSnapshotFor(stock, plant.propertyId, plant.id, period)
+  if (!snapshot) throw new RouteProblem(404, PLANT_GONE_TEXT)
+  return computeSettlement(snapshot, { asOf: today() })
+}
+
+app.get('/api/heating-settlements', async (req, res) => {
+  res.json(await readData(async (db) => separateHeatingSettlements(db, await propertyOf(db, req), today())))
+})
+
+app.get('/api/heating-settlement/:plant/:period', async (req, res) => {
+  const { target, closed, stock } = await readData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return { target, closed: await findClosedHeatingSettlement(db, target.plant.id, target.period.key), stock: await readStock(db) }
+  })
+  const frame = {
+    period: settlementPeriod(target.period),
+    deadline: settlementDeadline(target.period),
+    scope: { kind: 'heating' as const, plantId: target.plant.id, plantName: target.plant.name },
+  }
+  if (closed) {
+    const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
+    const deviation = compareWithFrozen(closed.settlement, () => computeHeating(stock, target.plant, target.period), frame.deadline, today())
+    return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
+  }
+  res.json({ ...computeHeating(stock, target.plant, target.period), closed: null })
+})
+
+app.post('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  // Rechnen und Einfrieren im selben Vorgang, wie bei der Abrechnung des Objekts.
+  const ergebnis = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    const label = periodLabel(target.period)
+    if (await findClosedHeatingSettlement(db, target.plant.id, target.period.key)) return { schonDa: true, label }
+    await closeHeatingSettlement(db, {
+      id: newId(), plantId: target.plant.id, period: target.period.key, closedAt: new Date().toISOString(), sentAt,
+      settlement: computeHeating(await readStock(db), target.plant, target.period),
+    })
+    return { schonDa: false, label }
+  })
+  if (ergebnis.schonDa) return res.status(409).json({ error: `Die Heizkostenabrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
+  res.status(201).json({ ok: true })
+})
+
+app.put('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const sentAt = sentAtOf(req)
+  if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
+  const gefunden = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return setHeatingSentAt(db, target.plant.id, target.period.key, sentAt)
+  })
+  if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
+  res.json({ ok: true })
+})
+
+app.get('/api/heating-settlement/:plant/:period/history', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return heatingSettlementHistory(db, target.plant.id, target.period.key)
+  }))
+})
+
+app.delete('/api/heating-settlement/:plant/:period/close', async (req, res) => {
+  const gefunden = await writeData(async (db) => {
+    const target = await heatingTargetOf(db, req)
+    return reopenHeatingSettlement(db, target.plant.id, target.period.key, newId())
+  })
+  if (!gefunden) return res.status(404).json({ error: 'Die Heizkostenabrechnung ist nicht abgeschlossen.' })
+  res.json({ ok: true })
 })
 
 // Wechsel des Abrechnungszeitraums (#208, Entwurf 3.6): erst die Vorschau, dann der Wechsel mit

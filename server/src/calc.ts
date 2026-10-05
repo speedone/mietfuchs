@@ -50,8 +50,8 @@ import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
-import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit } from '../../shared/heatingPeriod.ts'
-import { snapshotFor, wayOf } from './snapshot.ts'
+import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { heatingSnapshotFor, snapshotFor, wayOf } from './snapshot.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -850,7 +850,11 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   // Bei einem Objekt mit eigenem Rhythmus (#208) die Abrechnungen der Teile, je einmal gerechnet; die
   // Vorauszahlungen der Abrechnung gibt es nur, wenn ein Zeitraum dem Kalenderjahr gleicht.
   const settled = used.map((p) => ({ part: p, settlement: computeSettlement(p.snapshot) }))
-  const same = settled.find(({ part }) => part.snapshot.period.from === calendar.from && part.snapshot.period.to === calendar.to)
+  // Eine Heizkostenabrechnung nach Weg d ist kein Abrechnungszeitraum des Objekts. Gibt es eine,
+  // gibt es für die Vorauszahlungen der Abrechnung keine einzelne Zahl mehr (Entwurf 3.10): `null`.
+  const separateHeating = used.some((p) => p.snapshot.scope?.kind === 'heating')
+  const same = separateHeating ? undefined
+    : settled.find(({ part }) => part.snapshot.scope === undefined && part.snapshot.period.from === calendar.from && part.snapshot.period.to === calendar.to)
 
   // Was die Abrechnung bei den Vorauszahlungen ansetzt, und **bei abgeschlossener Abrechnung
   // ihr eingefrorener Stand**, genau wie beim Eigenanteil weiter unten. Die Zahl steht in der
@@ -1015,7 +1019,7 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, items: [...split.items.values()] },
-    settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: periodLabel(p.snapshot.period) })),
+    settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: p.snapshot.scope?.kind === 'heating' ? `Heizkosten ${periodLabel(p.snapshot.period)}` : periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
     closedSelfUseDiffers: split.closedSelfUseDiffers,
     closedItemsChanged: split.closedItemsChanged,
@@ -1034,22 +1038,38 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   }
 }
 
-// Die Teile der Steuerübersicht eines Objekts mit eigenem Rhythmus (#208, Entwurf 3.10): jeder
-// Abrechnungszeitraum, der das Jahr oder das Vorjahr berührt (eine Position darf bis ein Jahr nach
-// dem Ende ihres Zeitraums bezahlt sein, repository.ts), mit seinen Positionen, deren Jahr der
-// Zahlung dieses Jahr ist. Ein Zeitraum, der das Jahr berührt, ist auch ohne Position dabei, denn
-// die Übersicht nennt ihn als Quelle. `null` beim Kalenderobjekt: Dort rechnet `taxReport` wie bisher.
+// Die Teile der Steuerübersicht eines Objekts mit eigenem Rhythmus oder eigener Heizperiode (#208,
+// Heizung PR 5, Entwurf 3.10): jeder Abrechnungszeitraum, der das Jahr oder das Vorjahr berührt, mit
+// seinen Positionen, deren Jahr der Zahlung dieses Jahr ist, dazu die Heizpositionen der
+// Heizperioden, die er nach Weg b aufnimmt (ihr Jahr der Zahlung richtet sich nach ihrer
+// Heizperiode). Jede Heizkostenabrechnung nach Weg d ist ein eigener Teil; den Eigenanteil liefert
+// dann sie. `null` beim Kalenderobjekt ohne eigene Heizperiode: Dort rechnet `taxReport` wie bisher.
 export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxPart[] | null {
   const rules = rulesOf(source.properties?.find((p) => p.id === propertyId))
-  if (isCalendarRules(rules)) return null
+  const ownPlants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId && (p.periodStartMonth ?? null) !== null)
+  if (isCalendarRules(rules) && ownPlants.length === 0) return null
   const jahr = calendarYearPeriod(year)
   const vorjahr = calendarYearPeriod(year - 1)
-  return periodsBetween(rules, vorjahr.from, jahr.to).flatMap((p) => {
+  const parts: TaxPart[] = periodsBetween(rules, vorjahr.from, jahr.to).flatMap((p) => {
     const snap = snapshotFor(source, propertyId, p)
-    const items = snap.costItems.filter((c) => c.period === p.key && taxYearOf(c, p) === year)
+    const items = [
+      ...snap.costItems.filter((c) => taxYearOf(c, p) === year),
+      ...(snap.heatingParts ?? []).filter((x) => !x.separate).flatMap((x) => x.items.filter((c) => taxYearOf(c, x.period) === year)),
+    ]
     const touches = p.from <= jahr.to && p.to >= jahr.from
     return items.length > 0 || touches ? [{ snapshot: snap, items }] : []
   })
+  const separate: TaxPart[] = ownPlants.flatMap((plant) => {
+    const way = wayOf(plant)
+    return periodsBetween(plantRules(way, rules), vorjahr.from, jahr.to).flatMap((h) => {
+      if (!settledSeparately(way, rules, h)) return []
+      const snap = heatingSnapshotFor(source, propertyId, plant.id, h)
+      if (!snap) return []
+      const items = snap.costItems.filter((c) => taxYearOf(c, h) === year)
+      return items.length > 0 ? [{ snapshot: snap, items }] : []
+    })
+  })
+  return [...parts, ...separate]
 }
 
 export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxReport {
