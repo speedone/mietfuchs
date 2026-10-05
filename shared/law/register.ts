@@ -141,8 +141,11 @@ export function law<T extends LawValue>(
 
 // `overlap`: gilt, sobald der Zeitraum die Fassung berührt (Kabelregel). Berührt er keine, sagt
 // die Antwort `none` und nennt trotzdem die nächstgelegene Fassung, denn der Hinweis „seit dem
-// 01.07.2024 nicht mehr“ braucht ihr Ende. Protokolliert wird die Fassung, nach der entschieden
-// wurde, auch bei `none`: Sie hat den Hinweis bestimmt.
+// 01.07.2024 nicht mehr“ braucht ihr Ende. Protokolliert wird bei `none` **nichts**: Ein Wert, der
+// im Zeitraum nicht gilt, ist kein angewandter Rechtswert, und „Angewandte Rechtswerte“ nennte
+// sonst etwa die Fernablesbarkeit ab 2027 in einer Abrechnung 2023 (Durchsicht von #221, I1).
+// Braucht eine Stelle die Fassung trotzdem für ihren Text, trägt sie sie mit `recordVersionAt`
+// ausdrücklich ein; die Anzeige nennt dann die Gültigkeit mit.
 function overlap<T extends LawValue>(param: LawParam<T>, period: Period, log: LawLog): OverlapAnswer<T> {
   const touching = param.versions.filter((v) => (v.validFrom === undefined || v.validFrom <= period.to) && (v.validTo === undefined || v.validTo >= period.from))
   const answer = (v: Version<T>, coverage: Coverage): OverlapAnswer<T> => ({
@@ -161,6 +164,13 @@ function overlap<T extends LawValue>(param: LawParam<T>, period: Period, log: La
   const after = param.versions.find((v) => v.validFrom !== undefined && v.validFrom > period.to)
   const nearest = before ?? after
   if (!nearest) throw new Error(`Rechtswert „${param.id}“ ohne Fassung`)
-  record(log, param, nearest)
   return answer(nearest, 'none')
+}
+
+// Trägt die Fassung an einem Tag ins Protokoll ein, ohne nach einer Zeitregel zu fragen: für eine
+// Stelle, die eine im Zeitraum nicht geltende Fassung in ihrem Text nennt (der Hinweis „seit dem
+// 01.07.2024 nicht mehr umlagefähig“). So steht in der Abrechnung, worauf sich der Text stützt,
+// und die Anzeige nennt mit der Gültigkeit, dass es nicht das Recht des Jahres ist.
+export function recordVersionAt<T extends LawValue>(param: LawParam<T>, date: string, log: LawLog): void {
+  record(log, param, versionAt(param, date))
 }
