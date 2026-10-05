@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { Meter, MeterType, Reading, Unit } from '../types'
+import type { HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
-import { defaultMeterUnit, emptyMeterForm, oldEndText, withMeterType, type MeterForm } from '../meterForm'
+import { asksRemote, emptyMeterForm, HEATING_ROLE_LABELS, meterBody, meterToForm, oldEndText, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
@@ -25,6 +25,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
   const [meters, setMeters] = useState<Meter[]>([])
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
   const [readings, setReadings] = useState<Reading[]>([])
   const [consumption, setConsumption] = useState<Consumption[]>([])
   const [meterForm, setMeterForm] = useState<MeterForm | null>(null)
@@ -40,12 +41,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
   useOpenForm(openMeterId !== null && (readingForm.date !== '' || readingForm.value.trim() !== '' || readingForm.oldEndValue.trim() !== '' || readingForm.note.trim() !== ''))
 
   const load = useCallback(async () => {
-    const [m, r, c] = await Promise.all([
+    const [m, r, c, h] = await Promise.all([
       api<Meter[]>(withProperty('/api/meters', propertyId)),
       api<Reading[]>(withProperty('/api/readings', propertyId)),
       api<Consumption[]>(withProperty(`/api/consumption/${param}`, propertyId)),
+      api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)),
     ])
     setMeters(m)
+    setPlants(h)
     setReadings(r)
     setConsumption(c)
   }, [param, propertyId])
@@ -56,19 +59,14 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
 
   async function saveMeter() {
     if (!meterForm) return
-    if (!meterForm.name.trim()) {
-      setError('Bitte einen Namen für den Zähler angeben.')
+    // Die Heizanlage des Objekts; in dieser Version gibt es höchstens eine (Heizung PR 4).
+    const result = meterBody(meterForm, plants[0]?.id ?? null)
+    if ('error' in result) {
+      setError(result.error)
       return
     }
     setError('')
-    const body = JSON.stringify({
-      name: meterForm.name.trim(),
-      unitId: meterForm.unitId || null,
-      type: meterForm.type,
-      meterNumber: meterForm.meterNumber.trim() || undefined,
-      // Ohne Angabe die Vorgabe der Sparte (#142), nicht für jede Sparte „m³“.
-      unit: meterForm.unit.trim() || defaultMeterUnit(meterForm.type),
-    })
+    const body = JSON.stringify(result.body)
     const editing = !!meterForm.id
     // Lehnt der Server ab (#146), bleibt der Dialog offen und zeigt seinen Satz.
     try {
@@ -188,7 +186,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                     readings={mReadings}
                     unitName={unitName(m.unitId)}
                     onToggle={() => { setError(''); setOpenMeterId(openMeterId === m.id ? null : m.id); setReadingForm({ ...EMPTY_READING }) }}
-                    onEdit={() => { setError(''); setMeterForm({ id: m.id, name: m.name, unitId: m.unitId ?? '', type: m.type, meterNumber: m.meterNumber ?? '', unit: m.unit }) }}
+                    onEdit={() => { setError(''); setMeterForm(meterToForm(m)) }}
                     onDelete={() => deleteMeter(m)}
                     readingForm={readingForm}
                     setReadingForm={setReadingForm}
@@ -252,6 +250,32 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
               Einheit
               <input value={meterForm.unit} onChange={(e) => setMeterForm({ ...meterForm, unit: e.target.value })} />
             </label>
+            {!meterForm.unitId && plants.length > 0 && (
+              <label className="field grow">
+                Gehört zur Heizanlage?
+                <select value={meterForm.heatingRole} onChange={(e) => setMeterForm({ ...meterForm, heatingRole: e.target.value as HeatingRole | '' })}>
+                  <option value="">Nein, Hauptzähler des Hauses</option>
+                  {(Object.keys(HEATING_ROLE_LABELS) as HeatingRole[]).map((r) => <option key={r} value={r}>{HEATING_ROLE_LABELS[r]}</option>)}
+                </select>
+              </label>
+            )}
+            {asksRemote(meterForm) && (
+              <>
+                <label className="field grow">
+                  Aus der Ferne ablesbar?
+                  <select value={meterForm.remote} onChange={(e) => setMeterForm({ ...meterForm, remote: e.target.value as RemoteAnswer })}>
+                    <option value="">Weiß ich nicht</option>
+                    <option value="yes">Ja</option>
+                    <option value="no">Nein</option>
+                  </select>
+                </label>
+                <label className="field grow">
+                  Eingebaut am
+                  <input type="date" value={meterForm.installedOn} onChange={(e) => setMeterForm({ ...meterForm, installedOn: e.target.value })} />
+                  <small className="muted">Für die Kürzung nach § 12 HeizkostenV: Neuere Geräte müssen ab dem Einbau aus der Ferne ablesbar sein, ältere ab 2027.</small>
+                </label>
+              </>
+            )}
           </div>
         </Drawer>
       )}

@@ -1,7 +1,21 @@
 // Das Formular eines Zählers, ohne DOM prüfbar (meterForm.test.ts).
-import type { MeterType } from './types'
+import type { HeatingRole, Meter, MeterType } from './types'
 
-export type MeterForm = { id?: string; name: string; unitId: string; type: MeterType; meterNumber: string; unit: string }
+// Fernablesbar? Leer heißt „weiß ich nicht“.
+export type RemoteAnswer = '' | 'yes' | 'no'
+
+export type MeterForm = {
+  id?: string
+  name: string
+  unitId: string
+  type: MeterType
+  meterNumber: string
+  unit: string
+  // Heizung PR 4: Rolle an der Heizanlage (nur ohne Wohnung), Fernablesbarkeit und Einbau.
+  heatingRole: HeatingRole | ''
+  remote: RemoteAnswer
+  installedOn: string
+}
 
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
 // „m³“ im Feld, und ein Wärmezähler, bei dem niemand es änderte, zeigte seinen Verbrauch in m³.
@@ -19,7 +33,73 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
   return { ...form, type, unit: followsDefault ? defaultMeterUnit(type) : form.unit }
 }
 
-export const emptyMeterForm = (): MeterForm => ({ name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser') })
+export const emptyMeterForm = (): MeterForm => ({
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', remote: '', installedOn: '',
+})
+
+export const meterToForm = (m: Meter): MeterForm => ({
+  id: m.id,
+  name: m.name,
+  unitId: m.unitId ?? '',
+  type: m.type,
+  meterNumber: m.meterNumber ?? '',
+  unit: m.unit,
+  heatingRole: m.heatingRole ?? '',
+  remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
+  installedOn: m.installedOn ?? '',
+})
+
+export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
+  supply: 'Versorgungszähler der Heizanlage (etwa der Gaszähler)',
+  dhwHeat: 'Wärmezähler für das Warmwasser an der Heizanlage',
+  totalHeat: 'Gesamtwärmezähler an der Heizanlage',
+}
+
+// Fernablesbarkeit und Einbau fragt das Formular nur bei Geräten, die § 5 HeizkostenV erfasst:
+// Wärme- und Warmwasserzähler und Heizkostenverteiler der Wohnungen, dazu die Wärmezähler der
+// Heizanlage. Der Gaszähler gehört dem Versorger.
+export function asksRemote(form: MeterForm): boolean {
+  if (form.unitId) return form.type === 'waerme' || form.type === 'warmwasser' || form.type === 'hkv'
+  return form.heatingRole === 'dhwHeat' || form.heatingRole === 'totalHeat'
+}
+
+export type MeterBody = {
+  name: string
+  unitId: string | null
+  type: MeterType
+  meterNumber?: string
+  unit: string
+  heatingPlantId: string | null
+  heatingRole: HeatingRole | null
+  remoteReadable: boolean | null
+  installedOn: string | null
+}
+
+// Der Rumpf zum Speichern. `plantId`: die Heizanlage des Objekts, `null` ohne. Eine Zählernummer
+// fehlt im Rumpf, wenn das Feld leer ist, wie bisher.
+export function meterBody(form: MeterForm, plantId: string | null): { body: MeterBody } | { error: string } {
+  if (!form.name.trim()) return { error: 'Bitte einen Namen für den Zähler angeben.' }
+  if (form.type === 'hkv' && !form.unitId) {
+    return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.' }
+  }
+  const role = !form.unitId && plantId !== null && form.heatingRole !== '' ? form.heatingRole : null
+  const asks = asksRemote({ ...form, heatingRole: role ?? '' })
+  const number = form.meterNumber.trim()
+  return {
+    body: {
+      name: form.name.trim(),
+      unitId: form.unitId || null,
+      type: form.type,
+      ...(number ? { meterNumber: number } : {}),
+      // Ohne Angabe die Vorgabe der Sparte (#142), nicht für jede Sparte „m³“.
+      unit: form.unit.trim() || defaultMeterUnit(form.type),
+      heatingPlantId: role === null ? null : plantId,
+      heatingRole: role,
+      remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
+      installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
+    },
+  }
+}
 
 // Der Endstand des alten Geräts in der Tabelle der Ablesungen. Fehlt er, steht „fehlt“ da und kein
 // leerer Platz (#142); eine eingetragene 0 ist eine Angabe und bleibt stehen (#83).
