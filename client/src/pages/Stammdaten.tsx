@@ -6,7 +6,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { scheduleOf, separateHeatingFor, separateHeatingPlant } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
-import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
+import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, prepaymentColumn, showsFlatRates } from '../tenancyModel'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { buildTenantChange, defaultStart, EMPTY_NEW_TENANT, endProblem, meterProblem, parseMeterValue, type NewTenantForm } from '../tenantChange'
 import PeriodCard from '../components/PeriodCard'
@@ -476,11 +476,11 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                     ))}
                   </td>
                   <td className="num">
-                    {t.prepayments.length === 0 && '—'}
-                    {t.prepayments.map((p, i) => (
+                    {prepaymentColumn(t).length === 0 && '—'}
+                    {prepaymentColumn(t).map((line, i) => (
                       <div key={i}>
-                        {t.prepayments.length > 1 && <><span className="muted nowrap">ab {p.from.slice(5, 7)}/{p.from.slice(0, 4)}:</span>{' '}</>}
-                        <span className="nowrap">{fmtEuro(p.monthlyCents)}</span>
+                        {line.label !== null && <><span className="muted nowrap">{line.label}</span>{' '}</>}
+                        <span className="nowrap">{line.amount}</span>
                       </div>
                     ))}
                   </td>
