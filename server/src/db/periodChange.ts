@@ -27,13 +27,14 @@ import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import {
-  parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf,
+  formatDayRange, parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, spansTwoYears, startYearOf,
 } from '../../../shared/period.ts'
+import { dayAfter } from '../../../shared/law/register.ts'
 import type { BillingPeriod, CostItem, PeriodChangePreview, PeriodKey, PeriodRules, Property, Tenancy } from '../../../shared/types.ts'
-import { splitByService, type ServicePart } from '../serviceSplit.ts'
+import { baseDescription, splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database } from './client.ts'
 import { readClosedSettlements, readCostItems, readProperties, readTenancies, readUnits } from './read.ts'
-import { PeriodError, writeCostItemParts } from './repository.ts'
+import { PeriodError, rewriteCostItemFamily, writeCostItemParts } from './repository.ts'
 import { assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
@@ -116,7 +117,8 @@ type OverrideAsk = { tenancy: Tenancy; drop: Set<PeriodKey>; from: { key: Period
 
 type Plan = {
   preview: PeriodChangePreview
-  splits: { item: CostItem; parts: ServicePart[] }[]
+  // `family`: die bisherigen Teile einer aufgeteilten Rechnung, die als Ganzes neu geteilt wird.
+  splits: { item: CostItem; parts: ServicePart[]; family?: CostItem[] }[]
   groups: Map<PeriodKey, { items: CostItem[]; options: BillingPeriod[] }>
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
@@ -185,6 +187,57 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
   const splits: Plan['splits'] = []
   const groups: Plan['groups'] = new Map()
   const regrows: Plan['regrows'] = []
+  // Die Teile einer aufgeteilten Rechnung (Nachprüfung von #226, 2): gleiche Kostenart, Beschreibung
+  // ohne den Zusatz „(anteilig …)“, Leistungszeitraum, Rechnungssteller, Beleg und Schlüssel, je in
+  // einem anderen Zeitraum. Sie werden beim Wechsel als Ganzes neu geteilt; jeden Teil einzeln zu
+  // teilen, summierte die Rundungen, und nach einigen Wechseln stand ein Cent im falschen Zeitraum.
+  const familyKey = (c: CostItem): string =>
+    [c.category, baseDescription(c.description), c.serviceFrom, c.serviceTo, c.vendor ?? '', c.invoiceFile ?? '', c.key].join('\u0000')
+  const families = new Map<string, CostItem[]>()
+  for (const c of items) {
+    if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined) continue
+    families.set(familyKey(c), [...(families.get(familyKey(c)) ?? []), c])
+  }
+  const familyOf = (c: CostItem): CostItem[] => {
+    const f = families.get(familyKey(c)) ?? [c]
+    return new Set(f.map((m) => m.period)).size === f.length ? f : [c]
+  }
+  // Die Teile, die der Wechsel betrifft, als eine Rechnung über die Tage, die sie im bisherigen Zeitraum
+  // abdecken. Bleibt ein Teil in einem Zeitraum, der sich nicht ändert, steht er fest, und nur der
+  // Rest wird geteilt. `null`: keine Rechnung aus mehreren Teilen, oder die betroffenen Teile decken
+  // keine zusammenhängende Spanne ab; dann gilt die Regel für einen einzelnen Teil darunter.
+  const wholeInvoice = (item: CostItem, family: CostItem[]): { family: CostItem[]; parts: ServicePart[] | null } | null => {
+    if (family.length < 2 || item.serviceFrom === undefined || item.serviceTo === undefined) return null
+    const moving = family.filter((m) => {
+      const am = changed(m.period)
+      return am !== null && am.status !== 'grows'
+    }).sort((x, y) => (x.period < y.period ? -1 : 1))
+    const spans: { from: string; to: string }[] = []
+    for (const m of moving) {
+      const old = changed(m.period)?.old
+      if (!old) return null
+      const from = (m.serviceFrom ?? '') > old.from ? m.serviceFrom ?? old.from : old.from
+      const to = (m.serviceTo ?? '') < old.to ? m.serviceTo ?? old.to : old.to
+      if (from > to) return null
+      const last = spans[spans.length - 1]
+      if (last !== undefined && dayAfter(last.to) !== from) return null
+      spans.push({ from, to })
+    }
+    const first = spans[0]
+    const last = spans[spans.length - 1]
+    if (first === undefined || last === undefined) return { family: moving, parts: null }
+    const lead = moving[0] ?? item
+    const fixed = family.length > moving.length
+    const total = moving.reduce((sum, c) => sum + c.amountCents, 0)
+    const labor = moving.reduce((sum, c) => sum + (c.labor35aCents ?? 0), 0)
+    const base = baseDescription(lead.description)
+    const parts = splitByService(next, {
+      id: [...family].map((c) => c.id).sort()[0] ?? lead.id, description: base, amountCents: total, labor35aCents: labor || undefined,
+      serviceFrom: first.from, serviceTo: last.to,
+    }).map((p) => (fixed && p.description === base ? { ...p, description: `${base} (anteilig ${formatDayRange(first.from, last.to)})` } : p))
+    return { family: moving, parts }
+  }
+  const done = new Set<string>()
   for (const item of items) {
     const a = changed(item.period)
     if (a === null) continue
@@ -195,6 +248,13 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       continue
     }
     if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined) {
+      if (done.has(item.id)) continue
+      const whole = wholeInvoice(item, familyOf(item))
+      if (whole !== null) {
+        for (const m of whole.family) done.add(m.id)
+        if (whole.parts !== null) splits.push({ item: whole.family[0] ?? item, parts: whole.parts, family: whole.family })
+        continue
+      }
       // Geteilt wird der Teil des Leistungszeitraums, der im bisherigen Zeitraum liegt: Ein schon
       // aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist aber nur
       // der Anteil seines Zeitraums. Über den ganzen geteilt, landete ein Teil davon ein zweites Mal
@@ -260,8 +320,9 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     periods: periods.map((p) => ({ key: p.key, label: periodLabel(p), short: p.short })),
     newShort: periods.filter((p) => p.short && !wasShort(p)).map((p) => ({ key: p.key, label: periodLabel(p) })),
     blocked: [...blocked],
-    moves: splits.map(({ item, parts }) => ({
-      costItemId: item.id, description: item.description, amountCents: item.amountCents,
+    moves: splits.map(({ item, parts, family }) => ({
+      costItemId: item.id, description: family ? baseDescription(item.description) : item.description,
+      amountCents: (family ?? [item]).reduce((sum, c) => sum + c.amountCents, 0),
       parts: parts.map((p) => ({ period: p.period.key, label: periodLabel(p.period), amountCents: p.amountCents })),
     })),
     groups: [...groups.entries()].map(([from, g]) => {
@@ -385,10 +446,12 @@ async function writeChange(
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
     if (next.changes.length > 0) await tx.insert(periodChanges).values(next.changes.map((fromMonth) => ({ propertyId, fromMonth })))
-    for (const { item, parts } of plan.splits) {
-      await writeCostItemParts(tx, item, parts.map((p) => ({
+    for (const { item, parts, family } of plan.splits) {
+      const writes = parts.map((p) => ({
         period: p.period.key, amountCents: p.amountCents, labor35aCents: p.labor35aCents, description: p.description, taxYear: taxYearIn(p.period, item),
-      })), newId, item.id)
+      }))
+      if (family) await rewriteCostItemFamily(tx, family, writes, newId)
+      else await writeCostItemParts(tx, item, writes, newId, item.id)
     }
     for (const [from, g] of plan.groups) {
       const target = g.options.find((p) => p.key === answers.groups[from]) ?? null

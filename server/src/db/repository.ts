@@ -1137,6 +1137,41 @@ export async function writeCostItemParts(tx: Executor, base: CostItem, parts: re
   return written
 }
 
+// Schreibt eine aufgeteilte Rechnung neu (Nachprüfung von #226, 2): `members` sind ihre bisherigen
+// Teile, `parts` die neuen. Ein Teil behält die Kennung des bisherigen Teils desselben Zeitraums,
+// sonst die eines übrigen; was übrig bleibt, wird gelöscht (gebuchte Zeilen einer Belegauswertung
+// werden dann wieder offen, `SET NULL`). Ohne Transaktion, der Aufrufer läuft in einer.
+export async function rewriteCostItemFamily(tx: Executor, members: readonly CostItem[], parts: readonly PartWrite[], newId: () => string): Promise<string[]> {
+  const first = members[0]
+  if (first === undefined) return []
+  const unused = [...members]
+  const take = (m: CostItem | undefined): CostItem | undefined => {
+    if (m !== undefined) unused.splice(unused.indexOf(m), 1)
+    return m
+  }
+  const exact = parts.map((p) => take(unused.find((m) => m.period === p.period)))
+  const chosen = exact.map((m) => m ?? take(unused[0]))
+  const written: string[] = []
+  for (const [i, part] of parts.entries()) {
+    const fields = { period: part.period, amountCents: part.amountCents, labor35aCents: part.labor35aCents, description: part.description, taxYear: part.taxYear }
+    const member = chosen[i]
+    if (member !== undefined) {
+      const entity = mergeCostItem(member, fields)
+      await guardCostItem(tx, member, entity, {}, { splitPart: true })
+      await costItemCollection.replace(tx, entity)
+      written.push(member.id)
+    } else {
+      const id = newId()
+      const entity = mergeCostItem({ ...first, id }, fields)
+      await guardCostItem(tx, null, entity, {}, { splitPart: true })
+      await costItemCollection.insert(tx, entity)
+      written.push(id)
+    }
+  }
+  for (const m of unused) await costItemCollection.remove(tx, m.id)
+  return written
+}
+
 // Die Rechnung, wie sie aufgeteilt würde: aus der gespeicherten Position (`currentId`) und dem
 // Rumpf, sonst aus dem Rumpf allein. Das Objekt kommt bei einer vorhandenen Position von ihr.
 async function splitBase(db: Database, propertyId: string | null, body: unknown, currentId: string | null): Promise<{ base: CostItem; from: string; to: string }> {

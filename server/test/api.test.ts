@@ -5733,3 +5733,28 @@ test('Aufteilen (#208): Heizung ↔ kalt über die Kostenart, nicht am Aufteilen
     s.stop()
   }
 })
+
+// Nachprüfung von #226 (2): Ein Wechsel teilt eine aufgeteilte Rechnung als Ganzes neu und nicht
+// jeden Teil für sich, sonst summieren sich die Rundungen; nach Mai → Januar → Mai → September →
+// Mai stand ein Cent im falschen Zeitraum.
+test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder exakt im Schnitt nach Tagen', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    await s.api('/api/costItems/split', { method: 'POST', body: JSON.stringify({ category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }) })
+    const id = (await s.api<{ id: string }[]>('/api/properties'))[0]?.id ?? assert.fail('kein Objekt')
+    const teile = async () => (await s.api<CostItem[]>('/api/costItems')).map((c) => [c.period, c.amountCents]).sort()
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+    for (const startMonth of [1, 5, 9, 5]) {
+      const regeln = { startMonth, changes: [] }
+      const vorschau = await s.api<{ token: string; groups: { from: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
+      const groups = Object.fromEntries(vorschau.groups.map((g) => [g.from, g.suggested]))
+      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { token: vorschau.token, groups } }) })
+      const summe = (await s.api<CostItem[]>('/api/costItems')).reduce((a, c) => a + c.amountCents, 0)
+      assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
+    }
+    assert.deepEqual(await teile(), [['2024-05', 15781], ['2025-05', 32219]])
+  } finally {
+    s.stop()
+  }
+})
