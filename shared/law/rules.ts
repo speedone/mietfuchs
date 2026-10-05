@@ -1,16 +1,35 @@
-// Das Regelverzeichnis (#112): Rechtsregeln, die die Berechnung anwendet, jeweils mit dem
-// Zeitraum, in dem sie gelten. Eine Abrechnung rechnet nach dem Recht ihres Jahres und nicht
-// nach dem von heute; wo eine Regel nur für einen Teil des Jahres gilt, sagt das
-// `ruleCoverage`, und calc.ts entscheidet daraus, statt ein Jahr fest hinzuschreiben.
+// Das Regelverzeichnis (#112), seit Heizung PR 1 Teil des Rechtsregisters (vorher
+// server/src/rules.ts): Rechtsregeln, die die Berechnung anwendet, jeweils mit dem Zeitraum, in dem
+// sie gelten. Eine Abrechnung rechnet nach dem Recht ihres Jahres und nicht nach dem von heute; wo
+// eine Regel nur für einen Teil des Jahres gilt, sagt das `ruleCoverage`.
 //
 // Aufgenommen wird nur, was die Berechnung wirklich anwendet. Das Verzeichnis ist keine
 // Rechtsbibliothek, sondern die Liste, gegen die eine Abrechnung geprüft wurde; deshalb steht
 // sie als Rechtsstand in jeder Abrechnung und wird beim Abschließen mit eingefroren.
 //
-// ISO-Daten werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts; die Datei
-// importiert calc.ts nicht, weil calc.ts sie importiert.
+// Zahlen und Daten in Kurzfassung und Gültigkeit kommen aus den Parametern des Registers und
+// stehen hier nicht noch einmal: So kann die Erklärung keine andere Zahl nennen als die Rechnung.
+// Der Wortlaut ist derselbe wie vorher (server/test/law-wording.test.ts).
+//
+// ISO-Daten werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts.
 //
 // Wer eine Regel ändert oder ergänzt, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
+import { betrkvTvSignal } from './bgb-betrkv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
+import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
+
+// Die Fassungen, aus denen die Regeln ihre Grenzen nehmen. Bekommt einer der beiden Parameter eine
+// zweite Fassung, muss die Regel entscheiden, welche sie erklärt; bis dahin bricht `onlyVersion`
+// beim Laden ab.
+const tv = onlyVersion(betrkvTvSignal)
+const retrofit = onlyVersion(hkvRemoteReadingRetrofit)
+if (!tv.validTo || !retrofit.validFrom) throw new Error('Rechtsregister: Kabelregel oder Fernablesbarkeit ohne Grenze')
+const TV_UNTIL = tv.validTo
+const TV_NEW_FROM = germanDate(tv.value.newSystemsFrom)
+const RETROFIT_FROM = retrofit.validFrom
+const share = valueAt(hkvConsumptionShare, LAW_AS_OF)
+const cut = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
+const remoteCut = valueAt(hkvCutRemoteReading, LAW_AS_OF)
 
 export type Rule = {
   code: string
@@ -32,12 +51,12 @@ export const RULES: readonly Rule[] = [
     title: 'Kabelfernsehen über die Nebenkosten',
     norm: '§ 2 Satz 1 Nr. 15 und Satz 2 BetrKV',
     summary:
-      'Die Gebühren für das TV-Signal eines Kabelanschlusses und die Grundgebühren eines Breitbandanschlusses durften bis zum 30.06.2024 ' +
-      'als Betriebskosten umgelegt werden, und zwar nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden. Seitdem nicht mehr. ' +
-      'Bei Anlagen, die vor dem 01.12.2021 errichtet wurden, bleiben umlagefähig: bei einer Gemeinschaftsantenne des Hauses der ' +
+      `Die Gebühren für das TV-Signal eines Kabelanschlusses und die Grundgebühren eines Breitbandanschlusses durften bis zum ${germanDate(TV_UNTIL)} ` +
+      `als Betriebskosten umgelegt werden, und zwar nur bei Anlagen, die vor dem ${TV_NEW_FROM} errichtet wurden. Seitdem nicht mehr. ` +
+      `Bei Anlagen, die vor dem ${TV_NEW_FROM} errichtet wurden, bleiben umlagefähig: bei einer Gemeinschaftsantenne des Hauses der ` +
       'Betriebsstrom sowie Prüfung und Einstellung durch eine Fachkraft, bei einer Breitband-Verteilanlage nur der Betriebsstrom. ' +
       'Bei später errichteten Anlagen ist davon nichts umlagefähig, ausgenommen eine reine Glasfaser-Verteilanlage (Betriebsstrom und Bereitstellungsentgelt).',
-    validTo: '2024-06-30',
+    validTo: TV_UNTIL,
   },
   {
     code: 'heating-flat-rate',
@@ -47,15 +66,15 @@ export const RULES: readonly Rule[] = [
       'Heizung und Warmwasser müssen nach Verbrauch abgerechnet werden; die Heizkostenverordnung geht einer Pauschale oder Warmmiete vor. ' +
       'Die Vereinbarung wird dann nicht angewendet: Der Heizanteil gilt als Vorauszahlung, über die nach Verbrauch abzurechnen ist. ' +
       'Nur im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, und in den Fällen des § 11 darf etwas anderes vereinbart werden. ' +
-      'Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen.',
+      `Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${cut} % kürzen.`,
   },
   {
     code: 'heating-consumption',
     title: 'Heizung und Warmwasser nach Verbrauch',
     norm: '§§ 2, 7 Abs. 1, 8 Abs. 1, 12 Abs. 1 HeizkostenV',
     summary:
-      'Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ' +
-      'Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um 15 % kürzen. ' +
+      `Von den Kosten der zentralen Heizungs- und Warmwasseranlage sind mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, der Rest nach Wohn- oder Nutzfläche (bei der Heizung auch nach umbautem Raum). ` +
+      `Wird nicht verbrauchsabhängig abgerechnet, darf der Mieter seinen Anteil um ${cut} % kürzen. ` +
       'Im Gebäude mit höchstens zwei Wohnungen, von denen der Vermieter eine selbst bewohnt, darf anderes vereinbart werden; ohne eine solche Vereinbarung gilt die Verordnung auch dort.',
   },
   {
@@ -72,11 +91,12 @@ export const RULES: readonly Rule[] = [
     title: 'Fernablesbare Zähler und monatliche Verbrauchsinformation',
     norm: '§ 5 Abs. 2 und 3, § 6a, § 12 Abs. 1 Satz 2 und 3 HeizkostenV',
     summary:
-      'Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: die nach dem 01.12.2021 eingebauten sofort, alle übrigen ab dem 01.01.2027 (Nachrüstfrist bis 31.12.2026). ' +
+      `Zähler und Heizkostenverteiler für Heizung und Warmwasser müssen fernablesbar sein: die nach dem ${germanDate(retrofit.value.installedUpTo)} eingebauten sofort, alle übrigen ab dem ${germanDate(RETROFIT_FROM)} (Nachrüstfrist bis ${germanDate(dayBefore(RETROFIT_FROM))}). ` +
       'Sind fernablesbare Geräte eingebaut, stehen den Mietern monatliche Verbrauchsinformationen zu. ' +
-      'Fehlt das eine oder das andere, darf der Mieter seinen Anteil an den Heizkosten um 3 % kürzen. ' +
+      `Fehlt das eine oder das andere, darf der Mieter seinen Anteil an den Heizkosten um ${remoteCut} % kürzen. ` +
       'Ausgenommen sind Fälle, in denen die Nachrüstung technisch nicht möglich ist, einen unangemessenen Aufwand bedeutet oder in sonstiger Weise eine unbillige Härte wäre.',
-    validFrom: '2027-01-01',
+    // Der Zeitpunkt kommt aus `hkv.remote-reading.retrofit` (N6 der dritten Fassung).
+    validFrom: RETROFIT_FROM,
   },
 ]
 

@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, consumptionOverview, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
-import { RULES_AS_OF } from '../src/rules.ts'
+import { RULES_AS_OF } from '../../shared/law/rules.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({

@@ -216,6 +216,16 @@ jobs:
         if: github.ref_type == 'tag'
         run: node scripts/set-version.mjs
 
+      # Rechtsregister (Heizung PR 1, Entwurf 4.7): Beim Tag bricht der Lauf ab, solange ein Wert
+      # im Register nicht an der Quelle geprüft ist (`checked: 'unchecked'`). Im gewöhnlichen
+      # Testlauf ist die Prüfung übersprungen, damit eine PR einen ungeprüften Wert eintragen darf.
+      - name: Rechtsregister geprüft?
+        if: github.ref_type == 'tag'
+        working-directory: server
+        env:
+          MIETFUCHS_RELEASE: '1'
+        run: node --test test/law-release.test.ts
+
       # Frontend bauen, Embed-Modul erzeugen und alle Ziel-Binaries kompilieren.
       - name: Binaries bauen
         run: npm run package
