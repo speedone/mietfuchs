@@ -85,6 +85,8 @@ describe('Drei Wege, wenn der Messdienst anders abrechnet (Nutzerwunsch, BGH VII
     }
     expect(ways[0]?.example).toBe('Beispiel: Der Messdienst rechnet von Mai bis April ab. Die Heizperiode 01.05.2025–30.04.2026 steht in der Betriebskostenabrechnung 2026, dem Jahr, in dem sie endet.')
     expect(ways[0]?.why).toMatch(/BGH, Urteil vom 30\.04\.2008, VIII ZR 240\/07/)
+    // Auch Weg 1 nennt den Vorbehalt des Mietvertrags (Durchsicht von #231, Minor 8).
+    expect(ways[0]?.cons.join(' ')).toMatch(/Zustimmung der Mieter/)
   })
   test('Ohne Antwort zur Vorauszahlung bleibt Weg 1 die Vorgabe, mit Vorbehalt; bei getrennter Abrechnung keine Vorgabe unter den drei', () => {
     expect(heatingWays({ objectCalendar: true, separate: '' }).filter((w) => w.recommended).map((w) => w.id)).toEqual(['own'])

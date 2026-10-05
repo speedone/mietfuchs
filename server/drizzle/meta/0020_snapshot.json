@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "bab9ec42-124f-43a9-8159-6b4132d02f8a",
+  "id": "24f3b496-5b26-46bd-ba5d-7ebadb38df14",
   "prevId": "7603e667-485d-4169-b04b-b99a0181449a",
   "tables": {
     "ai_slots": {
@@ -2093,6 +2093,10 @@
         "heating_prepayments_monthly_not_negative": {
           "name": "heating_prepayments_monthly_not_negative",
           "value": "\"monthly_cents\" >= 0"
+        },
+        "heating_prepayments_from_valid": {
+          "name": "heating_prepayments_from_valid",
+          "value": "\"from\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr(\"from\", 6, 2) AS INTEGER) BETWEEN 1 AND 12"
         }
       }
     },

@@ -501,6 +501,8 @@ export const heatingPrepayments = sqliteTable(
   (t) => [
     primaryKey({ columns: [t.tenancyId, t.from] }),
     notNegative('heating_prepayments_monthly_not_negative', 'monthly_cents'),
+    // Ein Monat in der Form JJJJ-MM (Durchsicht von #231); dieselbe Prüfung wie bei Zeitraumschlüsseln.
+    periodKeyCheck('heating_prepayments_from_valid', 'from'),
   ],
 )
 

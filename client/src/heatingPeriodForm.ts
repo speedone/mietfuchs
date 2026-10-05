@@ -96,6 +96,7 @@ export function heatingWays(input: { objectCalendar: boolean; separate: Separate
       cons: [
         'Heizkosten und übrige Kosten betreffen verschiedene Zeiträume; das erklärt die Abrechnung, Mieter fragen trotzdem nach.',
         'Wer ausgezogen ist, bekommt im Jahr danach noch eine Abrechnung nur mit Heizkosten. Ob dafür die spätere Frist gilt, ist nicht entschieden; Mietfuchs empfiehlt die frühere.',
+        'Legt Ihr Mietvertrag fest, dass auch die Heizkosten nach Kalenderjahr abgerechnet werden, braucht die eigene Heizperiode die Zustimmung der Mieter.',
       ],
       example: 'Beispiel: Der Messdienst rechnet von Mai bis April ab. Die Heizperiode 01.05.2025–30.04.2026 steht in der Betriebskostenabrechnung 2026, dem Jahr, in dem sie endet.',
       why,

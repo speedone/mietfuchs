@@ -82,7 +82,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0019_heizanlage_bedingungen': '20506c7a6cddb70de5c0ca509fadebdbe722ee666f89205be8052f64b873e17c',
   // Heizung PR 5. Wird PR 4 vor dem Push neu erzeugt, wird dieser Schritt neu erzeugt und die Marke
   // hier ersetzt.
-  '0020_heizperiode': '57669fe100c74bc64fed1d0ed3c8293d1690b9d8a00a842d7937d2dacd7d7055',
+  '0020_heizperiode': '3ea767aa7c4597181555eeda5b781ce48c144e46421244fe0d5dc3060c36d83e',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

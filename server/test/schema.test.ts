@@ -759,6 +759,9 @@ test('Heizstaffel und Heizkorrektur: nie negativ, vorläufig nur mit Monaten, en
     connection.exec(eineAnlage)
     assert.equal(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2025-05', 12300)"), null)
     assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2026-01', -1)"), 'negativ')
+    // Durchsicht von #231 (Minor 9): ein Monat in der Form JJJJ-MM.
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', '2026-13', 100)"), 'Monat 13')
+    assert.ok(rejects(connection, "INSERT INTO heating_prepayments (tenancy_id, \"from\", monthly_cents) VALUES ('t1', 'ab Mai', 100)"), 'kein Monat')
     const korrektur = (werte: string) => `INSERT INTO heating_prepayment_overrides (tenancy_id, plant_id, period, amount_cents, provisional, from_month, to_month) VALUES ${werte}`
     assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2025-05', 30000, 0, NULL, NULL)")), null)
     assert.equal(rejects(connection, korrektur("('t1', 'hp1', '2026-05', 87600, 1, '2026-05', '2026-12')")), null)

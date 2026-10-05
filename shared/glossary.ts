@@ -263,7 +263,8 @@ export const GLOSSARY = {
     example: 'Abrechnung für 2025: Sie muss bis zum 31.12.2026 beim Mieter sein. Kommt sie am 02.01.2027, entfällt eine Nachzahlung von 200 €; ein Guthaben des Mieters bleibt fällig.',
     norm: '§ 556 Abs. 3 BGB; BGH, Urteil vom 20.05.2026, VIII ZR 6/24',
     needed: 'Ja, für jede Abrechnung. Es zählt der Zugang beim Mieter, nicht das Absenden. Bei einer Eigentumswohnung gilt die Frist auch, wenn die Hausgeldabrechnung noch fehlt. Liegt der Grundsteuerbescheid ohne Ihr Verschulden noch nicht vor, oder haben Sie gegen ihn, den Grundsteuerwert- oder den Messbescheid Einspruch eingelegt, dürfen Sie mit der Grundsteuer warten, bis der endgültige Bescheid da oder über den Einspruch entschieden ist. Rechnen Sie das Übrige trotzdem fristgerecht ab, behalten Sie sich die Grundsteuer ausdrücklich vor und fordern Sie sie im Regelfall innerhalb von drei Monaten danach. Mietfuchs zeigt die Frist auf der Seite Abrechnung.',
-  },  // #208: Abrechnungszeitraum, Rumpf und Leistungsprinzip. § 556 Abs. 3 BGB und VIII ZR 316/10,
+  },
+  // #208: Abrechnungszeitraum, Rumpf und Leistungsprinzip. § 556 Abs. 3 BGB und VIII ZR 316/10,
   // VIII ZR 49/07, VIII ZR 156/11 gelesen am 05.10.2026 (Entwurf 2).
   billingPeriod: {
     title: 'Abrechnungszeitraum',
@@ -271,11 +272,12 @@ export const GLOSSARY = {
     example: 'Ein Objekt rechnet von Mai bis April ab: Der Zeitraum 2025/2026 läuft vom 01.05.2025 bis 30.04.2026, und die Abrechnung muss den Mietern bis 30.04.2027 zugehen.',
     norm: '§ 556 Abs. 3 BGB',
     needed: 'Nur wenn Ihr Messdienst oder Ihr Mietvertrag einen anderen Zeitraum als das Kalenderjahr nennt. Mietkonto und Steuer bleiben beim Kalenderjahr.',
-  },  // Heizung PR 5 (#217): BGH, Urteil vom 30.04.2008, VIII ZR 240/07, Leitsätze nachgelesen (Entwurf 3.1).
+  },
+  // Heizung PR 5 (#217): BGH, Urteil vom 30.04.2008, VIII ZR 240/07, Leitsätze nachgelesen (Entwurf 3.1).
   heatingPeriod: {
     title: 'Eigene Heizperiode',
     short: 'Die Heizkosten werden für einen anderen Zeitraum abgerechnet als die übrigen Betriebskosten, meist für den des Messdienstes, etwa Mai bis April.',
-    example: 'Die Betriebskostenabrechnung 2026 umfasst Januar bis Dezember 2026, darin die Heizkosten der Heizperiode 01.05.2025–30.04.2026. Ein Mieter, der am 31.10.2025 ausgezogen ist, bekommt für 2026 eine Abrechnung nur mit seinen Heizkosten vom 01.05. bis 31.10.2025, im Beispiel 412,30 €.',
+    example: 'Die Betriebskostenabrechnung 2026 umfasst Januar bis Dezember 2026, darin die Heizkosten der Heizperiode 01.05.2025–30.04.2026. Ein Mieter, der am 31.10.2025 ausgezogen ist, bekommt für 2026 eine Abrechnung nur mit seinen Heizkosten vom 01.05. bis 31.10.2025: Rechnet der Messdienst für die Wohnung 1.000,00 € ab, davon 412,30 € bis zum Auszug und 587,70 € für den Nachmieter, sind das 412,30 €.',
     norm: 'BGH, Urteil vom 30.04.2008, VIII ZR 240/07; § 556 Abs. 3 BGB',
     needed: 'Nur wenn Ihr Messdienst nicht im Zeitraum Ihrer Abrechnung abrechnet und Sie den Zeitraum nicht umstellen wollen. Zulässig ist das, wenn Heizkosten und übrige Kosten mit einer gemeinsamen Vorauszahlung abgerechnet werden. Werden die Heizkosten mit eigener Vorauszahlung getrennt abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit eigener Frist; das ist eine Auslegung des Gesetzes. Legt Ihr Mietvertrag den Zeitraum fest, braucht eine Änderung die Zustimmung der Mieter.',
   },

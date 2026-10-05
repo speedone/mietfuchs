@@ -58,7 +58,8 @@ CREATE TABLE `heating_prepayments` (
 	`monthly_cents` integer NOT NULL,
 	PRIMARY KEY(`tenancy_id`, `from`),
 	FOREIGN KEY (`tenancy_id`) REFERENCES `tenancies`(`id`) ON UPDATE no action ON DELETE cascade,
-	CONSTRAINT "heating_prepayments_monthly_not_negative" CHECK("monthly_cents" >= 0)
+	CONSTRAINT "heating_prepayments_monthly_not_negative" CHECK("monthly_cents" >= 0),
+	CONSTRAINT "heating_prepayments_from_valid" CHECK("from" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("from", 6, 2) AS INTEGER) BETWEEN 1 AND 12)
 );
 --> statement-breakpoint
 CREATE TABLE `heating_separate_spans` (
