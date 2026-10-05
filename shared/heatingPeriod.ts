@@ -1,0 +1,103 @@
+// Die eigene Heizperiode einer Heizanlage (#217, Heizung PR 5, Entwurf 3.0, 3.1).
+//
+// Eine Anlage rechnet im Zeitraum ihres Objekts ab (`periodStartMonth` null) oder in einem eigenen
+// Rhythmus, etwa Mai bis April wie ihr Messdienst. Die Heizperioden werden wie die Zeiträume des
+// Objekts berechnet (shared/period.ts) und nie gespeichert; ihr Schlüssel ist der Monat des Beginns.
+//
+// **Wo eine Heizperiode abgerechnet wird.** Ohne getrennte Abrechnung gehört sie in die
+// Betriebskostenabrechnung des Objektzeitraums, in dem sie endet (Weg b, BGH VIII ZR 240/07: zulässig,
+// wenn über die Heizkosten nicht getrennt abzurechnen ist). Werden die Heizkosten mit eigener
+// Vorauszahlung getrennt abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit
+// eigener Frist (Weg d, Auslegung nach 15.1 Nr. 21), aber nur, wenn sie kein Abrechnungszeitraum des
+// Objekts ist: Bei H = P gibt es eine Gesamtabrechnung, die beide Vorauszahlungen getrennt ausweist.
+// Ob Weg d gilt, sagen die gespeicherten Spannen (`separateSpans`), nicht die Antwort von heute:
+// Ein Ausschalten wirkt erst ab W, und eine Heizperiode davor bleibt getrennt (D1).
+//
+// **Jeder Monat der Heizstaffel wird genau einmal angerechnet** (6.1 Nr. 5): in der
+// Heizkostenabrechnung der getrennten Heizperiode, die ihn enthält, sonst in der Abrechnung P, die
+// ihn enthält. Die Regel steht hier und nur hier (`separateOwner`); P und die Heizkostenabrechnung
+// fragen beide.
+
+import { periodContaining, periodOfKey, periodsBetween, settlementDeadline } from './period.ts'
+import type { BillingPeriod, PeriodRules, SeparateSpan, Unit } from './types.ts'
+
+export type PlantRhythm = { periodStartMonth: number | null; periodChanges: readonly string[] }
+export type PlantWay = PlantRhythm & { separateSpans: readonly SeparateSpan[] }
+
+const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+const monthName = (month: string): string => MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month.slice(5, 7)
+
+export const hasOwnRhythm = (plant: Pick<PlantRhythm, 'periodStartMonth'>): boolean => plant.periodStartMonth !== null
+
+export const plantRules = (plant: PlantRhythm, objectRules: PeriodRules): PeriodRules =>
+  plant.periodStartMonth === null ? objectRules : { startMonth: plant.periodStartMonth, changes: [...plant.periodChanges] }
+
+export const sameSpan = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
+
+// Ist die Heizperiode zugleich ein Abrechnungszeitraum des Objekts? Verglichen werden die Grenzen,
+// nicht der Schlüssel: Der Rumpf 01.01.–30.04.2025 des Objekts und das Kalenderjahr 2025 der Anlage
+// tragen beide '2025-01'.
+export function isObjectPeriod(objectRules: PeriodRules, h: BillingPeriod): boolean {
+  const p = periodOfKey(objectRules, h.key)
+  return p !== null && sameSpan(p, h)
+}
+
+// Die Heizperioden, deren Ende in P liegt, in ihrer Reihenfolge. Bei zwei Zwölfmonatsrhythmen genau
+// eine; nur ein Wechsel kann zwei oder keine ergeben (Entwurf 3.0).
+export function heatingPeriodsEndingIn(rules: PeriodRules, p: Pick<BillingPeriod, 'from' | 'to'>): BillingPeriod[] {
+  return periodsBetween(rules, p.from, p.to).filter((h) => h.to >= p.from && h.to <= p.to)
+}
+
+// Die Spanne, in die eine Heizperiode reicht: Sie endet am oder nach dem Monat X und beginnt vor W.
+// Monate als 'JJJJ-MM' werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts.
+export const spanOf = (spans: readonly SeparateSpan[], h: BillingPeriod): SeparateSpan | undefined =>
+  spans.find((s) => h.to.slice(0, 7) >= s.from && (s.until === null || h.key < s.until))
+
+export function settledSeparately(plant: PlantWay, objectRules: PeriodRules, h: BillingPeriod): boolean {
+  return hasOwnRhythm(plant) && !isObjectPeriod(objectRules, h) && spanOf(plant.separateSpans, h) !== undefined
+}
+
+// Die getrennt abgerechnete Heizperiode, der ein Monat der Heizstaffel gehört; `null` heißt: Die
+// Abrechnung P, die den Monat enthält, rechnet ihn an. Ein Monat vor X gehört P, auch wenn seine
+// Heizperiode getrennt abgerechnet wird: Seine Vorauszahlung stand beim Umstellen ganz in
+// `prepayments` und ist dort angerechnet (C3).
+export function separateOwner(plant: PlantWay, objectRules: PeriodRules, month: string): BillingPeriod | null {
+  if (!hasOwnRhythm(plant)) return null
+  const h = periodContaining(plantRules(plant, objectRules), `${month}-01`)
+  const span = isObjectPeriod(objectRules, h) ? undefined : spanOf(plant.separateSpans, h)
+  return span !== undefined && month >= span.from ? h : null
+}
+
+// Ohne Liste versorgt eine Anlage alle Wohnungen ohne „kein Anschluss: Wärme“ (#117), mit Liste
+// genau diese (PR 4, `units_limited`).
+export function servesUnit(plant: { units: readonly { unitId: string }[] | null }, unit: Pick<Unit, 'id' | 'noConnection'>): boolean {
+  if (plant.units === null) return !(unit.noConnection ?? []).includes('waerme')
+  return plant.units.some((u) => u.unitId === unit.id)
+}
+
+// Eine Abrechnung nur mit Heizkosten für einen Zeitraum, in dem der Mieter nicht mehr gewohnt hat,
+// ist nicht entschieden (15.1 Nr. 2). Empfohlen wird die Frist des Zeitraums, in dem das
+// Mietverhältnis endete; die zwölf Monate kommen aus dem Rechtsregister (`settlementDeadline`).
+export function recommendedDeadline(objectRules: PeriodRules, end: string): string {
+  return settlementDeadline(periodContaining(objectRules, end))
+}
+
+// Bis wann die Abrechnung des Messdienstes anzufordern ist, damit die empfohlene Frist hält: zwei
+// Monate vorher, wie im Beispiel des Entwurfs (3.1, L3: Frist 31.12.2026, Anforderung bis Oktober
+// 2026). Eine Festlegung für den Text, keine Rechtsfrist.
+export function requestMonth(deadline: string): string {
+  const index = Number(deadline.slice(0, 4)) * 12 + Number(deadline.slice(5, 7)) - 1 - 2
+  const year = Math.floor(index / 12)
+  return `${MONTH_NAMES[index - year * 12] ?? ''} ${year}`
+}
+
+// „Mai bis Dezember 2025“, über den Jahreswechsel „Dezember 2025 bis Januar 2026“, ein Monat „Mai 2025“.
+export function monthSpanText(months: readonly string[]): string {
+  const first = months[0]
+  const last = months[months.length - 1]
+  if (first === undefined || last === undefined) return ''
+  if (first === last) return `${monthName(first)} ${first.slice(0, 4)}`
+  return first.slice(0, 4) === last.slice(0, 4)
+    ? `${monthName(first)} bis ${monthName(last)} ${first.slice(0, 4)}`
+    : `${monthName(first)} ${first.slice(0, 4)} bis ${monthName(last)} ${last.slice(0, 4)}`
+}
