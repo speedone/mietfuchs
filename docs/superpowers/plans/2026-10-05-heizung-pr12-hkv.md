@@ -9,15 +9,17 @@ Nutzungszeitraum (deckt Verdunster und Funk-Heizkostenverteiler ab). Ein fehlend
 Geräte in einer Anlage (§ 5 Abs. 7 HeizkostenV, Vorerfassung, #218) und ein Gerätestichtag neben dem
 Beginn der Heizperiode werden gemeldet; der Ausweis nennt je Gerät Skala, Faktor und Einheiten.
 
-**Architecture:** Zwei nullbare Spalten an `meters` (`rating_factor`, `hca_scale`) und die Tabelle
-`heating_service_values` (Entwurf 5.6) in zwei erzeugten Schritten. Die Rechnung steht als reine
-Funktionen in der neuen Datei `server/src/hca.ts` (`ratingOf`, `ratedSegments`, `serviceSegments`,
-`heatDevicesOf`, `mixedCapture`, `missingRatings`, `deviceCutoffs`); sie ersetzt die Stelle, an der PR 10
-die Verbrauchswerte der Wohnungen aus den Wärmezählern bildet (Naht N1, siehe „Annahmen über PR 10“),
-und liefert für alle drei Erfassungen dieselbe Gestalt: je Wohnung je Gerät die Segmente zwischen zwei
-Ablesungen. So bleiben Zwischenablesung, Gradtage und „keine Interpolation“ aus PR 10 unverändert
-zuständig. Der Stichtagswert ist kein neues Datenfeld: Er wird wie ein Zählerwechsel erfasst
-(`replacement: true`, `oldEndValue` = Stichtagswert, `value` = 0, Entwurf 8.1).
+**Architecture:** Zwei nullbare Spalten an `meters` (`rating_factor`, `hca_scale`), `hca_model` an der
+Anlage und die Tabelle `heating_service_values` (Entwurf 5.6) in zwei erzeugten Schritten. Die eigene
+Heizkostenabrechnung von PR 10 rechnet im **Grenzmodell** (`planSelf`: je Zähler eine Ablesung an jeder
+Grenze, Verbrauch als Differenz, `metersOf` je Wohnung und Topf); diese PR bringt die neuen Erfassungen
+in genau diese Gestalt: Heizkostenverteiler sind Zähler vom Typ `hkv` mit einem Faktor am Zähler
+(`SelfMeter.factor`, `meterFactor` in der neuen Datei `server/src/hca.ts`), `metersOf` wählt den Typ nach
+der Erfassung, und Werte eines Ablesedienstes werden je Wohnung ein gedachter Zähler mit kumulierten
+Ständen (`serviceMeters`). So bleiben Zwischenablesung, Gradtage und „keine Interpolation“ aus PR 10
+unverändert zuständig. Was die Verteilung verhindert (`mixedCapture`, `missingRatings`), kommt in die
+Liste `blocked` von PR 10. Der Stichtagswert ist kein neues Datenfeld: Er wird wie ein Zählerwechsel
+erfasst (`replacement: true`, `oldEndValue` = Stichtagswert, `value` = 0, Entwurf 8.1).
 
 **Tech Stack:** Node 24 (TypeScript ohne Build, Typen werden abgestreift), Express 5, Drizzle ORM
 0.45 über `sqlite-proxy`, drizzle-kit 0.31, `node:test`, React 19 + Vite, vitest mit jsdom.
@@ -35,10 +37,46 @@ elektronischen HKV“, „Verdunster“, „Gemischte Ausstattung“), 15.3 (Zei
 elektronische HKV, Skalen und Bewertungsfaktoren“, ⟨Norm offen: VDI 2077; DIN EN 834⟩), 16
 (Nicht-Ziele: Verdunster selbst auswerten, Vorerfassung).
 
-**Baut auf:** PR 1 bis PR 11 (Pläne `docs/superpowers/plans/2026-10-05-heizung-pr{1..11}-*.md`); PR 10
-(Plan `…-pr10-kernrechnung.md`) lag beim Schreiben dieses Plans **nicht** vor, siehe „Annahmen über
-PR 10“. Gearbeitet wird auf `feat/heizung-pr12-hkv`, abgezweigt von der Spitze von PR 11; der PR wird
-gestapelt auf PR 11 gestellt und nach dessen Merge auf `main` umgestellt.
+**Baut auf:** PR 1 bis PR 11 (Pläne `docs/superpowers/plans/2026-10-05-heizung-pr{1..11}-*.md`),
+maßgeblich PR 10 in der Fassung von Commit `81828af` (abgeglichen, siehe „Abgleich mit PR 10“) und der
+Testhelfer `server/testing/selfHeating.ts` aus PR 11. Gearbeitet wird auf `feat/heizung-pr12-hkv`,
+abgezweigt von der Spitze von PR 11; der PR wird gestapelt auf PR 11 gestellt und nach dessen Merge auf
+`main` umgestellt.
+
+## Änderungen nach Prüfung vom 05.10.2026
+
+Der Prüfbericht vom 05.10.2026 (Teil B, Schnittstellen zu PR 10 in der Fassung von Commit `81828af`) hat
+gezeigt, dass dieser Plan an PR 10 vorbeigeplant war: PR 10 hat kein Segmentmodell je Gerät
+(`heatDevicesOf`, `HeatSegment`), sondern das Grenzmodell in `planSelf`. Geändert ist:
+
+1. **Abgleich mit PR 10** (Abschnitt „Abgleich mit PR 10“ unter den Annahmen): Liste `CAPTURE_METHODS`
+   statt `HEAT_CAPTURES`, die eine Sperre `LATER.capture` statt `LATER.hca`/`LATER.serviceValues`,
+   Fehler über `blocked: SelfBlock[]` mit geschlossener Code-Vereinigung statt `blockers`, Auswahl
+   `CAPTURE_SELF_OPTIONS` in `heatingSelfForm.ts` statt `CAPTURE_OPTIONS`. `hca_model` fehlt in PR 10
+   und kommt in Task 2 fest dazu.
+2. **Task 3 und Task 4 neu gefasst auf das Grenzmodell:** Der Faktor steht am Zähler
+   (`SelfMeter.factor`), `metersOf` in `planSelf` wählt bei `capture = 'hca'` den Typ `hkv`, jede
+   Differenz zählt mal Faktor. Werte eines Ablesedienstes werden je Wohnung ein gedachter Zähler mit
+   kumulierten Ständen (0 am Tag vor der ersten Zeile, die Summe am Ende jeder Zeile); eine Lücke ergibt
+   eine fehlende Grenzablesung und damit den Weg von PR 10. `heatDevicesOf`, `HeatSegment`,
+   `UnitHeatDevices`, `serviceSegments` entfallen; `hca.ts` behält `mixedCapture`, `missingRatings`,
+   `deviceCutoffs`, `deviceLines`. Damit setzt PR 13 an `metersOf` an, wie es dort steht.
+3. **Ausweis an `self`:** Geräte und Werte des Ablesedienstes stehen in `SelfHeatingStatement.devices`
+   bzw. `.serviceValues` (über `SelfPlantPlan`), nicht in einem `report` des CO₂-Blocks. Die Einheit des
+   Topfs Heizung heißt bei Heizkostenverteilern und Ablesedienst „Einheiten“ statt „kWh“
+   (`potUnitOf`, Abweichung 9).
+4. **Tests auf den Testhelfer von PR 11** (`server/testing/selfHeating.ts`, feste Kennungen `wz-a`…;
+   Option `serviceValues` kommt hier dazu) und auf die Wege von PR 10: Eine Anlage wird nur über die
+   Einrichtung zur eigenen Abrechnung (`setUpSelf`, PR 10 Abweichung 17), `POST /api/heating-plants`
+   liefert `{ plant, assigned }`.
+5. **Einrichtung legt bei Heizkostenverteilern und Ablesedienst keine Wärmezähler an** (Abweichung 8):
+   sonst meldete die eigene Prüfung gemischte Geräte.
+6. **`andList` aus `shared/wording.ts`**, Importe aus `db/heatingPeriodContext.ts` und `db/client.ts`
+   wie in PR 10 und PR 14.
+
+Nicht in diesem Durchgang: Den Hinweis auf gemischte Skalen (Einheits- neben Produktskala in einer Anlage,
+Prüfbericht A.2 „hält mit Vorbehalt“) baut dieser Plan nicht; er steht als Prüfpunkt in der
+PR-Beschreibung (⟨Norm offen: VDI 2077; DIN EN 834⟩).
 
 ## Global Constraints
 
@@ -131,10 +169,10 @@ gestapelt auf PR 11 gestellt und nach dessen Merge auf `main` umgestellt.
 | `shared/types.ts` | `HcaScale`, `Meter.ratingFactor`, `Meter.hcaScale`, `HeatingServiceValue`, `HcaDeviceLine`, `HeatingStatement.devices`, `HeatingPeriodView.serviceValues` | 2, 4, 5 |
 | `server/src/db/schema.ts`, `server/drizzle/0030_hkv.sql`, `0031_hkv_bedingungen.sql`, `meta/*` (erzeugt) | Spalten, Tabelle, Bedingungen | 2 |
 | `server/src/db/repository.ts`, `server/src/db/read.ts` | Zähler schreiben und prüfen, Ablesedienstwerte lesen, `crossPropertyViolations` | 2, 5 |
-| `server/src/hca.ts` (neu) | Faktor, Segmente, gemischte Geräte, fehlende Faktoren, Gerätestichtag | 3 |
-| `server/src/heating.ts`, `server/src/calc.ts`, `server/src/snapshot.ts` | Naht N1, Hinweise, Ausweis je Gerät | 4 |
-| `server/src/db/serviceValues.ts` (neu), `server/src/db/heating.ts`, `server/src/index.ts` | Werte des Ablesedienstes speichern, Sperre der Erfassungen fällt, Route | 5 |
-| `client/src/meterForm.ts` (PR 4), `client/src/hcaForm.ts` (neu), `client/src/components/CutoffReadingForm.tsx` (neu), `client/src/components/ServiceValuesCard.tsx` (neu), `client/src/hcaView.ts` (neu), `client/src/components/HcaBlock.tsx` (neu), `client/src/pages/Zaehler.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/heatingForm.ts` | Formulare, Karte, Druckblock | 6 |
+| `server/src/hca.ts` (neu) | Faktor am Zähler, Ablesedienst als gedachter Zähler, Ausweis je Gerät, gemischte Geräte, fehlende Faktoren, Gerätestichtag | 3 |
+| `server/src/heating.ts`, `server/src/calc.ts`, `server/testing/selfHeating.ts` | Naht im Grenzmodell (`metersOf`, Faktor), `blocked`, Hinweis, Ausweis an `self` | 4 |
+| `server/src/db/serviceValues.ts` (neu), `server/src/db/heating.ts`, `server/src/db/heatingSelf.ts`, `server/src/index.ts` | Werte des Ablesedienstes speichern, Sperre `LATER.capture` fällt, Einrichtung ohne Wärmezähler bei HKV und Ablesedienst, Route | 5 |
+| `client/src/meterForm.ts` (PR 4), `client/src/hcaForm.ts` (neu), `client/src/components/CutoffReadingForm.tsx` (neu), `client/src/components/ServiceValuesCard.tsx` (neu), `client/src/hcaView.ts` (neu), `client/src/components/HcaBlock.tsx` (neu), `client/src/pages/Zaehler.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/heatingSelfForm.ts` (PR 10) | Formulare, Karte, Druckblock, Erfassung in der Einrichtung frei | 6 |
 | `CHANGELOG.md`, `CLAUDE.md` | Doku | 7 |
 | Tests: `law.test.ts`, `law-history.test.ts`, `law-literals.test.ts`, `glossary.test.ts`, `schema.test.ts`, `migrations.test.ts`, `hca.test.ts` (neu), `db-hkv.test.ts` (neu), `calc-hkv.test.ts` (neu), `api.test.ts`, `client/src/hcaForm.test.ts` (neu), `client/src/meterForm.test.ts`, `client/src/hcaView.test.ts` (neu), `client/src/components/CutoffReadingForm.test.tsx` (neu), `client/src/components/ServiceValuesCard.test.tsx` (neu) | | je Task |
 
@@ -158,7 +196,10 @@ Task 1 beginnt.
 - **PR 6** db/co2.ts `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`,
   `closedText`, `heatingPeriodViews`, `PlantContext`; `HeatingPeriodView`, `HeatingStatement`;
   `client/src/pages/Heizkosten.tsx`.
-- **PR 11** `server/src/dhw.ts` `andList`; `client/src/heatingForm.ts` `parseDecimal`, `numberText`.
+- **PR 10** (Plan, Commit `81828af`): siehe „Abgleich mit PR 10“.
+- **PR 11** `server/testing/selfHeating.ts` (`selfSnapshot`, `SelfSnapshotOptions`, `PLANT`, feste
+  Kennungen `wz-a`, `wz-b`, `wz-c`, `ww`, Anlage `hp`); `client/src/heatingForm.ts` `parseDecimal`,
+  `numberText`. `andList` kommt aus `shared/wording.ts` (Bestand), nicht aus dhw.ts.
 - **calc.ts (Bestand)** `meterSegments(readings: SnapshotReading[]): { segments: { from; to; delta; days }[]; notices; warnings }`;
   Konvention: Eine Ablesung gilt zum Tagesende ihres Datums, ein Segment reicht vom Datum der früheren
   zum Datum der späteren Ablesung, `days` ist der Abstand in Tagen.
@@ -184,6 +225,30 @@ Weicht PR 10 in der Sache ab (nicht nur im Namen), entscheidet die Durchsicht, b
 
 Fehlt C2 so, dass der Verbrauch an mehreren Stellen gebildet wird, wird zuerst (als eigener Schritt vor
 Task 4 Step 3) eine Funktion daraus; alles andere ist eine Umbenennung.
+
+### Abgleich mit PR 10 (Prüfung vom 05.10.2026)
+
+Der Plan von PR 10 liegt vor (`2026-10-05-heizung-pr10-kernrechnung.md`, Commit `81828af`). Die Annahmen
+C1 bis C8 sind damit aufgelöst; die Tasks benutzen die Namen der rechten Spalte. Wo die Tabelle oben
+einem Task widerspricht, gilt der Task.
+
+| Nr. | In PR 10 tatsächlich | Folge in diesem Plan |
+|---|---|---|
+| C1 | Liste `CAPTURE_METHODS` (schema.ts); `HeatingPlant.capture: CaptureMethod \| null`; eine Sperre in `guardHeatingPlant`: `if (after.capture !== 'heatMeter') throw new HeatingError(400, LATER.capture)`; keine Spalte `hca_model` | Task 2 nimmt `CAPTURE_METHODS` und legt `hca_model` fest an; Task 5 löscht die Zeile und `LATER.capture` |
+| C2, C3 | Kein `heatDevicesOf`: Der Verbrauch entsteht in `planSelf` über den inneren Helfer `metersOf(unitId, pot)` (Typ aus `POT_METER`, nur `waerme`/`warmwasser`), `boundaryReadingsOf` je Grenze und `measuredBetween` je Grenzpaar, `v += result.value` je Wohnung; Eingabe `SelfInput` mit `meters: SelfMeter[]` (`{ id, name, unitId, type }`) und `readings: SelfReading[]` | Task 3/4 neu: `SelfMeter.factor`, `SelfInput.capture`, `meterTypeOf` in `planSelf`, `v += result.value * (m.factor ?? 1)`; Ablesedienst als gedachter `SelfMeter` mit kumulierten `SelfReading`s |
+| C4 | `blocked: SelfBlock[]` je Anlage im Block des Plans von `computeSettlement`, `type SelfBlock = { code: … }` mit geschlossener Vereinigung; gemeldet über `warn(b.code, …)` mit dem Ort davor und „Bis dahin verteilt Mietfuchs …“ dahinter | Task 4 erweitert die Vereinigung um `'heating.mixed-capture' \| 'heating.hca-factor-missing'`; die Sätze aus hca.ts tragen weder Ort noch „Bis dahin“ |
+| C5 | `SnapshotMeter` mit `name`, `heatingPlantId`, `heatingRole` (PR 4) | Task 2 ergänzt `hcaScale`, `ratingFactor` |
+| C6 | Kein Testhelfer in PR 10 (`beispielA` baut über die Datenbank); PR 11 legt `server/testing/selfHeating.ts` an | Task 4 benutzt `selfSnapshot()` mit den festen Kennungen und ergänzt die Option `serviceValues` |
+| C7 | Client: `CAPTURE_SELF_OPTIONS: { value; label; later: boolean }[]` in `client/src/heatingSelfForm.ts` (PR 4 hat ein anderes `CAPTURE_OPTIONS`); `selfSetupBody` lehnt `later` ab | Task 6 setzt `later: false` und nimmt den Zusatz aus den Beschriftungen |
+| C8 | Regel `heating-own-settlement` (PR 10 Task 1) | wie angenommen |
+
+Dazu, was keine Annahme war, aber an PR 10 hängt: Eine Anlage wird nur über die Einrichtung zur eigenen
+Abrechnung (`setUpSelf`, `PUT /api/heating-plants/:id/self`, PR 10 Abweichung 17); `createHeatingPlant`
+mit `method: 'self'` lehnt PR 10 ab. `setUpSelf` legt je angeschlossener Wohnung Wärme- und
+Warmwasserzähler an; bei Heizkostenverteilern und Ablesedienst darf es die Wärmezähler nicht anlegen
+(Abweichung 8, Task 5). `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`,
+`closedText` stehen seit PR 8 in `server/src/db/heatingPeriodContext.ts`, `Database` in
+`server/src/db/client.ts`.
 
 ## Abweichungen vom Entwurf und Festlegungen dieses Plans
 
@@ -214,6 +279,20 @@ entscheidet.
    **anderem Faktor** ist ein neuer Zähler (Review Focus 1).
 6. **`heating.hca-factor-missing` auch bei fehlender Skala.** Der Entwurf nennt den Code für den
    fehlenden Faktor; ohne Skala ist unbekannt, ob ein Faktor nötig ist, und geraten wird nicht.
+7. **Werte eines Ablesedienstes als gedachter Zähler** (nach der Prüfung vom 05.10.2026): je Wohnung ein
+   Zähler mit kumulierten Ständen, 0 am Tag vor dem Beginn der ersten Zeile und die Summe am Ende jeder
+   Zeile. Am Beginn einer Zeile nach einer Lücke steht **kein** Stand: Läge dort einer, zählte die Lücke
+   still als Verbrauch 0. So findet eine Grenze in der Lücke keine eigene Ablesung, und PR 10 nimmt die
+   nächste in ihrer Zelle wie abgelesen (mit Hinweis) oder geht den Weg der fehlenden Zwischenablesung.
+   Nichts wird aufgefüllt (Abweichung 3, Review Focus 2).
+8. **Die Einrichtung legt bei Heizkostenverteilern und Ablesedienst keine Wärmezähler an.** `setUpSelf`
+   (PR 10) legt je angeschlossener Wohnung die fehlenden Zähler des Topfs an; bei `capture = 'hca'` wären
+   das Wärmezähler neben den Heizkostenverteilern, und `mixedCapture` meldete gemischte Geräte. Die
+   Heizkostenverteiler legt der Vermieter je Heizkörper selbst an (mit Skala und Faktor), beim
+   Ablesedienst gibt es keine Geräte in Mietfuchs. Warmwasserzähler legt die Einrichtung weiter an.
+9. **Einheit des Topfs Heizung bei Heizkostenverteilern und Ablesedienst: „Einheiten“** statt „kWh“
+   (`potUnitOf`, `SelfPotView.consumptionUnit`). Heizkostenverteiler messen keine Wärmemenge; „785 von
+   7.850 kWh“ stünde falsch auf der Abrechnung.
 
 ---
 ### Task 1: Register und Lexikon
@@ -385,10 +464,11 @@ Refs #99"
 - Test: `server/test/schema.test.ts`, `server/test/migrations.test.ts`, `server/test/db-hkv.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: PR 4 `meters`, `mergeMeter`, `meterRow`, `guardMeter`, `readMeters`, `oneOf`, `exactly`, `notNegative`, `heatingPeriods`, `units`; PR 2 `PeriodKey`, `periodKey`; C1, C5.
+- Consumes: PR 4 `meters`, `mergeMeter`, `meterRow`, `guardMeter`, `readMeters`, `oneOf`, `exactly`, `notNegative`, `heatingPeriods`, `heatingPlants`, `units`; PR 2 `PeriodKey`, `periodKey`; PR 10 `CAPTURE_METHODS`, `HeatingPlant.capture`; PR 11 `server/testing/selfHeating.ts` (`PLANT`).
 - Produces:
   - `shared/types.ts`: `type HcaScale = 'unit' | 'product'`; `Meter.ratingFactor?: number | null`, `Meter.hcaScale?: HcaScale | null`; `type HeatingServiceValue = { plantId: string; period: PeriodKey; unitId: string; from: string; to: string; heatValue: number; waterValue: number | null }`
-  - schema.ts: `HCA_SCALES`, Spalten `meters.ratingFactor` (`rating_factor`), `meters.hcaScale` (`hca_scale`), Tabelle `heatingServiceValues` (`heating_service_values`: `heatingPeriodId`, `unitId`, `from`, `to`, `heatValue`, `waterValue`)
+  - schema.ts: `HCA_SCALES`, Spalten `meters.ratingFactor` (`rating_factor`), `meters.hcaScale` (`hca_scale`), `heatingPlants.hcaModel` (`hca_model`), Tabelle `heatingServiceValues` (`heating_service_values`: `heatingPeriodId`, `unitId`, `from`, `to`, `heatValue`, `waterValue`)
+  - `HeatingPlant.hcaModel: string | null`
   - read.ts: `readHeatingServiceValues(db: Database): Promise<HeatingServiceValue[]>`, `Stock.heatingServiceValues`
   - snapshot.ts: `SnapshotMeter` pickt zusätzlich `'ratingFactor' | 'hcaScale'`; `Snapshot.heatingServiceValues?: HeatingServiceValue[]`; `SnapshotSource.heatingServiceValues?: HeatingServiceValue[]`
 
@@ -567,10 +647,13 @@ export const heatingServiceValues = sqliteTable(
 )
 ```
 
-Fehlt nach PR 10 die Spalte `hca_model` an `heatingPlants` (Annahme C1), in diesem Step als letzte
-Spalte dort ergänzen, mit `hcaModel: string | null` in `HeatingPlant`, `mergeHeatingPlant`
-(`merged(body, 'hcaModel', current.hcaModel, asNullableFilled)`), `emptyHeatingPlant` (`null`) und
-`plantRow`:
+PR 10 hat die Spalte `hca_model` nicht (Abgleich C1). In diesem Step kommt sie als letzte Spalte an
+`heatingPlants`, mit `hcaModel: string | null` in `HeatingPlant`, `mergeHeatingPlant`
+(`merged(body, 'hcaModel', current.hcaModel, asNullableFilled)`), `emptyHeatingPlant` (`null`), `plantRow`
+und `readHeatingPlants` (`hcaModel: p.hcaModel`). Jedes vollständige Literal von `HeatingPlant` bekommt
+`hcaModel: null`: in `server/testing/selfHeating.ts` (PR 11, `PLANT`, hinter `heatGeneration: null,`) und
+in den Testdaten des Clients (PR 11 `HotWaterCard.test.tsx`, PR 4/10 `heatingForm.test.ts`,
+`HeatingCard.test.tsx`, `heatingSelfForm.test.ts`); der Übersetzer nennt jedes.
 
 ```ts
     // Bauart der Heizkostenverteiler (Entwurf 5.3), nur zur Beschreibung im Ausweis.
@@ -580,8 +663,8 @@ Spalte dort ergänzen, mit `hcaModel: string | null` in `HeatingPlant`, `mergeHe
 Run: `npm --prefix server run db:generate -- --name hkv`
 
 Expected: `server/drizzle/0030_hkv.sql` mit genau einem `CREATE TABLE \`heating_service_values\``
-(samt seiner drei Bedingungen und Fremdschlüssel), zwei `ALTER TABLE \`meters\` ADD` (und gegebenenfalls
-eines für `heating_plants.hca_model`), **kein** `__new_`. Sonst: Datei, Journal-Eintrag und
+(samt seiner drei Bedingungen und Fremdschlüssel), zwei `ALTER TABLE \`meters\` ADD` und einem
+`ALTER TABLE \`heating_plants\` ADD` (`hca_model`), **kein** `__new_`. Sonst: Datei, Journal-Eintrag und
 Momentaufnahme löschen, Schema berichtigen, neu erzeugen. Bei einer Frage nach Umbenennung: „create“.
 
 - [ ] **Step 5: Zweiter Schritt: Bedingungen an `meters`**
@@ -690,7 +773,7 @@ Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add shared/types.ts server/src/db/schema.ts server/drizzle server/src/db/repository.ts server/src/db/read.ts server/src/snapshot.ts server/test/schema.test.ts server/test/migrations.test.ts server/test/db-hkv.test.ts
+git add shared/types.ts server/src/db/schema.ts server/drizzle server/src/db/repository.ts server/src/db/read.ts server/src/db/heating.ts server/src/snapshot.ts server/testing/selfHeating.ts client/src server/test/schema.test.ts server/test/migrations.test.ts server/test/db-hkv.test.ts
 git commit -m "Heizkostenverteiler: Skala und Bewertungsfaktor; Tabelle für Werte des Ablesedienstes
 
 Zwei Spalten an den Zählern, nur beim Heizkostenverteiler, und die Tabelle der Werte je Wohnung
@@ -702,9 +785,14 @@ Refs #99"
 ---
 ### Task 3: Die Rechnung (`server/src/hca.ts`)
 
-Reine Funktionen. Sie bringen die drei Erfassungen in dieselbe Gestalt (je Wohnung je Gerät die
-Segmente zwischen zwei Ablesungen) und finden, was die Verteilung verhindert oder einen Hinweis
-braucht.
+Neu gefasst nach der Prüfung vom 05.10.2026 (Abgleich mit PR 10, Commit `81828af`). PR 10 rechnet nicht
+mit Segmenten je Gerät, sondern mit dem **Grenzmodell**: je Zähler eine Ablesung an jeder Grenze (Beginn,
+Wechsel, Ende, `boundaryReadingsOf`), Verbrauch ist die Differenz zweier wirklicher Ablesungen
+(`measuredBetween`), summiert je Wohnung in `planSelf`. Die neuen Erfassungen werden in diese Gestalt
+gebracht, statt eine zweite daneben zu stellen: Ein Heizkostenverteiler ist ein Zähler vom Typ `hkv` mit
+einem Faktor, die Werte eines Ablesedienstes sind je Wohnung ein gedachter Zähler mit kumulierten
+Ständen. Diese Datei hält die reinen Funktionen dafür und die Prüfungen, die die Verteilung verhindern
+oder einen Hinweis brauchen; die Naht in `planSelf` und `computeSettlement` ist Task 4.
 
 **Files:**
 - Create: `server/src/hca.ts`
@@ -712,21 +800,20 @@ braucht.
 - Test: `server/test/hca.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 2 `HcaScale`, `HeatingServiceValue`, `SnapshotMeter` (mit `ratingFactor`, `hcaScale`), `SnapshotReading`; calc.ts `meterSegments`; PR 1 `dayBefore`, `germanDate`, `Period`; PR 11 `andList` (dhw.ts); C1 `HeatingPlant['capture']`.
+- Consumes: Task 2 `HcaScale`, `HeatingServiceValue`, `SnapshotMeter` (mit `ratingFactor`, `hcaScale`), `SnapshotReading`; calc.ts `meterSegments`; PR 1 `dayBefore`, `germanDate`, `Period`; `andList` (`shared/wording.ts`); PR 10 `CaptureMethod` (`shared/types.ts`), `SelfMeter`, `SelfReading` (heating.ts; `SelfMeter` bekommt in Task 4 das Feld `factor`).
 - Produces:
   - `shared/types.ts`: `type HcaDeviceLine = { unitId: string; meterId: string; name: string; scale: HcaScale; factor: number; raw: number; rated: number }`
   - `server/src/hca.ts`:
-    - `type HeatSegment = { from: string; to: string; delta: number; days: number }`, `type UnitHeatDevices = { unitId: string; devices: { id: string; segments: HeatSegment[] }[] }`, `type HeatCapture = NonNullable<HeatingPlant['capture']>`
     - `type HcaMeter = Pick<SnapshotMeter, 'id' | 'unitId' | 'type'> & { name?: string; hcaScale?: HcaScale | null; ratingFactor?: number | null; heatingPlantId?: string | null }`
     - `ratingOf(m: HcaMeter): { ok: true; factor: number; scale: HcaScale } | { ok: false; missing: 'scale' | 'factor' }`
-    - `ratedSegments(readings: readonly SnapshotReading[], factor: number): HeatSegment[]`
-    - `serviceSegments(rows: readonly HeatingServiceValue[], unitId: string, part: 'heat' | 'water'): HeatSegment[]`
-    - `type DevicesInput = { capture: HeatCapture; unitIds: readonly string[]; meters: readonly HcaMeter[]; readings: readonly SnapshotReading[]; serviceValues: readonly HeatingServiceValue[] }`
-    - `heatDevicesOf(i: DevicesInput): UnitHeatDevices[]`, `serviceWaterDevicesOf(rows, unitIds): UnitHeatDevices[] | null`, `deviceLines(i: DevicesInput, h: Period): HcaDeviceLine[]`
+    - `meterFactor(m: HcaMeter): number`
+    - `serviceMeters(rows: readonly HeatingServiceValue[], units: readonly { id: string; name: string }[], part: 'heat' | 'water'): { meters: SelfMeter[]; readings: SelfReading[] } | null`
+    - `type DevicesInput = { capture: CaptureMethod; unitIds: readonly string[]; meters: readonly HcaMeter[]; readings: readonly SnapshotReading[] }`, `deviceLines(i: DevicesInput, h: Period): HcaDeviceLine[]`
     - `type MixedCapture = { heatMeterUnits: string[]; hcaUnits: string[] }`, `mixedCapture(capture, unitIds, meters): MixedCapture | null`
     - `type MissingRating = { meterId: string; name: string; unitId: string; missing: 'scale' | 'factor' }`, `missingRatings(capture, unitIds, meters): MissingRating[]`
     - `type DeviceCutoff = { meterId: string; name: string; unitId: string; date: string }`, `deviceCutoffs(meters, readings, unitIds, h): DeviceCutoff[]`
-    - `mixedCaptureText(where, capture, m, nameOf)`, `missingRatingsText(where, list, nameOf)`, `deviceCutoffText(where, c, h, nameOf)` (je `string`)
+    - `mixedCaptureText(capture, m, nameOf)`, `missingRatingsText(list, nameOf)` (je `string`, ohne Ort und ohne „Bis dahin …“, beides setzt `computeSettlement` wie bei jedem `SelfBlock` dazu), `deviceCutoffText(where, c, h, nameOf)` (`string`, ein eigener Hinweis)
+  - Entfällt gegenüber der ersten Fassung: `HeatSegment`, `UnitHeatDevices`, `heatDevicesOf`, `serviceSegments`, `serviceWaterDevicesOf`, `ratedSegments` (Prüfbericht B.1, Zeile C2/C3).
 
 - [ ] **Step 1: Failing test schreiben**
 
@@ -734,12 +821,13 @@ Datei `server/test/hca.test.ts`:
 
 ```ts
 // Heizkostenverteiler und Werte eines Ablesedienstes (Heizung PR 12, Entwurf 8.1, 12.2). Jede Zahl ist
-// von Hand nachgerechnet; der Kommentar am Test nennt die Rechnung.
+// von Hand nachgerechnet; der Kommentar am Test nennt die Rechnung. Die Verteilung über planSelf prüft
+// heating.test.ts (Task 4), die Abrechnung calc-hkv.test.ts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  deviceCutoffs, deviceCutoffText, deviceLines, heatDevicesOf, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText,
-  ratingOf, serviceSegments, serviceWaterDevicesOf, type HcaMeter, type UnitHeatDevices,
+  deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText,
+  ratingOf, serviceMeters, type HcaMeter,
 } from '../src/hca.ts'
 import type { SnapshotReading } from '../src/snapshot.ts'
 import type { HeatingServiceValue } from '../../shared/types.ts'
@@ -749,14 +837,19 @@ const H = { from: '2025-01-01', to: '2025-12-31' }
 const hkv = (id: string, unitId: string, over: Partial<HcaMeter> = {}): HcaMeter =>
   ({ id, unitId, type: 'hkv', name: id, hcaScale: 'unit', ratingFactor: 1, heatingPlantId: null, ...over })
 const read = (meterId: string, date: string, value: number, over: Partial<SnapshotReading> = {}): SnapshotReading => ({ meterId, date, value, ...over })
-const sum = (u: UnitHeatDevices | undefined) => Math.round((u?.devices ?? []).reduce((a, d) => a + d.segments.reduce((b, s) => b + s.delta, 0), 0) * 1000) / 1000
 const nameOf = (id: string) => `Wohnung ${id.toUpperCase()}`
+const rated = (lines: ReturnType<typeof deviceLines>, unitId: string) =>
+  Math.round(lines.filter((l) => l.unitId === unitId).reduce((a, l) => a + l.rated, 0) * 1000) / 1000
 
 test('Skala und Faktor: Produktskala zählt wie abgelesen, Einheitsskala mal Faktor; ohne Skala oder Faktor kein Wert', () => {
   assert.deepEqual(ratingOf(hkv('x', 'a', { hcaScale: 'product', ratingFactor: null })), { ok: true, factor: 1, scale: 'product' })
   assert.deepEqual(ratingOf(hkv('x', 'a', { ratingFactor: 1.25 })), { ok: true, factor: 1.25, scale: 'unit' })
   assert.deepEqual(ratingOf(hkv('x', 'a', { ratingFactor: null })), { ok: false, missing: 'factor' })
   assert.deepEqual(ratingOf(hkv('x', 'a', { hcaScale: null })), { ok: false, missing: 'scale' })
+  // Der Faktor am Zähler für planSelf: Wärmezähler und Wasserzähler 1, fehlende Angaben 1 (dann verteilt
+  // die Anlage ohnehin nicht, `missingRatings`).
+  assert.deepEqual([meterFactor(hkv('x', 'a', { ratingFactor: 0.8 })), meterFactor(hkv('x', 'a', { hcaScale: 'product' })), meterFactor(hkv('x', 'a', { ratingFactor: null }))], [0.8, 1, 1])
+  assert.equal(meterFactor({ id: 'w', unitId: 'a', type: 'waerme' }), 1)
 })
 
 test('HKV mit Faktoren 0,8 und 1,25 (Entwurf 12.2): 500 · 1,25 + 200 · 0,8 = 785 von 7.850 Einheiten, also ein Zehntel', () => {
@@ -766,35 +859,35 @@ test('HKV mit Faktoren 0,8 und 1,25 (Entwurf 12.2): 500 · 1,25 + 200 · 0,8 = 7
     read('a2', '2024-12-31', 0), read('a2', '2025-12-31', 200),
     read('b1', '2024-12-31', 0), read('b1', '2025-12-31', 7065),
   ]
-  const input = { capture: 'hca' as const, unitIds: ['a', 'b'], meters, readings, serviceValues: [] }
-  const units = heatDevicesOf(input)
-  assert.deepEqual(units.map(sum), [785, 7065])
-  assert.equal(sum(units[0]) / (sum(units[0]) + sum(units[1])), 0.1)
-  assert.deepEqual(units[0]?.devices.map((d) => d.id), ['a1', 'a2'])
-  assert.deepEqual(deviceLines(input, H).map((l) => [l.meterId, l.scale, l.factor, l.raw, Math.round(l.rated * 1000) / 1000]), [
+  const lines = deviceLines({ capture: 'hca', unitIds: ['a', 'b'], meters, readings }, H)
+  assert.deepEqual(lines.map((l) => [l.meterId, l.scale, l.factor, l.raw, Math.round(l.rated * 1000) / 1000]), [
     ['a1', 'unit', 1.25, 500, 625], ['a2', 'unit', 0.8, 200, 160], ['b1', 'product', 1, 7065, 7065],
   ])
+  assert.deepEqual([rated(lines, 'a'), rated(lines, 'b')], [785, 7065])
+  assert.equal(rated(lines, 'a') / (rated(lines, 'a') + rated(lines, 'b')), 0.1)
+  assert.deepEqual(deviceLines({ capture: 'heatMeter', unitIds: ['a', 'b'], meters, readings }, H), [])
 })
 
 test('Tausch eines Geräts mit anderem Faktor (Review Focus 1): altes und neues Gerät je mit ihrem Faktor', () => {
   // 300 · 1,25 = 375 bis zum Tausch, danach 250 · 0,8 = 200; zusammen 575.
   const meters = [hkv('d-alt', 'd', { ratingFactor: 1.25 }), hkv('d-neu', 'd', { ratingFactor: 0.8 })]
   const readings = [read('d-alt', '2024-12-31', 0), read('d-alt', '2025-06-15', 300), read('d-neu', '2025-06-15', 0), read('d-neu', '2025-12-31', 250)]
-  assert.equal(sum(heatDevicesOf({ capture: 'hca', unitIds: ['d'], meters, readings, serviceValues: [] })[0]), 575)
+  assert.equal(rated(deviceLines({ capture: 'hca', unitIds: ['d'], meters, readings }, H), 'd'), 575)
 })
 
 test('Stichtagswert (Entwurf 8.1): Rücksetzen wie ein Zählerwechsel; mitten in der Heizperiode ein Hinweis, am Beginn oder Ende nicht', () => {
   // Bis 30.06. 420 Einheiten (Stichtagswert), danach 180; zusammen 600.
   const meters = [hkv('c1', 'c', { hcaScale: 'product', ratingFactor: null })]
   const mitte = [read('c1', '2024-12-31', 0), read('c1', '2025-06-30', 0, { replacement: true, oldEndValue: 420 }), read('c1', '2025-12-31', 180)]
-  assert.equal(sum(heatDevicesOf({ capture: 'hca', unitIds: ['c'], meters, readings: mitte, serviceValues: [] })[0]), 600)
+  assert.equal(rated(deviceLines({ capture: 'hca', unitIds: ['c'], meters, readings: mitte }, H), 'c'), 600)
   const cut = deviceCutoffs(meters, mitte, ['c'], H)
   assert.deepEqual(cut, [{ meterId: 'c1', name: 'c1', unitId: 'c', date: '2025-06-30' }])
   const first = cut[0] ?? assert.fail('kein Stichtag')
   assert.match(deviceCutoffText('Heizung, Heizperiode 2025', first, H, nameOf), /„c1“ \(Wohnung C\) hat am 30\.06\.2025 auf null zurückgesetzt; die Heizperiode beginnt aber am 01\.01\.2025/)
+  // Am Tag vor dem Beginn und am letzten Tag: kein Hinweis; in der Heizperiode zählen 650 Einheiten.
   const amRand = [read('c1', '2023-12-31', 0), read('c1', '2024-12-31', 0, { replacement: true, oldEndValue: 900 }), read('c1', '2025-12-31', 0, { replacement: true, oldEndValue: 650 })]
   assert.deepEqual(deviceCutoffs(meters, amRand, ['c'], H), [])
-  assert.equal(sum(heatDevicesOf({ capture: 'hca', unitIds: ['c'], meters, readings: amRand, serviceValues: [] })[0]), 1550)
+  assert.equal(rated(deviceLines({ capture: 'hca', unitIds: ['c'], meters, readings: amRand }, H), 'c'), 650)
 })
 
 test('Gemischte Geräte (§ 5 Abs. 7, Review Focus 4): Wärmezähler neben Heizkostenverteilern; Warmwasserzähler und Zähler der Anlage zählen nicht', () => {
@@ -809,9 +902,10 @@ test('Gemischte Geräte (§ 5 Abs. 7, Review Focus 4): Wärmezähler neben Heizk
   // Ein Gerät an einer Wohnung, die nicht an der Anlage hängt, zählt nicht.
   assert.equal(mixedCapture('hca', ['b'], [wz('wa', 'a'), hkv('b1', 'b')]), null)
   assert.equal(mixedCapture('serviceValues', ['a', 'b'], [wz('wa', 'a'), hkv('b1', 'b')]), null)
-  const t = mixedCaptureText('Heizung, Heizperiode 2025', 'hca', m ?? assert.fail('nicht gemischt'), nameOf)
-  assert.match(t, /Eingestellt ist die Erfassung mit Heizkostenverteilern, an den Wohnungen hängen aber Wärmezähler bei Wohnung A und Heizkostenverteiler bei Wohnung B/)
+  const t = mixedCaptureText('hca', m ?? assert.fail('nicht gemischt'), nameOf)
+  assert.match(t, /^Eingestellt ist die Erfassung mit Heizkostenverteilern, an den Wohnungen hängen aber Wärmezähler bei Wohnung A und Heizkostenverteiler bei Wohnung B/)
   assert.match(t, /§ 5 Abs\. 7 HeizkostenV.*Vorerfassung.*Messdienst/s)
+  assert.doesNotMatch(t, /Bis dahin/)
 })
 
 test('Fehlende Skala oder fehlender Faktor (hca-factor-missing): je Gerät benannt, nur bei Erfassung mit Heizkostenverteilern', () => {
@@ -822,25 +916,30 @@ test('Fehlende Skala oder fehlender Faktor (hca-factor-missing): je Gerät benan
     { meterId: 'b1', name: 'Bad', unitId: 'b', missing: 'scale' },
   ])
   assert.deepEqual(missingRatings('heatMeter', ['a', 'b'], meters), [])
-  assert.match(missingRatingsText('Heizung', list, nameOf), /„Wohnzimmer“ \(Wohnung A\): der Bewertungsfaktor und „Bad“ \(Wohnung B\): die Skala.*als neuen Zähler an/s)
+  assert.match(missingRatingsText(list, nameOf), /^Bei diesen Heizkostenverteilern fehlt „Wohnzimmer“ \(Wohnung A\): der Bewertungsfaktor und „Bad“ \(Wohnung B\): die Skala.*als neuen Zähler an/s)
 })
 
-test('Werte des Ablesedienstes: ein Segment je Zeile vom Tag vor dem Beginn bis zum Ende; Lücken bleiben Lücken (Review Focus 2)', () => {
+test('Werte des Ablesedienstes als gedachter Zähler je Wohnung: kumulierte Stände, Lücken bleiben Lücken (Review Focus 2)', () => {
   const p = periodKey('2025-01')
   const rows: HeatingServiceValue[] = [
     { plantId: 'hp', period: p, unitId: 'a', from: '2025-10-15', to: '2025-12-31', heatValue: 100, waterValue: 3 },
     { plantId: 'hp', period: p, unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: 12 },
     { plantId: 'hp', period: p, unitId: 'b', from: '2025-01-01', to: '2025-12-31', heatValue: 800, waterValue: 20 },
   ]
-  assert.deepEqual(serviceSegments(rows, 'a', 'heat'), [
-    { from: '2024-12-31', to: '2025-09-30', delta: 340, days: 273 },
-    { from: '2025-10-14', to: '2025-12-31', delta: 100, days: 78 },
+  const units = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }]
+  const heat = serviceMeters(rows, units, 'heat') ?? assert.fail('keine Werte')
+  assert.deepEqual(heat.meters.map((m) => [m.id, m.unitId, m.type, m.factor]), [
+    ['ablesedienst-heizung:a', 'a', 'waerme', 1], ['ablesedienst-heizung:b', 'b', 'waerme', 1],
   ])
-  const units = heatDevicesOf({ capture: 'serviceValues', unitIds: ['a', 'b', 'c'], meters: [], readings: [], serviceValues: rows })
-  assert.deepEqual(units.map(sum), [440, 800, 0])
-  assert.deepEqual(units[2]?.devices, [])
-  assert.deepEqual(serviceWaterDevicesOf(rows, ['a', 'b'])?.map(sum), [15, 20])
-  assert.equal(serviceWaterDevicesOf(rows.map((r) => ({ ...r, waterValue: null })), ['a', 'b']), null)
+  // A: 0 am 31.12.2024, 340 am 30.09.2025, 440 am 31.12.2025. Am 14.10. (Tag vor der zweiten Zeile)
+  // steht kein Stand: Eine Grenze in der Lücke findet keine Ablesung, und PR 10 geht den Weg der
+  // fehlenden Zwischenablesung bzw. des fehlenden Werts. C hat keine Zeile und keinen Zähler.
+  assert.deepEqual(heat.readings.filter((r) => r.meterId === 'ablesedienst-heizung:a').map((r) => [r.date, r.value]), [
+    ['2024-12-31', 0], ['2025-09-30', 340], ['2025-12-31', 440],
+  ])
+  const water = serviceMeters(rows, units, 'water') ?? assert.fail('kein Warmwasser')
+  assert.deepEqual(water.readings.filter((r) => r.meterId === 'ablesedienst-warmwasser:b').map((r) => [r.date, r.value]), [['2024-12-31', 0], ['2025-12-31', 20]])
+  assert.equal(serviceMeters(rows.map((r) => ({ ...r, waterValue: null })), units, 'water'), null)
 })
 ```
 
@@ -864,29 +963,31 @@ export type HcaDeviceLine = { unitId: string; meterId: string; name: string; sca
 ```ts
 // Heizkostenverteiler und Werte eines Ablesedienstes (Heizung PR 12, Entwurf 8.1), als reine Funktionen.
 //
-// § 5 Abs. 1 Satz 1 HeizkostenV lässt Wärmezähler und Heizkostenverteiler gleichrangig zu. Mietfuchs
-// bringt alle drei Erfassungen in dieselbe Gestalt: je Wohnung je Gerät die Segmente zwischen zwei
-// Ablesungen (`HeatSegment`, Konvention von `meterSegments` in calc.ts: eine Ablesung gilt zum
-// Tagesende ihres Datums). Daraus rechnet die eigene Heizkostenabrechnung (PR 10) Zwischenablesung,
-// Gradtage und Leerstand, ohne zu interpolieren.
+// § 5 Abs. 1 Satz 1 HeizkostenV lässt Wärmezähler und Heizkostenverteiler gleichrangig zu. Die eigene
+// Heizkostenabrechnung (PR 10) rechnet mit dem Grenzmodell: je Zähler eine Ablesung an jeder Grenze
+// (Beginn, Wechsel, Ende), Verbrauch ist die Differenz zweier wirklicher Ablesungen (`measuredBetween`),
+// summiert je Wohnung in `planSelf`. Diese Datei bringt die beiden neuen Erfassungen in diese Gestalt
+// (Abgleich mit PR 10 nach der Prüfung vom 05.10.2026):
 //
-// - Wärmezähler: die Segmente der Zähler (wie bisher).
-// - Heizkostenverteiler: die Segmente der Geräte mal dem Bewertungsfaktor (Einheitsskala) oder wie
-//   abgelesen (Produktskala). Der Stichtagswert ist eine Ablesung mit `replacement` (Entwurf 8.1).
-// - Ablesedienst: je Zeile ein Segment vom Tag vor ihrem Beginn bis zu ihrem Ende.
+// - Heizkostenverteiler sind Zähler vom Typ `hkv`; jeder trägt seinen Faktor (`meterFactor`): bei der
+//   Einheitsskala den Bewertungsfaktor des Heizkörpers, bei der Produktskala 1. `planSelf` multipliziert
+//   die Differenz damit. Der Stichtagswert ist eine Ablesung mit `replacement` (Entwurf 8.1).
+// - Werte eines Ablesedienstes werden je Wohnung ein gedachter Zähler (`serviceMeters`) mit kumulierten
+//   Ständen: 0 am Tag vor dem Beginn der ersten Zeile und die Summe am Ende jeder Zeile. Eine Lücke
+//   zwischen zwei Zeilen ergibt keinen Stand an ihrem Beginn; eine Grenze darin findet keine Ablesung,
+//   und PR 10 geht den Weg der fehlenden Zwischenablesung bzw. des fehlenden Werts. Nichts wird
+//   interpoliert (Entwurf 8.4).
 //
 // Skalen und Faktoren nach [M] Haufe HeizKV § 5.3 und Berliner Mieterverein (übernommen);
 // ⟨Norm offen: VDI 2077; DIN EN 834⟩ (Entwurf 15.3). Ob ein Faktor stimmt, prüft Mietfuchs nicht
 // (Entwurf 16). Diese Datei steht in `ENGINE_FILES` des Wächters (law-literals.test.ts).
-import type { HcaDeviceLine, HcaScale, HeatingPlant, HeatingServiceValue } from '../../shared/types.ts'
+import type { CaptureMethod, HcaDeviceLine, HcaScale, HeatingServiceValue } from '../../shared/types.ts'
 import { dayBefore, germanDate, type Period } from '../../shared/law/register.ts'
+import { andList } from '../../shared/wording.ts'
 import { meterSegments } from './calc.ts'
-import { andList } from './dhw.ts'
+import type { SelfMeter, SelfReading } from './heating.ts'
 import type { SnapshotMeter, SnapshotReading } from './snapshot.ts'
 
-export type HeatSegment = { from: string; to: string; delta: number; days: number }
-export type UnitHeatDevices = { unitId: string; devices: { id: string; segments: HeatSegment[] }[] }
-export type HeatCapture = NonNullable<HeatingPlant['capture']>
 export type HcaMeter = Pick<SnapshotMeter, 'id' | 'unitId' | 'type'> & {
   name?: string
   hcaScale?: HcaScale | null
@@ -894,10 +995,6 @@ export type HcaMeter = Pick<SnapshotMeter, 'id' | 'unitId' | 'type'> & {
   heatingPlantId?: string | null
 }
 
-const dayNumber = (iso: string): number => {
-  const [y, m, d] = iso.split('-').map(Number)
-  return Date.UTC(y ?? 0, (m ?? 1) - 1, d ?? 1) / 86_400_000
-}
 const byFrom = <T extends { from: string }>(a: T, b: T): number => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0)
 
 // ---------- Faktor ----------
@@ -910,8 +1007,13 @@ export function ratingOf(m: HcaMeter): { ok: true; factor: number; scale: HcaSca
   return factor !== null && factor > 0 ? { ok: true, factor, scale } : { ok: false, missing: 'factor' }
 }
 
-export function ratedSegments(readings: readonly SnapshotReading[], factor: number): HeatSegment[] {
-  return meterSegments([...readings]).segments.map((s) => ({ from: s.from, to: s.to, delta: s.delta * factor, days: s.days }))
+// Der Faktor am Zähler für `planSelf` (`SelfMeter.factor`): beim Heizkostenverteiler der der Skala, sonst
+// 1. Fehlt Skala oder Faktor, ebenfalls 1; die Anlage wird dann nicht verteilt (`missingRatings`,
+// `heating.hca-factor-missing`), die Zahl also nie benutzt.
+export function meterFactor(m: HcaMeter): number {
+  if (m.type !== 'hkv') return 1
+  const r = ratingOf(m)
+  return r.ok ? r.factor : 1
 }
 
 // Zähler, die an einer Wohnung der Anlage die Raumwärme erfassen: Wärmezähler und
@@ -922,66 +1024,41 @@ const isRoomHeat = (m: HcaMeter, ids: ReadonlySet<string>): boolean =>
 
 // ---------- Ablesedienst ----------
 
-export function serviceSegments(rows: readonly HeatingServiceValue[], unitId: string, part: 'heat' | 'water'): HeatSegment[] {
-  return rows
-    .filter((r) => r.unitId === unitId)
-    .slice()
-    .sort(byFrom)
-    .flatMap((r) => {
-      const value = part === 'heat' ? r.heatValue : r.waterValue
-      if (value === null) return []
-      const from = dayBefore(r.from)
-      return [{ from, to: r.to, delta: value, days: dayNumber(r.to) - dayNumber(from) }]
-    })
+// Je Wohnung mit Zeilen ein gedachter Zähler (`ablesedienst-heizung:<Wohnung>` bzw.
+// `ablesedienst-warmwasser:<Wohnung>`, Faktor 1) und seine kumulierten Stände. Beim Warmwasser `null`,
+// wenn keine Zeile einen Wert dafür hat: Dann zählen die Warmwasserzähler (Abweichung 3).
+export function serviceMeters(rows: readonly HeatingServiceValue[], units: readonly { id: string; name: string }[], part: 'heat' | 'water'): { meters: SelfMeter[]; readings: SelfReading[] } | null {
+  if (part === 'water' && rows.every((r) => r.waterValue === null)) return null
+  const meters: SelfMeter[] = []
+  const readings: SelfReading[] = []
+  for (const u of units) {
+    const own = rows.filter((r) => r.unitId === u.id).slice().sort(byFrom)
+    const first = own[0]
+    if (!first) continue
+    const id = `ablesedienst-${part === 'heat' ? 'heizung' : 'warmwasser'}:${u.id}`
+    meters.push({ id, name: `Ablesedienst ${u.name}`, unitId: u.id, type: part === 'heat' ? 'waerme' : 'warmwasser', factor: 1 })
+    readings.push({ meterId: id, date: dayBefore(first.from), value: 0 })
+    let sum = 0
+    for (const r of own) {
+      sum += part === 'heat' ? r.heatValue : (r.waterValue ?? 0)
+      readings.push({ meterId: id, date: r.to, value: sum })
+    }
+  }
+  return { meters, readings }
 }
 
-// ---------- Geräte je Wohnung ----------
+// ---------- Ausweis je Gerät ----------
 
 export type DevicesInput = {
-  capture: HeatCapture
+  capture: CaptureMethod
   unitIds: readonly string[]
   meters: readonly HcaMeter[]
   readings: readonly SnapshotReading[]
-  serviceValues: readonly HeatingServiceValue[]
-}
-
-// Die Verbrauchswerte der Raumwärme je Wohnung und Gerät. Fehlt bei einem Heizkostenverteiler Skala oder
-// Faktor, steht er hier mit Faktor 1; die Anlage wird dann nicht verteilt (`missingRatings`,
-// `heating.hca-factor-missing`), die Zahl also nie benutzt.
-export function heatDevicesOf(i: DevicesInput): UnitHeatDevices[] {
-  if (i.capture === 'serviceValues') {
-    return i.unitIds.map((unitId) => {
-      const segments = serviceSegments(i.serviceValues, unitId, 'heat')
-      return { unitId, devices: segments.length > 0 ? [{ id: `ablesedienst:${unitId}`, segments }] : [] }
-    })
-  }
-  const type = i.capture === 'hca' ? 'hkv' : 'waerme'
-  const ids = new Set(i.unitIds)
-  return i.unitIds.map((unitId) => ({
-    unitId,
-    devices: i.meters
-      .filter((m) => isRoomHeat(m, ids) && m.unitId === unitId && m.type === type)
-      .map((m) => {
-        const rating = ratingOf(m)
-        const factor = type === 'hkv' && rating.ok ? rating.factor : 1
-        return { id: m.id, segments: ratedSegments(i.readings.filter((r) => r.meterId === m.id), factor) }
-      }),
-  }))
-}
-
-// Das Warmwasser laut Ablesedienst, wenn er es liefert; sonst `null`, und die Warmwasserzähler zählen
-// (Abweichung 3 des Plans PR 12).
-export function serviceWaterDevicesOf(rows: readonly HeatingServiceValue[], unitIds: readonly string[]): UnitHeatDevices[] | null {
-  if (rows.length === 0 || rows.every((r) => r.waterValue === null)) return null
-  return unitIds.map((unitId) => {
-    const segments = serviceSegments(rows, unitId, 'water')
-    return { unitId, devices: segments.length > 0 ? [{ id: `ablesedienst-warmwasser:${unitId}`, segments }] : [] }
-  })
 }
 
 // Je Heizkostenverteiler die Einheiten der Heizperiode für den Ausweis (Entwurf 8.8: „bei HKV je Gerät;
 // bei der Einheitsskala muss der Faktor in der Abrechnung stehen“). Gezählt werden die Segmente ganz in
-// der Heizperiode; die Verteilung auf Nutzer macht PR 10.
+// der Heizperiode; die Verteilung auf Nutzer macht `planSelf` (PR 10).
 export function deviceLines(i: DevicesInput, h: Period): HcaDeviceLine[] {
   if (i.capture !== 'hca') return []
   const ids = new Set(i.unitIds)
@@ -1005,7 +1082,7 @@ export type MixedCapture = { heatMeterUnits: string[]; hcaUnits: string[] }
 // § 5 Abs. 7 HeizkostenV: nicht mit gleichen Ausstattungen erfasst. Gemischt heißt hier: Wärmezähler und
 // Heizkostenverteiler an Wohnungen derselben Anlage, oder ein Gerät, das nicht zur eingestellten
 // Erfassung passt (Abweichung 1 des Plans PR 12). Beim Ablesedienst liefert der Dienst die Werte.
-export function mixedCapture(capture: HeatCapture, unitIds: readonly string[], meters: readonly HcaMeter[]): MixedCapture | null {
+export function mixedCapture(capture: CaptureMethod, unitIds: readonly string[], meters: readonly HcaMeter[]): MixedCapture | null {
   if (capture === 'serviceValues') return null
   const ids = new Set(unitIds)
   const room = meters.filter((m) => isRoomHeat(m, ids))
@@ -1018,7 +1095,7 @@ export function mixedCapture(capture: HeatCapture, unitIds: readonly string[], m
 
 export type MissingRating = { meterId: string; name: string; unitId: string; missing: 'scale' | 'factor' }
 
-export function missingRatings(capture: HeatCapture, unitIds: readonly string[], meters: readonly HcaMeter[]): MissingRating[] {
+export function missingRatings(capture: CaptureMethod, unitIds: readonly string[], meters: readonly HcaMeter[]): MissingRating[] {
   if (capture !== 'hca') return []
   const ids = new Set(unitIds)
   return meters
@@ -1046,30 +1123,30 @@ export function deviceCutoffs(meters: readonly HcaMeter[], readings: readonly Sn
 
 // ---------- Sätze ----------
 
-const CAPTURE_WORDS: Record<HeatCapture, string> = {
+const CAPTURE_WORDS: Record<CaptureMethod, string> = {
   heatMeter: 'Wärmezählern',
   hca: 'Heizkostenverteilern',
   serviceValues: 'Werten eines Ablesedienstes',
 }
 
-export function mixedCaptureText(where: string, capture: HeatCapture, m: MixedCapture, nameOf: (unitId: string) => string): string {
+// Ohne Ort und ohne Folge: `computeSettlement` setzt beides wie bei jedem Grund, der die Anlage nicht
+// verteilbar macht, davor bzw. dahinter (PR 10 Task 8: „Bis dahin verteilt Mietfuchs …“).
+export function mixedCaptureText(capture: CaptureMethod, m: MixedCapture, nameOf: (unitId: string) => string): string {
   const parts = [
     ...(m.heatMeterUnits.length > 0 ? [`Wärmezähler bei ${andList(m.heatMeterUnits.map(nameOf))}`] : []),
     ...(m.hcaUnits.length > 0 ? [`Heizkostenverteiler bei ${andList(m.hcaUnits.map(nameOf))}`] : []),
   ]
   // #218: Vorerfassung nach Nutzergruppen kommt mit einer eigenen Erweiterung.
-  return `${where}: Eingestellt ist die Erfassung mit ${CAPTURE_WORDS[capture]}, an den Wohnungen hängen aber ${andList(parts)}. ` +
+  return `Eingestellt ist die Erfassung mit ${CAPTURE_WORDS[capture]}, an den Wohnungen hängen aber ${andList(parts)}. ` +
     'Wird der Verbrauch nicht mit gleichen Geräten erfasst, ist nach § 5 Abs. 7 HeizkostenV zuerst der Anteil jeder Gruppe am Gesamtverbrauch vorab zu erfassen (Vorerfassung). Das rechnet Mietfuchs noch nicht. ' +
-    'Lassen Sie diese Heizkosten von einem Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge; steht ein Gerät nur noch in der Liste, weil es ausgebaut ist, nehmen Sie es dort heraus. ' +
-    'Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht.'
+    'Lassen Sie diese Heizkosten von einem Messdienst abrechnen und übernehmen Sie dessen Beträge als Einzelbeträge; steht ein Gerät nur noch in der Liste, weil es ausgebaut ist, nehmen Sie es dort heraus.'
 }
 
-export function missingRatingsText(where: string, list: readonly MissingRating[], nameOf: (unitId: string) => string): string {
+export function missingRatingsText(list: readonly MissingRating[], nameOf: (unitId: string) => string): string {
   const items = list.map((x) => `„${x.name || 'ohne Namen'}“ (${nameOf(x.unitId)}): ${x.missing === 'scale' ? 'die Skala' : 'der Bewertungsfaktor'}`)
-  return `${where}: Bei ${list.length === 1 ? 'diesem Heizkostenverteiler' : 'diesen Heizkostenverteilern'} fehlt ${andList(items)}. ` +
+  return `Bei ${list.length === 1 ? 'diesem Heizkostenverteiler' : 'diesen Heizkostenverteilern'} fehlt ${andList(items)}. ` +
     'Bei der Einheitsskala zählt der Ablesewert erst mal dem Bewertungsfaktor des Heizkörpers, und der Faktor muss in der Abrechnung stehen; bei der Produktskala ist er eingerechnet. ' +
-    'Skala und Faktor stehen auf dem Gerät oder in den Unterlagen des Herstellers oder Messdienstes. Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an. ' +
-    'Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht.'
+    'Skala und Faktor stehen auf dem Gerät oder in den Unterlagen des Herstellers oder Messdienstes. Ein Gerät mit anderem Faktor, etwa nach einem Tausch, legen Sie als neuen Zähler an.'
 }
 
 export function deviceCutoffText(where: string, c: DeviceCutoff, h: Period, nameOf: (unitId: string) => string): string {
@@ -1079,9 +1156,10 @@ export function deviceCutoffText(where: string, c: DeviceCutoff, h: Period, name
 }
 ```
 
-`hca.ts` importiert `meterSegments` aus calc.ts, und calc.ts erreicht hca.ts über heating.ts (Task 4).
-Der Kreis ist harmlos, denn keine der beiden Dateien ruft beim Laden etwas aus der anderen auf; es sind
-nur Funktionsdeklarationen. Ein Test, der hca.ts allein lädt (Step 1), zeigt es.
+`hca.ts` importiert `meterSegments` aus calc.ts, und calc.ts importiert hca.ts (Task 4). Der Kreis ist
+harmlos, denn keine der beiden Dateien ruft beim Laden etwas aus der anderen auf; es sind nur
+Funktionsdeklarationen. Ein Test, der hca.ts allein lädt (Step 1), zeigt es. Aus heating.ts kommen nur
+Typen (`import type`).
 
 - [ ] **Step 5: Wächter (`server/test/law-literals.test.ts`)**
 
@@ -1090,10 +1168,9 @@ nur Funktionsdeklarationen. Ein Test, der hca.ts allein lädt (Step 1), zeigt es
 - [ ] **Step 6: Tests ausführen, sie müssen bestehen**
 
 Run: `npm --prefix server test -- test/hca.test.ts test/law-literals.test.ts && npm run typecheck`
-Expected: PASS (`hca.test.ts`: 7 Tests).
-
-Zur Probe der Rechnung von Hand: 2025-01-01 bis 2025-09-30 sind 273 Tage, das Segment vom 31.12.2024
-bis 30.09.2025 hat also `days: 273`; vom 14.10. bis 31.12.2025 sind es 17 + 30 + 31 = 78.
+Expected: PASS (`hca.test.ts`: 7 Tests). Der Typfehler „`factor` does not exist in type `SelfMeter`“
+in `serviceMeters` verschwindet erst mit Task 4 Step 3; deshalb kommt die Zeile `factor?: number` an
+`SelfMeter` schon in diesem Step (heating.ts, Code in Task 4 Step 3, erster Block).
 
 - [ ] **Step 7: Commit**
 
@@ -1101,51 +1178,131 @@ Run: `npm test`
 Expected: PASS (hca.ts wird noch nicht aufgerufen).
 
 ```bash
-git add shared/types.ts server/src/hca.ts server/test/hca.test.ts server/test/law-literals.test.ts
+git add shared/types.ts server/src/hca.ts server/src/heating.ts server/test/hca.test.ts server/test/law-literals.test.ts
 git commit -m "Heizkostenverteiler und Ablesedienst als reine Funktionen
 
-Segmente je Wohnung und Gerät für alle drei Erfassungen, Bewertungsfaktor bei Einheitsskala,
-Stichtagswert wie ein Zählerwechsel, gemischte Geräte nach § 5 Abs. 7 HeizkostenV, fehlende
-Faktoren und Rücksetzungen mitten in der Heizperiode.
+Faktor am Zähler (Einheitsskala mit Bewertungsfaktor, Produktskala 1), Werte eines
+Ablesedienstes als gedachter Zähler mit kumulierten Ständen, Ausweis je Gerät, gemischte Geräte
+nach § 5 Abs. 7 HeizkostenV, fehlende Faktoren und Rücksetzungen mitten in der Heizperiode.
 
 Refs #99"
 ```
 
 ---
-### Task 4: Naht zu PR 10: Verbrauch je Erfassung, Fehler, Hinweis, Ausweis je Gerät
+### Task 4: Naht zu PR 10: Faktor am Zähler, Gerätetyp nach Erfassung, Ablesedienst, Fehler, Ausweis
+
+Neu gefasst nach der Prüfung vom 05.10.2026. Die Stelle, an der PR 10 den Verbrauch je Wohnung bildet, ist
+`planSelf` mit dem inneren Helfer `metersOf(unitId, pot)` (Typ aus `POT_METER`) und der Summe
+`v += result.value` je Grenzpaar. Dort setzt diese PR an: Der Gerätetyp der Heizung folgt der Erfassung
+(`hkv` bei Heizkostenverteilern), jede Differenz zählt mit dem Faktor ihres Zählers, und die Werte eines
+Ablesedienstes kommen als gedachte Zähler (Task 3) in die Eingabe von `planSelf`. Was die Verteilung
+verhindert, kommt in die Liste `blocked: SelfBlock[]` von PR 10; deren Code-Vereinigung wird um zwei Codes
+erweitert. Der Ausweis je Gerät und die Werte des Ablesedienstes hängen an `self`.
 
 **Files:**
-- Modify: `server/src/heating.ts`, `server/src/calc.ts`, `shared/types.ts` (`HeatingStatement.devices`, `HeatingStatement.serviceValues`)
-- Test: `server/test/calc-hkv.test.ts` (neu)
+- Modify: `server/src/heating.ts`, `server/src/calc.ts`, `shared/types.ts` (`SelfHeatingStatement.devices`, `.serviceValues`, `SelfPotView.consumptionUnit`), `server/testing/selfHeating.ts` (Option `serviceValues`)
+- Test: `server/test/heating.test.ts` (ergänzen), `server/test/calc-hkv.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 3 `heatDevicesOf` (als `devicesByCapture`), `serviceWaterDevicesOf`, `mixedCapture`, `mixedCaptureText`, `missingRatings`, `missingRatingsText`, `deviceCutoffs`, `deviceCutoffText`, `deviceLines`, `HeatSegment`, `UnitHeatDevices`; Task 2 `Snapshot.heatingServiceValues`; PR 10 (C2, C3, C4, C6, C8); PR 6 im Block je Anlage und Heizperiode `report`, `where`, `warn`, `hPeriod`.
+- Consumes: Task 3 `meterFactor`, `serviceMeters`, `mixedCapture`, `mixedCaptureText`, `missingRatings`, `missingRatingsText`, `deviceCutoffs`, `deviceCutoffText`, `deviceLines`, `HcaDeviceLine`; Task 2 `Snapshot.heatingServiceValues`, `SnapshotMeter.hcaScale`, `.ratingFactor`.
+  PR 10 (Plan, Commit `81828af`): heating.ts `SelfMeter`, `SelfInput`, `planSelf` mit `metersOf`, `POT_METER`, `measuredBetween`; calc.ts im Block des Plans `hotWater`, `potTypes`, `unitMeters`, `served`, `servedIds`, `input` (PR 10 Task 9 Step 4: `const input: SelfInput = { … }`), `plan`, `blocked`, `where`, `selfProblemText(p, areaBasisHeat)`, `type SelfBlock`, `type SelfPlantPlan`, `selfPlans.set(…)`, `POT_UNIT`, `selfSteps`, `selfStatementOf`; Testhelfer `input`, `r`, `userOf`, `near`, `UNITS`, `TENANCIES` (heating.test.ts).
+  PR 11: `server/testing/selfHeating.ts` (`selfSnapshot`, `SelfSnapshotOptions`), Kennungen `wz-a`, `wz-b`, `wz-c`, `ww`, Anlage `hp`.
 - Produces:
-  - `heating.ts`: `HeatDevicesInput.serviceValues: readonly HeatingServiceValue[]`; `heatDevicesOf` und `waterDevicesOf` wählen nach `plant.capture`; `HeatSegment` und `UnitHeatDevices` werden aus hca.ts weitergereicht (eine Definition).
-  - `shared/types.ts`: `HeatingStatement.devices?: HcaDeviceLine[]`, `HeatingStatement.serviceValues?: HeatingServiceValue[]`
+  - `heating.ts`: `SelfMeter.factor?: number` (fehlt: 1), `SelfInput.capture?: CaptureMethod` (fehlt: `heatMeter`); in `planSelf` `meterTypeOf(pot)`
+  - calc.ts: `SelfBlock['code']` + `'heating.mixed-capture' | 'heating.hca-factor-missing'`; `SelfPlantPlan.capture: CaptureMethod`, `.devices: HcaDeviceLine[]`, `.serviceValues: HeatingServiceValue[]`; `potUnitOf(sp, pot): 'kWh' | 'm³' | 'Einheiten'`; `selfProblemText(p, areaBasisHeat, capture = 'heatMeter')`
+  - `shared/types.ts`: `SelfHeatingStatement.devices?: HcaDeviceLine[]`, `SelfHeatingStatement.serviceValues?: HeatingServiceValue[]`; `SelfPotView.consumptionUnit: 'kWh' | 'm³' | 'Einheiten'`
   - `noticeKinds` + `'heating.device-cutoff'` (warning), `'heating.mixed-capture'` (error), `'heating.hca-factor-missing'` (error)
+  - `server/testing/selfHeating.ts`: `SelfSnapshotOptions.serviceValues?: HeatingServiceValue[]`
 
-- [ ] **Step 1: Failing test schreiben**
+- [ ] **Step 1: Failing tests schreiben**
 
-Datei `server/test/calc-hkv.test.ts`:
+(a) `server/test/heating.test.ts` (PR 10): anhängen.
+
+```ts
+// ---------- Heizkostenverteiler und Ablesedienst im Grenzmodell (Heizung PR 12) ----------
+
+// Beispiel A ohne Warmwasser, mit Heizkostenverteilern statt Wärmezählern: A zwei Geräte mit Einheitsskala
+// (Faktor 1,25 und 0,8), B eins mit Produktskala, C eins mit Faktor 2 und dem Wechsel am 30.09.
+const HKV: SelfMeter[] = [
+  { id: 'a1', name: 'A Wohnzimmer', unitId: 'a', type: 'hkv', factor: 1.25 }, { id: 'a2', name: 'A Bad', unitId: 'a', type: 'hkv', factor: 0.8 },
+  { id: 'b1', name: 'B', unitId: 'b', type: 'hkv', factor: 1 }, { id: 'c1', name: 'C', unitId: 'c', type: 'hkv', factor: 2 },
+]
+const HKV_READINGS: SelfReading[] = [
+  r('a1', '2024-12-31', 0), r('a1', '2025-12-31', 500), r('a2', '2024-12-31', 0), r('a2', '2025-12-31', 200),
+  r('b1', '2024-12-31', 0), r('b1', '2025-12-31', 7065),
+  r('c1', '2024-12-31', 0), r('c1', '2025-09-30', 300), r('c1', '2025-12-31', 500),
+]
+
+test('HKV im Grenzmodell: Differenz mal Faktor des Geräts; Zwischenablesung je Gerät wie bei Wärmezählern', () => {
+  const plan = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV, readings: HKV_READINGS }))
+  assert.deepEqual(plan.problems, [])
+  // A: 500 · 1,25 + 200 · 0,8 = 785; B: 7.065; C1: 300 · 2 = 600; C2: 200 · 2 = 400.
+  near(userOf(plan, 'A').pots.heating.value ?? -1, 785, 'A')
+  near(userOf(plan, 'B').pots.heating.value ?? -1, 7065, 'B')
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 600, 'C1')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 400, 'C2')
+  near(plan.totals.heating.consumption, 8850, 'Summe')
+  // Wärmezähler an einer Wohnung zählen bei Erfassung mit Heizkostenverteilern nicht (das meldet
+  // `mixedCapture` in calc.ts); ohne Gerät des richtigen Typs fehlt der Wert.
+  const ohne = planSelf(input({ hotWater: 'none', capture: 'hca', meters: HKV.filter((m) => m.unitId !== 'b'), readings: HKV_READINGS }))
+  assert.deepEqual(ohne.problems.map((p) => (p.kind === 'missing' ? [p.unitId, p.reason] : p.kind)), [['b', 'noMeter']])
+  // Ohne `capture` rechnet planSelf wie in PR 10 mit Wärmezählern; die Geräte vom Typ `hkv` zählen dann nicht.
+  assert.equal(planSelf(input({ hotWater: 'none', meters: HKV, readings: HKV_READINGS })).totals.heating.measured, false)
+})
+
+test('Ablesedienst als gedachter Zähler: Zeilen je Nutzungszeitraum ergeben dieselben Werte; eine Lücke an einem Wechsel ist eine fehlende Zwischenablesung', () => {
+  const svc = (unitId: string, values: [string, string, number][]) => {
+    const id = `ablesedienst-heizung:${unitId}`
+    const first = values[0] ?? assert.fail('keine Zeile')
+    const readings: SelfReading[] = [r(id, '2024-12-31', 0)]
+    let sum = 0
+    for (const [, to, v] of values) {
+      sum += v
+      readings.push(r(id, to, sum))
+    }
+    return { meter: { id, name: `Ablesedienst ${unitId}`, unitId, type: 'waerme' as const, factor: 1 }, readings, first }
+  }
+  const a = svc('a', [['2025-01-01', '2025-12-31', 12000]])
+  const b = svc('b', [['2025-01-01', '2025-12-31', 16000]])
+  const c = svc('c', [['2025-01-01', '2025-09-30', 7200], ['2025-10-01', '2025-12-31', 4800]])
+  const plan = planSelf(input({ hotWater: 'none', capture: 'serviceValues', meters: [a.meter, b.meter, c.meter], readings: [...a.readings, ...b.readings, ...c.readings] }))
+  assert.deepEqual(plan.problems, [])
+  near(userOf(plan, 'C1').pots.heating.value ?? -1, 7200, 'C1 wie mit Wärmezähler')
+  near(userOf(plan, 'C2').pots.heating.value ?? -1, 4800, 'C2')
+  // Lücke: C hat nur eine Zeile bis 15.09., dann ab 01.10. Am 30.09. (Wechsel) steht kein eigener Stand;
+  // die Ablesung vom 15.09. liegt 15 Tage daneben und gilt wie abgelesen (PR 10, Abweichung 9), es wird
+  // nichts aufgefüllt.
+  const luecke = svc('c', [['2025-01-01', '2025-09-15', 7000], ['2025-10-01', '2025-12-31', 4800]])
+  const mitLuecke = planSelf(input({ hotWater: 'none', capture: 'serviceValues', meters: [a.meter, b.meter, luecke.meter], readings: [...a.readings, ...b.readings, ...luecke.readings] }))
+  near(userOf(mitLuecke, 'C1').pots.heating.value ?? -1, 7000, 'C1 bis zur letzten Zeile')
+  near(userOf(mitLuecke, 'C2').pots.heating.value ?? -1, 4800, 'C2')
+  assert.ok(mitLuecke.findings.some((f) => f.kind === 'interimOff' && f.boundary === '2025-09-30' && f.readingDate === '2025-09-15'))
+})
+```
+
+Den Typimport aus `'../src/heating.ts'` um `type SelfMeter, type SelfReading` ergänzen, soweit nicht
+schon da.
+
+(b) Datei `server/test/calc-hkv.test.ts`:
 
 ```ts
 // Heizkostenverteiler und Ablesedienst in der eigenen Heizkostenabrechnung (Heizung PR 12). Kern ist
 // die Gleichrangigkeit nach § 5 Abs. 1 Satz 1 HeizkostenV: Dieselben bewerteten Einheiten ergeben
 // dieselben Beträge, ob sie von Wärmezählern, Heizkostenverteilern oder einem Ablesedienst kommen.
-// Grundlage ist Beispiel A aus dem Entwurf 8.6 (Annahme C6).
+// Grundlage ist Beispiel A aus server/testing/selfHeating.ts (PR 11): Wärmezähler `wz-a`, `wz-b`,
+// `wz-c`, Anlage `hp`, Heizperiode 2025.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, meterSegments, type ComputedSettlement } from '../src/calc.ts'
-import type { Snapshot, SnapshotMeter, SnapshotReading } from '../src/snapshot.ts'
+import type { Snapshot, SnapshotReading } from '../src/snapshot.ts'
 import type { HeatingServiceValue } from '../../shared/types.ts'
 import { dayAfter } from '../../shared/law/register.ts'
 import { selfSnapshot } from '../testing/selfHeating.ts'
 
 const codes = (s: ComputedSettlement) => s.notices.map((n) => n.code)
-const heatingOf = (s: ComputedSettlement) => s.heating?.find((h) => h.plantId === 'hp') ?? assert.fail('keine Heizabrechnung der Anlage hp')
+const selfOf = (s: ComputedSettlement) => s.heating?.find((h) => h.plantId === 'hp')?.self ?? assert.fail('kein Ausweis der Anlage hp')
 const amounts = (s: ComputedSettlement) => s.statements.map((st) => [st.tenancyId, st.totalShareCents, st.rows.map((r) => [r.costItemId, r.shareCents])])
-const isUnitHeat = (m: SnapshotMeter) => m.type === 'waerme' && m.unitId !== null && (m.heatingPlantId ?? null) === null
+const HEAT = ['wz-a', 'wz-b', 'wz-c']
 const withCapture = (s: Snapshot, capture: 'heatMeter' | 'hca' | 'serviceValues'): Snapshot => ({
   ...s, heatingPlants: (s.heatingPlants ?? []).map((p) => (p.id === 'hp' ? { ...p, capture } : p)),
 })
@@ -1153,30 +1310,31 @@ const withCapture = (s: Snapshot, capture: 'heatMeter' | 'hca' | 'serviceValues'
 // Die Wärmezähler von Beispiel A als Heizkostenverteiler mit Einheitsskala und Faktor 2, die Ablesungen
 // halbiert: dieselben bewerteten Einheiten.
 function asHca(s: Snapshot, factor: number | null = 2): Snapshot {
-  const heat = new Set(s.meters.filter(isUnitHeat).map((m) => m.id))
   return {
     ...withCapture(s, 'hca'),
-    meters: s.meters.map((m) => (heat.has(m.id) ? { ...m, type: 'hkv' as const, hcaScale: 'unit' as const, ratingFactor: factor } : m)),
-    readings: s.readings.map((r): SnapshotReading => (heat.has(r.meterId)
+    meters: s.meters.map((m) => (HEAT.includes(m.id) ? { ...m, type: 'hkv' as const, hcaScale: 'unit' as const, ratingFactor: factor } : m)),
+    readings: s.readings.map((r): SnapshotReading => (HEAT.includes(r.meterId)
       ? { ...r, value: r.value / 2, ...(r.oldEndValue !== undefined ? { oldEndValue: r.oldEndValue / 2 } : {}) }
       : r)),
   }
 }
 
-// Dieselben Werte als Zeilen eines Ablesedienstes: je Segment eines Wärmezählers eine Zeile.
-function asService(s: Snapshot): Snapshot {
-  const heat = s.meters.filter(isUnitHeat)
-  const rows: HeatingServiceValue[] = heat.flatMap((m) =>
-    meterSegments(s.readings.filter((r) => r.meterId === m.id)).segments
+// Dieselben Werte als Zeilen eines Ablesedienstes: je Segment eines Wärmezählers eine Zeile; die
+// Wärmezähler der Wohnungen fallen weg.
+function asService(): Snapshot {
+  const base = selfSnapshot()
+  const rows: HeatingServiceValue[] = base.meters.filter((m) => HEAT.includes(m.id)).flatMap((m) =>
+    meterSegments(base.readings.filter((r) => r.meterId === m.id)).segments
       .filter((seg) => seg.from >= '2024-12-31' && seg.to <= '2025-12-31')
-      .map((seg) => ({ plantId: 'hp', period: s.period, unitId: m.unitId ?? '', from: dayAfter(seg.from), to: seg.to, heatValue: seg.delta, waterValue: null })))
-  return { ...withCapture(s, 'serviceValues'), meters: s.meters.filter((m) => !isUnitHeat(m)), heatingServiceValues: rows }
+      .map((seg) => ({ plantId: 'hp', period: base.period.key, unitId: m.unitId ?? '', from: dayAfter(seg.from), to: seg.to, heatValue: seg.delta, waterValue: null })))
+  return withCapture(selfSnapshot({ serviceValues: rows, meters: base.meters.filter((m) => !HEAT.includes(m.id)) }), 'serviceValues')
 }
 
 test('Wärmezähler wie bisher (Beispiel A, F16): keine neuen Hinweise, kein Geräteausweis', () => {
   const s = computeSettlement(selfSnapshot())
   for (const c of ['heating.device-cutoff', 'heating.mixed-capture', 'heating.hca-factor-missing']) assert.ok(!codes(s).includes(c), c)
-  assert.equal(heatingOf(s).devices, undefined)
+  assert.equal(selfOf(s).devices, undefined)
+  assert.equal(selfOf(s).pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'kWh')
 })
 
 test('§ 5 Abs. 1 Satz 1: Heizkostenverteiler mit denselben bewerteten Einheiten ergeben dieselben Beträge wie Wärmezähler', () => {
@@ -1184,27 +1342,25 @@ test('§ 5 Abs. 1 Satz 1: Heizkostenverteiler mit denselben bewerteten Einheiten
   const hca = computeSettlement(asHca(base))
   assert.deepEqual(amounts(hca), amounts(computeSettlement(base)))
   assert.ok(!codes(hca).some((c) => c === 'heating.hca-factor-missing' || c === 'heating.mixed-capture'), codes(hca).join(', '))
-  const lines = heatingOf(hca).devices ?? assert.fail('kein Geräteausweis')
-  assert.equal(lines.length, base.meters.filter(isUnitHeat).length)
+  const lines = selfOf(hca).devices ?? assert.fail('kein Geräteausweis')
+  assert.deepEqual(lines.map((l) => l.meterId), HEAT)
   assert.ok(lines.every((l) => l.scale === 'unit' && l.factor === 2 && l.rated === l.raw * 2))
+  assert.equal(selfOf(hca).pots.find((p) => p.pot === 'heating')?.consumptionUnit, 'Einheiten')
 })
 
 test('Ablesedienst mit denselben Einheiten: dieselben Beträge; die Zeilen stehen im Ausweis', () => {
-  const base = selfSnapshot()
-  const service = computeSettlement(asService(base))
-  assert.deepEqual(amounts(service), amounts(computeSettlement(base)))
-  assert.ok((heatingOf(service).serviceValues ?? []).length > 0)
+  const service = computeSettlement(asService())
+  assert.deepEqual(amounts(service), amounts(computeSettlement(selfSnapshot())))
+  assert.equal((selfOf(service).serviceValues ?? []).length, 4)
 })
 
 test('Fehlender Faktor (hca-factor-missing) und gemischte Geräte (mixed-capture): Fehler mit Satz, Anlage nicht verteilt', () => {
   const ohneFaktor = computeSettlement(asHca(selfSnapshot(), null))
   const n = ohneFaktor.notices.find((x) => x.code === 'heating.hca-factor-missing') ?? assert.fail('kein Fehler')
   assert.equal(n.level, 'error')
-  assert.match(n.text, /fehlt .*der Bewertungsfaktor/)
-  const base = selfSnapshot()
-  const [erster] = base.meters.filter(isUnitHeat)
-  const gemischt = asHca(base)
-  const zurueck: Snapshot = { ...gemischt, meters: gemischt.meters.map((m) => (m.id === erster?.id ? { ...m, type: 'waerme' as const, hcaScale: null, ratingFactor: null } : m)) }
+  assert.match(n.text, /fehlt .*der Bewertungsfaktor.*Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht/s)
+  const gemischt = asHca(selfSnapshot())
+  const zurueck: Snapshot = { ...gemischt, meters: gemischt.meters.map((m) => (m.id === 'wz-a' ? { ...m, type: 'waerme' as const, hcaScale: null, ratingFactor: null } : m)) }
   const m = computeSettlement(zurueck).notices.find((x) => x.code === 'heating.mixed-capture') ?? assert.fail('kein Fehler')
   assert.equal(m.level, 'error')
   assert.match(m.text, /Vorerfassung/)
@@ -1212,100 +1368,82 @@ test('Fehlender Faktor (hca-factor-missing) und gemischte Geräte (mixed-capture
 
 test('Gerätestichtag mitten in der Heizperiode: Hinweis am Gerät, gerechnet wird mit den Werten, wie sie sind', () => {
   const base = asHca(selfSnapshot())
-  const [geraet] = base.meters.filter((m) => m.type === 'hkv')
-  if (!geraet) assert.fail('kein Heizkostenverteiler')
-  const mitReset: Snapshot = { ...base, readings: [...base.readings, { meterId: geraet.id, date: '2025-06-30', value: 0, replacement: true, oldEndValue: 1 }] }
+  const mitReset: Snapshot = { ...base, readings: [...base.readings, { meterId: 'wz-a', date: '2025-06-30', value: 0, replacement: true, oldEndValue: 3000 }] }
   const n = computeSettlement(mitReset).notices.find((x) => x.code === 'heating.device-cutoff') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
-  assert.deepEqual(n.subject, { kind: 'meter', id: geraet.id })
+  assert.deepEqual(n.subject, { kind: 'meter', id: 'wz-a' })
   assert.match(n.text, /hat am 30\.06\.2025 auf null zurückgesetzt/)
 })
 ```
 
-Die Grenzen `'2024-12-31'` und `'2025-12-31'` in `asService` sind der Tag vor dem Beginn und das Ende
-der Heizperiode `'2025-01'` von Beispiel A (C6); hat PR 10 Beispiel A in einem anderen Jahr, folgen sie
-`s.period`. Im Test mit dem Rücksetzen liegt die Ablesung zwischen zwei anderen; ihr `oldEndValue`
-spielt für den Hinweis keine Rolle.
+`wz-a` ist nach `asHca` ein Heizkostenverteiler mit 500 Einheiten am 31.12.2024 (1.000 / 2); der
+Rücksetzwert 3.000 liegt darüber, der Verbrauch bleibt also nicht negativ.
 
-- [ ] **Step 2: Test ausführen, er muss scheitern**
+- [ ] **Step 2: Tests ausführen, sie müssen scheitern**
 
-Run: `npm --prefix server test -- test/calc-hkv.test.ts`
-Expected: FAIL; ohne Naht ignoriert PR 10 die Heizkostenverteiler (keine Verteilung nach Verbrauch bzw.
-`LATER.hca`), und es gibt keinen der drei Codes.
+Run: `npm --prefix server test -- test/heating.test.ts test/calc-hkv.test.ts`
+Expected: FAIL; heating.test.ts mit `capture` und `factor` unbekannt bzw. ohne Verbrauch bei `hkv`,
+calc-hkv.test.ts mit `heatingServiceValues` unbekannt an `selfSnapshot` und ohne die drei Codes.
 
-- [ ] **Step 3: Naht in `server/src/heating.ts` (Annahmen C2, C3)**
+- [ ] **Step 3: Naht in `server/src/heating.ts`**
 
-Importe:
+`SelfMeter` (PR 10 Task 3) ersetzen durch (in Task 3 Step 6 schon geschehen; dann bleibt es):
 
 ```ts
-import { heatDevicesOf as devicesByCapture, serviceWaterDevicesOf } from './hca.ts'
-import type { HeatingServiceValue } from '../../shared/types.ts'
+// `factor` (Heizung PR 12): Die Differenz zweier Ablesungen zählt mal diesem Faktor; beim
+// Heizkostenverteiler mit Einheitsskala der Bewertungsfaktor, sonst 1 (hca.ts `meterFactor`). Fehlt: 1.
+export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType; factor?: number }
 ```
 
-Die Typen `HeatSegment` und `UnitHeatDevices` von PR 10 ersetzen durch die aus hca.ts, damit es nur eine
-Definition gibt:
+In `SelfInput` als letztes Feld:
 
 ```ts
-export type { HeatSegment, UnitHeatDevices } from './hca.ts'
+  // Womit die Heizung erfasst wird (Heizung PR 12): bei `hca` die Zähler vom Typ `hkv`; Werte eines
+  // Ablesedienstes kommen als gedachte Zähler vom Typ `waerme`/`warmwasser` (hca.ts `serviceMeters`).
+  // Fehlt: Wärmezähler wie in PR 10.
+  capture?: CaptureMethod
 ```
 
-(Wo heating.ts sie selbst benutzt, zusätzlich `import type { HeatSegment, UnitHeatDevices } from './hca.ts'`.)
-`HeatDevicesInput` als letztes Feld:
+(`CaptureMethod` zum Typimport aus `'../../shared/types.ts'`.) In `planSelf` die Zeile
+`const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === POT_METER[pot])`
+ersetzen durch:
 
 ```ts
-  // Werte eines Ablesedienstes dieser Anlage in dieser Heizperiode (Heizung PR 12).
-  serviceValues: readonly HeatingServiceValue[]
+  const meterTypeOf = (pot: SelfPot): MeterType => (pot === 'heating' && input.capture === 'hca' ? 'hkv' : POT_METER[pot])
+  const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === meterTypeOf(pot))
 ```
 
-Den Rumpf von `heatDevicesOf` ersetzen durch:
+und in der Schleife „Verbrauch je Gruppe zwischen ihren äußeren Grenzen“ die Zeile `v += result.value`
+durch
 
 ```ts
-// Die Verbrauchswerte der Raumwärme je Wohnung und Gerät (Heizung PR 10; ab PR 12 nach der Erfassung:
-// Wärmezähler, Heizkostenverteiler mit Faktor oder Werte eines Ablesedienstes, hca.ts).
-export function heatDevicesOf(i: HeatDevicesInput): UnitHeatDevices[] {
-  return devicesByCapture({
-    capture: i.plant.capture ?? 'heatMeter',
-    unitIds: i.units.map((u) => u.id),
-    meters: i.meters,
-    readings: i.readings,
-    serviceValues: i.serviceValues,
-  })
-}
+          v += result.value * (m.factor ?? 1)
 ```
 
-und in `waterDevicesOf` als erste Zeilen:
+Sonst ändert sich in heating.ts nichts: Grenzen, Zellen, Gruppen nach § 9b Abs. 3, Hinweise neben dem
+Stichtag und „keine Interpolation“ gelten für alle drei Erfassungen gleich.
 
-```ts
-  // Liefert der Ablesedienst auch das Warmwasser, zählen seine Werte (Heizung PR 12, Abweichung 3).
-  const fromService = i.plant.capture === 'serviceValues' ? serviceWaterDevicesOf(i.serviceValues, i.units.map((u) => u.id)) : null
-  if (fromService) return fromService
-```
+- [ ] **Step 4: Fehler, Hinweis, Ausweis (`server/src/calc.ts`, `shared/types.ts`, Testhelfer)**
 
-Die Aufrufer von `heatDevicesOf` und `waterDevicesOf` in calc.ts übergeben
-`serviceValues: (snapshot.heatingServiceValues ?? []).filter((v) => v.plantId === plant.id && v.period === h.key)`;
-`plant` und `h` sind dort Anlage und Heizperiode (PR 5/10).
-
-Golden F16 hält fest, dass der Zweig `heatMeter` dasselbe ergibt wie der Code von PR 10: `isRoomHeat`
-in hca.ts wählt genau die Wärmezähler an angeschlossenen Wohnungen ohne `heatingPlantId`. Wählt PR 10
-anders (etwa auch Zähler ohne Rolle an der Anlage), wird `isRoomHeat` daran angeglichen, nicht der Test.
-
-- [ ] **Step 4: Fehler, Hinweis, Ausweis (`server/src/calc.ts`, `shared/types.ts`)**
-
-`shared/types.ts`, in `HeatingStatement` als letzte Felder:
+`shared/types.ts`: in `SelfHeatingStatement` (PR 10, nach PR 11 mit `dhw`) als letzte Felder
 
 ```ts
   // Heizkostenverteiler je Gerät mit Skala und Faktor (Heizung PR 12, Entwurf 8.8) bzw. die Werte des
-  // Ablesedienstes; nur bei eigener Abrechnung mit dieser Erfassung.
+  // Ablesedienstes; nur bei dieser Erfassung.
   devices?: HcaDeviceLine[]
   serviceValues?: HeatingServiceValue[]
 ```
 
+und in `SelfPotView` `consumptionUnit: 'kWh' | 'm³'` durch `consumptionUnit: 'kWh' | 'm³' | 'Einheiten'`
+ersetzen (Heizkostenverteiler und Ablesedienste zählen Einheiten, keine Kilowattstunden).
+
 `server/src/calc.ts`: Import
 
 ```ts
-import { deviceCutoffs, deviceCutoffText, deviceLines, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText } from './hca.ts'
+import { deviceCutoffs, deviceCutoffText, deviceLines, meterFactor, missingRatings, missingRatingsText, mixedCapture, mixedCaptureText, serviceMeters } from './hca.ts'
 ```
 
+und `CaptureMethod, HcaDeviceLine, HeatingServiceValue` in den Typimport aus `'../../shared/types.ts'`.
 In `noticeKinds` hinter den Codes von PR 11:
 
 ```ts
@@ -1315,48 +1453,158 @@ In `noticeKinds` hinter den Codes von PR 11:
   'heating.hca-factor-missing': { level: 'error', title: 'Skala oder Bewertungsfaktor fehlt', rule: 'heating-own-settlement', terms: ['heatCostAllocator'] },
 ```
 
-An der Stelle, an der PR 10 je Anlage und Heizperiode bei `self` die Liste `blockers` füllt (Annahme
-C4), vor ihrer Auswertung:
+`type SelfBlock` (PR 10 Task 8 Step 7) bekommt die beiden Codes:
+
+```ts
+  type SelfBlock = {
+    code: 'heating.self-incomplete' | 'heating.dhw-share-invalid' | 'heating.heat-pump-dhw-basis' | 'fuel.stock-missing-self' | 'fuel.stock-invalid'
+      | 'heating.mixed-capture' | 'heating.hca-factor-missing'
+    text: string
+  }
+```
+
+`type SelfPlantPlan` bekommt als letzte Felder:
+
+```ts
+    // Heizung PR 12: die Erfassung, je Heizkostenverteiler die Einheiten und die Werte des Ablesedienstes
+    // dieser Heizperiode (für den Ausweis).
+    capture: CaptureMethod
+    devices: HcaDeviceLine[]
+    serviceValues: HeatingServiceValue[]
+```
+
+Hinter `POT_UNIT` (PR 10):
+
+```ts
+  // Die Einheit des Verbrauchs eines Topfs (Heizung PR 12): Heizkostenverteiler und Ablesedienst zählen
+  // Einheiten.
+  const potUnitOf = (sp: Pick<SelfPlantPlan, 'capture'>, p: SelfPot): 'kWh' | 'm³' | 'Einheiten' =>
+    p === 'water' ? 'm³' : sp.capture === 'heatMeter' ? 'kWh' : 'Einheiten'
+```
+
+`selfProblemText` (PR 10) bekommt einen dritten Parameter mit Vorgabe und nennt das Gerät nach der
+Erfassung. Die Signatur wird `(p: SelfProblem, areaBasisHeat: string, capture: CaptureMethod = 'heatMeter'): string`,
+und die Zeile für `noMeter` wird:
+
+```ts
+    if (p.reason === 'noMeter') {
+      const device = p.pot === 'water' ? 'Warmwasserzähler' : capture === 'hca' ? 'Heizkostenverteiler' : capture === 'serviceValues' ? 'Wert des Ablesedienstes' : 'Wärmezähler'
+      return capture === 'serviceValues' && p.pot === 'heating'
+        ? `Für ${p.unitName} fehlen die Werte des Ablesedienstes, die übrigen Wohnungen haben welche. Tragen Sie sie auf der Seite Heizkosten in der Karte „Ablesedienst“ ein.`
+        : `${p.unitName} hat keinen ${device}, die übrigen Wohnungen schon. Legen Sie ${p.pot === 'water' || capture === 'heatMeter' ? 'den Zähler' : 'das Gerät'} an und tragen Sie die Stände ein.`
+    }
+```
+
+Im Block des Plans (PR 10 Task 8 Step 7) die beiden Zeilen
+
+```ts
+    const potTypes: MeterType[] = hotWater === 'none' ? ['waerme'] : ['waerme', 'warmwasser']
+    const unitMeters = snapshot.meters.flatMap((m) => (m.unitId !== null && (m.heatingPlantId ?? null) === null && potTypes.includes(m.type) ? [{ ...m, unitId: m.unitId }] : []))
+```
+
+ersetzen durch:
+
+```ts
+    // Heizung PR 12: Die Heizung erfasst je nach Einstellung der Typ `waerme` oder `hkv`; Werte eines
+    // Ablesedienstes ersetzen die Zähler der Wohnungen (beim Warmwasser nur, wenn er es liefert).
+    const capture: CaptureMethod = plant.capture ?? 'heatMeter'
+    const potTypes: MeterType[] = [capture === 'hca' ? 'hkv' : 'waerme', ...(hotWater === 'none' ? [] : ['warmwasser' as const])]
+    const unitMeters = snapshot.meters.flatMap((m) => (m.unitId !== null && (m.heatingPlantId ?? null) === null && potTypes.includes(m.type) ? [{ ...m, unitId: m.unitId }] : []))
+    const serviceRows = capture === 'serviceValues' ? (snapshot.heatingServiceValues ?? []).filter((v) => v.plantId === plant.id && v.period === period.key) : []
+```
+
+Hinter `const servedIds = …`:
+
+```ts
+    const svcHeat = capture === 'serviceValues' ? serviceMeters(serviceRows, served, 'heat') : null
+    const svcWater = capture === 'serviceValues' && hotWater !== 'none' ? serviceMeters(serviceRows, served, 'water') : null
+```
+
+Im Objekt `const input: SelfInput = { … }` (PR 10 Task 9 Step 4) die Felder `meters` und `readings`
+ersetzen und `capture` anhängen:
+
+```ts
+      meters: [
+        ...unitMeters
+          .filter((m) => servedIds.has(m.unitId) && !(svcHeat && m.type === 'waerme') && !(svcWater && m.type === 'warmwasser'))
+          .map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type, factor: meterFactor(m) })),
+        ...(svcHeat?.meters ?? []),
+        ...(svcWater?.meters ?? []),
+      ],
+      readings: [
+        ...snapshot.readings.map((r) => ({ ...r, boundFor: r.interimFor ?? null })),
+        ...(svcHeat?.readings ?? []),
+        ...(svcWater?.readings ?? []),
+      ],
+      capture,
+```
+
+Den Text der Fehler aus dem Plan: Im Aufruf `selfProblemText(p, plant.areaBasisHeat ?? 'area')` das dritte
+Argument `capture` ergänzen. Unmittelbar vor `const where = …`:
 
 ```ts
     // Heizkostenverteiler und Ablesedienst (Heizung PR 12, Entwurf 8.1).
-    const capture = plant.capture ?? 'heatMeter'
-    const plantUnitIds = plantUnits.map((u) => u.id)
     const unitNameOf = (id: string) => snapshot.units.find((u) => u.id === id)?.name ?? id
-    const mixed = mixedCapture(capture, plantUnitIds, snapshot.meters)
-    if (mixed) blockers.push({ code: 'heating.mixed-capture', text: mixedCaptureText(where, capture, mixed, unitNameOf) })
-    const unrated = missingRatings(capture, plantUnitIds, snapshot.meters)
-    if (unrated.length > 0) blockers.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(where, unrated, unitNameOf) })
-    for (const c of deviceCutoffs(snapshot.meters, snapshot.readings, plantUnitIds, hPeriod)) {
-      warn('heating.device-cutoff', deviceCutoffText(where, c, hPeriod, unitNameOf), { kind: 'meter', id: c.meterId })
-    }
-    if (capture === 'hca') report.devices = deviceLines({ capture, unitIds: plantUnitIds, meters: snapshot.meters, readings: snapshot.readings, serviceValues: [] }, hPeriod)
-    if (capture === 'serviceValues') report.serviceValues = (snapshot.heatingServiceValues ?? []).filter((v) => v.plantId === plant.id && v.period === h.key)
+    const mixed = mixedCapture(capture, [...servedIds], snapshot.meters)
+    if (mixed) blocked.push({ code: 'heating.mixed-capture', text: mixedCaptureText(capture, mixed, unitNameOf) })
+    const unrated = missingRatings(capture, [...servedIds], snapshot.meters)
+    if (unrated.length > 0) blocked.push({ code: 'heating.hca-factor-missing', text: missingRatingsText(unrated, unitNameOf) })
 ```
 
-`plant`, `plantUnits` (die angeschlossenen Wohnungen), `blockers`, `where`, `report`, `hPeriod` und `h`
-sind die Namen, die PR 10 und PR 6 dort führen; heißen sie anders, hier anpassen. `snapshot.meters`
-erfüllt `HcaMeter`, weil `SnapshotMeter` nach Task 2 und C5 `name`, `heatingPlantId`, `hcaScale` und
-`ratingFactor` führt.
+Direkt hinter der Zeile `for (const b of blocked) warn(b.code, …)`:
+
+```ts
+    for (const c of deviceCutoffs(snapshot.meters, snapshot.readings, [...servedIds], { from: period.from, to: period.to })) {
+      warn('heating.device-cutoff', deviceCutoffText(where, c, { from: period.from, to: period.to }, unitNameOf), { kind: 'meter', id: c.meterId })
+    }
+```
+
+Im Objekt von `selfPlans.set(plant.id, { … })` als letzte Felder:
+
+```ts
+      capture,
+      devices: deviceLines({ capture, unitIds: [...servedIds], meters: snapshot.meters, readings: snapshot.readings }, { from: period.from, to: period.to }),
+      serviceValues: serviceRows,
+```
+
+In `selfSteps` und `selfStatementOf` (PR 10 Task 9) jedes `POT_UNIT[p]` durch `potUnitOf(sp, p)`
+ersetzen; in `selfStatementOf` die Zeile `consumptionUnit: p === 'heating' ? 'kWh' : 'm³',` durch
+`consumptionUnit: potUnitOf(sp, p),` und im zurückgegebenen Objekt als letzte Felder:
+
+```ts
+      ...(sp.devices.length > 0 ? { devices: sp.devices } : {}),
+      ...(sp.serviceValues.length > 0 ? { serviceValues: sp.serviceValues } : {}),
+```
+
+`snapshot.meters` erfüllt `HcaMeter`, weil `SnapshotMeter` nach Task 2 und PR 4 `name`,
+`heatingPlantId`, `hcaScale` und `ratingFactor` führt. `served` sind die angeschlossenen Wohnungen aus
+dem Block von PR 10 (`{ id, name, … }`).
+
+`server/testing/selfHeating.ts` (PR 11): `HeatingServiceValue` zum Typimport; in
+`SelfSnapshotOptions` als letztes Feld `serviceValues?: HeatingServiceValue[]`; im Objekt `source` von
+`selfSnapshot` `heatingServiceValues: o.serviceValues ?? [],` (das Feld `hcaModel` hat `PLANT` seit Task 2).
 
 - [ ] **Step 5: Tests ausführen, sie müssen bestehen**
 
-Run: `npm --prefix server test -- test/calc-hkv.test.ts test/hca.test.ts && npm run typecheck`
-Expected: PASS (`calc-hkv.test.ts`: 5 Tests).
+Run: `npm --prefix server test -- test/heating.test.ts test/calc-hkv.test.ts test/hca.test.ts test/calc-heizkosten.test.ts test/calc-warmwasser.test.ts && npm run typecheck`
+Expected: PASS (`calc-hkv.test.ts`: 5 Tests). Der Gleichheitstest von PR 11 (`selfSnapshot` gegen
+`beispielA`) bleibt grün: Bei `capture = 'heatMeter'` sind alle Faktoren 1 und die Zähler dieselben.
 
 - [ ] **Step 6: Alle Tests, Golden und Commit**
 
 Run: `npm test`
-Expected: PASS; `settlement-golden.test.ts` und `db-golden.test.ts` unverändert.
+Expected: PASS; `settlement-golden.test.ts`, `db-golden.test.ts` und `heating-golden.test.ts`
+unverändert.
 
 ```bash
-git add server/src/heating.ts server/src/calc.ts shared/types.ts server/test/calc-hkv.test.ts
+git add server/src/heating.ts server/src/calc.ts shared/types.ts server/testing/selfHeating.ts server/test/heating.test.ts server/test/calc-hkv.test.ts
 git commit -m "Eigene Heizkostenabrechnung nach Heizkostenverteilern und Werten eines Ablesedienstes
 
-Der Verbrauch je Wohnung kommt je nach Erfassung von Wärmezählern, von Heizkostenverteilern mit
-Bewertungsfaktor oder vom Ablesedienst, in derselben Gestalt; dieselben Einheiten ergeben dieselben
-Beträge. Gemischte Geräte und fehlende Faktoren verhindern die Verteilung mit einem Satz; ein
-Gerätestichtag mitten in der Heizperiode ergibt einen Hinweis.
+Im Grenzmodell von PR 10: Der Gerätetyp der Heizung folgt der Erfassung, jede Differenz zählt mit
+dem Faktor ihres Geräts, die Werte des Ablesedienstes kommen als gedachte Zähler mit kumulierten
+Ständen. Dieselben Einheiten ergeben dieselben Beträge. Gemischte Geräte und fehlende Faktoren
+verhindern die Verteilung mit einem Satz; ein Gerätestichtag mitten in der Heizperiode ergibt
+einen Hinweis.
 
 Refs #99"
 ```
@@ -1367,11 +1615,11 @@ Refs #99"
 
 **Files:**
 - Create: `server/src/db/serviceValues.ts`
-- Modify: `server/src/db/heating.ts` (`guardHeatingPlant`), `server/src/db/repository.ts` (`HKV_KEY`, `crossPropertyViolations`), `server/src/db/co2.ts` (`heatingPeriodViews`), `server/src/index.ts`, `shared/types.ts` (`HeatingPeriodView.serviceValues`)
-- Test: `server/test/db-hkv.test.ts` (ergänzen), `server/test/api.test.ts` (ergänzen)
+- Modify: `server/src/db/heating.ts` (`guardHeatingPlant`, `LATER`), `server/src/db/heatingSelf.ts` (`setUpSelf`), `server/src/db/repository.ts` (`HKV_KEY`, `crossPropertyViolations`), `server/src/db/co2.ts` (`heatingPeriodViews`), `server/src/index.ts`, `shared/types.ts` (`HeatingPeriodView.serviceValues`)
+- Test: `server/test/db-hkv.test.ts` (ergänzen), `server/test/api.test.ts` (ergänzen), `server/test/db-heizkosten.test.ts` (eine Zeile von PR 10 fällt)
 
 **Interfaces:**
-- Consumes: Task 2 `heatingServiceValues`, `readHeatingServiceValues`, `HeatingServiceValue`; PR 6 `plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`, `closedText`, `heatingPeriodViews`; PR 5 `servesUnit`; repository.ts `HeatingError`, `raw`, `nullableNumber`, `ISO_DATE`; read.ts `readUnits`; index.ts `writeData`, `bodyObject`; PR 2 `closeSettlement`.
+- Consumes: Task 2 `heatingServiceValues`, `readHeatingServiceValues`, `HeatingServiceValue`; PR 8 `server/src/db/heatingPeriodContext.ts` (`plantContext`, `heatingPeriodOf`, `heatingPeriodClosed`, `ensureHeatingPeriod`, `closedText`); PR 6 `heatingPeriodViews`; PR 5 `servesUnit`; repository.ts `HeatingError`, `raw`, `nullableNumber`, `ISO_DATE`; read.ts `readUnits`; `Database` (`server/src/db/client.ts`); index.ts `writeData`, `bodyObject`; PR 2 `closeSettlement`; PR 10 `setUpSelf(db, plantId, body, today, newId)` mit der Schleife über `pots`, die `plans` für fehlende Zähler füllt, `LATER.capture`, Route `PUT /api/heating-plants/:id/self`.
 - Produces:
   - `db/serviceValues.ts`: `saveServiceValues(db: Database, plantId: string, period: string, body: unknown): Promise<HeatingServiceValue[] | null>` (`null` heißt: Anlage gibt es nicht)
   - `HeatingPeriodView.serviceValues: HeatingServiceValue[]`
@@ -1383,6 +1631,7 @@ Refs #99"
 
 ```ts
 import { createHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
+import { setUpSelf } from '../src/db/heatingSelf.ts'
 import { heatingPeriodViews } from '../src/db/co2.ts'
 import { saveServiceValues } from '../src/db/serviceValues.ts'
 import { closeSettlement, createProperty, crossPropertyViolations } from '../src/db/repository.ts'
@@ -1393,12 +1642,33 @@ import { periodKey } from '../../shared/period.ts'
 und ans Dateiende:
 
 ```ts
+let ids = 0
+const newId = () => `m-${++ids}`
+// Die Einrichtung von PR 10 (Schritt 7) mit der Erfassung als Parameter; eine Anlage wird nur über sie
+// zur eigenen Abrechnung (PR 10 Abweichung 17).
+const einrichtung = (capture: 'hca' | 'serviceValues') => ({
+  period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture,
+  dhwHeatMeter: false, totalHeatMeter: false,
+})
 async function ablesedienst(opened: Opened): Promise<void> {
   await opened.write(async (db) => {
     for (const u of ['a', 'b']) await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: 50, participates: true })
-    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'self', hotWater: 'combined', capture: 'serviceValues' })
+    await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
   })
+  await opened.write((db) => setUpSelf(db, 'hp', einrichtung('serviceValues'), '2026-02-01', newId))
 }
+
+test('Einrichtung mit Heizkostenverteilern oder Ablesedienst: keine Wärmezähler, die Warmwasserzähler schon (Abweichung 8)', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      for (const u of ['a', 'b']) await createEntity(db, 'units', u, { propertyId: 'objekt-1', name: u.toUpperCase(), areaM2: 50, participates: true })
+      await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
+    })
+    const done = await opened.write((db) => setUpSelf(db, 'hp', einrichtung('hca'), '2026-02-01', newId)) ?? assert.fail('keine Anlage')
+    assert.equal(done.plant.capture, 'hca')
+    assert.deepEqual(done.created.map((m) => m.type).sort(), ['warmwasser', 'warmwasser'])
+  })
+})
 const zeile = (unitId: string, from: string, to: string, heatValue: number, waterValue: number | null = null) => ({ unitId, from, to, heatValue, waterValue })
 
 test('Ablesedienst: speichern ersetzt alle Zeilen der Heizperiode; die Ansicht zeigt sie', async () => {
@@ -1469,7 +1739,12 @@ test('Wiederherstellen: ein Wert des Ablesedienstes an einer Wohnung eines ander
 test('Ablesedienst (Heizung PR 12): PUT speichert die Werte, eine Überschneidung ergibt 400 mit Satz', async () => {
   await withServer(async (base, send) => {
     const unit = await jsonOf<{ id: string }>(await send(`${base}/api/units`, { method: 'POST', body: JSON.stringify({ name: 'A', areaM2: 50, participates: true }) }))
-    const plant = await jsonOf<{ id: string }>(await send(`${base}/api/heating-plants`, { method: 'POST', body: JSON.stringify({ energy: 'gas', method: 'self', hotWater: 'combined', capture: 'serviceValues' }) }))
+    // POST liefert `{ plant, assigned }` (PR 4); zur eigenen Abrechnung über die Einrichtung (PR 10).
+    const { plant } = await jsonOf<{ plant: { id: string } }>(await send(`${base}/api/heating-plants`, { method: 'POST', body: JSON.stringify({ energy: 'gas', method: 'manual' }) }))
+    const setup = await send(`${base}/api/heating-plants/${plant.id}/self`, { method: 'PUT', body: JSON.stringify({
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'serviceValues', dhwHeatMeter: false, totalHeatMeter: false,
+    }) })
+    assert.equal(setup.status, 200)
     const url = `${base}/api/heating-plants/${plant.id}/periods/2025-01/service-values`
     const ok = await send(url, { method: 'PUT', body: JSON.stringify({ values: [{ unitId: unit.id, from: '2025-01-01', to: '2025-12-31', heatValue: 800, waterValue: null }] }) })
     assert.equal(ok.status, 200)
@@ -1487,14 +1762,29 @@ test('Ablesedienst (Heizung PR 12): PUT speichert die Werte, eine Überschneidun
 - [ ] **Step 2: Tests ausführen, sie müssen scheitern**
 
 Run: `npm --prefix server test -- test/db-hkv.test.ts test/api.test.ts`
-Expected: FAIL; `ERR_MODULE_NOT_FOUND` für `db/serviceValues.ts` bzw. 400 `LATER.serviceValues` beim
-Anlegen der Anlage.
+Expected: FAIL; `ERR_MODULE_NOT_FOUND` für `db/serviceValues.ts` bzw. 400 `LATER.capture` bei der
+Einrichtung mit `capture: 'serviceValues'`.
 
 - [ ] **Step 3: Sperre fällt, Satz zu freien Schlüsseln (`db/heating.ts`, `repository.ts`)**
 
-`server/src/db/heating.ts`, `guardHeatingPlant`: die beiden Zeilen von PR 10, die `capture === 'hca'`
-und `capture === 'serviceValues'` mit `LATER.hca` bzw. `LATER.serviceValues` ablehnen (C1), löschen,
-ebenso die beiden Einträge in `LATER`, wenn sonst niemand sie liest.
+`server/src/db/heating.ts`, `guardHeatingPlant`: die Zeile von PR 10
+`if (after.capture !== 'heatMeter') throw new HeatingError(400, LATER.capture)` löschen (Abgleich C1), ebenso
+den Eintrag `capture` in `LATER`. Die Zeile davor (`capture === null` → „Bitte wählen Sie, womit der
+Verbrauch erfasst wird.“) bleibt.
+
+`server/src/db/heatingSelf.ts`, `setUpSelf` (PR 10 Task 5): In der Schleife, die je angeschlossener
+Wohnung die fehlenden Zähler plant (`for (const pot of pots) { const type = POT_METER[pot] … }`), als
+erste Zeile des inneren Rumpfs (Abweichung 8):
+
+```ts
+      // Heizung PR 12: Heizkostenverteiler legt der Vermieter je Heizkörper selbst an, beim Ablesedienst gibt
+      // es keine Geräte; ein Wärmezähler daneben wäre eine gemischte Ausstattung (§ 5 Abs. 7).
+      if (pot === 'heating' && after.capture !== 'heatMeter') continue
+```
+
+`server/test/db-heizkosten.test.ts` (PR 10): Im Test „Einrichtung: Anteil 50 bis 70 % …“ die Zeile
+`await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, capture: 'hca' }, '2026-02-01', newId)), status(400, /späteren Version/))`
+löschen; die Einrichtung mit Heizkostenverteilern prüft jetzt db-hkv.test.ts.
 
 `server/src/db/repository.ts`: `HKV_KEY` (PR 4) ersetzen durch (Abweichung 4):
 
@@ -1537,8 +1827,8 @@ import { eq } from 'drizzle-orm'
 import type { HeatingPlant, HeatingServiceValue, Unit } from '../../../shared/types.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import { germanDate } from '../../../shared/law/register.ts'
-import { closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './co2.ts'
-import type { Database } from './open.ts'
+import { closedText, ensureHeatingPeriod, heatingPeriodClosed, heatingPeriodOf, plantContext } from './heatingPeriodContext.ts'
+import type { Database } from './client.ts'
 import { readUnits } from './read.ts'
 import { HeatingError, ISO_DATE, nullableNumber, raw } from './repository.ts'
 import { heatingServiceValues } from './schema.ts'
@@ -1608,8 +1898,9 @@ export async function saveServiceValues(db: Database, plantId: string, period: s
 }
 ```
 
-`Database` kommt von dort, wo db/co2.ts (PR 6) es importiert; steht es dort aus einer anderen Datei,
-hier denselben Pfad nehmen. `ctx.plant` ist eine `HeatingPlant` (PR 6, `PlantContext`).
+`Database` aus `'./client.ts'` und der Kontext der Heizperiode aus `'./heatingPeriodContext.ts'`, wie in
+db/heatingSelf.ts (PR 10) und db/heatingInfo.ts (PR 14). `ctx.plant` ist eine `HeatingPlant` (PR 8,
+`PlantContext`).
 
 - [ ] **Step 5: Ansicht und Route (`db/co2.ts`, `shared/types.ts`, `index.ts`)**
 
@@ -1654,7 +1945,7 @@ Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add server/src/db/serviceValues.ts server/src/db/heating.ts server/src/db/repository.ts server/src/db/co2.ts server/src/index.ts shared/types.ts server/test/db-hkv.test.ts server/test/api.test.ts
+git add server/src/db/serviceValues.ts server/src/db/heating.ts server/src/db/heatingSelf.ts server/src/db/repository.ts server/src/db/co2.ts server/src/index.ts shared/types.ts server/test/db-hkv.test.ts server/test/db-heizkosten.test.ts server/test/api.test.ts
 git commit -m "Werte des Ablesedienstes speichern; Erfassung mit Heizkostenverteilern freigegeben
 
 Die Zeilen einer Heizperiode werden in einer Transaktion ersetzt, mit Prüfung je Zeile, ohne
@@ -1669,14 +1960,15 @@ Refs #99"
 
 **Files:**
 - Create: `client/src/hcaForm.ts`, `client/src/components/HcaFields.tsx`, `client/src/components/CutoffReadingForm.tsx`, `client/src/components/ServiceValuesCard.tsx`, `client/src/hcaView.ts`, `client/src/components/HcaBlock.tsx`
-- Modify: `client/src/meterForm.ts` (PR 4), das Zählerformular, in dem PR 4 `meterBody` aufruft, `client/src/pages/Zaehler.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/heatingForm.ts` (`CAPTURE_OPTIONS`)
-- Test: `client/src/hcaForm.test.ts` (neu), `client/src/hcaView.test.ts` (neu), `client/src/components/HcaFields.test.tsx` (neu), `client/src/components/CutoffReadingForm.test.tsx` (neu), `client/src/components/ServiceValuesCard.test.tsx` (neu)
+- Modify: `client/src/meterForm.ts` (PR 4), das Zählerformular, in dem PR 4 `meterBody` aufruft, `client/src/pages/Zaehler.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/heatingSelfForm.ts` (PR 10, `CAPTURE_SELF_OPTIONS`)
+- Test: `client/src/hcaForm.test.ts` (neu), `client/src/hcaView.test.ts` (neu), `client/src/components/HcaFields.test.tsx` (neu), `client/src/components/CutoffReadingForm.test.tsx` (neu), `client/src/components/ServiceValuesCard.test.tsx` (neu), `client/src/heatingSelfForm.test.ts` (ein Test von PR 10 ändert sich), `client/src/heatingSelfView.test.ts` (ergänzen)
+- Modify (dazu): `client/src/heatingSelfView.ts`, `client/src/components/SelfHeatingCards.tsx`, `client/src/components/SelfHeatingBlock.tsx` (Einheit „Einheiten“, Abweichung 9)
 
 **Interfaces:**
-- Consumes: Task 2 `HcaScale`, `Meter.hcaScale`, `Meter.ratingFactor`, `HeatingServiceValue`; Task 4 `HeatingStatement.devices`, `.serviceValues`, `HcaDeviceLine`; Task 5 `HeatingPeriodView.serviceValues`, Route `service-values`; PR 11 `parseDecimal`, `numberText` (heatingForm.ts); PR 4 `MeterForm`, `meterToForm`, `meterBody`; C7.
+- Consumes: Task 2 `HcaScale`, `Meter.hcaScale`, `Meter.ratingFactor`, `HeatingServiceValue`; Task 4 `SelfHeatingStatement.devices`, `.serviceValues`, `HcaDeviceLine`; Task 5 `HeatingPeriodView.serviceValues`, Route `service-values`; PR 11 `parseDecimal`, `numberText` (heatingForm.ts); PR 4 `MeterForm`, `meterToForm`, `meterBody`; PR 10 `CAPTURE_SELF_OPTIONS`, `selfSetupBody`, `filled` (Testhelfer in heatingSelfForm.test.ts).
 - Produces:
   - `hcaForm.ts`: `HCA_SCALE_OPTIONS`, `type HcaFieldsForm = { scale: HcaScale | ''; factor: string }`, `hcaFieldsOf(m: Pick<Meter, 'hcaScale' | 'ratingFactor'>): HcaFieldsForm`, `hcaFieldsBody(type: MeterType, f: HcaFieldsForm): { body: { hcaScale: HcaScale | null; ratingFactor: number | null } } | { error: string }`, `type CutoffForm = { date: string; value: string }`, `cutoffReadingBody(meterId: string, f: CutoffForm): { body: { meterId: string; date: string; value: number; replacement: true; oldEndValue: number } } | { error: string }`, `type ServiceRowForm = { unitId: string; from: string; to: string; heat: string; water: string }`, `serviceRowsOf(values: readonly HeatingServiceValue[]): ServiceRowForm[]`, `serviceValuesBody(rows: readonly ServiceRowForm[]): { body: { values: { unitId: string; from: string; to: string; heatValue: number; waterValue: number | null }[] } } | { error: string }`
-  - `hcaView.ts`: `hcaLines(h: Pick<HeatingStatement, 'devices' | 'serviceValues'>, unitName: (id: string) => string): string[]`
+  - `hcaView.ts`: `hcaLines(self: Pick<SelfHeatingStatement, 'devices' | 'serviceValues'> | undefined, unitName: (id: string) => string): string[]`
 
 - [ ] **Step 1: Failing tests schreiben**
 
@@ -1735,8 +2027,43 @@ test('Druckblock: je Gerät Einheiten, Skala und Faktor (Entwurf 8.8); Werte des
     serviceValues: [{ plantId: 'hp', period: periodKey('2025-01'), unitId: 'a', from: '2025-01-01', to: '2025-09-30', heatValue: 340, waterValue: 12 }],
   }, name)).toEqual(['Wohnung A, 01.01.2025 bis 30.09.2025: Heizung 340 Einheiten, Warmwasser 12 (laut Ablesedienst)'])
   expect(hcaLines({}, name)).toEqual([])
+  expect(hcaLines(undefined, name)).toEqual([])
 })
 ```
+
+(b2) `client/src/heatingSelfForm.test.ts` (PR 10): den Test „Erfassung mit Heizkostenverteilern oder Werten
+eines Ablesedienstes: noch gesperrt“ ersetzen durch:
+
+```ts
+  it('Erfassung mit Heizkostenverteilern oder Werten eines Ablesedienstes (Heizung PR 12): wählbar, ohne Zusatz', () => {
+    expect('body' in selfSetupBody(filled({ capture: 'hca' }), 'gas')).toBe(true)
+    expect('body' in selfSetupBody(filled({ capture: 'serviceValues' }), 'gas')).toBe(true)
+    expect(CAPTURE_SELF_OPTIONS.every((o) => !o.later && !/späteren Version/.test(o.label))).toBe(true)
+  })
+```
+
+(`CAPTURE_SELF_OPTIONS` in den Import aus `'./heatingSelfForm'` aufnehmen, falls nicht da.)
+
+(b3) `client/src/heatingSelfView.test.ts` (PR 10) anhängen (Abweichung 9):
+
+```ts
+test('Heizung PR 12: bei Heizkostenverteilern und Ablesedienst Einheiten statt kWh', () => {
+  const u = {
+    key: 'A', role: 'tenancy' as const, tenancyId: 'A', label: 'Mieter A', from: '2025-01-01', to: '2025-12-31', days: 365, degreeDayPermille: 1000,
+    heatingConsumption: 785, waterConsumption: null, heatingGroup: false, waterGroup: false, heatingCents: 0, waterCents: 0, heatingCo2Cents: 0, waterCo2Cents: 0,
+  }
+  const pot = { pot: 'heating' as const, costCents: 0, consumptionPct: 70, byAreaOnly: false, areaM2: 200, consumption: 7850, consumptionUnit: 'Einheiten' as const, baseCentsPerM2: 0, consumptionCentsPerUnit: null }
+  expect(userLine(u, { pots: [pot] })).toContain('Heizung 785 Einheiten')
+  const unit = {
+    unitId: 'a', unitName: 'A', areaM2: 60, heatAreaM2: 60, boundaries: [], users: [],
+    readings: [{ meterId: 'a1', meterName: 'Wohnzimmer', pot: 'heating' as const, boundary: '2025-12-31', date: '2025-12-31', value: 500 }],
+  }
+  expect(readingResult(unit, '2025-12-31', 'Einheiten')).toEqual(['Wohnzimmer: 500 Einheiten am 31.12.2025'])
+  expect(readingResult(unit, '2025-12-31')).toEqual(['Wohnzimmer: 500 kWh am 31.12.2025'])
+})
+```
+
+(`readingResult` in den Import aus `'./heatingSelfView'` aufnehmen, falls nicht da.)
 
 (c) Datei `client/src/components/HcaFields.test.tsx`:
 
@@ -2064,7 +2391,7 @@ findet je Zeile also genau sie.
 ```ts
 // Druckblock „Heizkostenverteiler“ bzw. „Werte des Ablesedienstes“ (Heizung PR 12, Entwurf 8.8): bei
 // der Einheitsskala muss der Faktor in der Abrechnung stehen.
-import type { HeatingStatement } from './types'
+import type { SelfHeatingStatement } from './types'
 
 const num = (n: number) => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 const day = (iso: string) => {
@@ -2072,12 +2399,13 @@ const day = (iso: string) => {
   return `${d}.${m}.${y}`
 }
 
-export function hcaLines(h: Pick<HeatingStatement, 'devices' | 'serviceValues'>, unitName: (id: string) => string): string[] {
-  const devices = (h.devices ?? []).map((d) =>
+// Liest den Ausweis der eigenen Abrechnung (`HeatingStatement.self`, Prüfbericht B.1).
+export function hcaLines(self: Pick<SelfHeatingStatement, 'devices' | 'serviceValues'> | undefined, unitName: (id: string) => string): string[] {
+  const devices = (self?.devices ?? []).map((d) =>
     d.scale === 'unit'
       ? `${unitName(d.unitId)}, „${d.name}“: ${num(d.raw)} Einheiten × Bewertungsfaktor ${num(d.factor)} = ${num(d.rated)} Einheiten (Einheitsskala)`
       : `${unitName(d.unitId)}, „${d.name}“: ${num(d.raw)} Einheiten (Produktskala, Faktor im Wert enthalten)`)
-  const service = (h.serviceValues ?? []).map((v) =>
+  const service = (self?.serviceValues ?? []).map((v) =>
     `${unitName(v.unitId)}, ${day(v.from)} bis ${day(v.to)}: Heizung ${num(v.heatValue)} Einheiten${v.waterValue !== null ? `, Warmwasser ${num(v.waterValue)}` : ''} (laut Ablesedienst)`)
   return [...devices, ...service]
 }
@@ -2091,11 +2419,11 @@ import { hcaLines } from '../hcaView'
 import type { HeatingStatement } from '../types'
 
 export default function HcaBlock({ heating, unitName }: { heating: HeatingStatement; unitName: (id: string) => string }) {
-  const lines = hcaLines(heating, unitName)
+  const lines = hcaLines(heating.self, unitName)
   if (lines.length === 0) return null
   return (
     <div className="print-block">
-      <h4>{heating.devices && heating.devices.length > 0 ? 'Heizkostenverteiler' : 'Werte des Ablesedienstes'}</h4>
+      <h4>{(heating.self?.devices ?? []).length > 0 ? 'Heizkostenverteiler' : 'Werte des Ablesedienstes'}</h4>
       <ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul>
     </div>
   )
@@ -2154,10 +2482,40 @@ anders, diese nehmen.)
 `<HcaBlock heating={h} unitName={(id) => units.find((u) => u.id === id)?.name ?? id} />`, mit den
 Wohnungen, die die Seite schon hat.
 
-`client/src/heatingForm.ts`, `CAPTURE_OPTIONS` (C7): bei `'hca'` und `'serviceValues'` `disabled: true`
-und den Zusatz „(kommt mit einer späteren Version)“ entfernen. Die Beschriftungen lauten danach
-„mit Heizkostenverteilern, die ich selbst ablese“ und „mit Werten eines Ablesedienstes (auch
-Verdunster und Funk)“; heißen sie bei PR 10 schon so, bleibt der Text.
+`client/src/heatingSelfForm.ts` (PR 10), `CAPTURE_SELF_OPTIONS` (Abgleich C7) ersetzen durch:
+
+```ts
+export const CAPTURE_SELF_OPTIONS: { value: CaptureMethod; label: string; later: boolean }[] = [
+  { value: 'heatMeter', label: 'Wärmezähler und Warmwasserzähler je Wohnung', later: false },
+  { value: 'hca', label: 'Heizkostenverteiler an den Heizkörpern, die ich selbst ablese', later: false },
+  { value: 'serviceValues', label: 'Werte eines Ablesedienstes (auch Verdunster und Funk)', later: false },
+]
+```
+
+Die Prüfung `CAPTURE_SELF_OPTIONS.find(…)?.later` in `selfSetupBody` bleibt; sie greift nicht mehr. Das
+`CAPTURE_OPTIONS` von PR 4 in `heatingForm.ts` (Frage „Wer rechnet ab?“) bleibt unverändert.
+
+`client/src/heatingSelfView.ts` (PR 10), Einheit der Heizung (Abweichung 9): In `userLine` vor
+`const parts = …`
+
+```ts
+  // Heizkostenverteiler und Ablesedienst zählen Einheiten (Heizung PR 12).
+  const heatUnit = self.pots.find((p) => p.pot === 'heating')?.consumptionUnit ?? 'kWh'
+```
+
+und im Ausdruck für die Heizung `${num(u.heatingConsumption)} kWh` durch
+`${num(u.heatingConsumption)} ${heatUnit}` ersetzen. `readingResult` bekommt einen dritten Parameter:
+
+```ts
+export function readingResult(unit: SelfUnitView, boundary: string, heatUnit: 'kWh' | 'Einheiten' = 'kWh'): string[] {
+  return unit.readings.filter((r) => r.boundary === boundary).map((r) => (r.date === null || r.value === null
+    ? `${r.meterName}: nicht abgelesen`
+    : `${r.meterName}: ${num(r.value)} ${r.pot === 'heating' ? heatUnit : 'm³'} am ${fmtDate(r.date)}`))
+}
+```
+
+Die Aufrufer in `SelfHeatingCards.tsx` und `SelfHeatingBlock.tsx` (PR 10 Task 13) übergeben
+`self.pots.find((p) => p.pot === 'heating')?.consumptionUnit === 'Einheiten' ? 'Einheiten' : 'kWh'`.
 
 - [ ] **Step 6: Tests ausführen, sie müssen bestehen**
 
@@ -2170,7 +2528,7 @@ Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add client/src/hcaForm.ts client/src/hcaForm.test.ts client/src/hcaView.ts client/src/hcaView.test.ts client/src/components/HcaFields.tsx client/src/components/HcaFields.test.tsx client/src/components/CutoffReadingForm.tsx client/src/components/CutoffReadingForm.test.tsx client/src/components/ServiceValuesCard.tsx client/src/components/ServiceValuesCard.test.tsx client/src/components/HcaBlock.tsx client/src/meterForm.ts client/src/meterForm.test.ts client/src/pages client/src/heatingForm.ts
+git add client/src/hcaForm.ts client/src/hcaForm.test.ts client/src/hcaView.ts client/src/hcaView.test.ts client/src/components/HcaFields.tsx client/src/components/HcaFields.test.tsx client/src/components/CutoffReadingForm.tsx client/src/components/CutoffReadingForm.test.tsx client/src/components/ServiceValuesCard.tsx client/src/components/ServiceValuesCard.test.tsx client/src/components/HcaBlock.tsx client/src/meterForm.ts client/src/meterForm.test.ts client/src/pages client/src/heatingSelfForm.ts client/src/heatingSelfForm.test.ts client/src/heatingSelfView.ts client/src/heatingSelfView.test.ts client/src/components/SelfHeatingCards.tsx client/src/components/SelfHeatingBlock.tsx
 git commit -m "Oberfläche: Skala und Faktor am Heizkostenverteiler, Stichtagswert, Werte des Ablesedienstes
 
 Skala und Bewertungsfaktor im Zählerformular, der Stichtagswert laut Anzeige als Ablesung mit
@@ -2217,10 +2575,13 @@ Im Abschnitt „Berechnungs-Engine“ hinter dem Punkt zum Warmwasseranteil (PR 
 ```markdown
 - **Heizkostenverteiler und Ablesedienst** (Heizung PR 12, [server/src/hca.ts](server/src/hca.ts)):
   § 5 Abs. 1 HeizkostenV lässt Wärmezähler und Heizkostenverteiler gleichrangig zu, und Mietfuchs
-  bringt alle drei Erfassungen in **dieselbe Gestalt**: je Wohnung je Gerät die Segmente zwischen zwei
-  Ablesungen (`HeatSegment`, Konvention von `meterSegments`). Zwischenablesung, Gradtage und „keine
-  Interpolation“ bleiben damit an einer Stelle (PR 10), und ein Test hält fest, dass dieselben
-  bewerteten Einheiten dieselben Beträge ergeben, gleich woher sie kommen. Bei der **Einheitsskala**
+  bringt alle drei Erfassungen in **das Grenzmodell von PR 10**: Ein Heizkostenverteiler ist ein Zähler
+  vom Typ `hkv` mit einem Faktor am Zähler (`SelfMeter.factor`), `planSelf` wählt den Gerätetyp nach der
+  Erfassung, und die Werte eines Ablesedienstes sind je Wohnung ein gedachter Zähler mit kumulierten
+  Ständen (ohne Stand am Beginn einer Zeile nach einer Lücke, sonst zählte die Lücke still als 0).
+  Zwischenablesung, Gradtage und „keine Interpolation“ bleiben damit an einer Stelle, und ein Test hält
+  fest, dass dieselben bewerteten Einheiten dieselben Beträge ergeben, gleich woher sie kommen. Die
+  Einheit des Topfs Heizung heißt dann „Einheiten“. Bei der **Einheitsskala**
   zählt der Ablesewert mal dem Bewertungsfaktor, bei der **Produktskala** wie abgelesen; ohne Skala
   oder Faktor `heating.hca-factor-missing` und keine Verteilung. Der **Stichtagswert** ist kein eigenes
   Feld, sondern eine Ablesung mit `replacement` und Wert 0; eine Rücksetzung mitten in der Heizperiode
@@ -2252,10 +2613,11 @@ Refs #99"
 
 - [ ] **Step 5: PR-Beschreibung**
 
-Gestapelt auf PR 11, mit `Refs #99`, den Abweichungen 1 bis 6, den Annahmen C1 bis C8 samt dem
-Ergebnis ihres Abgleichs und dem Hinweis, dass #218 die Vorerfassung trägt und offen bleibt.
-⟨Norm offen: VDI 2077; DIN EN 834⟩ für Skalen, Bewertungsfaktoren und die Grenze „gleiche
-Ausstattung“ (Abweichung 1) steht als Prüfpunkt darin.
+Gestapelt auf PR 11, mit `Refs #99`, den Abweichungen 1 bis 9, dem Abschnitt „Änderungen nach Prüfung
+vom 05.10.2026“, der Tabelle „Abgleich mit PR 10“ und dem Hinweis, dass #218 die Vorerfassung trägt und
+offen bleibt. ⟨Norm offen: VDI 2077; DIN EN 834⟩ für Skalen, Bewertungsfaktoren und die Grenze „gleiche
+Ausstattung“ (Abweichung 1) steht als Prüfpunkt darin, ebenso die Frage, ob Einheits- und Produktskala
+in einer Anlage einen Hinweis brauchen (Prüfbericht A.2).
 
 ---
 
@@ -2275,7 +2637,8 @@ Ausstattung“ (Abweichung 1) steht als Prüfpunkt darin.
 | Werte eines Ablesedienstes je Wohnung und Nutzungszeitraum, deckt Verdunster und Funk ab (8.1) | Task 3, Task 4, Task 5, Task 6 |
 | Verdunster nicht selbst auswerten; ARGE-Fenster 400–800 ‰ nur im Lexikon (8.1, 4.3, 16) | Task 1 |
 | HKV nicht eichpflichtig (3.12) | Global Constraints (keine Änderung an PR 21) |
-| Ausweis „bei HKV je Gerät; bei der Einheitsskala muss der Faktor in der Abrechnung stehen“ (8.8) | Task 3 `deviceLines`, Task 4, Task 6 `HcaBlock` |
+| Ausweis „bei HKV je Gerät; bei der Einheitsskala muss der Faktor in der Abrechnung stehen“ (8.8) | Task 3 `deviceLines`, Task 4 (`self.devices`), Task 6 `HcaBlock` |
+| Naht im Grenzmodell von PR 10 (Prüfbericht B.1, C2–C4) | Task 4 (`metersOf`, `factor`, `blocked`), heating.test.ts |
 | Schnappschuss mit Ablesedienstwerten (5.8) | Task 2 |
 | Wiederherstellen: Objektgrenzen (5.9) | Task 5 |
 | ⟨Norm offen: VDI 2077; DIN EN 834⟩ sichtbar (15.3) | Kopf von hca.ts, Abweichung 1, PR-Beschreibung |
@@ -2284,14 +2647,16 @@ Ausstattung“ (Abweichung 1) steht als Prüfpunkt darin.
 Nicht in diesem Plan: Schätzung nach § 9a bei fehlenden Werten (PR 13; Lücken bleiben hier Lücken),
 § 6a-Angaben (PR 14), monatliche Verbrauchsinformation aus Funkwerten (PR 22), Vorerfassung (#218).
 
-**2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Namen von PR 10 stehen in „Annahmen über PR 10“
-(C1–C8) mit jeder Stelle; Abgleich vor Task 1.
+**2. Platzhalter.** Keine „TBD“, kein „wie Task N“. Die Namen von PR 10 sind abgeglichen (Abschnitt
+„Abgleich mit PR 10“, Commit `81828af`).
 
 **3. Typen.** `HcaScale`, `hcaScale`, `ratingFactor`, `HeatingServiceValue` (`heatValue`,
-`waterValue`), `HcaDeviceLine` (`raw`, `rated`, `factor`, `scale`), `HeatSegment`, `UnitHeatDevices`,
-`HcaMeter`, `DevicesInput`, `MixedCapture`, `MissingRating`, `DeviceCutoff` sind in Task 2/3 definiert
-und in Task 4–6 mit denselben Namen benutzt. `HeatDevicesInput.serviceValues` (Task 4) entspricht
-`DevicesInput.serviceValues` (Task 3).
+`waterValue`), `HcaDeviceLine` (`raw`, `rated`, `factor`, `scale`), `HcaMeter`, `DevicesInput`,
+`MixedCapture`, `MissingRating`, `DeviceCutoff` sind in Task 2/3 definiert und in Task 4–6 mit denselben
+Namen benutzt. Aus PR 10: `SelfMeter` (+ `factor`), `SelfInput` (+ `capture`), `SelfBlock` (+ zwei
+Codes), `SelfPlantPlan` (+ `capture`, `devices`, `serviceValues`), `CaptureMethod`,
+`CAPTURE_METHODS`, `CAPTURE_SELF_OPTIONS`, `LATER.capture`. `serviceMeters` liefert `SelfMeter` und
+`SelfReading` in der Gestalt von PR 10.
 
 **4. Review Focus.** 1 → `hca.test.ts` „Tausch eines Geräts“; 2 → „Werte des Ablesedienstes … Lücken“
 und `db-hkv.test.ts` (Lücke erlaubt); 3 → `db-hkv.test.ts` „für alle Zeilen ein oder für keine“; 4 →
