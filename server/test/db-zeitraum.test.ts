@@ -262,7 +262,7 @@ test('Ein Objekt löschen, an dem eine Auswertung mit gewähltem Zeitraum hängt
   }
 })
 
-test('Der Rhythmus lässt sich in dieser Version nicht über die Objekte setzen (Bedienung: PR 3)', async () => {
+test('Der Rhythmus lässt sich nicht über PUT /api/properties setzen, nur über den Wechsel mit Vorschau (#208)', async () => {
   // Bleibt grün und hält fest, dass es keine Hintertür gibt: Ein Wechsel ohne Vorschau ließe
   // Positionen und Jahreskorrekturen ohne Zeitraum zurück.
   const dir = tempDir()

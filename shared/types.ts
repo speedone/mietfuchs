@@ -263,6 +263,32 @@ export type SplitPreviewPart = {
   closed: boolean
 }
 
+// Die Vorschau eines Wechsels des Abrechnungszeitraums (#208, Entwurf 3.6). `blocked`: Gründe, aus
+// denen nicht gewechselt wird (abgeschlossene Abrechnungen). `moves`: kalte Rechnungen mit
+// Leistungszeitraum, die nach Tagen auf die neuen Zeiträume aufgeteilt werden oder in einen
+// anderen wandern. `groups`: Positionen ohne Leistungszeitraum und Heizkosten je bisherigem
+// Zeitraum, die der Vermieter zuordnet. `overrides`: Jahreskorrekturen, die neu erfasst werden,
+// je Mietverhältnis mit den Zeiträumen, für die gefragt wird. `assessments`: Belegauswertungen,
+// deren gewählter Zeitraum entfällt.
+export type PeriodChangePreview = {
+  rules: PeriodRules
+  periods: { key: PeriodKey; label: string; short: boolean }[]
+  newShort: { key: PeriodKey; label: string }[]
+  blocked: string[]
+  moves: { costItemId: string; description: string; amountCents: number; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]
+  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  overrides: { tenancyId: string; tenantName: string; from: { key: PeriodKey; label: string; cents: number }[]; ask: { period: PeriodKey; label: string; months: string }[] }[]
+  assessments: { assessmentId: string; file: string; from: PeriodKey; to: PeriodKey; toLabel: string }[]
+}
+
+// Die Antworten zur Vorschau: je Gruppe (bisheriger Zeitraum) der neue Zeitraum; je
+// Mietverhältnis und gefragtem Zeitraum der tatsächlich gezahlte Betrag in Cent, `null` heißt
+// „keine Korrektur, es gilt die Staffel“. Eine fehlende Antwort ist keine Antwort (409).
+export type PeriodChangeAnswers = {
+  groups?: Record<string, string>
+  overrides?: Record<string, Record<string, number | null>>
+}
+
 export type Settings = {
   houseName: string
   address: string

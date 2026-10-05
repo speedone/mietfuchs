@@ -41,6 +41,7 @@ import {
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
+import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
   archiveDatabaseProblem, archiveInfoText, originText, writeDatabaseSnapshot,
@@ -480,6 +481,11 @@ app.put('/api/properties/:id', async (req, res) => {
   if (!property) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
   res.json(property)
 })
+// Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
+// begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate. Der Wechsel des
+// Zeitraums (#208) braucht ihn für die Liste der Zeiträume in der Vorschau.
+const today = (): string => new Date().toISOString().slice(0, 10)
+
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
   if (result.removed) return res.json({ ok: true })
@@ -494,10 +500,24 @@ app.delete('/api/properties/:id', async (req, res) => {
   })
 })
 
+// Wechsel des Abrechnungszeitraums (#208, Entwurf 3.6): erst die Vorschau, dann der Wechsel mit
+// den Antworten, in einer Transaktion. Fehlt eine Antwort oder träfe der Wechsel eine
+// abgeschlossene Abrechnung, antwortet der Server mit 409 und der neuen Vorschau, gespeichert ist
+// nichts. Begründung in db/periodChange.ts.
+app.post('/api/properties/:id/period/preview', async (req, res) => {
+  const preview = await readData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  if (!preview) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+  res.json(preview)
+})
+app.put('/api/properties/:id/period', async (req, res) => {
+  const body = bodyObject(req)
+  const result = await writeData((db) => applyPeriodChange(db, req.params.id, body.rules, body.answers, newId, today()))
+  if (!result) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.property)
+})
+
 // ---------- Abrechnung ----------
-// Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
-// begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate.
-const today = (): string => new Date().toISOString().slice(0, 10)
 
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
 app.get('/api/settlement/:period', async (req, res) => {

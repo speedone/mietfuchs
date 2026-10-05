@@ -5569,3 +5569,32 @@ test('Aufteilen (#208): Vorschau und Speichern über HTTP, 409 bei abgeschlossen
     s.stop()
   }
 })
+
+test('Wechsel des Zeitraums (#208): Vorschau und Speichern über HTTP, 409 ohne Antworten', async () => {
+  const s = await startServer()
+  try {
+    const unit = await s.api<{ id: string }>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'EG', areaM2: 60, participates: true }) })
+    await s.api('/api/tenancies', { method: 'POST', body: JSON.stringify({ unitId: unit.id, tenantName: 'A', persons: 1, start: '2024-01-01', prepaymentOverrides: { '2025-01': 220000 } }) })
+    const [objekt] = await s.api<{ id: string }[]>('/api/properties')
+    const id = objekt?.id ?? assert.fail('kein Objekt')
+    const next = { startMonth: 1, changes: ['2025-05'] }
+    const vorschau = await s.api<{ overrides: { ask: { period: string }[] }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: next }) })
+    assert.deepEqual(vorschau.overrides[0]?.ask.map((a) => a.period), ['2025-01', '2025-05'])
+    const ohne = await fetch(`${s.base}/api/properties/${id}/period`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: next }) })
+    assert.equal(ohne.status, 409)
+    const tenancyId = (await s.api<{ id: string }[]>('/api/tenancies'))[0]?.id ?? assert.fail('kein Mietverhältnis')
+    const property = await s.api<{ periodRules: unknown }>(`/api/properties/${id}`, {
+      method: 'PUT', body: JSON.stringify({ periodRules: { startMonth: 5, changes: [] } }),
+    })
+    assert.deepEqual(property.periodRules, { startMonth: 1, changes: [] }, 'PUT /api/properties setzt den Rhythmus nicht')
+    const gewechselt = await s.api<{ periodRules: unknown }>(`/api/properties/${id}/period`, {
+      method: 'PUT', body: JSON.stringify({ rules: next, answers: { overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
+    })
+    assert.deepEqual(gewechselt.periodRules, next)
+    assert.equal((await s.api<{ period: { label: string } }>('/api/settlement/2025-01')).period.label, '01.01.–30.04.2025')
+    const falsch = await fetch(`${s.base}/api/properties/${id}/period/preview`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rules: { startMonth: 0, changes: [] } }) })
+    assert.equal(falsch.status, 400)
+  } finally {
+    s.stop()
+  }
+})
