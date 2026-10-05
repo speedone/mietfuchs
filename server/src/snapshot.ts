@@ -17,9 +17,12 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
-import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
-import { heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, StockValue, Tenancy, Unit } from '../../shared/types.ts'
+import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodContaining, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
+import { isStockEnergy } from '../../shared/fuelStock.ts'
+import { dayAfter, germanDate } from '../../shared/law/register.ts'
+import { readFrozenStock, type StockPeriodInput } from './fuelStock.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
 
@@ -109,8 +112,11 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG); fehlen sie, hat die Anlage keine.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
   & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew'>>
-// Die Angabe zum Warmwasser je Heizperiode (Heizung PR 6, #211).
+// Die Angaben je Heizperiode, die die Berechnung liest: Warmwasser laut Messdienst (Heizung PR 6, #211)
+// und der Vorrat (Heizung PR 8). Die Felder des Vorrats sind optional, damit ein von Hand gebauter
+// Schnappschuss ohne Vorrat sie nicht nennen muss; fehlen sie, gibt es keinen.
 export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>
+  & Partial<Pick<HeatingPeriodData, 'stockUnit' | 'openingQuantity' | 'openingCostCents' | 'openingEmissionsKg' | 'openingCo2Cents' | 'openingInvoicedBefore2023' | 'closingQuantity' | 'closingMeasuredOn'>>
 
 export const wayOf = (p: SnapshotHeatingPlant): PlantWay => ({
   periodStartMonth: p.periodStartMonth ?? null, periodChanges: p.periodChanges ?? [], separateSpans: p.separateSpans ?? [],
@@ -176,6 +182,11 @@ export type SnapshotClosedSettlement = {
   fuelCarryRows?: FrozenFuelRow[]
   // Die Überträge des eingefrorenen Stands je Anlage, Heizperiode und Lieferung (Nachprüfung von #233).
   fuelCarries?: FrozenFuelCarryOut[]
+  // Der Vorrat des eingefrorenen Stands (Heizung PR 8, G-A4), je `Anlage:Heizperiode`: der Endbestand,
+  // aus dem die Folgeperiode ihren Anfangsbestand liest, und der Anfangsbestand, wenn er aus der
+  // Vorperiode übernommen war; dann ist er deren Endbestand. Fehlt das Feld, kennt der Stand keinen.
+  stockClosings?: Record<string, StockValue> | null
+  stockOpenings?: Record<string, StockValue> | null
 }
 export type FrozenItemSelfUse = { selfCents: number, noBasis: boolean }
 
@@ -304,8 +315,26 @@ export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
   return out
 }
 
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[] } {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [] }
+// Der Vorrat aus `heating` eines Stands (Heizung PR 8): Endbestände und übernommene Anfangsbestände je
+// `Anlage:Heizperiode`. Ein Eintrag, der sich nicht lesen lässt, fehlt; dann gilt der eingetragene Wert.
+function stockOf(heating: unknown, which: 'closing' | 'opening'): Record<string, StockValue> | null {
+  if (!Array.isArray(heating)) return null
+  const out: Record<string, StockValue> = {}
+  for (const h of heating) {
+    if (h === null || typeof h !== 'object') continue
+    const plantId: unknown = Reflect.get(h, 'plantId')
+    const period: unknown = Reflect.get(h, 'period')
+    const stock: unknown = Reflect.get(h, 'stock')
+    if (typeof plantId !== 'string' || typeof period !== 'string' || stock === null || typeof stock !== 'object') continue
+    if (which === 'opening' && Reflect.get(stock, 'openingSource') === 'own') continue
+    const value = readFrozenStock(Reflect.get(stock, which))
+    if (value) out[`${plantId}:${period}`] = value
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[], stockClosings: Record<string, StockValue> | null, stockOpenings: Record<string, StockValue> | null } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [], stockClosings: null, stockOpenings: null }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
@@ -316,6 +345,8 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
     itemTotals: itemTotalsOf(settlement),
     fuelCarryRows: frozenFuelRowsOf(settlement),
     fuelCarries: frozenFuelCarriesOf(settlement),
+    stockClosings: stockOf(Reflect.get(settlement, 'heating'), 'closing'),
+    stockOpenings: stockOf(Reflect.get(settlement, 'heating'), 'opening'),
   }
   // Ergeben die Eigenanteile je Position nicht die Summe des Papiers, ist das Archivstück in sich
   // nicht stimmig (etwa von Hand gebaut), und dann gilt nur die Summe; die Steuerübersicht verteilt
@@ -382,6 +413,9 @@ export type Snapshot = {
   // Lieferungen, Überträge und abgeschlossene Heizperioden (Heizung PR 7). Fehlt das Feld, gibt es
   // keine Lieferungen, und die Berechnung rechnet wie vorher.
   fuel?: SnapshotFuel
+  // Je Anlage mit Vorratsenergie und Heizperiode dieser Berechnung die Kette für die
+  // Bestandsrechnung (Heizung PR 8). Fehlt sie, gibt es keinen Vorrat.
+  stockChains?: SnapshotStockChain[]
 }
 
 // Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
@@ -389,7 +423,9 @@ export type Snapshot = {
 export type SnapshotFuelDelivery = Pick<
   FuelDelivery,
   'id' | 'plantId' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
->
+> & Partial<Pick<FuelDelivery, 'invoiceDate' | 'quantity' | 'quantityUnit'>>
+// Rechnungsdatum, Menge und Einheit liest seit Heizung PR 8 die Bestandsrechnung; optional, damit ein
+// von Hand gebauter Schnappschuss einer Gasrechnung sie nicht nennen muss.
 // Eine abgeschlossene Heizperiode einer Anlage, mit der Bezeichnung und der Frist der Abrechnung, die
 // sie abgeschlossen hat, und deren Übertragszeilen.
 // `carries`: was diese Heizperiode beim Abschluss je Lieferung in andere übertragen hat.
@@ -530,6 +566,100 @@ export function narrowToProperty<
   }
 }
 
+// ---------- Brennstoffvorrat (Heizung PR 8, Entwurf 5.8, 8.2) ----------
+
+// Je Anlage mit Vorratsenergie und Heizperiode dieser Berechnung die Kette der Heizperioden für die
+// Bestandsrechnung (fuelStock.ts): die Heizperiode selbst und davor jede Vorperiode mit eingetragenem
+// Endbestand, bis zur ersten, deren Endbestand eingefroren ist. Lieferungen gehören zur Heizperiode
+// ihres Lieferdatums (Entwurf 5.4); geschätzte Lieferungen (PR 7) gibt es beim Vorrat nicht. Der Betrag
+// einer Lieferung ist Σ ihrer Positionen, über alle Zeiträume, sonst der an der Lieferung (5.4).
+// Ist die Folgeperiode einer Heizperiode abgeschlossen und hat sie deren Endbestand übernommen, steht
+// ihr eingefrorener Anfangsbestand dabei (`nextFrozenOpening`, G-A4).
+export type SnapshotStockChain = { plantId: string; period: PeriodKey; chain: StockPeriodInput[] }
+
+export type StockChainSource = {
+  costItems: readonly Pick<SnapshotCostItem, 'amountCents' | 'fuelDeliveryId'>[]
+  closedSettlements: readonly (SnapshotClosedSettlement & { period: PeriodKey })[]
+  closedHeatingSettlements?: readonly (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
+  heatingPeriodRows?: readonly SnapshotHeatingPeriodRow[]
+  fuelDeliveries?: readonly SnapshotFuelDelivery[]
+}
+
+// Mehr Vorperioden liest niemand; eine längere Kette ohne eingefrorenen Endbestand gibt es nur bei
+// einem Bestand, der hundert Heizperioden nie abgeschlossen hat.
+const STOCK_CHAIN_LIMIT = 100
+
+export function stockChainsOf(source: StockChainSource, plant: SnapshotHeatingPlant, objectRules: PeriodRules, hs: readonly BillingPeriod[]): SnapshotStockChain[] {
+  if (!isStockEnergy(plant.energy)) return []
+  const way = wayOf(plant)
+  const rules = plantRules(way, objectRules)
+  const rows = new Map((source.heatingPeriodRows ?? []).filter((r) => r.plantId === plant.id).map((r) => [String(r.period), r]))
+  const deliveries = (source.fuelDeliveries ?? []).filter((d) => d.plantId === plant.id && !d.estimated)
+  const linked = new Map<string, number>()
+  for (const c of source.costItems) {
+    if (c.fuelDeliveryId) linked.set(c.fuelDeliveryId, (linked.get(c.fuelDeliveryId) ?? 0) + c.amountCents)
+  }
+  const dateOf = (d: SnapshotFuelDelivery): string | null => d.deliveredAt ?? d.invoiceDate ?? null
+  const labelOf = (d: SnapshotFuelDelivery, date: string): string => d.label || `Lieferung vom ${germanDate(date)}`
+  // Der eingefrorene Stand, der eine Heizperiode abgeschlossen hat: ihre Heizkostenabrechnung nach
+  // Weg d, sonst die Abrechnung des Objektzeitraums, in dem sie endet (W1, B3).
+  const closedOf = (p: BillingPeriod): SnapshotClosedSettlement | undefined =>
+    settledSeparately(way, objectRules, p)
+      ? source.closedHeatingSettlements?.find((c) => c.plantId === plant.id && c.period === p.key)
+      : source.closedSettlements.find((c) => c.period === periodContaining(objectRules, p.to).key)
+  const frozenOf = (p: BillingPeriod): StockValue | null => closedOf(p)?.stockClosings?.[`${plant.id}:${p.key}`] ?? null
+  const nextFrozenOf = (p: BillingPeriod): StockValue | null => {
+    const next = periodContaining(rules, dayAfter(p.to))
+    return closedOf(next)?.stockOpenings?.[`${plant.id}:${next.key}`] ?? null
+  }
+  const inputOf = (p: BillingPeriod): StockPeriodInput => {
+    const row = rows.get(p.key)
+    const measured = row?.closingMeasuredOn ?? null
+    const opening = row?.openingQuantity ?? null
+    return {
+      key: p.key,
+      label: periodLabel(p),
+      from: p.from,
+      to: p.to,
+      unit: row?.stockUnit ?? null,
+      ownOpening: row && opening !== null
+        ? { quantity: opening, costCents: row.openingCostCents ?? null, emissionsKg: row.openingEmissionsKg ?? null, co2Cents: row.openingCo2Cents ?? null, invoicedBefore2023: row.openingInvoicedBefore2023 ?? null }
+        : null,
+      closingQuantity: row?.closingQuantity ?? null,
+      closingMeasuredOn: measured,
+      deliveries: deliveries.flatMap((d) => {
+        const date = dateOf(d)
+        if (date === null || date < p.from || date > p.to) return []
+        return [{
+          id: d.id, label: labelOf(d, date), date, invoiceDate: d.invoiceDate ?? date, quantity: d.quantity ?? null, quantityUnit: d.quantityUnit ?? null,
+          costCents: linked.get(d.id) ?? d.amountCents, emissionsKg: d.emissionsKg, co2Cents: d.co2CostCents,
+        }]
+      }),
+      laterDeliveries: measured !== null && measured > p.to
+        ? deliveries.flatMap((d) => {
+          const date = dateOf(d)
+          return date !== null && date > p.to && date <= measured ? [{ label: labelOf(d, date), date }] : []
+        })
+        : [],
+      frozenClosing: frozenOf(p),
+      nextFrozenOpening: nextFrozenOf(p),
+    }
+  }
+  return hs.map((h) => {
+    const chain = [inputOf(h)]
+    let cur = h
+    for (let i = 0; i < STOCK_CHAIN_LIMIT; i++) {
+      const prev = previousPeriod(rules, cur)
+      const input = inputOf(prev)
+      if (!input.frozenClosing && input.closingQuantity === null && !input.nextFrozenOpening) break
+      chain.unshift(input)
+      if (input.frozenClosing) break
+      cur = prev
+    }
+    return { plantId: plant.id, period: h.key, chain }
+  })
+}
+
 // Der Schnappschuss eines Objekts in einem Abrechnungszeitraum. Die Routen rechnen nur hierüber; den
 // Vorzeitraum bestimmt der Rhythmus des Objekts (#208).
 //
@@ -577,6 +707,17 @@ export function snapshotFor(
     })
   })
   const fuel = fuelSnapshotOf(source, propertyId, narrowed, plants, objectRules)
+  // Brennstoffvorrat (Heizung PR 8): je Anlage mit Vorratsenergie die Kette ihrer Heizperioden in P.
+  // Eine Anlage mit eigener Heizperiode rechnet in jeder Heizperiode, die in P endet.
+  const stockSource: StockChainSource = {
+    costItems: narrowed.costItems,
+    closedSettlements: narrowed.closedSettlements,
+    closedHeatingSettlements: source.closedHeatingSettlements,
+    heatingPeriodRows: source.heatingPeriodRows,
+    fuelDeliveries: source.fuelDeliveries,
+  }
+  const stockChains = plants.flatMap((p) =>
+    stockChainsOf(stockSource, p, objectRules, hasOwnRhythm(wayOf(p)) ? heatingPeriodsEndingIn(plantRules(wayOf(p), objectRules), period) : [period]))
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
@@ -588,6 +729,7 @@ export function snapshotFor(
     objectRules,
     ...(heatingParts.length > 0 ? { heatingParts } : {}),
     ...(fuel ? { fuel } : {}),
+    ...(stockChains.length > 0 ? { stockChains } : {}),
   }
 }
 
@@ -607,6 +749,14 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
   const mine = narrowed.costItems.filter((c) => c.heatingPlantId === plantId)
   const frozen = (source.closedHeatingSettlements ?? []).find((c) => c.plantId === plantId && c.period === h.key)
   const fuel = fuelSnapshotOf(source, propertyId, narrowed, plants, objectRules)
+  // Heizung PR 8: die Kette des Vorrats für diese eine Heizperiode.
+  const stockChains = stockChainsOf({
+    costItems: narrowed.costItems,
+    closedSettlements: narrowed.closedSettlements,
+    closedHeatingSettlements: source.closedHeatingSettlements,
+    heatingPeriodRows: source.heatingPeriodRows,
+    fuelDeliveries: source.fuelDeliveries,
+  }, plant, objectRules, [h])
   return {
     ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
     propertyId,
@@ -626,6 +776,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
       : null,
     scope: { kind: 'heating', plant },
     ...(fuel ? { fuel } : {}),
+    ...(stockChains.length > 0 ? { stockChains } : {}),
   }
 }
 
