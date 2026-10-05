@@ -31,7 +31,7 @@ Zähler.
 
 **Baut auf:** PR 1 (`docs/superpowers/plans/2026-10-05-heizung-pr1-rechtsregister.md`, Code auf
 `feat/heizung-pr1-rechtsregister`), PR 2 (`…-pr2-zeitraum-kern.md`) und PR 3
-(`…-pr3-zeitraum-bedienung.md`, entsteht parallel). Gearbeitet wird auf
+(`…-pr3-zeitraum-bedienung.md`). Gearbeitet wird auf
 `feat/heizung-pr4-heizanlage`, abgezweigt von der Spitze von PR 3; der PR wird gestapelt auf PR 3
 gestellt und nach dessen Merge auf `main` umgestellt (CLAUDE.md, „Durchsicht vor jedem PR und vor
 jedem Merge“).
@@ -67,9 +67,9 @@ jedem Merge“).
 - **Migrationen:** Aufbau nur mit `npm --prefix server run db:generate -- --name <name>`, nie von
   Hand. Zwei Schritte, in genau dieser Reihenfolge hinter den Schritten von PR 3: `heizanlage`
   (neue Tabellen und neue Spalten, keine geänderte Bedingung an einer bestehenden Tabelle) und
-  `heizanlage_bedingungen` (Zählertypen, Objektart, Bedingungen an `meters`). Die Nummern vergibt
-  drizzle-kit; nach dem Stand der Planung folgen sie auf 0014/0015 (PR 2) und die Schritte von
-  PR 3. Keine Datenanweisung. Die Marken beider Schritte kommen in
+  `heizanlage_bedingungen` (Zählertypen, Objektart, Bedingungen an `meters`). PR 2 belegt
+  0014/0015, PR 3 `0016_leistungszeitraum` und `0017_leistungszeitraum_pruefung`; PR 4 erzeugt also
+  `0018_heizanlage` und `0019_heizanlage_bedingungen`. Keine Datenanweisung. Die Marken beider Schritte kommen in
   `server/test/migrations.test.ts`. Wird PR 3 vor dem ersten Push dieses Zweigs neu erzeugt,
   werden beide Schritte hier ebenfalls neu erzeugt (README „solange ein Schritt die Arbeitskopie
   nicht verlassen hat“).
@@ -123,7 +123,7 @@ jedem Merge“).
 | `shared/law/heizkostenv.ts`, `shared/law/params.ts` | Parameter `hkv.remote-reading.new-devices` | 1 |
 | `shared/types.ts` | `HeatingPlant`, `HeatingPlantUnit`, `HeatingPeriodData`, Aufzählungen, `AssignableHeatingItem`; `Meter` und `CostItem` erweitert; `MeterType` + `warmwasser`, `hkv`; `PropertyKind` + `zfh` | 2 |
 | `server/src/db/schema.ts` | Tabellen, Spalten, Listen, Bedingungen | 2 |
-| `server/drizzle/<n>_heizanlage.sql`, `<n+1>_heizanlage_bedingungen.sql`, `meta/*` (erzeugt) | Migration | 2 |
+| `server/drizzle/0018_heizanlage.sql`, `0019_heizanlage_bedingungen.sql`, `meta/*` (erzeugt) | Migration | 2 |
 | `shared/wording.ts`, `server/src/bookingPlan.ts`, `client/src/types.ts`, `client/src/meterForm.ts`, `client/src/unitForm.ts` | neue Zählertypen und Objektart beschriften | 2 |
 | `server/src/db/read.ts` | Anlagen lesen, neue Felder an Zählern und Positionen, `Stock.heatingPlants` | 3, 4 |
 | `server/src/db/heating.ts` (neu) | Anlage anlegen, ändern, entfernen; Zuordnung offener Heizpositionen; Befunde beim Wiederherstellen | 3, 5 |
@@ -162,7 +162,11 @@ und PR 2; Namen genau so:
   `closedSettlements.period`; in repository.ts `PeriodError`, `rulesForProperty`,
   `Collection<T>.guard(db, before, after, body)` und `guardCostItem(db, before, after, body)`;
   `closeSettlement(db, { id, propertyId, period, closedAt, sentAt, settlement })`.
-- PR 3 (`cost_items.service_from`, `service_to`, `tax_year`, `heating_part`): PR 4 liest keines
+- PR 3 (Plan `…-pr3-zeitraum-bedienung.md`): Migrationen 0016/0017 mit `cost_items.service_from`,
+  `service_to`, `tax_year`, `heating_part` samt Bedingung `cost_items_heating_part_category` (nur
+  Kostenart Heizung und Warmwasser, dieselbe Grenze wie `heatingPlantId` hier); `PeriodProvider`
+  und `usePeriod` ersetzen `useYear`, die Karte „Abrechnungszeitraum“ (`PeriodCard`) steht in den
+  Stammdaten. PR 4 liest keines
   dieser Felder. Wo ein Test alle Spalten einer Tabelle belegt (`db-repository.test.ts`), stehen
   sie schon in der Probe; dieser Plan ergänzt nur die eigenen.
 
@@ -284,7 +288,7 @@ einem Schritt“): erst Tabellen und Spalten, dann die Bedingungen.
 
 **Files:**
 - Modify: `shared/types.ts`, `server/src/db/schema.ts`
-- Create (erzeugt): `server/drizzle/<n>_heizanlage.sql`, `server/drizzle/<n+1>_heizanlage_bedingungen.sql`, `server/drizzle/meta/<n>_snapshot.json`, `server/drizzle/meta/<n+1>_snapshot.json`; Modify (erzeugt): `server/drizzle/meta/_journal.json`
+- Create (erzeugt): `server/drizzle/0018_heizanlage.sql`, `server/drizzle/0019_heizanlage_bedingungen.sql`, `server/drizzle/meta/0018_snapshot.json`, `server/drizzle/meta/0019_snapshot.json`; Modify (erzeugt): `server/drizzle/meta/_journal.json`
 - Modify (Beschriftungen der neuen Werte): `shared/wording.ts`, `server/src/bookingPlan.ts`, `client/src/types.ts`, `client/src/meterForm.ts`, `client/src/unitForm.ts`
 - Test: `server/test/schema.test.ts`, `server/test/migrations.test.ts`, `client/src/meterForm.test.ts`, `client/src/unitForm.test.ts`
 
@@ -691,7 +695,7 @@ Step, wie sie sind):
 
 Run: `npm --prefix server run db:generate -- --name heizanlage`
 
-Expected: eine neue Datei `server/drizzle/<n>_heizanlage.sql`. Darin genau: je ein `CREATE TABLE` für
+Expected: eine neue Datei `server/drizzle/0018_heizanlage.sql`. Darin genau: je ein `CREATE TABLE` für
 `heating_periods`, `heating_plant_units` und `heating_plants`, der eindeutige Index
 `heating_periods_plant_period_idx`, ein `ALTER TABLE … ADD` für `cost_items.heating_plant_id` (mit
 `REFERENCES heating_plants(id)`) und vier für `meters` (`heating_plant_id`, `heating_role`,
@@ -743,7 +747,7 @@ Die Bedingungen von `meters` (das zweite Argument von `sqliteTable('meters', …
 
 Run: `npm --prefix server run db:generate -- --name heizanlage_bedingungen`
 
-Expected: `server/drizzle/<n+1>_heizanlage_bedingungen.sql` mit `PRAGMA foreign_keys=OFF`, je einem
+Expected: `server/drizzle/0019_heizanlage_bedingungen.sql` mit `PRAGMA foreign_keys=OFF`, je einem
 Neubau `__new_properties`, `__new_cost_items`, `__new_meters`, `__new_unit_no_connection` samt
 `INSERT INTO … SELECT`, `DROP TABLE`, `RENAME`, und `PRAGMA foreign_keys=ON`. Kein
 `ALTER TABLE … ADD`. Der Neubau von `cost_items` und `meters` schreibt
@@ -808,7 +812,7 @@ Run:
 node --input-type=module -e "const { loadMigrations } = await import('./server/src/db/client.ts'); for (const m of await loadMigrations()) if (m.tag.includes('heizanlage')) console.log(\`  '\${m.tag}': '\${m.hash}',\`)"
 ```
 
-In `server/test/migrations.test.ts` in `VEROEFFENTLICHT` hinter der letzten Marke von PR 3 die
+In `server/test/migrations.test.ts` in `VEROEFFENTLICHT` hinter `'0017_leistungszeitraum_pruefung'` (PR 3) die
 beiden ausgegebenen Zeilen einfügen, darüber der Kommentar:
 
 ```ts
@@ -1497,9 +1501,9 @@ test('Zähler der Anlage: mit Rolle und ohne Wohnung; jede Abweichung mit einem 
 ```
 
 In `server/test/db-repository.test.ts`, Test „Die Verschmelzung erreicht jede Spalte“: den Import
-aus `'../src/db/heating.ts'` (`createHeatingPlant`) und aus `'../../shared/heating.ts'`
-(`HEATING_CATEGORY`) ergänzen. In `proben` bei `costItems` `category: 'Müll'` durch
-`category: HEATING_CATEGORY` ersetzen und `heatingPlantId: 'hp1',` anhängen; den Rumpf der Probe
+aus `'../src/db/heating.ts'` (`createHeatingPlant`) ergänzen. In `proben` steht bei `costItems` seit PR 3 schon
+`category: 'Heizung und Warmwasser'` (PR-3-Plan, Task 2 Step 10); dort `heatingPlantId: 'hp1',`
+anhängen (die Anlage gibt es nur für diese Kostenart, siehe `mergeCostItem`); den Rumpf der Probe
 `meters` ersetzen durch:
 
 ```ts
@@ -4002,9 +4006,9 @@ PR 6, 7, 10, 18 laut 5.1); Anleitung „Heizung einrichten“ (11.4, sinnvoll er
 `heating.remote-reading-missing`. `heating.remote-reading` bleibt `hint` und im Client
 „informational“ (färbt die Ampel nicht), wie bisher.
 
-**2. Platzhalter:** Keine offenen Stellen. Die Migrationsnummern `<n>`/`<n+1>` und die beiden
-Marken in Task 2 Step 7 sind Ausgaben von drizzle-kit bzw. des angegebenen Befehls und lassen sich
-erst nach PR 3 nennen; der Plan gibt Namen, Inhalt und Prüfung jedes Schritts vor.
+**2. Platzhalter:** Keine offenen Stellen. Die beiden Marken in Task 2 Step 7 sind Ausgaben des
+angegebenen Befehls (Prüfsummen der erzeugten Dateien 0018 und 0019), wie in den Plänen von PR 2 und
+PR 3; der Plan gibt Namen, Inhalt und Prüfung jedes Schritts vor.
 
 **3. Typen und Namen:** `HeatingPlant` (Task 2) wird in Task 3 gelesen und geschrieben, in Task 7
 als `SnapshotHeatingPlant`, in Task 8 als `RemotePlant` geschnitten und in Task 10 als
