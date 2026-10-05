@@ -187,3 +187,29 @@ test('Ohne Anlage und mit unbekannter Angabe: der Hinweis aus PR 1, wortgleich',
   assert.deepEqual(remoteNotices(settle(heizBestand(2027), 2027, [plant()])), ohne)
   assert.deepEqual(remoteNotices(settle(heizBestand(2026), 2026)), [])
 })
+
+// ---------- Zweifamilienhaus (#180, Entwurf 8.9) ----------
+
+const zfh = (units: SnapshotUnit[], withHeating = true): ComputedSettlement => computeSettlement({
+  ...snapshotOf(source({
+    units,
+    tenancies: units.filter((u) => u.participates).map((u) => tenancy(`t-${u.id}`, u.id)),
+    costItems: withHeating ? [item('heizung', 2025, { category: HEATING_CATEGORY, amountCents: 100000, key: 'area' })] : [],
+  }), 2025),
+  property: { kind: 'zfh', cableBuiltBeforeDec2021: null },
+})
+const kindNotices = (r: ComputedSettlement) => r.notices.filter((n) => n.code === 'property.kind-mismatch')
+
+test('Zweifamilienhaus: passt die Objektart nicht zu den Wohnungen, gibt es einen Hinweis', () => {
+  const drei = [unit('eg'), unit('og'), unit('dg')]
+  const [n] = kindNotices(zfh(drei))
+  assert.equal(n?.level, 'hint')
+  assert.match(n?.text ?? '', /höchstens zwei Wohnungen/)
+  // Eine selbst bewohnte und eine vermietete Wohnung: Die Ausnahme kann gelten, kein Hinweis.
+  assert.deepEqual(kindNotices(zfh([unit('eg', { participates: false, selfUsed: true, selfPersons: 2 }), unit('og')])), [])
+  // Ohne Heizkosten spielt die Ausnahme keine Rolle.
+  assert.deepEqual(kindNotices(zfh(drei, false)), [])
+  // Ein Mehrfamilienhaus bekommt den Hinweis nie.
+  const mfh = computeSettlement({ ...snapshotOf(source({ units: drei, costItems: [item('heizung', 2025, { category: HEATING_CATEGORY, key: 'area' })] }), 2025), property: { kind: 'mfh', cableBuiltBeforeDec2021: null } })
+  assert.deepEqual(kindNotices(mfh), [])
+})
