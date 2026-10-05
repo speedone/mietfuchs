@@ -17,7 +17,7 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, CostItem, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, CostItem, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
 import type { Db } from './store.ts'
 
@@ -86,10 +86,17 @@ export type SnapshotCostItem = Pick<
   | 'invoiceFile'
 >
 
-// Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp. Name, Zählernummer und
-// Maßeinheit sind Anzeige; die Jahresübersicht der Zähler-Seite gibt nur `meterId` zurück und
-// der Browser stellt sie daneben.
-export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type'>
+// Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur
+// Heizanlage (Heizung PR 4): Ein Zähler der Anlage ist kein Hauptzähler des Hauses, und
+// Fernablesbarkeit und Einbau entscheiden über die Kürzung nach § 12 Abs. 1 Satz 2 HeizkostenV. Der
+// Name nur für diesen Hinweis, deshalb optional; Zählernummer und Maßeinheit sind Anzeige, die
+// Jahresübersicht der Zähler-Seite gibt nur `meterId` zurück und der Browser stellt sie daneben.
+export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & Partial<Pick<Meter, 'name'>>
+
+// Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest: was über
+// die Fernablesbarkeit bekannt ist und welche Wohnungen angeschlossen sind. Die Verteilung liest sie
+// in dieser Version nicht (Entwurf 11.2, A2).
+export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'units'>
 
 // Gelesen werden Zähler, Datum, Stand und der Zählerwechsel mit dem Endstand des alten Geräts.
 // Die eigene Kennung der Ablesung und die Notiz braucht die Verbrauchsrechnung nicht.
@@ -247,6 +254,10 @@ export type Snapshot = {
   // anderen Schlüssel hat als dieselbe Kostenart im Vorjahr. Verteilt wird nichts davon. Fehlt
   // die Angabe, etwa in einem von Hand gebauten Schnappschuss, entfällt nur der Hinweis.
   previousCostItems?: SnapshotCostItem[]
+  // Die Heizanlagen des Objekts (Heizung PR 4). Fehlt die Angabe (db.json, Regression, ein von Hand
+  // gebauter Schnappschuss), rechnet die Berechnung wie ohne Anlage, und dasselbe gilt für eine
+  // leere Liste.
+  heatingPlants?: SnapshotHeatingPlant[]
 }
 
 export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
@@ -327,7 +338,10 @@ export function narrowToProperty<
 // Der Schnappschuss eines Objekts in einem Abrechnungszeitraum. Die Routen rechnen nur hierüber; den
 // Vorzeitraum bestimmt der Rhythmus des Objekts (#208).
 export function snapshotFor(
-  source: PropertyScopedSource & { properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[] },
+  source: PropertyScopedSource & {
+    properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
+    heatingPlants?: (SnapshotHeatingPlant & { propertyId: string })[]
+  },
   propertyId: string,
   period: BillingPeriod,
 ): Snapshot {
@@ -336,6 +350,9 @@ export function snapshotFor(
     ...snapshotOfPeriod(narrowToProperty(source, propertyId), period, previousPeriod(rulesOf(found), period)),
     propertyId,
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
+    // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier,
+    // an derselben Stelle wie das Objekt selbst.
+    heatingPlants: (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId),
   }
 }
 

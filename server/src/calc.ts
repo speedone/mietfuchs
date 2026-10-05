@@ -1668,16 +1668,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     u.selfUsed ? diy : Math.min(diy, tenancies.filter((t) => t.unitId === u.id).reduce((a, t) => a + t.days, 0))
   // `only`: die Teilnehmer einer Position (#94); ohne sie alle Wohnungszähler wie bisher.
   // `basisOnes`: die Wohnungen der Verteilbasis.
+  // Zähler der Heizanlage selbst (Gaszähler, Wärmezähler am Speicher; Heizung PR 4) haben keine
+  // Wohnung, sind aber kein Hauptzähler des Hauses: Sie messen, was die Anlage bezieht oder erzeugt,
+  // nicht, was die Wohnungen zusammen verbraucht haben. Als Hauptzähler gelesen, machte ein
+  // Wärmezähler am Speicher aus jeder Wohnung ohne Wärmezähler einen Rest nach #116.
+  const houseMeters = allMeters.filter((m) => !m.unitId && !m.heatingPlantId)
+  // Wasser (Entwurf 5.3, G-B8): Beim Kaltwasser zählen die Warmwasserzähler der Wohnungen mit, denn
+  // die Wasserkosten des Warmwassers gehören dazu, soweit sie nicht gesondert abgerechnet werden
+  // (§ 8 Abs. 2 HeizkostenV), und der Hauptzähler misst beides. Ob eine Wohnung einen Zähler hat
+  // (#116), sagt aber nur ein Kaltwasserzähler: Mit nur einem Warmwasserzähler fehlt ihr Kaltwasser,
+  // und es kommt über den Hauptzähler.
+  const measures = (type: string, m: SnapshotMeter): boolean => m.type === type || (type === 'kaltwasser' && m.type === 'warmwasser')
   const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null, basisOnes: SnapshotUnit[]) => {
     const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
     const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
     // Hauptzähler: Zähler ohne Wohnung. Er misst das ganze Haus und taugt deshalb nicht als
     // Basis einer Position, die nur für einen Teil der Wohnungen gilt.
-    const mainMeters = only === null ? allMeters.filter((m) => !m.unitId) : []
+    const mainMeters = only === null ? houseMeters : []
     const selfIds = new Set(selfOnes.map((u) => u.id))
-    const meterTypes = [...new Set(unitMeters.map((m) => m.type))]
+    // Ein Warmwasserzähler bringt auch den Kaltwasser-Schlüssel mit (siehe `measures`).
+    const meterTypes = [...new Set(unitMeters.flatMap((m): string[] => (m.type === 'warmwasser' ? ['warmwasser', 'kaltwasser'] : [m.type])))]
     for (const type of meterTypes) {
-      const meters = unitMeters.filter((m) => m.type === type) as (SnapshotMeter & { unitId: string })[]
+      const meters = unitMeters.filter((m) => measures(type, m)) as (SnapshotMeter & { unitId: string })[]
+      // Verbrauch je Wohnung, für den Eigenanteil; beim Kaltwasser samt Warmwasser.
+      const usage = new Map<string, number>()
+      // Wohnungen mit einem abgelesenen Zähler genau dieses Typs (#116, G-B8).
       const perUnit = new Map<string, number>()
       let basis = 0
       for (const m of meters) {
@@ -1686,12 +1701,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         basis += c
         // Ein angelegter, aber im Jahr nie abgelesener Zähler ist kein Zähler: Sonst gälte die
         // Wohnung als gemessen, und der Fehler aus #116 käme ohne Warnung zurück.
-        if (coveredDays(readings, yFrom, yTo) > 0) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        if (coveredDays(readings, yFrom, yTo) > 0) {
+          usage.set(m.unitId, (usage.get(m.unitId) || 0) + c)
+          if (m.type === type) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        }
       }
       // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
       // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
       // Wohnungen fällt damit ohnehin dem Vermieter zu.
-      let selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
+      let selfConsumption = selfOnes.reduce((a, u) => a + (usage.get(u.id) || 0), 0)
       // **Vorwegabzug über den Hauptzähler (#116).** Hat jede bewohnte Einheit einen Zähler,
       // bleibt es bei ihrem Verhältnis, und die Messdifferenz zum Hauptzähler geht darin auf,
       // wie bisher. Fehlt einer der Zähler, ist ihr Verbrauch der Rest des Hauptzählers, und die
@@ -1704,7 +1722,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
-        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id).map((m) => readingsOf(m.id)), yFrom, yTo)
+        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id && m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
         const needed = neededDays(u)
         return covered < needed ? [{ unit: u, covered, needed }] : []
       })
