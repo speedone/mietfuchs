@@ -175,3 +175,17 @@ test('Kein Ende einer Heizperiode in P: Warnung an der Heizanlage', () => {
   const w = s.notices?.find((n) => n.code === 'period.no-heating-period') ?? assert.fail('keine Warnung')
   assert.deepEqual([w.level, w.subject], ['warning', { kind: 'heatingPlant', id: 'hp1' }])
 })
+
+test('Weg d ohne Heizstaffel: Monate einer getrennten Heizperiode ohne Heizvorauszahlung ergeben den Hinweis (Durchsicht von #231, Important 2)', () => {
+  const s = settle(haus({
+    heatingPlants: [anlage({ separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] })],
+    tenancies: [
+      mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }], { heatingPrepayments: [{ from: '2025-05', monthlyCents: 12300 }] }),
+      // Ein Nachmieter, dessen Heizvorauszahlung nicht erfasst wurde.
+      { ...mieter('N', '2026-03-01', null, [{ from: '2026-03', monthlyCents: 30000 }]), unitId: 'u1' },
+    ],
+  }), '2026-01')
+  const hints = (s.notices ?? []).filter((n) => n.code === 'prepayment.heating-share-missing')
+  assert.deepEqual(hints.map((h) => h.subject), [{ kind: 'tenancy', id: 'N' }])
+  assert.match(hints[0]?.text ?? '', /N \(EG\): Die Heizkosten März bis Dezember 2026 werden getrennt abgerechnet, für diese Monate ist aber keine Heizvorauszahlung erfasst/)
+})

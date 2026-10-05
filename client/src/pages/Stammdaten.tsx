@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { CostModel, DepositStatus, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
+import type { CostModel, DepositStatus, HeatingPlant, Meter, MeterType, Settings, Tenancy, Unit, UnitDependents, UnitUsage } from '../types'
 import { DEPOSIT_STATUS_LABELS, METER_TYPE_LABELS, UNIT_USAGE_LABELS, usageOf } from '../types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, type UnitForm } from '../unitForm'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { scheduleOf } from '../heatingSettlementView'
+import { scheduleOf, separateHeatingFor } from '../heatingSettlementView'
 import Drawer from '../components/Drawer'
 import PropertyCard from '../components/PropertyCard'
 import { COST_MODEL_LABELS, buildPersonHistory, costModelBadge, costModelBody, defaultTenancyUnitId, overlapQuestion, showsFlatRates } from '../tenancyModel'
@@ -126,6 +126,17 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
     void api<Meter[]>(withProperty('/api/meters', propertyId))
       .then((all) => { if (alive) setObjectMeters(all) })
       .catch(() => { if (alive) setObjectMeters([]) })
+    return () => { alive = false }
+  }, [propertyId])
+  // Die Heizanlagen (Heizung PR 5): Rechnet die Anlage einer Wohnung die Heizkosten getrennt ab, fragen
+  // Mietverhältnis und Mieterwechsel die Heizvorauszahlung mit ab (Durchsicht von #231).
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
+  useEffect(() => {
+    if (!propertyId) return
+    let alive = true
+    void api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId))
+      .then((all) => { if (alive) setPlants(Array.isArray(all) ? all : []) })
+      .catch(() => { if (alive) setPlants([]) })
     return () => { alive = false }
   }, [propertyId])
   // „Hier beheben →“ aus der Abrechnung (#142): die betroffene Wohnung oder das Mietverhältnis öffnen.
@@ -596,23 +607,28 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
                 </div>
               ))}
               <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, prepayments: [...tenForm.prepayments, { from: '', amount: '' }] })}>+ Erhöhung ab Monat …</button>
-              {tenForm.heatingPrepayments.length > 0 && (
-                <>
-                  <div className="field-group-label">davon Heizvorauszahlung je Monat — Staffel</div>
-                  <p className="muted">Die Heizkosten rechnen Sie getrennt ab. Ändert sich die Vorauszahlung, tragen Sie die neue Heizvorauszahlung ab demselben Monat hier ein.</p>
-                  {tenForm.heatingPrepayments.map((p, i) => (
-                    <div key={i} className="row">
-                      <label className="field">ab Monat
-                        <input type="month" value={p.from} onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: tenForm.heatingPrepayments.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
-                      </label>
-                      <label className="field">€ je Monat
-                        <input value={p.amount} onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: tenForm.heatingPrepayments.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
-                      </label>
-                    </div>
-                  ))}
-                  <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...tenForm.heatingPrepayments, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
-                </>
-              )}
+              {(tenForm.heatingPrepayments.length > 0 || separateHeatingFor(units.find((u) => u.id === tenForm.unitId) ?? { id: tenForm.unitId }, plants)) && (() => {
+                // Bei getrennter Heizkostenabrechnung gehört zu jedem Mietverhältnis seine Heizvorauszahlung,
+                // auch zu einem neuen (Durchsicht von #231); die Staffel oben ist dann die übrige Vorauszahlung.
+                const rows = tenForm.heatingPrepayments.length > 0 ? tenForm.heatingPrepayments : [{ from: '', amount: '' }]
+                return (
+                  <>
+                    <div className="field-group-label">Heizvorauszahlung je Monat (neben der übrigen Vorauszahlung) — Staffel</div>
+                    <p className="muted">Die Heizkosten rechnen Sie getrennt ab. Die Staffel „NK-Vorauszahlung“ oben ist dann die übrige Vorauszahlung; ändert sich eine der beiden, tragen Sie die neue ab demselben Monat hier oder oben ein.</p>
+                    {rows.map((p, i) => (
+                      <div key={i} className="row">
+                        <label className="field">ab Monat
+                          <input type="month" value={p.from} placeholder="Einzugsmonat" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, from: e.target.value } : x)) })} />
+                        </label>
+                        <label className="field">€ je Monat
+                          <input value={p.amount} placeholder="z. B. 120,00" onChange={(e) => setTenForm({ ...tenForm, heatingPrepayments: rows.map((x, k) => (k === i ? { ...x, amount: e.target.value } : x)) })} />
+                        </label>
+                      </div>
+                    ))}
+                    <button className="btn small secondary field-add" onClick={() => setTenForm({ ...tenForm, heatingPrepayments: [...rows, { from: '', amount: '' }] })}>+ Änderung ab Monat …</button>
+                  </>
+                )
+              })()}
             </div>
 
             <details className="extra-details" style={{ width: '100%' }}>
@@ -796,6 +812,7 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
         <TenantChangeWizard
           tenancy={wizardFor}
           unit={units.find((u) => u.id === wizardFor.unitId)}
+          plants={plants}
           onClose={() => setWizardFor(null)}
           onDone={async () => { await reload(); setWizardFor(null) }}
         />
@@ -810,9 +827,10 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
 // ganz oder gar nicht ausführt (#150). Abbrechen ändert nichts; scheitert das Speichern, auch nicht.
 // Die Regeln stehen in tenantChange.ts.
 
-function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
+function TenantChangeWizard({ tenancy, unit, plants, onClose, onDone }: {
   tenancy: Tenancy
   unit: Unit | undefined
+  plants: HeatingPlant[]
   onClose: () => void
   onDone: () => Promise<void>
 }) {
@@ -822,6 +840,8 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   const [meterValues, setMeterValues] = useState<Record<string, string>>({})
   const [vacancy, setVacancy] = useState(false)
   const [newTenant, setNewTenant] = useState<NewTenantForm>(EMPTY_NEW_TENANT)
+  // Getrennte Heizkostenabrechnung an der Wohnung (Durchsicht von #231): der Nachmieter bekommt seine Heizvorauszahlung.
+  const askHeating = unit ? separateHeatingFor(unit, plants) : false
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -859,7 +879,7 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
   }
 
   async function commit() {
-    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant })
+    const change = buildTenantChange({ tenancy, endDate, meters, meterValues, vacancy, newTenant, askHeating })
     if ('error' in change) {
       setError(change.error)
       return
@@ -973,9 +993,15 @@ function TenantChangeWizard({ tenancy, unit, onClose, onDone }: {
                 <input value={newTenant.baseRent} style={{ width: 120 }} placeholder="z. B. 800,00" onChange={(e) => setNewTenant({ ...newTenant, baseRent: e.target.value })} />
               </label>
               <label className="field">
-                Vorauszahlung €/Monat
+                {askHeating ? 'Übrige Vorauszahlung €/Monat' : 'Vorauszahlung €/Monat'}
                 <input value={newTenant.prepayment} style={{ width: 120 }} placeholder="z. B. 150,00" onChange={(e) => setNewTenant({ ...newTenant, prepayment: e.target.value })} />
               </label>
+              {askHeating && (
+                <label className="field">
+                  Heizvorauszahlung €/Monat
+                  <input value={newTenant.heatingPrepayment ?? ''} style={{ width: 120 }} placeholder="z. B. 120,00" onChange={(e) => setNewTenant({ ...newTenant, heatingPrepayment: e.target.value })} />
+                </label>
+              )}
             </div>
           )}
           <div className="notice" style={{ marginTop: 10 }}>

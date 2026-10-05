@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit,
-  recommendedDeadlineText, scheduleOf, settlementPaths, settlementTitle,
+  recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, Statement, Tenancy } from './types'
@@ -85,5 +85,16 @@ describe('Kostenformular und Mietverhältnis', () => {
   test('Staffel aus dem Formular', () => {
     expect(scheduleOf([{ from: '2025-05', amount: '123,00' }, { from: '', amount: '' }])).toEqual([{ from: '2025-05', monthlyCents: 12300 }])
     expect(scheduleOf([{ from: '2025-05', amount: 'viel' }])).toEqual({ error: 'Bitte die Staffel der Heizvorauszahlung prüfen (Monat und Betrag).' })
+  })
+})
+
+describe('Heizvorauszahlung im Mietverhältnis (Durchsicht von #231, Important 2)', () => {
+  test('Gefragt wird, wenn die Anlage der Wohnung getrennt abrechnet', () => {
+    const unit = { id: 'u1', noConnection: undefined }
+    expect(separateHeatingFor(unit, [plant()])).toBe(false)
+    expect(separateHeatingFor(unit, [plant({ separateSpans: [{ from: '2025-05', until: null }] })])).toBe(true)
+    expect(separateHeatingFor(unit, [plant({ separateSpans: [{ from: '2025-05', until: k('2026-05') }] })])).toBe(false)
+    expect(separateHeatingFor(unit, [plant({ periodStartMonth: null, separateSettlement: true })])).toBe(true)
+    expect(separateHeatingFor(unit, [plant({ separateSpans: [{ from: '2025-05', until: null }], units: [{ unitId: 'u2', heatedAreaM2: null }] })])).toBe(false)
   })
 })

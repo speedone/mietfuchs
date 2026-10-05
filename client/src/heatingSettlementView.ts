@@ -3,9 +3,9 @@
 // Heizkostenabrechnungen, ihre Fristen im Cockpit, die Heizkorrektur, die Heizperioden im
 // Kostenformular und die Heizstaffel im Mietverhältnis. Ohne DOM prüfbar.
 import { fmtDate, parseEuro } from './api'
-import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules } from '../../shared/heatingPeriod.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules, servesUnit } from '../../shared/heatingPeriod.ts'
 import { periodLabel } from '../../shared/period.ts'
-import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy } from './types'
+import type { BillingPeriod, HeatingPlant, HeatingPrepaymentOverride, HeatingSettlementInfo, PeriodKey, PeriodRules, Settlement, Statement, Tenancy, Unit } from './types'
 
 const sameDays = (a: Pick<BillingPeriod, 'from' | 'to'>, b: Pick<BillingPeriod, 'from' | 'to'>): boolean => a.from === b.from && a.to === b.to
 
@@ -105,4 +105,13 @@ export function scheduleOf(rows: readonly { from: string; amount: string }[]): {
     result.push({ from: row.from, monthlyCents: cents })
   }
   return result
+}
+
+// Rechnet die Anlage, die die Wohnung versorgt, die Heizkosten getrennt ab (offene Spanne nach Weg d
+// oder H = P mit getrennter Vorauszahlung)? Dann fragen Mietverhältnis und Mieterwechsel die
+// Heizvorauszahlung mit ab (Durchsicht von #231, Important 2).
+export function separateHeatingFor(unit: Pick<Unit, 'id' | 'noConnection'>, plants: readonly HeatingPlant[]): boolean {
+  const plant = plants.find((p) => servesUnit(p, unit))
+  if (!plant) return false
+  return plant.separateSpans.some((s) => s.until === null) || (!hasOwnRhythm(plant) && plant.separateSettlement === true)
 }

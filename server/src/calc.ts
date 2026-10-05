@@ -3015,6 +3015,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
             'Teilen Sie die Vorauszahlung unter Stammdaten → Heizung auf („Vorauszahlung aufteilen“); an der Summe ändert sich nichts.',
           { kind: 'heatingPlant', id: plant.id })
       }
+      // Weg d (Durchsicht von #231): Monate, die einer getrennt abgerechneten Heizperiode gehören, ohne
+      // Heizvorauszahlung. Deren Heizkostenabrechnung wiese 0 € aus, und die volle Vorauszahlung stünde
+      // in P; typisch für ein neues Mietverhältnis, bei dem die Heizstaffel fehlt.
+      const way = wayOf(plant)
+      const heizRate: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
+      const ohne = periodMonths(period).filter((m) => t.start <= `${m}-01` && !(t.end && t.end < `${m}-01`) &&
+        separateOwner(way, objectRules, m) !== null && rateAtMonth(heizRate, m) === 0 && rateAtMonth(t.prepayments, m) > 0)
+      if (ohne.length > 0) {
+        warn('prepayment.heating-share-missing',
+          `${t.tenantName} (${t.unit.name}): Die Heizkosten ${monthSpanText(ohne)} werden getrennt abgerechnet, für diese Monate ist aber keine Heizvorauszahlung erfasst; ` +
+            'die Heizkostenabrechnung weist dafür 0 € aus, und die ganze Vorauszahlung steht in dieser Abrechnung. Tragen Sie die Heizvorauszahlung im Mietverhältnis ein (Stammdaten); die übrige Vorauszahlung verringert sich um denselben Betrag.',
+          { kind: 'tenancy', id: t.id })
+      }
       const heizstaffel = t.heatingPrepayments ?? []
       const first = [...heizstaffel].sort((a, b) => compareText(a.from, b.from))[0]
       if (first === undefined) continue
