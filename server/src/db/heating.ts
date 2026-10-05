@@ -19,16 +19,16 @@
 //
 // Diese Datei importiert aus repository.ts, nie umgekehrt; die Prüfungen an Kostenpositionen und
 // Zählern stehen dort, weil sie zum Verschmelzen dieser Sammlungen gehören.
-import { and, count, eq, inArray, isNull } from 'drizzle-orm'
+import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
-import { periodKey } from '../../../shared/period.ts'
+import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
-import { readHeatingPlants } from './read.ts'
+import { readHeatingPlants, readProperties } from './read.ts'
 import { asNullableFilled, asNullableText, asText, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import {
   CHANGE_SPLITS, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, heatingPlants, heatingPlantUnits, meters,
+  HEATING_SOURCES, HEATING_SUPPLIES, heatingPeriods, heatingPlants, heatingPlantUnits, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -212,4 +212,65 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
     await tx.delete(heatingPlants).where(eq(heatingPlants.id, id))
   })
   return { removed: true, released }
+}
+
+const plantName = (name: string): string => (name ? `„${name}“` : 'ohne Namen')
+
+// Befunde an den Heizanlagen im ganzen Bestand, als lesbare Sätze (Entwurf 5.3, 5.9). Leer heißt in
+// Ordnung. Über die Routen entsteht keiner davon; in einem Archiv kann einer stehen. Dieselbe Haltung
+// wie `crossPropertyViolations` in repository.ts.
+export async function heatingPlantViolations(db: Database): Promise<string[]> {
+  const befunde: string[] = []
+  const wohnungen = await db
+    .select({ plant: heatingPlants.name, unit: units.name })
+    .from(heatingPlantUnits)
+    .innerJoin(heatingPlants, eq(heatingPlantUnits.plantId, heatingPlants.id))
+    .innerJoin(units, eq(heatingPlantUnits.unitId, units.id))
+    .where(ne(heatingPlants.propertyId, units.propertyId))
+  for (const w of wohnungen) befunde.push(`Die Heizanlage ${plantName(w.plant)} versorgt die Wohnung „${w.unit}“ eines anderen Objekts.`)
+  const posten = await db
+    .select({ description: costItems.description })
+    .from(costItems)
+    .innerJoin(heatingPlants, eq(costItems.heatingPlantId, heatingPlants.id))
+    .where(ne(costItems.propertyId, heatingPlants.propertyId))
+  for (const c of posten) befunde.push(`Die Kostenposition „${c.description}“ gehört zur Heizanlage eines anderen Objekts.`)
+  const zaehler = await db
+    .select({ name: meters.name })
+    .from(meters)
+    .innerJoin(heatingPlants, eq(meters.heatingPlantId, heatingPlants.id))
+    .where(ne(meters.propertyId, heatingPlants.propertyId))
+  for (const z of zaehler) befunde.push(`Der Zähler „${z.name}“ gehört zur Heizanlage eines anderen Objekts.`)
+
+  // Überlappende Anlagen: Ab zwei Anlagen in einem Objekt braucht jede ihre Liste, und keine Wohnung
+  // hängt an zweien. Sonst verteilten zwei Anlagen dieselben Kosten auf dieselben Mieter.
+  const anlagen = await readHeatingPlants(db)
+  const unitNames = new Map((await db.select({ id: units.id, name: units.name }).from(units)).map((u) => [u.id, u.name]))
+  for (const propertyId of new Set(anlagen.map((p) => p.propertyId))) {
+    const imObjekt = anlagen.filter((p) => p.propertyId === propertyId)
+    if (imObjekt.length < 2) continue
+    for (const p of imObjekt.filter((x) => x.units === null)) {
+      befunde.push(`Im Objekt stehen mehrere Heizanlagen, und die Heizanlage ${plantName(p.name)} hat keine Liste der Wohnungen; dann versorgten zwei Anlagen dieselben Wohnungen.`)
+    }
+    const gesehen = new Set<string>()
+    for (const unitId of imObjekt.flatMap((p) => (p.units ?? []).map((u) => u.unitId))) {
+      if (gesehen.has(unitId)) befunde.push(`Die Wohnung „${unitNames.get(unitId) ?? unitId}“ hängt an mehreren Heizanlagen.`)
+      gesehen.add(unitId)
+    }
+  }
+
+  // Heizperioden: In dieser Version ist jede Heizperiode ein Abrechnungszeitraum des Objekts (eine
+  // eigene kommt mit PR 5).
+  const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
+  const perioden = await db
+    .select({ period: heatingPeriods.period, propertyId: heatingPlants.propertyId, name: heatingPlants.name })
+    .from(heatingPeriods)
+    .innerJoin(heatingPlants, eq(heatingPeriods.plantId, heatingPlants.id))
+  for (const h of perioden) {
+    const rules = rulesById.get(h.propertyId)
+    const key = parsePeriodKey(h.period)
+    if (!rules || key === null || periodOfKey(rules, key) === null) {
+      befunde.push(`Die Heizanlage ${plantName(h.name)} hat Angaben zur Heizperiode ${h.period}, die es für ihr Objekt nicht gibt.`)
+    }
+  }
+  return befunde
 }
