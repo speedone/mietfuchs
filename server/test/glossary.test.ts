@@ -114,3 +114,28 @@ test('Zeiträume (#208): Abrechnungszeitraum, Rumpf, Leistungsprinzip und Gradta
   assert.equal((70000 / 0.53 / 12 / 100).toFixed(2), '110.06')
   assert.match(GLOSSARY.degreeDays.norm, /§ 9b Abs\. 2 HeizkostenV/)
 })
+
+test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen aus dem Register', () => {
+  // 24.105,6 kg bei 600 m²: 40,176 kg, auf eine Nachkommastelle 40,2 (§ 5 Abs. 1 Satz 3) → 37 bis
+  // unter 42 kg, Vermieter 60 % (Anlage). 600 € CO₂-Kosten: 360 € Vermieter, 240 € Mieter.
+  assert.equal(Math.round((24105.6 / 600) * 10) / 10, 40.2)
+  const split = GLOSSARY.co2Split
+  assert.match(split.example, /24\.105,6 kg CO₂ bei 600 m² Wohnfläche: 40,2 kg je m², Stufe 37 bis unter 42 kg/)
+  assert.match(split.example, /trägt 60 % der CO₂-Kosten, also 360 €, die Mieter tragen 240 €/)
+  assert.match(split.example, /um 3 % kürzen/)
+  assert.match(split.needed, /am oder nach dem 01\.01\.2023 beginnt/)
+  assert.equal(split.norm, '§§ 5, 7 CO2KostAufG')
+  assert.match(GLOSSARY.co2Stage.short, /einer von 10 Stufen/)
+  assert.match(GLOSSARY.co2Stage.short, /0 % unter 12 kg bis 95 % ab 52 kg/)
+  assert.match(GLOSSARY.co2Stage.example, /40,176 kg je m², gerundet 40,2: Stufe 37 bis unter 42 kg, der Vermieter trägt 60 %/)
+  // 5.421 kg bei 200,6 m²: 27,0239 kg, gerundet 27,0.
+  assert.equal(Math.round((5421 / 200.6) * 100) / 100, 27.02)
+  assert.match(GLOSSARY.co2Area.example, /5\.421 kg CO₂ bei 200,6 m² laut Messdienst ergeben 27,02 kg je m², gerundet 27,0/)
+  // Techem-Muster (Entwurf 7.2, 7.4): 3.540,00 − 87,50 = 3.452,50; 3.845,51 + 87,50 = 3.933,01.
+  assert.equal(354000 - 8750, 345250)
+  assert.equal(384551 + 8750, 393301)
+  assert.match(GLOSSARY.co2Deducted.example, /3\.540,00 €.*87,50 €.*3\.452,50 €.*3\.845,51 €.*3\.933,01 €/s)
+  // 15 % von 1.000 € (BGH VIII ZR 151/20, Entwurf R-A6).
+  assert.match(GLOSSARY.hotWaterShare.example, /1\.000 €.*um 15 % kürzen, also um 150 €/s)
+  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 HeizkostenV; BGH VIII ZR 151/20')
+})
