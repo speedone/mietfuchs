@@ -247,6 +247,7 @@ const noticeKinds = {
   'co2.sum-check': { level: 'error', title: 'CO₂-Angaben passen nicht zu den Positionen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.sum-check-approx': { level: 'hint', title: 'CO₂-Angaben mit geschätzter Summe', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.pool-foreign-item': { level: 'hint', title: 'Position ohne Einzelbeträge bei der Heizanlage', terms: ['individualAmounts', 'co2Split'] },
+  'co2.share-capped': { level: 'hint', title: 'CO₂-Anteil des Vermieters passt nicht in die Position', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
   'co2.reliefs-invalid': { level: 'error', title: 'Beträge „vom Vermieter übernommen“ passen nicht', rule: 'co2-split', terms: ['co2Split'] },
   'co2.reliefs-missing': { level: 'warning', title: 'Betrag „vom Vermieter übernommen“ fehlt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.probably-deducted': { level: 'warning', title: 'CO₂-Anteil vermutlich schon abgezogen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
@@ -2786,6 +2787,20 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // einzigen Grund ganz an den Vermieter, gilt dieser Grund und kein Eigenanteil.
     const parts: LandlordPart[] = recipients.flatMap((r, k) => (r.landlord && cents[k] !== 0 ? [{ reason: r.key as LandlordReason, cents: cents[k] }] : []))
     if (!forced) selfUsedShareCents += parts.find((p) => p.reason === 'selfUse')?.cents ?? 0
+    // Vorwegabzug (Heizung PR 6, Durchsicht M-2): Reicht der Rest der Position nicht für den
+    // CO₂-Anteil, kappt `take()` ihn. Mehr als den Rundungsspielraum heißt: L steckt in einer
+    // anderen Messdienstposition. Geld wandert dadurch nicht (beides bleibt beim Vermieter), nur
+    // der Grund stimmt nicht; der Hinweis führt zur Wahl der Position.
+    const co2Deduction = co2Deductions.get(item.id)
+    if (co2ShareRaw !== null && co2Deduction && !forced) {
+      const capped = Math.round(co2ShareRaw) - (parts.find((p) => p.reason === 'co2Share')?.cents ?? 0)
+      if (capped > co2Deduction.toleranceCents + 1) {
+        warn('co2.share-capped',
+          `„${item.description}“: Der Rest dieser Position nach den Einzelbeträgen reicht nicht für den CO₂-Anteil des Vermieters von ${fmtCents(co2Deduction.landlordCents)}; ${fmtCents(capped)} fehlen. ` +
+            'Vermutlich steckt der Abzug in einer anderen Position des Messdienstes. Wählen Sie auf der Seite Heizkosten unter „Position mit dem CO₂-Anteil“ die Position, die die Zeile „Abzüglich CO₂-Kosten Vermieter“ enthält.',
+          { kind: 'heatingCosts', id: item.heatingPlantId ?? '' })
+      }
+    }
     if (landlordCents !== 0) {
       landlordRows.push({
         costItemId: item.id,

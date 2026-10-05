@@ -408,3 +408,19 @@ test('Invarianten: Summe, Vorwegabzug, Abzugszeilen und Kürzungen auf die gedru
     }
   }
 })
+
+test('Vorwegabzug in der falschen Position: Kappt take() den co2Share über den Rundungsspielraum, sagt ein Hinweis es (Durchsicht M-2)', () => {
+  // L steckt in der kleineren Position B; Mietfuchs nimmt ohne Wahl die größte (A), deren Rest 0 ist.
+  const a = messdienst(200000, { ta: 120000, tb: 80000 }, { id: 'A', description: 'Heizung' })
+  const b = messdienst(110000, { ta: 60000, tb: 40000 }, { id: 'B', description: 'Warmwasser' })
+  const s = { units: [unit('a'), unit('b')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')], costItems: [a, b] }
+  const st = co2({ serviceUsersTotalCents: 300000, serviceLandlordCents: 10000, serviceUnitsCount: 2 })
+  const r = settle(s, [st])
+  const n = r.notices.find((x) => x.code === 'co2.share-capped') ?? assert.fail(`kein Hinweis: ${codes(r).join(', ')}`)
+  assert.deepEqual([n.level, n.subject], ['hint', { kind: 'heatingCosts', id: 'hp' }])
+  assert.match(n.text, /„Heizung“/)
+  assert.match(n.text, /100,00 €/)
+  const gewaehlt = settle(s, [{ ...st, serviceCostItemId: 'B' }])
+  assert.ok(!codes(gewaehlt).includes('co2.share-capped'))
+  assert.deepEqual(partsOf(gewaehlt, 'B'), [{ reason: 'co2Share', cents: 10000 }])
+})

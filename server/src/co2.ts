@@ -219,7 +219,9 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
 
 // ---------- Vorwegabzug (Entwurf 7.4) ----------
 
-export type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean }
+// `toleranceCents`: der Rundungsspielraum der Probe (NE · 2 ct). Kappt `take()` den co2Share um mehr,
+// steckt L vermutlich in einer anderen Position (Durchsicht M-2).
+export type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean; toleranceCents: number }
 
 // Beim Vorwegabzug mit bestandener Probe (mit geschätztem S im weiteren Spielraum) die Zerlegung des Vermieterrests
 // in der Position, in der L steckt: L_self (laut Messdienst, sonst L · Eigenbeträge / S) und den
@@ -243,7 +245,7 @@ export function co2DeductionsOf(pots: readonly Co2Pot[], units: readonly Snapsho
       0,
     )
     const self = selfLandlordRaw(L, S, selfNet, st.serviceSelfLandlordCents)
-    out.set(pot.carrierId, { landlordCents: L, selfRaw: self.raw, selfApproximated: self.approximated })
+    out.set(pot.carrierId, { landlordCents: L, selfRaw: self.raw, selfApproximated: self.approximated, toleranceCents: pot.probe.toleranceCents })
   }
   return out
 }
