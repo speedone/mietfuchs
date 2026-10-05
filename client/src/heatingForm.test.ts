@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, emptyHeatingForm, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, emptyHeatingForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -92,4 +92,12 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt({ remote: 'all', installedAfter: 'all', newInstall: 'whole' }), UNITS)).toMatchObject({ body: { newDevicesInstall: null } })
     expect(heatingToForm(PLANT, UNITS).newInstall).toBe('single')
   })
+})
+
+test('Warmwasser laut Messdienst (Heizung PR 6): die Bestätigung des Aufwands gibt es nur zu einer Formel', () => {
+  expect(HOT_WATER_OPTIONS.map((o) => o.value)).toEqual(['', 'heatMeter', 'volumeFormula', 'areaFormula'])
+  expect([isFormula('volumeFormula'), isFormula('areaFormula'), isFormula('heatMeter'), isFormula('')]).toEqual([true, true, false, false])
+  expect(hotWaterBody('areaFormula', true)).toEqual({ dhwMethod: 'areaFormula', dhwUnmeasurable: true })
+  expect(hotWaterBody('heatMeter', true)).toEqual({ dhwMethod: 'heatMeter', dhwUnmeasurable: null })
+  expect(hotWaterBody('', false)).toEqual({ dhwMethod: null, dhwUnmeasurable: null })
 })

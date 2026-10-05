@@ -163,10 +163,9 @@ test('Hinweis an der Heizanlage führt in die Stammdaten (Heizung PR 5)', () => 
   expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingPlant', id: 'hp1' } })
 })
 
-test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben vorerst in den Stammdaten (Heizung PR 6)', () => {
+test('Heizanlage als Ziel: ohne Anlage zur Einrichtung, CO₂-Angaben auf der Seite Heizkosten (Heizung PR 6)', () => {
   expect(noticeTarget({ kind: 'heatingPlant', id: '' })).toEqual({ tab: 'stammdaten', label: 'Heizung einrichten →', focus: { kind: 'heatingPlant', id: '' } })
   // Mit Anlage bleibt das Ziel aus PR 5 (Zeitraum der Heizung in den Stammdaten).
   expect(noticeTarget({ kind: 'heatingPlant', id: 'hp1' })?.tab).toBe('stammdaten')
-  // Bis es die Seite Heizkosten gibt (Task 11), führen die CO₂-Hinweise ebenfalls zur Karte „Heizung“.
-  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'stammdaten', label: 'Hier beheben → Stammdaten', focus: { kind: 'heatingCosts', id: 'hp1' } })
+  expect(noticeTarget({ kind: 'heatingCosts', id: 'hp1' })).toEqual({ tab: 'heizkosten', label: 'Hier beheben → Heizkosten', focus: { kind: 'heatingCosts', id: 'hp1' } })
 })

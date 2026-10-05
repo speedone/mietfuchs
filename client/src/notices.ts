@@ -66,7 +66,7 @@ export function noticeClass(level: NoticeLevel): 'error' | 'notice' | 'hint' {
   return level === 'error' ? 'error' : level === 'warning' ? 'notice' : 'hint'
 }
 
-export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto'
+export type NoticeTab = 'kosten' | 'stammdaten' | 'zaehler' | 'mietkonto' | 'heizkosten'
 const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> = {
   costItem: { tab: 'kosten', page: 'Kosten' },
   unit: { tab: 'stammdaten', page: 'Stammdaten' },
@@ -74,9 +74,8 @@ const TARGETS: Record<NoticeSubject['kind'], { tab: NoticeTab, page: string }> =
   meter: { tab: 'zaehler', page: 'Zähler' },
   rentLedger: { tab: 'mietkonto', page: 'Mietkonto' },
   heatingPlant: { tab: 'stammdaten', page: 'Stammdaten' },
-  // Heizung PR 6: die CO₂-Angaben; vorerst die Karte „Heizung“ in den Stammdaten, mit Task 11 die
-  // Seite Heizkosten.
-  heatingCosts: { tab: 'stammdaten', page: 'Stammdaten' },
+  // Heizung PR 6: die CO₂-Angaben und das Warmwasser stehen auf der Seite Heizkosten.
+  heatingCosts: { tab: 'heizkosten', page: 'Heizkosten' },
 }
 
 // Wohin „Hier beheben →“ führt: zur Seite und dort zum Eintrag (#142). `focus` reicht die App an

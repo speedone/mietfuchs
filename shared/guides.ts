@@ -22,7 +22,7 @@ const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
-export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
+export const GUIDE_PAGES = ['stammdaten', 'zaehler', 'kosten', 'mietkonto', 'heizkosten', 'abrechnung', 'steuer', 'einstellungen', 'belege'] as const
 export type GuidePage = (typeof GUIDE_PAGES)[number]
 
 export type GuideStep = {
