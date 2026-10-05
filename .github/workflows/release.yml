@@ -225,6 +225,9 @@ jobs:
       - name: Rechtsregister geprüft?
         if: github.ref_type == 'tag'
         working-directory: server
+        # Ausdrücklich bash: GitHub ruft es dann mit `-eo pipefail` auf, und ein gescheiterter Test
+        # geht nicht in `tee` unter.
+        shell: bash
         env:
           MIETFUCHS_RELEASE: '1'
         run: |
