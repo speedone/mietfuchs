@@ -775,10 +775,35 @@ für die Kalenderzeiträume, sonst bliebe eine zurückgesetzte Korrektur stehen.
 `period` ist eine 400 und wird nicht still ersetzt. Ein
 Schlüssel, den es für sein Objekt nicht gibt, wird beim Schreiben abgelehnt und beim Wiederherstellen
 eines Archivs ebenso (`orphanPeriodKeys`). Die Frist kommt vom Server (`Settlement.deadline`,
-`settlementDeadline` mit `bgb.deadline-months`) und friert mit ein. **Bedienung fehlt noch** (PR 3
-des Meilensteins Heizung): Rhythmus und Wechsel lassen sich über die Oberfläche nicht setzen, die
-Oberfläche denkt in Kalenderjahren und übersetzt an Stellen mit dem Kommentar „Brücke Kalenderjahr
-(#208)“.
+`settlementDeadline` mit `bgb.deadline-months`) und friert mit ein.
+**Bedienung** (PR 3): Den Rhythmus ändert nur der Wechsel mit Vorschau
+([server/src/db/periodChange.ts](server/src/db/periodChange.ts), `POST /api/properties/:id/period/preview`
+und `PUT …/period`); er bekommt die ganzen neuen Regeln und vergleicht sie mit den alten. Ein
+abgeschlossener Zeitraum, der sich änderte, sperrt (409); Jahreskorrekturen werden neu erfasst, wenn
+ein Mietverhältnis danach Monate in mehr als einem oder einem anders geschnittenen Zeitraum hat
+(eine gezahlte Summe lässt sich nicht verteilen), ohne Antwort wird nicht gespeichert. **Kalte
+Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen aufgeteilt**
+([server/src/serviceSplit.ts](server/src/serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den
+ganzen Leistungszeitraum, daran erkennt die Abrechnung ihn. Heizkosten nie (VIII ZR 156/11), dort
+warnt `period.heating-mismatch`. `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem
+Zeitraum über zwei Kalenderjahre; die Steuerübersicht eines solchen Objekts schöpft aus allen
+Abrechnungen, die das Jahr berühren (`taxPartsFor` in calc.ts). **Der Vorschlag nach § 560 im
+Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
+kalt nach Tagen, Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
+Vereinigung der Leistungszeiträume, feste Heizpositionen nach den Tagen ihres Leistungszeitraums;
+fehlt für den Brennstoff ein Faktor, gibt es keinen Vorschlag. Die Oberfläche hält einen **Tag** und
+keinen Schlüssel ([client/src/period.tsx](client/src/period.tsx), Logik in
+[client/src/periodForm.ts](client/src/periodForm.ts)): Der Zeitraum ist der, der ihn enthält, so
+passt ein Objektwechsel ihn von selbst an. Beim Kalenderobjekt heißt der Umschalter weiter
+„Abrechnungsjahr“, seine Werte sind Jahreszahlen und die Routen bekommen die Jahreszahl; Mietkonto
+und Steuer haben bei abweichendem Zeitraum einen eigenen Kalenderjahr-Umschalter. Die Belegbuchung
+bucht in `bookingPeriod` (shared/assessment.ts): den gewählten Zeitraum, wenn er das Jahr des Belegs
+berührt, sonst den mit der größten Überschneidung. Der gewählte Zeitraum einer Auswertung entsteht
+aus dem gewählten Jahr nach den Regeln des Objekts (`periodForYear`) und nie als festes `JJJJ-01`:
+Das wäre bei Mai bis April ein verwaister Schlüssel, und jedes spätere Backup lehnte das
+Wiederherstellen ab. Ein schon aufgeteilter Teil wird bei einem weiteren Wechsel nur über den Teil
+seines Leistungszeitraums neu geteilt, der in seinem bisherigen Zeitraum liegt, und beim Berichtigen
+seines Betrags nicht noch einmal (`needsSplitCheck` mit der gespeicherten Position).
 
 **Belegordner** (#170, [client/src/pages/Belege.tsx](client/src/pages/Belege.tsx), Logik in
 [client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,

@@ -154,6 +154,23 @@ const bestandHeute = () => ({
   ...kern(),
 })
 
+// Fünf Jahre Bestand (#208, Praxislauf Fall 16): dieselben Wohnungen, Mietverhältnisse seit 2021,
+// je Jahr eine Müllabfuhr und eine Grundsteuer, eine Jahreskorrektur 2023.
+const bestandFuenfJahre = () => {
+  const b = bestandHeute()
+  for (const t of b.tenancies) {
+    t.start = '2021-01-01'
+    t.personHistory = [{ from: '2021-01-01', persons: t.persons }]
+    t.prepayments = [{ from: '2021-01', monthlyCents: t.prepayments[0].monthlyCents }]
+  }
+  b.tenancies[0].prepaymentOverrides = { 2023: 170000 }
+  b.costItems = [2021, 2022, 2023, 2024, 2025].flatMap((year, i) => [
+    { id: `m${year}`, year, category: 'Müllabfuhr', description: `Abfallgebühren ${year}`, amountCents: 120000 + i * 3001, key: 'area' },
+    { id: `g${year}`, year, category: 'Grundsteuer', description: `Grundsteuer ${year}`, amountCents: 48000 + i * 7, key: 'units' },
+  ])
+  return b
+}
+
 // Ein Bestand, der mit dem Kern nichts gemein hat: eine andere Wohnung, ein anderer Betrag.
 //
 // **Er ist der Vorzustand, wenn ein Fall beweisen soll, dass ein Stand von außen wirklich
@@ -680,6 +697,88 @@ fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
   } finally {
     ollama.stop()
   }
+})
+
+fall(15, 'Backup mit abweichendem Zeitraum und Rumpf (#208)', async () => {
+  // Die eigene Heizperiode (Entwurf 5.9) kommt mit PR 5 dazu; hier der Zeitraum des Objekts.
+  const dataDir = tempDir()
+  const regeln = { startMonth: 1, changes: ['2025-05'] }
+  const senden = (base, pfad, method, body) => fetch(`${base}${pfad}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const pruefen = async (base, name) => {
+    const [o] = await holen(base, '/api/properties')
+    gleich(o?.periodRules, regeln, `${name}: der Rhythmus ist da`)
+    const kosten = (await holen(base, '/api/costItems')).map((c) => [c.period, c.amountCents]).sort()
+    gleich(kosten, [['2025-01', 15781], ['2025-05', 32219]], `${name}: die Grundsteuer ist nach Tagen aufgeteilt`)
+    const rumpf = await holen(base, '/api/settlement/2025-01')
+    gleich([rumpf.period?.label, rumpf.deadline, rumpf.statements?.[0]?.prepaymentCents], ['01.01.–30.04.2025', '2026-04-30', 70000], `${name}: der Rumpf rechnet mit der neu erfassten Jahreskorrektur`)
+    gleich((await fetch(`${base}/api/settlement/2025`)).status, 404, `${name}: die nackte Jahreszahl gibt es für dieses Objekt nicht`)
+  }
+  await withServer(dataDir, async ({ base }) => {
+    const unit = await jsonOf(await senden(base, '/api/units', 'POST', { name: 'EG', areaM2: 60, participates: true }))
+    const mieter = await jsonOf(await senden(base, '/api/tenancies', 'POST', {
+      unitId: unit.id, tenantName: 'Müller', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 20000 }], prepaymentOverrides: { '2025-01': 220000 },
+    }))
+    await senden(base, '/api/costItems', 'POST', { period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' })
+    const [objekt] = await holen(base, '/api/properties')
+    const vorschau = await jsonOf(await senden(base, `/api/properties/${objekt.id}/period/preview`, 'POST', { rules: regeln }))
+    gleich(vorschau.newShort?.map((p) => p.label), ['01.01.–30.04.2025'], 'Wechsel: die Vorschau nennt den Rumpf')
+    const ohne = await senden(base, `/api/properties/${objekt.id}/period`, 'PUT', { rules: regeln })
+    gleich(ohne.status, 409, 'Wechsel: ohne die neu erfasste Jahreskorrektur wird nicht gespeichert')
+    const mit = await senden(base, `/api/properties/${objekt.id}/period`, 'PUT', { rules: regeln, answers: { overrides: { [mieter.id]: { '2025-01': 70000, '2025-05': null } } } })
+    gleich(mit.status, 200, 'Wechsel: mit Antworten gespeichert')
+    await pruefen(base, 'vor dem Backup')
+    const zip = await backupHolen(base)
+    await senden(base, '/api/units', 'POST', { name: 'Nach dem Backup', areaM2: 10, participates: true })
+    gleich((await holen(base, '/api/units')).length, 2, 'Wiederherstellen: vorher sind es zwei Wohnungen')
+    const antwort = await backupEinspielen(base, zip)
+    gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
+    gleich((await holen(base, '/api/units')).length, 1, 'Wiederherstellen: der Stand des Archivs gilt')
+    await pruefen(base, 'nach dem Wiederherstellen')
+  })
+  await withServer(dataDir, async ({ base }) => {
+    await pruefen(base, 'nach dem Neustart')
+  })
+})
+
+fall(16, 'Datenbank von 0.10.1 mit Kostenpositionen in fünf Jahren, Update auf Zeiträume (#208)', async () => {
+  // Der Weg der meisten Nutzer nach diesem Release: Die Datenbank steht auf 0013, und die neue
+  // Version zieht `year` auf `period` um (0014/0015) und legt die Spalten aus 0016/0017 an. Jede
+  // Zahl muss bleiben, wie die Berechnung sie vorher ergab.
+  const { applyMigrations, connect, loadMigrations } = await import('../server/src/db/client.ts')
+  const { migrateLegacy, straightenForDatabase } = await import('../server/src/legacy/migrate.ts')
+  const { writeStock } = await import('../server/src/legacy/write.ts')
+  const { computeSettlement } = await import('../server/src/calc.ts')
+  const { snapshotFromDb } = await import('../server/src/snapshot.ts')
+  const dataDir = tempDir()
+  const connection = await connect(path.join(dataDir, 'mietfuchs.sqlite'))
+  const migrations = await loadMigrations()
+  const bis = migrations.findIndex((m) => m.tag === '0014_zeitraum')
+  if (bis < 0) return fail('Schritt 0014_zeitraum fehlt')
+  applyMigrations(connection, migrations.slice(0, 1))
+  const gerade = straightenForDatabase(migrateLegacy(/** @type {any} */ (bestandFuenfJahre())))
+  await writeStock(connection.db, gerade)
+  applyMigrations(connection, migrations.slice(0, bis))
+  connection.close()
+
+  const jahre = [2021, 2022, 2023, 2024, 2025]
+  const zeilen = (s) => (s.statements ?? []).map((st) => [st.tenancyId, st.totalShareCents, st.prepaymentCents, st.balanceCents]).sort()
+  const vorher = Object.fromEntries(jahre.map((y) => [y, zeilen(computeSettlement(snapshotFromDb(gerade, y)))]))
+  await withServer(dataDir, async ({ base }) => {
+    const kosten = await holen(base, '/api/costItems')
+    gleich([...new Set(kosten.map((c) => c.period))].sort(), jahre.map((y) => `${y}-01`), 'Update: jede Position trägt den Kalenderzeitraum ihres Jahres')
+    gleich(kosten.every((c) => c.year === Number(String(c.period).slice(0, 4))), true, 'Update: ein Tab von vor dem Update liest weiter das Jahr')
+    for (const y of jahre) {
+      const s = await holen(base, `/api/settlement/${y}`)
+      gleich(zeilen(s), vorher[y], `Update: Abrechnung ${y} auf den Cent wie vorher`)
+      gleich([s.period?.key, s.deadline], [`${y}-01`, `${y + 1}-12-31`], `Update: Abrechnung ${y} mit Zeitraum und Frist`)
+    }
+    const mieter = await holen(base, '/api/tenancies')
+    // Beim Kalenderobjekt nennt die Route die Jahreskorrektur nach Jahreszahl, für Tabs von vor dem
+    // Update (Durchsicht von #222, M1); gespeichert ist sie unter dem Zeitraum 2023-01, und die
+    // Abrechnung 2023 oben rechnet mit ihr.
+    gleich(mieter.find((t) => t.id === 't1')?.prepaymentOverrides, { 2023: 170000 }, 'Update: die Jahreskorrektur ist da')
+  })
+  dateienImOrdner(dataDir, 'Update', { 'mietfuchs.sqlite.vor-0014_zeitraum': true })
 })
 
 // ---------- Lauf ----------
