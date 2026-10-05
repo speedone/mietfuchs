@@ -1,6 +1,6 @@
 # Spezifikation: Heizung gesamt (Meilenstein 0.11.0)
 
-- **Fassung:** achte Fassung vom 05.10.2026, nach der Nachprüfung der siebten Fassung. Die Änderungen stehen je Befund in 0.11 bis 0.5.
+- **Fassung:** achte Fassung vom 05.10.2026 mit dem Nachtrag aus den Planprüfungen (0.12). Die Änderungen stehen je Befund in 0.12 bis 0.5.
 - **Ersetzt** die drei Teilentwürfe. Sie bleiben als Herleitung auf ihren Zweigen liegen, gelten aber nicht mehr:
   - CO₂-Kostenaufteilung, 3. Fassung (`feat/co2-kostenaufteilung`, `docs/superpowers/specs/2026-10-04-co2-kostenaufteilung-design.md`);
   - Abrechnungszeitraum (`feat/abrechnungszeitraum`, `…/2026-10-05-abrechnungszeitraum-design.md`);
@@ -299,6 +299,68 @@ Grundlage ist die Nachprüfung der sechsten Fassung vom 05.10.2026 (D1–D3, R-a
 | D3 | Feste Positionen derselben Art im § 560-Vorschlag | Übernommen: Σ Beträge × 365 / Tage der Vereinigung der Leistungszeiträume / 12 ([R] VIII ZR 294/10). Testfall 30,42 € statt 60,85 €. **Ändert PR 3** an dieser Stelle. | 3.7, 12.2, 13 PR 3 |
 
 **Folgen für PR 1–4:** PR 1, 2 und 4 bleiben unverändert. PR 3 ändert sich nur durch D3.
+
+### 0.12 Nachtrag aus den Planprüfungen
+
+Grundlage sind die Prüfungen der Pläne PR 10–22 vom 05.10.2026 und die Änderungsabschnitte in `docs/superpowers/plans/`. Die Belege stehen in den Prüfberichten. Hier stehen nur die Befunde, die den Entwurf betreffen.
+
+**§ 6a, Eichfrist, CO₂ ab 2028, Selbstversorger:**
+
+| Thema | Entscheidung | Beleg | Abschnitt |
+|---|---|---|---|
+| § 6a Abs. 3 Nr. 4 (Durchschnittsnutzer) | **Kein Hausdurchschnitt.** Der Vergleichswert kommt vom Vermieter mit Quelle. Bei Heizkostenverteilern genügt die Bestätigung „Vergleich des Messdienstes liegt bei“. | BR-Drs. 643/21, S. 18 (zu Abs. 2 Nr. 3: „nicht ein Vergleich mit den Nutzern im selben Gebäude“) und S. 20 (zu Abs. 3 Nr. 4: entsprechend) | 8.8, 15.2 F5, 15.3 |
+| Eichfrist | Neue Fristen ab **03.11.2021** (3. ÄndVO MessEV, BGBl. I 2021 S. 4742). Davor, 2015–2021: Kaltwasser 6, Warmwasser 5, Wärmezähler 5 Jahre. Für Warm- und Wärmezähler mit Kennzeichnung 2016–2021 gibt es keinen Vorschlag. Die Eichfrist von Gas- und Stromzählern ergibt sich aus Anlage 7 Nr. 5.6 und 6, nicht aus § 35. | MessEV Anlage 7, §§ 34, 35; MessEG § 37; frühere Fassungen über buzer (vor dem Merge am BGBl. bestätigen) | 3.12, 4.3 |
+| § 5a Abs. 4, Notfalleinbau | Zwölf Monate **ab dem Einbau**, nicht das Kalenderjahr 2028 | BT-Drs. 21/7009, S. 154 | 4.3, 15.1 Nr. 24 |
+| § 5a und Contracting | Erfasst: § 5a gilt auch für Anlagen, die Dritte im Contracting betreiben. Keine Sperre. | BT-Drs. 21/6278, S. 124 | 4.3, 13 PR 18 |
+| § 5d Abs. 4 S. 2 | Traten die Voraussetzungen nach Vertragsschluss ein, genügt die Mitteilung mit der Abrechnung. Das Datum gehört **ans Mietverhältnis** (`tenancies.half_split_notice_on`), denn die Information ist je Mieter geschuldet. | BT-Drs. 21/7009, S. 156 | 4.3, 5.3 |
+| Angespannter Markt | Wert mit Gültigkeitszeitraum (`tight_market_from`/`_to`) statt eines zeitlosen Wahrheitswerts | Die Verordnungen sind befristet: § 556d Abs. 2 S. 4, § 558 Abs. 3 S. 3, § 577a Abs. 2 S. 2 BGB | 4.3, 5.3 |
+| Gasherd −5 % (§ 6 Abs. 3) | Nur bei einem Gerät **im Eigentum des Mieters** | BT-Drs. 20/3172, S. 35 | 4.3, 13 PR 19 |
+
+**Heizkostenverordnung:**
+
+| Thema | Entscheidung | Beleg | Abschnitt |
+|---|---|---|---|
+| Wärmepumpe vor 01.10.2024 | Bis 30.09.2024 waren überwiegend mit Wärmepumpe versorgte Gebäude nach § 11 Abs. 1 Nr. 3 a a. F. von §§ 3–7 (und über Abs. 2 von § 8) ausgenommen. Für Heizperioden davor gibt es einen Hinweis statt eines Fehlers. Nur bei nicht überwiegender Versorgung (`heatGeneration = 'mixed'`) bleibt § 9 Abs. 1 S. 5 a. F. | HeizkostenV a. F. über buzer (Fassungsvergleich) | 13 PR 11, PR 14 |
+| § 11 je Topf | Die Ausnahme gilt je Topf (Wärme, Warmwasser), mit eigener Prüfung für das Warmwasser nach § 11 Abs. 2. Der § 6a-Block entfällt nur, wenn beide Töpfe ausgenommen sind. | § 11 Abs. 1, 2 HeizkostenV | 8.9, 13 PR 14 |
+| Vereinbarung nach § 2 | Hebt nur § 12 Abs. 1 S. 1 (15 %) auf. Fernablesbarkeit (S. 2) und § 6a (S. 3) gelten weiter. Ist eine `manual`-Anlage nach Verbrauch verteilt, gilt § 6a Abs. 3 voll; die Kurzform nach Abs. 5 nur ohne Verbrauch. | § 2 HeizkostenV („rechtsgeschäftliche Bestimmungen“ nur, soweit sie den Maßstab regeln); § 6a Abs. 5 | 8.8, 8.9, 13 PR 14 |
+| § 9a | Die Schätzung ersetzt nur den **nicht erfassten** Teil. Ein Nutzer mit gültiger Zwischenablesung behält seinen Messwert. Eine Schätzung trotz vollständiger Ablesung wird gemeldet. | § 9a Abs. 1 S. 2 („anstelle des erfassten Verbrauchs“) | 8.7, 13 PR 13 |
+| Ablesungen am Mieterwechsel | Am Wechsel erfasste Ablesungen sind **fest an ihre Grenze** gebunden; die Nähe-Regel gilt nur als Rückfall. Zwei verschiedene Werte eines Zählers am selben Tag sind ein Befund, keine stille Wahl (wie #69). Der Anfangsstand von H ist der eingefrorene Endstand einer abgeschlossenen H−1. Ab der Warngrenze wählt der Vermieter zwischen Ablesung und § 9b Abs. 3 Alt. 2. | § 9b Abs. 1, 3; Bestand #69; Prüfung PR 10 | 3.5, 13 PR 10 |
+| 15 % nach CO₂-Abzug | Auch bei nur einem unerfassten Topf ist die Grundlage der Topfanteil des Mieters **nach** seinem CO₂-Abzug. Der Ausweis druckt den Topfbetrag je Mieter. | § 12 Abs. 1 S. 1 („soweit“); 6.5 | 6.5, 13 PR 10 |
+| Hackschnitzel | Fassung bis 30.11.2021: 650 kWh/SRm; ab 01.12.2021: 4 kWh/kg (lufttrocken). gesetze-im-internet.de druckt die alte Tabelle noch ab (Konsolidierungsversehen). | BGBl. 2021 I S. 4964 (vor dem Merge am PDF bestätigen); buzer | 4.3 `hkv.heating-values` |
+| Faktor 0,30 | Gilt erst **ab 01.10.2024** (§ 9 Abs. 2 S. 6 Nr. 3 n. F.); davor nur Nr. 1 und 2 | HeizkostenV a. F. über buzer | 4.3 `hkv.dhw.factors` |
+| Contracting | Unabhängig vom Brennstoff. § 7 Abs. 3, § 9 Abs. 1 S. 2 und § 9 Abs. 2 S. 6 Nr. 2 gelten für jede eigenständige gewerbliche Wärmelieferung (§ 1 Abs. 1 Nr. 2); § 2 Abs. 1 S. 2 CO2KostAufG begrenzt nur die CO₂-Aufteilung. | HeizkostenV §§ 1, 7, 9 | 13 PR 16 |
+
+**Betriebsstrom, Umsatzsteuer, monatliche Information:**
+
+| Thema | Entscheidung | Beleg | Abschnitt |
+|---|---|---|---|
+| Betriebsstrom | Der BGH lässt den **Bruchteil der Brennstoffkosten** als Schätzgrundlage zu und nennt Literaturwerte, ohne selbst einen Wert festzulegen. Die Hilfe bekommt einen Weg „Betrag selbst geschätzt“. Die Spannen bleiben Lexikontext, kein Rechenweg. | [R] V ZR 166/15, Rn. 14 (geprüft über rewis) | 13 PR 15, 16 |
+| Umsatzsteuer, Mischsatz | Bei Ablesezeiträumen über den 01.10.2022 oder den 01.04.2024 ist jeder Satz zwischen 7 und 19 % plausibel. | BMF-Schreiben vom 25.10.2022, Rz. 12 (Aufteilung nach Tagen bzw. Verbrauch) | 13 PR 17 |
+| Monatliche Information (§ 6a Abs. 1, 2) | „Um 3 %“ nur für Mieter, deren Wohnung selbst fernablesbar ausgestattet ist. Bei gemischter Ausstattung: „im Einzelfall zu prüfen, möglich ist eine Kürzung um 3 %“. | BR-Drs. 643/21, S. 17 (Einzelfallprüfung bei gemischter Ausstattung) | 8.8, 13 PR 22 |
+
+**Neu in 15.1 und 15.2** (aus den Prüfungen von PR 11, 18 und 19, jeweils als Auslegung):
+
+- 15.1 Nr. 23 (§ 9 und § 5a, beide Lesarten);
+- Nr. 24 (§ 5a Abs. 4 S. 2);
+- Nr. 25 (§ 8 Abs. 2 und die Auszahlungsfrist);
+- Nr. 26 (Einbau am 01.01.2027);
+- Nr. 27 (3 % oder 6 %);
+- Nr. 13 ergänzt um die Gegenstimme der Begründung (BT-Drs. 21/6278, S. 124: „für Abrechnungszeiträume ab dem 01. Januar 2028“). Mietfuchs folgt weiter dem Wortlaut („angefallen“).
+- 15.2 F7: Flächenformel im Rumpf nach Tagen (§ 9b Abs. 2).
+
+**Geprüft und berichtigt: Contracting mit Wärmepumpe (PR 16).** Der Plan lehnte das Merkmal Contracting bei einer Wärmepumpe „als Auslegung“ ganz ab, weil offen ist, ob für Formelwerte § 9 Abs. 2 S. 6 Nr. 2 (÷ 1,15) oder Nr. 3 (× 0,30) gilt.
+
+- **Die Ablehnung ist zu weit.**
+  - [G] § 556c Abs. 1 BGB knüpft an die Umstellung „auf die eigenständig gewerbliche Lieferung durch einen Wärmelieferanten“ an, ohne Einschränkung nach dem Wärmeerzeuger.
+  - [G] § 1 WärmeLV ebenso (beide am 05.10.2026 gelesen).
+  - [G] § 9 Abs. 1 S. 2 HeizkostenV teilt bei Wärmelieferung nach dem **Wärmeverbrauch**, und das ist bei gemessener Wärme eindeutig.
+- **Folge der Ablehnung:** Ein Vermieter mit Wärmepumpen-Contracting bekäme weder die Hinweise nach § 556c BGB und WärmeLV noch die richtige Rechnung, sondern müsste die Anlage als eigene führen.
+- **Korrektur für PR 16:**
+  - Contracting auch bei der Wärmepumpe zulassen, mit den Hinweisen nach § 556c und WärmeLV.
+  - Der Warmwasseranteil wird dort nur **gemessen** gerechnet (Q / gelieferte Wärme laut Rechnung).
+  - Nur die **Formeln** (Volumen- und Flächenformel) werden mit dem Satz zur offenen Frage nach Nr. 2 oder Nr. 3 gesperrt (`heating.dhw-share-invalid`). Das ist die engste Sperre, die keine Zahl rät.
+
+**Folgen für PR 1–9:** keine. Die Korrekturen betreffen die Pläne PR 10–22; ihre Änderungsabschnitte führen sie bereits, außer der Berichtigung zu PR 16 (Wärmepumpe).
 
 ---
 
@@ -820,8 +882,8 @@ Bleibt nach Kalendermonaten. Bei Weg d führt es beide Vorauszahlungen, `prepaym
 - **Eichfrist.** [G] MessEV Anlage 7 (geprüft 05.10. durch Gegenprüfung R):
   - Nr. 5.5.1 Kaltwasserzähler, Nr. 5.5.2 Warmwasserzähler und Nr. 7.1 Wärmezähler je **sechs** Jahre.
   - [G] § 34 Abs. 2: Die Frist endet mit Ablauf des Jahres. Das passt zu `calibrated_until` als Jahreszahl.
-  - [G] § 35: Die Frist kann im Stichprobenverfahren verlängert werden; dazu gibt es einen Hinweis am Zähler.
-  - **Das Datum der Umstellung von fünf auf sechs Jahre (02.11.2021) und das Übergangsrecht für vorher geeichte Zähler sind ungeprüft** (LBME NRW, ista; vor PR 21 im BGBl. lesen). Bis dahin schlägt Mietfuchs keine Frist vor, sondern fragt das Jahr, bis zu dem geeicht ist.
+  - [G] § 35: Die Frist kann im Stichprobenverfahren verlängert werden; dazu gibt es einen Hinweis am Zähler. Dass Gas- und Stromzähler eine Eichfrist haben, folgt nicht aus § 35, sondern aus § 34 Abs. 1 mit Anlage 7 Nr. 5.6 (Gaszähler) und Nr. 6 (Elektrizitätszähler) und § 37 Abs. 1 MessEG (0.12).
+  - **Fassungen** (0.12, Prüfung PR 21): Die 3. Änderungsverordnung zur MessEV (BGBl. I 2021 S. 4742) gilt **ab 03.11.2021**. Davor galten vom 01.01.2015 bis 02.11.2021 (Urfassung und Fassungen 2017, 2019): Kaltwasser **6**, Warmwasser **5**, Wärmezähler **5** Jahre (Anlage 7 Nr. 5.5.1, 5.5.2, 7.1; konsolidiert über buzer, vor dem Merge am BGBl. 2014 S. 2010 bestätigen). Die 4. Änderung (BGBl. 2024 I Nr. 27) berührt diese Nummern nicht. Für Warm- und Wärmezähler mit Kennzeichnungsjahr 2016–2021 sagt der Wortlaut nicht, ob 5 oder 6 Jahre gelten (keine Übergangsregel); dort schlägt Mietfuchs keine Frist vor und fragt.
 - **Heizkostenverteiler sind keine eichpflichtigen Messgeräte** (Z-B10). Für Zähler vom Typ `hkv` gibt es kein `calibrated_until` (Prüfbedingung) und keinen Hinweis.
 - **Hinweis** `meter.calibration-overdue` (warning): Die Werte werden trotzdem verwendet (#91).
 
@@ -944,13 +1006,13 @@ Alle Werte stehen nur hier. **Ein Parameter kommt mit der PR ins Register, die i
 | `co2.cut.missing` | 3 % | § 7 Abs. 4 | periodStart | geprüft 05.10. | 6 |
 | `co2.half-split` | Vermieter 500 ‰ für Netzentgelte (incurred ab 01.01.2028) und CO₂-Kosten (ab 01.01.2028, anteilig als Auslegung); Biobrennstoff ab 01.01.2029, höchstens 30 % | § 5a Abs. 1, 3 | incurred | geprüft 05.10. | 18 |
 | `co2.half-split.new-buildings` | § 5a entsprechend bei Errichtung und erster Nutzung bis 31.12.2029; nicht bei Bauantrag oder Bauanzeige vor 13.05.2026 | § 5b | eventDate | geprüft 05.10. | 18 |
-| `co2.half-split.emergency` | Einbau nach irreparablem Ausfall weniger als zwölf Monate vor 01.01.2028: Abs. 1–3 ruhen zwölf Monate ab Einbau; Fälle nach § 43 Abs. 7 GModG | § 5a Abs. 4 | eventDate | geprüft 05.10. | 18 |
-| `co2.half-split.two-family` | im selbst bewohnten Gebäude mit höchstens zwei Wohnungen keine Teilung, außer die Gemeinde steht in einer Verordnung nach § 556d Abs. 2 S. 1, § 558 Abs. 3 S. 3 oder § 577a Abs. 2 S. 2 BGB; nur mit Mitteilung in Textform | § 5d Abs. 1 Nr. 1, Abs. 3, 4 | periodStart | geprüft 05.10. | 18 |
-| `co2.self-supply` | Anzeige binnen 12 Monaten; −5 % bei Nutzung eigener Geräte zu anderen Zwecken | § 6 Abs. 2, 3 | eventDate | geprüft 05.10. | 19 |
+| `co2.half-split.emergency` | Einbau nach irreparablem Ausfall vom 01.01. bis 31.12.2028 (§ 43 Abs. 7 S. 1 GModG) ohne vorherige Pflicht: Abs. 1–3 ruhen **zwölf Monate ab dem Einbau** (BT-Drs. 21/7009, S. 154; §§ 187 Abs. 1, 188 Abs. 2 BGB); Einbau weniger als zwölf Monate vor dem 01.01.2028 nach Satz 1 | § 5a Abs. 4 | eventDate | geprüft 05.10. | 18 |
+| `co2.half-split.two-family` | im selbst bewohnten Gebäude mit höchstens zwei Wohnungen und gemeinsamer Wärmeversorgung keine Teilung, außer die Gemeinde steht in einer Verordnung nach § 556d Abs. 2 S. 1, § 558 Abs. 3 S. 3 oder § 577a Abs. 2 S. 2 BGB **im Zeitraum** (`tight_market_from`/`_to`, die Verordnungen sind befristet); Mitteilung in Textform **je Mietverhältnis** (`tenancies.half_split_notice_on`); traten die Voraussetzungen nach Vertragsschluss ein, genügt sie mit der Abrechnung (§ 5d Abs. 4 S. 2; BT-Drs. 21/7009, S. 156) | § 5d Abs. 1 Nr. 1, Abs. 3, 4 | periodStart | geprüft 05.10. | 18 |
+| `co2.self-supply` | Anzeige binnen 12 Monaten; −5 % nur bei einem Gerät **im Eigentum des Mieters**, das den Brennstoff zu anderen Zwecken nutzt (BT-Drs. 20/3172, S. 35) | § 6 Abs. 2, 3 | eventDate | geprüft 05.10. | 19 |
 | `co2.price` | 2023: 30, 2024: 45, 2025: 55, 2026: 60 €/t (Mittelwert des Preiskorridors 55–65 nach § 4 Abs. 1 Nr. 2, kein Festpreis; Hinweis 4 der dritten Prüfung, Wortlaut durch Gegenprüfung R gelesen); 2027: `null` | § 3 Abs. 3, § 4 Abs. 1, 2; DEHSt | deliveryYear, überschreibbar | geprüft 05.10. | 17 |
 | `co2.price-ets` | 2023: 80,40; 2024: 83,68; 2025: 65,01; 2026: 73,86 €/t | § 3 Abs. 4 Nr. 4 b, § 4 Abs. 3 | eventDate (Rechnungsdatum − 1 Jahr) | Regel geprüft 05.10., Werte übernommen | 17 |
 | `co2.ebev-factors` | Erdgas 0,20088 kg/kWh Hᵢ bzw. 0,18139 Hₛ; Heizöl EL 0,2664 kg/kWh bzw. 2,6763 kg/l; Flüssiggas 0,2358 bzw. 3,013 kg/kg | EBeV 2030 Anlage 2 Teil 4 | deliveryYear | übernommen | 17 |
-| `messev.calibration-years` | Kaltwasser, Warmwasser, Wärme je 6 | MessEV Anlage 7 Nr. 5.5.1, 5.5.2, 7.1; § 34 Abs. 2 | eventDate | Werte geprüft 05.10.; Übergangsdatum ungeprüft | 21 |
+| `messev.calibration-years` | ab 03.11.2021: Kaltwasser, Warmwasser, Wärme je 6; 01.01.2015–02.11.2021: Kaltwasser 6, Warmwasser 5, Wärme 5 | MessEV Anlage 7 Nr. 5.5.1, 5.5.2, 7.1; § 34 Abs. 2 | eventDate | Werte ab 2021 geprüft 05.10.; frühere Fassung `adopted` (buzer) | 21 |
 | `practice.vacancy-persons` | 1 | Auslegung nach BGH VIII ZR 180/12 | periodStart | Bestand (#177) | 1 |
 | `practice.evaporator-window` | 400–800 ‰ | [M] ARGE (Berliner Mieterverein, ista) | periodStart | geprüft 05.10.; nur Lexikon | 12 |
 | `practice.reading-off-warning` | ab einem Monat Abweichung in Oktober bis April | Haufe-Kommentar (Literatur), ⟨Norm offen: VDI 2077⟩ | periodStart | sekundär | 10 |
@@ -1769,7 +1831,7 @@ Jede Position mit Betrag A und Ziel z bekommt die Rohwerte A · g_r(z) und wird 
 | 1 c | Entgelte für Geräte, Eichung, Ablesung, Abrechnung | automatisch aus Teil `metering` |
 | 2 | Kontaktinformationen | fester Text, jährlich geprüft (4.8) |
 | 3 | Streitbeilegung bei Verbrauchervertrag | nur mit `consumer_contract` |
-| 4 | Vergleich mit Durchschnittsnutzer | Hausdurchschnitt je m², so benannt. ⟨Norm offen: DIN 94680⟩, die laut Inhaltsangabe Vergleichswerte enthält |
+| 4 | Vergleich mit Durchschnittsnutzer | **Kein Hausdurchschnitt** (BR-Drs. 643/21, Begründung zu § 6a Abs. 2 Nr. 3, S. 18: „Gemeint ist damit nicht ein Vergleich mit den Nutzern im selben Gebäude“, zu Abs. 3 Nr. 4, S. 20: gilt entsprechend). Der Vergleichswert kommt vom Vermieter **mit Quelle** (Wert des Messdienstes oder eines Vergleichstests). Bei Heizkostenverteilern genügt die Bestätigung „Vergleich des Messdienstes liegt bei“. Fehlt beides: 3 % (0.12). ⟨Norm offen: DIN 94680⟩ |
 | 5 | Vergleich mit dem vorhergehenden Zeitraum, witterungsbereinigt, grafisch, Wärme und Warmwasser | Klimafaktor des DWD je Postleitzahl, abgefragt (15.2 F5) |
 
 **Fehlende Angaben** (R-A17, [G] § 12 Abs. 1 S. 3: „nicht oder nicht vollständig“):
@@ -2470,7 +2532,7 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 | 10 | Umrechnung von E über eine Lücke ohne Rechnung | § 5 Abs. 1 S. 5 spricht von den „auf den Rechnungen ausgewiesenen“ Emissionen | E auf H umgerechnet (sonst wäre die Stufe zu niedrig); C und Brennstoffkosten nie hochgerechnet, **außer als ausdrücklich geschätzte Lieferung mit Vorbehalt** (8.2) | `fuel.uncovered`, `fuel.estimated` |
 | 11 | Ist ein einseitiger Rumpf oder ein Rumpf nur der Heizperiode „vereinbart“ (§ 5 Abs. 1 S. 4)? | Wortlaut „vereinbart“; [S] NebenkostenFix kürzt nur bei Vereinbarung; Messdienste rechnen auf ihren Zeitraum | kürzen wie die Messdienste | `co2.short-period-agreed` nennt das Wort und verweist auf den Mietvertrag |
 | 12 | Einseitiger Wechsel des Zeitraums mit Rumpf | kein BGH; [M] Brunata: nur aus sachlichem Grund | Rumpf mit Hinweis | `period.short` |
-| 13 | CO₂-Kosten nach § 5a Abs. 3 Nr. 2 in einer Heizperiode über den 01.01.2028 | Abs. 3 Nr. 2 sagt nur „ab dem 1. Januar 2028“; „angefallen“ mit Umrechnung steht in Abs. 1 für Netzentgelte und Biobrennstoff | anteilig nach Anfall wie Abs. 1 | `co2.half-split` |
+| 13 | CO₂-Kosten nach § 5a Abs. 3 Nr. 2 in einer Heizperiode über den 01.01.2028 | Abs. 3 Nr. 2 sagt nur „ab dem 1. Januar 2028“; „angefallen“ mit Umrechnung steht in Abs. 1 für Netzentgelte und Biobrennstoff | anteilig nach Anfall wie Abs. 1. Gegenstimme: Die Begründung (BT-Drs. 21/6278, S. 124) spricht von Netzentgelten „für Abrechnungszeiträume ab dem 01. Januar 2028“; der Gesetzestext („angefallen“) trägt die Lesart nach Anfall | `co2.half-split` |
 | 14 | § 6a Abs. 3 Nr. 5 im ersten Jahr ohne Vorjahr | Wortlaut ohne Ausnahme | „bis zu 3 %“ | `heating.info-incomplete` |
 | 15 | Pauschale oder Warmmiete und § 6 Abs. 1 CO2KostAufG | keine Rechtsprechung | keine Rechnung | Lexikon |
 | 16 | „Überwiegend dem Wohnen“ (§ 6 Abs. 1) | Maßstab offen | Schalter, Vorgabe Wohngebäude | Lexikon |
@@ -2480,6 +2542,11 @@ Hier gibt es Quellen, aber keine Entscheidung. Mietfuchs wählt die vorsichtige 
 | 20 | Gilt die Mitteilungspflicht des § 5d Abs. 4 auch für Abs. 3? | Abs. 4 spricht von den „Voraussetzungen des Härtefalls“, die Überschrift des § 5d von Härtefällen | ja, als Auslegung: ohne Mitteilung hälftig (zulasten des Vermieters, also vorsichtig gegenüber dem Mieter) | `co2.half-split-two-family` |
 | 21 | Getrennte Heizkostenabrechnung (Weg d) | § 556 Abs. 3 S. 1, 4 BGB; VIII ZR 240/07 Rn. 17–22 (Teilabrechnungen erlaubt, Leitsatz a nur bei einheitlicher Vorauszahlung) – Umkehrschluss; ob eine im Vertrag getrennt ausgewiesene Vorauszahlung eine getrennte Abrechnung verlangt, ist Vertragsauslegung | Weg d nur bei getrennter Abrechnung und H ≠ P; Zustimmungsvorbehalt, wenn der Vertrag den Zeitraum festlegt | Einrichtung Schritt 3 |
 | 22 | 15 % bei Wärmepumpe ohne Erfassung nach dem 30.09.2025 | § 12 Abs. 3 S. 2: Verordnung erst ab dem Zeitraum nach der Installation; ohne Installation wörtlich nie; BT-Drs. 20/7619 schweigt zur Kürzung | Die Pflicht aus S. 1 ist verletzt, also gilt § 12 Abs. 1 S. 1 (15 %) | `heating.no-consumption` mit Vermerk „Auslegung“ |
+| 23 | § 9 CO2KostAufG und der Anteil nach § 5a | **Für** eine Kürzung nach § 9: § 6 Abs. 2 S. 1 umfasst seit 29.07.2026 § 5a Abs. 3, die CO₂-Kosten nach § 5a Abs. 3 Nr. 2 werden nach § 7 Abs. 1 abgerechnet, § 9 Abs. 1 nennt §§ 5–8. **Dagegen:** § 9 Abs. 1 meint den Anteil „nach § 5, 6, 7 oder 8“, die Teilung folgt aus § 5a „in Abweichung von § 5 Abs. 2“. Die Begründungen (BT-Drs. 21/6278, 21/7009) schweigen. | Auslegung zulasten des Vermieters: § 9 kürzt den Teil nach § 5a nicht; bei § 9 Abs. 2 ist der Teil nach Stufen 0 ‰ | `co2.restriction` |
+| 24 | § 5a Abs. 4 S. 2: „in § 43 Abs. 7 S. 1 genannter Zeitraum“ | Wortlaut lässt Kalenderjahr 2028 oder Übergangszeit zu; BT-Drs. 21/7009, S. 154: „erst nach einer Übergangszeit von 12 Monaten ab dem Einbau“ | Auslegung nach der Begründung: zwölf Monate ab dem Einbau | `co2.half-split` |
+| 25 | § 8 Abs. 2 CO2KostAufG verweist seit 29.07.2026 auf § 6 Abs. 2 S. 2 bis 4; die Auszahlungsfrist steht jetzt in S. 5 | wahrscheinlich Redaktionsversehen, keine Quelle | Auslegung: Mietfuchs warnt trotzdem und nennt die Frage | `co2.refund-due` |
+| 26 | Einbau am 01.01.2027 und § 5a Abs. 4 S. 1 („weniger als zwölf Monate vor dem 1. Januar 2028“) | §§ 187, 188 BGB treffen ihn nicht genau; die Begründung spricht von einer „Havarie im Verlauf des Jahres 2027“ (BT-Drs. 21/7009, S. 154) | nach dem Wortlaut nicht eingeschlossen | Hinweis bei Einbau 01.01.2027 |
+| 27 | Treffen § 7 Abs. 4 (CO₂) und § 7 Abs. 5 S. 3 (Netzentgelte, Bio) zusammen: 3 % oder 6 %? | Wortlaut schweigt | nicht summieren, jede Kürzung einzeln (wie 6.5) | `co2.half-split-missing` |
 
 ### 15.2 Verbleibende Festlegungen ohne Primärquelle
 
@@ -2525,7 +2592,7 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
 **F5: § 6a Abs. 3 Nr. 4 und 5**
 
 - *Recherche:* Die Bekanntmachung der Vereinfachungen nach § 6a Abs. 3 S. 4 wurde nicht gefunden. Nächste amtliche Grundlage sind die GEG-Bekanntmachung „Regeln für Energieverbrauchswerte im Wohngebäudebestand“ (29.03.2021, BAnz 16.04.2021) und die [Klimafaktoren des DWD](https://www.dwd.de/DE/leistungen/klimafaktoren/klimafaktoren.html). Nr. 4 vermutlich in DIN 94680.
-- *Lösung:* Hausdurchschnitt je m², so benannt, und Klimafaktor des DWD. ⟨Norm offen: DIN 94680⟩
+- *Lösung:* **Kein Hausdurchschnitt** (BR-Drs. 643/21, S. 18 und 20, siehe 8.8). Der Vergleichswert für Nr. 4 kommt vom Vermieter mit Quelle; bei Heizkostenverteilern genügt die Bestätigung, dass der Vergleich des Messdienstes beiliegt. Für Nr. 5 Klimafaktor des DWD. ⟨Norm offen: DIN 94680⟩
 - *Hinweis:* Der Druckblock nennt die Grundlage.
 
 **F6: Plausibilitätsgrenzen**
@@ -2553,6 +2620,12 @@ Für jede Festlegung stehen hier der Rechercheweg, die konservativste oder verbr
 | Ablesung nicht am Stichtag mit § 9a | ersetzt durch OLG Schleswig, AG Nordhorn, LG Osnabrück, VIII ZR 373/04 |
 | ±1 Tag, 14 Tage Fortschreibung, 75 %, größte Überschneidung, 1 € Toleranz der Probe | entfallen |
 
+**F7: Flächenformel des § 9 Abs. 2 S. 4 im Rumpfzeitraum** (Prüfung PR 11)
+
+- *Recherche:* Die Formel liefert „Kilowattstunden pro Jahr“; für einen kürzeren Zeitraum muss umgerechnet werden. Weder Verordnung noch Messdienste nennen das Verfahren; VDI 2077 Bl. 3.1 nicht gelesen.
+- *Lösung:* nach Tagen, weil § 9b Abs. 2 die Kosten des Warmwasserverbrauchs zeitanteilig teilt und Warmwasser nicht witterungsabhängig ist. ⟨Norm offen: VDI 2077⟩
+- *Hinweis:* Rechenweg „Flächenformel auf {Tage} Tage umgerechnet“.
+
 ### 15.3 Regeln, die an kostenpflichtigen Normen hängen
 
 Ob VDI 2077 und DIN 94680:2024-05 beschafft werden, entscheidet der Nutzer. Bis dahin stützen sich diese Regeln auf die dokumentierte Praxis der Messdienste und tragen im Text, im Lexikon und im Ausweis die Marke ⟨Norm offen⟩.
@@ -2566,7 +2639,7 @@ Ob VDI 2077 und DIN 94680:2024-05 beschafft werden, entscheidet der Nutzer. Bis 
 | Zwischenablesung neben dem Wechsel, Monatswerte | 3.5, F3 | VDI 2077 | [M] ista, Brunata | PR 10 |
 | Gemessenes Q gegen Brennwert-kWh | 8.3, 15.1 Nr. 9 | VDI 2077 | Wortlaut § 9 | PR 10 |
 | Selbst abgelesene elektronische HKV, Skalen und Bewertungsfaktoren | 8.1 | VDI 2077; DIN EN 834 | [M] Haufe, Berliner Mieterverein | PR 12 |
-| Durchschnittsnutzer und Witterungsbereinigung (§ 6a Abs. 3 Nr. 4, 5) | 8.8, F5 | DIN 94680 | Hausdurchschnitt, Klimafaktor des DWD | PR 14 |
+| Durchschnittsnutzer und Witterungsbereinigung (§ 6a Abs. 3 Nr. 4, 5) | 8.8, F5 | DIN 94680 | Wert mit Quelle vom Vermieter (kein Hausdurchschnitt, BR-Drs. 643/21), Klimafaktor des DWD | PR 14 |
 | Rohrwärme (Nicht-Ziel) | 16 | VDI 2077 (Beiblatt) | – | – |
 
 ---
