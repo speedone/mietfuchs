@@ -579,6 +579,11 @@ export type SettlementRow = {
   // in den Zeilen des Vermieteranteils, und optional, weil eine vorher abgeschlossene Abrechnung
   // sie nicht kennt; die Oberfläche nennt die Gründe dann pauschal wie zuvor.
   landlordParts?: LandlordPart[]
+  // Eine Zeile ohne Kostenposition (Heizung PR 6): `co2Relief` ist der CO₂-Anteil des Vermieters,
+  // der dem Mieter als eigene Zeile abgezogen wird (Entwurf 7.5, 9.4). `costItemId` trägt dann die
+  // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. Spätere PRs
+  // ergänzen `fuelCarry` und `co2Refund`.
+  kind?: 'co2Relief'
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -593,10 +598,12 @@ export type SettlementRow = {
 //   `amountsRest`   bei Einzelbeträgen der Rest, den kein Mietverhältnis trägt
 //   `customRest`    bei vereinbarten Anteilen, was unter 100 % fehlt
 //   `mainMeterRest` beim Verbrauch der Teil des Hauptzählers, den kein Wohnungszähler misst
+//   `co2Share`      CO₂-Anteil des Vermieters (Heizung PR 6): beim Vorwegabzug der abziehbare Teil
+//                   in der Position des Messdienstes, beim reinen Ausweis die Summe der Abzugszeilen
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
-  | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'rounding'
+  | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -652,7 +659,10 @@ export type NotSettled = {
 export type NoticeLevel = 'info' | 'hint' | 'warning' | 'error'
 // Wo man den Hinweis behebt. Daraus wird der Knopf „Hier beheben →“.
 // `rentLedger` (#133): das Mietkonto eines Mietverhältnisses, `id` ist die Kennung des Mietverhältnisses.
-export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant'; id: string }
+// `heatingPlant` (Heizung PR 5): die Heizanlage in den Stammdaten; `id` leer heißt, es gibt noch keine,
+// und der Knopf führt zur Einrichtung (PR 6). `heatingCosts` (Heizung PR 6): die CO₂-Angaben und das
+// Warmwasser einer Anlage auf der Seite Heizkosten; `id` ist die Anlage.
+export type NoticeSubject = { kind: 'costItem' | 'unit' | 'tenancy' | 'meter' | 'rentLedger' | 'heatingPlant' | 'heatingCosts'; id: string }
 export type Notice = {
   code: string
   level: NoticeLevel
@@ -723,6 +733,10 @@ export type Settlement = {
   // #135). Der Server entscheidet das (isGarageLike in calc.ts), das Cockpit übernimmt es.
   // Optional, weil eine vorher abgeschlossene Abrechnung das Feld nicht kennt.
   garageLikeUnitIds?: string[]
+  // Je Heizanlage und Heizperiode dieser Abrechnung, was der Druckblock braucht (Heizung PR 6,
+  // Entwurf 5.7, 9.5). Optional, weil eine vorher abgeschlossene Abrechnung es nicht kennt und eine
+  // Abrechnung ohne Heizanlage es nicht hat.
+  heating?: HeatingStatement[]
   // gesetzt, wenn die Abrechnung abgeschlossen (eingefroren) ist
   closed: { closedAt: string; sentAt: string | null } | null
   // Nur bei einer abgeschlossenen Abrechnung (#56): Was die heutige Berechnung je Mieter anders
@@ -1268,3 +1282,98 @@ export type SeparateHeatingRef = { plantId: string; plantName: string; period: S
 export type HeatingScopeRef = { kind: 'heating'; plantId: string; plantName: string }
 // Eine Heizkostenabrechnung nach Weg d in der Liste für Cockpit und Abrechnungsseite (Heizung PR 5).
 export type HeatingSettlementInfo = SeparateHeatingRef & { closed: { closedAt: string; sentAt: string | null } | null }
+
+// ---------- CO₂ (Heizung PR 6, Entwurf 5.5, 7, 9.5) ----------
+
+// Wie die CO₂-Kosten in der Heizkostenabrechnung stehen. `serviceDeducted`: Der Messdienst hat den
+// Anteil des Vermieters in der Kostenaufstellung abgezogen („Abzüglich CO₂-Kosten Vermieter“);
+// `serviceShown`: nur ausgewiesen; `selfAfterService`: gar nicht aufgeteilt; `self`: Mietfuchs teilt
+// selbst auf (PR 7).
+export type Co2Method = 'serviceDeducted' | 'serviceShown' | 'selfAfterService' | 'self'
+
+// Ein Betrag „vom Vermieter übernommen“ laut Messdienst, je Mietverhältnis.
+export type Co2TenantRelief = { tenancyId: string; cents: number }
+
+// Die CO₂-Angaben einer Heizperiode. Die Felder `service*` stehen so in der Abrechnung des
+// Messdienstes oder der Gemeinschaft. S (`serviceUsersTotalCents`) ist die gedruckte Zeile der zu
+// verteilenden Kosten Heizung und Warmwasser, beim Vorwegabzug also nach dem Abzug (G-B3);
+// `serviceUsersTotalApprox`: Die Zeile war nicht zu finden, S ist die Summe der Einzelbeträge
+// aller Nutzeinheiten (Entwurf 7.3, R6). L ist `serviceLandlordCents`, L_self
+// `serviceSelfLandlordCents`, G und V `serviceFuelGrossCents` und `serviceFuelNetCents`.
+export type Co2Statement = {
+  heatingPeriodId: string
+  plantId: string
+  period: PeriodKey
+  method: Co2Method
+  areaM2: number | null
+  serviceEmissionsKg: number | null
+  serviceAreaM2: number | null
+  serviceKgPerM2: number | null
+  serviceLandlordPermille: number | null
+  serviceTotalCents: number | null
+  serviceLandlordCents: number | null
+  serviceUsersTotalCents: number | null
+  serviceUsersTotalApprox: boolean
+  serviceUnitsCount: number | null
+  serviceCostItemId: string | null
+  serviceSelfLandlordCents: number | null
+  serviceFuelGrossCents: number | null
+  serviceFuelNetCents: number | null
+  reliefs: Co2TenantRelief[]
+}
+
+// Eine Zeile des Ausweises je Mieter: „vom Vermieter übernommen“ und „in Ihren Heizkosten
+// enthalten“. `approximated`: nach dem Anteil an den Messdienstbeträgen gerechnet, weil die
+// Abrechnung keinen Wert je Mieter nennt; `tenantCents` ist null ohne die CO₂-Kosten insgesamt.
+export type Co2TenantLine = { tenancyId: string; landlordCents: number; tenantCents: number | null; approximated: boolean }
+
+// Die Stufe als Spanne, für den Druckblock: von `from` bis unter `to` kg je m² (ohne `to`: ab).
+export type Co2StageRange = { from: number; to: number | null; landlordPercent: number }
+
+// Was die Abrechnung zur CO₂-Aufteilung einer Heizperiode weiß (Entwurf 9.5). `booked`: die
+// Aufteilung ist gebucht (Probe bestanden oder S geschätzt); `deducted`: beim Messdienst schon
+// abgezogen. `stage` ist die Stufe, in die Mietfuchs den Wert laut Messdienst einordnet, `table`
+// die Tabelle (bei kurzer Heizperiode mit gekürzten Grenzen, `shortened`).
+export type Co2Assessment = {
+  method: Co2Method
+  booked: boolean
+  deducted: boolean
+  totalCents: number | null
+  landlordCents: number | null
+  landlordPermille: number | null
+  kgPerM2: number | null
+  emissionsKg: number | null
+  areaM2: number | null
+  stage: Co2StageRange | null
+  table: Co2StageRange[]
+  shortened: boolean
+  selfLandlordCents: number | null
+  selfApproximated: boolean
+  tenants: Co2TenantLine[]
+}
+
+// Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.
+export type HeatingStatement = {
+  plantId: string
+  plantName: string
+  energy: HeatingEnergy
+  period: PeriodKey
+  from: string
+  to: string
+  co2: Co2Assessment | null
+}
+
+// Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
+// CO₂-Angaben und die Positionen der Anlage in dieser Heizperiode für die Probe.
+export type HeatingPeriodView = {
+  plantId: string
+  period: PeriodKey
+  label: string
+  from: string
+  to: string
+  short: boolean
+  closed: boolean
+  hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable'>
+  co2: Co2Statement | null
+  items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts'>[]
+}
