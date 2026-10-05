@@ -7,7 +7,7 @@ import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
 import { invoiceLabel, renderInvoicePages } from '../pdfPreview'
 import { usePeriod } from '../period'
 import { useFocusTarget } from '../focus'
-import { settledInvoiceFiles } from '../costPeriods'
+import { settledInvoiceFiles, type PlantPeriods } from '../costPeriods'
 import { PeriodSelect } from '../components/PeriodSelect'
 import { useOpenForm, useProperty, withProperty } from '../property'
 import { effectiveLandlord, letterhead } from '../landlord'
@@ -42,7 +42,7 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate, focus, onFocusDone }: Props) {
-  const { key, label, param, calendar, period } = usePeriod()
+  const { key, label, param, calendar, period, rules } = usePeriod()
   const { properties, property } = useProperty()
   const propertyId = property?.id
   // Vermieter, IBAN und Frist: am Objekt abweichend, sonst aus den Einstellungen (#92).
@@ -56,6 +56,11 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
   // Die Korrektur der gezahlten Vorauszahlung hängt an einem Mietverhältnis dieses Objekts (#145).
   useOpenForm(ppEdit !== null)
   const [costItems, setCostItems] = useState<CostItem[]>([])
+  // Für die Belegkopien einer Position über 0 €: zu welcher Abrechnung sie gehört (Durchsicht N3).
+  const [plants, setPlants] = useState<PlantPeriods[]>([])
+  useEffect(() => {
+    api<PlantPeriods[]>(withProperty('/api/heating-plants', property?.id)).then(setPlants).catch(() => setPlants([]))
+  }, [property?.id])
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [attachmentPages, setAttachmentPages] = useState<Record<string, string[]>>({})
   const [attachmentsLoading, setAttachmentsLoading] = useState(false)
@@ -115,7 +120,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
 
   // Beleg-Dateien der gezeigten Abrechnung (in Erfassungsreihenfolge, ohne Duplikate), auch die der
   // Heizperiode, die darin abgerechnet wird
-  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems) : []), [data, costItems])
+  const invoiceFiles = useMemo(() => (data ? settledInvoiceFiles(data, costItems, rules, plants) : []), [data, costItems, rules, plants])
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.

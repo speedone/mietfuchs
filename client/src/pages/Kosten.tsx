@@ -538,7 +538,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                       />
                     )}
                     {!r.inline && <div className="muted">{r.formReason ?? 'Einzelbeträge je Mieter bitte im Formular eintragen.'}</div>}
-                    {r.heating && <div className="muted">unter der Heizperiode, die in {label} endet</div>}
+                    {r.heatingNote && <div className="muted">{r.heatingNote}</div>}
                   </td>
                   <td>
                     <button className="btn small ghost" onClick={() => { setError(''); setForm(carryOverForm(r)); setFormCarryId(r.source.id) }}>Im Formular öffnen</button>

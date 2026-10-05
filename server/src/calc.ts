@@ -1954,10 +1954,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // 0,00 €“ und fragte, wo sie geblieben ist.
     const schedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
     const byOwner = new Map<string, { label: string, months: string[] }>()
+    // Dieselbe Quelle wie die Anrechnung dort (`heatingPrepaymentCents`): ein Monat zählt, wenn die
+    // Staffel etwas verlangt oder eine Heizkorrektur der Heizperiode ihn abdeckt (Durchsicht N1).
+    const overrides = (t.heatingPrepaymentOverrides ?? []).filter((o) => o.plantId === plant.id)
     for (const m of periodMonths(period)) {
-      if (t.start > `${m}-01` || (t.end && t.end < `${m}-01`) || rateAtMonth(schedule, m) === 0) continue
+      if (t.start > `${m}-01` || (t.end && t.end < `${m}-01`)) continue
       const owner = separateOwner(way, objectRules, m)
       if (owner === null) continue
+      const override = overrides.find((o) => o.period === owner.key)
+      const covered = override !== undefined && (!override.provisional || (override.fromMonth !== null && override.toMonth !== null && m >= override.fromMonth && m <= override.toMonth))
+      if (rateAtMonth(schedule, m) === 0 && !covered) continue
       const entry = byOwner.get(owner.key) ?? { label: periodLabel(owner), months: [] }
       entry.months.push(m)
       byOwner.set(owner.key, entry)

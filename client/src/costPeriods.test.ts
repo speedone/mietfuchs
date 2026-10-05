@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { filedUnderSettlement, heatingRowTarget, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf } from './costPeriods'
+import { closedCheckPath, filedUnderSettlement, heatingRowTarget, itemsOfSettlement, periodCosts, settledInvoiceFiles, settlementKeyOf } from './costPeriods'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { CostItem, HeatingPlant, HeatingSettlementInfo, PeriodRules } from './types'
 
@@ -88,5 +88,26 @@ describe('Cockpit → Heizkostenabrechnung (E45)', () => {
       period: { key: k('2025-05'), from: '2025-05-01', to: '2026-04-30', short: false, label: '2025/2026' },
     }
     expect(heatingRowTarget(h, CALENDAR_RULES)).toEqual({ period: '2026-01', focus: { kind: 'heatingSettlement', id: 'hp1|2025-05' } })
+  })
+})
+
+// Durchsicht N2: „Betrag prüfen“ im Belegordner fragt, ob die Abrechnung der Position abgeschlossen
+// ist. Für eine Heizposition nach Weg d ist das ihre Heizkostenabrechnung, nicht die des Objekts.
+describe('Welche Abrechnung „abgeschlossen“ beantwortet (N2)', () => {
+  test('Weg d: die Heizkostenabrechnung der Heizperiode, sonst die Abrechnung des Zeitraums', () => {
+    expect(closedCheckPath(heating('2025-05', 1), CALENDAR_RULES, [plant()])).toBe('/api/heating-settlement/hp1/2025-05')
+    expect(closedCheckPath(heating('2024-05', 1), CALENDAR_RULES, [plant()])).toBe('/api/settlement/2025-01')
+    expect(closedCheckPath(item('2025-01', 1), CALENDAR_RULES, [plant()])).toBe('/api/settlement/2025-01')
+  })
+})
+
+// Durchsicht N3: Eine Position über 0 € steht nicht in den Zeilen der Abrechnung, ihr Beleg gehörte
+// vorher trotzdem zu den Belegkopien (Auswahl nach Zeitraum). Er bleibt dabei.
+describe('Belegkopien mit einer 0-€-Position (N3)', () => {
+  test('der Beleg einer Position des Zeitraums ohne Zeile bleibt dabei', () => {
+    const null0 = item('2025-01', 0, { invoiceFile: 'null.pdf' })
+    const other = item('2024-01', 0, { invoiceFile: 'alt.pdf' })
+    const s = { statements: [], landlord: { rows: [] }, period: { key: k('2025-01') } }
+    expect(settledInvoiceFiles(s, [null0, other], CALENDAR_RULES, [plant()])).toEqual(['null.pdf'])
   })
 })

@@ -5,7 +5,7 @@ import { usePeriod } from '../period'
 import { labelOfKey } from '../periodForm'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { closedPeriodNotice } from '../../../shared/costItem.ts'
-import { filedUnderSettlement, type PlantPeriods } from '../costPeriods'
+import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../costPeriods'
 // Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf
 // 5.2: `uploads.year` bleibt). Die Mappe für Mieter gehört dagegen zu einer Abrechnung, also zu
 // einem Zeitraum des Objekts.
@@ -308,7 +308,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
     // nur der Satz; das Zuordnen ist schon gespeichert.
     try {
-      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${c.period}`, c.propertyId))
+      // Die Abrechnung, zu der die Position gehört; nach Weg d ihre Heizkostenabrechnung (Durchsicht N2).
+      const raw = loadedItems.find((x) => x.id === c.id) ?? c
+      const path = closedCheckPath(raw, rulesOf(properties.find((p) => p.id === c.propertyId)), plantsBy.get(c.propertyId) ?? [])
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(path, c.propertyId))
       if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
     } catch { /* ohne Auskunft kein Satz */ }
   }

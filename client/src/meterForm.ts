@@ -15,6 +15,9 @@ export type MeterForm = {
   unit: string
   // Heizung PR 4: Rolle an der Heizanlage (nur ohne Wohnung), Fernablesbarkeit und Einbau.
   heatingRole: HeatingRole | ''
+  // Die gespeicherte Rolle (Durchsicht M1): Sie bleibt wählbar, auch wenn die Sparte sie nicht mehr
+  // anbietet, und fällt erst bei einem Spartenwechsel weg.
+  keptRole: HeatingRole | ''
   remote: RemoteAnswer
   installedOn: string
 }
@@ -29,6 +32,11 @@ export const defaultMeterUnit = (type: MeterType): string => DEFAULT_UNITS[type]
 // mit. Eine selbst eingetragene Einheit bleibt, sie ist eine Angabe. Nur bei einem neuen Zähler:
 // Bei einem bestehenden ist die Einheit gespeichert und gehört zu seinen Ablesungen.
 export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
+  if (type !== form.type) {
+    // Mit der Sparte fällt eine Rolle weg, die die neue nicht anbietet (Durchsicht M1).
+    const roles = rolesForType(type)
+    form = { ...form, keptRole: '', heatingRole: form.heatingRole !== '' && roles.includes(form.heatingRole) ? form.heatingRole : '' }
+  }
   if (form.id) return { ...form, type }
   const unit = form.unit.trim()
   const followsDefault = unit === '' || unit === defaultMeterUnit(form.type)
@@ -36,7 +44,7 @@ export function withMeterType(form: MeterForm, type: MeterType): MeterForm {
 }
 
 export const emptyMeterForm = (): MeterForm => ({
-  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', remote: '', installedOn: '',
+  name: '', unitId: '', type: 'kaltwasser', meterNumber: '', unit: defaultMeterUnit('kaltwasser'), heatingRole: '', keptRole: '', remote: '', installedOn: '',
 })
 
 export const meterToForm = (m: Meter): MeterForm => ({
@@ -47,6 +55,7 @@ export const meterToForm = (m: Meter): MeterForm => ({
   meterNumber: m.meterNumber ?? '',
   unit: m.unit,
   heatingRole: m.heatingRole ?? '',
+  keptRole: m.unitId === null && m.heatingRole ? m.heatingRole : '',
   remote: m.remoteReadable === true ? 'yes' : m.remoteReadable === false ? 'no' : '',
   installedOn: m.installedOn ?? '',
 })
@@ -61,11 +70,19 @@ export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
 // Versorgungszähler ist, was Brennstoff oder Energie zuführt: Gas oder Öl (Sparte „Sonstiges“),
 // Strom einer Wärmepumpe, Fernwärme. Die Wärmezähler der Anlage haben die Sparte „Wärme“, wie der
 // Server verlangt. Ein Wasserzähler hat keine Rolle; dort fragt das Formular nicht.
-export function heatingRoleOptions(form: Pick<MeterForm, 'unitId' | 'type'>, hasPlant: boolean): HeatingRole[] {
+const rolesForType = (type: MeterType): HeatingRole[] =>
+  type === 'waerme' ? ['supply', 'dhwHeat', 'totalHeat'] : type === 'sonstig' || type === 'strom' ? ['supply'] : []
+
+// Eine gespeicherte Rolle, die die Sparte nicht anbietet, steht dazu (Durchsicht M1): Sie fiele sonst
+// beim nächsten Speichern weg, und die Berechnung läse den Zähler als Hauptzähler des Hauses.
+export function heatingRoleOptions(form: Pick<MeterForm, 'unitId' | 'type'> & Partial<Pick<MeterForm, 'keptRole'>>, hasPlant: boolean): HeatingRole[] {
   if (!hasPlant || form.unitId) return []
-  if (form.type === 'waerme') return ['supply', 'dhwHeat', 'totalHeat']
-  if (form.type === 'sonstig' || form.type === 'strom') return ['supply']
-  return []
+  const roles = rolesForType(form.type)
+  return form.keptRole && !roles.includes(form.keptRole) ? [...roles, form.keptRole] : roles
+}
+
+export function heatingRoleLabel(form: Pick<MeterForm, 'type'>, role: HeatingRole): string {
+  return rolesForType(form.type).includes(role) ? HEATING_ROLE_LABELS[role] : `bisher: ${HEATING_ROLE_LABELS[role]}`
 }
 
 export const HEATING_ROLE_HELP = 'Ein Zähler der Heizanlage zählt nicht als Hauptzähler des Hauses; Mietfuchs ordnet ihn den Heizkosten zu. Wählen Sie „Nein“, wenn er den Verbrauch des ganzen Hauses misst.'

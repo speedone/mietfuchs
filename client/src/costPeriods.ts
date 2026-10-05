@@ -8,10 +8,10 @@
 // als eigene Jahre, und die Heizkosten fehlen im Jahr ihrer Abrechnung. Die Seite Kosten rechnet
 // dasselbe über `itemsOfPeriod`; die übrigen Seiten fragen hier.
 import { settlementKeyOf } from '../../shared/heatingPeriod.ts'
-import { periodContaining, periodLabel, periodOfKey } from '../../shared/period.ts'
+import { CALENDAR_RULES, periodContaining, periodLabel, periodOfKey } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, NoticeSubject, PeriodKey, PeriodRules } from './types'
 
-export type PlantPeriods = Pick<HeatingPlant, 'id' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'>
+export type PlantPeriods = Pick<HeatingPlant, 'id' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'> & Partial<Pick<HeatingPlant, 'name'>>
 type Positioned = { period: PeriodKey; heatingPlantId?: string | null }
 
 // Die Regel selbst steht in shared/heatingPeriod.ts, weil die Berechnung sie für den Vergleich mit
@@ -65,12 +65,34 @@ export function periodCosts(items: readonly (Positioned & { category: string; am
 // Die Belegkopien zu einer Abrechnung, in der Reihenfolge der erfassten Positionen und ohne Doppelte:
 // die Belege der Positionen, die auf dem Papier stehen. Vorher galt `period` gleich dem Zeitraum, und
 // die Heizrechnung einer eigenen Heizperiode fehlte unter den Anlagen, obwohl ihre Kosten dastanden.
+// Eine Position über 0 € hat keine Zeile auf dem Papier; ihr Beleg gehört trotzdem dazu, wenn sie zu
+// dieser Abrechnung gehört (Durchsicht N3).
 export function settledInvoiceFiles(
-  s: { statements: readonly { rows: readonly { costItemId: string }[] }[]; landlord: { rows: readonly { costItemId: string }[] } },
-  items: readonly { id: string; invoiceFile?: string }[],
+  s: {
+    statements: readonly { rows: readonly { costItemId: string }[] }[]
+    landlord: { rows: readonly { costItemId: string }[] }
+    period?: { key: PeriodKey }
+    scope?: { kind: string; plantId?: string } | null
+  },
+  items: readonly { id: string; invoiceFile?: string; amountCents?: number; period?: PeriodKey; heatingPlantId?: string | null }[],
+  objectRules: PeriodRules = CALENDAR_RULES,
+  plants: readonly PlantPeriods[] = [],
 ): string[] {
   const ids = new Set([...s.statements.flatMap((st) => st.rows), ...s.landlord.rows].map((r) => r.costItemId))
-  return [...new Set(items.filter((c) => ids.has(c.id) && c.invoiceFile).map((c) => c.invoiceFile as string))]
+  const zeroHere = (c: (typeof items)[number]): boolean => {
+    if (c.amountCents !== 0 || c.period === undefined || s.period === undefined) return false
+    if (s.scope?.kind === 'heating') return c.heatingPlantId === s.scope.plantId && c.period === s.period.key
+    const k = settlementKeyOf({ period: c.period, heatingPlantId: c.heatingPlantId ?? null }, objectRules, plants)
+    return k.key === s.period.key && !k.separate
+  }
+  return [...new Set(items.filter((c) => (ids.has(c.id) || zeroHere(c)) && c.invoiceFile).map((c) => c.invoiceFile as string))]
+}
+
+// Welche Abrechnung sagt, ob die Position abgeschlossen ist (Durchsicht N2): nach Weg d die
+// Heizkostenabrechnung ihrer Heizperiode, sonst die Abrechnung des Zeitraums, zu dem sie gehört.
+export function closedCheckPath(item: { period: PeriodKey; heatingPlantId?: string | null }, objectRules: PeriodRules, plants: readonly PlantPeriods[]): string {
+  const k = settlementKeyOf(item, objectRules, plants)
+  return k.separate && item.heatingPlantId ? `/api/heating-settlement/${item.heatingPlantId}/${item.period}` : `/api/settlement/${k.key}`
 }
 
 // „Zur Abrechnung →“ an einer Heizkostenabrechnung im Cockpit (E45): Sie steht im Zeitraum, in dem

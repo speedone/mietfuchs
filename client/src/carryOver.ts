@@ -11,7 +11,8 @@ import type { BillingPeriod, CostItem, PeriodKey, PeriodRules, Tenancy, Unit } f
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
-import { calendarContext, spansTwoYears, type PeriodContext } from '../../shared/period.ts'
+import { calendarContext, formatDayRange, periodLabel, spansTwoYears, type PeriodContext } from '../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules } from '../../shared/heatingPeriod.ts'
 import { filedUnderSettlement, settlementKeyOf, type PlantPeriods } from './costPeriods'
 
@@ -44,6 +45,9 @@ export type CarryRow = {
   heating: { plantId: string; period: PeriodKey } | null
   // Warum die Zeile nur im Formular übernommen werden kann
   formReason?: string
+  // Wohin eine Heizposition kommt: Heizperiode und Jahr der Zahlung, bei einer Vorlage ohne Anlage
+  // auch die Anlage, die der Server sonst still zuordnete (`defaultHeatingPlant`, Durchsicht).
+  heatingNote?: string
 }
 
 // Steht im Jahr schon eine Position, die dieselbe Rechnung sein könnte? Die Regel ist die gemeinsame
@@ -82,13 +86,26 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
   const filed = heating ? filedUnderSettlement(items, () => heating.rules, () => heating.plants) : items
   const keyOf = (i: CostItem) => (heating ? settlementKeyOf(i, heating.rules, heating.plants).key : i.period)
   // Die Heizperiode der Anlage, die im Ziel endet; `'ask'` bei keiner oder mehreren.
-  const heatingOf = (source: CostItem): { plantId: string; period: PeriodKey; from: string; to: string } | 'ask' | null => {
-    const plant = heating && source.heatingPlantId ? heating.plants.find((p) => p.id === source.heatingPlantId) : undefined
+  // Eine Vorlage ohne Anlage bekommt beim Speichern die einzige Anlage des Objekts (Server,
+  // `defaultHeatingPlant`); dieselbe Regel hier, damit die Zeile es vorher sagt.
+  const plantOf = (source: CostItem): PlantPeriods | undefined => {
+    if (!heating) return undefined
+    if (source.heatingPlantId) return heating.plants.find((p) => p.id === source.heatingPlantId)
+    return source.category === HEATING_CATEGORY && heating.plants.length === 1 ? heating.plants[0] : undefined
+  }
+  const heatingOf = (source: CostItem): { plantId: string; period: PeriodKey; from: string; to: string; short: boolean } | 'ask' | null => {
+    const plant = plantOf(source)
     if (!heating || !plant || !hasOwnRhythm(plant)) return null
-    if (target === undefined) return 'ask'
+    if (target === undefined) return source.heatingPlantId ? 'ask' : null
     const ending = heatingPeriodsEndingIn(plantRules(plant, heating.rules), target)
     const only = ending.length === 1 ? ending[0] : undefined
-    return only ? { plantId: plant.id, period: only.key, from: only.from, to: only.to } : 'ask'
+    // Ohne eindeutige Heizperiode ordnet auch der Server eine Vorlage ohne Anlage nicht zu.
+    if (!only) return source.heatingPlantId ? 'ask' : null
+    return { plantId: plant.id, period: only.key, from: only.from, to: only.to, short: only.short }
+  }
+  const plantName = (source: CostItem): string => {
+    const name = plantOf(source)?.name
+    return name ? ` „${name}“` : ''
   }
   const taxYearOf = (source: CostItem): string => {
     if (target === undefined) return source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : ''
@@ -107,6 +124,12 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
     const formReason = h === 'ask'
       ? 'Im Abrechnungszeitraum enden keine oder mehrere Heizperioden dieser Anlage. Bitte wählen Sie die Heizperiode im Formular („Im Formular öffnen“).'
       : h && heatingTax === null ? 'Bitte geben Sie das Jahr der Zahlung im Formular an („Im Formular öffnen“).' : undefined
+    const where = h && h !== 'ask'
+      ? `Heizperiode ${periodLabel({ key: h.period, from: h.from, to: h.to, short: h.short })}${h.short ? '' : ` (${formatDayRange(h.from, h.to)})`}${heatingTax ? `, Jahr der Zahlung ${heatingTax}` : ''}.`
+      : ''
+    const heatingNote = !source.heatingPlantId && plantOf(source)
+      ? (where ? `Wird der Heizanlage${plantName(source)} zugeordnet: ${where}` : h === null ? `Wird der Heizanlage${plantName(source)} zugeordnet.` : undefined)
+      : where || undefined
     return {
       source,
       description,
@@ -120,6 +143,7 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
       taxYear: h && h !== 'ask' ? heatingTax ?? '' : taxYearOf(source),
       heating: h && h !== 'ask' ? { plantId: h.plantId, period: h.period } : null,
       ...(formReason ? { formReason } : {}),
+      ...(heatingNote ? { heatingNote } : {}),
     }
   })
   // Liegt die Heizperiode in einem Kalenderjahr, ist es dieses (kein Feld); reicht sie über zwei, das

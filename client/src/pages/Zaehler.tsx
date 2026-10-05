@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
-import { asksRemote, emptyMeterForm, HEATING_ROLE_HELP, HEATING_ROLE_LABELS, heatingRoleOptions, meterBody, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksRemote, emptyMeterForm, HEATING_ROLE_HELP, heatingRoleLabel, heatingRoleOptions, meterBody, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
@@ -255,7 +255,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 Gehört zur Heizanlage?
                 <select value={heatingRoleOptions(meterForm, true).includes(meterForm.heatingRole as HeatingRole) ? meterForm.heatingRole : ''} onChange={(e) => setMeterForm({ ...meterForm, heatingRole: e.target.value as HeatingRole | '' })}>
                   <option value="">Nein</option>
-                  {heatingRoleOptions(meterForm, true).map((r) => <option key={r} value={r}>{HEATING_ROLE_LABELS[r]}</option>)}
+                  {heatingRoleOptions(meterForm, true).map((r) => <option key={r} value={r}>{heatingRoleLabel(meterForm, r)}</option>)}
                 </select>
                 <small className="muted">{HEATING_ROLE_HELP}</small>
               </label>

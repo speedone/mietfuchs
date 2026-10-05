@@ -247,6 +247,21 @@ describe('Vorjahr mit eigener Heizperiode', () => {
     expect(carryOverBody({ ...row, amount: '100' }, UNITS, calendarYearPeriod(2026))).toEqual({ error: expect.stringMatching(/Heizperiode.*Formular/) })
   })
 
+  // Durchsicht: Eine Heizposition des Vorjahres ohne Anlage bekäme beim Speichern vom Server still die
+  // einzige Anlage des Objekts, deren Heizperiode und ein Jahr der Zahlung (defaultHeatingPlant). Die
+  // Zeile sagt das vorher und legt es ausdrücklich so an.
+  test('Heizposition ohne Anlage: die Zeile nennt Anlage, Heizperiode und Jahr der Zahlung', () => {
+    const ohne = heizung('2025-01', { heatingPlantId: undefined })
+    const row = rowOf(carryOverRows([ohne], at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant({ name: 'Keller' })] }), 'Messdienst Heizung')
+    expect(row.heating).toEqual({ plantId: 'hp1', period: '2025-05' })
+    expect(row.heatingNote).toBe('Wird der Heizanlage „Keller“ zugeordnet: Heizperiode 2025/2026 (01.05.2025–30.04.2026), Jahr der Zahlung 2026.')
+    expect(carryOverBody({ ...row, amount: '100' }, UNITS, calendarYearPeriod(2026))).toMatchObject({ body: { period: '2025-05', heatingPlantId: 'hp1', taxYear: 2026 } })
+    const gleich = rowOf(carryOverRows([ohne], at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant({ periodStartMonth: null })] }), 'Messdienst Heizung')
+    expect([gleich.heating, gleich.heatingNote]).toEqual([null, 'Wird der Heizanlage zugeordnet.'])
+    const zwei = rowOf(carryOverRows([ohne], at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant(), plant({ id: 'hp2' })] }), 'Messdienst Heizung')
+    expect([zwei.heating, zwei.heatingNote]).toEqual([null, undefined])
+  })
+
   test('ohne eigene Heizperiode wie bisher', () => {
     const items = [heizung('2025-01', { taxYear: undefined })]
     const row = rowOf(carryOverRows(items, at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant({ periodStartMonth: null })] }), 'Messdienst Heizung')
