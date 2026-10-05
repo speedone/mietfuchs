@@ -389,6 +389,13 @@ export const GLOSSARY = {
     norm: '§ 7 Abs. 2 HeizkostenV',
     needed: 'Wenn eine Rechnung über die Heizperiode hinausreicht oder Mietfuchs die CO₂-Kosten selbst aufteilen soll. Ohne Verknüpfung verteilt Mietfuchs die Position ganz in ihrem Zeitraum und grenzt nichts ab.',
   },
+  fuelStock: {
+    title: 'Brennstoffvorrat (Bestandsrechnung)',
+    short: 'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle liegt der Brennstoff im Tank oder Lager, und nicht jede Lieferung wird im selben Abrechnungszeitraum verbraucht. Umgelegt werden die Kosten des verbrauchten Brennstoffs samt seiner Lieferung: Anfangsbestand plus Lieferungen minus Endbestand. Verbraucht wird das Älteste zuerst; den Endbestand bewertet Mietfuchs deshalb wie die Messdienste zu den Preisen der jüngsten Lieferungen.',
+    example: 'Anfangsbestand 2.000 l für 1.900 €, Lieferungen 3.000 l für 3.150 € und 2.500 l für 2.500 €, Endbestand 1.800 l. Der Endbestand stammt aus der jüngsten Lieferung und ist 1.800 € wert. Verbraucht wurden 5.700 l für 1.900 € + 3.150 € + 2.500 € − 1.800 € = 5.750 €; bezahlt haben Sie in diesem Zeitraum 5.650 €. Die 100 € Unterschied stehen in der Abrechnung als „aus dem Vorrat“ und „im Vorrat“.',
+    norm: '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11',
+    needed: 'Ja, wenn Sie mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle heizen und die Heizkosten selbst nach Schlüsseln verteilen, oder wenn der Messdienst die CO₂-Kosten nicht aufgeteilt hat. Dann tragen Sie auf der Seite Heizkosten in der Karte „Vorrat“ Anfangs- und Endbestand ein.',
+  },
   fixedPriceComponent: {
     title: 'Fester Preisbestandteil',
     short: 'Grund-, Leistungs-, Mess- und Verrechnungspreis einer Versorgerrechnung. Er hängt an der Zeit, nicht an der Menge, und wird deshalb nach Tagen auf die Heizperioden geteilt.',

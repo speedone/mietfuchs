@@ -156,3 +156,17 @@ test('Gradtagszahlen (Heizung PR 7): auch für die Abgrenzung einer Versorgerrec
   assert.match(GLOSSARY.degreeDays.needed, /Zählerstand zum Stichtag/)
   assert.match(GLOSSARY.degreeDays.needed, /DIN 94680/)
 })
+
+test('Brennstoffvorrat (Heizung PR 8): Beispiel nachgerechnet', () => {
+  // Anfangsbestand 2.000 l / 1.900 €, Lieferungen 3.000 l / 3.150 € und 2.500 l / 2.500 €,
+  // Endbestand 1.800 l aus der jüngsten Lieferung: 1.800 / 2.500 × 2.500 € = 1.800 €.
+  assert.equal(2000 + 3000 + 2500 - 1800, 5700)
+  assert.equal((1800 / 2500) * 250000, 180000)
+  assert.equal(190000 + 315000 + 250000 - 180000, 575000)
+  assert.equal(315000 + 250000, 565000)
+  const t = GLOSSARY.fuelStock
+  assert.match(t.example, /Endbestand 1\.800 l.*1\.800 €.*5\.700 l.*5\.750 €.*5\.650 €.*100 €/s)
+  assert.equal(t.norm, '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11')
+  assert.match(t.short, /jüngsten Lieferungen/)
+  assert.match(t.needed, /Heizöl, Flüssiggas, Pellets, Holz oder Kohle/)
+})
