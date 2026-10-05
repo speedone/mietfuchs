@@ -57,6 +57,22 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Vorauszahlungen, das Cockpit jede Heizkostenabrechnung mit ihrer Frist
   ([#217](https://github.com/speedone/mietfuchs/issues/217)).
 
+- **CO₂-Kosten beim Messdienst und bei der Eigentümergemeinschaft.** Auf der neuen Seite
+  „Heizkosten“ (sichtbar ab einer Heizanlage) tragen Sie die CO₂-Angaben der Heizkostenabrechnung
+  ein: ob es eine Zeile „Abzüglich CO₂-Kosten Vermieter“ gibt, die Summe der Kosten aller Nutzer und
+  die Zahlen der CO₂-Seite. Eine Probe zeigt, ob der Betrag Ihrer Position dazu passt. Beim
+  Vorwegabzug steht der CO₂-Anteil des Vermieters als eigener Grund beim Vermieter und in der
+  Steuerübersicht als Werbungskosten, der Teil Ihrer eigenen Wohnung im Eigenanteil; weist der
+  Messdienst die CO₂-Kosten nur aus, bekommt jeder Mieter eine eigene Abzugszeile. Die Abrechnung
+  druckt die Einstufung und die Grundlagen mit (§ 7 Abs. 3 CO2KostAufG)
+  ([#97](https://github.com/speedone/mietfuchs/issues/97), [#209](https://github.com/speedone/mietfuchs/issues/209)).
+- **Warmwasser laut Messdienst.** Hat der Messdienst die Wärme für das Warmwasser mit einer Formel
+  bestimmt, ohne dass das Messen unzumutbar wäre, nennt die Abrechnung die Kürzung von 15 % je Mieter
+  auf seine Heiz- und Warmwasserkosten (§ 9 Abs. 2 HeizkostenV, BGH VIII ZR 151/20)
+  ([#211](https://github.com/speedone/mietfuchs/issues/211)).
+- Anleitung „CO₂-Kosten der Heizung aufteilen“ und Lexikon-Einträge zur CO₂-Aufteilung, Einstufung,
+  Fläche, Abzugszeile und zum Warmwasseranteil.
+
 ### Geändert
 
 - **Jahr der Zahlung bei der Belegbuchung.** Reicht der Abrechnungszeitraum über zwei
@@ -94,6 +110,18 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
 - Ein Kostenschlüssel „nach Verbrauch“ mit Heizkostenverteilern wird abgelehnt, bis Mietfuchs deren
   Bewertungsfaktoren kennt; übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.
+
+- **Angekündigt: Hinweis zu den CO₂-Kosten bei Heizpositionen ab 2023.** Für Abrechnungszeiträume, die
+  am oder nach dem 01.01.2023 beginnen, sagt die Abrechnung bei Positionen „Heizung und Warmwasser“,
+  ob die CO₂-Kosten aufzuteilen sind, und nennt die Kürzung von 3 % je Mieter, wenn die Aufteilung
+  fehlt. Ohne Heizanlage ist das ein Hinweis mit dem Knopf „Heizung einrichten →“, mit einer Gas-,
+  Öl-, Flüssiggas- oder Kohleheizung ohne CO₂-Angaben eine Warnung; beide färben die Ampel im Cockpit.
+  Keine Zahl ändert sich ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Anleitung „Fertige Abrechnung eines Messdienstes übernehmen“:** Der Betrag Ihrer selbstgenutzten
+  Wohnung steht wie in der Abrechnung; den CO₂-Teil Ihrer Wohnung tragen Sie in der Karte „CO₂-Kosten“
+  ein. Wer ihn nach der bisherigen Anleitung in den Eigenbetrag geschrieben hat, dem meldet die Probe
+  das ([#209](https://github.com/speedone/mietfuchs/issues/209)).
+- Eine Heizanlage mit erfassten CO₂-Angaben lässt sich erst entfernen, wenn die Angaben entfernt sind.
 
 ### Behoben
 

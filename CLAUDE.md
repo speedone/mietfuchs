@@ -958,6 +958,59 @@ stehen in [shared/heatingPeriod.ts](shared/heatingPeriod.ts).
   getrennt abgerechnet werden (VIII ZR 240/07, Leitsatz a). Logik in
   [client/src/heatingPeriodForm.ts](client/src/heatingPeriodForm.ts) (`heatingWays`).
 
+**CO₂ beim Messdienst** (Heizung PR 6, #97, #209, #211): Die CO₂-Angaben einer Heizperiode stehen in
+`co2_statements` (eine Zeile je Zeile in `heating_periods`), die Beträge „vom Vermieter übernommen“ je
+Mietverhältnis in `co2_tenant_reliefs`. Lesen und Schreiben in
+[server/src/db/co2.ts](server/src/db/co2.ts), gerechnet in [server/src/co2.ts](server/src/co2.ts) und im
+CO₂-Block von `computeSettlement`; die Probe in [shared/co2Probe.ts](shared/co2Probe.ts), weil die
+Oberfläche sie live zeigt. Die Rechtswerte (Anwendbarkeit ab 01.01.2023, Stufentabelle, Rundung, 3 %)
+stehen in [shared/law/co2kostaufg.ts](shared/law/co2kostaufg.ts), am Wortlaut auf
+gesetze-im-internet.de gegengelesen.
+
+- **Die Methode ist eine Antwort, keine Vorgabe** (Entwurf 7.2): `serviceDeducted` (Abzugszeile),
+  `serviceShown` (nur ausgewiesen), `selfAfterService` (nicht aufgeteilt); `self` kommt mit PR 7 und
+  wird bis dahin abgelehnt, ebenso CO₂-Angaben an einer Anlage mit freien Schlüsseln.
+- **S ist die gedruckte Kostensumme** (G-B3), nicht die Summe der gerundeten Nutzerzeilen. Die Probe
+  läuft nur über die Messdienstpositionen (Schlüssel `amounts`, W9): Vorwegabzug Σ = S + L ± 1 ct, nur
+  ausgewiesen Σ = S, beide Einzel- und Eigenbeträge ≤ S + NE · 2 ct. Scheitert sie, wird **nichts**
+  gebucht (`co2.sum-check`, error); mit „Ich finde diese Zeile nicht“ ist S geschätzt, und es bleibt
+  ein Hinweis.
+- **Vorwegabzug:** In der Position, in der L steckt (`carrierId`: die gewählte, sonst die größte),
+  steht L_self exakt in `selfUse` (#203: nie über `take()`), der Rest von L als eigener Grund
+  `co2Share` direkt dahinter, durch den Rest begrenzt. Die Mieter zahlen ihre Einzelbeträge
+  unverändert. Damit ist #209 behoben: Werbungskosten sind das Bezahlte, L_self privat.
+- **Nur ausgewiesen:** Zeilen `kind: 'co2Relief'` ohne Kostenposition (`costItemId` =
+  `co2:<Anlage>:<Heizperiode>`), je Mieter der Wert laut Messdienst oder L · x / S, als eine Verteilung
+  von R = round(Σ r) mit `distributeCents`; der Vermieter trägt R in einer Zeile gleicher Kennung als
+  `co2Share`. Σ aller Zeilen bleibt Σ der Positionen.
+- **Kürzungen** (6.5) je Mieter auf seine gedruckten Zeilen im Topf nach der Abzugszeile, nie summiert:
+  3 % nach § 7 Abs. 4 CO2KostAufG (`co2.missing`, `co2.service-unsplit`, `co2.incomplete`,
+  `co2.sum-check`, ohne Anlage `co2.fuel-unknown` und `co2.missing-first-year`), 15 % bei Warmwasser
+  nach Formel (`heating.dhw-not-metered`). Alle Rechtswerte aus `shared/law/co2kostaufg.ts`.
+- **Nachstufung** (9.2): Mietfuchs ordnet den Wert laut Messdienst in die Stufentabelle ein (gerundet
+  auf eine Nachkommastelle, bei kurzer Heizperiode mit gekürzten Grenzen, ein ganzzahlig gedruckter
+  Wert als Spanne) und meldet eine Abweichung als Hinweis (`co2.stage-mismatch`); § 8 und § 9 kennt
+  die Berechnung erst mit PR 7.
+- **Töpfe und eigene Heizperiode:** Ein Topf ist je Anlage die Menge ihrer Heizpositionen mit dem
+  Schlüssel des Zeitraums der Berechnung. Bei eigener Heizperiode rechnet die Teilabrechnung (Weg b)
+  bzw. die Heizkostenabrechnung (Weg d) den Topf; `mergeHeatingPart` übernimmt `heating`.
+- **Ausweis:** `Settlement.heating` je Anlage und Heizperiode mit `Co2Assessment`; der Druckblock
+  „CO₂-Kostenaufteilung“ ([client/src/co2View.ts](client/src/co2View.ts)) ist nicht `no-print`.
+- **Oberfläche:** Seite „Heizkosten“, erst ab einer Heizanlage in der Navigation (`navFor`), mit den
+  Karten „CO₂-Kosten“ (Logik in [client/src/co2Form.ts](client/src/co2Form.ts)) und „Warmwasser“.
+- Eine Anlage mit CO₂-Angaben wird nicht still mitgelöscht (409); Beträge je Mietverhältnis gehören zum
+  Objekt der Anlage (`guardTenancyMove`, `crossPropertyViolations`). Eine Zeile in `heating_periods`,
+  die nach dem Entfernen keine Angabe mehr trägt, wird mit entfernt (`dropIfEmpty`): Der Wechsel des
+  Zeitraums der Heizung (PR 5) sieht jede Zeile als erfasste Angabe. Beim Wiederherstellen prüft
+  `heatingPlantViolations` die Schlüssel nach dem Rhythmus der Anlage (`plantRules`).
+- **Kostenart „Heizung“ ist keine Heizposition.** CO₂-Hinweise erscheinen wie alle Heizregeln nur bei
+  der Kostenart „Heizung und Warmwasser“ (`HEATING_CATEGORY`); deshalb bleibt Golden F06 (Kostenart
+  „Heizung“) wortgleich, anders als im Entwurf (12.1) angenommen.
+- **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das
+  Techem-Muster mit Vorwegabzug, F12 eine anonymisierte reale Abrechnung Mai bis April. In F12 sind
+  nur die Gesamtwerte und der eine Nutzer des Belegs echt; die übrigen drei Nutzer sind synthetisch und
+  die kg CO₂ geschätzt, beides steht so in README und `betraege.json`.
+
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
@@ -1045,7 +1098,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/periods` (Heizperioden einer Anlage mit CO₂-Angaben und Warmwasser, siehe CO₂ beim Messdienst), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
