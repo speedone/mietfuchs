@@ -45,6 +45,8 @@ export default function Uebersicht({ onNavigate }: Props) {
   // Nach Weg d stehen die Heizkosten in einer eigenen Heizkostenabrechnung; die Kennzahl zählt sie
   // mit, sonst wiche sie von der Summe der Kostenarten ab.
   const separateCents = periods.find((p) => p.key === key)?.separateCents ?? 0
+  // Die Salden gehören zur Betriebskostenabrechnung; ohne deren Kosten sind sie kein Ergebnis (#142).
+  const settledCosts = (periods.find((p) => p.key === key)?.totalCents ?? 0) - separateCents !== 0
   // Ohne Kosten im Jahr gibt es nichts zu vergleichen (#142): Jede Kostenart des Vorjahres stünde
   // sonst mit „−100 %“ da, und das hieße nur, dass noch nichts erfasst ist.
   const hasCosts = cur.size > 0
@@ -119,7 +121,7 @@ export default function Uebersicht({ onNavigate }: Props) {
             <div className="l">Vermieteranteil</div>
           </div>
           {/* Ohne Kosten erstattete die Berechnung die volle Vorauszahlung (#142); das ist kein Ergebnis. */}
-          {hasCosts && settlement.statements.map((st) => (
+          {settledCosts && settlement.statements.map((st) => (
             <div className="kpi" key={st.tenancyId}>
               <div className="v" style={{ color: st.balanceCents >= 0 ? 'var(--green)' : 'var(--red)' }}>
                 {fmtEuro(Math.abs(st.balanceCents))}

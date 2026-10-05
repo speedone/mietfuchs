@@ -166,4 +166,6 @@ test('ein Ziel „Heizkostenabrechnung“ wählt ihren Reiter', async () => {
   )
   await waitFor(() => expect(calls).toContain(`/api/heating-settlement/hp1/${YEAR - 1}-05`), SLOW)
   expect(done).toHaveBeenCalled()
+  // Der Knopf nennt, was er abschließt; vorher stand dort „Abrechnung <Jahr> abschließen“.
+  await screen.findByRole('button', { name: `🔒 Heizkostenabrechnung ${YEAR - 1}/${YEAR} abschließen` }, SLOW)
 })

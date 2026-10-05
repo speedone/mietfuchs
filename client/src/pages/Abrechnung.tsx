@@ -145,29 +145,33 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
     return () => { alive = false }
   }, [printAttachments, invoiceFiles, attachmentPages])
 
+  // Was abgeschlossen oder wieder geöffnet wird: bei gewählter Heizkostenabrechnung sie selbst, nicht
+  // „Abrechnung <Jahr>“ (Sichtprüfung E45).
+  const docLabel = target !== null && data?.scope?.kind === 'heating' ? `Heizkostenabrechnung ${data.period.label}` : `Abrechnung ${label}`
+
   // Abrechnung abschließen / wieder öffnen / Versanddatum festhalten
   async function closeSettlement() {
     const ok = await confirm({
       // Bei mehreren Objekten mit Objekt (#157): Eingefroren wird nur die Abrechnung dieses Objekts.
-      title: closeSettlementTitle(label, properties, property),
+      title: closeSettlementTitle(label, properties, property, docLabel),
       message: 'Der aktuelle Berechnungsstand wird eingefroren — spätere Änderungen an Kosten oder Stammdaten ändern diese Abrechnung nicht mehr. Sie lässt sich jederzeit wieder öffnen.',
       confirmLabel: 'Abschließen',
     })
     if (!ok) return
     if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'POST', body: JSON.stringify({}) })))) return
     await load()
-    toast(`Abrechnung ${label} abgeschlossen.`)
+    toast(`${docLabel} abgeschlossen.`)
   }
   async function reopenSettlement() {
     const ok = await confirm({
-      title: `Abrechnung ${label} wieder öffnen?`,
+      title: `${docLabel} wieder öffnen?`,
       message: 'Es gilt wieder die laufende Berechnung. Der bisherige Stand bleibt unter „Frühere Abschlüsse“ erhalten. Eine bereits verschickte Abrechnung sollte nur bei Fehlern neu erstellt werden.',
       confirmLabel: 'Wieder öffnen',
     })
     if (!ok) return
     if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'DELETE' })))) return
     await load()
-    toast(`Abrechnung ${label} wieder geöffnet.`)
+    toast(`${docLabel} wieder geöffnet.`)
   }
   async function saveSentAt(sentAt: string) {
     if (!(await attempt(() => api(withProperty(paths.close, propertyId), { method: 'PUT', body: JSON.stringify({ sentAt: sentAt || null }) })))) return
@@ -300,7 +304,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
                   <span className="muted">Die Abrechnung wird laufend neu berechnet. Nach dem Versand abschließen, damit sich der Stand nicht mehr ändert.</span>
                 </div>
                 <button className="btn" disabled={!data || data.totalCostsCents === 0} onClick={() => void closeSettlement()}>
-                  🔒 Abrechnung {label} abschließen
+                  🔒 {docLabel} abschließen
                 </button>
               </>
             )}
@@ -380,7 +384,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate, fo
           <div className="kpis no-print">
             <div className="kpi">
               <div className="v">{fmtEuro(data.totalCostsCents)}</div>
-              <div className="l">Gesamtkosten {label}</div>
+              <div className="l">Gesamtkosten {data.period.label}</div>
             </div>
             <div className="kpi">
               <div className="v">{fmtEuro(distributed)}</div>
