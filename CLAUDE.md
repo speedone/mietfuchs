@@ -870,6 +870,43 @@ Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
   jeder Position, auch ohne Beleg. Textfelder, die mit = + - @ beginnen, bekommen einen Apostroph
   davor (CSV-Formel-Einschleusung).
 
+**Heizanlage** (Heizung PR 4, #99, #214, #180): Ein Objekt hat höchstens eine Heizanlage
+(`heating_plants`, eine zweite kommt mit PR 9), dazu die angeschlossenen Wohnungen
+(`heating_plant_units`) und eine Zeile je Heizperiode (`heating_periods`, ohne Vorrat; geschrieben
+ab PR 6). Anlegen, Ändern und Entfernen stehen in
+[server/src/db/heating.ts](server/src/db/heating.ts), die Prüfungen an Zählern und Kostenpositionen
+in repository.ts, das dafür seine Rumpf-Helfer exportiert (heating.ts importiert von dort, nie
+umgekehrt).
+
+- **Eine Anlage ändert keine Zahl.** `manual` und `service` verteilen wie bisher; `change_split` wird
+  gespeichert und wirkt erst mit `heating_target` (PR 10). Was spätere PRs rechnen (eigene
+  Abrechnung, Etagenheizung, zweite Anlage, eigene Heizperiode, getrennte Abrechnung, beheizte
+  Fläche), lehnt der Server mit `HeatingError` (400) und einem Satz ab.
+- **Ohne Liste alle Wohnungen, mit Liste genau diese.** Ob es eine Liste gibt, sagt
+  `units_limited`, wie `participants_limited` (#94): Sonst versorgte eine Anlage, deren letzte
+  Wohnung gelöscht wurde, plötzlich das ganze Haus.
+- **Heizpositionen gehören zur Anlage ihres Objekts.** Beim Einrichten mit Vorschau
+  (`/api/heating-plants/assignable`), danach bekommt jede neue Position der Kostenart Heizung und
+  Warmwasser ohne Feld `heatingPlantId` die einzige Anlage (`defaultHeatingPlant`, auch für alte
+  Tabs und die Belegbuchung). Abgeschlossene Zeiträume bekommen keine Anlage. Entfernen gibt die
+  Positionen frei; hängen noch Zähler an der Anlage, wird abgelehnt.
+- **Zähler der Anlage** (`heating_plant_id` mit Rolle, ohne Wohnung) sind **keine Hauptzähler** des
+  Hauses (`houseMeters` in calc.ts). **Warmwasserzähler zählen beim Kaltwasser mit**, aber nur ein
+  Kaltwasserzähler sagt, ob eine Wohnung gemessen ist (G-B8, `measures`). Nach
+  Heizkostenverteilern verteilt Mietfuchs erst mit Bewertungsfaktoren (PR 12); bis dahin lehnt der
+  Server den Schlüssel ab, und die Oberfläche bietet ihn nicht an.
+- **Fernablesbarkeit** entscheidet [server/src/remoteReading.ts](server/src/remoteReading.ts) nach
+  `hkv.remote-reading.new-devices` (Einbau nach dem Stichtag: ab Einbau) und
+  `hkv.remote-reading.retrofit` (ältere ab 2027), aus den Zählern oder, beim Messdienst, aus der
+  Angabe an der Anlage. Sicher heißt `heating.remote-reading-missing` (warning, 3 % je Mieter auf
+  die gedruckten Heizzeilen), möglich `heating.remote-reading` mit „bis zu“; ohne Anlage oder ohne
+  Angaben bleibt `heating.remote-reading` wortgleich wie vor PR 4. Zwei Codes, weil die Stufe am
+  Code hängt (#112).
+- **Zweifamilienhaus** ist eine Art des Objekts (`zfh`) und nur Beschreibung; § 2 hängt an den
+  Wohnungen (`mayAgreeOtherwise`), ein Widerspruch ergibt `property.kind-mismatch` (hint).
+- Das Wiederherstellen prüft Verweise auf Anlagen anderer Objekte, überlappende Anlagen und
+  Heizperioden ohne Zeitraum (`heatingPlantViolations`).
+
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
@@ -957,7 +994,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
