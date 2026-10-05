@@ -118,10 +118,10 @@ export const RULES: readonly Rule[] = [
     // kürzt den gesamten Anteil an Heiz- und Warmwasserkosten (Entwurf R-A6, G-B9).
     code: 'heating-dhw-split',
     title: 'Warmwasser mit Wärmezähler',
-    norm: '§ 9 Abs. 2 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
+    norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
     summary:
       'Versorgt die Heizung auch das Warmwasser, ist die Wärme für das Warmwasser mit einem Wärmezähler zu messen. ' +
-      'Eine Formel darf nur verwenden, wer sie nur mit unzumutbar hohem Aufwand messen könnte. ' +
+      'Die Formel nach dem Warmwasserverbrauch darf nur verwenden, wer die Wärmemenge nur mit unzumutbar hohem Aufwand messen könnte; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann. ' +
       `Wird ohne diesen Grund nach einer Formel abgerechnet, darf der Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen.`,
   },
 ]

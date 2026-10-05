@@ -131,10 +131,14 @@ test('Irrtümer der Probe (Entwurf 7.3): „Ja“ mit Betrag S, „Nein“ obwoh
   const text = textOf(netto, 'co2.sum-check')
   assert.match(text, /Ihre Positionen ergeben 3\.845,51 €\. Mit Abzugszeile müssten es S \+ L = 3\.933,01 € sein, ohne Abzugszeile S = 3\.845,51 €\./)
   assert.match(text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 33,10 €, tb \(b\) 28,76 €, tc \(c\) 30,45 € und td \(d\) 23,06 €/)
+  // Beim Vorwegabzug steht die Aufteilung meist in der Abrechnung des Messdienstes (Durchsicht I4).
+  assert.match(text, /Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter/)
   assert.deepEqual(netto.notices.find((n) => n.code === 'co2.sum-check')?.subject, { kind: 'heatingCosts', id: 'hp' })
   assert.deepEqual(partsOf(netto), [])
   // „Nein“, obwohl abgezogen, Betrag brutto: Betrag = S + L, verlangt S.
-  assert.ok(codes(settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ method: 'serviceShown' })])).includes('co2.sum-check'))
+  const nein = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ method: 'serviceShown' })])
+  // Nur ausgewiesen und nicht gebucht: Die Mieter trügen den Anteil des Vermieters mit (Durchsicht I4).
+  assert.match(textOf(nein, 'co2.sum-check'), /tragen die Mieter auch den CO₂-Anteil des Vermieters von 87,50 €.*§ 6 Abs\. 1 CO2KostAufG/s)
   // Leerstand und fremde Einheiten: S umfasst ihre Beträge, eingetragen sind sie nicht.
   const leer = settle(
     { units: [...vier.units, unit('e')], tenancies: vier.tenancies, costItems: [messdienst(393301 + 50000, TECHEM)] },
@@ -274,6 +278,8 @@ test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizze
   assert.match(n.text, /^Heizanlage „Gas“, Heizperiode 2025: Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen/)
   assert.match(n.text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €\./)
   assert.match(n.text, /Tragen Sie auf der Seite Heizkosten die CO₂-Angaben aus der Abrechnung des Messdienstes ein\./)
+  // Durchsicht M6: Auch ohne Aufteilung trägt der Vermieter seinen Anteil.
+  assert.match(n.text, /Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen \(§ 5 Abs\. 2, § 6 Abs\. 1 CO2KostAufG\)/)
   assert.ok(r.legalBasis.values?.some((v) => v.id === 'co2.cut.missing'))
   // Fernwärme nur, falls der Lieferant CO₂ ausweist (R-A28); Wärmepumpe: nichts aufzuteilen.
   assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'districtHeating' })]), 'co2.missing'), /Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie/)
@@ -306,6 +312,7 @@ test('Der Messdienst hat nicht aufgeteilt (Entwurf 7.6, ohne Lieferung): co2.ser
   const n = r.notices.find((x) => x.code === 'co2.service-unsplit') ?? assert.fail('kein Hinweis')
   assert.equal(n.level, 'warning')
   assert.match(n.text, /hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €/)
+  assert.match(n.text, /Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen \(§ 5 Abs\. 2, § 6 Abs\. 1 CO2KostAufG\)/)
   assert.ok(!codes(r).includes('co2.missing'))
   assert.deepEqual(partsOf(r), [])
 })
@@ -340,7 +347,11 @@ test('Warmwasser beim Messdienst (#211, Entwurf 7.7): Formel ohne bestätigten A
   const r = mit({ dhwMethod: 'volumeFormula' })
   const n = r.notices.find((x) => x.code === 'heating.dhw-not-metered') ?? assert.fail('kein Hinweis')
   assert.deepEqual([n.level, n.rule, n.subject], ['warning', 'heating-dhw-split', { kind: 'heatingCosts', id: 'hp' }])
-  assert.match(n.text, /um 15 % kürzen \(BGH VIII ZR 151\/20\), hier: ta \(a\) 90,00 € und tb \(b\) 60,00 €/)
+  assert.match(n.text, /um 15 % kürzen \(§ 9 Abs\. 2 Satz 1, § 12 Abs\. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12\.01\.2022, VIII ZR 151\/20\), hier: ta \(a\) 90,00 € und tb \(b\) 60,00 €/)
+  assert.match(n.text, /nur mit unzumutbar hohem Aufwand/)
+  // Die Formel nach der Wohnfläche hat eine engere Voraussetzung (§ 9 Abs. 2 Satz 4, Durchsicht M1).
+  const flaeche = textOf(mit({ dhwMethod: 'areaFormula' }), 'heating.dhw-not-metered')
+  assert.match(flaeche, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann \(§ 9 Abs\. 2 Satz 4 HeizkostenV\)/)
   assert.ok(r.legalBasis.values?.some((v) => v.id === 'hkv.cut.not-by-consumption'))
   const keine: Partial<SnapshotHeatingPeriodRow>[] = [{ dhwMethod: 'volumeFormula', dhwUnmeasurable: true }, { dhwMethod: 'heatMeter' }, { dhwMethod: null }]
   for (const row of keine) assert.ok(!codes(mit(row)).includes('heating.dhw-not-metered'), JSON.stringify(row))

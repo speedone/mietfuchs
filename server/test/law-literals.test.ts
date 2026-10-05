@@ -52,6 +52,7 @@ const ALLOWED: readonly Allowed[] = [
   { file: 'shared/glossary.ts', match: '20 Prozent', reason: '§ 35a Abs. 2 EStG, Steuer des Mieters; kein Parameter des Entwurfs (4.3)' },
   { file: 'server/src/calc.ts', match: '31.05.2006', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 159/05), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '08.01.2013', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 180/12), kein Rechtswert' },
+  { file: 'server/src/calc.ts', match: '12.01.2022', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 151/20, Warmwasser ohne Wärmezähler), kein Rechtswert' },
   { file: 'server/src/calc.ts', match: '30.04.2008', reason: 'Datum einer Entscheidung im Zitat (BGH VIII ZR 240/07, eigene Heizperiode), kein Rechtswert' },
   { file: 'server/src/invoiceAmounts.ts', match: 'Math.max(50,', reason: 'Rundungstoleranz der Schnellerfassung (mindestens 0,50 €), keine Rechtszahl' },
 ]

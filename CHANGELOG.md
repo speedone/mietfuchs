@@ -67,8 +67,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   druckt die Einstufung und die Grundlagen mit (§ 7 Abs. 3 CO2KostAufG)
   ([#97](https://github.com/speedone/mietfuchs/issues/97), [#209](https://github.com/speedone/mietfuchs/issues/209)).
 - **Warmwasser laut Messdienst.** Hat der Messdienst die Wärme für das Warmwasser mit einer Formel
-  bestimmt, ohne dass das Messen unzumutbar wäre, nennt die Abrechnung die Kürzung von 15 % je Mieter
-  auf seine Heiz- und Warmwasserkosten (§ 9 Abs. 2 HeizkostenV, BGH VIII ZR 151/20)
+  bestimmt, ohne dass deren Voraussetzung vorliegt (§ 9 Abs. 2 Satz 2 bzw. 4 HeizkostenV), nennt die
+  Abrechnung die Kürzung von 15 % je Mieter auf seine Heiz- und Warmwasserkosten (§ 9 Abs. 2 Satz 1,
+  § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)
   ([#211](https://github.com/speedone/mietfuchs/issues/211)).
 - Anleitung „CO₂-Kosten der Heizung aufteilen“ und Lexikon-Einträge zur CO₂-Aufteilung, Einstufung,
   Fläche, Abzugszeile und zum Warmwasseranteil.

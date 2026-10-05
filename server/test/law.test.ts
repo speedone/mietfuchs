@@ -276,7 +276,10 @@ test('Regeln: CO₂-Aufteilung ab dem Beginn der Anwendbarkeit, Warmwasser mit W
   assert.match(co2.summary, /am oder nach dem 01\.01\.2023 beginnen/)
   assert.match(co2.summary, /um 3 % kürzen/)
   const dhw = RULES.find((r) => r.code === 'heating-dhw-split') ?? assert.fail('Regel heating-dhw-split fehlt')
-  assert.equal(dhw.norm, '§ 9 Abs. 2 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
+  assert.equal(dhw.norm, '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
+  // Durchsicht M5 und M1: wer die Wärmemenge nicht messen könnte, und die engere Voraussetzung der Flächenformel.
+  assert.match(dhw.summary, /wer die Wärmemenge nur mit unzumutbar hohem Aufwand messen könnte/)
+  assert.match(dhw.summary, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann/)
   assert.match(dhw.summary, /um 15 % kürzen/)
   assert.equal(dhw.validFrom, undefined)
 })

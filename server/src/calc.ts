@@ -2849,6 +2849,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const co2Duty = (lead: string) =>
     `${lead} zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, ` +
     'die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG).'
+  // Durchsicht M6: Auch wenn die Abrechnung nicht aufteilt, gehört der Anteil des Vermieters nicht zu
+  // den Kosten der Mieter (§ 5 Abs. 2: die Aufteilung richtet sich nach der Stufe; § 6 Abs. 1:
+  // eine Vereinbarung über mehr ist unwirksam).
+  const CO2_NOT_ON_TENANTS = 'Ihren Anteil an den CO₂-Kosten dürfen Sie auch dann nicht auf die Mieter umlegen (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG).'
   // Was der Vermieter tun kann, je nach Abrechnungsweg der Anlage.
   const nextStep = (pot: Co2Pot): string =>
     pot.method !== 'service'
@@ -2891,7 +2895,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
           warn('co2.sum-check',
             `${where}: Die Probe der CO₂-Angaben geht nicht auf.${approxText} ${lines}${entered} Bis das geklärt ist, bucht Mietfuchs keine CO₂-Aufteilung, und die Mieter tragen ihre Einzelbeträge wie eingetragen. ` +
-              `Ohne Aufteilung darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+              (st.method === 'serviceShown'
+                ? `Weil die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von ${fmtCents(L)} mit; den dürfen Sie nicht auf sie umlegen, eine Vereinbarung, nach der der Mieter mehr als seinen Anteil trägt, ist unwirksam (§ 5 Abs. 2, § 6 Abs. 1 CO2KostAufG). `
+                : '') +
+              `Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
               'Prüfen Sie den Betrag der Position (bezahlt, also vor „Abzüglich CO₂-Kosten Vermieter“) und Ihre Antwort auf die Frage nach der Abzugszeile.',
             plantSubject)
         } else if (pot.probe.ok && st.serviceUsersTotalApprox) {
@@ -2991,7 +2998,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         warn('co2.service-unsplit',
           `${where}: Der Messdienst hat die CO₂-Kosten nicht zwischen Ihnen und den Mietern aufgeteilt. Das Gesetz verlangt die Aufteilung und ihren Ausweis in der Heizkostenabrechnung (§§ 5, 7 Abs. 3 CO2KostAufG); ` +
             `ohne sie darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
-            'Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung; dafür braucht er die CO₂-Angaben Ihrer Brennstoffrechnung. Selbst aufteilen kann Mietfuchs mit einer späteren Version.',
+            `${CO2_NOT_ON_TENANTS} Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung; dafür braucht er die CO₂-Angaben Ihrer Brennstoffrechnung. Selbst aufteilen kann Mietfuchs mit einer späteren Version.`,
           plantSubject)
       }
       if (settledHere && service && booked) {
@@ -3024,7 +3031,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
         warn('co2.missing',
           `${where}: ${co2Duty(pot.energy === 'districtHeating' ? 'Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie' : 'Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten')} ` +
-            `Für diese Heizperiode kennt Mietfuchs keine CO₂-Angaben. Fehlen sie auch in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ${nextStep(pot)}`,
+            `Für diese Heizperiode kennt Mietfuchs keine CO₂-Angaben. Fehlen sie auch in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ${CO2_NOT_ON_TENANTS} ${nextStep(pot)}`,
           plantSubject)
       } else if (pot.energy === 'other') {
         const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
@@ -3036,15 +3043,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
     // Warmwasser beim Messdienst (#211, Entwurf 7.7): Laut Abrechnung nach einer Formel bestimmt, ohne
     // bestätigten unzumutbaren Aufwand. 15 % auf den ganzen Anteil an Heiz- und Warmwasserkosten im
-    // Topf (BGH VIII ZR 151/20, R-A6, G-B9). Ohne Angabe kein Hinweis.
+    // Topf (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH VIII ZR 151/20; R-A6, G-B9). Die
+    // Flächenformel hat die engere Voraussetzung des Satzes 4 (Durchsicht M1). Ohne Angabe kein Hinweis.
     const hw = pot.hotWater
     if (settledHere && pot.method === 'service' && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true) {
       const cut = law(hkvCutNotByConsumption, { period: hPeriod }, lawLog)
       warn('heating.dhw-not-metered',
         `${where}: Laut Abrechnung wurde die Wärme für das Warmwasser mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen. ` +
-          'Die Heizkostenverordnung verlangt den Wärmezähler; die Formel ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 HeizkostenV). ' +
-          `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (BGH VIII ZR 151/20)${cutsOn(ids, cut)}. ` +
-          'Ist das Messen bei Ihnen unzumutbar aufwendig, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf.',
+          (hw.dhwMethod === 'areaFormula'
+            ? 'Die Heizkostenverordnung verlangt den Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV); die Formel nach der Wohnfläche ist nur erlaubt, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann (§ 9 Abs. 2 Satz 4 HeizkostenV). '
+            : 'Die Heizkostenverordnung verlangt den Wärmezähler (§ 9 Abs. 2 Satz 1 HeizkostenV); die Formel nach dem Warmwasserverbrauch ist nur erlaubt, wenn die Wärmemenge nur mit unzumutbar hohem Aufwand gemessen werden könnte (§ 9 Abs. 2 Satz 2 HeizkostenV). ') +
+          `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20)${cutsOn(ids, cut)}. ` +
+          'Trifft die Voraussetzung bei Ihnen zu, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf.',
         plantSubject)
     }
   }

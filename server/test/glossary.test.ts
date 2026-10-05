@@ -137,5 +137,5 @@ test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen
   assert.match(GLOSSARY.co2Deducted.example, /3\.540,00 €.*87,50 €.*3\.452,50 €.*3\.845,51 €.*3\.933,01 €/s)
   // 15 % von 1.000 € (BGH VIII ZR 151/20, Entwurf R-A6).
   assert.match(GLOSSARY.hotWaterShare.example, /1\.000 €.*um 15 % kürzen, also um 150 €/s)
-  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 HeizkostenV; BGH VIII ZR 151/20')
+  assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
 })

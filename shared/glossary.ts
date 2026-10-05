@@ -219,7 +219,7 @@ export const GLOSSARY = {
     title: 'Warmwasseranteil',
     short: 'Bereitet die Heizung auch das Warmwasser, wird ein Teil ihrer Kosten dem Warmwasser zugerechnet. Die Wärme dafür ist mit einem Wärmezähler zu messen; eine Formel ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre.',
     example: `Ein Mieter trägt 1.000 € Heiz- und Warmwasserkosten. Hat der Messdienst die Wärme für das Warmwasser ohne diesen Grund mit einer Formel bestimmt, darf der Mieter seinen Anteil um ${CUT} % kürzen, also um ${(1000 * CUT) / 100} €.`,
-    norm: '§ 9 Abs. 2 HeizkostenV; BGH VIII ZR 151/20',
+    norm: '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20',
     needed: 'Nur, wenn die Abrechnung des Messdienstes sagt, dass die Wärme für das Warmwasser nach einer Formel bestimmt wurde. Dann tragen Sie das auf der Seite Heizkosten ein.',
   },
   cableTv: {
