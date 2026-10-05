@@ -30,6 +30,7 @@ import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpe
 import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
+import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 
 // ---------- Bausteine für die Testdaten ----------
 //
@@ -250,7 +251,7 @@ test('Schnappschuss: das Altformat der Vorauszahlung überlebt die Grenze', () =
   const snap = snapshotFromDb(makeDb(), 2025)
   const stored = snap.tenancies.find((x) => x.id === 't2')
   if (!stored) assert.fail('das Mietverhältnis fehlt im Schnappschuss')
-  assert.equal(computePrepaymentCents(stored, 2025).cents, 180000) // 12 × 150 €
+  assert.equal(computePrepaymentCents(stored, calendarYearPeriod(2025)).cents, 180000) // 12 × 150 €
 })
 
 test('Flächenschlüssel: Eigennutzung bleibt außen vor, Verteilung 90:60', () => {
@@ -342,29 +343,29 @@ test('Vorauszahlungs-Staffel: Erhöhung zum Juli', () => {
     ],
   })
   // 6 × 150 € + 6 × 180 € = 1.980 €
-  assert.deepEqual(computePrepaymentCents(t, 2025), { cents: 198000, overridden: false })
+  assert.deepEqual(computePrepaymentCents(t, calendarYearPeriod(2025)), { cents: 198000, overridden: false })
   // Vorjahr: ganzjährig 150 €
-  assert.deepEqual(computePrepaymentCents(t, 2024), { cents: 180000, overridden: false })
+  assert.deepEqual(computePrepaymentCents(t, calendarYearPeriod(2024)), { cents: 180000, overridden: false })
 })
 
 test('Vorauszahlungen: Einzug Mitte März zählt ab April', () => {
   const t = tenancy({ id: 't1', unitId: 'u1', start: '2025-03-15', prepayments: [{ from: '2025-03', monthlyCents: 10000 }] })
-  assert.equal(computePrepaymentCents(t, 2025).cents, 90000) // Apr–Dez = 9 Monate
+  assert.equal(computePrepaymentCents(t, calendarYearPeriod(2025)).cents, 90000) // Apr–Dez = 9 Monate
 })
 
 test('Vorauszahlungen: manuelle Jahres-Korrektur hat Vorrang', () => {
   const t = tenancy({
     id: 't1', unitId: 'u1', start: '2024-01-01',
     prepayments: [{ from: '2024-01', monthlyCents: 15000 }],
-    prepaymentOverrides: { '2025': 165000 }, // ein Monat nicht gezahlt
+    prepaymentOverrides: { '2025-01': 165000 }, // ein Monat nicht gezahlt
   })
-  assert.deepEqual(computePrepaymentCents(t, 2025), { cents: 165000, overridden: true })
-  assert.equal(computePrepaymentCents(t, 2024).cents, 180000)
+  assert.deepEqual(computePrepaymentCents(t, calendarYearPeriod(2025)), { cents: 165000, overridden: true })
+  assert.equal(computePrepaymentCents(t, calendarYearPeriod(2024)).cents, 180000)
 })
 
 test('Vorauszahlungen: Altformat (fester Monatsbetrag) wird weiter unterstützt', () => {
   const t = tenancy({ id: 't1', unitId: 'u1', prepaymentMonthlyCents: 15000 })
-  assert.equal(computePrepaymentCents(t, 2025).cents, 180000)
+  assert.equal(computePrepaymentCents(t, calendarYearPeriod(2025)).cents, 180000)
 })
 
 test('Kosten anderer Jahre werden ignoriert', () => {
@@ -2257,7 +2258,7 @@ function scopedSource(db: Db, propertyId: string): PropertyScopedSource {
   return {
     units: db.units.map((u) => ({ ...u, propertyId })),
     tenancies: db.tenancies,
-    costItems: db.costItems.map((c) => ({ ...c, propertyId })),
+    costItems: db.costItems.map((c) => ({ ...c, period: calendarPeriod(c.year), propertyId })),
     meters: db.meters.map((m) => ({ ...m, propertyId })),
     readings: db.readings,
     payments: db.payments,
@@ -2286,7 +2287,7 @@ test('Invariante: mit zwei Objekten rechnet jedes, als wäre es allein', () => {
     const b = prefixed(randomDb(rnd), 'B')
     const beide = merged(scopedSource(a, 'objekt-a'), scopedSource(b, 'objekt-b'))
     for (const [allein, propertyId] of [[a, 'objekt-a'], [b, 'objekt-b']] as const) {
-      const imVerbund = snapshotFor(beide, propertyId, 2025)
+      const imVerbund = snapshotFor(beide, propertyId, calendarYearPeriod(2025))
       const fuerSich = snapshotOf(sourceOf(allein), 2025)
       const fall = `Fall ${i}, ${propertyId}`
       assert.deepEqual(computeSettlement(imVerbund), computeSettlement(fuerSich), `${fall}: Abrechnung`)
@@ -2683,7 +2684,7 @@ test('Eine Rundungsregel (#202): eine vorher abgeschlossene Abrechnung bleibt, d
       return { ...st, totalShareCents: share, balanceCents: st.balanceCents + st.totalShareCents - share }
     }),
   }
-  const r = compareWithFrozen(frozen, today, 2025, '2026-06-01')
+  const r = compareWithFrozen(frozen, today, '2026-12-31', '2026-06-01')
   assert.equal(r.comparable, true)
   assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.differenceCents, d.direction]), [['tb', 1, 'tenant'], ['tc', 1, 'tenant']])
 })

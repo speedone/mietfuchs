@@ -4,6 +4,7 @@
 import { parseNumberDe } from './numbers'
 import type { CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
+import { calendarPeriod } from '../../shared/period.ts'
 
 export type UnitForm = {
   id?: string
@@ -115,7 +116,8 @@ export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: nu
   if (empty.length > 0) {
     const names = empty.map((u) => u.name)
     const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}` : names[0]
-    const byArea = yearItems.some((c) => c.year === year && c.key === 'area' && !isNotAllocable(c.category) &&
+    // Brücke Kalenderjahr (#208): bis PR 3
+    const byArea = yearItems.some((c) => c.period === calendarPeriod(year) && c.key === 'area' && !isNotAllocable(c.category) &&
       empty.some((u) => u.participates && (!c.participantUnitIds || c.participantUnitIds.includes(u.id))))
     parts.push((empty.length === 1
       ? `${list} hat 0 m² und im Jahr keine Bewohner. Ist ${list} eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².`

@@ -6,13 +6,14 @@
 // Nachgestellt wie im Issue: Eigentumswohnung, Hausgeld 900 € Rücklage neben 3.921 € übrigen
 // Werbungskosten. Vorher standen 4.821 € als Werbungskosten da.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, RESERVE_CATEGORY, taxReport } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource } from '../src/snapshot.ts'
 
 const item = (over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id: 'k', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', ...over,
+  id: 'k', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', ...over,
 })
 const source = (costItems: SnapshotCostItem[]): SnapshotSource => ({
   units: [{ id: 'w', name: 'Wohnung', areaM2: 70, participates: true }],

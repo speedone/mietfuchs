@@ -7,6 +7,7 @@
 // belegte Regel; die Rechnungen unten nehmen deshalb den Wert aus dem Register und nicht seine
 // heutige Zahl, und genau ein Test hält die Zahl fest.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, occupiedDays, type ComputedSettlement } from '../src/calc.ts'
@@ -23,7 +24,7 @@ const tenancy = (id: string, unitId: string, persons: number, start = '2020-01-0
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
 const muell = (over: Partial<SnapshotCostItem> = {}): SnapshotCostItem => ({
-  id: 'muell', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 60000, key: 'persons', ...over,
+  id: 'muell', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll', amountCents: 60000, key: 'persons', ...over,
 })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
@@ -314,7 +315,7 @@ test('Leerstand beim Personenschlüssel: eine nach altem Stand abgeschlossene Ab
   const frozen = settle({ ...source, units: [unit('A'), unit('B'), unit('C', { participates: false })] })
   assert.equal(shareOf(frozen, 'ta'), 40000)
   const current = settle(source)
-  const cmp = compareWithFrozen(frozen, current, 2025, '2026-03-01')
+  const cmp = compareWithFrozen(frozen, current, '2026-12-31', '2026-03-01')
   assert.equal(cmp.comparable, true)
   assert.deepEqual(cmp.deviations.map((d) => [d.tenancyId, d.direction, d.differenceCents]), [
     ['ta', 'tenant', 40000 - shareOf(current, 'ta')],

@@ -8,6 +8,13 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 
 ### Geändert
 
+- Abrechnungszeiträume werden intern als Zeitraum geführt und nicht mehr als Kalenderjahr:
+  Kostenpositionen, abgeschlossene Abrechnungen und gezahlte Vorauszahlungen hängen an einem
+  Zeitraum, der im Kalenderjahr wie bisher heißt. Wer im Kalenderjahr abrechnet, merkt davon
+  nichts; jede Zahl bleibt gleich. Die Abrechnung nennt ihre Frist jetzt selbst, und Frist und
+  Höchstdauer des Zeitraums (§ 556 Abs. 3 BGB) frieren mit der abgeschlossenen Abrechnung ein.
+  Vorbereitung für Abrechnungszeiträume wie Mai bis April
+  ([#208](https://github.com/speedone/mietfuchs/issues/208)).
 - **Rechtsregister.** Jede Rechtszahl, mit der Mietfuchs rechnet oder die es nennt (Kabel-TV bis
   30.06.2024, 50 bis 70 % nach Verbrauch, die Kürzungen um 15 % und 3 %, die Fernablesbarkeit ab
   2027, ein Leerstandstag mit einer Person, der Regelsatz der Umsatzsteuer), steht jetzt an einer

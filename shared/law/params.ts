@@ -3,13 +3,15 @@
 // Konstanten, die hier fehlen.
 import type { LawParam, Timing } from './register.ts'
 import type { LawValue } from '../types.ts'
-import { betrkvTvSignal } from './bgb-betrkv.ts'
+import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from './bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { practiceVacancyPersons } from './practice.ts'
 import { ustgStandardRate } from './ustg.ts'
 
 export const LAW_PARAMS: readonly LawParam<LawValue, Timing>[] = [
   betrkvTvSignal,
+  bgbDeadlineMonths,
+  bgbMaxPeriodMonths,
   hkvConsumptionShare,
   hkvCutNotByConsumption,
   hkvCutRemoteReading,

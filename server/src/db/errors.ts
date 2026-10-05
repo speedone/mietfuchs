@@ -52,6 +52,11 @@ const FIELD_NAMES: Record<string, string> = {
   date: 'Datum',
   start: 'Beginn',
   year: 'Jahr',
+  // Abrechnungszeitraum (#208)
+  period: 'Abrechnungszeitraum',
+  requested_period: 'gewählten Abrechnungszeitraum',
+  period_start_month: 'Beginnmonat der Abrechnungszeiträume',
+  from_month: 'Monat des Wechsels',
   category: 'Kostenart',
   key: 'Umlageschlüssel',
   type: 'Zählertyp',
@@ -92,7 +97,9 @@ function uniqueMessage(details: string): string {
       'vorhandenen Eintrag oder wählen Sie einen anderen Stichtag.'
     )
   }
-  if (spalten.includes('year')) {
+  // Seit #208 sind abgeschlossene Abrechnungen und Jahreskorrekturen nach Zeitraum geschlüsselt;
+  // solange die Oberfläche nur Kalenderjahre kennt, ist der Zeitraum dort ein Jahr.
+  if (spalten.includes('year') || spalten.includes('period')) {
     return (
       'Für dieses Jahr ist bereits eine Abrechnung abgeschlossen. Es kann je Jahr nur eine ' +
       'geben. Heben Sie den Abschluss auf, wenn Sie ihn erneuern wollen.'
@@ -129,6 +136,18 @@ function checkMessage(name: string): string {
       'unvollständig ist. Das ist ein Fehler in Mietfuchs und keiner in Ihren Daten; an der ' +
       'gespeicherten Abrechnung hat sich nichts geändert. Bitte melden Sie ihn.'
     )
+  }
+  // Zwei Endungen aus #208. `_valid`: ein Wert mit fester Form, hier der Zeitraumschlüssel
+  // 'JJJJ-MM' oder ein Monat von 1 bis 12. `_with_property`: ein Wert, der nur an einem Objekt
+  // bestimmt ist.
+  if (name.endsWith('_valid')) {
+    const feld = fieldOfConstraint(name, '_valid')
+    return name.endsWith('_period_start_month_valid')
+      ? `Für den ${feld} ist nur ein Monat von 1 bis 12 zulässig.`
+      : `Für ${feld} ist ein Wert angekommen, der kein Monat in der Form JJJJ-MM ist (etwa 2025-05). Bitte laden Sie die Seite neu und versuchen Sie es noch einmal.`
+  }
+  if (name.endsWith('_with_property')) {
+    return `Einen ${fieldOfConstraint(name, '_with_property')} gibt es nur zusammen mit einem Objekt, denn jedes Objekt hat seine eigenen Zeiträume. Bitte ordnen Sie den Beleg zuerst einem Objekt zu.`
   }
   if (name === 'settings_single_row') {
     // Die einzige Bedingung ohne Endung, und sie ist eine echte Ausnahme: Sie beschreibt kein

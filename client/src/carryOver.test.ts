@@ -1,5 +1,6 @@
 // „Aus dem Vorjahr übernehmen“ (#141): Die Positionen des Vorjahres werden zur Vorlage, ohne
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
+import { calendarPeriod } from '../../shared/period.ts'
 import { describe, expect, test } from 'vitest'
 import type { CostItem, Unit } from './types'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
@@ -9,7 +10,7 @@ const UNITS: Unit[] = [
   { id: 'u2', propertyId: 'p', name: 'OG', areaM2: 70, participates: true },
 ]
 let n = 0
-const item = (over: Partial<CostItem> & Pick<CostItem, 'year' | 'category' | 'description'>): CostItem => ({
+const item = (over: Partial<CostItem> & Pick<CostItem, 'period' | 'category' | 'description'>): CostItem => ({
   id: `k${++n}`, propertyId: 'p', amountCents: 50000, key: 'area', ...over,
 })
 const rowOf = (rows: CarryRow[], description: string): CarryRow => {
@@ -30,12 +31,12 @@ describe('Jahreszahl in der Beschreibung', () => {
 
 describe('Vorlagen aus dem Vorjahr', () => {
   const items = [
-    item({ year: 2024, category: 'Grundsteuer', description: 'Grundsteuer 2024' }),
-    item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt', invoiceFile: 'gs.pdf', labor35aCents: 0 }),
-    item({ year: 2025, category: 'Hauswart', description: 'Hauswart', key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 480000 }, labor35aCents: 3000 }),
-    item({ year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung ista', key: 'amounts', tenancyAmounts: { t1: 30000 } }),
-    item({ year: 2026, category: 'Müllabfuhr', description: 'Müll 2026' }),
-    item({ year: 2025, category: 'Müllabfuhr', description: 'Müll 2025', key: 'persons' }),
+    item({ period: calendarPeriod(2024), category: 'Grundsteuer', description: 'Grundsteuer 2024' }),
+    item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt', invoiceFile: 'gs.pdf', labor35aCents: 0 }),
+    item({ period: calendarPeriod(2025), category: 'Hauswart', description: 'Hauswart', key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 480000 }, labor35aCents: 3000 }),
+    item({ period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung ista', key: 'amounts', tenancyAmounts: { t1: 30000 } }),
+    item({ period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Müll 2026' }),
+    item({ period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll 2025', key: 'persons' }),
   ]
   const rows = carryOverRows(items, 2026)
 
@@ -62,11 +63,11 @@ describe('Vorlagen aus dem Vorjahr', () => {
   })
 
   test('Durchsicht: vereinbarte Anteile mit Summe, Direktzuordnung mit Wohnung', () => {
-    const anteile = carryKeyDetails(item({ year: 2025, category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 40 } }), UNITS)
+    const anteile = carryKeyDetails(item({ period: calendarPeriod(2025), category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 40 } }), UNITS)
     expect(anteile).toEqual({ text: 'EG: 40 % · OG: 40 % (zusammen 80 %)', warn: true })
-    expect(carryKeyDetails(item({ year: 2025, category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 60 } }), UNITS)).toEqual({ text: 'EG: 40 % · OG: 60 %', warn: false })
-    expect(carryKeyDetails(item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: 'u2' }), UNITS)).toEqual({ text: 'direkt OG', warn: false })
-    expect(carryKeyDetails(item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: null }), UNITS)).toEqual({ text: 'Wohnung fehlt', warn: true })
+    expect(carryKeyDetails(item({ period: calendarPeriod(2025), category: 'Hauswart', description: 'H', key: 'custom', customShares: { u1: 40, u2: 60 } }), UNITS)).toEqual({ text: 'EG: 40 % · OG: 60 %', warn: false })
+    expect(carryKeyDetails(item({ period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: 'u2' }), UNITS)).toEqual({ text: 'direkt OG', warn: false })
+    expect(carryKeyDetails(item({ period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'S', key: 'direct', directUnitId: null }), UNITS)).toEqual({ text: 'Wohnung fehlt', warn: true })
   })
 
   test('ein eingetragener Betrag hakt die Zeile an, ein geleerter ab', () => {
@@ -78,7 +79,7 @@ describe('Vorlagen aus dem Vorjahr', () => {
   test('Rumpf: Schlüssel und Angaben des Vorjahres, Betrag des Jahres, kein Beleg', () => {
     const gs = withCarryAmount(rowOf(rows, 'Grundsteuer 2025'), '610,00')
     expect(carryOverBody(gs, UNITS, 2026)).toMatchObject({
-      body: { year: 2026, category: 'Grundsteuer', description: 'Grundsteuer 2026', vendor: 'Stadt', amountCents: 61000, key: 'area', invoiceFile: null },
+      body: { period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Grundsteuer 2026', vendor: 'Stadt', amountCents: 61000, key: 'area', invoiceFile: null },
     })
   })
 
@@ -110,8 +111,8 @@ describe('Vorlagen aus dem Vorjahr', () => {
 describe('schon erfasst nach der gemeinsamen Regel', () => {
   test('KI-Beschreibung bei gleicher Kostenart: als erfasst erkannt, ein Betrag hakt nicht an', () => {
     const items = [
-      item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
-      item({ year: 2026, category: 'Grundsteuer', description: 'Abgabenbescheid Stadt Musterstadt Q1–Q4', invoiceFile: 'gs.pdf' }),
+      item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
+      item({ period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Abgabenbescheid Stadt Musterstadt Q1–Q4', invoiceFile: 'gs.pdf' }),
     ]
     const row = rowOf(carryOverRows(items, 2026), 'Grundsteuer 2025')
     expect(row.already).toBe(true)
@@ -121,9 +122,9 @@ describe('schon erfasst nach der gemeinsamen Regel', () => {
 
   test('eine Gutschrift des Vorjahres gilt nicht als erfasst, weil es eine Rechnung derselben Art gibt (rc.1)', () => {
     const items = [
-      item({ year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
-      item({ year: 2025, category: 'Grundsteuer', description: 'Erstattung Grundsteuer', vendor: 'Stadt', amountCents: -5745 }),
-      item({ year: 2026, category: 'Grundsteuer', description: 'Abgabenbescheid', vendor: 'Stadt', invoiceFile: 'gs.pdf' }),
+      item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: 'Stadt' }),
+      item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Erstattung Grundsteuer', vendor: 'Stadt', amountCents: -5745 }),
+      item({ period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Abgabenbescheid', vendor: 'Stadt', invoiceFile: 'gs.pdf' }),
     ]
     const rows = carryOverRows(items, 2026)
     expect(rowOf(rows, 'Grundsteuer 2025').already).toBe(true)
@@ -132,20 +133,20 @@ describe('schon erfasst nach der gemeinsamen Regel', () => {
 
   test('breite Kostenart mit anderer Beschreibung und anderem Steller: nicht erfasst', () => {
     const items = [
-      item({ year: 2025, category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025', vendor: 'Pumpen Huber' }),
-      item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne', vendor: 'Dach Maier' }),
+      item({ period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'Wartung Hebeanlage 2025', vendor: 'Pumpen Huber' }),
+      item({ period: calendarPeriod(2026), category: 'Sonstige Betriebskosten', description: 'Reinigung Dachrinne', vendor: 'Dach Maier' }),
     ]
     expect(rowOf(carryOverRows(items, 2026), 'Wartung Hebeanlage 2025').already).toBe(false)
     // derselbe Steller schon: dann ist es wohl dieselbe Wartung
-    const same = [items[0]!, item({ year: 2026, category: 'Sonstige Betriebskosten', description: 'Jahresrechnung', vendor: 'Pumpen Huber GmbH' })]
+    const same = [items[0]!, item({ period: calendarPeriod(2026), category: 'Sonstige Betriebskosten', description: 'Jahresrechnung', vendor: 'Pumpen Huber GmbH' })]
     expect(rowOf(carryOverRows(same, 2026), 'Wartung Hebeanlage 2025').already).toBe(true)
   })
 
   test('eine schon übernommene Schwesterposition macht die andere nicht zu „erfasst“', () => {
     const items = [
-      item({ year: 2025, category: 'Müllabfuhr', description: 'Restmüll 2025' }),
-      item({ year: 2025, category: 'Müllabfuhr', description: 'Biomüll 2025' }),
-      item({ year: 2026, category: 'Müllabfuhr', description: 'Restmüll 2026' }),
+      item({ period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Restmüll 2025' }),
+      item({ period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Biomüll 2025' }),
+      item({ period: calendarPeriod(2026), category: 'Müllabfuhr', description: 'Restmüll 2026' }),
     ]
     const rows = carryOverRows(items, 2026)
     expect(rowOf(rows, 'Restmüll 2025').already).toBe(true)
@@ -155,7 +156,7 @@ describe('schon erfasst nach der gemeinsamen Regel', () => {
 
 describe('Nicht umlagefähig mit Einheit für die Steuer (#163)', () => {
   test('die Übernahme behält die Einheit, die die Position für die Steuer betrifft', () => {
-    const items = [item({ year: 2025, category: 'Nicht umlagefähig', description: 'Wartung Therme EG', key: 'direct', directUnitId: 'u1' })]
+    const items = [item({ period: calendarPeriod(2025), category: 'Nicht umlagefähig', description: 'Wartung Therme EG', key: 'direct', directUnitId: 'u1' })]
     const row = withCarryAmount(rowOf(carryOverRows(items, 2026), 'Wartung Therme EG'), '180,00')
     expect(carryOverBody(row, UNITS, 2026)).toMatchObject({ body: { category: 'Nicht umlagefähig', key: 'direct', directUnitId: 'u1' } })
   })

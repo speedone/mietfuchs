@@ -2,6 +2,7 @@
 // Doppelungen im Kostenformular (Befund A): Eine neue Position derselben Kostenart fragt nach,
 // statt still eine zweite anzulegen. Der Weg über die KI-Auswertung (Schnellerfassung und
 // Kostenseite) steht seit der Belegbuchung (#170) in booking.test.tsx.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { CostItem, Unit } from '../types'
@@ -52,7 +53,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-const estimate = (year: number): CostItem => ({ id: 'gs', propertyId: 'objekt-1', year, category: 'Grundsteuer', description: `Grundsteuer ${year}`, vendor: 'Stadt', amountCents: 61000, key: 'area' })
+const estimate = (year: number): CostItem => ({ id: 'gs', propertyId: 'objekt-1', period: calendarPeriod(year), category: 'Grundsteuer', description: `Grundsteuer ${year}`, vendor: 'Stadt', amountCents: 61000, key: 'area' })
 
 const kostenPage = () => render(
   <YearProvider>

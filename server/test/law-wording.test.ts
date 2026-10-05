@@ -6,6 +6,7 @@
 // und die vorhandenen Tests zu Kabel, Heizung und Fernablesbarkeit prüfen mit Mustern. Erst ein
 // wörtlicher Vergleich fängt ein „15 %“, aus dem „15%“ oder „15 Prozent“ geworden ist.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
@@ -20,7 +21,7 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, areaM2: number, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2, participates: true, ...over })
 const item = (year: number, over: Partial<SnapshotCostItem>): SnapshotCostItem =>
-  ({ id: 'k', year, category: 'Heizung und Warmwasser', description: 'Posten', amountCents: 120000, key: 'area', ...over })
+  ({ id: 'k', period: calendarPeriod(year), category: 'Heizung und Warmwasser', description: 'Posten', amountCents: 120000, key: 'area', ...over })
 const snap = (year: number, s: Partial<SnapshotSource>, property?: Snapshot['property']): Snapshot => ({
   ...snapshotOf({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s }, year),
   ...(property !== undefined ? { property } : {}),

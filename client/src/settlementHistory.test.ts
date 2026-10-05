@@ -27,17 +27,17 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
   const frueher = (sentAt: string | null, id = 'h') => ({ id, closedAt: '2026-01-10T09:00:00.000Z', sentAt, reopenedAt: '2026-03-01T10:00:00.000Z', settlement: {} })
 
   test('ohne Versand: die verbleibenden Tage wie bisher', () => {
-    const v = deadlineView(2025, null, [], heute)
+    const v = deadlineView('2025', '2026-12-31', null, [], heute)
     expect(v.level).toBe('ok')
     expect(v.text).toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025 muss dem Mieter bis zum 31.12.2026 zugehen — noch 91 Tage.')
   })
 
   test('versandt: gewahrt', () => {
-    expect(deadlineView(2025, '2026-01-12', [], heute).text).toBe('Abrechnung 2025 am 12.01.2026 versendet — die Frist nach §556 BGB (31.12.2026) ist gewahrt.')
+    expect(deadlineView('2025', '2026-12-31', '2026-01-12', [], heute).text).toBe('Abrechnung 2025 am 12.01.2026 versendet — die Frist nach §556 BGB (31.12.2026) ist gewahrt.')
   })
 
   test('nach dem Wiederöffnen bleibt der frühere Versand sichtbar, statt dass die Frist neu zu laufen scheint', () => {
-    const v = deadlineView(2025, null, [frueher('2026-01-12')], heute)
+    const v = deadlineView('2025', '2026-12-31', null, [frueher('2026-01-12')], heute)
     expect(v.text).toContain('am 12.01.2026')
     expect(v.text).toContain('gewahrt')
     expect(v.text).toContain('bis zum 31.12.2026')
@@ -46,13 +46,13 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
   })
 
   test('mehrere frühere Abschlüsse: es zählt der erste Versand', () => {
-    const v = deadlineView(2025, null, [frueher('2026-05-02', 'h2'), frueher('2026-01-12', 'h1'), frueher(null, 'h0')], heute)
+    const v = deadlineView('2025', '2026-12-31', null, [frueher('2026-05-02', 'h2'), frueher('2026-01-12', 'h1'), frueher(null, 'h0')], heute)
     expect(v.text).toContain('am 12.01.2026')
     expect(v.text).not.toContain('02.05.2026')
   })
 
   test('Frist abgelaufen, aber rechtzeitig versandt: kein Fehler, sondern der Hinweis auf die Berichtigung', () => {
-    const v = deadlineView(2024, null, [frueher('2025-06-01')], heute)
+    const v = deadlineView('2024', '2025-12-31', null, [frueher('2025-06-01')], heute)
     expect(v.level).toBe('notice')
     expect(v.text).toContain('am 01.06.2025')
     expect(v.text).toContain('abgelaufen')
@@ -61,10 +61,15 @@ describe('Frist nach § 556 Abs. 3 BGB nach dem Wiederöffnen (#142)', () => {
   })
 
   test('schon der frühere Versand lag nach Fristende: jede Nachforderung ist in der Regel ausgeschlossen', () => {
-    const v = deadlineView(2024, null, [frueher('2026-02-01')], heute)
+    const v = deadlineView('2024', '2025-12-31', null, [frueher('2026-02-01')], heute)
     expect(v.level).toBe('error')
     expect(v.text).toContain('am 01.02.2026')
     expect(v.text).toContain('Nachforderungen sind in der Regel ausgeschlossen')
     expect(v.text).not.toContain('höhere Nachzahlung')
+  })
+
+  test('Mai bis April: Bezeichnung und Frist kommen von der Abrechnung (#208)', () => {
+    expect(deadlineView('2025/2026', '2027-04-30', null, [], heute).text)
+      .toBe('Abrechnungsfrist (§556 BGB): Die Abrechnung 2025/2026 muss dem Mieter bis zum 30.04.2027 zugehen — noch 211 Tage.')
   })
 })

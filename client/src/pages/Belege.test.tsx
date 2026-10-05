@@ -2,6 +2,7 @@
 // Der Belegordner (#170): Filter nach Objekt und Jahr, Register je Kostenart, Suche. Die
 // Entscheidungslogik prüft receipts.test.ts; hier geht es um das, was nur die Seite zeigt,
 // vor allem darum, dass die Auswahlfelder den Wert anzeigen, nach dem tatsächlich gefiltert wird.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
@@ -24,12 +25,12 @@ const up = (file: string, sha = file): UploadInfo => ({
 
 const ITEMS: Record<string, CostItem[]> = {
   p1: [
-    { id: 'gs', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer B', amountCents: 60000, key: 'area', invoiceFile: '1_gs.pdf', vendor: 'Stadt' },
-    { id: 'w1', propertyId: 'p1', year: YEAR, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 98000, key: 'area', invoiceFile: '2_wasser.pdf', vendor: 'Stadtwerke' },
-    { id: 'w2', propertyId: 'p1', year: YEAR, category: 'Wasser/Abwasser', description: 'Abwasser', amountCents: 26000, key: 'area' },
+    { id: 'gs', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer B', amountCents: 60000, key: 'area', invoiceFile: '1_gs.pdf', vendor: 'Stadt' },
+    { id: 'w1', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 98000, key: 'area', invoiceFile: '2_wasser.pdf', vendor: 'Stadtwerke' },
+    { id: 'w2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Wasser/Abwasser', description: 'Abwasser', amountCents: 26000, key: 'area' },
   ],
   p2: [
-    { id: 'x', propertyId: 'p2', year: YEAR, category: 'Grundsteuer', description: 'Grundsteuer Ahornweg', amountCents: 40000, key: 'area', invoiceFile: '3_ahorn.pdf' },
+    { id: 'x', propertyId: 'p2', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: 'Grundsteuer Ahornweg', amountCents: 40000, key: 'area', invoiceFile: '3_ahorn.pdf' },
   ],
 }
 
@@ -233,7 +234,7 @@ test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was feh
 // Seite nach dem Betrag, statt den geschätzten still stehen zu lassen.
 test('Posteingang: passende Kostenart oben, nach dem Zuordnen „Betrag prüfen“', async () => {
   extraUploads = [up('5_Grundsteuerbescheid.pdf')]
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   const zuordnen = await screen.findByLabelText('Grundsteuerbescheid.pdf einer Position zuordnen') as HTMLSelectElement
@@ -275,7 +276,7 @@ const renderWithOpen = (onOpenItem: (c: CostItem) => void) =>
   )
 
 test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein Feld, „Position öffnen“', async () => {
-  extraItems = [{ id: 'hg', propertyId: 'p1', year: YEAR, category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }]
+  extraItems = [{ id: 'hg', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Hauswart', description: 'Hauswart laut Hausgeld', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -288,7 +289,7 @@ test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein
 })
 
 test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins Formular', async () => {
-  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
+  extraItems = [{ id: 'gp', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 100000, labor35aCents: 80000, key: 'area' }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -305,7 +306,7 @@ test('„Betrag prüfen“: liegt der Lohnanteil über dem neuen Betrag, ins For
 // Dritte Durchsicht (M1): Eine übernommene Position kann einen geschätzten §35a-Lohnanteil tragen.
 // „Betrag prüfen“ nennt ihn, damit er nicht still in die Anlage V gelangt.
 test('„Betrag prüfen“ nennt den Lohnanteil der Position und führt ins Formular', async () => {
-  extraItems = [{ id: 'gp', propertyId: 'p1', year: YEAR, category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000, key: 'area' }]
+  extraItems = [{ id: 'gp', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Gartenpflege', description: 'Garten', amountCents: 300000, labor35aCents: 100000, key: 'area' }]
   const onOpenItem = vi.fn()
   renderWithOpen(onOpenItem)
   await screen.findByText('Wasser/Abwasser')
@@ -362,7 +363,7 @@ test('Weiter prüfen (#170): scheitert das Zuordnen, steht eine Meldung da und d
 // Integrationsdurchsicht vor 0.10 (N1): „Betrag prüfen“ ändert eine Position. Liegt sie in einem
 // Jahr mit abgeschlossener Abrechnung, sagt der Kasten es, bevor gespeichert wird.
 test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt die Abweichung', async () => {
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   closed = { closedAt: `${YEAR + 1}-03-01T00:00:00.000Z` }
   renderPage()
   await screen.findByText('Wasser/Abwasser')
@@ -372,7 +373,7 @@ test('„Betrag prüfen“ in einem Jahr mit abgeschlossener Abrechnung nennt di
 })
 
 test('„Betrag prüfen“ in einem offenen Jahr: kein Satz zur abgeschlossenen Abrechnung', async () => {
-  extraItems = [{ id: 'gs2', propertyId: 'p1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
+  extraItems = [{ id: 'gs2', propertyId: 'p1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR} (Nachtrag)`, amountCents: 61000, key: 'area' }]
   renderPage()
   await screen.findByText('Wasser/Abwasser')
   fireEvent.change(screen.getByLabelText('lose.pdf einer Position zuordnen'), { target: { value: 'gs2' } })

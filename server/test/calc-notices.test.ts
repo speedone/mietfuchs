@@ -2,6 +2,7 @@
 // wo es passt, den betroffenen Eintrag und die Regel. Der Wortlaut bleibt: `warnings` sind genau
 // die Texte der Hinweise, damit Cockpit, ältere Tabs und eingefrorene Abrechnungen weiter stimmen.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, consumptionOverview, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
@@ -14,7 +15,7 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
 const item = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
+  id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
 })
 const settle = (s: Partial<SnapshotSource>, year = 2025): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
@@ -65,7 +66,7 @@ test('Hinweise: die Position, die Wohnung und das Mietverhältnis stehen als Geg
 test('Kabel: der Hinweis nennt die Regel und die Position, 2024 und danach mit eigenem Code', () => {
   const k = (year: number) => settle({
     units: [unit('a')], tenancies: [tenancy('t-a', 'a')],
-    costItems: [item('kabel', { year, category: 'Kabel/Antenne', key: 'units' })],
+    costItems: [item('kabel', { period: calendarPeriod(year), category: 'Kabel/Antenne', key: 'units' })],
   }, year).notices
   assert.deepEqual(k(2023), [])
   assert.deepEqual(k(2024).map((n) => [n.code, n.rule, n.subject?.id]), [['tv-signal.partial-year', 'tv-signal', 'kabel']])

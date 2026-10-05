@@ -3,6 +3,7 @@
 // Verteilbasis, in der alle Einheiten 0 haben, teilt nicht durch null, sondern gibt die Position
 // mit einer Meldung an den Vermieter.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
@@ -18,7 +19,7 @@ const tenancy = (id: string, unitId: string, persons: number): SnapshotTenancy =
   id, unitId, tenantName: id, persons, personHistory: [{ from: '2020-01-01', persons }], start: '2020-01-01', end: null,
   prepayments: [], prepaymentOverrides: {}, baseRents: [],
 })
-const item = (id: string, key: SnapshotCostItem['key']): SnapshotCostItem => ({ id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key })
+const item = (id: string, key: SnapshotCostItem['key']): SnapshotCostItem => ({ id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,
 }, 2025))

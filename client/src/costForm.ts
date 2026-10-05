@@ -10,6 +10,7 @@ import { parseNumberDe } from './numbers'
 import { usageOf } from './types'
 import { CREDIT_WITH_AMOUNTS, costItemBody, inBasis, pct, showsTaxUnitField, taxUnitOf, type BuildResult, type CostItemDraft } from '../../shared/costItem.ts'
 import { etwByStatement, lastExternalBasis, type KeyContext } from '../../shared/assessment.ts'
+import { calendarContext, calendarPeriod } from '../../shared/period.ts'
 // Seit der Belegbuchung (#170) in shared/, weil der Server dieselben Prüfungen und Vorschläge braucht.
 export { amountProblem, showsTaxUnitField, type BuildResult } from '../../shared/costItem.ts'
 export { aiPositionDefaults, aiPositionPreselect, lastExternalBasis, type AiPositionKey, type KeyContext } from '../../shared/assessment.ts'
@@ -247,7 +248,8 @@ export function applyAllocation(form: ItemForm, a: Allocation, units: Unit[]): I
 function proposal(previous: ItemForm, category: string, units: Unit[], meters: Meter[], ctx?: KeyContext): ItemForm {
   const form: ItemForm = { ...previous, directUnitId: '', meterType: '', customShares: {}, participants: null }
   // Bei einer breiten Kostenart nur mit derselben Beschreibung (shared/allocation.ts).
-  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, ctx.year, form.description) : null
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const remembered = ctx && !isNotAllocable(category) ? previousAllocation(ctx.items, category, calendarContext(ctx.year), form.description) : null
   if (remembered) return applyAllocation(form, remembered, units)
   if (etwByStatement(category, ctx)) {
     const last = ctx ? lastExternalBasis(ctx.items) : null
@@ -272,7 +274,6 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
   }))
   const total = parseAmountNumber(form.externalTotal)
   return allocationOf({
-    year: 0,
     category: form.category,
     description: form.description,
     key: form.key,
@@ -290,7 +291,8 @@ function formAllocation(form: ItemForm, units: Unit[]): Allocation {
 export function keyChangeNotice(form: ItemForm, units: Unit[], ctx: KeyContext): string {
   if (isNotAllocable(form.category)) return ''
   const basis = basisUnitsOf(units).map((u) => u.id)
-  const before = comparablePrevious(ctx.items, form.category, ctx.year, form.description).map((i) => allocationOf(i, basis))
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const before = comparablePrevious(ctx.items, form.category, calendarContext(ctx.year), form.description).map((i) => allocationOf(i, basis))
   const first = before[0]
   const now = formAllocation(form, units)
   if (!first || before.some((a) => sameAllocation(a, now))) return ''
@@ -433,7 +435,8 @@ function draftOf(form: ItemForm, units: Unit[], tenancies: Tenancy[] | undefined
 // Validiert das Formular und baut den API-Rumpf, mit derselben Prüfung wie der Server
 // (shared/costItem.ts).
 export function buildCostItemBody(form: ItemForm, units: Unit[], year: number, tenancies?: Tenancy[]): BuildResult {
-  return costItemBody(draftOf(form, units, tenancies, year), units, year)
+  // Brücke Kalenderjahr (#208): bis PR 3
+  return costItemBody(draftOf(form, units, tenancies, year), units, calendarPeriod(year))
 }
 
 // Hinweise, die an der Kostenart und am Abrechnungsjahr hängen (#107). Dieselbe Regel meldet die
@@ -459,5 +462,6 @@ export function sameCostOf<T extends DuplicateItem>(
   items: readonly T[], body: { category: string, description: string, vendor?: string, amountCents: number | null },
   propertyId: string | null | undefined, year: number,
 ): T[] {
-  return sameCostCandidates(items, { propertyId, year, category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
+  // Brücke Kalenderjahr (#208): bis PR 3
+  return sameCostCandidates(items, { propertyId, period: calendarPeriod(year), category: body.category, description: body.description, vendor: body.vendor, amountCents: body.amountCents })
 }

@@ -7,10 +7,12 @@
 // Eine eigene Staffel „Schlüssel je Kostenart ab Jahr“ gibt es bewusst nicht: Die Positionen des
 // Vorjahres tragen den Schlüssel schon, und ein zweites Abbild davon liefe auseinander (siehe
 // docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
-import type { CostItem, CostKey, ExternalMeasure, MeterType } from './types.ts'
+import type { CostItem, CostKey, ExternalMeasure, MeterType, PeriodKey } from './types.ts'
+import type { PeriodContext } from './period.ts'
 
-export type AllocatedItem = Pick<CostItem, 'year' | 'category' | 'key' | 'description'> &
-  Partial<Pick<CostItem, 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis'>>
+// Der Zeitraum ist optional: `allocationOf` braucht ihn nicht, nur die Suche nach dem Vorzeitraum.
+export type AllocatedItem = Pick<CostItem, 'category' | 'key' | 'description'> &
+  Partial<Pick<CostItem, 'period' | 'meterType' | 'directUnitId' | 'customShares' | 'participantUnitIds' | 'externalBasis'>>
 
 // Der Schlüssel einer Position mit genau den Angaben, die zu ihm gehören. Ein Zählertyp, der an
 // einer Flächenposition stehengeblieben ist, gehört nicht dazu. Die Kosten der Gemeinschaft
@@ -73,11 +75,11 @@ export function sameAllocation(a: Allocation, b: Allocation): boolean {
     (a.externalBasis?.measure ?? null) === (b.externalBasis?.measure ?? null)
 }
 
-// Die Positionen derselben Kostenart im Vorjahr. Vorjahr heißt das Jahr davor und kein früheres:
-// Dieselbe Frage stellt der Hinweis der Berechnung, und § 556a BGB fragt von Abrechnungszeitraum
-// zu Abrechnungszeitraum.
-export function previousYearItems<T extends AllocatedItem>(items: readonly T[], category: string, year: number): T[] {
-  return items.filter((i) => i.year === year - 1 && i.category === category)
+// Die Positionen derselben Kostenart im Vorzeitraum (#208): der Zeitraum unmittelbar davor und kein
+// früherer. Dieselbe Frage stellt der Hinweis der Berechnung, und § 556a BGB fragt von
+// Abrechnungszeitraum zu Abrechnungszeitraum.
+export function previousPeriodItems<T extends AllocatedItem>(items: readonly T[], category: string, previous: PeriodKey): T[] {
+  return items.filter((i) => i.period === previous && i.category === category)
 }
 
 // Kostenarten, unter denen ganz verschiedene Rechnungen stehen (Befund der Durchsicht): Die Wartung
@@ -93,14 +95,14 @@ export function replaceYear(text: string, from: number, to: number): string {
 
 const normalized = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
 
-// Die Vorjahrespositionen, mit denen eine Position verglichen wird. Gibt es im Vorjahr eine mit
-// derselben Beschreibung (Jahreszahl ersetzt, ohne Groß- und Kleinschreibung), nur diese; sonst
-// alle der Kostenart, außer bei einer breiten Kostenart, wo es dann keine gibt.
-export function comparablePrevious<T extends AllocatedItem>(items: readonly T[], category: string, year: number, description?: string): T[] {
-  const prior = previousYearItems(items, category, year)
+// Die Positionen des Vorzeitraums, mit denen eine Position verglichen wird. Gibt es dort eine mit
+// derselben Beschreibung (Jahreszahl des Beginns ersetzt, ohne Groß- und Kleinschreibung), nur diese;
+// sonst alle der Kostenart, außer bei einer breiten Kostenart, wo es dann keine gibt.
+export function comparablePrevious<T extends AllocatedItem>(items: readonly T[], category: string, at: PeriodContext, description?: string): T[] {
+  const prior = previousPeriodItems(items, category, at.previous)
   if (description?.trim()) {
     const wanted = normalized(description)
-    const same = prior.filter((p) => normalized(replaceYear(p.description, year - 1, year)) === wanted)
+    const same = prior.filter((p) => normalized(replaceYear(p.description, at.previousYear, at.year)) === wanted)
     if (same.length > 0) return same
   }
   return BROAD_CATEGORIES.includes(category) ? [] : prior
@@ -110,8 +112,8 @@ export function comparablePrevious<T extends AllocatedItem>(items: readonly T[],
 // Widersprechen sich die Positionen des Vorjahres, gibt es keinen Vorschlag: Welcher gemeint ist,
 // weiß nur der Vermieter. Sonst gilt die zuletzt angelegte (Reihenfolge der Liste), damit eine
 // geänderte Summe der Anlage mitkommt.
-export function previousAllocation(items: readonly AllocatedItem[], category: string, year: number, description?: string): Allocation | null {
-  const found = comparablePrevious(items, category, year, description).map((i) => allocationOf(i))
+export function previousAllocation(items: readonly AllocatedItem[], category: string, at: PeriodContext, description?: string): Allocation | null {
+  const found = comparablePrevious(items, category, at, description).map((i) => allocationOf(i))
   const last = found.at(-1)
   if (!last) return null
   return found.every((a) => sameAllocation(a, last)) ? last : null

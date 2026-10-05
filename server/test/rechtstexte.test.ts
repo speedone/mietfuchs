@@ -2,6 +2,7 @@
 // belegte Korrektur; die Quellen stehen im Kommentar zu #109. Wer einen Text ändert, prüft ihn
 // gegen diese Quellen, nicht gegen den Test.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
@@ -20,7 +21,7 @@ test('Kabelfernsehen: nur Anlagen vor dem 01.12.2021, und bei der Verteilanlage 
   const source: SnapshotSource = {
     units: [{ id: 'u', name: 'EG', areaM2: 50, participates: true }],
     tenancies: [{ id: 't', unitId: 'u', tenantName: 'M', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }],
-    costItems: [{ id: 'k', year: 2025, category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }],
+    costItems: [{ id: 'k', period: calendarPeriod(2025), category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }],
     meters: [], readings: [], payments: [], closedSettlements: [],
   }
   const w = computeSettlement(snapshotOf(source, 2025)).warnings.join(' ')
@@ -52,7 +53,7 @@ test('Durchsicht: der Betriebsstrom bleibt nur bei Anlagen vor dem 01.12.2021, u
   const source: SnapshotSource = {
     units: [{ id: 'u', name: 'EG', areaM2: 50, participates: true }],
     tenancies: [{ id: 't', unitId: 'u', tenantName: 'M', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }],
-    costItems: [{ id: 'k', year: 2025, category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }],
+    costItems: [{ id: 'k', period: calendarPeriod(2025), category: 'Kabel/Antenne', description: 'Kabel', amountCents: 12000, key: 'units' }],
     meters: [], readings: [], payments: [], closedSettlements: [],
   }
   const w = computeSettlement(snapshotOf(source, 2025)).warnings.join(' ')
@@ -65,7 +66,7 @@ test('Durchsicht: die 15 % gelten, wenn nicht nach Verbrauch abgerechnet wird, n
   const source: SnapshotSource = {
     units: [{ id: 'a', name: 'a', areaM2: 50, participates: true }, { id: 'b', name: 'b', areaM2: 50, participates: true }, { id: 'c', name: 'c', areaM2: 50, participates: true }],
     tenancies: [{ id: 't', unitId: 'a', tenantName: 'M', persons: 1, personHistory: [], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [], heatingModel: 'inclusive' }],
-    costItems: [{ id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 12000, key: 'area' }],
+    costItems: [{ id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 12000, key: 'area' }],
     meters: [], readings: [], payments: [], closedSettlements: [],
   }
   const w = computeSettlement(snapshotOf(source, 2025)).warnings.join(' ')

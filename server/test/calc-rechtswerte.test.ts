@@ -3,6 +3,7 @@
 // `legalBasis.values`, und nur diese. So friert beim Abschluss ein, mit welcher Zahl gerechnet
 // wurde, und `deviation` kann sie später vergleichen.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -15,17 +16,19 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, areaM2: number): SnapshotUnit => ({ id, name: id, areaM2, participates: true })
 const item = (year: number, over: Partial<SnapshotCostItem>): SnapshotCostItem =>
-  ({ id: 'k', year, category: 'Grundsteuer', description: 'Posten', amountCents: 120000, key: 'area', ...over })
+  ({ id: 'k', period: calendarPeriod(year), category: 'Grundsteuer', description: 'Posten', amountCents: 120000, key: 'area', ...over })
 const snap = (year: number, s: Partial<SnapshotSource>, property?: Snapshot['property']): Snapshot => ({
   ...snapshotOf({ units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s }, year),
   ...(property !== undefined ? { property } : {}),
 })
 const two = { units: [unit('w1', 60), unit('w2', 40)], tenancies: [tenancy('A', 'w1'), tenancy('B', 'w2')] }
-const ids = (s: ComputedSettlement) => s.legalBasis.values.map((v) => v.id).sort()
+// Frist und Höchstdauer des Zeitraums (#208) stehen in jeder Abrechnung; gefragt wird hier nach den
+// übrigen, deshalb ohne sie.
+const ids = (s: ComputedSettlement) => s.legalBasis.values.map((v) => v.id).filter((id) => !id.startsWith('bgb.')).sort()
 
 test('Rechtswerte: ohne Heizung, Kabel und Leerstand keine, und der Rechtsstand ist das Datum des Registers', () => {
   const s = computeSettlement(snap(2025, { ...two, costItems: [item(2025, {})] }))
-  assert.deepEqual(s.legalBasis.values, [])
+  assert.deepEqual(ids(s), [])
   assert.equal(s.legalBasis.asOf, LAW_AS_OF)
 })
 
@@ -48,7 +51,7 @@ test('Rechtswerte: Kabel 2024 und 2025 frieren die Kabelregel ein, auch wenn sie
   for (const year of [2024, 2025]) {
     const s = computeSettlement(snap(year, { ...two, costItems: [item(year, { category: 'Kabel/Antenne', key: 'units' })] }))
     assert.deepEqual(ids(s), ['betrkv.tv-signal'], String(year))
-    assert.equal(s.legalBasis.values[0]?.validTo, '2024-06-30')
+    assert.equal(s.legalBasis.values.find((v) => v.id === 'betrkv.tv-signal')?.validTo, '2024-06-30')
   }
 })
 
@@ -64,7 +67,7 @@ test('Rechtswerte: Leerstand beim Personenschlüssel friert die eine Person ein,
   const muell = item(2025, { category: 'Müllabfuhr', key: 'persons' })
   const leer = computeSettlement(snap(2025, { units: two.units, tenancies: [tenancy('A', 'w1')], costItems: [muell] }))
   assert.deepEqual(ids(leer), ['practice.vacancy-persons'])
-  assert.equal(leer.legalBasis.values[0]?.text, '1 Person je Leerstandstag')
+  assert.equal(leer.legalBasis.values.find((v) => v.id === 'practice.vacancy-persons')?.text, '1 Person je Leerstandstag')
   assert.deepEqual(ids(computeSettlement(snap(2025, { ...two, costItems: [muell] }))), [])
 })
 
@@ -80,13 +83,20 @@ test('Rechtswerte: jedes Jahr rechnet, auch weit vor und nach den Fassungen des 
         item(year, { id: 'm', category: 'Müllabfuhr', key: 'persons' }),
       ],
     }, { kind: 'mfh', cableBuiltBeforeDec2021: false }))
-    assert.ok(s.legalBasis.values.length >= 4, `${year}: ${ids(s).join(', ')}`)
+    assert.ok(ids(s).length >= 4, `${year}: ${ids(s).join(', ')}`)
   }
 })
 
 test('Rechtswerte: zwei Abrechnungen nacheinander teilen kein Protokoll', () => {
   const heat = computeSettlement(snap(2025, { ...two, costItems: [item(2025, { category: 'Heizung und Warmwasser' })] }))
   const plain = computeSettlement(snap(2025, { ...two, costItems: [item(2025, {})] }))
-  assert.ok(heat.legalBasis.values.length > 0)
-  assert.deepEqual(plain.legalBasis.values, [])
+  assert.ok(ids(heat).length > 0)
+  assert.deepEqual(ids(plain), [])
+})
+
+test('Rechtswerte: Frist und Höchstdauer des Zeitraums frieren in jeder Abrechnung ein (#208)', () => {
+  const s = computeSettlement(snap(2025, { ...two, costItems: [item(2025, {})] }))
+  const bgb = s.legalBasis.values.filter((v) => v.id.startsWith('bgb.')).map((v) => [v.id, v.value])
+  assert.deepEqual(bgb.sort(), [['bgb.deadline-months', 12], ['bgb.max-period-months', 12]])
+  assert.equal(s.deadline, '2026-12-31')
 })

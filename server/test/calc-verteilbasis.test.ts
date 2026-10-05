@@ -4,6 +4,7 @@
 // Gebaut wird unmittelbar ein Schnappschuss und keine db.json: Die alte Datei kennt diese Angaben
 // nicht (LegacyCostItem in store.ts).
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
@@ -16,7 +17,7 @@ const tenancy = (id: string, unitId: string, start = '2025-01-01', end: string |
 })
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
 const item = (over: Partial<SnapshotCostItem> & Pick<SnapshotCostItem, 'key'>): SnapshotCostItem => ({
-  id: 'k', year: 2025, category: 'Sonstige Betriebskosten', description: 'Probe', amountCents: 100000, ...over,
+  id: 'k', period: calendarPeriod(2025), category: 'Sonstige Betriebskosten', description: 'Probe', amountCents: 100000, ...over,
 })
 const source = (over: Partial<SnapshotSource>): SnapshotSource => ({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...over,
@@ -268,7 +269,7 @@ function randomSource(rnd: Rng): SnapshotSource {
     // Gutschriften außer bei Einzelbeträgen, und auch Heizung (Integrationsdurchsicht Geld)
     const amountCents = key !== 'amounts' && rnd() < 0.15 ? -base : base
     const category = rnd() < 0.3 ? 'Heizung und Warmwasser' : 'Sonstige Betriebskosten'
-    const c: SnapshotCostItem = { id: `c${i}`, year: 2025, category, description: `P${i}`, amountCents, key }
+    const c: SnapshotCostItem = { id: `c${i}`, period: calendarPeriod(2025), category, description: `P${i}`, amountCents, key }
     const r = rnd()
     if (r < 0.2) c.participantUnitIds = []
     else if (r < 0.6) c.participantUnitIds = units.filter(() => rnd() < 0.5).map((u) => u.id)
@@ -378,7 +379,7 @@ test('Fehlende Wohnfläche: gewarnt wird nur für Wohnungen, die an einer Fläch
   const s = computeSettlement(snapshotOf({
     units: [{ id: 'a', name: 'A', areaM2: 50, participates: true }, { id: 'g', name: 'Garage', areaM2: 0, participates: true }],
     tenancies: [], meters: [], readings: [], payments: [], closedSettlements: [],
-    costItems: [{ id: 'k', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area', participantUnitIds: ['a'] }],
+    costItems: [{ id: 'k', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 10000, key: 'area', participantUnitIds: ['a'] }],
   }, 2025))
   assert.ok(!s.notices.some((n) => n.code === 'basis.unit-no-area'), s.warnings.join(' | '))
 })

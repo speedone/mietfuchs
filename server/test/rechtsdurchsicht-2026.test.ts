@@ -8,6 +8,7 @@
 // eingebaut sind, weiß Mietfuchs nicht; es gibt deshalb einen Hinweis ohne Betrag, und zwar ab
 // dem Abrechnungsjahr 2027, nicht vorher.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -21,7 +22,7 @@ const tenancy = (id: string, unitId: string): SnapshotTenancy => ({
 })
 const unit = (id: string, areaM2: number): SnapshotUnit => ({ id, name: id, areaM2, participates: true })
 const heizung = (year: number, over: Partial<SnapshotCostItem> = {}): SnapshotCostItem => ({
-  id: `h${year}`, year, category: 'Heizung und Warmwasser', description: 'Wärme laut Messdienst', amountCents: 300000,
+  id: `h${year}`, period: calendarPeriod(year), category: 'Heizung und Warmwasser', description: 'Wärme laut Messdienst', amountCents: 300000,
   key: 'amounts', tenancyAmounts: { A: 100000, B: 100000, C: 100000 }, ...over,
 })
 const haus = {
@@ -123,7 +124,7 @@ test('Rechtsdurchsicht 2026: Direktzuordnung einer Heizposition auf eine vermiet
   assert.equal(n.length, 1)
   assert.equal(n[0]?.subject, undefined, 'nichts zu beheben, also kein „Hier beheben →“')
   // 2026 weiterhin nicht
-  assert.deepEqual(remote(settle(2026, { ...haus, costItems: [{ ...direkt, year: 2026 }] })), [])
+  assert.deepEqual(remote(settle(2026, { ...haus, costItems: [{ ...direkt, period: calendarPeriod(2026) }] })), [])
 })
 
 test('Rechtsdurchsicht 2026: Direktzuordnung auf eine leere Wohnung ergibt keinen Hinweis', () => {

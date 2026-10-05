@@ -11,6 +11,7 @@ import type { CostItem, Tenancy, Unit } from './types'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
@@ -41,11 +42,13 @@ export type CarryRow = {
 // Gutschrift des Vorjahres ist nie durch eine Rechnung schon erfasst und umgekehrt (rc.1).
 export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, 'source' | 'description'> & Partial<Pick<CarryRow, 'vendor'>>, year: number): boolean {
   const category = row.source.category
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const previous = calendarPeriod(year - 1)
   const sisters = items
-    .filter((i) => i.year === year - 1 && i.category === category && i.id !== row.source.id)
+    .filter((i) => i.period === previous && i.category === category && i.id !== row.source.id)
     .map((i) => normalizedText(i.description))
   const own = normalizedText(row.description)
-  return sameCostCandidates(items, { year, category, description: row.description, vendor: row.vendor ?? row.source.vendor, amountCents: row.source.amountCents })
+  return sameCostCandidates(items, { period: calendarPeriod(year), category, description: row.description, vendor: row.vendor ?? row.source.vendor, amountCents: row.source.amountCents })
     .some((i) => {
       const text = normalizedText(i.description)
       return text === own || !sisters.includes(text)
@@ -53,7 +56,8 @@ export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, '
 }
 
 export function carryOverRows(items: readonly CostItem[], year: number): CarryRow[] {
-  return items.filter((i) => i.year === year - 1).map((source) => {
+  // Brücke Kalenderjahr (#208): bis PR 3
+  return items.filter((i) => i.period === calendarPeriod(year - 1)).map((source) => {
     const description = replaceYear(source.description, year - 1, year)
     return {
       source,

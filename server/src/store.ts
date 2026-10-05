@@ -95,8 +95,11 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 // `notSettled` (#93), `notices` und `legalBasis` (#112) ebenso optional: Eine vorher
 // abgeschlossene Abrechnung kennt sie nicht. Aus demselben Grund ist `legalBasis` hier die Form aus
 // shared/types.ts mit optionalen `values` und nicht die frisch gerechnete (Heizung PR 1).
-export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
+export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds' | 'period' | 'deadline'> & {
   selfUsedShareCents?: number
+  // vor #208 abgeschlossene Abrechnungen kennen Zeitraum und Frist nicht
+  period?: ComputedSettlement['period']
+  deadline?: ComputedSettlement['deadline']
   // vor #135 abgeschlossene Abrechnungen kennen die Einstufung nicht
   garageLikeUnitIds?: ComputedSettlement['garageLikeUnitIds']
   notSettled?: ComputedSettlement['notSettled']
@@ -123,8 +126,11 @@ export type ClosedSettlement = {
 export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
 export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
 export type LegacyMeter = Omit<Meter, 'propertyId'>
-export type LegacyCostItem = Omit<CostItem, 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
+// Die db.json kennt Jahre, keine Zeiträume (#208): Ihre Kostenpositionen tragen `year`, und erst der
+// Eingang macht daraus den Kalenderzeitraum.
+export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
   key: LegacyCostKey
+  year: number
 }
 
 export type Db = {

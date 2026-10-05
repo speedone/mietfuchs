@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { calendarPeriod } from '../../shared/period.ts'
 import type { CostItem, MeterType, Tenancy, Unit } from './types'
 import { usageOf } from './types'
 import { EMPTY_UNIT_FORM, buildUnitBody, connectionSummary, connectionTypes, setConnected, unitDeleteMessage, unitToForm, zeroAreaUnits, missingAreaCheck, type UnitForm } from './unitForm'
@@ -239,7 +240,7 @@ describe('Cockpit: fehlende Fläche oder leere Einheit mit 0 m² (Endprüfung rc
     expect(missingAreaCheck([u('EG', { participates: false, selfUsed: true, selfPersons: undefined })], [], 2025).cta).toBe('Wohnfläche ergänzen')
   })
   test('mit einer Position nach Fläche: der Hinweis der Abrechnung wird angekündigt', () => {
-    const flaeche = (over: Partial<CostItem> = {}): CostItem => ({ id: 'c', propertyId: 'p', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 1000, key: 'area', ...over })
+    const flaeche = (over: Partial<CostItem> = {}): CostItem => ({ id: 'c', propertyId: 'p', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 1000, key: 'area', ...over })
     const satz = 'G hat 0 m² und im Jahr keine Bewohner. Ist G eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².'
     expect(missingAreaCheck([u('G')], [], 2025, [flaeche()]).detail).toBe(`${satz} Bei Positionen nach Wohnfläche weist die Abrechnung trotzdem darauf hin.`)
     // Nicht bei anderem Schlüssel, nicht umlagefähig oder ohne G als Teilnehmer

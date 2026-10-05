@@ -48,6 +48,7 @@ import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { candidateText } from '../triage'
 import { countOf } from '../../../shared/wording.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 // `tenancies` für die Einzelbeträge je Mietverhältnis (#94); ohne sie gibt es dort nur keine Felder.
@@ -65,7 +66,7 @@ const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Si
 export default function Kosten({ units, settings, tenancies = [], focus, onFocusDone }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year } = useYear()
+  const { year, period } = useYear()
   // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht).
   const switchYear = useSwitchYear()
   const { property } = useProperty()
@@ -132,7 +133,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
     }
   }
 
-  const yearItems = useMemo(() => items.filter((i) => i.year === year), [items, year])
+  const yearItems = useMemo(() => items.filter((i) => i.period === period), [items, period])
   // Woraus eine neue Position ihren Schlüssel vorgeschlagen bekommt (#141): die Positionen des
   // Objekts, das Jahr und die Art des Objekts.
   const keyCtx: KeyContext = useMemo(() => ({ items, year, propertyKind: property?.kind ?? null }), [items, year, property?.kind])
@@ -162,7 +163,8 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
 
   // Die Vorlagen gehören zum gewählten Jahr und Objekt; wechselt eines davon, schließt die Liste.
   useEffect(() => { setCarry(null) }, [year, propertyId])
-  const previousCount = useMemo(() => items.filter((i) => i.year === year - 1).length, [items, year])
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const previousCount = useMemo(() => items.filter((i) => i.period === calendarPeriod(year - 1)).length, [items, year])
 
   function updateCarry(index: number, patch: Partial<CarryRow>) {
     setCarry((rows) => rows && rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))

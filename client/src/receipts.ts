@@ -8,12 +8,17 @@
 // an einer Position hängt, hat kein eigenes Objekt und kein eigenes Jahr; sonst gäbe es zwei
 // Wahrheiten, die auseinanderlaufen, sobald jemand die Position verschiebt. Nur ein Beleg im
 // Posteingang (an keiner Position) trägt sie selbst.
+//
+// Brücke Kalenderjahr (#208): bis PR 3, für die ganze Datei. Der Belegordner gliedert nach
+// Kalenderjahren, weil Belege Kalenderjahre tragen; das Jahr einer Position ist das Jahr, in dem ihr
+// Zeitraum beginnt.
 import type { CostItem, UploadInfo, UploadLinks } from './types'
 import { CATEGORIES, matchCategory } from './types'
 import { fmtEuro, parseEuro } from './api'
 import { amountProblem } from './costForm'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 import { countOf } from '../../shared/wording.ts'
+import { startYearOf } from '../../shared/period.ts'
 
 // Ein Beleg, wie GET /api/uploads ihn liefert. Die Angaben der Belegbuchung (#170) fehlen bei
 // einem älteren Server und in Tests, die sie nicht brauchen.
@@ -79,13 +84,13 @@ export function receiptCards(uploads: ReceiptUpload[], items: CostItem[]): Recei
       // Bei gebuchten Zeilen die Summe dieses Belegs, sonst der Betrag der Position (#170)
       amountCents: linked.reduce((a, c) => a + (upload.bookedCents?.[c.id] ?? c.amountCents), 0),
       propertyIds: [...new Set(linked.map((c) => c.propertyId))],
-      years: [...new Set(linked.map((c) => c.year))].sort((a, b) => b - a),
+      years: [...new Set(linked.map((c) => startYearOf(c.period)))].sort((a, b) => b - a),
     }
   })
 }
 
 const inScope = (c: CostItem, f: FolderFilter): boolean =>
-  (f.propertyId === 'all' || c.propertyId === f.propertyId) && (f.year === 'all' || c.year === f.year)
+  (f.propertyId === 'all' || c.propertyId === f.propertyId) && (f.year === 'all' || startYearOf(c.period) === f.year)
 
 // Die Reihenfolge der Register: wie die Kostenarten in der Oberfläche stehen, Unbekanntes danach.
 const categoryRank = (category: string): number => {
@@ -115,7 +120,7 @@ export function matchesQuery(card: ReceiptCard, query: string): boolean {
 export function itemMatchesQuery(c: CostItem, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  if (/^\d{4}$/.test(q) && c.year === Number(q)) return true
+  if (/^\d{4}$/.test(q) && startYearOf(c.period) === Number(q)) return true
   const cents = amountOf(q)
   if (cents !== null && c.amountCents === cents) return true
   return [c.vendor ?? '', c.description, c.category].join(' ').toLowerCase().includes(q)
@@ -129,10 +134,11 @@ export function buildFolder(uploads: ReceiptUpload[], items: CostItem[], filter:
   const groups = new Map<string, CategoryGroup>()
   for (const c of items) {
     if (!inScope(c, filter)) continue
-    const key = `${c.year}|${c.category}`
+    const year = startYearOf(c.period)
+    const key = `${year}|${c.category}`
     let g = groups.get(key)
     if (!g) {
-      g = { key, year: c.year, category: c.category, sumCents: 0, items: [], cards: [], missing: [] }
+      g = { key, year, category: c.category, sumCents: 0, items: [], cards: [], missing: [] }
       groups.set(key, g)
     }
     g.sumCents += c.amountCents
@@ -264,7 +270,7 @@ export function inboxOf(cards: ReceiptCard[], filter: FolderFilter): { here: Rec
 
 // Welche Belege des Posteingangs für eine Position in Frage kommen.
 export function inboxFor(cards: ReceiptCard[], c: CostItem): ReceiptCard[] {
-  return cards.filter((card) => card.items.length === 0 && isReceipt(card) && fitsPlacement(card.upload, c.propertyId, c.year))
+  return cards.filter((card) => card.items.length === 0 && isReceipt(card) && fitsPlacement(card.upload, c.propertyId, startYearOf(c.period)))
 }
 
 // ---------- Einer Position zuordnen (Befund C) ----------
@@ -277,7 +283,7 @@ export function attachChoices(u: UploadInfo, candidates: readonly CostItem[]): {
   // NFC: macOS liefert Dateinamen zerlegt („u“ und Trema), matchCategory sucht das „ü“.
   const name = (u.originalName || u.file).normalize('NFC').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ')
   const category = matchCategory(name)
-  const likely = candidates.filter((c) => sameCostCandidates([c], { propertyId: c.propertyId, year: c.year, category, description: name }).length > 0)
+  const likely = candidates.filter((c) => sameCostCandidates([c], { propertyId: c.propertyId, period: c.period, category, description: name }).length > 0)
   return { category: likely.length > 0 ? category : null, likely, rest: candidates.filter((c) => !likely.includes(c)) }
 }
 

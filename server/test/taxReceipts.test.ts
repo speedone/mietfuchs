@@ -1,12 +1,13 @@
 // „Belege für die Steuer“ (#170): ein ZIP je Objekt und Jahr, geordnet nach den Gruppen der
 // Anlage V, mit allen Positionen, auch den nicht umlagefähigen.
+import { calendarPeriod } from '../../shared/period.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { CostItem } from '../../shared/types.ts'
 import { planTaxArchive } from '../src/taxReceipts.ts'
 
 const item = (id: string, extra: Partial<CostItem> = {}): CostItem => ({
-  id, propertyId: 'p1', year: 2025, category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
+  id, propertyId: 'p1', period: calendarPeriod(2025), category: 'Grundsteuer', description: `Position ${id}`, amountCents: 10000, key: 'area', ...extra,
 })
 
 const names = new Map([

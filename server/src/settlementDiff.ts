@@ -65,12 +65,12 @@ function readStatements(value: unknown): Saldo[] | null {
   return out
 }
 
-// `today` als JJJJ-MM-TT, hineingereicht, damit der Test nicht vom Kalender abhängt.
+// `deadline` ist das Ende der Frist nach § 556 Abs. 3 BGB für den Zeitraum der Abrechnung
+// (`settlementDeadline`, #208), `today` der heutige Tag als JJJJ-MM-TT; beide hineingereicht, damit
+// der Test nicht vom Kalender abhängt.
 // `current` darf auch eine Funktion sein, die rechnet: Scheitert die heutige Berechnung, bleibt der
 // eingefrorene Stand trotzdem lesbar, und das Ergebnis heißt „nicht vergleichbar“.
-export function compareWithFrozen(frozen: unknown, currentOrCompute: Current | (() => Current), year: number, today: string): SettlementComparison {
-  // § 556 Abs. 3 BGB: zwölf Monate nach Ende des Abrechnungszeitraums, hier des Kalenderjahres.
-  const deadline = `${year + 1}-12-31`
+export function compareWithFrozen(frozen: unknown, currentOrCompute: Current | (() => Current), deadline: string, today: string): SettlementComparison {
   const deadlinePassed = today > deadline
   const before = readStatements(frozen)
   if (!before) return { comparable: false, deviations: [], valueChanges: [], deadline, deadlinePassed }

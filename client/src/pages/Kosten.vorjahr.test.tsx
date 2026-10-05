@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Kosten-Seite mit Vorjahr (#141): der gemerkte Schlüssel im Formular und „Aus dem Vorjahr
 // übernehmen“. Geprüft wird, was gespeichert wird, und dass die Auswahl den gespeicherten Wert zeigt.
+import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Unit } from '../types'
@@ -17,15 +18,15 @@ const UNITS: Unit[] = [
 const YEAR = new Date().getFullYear() - 1
 const PREV = YEAR - 1
 const ITEMS: CostItem[] = [
-  { id: 'a', propertyId: 'objekt-1', year: PREV, category: 'Müllabfuhr', description: `Müllabfuhr ${PREV}`, vendor: 'Stadtwerke', amountCents: 36000, key: 'units', participantUnitIds: ['u1'], invoiceFile: 'muell.pdf' },
-  { id: 'b', propertyId: 'objekt-1', year: PREV, category: 'Hauswart', description: 'Hauswart laut Hausgeldabrechnung', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } },
+  { id: 'a', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Müllabfuhr', description: `Müllabfuhr ${PREV}`, vendor: 'Stadtwerke', amountCents: 36000, key: 'units', participantUnitIds: ['u1'], invoiceFile: 'muell.pdf' },
+  { id: 'b', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Hauswart', description: 'Hauswart laut Hausgeldabrechnung', amountCents: 48000, key: 'external', externalBasis: { measure: 'mea', total: 1000, totalCents: 4800000 } },
   // Durchsicht: schon im Jahr erfasst, vereinbarte Anteile, Direktzuordnung
-  { id: 'c', propertyId: 'objekt-1', year: PREV, category: 'Grundsteuer', description: `Grundsteuer ${PREV}`, amountCents: 60000, key: 'area' },
-  { id: 'c2', propertyId: 'objekt-1', year: YEAR, category: 'Grundsteuer', description: `Grundsteuer ${YEAR}`, amountCents: 61000, key: 'area' },
-  { id: 'd', propertyId: 'objekt-1', year: PREV, category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'custom', customShares: { u1: 30, u2: 50 } },
-  { id: 'e', propertyId: 'objekt-1', year: PREV, category: 'Schornsteinfeger', description: 'Kamin', amountCents: 9000, key: 'direct', directUnitId: 'u2' },
+  { id: 'c', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Grundsteuer', description: `Grundsteuer ${PREV}`, amountCents: 60000, key: 'area' },
+  { id: 'c2', propertyId: 'objekt-1', period: calendarPeriod(YEAR), category: 'Grundsteuer', description: `Grundsteuer ${YEAR}`, amountCents: 61000, key: 'area' },
+  { id: 'd', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Gartenpflege', description: 'Garten', amountCents: 30000, key: 'custom', customShares: { u1: 30, u2: 50 } },
+  { id: 'e', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Schornsteinfeger', description: 'Kamin', amountCents: 9000, key: 'direct', directUnitId: 'u2' },
   // #163: nicht umlagefähig, für die Steuer der Wohnung OG zugeordnet
-  { id: 'f', propertyId: 'objekt-1', year: PREV, category: 'Nicht umlagefähig', description: 'Therme OG', amountCents: 25000, key: 'direct', directUnitId: 'u2' },
+  { id: 'f', propertyId: 'objekt-1', period: calendarPeriod(PREV), category: 'Nicht umlagefähig', description: 'Therme OG', amountCents: 25000, key: 'direct', directUnitId: 'u2' },
 ]
 
 let sent: { url: string; method: string; body: Record<string, unknown> }[]
@@ -109,7 +110,7 @@ test('Aus dem Vorjahr übernehmen: nur mit Betrag, ohne Beleg, mit Schlüssel un
   fireEvent.click(anlegen())
   await waitFor(() => expect(sent).toHaveLength(2))
   expect(sent[0]?.body).toMatchObject({
-    year: YEAR, category: 'Müllabfuhr', description: `Müllabfuhr ${YEAR}`, vendor: 'Stadtwerke', amountCents: 38000,
+    period: calendarPeriod(YEAR), category: 'Müllabfuhr', description: `Müllabfuhr ${YEAR}`, vendor: 'Stadtwerke', amountCents: 38000,
     key: 'units', participantUnitIds: ['u1'], invoiceFile: null,
   })
   expect(sent[1]?.body).toMatchObject({ key: 'external', amountCents: 50000, externalBasis: { measure: 'mea', total: 1000, totalCents: 5000000 } })
