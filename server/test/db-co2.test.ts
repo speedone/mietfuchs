@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from '../src/db/co2.ts'
 import { createHeatingPlant, removeHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
-import { readCo2Statements } from '../src/db/read.ts'
+import { readCo2Statements, readHeatingPeriodRows } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, CrossPropertyError, HeatingError, updateEntity } from '../src/db/repository.ts'
 import { units } from '../src/db/schema.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
@@ -147,5 +147,22 @@ test('Heizanlage entfernen: mit CO₂-Angaben 409 statt stillem Löschen', async
     assert.deepEqual(await opened.write((db) => removeHeatingPlant(db, 'hp')), { removed: false, reason: 'co2', periods: ['2025-01'] })
     await opened.write((db) => removeCo2Statement(db, 'hp', '2025-01'))
     assert.equal((await opened.write((db) => removeHeatingPlant(db, 'hp'))).removed, true)
+  })
+})
+
+test('Entfernen lässt keine leere Heizperiode zurück: sonst sperrte sie den Wechsel des Zeitraums der Heizung (PR 5)', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug))
+    await opened.write((db) => removeCo2Statement(db, 'hp', '2025-01'))
+    assert.deepEqual(await opened.read(readHeatingPeriodRows), [], 'nach dem Entfernen der CO₂-Angaben')
+    await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'heatMeter' }))
+    await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: null }))
+    assert.deepEqual(await opened.read(readHeatingPeriodRows), [], 'nach dem Leeren der Angabe zum Warmwasser')
+    // Bleibt eine der beiden Angaben, bleibt die Heizperiode.
+    await opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'heatMeter' }))
+    await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug))
+    await opened.write((db) => removeCo2Statement(db, 'hp', '2025-01'))
+    assert.deepEqual((await opened.read(readHeatingPeriodRows)).map((r) => r.dhwMethod), ['heatMeter'])
   })
 })

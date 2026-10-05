@@ -80,6 +80,19 @@ async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey
   return id
 }
 
+// Eine Zeile in `heating_periods` ohne jede Angabe wird wieder entfernt. Sie entstand nur, damit
+// etwas an ihr hängen konnte; bliebe sie leer stehen, sperrte sie den Wechsel des Zeitraums der
+// Heizung (PR 5, heatingPeriodChange.ts: jede Zeile gilt dort als erfasste Angabe).
+async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void> {
+  const [row] = await db.select().from(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
+  if (!row) return
+  const { id: _id, plantId: _plant, period: _period, ...data } = row
+  if (Object.values(data).some((v) => v !== null)) return
+  const [co2] = await db.select({ n: count() }).from(co2Statements).where(eq(co2Statements.heatingPeriodId, heatingPeriodId))
+  if ((co2?.n ?? 0) > 0) return
+  await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
+}
+
 // ---------- Lesen ----------
 
 // Die Heizperioden der Anlage, die im Abrechnungszeitraum P enden, mit ihren Angaben und den
@@ -252,6 +265,7 @@ export async function removeCo2Statement(db: Database, plantId: string, period: 
   await db.transaction(async (tx) => {
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     await tx.delete(co2Statements).where(eq(co2Statements.heatingPeriodId, current.heatingPeriodId))
+    await dropIfEmpty(tx, current.heatingPeriodId)
   })
   return true
 }
@@ -278,6 +292,7 @@ export async function saveHotWater(db: Database, plantId: string, period: string
     if (await heatingPeriodClosed(tx, ctx, h)) throw new HeatingError(409, closedText(h))
     const heatingPeriodId = await ensureHeatingPeriod(tx, plantId, h.key)
     await tx.update(heatingPeriods).set({ dhwMethod, dhwUnmeasurable }).where(eq(heatingPeriods.id, heatingPeriodId))
+    await dropIfEmpty(tx, heatingPeriodId)
   })
   return { dhwMethod, dhwUnmeasurable }
 }
