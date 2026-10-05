@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 7 (Typen werden von Node abgestreift, `erasableSyntaxOnly`, `verbatimModuleSyntax`), Node 24.15 mit `node:test`, React 19 mit vitest, kein neues Paket.
 
-**Spec:** `docs/superpowers/specs/2026-10-05-heizung-gesamt-design.md` auf `feat/heizung`, **dritte Fassung** (Commit `1f6c6f1`). Für diesen Plan maßgeblich: Abschnitt 0.6 („Folgen für PR 1“), Abschnitt 3.13, Abschnitt 4 vollständig, 10.2, 12.4 (Wächter und Lexikon), 13 (Zeile PR 1).
+**Spec:** `docs/superpowers/specs/2026-10-05-heizung-gesamt-design.md` auf `feat/heizung`. Geplant nach der **dritten Fassung** (Commit `1f6c6f1`); die vierte bis achte Fassung (bis `09ec10b`) ändern PR 1 nicht, jede sagt das unter „Folgen für PR 1“, und zwischen den Fassungen hat sich nur die Spezifikation geändert, kein Code. Für diesen Plan maßgeblich: Abschnitt 0.6 („Folgen für PR 1“), Abschnitt 3.13, Abschnitt 4 vollständig, 10.2, 12.4 (Wächter und Lexikon), 13 (Zeile PR 1).
 
 ## Global Constraints
 
@@ -2630,6 +2630,6 @@ git commit -m "Doku: Rechtsregister in CHANGELOG und CLAUDE.md" -m "Refs #97" -m
 
 - [ ] **Step 5: Übergabe**
 
-Beim Schreiben dieses Plans wurde jeder Schritt in einem Wegwerf-Worktree auf `origin/feat/heizung` (Commit `1f6c6f1`) in dieser Reihenfolge durchgespielt: jeder RED-Schritt scheiterte wie angegeben, am Ende `npm test` mit 1.257 bestandenen Server- und 726 Client-Tests, `npm run typecheck` und `npm run build` ohne Fehler.
+Beim Schreiben dieses Plans wurde jeder Schritt in einem Wegwerf-Worktree auf `origin/feat/heizung` (Commit `1f6c6f1`, im Code gleich mit `09ec10b`) in dieser Reihenfolge durchgespielt: jeder RED-Schritt scheiterte wie angegeben, am Ende `npm test` mit 1.257 bestandenen Server- und 726 Client-Tests, `npm run typecheck` und `npm run build` ohne Fehler.
 
 Vor dem PR die Durchsicht mit frischem Kontext (CLAUDE.md). Offen bleibt bewusst: `ustg.standard-rate` ist ungeprüft; vor dem Release § 12 Abs. 1 UStG und § 28 Abs. 1 UStG a. F. lesen, bei Bestätigung `checked: 'checked'` und `retrieved` setzen (neue Zeile in `law-history.test.ts` nur, wenn sich ein Wert ändert; der Prüfstand steht dort nicht).
