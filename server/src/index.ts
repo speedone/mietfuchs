@@ -37,10 +37,11 @@ import type { Database } from './db/client.ts'
 import { databaseProblem } from './db/errors.ts'
 import { readProperties, readSettings, readStock } from './db/read.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, PeriodConflict, PeriodError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
+import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -487,6 +488,36 @@ app.delete('/api/properties/:id', async (req, res) => {
   res.status(409).json({
     error: `Dieses Objekt enthält noch ${result.inUse}. Gelöscht wird nur ein leeres Objekt, damit keine ` +
       `Abrechnung und keine bezahlte Rechnung verloren geht.`,
+  })
+})
+
+// ---------- Heizanlage (Heizung PR 4) ----------
+// Was eine Anlage ist und was sie in dieser Version tut, steht in db/heating.ts. Das Objekt kommt
+// wie bei den übrigen Datenrouten aus `?property=` (beim Anlegen auch aus dem Rumpf); bei genau
+// einem Objekt gilt dieses.
+
+app.get('/api/heating-plants', async (req, res) => {
+  res.json(await readData(async (db) => listHeatingPlants(db, await propertyOf(db, req))))
+})
+// Die Vorschau der Einrichtung: welche Heizpositionen beim Anlegen zur Anlage kommen.
+app.get('/api/heating-plants/assignable', async (req, res) => {
+  res.json(await readData(async (db) => assignableHeatingItems(db, await propertyOf(db, req))))
+})
+app.post('/api/heating-plants', async (req, res) => {
+  res.status(201).json(await writeData(async (db) => createHeatingPlant(db, newId(), await propertyOf(db, req, true), bodyObject(req))))
+})
+app.put('/api/heating-plants/:id', async (req, res) => {
+  const plant = await writeData((db) => updateHeatingPlant(db, req.params.id, bodyObject(req)))
+  if (!plant) return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.json(plant)
+})
+app.delete('/api/heating-plants/:id', async (req, res) => {
+  const result = await writeData((db) => removeHeatingPlant(db, req.params.id))
+  if (result.removed) return res.json({ ok: true, released: result.released })
+  if (result.reason === 'missing') return res.status(404).json({ error: 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.' })
+  res.status(409).json({
+    error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
+      'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
   })
 })
 
@@ -1850,7 +1881,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
     return res.status(400).json({ error: message })
   }
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme

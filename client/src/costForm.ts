@@ -225,6 +225,13 @@ export function meterTypeOptions(unitMeterTypes: MeterType[], stored: MeterType 
   return [...new Set([...unitMeterTypes, ...(stored ? [stored] : [])])]
 }
 
+// Die Zählertypen, nach denen eine Position verteilt werden kann: die der Wohnungszähler, ohne
+// Heizkostenverteiler (Heizung PR 4). Deren Einheiten verteilt Mietfuchs erst mit den
+// Bewertungsfaktoren (PR 12); bis dahin lehnt auch der Server den Schlüssel ab.
+export function costMeterTypes(meters: readonly Pick<Meter, 'type' | 'unitId'>[]): MeterType[] {
+  return [...new Set(meters.filter((m) => m.unitId && m.type !== 'hkv').map((m) => m.type))]
+}
+
 // Schlüssel wechseln (#142). Beim Verbrauchsschlüssel stand der Zählertyp auf „— wählen —“, auch
 // wenn es nur einen gab. Dann wird er jetzt vorgewählt, und zwar im Zustand und nicht nur in der
 // Anzeige, sodass gespeichert wird, was zu sehen ist; er steht ja in der Auswahl. Bei mehreren

@@ -34,6 +34,7 @@ import {
   withKey,
   withCategory,
   type ItemForm,
+  costMeterTypes,
 } from './costForm'
 
 const unit = (id: string, extra: Partial<Unit> = {}): Unit => ({ propertyId: 'objekt-1',
@@ -77,6 +78,11 @@ describe('Auswahllisten enthalten immer den gewählten Wert', () => {
   test('Ein leeres Formular hat keinen vorbelegten Zählertyp', () => {
     // Genau diese Vorbelegung war der Fehler: „kaltwasser" ohne passenden Zähler.
     expect(EMPTY_ITEM_FORM.meterType).toBe('')
+  })
+
+  test('Heizkostenverteiler stehen als Zählertyp nicht zur Wahl, Warmwasser schon (Heizung PR 4)', () => {
+    expect(costMeterTypes([{ type: 'hkv', unitId: 'u1' }, { type: 'warmwasser', unitId: 'u1' }, { type: 'kaltwasser', unitId: null }])).toEqual(['warmwasser'])
+    expect(costMeterTypes([{ type: 'hkv', unitId: 'u1' }])).toEqual([])
   })
 })
 

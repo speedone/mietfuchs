@@ -76,6 +76,10 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // Merge; werden 0016 oder 0017 vor dem ersten Push neu erzeugt, hier die neue Marke eintragen.
   '0016_leistungszeitraum': '2bed08c8351a3f4f5406e5029cda357d3fa6f4bc9416c3030251b65002d01588',
   '0017_leistungszeitraum_pruefung': '704a4352ea7810cd18325a9ce8e8443a96313908b9688492cc7db61c076c3991',
+  // Heizung PR 4. Wird PR 3 vor dem Push neu erzeugt, werden diese beiden Schritte neu erzeugt und
+  // die Marken hier ersetzt.
+  '0018_heizanlage': '17887b3be11aa23782feeae5ff30b011298d3c360f3a1e22b5561877b216a01f',
+  '0019_heizanlage_bedingungen': '20506c7a6cddb70de5c0ca509fadebdbe722ee666f89205be8052f64b873e17c',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

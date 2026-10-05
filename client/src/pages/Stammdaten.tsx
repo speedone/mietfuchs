@@ -14,6 +14,7 @@ import { emptyUnitsText } from '../propertyView'
 import Term from '../components/Term'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
+import HeatingCard from '../components/HeatingCard'
 import { useFocusTarget, type FocusProps } from '../focus'
 
 type Props = {
@@ -356,6 +357,9 @@ export default function Stammdaten({ units, tenancies, settings, reload, focus, 
           <div className="notice" style={{ marginTop: 14 }}>Keine Wohnung ist an der Kostenverteilung beteiligt — die Abrechnung wäre leer.</div>
         )}
       </div>
+
+      {/* Heizung PR 4: optional, nach den Wohnungen, weil Schritt 4 nach ihnen fragt. */}
+      <HeatingCard units={units} />
 
       <div className="card">
         <h2>Mietverhältnisse</h2>

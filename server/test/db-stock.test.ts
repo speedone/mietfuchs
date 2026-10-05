@@ -344,7 +344,9 @@ const collectionsWithTable = (stock: ReturnType<typeof straightenForDatabase>): 
   { what: 'Zahlungen', table: paymentsTable, rows: stock.payments },
 ]
 
-const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited', 'costModel', 'heatingModel', 'serviceFrom', 'serviceTo', 'taxYear', 'heatingPart'])
+const NOT_IN_DB_JSON = new Set(['period', 'propertyId', 'mea', 'externalMeasure', 'externalTotal', 'externalTotalCents', 'participantsLimited', 'costModel', 'heatingModel', 'serviceFrom', 'serviceTo', 'taxYear', 'heatingPart',
+  // Die Heizanlage (Heizung PR 4) kennt die db.json nicht; ihre Rundreise prüft db-repository.test.ts.
+  'heatingPlantId', 'heatingRole', 'remoteReadable', 'installedOn'])
 
 test('Rundreise: die Probe belegt jede Spalte des Schemas', () => {
   // Der Wächter über dem Wächter. Der Test darunter kann nur finden, was in der Probe steht;

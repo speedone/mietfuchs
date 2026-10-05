@@ -392,6 +392,22 @@ async function uploadsAndSettlement() {
   return unit
 }
 
+// Heizanlage (Heizung PR 4): anlegen; eine neue Heizposition gehört ihr von selbst, und die
+// Abrechnung bleibt dieselbe.
+async function heatingPlant() {
+  const vorher = (await request('/api/settlement/2025')).body
+  const angelegt = await request('/api/heating-plants', json('POST', { energy: 'gas', method: 'service', assignItemIds: [] }))
+  assert(angelegt.status === 201 && angelegt.body.plant?.energy === 'gas', 'Heizanlage anlegen', angelegt.body)
+  const posten = await request('/api/costItems', json('POST', {
+    period: '2025-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 0, key: 'area',
+  }))
+  assert(posten.body.heatingPlantId === angelegt.body.plant.id, 'eine neue Heizposition gehört zur Anlage', posten.body)
+  await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
+  const nachher = (await request('/api/settlement/2025')).body
+  assert(JSON.stringify(nachher.statements) === JSON.stringify(vorher.statements) && nachher.totalCostsCents === vorher.totalCostsCents,
+    'die Abrechnung bleibt mit Heizanlage dieselbe', { vorher: vorher.totalCostsCents, nachher: nachher.totalCostsCents })
+}
+
 async function backupAndRestore(unit) {
   const backup = await request('/api/backup')
   assert(backup.status === 200 && backup.body.subarray(0, 2).toString() === 'PK', 'Backup als ZIP herunterladen')
@@ -407,6 +423,8 @@ async function backupAndRestore(unit) {
   const r = await request('/api/restore', { method: 'POST', body: fd })
   const units = (await request('/api/units')).body
   assert(r.status === 200 && units.length === 1 && units[0].id === unit.id, 'Backup wiederherstellen bringt die Daten zurück', r.body)
+  const anlagen = (await request('/api/heating-plants')).body
+  assert(Array.isArray(anlagen) && anlagen.length === 1, 'die Heizanlage ist nach der Wiederherstellung da', anlagen)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
   // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
@@ -450,6 +468,7 @@ async function main() {
   await aiExtraction()
   await openAiExtraction()
   const unit = await uploadsAndSettlement()
+  await heatingPlant()
   await backupAndRestore(unit)
   console.log(`\nAlle ${passed} Prüfungen bestanden.`)
 }

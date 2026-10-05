@@ -278,3 +278,27 @@ test('Leistungszeitraum, Jahr der Zahlung und Brennstoff: jede Bedingung hat ihr
     assert.match(art, /Heizung und Warmwasser/, art)
   })
 })
+
+test('Heizanlage: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 4)', async () => {
+  // Die Schreibprüfung in heating.ts und repository.ts fängt das vorher ab; die Bedingungen sind
+  // das Netz darunter. „Ein Wert, der kein Monat in der Form JJJJ-MM ist“ wäre hier falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")))
+    const quelle = await run("INSERT INTO heating_plants (id, property_id, energy, source, method) VALUES ('hp2', 'objekt-1', 'gas', 'homeowners', 'manual')")
+    assert.match(quelle, /Gemeinschaft/, quelle)
+    // Derselbe Wortlaut wie die Wahl in der Einrichtung „Heizung“ (Durchsicht von #230, M4).
+    assert.match(quelle, /„Die Gemeinschaft \(Hausverwaltung\) rechnet ab“/, quelle)
+    assert.doesNotMatch(quelle, /JJJJ-MM/, quelle)
+    const rolle = await run("INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id) VALUES ('m1', 'objekt-1', 'Gas', 'sonstig', 'm³', 'hp1')")
+    assert.match(rolle, /Rolle/, rolle)
+    assert.doesNotMatch(rolle, /JJJJ-MM/, rolle)
+    const wohnung = await run("INSERT INTO meters (id, property_id, name, unit_id, type, unit, heating_plant_id, heating_role) VALUES ('m2', 'objekt-1', 'Gas', 'u1', 'sonstig', 'm³', 'hp1', 'supply')")
+    assert.match(wohnung, /keiner Wohnung/, wohnung)
+    const waerme = await run("INSERT INTO heating_periods (id, plant_id, period, heat_consumption_pct) VALUES ('h1', 'hp1', '2025-01', 101)")
+    assert.match(waerme, /Heizkosten ist ein Anteil/, waerme)
+    const wasser = await run("INSERT INTO heating_periods (id, plant_id, period, water_consumption_pct) VALUES ('h2', 'hp1', '2025-01', -1)")
+    assert.match(wasser, /Warmwasser/, wasser)
+    assert.doesNotMatch(wasser, /JJJJ-MM/, wasser)
+  })
+})

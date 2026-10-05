@@ -436,7 +436,7 @@ export function bookingResponse(outcome: BookingOutcome, assessment: AssessmentV
 // hier, ohne dass diese Datei das Schema (und damit drizzle) laden muss; die Tests des Browsers
 // importieren sie.
 const KEYS: Record<CostKey, true> = { area: true, persons: true, units: true, direct: true, meter: true, custom: true, external: true, amounts: true }
-const METER_TYPES: Record<MeterType, true> = { kaltwasser: true, strom: true, waerme: true, sonstig: true }
+const METER_TYPES: Record<MeterType, true> = { kaltwasser: true, warmwasser: true, strom: true, waerme: true, hkv: true, sonstig: true }
 const MEASURES: Record<ExternalMeasure, true> = { mea: true, area: true, units: true }
 
 const get = (v: unknown, key: string): unknown => (v !== null && typeof v === 'object' ? Reflect.get(v, key) : undefined)

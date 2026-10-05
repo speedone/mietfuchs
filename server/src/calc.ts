@@ -36,7 +36,8 @@ import { rulesFor } from '../../shared/law/rules.ts'
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -225,8 +226,13 @@ const noticeKinds = {
   'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.consumption-share': { level: 'hint', title: `Verbrauchsanteil der Heizkosten außerhalb ${hkvConsumptionShare.describe(valueAt(hkvConsumptionShare, LAW_AS_OF))}`, rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.may-agree-otherwise': { level: 'hint', title: 'Heizkosten nicht nach Verbrauch verteilt (Zweifamilienhaus)', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
+  // #180, Entwurf 8.9: Die Objektart ist eine Beschreibung; die Ausnahme des § 2 hängt an den Wohnungen.
+  'property.kind-mismatch': { level: 'hint', title: 'Art des Objekts passt nicht zu den Wohnungen', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'heatingSystem'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'heating.remote-reading': { level: 'hint', title: 'Zähler der Heizung fernablesbar?', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance'] },
+  // Heizung PR 4 (#214): ein Gerät ist nicht fernablesbar, obwohl es das sein muss. Eine eigene Stufe
+  // und damit ein eigener Code: `heating.remote-reading` bleibt der Hinweis, wenn es nur sein kann.
+  'heating.remote-reading-missing': { level: 'warning', title: 'Geräte der Heizung nicht fernablesbar', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance', 'heatCostAllocator'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -1668,16 +1674,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     u.selfUsed ? diy : Math.min(diy, tenancies.filter((t) => t.unitId === u.id).reduce((a, t) => a + t.days, 0))
   // `only`: die Teilnehmer einer Position (#94); ohne sie alle Wohnungszähler wie bisher.
   // `basisOnes`: die Wohnungen der Verteilbasis.
+  // Zähler der Heizanlage selbst (Gaszähler, Wärmezähler am Speicher; Heizung PR 4) haben keine
+  // Wohnung, sind aber kein Hauptzähler des Hauses: Sie messen, was die Anlage bezieht oder erzeugt,
+  // nicht, was die Wohnungen zusammen verbraucht haben. Als Hauptzähler gelesen, machte ein
+  // Wärmezähler am Speicher aus jeder Wohnung ohne Wärmezähler einen Rest nach #116.
+  const houseMeters = allMeters.filter((m) => !m.unitId && !m.heatingPlantId)
+  // Wasser (Entwurf 5.3, G-B8): Beim Kaltwasser zählen die Warmwasserzähler der Wohnungen mit, denn
+  // die Wasserkosten des Warmwassers gehören dazu, soweit sie nicht gesondert abgerechnet werden
+  // (§ 8 Abs. 2 HeizkostenV), und der Hauptzähler misst beides. Ob eine Wohnung einen Zähler hat
+  // (#116), sagt aber nur ein Kaltwasserzähler: Mit nur einem Warmwasserzähler fehlt ihr Kaltwasser,
+  // und es kommt über den Hauptzähler.
+  const measures = (type: string, m: SnapshotMeter): boolean => m.type === type || (type === 'kaltwasser' && m.type === 'warmwasser')
   const consumptionFor = (selfOnes: SnapshotUnit[], only: Set<string> | null, basisOnes: SnapshotUnit[]) => {
     const byType: Record<string, ConsumptionByTypeEntry | undefined> = {}
     const unitMeters = allMeters.filter((m) => m.unitId && (only === null || only.has(m.unitId)))
     // Hauptzähler: Zähler ohne Wohnung. Er misst das ganze Haus und taugt deshalb nicht als
     // Basis einer Position, die nur für einen Teil der Wohnungen gilt.
-    const mainMeters = only === null ? allMeters.filter((m) => !m.unitId) : []
+    const mainMeters = only === null ? houseMeters : []
     const selfIds = new Set(selfOnes.map((u) => u.id))
-    const meterTypes = [...new Set(unitMeters.map((m) => m.type))]
+    // Ein Warmwasserzähler bringt auch den Kaltwasser-Schlüssel mit (siehe `measures`).
+    const meterTypes = [...new Set(unitMeters.flatMap((m): string[] => (m.type === 'warmwasser' ? ['warmwasser', 'kaltwasser'] : [m.type])))]
     for (const type of meterTypes) {
-      const meters = unitMeters.filter((m) => m.type === type) as (SnapshotMeter & { unitId: string })[]
+      const meters = unitMeters.filter((m) => measures(type, m)) as (SnapshotMeter & { unitId: string })[]
+      // Verbrauch je Wohnung, für den Eigenanteil; beim Kaltwasser samt Warmwasser.
+      const usage = new Map<string, number>()
+      // Wohnungen mit einem abgelesenen Zähler genau dieses Typs (#116, G-B8).
       const perUnit = new Map<string, number>()
       let basis = 0
       for (const m of meters) {
@@ -1686,12 +1707,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         basis += c
         // Ein angelegter, aber im Jahr nie abgelesener Zähler ist kein Zähler: Sonst gälte die
         // Wohnung als gemessen, und der Fehler aus #116 käme ohne Warnung zurück.
-        if (coveredDays(readings, yFrom, yTo) > 0) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        if (coveredDays(readings, yFrom, yTo) > 0) {
+          usage.set(m.unitId, (usage.get(m.unitId) || 0) + c)
+          if (m.type === type) perUnit.set(m.unitId, (perUnit.get(m.unitId) || 0) + c)
+        }
       }
       // Ein Zählerstand belegt Verbrauch innerhalb der abgerechneten Menge und zählt deshalb
       // unabhängig vom Beteiligungs-Kennzeichen in die Basis; der Anteil nicht vermieteter
       // Wohnungen fällt damit ohnehin dem Vermieter zu.
-      let selfConsumption = selfOnes.reduce((a, u) => a + (perUnit.get(u.id) || 0), 0)
+      let selfConsumption = selfOnes.reduce((a, u) => a + (usage.get(u.id) || 0), 0)
       // **Vorwegabzug über den Hauptzähler (#116).** Hat jede bewohnte Einheit einen Zähler,
       // bleibt es bei ihrem Verhältnis, und die Messdifferenz zum Hauptzähler geht darin auf,
       // wie bisher. Fehlt einer der Zähler, ist ihr Verbrauch der Rest des Hauptzählers, und die
@@ -1704,7 +1728,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       // Gemessen, aber lückenhaft: Der Verbrauch der Lücke steckt dann im Rest des Hauptzählers.
       const partial = candidates.flatMap((u) => {
         if (!occupied.has(u.id) || !perUnit.has(u.id)) return []
-        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id).map((m) => readingsOf(m.id)), yFrom, yTo)
+        const covered = unitCoveredDays(meters.filter((m) => m.unitId === u.id && m.type === type).map((m) => readingsOf(m.id)), yFrom, yTo)
         const needed = neededDays(u)
         return covered < needed ? [{ unit: u, covered, needed }] : []
       })
@@ -2628,7 +2652,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // ins Leere.
   // Der Zeitpunkt kommt aus `hkv.remote-reading.retrofit` (Zeitregel `overlap`), die Höhe aus
   // `hkv.cut.remote-reading` (dritte Fassung des Entwurfs, N6).
-  const retrofit = heatingBilledItem ? law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog) : null
+  // Mit Heizanlage (Heizung PR 4, #214) weiß Mietfuchs, was eingetragen ist: an den Zählern
+  // Fernablesbarkeit und Einbaudatum, an der Anlage die Angabe für den Messdienst. Ohne Anlage, oder
+  // solange dort nichts bekannt ist, bleibt es beim Hinweis darunter, Wort für Wort wie bisher.
+  const remote = heatingBilledItem ? remoteReadingVerdict(snapshot.heatingPlants ?? [], snapshot.meters, snapshot.units, lawPeriod, lawLog) : null
+  const retrofit = heatingBilledItem && (remote === null || remote.level === 'unknown') ? law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog) : null
   if (retrofit && retrofit.coverage !== 'none') {
     const remoteCut = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
     warn('heating.remote-reading',
@@ -2638,6 +2666,51 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst. Ausgenommen sind Einzelfälle, in denen die Nachrüstung technisch nicht möglich ist, unangemessen aufwendig wäre oder sonst eine unbillige Härte bedeutete (§ 5 Abs. 3 Satz 2), sowie die Fälle des § 11 HeizkostenV. ' +
         'Das gilt nicht für eine Gastherme in der Wohnung mit eigenem Gasvertrag des Mieters. ' +
         'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).')
+  }
+  if (remote && (remote.level === 'required' || remote.level === 'possible')) {
+    const remoteCut = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
+    const newDevices = law(hkvRemoteReadingNewDevices, { date: lawPeriod.to }, lawLog)
+    const retrofitRule = law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog)
+    // Die Kürzung je Mieter auf seine gedruckten Heizzeilen, kaufmännisch gerundet (Entwurf 6.5).
+    // Mietfuchs zieht nichts ab; erklären muss die Kürzung der Mieter.
+    // Nur Mieter in Wohnungen an der Anlage (Durchsicht von #230).
+    const served = servedUnitIds(snapshot.heatingPlants ?? [], snapshot.units)
+    const cuts = [...statements.values()].filter((st) => served.has(st.unitId)).flatMap((st) => {
+      const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY).reduce((a, r) => a + r.shareCents, 0)
+      return heat > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((heat * remoteCut) / 100))}`] : []
+    })
+    const names = remote.meterIds.map((id) => `„${snapshot.meters.find((m) => m.id === id)?.name ?? 'ohne Namen'}“`)
+    const which = names.length > 0
+      ? `Nicht fernablesbar ${names.length === 1 ? 'ist' : 'sind'} ${andList(names)}.`
+      : 'Laut Ihrer Angabe an der Heizanlage sind nicht alle Zähler und Heizkostenverteiler fernablesbar.'
+    const rule = `Geräte, die nach dem ${fmtDay(newDevices.installedAfter)} eingebaut wurden, müssen ab ihrem Einbau fernablesbar sein (§ 5 Abs. 2 HeizkostenV), alle übrigen ab dem ${fmtDay(retrofitRule.validFrom ?? '')} (§ 5 Abs. 3).`
+    const subject: NoticeSubject | undefined = remote.meterIds[0] ? { kind: 'meter', id: remote.meterIds[0] } : undefined
+    if (remote.level === 'required') {
+      warn('heating.remote-reading-missing',
+        `${which} ${rule} In diesem Zeitraum gilt das für diese Geräte. Jeder Mieter darf seinen Anteil an den Heizkosten deshalb um ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
+          `${cuts.length > 0 ? `, hier: ${andList(cuts)}` : ''}. Mietfuchs zieht nichts ab; die Kürzung muss der Mieter erklären. ` +
+          'Ausgenommen sind ein einzelnes Gerät, das in einem nicht fernablesbaren System ersetzt oder ergänzt wurde (§ 5 Abs. 2 Satz 4), und Fälle, in denen die Nachrüstung technisch nicht möglich ist oder eine unbillige Härte wäre (§ 5 Abs. 3 Satz 2); bewahren Sie dafür einen Nachweis auf.',
+        subject)
+    } else {
+      warn('heating.remote-reading',
+        `${which} ${rule} Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum und daran, ob ein einzelnes Gerät in einem System ersetzt oder ergänzt wurde, dessen übrige Geräte nicht fernablesbar sind; dann gilt die Frist für die übrigen (§ 5 Abs. 2 Satz 4). Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
+          `${cuts.length > 0 ? `, hier bis zu: ${andList(cuts)}` : ''}. ` +
+          (remote.askInstall
+            ? `Sagen Sie Mietfuchs an der Heizanlage, ob die nicht fernablesbaren Geräte, die nach dem ${fmtDay(newDevices.installedAfter)} eingebaut wurden, einzeln als Ersatz oder Ergänzung in ein bestehendes, nicht fernablesbares System kamen oder ob das System als Ganzes neu installiert wurde; dann rechnet Mietfuchs es genau.`
+            : 'Tragen Sie das Einbaudatum am Zähler oder die Angabe an der Heizanlage ein; dann rechnet Mietfuchs es genau.'),
+        subject)
+    }
+  }
+
+  // Zweifamilienhaus (#180, Entwurf 8.9): Die Objektart sagt, wie der Vermieter das Haus nennt. Ob
+  // die Ausnahme des § 2 HeizkostenV gilt, hängt an den Wohnungen (`heatingAgreeable`), und danach
+  // rechnet Mietfuchs. Widerspricht die Art den Wohnungen, erfährt es der Vermieter; ohne
+  // Heizkosten spielt die Ausnahme keine Rolle.
+  if (snapshot.property?.kind === 'zfh' && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY)) {
+    warn('property.kind-mismatch',
+      'Das Objekt ist als Zweifamilienhaus eingetragen, nach den angelegten Wohnungen gilt die Ausnahme des § 2 HeizkostenV aber nicht: ' +
+        'Dafür darf das Gebäude höchstens zwei Wohnungen haben, von denen Sie eine selbst bewohnen. Mietfuchs richtet sich nach den Wohnungen; ' +
+        'die Heizkostenverordnung gilt hier ohne diese Ausnahme. Prüfen Sie die Art des Objekts in den Stammdaten oder ob Ihre eigene Wohnung als „Eigennutzung“ angelegt ist.')
   }
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine

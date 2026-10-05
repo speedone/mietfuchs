@@ -164,7 +164,9 @@ export function unitDeleteMessage(deps: UnitDependents | null): string {
 // Formular. Strom bietet das Formular nur an, wenn das Objekt einen Stromzähler an einer Einheit
 // hat oder er schon als Ausnahme gesetzt ist: Ein Stromzähler ohne Einheit ist der Allgemeinstrom
 // des Hauses und sagt nichts über den Anschluss einer Einheit.
-const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'waerme', 'sonstig', 'strom']
+// Heizkostenverteiler sind kein Anschluss: Sie hängen an Heizkörpern, und eine Einheit ohne Heizung
+// hat „kein Anschluss: Wärme“.
+const CONNECTION_ORDER: MeterType[] = ['kaltwasser', 'warmwasser', 'waerme', 'sonstig', 'strom']
 export function connectionTypes(objectMeters: Pick<Meter, 'type' | 'unitId'>[], noConnection: MeterType[]): MeterType[] {
   const present = new Set<MeterType>(objectMeters.filter((m) => m.type !== 'strom' || m.unitId).map((m) => m.type))
   return CONNECTION_ORDER.filter((t) => present.has(t) || noConnection.includes(t))
@@ -176,7 +178,7 @@ export function setConnected(form: UnitForm, type: MeterType, connected: boolean
 }
 
 // Die Ausnahme in Worten, für die Zusammenfassung im Formular und das Kennzeichen in der Liste.
-const CONNECTION_WORDS: Record<MeterType, string> = { kaltwasser: 'Wasser', waerme: 'Wärme', strom: 'Strom', sonstig: '' }
+const CONNECTION_WORDS: Record<MeterType, string> = { kaltwasser: 'Wasser', warmwasser: 'Warmwasser', waerme: 'Wärme', hkv: '', strom: 'Strom', sonstig: '' }
 export function connectionSummary(noConnection: MeterType[]): string {
   const sorted = CONNECTION_ORDER.filter((t) => noConnection.includes(t))
   if (sorted.length === 0) return ''

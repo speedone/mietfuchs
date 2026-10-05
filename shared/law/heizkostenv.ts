@@ -108,3 +108,34 @@ export const hkvDegreeDays: LawParam<DegreeDayTable, 'periodStart'> = {
   describe: (v) =>
     `${Object.entries(v.months).map(([m, n]) => `${m}: ${n}`).join(', ')}, ${v.summerMonths.join('/')} zusammen ${v.summer} (Promille je Monat)`,
 }
+
+// Geräte, die nach dem 01.12.2021 eingebaut werden, müssen fernablesbar sein, und zwar ab ihrem
+// Einbau (§ 5 Abs. 2 Satz 1 HeizkostenV); ausgenommen ist der Ersatz oder die Ergänzung einzelner
+// Geräte in einem nicht fernablesbaren Gesamtsystem (Satz 4). Zeitregel `eventDate`: Gefragt wird
+// mit dem Einbaudatum (Heizung PR 4, N6 der dritten Fassung: eine Zeitregel je Parameter; die
+// Altgeräte regelt `hkv.remote-reading.retrofit`). Zwei Fassungen, damit jedes Datum eine Antwort
+// hat; der Stichtag steht zusätzlich im Wert, weil die Hinweise ihn nennen.
+export const hkvRemoteReadingNewDevices: LawParam<{ readonly required: boolean; readonly installedAfter: string }, 'eventDate'> = {
+  id: 'hkv.remote-reading.new-devices',
+  title: 'Fernablesbarkeit neu eingebauter Geräte',
+  norm: '§ 5 Abs. 2 HeizkostenV',
+  timing: 'eventDate',
+  versions: [
+    {
+      validTo: '2021-12-01',
+      value: { required: false, installedAfter: '2021-12-01' },
+      source: checked('§ 5 Abs. 2 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__5.html'),
+      enacted: ENACTED,
+    },
+    {
+      validFrom: '2021-12-02',
+      value: { required: true, installedAfter: '2021-12-01' },
+      source: checked('§ 5 Abs. 2 HeizkostenV', 'https://www.gesetze-im-internet.de/heizkostenv/__5.html'),
+      enacted: ENACTED,
+    },
+  ],
+  describe: (v) =>
+    v.required
+      ? `Einbau nach dem ${germanDate(v.installedAfter)}: fernablesbar ab Einbau`
+      : `Einbau bis ${germanDate(v.installedAfter)}: keine Pflicht ab Einbau`,
+}

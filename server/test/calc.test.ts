@@ -27,7 +27,7 @@ import { snapshotFor, snapshotFromDb, snapshotOf, type PropertyScopedSource, typ
 import type { ClosedSettlement, Db } from '../src/store.ts'
 import type { CostKey, CostModel, MeterType, Payment, Reading, Settings, TaxExpenseGroup, TaxReport, Tenancy, UnitUsage } from '../../shared/types.ts'
 // Die Tests bauen eine db.json; deren Wohnungen, Zähler und Kosten tragen kein Objekt (#92).
-import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyUnit as Unit } from '../src/store.ts'
+import type { LegacyCostItem as CostItem, LegacyCostKey, LegacyMeter as Meter, LegacyMeterType, LegacyUnit as Unit } from '../src/store.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
@@ -1947,7 +1947,7 @@ function randomDb(rnd: Rng): Db {
   for (const u of units) {
     if (rnd() < 0.5) continue
     const id = `m${meters.length}`
-    meters.push({ id, unitId: u.id, type: pick<MeterType>(['kaltwasser', 'sonstig', 'waerme']), name: id, unit: 'm³' })
+    meters.push({ id, unitId: u.id, type: pick<LegacyMeterType>(['kaltwasser', 'sonstig', 'waerme']), name: id, unit: 'm³' })
     readings.push({ id: `${id}a`, meterId: id, date: '2024-12-31', value: 0 })
     readings.push({ id: `${id}b`, meterId: id, date: '2025-12-31', value: Math.round(rnd() * 100) })
   }
@@ -1979,7 +1979,7 @@ function randomDb(rnd: Rng): Db {
       amountCents: rnd() < 0.15 ? -amount : amount,
       key,
     }
-    if (key === 'meter') item.meterType = pick<MeterType | undefined>(['kaltwasser', 'sonstig', 'waerme', undefined])
+    if (key === 'meter') item.meterType = pick<LegacyMeterType | undefined>(['kaltwasser', 'sonstig', 'waerme', undefined])
     if (key === 'direct') item.directUnitId = pick([...units.map((u) => u.id), 'weg'])
     if (key === 'custom') {
       const shares: Record<string, number> = {}

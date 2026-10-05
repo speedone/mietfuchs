@@ -37,6 +37,7 @@ import {
   taxYearOptions,
   type ItemForm,
   type KeyContext,
+  costMeterTypes,
 } from '../costForm'
 import CostPeriodFields from '../components/CostPeriodFields'
 import TaxYearSelect from '../components/TaxYearSelect'
@@ -118,7 +119,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   useFocusTarget(focus, 'costItem', items, (i) => i.id, (i) => { setError(''); setForm(itemToForm(i)) }, onFocusDone)
 
   // Verbrauchsschlüssel ist nur sinnvoll, wenn Wohnungszähler existieren
-  const unitMeterTypes = useMemo(() => [...new Set(meters.filter((m) => m.unitId).map((m) => m.type))], [meters])
+  const unitMeterTypes = useMemo(() => costMeterTypes(meters), [meters])
   // Wohnungen der Abrechnungseinheit — nur sie können einen vereinbarten Anteil tragen
   const basisUnits = useMemo(() => basisUnitsOf(units), [units])
   // Live-Summe der Anteile, damit der Vermieter-Rest schon bei der Eingabe sichtbar ist
