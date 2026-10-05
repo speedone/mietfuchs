@@ -199,13 +199,19 @@ test('Heizposition: eine neue gehört der einzigen Anlage, auch ohne Feld (alter
   })
 })
 
-test('Heizposition: wechselt die Kostenart, fällt die Anlage weg; beim Ändern wird nicht still zugeordnet', async () => {
+test('Heizposition: wechselt die Kostenart, fällt die Anlage weg; wird sie zur Heizposition, bekommt sie die Anlage wie beim Anlegen', async () => {
   await withDatabase(async (opened) => {
     await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas' }))
     await opened.write((db) => heizposition(db, 'c1'))
     assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { category: 'Müllabfuhr' })), 'heatingPlantId'), undefined)
-    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { category: HEATING_CATEGORY })), 'heatingPlantId'), undefined)
-    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { heatingPlantId: 'hp1' })), 'heatingPlantId'), 'hp1')
+    // Durchsicht von #230 (M2): nachträglich zur Heizposition gemacht, wie eine neue.
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { category: HEATING_CATEGORY })), 'heatingPlantId'), 'hp1')
+    // Eine Heizposition, die ausdrücklich ohne Anlage steht, bleibt beim Ändern ohne.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c1', { heatingPlantId: null }))
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c1', { description: 'Gas 2025' })), 'heatingPlantId'), undefined)
+    // Kalt angelegt und mit ausdrücklich ohne Anlage zur Heizposition gemacht: bleibt ohne.
+    await opened.write((db) => createEntity(db, 'costItems', 'c2', { propertyId: 'objekt-1', period: '2025-01', category: 'Müllabfuhr', description: 'M', amountCents: 1, key: 'area' }))
+    assert.equal(fieldOf(await opened.write((db) => updateEntity(db, 'costItems', 'c2', { category: HEATING_CATEGORY, heatingPlantId: null })), 'heatingPlantId'), undefined)
   })
 })
 

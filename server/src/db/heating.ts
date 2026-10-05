@@ -200,18 +200,18 @@ export type PlantRemoval = { removed: true; released: number } | { removed: fals
 // nichts. Hängen noch Zähler an ihr, wird nicht entfernt: Ohne Anlage wären sie Hauptzähler des
 // Hauses und verteilten Verbrauch um (#116). Was aus ihnen wird, entscheidet der Vermieter.
 export async function removeHeatingPlant(db: Database, id: string): Promise<PlantRemoval> {
-  const [plant] = await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
-  if (!plant) return { removed: false, reason: 'missing' }
-  const zaehler = await db.select({ name: meters.name }).from(meters).where(eq(meters.heatingPlantId, id))
-  if (zaehler.length > 0) return { removed: false, reason: 'meters', meters: zaehler.map((z) => z.name) }
-  let released = 0
-  await db.transaction(async (tx) => {
+  // Prüfen und Entfernen in einer Transaktion (Durchsicht von #230): Zwischen der Frage nach den
+  // Zählern und dem Löschen darf kein Zähler dazukommen.
+  return db.transaction(async (tx): Promise<PlantRemoval> => {
+    const [plant] = await tx.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.id, id))
+    if (!plant) return { removed: false, reason: 'missing' }
+    const zaehler = await tx.select({ name: meters.name }).from(meters).where(eq(meters.heatingPlantId, id))
+    if (zaehler.length > 0) return { removed: false, reason: 'meters', meters: zaehler.map((z) => z.name) }
     const [n] = await tx.select({ n: count() }).from(costItems).where(eq(costItems.heatingPlantId, id))
-    released = n?.n ?? 0
     await tx.update(costItems).set({ heatingPlantId: null }).where(eq(costItems.heatingPlantId, id))
     await tx.delete(heatingPlants).where(eq(heatingPlants.id, id))
+    return { removed: true, released: n?.n ?? 0 }
   })
-  return { removed: true, released }
 }
 
 const plantName = (name: string): string => (name ? `„${name}“` : 'ohne Namen')

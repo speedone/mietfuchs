@@ -339,9 +339,15 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
     heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
     // Die Heizanlage der Position (Heizung PR 4). Nur die Kostenart Heizung und Warmwasser gehört zu
-    // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. Fehlt das Feld bei einer neuen
-    // Position, setzt `insert` die Anlage des Objekts (`defaultHeatingPlant`).
-    heatingPlantId: category === HEATING_CATEGORY ? merged(body, 'heatingPlantId', current.heatingPlantId, asNullableFilled) : null,
+    // einer Anlage; wechselt die Kostenart, fällt die Anlage weg. `undefined` heißt „nicht
+    // angegeben“: bei einer neuen Position und bei einer, die gerade zur Heizposition wird
+    // (Durchsicht von #230). Dann setzen `insert` und `replace` die Anlage des Objekts
+    // (`defaultHeatingPlant`); eine Heizposition, die schon eine Kostenart Heizung hatte, behält ihre.
+    heatingPlantId: category !== HEATING_CATEGORY
+      ? null
+      : has(body, 'heatingPlantId')
+        ? asNullableFilled(raw(body, 'heatingPlantId'))
+        : current.category === HEATING_CATEGORY ? (current.heatingPlantId ?? null) : undefined,
   }
 }
 
@@ -1105,8 +1111,10 @@ const costItemCollection: Collection<CostItem> = {
     await writeCostItemShares(db, entity)
   },
   replace: async (db, c) => {
-    await db.update(costItems).set(costItemRow(c)).where(eq(costItems.id, c.id))
-    await writeCostItemShares(db, c)
+    // Wird eine Position zur Heizposition, bekommt sie die Anlage wie beim Anlegen (Durchsicht von #230).
+    const entity = c.heatingPlantId === undefined ? { ...c, heatingPlantId: await defaultHeatingPlant(db, c) } : c
+    await db.update(costItems).set(costItemRow(entity)).where(eq(costItems.id, entity.id))
+    await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => { await db.delete(costItems).where(eq(costItems.id, id)) },
 }

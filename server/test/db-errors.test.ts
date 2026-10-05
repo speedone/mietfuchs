@@ -287,6 +287,8 @@ test('Heizanlage: jede Bedingung, deren Endung allein den falschen Satz ergäbe,
     await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy) VALUES ('hp1', 'objekt-1', 'gas')")))
     const quelle = await run("INSERT INTO heating_plants (id, property_id, energy, source, method) VALUES ('hp2', 'objekt-1', 'gas', 'homeowners', 'manual')")
     assert.match(quelle, /Gemeinschaft/, quelle)
+    // Derselbe Wortlaut wie die Wahl in der Einrichtung „Heizung“ (Durchsicht von #230, M4).
+    assert.match(quelle, /„Die Gemeinschaft \(Hausverwaltung\) rechnet ab“/, quelle)
     assert.doesNotMatch(quelle, /JJJJ-MM/, quelle)
     const rolle = await run("INSERT INTO meters (id, property_id, name, type, unit, heating_plant_id) VALUES ('m1', 'objekt-1', 'Gas', 'sonstig', 'm³', 'hp1')")
     assert.match(rolle, /Rolle/, rolle)
