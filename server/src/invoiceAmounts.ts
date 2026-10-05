@@ -14,6 +14,8 @@
 // erst nach Prüfung. `amountsAdjusted` und `laborFromTotal` sagen ihr, was gerechnet wurde.
 import type { Extraction } from '../../shared/types.ts'
 import { largestRemainder } from './calc.ts'
+import { valueAt } from '../../shared/law/register.ts'
+import { ustgStandardRate } from '../../shared/law/ustg.ts'
 
 // Eine Rechnungsposition, wie das Modell sie geliefert hat. Weitere Felder (Beschreibung,
 // Kategorie, …) fasst diese Funktion nicht an, deshalb bleiben sie über den Index-Zugriff nur
@@ -64,11 +66,19 @@ const toEur = (cents: number): number => Math.round(cents) / 100
 // Wie in der Schnellerfassung: kleine Abweichungen sind Rundung, keine fehlende Umsatzsteuer
 const tolerance = (totalCents: number): number => Math.max(50, Math.round(totalCents * 0.02))
 
-// Der Regelsatz der Umsatzsteuer, dazu eine halbe Prozentstelle für Rundung. Mehr als den
-// Regelsatz gibt es in Deutschland nicht; nach unten ist alles bis 0 möglich, weil eine Rechnung
-// ermäßigte (7 Prozent) und steuerfreie Anteile mischen kann.
-const VAT_PERCENT = 19
+// Der Regelsatz der Umsatzsteuer kommt aus dem Rechtsregister (`ustg.standard-rate`, Heizung
+// PR 1), dazu eine halbe Prozentstelle für Rundung. Mehr als den Regelsatz gibt es in Deutschland
+// nicht; nach unten ist alles bis 0 möglich, weil eine Rechnung ermäßigte und steuerfreie Anteile
+// mischen kann. Die halbe Stelle ist keine Rechtszahl, sondern Rechentoleranz.
 const VAT_ROUNDING_PERCENT = 0.5
+
+// Der Tag, nach dem sich der Regelsatz richtet: das Rechnungsdatum, wenn das Modell eines im
+// Format JJJJ-MM-TT geliefert hat, sonst heute. Zeitregel `eventDate` wie im Register. Vor der
+// ersten Fassung des Registers (01.01.2007) gibt es keinen Satz; auch dann gilt heute, statt dass
+// die Auswertung am Fehler des Registers abbricht.
+const FIRST_RATE_DAY = ustgStandardRate.versions[0]?.validFrom ?? ''
+const rateDate = (invoiceDate: unknown, today: string): string =>
+  typeof invoiceDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(invoiceDate) && invoiceDate >= FIRST_RATE_DAY ? invoiceDate : today
 
 // Lässt sich der Abstand zwischen Positionssumme und Rechnungsbetrag durch Umsatzsteuer
 // erklären? An dieser Frage hängt in diesem Modul alles, denn ein größerer Abstand heißt: Die
@@ -83,10 +93,11 @@ const VAT_ROUNDING_PERCENT = 0.5
 // Ein Rechnungsbetrag unter der Positionssumme ist dagegen kein Zeichen für eine fehlende
 // Position, sondern für eine Abschlagszahlung, und ein gar nicht bekannter Rechnungsbetrag ist
 // überhaupt kein Zeichen. Beides blockt deshalb nicht.
-const vatExplainsGap = (positionCents: number, totalCents: number): boolean =>
-  positionCents > 0 && totalCents <= positionCents * (1 + (VAT_PERCENT + VAT_ROUNDING_PERCENT) / 100)
+const vatExplainsGap = (positionCents: number, totalCents: number, vatPercent: number): boolean =>
+  positionCents > 0 && totalCents <= positionCents * (1 + (vatPercent + VAT_ROUNDING_PERCENT) / 100)
 
-export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
+// `today` als JJJJ-MM-TT, hineingereicht, damit der Test nicht vom Kalender abhängt.
+export function normalizeAmounts(extraction: RawExtraction | null | undefined, today: string = new Date().toISOString().slice(0, 10)) {
   // Die drei Hilfsfelder des Modells verlassen die Auswertung nicht. Mit `vatRatePercent`
   // gerechnet wird nicht mehr (siehe unten), abgetrennt wird es trotzdem: In der Oberfläche hat
   // es nichts verloren.
@@ -95,6 +106,7 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   result.positions = positions
   const keys = positions.map((_, i) => String(i))
   const totalCents = toCents(result.totalGrossEur) ?? 0
+  const vatPercent = valueAt(ustgStandardRate, rateDate(result.invoiceDate, today))
   // `null` heißt „nicht gelesen“ und ist etwas anderes als 0: Eine Position kann laut Rechnung
   // nichts kosten (mitversicherte Leistung, Gutschriftszeile), und dann stimmt alles.
   const netCents = positions.map((p) => toCents(p.amountEur))
@@ -120,7 +132,7 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   // Kostenseite gibt es ihn nicht, dort bleibt es beim Blick auf den Beleg.
   if (
     positionsAreNet === true && allNetRead
-    && netSum < totalCents - tolerance(totalCents) && vatExplainsGap(netSum, totalCents)
+    && netSum < totalCents - tolerance(totalCents) && vatExplainsGap(netSum, totalCents, vatPercent)
   ) {
     // Immer anteilig, nie mit einem genannten Steuersatz. Das Restverfahren normiert ohnehin auf
     // den Rechnungsbetrag, bei richtigem Satz kommt deshalb in jeder Position dasselbe heraus.
@@ -149,7 +161,7 @@ export function normalizeAmounts(extraction: RawExtraction | null | undefined) {
   const grossSum = readGross.reduce((a, b) => a + b, 0)
   if (
     laborTotal > 0 && !hasOwnLabor && allGrossRead
-    && vatExplainsGap(grossSum, totalCents) && laborTotal <= grossSum
+    && vatExplainsGap(grossSum, totalCents, vatPercent) && laborTotal <= grossSum
   ) {
     const parts = largestRemainder(laborTotal, readGross.map((c) => (c * laborTotal) / grossSum), keys)
     positions.forEach((p, i) => { p.labor35aEur = toEur(parts[i]) })
