@@ -11,6 +11,14 @@
 // Oberfläche und muss dort wörtlich so stehen; der Test prüft das.
 
 import type { TermId } from './glossary.ts'
+// Rechtszahlen aus dem Rechtsregister (Heizung PR 1), in der Fassung von `LAW_AS_OF` wie im Lexikon.
+// Die CO₂-Kürzung von 3 Prozent folgt mit PR 6 (`co2.cut.missing`); bis dahin ist sie im Wächter
+// law-literals.test.ts als erlaubte Stelle benannt.
+import { hkvConsumptionShare, hkvCutNotByConsumption } from './law/heizkostenv.ts'
+import { LAW_AS_OF, valueAt } from './law/register.ts'
+
+const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
+const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 
 // Die Seiten, auf die eine Anleitung springen kann. Dieselben Kennungen wie die Navigation;
 // client/src/nav.ts prüft beim Übersetzen, dass jede davon dort vorkommt.
@@ -109,7 +117,7 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Ist im Mietvertrag kein Umlageschlüssel vereinbart, wird nach Wohnfläche umgelegt. Kosten, die von einem erfassten Verbrauch der Mieter abhängen, sind nach einem Maßstab umzulegen, der dem unterschiedlichen Verbrauch Rechnung trägt, also nach den Zählern.', norm: '§ 556a Abs. 1 Satz 1 und 2 BGB' },
       { text: 'Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; danach können Sie eine Nachzahlung in der Regel nicht mehr verlangen.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
-      { text: 'Bei einer Zentralheizung sind mindestens 50 und höchstens 70 Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 Prozent kürzen.', norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
+      { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Heiz- und Warmwasserkosten nach Verbrauch zu verteilen. Wird nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Verwaltungskosten sowie Instandhaltung und Instandsetzung sind keine Betriebskosten; erfassen Sie sie als „Nicht umlagefähig“.', norm: '§ 1 Abs. 2 BetrKV' },
       { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Mietfuchs rechnet das noch nicht (#97); nehmen Sie den Vermieteranteil aus der Abrechnung des Messdienstes.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
     ],
@@ -229,7 +237,7 @@ const GUIDE_DATA = {
     caveats: [
       { text: 'Betriebskosten dürfen als Pauschale oder als Vorauszahlung vereinbart werden.', norm: '§ 556 Abs. 2 BGB' },
       { text: 'Eine Pauschale dürfen Sie nur erhöhen, wenn der Mietvertrag das vorsieht, durch Erklärung in Textform; sinken die Betriebskosten, ist sie ab dann herabzusetzen.', norm: '§ 560 Abs. 1 und 3 BGB' },
-      { text: 'Für Heizung und Warmwasser geht die Heizkostenverordnung einer Pauschale oder Warmmiete vor, außer im Gebäude mit nicht mehr als zwei Wohnungen, von denen Sie eine selbst bewohnen. Wird entgegen der Verordnung nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um 15 Prozent kürzen.', norm: '§ 2, § 12 Abs. 1 HeizkostenV' },
+      { text: `Für Heizung und Warmwasser geht die Heizkostenverordnung einer Pauschale oder Warmmiete vor, außer im Gebäude mit nicht mehr als zwei Wohnungen, von denen Sie eine selbst bewohnen. Wird entgegen der Verordnung nicht nach Verbrauch abgerechnet, darf der Mieter seinen Anteil um ${CUT} Prozent kürzen.`, norm: '§ 2, § 12 Abs. 1 HeizkostenV' },
     ],
     gaps: [
       { text: 'Mietfuchs vergleicht eine Pauschale nicht mit den tatsächlichen Kosten und rechnet keine Erhöhung oder Senkung vor; das tun Sie anhand des Vermieteranteils selbst.' },
@@ -255,7 +263,7 @@ const GUIDE_DATA = {
     ],
     example: 'Die Heizkostenabrechnung nennt 1.200 € für Wohnung A, 1.100 € für Wohnung B und 600 € für Ihre eigene Wohnung, zusammen 2.900 €. Vorher abgezogen hat der Messdienst unter „abzüglich CO₂-Kosten Vermieter“ 100 €, die Sie als Vermieter tragen. Bezahlt haben Sie also 3.000 €, und das ist der Betrag der Position. Die Mieter tragen 1.200 € und 1.100 €. Von den 100 € nennt die Einzelabrechnung Ihrer Wohnung 20,69 € als vom Vermieter übernommen (die Näherung 100 × 600 ÷ 2.900 ergäbe dasselbe); in ihr Feld kommen 620,69 €, Ihr Eigenanteil. Die übrigen 79,31 € bleiben als Rest beim Vermieter und stehen in der Steuerübersicht als Werbungskosten. Mit 2.900 € als Betrag fehlten sie dort.',
     caveats: [
-      { text: 'Bei einer Zentralheizung sind mindestens 50 und höchstens 70 Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um 15 Prozent kürzen.', norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
+      { text: `Bei einer Zentralheizung sind mindestens ${SHARE.min} und höchstens ${SHARE.max} Prozent der Kosten nach Verbrauch zu verteilen; das erledigt der Messdienst. Wird nicht nach Verbrauch abgerechnet, darf der Mieter um ${CUT} Prozent kürzen.`, norm: '§ 7 Abs. 1, § 8 Abs. 1, § 12 Abs. 1 HeizkostenV' },
       { text: 'Beim Mieterwechsel muss eine Zwischenablesung stattfinden; melden Sie dem Messdienst den Auszug rechtzeitig.', norm: '§ 9b HeizkostenV' },
       { text: 'Fallen für die Heizung CO₂-Kosten an, sind sie zwischen Ihnen und dem Mieter nach dem CO₂-Ausstoß des Gebäudes aufzuteilen. Die Heizkostenabrechnung muss den Anteil des Mieters, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen; fehlt das, darf der Mieter seinen Anteil an den Heizkosten um 3 Prozent kürzen. Die großen Messdienste teilen auf, wenn Sie ihnen die CO₂-Angaben Ihrer Brennstoffrechnung melden, und weisen die Angaben in ihrer Abrechnung aus; legen Sie sie dem Mieter mit Ihrer Abrechnung bei.', norm: '§ 5 Abs. 2, § 7 Abs. 3 und 4 CO2KostAufG' },
       { text: 'Weist die Abrechnung keinen CO₂-Anteil des Vermieters aus, fragen Sie beim Messdienst nach, bevor Sie abrechnen; selbst rechnet Mietfuchs die Aufteilung noch nicht (#97).' },
