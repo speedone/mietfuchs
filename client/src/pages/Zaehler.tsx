@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { HeatingPlant, HeatingRole, Meter, MeterType, Reading, Unit } from '../types'
 import { METER_TYPE_LABELS } from '../types'
 import { buildReadingBody, EMPTY_READING, type ReadingForm } from '../readingForm'
-import { asksRemote, emptyMeterForm, HEATING_ROLE_LABELS, meterBody, meterToForm, oldEndText, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
+import { asksRemote, emptyMeterForm, HEATING_ROLE_LABELS, meterBody, meterToForm, oldEndText, REMOTE_RULE_TEXT, withMeterType, type MeterForm, type RemoteAnswer } from '../meterForm'
 import { api, errorText, fmtDate } from '../api'
 import { usePeriod } from '../period'
 import { PeriodSelect } from '../components/PeriodSelect'
@@ -259,7 +259,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 </select>
               </label>
             )}
-            {asksRemote(meterForm) && (
+            {asksRemote(meterForm, plants.length > 0) && (
               <>
                 <label className="field grow">
                   Aus der Ferne ablesbar?
@@ -272,7 +272,7 @@ export default function Zaehler({ units, focus, onFocusDone }: Props) {
                 <label className="field grow">
                   Eingebaut am
                   <input type="date" value={meterForm.installedOn} onChange={(e) => setMeterForm({ ...meterForm, installedOn: e.target.value })} />
-                  <small className="muted">Für die Kürzung nach § 12 HeizkostenV: Neuere Geräte müssen ab dem Einbau aus der Ferne ablesbar sein, ältere ab 2027.</small>
+                  <small className="muted">{REMOTE_RULE_TEXT}</small>
                 </label>
               </>
             )}

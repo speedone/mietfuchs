@@ -884,7 +884,8 @@ umgekehrt).
   Fläche), lehnt der Server mit `HeatingError` (400) und einem Satz ab.
 - **Ohne Liste alle Wohnungen, mit Liste genau diese.** Ob es eine Liste gibt, sagt
   `units_limited`, wie `participants_limited` (#94): Sonst versorgte eine Anlage, deren letzte
-  Wohnung gelöscht wurde, plötzlich das ganze Haus.
+  Wohnung gelöscht wurde, plötzlich das ganze Haus. Eine Wohnung in der Liste wechselt nicht das
+  Objekt (`guardUnit`).
 - **Heizpositionen gehören zur Anlage ihres Objekts.** Beim Einrichten mit Vorschau
   (`/api/heating-plants/assignable`), danach bekommt jede neue Position der Kostenart Heizung und
   Warmwasser ohne Feld `heatingPlantId` die einzige Anlage (`defaultHeatingPlant`, auch für alte
@@ -898,8 +899,11 @@ umgekehrt).
 - **Fernablesbarkeit** entscheidet [server/src/remoteReading.ts](server/src/remoteReading.ts) nach
   `hkv.remote-reading.new-devices` (Einbau nach dem Stichtag: ab Einbau) und
   `hkv.remote-reading.retrofit` (ältere ab 2027), aus den Zählern oder, beim Messdienst, aus der
-  Angabe an der Anlage. Sicher heißt `heating.remote-reading-missing` (warning, 3 % je Mieter auf
-  die gedruckten Heizzeilen), möglich `heating.remote-reading` mit „bis zu“; ohne Anlage oder ohne
+  Angabe an der Anlage. Ein neues Gerät in einem System, dessen übrige Geräte nicht fernablesbar
+  sind (laut Anlage keines oder alle anderen bekannten nicht), kann ein Ersatz nach § 5 Abs. 2 Satz 4
+  sein; dann gilt die Frist des Abs. 3, vorher heißt es nur „bis zu“. Sicher heißt
+  `heating.remote-reading-missing` (warning, 3 % je Mieter in Wohnungen an der Anlage, auf die
+  gedruckten Heizzeilen), möglich `heating.remote-reading` mit „bis zu“; ohne Anlage oder ohne
   Angaben bleibt `heating.remote-reading` wortgleich wie vor PR 4. Zwei Codes, weil die Stufe am
   Code hängt (#112).
 - **Zweifamilienhaus** ist eine Art des Objekts (`zfh`) und nur Beschreibung; § 2 hängt an den

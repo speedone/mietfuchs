@@ -1,5 +1,7 @@
 // Das Formular eines Zählers, ohne DOM prüfbar (meterForm.test.ts).
 import type { HeatingRole, Meter, MeterType } from './types'
+import { hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from '../../shared/law/register.ts'
 
 // Fernablesbar? Leer heißt „weiß ich nicht“.
 export type RemoteAnswer = '' | 'yes' | 'no'
@@ -58,7 +60,11 @@ export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
 // Fernablesbarkeit und Einbau fragt das Formular nur bei Geräten, die § 5 HeizkostenV erfasst:
 // Wärme- und Warmwasserzähler und Heizkostenverteiler der Wohnungen, dazu die Wärmezähler der
 // Heizanlage. Der Gaszähler gehört dem Versorger.
-export function asksRemote(form: MeterForm): boolean {
+// Gefragt wird erst, wenn das Objekt eine Heizanlage hat (Durchsicht von #230, M1): Ohne Anlage
+// rechnet Mietfuchs mit diesen Angaben nichts, und mit einer später angelegten Anlage änderten sie
+// still die Hinweise der Abrechnung.
+export function asksRemote(form: MeterForm, hasPlant: boolean): boolean {
+  if (!hasPlant) return false
   if (form.unitId) return form.type === 'waerme' || form.type === 'warmwasser' || form.type === 'hkv'
   return form.heatingRole === 'dhwHeat' || form.heatingRole === 'totalHeat'
 }
@@ -71,9 +77,15 @@ export type MeterBody = {
   unit: string
   heatingPlantId: string | null
   heatingRole: HeatingRole | null
-  remoteReadable: boolean | null
-  installedOn: string | null
+  // Fehlen ohne Heizanlage im Rumpf: Eine gespeicherte Angabe bleibt dann, wie sie ist.
+  remoteReadable?: boolean | null
+  installedOn?: string | null
 }
+
+// Der Hilfetext am Einbaudatum, mit den Stichtagen aus dem Register (Durchsicht von #230, M5).
+export const REMOTE_RULE_TEXT =
+  `Für die Kürzung nach § 12 HeizkostenV: Geräte, die nach dem ${germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)} ` +
+  `eingebaut wurden, müssen ab dem Einbau aus der Ferne ablesbar sein, ältere ab dem ${germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')}.`
 
 // Der Rumpf zum Speichern. `plantId`: die Heizanlage des Objekts, `null` ohne. Eine Zählernummer
 // fehlt im Rumpf, wenn das Feld leer ist, wie bisher.
@@ -83,7 +95,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
     return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.' }
   }
   const role = !form.unitId && plantId !== null && form.heatingRole !== '' ? form.heatingRole : null
-  const asks = asksRemote({ ...form, heatingRole: role ?? '' })
+  const asks = asksRemote({ ...form, heatingRole: role ?? '' }, plantId !== null)
   const number = form.meterNumber.trim()
   return {
     body: {
@@ -95,8 +107,10 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
       unit: form.unit.trim() || defaultMeterUnit(form.type),
       heatingPlantId: role === null ? null : plantId,
       heatingRole: role,
-      remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
-      installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
+      ...(plantId === null ? {} : {
+        remoteReadable: asks && form.remote !== '' ? form.remote === 'yes' : null,
+        installedOn: asks && form.installedOn !== '' ? form.installedOn : null,
+      }),
     },
   }
 }

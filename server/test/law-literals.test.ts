@@ -36,11 +36,18 @@ const ENGINE_FILES = ['server/src/calc.ts', 'server/src/snapshot.ts', 'shared/he
 // ohne Zeichenketten und Kommentare, in den Dateien der Berechnung und in invoiceAmounts.ts, auf die
 // Zahlen, die heute im Register stehen. Eine Zahl in einem Bezeichner oder eine Dezimalzahl zählt
 // nicht.
+// Die Oberfläche der Heizung nennt Stichtage und Jahre aus dem Register (Durchsicht von #230, M5):
+// Datumsangaben und Jahreszahlen der Rechtslage stehen dort nicht als Text.
+const CLIENT_LAW_FILES = ['client/src/components/HeatingCard.tsx', 'client/src/pages/Zaehler.tsx', 'client/src/heatingForm.ts', 'client/src/meterForm.ts']
+const CLIENT_LAW_PATTERNS = [...DATE_PATTERNS, /(?<![\w.])20[12]\d(?!\w|\.\d)/g]
 const CODE_FILES = [...ENGINE_FILES, 'server/src/invoiceAmounts.ts']
 const CODE_PATTERN = /(?<![\w.])(15|50|70|19|16|2021|2024|2027)(?![\w.])/g
 
 type Allowed = { file: string; match: string; reason: string }
 const ALLOWED: readonly Allowed[] = [
+  { file: 'client/src/components/HeatingCard.tsx', match: '01.10.2024', reason: 'Frage nach der Wärmepumpe (§ 12 Abs. 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10, PR 4 speichert nur die Antwort' },
+  { file: 'client/src/components/HeatingCard.tsx', match: '2022', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10' },
+  { file: 'client/src/components/HeatingCard.tsx', match: '2024', reason: 'Durchschnittskosten 2022 bis 2024 (§ 12 Abs. 3 Satz 3 HeizkostenV); `hkv.heat-pump.capture` kommt mit PR 10' },
   { file: 'shared/glossary.ts', match: '100 Prozent', reason: 'Summe vereinbarter Quoten, keine Rechtsfolge' },
   { file: 'shared/glossary.ts', match: '20 Prozent', reason: '§ 35a Abs. 2 EStG, Steuer des Mieters; kein Parameter des Entwurfs (4.3)' },
   { file: 'shared/guides.ts', match: '3 Prozent', reason: 'CO₂-Kürzung nach § 7 Abs. 4 CO2KostAufG; `co2.cut.missing` kommt mit PR 6 ins Register (4.3, G-C7)' },
@@ -96,6 +103,12 @@ test('Rechtszahlen: kein Datumsliteral in den Dateien der Berechnung', () => {
   assert.equal(open.length, 0, `Datum als Literal, bitte aus shared/law/ nehmen:\n${report(open)}`)
 })
 
+test('Rechtszahlen: kein Stichtag und kein Stichjahr als Text in der Oberfläche der Heizung', () => {
+  for (const file of CLIENT_LAW_FILES) assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} gibt es nicht; die Liste ist veraltet`)
+  const open = findings(CLIENT_LAW_FILES, CLIENT_LAW_PATTERNS).filter((f) => !isAllowed(f))
+  assert.equal(open.length, 0, `Rechtsdatum als Literal in der Oberfläche, bitte aus shared/law/ nehmen:\n${report(open)}`)
+})
+
 test('Rechtszahlen: keine Zahl einer Rechtsregel im Code der Berechnung', () => {
   for (const file of CODE_FILES) assert.ok(fs.existsSync(path.join(ROOT, file)), `${file} gibt es nicht; die Liste ist veraltet`)
   const open = codeFindings().filter((f) => !isAllowed(f))
@@ -103,7 +116,7 @@ test('Rechtszahlen: keine Zahl einer Rechtsregel im Code der Berechnung', () => 
 })
 
 test('Rechtszahlen: jede erlaubte Stelle gibt es noch, und jede hat einen Grund', () => {
-  const all = [...findings(percentFiles(), PERCENT_PATTERNS), ...findings(ENGINE_FILES, DATE_PATTERNS), ...codeFindings()]
+  const all = [...findings(percentFiles(), PERCENT_PATTERNS), ...findings(ENGINE_FILES, DATE_PATTERNS), ...findings(CLIENT_LAW_FILES, CLIENT_LAW_PATTERNS), ...codeFindings()]
   for (const a of ALLOWED) {
     assert.ok(a.reason.trim(), `${a.file}: „${a.match}“ ohne Grund`)
     assert.ok(all.some((f) => f.file === a.file && f.match.includes(a.match)), `erlaubte Stelle nicht mehr da: ${a.file} „${a.match}“`)

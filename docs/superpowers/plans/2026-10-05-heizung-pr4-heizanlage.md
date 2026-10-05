@@ -47,7 +47,9 @@ jedem Merge“).
   PR 3. Kein neues Pflichtfeld, kein neuer Schritt im Weg.
 - **Anlegen einer Anlage ändert keine Zahl** (11.2, A2): Eine Anlage mit den Vorgaben
   (`method = 'manual'` oder `'service'`, Fernablesbarkeit „unbekannt“) ergibt dieselbe Abrechnung
-  wie ohne Anlage, über das ganze Ergebnis. `change_split` wird gespeichert und wirkt in PR 4
+  wie ohne Anlage, über das ganze Ergebnis. Genauer (Durchsicht von #230): Stehen an Zählern schon
+  Angaben zur Fernablesbarkeit, die vor der Anlage gemacht wurden, können sich mit der Anlage die
+  Hinweise ändern, nie ein Betrag. Die Oberfläche fragt diese Angaben erst mit einer Anlage ab. `change_split` wird gespeichert und wirkt in PR 4
   nirgends (bei `manual` erst mit `heating_target`, PR 10; B7).
 - **Sperren, 400 mit einem Satz** (13, W7): `method = 'self'`, `supply = 'perUnit'`, zweite Anlage
   im selben Objekt, eigene Heizperiode (`periodStartMonth`), getrennte Abrechnung

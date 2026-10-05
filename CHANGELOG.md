@@ -23,13 +23,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizkostenabrechnung erstellt (ein Messdienst, bei einer Eigentumswohnung die Gemeinschaft, oder
   niemand), welche Wohnungen angeschlossen sind und ob die Zähler und Heizkostenverteiler aus der
   Ferne ablesbar sind. Vorhandene Heizpositionen offener Zeiträume kommen beim Einrichten zur
-  Anlage, neue von selbst. An keinem Betrag ändert sich dadurch etwas
+  Anlage, neue von selbst. An keinem Betrag ändert sich dadurch etwas; stehen an Zählern schon
+  Angaben zur Fernablesbarkeit, können Hinweise dazukommen
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
 - **Fernablesbarkeit nach Einbaudatum, beziffert.** Zähler kennen jetzt die Sparten Warmwasser und
   Heizkostenverteiler, dazu „aus der Ferne ablesbar“ und das Einbaudatum; beim Messdienst genügt die
   Angabe an der Heizanlage. Ist ein Gerät nicht fernablesbar, obwohl es das sein muss (nach dem
   01.12.2021 eingebaut: ab dem Einbau, ältere ab 2027), nennt die Abrechnung die Kürzung von 3 %
-  der Heizkosten je Mieter; ist das nur möglich, sagt sie „bis zu“. Ohne Angaben bleibt es beim
+  der Heizkosten je Mieter; ist das nur möglich, etwa weil ein einzelnes Gerät in einem sonst nicht
+  fernablesbaren System ersetzt wurde (§ 5 Abs. 2 Satz 4 HeizkostenV), sagt sie „bis zu“. Ohne Angaben bleibt es beim
   bisherigen Hinweis ([#214](https://github.com/speedone/mietfuchs/issues/214)).
 - **Zweifamilienhaus als Art des Objekts**, mit einem Hinweis, wenn die angelegten Wohnungen nicht
   dazu passen; ob die Ausnahme des § 2 HeizkostenV gilt, richtet sich weiter nach den Wohnungen

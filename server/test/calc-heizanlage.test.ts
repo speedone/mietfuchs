@@ -234,3 +234,14 @@ test('Zweifamilienhaus: passt die Objektart nicht zu den Wohnungen, gibt es eine
   const mfh = computeSettlement({ ...snapshotOf(source({ units: drei, costItems: [item('heizung', 2025, { category: HEATING_CATEGORY, key: 'area' })] }), 2025), property: { kind: 'mfh', cableBuiltBeforeDec2021: null } })
   assert.deepEqual(kindNotices(mfh), [])
 })
+
+test('Angaben zur Fernablesbarkeit vor der Anlage: Mit der Anlage ändern sich Hinweise, nie Beträge (Durchsicht von #230)', () => {
+  const geraet = meter('hkv-a', 'a', 'hkv', { name: 'HKV', remoteReadable: false, installedOn: '2023-05-01' })
+  const ohne = settle(heizBestand(2025, [geraet]), 2025)
+  const mit = settle(heizBestand(2025, [geraet]), 2025, [plant()])
+  assert.notDeepEqual(remoteNotices(mit), remoteNotices(ohne), 'der Hinweis kommt mit der Anlage')
+  const betraege = (r: ComputedSettlement) => [...r.statements.values()].map((st) => [st.tenancyId, st.rows.map((row) => row.shareCents), st.balanceCents])
+  assert.deepEqual(betraege(mit), betraege(ohne))
+  assert.equal(mit.totalCostsCents, ohne.totalCostsCents)
+})
+

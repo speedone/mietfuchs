@@ -1,7 +1,7 @@
 // Die Einheit eines Zählers folgt seiner Sparte (#142): Ein Wärmezähler, bei dem niemand die
 // Einheit geändert hat, zeigte „m³“.
 import { expect, test } from 'vitest'
-import { defaultMeterUnit, emptyMeterForm, meterBody, meterToForm, oldEndText, withMeterType } from './meterForm'
+import { asksRemote, defaultMeterUnit, emptyMeterForm, meterBody, meterToForm, oldEndText, withMeterType } from './meterForm'
 
 test('Vorgabe der Einheit je Sparte: Wasser m³, Wärme und Strom kWh, Sonstiges leer', () => {
   expect(defaultMeterUnit('kaltwasser')).toBe('m³')
@@ -40,8 +40,16 @@ test('Zähler der Heizanlage: nur ohne Wohnung und mit Anlage; Fernablesbarkeit 
   expect(meterBody(speicher, 'hp1')).toEqual({
     body: { name: 'Speicher', unitId: null, type: 'waerme', unit: 'kWh', heatingPlantId: 'hp1', heatingRole: 'dhwHeat', remoteReadable: false, installedOn: '2022-03-01' },
   })
-  // Ohne Anlage im Objekt bleibt es ein Hauptzähler, und dann fragt das Formular nicht nach § 5.
-  expect(meterBody(speicher, null)).toMatchObject({ body: { heatingPlantId: null, heatingRole: null, remoteReadable: null, installedOn: null } })
+  // Ohne Anlage im Objekt bleibt es ein Hauptzähler, und dann fragt das Formular nicht nach § 5. Die
+  // Felder fehlen dann im Rumpf, damit eine gespeicherte Angabe bleibt (Durchsicht von #230, M1).
+  const ohneAnlage = meterBody(speicher, null)
+  expect(ohneAnlage).toMatchObject({ body: { heatingPlantId: null, heatingRole: null } })
+  expect('body' in ohneAnlage && Object.hasOwn(ohneAnlage.body, 'remoteReadable')).toBe(false)
+  expect('body' in ohneAnlage && Object.hasOwn(ohneAnlage.body, 'installedOn')).toBe(false)
+  const hkvOhneAnlage = meterBody({ ...emptyMeterForm(), name: 'HKV', unitId: 'eg', type: 'hkv', unit: 'Einheiten', remote: 'no' }, null)
+  expect('body' in hkvOhneAnlage && Object.hasOwn(hkvOhneAnlage.body, 'remoteReadable')).toBe(false)
+  expect(asksRemote({ ...emptyMeterForm(), unitId: 'eg', type: 'hkv' }, false)).toBe(false)
+  expect(asksRemote({ ...emptyMeterForm(), unitId: 'eg', type: 'hkv' }, true)).toBe(true)
   // Der Gaszähler gehört dem Versorger: Rolle ja, Fernablesbarkeit nein.
   expect(meterBody({ ...speicher, name: 'Gas', type: 'sonstig', heatingRole: 'supply' }, 'hp1'))
     .toMatchObject({ body: { heatingPlantId: 'hp1', heatingRole: 'supply', remoteReadable: null, installedOn: null } })
