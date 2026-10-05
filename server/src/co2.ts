@@ -2,7 +2,10 @@
 // Rechtswerte reicht der Aufrufer aus dem Register herein (`law()` protokolliert sie); hier steht
 // keine Zahl der Stufentabelle und kein Datum (law-literals.test.ts).
 import type { Co2Stage } from '../../shared/law/co2kostaufg.ts'
-import type { Co2StageRange, Co2Statement, Co2TenantRelief, DhwMethod, HeatingEnergy } from '../../shared/types.ts'
+import type { BillingPeriod, Co2Assessment, Co2StageRange, Co2Statement, Co2TenantLine, Co2TenantRelief, DhwMethod, HeatingEnergy, HeatingMethod, HeatingSource } from '../../shared/types.ts'
+import { serviceProbe, type ProbeResult } from '../../shared/co2Probe.ts'
+import { HEATING_CATEGORY } from '../../shared/heating.ts'
+import type { Snapshot, SnapshotCostItem, SnapshotHeatingPeriodRow, SnapshotUnit } from './snapshot.ts'
 
 // Brennstoffe mit Standardwert für den Emissionsfaktor nach der EBeV, die das Gesetz erfasst (§ 2
 // Abs. 1 Satz 1 CO2KostAufG, Entwurf 5.3). Die Wärmelieferung erfasst Satz 2 „hinsichtlich der für
@@ -140,4 +143,149 @@ export function shownReliefs(
     return { ...p, approximated: true }
   })
   return { raws, problem: null, missing }
+}
+
+// ---------- Töpfe (Entwurf 6.1 Nr. 4) ----------
+
+// Ein Topf: die Positionen einer Anlage in einer Heizperiode, mit den Angaben dazu. `serviceItems`
+// sind die Messdienstpositionen (Schlüssel `amounts`), über die allein die Probe läuft (W9);
+// `foreign` die übrigen. `carrierId` ist die Position, in der L steckt: die gewählte, sonst die
+// größte Messdienstposition. Welche es ist, ändert nur, wie sich der Vermieteranteil zerlegt, nicht,
+// was die Mieter tragen. `reliefKey` kennzeichnet die Zeilen ohne Position (Abzugszeilen).
+export type Co2Pot = {
+  plantId: string
+  plantName: string
+  energy: HeatingEnergy
+  method: HeatingMethod
+  source: HeatingSource
+  period: BillingPeriod
+  items: SnapshotCostItem[]
+  serviceItems: SnapshotCostItem[]
+  foreign: SnapshotCostItem[]
+  statement: Co2Statement | null
+  hotWater: SnapshotHeatingPeriodRow | null
+  probe: ProbeResult | null
+  carrierId: string | null
+  reliefKey: string
+}
+
+// Ein Topf je Anlage im Zeitraum dieser Berechnung (Entwurf 6.1 Nr. 4.1). Seit Heizung PR 5 rechnet
+// `computeSettlement` jede Heizperiode einer Anlage mit eigener Heizperiode für sich: nach Weg b als
+// Teilabrechnung (`scope: 'heatingPart'`), nach Weg d als Heizkostenabrechnung (`heatingSnapshotFor`);
+// der Zeitraum der Berechnung ist dann die Heizperiode, und ihre Positionen stehen in `items`. Ohne
+// eigene Heizperiode ist die Heizperiode der Zeitraum des Objekts. In jedem Fall ist der Topf: die
+// Positionen der Anlage mit dem Schlüssel des Zeitraums. In P ist der Topf einer Anlage mit eigener
+// Heizperiode deshalb leer, denn ihre Positionen stehen in `heatingParts` (snapshot.ts).
+export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]): Co2Pot[] {
+  const period = snapshot.period
+  return (snapshot.heatingPlants ?? []).map((plant): Co2Pot => {
+    const pot = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plant.id && c.period === period.key)
+    const serviceItems = pot.filter((c) => c.key === 'amounts')
+    const statement = (snapshot.co2Statements ?? []).find((s) => s.plantId === plant.id && s.period === period.key) ?? null
+    let probe: ProbeResult | null = null
+    if (
+      statement && (statement.method === 'serviceDeducted' || statement.method === 'serviceShown') &&
+      statement.serviceUsersTotalCents !== null && statement.serviceLandlordCents !== null && statement.serviceUnitsCount !== null
+    ) {
+      probe = serviceProbe({
+        deducted: statement.method === 'serviceDeducted',
+        items: serviceItems,
+        usersTotalCents: statement.serviceUsersTotalCents,
+        landlordCents: statement.serviceLandlordCents,
+        unitsCount: statement.serviceUnitsCount,
+        approx: statement.serviceUsersTotalApprox,
+      })
+    }
+    const chosen = serviceItems.find((c) => c.id === statement?.serviceCostItemId)
+    const largest = serviceItems.reduce<SnapshotCostItem | null>((a, c) => (a === null || c.amountCents > a.amountCents ? c : a), null)
+    return {
+      plantId: plant.id,
+      plantName: plant.name ?? '',
+      energy: plant.energy,
+      method: plant.method,
+      source: plant.source,
+      period,
+      items: pot,
+      serviceItems,
+      foreign: pot.filter((c) => c.key !== 'amounts'),
+      statement,
+      hotWater: (snapshot.heatingPeriodRows ?? []).find((r) => r.plantId === plant.id && r.period === period.key) ?? null,
+      probe,
+      carrierId: (chosen ?? largest)?.id ?? null,
+      reliefKey: `co2:${plant.id}:${period.key}`,
+    }
+  })
+}
+
+// ---------- Vorwegabzug (Entwurf 7.4) ----------
+
+export type Co2Deduction = { landlordCents: number; selfRaw: number; selfApproximated: boolean }
+
+// Beim Vorwegabzug mit bestandener Probe, oder mit geschätztem S, die Zerlegung des Vermieterrests
+// in der Position, in der L steckt: L_self (laut Messdienst, sonst L · Eigenbeträge / S) und den
+// abziehbaren Rest. Die Eigenbeträge sind die der selbstgenutzten Wohnungen in den
+// Messdienstpositionen des Topfs. `applicable` fragt das Register (`co2.applicable-from`), und nur
+// für Töpfe mit einem solchen Datensatz.
+export function co2DeductionsOf(pots: readonly Co2Pot[], units: readonly SnapshotUnit[], applicable: (period: BillingPeriod) => boolean): Map<string, Co2Deduction> {
+  const selfUsed = new Set(units.filter((u) => u.selfUsed && !u.participates).map((u) => u.id))
+  const out = new Map<string, Co2Deduction>()
+  for (const pot of pots) {
+    const st = pot.statement
+    if (!st || st.method !== 'serviceDeducted' || !pot.probe || pot.carrierId === null) continue
+    if (!pot.probe.ok && !st.serviceUsersTotalApprox) continue
+    if (!applicable(pot.period)) continue
+    const L = st.serviceLandlordCents ?? 0
+    const S = st.serviceUsersTotalCents ?? 0
+    const selfNet = pot.serviceItems.reduce(
+      (a, c) => a + Object.entries(c.selfAmounts ?? {}).filter(([id]) => selfUsed.has(id)).reduce((b, [, x]) => b + Math.max(0, x), 0),
+      0,
+    )
+    const self = selfLandlordRaw(L, S, selfNet, st.serviceSelfLandlordCents)
+    out.set(pot.carrierId, { landlordCents: L, selfRaw: self.raw, selfApproximated: self.approximated })
+  }
+  return out
+}
+
+// ---------- Ausweis (Entwurf 7.4 „Ausweis“, 9.5) ----------
+
+// Die Zeilen je Mieter: „vom Vermieter übernommen“ (beim reinen Ausweis die gebuchte Abzugszeile,
+// sonst der Wert laut Messdienst oder L · x / S als Anzeige ohne Buchung) und „in Ihren Heizkosten
+// enthalten“ als (C − L) · x / S, ohne C nicht. `shares` sind die Messdienstbeträge des Mieters im
+// Topf.
+export function tenantLines(st: Co2Statement, shares: readonly ReliefShare[], printed: ReadonlyMap<string, { cents: number; approximated: boolean }>): Co2TenantLine[] {
+  const S = st.serviceUsersTotalCents ?? 0
+  const L = st.serviceLandlordCents ?? 0
+  const given = new Map(st.reliefs.map((r) => [r.tenancyId, r.cents]))
+  return shares.map((s) => {
+    const booked = printed.get(s.tenancyId)
+    const g = given.get(s.tenancyId)
+    const landlordCents = booked ? booked.cents : g ?? (S > 0 ? Math.round((L * s.cents) / S) : 0)
+    const approximated = booked ? booked.approximated : g === undefined
+    const tenantCents = st.serviceTotalCents !== null && S > 0 ? Math.round(((st.serviceTotalCents - L) * s.cents) / S) : null
+    return { tenancyId: s.tenancyId, landlordCents, tenantCents, approximated }
+  })
+}
+
+export function co2Assessment(
+  st: Co2Statement,
+  re: Restage,
+  p: { booked: boolean; ranges: Co2StageRange[]; shortened: boolean; deduction: Co2Deduction | undefined; tenants: Co2TenantLine[] },
+): Co2Assessment {
+  return {
+    method: st.method,
+    booked: p.booked,
+    deducted: st.method === 'serviceDeducted',
+    totalCents: st.serviceTotalCents,
+    landlordCents: st.serviceLandlordCents,
+    landlordPermille: st.serviceLandlordPermille,
+    kgPerM2: re.value,
+    emissionsKg: st.serviceEmissionsKg,
+    areaM2: st.serviceAreaM2 ?? st.areaM2,
+    stage: re.stage,
+    table: p.ranges,
+    shortened: p.shortened,
+    selfLandlordCents: p.deduction ? Math.round(p.deduction.selfRaw) : null,
+    selfApproximated: p.deduction?.selfApproximated ?? false,
+    tenants: p.tenants,
+  }
 }

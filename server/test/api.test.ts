@@ -31,6 +31,7 @@ import type {
   UpdateStatus, UploadEntry, UploadInfo,
 } from '../../shared/types.ts'
 import type { Db } from '../src/store.ts'
+import { withoutCo2 } from '../testing/co2.ts'
 import type { MigratedSettings } from '../src/ai/settings.ts'
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -5785,7 +5786,7 @@ test('Heizanlage: anlegen samt Zuordnung offener Heizpositionen, und die Abrechn
     const [gespeichert] = await s.api<CostItem[]>('/api/costItems')
     assert.equal(gespeichert?.heatingPlantId, plant.id)
     // Entwurf 11.2: Das Anlegen ändert keine Zahl und keinen Hinweis.
-    assert.deepEqual(await s.api<Settlement>('/api/settlement/2025-01'), vorher)
+    assert.deepEqual(withoutCo2(await s.api<Settlement>('/api/settlement/2025-01')), withoutCo2(vorher))
   } finally {
     s.stop()
   }
