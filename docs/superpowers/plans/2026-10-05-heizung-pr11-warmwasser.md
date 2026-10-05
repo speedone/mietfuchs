@@ -192,6 +192,32 @@ Plan bzw. Code von PR 10 ab und ersetzt in diesem Plan jeden abweichenden Namen,
 Spalte „Wo benutzt“ nennt jede Stelle. Weicht PR 10 in der Sache ab (nicht nur im Namen), entscheidet
 die Durchsicht, bevor gebaut wird.
 
+**Vermerk nach Erscheinen des Plans von PR 10** (`2026-10-05-heizung-pr10-kernrechnung.md`): Die
+tatsächlichen Namen dort, die die Annahmen ersetzen:
+
+- **B2/B3:** α bestimmt `hotWaterShareOf(i: AlphaInput)` in `server/src/heating.ts` (Task 4), Ergebnis
+  `{ ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem }`, mit
+  `type Alpha = { value; dhwHeatKwh; referenceKwh; reference: 'fuel' | 'totalHeat'; estimated }` und
+  `AlphaProblem = 'formulaLater' | 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'heatingValueLater' | 'outOfRange'`.
+  `AlphaInput` hat `hotWater`, `dhwMethod`, `energy`, `dhwHeatKwh`, `totalHeatKwh`, `fuelKwh`,
+  `fuelCoveragePermille`, `fuelEstimated?`; kein `plant`/`row`/`stock`. Der Aufruf steht einmal in
+  `computeSettlement` (Task 8, `alphaResult`); die Texte zu den Problemen in `ALPHA_TEXT`, Codes
+  `heating.dhw-share-invalid` und `heating.heat-pump-dhw-basis`. Die Naht N1 dieses Plans ersetzt
+  `hotWaterShareOf` und `ALPHA_TEXT`, nicht eine Funktion `dhwShare`.
+- **B4:** `formulaLater` und `heatingValueLater` sind die beiden Sperren; die Einrichtung lehnt
+  `hotWater = 'combined'` bei Öl, Flüssiggas, Pellets, Holz und Kohle mit 400 ab (Abweichung 10 dort).
+- **B6:** `SnapshotFuelDelivery` bekommt in PR 10 nur `energyKwh`; `SnapshotHeatingPeriodRow` pickt
+  `heatConsumptionPct`, `waterConsumptionPct`, `insulationRule`, `dhwHeatKwh`, `totalHeatKwh`.
+- **B7:** Der Ausweis ist `HeatingStatement.self?: SelfHeatingStatement`; α steht dort als **Objekt**
+  `self.alpha = { percent, dhwHeatKwh, referenceKwh, reference, estimated } | null` (Prozent, nicht
+  Bruchteil), nicht als `alpha?: number`. Der Druckblock heißt `client/src/components/SelfHeatingBlock.tsx`.
+- **B8:** Einen Helfer `server/testing/selfHeating.ts` gibt es nicht. Beispiel A baut
+  `beispielA(opened, options)` in `server/test/calc-heizkosten.test.ts` über die Datenbank
+  (`setUpSelf`, Zähler, Ablesungen, `createDelivery`, Positionen) und gibt einen `Snapshot` zurück;
+  wer ihn in PR 11 braucht, zieht ihn nach `server/testing/` um.
+- **B9:** zwei Schritte, `0026_heizkostenabrechnung` und `0027_heizkostenabrechnung_bedingungen`.
+- **B10:** `HeatingPeriodView` bekommt in PR 10 nur `distribution`; `HotWaterCard` bleibt von PR 6.
+
 | Nr. | Annahme | Wo benutzt |
 |---|---|---|
 | B1 | `HeatingPlant` hat `hotWater: 'combined' \| 'separate' \| 'none'` (Spalte `hot_water`) und `capture: 'heatMeter' \| 'hca' \| 'serviceValues' \| null`; `SnapshotHeatingPlant` pickt `energy`, `method`, `hotWater`, `units`, `name` | Task 2, 4 |

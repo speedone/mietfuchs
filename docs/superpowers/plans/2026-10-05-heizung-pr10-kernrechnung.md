@@ -12,7 +12,8 @@ Gewichte (#202), rechnet Vorrat und Überträge auch hier, prüft Wärmepumpen n
 druckt Heizkostenabrechnung und Ableseergebnis.
 
 **Architecture:** Die Rechnung steht als reine Funktionen in `server/src/heating.ts`: Nutzer je
-Wohnung, Ablesung je Grenze (die nächste in ihrer Zelle, ohne Rückrechnung), Gruppen nach § 9b
+Wohnung, Ablesung je Grenze (die beim Wechsel gebundene, sonst die nächste in ihrer Zelle über die
+Nachbarperioden, ohne Rückrechnung), Gruppen nach § 9b
 Abs. 3, Bruchteile je Topf, Warmwasseranteil, Anteile mit Vorgabe aus der Vorperiode und das Urteil
 über Wärmepumpen. `computeSettlement` baut daraus je Anlage mit `method = 'self'` einen Plan, verteilt
 jede Position mit dem neuen Schlüssel `heatingSystem` über `distributeCents` mit den Rohwerten
@@ -135,9 +136,10 @@ sie ab, ist das ein Befund für die Durchsicht, kein stiller Umbau.
    Tage), der Nachmieter rechnet ab seiner Ablesung; Σ der Nutzer der Wohnung bleibt der Verbrauch
    der Wohnung. Test in Task 3.
 2. **Ein Mieter liest am 03.10. ab, gewechselt wurde zum 30.09., und am 15.10. wird noch einmal
-   abgelesen.** Erwartet: Es gilt die Ablesung, die dem Wechsel am nächsten liegt (03.10.), nicht
-   die spätere; die Grenze zwischen den Nutzern liegt am 03.10., und der Hinweis nennt 3 Tage und den
-   Gradtagsanteil. Test in Task 3.
+   abgelesen; keine der beiden ist beim Mieterwechsel erfasst.** Erwartet: Es gilt die Ablesung, die
+   dem Wechsel am nächsten liegt (03.10.), nicht die spätere; die Grenze zwischen den Nutzern liegt am
+   03.10., und der Hinweis nennt 3 Tage und den Gradtagsanteil. Ist eine davon beim Mieterwechsel
+   erfasst, gilt diese, auch wenn die andere näher liegt (Abweichung 9). Test in Task 3.
 3. **Die Anlage wird von „Niemand“ auf „Ich selbst“ umgestellt, während im offenen Zeitraum schon
    Heizpositionen mit Schlüssel „nach Wohnfläche“ stehen.** Erwartet: 409 mit der Liste dieser
    Positionen; erst mit Teil und Ziel für jede wird umgestellt, in einer Transaktion mit Anteil und
@@ -256,17 +258,31 @@ entscheidet.
    rechnet PR 10.
 7. **`heating.heat-pump-capture`** (hint): Der Entwurf nennt keinen Code für eine Wärmepumpe, für die
    die Verordnung im Zeitraum noch nicht gilt (§ 12 Abs. 3 Satz 2). Dann gibt es keine
-   Kürzungshinweise nach § 12, und der Hinweis sagt, ab wann sie gilt.
+   Kürzungshinweise nach § 12, und der Hinweis sagt, ab wann sie gilt: „ab dem Abrechnungszeitraum,
+   der nach dem TT.MM.JJJJ beginnt“ („nach“ streng gelesen).
 8. **Tabelle `interim_reading_gaps`** (Wohnung, Datum der Grenze, „nicht möglich“ oder „nicht
    durchgeführt“, Grund). Der Entwurf (3.5) lässt Mietfuchs fragen, nennt aber keinen Ort für die
    Antwort. Die Grenze ist der letzte Tag des bisherigen Nutzers; so passt dieselbe Antwort zum
    Mieterwechsel (#150) und zum Beginn oder Ende eines Leerstands.
-9. **Welche Ablesung zu einer Grenze gehört:** die nächste, deren Datum dieser Grenze näher liegt als
-   jeder anderen Grenze der Wohnung; die äußeren Nachbarn sind der Beginn der vorigen und das Ende der
-   folgenden Heizperiode. Liegt eine Ablesung genau in der Mitte zwischen zwei Grenzen, gehört sie
-   zur früheren; liegen zwei gleich weit von einer Grenze, gilt die frühere; am selben Tag die
-   zuletzt erfasste. Der Entwurf sagt „der abgelesene Wert, wie er ist“, aber nicht, welcher von
-   mehreren; ohne Regel könnte eine Ablesung zwei Grenzen dienen.
+9. **Welche Ablesung zu einer Grenze gehört** (nach der rechtlichen Prüfung neu gefasst). Weder
+   HeizkostenV noch BGH regeln das; belegt ist nur, dass nicht zurückgerechnet wird (Entwurf 3.5).
+   Die Regel hat deshalb vier Teile, jeder mit Grund:
+   - **Gebunden vor nah.** Eine Ablesung, die beim Mieterwechsel erfasst wird (#150, Task 5 und 12),
+     trägt ihre Grenze (`readings.interim_for`, der letzte Tag des bisherigen Nutzers) und gehört
+     fest zu ihr, wie bei den Messdiensten, die eine Zwischenablesung beauftragen und kennzeichnen.
+   - **Nähe nur als Rückfall** für Ablesungen ohne Bindung (Stichtag, nachgetragene Werte): die
+     nächste in der Zelle der Grenze; liegt eine Ablesung genau in der Mitte, gehört sie zur früheren
+     Grenze, und von zwei gleich weit entfernten gilt die frühere. Das ist eine **Festlegung nach der
+     Praxis der Messdienste ohne Quelle** (ista nimmt Monatsendwerte, Brunata führt Wechsel- und
+     Ablesedatum getrennt); sie ist deterministisch und keiner Norm zuwider.
+   - **Zwei verschiedene Werte eines Zählers am selben Tag** sind ein Befund
+     (`heating.self-incomplete`, Grund `sameDay`), keine Wahl; welcher stimmt, weiß nur der Vermieter
+     (dieselbe Regel wie #69). Gleiche Werte stören nicht.
+   - **Über die Heizperioden stetig.** Die Zellen werden über alle Grenzen der Wohnung in H−1, H und
+     H+1 gebildet (`outerChanges`), sodass H−1 und H einer Ablesung dieselbe Grenze geben. Ist H−1
+     abgeschlossen, ist ihr eingefrorener Endstand der Anfangsstand von H (`opening`, aus dem
+     abgeschlossenen Ausweis); sonst zählte Verbrauch, der nach dem Abschluss nachgetragen wurde,
+     doppelt oder gar nicht.
 10. **Warmwasseranteil nur bei Abrechnung in kWh** (Gas, Fernwärme, Wärmepumpe, Strom). Bei Heizöl,
     Flüssiggas, Pellets, Holz und Kohle braucht § 9 Abs. 3 den Heizwert laut Rechnung, hilfsweise die
     Tabelle; beides kommt mit PR 11 (Entwurf 13). Bis dahin ist `hot_water = 'combined'` dort gesperrt
@@ -275,42 +291,86 @@ entscheidet.
     hochzurechnen wäre eine Schätzung (W4: hochgerechnet wird nur der Ausstoß); bis die Folgerechnung
     oder die Schätzung beim Abschluss da ist, gilt `heating.dhw-share-invalid`. Die Schätzung beim
     Abschluss (PR 7) bekommt dafür die kWh im selben Verhältnis wie kg und CO₂-Kosten (8.2 Nr. 2:
-    „kg und CO₂-€ im selben Verhältnis“, hier auch für die Menge).
+    „kg und CO₂-€ im selben Verhältnis“, hier auch für die Menge); das ist eine **Festlegung ohne
+    Quelle**. Weil die Schätzung damit auch den Nenner von α bestimmt, sagt der Hinweis
+    `heating.dhw-share-estimated` (hint, neu), dass α auf der geschätzten Energie beruht und sich mit
+    der Folgerechnung ändern kann.
 12. **Gemessene Warmwasserwärme:** der eingetragene Wert der Heizperiode (`dhw_heat_kwh`), sonst der
     Zähler mit der Rolle `dhwHeat`; ebenso die Gesamtwärme (`total_heat_kwh`, Rolle `totalHeat`).
-13. **§ 7 Abs. 1 Satz 2 bei Flüssiggas:** „Öl- oder Gasheizung“ umfasst nach dem Wortlaut jede
-    Gasheizung; Mietfuchs zählt Flüssiggas dazu. Eine Quelle, die das ausdrücklich sagt, gibt es
+13. **§ 7 Abs. 1 Satz 2 bei Flüssiggas** (Auslegung, im Lexikon unter „Verbrauchskosten“ so
+    gekennzeichnet). Der Wortlaut sagt „Öl- oder Gasheizung“ ohne Einschränkung; wo die Verordnung
+    Erdgas meint, sagt sie es (§ 9 Abs. 2 Satz 6, Tabelle in § 9 Abs. 3 trennt Erdgas und Flüssiggas).
+    Die Begründung (BR-Drs. 570/08, S. 13) spricht von „Öl- und Gasheizungen“ und grenzt nur gegen
+    Versorgungsarten mit hohem Grundkostenanteil wie Fernwärme ab. Der Pflichtanteil ist unter beiden
+    Lesarten zulässig, denn er liegt im Rahmen des Satzes 1; eine ausdrückliche Quelle gibt es
     nicht.
-14. **Anteil ohne Angabe:** Fehlt jeder Anteil nach Verbrauch (weder eigene Zeile noch Vorperiode),
+14. **Anteil ohne Angabe:** Fehlt der Anteil nach Verbrauch (weder eigene Zeile noch Vorperiode),
     wird nicht verteilt (`heating.self-incomplete`); die Einrichtung (Schritt 7) schreibt ihn immer.
-    Mehr als 70 % nur mit Vereinbarung (§ 10) kommt mit PR 14 und ist bis dahin gesperrt.
-15. **Kürzungsbetrag bei nur einem unerfassten Topf:** Fehlt der Verbrauch nur für Heizung oder nur für
-    Warmwasser, rechnet `heating.no-consumption` 15 % auf den exakten Anteil des Mieters an diesem Topf
-    und nicht auf gedruckte Zeilen, denn eine Zeile je Topf gibt es nicht (6.5 nennt die gedruckten
-    Zeilen). Sind alle Töpfe unerfasst, gilt die Summe der gedruckten Zeilen nach Abzug wie überall.
-16. **„Nur Heizung“ bei freien Schlüsseln:** Die Gradtage ersetzen den Tagesanteil bei den
-    Schlüsseln Wohnfläche, Wohneinheiten, vereinbarte Anteile und Direktzuordnung. Beim
-    Personenschlüssel bleibt es bei Personentagen, denn § 9b Abs. 2 nennt keine Personen; Verbrauch,
-    Einzelbeträge und Gemeinschaft teilen ohnehin nicht nach Tagen.
+    **Je Topf eigen** (§ 8 Abs. 1 verlangt beim Warmwasser eine eigene Wahl): Der Anteil beim
+    Warmwasser kommt aus der eigenen Zeile oder dem Warmwasserwert der Vorperiode, nie still aus dem
+    Anteil der Heizung; fehlt er, ist das `heating.self-incomplete`. Einrichtung und Seite Heizkosten
+    fragen beide Werte, vorbelegt mit demselben, sodass der Vermieter wählt. Mehr als 70 % nur mit
+    Vereinbarung (§ 10) kommt mit PR 14 und ist bis dahin gesperrt; unter 50 % bleibt hart.
+15. **Kürzungsbetrag bei nur einem unerfassten Topf:** „Soweit“ in § 12 Abs. 1 Satz 1 begrenzt die
+    Kürzung auf den unerfassten Teil. Fehlt der Verbrauch nur für Heizung oder nur für Warmwasser,
+    rechnet `heating.no-consumption` deshalb auf den Anteil des Mieters an diesem Topf, und zwar **nach
+    CO₂-Abzug** wie 6.5: vom Topfanteil geht der Teil seines Abzugs ab, der auf diesen Topf entfällt
+    (sein Brennstoff in diesem Topf durch seinen Brennstoff insgesamt; beim Ziel „beides“ teilt α).
+    Weil es keine gedruckte Zeile je Topf gibt, druckt der Ausweis den Topfbetrag je Mieter vor und
+    nach Abzug; das ist die Grundlage, die der Mieter nachrechnen kann. Sind alle Töpfe unerfasst,
+    gilt die Summe der gedruckten Zeilen nach Abzug wie überall.
+16. **„Nur Heizung“ bei freien Schlüsseln:** § 9b Abs. 2 teilt die übrigen Wärmekosten beim
+    Nutzerwechsel „nach der Gradtagszahl oder zeitanteilig“. Bei Wohnfläche, Wohneinheiten,
+    vereinbarten Anteilen und Direktzuordnung ist der Tagesanteil des Mietverhältnisses genau dieser
+    zeitanteilige Faktor; an seine Stelle tritt der Gradtagsanteil, die übrige Rechnung bleibt.
+    Personen bleiben zeitanteilig: Personentage sind zeitanteilig und damit nach § 9b Abs. 2 ebenso
+    zulässig, und die Verordnung kennt für Heizkosten keinen Personenschlüssel (§ 7 Abs. 1 Satz 5).
+    Verbrauch, Einzelbeträge und Gemeinschaft teilen nicht nach Tagen. Fällt die Anlage gar nicht
+    unter die Verordnung (§ 2, § 11), ist die Wahl eine Festlegung von Mietfuchs; einstellbar bleibt
+    sie über `change_split`.
 17. **Eine Anlage wird nur über die Einrichtung zur eigenen Heizkostenabrechnung** (`PUT
     /api/heating-plants/:id/self`), damit Anteil, Zähler und Umstellung der Positionen in einer
     Transaktion entstehen. Wer zurück auf „Niemand“ stellt, bestätigt, dass die Positionen des offenen
-    Zeitraums nach Wohnfläche verteilt werden (409 mit Liste, sonst `convertItems: 'area'`).
+    Zeitraums nach Wohnfläche verteilt werden (409 mit Liste, sonst `convertItems: 'area'`). Der
+    Satz der 409 nennt die Folgen: Fällt die Anlage unter die Verordnung, darf jeder Mieter um den
+    Kürzungssatz kürzen (§ 12 Abs. 1 Satz 1), und ein anderer Maßstab gilt nur für künftige Zeiträume,
+    nach Erklärung gegenüber den Mietern (§ 6 Abs. 4).
 18. **Positionen einer Anlage mit eigener Abrechnung haben immer den Schlüssel `heatingSystem`**
     (400 sonst), und Brennstoff hat bei verbundener Warmwasserbereitung das Ziel „Heizung und
     Warmwasser“ (§ 9 Abs. 1 Satz 1: die einheitlich entstandenen Kosten sind aufzuteilen).
 19. **`heating.change-fee`** (hint) erscheint an jeder Heizposition, deren Beschreibung
     „Zwischenablesung“ oder „Nutzerwechsel“ enthält, nicht nur bei eigener Abrechnung (der Entwurf
-    nennt nur den Code). Das ist die eine angekündigte Änderung für Bestandsnutzer.
+    nennt nur den Code). Das ist die eine angekündigte Änderung für Bestandsnutzer. Der Text gibt den
+    Leitsatz von BGH VIII ZR 19/07 wieder und lässt die Wirksamkeit einer Formularklausel offen; das
+    AG Berlin-Hohenschönhausen (16 C 205/07) hält eine solche Klausel für unwirksam, zitiert als
+    Instanzgericht. Eine wirksame Vereinbarung begründet einen Anspruch gegen den ausziehenden Mieter
+    und macht die Gebühr nicht zu einer Position, die nach Schlüssel auf alle umgelegt wird. Derselbe
+    Leitsatz gilt für die Nutzerwechselgebühr der Kaltwasserzähler; die Ausweitung ist eine weitere
+    Änderung für Bestandsnutzer und wird nach Rückfrage als eigenes Issue vorgeschlagen (CLAUDE.md:
+    Issues sind öffentlich), nicht in PR 10 gebaut.
 20. **Golden F17 legt fest, was der Entwurf offenlässt:** drei Wohnungen à 100 m² mit Wärmezählern
     10.000 / 12.000 / 8.000 kWh und ohne Warmwasser (8.2 nennt nur Rechnungen und Bestand); für die
     Variante mit ⅓ Eigennutzung zeigen alle drei 10.000 kWh, damit das Gewicht genau ⅓ ist. Der
-    Entwurf nennt 1.916,67 € als exakten Eigenanteil; je Position nach #202 gerundet liegt die
-    Abrechnung höchstens zwei Cent daneben, und der Test erlaubt genau das.
+    Entwurf nennt 1.916,67 € als exakten Eigenanteil (8.2, 12.2 N8). Gedruckt wird je Zeile nach #202
+    gerundet, je Zeile höchstens 1 ct daneben (6.2); die README leitet den gedruckten Wert von Hand
+    her (**1.916,68 €**: der Restcent der Rechnung 2.500 € und des Übertrags „aus dem Vorrat“ geht bei
+    Gleichstand an den Vermieter), und der Test nagelt ihn mit `assert.equal` fest, damit ein Fehler
+    bei der Zuteilung des Restcents auffällt.
 21. **Einrichtung über eine angelegte Anlage:** Wer „Ich selbst“ wählt, legt die Anlage zunächst mit
     `method = 'manual'` an (an keiner Zahl ändert sich etwas) und beantwortet danach Schritt 7, der sie
     über `PUT …/self` umstellt. Bricht er dort ab, bleibt die Anlage bei „Niemand“, und die Karte sagt
     das. Der Entwurf (11.2) beschreibt die Fragen, nicht ihre Speicherung in zwei Schritten.
+22. **Zwischenablesung ab der Warngrenze: der Vermieter wählt.** § 9b Abs. 3 Alt. 2 sieht Gradtage
+    bzw. Tage vor, wenn eine Ablesung „wegen des Zeitpunktes“ keine hinreichend genaue Ermittlung
+    zulässt. Liegt eine Zwischenablesung ab `practice.reading-off-warning` neben dem Wechsel, legt
+    Mietfuchs das nicht selbst fest: Ohne Antwort ist die Anlage nicht verteilbar
+    (`heating.self-incomplete`, Grund `farInterim`), und auf der Seite Heizkosten wählt der Vermieter
+    „Ablesung verwenden“ (`useReading`, Warnung `heating.interim-reading-far`) oder „Nach § 9b Abs. 3“
+    (`imprecise`, dann wie ohne Zwischenablesung, Hinweis ohne Kürzung). Beide Antworten stehen in
+    `interim_reading_gaps` neben „nicht möglich“ und „nicht durchgeführt“.
+23. **Neue Spalte `readings.interim_for`** (Datum der Grenze, nur bei Ablesungen aus dem
+    Mieterwechsel): die Bindung aus Nr. 9. Ältere Ablesungen haben keine und fallen unter die
+    Nähe-Regel; an keiner Zahl ohne eigene Abrechnung ändert sich etwas.
 
 ---
 
@@ -627,14 +687,14 @@ Hinter `hotWaterShare` einfügen:
     short: 'Der Teil der Heiz- oder Warmwasserkosten, der nach dem gemessenen Verbrauch verteilt wird, bei der Heizung nach Kilowattstunden, beim Warmwasser nach Kubikmetern.',
     example: 'Topf Heizung 5.628,00 €, davon 70 % nach Verbrauch = 3.939,60 €. Eine Wohnung mit 12.000 von 40.000 kWh trägt davon 1.181,88 €.',
     norm: '§ 7 Abs. 1 Satz 1, § 8 Abs. 1 HeizkostenV',
-    needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Ohne Zähler darf jeder Mieter seinen Anteil kürzen.',
+    needed: 'Ja, wenn Sie die Heizkosten selbst abrechnen. Ohne Zähler darf jeder Mieter seinen Anteil kürzen. Bei einer Öl- oder Gasheizung in einem Haus mit Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen ist der Anteil vorgeschrieben (§ 7 Abs. 1 Satz 2 HeizkostenV). Dass eine Flüssiggasheizung dazu zählt, ist eine Auslegung von Mietfuchs: Der Wortlaut sagt „Gasheizung“ ohne Einschränkung, wo die Verordnung Erdgas meint, sagt sie es (§ 9 Abs. 2 Satz 6 und die Tabelle in § 9 Abs. 3), und die Begründung (BR-Drs. 570/08) nennt Öl- und Gasheizungen und grenzt nur gegen Fernwärme ab. Der vorgeschriebene Anteil ist unter beiden Lesarten zulässig.',
   },
   interimReading: {
     title: 'Zwischenablesung',
     short: 'Die Ablesung der Wärme- und Warmwasserzähler, wenn ein Mieter mitten im Abrechnungszeitraum aus- oder einzieht. Nach ihr werden die Verbrauchskosten aufgeteilt; die übrigen Heizkosten nach Gradtagszahlen oder zeitanteilig, die übrigen Warmwasserkosten zeitanteilig.',
     example: 'Wechsel zum 30.09.: Grundkosten Heizung der Wohnung 506,52 €. Nach Gradtagen (Januar bis September 640 Promille) trägt der Vormieter 324,17 € und der Nachmieter 182,35 €; zeitanteilig wären es 378,85 € und 127,67 €.',
     norm: '§ 9b HeizkostenV',
-    needed: 'Ja, bei jedem Mieterwechsel. Ist sie nicht möglich, werden die gesamten Kosten der Wohnung nach Gradtagen bzw. Tagen geteilt. Die Kosten der Zwischenablesung trägt der Vermieter, soweit nichts anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07); ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden.',
+    needed: 'Ja, bei jedem Mieterwechsel. Ist sie nicht möglich, werden die gesamten Kosten der Wohnung nach Gradtagen bzw. Tagen geteilt. Die Kosten der Zwischenablesung trägt der Vermieter, soweit nichts anderes vereinbart ist (BGH, Urteil vom 14.11.2007, VIII ZR 19/07); ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden. Das AG Berlin-Hohenschönhausen (16 C 205/07) hält sie für unwirksam; das ist die Entscheidung eines Amtsgerichts.',
   },
   heatMeter: {
     title: 'Wärmezähler',
@@ -670,7 +730,8 @@ Refs #99"
 ### Task 2: Datenmodell und Migrationen 0026/0027
 
 Vier Spalten an `heating_plants` (Warmwasser, Erfassung, Flächenbasis der Heizung, Einbau der
-Wärmepumpe), das Ziel an `cost_items`, der Schlüssel `heatingSystem` und die Tabelle
+Wärmepumpe), das Ziel an `cost_items`, die Grenze einer Ablesung aus dem Mieterwechsel an `readings`
+(`interim_for`, Abweichung 23), der Schlüssel `heatingSystem` und die Tabelle
 `interim_reading_gaps`. Zwei erzeugte Schritte, weil drizzle-kit beim Neubau einer Tabelle die neuen
 Spalten aus der alten kopieren wollte (README „Neue Spalten und geänderte Bedingungen nie in einem
 Schritt“). Dazu die Typen des Ausweises, die Task 9 füllt.
@@ -683,8 +744,8 @@ Schritt“). Dazu die Typen des Ausweises, die Task 9 füllt.
 **Interfaces:**
 - Consumes (PR 3, 4, 6, 7): `HeatingPart`, `HEATING_PARTS`, `HeatingPlant`, `HeatingPeriodData`, `ChangeSplit`, `InsulationRule`, `HeatingStatement`, `HeatingPeriodView`, `heatingPlants`, `costItems`, `units`, `exactly`, `oneOf`, `COST_KEYS`.
 - Produces:
-  - `shared/types.ts`: `CostKey` + `'heatingSystem'`; `HeatingTarget = 'both' | 'heating' | 'water'`; `HotWater = 'combined' | 'separate' | 'none'`; `CaptureMethod = 'heatMeter' | 'hca' | 'serviceValues'`; `AreaBasisHeat = 'area' | 'heatedArea'`; `InterimGapStatus = 'impossible' | 'missed'`; `InterimGap = { unitId: string; date: string; status: InterimGapStatus; reason: string }`; `HeatingDistribution`; `SelfPot`, `SelfRole`, `SelfPotView`, `SelfReadingView`, `SelfBoundaryView`, `SelfUserView`, `SelfUnitView`, `SelfHeatingStatement` (Felder in Step 3); `HeatingPlant.hotWater: HotWater`, `.capture: CaptureMethod | null`, `.areaBasisHeat: AreaBasisHeat`, `.heatPumpInstalledOn: string | null`; `CostItem.heatingTarget?: HeatingTarget`; `HeatingStatement.self?: SelfHeatingStatement`; `HeatingPeriodView.distribution?: HeatingDistribution | null`
-  - schema.ts: `HEATING_TARGETS`, `HOT_WATER`, `CAPTURE_METHODS`, `AREA_BASES_HEAT`, `INTERIM_GAP_STATUS`, `interimReadingGaps`; Spalten `heatingPlants.hotWater`, `.capture`, `.areaBasisHeat`, `.heatPumpInstalledOn`, `costItems.heatingTarget`
+  - `shared/types.ts`: `CostKey` + `'heatingSystem'`; `HeatingTarget = 'both' | 'heating' | 'water'`; `HotWater = 'combined' | 'separate' | 'none'`; `CaptureMethod = 'heatMeter' | 'hca' | 'serviceValues'`; `AreaBasisHeat = 'area' | 'heatedArea'`; `InterimGapStatus = 'impossible' | 'missed' | 'imprecise' | 'useReading'`; `Reading.interimFor?: string`; `InterimGap = { unitId: string; date: string; status: InterimGapStatus; reason: string }`; `HeatingDistribution`; `SelfPot`, `SelfRole`, `SelfPotView`, `SelfReadingView`, `SelfBoundaryView`, `SelfUserView`, `SelfUnitView`, `SelfHeatingStatement` (Felder in Step 3); `HeatingPlant.hotWater: HotWater`, `.capture: CaptureMethod | null`, `.areaBasisHeat: AreaBasisHeat`, `.heatPumpInstalledOn: string | null`; `CostItem.heatingTarget?: HeatingTarget`; `HeatingStatement.self?: SelfHeatingStatement`; `HeatingPeriodView.distribution?: HeatingDistribution | null`
+  - schema.ts: `HEATING_TARGETS`, `HOT_WATER`, `CAPTURE_METHODS`, `AREA_BASES_HEAT`, `INTERIM_GAP_STATUS`, `interimReadingGaps`; Spalten `heatingPlants.hotWater`, `.capture`, `.areaBasisHeat`, `.heatPumpInstalledOn`, `costItems.heatingTarget`, `readings.interimFor`
   - `KEY_LABELS.heatingSystem` (Server: `'nach Heizkostenverordnung'`, Client: `'nach Heizkostenverordnung (eigene Heizkostenabrechnung)'`)
 
 - [ ] **Step 1: Write the failing tests**
@@ -821,6 +882,14 @@ costForm.test.ts.
   distribution?: HeatingDistribution | null
 ```
 
+`Reading` bekommt als letztes Feld (Abweichung 23):
+
+```ts
+  // Bei einer Ablesung aus dem Mieterwechsel (#150) die Grenze, zu der sie gehört: der letzte Tag des
+  // bisherigen Nutzers (Heizung PR 10). Fehlt bei allen übrigen Ablesungen.
+  interimFor?: string
+```
+
 `CostKey`:
 
 ```ts
@@ -837,9 +906,11 @@ export type HotWater = 'combined' | 'separate' | 'none'
 export type CaptureMethod = 'heatMeter' | 'hca' | 'serviceValues'
 export type AreaBasisHeat = 'area' | 'heatedArea'
 
-// Keine Zwischenablesung an einer Grenze (Entwurf 3.5): „nicht möglich“ (§ 9b Abs. 3) oder „nicht
-// durchgeführt“. `date` ist der letzte Tag des bisherigen Nutzers (Abweichung 8 des Plans).
-export type InterimGapStatus = 'impossible' | 'missed'
+// Antwort des Vermieters zur Zwischenablesung an einer Grenze (Entwurf 3.5): keine, weil „nicht
+// möglich“ (§ 9b Abs. 3 Alt. 1) oder „nicht durchgeführt“; oder eine Ablesung ab der Warngrenze, die
+// er nach § 9b Abs. 3 Alt. 2 als ungenau behandelt (`imprecise`) oder bewusst verwendet
+// (`useReading`). `date` ist der letzte Tag des bisherigen Nutzers (Abweichungen 8 und 22 des Plans).
+export type InterimGapStatus = 'impossible' | 'missed' | 'imprecise' | 'useReading'
 export type InterimGap = { unitId: string; date: string; status: InterimGapStatus; reason: string }
 
 // Der Anteil nach Verbrauch einer Heizperiode, wie ihn die Seite Heizkosten zeigt (§ 6 Abs. 4, § 7
@@ -848,7 +919,9 @@ export type InterimGap = { unitId: string; date: string; status: InterimGapStatu
 // gibt noch keinen Anteil.
 export type HeatingDistribution = {
   own: { heating: number | null; water: number | null; insulationRule: InsulationRule | null }
-  effective: { heating: number; water: number; insulationRule: InsulationRule | null } | null
+  // `water` ist null, wenn es kein zentrales Warmwasser gibt oder der Wert fehlt (§ 8 Abs. 1 verlangt
+  // eine eigene Wahl, Abweichung 14).
+  effective: { heating: number; water: number | null; insulationRule: InsulationRule | null } | null
   inherited: boolean
   begun: boolean
   first: boolean
@@ -878,6 +951,8 @@ export type SelfBoundaryView = {
   kind: 'start' | 'end' | 'change'
   status: 'read' | 'off' | 'missing'
   offDays: number
+  // ab der Warngrenze neben dem Wechsel (`practice.reading-off-warning`); dann wählt der Vermieter
+  far: boolean
   gap: InterimGapStatus | null
 }
 // Ein Nutzer einer Wohnung (Mieter, Leerstand, Eigennutzung, außerhalb) mit seinen Werten.
@@ -896,6 +971,10 @@ export type SelfUserView = {
   waterGroup: boolean
   heatingCents: number
   waterCents: number
+  // Der Teil seines CO₂-Abzugs, der auf den Topf entfällt (Abweichung 15): Topfbetrag nach Abzug =
+  // heatingCents − heatingCo2Cents. 0 ohne Abzug.
+  heatingCo2Cents: number
+  waterCo2Cents: number
 }
 export type SelfUnitView = {
   unitId: string
@@ -912,8 +991,8 @@ export type SelfHeatingStatement = {
   changeSplit: ChangeSplit
   areaBasisHeat: AreaBasisHeat
   hotWater: HotWater
-  alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat' } | null
-  shares: { heating: number; water: number; forced: boolean; previous: { heating: number; water: number } | null } | null
+  alpha: { percent: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean } | null
+  shares: { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null } | null
   pots: SelfPotView[]
   units: SelfUnitView[]
 }
@@ -929,7 +1008,7 @@ export const HEATING_TARGETS = exactly<HeatingTarget>()(['both', 'heating', 'wat
 export const HOT_WATER = exactly<HotWater>()(['combined', 'separate', 'none'] as const)
 export const CAPTURE_METHODS = exactly<CaptureMethod>()(['heatMeter', 'hca', 'serviceValues'] as const)
 export const AREA_BASES_HEAT = exactly<AreaBasisHeat>()(['area', 'heatedArea'] as const)
-export const INTERIM_GAP_STATUS = exactly<InterimGapStatus>()(['impossible', 'missed'] as const)
+export const INTERIM_GAP_STATUS = exactly<InterimGapStatus>()(['impossible', 'missed', 'imprecise', 'useReading'] as const)
 ```
 
 In `heatingPlants` als letzte Spalten (hinter denen von PR 7):
@@ -947,6 +1026,14 @@ In `costItems` als letzte Spalte (hinter `fuelDeliveryId` aus PR 7):
 ```ts
     // Ziel bei Heizung und Warmwasser (Heizung PR 10): beides, nur Heizung, nur Warmwasser.
     heatingTarget: text('heating_target', { enum: HEATING_TARGETS }),
+```
+
+In `readings` als letzte Spalte (Abweichung 23; keine Bedingung, sonst baute drizzle-kit die Tabelle
+neu):
+
+```ts
+    // Grenze einer Ablesung aus dem Mieterwechsel (Heizung PR 10): letzter Tag des bisherigen Nutzers.
+    interimFor: text('interim_for'),
 ```
 
 Hinter der Tabelle `heatingPeriods` (PR 4):
@@ -977,7 +1064,8 @@ Run: `npm --prefix server run db:generate -- --name heizkostenabrechnung`
 
 Expected: `server/drizzle/0026_heizkostenabrechnung.sql` mit genau einem `CREATE TABLE
 interim_reading_gaps` (samt Primärschlüssel, Fremdschlüssel und beiden Bedingungen), vier
-`ALTER TABLE heating_plants ADD` und einem `ALTER TABLE cost_items ADD`. **Kein** `__new_`. Steht
+`ALTER TABLE heating_plants ADD`, einem `ALTER TABLE cost_items ADD` und einem
+`ALTER TABLE readings ADD`. **Kein** `__new_`. Steht
 ein Neubau darin, ist eine Bedingung an einer bestehenden Tabelle mitgekommen: Datei,
 Journal-Eintrag und Momentaufnahme löschen, Schema berichtigen, neu erzeugen. Fragt drizzle-kit nach
 einer Umbenennung, ist die Antwort „create“.
@@ -1124,17 +1212,17 @@ Betrag A bekommt in Task 8 die Rohwerte A · g_r(Ziel).
   - `type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }`
   - `type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }`
   - `type SelfMeter = { id: string; name: string; unitId: string; type: MeterType }`
-  - `type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null }`
-  - `type SelfInput = { h: { from: string; to: string }; neighbors: { before: string; after: string }; changeSplit: ChangeSplit; hotWater: HotWater; areaBasisHeat: AreaBasisHeat; units: readonly SelfUnit[]; tenancies: readonly SelfTenancy[]; meters: readonly SelfMeter[]; readings: readonly SelfReading[]; gaps: readonly InterimGap[]; table: DegreeDayTable; offRule: () => ReadingOffWarning }` (die Warngrenze wird nur gefragt, wenn eine Ablesung neben ihrer Grenze liegt; so steht sie nur dann im Rechtsstand)
+  - `type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }`
+  - `type SelfInput = { h: { from: string; to: string }; neighbors: { before: string; after: string }; outerChanges?: ReadonlyMap<string, readonly string[]>; opening?: ReadonlyMap<string, SelfReading>; changeSplit: ChangeSplit; hotWater: HotWater; areaBasisHeat: AreaBasisHeat; units: readonly SelfUnit[]; tenancies: readonly SelfTenancy[]; meters: readonly SelfMeter[]; readings: readonly SelfReading[]; gaps: readonly InterimGap[]; table: DegreeDayTable; offRule: () => ReadingOffWarning }` (die Warngrenze wird nur gefragt, wenn eine Ablesung neben ihrer Grenze liegt; so steht sie nur dann im Rechtsstand)
   - `type SelfUser = { key: string; role: SelfRole; tenancyId: string | null; unitId: string; label: string; from: string; to: string; days: number; degreeDayPermille: number }`
   - `type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean }`, `type SelfUserPlan = SelfUser & { pots: Record<SelfPot, SelfUserPot> }`
-  - `type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null }`
+  - `type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null; far: boolean }`
   - `type SelfUnitPlan = { unit: SelfUnit; heatArea: number; users: SelfUserPlan[]; boundaries: SelfBoundary[]; readings: SelfReadingView[]; consumption: Record<SelfPot, number> }`
-  - `type SelfProblem = { kind: 'noArea'; pot: SelfPot } | { kind: 'missing'; pot: SelfPot; unitId: string; unitName: string; boundary: string | null; reason: 'noMeter' | 'noReading' | 'replacement' | 'negative'; meterName: string | null }`
+  - `type SelfProblem = { kind: 'noArea'; pot: SelfPot } | { kind: 'missing'; pot: SelfPot; unitId: string; unitName: string; boundary: string | null; reason: 'noMeter' | 'noReading' | 'replacement' | 'negative' | 'sameDay'; meterName: string | null } | { kind: 'farInterim'; unitId: string; unitName: string; boundary: string; readingDate: string; days: number }`
   - `type SelfFinding = { kind: 'datesDiffer'; boundary: string; readingDate: string; unitName: string; days: number; permille: number; far: boolean } | { kind: 'interimOff'; unitId: string; unitName: string; boundary: string; readingDate: string; days: number; permille: number; far: boolean } | { kind: 'noInterim'; unitId: string; unitName: string; boundary: string; pots: SelfPot[]; status: InterimGapStatus | null; reason: string; tenancyIds: string[] }`
   - `type SelfPlan = { pots: SelfPot[]; units: SelfUnitPlan[]; totals: Record<SelfPot, { area: number; consumption: number; measured: boolean }>; problems: SelfProblem[]; findings: SelfFinding[] }`
   - `type SelfWeights = { heating: number; water: number; both: number }`
-  - `POT_METER: Record<SelfPot, MeterType>`, `usersOf(unit, tenancies, h): SelfUser[]`, `boundaryReadingsOf(readings, boundaries, neighbors): Map<string, SelfReading | null>`, `measuredBetween(sorted, a, b): { value: number } | { problem: 'replacement' | 'negative' }`, `sortReadings(readings): SelfReading[]`, `addMonths(iso, n): string`, `readingOff(boundary, date, table, rule): { days: number; permille: number; far: boolean }`, `planSelf(input): SelfPlan`, `weightsOf(plan, shares: { heating: number; water: number }, alpha: number | null): Map<string, SelfWeights>`, `targetProblem(hotWater, part, target): string | null`
+  - `POT_METER: Record<SelfPot, MeterType>`, `usersOf(unit, tenancies, h): SelfUser[]`, `boundaryReadingsOf(readings, boundaries, cells): Map<string, SelfReading | null>`, `measuredBetween(sorted, a, b): { value: number } | { problem: 'replacement' | 'negative' }`, `sortReadings(readings): SelfReading[]`, `addMonths(iso, n): string`, `readingOff(boundary, date, table, rule): { days: number; permille: number; far: boolean }`, `planSelf(input): SelfPlan`, `weightsOf(plan, shares: { heating: number; water: number }, alpha: number | null): Map<string, SelfWeights>`, `targetProblem(hotWater, part, target): string | null`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1147,7 +1235,7 @@ Betrag A bekommt in Task 8 die Rohwerte A · g_r(Ziel).
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  planSelf, readingOff, targetProblem, usersOf, weightsOf,
+  boundaryReadingsOf, planSelf, readingOff, targetProblem, usersOf, weightsOf,
   type SelfInput, type SelfMeter, type SelfPlan, type SelfReading, type SelfTenancy, type SelfUnit,
 } from '../src/heating.ts'
 import { distributeCents } from '../src/calc.ts'
@@ -1306,6 +1394,59 @@ test('Warngrenze: ein Monat Abweichung mit einem Wintermonat dazwischen', () => 
   assert.equal(readingOff('2025-09-30', '2025-11-05', table, offRule).far, true, 'Oktober dazwischen')
 })
 
+test('Abweichung 9: eine Ablesung aus dem Mieterwechsel gehört fest zu ihrer Grenze, auch wenn eine ungebundene näher liegt', () => {
+  const gebunden = [
+    ...without('2025-09-30', ['wc', 'xc']),
+    r('wc', '2025-09-29', 7650), r('xc', '2025-09-29', 42),
+    r('wc', '2025-10-10', 7900, { boundFor: '2025-09-30' }), r('xc', '2025-10-10', 44, { boundFor: '2025-09-30' }),
+  ]
+  const plan = planSelf(input({ readings: gebunden }))
+  assert.deepEqual([userOf(plan, 'C1').pots.heating.value, userOf(plan, 'C2').pots.heating.value], [7400, 4600])
+  // Ohne Bindung gilt die Nähe-Regel: der 29.09. liegt näher.
+  const frei = planSelf(input({ readings: gebunden.map((x) => ({ ...x, boundFor: null })) }))
+  assert.equal(userOf(frei, 'C1').pots.heating.value, 7150)
+  // Mitte zwischen zwei Grenzen: zur früheren.
+  const at = boundaryReadingsOf([r('m', '2025-02-15', 1)], ['2025-01-31', '2025-03-02'], ['2024-12-31', '2025-01-31', '2025-03-02', '2025-12-31'])
+  assert.deepEqual([at.get('2025-01-31')?.date ?? null, at.get('2025-03-02')?.date ?? null], ['2025-02-15', null])
+})
+
+test('Abweichung 9: zwei verschiedene Werte eines Zählers am selben Tag sind ein Befund, gleiche Werte nicht (#69)', () => {
+  const doppelt = planSelf(input({ readings: [...READINGS, r('wa', '2025-12-31', 13050)] }))
+  assert.deepEqual(doppelt.problems.map((p) => (p.kind === 'missing' ? [p.reason, p.boundary, p.meterName] : p.kind)), [['sameDay', '2025-12-31', 'Wärme A']])
+  assert.deepEqual(planSelf(input({ readings: [...READINGS, r('wa', '2025-12-31', 13000)] })).problems, [])
+})
+
+test('Abweichung 9: Zellen über H−1, H und H+1; der eingefrorene Endstand der Vorperiode ist der Anfangsstand', () => {
+  // H = 2024, in H+1 zieht C1 am 31.01.2025 aus; die einzige Ablesung um den Jahreswechsel ist vom 20.01.2025.
+  const nurC = (outerChanges?: ReadonlyMap<string, readonly string[]>) => planSelf(input({
+    h: { from: '2024-01-01', to: '2024-12-31' }, neighbors: { before: '2022-12-31', after: '2025-12-31' }, hotWater: 'none',
+    units: UNITS.filter((u) => u.id === 'c'), meters: METERS.filter((m) => m.id === 'wc'),
+    tenancies: [{ id: 'C1', unitId: 'c', tenantName: 'Mieter C1', start: '2020-01-01', end: '2025-01-31' }, { id: 'C2', unitId: 'c', tenantName: 'Mieter C2', start: '2025-02-01', end: null }],
+    readings: [r('wc', '2023-12-31', 0), r('wc', '2025-01-20', 600)], ...(outerChanges ? { outerChanges } : {}),
+  }))
+  // Ohne die Grenzen von H+1 nähme H den 20.01. als Endstand, H+1 aber als Zwischenablesung: doppelt.
+  assert.deepEqual(nurC().problems, [])
+  assert.deepEqual(nurC(new Map([['c', ['2025-01-31']]])).problems.map((p) => (p.kind === 'missing' ? [p.reason, p.boundary] : p.kind)), [['noReading', '2024-12-31']])
+  // Eingefroren: H−1 endete mit 1.000 am 31.12.2024; nachgetragen ist nur ein Stand vom 05.01.2025.
+  const nachgetragen = READINGS.map((x) => (x.meterId === 'wa' && x.date === '2024-12-31' ? r('wa', '2025-01-05', 1100) : x))
+  assert.equal(userOf(planSelf(input({ readings: nachgetragen })), 'A').pots.heating.value, 11900)
+  assert.equal(userOf(planSelf(input({ readings: nachgetragen, opening: new Map([['wa', r('wa', '2024-12-31', 1000)]]) })), 'A').pots.heating.value, 12000)
+})
+
+test('Abweichung 22: Zwischenablesung ab der Warngrenze; ohne Wahl nicht verteilbar, sonst Ablesung oder § 9b Abs. 3', () => {
+  const nov = [...without('2025-09-30', ['wc', 'xc']), r('wc', '2025-11-05', 8200), r('xc', '2025-11-05', 46)]
+  const ohne = planSelf(input({ readings: nov }))
+  assert.deepEqual(ohne.problems.map((p) => (p.kind === 'farInterim' ? [p.kind, p.boundary, p.readingDate, p.days] : p.kind)), [['farInterim', '2025-09-30', '2025-11-05', 36]])
+  const gap = (status: 'imprecise' | 'useReading') => [{ unitId: 'c', date: '2025-09-30', status, reason: '' }]
+  const ablesung = planSelf(input({ readings: nov, gaps: gap('useReading') }))
+  assert.deepEqual([ablesung.problems, userOf(ablesung, 'C1').pots.heating.value], [[], 7700])
+  assert.ok(ablesung.findings.some((f) => f.kind === 'interimOff' && f.far))
+  const ungenau = planSelf(input({ readings: nov, gaps: gap('imprecise') }))
+  assert.deepEqual([ungenau.problems, userOf(ungenau, 'C1').pots.heating.group], [[], true])
+  assert.ok(ungenau.findings.some((f) => f.kind === 'noInterim' && f.status === 'imprecise'))
+  assert.equal(ungenau.units.find((u) => u.unit.id === 'c')?.boundaries.find((b) => b.kind === 'change')?.far, true)
+})
+
 test('Review Focus 1: Leerstand zwischen zwei Mietern, Ablesung nur am Ende des Leerstands', () => {
   const tenancies = TENANCIES.map((t) => (t.id === 'C2' ? { ...t, start: '2025-10-15' } : t))
   const readings = [...without('2025-09-30', ['wc', 'xc']), r('wc', '2025-10-14', 7900), r('xc', '2025-10-14', 44)]
@@ -1419,13 +1560,14 @@ Expected: FAIL. `heating.test.ts` mit `ERR_MODULE_NOT_FOUND` für `src/heating.t
 // Nutzerwechsel (§ 9b Abs. 1, §§ 6, 7 Abs. 1 Satz 5 HeizkostenV; Entwurf 3.5).
 //
 // **Ablesung an einer Grenze** (Entwurf 3.5, Abweichung 9 des Plans). Grenzen sind das Ende des Tages
-// vor der Heizperiode, ihr letzter Tag und der letzte Tag jedes Nutzers. Zu einer Grenze gehört die
-// Ablesung, die ihr am nächsten liegt, aus den Ablesungen, die ihr näher liegen als jeder anderen
-// Grenze der Wohnung; die äußeren Nachbarn sind der Beginn der vorigen und das Ende der folgenden
-// Heizperiode. Gerechnet wird mit dem Wert, wie er abgelesen ist: ohne Rückrechnung (LG Osnabrück,
-// NZM 2004, 95) und **ohne lineare Interpolation** (Entwurf 8.4). Liegt eine Ablesung genau in der
-// Mitte zwischen zwei Grenzen, gehört sie zur früheren; liegen zwei gleich weit von einer Grenze, gilt
-// die frühere; am selben Tag die zuletzt erfasste.
+// vor der Heizperiode, ihr letzter Tag und der letzte Tag jedes Nutzers. Eine Ablesung aus dem
+// Mieterwechsel gehört fest zu ihrer Grenze. Sonst, als Festlegung nach der Praxis der Messdienste
+// ohne Quelle, die Ablesung, die der Grenze am nächsten liegt, aus denen, die ihr näher liegen als
+// jeder anderen Grenze der Wohnung über H−1, H und H+1 (genau in der Mitte: zur früheren Grenze; zwei
+// gleich weit: die frühere). Zwei verschiedene Werte am selben Tag sind ein Befund. Ist die Vorperiode
+// abgeschlossen, ist ihr eingefrorener Endstand der Anfangsstand. Gerechnet wird mit dem Wert, wie er
+// abgelesen ist: ohne Rückrechnung (LG Osnabrück, NZM 2004, 95) und **ohne lineare Interpolation**
+// (Entwurf 8.4). Ab der Warngrenze neben einem Wechsel wählt der Vermieter (§ 9b Abs. 3 Alt. 2).
 //
 // **§ 9b.** Verbrauch nach der Zwischenablesung; übrige Wärmekosten nach Gradtagen oder Tagen
 // (`change_split`), übrige Warmwasserkosten nach Tagen (Abs. 2). Fehlt die Ablesung an einer Grenze
@@ -1445,10 +1587,17 @@ import type {
 export type SelfUnit = { id: string; name: string; areaM2: number; heatedAreaM2: number | null; role: 'rented' | 'self' | 'outside' }
 export type SelfTenancy = { id: string; unitId: string; tenantName: string; start: string; end: string | null }
 export type SelfMeter = { id: string; name: string; unitId: string; type: MeterType }
-export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null }
+// `boundFor`: Grenze einer Ablesung aus dem Mieterwechsel (`readings.interim_for`, Abweichung 9, 23).
+export type SelfReading = { meterId: string; date: string; value: number; replacement?: boolean; oldEndValue?: number | null; boundFor?: string | null }
 export type SelfInput = {
   h: { from: string; to: string }
+  // Beginn der vorigen und Ende der folgenden Heizperiode als äußerste Grenzen der Zellen.
   neighbors: { before: string; after: string }
+  // Je Wohnung die Wechselgrenzen in H−1 und H+1, damit H−1, H und H+1 einer Ablesung dieselbe Grenze
+  // geben (Abweichung 9). Fehlt der Eintrag, gibt es dort keinen Wechsel.
+  outerChanges?: ReadonlyMap<string, readonly string[]>
+  // Je Zähler der eingefrorene Endstand der abgeschlossenen Vorperiode; er ist der Anfangsstand.
+  opening?: ReadonlyMap<string, SelfReading>
   changeSplit: ChangeSplit
   hotWater: HotWater
   areaBasisHeat: AreaBasisHeat
@@ -1479,7 +1628,7 @@ export type SelfUser = {
 // in einer Gruppe nach § 9b Abs. 3 steht.
 export type SelfUserPot = { base: number; consumption: number; value: number | null; group: boolean }
 export type SelfUserPlan = SelfUser & { pots: Record<SelfPot, SelfUserPot> }
-export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null }
+export type SelfBoundary = { date: string; kind: 'start' | 'end' | 'change'; readingDates: (string | null)[]; gap: InterimGapStatus | null; far: boolean }
 export type SelfUnitPlan = {
   unit: SelfUnit
   heatArea: number
@@ -1490,7 +1639,9 @@ export type SelfUnitPlan = {
 }
 export type SelfProblem =
   | { kind: 'noArea'; pot: SelfPot }
-  | { kind: 'missing'; pot: SelfPot; unitId: string; unitName: string; boundary: string | null; reason: 'noMeter' | 'noReading' | 'replacement' | 'negative'; meterName: string | null }
+  | { kind: 'missing'; pot: SelfPot; unitId: string; unitName: string; boundary: string | null; reason: 'noMeter' | 'noReading' | 'replacement' | 'negative' | 'sameDay'; meterName: string | null }
+  // Zwischenablesung ab der Warngrenze ohne Wahl des Vermieters (§ 9b Abs. 3 Alt. 2, Abweichung 22).
+  | { kind: 'farInterim'; unitId: string; unitName: string; boundary: string; readingDate: string; days: number }
 export type SelfFinding =
   | { kind: 'datesDiffer'; boundary: string; readingDate: string; unitName: string; days: number; permille: number; far: boolean }
   | { kind: 'interimOff'; unitId: string; unitName: string; boundary: string; readingDate: string; days: number; permille: number; far: boolean }
@@ -1549,32 +1700,57 @@ export function sortReadings(readings: readonly SelfReading[]): SelfReading[] {
   return readings.map((r, i) => ({ r, i })).sort((a, b) => (a.r.date < b.r.date ? -1 : a.r.date > b.r.date ? 1 : a.i - b.i)).map((x) => x.r)
 }
 
-// Je Grenze die Ablesung eines Zählers (`null`, wenn keine in ihrer Zelle liegt). `boundaries`
-// aufsteigend; die Nachbarn liegen außerhalb.
-export function boundaryReadingsOf(sorted: readonly SelfReading[], boundaries: readonly string[], neighbors: { before: string; after: string }): Map<string, SelfReading | null> {
-  const all = [neighbors.before, ...boundaries, neighbors.after].map(dayNumber)
-  const out = new Map<string, SelfReading | null>()
-  boundaries.forEach((b, k) => {
-    const lo = all[k] ?? Number.NEGATIVE_INFINITY
-    const bn = all[k + 1] ?? 0
-    const hi = all[k + 2] ?? Number.POSITIVE_INFINITY
+// Je Grenze die Ablesung eines Zählers (`null`, wenn keine passt; Abweichung 9). `cells` ist die
+// aufsteigende Liste aller Grenzen der Wohnung über H−1, H und H+1 samt den äußeren Nachbarn und
+// enthält `boundaries`.
+// 1. Gebunden vor nah: eine Ablesung aus dem Mieterwechsel gehört zu ihrer Grenze (bei mehreren die
+//    nächste, bei gleichem Abstand die frühere).
+// 2. Rückfall, Festlegung nach der Praxis der Messdienste ohne Quelle: die nächste ungebundene in der
+//    Zelle der Grenze; genau in der Mitte gehört sie zur früheren Grenze, von zwei gleich weit
+//    entfernten gilt die frühere. Eine an eine andere Grenze der Zellen gebundene zählt nicht mit.
+// Zwei verschiedene Werte am selben Tag wählt diese Funktion nicht aus; das meldet `sameDayConflict`.
+export function boundaryReadingsOf(sorted: readonly SelfReading[], boundaries: readonly string[], cells: readonly string[]): Map<string, SelfReading | null> {
+  const nums = cells.map(dayNumber)
+  const cellSet = new Set(cells)
+  const nearest = (candidates: readonly SelfReading[], bn: number): SelfReading | null => {
     let best: SelfReading | null = null
     let bestDist = Number.POSITIVE_INFINITY
     let bestDay = 0
-    for (const r of sorted) {
+    for (const r of candidates) {
       const d = dayNumber(r.date)
-      // Näher an dieser Grenze als an der früheren (strikt) und nicht ferner als an der späteren.
-      if (!(d - lo > bn - d && hi - d >= d - bn)) continue
       const dist = Math.abs(d - bn)
-      if (dist < bestDist || (dist === bestDist && d <= bestDay)) {
+      if (dist < bestDist || (dist === bestDist && d < bestDay)) {
         best = r
         bestDist = dist
         bestDay = d
       }
     }
-    out.set(b, best)
-  })
+    return best
+  }
+  const out = new Map<string, SelfReading | null>()
+  for (const b of boundaries) {
+    const k = cells.indexOf(b)
+    const bn = nums[k] ?? dayNumber(b)
+    const tied = sorted.filter((r) => r.boundFor === b)
+    if (tied.length > 0) {
+      out.set(b, nearest(tied, bn))
+      continue
+    }
+    const lo = nums[k - 1] ?? Number.NEGATIVE_INFINITY
+    const hi = nums[k + 1] ?? Number.POSITIVE_INFINITY
+    // Näher an dieser Grenze als an der früheren (strikt) und nicht ferner als an der späteren.
+    out.set(b, nearest(sorted.filter((r) => {
+      if (r.boundFor && cellSet.has(r.boundFor)) return false
+      const d = dayNumber(r.date)
+      return d - lo > bn - d && hi - d >= d - bn
+    }), bn))
+  }
   return out
+}
+
+// Ein anderer Wert desselben Zählers am selben Tag (ohne Zählerwechsel): ein Befund, keine Wahl (#69).
+export function sameDayConflict(sorted: readonly SelfReading[], chosen: SelfReading): boolean {
+  return !chosen.replacement && sorted.some((x) => x !== chosen && x.date === chosen.date && !x.replacement && x.value !== chosen.value)
 }
 
 // Verbrauch zwischen zwei Ablesungen desselben Zählers: Differenz der Stände, über Zählerwechsel
@@ -1648,8 +1824,16 @@ export function planSelf(input: SelfInput): SelfPlan {
   const heatAreaOf = (u: SelfUnit): number => (input.areaBasisHeat === 'heatedArea' ? (u.heatedAreaM2 ?? u.areaM2) : u.areaM2) || 0
   const areaOf = (pot: SelfPot, u: SelfUnit): number => (pot === 'heating' ? heatAreaOf(u) : u.areaM2 || 0)
   const metersOf = (unitId: string, pot: SelfPot) => input.meters.filter((m) => m.unitId === unitId && m.type === POT_METER[pot])
-  const sortedOf = new Map(input.meters.map((m) => [m.id, sortReadings(input.readings.filter((r) => r.meterId === m.id))]))
   const startBoundary = dayBefore(h.from)
+  // Der eingefrorene Endstand der abgeschlossenen Vorperiode steht in der Liste, auch wenn die
+  // Ablesung seither geändert wurde; er gilt (er steht in der zugestellten Abrechnung).
+  const openingOf = (meterId: string): SelfReading | null => input.opening?.get(meterId) ?? null
+  const sortedOf = new Map(input.meters.map((m) => {
+    const own = input.readings.filter((r) => r.meterId === m.id)
+    const o = openingOf(m.id)
+    const same = o ? own.find((x) => x.date === o.date && x.value === o.value) : undefined
+    return [m.id, sortReadings(o && !same ? [...own, { ...o, boundFor: null }] : own)]
+  }))
 
   const totals = Object.fromEntries(pots.map((p) => [p, { area: input.units.reduce((a, u) => a + areaOf(p, u), 0), consumption: 0, measured: false }])) as SelfPlan['totals']
   // Ein Topf ohne einen einzigen Zähler ist nicht erfasst (nur nach Fläche, `heating.no-consumption`);
@@ -1669,9 +1853,43 @@ export function planSelf(input: SelfInput): SelfPlan {
       boundarySet.add(u.to)
     }
     const boundaries = [...boundarySet].sort()
+    const cells = [...new Set([input.neighbors.before, ...(input.outerChanges?.get(unit.id) ?? []), ...boundaries, input.neighbors.after])].sort()
     const readingAt = new Map<string, Map<string, SelfReading | null>>()
-    for (const p of pots) for (const m of metersOf(unit.id, p)) readingAt.set(m.id, boundaryReadingsOf(sortedOf.get(m.id) ?? [], boundaries, input.neighbors))
+    for (const p of pots) {
+      for (const m of metersOf(unit.id, p)) {
+        const sorted = sortedOf.get(m.id) ?? []
+        const at = boundaryReadingsOf(sorted, boundaries, cells)
+        const o = openingOf(m.id)
+        if (o) at.set(startBoundary, sorted.find((x) => x.date === o.date && x.value === o.value) ?? null)
+        readingAt.set(m.id, at)
+        // Zwei verschiedene Werte am selben Tag (Abweichung 9); der eingefrorene Anfangsstand gilt.
+        for (const b of boundaries) {
+          const chosen = at.get(b) ?? null
+          if (chosen && !(o && b === startBoundary) && sameDayConflict(sorted, chosen)) {
+            problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'sameDay', meterName: m.name })
+          }
+        }
+      }
+    }
     const consumption: Record<SelfPot, number> = { heating: 0, water: 0 }
+    const answerAt = (b: string): InterimGapStatus | null => input.gaps.find((x) => x.unitId === unit.id && x.date === b)?.status ?? null
+    const isChange = (b: string): boolean => users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b))
+    // Wie weit die Ablesungen einer Grenze daneben liegen (die fernste über alle Zähler).
+    const offAt = new Map<string, { date: string; days: number; permille: number; far: boolean }>()
+    for (const b of boundaries) {
+      const dates = pots.flatMap((p) => metersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
+      if (dates.length === 0 || dates.some((d) => d === null)) continue
+      const farthest = (dates as string[]).filter((d) => d !== b).reduce<string | null>((a, d) => (a === null || Math.abs(dayNumber(d) - dayNumber(b)) > Math.abs(dayNumber(a) - dayNumber(b)) ? d : a), null)
+      if (farthest !== null) offAt.set(b, { date: farthest, ...readingOff(b, farthest, table, input.offRule()) })
+    }
+    // Ab der Warngrenze neben einem Wechsel wählt der Vermieter (§ 9b Abs. 3 Alt. 2, Abweichung 22).
+    for (const b of boundaries.filter(isChange)) {
+      const off = offAt.get(b)
+      const answer = answerAt(b)
+      if (off?.far && answer !== 'imprecise' && answer !== 'useReading') {
+        problems.push({ kind: 'farInterim', unitId: unit.id, unitName: unit.name, boundary: b, readingDate: off.date, days: off.days })
+      }
+    }
 
     // Grundkosten: Fläche der Wohnung im Topf mal Anteil an Gradtagen bzw. Tagen der Heizperiode.
     for (const p of pots) {
@@ -1684,7 +1902,8 @@ export function planSelf(input: SelfInput): SelfPlan {
         if (potHasMeters[p] && areaOf(p, unit) > 0) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: null, reason: 'noMeter', meterName: null })
         continue
       }
-      const has = (b: string): boolean => meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
+      // „Nach § 9b Abs. 3“ gewählt: die Ablesung gilt als nicht hinreichend genau (Abweichung 22).
+      const has = (b: string): boolean => answerAt(b) !== 'imprecise' && meters.every((m) => (readingAt.get(m.id)?.get(b) ?? null) !== null)
       for (const b of [startBoundary, h.to]) {
         for (const m of meters) {
           if ((readingAt.get(m.id)?.get(b) ?? null) === null) problems.push({ kind: 'missing', pot: p, unitId: unit.id, unitName: unit.name, boundary: b, reason: 'noReading', meterName: m.name })
@@ -1736,31 +1955,32 @@ export function planSelf(input: SelfInput): SelfPlan {
 
     // Die Grenzen der Wohnung mit ihren Ablesungen (Ausweis, Ampel, Hinweise).
     const bounds: SelfBoundary[] = boundaries
-      .filter((b) => b === startBoundary || b === h.to || users.some((u, i) => i < users.length - 1 && u.to === b && users[i + 1]?.from === dayAfter(b)))
+      .filter((b) => b === startBoundary || b === h.to || isChange(b))
       .map((b) => {
         const all = pots.flatMap((p) => metersOf(unit.id, p)).map((m) => readingAt.get(m.id)?.get(b)?.date ?? null)
         const kind = b === startBoundary ? 'start' : b === h.to ? 'end' : 'change'
-        const gap = kind === 'change' ? (input.gaps.find((x) => x.unitId === unit.id && x.date === b)?.status ?? null) : null
-        return { date: b, kind, readingDates: all, gap }
+        const gap = kind === 'change' ? answerAt(b) : null
+        return { date: b, kind, readingDates: all, gap, far: offAt.get(b)?.far ?? false }
       })
     // Hinweise an den Wechseln: Ablesung daneben, oder keine (dann mit der Antwort des Vermieters).
     for (const bd of bounds.filter((x) => x.kind === 'change')) {
-      const missingPots = pots.filter((p) => metersOf(unit.id, p).length > 0 && metersOf(unit.id, p).some((m) => (readingAt.get(m.id)?.get(bd.date) ?? null) === null))
+      const answer = input.gaps.find((x) => x.unitId === unit.id && x.date === bd.date)
+      const imprecise = answer?.status === 'imprecise'
+      const missingPots = imprecise
+        ? pots.filter((p) => metersOf(unit.id, p).length > 0)
+        : pots.filter((p) => metersOf(unit.id, p).length > 0 && metersOf(unit.id, p).some((m) => (readingAt.get(m.id)?.get(bd.date) ?? null) === null))
       if (missingPots.length > 0) {
-        const answer = input.gaps.find((x) => x.unitId === unit.id && x.date === bd.date)
         const around = users.filter((u) => u.to === bd.date || u.from === dayAfter(bd.date))
+        // „Ablesung verwenden“ passt nicht zu einer fehlenden Ablesung und zählt dann nicht als Antwort.
+        const status = answer && answer.status !== 'useReading' ? answer.status : null
         findings.push({
           kind: 'noInterim', unitId: unit.id, unitName: unit.name, boundary: bd.date, pots: missingPots,
-          status: answer?.status ?? null, reason: answer?.reason ?? '', tenancyIds: around.flatMap((u) => (u.tenancyId ? [u.tenancyId] : [])),
+          status, reason: answer?.reason ?? '', tenancyIds: around.flatMap((u) => (u.tenancyId ? [u.tenancyId] : [])),
         })
         continue
       }
-      const offs = bd.readingDates.filter((d): d is string => d !== null && d !== bd.date)
-      const farthest = offs.reduce<string | null>((a, d) => (a === null || Math.abs(dayNumber(d) - dayNumber(bd.date)) > Math.abs(dayNumber(a) - dayNumber(bd.date)) ? d : a), null)
-      if (farthest !== null) {
-        const off = readingOff(bd.date, farthest, table, input.offRule())
-        findings.push({ kind: 'interimOff', unitId: unit.id, unitName: unit.name, boundary: bd.date, readingDate: farthest, days: off.days, permille: off.permille, far: off.far })
-      }
+      const off = offAt.get(bd.date)
+      if (off) findings.push({ kind: 'interimOff', unitId: unit.id, unitName: unit.name, boundary: bd.date, readingDate: off.date, days: off.days, permille: off.permille, far: off.far })
     }
 
     const readings: SelfReadingView[] = pots.flatMap((p) => metersOf(unit.id, p).flatMap((m) => bounds.map((bd) => {
@@ -1841,7 +2061,7 @@ export function targetProblem(hotWater: HotWater, part: HeatingPart | null, targ
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/heating.test.ts test/law-literals.test.ts && npm run typecheck`
-Expected: PASS (heating.test.ts: 17 Tests). Scheitert Beispiel A um einen Cent, ist die Verteilung
+Expected: PASS (heating.test.ts: 21 Tests). Scheitert Beispiel A um einen Cent, ist die Verteilung
 falsch und nicht die Erwartung: Die Zahlen stehen in Entwurf 8.6 und sind dort nachgerechnet.
 
 - [ ] **Step 5: Commit**
@@ -1873,12 +2093,12 @@ für eine Wärmepumpe im Zeitraum gilt (§ 12 Abs. 3, F5, 4.7). Alle drei als re
 - Consumes (Task 1, 3): `HeatPumpCapture` (`shared/law/heizkostenv.ts`); `DhwMethod`, `HeatingEnergy`, `HotWater`, `InsulationRule` (`shared/types.ts`).
 - Produces (`server/src/heating.ts`):
   - `KWH_ENERGIES: readonly HeatingEnergy[]` (`gas`, `districtHeating`, `heatPump`, `electric`), `OIL_OR_GAS: readonly HeatingEnergy[]` (`gas`, `oil`, `lpg`)
-  - `type AlphaInput = { hotWater: HotWater; dhwMethod: DhwMethod | null; energy: HeatingEnergy; dhwHeatKwh: number | null; totalHeatKwh: number | null; fuelKwh: number | null; fuelCoveragePermille: number | null }`
+  - `type AlphaInput = { hotWater: HotWater; dhwMethod: DhwMethod | null; energy: HeatingEnergy; dhwHeatKwh: number | null; totalHeatKwh: number | null; fuelKwh: number | null; fuelCoveragePermille: number | null; fuelEstimated?: boolean }`
   - `type AlphaProblem = 'formulaLater' | 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'heatingValueLater' | 'outOfRange'`
-  - `type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat' }`
+  - `type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean }`
   - `hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null } | { ok: false; problem: AlphaProblem }`
   - `type ShareRow = { period: string; heatConsumptionPct: number | null; waterConsumptionPct: number | null; insulationRule: InsulationRule | null }`
-  - `type ConsumptionShares = { heating: number; water: number; forced: boolean; previous: { heating: number; water: number } | null; own: boolean; changed: boolean }`
+  - `type ConsumptionShares = { heating: number; water: number | null; forced: boolean; previous: { heating: number; water: number | null } | null; own: boolean; changed: boolean }`
   - `consumptionSharesOf(rows: readonly ShareRow[], key: string, energy: HeatingEnergy, forced: () => number): ConsumptionShares | null`
   - `type HeatPumpVerdict = { kind: 'applies' } | { kind: 'notYet'; captureInstalledOn: string | null } | { kind: 'missing' }`
   - `heatPumpVerdict(plant: { energy: HeatingEnergy; capturedOnOct2024: boolean | null; captureInstalledOn: string | null; heatPumpInstalledOn: string | null }, hFrom: string, rule: HeatPumpCapture): HeatPumpVerdict | null`
@@ -1901,7 +2121,10 @@ test('α gemessen: 9.000 von 60.000 kWh nach Brennwert = 15,0 % (Wortlaut, G-B1 
   const r = hotWaterShareOf(gas())
   assert.ok(r.ok && r.alpha)
   near(r.alpha.value, 0.15, 'α')
-  assert.deepEqual([r.alpha.reference, r.alpha.referenceKwh, r.alpha.dhwHeatKwh], ['fuel', 60000, 9000])
+  assert.deepEqual([r.alpha.reference, r.alpha.referenceKwh, r.alpha.dhwHeatKwh, r.alpha.estimated], ['fuel', 60000, 9000, false])
+  // Mit der Schätzung beim Abschluss beruht α auf geschätzter Energie (Abweichung 11).
+  const geschaetzt = hotWaterShareOf(gas({ fuelEstimated: true }))
+  assert.ok(geschaetzt.ok && geschaetzt.alpha?.estimated === true)
 })
 
 test('α bei Fernwärme: Gesamtwärme, wenn gemessen, sonst die gelieferten kWh laut Rechnung', () => {
@@ -1946,6 +2169,11 @@ test('R-A7: Vorgabe ist der Anteil der Vorperiode; ein neuer Anteil ist ein Wech
   const neu = consumptionSharesOf([row('2024-01', 50), row('2025-01', 70)], '2025-01', 'gas', seventy) ?? assert.fail('kein Anteil')
   assert.deepEqual([neu.heating, neu.own, neu.changed, neu.previous], [70, true, true, { heating: 50, water: 50 }])
   // Eine spätere Heizperiode zählt nicht als Vorperiode.
+  // § 8 Abs. 1: ohne eigenen Wert beim Warmwasser kein Ersatz aus der Heizung (Abweichung 14).
+  const ohneWasser = consumptionSharesOf([row('2025-01', 60, null)], '2025-01', 'gas', seventy) ?? assert.fail('kein Anteil')
+  assert.deepEqual([ohneWasser.heating, ohneWasser.water], [60, null])
+  const geerbtOhneWasser = consumptionSharesOf([row('2024-01', 60, null)], '2025-01', 'gas', seventy) ?? assert.fail('kein Anteil')
+  assert.equal(geerbtOhneWasser.water, null)
   const vorher = consumptionSharesOf([row('2026-01', 60)], '2025-01', 'gas', seventy)
   assert.equal(vorher, null)
   assert.equal(consumptionSharesOf([], '2025-01', 'gas', seventy), null)
@@ -2013,9 +2241,11 @@ export type AlphaInput = {
   // Energie der in der Heizperiode verbrauchten Lieferungen in kWh, wie abgerechnet, und ihre Abdeckung
   fuelKwh: number | null
   fuelCoveragePermille: number | null
+  // Eine der verbrauchten Lieferungen ist die Schätzung beim Abschluss (PR 7, Abweichung 11).
+  fuelEstimated?: boolean
 }
 export type AlphaProblem = 'formulaLater' | 'noDhwHeat' | 'heatPumpBasis' | 'noFuelEnergy' | 'fuelGap' | 'heatingValueLater' | 'outOfRange'
-export type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat' }
+export type Alpha = { value: number; dhwHeatKwh: number; referenceKwh: number; reference: 'fuel' | 'totalHeat'; estimated: boolean }
 
 const COVERAGE_FULL = 1000
 
@@ -2050,7 +2280,7 @@ export function hotWaterShareOf(i: AlphaInput): { ok: true; alpha: Alpha | null 
   }
   const value = referenceKwh > 0 ? i.dhwHeatKwh / referenceKwh : Number.NaN
   if (!(value > 0 && value < 1)) return { ok: false, problem: 'outOfRange' }
-  return { ok: true, alpha: { value, dhwHeatKwh: i.dhwHeatKwh, referenceKwh, reference } }
+  return { ok: true, alpha: { value, dhwHeatKwh: i.dhwHeatKwh, referenceKwh, reference, estimated: reference === 'fuel' && i.fuelEstimated === true } }
 }
 
 // ---------- Anteil nach Verbrauch (Entwurf 8.5, R-A7) ----------
@@ -2062,17 +2292,20 @@ export const OIL_OR_GAS: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg']
 export type ShareRow = { period: string; heatConsumptionPct: number | null; waterConsumptionPct: number | null; insulationRule: InsulationRule | null }
 export type ConsumptionShares = {
   heating: number
-  water: number
+  // null: kein eigener Wert für das Warmwasser (§ 8 Abs. 1); bei verbundener oder getrennter
+  // Warmwasserbereitung ist das `heating.self-incomplete` (Abweichung 14).
+  water: number | null
   forced: boolean
-  previous: { heating: number; water: number } | null
+  previous: { heating: number; water: number | null } | null
   own: boolean
   changed: boolean
 }
 
 // Der Anteil nach Verbrauch einer Heizperiode, in Prozent. **Vorgabe ist der Anteil der vorigen
 // Heizperiode** (§ 6 Abs. 4: der Gebäudeeigentümer wählt, ändern nur für künftige Zeiträume durch
-// Erklärung); die eigene Zeile gilt, wenn sie einen Wert hat. Ohne beides `null` (Abweichung 14). Ist
-// das Warmwasser ohne eigenen Wert, gilt der der Heizung (die Einrichtung fragt einmal). Bei Öl und Gas
+// Erklärung); die eigene Zeile gilt, wenn sie einen Wert hat. Ohne beides `null` (Abweichung 14). Das
+// Warmwasser hat seinen eigenen Wert aus der eigenen Zeile oder der Vorperiode und bekommt nie still den
+// der Heizung (§ 8 Abs. 1 verlangt eine eigene Wahl); fehlt er, ist `water` null. Bei Öl und Gas
 // mit `insulationRule = 'applies'` zwingend `forced()` für die Heizung (§ 7 Abs. 1 Satz 2); das
 // Warmwasser regelt § 8 und bleibt, wie es ist.
 export function consumptionSharesOf(rows: readonly ShareRow[], key: string, energy: HeatingEnergy, forced: () => number): ConsumptionShares | null {
@@ -2080,12 +2313,12 @@ export function consumptionSharesOf(rows: readonly ShareRow[], key: string, ener
   const earlier = rows.filter((r) => r.period < key).slice().sort((a, b) => (a.period < b.period ? 1 : -1))
   const prevShare = earlier.find((r) => r.heatConsumptionPct !== null)
   const previous = prevShare && prevShare.heatConsumptionPct !== null
-    ? { heating: prevShare.heatConsumptionPct, water: prevShare.waterConsumptionPct ?? prevShare.heatConsumptionPct }
+    ? { heating: prevShare.heatConsumptionPct, water: prevShare.waterConsumptionPct }
     : null
   const ownHeat = own?.heatConsumptionPct ?? null
   const heat = ownHeat ?? previous?.heating ?? null
   if (heat === null) return null
-  const water = (ownHeat !== null ? (own?.waterConsumptionPct ?? ownHeat) : previous?.water) ?? heat
+  const water = ownHeat !== null ? (own?.waterConsumptionPct ?? null) : (previous?.water ?? null)
   const insulation = own?.insulationRule ?? earlier.find((r) => r.insulationRule !== null)?.insulationRule ?? null
   const isForced = insulation === 'applies' && OIL_OR_GAS.includes(energy)
   return {
@@ -2130,7 +2363,7 @@ export function heatPumpVerdict(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/heating.test.ts test/law-literals.test.ts && npm run typecheck`
-Expected: PASS (heating.test.ts: 24 Tests). `law-literals.test.ts` bleibt grün: heating.ts enthält
+Expected: PASS (heating.test.ts: 28 Tests). `law-literals.test.ts` bleibt grün: heating.ts enthält
 weder ein Datum noch eine Rechtszahl, nur die Promille eines vollen Jahres (`COVERAGE_FULL`).
 
 - [ ] **Step 5: Commit**
@@ -2218,7 +2451,7 @@ async function haus(opened: Opened, energy = 'gas'): Promise<void> {
     await createEntity(db, 'costItems', 'gas', { propertyId: 'objekt-1', period: '2025-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 600000, key: 'area' })
   })
 }
-const SETUP = { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
+const SETUP = { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
 
 test('Review Focus 3: Umstellen auf die eigene Abrechnung nennt erst die offenen Positionen, dann alles in einer Transaktion', async () => {
   await withDatabase(async (opened) => {
@@ -2251,6 +2484,8 @@ test('Einrichtung: Anteil 50 bis 70 %, Pflichtanteil bei gedämmten Leitungen, W
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 45 }, '2026-02-01', newId)), status(400, /mindestens 50/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, heatConsumptionPct: 60, insulationRule: 'applies' }, '2026-02-01', newId)), status(400, /70 %.*§ 7 Abs\. 1 Satz 2/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, capture: 'hca' }, '2026-02-01', newId)), status(400, /späteren Version/))
+    // § 8 Abs. 1: Der Anteil beim Warmwasser ist eine eigene Wahl, nie still der der Heizung (Abweichung 14).
+    await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items, waterConsumptionPct: undefined }, '2026-02-01', newId)), status(400, /Warmwasser.*§ 8 Abs\. 1/))
     await assert.rejects(opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'heating' }] }, '2026-02-01', newId)), status(400, /§ 9 Abs\. 1/))
   })
   await withDatabase(async (opened) => {
@@ -2306,8 +2541,8 @@ test('R-A7: der Anteil einer begonnenen Heizperiode bleibt; ein neuer gilt ab de
     await haus(opened)
     await opened.write((db) => setUpSelf(db, 'hp', { ...SETUP, heatConsumptionPct: 50, items: [{ id: 'gas', heatingPart: 'fuel', heatingTarget: 'both' }] }, '2025-03-01', newId))
     // 2025 hat am 01.01. begonnen: Die Einrichtung hat den bisherigen Anteil festgehalten, ändern geht nicht mehr.
-    await assert.rejects(opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-03-01')), status(400, /§ 6 Abs\. 4/))
-    const next = await opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-11-15'))
+    await assert.rejects(opened.write((db) => saveDistribution(db, 'hp', '2025-01', { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-03-01')), status(400, /§ 6 Abs\. 4/))
+    const next = await opened.write((db) => saveDistribution(db, 'hp', '2026-01', { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' }, '2025-11-15'))
     assert.deepEqual([next?.own.heating, next?.effective?.heating, next?.inherited, next?.begun], [70, 70, false, false])
     const [view] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025', '2025-03-01')) ?? assert.fail('keine Anlage')
     assert.deepEqual([view?.distribution?.effective?.heating, view?.distribution?.begun, view?.distribution?.first], [50, true, false])
@@ -2341,7 +2576,7 @@ test('Mieterwechsel: Ablesung mit eigenem Datum neben dem Auszug, und die Antwor
       interimGap: null,
       newTenancy: { tenantName: 'Mieter C2', persons: 1, personHistory: [{ from: '2025-10-01', persons: 1 }], start: '2025-10-01', baseRents: [], prepayments: [], prepaymentOverrides: {} },
     }, newId))
-    assert.deepEqual(r?.readings.map((x) => [x.meterId, x.date, x.value]), [['wc', '2025-10-03', 7800]])
+    assert.deepEqual(r?.readings.map((x) => [x.meterId, x.date, x.value, x.interimFor]), [['wc', '2025-10-03', 7800, '2025-09-30']])
     await assert.rejects(
       opened.write((db) => changeTenant(db, 'objekt-1', 'tb', { end: '2025-06-30', readings: [{ meterId: 'wb', value: 1, date: '30.06.2025' }], newTenancy: null }, newId)),
       status(400, /Ablesedatum/),
@@ -2473,7 +2708,7 @@ In der Schleife über die Angaben der Ablesungen die Zeilen ab `ablesungen.push(
       throw new TenantChangeError(400, `Das Ablesedatum für „${meter.name}“ ist kein Datum. Bitte wählen Sie es im Kalender.`)
     }
     ablesungen.push(mergeReading(emptyReading(nextId()), {
-      meterId: meter.id, date: typeof datum === 'string' ? datum : end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`,
+      meterId: meter.id, date: typeof datum === 'string' ? datum : end, value, note: `Zwischenablesung Mieterwechsel ${current.tenantName}`, interimFor: end,
     }))
 ```
 
@@ -2490,6 +2725,13 @@ Hinter der Schleife:
     luecke = { status: s, reason: typeof grund === 'string' ? grund.trim() : '' }
   }
 ```
+
+Die Ablesung trägt ihre Grenze (`interimFor: end`, Abweichung 9 und 23): Sie gehört fest zum
+Wechsel, auch wenn eine andere Ablesung näher läge. Dafür in `repository.ts`: `mergeReading` übernimmt
+`interimFor: merged(body, 'interimFor', current.interimFor, (v) => (typeof v === 'string' && ISO_DATE.test(v) ? v : undefined))`,
+die Zeile von `readingCollection` schreibt `interimFor: orNull(r.interimFor)`, und `read.ts` liest
+`...(r.interimFor !== null ? { interimFor: r.interimFor } : {})` (dasselbe Muster wie `heatingPart`,
+PR 3); der Test oben prüft die Grenze an der Ablesung.
 
 In der Transaktion hinter `for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)`:
 
@@ -2560,13 +2802,16 @@ In `updateHeatingPlant` direkt danach, vor dem Schreiben:
 
 ```ts
   // Zurück von der eigenen Abrechnung: Die Positionen offener Zeiträume brauchen einen anderen
-  // Schlüssel. Ohne Bestätigung 409 mit der Liste; mit `convertItems: 'area'` werden sie in derselben
-  // Transaktion nach Wohnfläche verteilt (Abweichung 17).
+  // Schlüssel. Ohne Bestätigung 409 mit der Liste und den Folgen (§ 12 Abs. 1, § 6 Abs. 4); mit
+  // `convertItems: 'area'` werden sie in derselben Transaktion nach Wohnfläche verteilt (Abweichung 17).
+  // (`hkvCutNotByConsumption` und `valueAt`, `LAW_AS_OF` in die Importe aus shared/law aufnehmen.)
   const zurueck = before.method === 'self' && after.method !== 'self'
   const offen = zurueck ? await selfItemsOf(db, after.id, null, 'heatingSystem') : []
   if (offen.length > 0 && raw(body, 'convertItems') !== 'area') {
     throw new SelfItemsError(
-      `Diese Heizanlage hat ${offen.length === 1 ? 'eine Position' : `${offen.length} Positionen`} in offenen Zeiträumen, die nach der Heizkostenverordnung verteilt ${offen.length === 1 ? 'wird' : 'werden'}. Bestätigen Sie, dass sie künftig nach Wohnfläche verteilt ${offen.length === 1 ? 'wird' : 'werden'}; prüfen Sie danach die Schlüssel.`,
+      `Diese Heizanlage hat ${offen.length === 1 ? 'eine Position' : `${offen.length} Positionen`} in offenen Zeiträumen, die nach der Heizkostenverordnung verteilt ${offen.length === 1 ? 'wird' : 'werden'}. Bestätigen Sie, dass sie künftig nach Wohnfläche verteilt ${offen.length === 1 ? 'wird' : 'werden'}; prüfen Sie danach die Schlüssel. ` +
+        `Fällt die Anlage unter die Heizkostenverordnung, verteilen Sie damit nicht nach Verbrauch, und jeder Mieter darf seinen Anteil um ${valueAt(hkvCutNotByConsumption, LAW_AS_OF)} % kürzen (§ 12 Abs. 1 Satz 1 HeizkostenV). ` +
+        'Einen anderen Abrechnungsmaßstab dürfen Sie nur für künftige Abrechnungszeiträume und zu ihrem Beginn wählen, durch Erklärung gegenüber den Mietern (§ 6 Abs. 4 HeizkostenV).',
       offen,
     )
   }
@@ -2685,17 +2930,22 @@ export function distributionOf(rows: readonly ShareRow[], energy: HeatingEnergy,
 const pctOf = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 // Prüft einen neuen Anteil (Prozent) und gibt Heizung und Warmwasser zurück.
-function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number; insulationRule: InsulationRule } {
+function checkShares(body: unknown, plant: HeatingPlant, h: BillingPeriod, rows: readonly ShareRow[], today: string): { heating: number; water: number | null; insulationRule: InsulationRule } {
   const heating = pctOf(raw(body, 'heatConsumptionPct'))
-  const water = pctOf(raw(body, 'waterConsumptionPct')) ?? heating
+  // § 8 Abs. 1: eigene Wahl beim Warmwasser (Abweichung 14); ohne zentrales Warmwasser gibt es keinen.
+  const withWater = plant.hotWater !== 'none'
+  const water = withWater ? pctOf(raw(body, 'waterConsumptionPct')) : null
+  if (withWater && water === null) {
+    throw new HeatingError(400, 'Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.')
+  }
   const insulationRule = oneOfOrUndefined(INSULATION_RULES, raw(body, 'insulationRule')) ?? 'unknown'
   const { min, max } = valueAt(hkvConsumptionShare, h.from)
-  for (const v of [heating, water]) {
+  for (const v of withWater ? [heating, water] : [heating]) {
     if (v === null) throw new HeatingError(400, 'Bitte geben Sie an, welcher Anteil der Kosten nach Verbrauch verteilt wird.')
     if (v > max) throw new HeatingError(400, `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.`)
     if (v < min) throw new HeatingError(400, `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).`)
   }
-  if (heating === null || water === null) throw new HeatingError(400, 'Bitte geben Sie den Anteil an.')
+  if (heating === null) throw new HeatingError(400, 'Bitte geben Sie den Anteil an.')
   if (insulationRule === 'applies' && OIL_OR_GAS.includes(plant.energy)) {
     const forced = valueAt(hkvConsumptionShareForced, h.from)
     if (heating !== forced) {
@@ -2930,7 +3180,7 @@ test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Antei
     const allgemein = await send('PUT', `/api/heating-plants/${plant.id}`, { method: 'self', capture: 'heatMeter' })
     assert.equal(allgemein.status, 400)
     assert.match(await errorFrom(allgemein), /Einrichtung/)
-    const setup = { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
+    const setup = { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }
     const liste = await send('PUT', `/api/heating-plants/${plant.id}/self`, setup)
     assert.equal(liste.status, 409)
     const body409 = await jsonOf<{ error: string; items: { id: string }[] }>(liste)
@@ -2940,10 +3190,10 @@ test('Eigene Heizkostenabrechnung über die Routen: Einrichtung mit Liste, Antei
     const result = await jsonOf<{ plant: HeatingPlant; created: Meter[]; converted: number }>(ok)
     assert.deepEqual([result.plant.method, result.converted, result.created.length], ['self', 1, 3])
     // Der Anteil: 2025 hat begonnen, ein anderer Wert ist gesperrt; derselbe geht.
-    const anders = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 60, insulationRule: 'notApplies' })
+    const anders = await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 60, waterConsumptionPct: 60, insulationRule: 'notApplies' })
     assert.equal(anders.status, 400)
     assert.match(await errorFrom(anders), /§ 6 Abs\. 4/)
-    const gleich = await jsonOf<HeatingDistribution>(await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 70, insulationRule: 'notApplies' }))
+    const gleich = await jsonOf<HeatingDistribution>(await send('PUT', `/api/heating-plants/${plant.id}/periods/2025-01/distribution`, { heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies' }))
     assert.equal(gleich.effective?.heating, 70)
     const [view] = await s.api<HeatingPeriodView[]>(`/api/heating-plants/${plant.id}/periods?period=2025`)
     assert.deepEqual([view?.distribution?.effective?.heating, view?.distribution?.begun], [70, true])
@@ -3050,6 +3300,8 @@ Alles optional, damit `legacy/read.ts` und bestehende Tests unverändert bleiben
   - `SnapshotHeatingPeriodRow` + `heatConsumptionPct`, `waterConsumptionPct`, `insulationRule`, `dhwHeatKwh`, `totalHeatKwh` (optional)
   - `SnapshotCostItem` pickt zusätzlich `'heatingTarget'`
   - `Snapshot.interimGaps?: InterimGap[]`; `SnapshotSource.interimGaps?: InterimGap[]`; `snapshotFor` und `heatingSnapshotFor` füllen sie mit den Antworten zu Wohnungen des Objekts
+  - `type SelfClosedEnd = { plantId: string; boundary: string; meterId: string; date: string; value: number }`, `Snapshot.selfClosedEnds?: SelfClosedEnd[]`, `selfClosedEndsOf(settlement: unknown): SelfClosedEnd[]` (Abweichung 9: eingefrorene Endstände abgeschlossener Heizperioden)
+  - Ablesungen im Schnappschuss mit `interimFor` (Abweichung 23)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3072,7 +3324,28 @@ test('Schnappschuss: Anlage, Heizperiode, Ziel und Antworten zu Zwischenablesung
     assert.deepEqual(s.interimGaps, [{ unitId: 'c', date: '2025-09-30', status: 'impossible', reason: 'Wohnung nicht zugänglich' }])
   })
 })
+
+test('Schnappschuss: der eingefrorene Endstand einer abgeschlossenen Heizperiode (Abweichung 9)', async () => {
+  await withDatabase(async (opened) => {
+    await haus(opened)
+    const frozen = { heating: [{ plantId: 'hp', period: '2024-01', to: '2024-12-31', self: { units: [{ readings: [
+      { meterId: 'wa', meterName: 'Wärme A', pot: 'heating', boundary: '2024-12-31', date: '2024-12-31', value: 1000 },
+      { meterId: 'wa', meterName: 'Wärme A', pot: 'heating', boundary: '2023-12-31', date: '2023-12-31', value: 0 },
+      { meterId: 'wb', meterName: 'Wärme B', pot: 'heating', boundary: '2024-12-31', date: null, value: null },
+    ] }] } }] }
+    await opened.write((db) => closeSettlement(db, { id: 's24', propertyId: 'objekt-1', period: periodKey('2024-01'), closedAt: '2025-03-01', sentAt: null, settlement: frozen }))
+    const p = periodOfKey(CALENDAR_RULES, periodKey('2025-01')) ?? assert.fail('kein Zeitraum')
+    const s = snapshotFor(await opened.read(readStock), 'objekt-1', p)
+    assert.deepEqual(s.selfClosedEnds, [{ plantId: 'hp', boundary: '2024-12-31', meterId: 'wa', date: '2024-12-31', value: 1000 }])
+    // Ein eingefrorener Stand ohne den Ausweis der eigenen Abrechnung ergibt nichts.
+    assert.deepEqual(selfClosedEndsOf({ heating: [{ plantId: 'hp' }] }), [])
+    assert.deepEqual(selfClosedEndsOf(null), [])
+  })
+})
 ```
+
+(`closeSettlement` in den Import aus `'../src/db/repository.ts'`, `selfClosedEndsOf` in den aus
+`'../src/snapshot.ts'`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -3128,6 +3401,47 @@ Positionen als ganze Datensätze durch (PR 4, PR 6); die neuen Felder kommen dam
 der beiden Funktionen Felder einzeln abbildet, kommen die neuen dort dazu.
 
 Den Typimport aus `'../../shared/types.ts'` um `HeatingPeriodData, InterimGap` ergänzen, soweit nicht da.
+
+Pickt der Schnappschuss Felder der Ablesung (`SnapshotReading`), kommt `'interimFor'` dazu; reicht er
+die Datensätze durch, kommt das Feld von selbst (Abweichung 23).
+
+Die eingefrorenen Endstände (Abweichung 9). Die abgeschlossene Abrechnung ist JSON aus einer älteren
+Fassung und wird deshalb Feld für Feld geprüft, nie behauptet:
+
+```ts
+// Der eingefrorene Endstand einer abgeschlossenen Heizperiode mit eigener Abrechnung (Heizung PR 10,
+// Abweichung 9): Er ist der Anfangsstand der folgenden, auch wenn die Ablesung seither geändert wurde,
+// denn er steht in der zugestellten Abrechnung.
+export type SelfClosedEnd = { plantId: string; boundary: string; meterId: string; date: string; value: number }
+
+const record = (v: unknown): Record<string, unknown> | null => (v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null)
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+
+export function selfClosedEndsOf(settlement: unknown): SelfClosedEnd[] {
+  return list(record(settlement)?.heating).flatMap((h) => {
+    const st = record(h)
+    const self = record(st?.self)
+    const plantId = st?.plantId
+    const end = st?.to
+    if (!st || !self || typeof plantId !== 'string' || typeof end !== 'string') return []
+    return list(self.units).flatMap((u) => list(record(u)?.readings).flatMap((r): SelfClosedEnd[] => {
+      const x = record(r)
+      return x && x.boundary === end && typeof x.meterId === 'string' && typeof x.date === 'string' && typeof x.value === 'number'
+        ? [{ plantId, boundary: end, meterId: x.meterId, date: x.date, value: x.value }]
+        : []
+    }))
+  })
+}
+```
+
+`Snapshot` bekommt `selfClosedEnds?: SelfClosedEnd[]`; in `snapshotFor` vor dem `return`:
+
+```ts
+  const selfClosedEnds = source.closedSettlements.filter((c) => c.propertyId === propertyId).flatMap((c) => selfClosedEndsOf(c.settlement))
+```
+
+und im Objekt `...(selfClosedEnds.length > 0 ? { selfClosedEnds } : {}),` (wie `interimGaps`; heißen
+`closedSettlements` oder `propertyId` in `snapshotFor` anders, gelten deren Namen).
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -3226,7 +3540,7 @@ async function beispielA(opened: Opened, o: Options = {}): Promise<Snapshot> {
     await createEntity(db, 'tenancies', 'C2', { unitId: 'c', tenantName: 'Mieter C2', persons: 1, start: '2025-10-01' })
     await createHeatingPlant(db, 'hp', 'objekt-1', { energy: o.energy ?? 'gas', method: 'manual' })
     await setUpSelf(db, 'hp', {
-      period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false,
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false,
     }, '2026-02-01', newId)
   })
   const meters = (await opened.read(readStock)).meters
@@ -3576,6 +3890,9 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
   const POT_NAME: Record<SelfPot, string> = { heating: 'Heizung', water: 'Warmwasser' }
   const POT_UNIT: Record<SelfPot, string> = { heating: 'kWh', water: 'm³' }
   const selfProblemText = (p: SelfProblem, areaBasisHeat: string): string => {
+    if (p.kind === 'farInterim') {
+      return `Beim Wechsel in ${p.unitName} zum ${fmtDay(p.boundary)} wurde erst am ${fmtDay(p.readingDate)} abgelesen, ${p.days} Tage daneben und über einen Wintermonat. Lässt die Ablesung wegen des Zeitpunkts keine hinreichend genaue Ermittlung zu, wird nach Gradtagen bzw. Tagen geteilt (§ 9b Abs. 3 HeizkostenV). Ob das so ist, entscheiden Sie: Wählen Sie auf der Seite Heizkosten „Ablesung verwenden“ oder „Nach § 9b Abs. 3“.`
+    }
     if (p.kind === 'noArea') {
       return `Für den Topf ${POT_NAME[p.pot]} ist keine Fläche hinterlegt, und die Grundkosten lassen sich nicht verteilen. Tragen Sie die Wohnfläche${p.pot === 'heating' && areaBasisHeat === 'heatedArea' ? ' bzw. die beheizte Fläche' : ''} der Wohnungen ein.`
     }
@@ -3583,6 +3900,7 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
     if (p.reason === 'noMeter') return `${p.unitName} hat keinen ${p.pot === 'heating' ? 'Wärmezähler' : 'Warmwasserzähler'}, die übrigen Wohnungen schon. Legen Sie den Zähler an und tragen Sie die Stände ein.`
     if (p.reason === 'noReading') return `Für ${meter} fehlt ein Stand zum ${fmtDay(p.boundary ?? yTo)}. Tragen Sie die Ablesung ein; liegt sie einige Tage daneben, gilt sie, wie sie ist.`
     if (p.reason === 'replacement') return `Beim Zähler ${meter} fehlt zu einem Zählerwechsel der Endstand des alten Geräts. Tragen Sie ihn nach.`
+    if (p.reason === 'sameDay') return `Für ${meter} stehen am ${fmtDay(p.boundary ?? yTo)} zwei verschiedene Stände. Welcher stimmt, wissen nur Sie; löschen oder berichtigen Sie den falschen auf der Seite Zähler.`
     return `Der Zähler ${meter} zeigt bis zum ${fmtDay(p.boundary ?? yTo)} weniger als vorher. Prüfen Sie die Stände oder markieren Sie einen Zählerwechsel.`
   }
   const ALPHA_TEXT: Record<AlphaProblem, string> = {
@@ -3606,20 +3924,30 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
     const servedIds = new Set(served.map((u) => u.id))
     const table = law(hkvDegreeDays, { period: lawPeriod }, lawLog)
     const neighbors = { before: dayBefore(prev.from), after: next.to }
+    // Abweichung 9: die Wechselgrenzen der Nachbarperioden und der eingefrorene Endstand der vorigen.
+    const selfUnits: SelfUnit[] = served.map((u) => ({
+      id: u.id, name: u.name, areaM2: u.areaM2 || 0,
+      heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
+      role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
+    }))
+    const selfTenancies: SelfTenancy[] = snapshot.tenancies.filter((t) => servedIds.has(t.unitId)).map((t) => ({ id: t.id, unitId: t.unitId, tenantName: t.tenantName, start: t.start, end: t.end }))
+    const changesIn = (unit: SelfUnit, hh: { from: string; to: string }): string[] => usersOf(unit, selfTenancies, hh).slice(0, -1).map((u) => u.to)
+    const outerChanges = new Map(selfUnits.map((u) => [u.id, [...changesIn(u, prev), ...changesIn(u, next)]]))
+    const opening = new Map((snapshot.selfClosedEnds ?? [])
+      .filter((e) => e.plantId === plant.id && e.boundary === dayBefore(period.from))
+      .map((e): [string, SelfReading] => [e.meterId, { meterId: e.meterId, date: e.date, value: e.value }]))
     const plan = planSelf({
       h: { from: period.from, to: period.to },
       neighbors,
+      outerChanges,
+      opening,
       changeSplit: plant.changeSplit ?? 'degreeDays',
       hotWater,
       areaBasisHeat: plant.areaBasisHeat ?? 'area',
-      units: served.map((u) => ({
-        id: u.id, name: u.name, areaM2: u.areaM2 || 0,
-        heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
-        role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
-      })),
-      tenancies: snapshot.tenancies.filter((t) => servedIds.has(t.unitId)).map((t) => ({ id: t.id, unitId: t.unitId, tenantName: t.tenantName, start: t.start, end: t.end })),
+      units: selfUnits,
+      tenancies: selfTenancies,
       meters: unitMeters.filter((m) => servedIds.has(m.unitId)).map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type })),
-      readings: snapshot.readings,
+      readings: snapshot.readings.map((r) => ({ ...r, boundFor: r.interimFor ?? null })),
       gaps: snapshot.interimGaps ?? [],
       table,
       offRule: () => law(practiceReadingOffWarning, { period: lawPeriod }, lawLog),
@@ -3637,7 +3965,7 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
       let sum = 0
       for (const m of ms) {
         const sorted = sortReadings(snapshot.readings.filter((r) => r.meterId === m.id))
-        const at = boundaryReadingsOf(sorted, [dayBefore(period.from), period.to], neighbors)
+        const at = boundaryReadingsOf(sorted, [dayBefore(period.from), period.to], [neighbors.before, dayBefore(period.from), period.to, neighbors.after])
         const a = at.get(dayBefore(period.from)) ?? null
         const b = at.get(period.to) ?? null
         if (a === null || b === null) return null
@@ -3656,6 +3984,8 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
       dhwHeatKwh: own?.dhwHeatKwh ?? plantMeterKwh('dhwHeat'),
       totalHeatKwh: own?.totalHeatKwh ?? plantMeterKwh('totalHeat'),
       fuelKwh, fuelCoveragePermille: fuelOfPlant?.coveragePermille ?? null,
+      // Die Schätzung beim Abschluss (PR 7) trägt bei der Lieferung `estimated` (Abweichung 11).
+      fuelEstimated: fuelOfPlant?.lines.some((l) => l.estimated) ?? false,
     })
     const verdict = plant.energy === 'heatPump'
       ? heatPumpVerdict(
@@ -3664,12 +3994,16 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
       )
       : null
     const blocked: SelfBlock[] = []
-    for (const p of plan.problems) blocked.push({ code: 'heating.self-incomplete', text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area')}${p.kind === 'missing' ? ' Lässt sich ein Wert nicht mehr ablesen, ist er zu schätzen (§ 9a HeizkostenV); das rechnet Mietfuchs mit einer späteren Version.' : ''}` })
+    for (const p of plan.problems) blocked.push({ code: 'heating.self-incomplete', text: `${selfProblemText(p, plant.areaBasisHeat ?? 'area')}${p.kind === 'missing' && p.reason !== 'sameDay' ? ' Lässt sich ein Wert nicht mehr ablesen, ist er zu schätzen (§ 9a HeizkostenV); das rechnet Mietfuchs mit einer späteren Version.' : ''}` })
     if (shares === null) {
       blocked.push({ code: 'heating.self-incomplete', text: 'Für diese Heizperiode ist kein Anteil nach Verbrauch festgelegt. Tragen Sie auf der Seite Heizkosten ein, mit welchem Anteil Sie bisher abgerechnet haben.' })
     } else {
       const { min, max } = law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
-      if ([shares.heating, shares.water].some((v) => v < min || v > max)) {
+      // § 8 Abs. 1: beim Warmwasser eine eigene Wahl, nie still die der Heizung (Abweichung 14).
+      if (hotWater !== 'none' && shares.water === null) {
+        blocked.push({ code: 'heating.self-incomplete', text: 'Für das Warmwasser ist kein Anteil nach Verbrauch festgelegt (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen. Tragen Sie ihn auf der Seite Heizkosten ein.' })
+      }
+      if ([shares.heating, ...(hotWater !== 'none' && shares.water !== null ? [shares.water] : [])].some((v) => v < min || v > max)) {
         blocked.push({ code: 'heating.self-incomplete', text: `Der Anteil nach Verbrauch liegt außerhalb von ${hkvConsumptionShare.describe({ min, max })}. Korrigieren Sie ihn auf der Seite Heizkosten.` })
       }
     }
@@ -3688,7 +4022,7 @@ Direkt hinter der Schleife der Übertragsposten des Vorrats (PR 8) und vor der Z
     const where = `${plant.name ? `Heizanlage „${plant.name}“` : 'Heizanlage'}, Heizperiode ${label}`
     for (const b of blocked) warn(b.code, `${where}: ${b.text} Bis dahin verteilt Mietfuchs die Heizkosten dieser Anlage nicht; sie stehen beim Vermieter.`, { kind: 'heatingCosts', id: plant.id })
     const weights = blocked.length === 0 && shares !== null && alphaResult.ok
-      ? weightsOf(plan, { heating: shares.heating, water: shares.water }, alphaResult.alpha?.value ?? null)
+      ? weightsOf(plan, { heating: shares.heating, water: shares.water ?? 0 }, alphaResult.alpha?.value ?? null)
       : null
     selfPlans.set(plant.id, {
       plant, plan, shares, alpha: alphaResult.ok ? alphaResult.alpha : null, weights, blocked, verdict, hotWater,
@@ -3832,7 +4166,7 @@ dem CO₂-Block.
 **Interfaces:**
 - Consumes (Task 3–8; PR 6–8): `selfPlans`, `SelfPlantPlan`, `planSelf`, `weightsOf`, `SelfInput`, `POT_NAME`; im CO₂-Block `co2Pots`, `report`, `cutsOn`, `heatingStatements`; `hkvCutNotByConsumption`, `hkvConsumptionShare`, `hkvHeatPumpCapture`, `hkvDegreeDays`; `statements`, `warn`, `andList`, `fmtCents`, `fmtNum`, `fmtDay`, `toUTC`, `MS_DAY`, `plants`, `targets`, `booked`, der Block `heating.flat-rate`.
 - Produces:
-  - Codes `heating.interim-reading-off`, `heating.no-interim-reading`, `heating.reading-dates-differ`, `heating.key-change`, `heating.change-split-time`, `heating.change-fee`, `heating.heat-pump-capture` (hint), `heating.interim-reading-far`, `heating.no-interim-reading-missed`, `heating.reading-dates-far`, `heating.no-consumption` (warning)
+  - Codes `heating.interim-reading-off`, `heating.no-interim-reading`, `heating.reading-dates-differ`, `heating.key-change`, `heating.change-split-time`, `heating.change-fee`, `heating.heat-pump-capture`, `heating.dhw-share-estimated` (hint), `heating.interim-reading-far`, `heating.no-interim-reading-missed`, `heating.reading-dates-far`, `heating.no-consumption` (warning)
   - `SelfPlantPlan.input: SelfInput`; `potCostOf(sp, items, pot): number`; `selfStatementOf(sp, items): SelfHeatingStatement`; `HeatingStatement.self` gefüllt
 
 - [ ] **Step 1: Write the failing tests**
@@ -3909,13 +4243,16 @@ test('Z-B3 und Z-B1: Ablesung neben Wechsel und Stichtag gilt, wie sie ist, mit 
   })
 })
 
-test('Kein Verbrauch erfasst: nur nach Fläche, 15 % auf den Anteil am unerfassten Topf (Abweichung 15)', async () => {
+test('Kein Verbrauch erfasst: nur nach Fläche, 15 % auf den Anteil am unerfassten Topf nach CO₂-Abzug (Abweichung 15)', async () => {
   await withDatabase(async (opened) => {
     const snap = await beispielA(opened)
     const s = computeSettlement({ ...snap, meters: snap.meters.filter((m) => !(m.type === 'waerme' && m.unitId !== null)) })
     const text = textOf(s, 'heating.no-consumption')
     assert.match(text, /Für Heizung ist kein Verbrauch erfasst/)
-    assert.match(text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier: Mieter A \(A\) 253,26 €, Mieter B \(B\) 337,68 €, Mieter C1 \(C\) 162,09 € und Mieter C2 \(C\) 91,17 €/)
+    // 15 % auf den Topf Heizung nach CO₂-Abzug: A 1.688,40 € − 145,01 €, B 2.251,20 € − 193,34 €,
+    // C1 1.080,58 € − 92,81 €, C2 607,82 € − 52,20 € (Abzüge 167,61 / 223,48 / 117,46 / 60,11 € nach dem
+    // Anteil am Brennstoff im Topf Heizung; Herleitung im Kommentar der Abweichung 15).
+    assert.match(text, /um 15 % kürzen \(§ 12 Abs\. 1 Satz 1 HeizkostenV\), hier vom Topf Heizung nach CO₂-Abzug laut Ausweis: Mieter A \(A\) 231,51 €, Mieter B \(B\) 308,68 €, Mieter C1 \(C\) 148,17 € und Mieter C2 \(C\) 83,34 €/)
   })
 })
 
@@ -3941,8 +4278,18 @@ test('Wärmepumpe, deren Erfassung erst im Zeitraum eingebaut wurde: Hinweis, ke
     const plants = (snap.heatingPlants ?? []).map((p) => ({ ...p, energy: 'heatPump' as const, hotWater: 'none' as const, capturedOnOct2024: false, captureInstalledOn: '2025-06-01' }))
     const items = snap.costItems.map((c) => (c.heatingTarget === 'both' || c.heatingTarget === 'water' ? { ...c, heatingTarget: 'heating' as const } : c))
     const s = computeSettlement({ ...snap, heatingPlants: plants, costItems: items, meters: snap.meters.filter((m) => !(m.type === 'waerme' && m.unitId !== null)) })
-    assert.match(textOf(s, 'heating.heat-pump-capture'), /01\.10\.2024.*§ 12 Abs\. 3 HeizkostenV.*01\.06\.2025/s)
+    assert.match(textOf(s, 'heating.heat-pump-capture'), /01\.10\.2024.*§ 12 Abs\. 3 HeizkostenV.*nach dem 01\.06\.2025 beginnt/s)
     assert.ok(!codes(s).includes('heating.no-consumption'), 'keine Kürzung, solange die Verordnung nicht gilt')
+  })
+})
+
+test('Abweichung 11: beruht der Warmwasseranteil auf der Schätzung beim Abschluss, sagt ein Hinweis das', async () => {
+  await withDatabase(async (opened) => {
+    const snap = await beispielA(opened)
+    const fuel = snap.fuel ?? assert.fail('keine Lieferungen im Schnappschuss')
+    const s = computeSettlement({ ...snap, fuel: { ...fuel, deliveries: fuel.deliveries.map((d) => ({ ...d, estimated: true })) } })
+    assert.match(textOf(s, 'heating.dhw-share-estimated'), /15 %.*geschätzten Energie.*Folgerechnung/s)
+    assert.ok(!codes(computeSettlement(snap)).includes('heating.dhw-share-estimated'))
   })
 })
 
@@ -3959,7 +4306,7 @@ test('Kosten der Zwischenablesung an einer Heizposition: Hinweis auf BGH VIII ZR
   await withDatabase(async (opened) => {
     const snap = await beispielA(opened)
     const s = computeSettlement({ ...snap, costItems: snap.costItems.map((c) => (c.id === 'imm' ? { ...c, description: 'Zwischenablesung Mieterwechsel' } : c)) })
-    assert.match(textOf(s, 'heating.change-fee'), /VIII ZR 19\/07/)
+    assert.match(textOf(s, 'heating.change-fee'), /VIII ZR 19\/07.*nicht entschieden.*AG Berlin-Hohenschönhausen/s)
   })
 })
 
@@ -4011,6 +4358,8 @@ In `noticeKinds` hinter den Codes aus Task 8:
   'heating.change-split-time': { level: 'hint', title: 'Mieterwechsel zeitanteilig statt nach Gradtagen', rule: 'heating-tenant-change', terms: ['interimReading', 'degreeDays'] },
   'heating.change-fee': { level: 'hint', title: 'Kosten der Zwischenablesung', rule: 'heating-tenant-change', terms: ['interimReading'] },
   'heating.heat-pump-capture': { level: 'hint', title: 'Wärmepumpe: Heizkostenverordnung gilt noch nicht', rule: 'heating-own-settlement', terms: ['heatingSystem', 'heatMeter'] },
+  // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
+  'heating.dhw-share-estimated': { level: 'hint', title: 'Warmwasseranteil aus geschätzter Energie', rule: 'heating-own-settlement', terms: ['hotWaterShare'] },
 ```
 
 - [ ] **Step 4: Der Plan merkt sich seine Eingabe (`server/src/calc.ts`)**
@@ -4022,17 +4371,15 @@ In `type SelfPlantPlan` (Task 8) als Feld `input: SelfInput` ergänzen (`type Se
     const input: SelfInput = {
       h: { from: period.from, to: period.to },
       neighbors,
+      outerChanges,
+      opening,
       changeSplit: plant.changeSplit ?? 'degreeDays',
       hotWater,
       areaBasisHeat: plant.areaBasisHeat ?? 'area',
-      units: served.map((u) => ({
-        id: u.id, name: u.name, areaM2: u.areaM2 || 0,
-        heatedAreaM2: plant.units?.find((x) => x.unitId === u.id)?.heatedAreaM2 ?? null,
-        role: u.participates ? 'rented' : u.selfUsed ? 'self' : 'outside',
-      })),
-      tenancies: snapshot.tenancies.filter((t) => servedIds.has(t.unitId)).map((t) => ({ id: t.id, unitId: t.unitId, tenantName: t.tenantName, start: t.start, end: t.end })),
+      units: selfUnits,
+      tenancies: selfTenancies,
       meters: unitMeters.filter((m) => servedIds.has(m.unitId)).map((m) => ({ id: m.id, name: m.name ?? m.id, unitId: m.unitId, type: m.type })),
-      readings: snapshot.readings,
+      readings: snapshot.readings.map((r) => ({ ...r, boundFor: r.interimFor ?? null })),
       gaps: snapshot.interimGaps ?? [],
       table,
       offRule: () => law(practiceReadingOffWarning, { period: lawPeriod }, lawLog),
@@ -4052,8 +4399,11 @@ ersetzen durch:
     // „Nur Heizung“ bei freien Schlüsseln (Heizung PR 10, Entwurf 5.3 `change_split`, A2, B7): Beim
     // Mieterwechsel teilen die übrigen Wärmekosten nach Gradtagszahlen (§ 9b Abs. 2), wenn die Anlage
     // es so eingestellt hat (Vorgabe). Eine kombinierte Position „Heizung und Warmwasser“ geht nach
-    // Tagen wie bisher; ohne Ziel ändert sich keine Zahl. Gilt für Fläche, Einheiten, vereinbarte
-    // Anteile und Direktzuordnung (Abweichung 16).
+    // Tagen wie bisher; ohne Ziel ändert sich keine Zahl. § 9b Abs. 2 lässt Gradtage oder Zeitanteil zu:
+    // Bei Fläche, Einheiten, vereinbarten Anteilen und Direktzuordnung ist der Tagesanteil genau der
+    // zeitanteilige Faktor, und an seine Stelle tritt der Gradtagsanteil. Personentage bleiben; sie sind
+    // ebenso zeitanteilig, und die Verordnung kennt für Heizkosten keinen Personenschlüssel
+    // (§ 7 Abs. 1 Satz 5; Abweichung 16).
     const manualPlant = item.category === HEATING_CATEGORY && item.heatingTarget === 'heating'
       ? plants.find((p) => p.id === item.heatingPlantId && p.method === 'manual')
       : undefined
@@ -4112,7 +4462,8 @@ mit `const selfFlat = new Map<string, number>()` vor der Schleife. Hinter der Ze
     // Übertragszeilen der Lieferungen und des Vorrats.
     if (item.category === HEATING_CATEGORY && !item.id.startsWith('fuel:') && !item.id.startsWith('stock:') && /zwischenablesung|nutzerwechsel/i.test(item.description)) {
       warn('heating.change-fee',
-        `„${item.description}“: Die Kosten einer Zwischenablesung beim Mieterwechsel (Nutzerwechselgebühr) sind keine Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden. ` +
+        `„${item.description}“: Kosten der Verbrauchserfassung, die wegen des Auszugs eines Mieters vor Ablauf des Abrechnungszeitraums entstehen, sind keine umlagefähigen Betriebskosten; sie trägt der Vermieter, soweit im Mietvertrag nichts anderes vereinbart ist (BGH VIII ZR 19/07). ` +
+          'Ob eine Klausel im Formularmietvertrag genügt, hat der BGH nicht entschieden; ein Amtsgericht hält sie für unwirksam (AG Berlin-Hohenschönhausen; das Aktenzeichen steht im Lexikon unter „Zwischenablesung“). Eine wirksame Vereinbarung gibt einen Anspruch gegen den ausziehenden Mieter, keine Position für alle. ' +
           'Gehört die Position dazu, erfassen Sie sie unter „Nicht umlagefähig“.',
         itemSubject(item))
     }
@@ -4142,16 +4493,28 @@ Hinter `selfBasisText` (Task 8):
   // Die Kosten eines Topfs: jede Position der Anlage nach ihrem Ziel, „Heizung und Warmwasser“ nach dem
   // Warmwasseranteil geteilt (Entwurf 8.3, 8.5). Ohne α (kein verbundenes Warmwasser) gibt es kein
   // Ziel „beides“.
-  const potCostOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], p: SelfPot): number => {
+  const partOf = (sp: SelfPlantPlan, c: SnapshotCostItem, p: SelfPot): number => {
     const a = sp.alpha?.value ?? null
-    return potItems.filter((c) => c.key === 'heatingSystem').reduce((sum, c) => {
-      const tg = c.heatingTarget ?? null
-      const part = tg === p ? 1 : tg === 'both' ? (a === null ? (p === 'heating' ? 1 : 0) : p === 'heating' ? 1 - a : a) : 0
-      return sum + c.amountCents * part
-    }, 0)
+    const tg = c.heatingTarget ?? null
+    return tg === p ? 1 : tg === 'both' ? (a === null ? (p === 'heating' ? 1 : 0) : p === 'heating' ? 1 - a : a) : 0
+  }
+  const potCostOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], p: SelfPot): number =>
+    potItems.filter((c) => c.key === 'heatingSystem').reduce((sum, c) => sum + c.amountCents * partOf(sp, c, p), 0)
+  // Der Teil des CO₂-Abzugs eines Mieters, der auf jeden Topf entfällt (Abweichung 15, Entwurf 6.5): sein
+  // gedruckter Abzug (positiv) im Verhältnis seines Brennstoffs in diesem Topf zu seinem Brennstoff
+  // insgesamt. Beim Ziel „beides“ teilt α.
+  const potCo2Of = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null, tenancyId: string | null, w: SelfWeights | undefined): Record<SelfPot, number> => {
+    const st = tenancyId ? statements.get(tenancyId) : undefined
+    const relief = st && reliefKey ? -st.rows.filter((r) => r.costItemId === reliefKey).reduce((a, r) => a + r.shareCents, 0) : 0
+    if (!w || relief === 0) return { heating: 0, water: 0 }
+    const fuel = potItems.filter((c) => c.key === 'heatingSystem' && c.heatingPart === 'fuel')
+    const inPot = (p: SelfPot) => fuel.reduce((a, c) => a + c.amountCents * partOf(sp, c, p) * w[p], 0)
+    const h = inPot('heating')
+    const wa = inPot('water')
+    return h + wa > 0 ? { heating: (relief * h) / (h + wa), water: (relief * wa) / (h + wa) } : { heating: 0, water: 0 }
   }
   // Der Ausweis je Anlage und Heizperiode (Entwurf 8.8 ohne § 6a, der mit PR 14 kommt).
-  const selfStatementOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[]): SelfHeatingStatement => {
+  const selfStatementOf = (sp: SelfPlantPlan, potItems: readonly SnapshotCostItem[], reliefKey: string | null): SelfHeatingStatement => {
     const cost = { heating: potCostOf(sp, potItems, 'heating'), water: potCostOf(sp, potItems, 'water') }
     const offDays = (d: string, b: string): number => Math.abs(Math.round((toUTC(d) - toUTC(b)) / MS_DAY))
     return {
@@ -4160,11 +4523,11 @@ Hinter `selfBasisText` (Task 8):
       changeSplit: sp.changeSplit,
       areaBasisHeat: sp.plant.areaBasisHeat ?? 'area',
       hotWater: sp.hotWater,
-      alpha: sp.alpha ? { percent: sp.alpha.value * 100, dhwHeatKwh: sp.alpha.dhwHeatKwh, referenceKwh: sp.alpha.referenceKwh, reference: sp.alpha.reference } : null,
+      alpha: sp.alpha ? { percent: sp.alpha.value * 100, dhwHeatKwh: sp.alpha.dhwHeatKwh, referenceKwh: sp.alpha.referenceKwh, reference: sp.alpha.reference, estimated: sp.alpha.estimated } : null,
       shares: sp.shares ? { heating: sp.shares.heating, water: sp.shares.water, forced: sp.shares.forced, previous: sp.shares.previous } : null,
       pots: sp.plan.pots.map((p): SelfPotView => {
         const t = sp.plan.totals[p]
-        const pct = t.measured && sp.shares ? sp.shares[p] : 0
+        const pct = t.measured && sp.shares ? (sp.shares[p] ?? 0) : 0
         return {
           pot: p, costCents: Math.round(cost[p]), consumptionPct: pct, byAreaOnly: !t.measured, areaM2: t.area, consumption: t.consumption,
           consumptionUnit: p === 'heating' ? 'kWh' : 'm³',
@@ -4181,13 +4544,14 @@ Hinter `selfBasisText` (Task 8):
         boundaries: u.boundaries.map((b) => {
           const dated = b.readingDates.filter((d): d is string => d !== null)
           return {
-            date: b.date, kind: b.kind, gap: b.gap,
+            date: b.date, kind: b.kind, gap: b.gap, far: b.far,
             status: dated.length < b.readingDates.length ? 'missing' : dated.some((d) => d !== b.date) ? 'off' : 'read',
             offDays: dated.reduce((m, d) => Math.max(m, offDays(d, b.date)), 0),
           }
         }),
         users: u.users.map((x): SelfUserView => {
           const w = sp.weights?.get(x.key)
+          const co2 = potCo2Of(sp, potItems, reliefKey, x.tenancyId, w)
           return {
             key: x.key, role: x.role, tenancyId: x.tenancyId, label: x.label, from: x.from, to: x.to, days: x.days, degreeDayPermille: x.degreeDayPermille,
             heatingConsumption: x.pots.heating.value,
@@ -4196,6 +4560,8 @@ Hinter `selfBasisText` (Task 8):
             waterGroup: x.pots.water.group,
             heatingCents: w ? Math.round(cost.heating * w.heating) : 0,
             waterCents: w ? Math.round(cost.water * w.water) : 0,
+            heatingCo2Cents: Math.round(co2.heating),
+            waterCo2Cents: Math.round(co2.water),
           }
         }),
       })),
@@ -4210,7 +4576,7 @@ Hinter `selfBasisText` (Task 8):
 ```ts
     // Die eigene Heizkostenabrechnung dieser Heizperiode (Heizung PR 10).
     const selfOf = selfPlans.get(pot.plantId)
-    if (selfOf) report.self = selfStatementOf(selfOf, pot.items)
+    if (selfOf) report.self = selfStatementOf(selfOf, pot.items, pot.reliefKey)
 ```
 
 - [ ] **Step 8: Hinweise (`server/src/calc.ts`)**
@@ -4251,12 +4617,16 @@ Direkt hinter der Schleife `for (const pot of co2Pots)` (dem CO₂-Block):
       } else if (f.kind === 'interimOff') {
         warn(f.far ? 'heating.interim-reading-far' : 'heating.interim-reading-off',
           `${where}: Beim Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} wurde am ${fmtDay(f.readingDate)} abgelesen (${f.days} ${f.days === 1 ? 'Tag' : 'Tage'} daneben, ${permilleText(f.permille)} der Gradtage). ` +
-            `Der Verbrauch dazwischen zählt zum ${f.readingDate > f.boundary ? 'Vormieter' : 'Nachmieter'}; zurückgerechnet wird nicht.` + (f.far ? farText : ''),
+            `Der Verbrauch dazwischen zählt zum ${f.readingDate > f.boundary ? 'Vormieter' : 'Nachmieter'}; zurückgerechnet wird nicht.` +
+            (f.far ? ' Sie haben gewählt, diese Ablesung zu verwenden, statt nach § 9b Abs. 3 HeizkostenV zu teilen.' + farText : ''),
           subject)
-      } else if (f.status === 'impossible') {
+      } else if (f.status === 'impossible' || f.status === 'imprecise') {
         warn('heating.no-interim-reading',
-          `${where}: Für den Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} gibt es keine Zwischenablesung (nicht möglich${f.reason ? `: ${f.reason}` : ''}). ` +
-            'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).',
+          f.status === 'impossible'
+            ? `${where}: Für den Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} gibt es keine Zwischenablesung (nicht möglich${f.reason ? `: ${f.reason}` : ''}). ` +
+              'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).'
+            : `${where}: Die Zwischenablesung zum Wechsel in ${f.unitName} zum ${fmtDay(f.boundary)} lässt nach Ihrer Angabe wegen ihres Zeitpunkts keine hinreichend genaue Ermittlung zu. ` +
+              'Die gesamten Kosten der Wohnung werden deshalb aufgeteilt, die Heizkosten nach Gradtagen bzw. Tagen, die Warmwasserkosten nach Tagen (§ 9b Abs. 3 HeizkostenV).',
           subject)
       } else {
         const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
@@ -4282,15 +4652,18 @@ Direkt hinter der Schleife `for (const pot of co2Pots)` (dem CO₂-Block):
       if (unmeasured.length === sp.plan.pots.length) {
         amounts = cutsOn(ids, cut)
       } else {
+        // „Soweit“ (§ 12 Abs. 1 Satz 1): nur der unerfasste Topf, sein Anteil nach CO₂-Abzug (6.5); der
+        // Ausweis druckt beide Beträge je Mieter (Abweichung 15).
         const p = unmeasured[0] ?? 'heating'
         const K = potCostOf(sp, pot?.items ?? [], p)
         const list = sp.plan.units.flatMap((u) => u.users).flatMap((u) => {
           const w = sp.weights?.get(u.key)
           if (u.role !== 'tenancy' || !u.tenancyId || !statements.has(u.tenancyId) || !w) return []
-          const c = Math.round((K * w[p] * cut) / 100)
+          const net = K * w[p] - potCo2Of(sp, pot?.items ?? [], pot?.reliefKey ?? null, u.tenancyId, w)[p]
+          const c = Math.round((net * cut) / 100)
           return c > 0 ? [`${nameOf(u.tenancyId)} ${fmtCents(c)}`] : []
         })
-        amounts = list.length > 0 ? `, hier: ${andList(list)}` : ''
+        amounts = list.length > 0 ? `, hier vom Topf ${POT_NAME[p]} nach CO₂-Abzug laut Ausweis: ${andList(list)}` : ''
       }
       const missingCapture = sp.verdict?.kind === 'missing'
         ? ` Die Wärmepumpe hat keine Verbrauchserfassung, obwohl sie bis zum ${fmtDay(law(hkvHeatPumpCapture, { date: period.from }, lawLog).installBy)} einzubauen war (§ 12 Abs. 3 HeizkostenV). Dass die Mieter dann nach § 12 Abs. 1 Satz 1 kürzen dürfen, ist eine Auslegung; entschieden ist es nicht.`
@@ -4304,8 +4677,14 @@ Direkt hinter der Schleife `for (const pot of co2Pots)` (dem CO₂-Block):
     const prev = sp.shares.previous
     if (sp.shares.changed && prev) {
       warn('heating.key-change',
-        `${where}: Der Anteil nach Verbrauch war in der vorigen Heizperiode ${fmtNum(prev.heating)} % bei der Heizung und ${fmtNum(prev.water)} % beim Warmwasser, jetzt ${fmtNum(sp.shares.heating)} % und ${fmtNum(sp.shares.water)} %. ` +
+        `${where}: Der Anteil nach Verbrauch war in der vorigen Heizperiode ${fmtNum(prev.heating)} % bei der Heizung${prev.water !== null ? ` und ${fmtNum(prev.water)} % beim Warmwasser` : ''}, jetzt ${fmtNum(sp.shares.heating)} %${sp.shares.water !== null ? ` und ${fmtNum(sp.shares.water)} %` : ''}. ` +
           'Den Abrechnungsmaßstab ändern Sie nach der ersten Festlegung nur bei Einführung einer Vorerfassung nach Nutzergruppen, nach baulichen Maßnahmen, die nachhaltig Heizenergie einsparen, oder aus anderen sachgerechten Gründen, durch Erklärung gegenüber den Mietern und nur mit Wirkung zum Beginn eines Abrechnungszeitraums (§ 6 Abs. 4 HeizkostenV). Ist das so geschehen, ist nichts zu tun.',
+        subject)
+    }
+    // Warmwasseranteil auf der Schätzung beim Abschluss (Abweichung 11).
+    if (sp.alpha?.estimated) {
+      warn('heating.dhw-share-estimated',
+        `${where}: Der Warmwasseranteil von ${fmtNum(Math.round(sp.alpha.value * 1000) / 10)} % beruht auf der geschätzten Energie der fehlenden Rechnung, die Sie beim Abschluss eingetragen haben. Mit der Folgerechnung kann er sich ändern; die abgeschlossene Abrechnung bleibt, wie sie ist.`,
         subject)
     }
     // Wärmepumpe, für die die Verordnung noch nicht gilt (§ 12 Abs. 3 Satz 2, Abweichung 7).
@@ -4314,13 +4693,13 @@ Direkt hinter der Schleife `for (const pot of co2Pots)` (dem CO₂-Block):
       const on = sp.verdict.captureInstalledOn
       warn('heating.heat-pump-capture',
         `${where}: Bei dieser Wärmepumpe wurde der Verbrauch am ${fmtDay(rule.capturedBy)} noch nicht erfasst. Die Heizkostenverordnung gilt für sie erst ab dem Abrechnungszeitraum, der nach dem Einbau der Erfassung beginnt (§ 12 Abs. 3 HeizkostenV)` +
-          `${on ? `; eingebaut wurde sie am ${fmtDay(on)}` : `; einzubauen ist sie bis zum ${fmtDay(rule.installBy)}`}. ` +
+          `${on ? `, also ab dem Abrechnungszeitraum, der nach dem ${fmtDay(on)} beginnt` : `; einzubauen ist sie bis zum ${fmtDay(rule.installBy)}`}. ` +
           'Bis dahin gilt die Verteilung laut Mietvertrag, und Kürzungen nach § 12 Abs. 1 HeizkostenV entfallen. Mietfuchs verteilt nach den erfassten Werten, wie Sie es eingerichtet haben; prüfen Sie, ob der Mietvertrag das deckt.',
         subject)
     }
     // Zeitanteilig statt nach Gradtagen (§ 9b Abs. 2): beide Beträge.
     if (sp.changeSplit === 'time' && sp.plan.units.some((u) => u.users.length > 1)) {
-      const alt = weightsOf(planSelf({ ...sp.input, changeSplit: 'degreeDays' }), { heating: sp.shares.heating, water: sp.shares.water }, sp.alpha?.value ?? null)
+      const alt = weightsOf(planSelf({ ...sp.input, changeSplit: 'degreeDays' }), { heating: sp.shares.heating, water: sp.shares.water ?? 0 }, sp.alpha?.value ?? null)
       const own = (pot?.items ?? []).filter((c) => c.key === 'heatingSystem')
       const sumFor = (w: Map<string, SelfWeights>, key: string): number => own.reduce((a, c) => a + c.amountCents * (w.get(key)?.[c.heatingTarget ?? 'both'] ?? 0), 0)
       const list = sp.plan.units.filter((u) => u.users.length > 1).flatMap((u) => u.users).flatMap((u) => (u.role === 'tenancy' && u.tenancyId && sp.weights
@@ -4351,7 +4730,7 @@ diese hier `tenantLabelOf`.)
 - [ ] **Step 9: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/calc-heizkosten.test.ts test/glossary.test.ts test/law-literals.test.ts test/anrede.test.ts test/calc.test.ts test/settlement-golden.test.ts test/heating-golden.test.ts test/calc-wortlaut.test.ts && npm run typecheck`
-Expected: PASS (calc-heizkosten.test.ts: 20 Tests). `glossary.test.ts` prüft, dass jeder neue Code einen
+Expected: PASS (calc-heizkosten.test.ts: 21 Tests). `glossary.test.ts` prüft, dass jeder neue Code einen
 Begriff hat; `law-literals.test.ts`, dass die Urteile ohne Datum genannt sind und keine Rechtszahl im
 Text steht; `anrede.test.ts` das Siezen.
 
@@ -4505,11 +4884,24 @@ A 172,83 €, B 197,02 €, C 148,63 €, zusammen 518,48 €.
 Wohnung C bewohnt der Vermieter selbst; damit das Gewicht der Eigennutzung genau ⅓ ist, zeigen alle
 drei Wärmezähler 10.000 kWh (Festlegung des Plans, der Entwurf nennt keine Zählerstände).
 
-- Abrechnung: Eigenanteil (`selfUsedShareCents`) = 5.750,00 € / 3 = 1.916,67 € exakt; je Position
-  gerundet liegt er höchstens zwei Cent daneben.
+- Abrechnung: Eigenanteil (`selfUsedShareCents`) exakt 5.750,00 € / 3 = 1.916,666… €. Gedruckt wird
+  je Zeile nach #202 (größter Rest, bei Gleichstand an den Vermieter, also an die Eigennutzung):
+
+  | Zeile | je Nutzer exakt | Eigennutzung gedruckt |
+  |---|---|---|
+  | Heizöl l1 3.150,00 € | 1.050,00 € | 1.050,00 € |
+  | Heizöl l2 2.500,00 € | 833,333… € | 833,34 € (Restcent, Gleichstand dreier Nutzer) |
+  | Heizöl aus dem Vorrat 1.900,00 € | 633,333… € | 633,34 € (ebenso) |
+  | Heizöl im Vorrat −1.800,00 € | −600,00 € | −600,00 € |
+  | zusammen | 1.916,666… € | **1.916,68 €** |
+
+  Vier Zeilen, je höchstens 1 ct daneben (6.2); der Test nagelt 1.916,68 € fest, damit ein Fehler bei
+  der Zuteilung des Restcents auffällt. Stimmt die Regel von #202 in `distributeCents` (PR 2) anders,
+  ist das ein Befund für die Durchsicht und nicht eine neue Erwartung.
 - Steuer: privat = Bezahltes mal Gewicht = 5.650,00 € / 3 = 1.883,33 € (6.4).
-- Der Abstand ist der Eigenanteil an den Überträgen (100,00 € / 3 = 33,33 €), bis auf die Rundung;
-  die Steuerseite erklärt ihn (`stockCarrySelfCents`, PR 8).
+- Der Abstand 1.916,68 € − 1.883,33 € = 33,35 € ist der Eigenanteil an den Überträgen (gedruckt
+  633,34 € − 600,00 € = 33,34 €), bis auf einen Cent aus der Rundung der Rechnung l2; die Steuerseite
+  erklärt ihn (`stockCarrySelfCents`, PR 8).
 ```
 
 - [ ] **Step 3: Write the tests**
@@ -4550,7 +4942,7 @@ test('F16 Eigene Heizkostenabrechnung: 1.961,89 / 2.615,84 / 1.331,52 / 750,75 �
       await createEntity(db, 'tenancies', 'C1', { unitId: 'c', tenantName: 'Mieter C1', persons: 1, start: '2020-01-01', end: '2025-09-30' })
       await createEntity(db, 'tenancies', 'C2', { unitId: 'c', tenantName: 'Mieter C2', persons: 1, start: '2025-10-01' })
       await createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'manual' })
-      await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }, '2026-02-01', meterId)
+      await setUpSelf(db, 'hp', { period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', dhwHeatMeter: true, totalHeatMeter: false }, '2026-02-01', meterId)
     })
     await ablesen(opened, [
       ['a', 'waerme', null, '2024-12-31', 1000], ['a', 'waerme', null, '2025-12-31', 13000],
@@ -4621,16 +5013,17 @@ test('F17 Heizöl mit Vorrat: 5.750,00 € nach Verbrauch, Überträge durch die
   })
 })
 
-test('F17 mit ⅓ Eigennutzung (N8): Abrechnung 1.916,67 €, Steuer 1.883,33 €, Abstand = Eigenanteil an den Überträgen', async () => {
+test('F17 mit ⅓ Eigennutzung (N8): Abrechnung 1.916,68 € (exakt 1.916,67 €), Steuer 1.883,33 €, Abstand = Eigenanteil an den Überträgen', async () => {
   await withDatabase(async (opened) => {
     const snap = await f17(opened, true, [10000, 10000, 10000])
     const s = computeSettlement(snap)
-    assert.ok(Math.abs(s.selfUsedShareCents - 191666.67) < 2, String(s.selfUsedShareCents))
+    // Je Zeile nach #202 gerundet, Restcent bei Gleichstand an den Vermieter (README, Abweichung 20).
+    assert.equal(s.selfUsedShareCents, 191668)
     const tax = taxReport(snap)
     const privat = tax.expenses.items.filter((x) => x.costItemId === 'l1' || x.costItemId === 'l2').reduce((a, x) => a + x.privateCents, 0)
-    assert.ok(Math.abs(privat - 188333.33) < 1, String(privat))
-    assert.equal(tax.expenses.stockCarrySelfCents, stockCarrySelfCents(s))
-    assert.ok(Math.abs(stockCarrySelfCents(s) - (s.selfUsedShareCents - privat)) <= 1)
+    assert.equal(privat, 188333)
+    assert.equal(stockCarrySelfCents(s), 3334)
+    assert.equal(tax.expenses.stockCarrySelfCents, 3334)
   })
 })
 ```
@@ -4639,9 +5032,8 @@ test('F17 mit ⅓ Eigennutzung (N8): Abrechnung 1.916,67 €, Steuer 1.883,33 �
 
 Run: `npm --prefix server test -- test/heating-golden.test.ts`
 Expected: PASS (die Tests aus PR 6 bis PR 9 und die drei neuen). Weicht eine Zahl ab, wird nicht die
-Erwartung angepasst: Die README rechnet von Hand, und die Abweichung ist ein Befund, der in Task 3, 4,
-8 oder 9 zu suchen ist (eine abweichende Rundung je Position ist der einzige erlaubte Unterschied von
-höchstens einem Cent je Zeile, und dann steht er in der README).
+Erwartung angepasst: Die README rechnet von Hand, auch die Rundung je Zeile, und die Abweichung ist
+ein Befund, der in Task 3, 4, 8 oder 9 (oder in `distributeCents`, PR 2) zu suchen ist.
 
 - [ ] **Step 5: Commit**
 
@@ -4683,12 +5075,12 @@ import { emptySelfSetup, forcedShare, itemsFromConflict, selfSetupBody, shareBou
 import type { HeatingPlant } from './types'
 
 const plant = { id: 'hp', energy: 'gas', hotWater: 'combined', capture: null, areaBasisHeat: 'area' } as Pick<HeatingPlant, 'id' | 'energy' | 'hotWater' | 'capture' | 'areaBasisHeat'>
-const filled = (over: Partial<SelfSetupForm> = {}): SelfSetupForm => ({ ...emptySelfSetup(plant, '2025-01'), share: '70', insulation: 'notApplies', ...over })
+const filled = (over: Partial<SelfSetupForm> = {}): SelfSetupForm => ({ ...emptySelfSetup(plant, '2025-01'), share: '70', waterShare: '70', insulation: 'notApplies', ...over })
 
 describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
   it('Vorgaben: Warmwasser über die Anlage, Wärmezähler, Wohnfläche, Wärmezähler am Speicher', () => {
     const f = emptySelfSetup(plant, '2025-01')
-    expect([f.hotWater, f.capture, f.areaBasisHeat, f.dhwHeatMeter, f.totalHeatMeter, f.share]).toEqual(['combined', 'heatMeter', 'area', true, false, ''])
+    expect([f.hotWater, f.capture, f.areaBasisHeat, f.dhwHeatMeter, f.totalHeatMeter, f.share, f.waterShare]).toEqual(['combined', 'heatMeter', 'area', true, false, '', ''])
   })
   it('Anteil: Grenzen aus dem Register, mit Satz', () => {
     const { min, max } = shareBounds()
@@ -4702,7 +5094,16 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     expect(forcedShare('lpg', 'applies')).toBe(70)
     expect(forcedShare('districtHeating', 'applies')).toBeNull()
     expect(forcedShare('gas', 'unknown')).toBeNull()
-    expect(selfSetupBody(filled({ share: '50', insulation: 'applies' }), 'gas')).toEqual({ error: expect.stringMatching(/70 % nach Verbrauch.*§ 7 Abs\. 1 Satz 2/) })
+    // Vorgeschrieben: das Feld zeigt den Pflichtanteil und sendet ihn, auch wenn nichts eingetippt ist.
+    const pflicht = selfSetupBody(filled({ share: '', insulation: 'applies' }), 'gas')
+    expect('body' in pflicht && pflicht.body.heatConsumptionPct).toBe(70)
+  })
+  it('§ 8 Abs. 1: der Anteil beim Warmwasser ist eine eigene Angabe (Abweichung 14)', () => {
+    expect(selfSetupBody(filled({ waterShare: '' }), 'gas')).toEqual({ error: expect.stringMatching(/Warmwasser.*§ 8 Abs\. 1/) })
+    const anders = selfSetupBody(filled({ waterShare: '50' }), 'gas')
+    expect('body' in anders && [anders.body.heatConsumptionPct, anders.body.waterConsumptionPct]).toEqual([70, 50])
+    const ohne = selfSetupBody(filled({ hotWater: 'none', waterShare: '' }), 'gas')
+    expect('body' in ohne && ohne.body.waterConsumptionPct).toBeNull()
   })
   it('Warmwasser über die Anlage nur bei Abrechnung in kWh (Abweichung 10)', () => {
     expect(selfSetupBody(filled(), 'oil')).toEqual({ error: expect.stringMatching(/Heizwert.*späteren Version/) })
@@ -4731,7 +5132,7 @@ describe('Einrichtung Schritt 7 (Heizung PR 10)', () => {
     if (!gas || !wartung) throw new Error('zwei Positionen erwartet')
     const done = selfSetupBody({ ...form, items: [{ ...gas, heatingTarget: 'both' }, { ...wartung, heatingPart: 'operating', heatingTarget: 'both' }] }, 'gas')
     expect(done).toEqual({ body: {
-      period: '2025-01', heatConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area',
+      period: '2025-01', heatConsumptionPct: 70, waterConsumptionPct: 70, insulationRule: 'notApplies', hotWater: 'combined', capture: 'heatMeter', areaBasisHeat: 'area',
       dhwHeatMeter: true, totalHeatMeter: false,
       items: [{ id: 'c1', heatingPart: 'fuel', heatingTarget: 'both' }, { id: 'c2', heatingPart: 'operating', heatingTarget: 'both' }],
     } })
@@ -4783,7 +5184,8 @@ describe('HeatingSelfSetup', () => {
     })
     const onDone = vi.fn()
     render(<HeatingSelfSetup plant={plant} period="2025-01" onDone={onDone} onCancel={() => {}} />)
-    fireEvent.change(screen.getByLabelText(/Anteil nach Verbrauch/), { target: { value: '70' } })
+    fireEvent.change(screen.getByLabelText(/Heizung in %/), { target: { value: '70' } })
+    fireEvent.change(screen.getByLabelText(/Warmwasser in %/), { target: { value: '70' } })
     fireEvent.change(screen.getByLabelText(/Wärmeschutz/), { target: { value: 'notApplies' } })
     fireEvent.click(screen.getByRole('button', { name: 'Umstellen' }))
     await screen.findByText(/„Gas“/)
@@ -4821,6 +5223,8 @@ export type SelfSetupForm = {
   hotWater: HotWater | ''
   capture: CaptureMethod
   share: string
+  // Anteil beim Warmwasser, eine eigene Wahl (§ 8 Abs. 1, Abweichung 14)
+  waterShare: string
   insulation: InsulationRule | ''
   areaBasisHeat: AreaBasisHeat
   dhwHeatMeter: boolean
@@ -4830,6 +5234,7 @@ export type SelfSetupForm = {
 export type SelfSetupBody = {
   period: string
   heatConsumptionPct: number
+  waterConsumptionPct: number | null
   insulationRule: InsulationRule
   hotWater: HotWater
   capture: CaptureMethod
@@ -4881,6 +5286,7 @@ export function emptySelfSetup(plant: Pick<HeatingPlant, 'energy' | 'hotWater' |
     hotWater: kwhEnergy(plant.energy) ? (plant.hotWater ?? 'combined') : plant.hotWater === 'combined' ? '' : plant.hotWater,
     capture: plant.capture ?? 'heatMeter',
     share: '',
+    waterShare: '',
     insulation: '',
     areaBasisHeat: plant.areaBasisHeat ?? 'area',
     dhwHeatMeter: true,
@@ -4911,13 +5317,20 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
     return { error: 'Bereitet die Heizung auch das Warmwasser, braucht die Aufteilung den Heizwert des Brennstoffs laut Rechnung (§ 9 Abs. 3 HeizkostenV); das kommt mit einer späteren Version. Bis dahin geht es mit getrennter Warmwasserbereitung oder ohne zentrales Warmwasser.' }
   }
   if (form.insulation === '') return { error: 'Bitte beantworten Sie die Frage zum Wärmeschutz; „Weiß ich nicht“ ist eine Antwort.' }
-  const share = form.share.trim() === '' ? null : Number(form.share.replace(',', '.'))
-  if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %.` }
-  if (share < min) return { error: `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).` }
-  if (share > max) return { error: `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.` }
+  // Vorgeschrieben (§ 7 Abs. 1 Satz 2): das Feld zeigt den Pflichtanteil und ist gesperrt; gesendet
+  // wird, was angezeigt ist.
   const forced = forcedShare(energy, form.insulation)
-  if (forced !== null && share !== forced) {
-    return { error: `Bei Öl- oder Gasheizung, Wärmeschutz unter dem Niveau von 1994 und überwiegend gedämmten Leitungen sind von den Heizkosten ${forced} % nach Verbrauch zu verteilen (§ 7 Abs. 1 Satz 2 HeizkostenV).` }
+  const percent = (text: string): number | null => (text.trim() === '' ? null : Number(text.replace(',', '.')))
+  const share = forced ?? percent(form.share)
+  if (share === null || !Number.isFinite(share)) return { error: `Bitte geben Sie den Anteil nach Verbrauch an, zwischen ${min} und ${max} %.` }
+  // § 8 Abs. 1: beim Warmwasser eine eigene Wahl; ohne zentrales Warmwasser keine (Abweichung 14).
+  const water = form.hotWater === 'none' ? null : percent(form.waterShare)
+  if (form.hotWater !== 'none' && (water === null || !Number.isFinite(water))) {
+    return { error: `Bitte geben Sie auch den Anteil nach Verbrauch beim Warmwasser an, zwischen ${min} und ${max} % (§ 8 Abs. 1 HeizkostenV); er darf von dem der Heizung abweichen.` }
+  }
+  for (const v of water === null ? [share] : [share, water]) {
+    if (v < min) return { error: `Die Heizkostenverordnung verlangt mindestens ${min} % nach Verbrauch (§ 7 Abs. 1, § 8 Abs. 1).` }
+    if (v > max) return { error: `Mehr als ${max} % nach Verbrauch gehen nur mit einer Vereinbarung (§ 10 HeizkostenV); das kommt mit einer späteren Version.` }
   }
   const items: SelfSetupBody['items'] = []
   for (const row of form.items) {
@@ -4929,7 +5342,7 @@ export function selfSetupBody(form: SelfSetupForm, energy: HeatingEnergy): { bod
   }
   return {
     body: {
-      period: form.period, heatConsumptionPct: share, insulationRule: form.insulation, hotWater: form.hotWater, capture: form.capture,
+      period: form.period, heatConsumptionPct: share, waterConsumptionPct: water, insulationRule: form.insulation, hotWater: form.hotWater, capture: form.capture,
       areaBasisHeat: form.areaBasisHeat, dhwHeatMeter: form.hotWater === 'combined' && form.dhwHeatMeter, totalHeatMeter: form.totalHeatMeter, items,
     },
   }
@@ -5049,11 +5462,18 @@ export default function HeatingSelfSetup({ plant, period, onDone, onCancel }: {
           <option value="unknown">Weiß ich nicht</option>
         </select>
       </label>
+      <p><Term id="consumptionCosts">Anteil nach Verbrauch</Term> ({min} bis {max} %), für Heizung und Warmwasser je eine Wahl:</p>
       <label className="field">
-        <Term id="consumptionCosts">Anteil nach Verbrauch</Term> in % ({min} bis {max})
+        Heizung in %
         <input inputMode="decimal" value={forced !== null ? String(forced) : form.share} disabled={forced !== null}
-          onChange={(e) => setForm({ ...form, share: e.target.value })} />
+          onChange={(e) => setForm({ ...form, share: e.target.value, waterShare: form.waterShare === '' || form.waterShare === form.share ? e.target.value : form.waterShare })} />
       </label>
+      {form.hotWater !== 'none' && (
+        <label className="field">
+          Warmwasser in %
+          <input inputMode="decimal" value={form.waterShare} onChange={(e) => setForm({ ...form, waterShare: e.target.value })} />
+        </label>
+      )}
       {forced !== null && <p className="muted">Bei Öl- oder Gasheizung in diesem Fall sind es {forced} % (§ 7 Abs. 1 Satz 2 HeizkostenV).</p>}
       <label className="field grow">
         <Term id="baseCosts">Grundkosten</Term> der Heizung verteilen nach
@@ -5520,7 +5940,7 @@ import { boundaryLight, boundaryText, distributionLines, potLines, readingResult
 import { fmtEuro } from './api'
 import type { HeatingDistribution, SelfBoundaryView, SelfHeatingStatement, SelfUnitView } from './types'
 
-const b = (over: Partial<SelfBoundaryView> = {}): SelfBoundaryView => ({ date: '2025-09-30', kind: 'change', status: 'read', offDays: 0, gap: null, ...over })
+const b = (over: Partial<SelfBoundaryView> = {}): SelfBoundaryView => ({ date: '2025-09-30', kind: 'change', status: 'read', offDays: 0, far: false, gap: null, ...over })
 const dist = (over: Partial<HeatingDistribution> = {}): HeatingDistribution => ({
   own: { heating: 70, water: 70, insulationRule: 'notApplies' }, effective: { heating: 70, water: 70, insulationRule: 'notApplies' },
   inherited: false, begun: true, first: false, forcedPercent: null, ...over,
@@ -5533,9 +5953,15 @@ describe('Ampel der Ablesungen (Heizung PR 10, Entwurf 3.5)', () => {
     expect(boundaryLight(b({ status: 'missing' }))).toBe('red')
     expect(boundaryLight(b({ status: 'missing', gap: 'impossible' }))).toBe('yellow')
     expect(boundaryLight(b({ status: 'missing', gap: 'missed' }))).toBe('red')
+    // Ab der Warngrenze rot, bis der Vermieter gewählt hat (Abweichung 22).
+    expect(boundaryLight(b({ status: 'off', offDays: 36, far: true }))).toBe('red')
+    expect(boundaryLight(b({ status: 'off', offDays: 36, far: true, gap: 'useReading' }))).toBe('yellow')
+    expect(boundaryLight(b({ status: 'off', offDays: 36, far: true, gap: 'imprecise' }))).toBe('yellow')
   })
   it('der Satz nennt Grenze und Tage', () => {
     expect(boundaryText(b({ status: 'off', offDays: 3 }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 3 Tage daneben')
+    expect(boundaryText(b({ status: 'off', offDays: 36, far: true }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 36 Tage daneben, über einen Wintermonat; bitte wählen')
+    expect(boundaryText(b({ status: 'off', offDays: 36, far: true, gap: 'imprecise' }), 'C')).toBe('C, Mieterwechsel zum 30.09.2025: abgelesen 36 Tage daneben, über einen Wintermonat (geteilt nach § 9b Abs. 3)')
     expect(boundaryText(b({ status: 'missing', kind: 'end', date: '2025-12-31' }), 'B')).toBe('B, Ende der Heizperiode am 31.12.2025: keine Ablesung')
   })
 })
@@ -5581,7 +6007,9 @@ describe('Ausweis und Ableseergebnis (Entwurf 8.8, § 6 Abs. 1 Satz 2)', () => {
     ])
   })
   it('Nutzerzeile mit Verbrauch, Gradtagen und Betrag', () => {
-    expect(userLine({ key: 'C1', role: 'tenancy', tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103330, waterCents: 29823 }, self))
+    const c1 = { key: 'C1', role: 'tenancy' as const, tenancyId: 'C1', label: 'Mieter C1', from: '2025-01-01', to: '2025-09-30', days: 273, degreeDayPermille: 640, heatingConsumption: 7200, waterConsumption: 38, heatingGroup: false, waterGroup: false, heatingCents: 103330, waterCents: 29823, heatingCo2Cents: 0, waterCo2Cents: 0 }
+    expect(userLine({ ...c1, heatingCo2Cents: 9281 }, self)).toContain(`Heizung 7.200 kWh, ${fmtEuro(103330)}, nach CO₂-Abzug ${fmtEuro(94049)}`)
+    expect(userLine(c1, self))
       .toBe(`Mieter C1, 01.01.2025 bis 30.09.2025 (273 Tage, 640 ‰ der Gradtage): Heizung 7.200 kWh, ${fmtEuro(103330)}; Warmwasser 38 m³, ${fmtEuro(29823)}`)
   })
   it('Ableseergebnis je Wohnung: Zähler, Datum, Stand; fehlend als solcher benannt', () => {
@@ -5609,7 +6037,7 @@ test('fehlende Zwischenablesung: die Antwort geht an den Server, die Seite lädt
   })
   const self = {
     ok: true, heatPump: null, changeSplit: 'degreeDays', areaBasisHeat: 'area', hotWater: 'none', alpha: null, shares: { heating: 70, water: 70, forced: false, previous: null }, pots: [],
-    units: [{ unitId: 'c', unitName: 'C', areaM2: 60, heatAreaM2: 60, readings: [], users: [], boundaries: [{ date: '2025-09-30', kind: 'change', status: 'missing', offDays: 0, gap: null }] }],
+    units: [{ unitId: 'c', unitName: 'C', areaM2: 60, heatAreaM2: 60, readings: [], users: [], boundaries: [{ date: '2025-09-30', kind: 'change', status: 'missing', offDays: 0, far: false, gap: null }] }],
   } as SelfHeatingStatement
   const onChanged = vi.fn()
   render(<SelfHeatingCards plant={{ id: 'hp', method: 'self' } as HeatingPlant} view={{ period: '2025-01', label: '2025', distribution: null } as HeatingPeriodView} self={self} onChanged={onChanged} />)
@@ -5640,7 +6068,8 @@ export type Light = 'green' | 'yellow' | 'red'
 // zulässig ist, aber hingesehen werden sollte (daneben abgelesen, Zwischenablesung nicht möglich).
 export function boundaryLight(b: SelfBoundaryView): Light {
   if (b.status === 'read') return 'green'
-  if (b.status === 'off') return 'yellow'
+  // Ab der Warngrenze neben dem Wechsel wählt der Vermieter; bis dahin wird nicht verteilt (Abweichung 22).
+  if (b.status === 'off') return b.far && b.kind === 'change' && b.gap !== 'useReading' && b.gap !== 'imprecise' ? 'red' : 'yellow'
   return b.gap === 'impossible' ? 'yellow' : 'red'
 }
 
@@ -5648,7 +6077,12 @@ const KIND_TEXT: Record<SelfBoundaryView['kind'], string> = { start: 'Beginn der
 export function boundaryText(b: SelfBoundaryView, unitName: string): string {
   const head = `${unitName}, ${KIND_TEXT[b.kind]} ${fmtDate(b.date)}`
   if (b.status === 'read') return `${head}: abgelesen`
-  if (b.status === 'off') return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben`
+  if (b.status === 'off') {
+    const choice = b.far && b.kind === 'change'
+      ? (b.gap === 'imprecise' ? ' (geteilt nach § 9b Abs. 3)' : b.gap === 'useReading' ? ' (Ablesung verwendet)' : '; bitte wählen')
+      : ''
+    return `${head}: abgelesen ${b.offDays} ${b.offDays === 1 ? 'Tag' : 'Tage'} daneben${b.far ? ', über einen Wintermonat' : ''}${choice}`
+  }
   const answer = b.gap === 'impossible' ? ' (nicht möglich)' : b.gap === 'missed' ? ' (nicht durchgeführt)' : ''
   return `${head}: keine Ablesung${answer}`
 }
@@ -5658,7 +6092,8 @@ export const shareEditable = (d: HeatingDistribution): boolean => d.first || !d.
 
 export function distributionLines(d: HeatingDistribution): string[] {
   if (!d.effective) return ['Noch kein Anteil nach Verbrauch festgelegt.']
-  const lines = [`Heizung ${d.effective.heating} %, Warmwasser ${d.effective.water} % nach Verbrauch${d.inherited ? ', übernommen aus der vorigen Heizperiode' : ''}`]
+  const water = d.effective.water === null ? '' : `, Warmwasser ${d.effective.water} %`
+  const lines = [`Heizung ${d.effective.heating} %${water} nach Verbrauch${d.inherited ? ', übernommen aus der vorigen Heizperiode' : ''}`]
   if (d.forcedPercent !== null) lines.push(`Vorgeschrieben: ${d.forcedPercent} % bei den Heizkosten (§ 7 Abs. 1 Satz 2 HeizkostenV).`)
   if (!shareEditable(d)) lines.push('Die Heizperiode hat begonnen; einen anderen Anteil tragen Sie für die nächste ein (§ 6 Abs. 4 HeizkostenV).')
   return lines
@@ -5681,9 +6116,11 @@ export function potLines(p: SelfPotView): string[] {
 
 export function userLine(u: SelfUserView, self: Pick<SelfHeatingStatement, 'pots'>): string {
   const time = `${fmtDate(u.from)} bis ${fmtDate(u.to)} (${u.days} Tage, ${num(u.degreeDayPermille)} ‰ der Gradtage)`
-  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} kWh${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${fmtEuro(u.heatingCents)}`]
+  // Der Topfbetrag je Mieter, mit Abzug auch nach CO₂-Abzug: die Grundlage einer Kürzung (Abweichung 15).
+  const net = (cents: number, co2: number) => `${fmtEuro(cents)}${co2 > 0 ? `, nach CO₂-Abzug ${fmtEuro(cents - co2)}` : ''}`
+  const parts = [`Heizung ${u.heatingConsumption === null ? 'nicht erfasst' : `${num(u.heatingConsumption)} kWh${u.heatingGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.heatingCents, u.heatingCo2Cents)}`]
   if (self.pots.some((p) => p.pot === 'water')) {
-    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${u.waterGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${fmtEuro(u.waterCents)}`)
+    parts.push(`Warmwasser ${u.waterConsumption === null ? 'nicht erfasst' : `${num(u.waterConsumption)} m³${u.waterGroup ? ' (gemeinsam nach § 9b Abs. 3)' : ''}`}, ${net(u.waterCents, u.waterCo2Cents)}`)
   }
   return `${u.label}, ${time}: ${parts.join('; ')}`
 }
@@ -5716,13 +6153,20 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
   const toast = useToast()
   const [error, setError] = useState('')
   const [share, setShare] = useState('')
+  const [waterShare, setWaterShare] = useState('')
   const { min, max } = shareBounds()
   const d = view.distribution ?? null
 
   async function saveShare() {
     try {
       await api(`/api/heating-plants/${plant.id}/periods/${view.period}/distribution`, {
-        method: 'PUT', body: JSON.stringify({ heatConsumptionPct: Number(share.replace(',', '.')), insulationRule: d?.effective?.insulationRule ?? 'unknown' }),
+        method: 'PUT',
+        // § 8 Abs. 1: beide Werte, das Warmwasser nur bei zentralem Warmwasser (Abweichung 14).
+        body: JSON.stringify({
+          heatConsumptionPct: Number(share.replace(',', '.')),
+          waterConsumptionPct: plant.hotWater === 'none' ? null : Number(waterShare.replace(',', '.')),
+          insulationRule: d?.effective?.insulationRule ?? 'unknown',
+        }),
       })
       setError('')
       toast('Anteil gespeichert.')
@@ -5751,7 +6195,11 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
         {d ? distributionLines(d).map((l) => <p key={l}>{l}</p>) : <p className="muted">Noch kein Anteil festgelegt.</p>}
         {(!d || shareEditable(d)) && (
           <div className="row no-print">
-            <label className="field">Heizung in % ({min} bis {max})<input inputMode="decimal" value={share} onChange={(e) => setShare(e.target.value)} /></label>
+            {/* Das Warmwasser übernimmt den Wert der Heizung sichtbar, bis der Vermieter ihn ändert. */}
+            <label className="field">Heizung in % ({min} bis {max})<input inputMode="decimal" value={share} onChange={(e) => { if (waterShare === '' || waterShare === share) setWaterShare(e.target.value); setShare(e.target.value) }} /></label>
+            {plant.hotWater !== 'none' && (
+              <label className="field">Warmwasser in %<input inputMode="decimal" value={waterShare} onChange={(e) => setWaterShare(e.target.value)} /></label>
+            )}
             <button className="btn secondary" onClick={saveShare}>Speichern</button>
           </div>
         )}
@@ -5765,6 +6213,14 @@ export default function SelfHeatingCards({ plant, view, self, onChanged }: {
               return (
                 <li key={`${u.unitId}@${b.date}`} className={`light-${light}`}>
                   {boundaryText(b, u.unitName)}
+                  {b.status === 'off' && b.kind === 'change' && b.far && (
+                    <span className="no-print">
+                      {' '}
+                      <button className="btn ghost" onClick={() => answer(u.unitId, b.date, 'useReading')}>Ablesung verwenden</button>
+                      <button className="btn ghost" onClick={() => answer(u.unitId, b.date, 'imprecise')}>Nach § 9b Abs. 3</button>
+                      {b.gap !== null && <button className="btn ghost" onClick={() => answer(u.unitId, b.date, null)}>Antwort zurücknehmen</button>}
+                    </span>
+                  )}
                   {b.status === 'missing' && b.kind === 'change' && (
                     <span className="no-print">
                       {' '}
@@ -6136,7 +6592,9 @@ Im Abschnitt „Architektur“ hinter dem Absatz **Mehrere Heizanlagen und Etage
 **Eigene Heizkostenabrechnung** (Heizung PR 10, #99): Bei `method = 'self'` verteilt Mietfuchs nach
 der Heizkostenverordnung. Die reine Rechnung steht in [server/src/heating.ts](server/src/heating.ts):
 Nutzer je Wohnung (Mietverhältnisse, Leerstand, Eigennutzung, außerhalb), die Ablesung je Grenze (die
-nächste, deren Datum dieser Grenze näher liegt als jeder anderen; ohne Rückrechnung, Entwurf 3.5),
+beim Mieterwechsel erfasste fest, `readings.interim_for`; sonst die nächste in der Zelle über H−1, H und
+H+1; zwei Werte am selben Tag sind ein Befund; der eingefrorene Endstand der Vorperiode ist der
+Anfangsstand; ohne Rückrechnung, Entwurf 3.5),
 § 9b Abs. 3 als Gruppe über die Grenzen ohne Ablesung, Bruchteile je Topf und daraus **ein Gewicht je
 Nutzer und Ziel** (`weightsOf`). calc.ts verteilt jede Position mit `key = 'heatingSystem'` mit diesen
 Gewichten durch `distributeCents` (#202), wie jede andere Position; Leerstand und Eigennutzung gehen
@@ -6188,7 +6646,7 @@ Refs #99"
 ```
 
 Danach Durchsicht mit frischem Kontext (CLAUDE.md „Durchsicht vor jedem PR“). Sie prüft ausdrücklich
-die Abweichungen 1 bis 21, die Nähte N1 bis N16 gegen den Code von PR 7 und PR 8 und die fünf Punkte
+die Abweichungen 1 bis 23, die Nähte N1 bis N16 gegen den Code von PR 7 und PR 8 und die fünf Punkte
 des Review Focus. Befunde mit einem vorher roten Test beheben; PR gestapelt auf PR 9 mit `Refs #99` und
 den Befunden in der Beschreibung. Vor dem Merge der Kette folgt die Integrationsdurchsicht des
 Endstands (`main..Spitze`) mit den Blickwinkeln Geld und Daten, der Praxislauf auf der Spitze und das
@@ -6251,9 +6709,29 @@ Routen aus Task 6 und die Rümpfe aus Task 11, 12 und 14 benutzen dieselben Feld
 | 4 Wohnung ohne Wärmezähler | heating.test.ts (Task 3), „Review Focus 4 …“; calc-heizkosten.test.ts (Task 8), „Review Focus 4 …“ |
 | 5 Gasrechnung mit Lücke | heating.test.ts (Task 4), „α: Formeln, Heizöl und Lücken …“; calc-heizkosten.test.ts (Task 8), „Review Focus 5 …“ |
 
+**Rechtliche Prüfung der Abweichungen** (05.10.2026, nach dem ersten Stand dieses Plans eingearbeitet):
+
+| Nr. | Befund der Prüfung | eingearbeitet in |
+|---|---|---|
+| 9 | gleicher Tag ist ein Befund (#69); Stetigkeit über H−1/H/H+1 und eingefrorener Anfangsstand; Bindung der Ablesung aus dem Mieterwechsel, Nähe nur als Rückfall (Festlegung nach Messdienst-Praxis); ab der Warngrenze wählt der Vermieter | Abweichungen 9, 22, 23; Task 2, 3, 5, 7, 8, 9, 13 |
+| 15 | Kürzung bei einem Topf nach CO₂-Abzug; Ausweis druckt den Topfbetrag je Mieter vor und nach Abzug | Task 2 (`heatingCo2Cents`, `waterCo2Cents`), Task 9, Task 13 |
+| 14 | Warmwasser nie still mit dem Anteil der Heizung (§ 8 Abs. 1) | Task 4, 5, 8, 11, 13 |
+| 13 | Flüssiggas als Auslegung im Lexikon, mit Wortlaut, Systematik und BR-Drs. 570/08 | Abweichung 13, Task 1 (`consumptionCosts`) |
+| 16 | Begründung über „oder zeitanteilig“ (§ 9b Abs. 2); Personen bleiben zeitanteilig | Abweichung 16, Task 9 Step 5 |
+| 10/11 | Hinweis, dass α auf der Schätzung beruht | `heating.dhw-share-estimated`, Task 4, 8, 9 |
+| 17 | 409 nennt die Kürzung nach § 12 Abs. 1 und § 6 Abs. 4 | Task 5 |
+| 19 | Leitsatz, AGB-Frage offen, AG Berlin-Hohenschönhausen als Instanzgericht; Wasser als eigenes Issue nach Rückfrage | Abweichung 19, Task 9 |
+| 20 | gerundeten Wert festnageln (1.916,68 €) | Abweichung 20, Task 10 |
+| 7 | „ab dem Zeitraum, der nach dem TT.MM.JJJJ beginnt“ | Task 9 |
+
+Offen für die Durchsicht (Hinweise der Prüfung, nicht gebaut): ein Erzeugerwechsel mitten in der
+Heizperiode (Kessel durch Wärmepumpe, Nr. 1); ein Hinweis, wenn eingetragene und gemessene
+Warmwasserwärme voneinander abweichen (Nr. 12); α auf Brennwertbasis ohne Faktor 1,11 bleibt
+⟨Norm offen: VDI 2077⟩ (Nr. 10).
+
 **Rechtszahlen.** 50, 70 und 15 % kommen aus `hkv.consumption-share`, `hkv.consumption-share-forced` und
 `hkv.cut-not-by-consumption`; die Stichtage der Wärmepumpe aus `hkv.heat-pump.capture`; die Gradtage aus
 `hkv.degree-days`. In `ENGINE_FILES` steht keine dieser Zahlen und kein Datum als Literal
 (`law-literals.test.ts` in Task 1, 4, 9). Urteile stehen ohne Datum (LG Hamburg 11 S 202/87,
 AG Schöneberg 104a C 226/05, BGH VIII ZR 19/07). Jede Festlegung ohne Grundlage im Entwurf steht unter
-„Abweichungen“ (1 bis 21).
+„Abweichungen“ (1 bis 23).
