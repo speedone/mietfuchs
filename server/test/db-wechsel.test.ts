@@ -79,7 +79,7 @@ test('Vorschau G-A1/N4: Rumpf, Aufteilen, Zuordnen und Neuerfassen der Jahreskor
 test('Ohne Antworten wird nicht gespeichert, mit Antworten alles in einem Schritt (N4)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    const ohne = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {}, ids, TODAY))
+    const ohne = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(ohne && 'error' in ohne, 'abgelehnt')
     assert.match(ohne.error, /Für den Wechsel fehlen Angaben/)
     assert.match(ohne.error, /„Müll 2025“/)
@@ -87,10 +87,10 @@ test('Ohne Antworten wird nicht gespeichert, mit Antworten alles in einem Schrit
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] }, 'nichts geschrieben')
     assert.equal((await items(opened)).length, 2)
 
-    const ok = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {
+    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
       groups: { '2025-01': '2025-01' },
       overrides: { 't-a': { '2025-01': 70000, '2025-05': null } },
-    }, ids, TODAY))
+    }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(ok && 'property' in ok)
     assert.deepEqual(ok.property.periodRules, MAI_AB_2025)
     const nachher = await items(opened)
@@ -108,7 +108,7 @@ test('Ein Wechsel neben einer abgeschlossenen Abrechnung wird abgelehnt, nichts 
     await opened.write((db) => closeSettlement(db, { id: 'z', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-02-01T00:00:00Z', sentAt: null, settlement: {} }))
     const v = await preview(opened, MAI_AB_2025)
     assert.match(v.blocked.join(' '), /Die Abrechnung 2025 ist abgeschlossen/)
-    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, ids, TODAY))
+    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(r && 'error' in r)
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
     // Ein Wechsel nach dem abgeschlossenen Zeitraum geht.
@@ -120,20 +120,20 @@ test('Ein Wechsel neben einer abgeschlossenen Abrechnung wird abgelehnt, nichts 
 test('Eine Antwort, die nicht passt, oder eine veraltete Vorschau: 409 statt eines halben Wechsels (Review Focus 3)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    const falsch = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {
+    const falsch = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
       groups: { '2025-01': '2024-05' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } },
-    }, ids, TODAY))
+    }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(falsch && 'error' in falsch)
     assert.match(falsch.error, /„Müll 2025“/)
-    const halb = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {
+    const halb = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
       groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000 } },
-    }, ids, TODAY))
+    }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(halb && 'error' in halb)
     assert.match(halb.error, /05\/2025–04\/2026/)
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
     // Derselbe Wechsel ein zweites Mal: Es ändert sich nichts.
-    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, ids, TODAY))
-    await assert.rejects(opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {}, ids, TODAY)),
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    await assert.rejects(opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY)),
       (err: unknown) => err instanceof PeriodError && /Es ändert sich nichts/.test(err.message))
   })
 })
@@ -153,7 +153,7 @@ test('Regeln: Beginnmonat 1 bis 12, Monate als JJJJ-MM, kein Wechsel auf einen M
 test('Einen Wechsel entfernen: Der Rumpf wächst wieder zum Jahr, beide Korrekturen werden neu erfasst', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     const v = await preview(opened, { startMonth: 1, changes: [] })
     const a = v.overrides.find((o) => o.tenancyId === 't-a') ?? assert.fail('A fehlt')
     assert.deepEqual(a.ask.map((x) => [x.period, x.months]), [['2025-01', '01–12/2025'], ['2026-01', '01–12/2026']])
@@ -168,7 +168,7 @@ test('Eine Auswertung wandert auf den Zeitraum mit der größten Überschneidung
     })
     const v = await preview(opened, MAI_AB_2025)
     assert.deepEqual(v.assessments, [{ assessmentId: 'a1', file: 'a.pdf', from: '2026-01', to: '2026-05', toLabel: '2026/2027' }])
-    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {}, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     const [row] = await opened.read((db) => db.select().from(assessments))
     assert.equal(row?.requestedPeriod, '2026-05')
   })
@@ -185,11 +185,11 @@ async function everythingSaves(opened: OpenedDatabase): Promise<void> {
 test('Nach einem Wechsel lässt sich jedes Mietverhältnis und jede Position speichern, auch nach dem Entfernen des Wechsels', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     await everythingSaves(opened)
-    const zurueck = await opened.write((db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, {
+    const zurueck = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, { ...{
       groups: { '2025-05': '2025-01' }, overrides: { 't-a': { '2025-01': 220000, '2026-01': null } },
-    }, ids, TODAY))
+    }, token: (await previewPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, TODAY))?.token }, ids, TODAY))
     assert.ok(zurueck && 'property' in zurueck, zurueck && 'error' in zurueck ? zurueck.error : 'kein Objekt')
     await everythingSaves(opened)
     const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer')
@@ -204,10 +204,10 @@ test('Ein schon aufgeteilter Teil wird beim nächsten Wechsel nur über seinen e
   // Mai-bis-Dezember-Betrags noch einmal in Januar bis April.
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, ids, TODAY))
-    const juli = await opened.write((db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, {
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    const juli = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, { ...{
       overrides: { 't-a': { '2025-01': 120000, '2025-07': null } },
-    }, ids, TODAY))
+    }, token: (await previewPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, TODAY))?.token }, ids, TODAY))
     assert.ok(juli && 'property' in juli, juli && 'error' in juli ? juli.error : 'kein Objekt')
     const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer').map((c) => [c.period, c.amountCents]).sort()
     // Mai und Juni: 61 von 245 Tagen des Teils über 32.219 Cent.

@@ -23,6 +23,7 @@
 // Gelesen wird vor der Transaktion (die Lesefunktionen aus read.ts nehmen die Verbindung); die
 // Schlange in open.ts lässt zwischen Lesen und Schreiben keine andere Anfrage herein.
 
+import crypto from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import {
@@ -33,7 +34,7 @@ import { splitByService, type ServicePart } from '../serviceSplit.ts'
 import type { Database } from './client.ts'
 import { readClosedSettlements, readCostItems, readProperties, readTenancies, readUnits } from './read.ts'
 import { PeriodError, writeCostItemParts } from './repository.ts'
-import { assessments, closedSettlementHistory, costItems, periodChanges, prepaymentOverrides, properties } from './schema.ts'
+import { assessments, closedSettlementHistory, periodChanges, prepaymentOverrides, properties } from './schema.ts'
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
 const monthName = (key: string): string => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)} ${key.slice(0, 4)}`
@@ -120,7 +121,32 @@ type Plan = {
   overrideRekeys: { tenancyId: string; from: PeriodKey; to: PeriodKey }[]
   overrideAsks: OverrideAsk[]
   assessmentMoves: { id: string; to: PeriodKey }[]
+  // Positionen eines Zeitraums, der nur wächst und danach über zwei Kalenderjahre reicht (M4).
+  regrows: { item: CostItem; target: BillingPeriod }[]
+  taxEntries: Map<string, PeriodChangePreview['taxYears'][number]>
   next: PeriodRules
+}
+
+// Das Jahr der Zahlung einer Position in einem Zeitraum über zwei Kalenderjahre (Entwurf 3.10,
+// Durchsicht von #226, I1): erlaubt ist vom Jahr des Beginns bis ein Jahr nach dem Ende, dieselbe
+// Spanne wie in repository.ts. Vorbelegt wird das bisherige Jahr, sonst das Kalenderjahr, in dem
+// ihr bisheriger Zeitraum begann, und zwar in die Spanne geklemmt. Ohne Klemme verschwände eine
+// Position, deren Jahr außerhalb liegt, aus jeder Steuerübersicht.
+const taxKey = (item: Pick<CostItem, 'id'>, p: Pick<BillingPeriod, 'key'>): string => `${item.id}|${p.key}`
+function taxEntry(item: CostItem, p: BillingPeriod): PeriodChangePreview['taxYears'][number] {
+  const start = Number(p.from.slice(0, 4))
+  const end = Number(p.to.slice(0, 4)) + 1
+  const was = item.taxYear ?? startYearOf(item.period)
+  return {
+    key: taxKey(item, p), costItemId: item.id, description: item.description, period: p.key, label: periodLabel(p),
+    suggested: Math.min(Math.max(was, start), end), options: Array.from({ length: end - start + 1 }, (_, i) => start + i),
+  }
+}
+
+// Die Marke einer Vorschau (M2): alles, was der Wechsel schreibt oder fragt. Der Zeitraum der Liste
+// hängt am heutigen Tag und gehört nicht dazu.
+function tokenOf(p: Omit<PeriodChangePreview, 'token' | 'periods'>): string {
+  return crypto.createHash('sha256').update(JSON.stringify([p.rules, p.newShort, p.blocked, p.moves, p.groups, p.overrides, p.assessments, p.taxYears])).digest('hex')
 }
 
 async function planPeriodChange(db: Database, propertyId: string, rawRules: unknown, today: string): Promise<Plan | null> {
@@ -158,10 +184,16 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
 
   const splits: Plan['splits'] = []
   const groups: Plan['groups'] = new Map()
+  const regrows: Plan['regrows'] = []
   for (const item of items) {
     const a = changed(item.period)
-    // Ein Zeitraum, der nur wächst, behält seine Positionen: Sie gehören weiter hinein.
-    if (a === null || a.status === 'grows') continue
+    if (a === null) continue
+    // Ein Zeitraum, der nur wächst, behält seine Positionen: Sie gehören weiter hinein. Reicht er
+    // danach über zwei Kalenderjahre, braucht jede ihr Jahr der Zahlung (M4).
+    if (a.status === 'grows') {
+      if (a.now !== null && spansTwoYears(a.now)) regrows.push({ item, target: a.now })
+      continue
+    }
     if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined) {
       // Geteilt wird der Teil des Leistungszeitraums, der im bisherigen Zeitraum liegt: Ein schon
       // aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist aber nur
@@ -249,8 +281,17 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
       ask: [...o.ask.values()].map((x) => ({ period: x.period.key, label: periodLabel(x.period), months: monthsText(x.months) })),
     })),
     assessments: assessmentPreview,
+    taxYears: [],
+    token: '',
   }
-  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, next }
+  const taxEntries: Plan['taxEntries'] = new Map()
+  const ask = (item: CostItem, p: BillingPeriod) => { if (spansTwoYears(p)) taxEntries.set(taxKey(item, p), taxEntry(item, p)) }
+  for (const { item, parts } of splits) for (const part of parts) ask(item, part.period)
+  for (const g of groups.values()) for (const o of g.options) for (const item of g.items) ask(item, o)
+  for (const { item, target } of regrows) ask(item, target)
+  preview.taxYears = [...taxEntries.values()]
+  preview.token = tokenOf(preview)
+  return { preview, splits, groups, overrideRekeys, overrideAsks: [...asks.values()], assessmentMoves, regrows, taxEntries, next }
 }
 
 // Eine Gruppe ohne betroffenen Zeitraum gibt es nicht; der Aufruf oben fragt nur bekannte.
@@ -262,12 +303,12 @@ export async function previewPeriodChange(db: Database, propertyId: string, rawR
   return (await planPeriodChange(db, propertyId, rawRules, today))?.preview ?? null
 }
 
-type Answers = { groups: Record<string, unknown>; overrides: Record<string, unknown> }
+type Answers = { groups: Record<string, unknown>; overrides: Record<string, unknown>; taxYears: Record<string, unknown>; token: unknown }
 const objectOr = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {}
 const readAnswers = (raw: unknown): Answers => {
   const a = objectOr(raw)
-  return { groups: objectOr(a.groups), overrides: objectOr(a.overrides) }
+  return { groups: objectOr(a.groups), overrides: objectOr(a.overrides), taxYears: objectOr(a.taxYears), token: a.token }
 }
 const isCents = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
 
@@ -289,14 +330,14 @@ function missingAnswers(plan: Plan, answers: Answers): string[] {
       }
     }
   }
+  for (const [key, given] of Object.entries(answers.taxYears)) {
+    const entry = plan.taxEntries.get(key)
+    if (entry && !(typeof given === 'number' && entry.options.includes(given))) {
+      missing.push(`„${entry.description}“: Das Jahr der Zahlung für ${entry.label} muss zwischen ${entry.options[0]} und ${entry.options[entry.options.length - 1]} liegen.`)
+    }
+  }
   return missing
 }
-
-// Das Jahr der Zahlung einer Position im neuen Zeitraum (Entwurf 3.10): Reicht er über zwei
-// Kalenderjahre, das bisherige oder das Kalenderjahr, in dem ihr bisheriger Zeitraum begann (dort
-// war sie bisher für die Steuer gezählt); sonst keines.
-const taxYearIn = (target: BillingPeriod | null, item: CostItem): number | null =>
-  target !== null && spansTwoYears(target) ? item.taxYear ?? startYearOf(item.period) : null
 
 export async function applyPeriodChange(
   db: Database, propertyId: string, rawRules: unknown, rawAnswers: unknown, newId: () => string, today: string,
@@ -305,9 +346,41 @@ export async function applyPeriodChange(
   if (plan === null) return null
   if (plan.preview.blocked.length > 0) return { error: `${plan.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
   const answers = readAnswers(rawAnswers)
+  if (answers.token !== plan.preview.token) {
+    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: plan.preview }
+  }
   const missing = missingAnswers(plan, answers)
   if (missing.length > 0) return { error: `Für den Wechsel fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: plan.preview }
+  // Das Jahr der Zahlung im neuen Zeitraum: die Antwort, sonst der Vorschlag; in einem Zeitraum in
+  // einem Kalenderjahr keines (Entwurf 3.10).
+  const taxYearIn = (target: BillingPeriod, item: CostItem): number | null => {
+    const entry = plan.taxEntries.get(taxKey(item, target))
+    if (entry === undefined) return null
+    const given = answers.taxYears[entry.key]
+    return typeof given === 'number' && entry.options.includes(given) ? given : entry.suggested
+  }
   const { next } = plan
+  try {
+    await writeChange(db, plan, answers, propertyId, next, newId, taxYearIn)
+  } catch (err) {
+    // Eine Schreibprüfung, die im Wechsel scheitert, ist ein Konflikt mit dem Bestand und keine
+    // falsche Anfrage (I1): 409 mit der Vorschau, die Transaktion hat nichts geschrieben.
+    if (err instanceof PeriodError) return { error: `${err.message} Gespeichert wurde nichts.`, preview: plan.preview }
+    throw err
+  }
+  const property = (await readProperties(db)).find((p) => p.id === propertyId)
+  return property ? { property } : null
+}
+
+async function writeChange(
+  db: Database, plan: Plan, answers: Answers, propertyId: string, next: PeriodRules, newId: () => string,
+  taxYearIn: (target: BillingPeriod, item: CostItem) => number | null,
+): Promise<void> {
+  // Positionen gehen durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern
+  // (`writeCostItemParts`), auch die verschobenen: ein rohes Update umginge die Prüfung des Jahres
+  // der Zahlung (Durchsicht von #226, I1).
+  const move = (tx: Parameters<Parameters<Database['transaction']>[0]>[0], item: CostItem, target: BillingPeriod) =>
+    writeCostItemParts(tx, item, [{ period: target.key, amountCents: item.amountCents, labor35aCents: item.labor35aCents ?? null, description: item.description, taxYear: taxYearIn(target, item) }], newId, item.id)
   await db.transaction(async (tx) => {
     await tx.update(properties).set({ periodStartMonth: next.startMonth }).where(eq(properties.id, propertyId))
     await tx.delete(periodChanges).where(eq(periodChanges.propertyId, propertyId))
@@ -320,10 +393,9 @@ export async function applyPeriodChange(
     for (const [from, g] of plan.groups) {
       const target = g.options.find((p) => p.key === answers.groups[from]) ?? null
       if (target === null) continue
-      for (const item of g.items) {
-        await tx.update(costItems).set({ period: target.key, taxYear: taxYearIn(target, item) }).where(eq(costItems.id, item.id))
-      }
+      for (const item of g.items) await move(tx, item, target)
     }
+    for (const { item, target } of plan.regrows) await move(tx, item, target)
     for (const r of plan.overrideRekeys) {
       await tx.update(prepaymentOverrides).set({ period: r.to }).where(and(eq(prepaymentOverrides.tenancyId, r.tenancyId), eq(prepaymentOverrides.period, r.from)))
     }
@@ -338,6 +410,4 @@ export async function applyPeriodChange(
     }
     for (const m of plan.assessmentMoves) await tx.update(assessments).set({ requestedPeriod: m.to }).where(eq(assessments.id, m.id))
   })
-  const property = (await readProperties(db)).find((p) => p.id === propertyId)
-  return property ? { property } : null
 }

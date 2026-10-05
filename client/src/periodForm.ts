@@ -14,7 +14,7 @@
 
 import { contextOf, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, previousPeriod, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import type { BillingPeriod, PeriodChangeAnswers, PeriodChangePreview, PeriodKey, PeriodRules } from './types'
-import { parseEuro } from './api'
+import { ApiError, parseEuro } from './api'
 
 export type PeriodChoice = { anchor: string | null; calendarYear: number | null }
 export type PeriodOption = { value: string; label: string }
@@ -132,12 +132,15 @@ export function withoutChange(current: PeriodRules, from: string): PeriodRules {
 export type AnswerForm = {
   groups: Record<string, string>
   overrides: Record<string, Record<string, { amount: string; none: boolean }>>
+  // Das Jahr der Zahlung je Eintrag der Vorschau (Durchsicht von #226, I1), als Text der Auswahl
+  taxYears: Record<string, string>
 }
 
 export function initialAnswers(preview: PeriodChangePreview): AnswerForm {
   return {
     groups: Object.fromEntries(preview.groups.map((g) => [g.from, g.suggested])),
     overrides: Object.fromEntries(preview.overrides.map((o) => [o.tenancyId, Object.fromEntries(o.ask.map((a) => [a.period, { amount: '', none: false }]))])),
+    taxYears: Object.fromEntries(preview.taxYears.map((t) => [t.key, String(t.suggested)])),
   }
 }
 
@@ -158,5 +161,21 @@ export function answersOf(preview: PeriodChangePreview, form: AnswerForm): Perio
     }
     overrides[o.tenancyId] = out
   }
-  return { groups: { ...form.groups }, overrides }
+  // Die Marke der Vorschau geht mit (M2): Hat sich der Bestand seitdem geändert, lehnt der Server mit
+  // der neuen Vorschau ab, statt eine gewachsene Gruppe ungesehen mitzuziehen.
+  const taxYears = Object.fromEntries(preview.taxYears.flatMap((t) => {
+    const y = Number(form.taxYears[t.key] ?? t.suggested)
+    return Number.isInteger(y) ? [[t.key, y]] : []
+  }))
+  return { groups: { ...form.groups }, overrides, taxYears, token: preview.token }
 }
+
+// Die neue Vorschau aus der 409 eines Wechsels (M2), sonst `null`.
+export function conflictPreview(e: unknown): PeriodChangePreview | null {
+  if (!(e instanceof ApiError) || e.status !== 409) return null
+  const p = e.data.preview
+  return p !== null && typeof p === 'object' ? p as PeriodChangePreview : null
+}
+
+// Ein Wechsel in Worten: „Mai 2025“ statt '2025-05' (M5).
+export const changeLabel = (month: string): string => `${MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month.slice(5, 7)} ${month.slice(0, 4)}`

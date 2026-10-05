@@ -31,7 +31,7 @@ test('F18 Rumpfzeitraum: 157,81 / 322,19 â‚¬, Frist 30.04.2026, Vorschlag 228 â‚
     const regeln = { startMonth: 1, changes: ['2025-05'] }
     const vorschau = await opened.read((db) => previewPeriodChange(db, 'objekt-1', regeln, '2026-10-05')) ?? assert.fail('kein Objekt')
     assert.deepEqual(vorschau.groups.map((g) => [g.from, g.items.map((i) => i.costItemId).sort()]), [['2025-01', ['gas', 'wa']]])
-    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { groups: { '2025-01': '2025-01' } }, () => 'gs-2', '2026-10-05'))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', regeln, { groups: { '2025-01': '2025-01' }, token: vorschau.token }, () => 'gs-2', '2026-10-05'))
     assert.ok(r && 'property' in r, 'gewechselt')
 
     const stock = await opened.read(readStock)

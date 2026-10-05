@@ -279,6 +279,13 @@ export type PeriodChangePreview = {
   groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
   overrides: { tenancyId: string; tenantName: string; from: { key: PeriodKey; label: string; cents: number }[]; ask: { period: PeriodKey; label: string; months: string }[] }[]
   assessments: { assessmentId: string; file: string; from: PeriodKey; to: PeriodKey; toLabel: string }[]
+  // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
+  // gelangt (Durchsicht von #226, I1, M4). `key` ist 'Kennung|Zeitraum'; vorbelegt mit dem bisherigen
+  // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
+  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
+  // Die Marke dieser Vorschau (M2): Stimmt sie beim Wechsel nicht mehr, hat sich der Bestand
+  // inzwischen geändert, und der Server antwortet mit 409 und der neuen Vorschau.
+  token: string
 }
 
 // Die Antworten zur Vorschau: je Gruppe (bisheriger Zeitraum) der neue Zeitraum; je
@@ -287,6 +294,9 @@ export type PeriodChangePreview = {
 export type PeriodChangeAnswers = {
   groups?: Record<string, string>
   overrides?: Record<string, Record<string, number | null>>
+  // Das Jahr der Zahlung je Eintrag aus `taxYears`; fehlt es, gilt der Vorschlag.
+  taxYears?: Record<string, number>
+  token?: string
 }
 
 export type Settings = {

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { anchorOf, answersOf, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
+import { anchorOf, answersOf, changeLabel, conflictPreview, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { PeriodChangePreview, PeriodRules } from './types'
+import { ApiError } from './api'
 
 const TODAY = '2026-10-05'
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
@@ -61,7 +62,8 @@ describe('Rhythmus ändern (#208)', () => {
     expect(withoutChange(WECHSEL, '2025-05')).toEqual({ startMonth: 1, changes: [] })
   })
   const vorschau: PeriodChangePreview = {
-    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [],
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [], token: 'marke',
+    taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
     groups: [{ from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [{ key: periodKey('2025-01'), label: '2025', cents: 220000 }], ask: [{ period: periodKey('2025-01'), label: '01.01.–30.04.2025', months: '01–04/2025' }, { period: periodKey('2025-05'), label: '2025/2026', months: '05/2025–04/2026' }] }],
   }
@@ -70,8 +72,22 @@ describe('Rhythmus ändern (#208)', () => {
     expect(form.groups).toEqual({ '2025-01': '2025-01' })
     expect(answersOf(vorschau, form)).toEqual({ error: 'Bitte tragen Sie für A ein, was 01–04/2025 tatsächlich gezahlt wurde, oder wählen Sie „keine Korrektur“.' })
     const ausgefuellt = { ...form, overrides: { 't-a': { '2025-01': { amount: '700,00', none: false }, '2025-05': { amount: '', none: true } } } }
-    expect(answersOf(vorschau, ausgefuellt)).toEqual({ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } })
+    // Die Marke der Vorschau und das Jahr der Zahlung gehen mit (Durchsicht von #226, M2, I1).
+    expect(form.taxYears).toEqual({ 'mu|2025-05': '2025' })
+    expect(answersOf(vorschau, ausgefuellt)).toEqual({ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } }, taxYears: { 'mu|2025-05': 2025 }, token: 'marke' })
     expect(answersOf(vorschau, { ...ausgefuellt, overrides: { 't-a': { '2025-01': { amount: 'siebenhundert', none: false }, '2025-05': { amount: '', none: true } } } }))
       .toEqual({ error: 'Bitte tragen Sie für A ein, was 01–04/2025 tatsächlich gezahlt wurde, als Euro-Betrag, etwa 700,00.' })
+  })
+})
+
+describe('Durchsicht von #226 (M2, M5)', () => {
+  test('Die 409 eines Wechsels bringt die neue Vorschau mit', () => {
+    const neu = { token: 'neu' }
+    expect(conflictPreview(new ApiError('veraltet', 409, { error: 'veraltet', preview: neu }))).toBe(neu)
+    expect(conflictPreview(new ApiError('kaputt', 400, { error: 'kaputt' }))).toBeNull()
+    expect(conflictPreview(new Error('Netz weg'))).toBeNull()
+  })
+  test('Ein Wechsel heißt mit Monatsnamen', () => {
+    expect(changeLabel('2025-05')).toBe('Mai 2025')
   })
 })

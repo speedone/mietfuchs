@@ -4,7 +4,7 @@ import { api, errorText, fmtEuro } from '../api'
 import { useOpenForm, useProperty } from '../property'
 import { useToast } from './feedback'
 import Term from './Term'
-import { answersOf, initialAnswers, MONTH_OPTIONS, nextRules, rhythmText, withoutChange, type AnswerForm, type RhythmForm } from '../periodForm'
+import { answersOf, changeLabel, conflictPreview, initialAnswers, MONTH_OPTIONS, nextRules, rhythmText, withoutChange, type AnswerForm, type RhythmForm } from '../periodForm'
 import { rulesOf } from '../../../shared/period.ts'
 
 // Die Karte „Abrechnungszeitraum“ in den Stammdaten (#208, Entwurf 3.6, 11.4). Jede Änderung geht
@@ -39,6 +39,12 @@ export function RhythmFields({ form, onChange }: { form: RhythmForm; onChange: (
 }
 
 export function PreviewAnswers({ preview, answers, onChange }: { preview: PeriodChangePreview; answers: AnswerForm; onChange: (next: AnswerForm) => void }) {
+  // Das Jahr der Zahlung einer Position einer Gruppe nur für den gewählten Zeitraum (I1).
+  const groupOf = new Map(preview.groups.flatMap((g) => g.items.map((i) => [i.costItemId, g.from] as const)))
+  const shownTax = preview.taxYears.filter((t) => {
+    const from = groupOf.get(t.costItemId)
+    return from === undefined || (answers.groups[from] ?? preview.groups.find((g) => g.from === from)?.suggested) === t.period
+  })
   return (
     <>
       {preview.groups.map((g) => (
@@ -46,6 +52,14 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
           Zeitraum für {g.items.map((i) => `„${i.description}“`).join(', ')} (bisher {g.fromLabel})
           <select value={answers.groups[g.from] ?? g.suggested} onChange={(e) => onChange({ ...answers, groups: { ...answers.groups, [g.from]: e.target.value } })}>
             {g.options.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </label>
+      ))}
+      {shownTax.map((t) => (
+        <label key={t.key} className="field">
+          Jahr der Zahlung (Steuer) für „{t.description}“ in {t.label}
+          <select value={answers.taxYears[t.key] ?? String(t.suggested)} onChange={(e) => onChange({ ...answers, taxYears: { ...answers.taxYears, [t.key]: e.target.value } })}>
+            {t.options.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
         </label>
       ))}
@@ -120,7 +134,13 @@ export default function PeriodCard() {
       await reload()
       toast('Abrechnungszeitraum umgestellt.')
     } catch (e) {
-      // 409: veraltete Vorschau oder fehlende Angaben; die Meldung sagt, was fehlt.
+      // 409: veraltete Vorschau oder fehlende Angaben. Die Antwort bringt die neue Vorschau mit
+      // (Durchsicht von #226, M2); sie ersetzt die alte, die Antworten werden neu vorbelegt.
+      const fresh = conflictPreview(e)
+      if (fresh) {
+        setPreview(fresh)
+        setAnswers(initialAnswers(fresh))
+      }
       setError(`${errorText(e)} Bitte prüfen Sie die Vorschau erneut.`)
     } finally {
       setBusy(false)
@@ -132,7 +152,7 @@ export default function PeriodCard() {
       <h2><Term id="billingPeriod">Abrechnungszeitraum</Term></h2>
       <p>{rhythmText(rules)}. <span className="muted">Januar heißt Kalenderjahr. Wählen Sie den Monat, mit dem Ihr Messdienst abrechnet.</span></p>
       {rules.changes.map((c) => (
-        <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {c} entfernen …</button>
+        <button key={c} className="btn secondary" disabled={busy} onClick={() => void ask(withoutChange(rules, c))}>Wechsel ab {changeLabel(c)} entfernen …</button>
       ))}
       <RhythmFields form={form} onChange={setForm} />
       <button className="btn secondary" disabled={busy} onClick={() => void ask(nextRules(rules, form))}>Vorschau</button>
