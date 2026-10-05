@@ -125,9 +125,10 @@ export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = fal
           {/* Laienprobe B21: die Berechnungsgrundlagen der Einstufung (§ 7 Abs. 3 CO2KostAufG). */}
           {(form.emissionsKg.trim() === '' || form.serviceArea.trim() === '') && (
             <p className="notice">
-              Für den Ausweis in der Abrechnung nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
+              Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
               Aus ihnen ist der Wert je m² berechnet; die Abrechnung muss neben der Einstufung auch ihre Berechnungsgrundlagen nennen,
-              sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG).
+              sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG). Ob ein Gericht weitere Angaben
+              verlangt, ist nicht entschieden; legen Sie deshalb die Abrechnung des Messdienstes bei.
             </p>
           )}
           {serviceItems.length > 1 && (

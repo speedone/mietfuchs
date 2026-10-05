@@ -65,7 +65,7 @@ describe('Rhythmus ändern (#208)', () => {
   const vorschau: PeriodChangePreview = {
     rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token: 'marke',
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
-    groups: [{ id: '2025-01', heating: false, split: null, from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [{ key: periodKey('2025-01'), label: '2025', cents: 220000 }], ask: [{ period: periodKey('2025-01'), label: '01.01.–30.04.2025', months: '01–04/2025' }, { period: periodKey('2025-05'), label: '2025/2026', months: '05/2025–04/2026' }] }],
   }
   test('Antworten: Zuordnung vorbelegt, jede Korrektur verlangt einen Betrag oder „keine Korrektur“ (N4)', () => {
@@ -97,7 +97,7 @@ describe('Nachprüfung von #226 (3): Antworten nach einer 409', () => {
   const vorschau = (token: string, extra = false): PeriodChangePreview => ({
     rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], effects: [], assessments: [], token,
     taxYears: [{ key: 'mu|2025-05', costItemId: 'mu', description: 'Müll', period: periodKey('2025-05'), label: '2025/2026', suggested: 2025, options: [2025, 2026, 2027] }],
-    groups: [{ id: '2025-01', heating: false, split: null, from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll', amountCents: 1 }, ...(extra ? [{ costItemId: 'wa', description: 'Wasser', amountCents: 2 }] : [])], options: [{ key: periodKey('2025-01'), label: 'R' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
     overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [], ask: [{ period: periodKey('2025-01'), label: 'R', months: '01–04/2025' }] }],
   })
   const eingetragen = (): AnswerForm => ({ groups: { '2025-01': '2025-05' }, overrides: { 't-a': { '2025-01': { amount: '700,00', none: false } } }, taxYears: { 'mu|2025-05': '2026' } })

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { EffectsList, PreviewAnswers, RhythmFields } from './PeriodCard'
-import { initialAnswers } from '../periodForm'
+import { answersOf, initialAnswers } from '../periodForm'
 import { periodKey } from '../../../shared/period.ts'
 import type { PeriodChangePreview } from '../types'
 
@@ -30,7 +30,7 @@ describe('Karte „Abrechnungszeitraum“ (#208)', () => {
         { key: 'mu|2025-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2025-05'), label: '2025/2026', suggested: 2026, options: [2025, 2026, 2027] },
         { key: 'mu|2024-05', costItemId: 'mu', description: 'Müll 2025', period: periodKey('2024-05'), label: '2024/2025', suggested: 2025, options: [2024, 2025, 2026] },
       ],
-      groups: [{ id: '2025-01', heating: false, split: null, from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-05') }],
+      groups: [{ id: '2025-01', heating: false, split: null, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-05') }],
     }
     render(<PreviewAnswers preview={preview} answers={initialAnswers(preview)} onChange={() => {}} />)
     const select = screen.getByRole('combobox', { name: /Zeitraum für „Müll 2025“/ }) as HTMLSelectElement
@@ -46,11 +46,11 @@ describe('Laienprobe (B2, B3, B4)', () => {
     rules: { startMonth: 1, changes: ['2025-07'] }, newShort: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],
     periods: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025', short: true }, { key: periodKey('2025-07'), label: '2025/2026', short: false }],
     groups: [
-      { id: '2025-01', heating: false, from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'gs', description: 'Grundsteuer 2025', amountCents: 42000 }],
+      { id: '2025-01', heating: false, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'gs', description: 'Grundsteuer 2025', amountCents: 42000 }],
         options: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }, { key: periodKey('2025-07'), label: '2025/2026' }],
-        split: { range: '01.01.–31.12.2025', items: [{ costItemId: 'gs', parts: [{ period: periodKey('2025-01'), label: '01.01.–30.06.2025', amountCents: 20827 }, { period: periodKey('2025-07'), label: '2025/2026', amountCents: 21173 }] }] },
+        split: { range: '01.01.–31.12.2025', items: [{ costItemId: 'gs', parts: [{ period: periodKey('2025-01'), label: '01.01.–30.06.2025', amountCents: 20827 }, { period: periodKey('2025-07'), label: '2025/2026', amountCents: 21173 }] }], notes: [] },
         suggested: 'split' },
-      { id: '2025-01|heizung', heating: true, from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'gas', description: 'Erdgas 2025', amountCents: 260000 }],
+      { id: '2025-01|heizung', heating: true, taxShifts: [], from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'gas', description: 'Erdgas 2025', amountCents: 260000 }],
         options: [{ key: periodKey('2025-01'), label: '01.01.–30.06.2025' }, { key: periodKey('2025-07'), label: '2025/2026' }], split: null, suggested: '2025-01' },
     ],
   }
@@ -71,7 +71,12 @@ describe('Laienprobe (B2, B3, B4)', () => {
       tenants: [{ tenantName: 'Familie Beispiel', beforeCents: 157882, afterCents: -25154 }], lostClaimsCents: 25154 }]} />)
     expect(screen.getByText(/Abrechnung bis 30\.06\.2026 zustellen – diese Frist ist schon abgelaufen\. Bisher: 2025 \(Frist 31\.12\.2026\)/)).toBeTruthy()
     expect(screen.getByText(/Familie Beispiel: vorher Guthaben 1\.578,82 €, nachher Nachzahlung 251,54 €/)).toBeTruthy()
-    expect(screen.getByText(/§ 556 Abs\. 3 Satz 3 BGB\); hier wären das 251,54 €\. Damit keine abgelaufene Abrechnung entsteht, wechseln Sie frühestens ab November 2025\./)).toBeTruthy()
+    // Review Runde 1: begründet (zu vertreten), mit Vorsicht zum rückwirkenden Wechsel, und gerechnet mit den Vorschlägen.
+    expect(screen.getByText(/Weil Sie selbst umstellen, haben Sie die Verspätung zu vertreten/)).toBeTruthy()
+    expect(screen.getByText(/§ 556 Abs\. 3 Satz 3 BGB\); das sind hier 251,54.€ mehr als bisher/)).toBeTruthy()
+    expect(screen.getByText(/üblich ist ein Wechsel nur für die Zukunft/)).toBeTruthy()
+    expect(screen.getByText(/wechseln Sie frühestens ab November 2025\./)).toBeTruthy()
+    expect(screen.getByText(/Gerechnet mit den Vorschlägen dieser Vorschau/)).toBeTruthy()
   })
   test('B4: „von Anfang an“ sagt, dass es auch frühere Abrechnungen ändert', () => {
     render(<RhythmFields form={{ mode: 'start', month: 7, from: '' }} onChange={() => {}} />)
@@ -79,5 +84,26 @@ describe('Laienprobe (B2, B3, B4)', () => {
     cleanup()
     render(<RhythmFields form={{ mode: 'change', month: 1, from: '2026-10' }} onChange={() => {}} />)
     expect(screen.queryByText(/ändert auch alle früheren Abrechnungszeiträume/)).toBeNull()
+  })
+})
+
+describe('Review Runde 1', () => {
+  test('Ohne Vorgabe: „bitte wählen“, die Sätze zum Steuerjahr, und ohne Wahl kein Speichern', () => {
+    const p: PeriodChangePreview = {
+      rules: { startMonth: 1, changes: ['2025-01'] }, periods: [], newShort: [], blocked: [], moves: [], effects: [], overrides: [], assessments: [], token: 't', taxYears: [],
+      groups: [{ id: '2024-05', heating: false, from: periodKey('2024-05'), fromLabel: '2024/2025', items: [{ costItemId: 'mu', description: 'Müll 2024/2025', amountCents: 36500 }],
+        options: [{ key: periodKey('2024-05'), label: '01.05.–31.12.2024' }, { key: periodKey('2025-01'), label: '2025' }],
+        split: { range: '01.05.2024–30.04.2025', items: [], notes: ['Geteilt kämen für die Steuer 245,00 € aus dem Jahr der Zahlung 2025 nach 2024, obwohl sich an der Zahlung nichts ändert.'] },
+        taxShifts: [{ key: periodKey('2024-05'), text: 'Ganz nach 01.05.–31.12.2024 verschoben, kämen für die Steuer 365,00 € aus dem Jahr der Zahlung 2025 nach 2024.' }],
+        suggested: '' }],
+    }
+    render(<PreviewAnswers preview={p} answers={initialAnswers(p)} onChange={() => {}} />)
+    const select = screen.getByRole('combobox', { name: /Zeitraum für „Müll 2024\/2025“/ }) as HTMLSelectElement
+    expect([select.value, select.selectedOptions[0]?.textContent]).toEqual(['', '– bitte wählen –'])
+    expect(screen.getByText(/Geteilt kämen für die Steuer 245,00 €/)).toBeTruthy()
+    expect(answersOf(p, initialAnswers(p))).toEqual({ error: 'Bitte wählen Sie, wohin „Müll 2024/2025“ kommen: nach Tagen aufteilen oder ganz in einen Zeitraum.' })
+    cleanup()
+    render(<PreviewAnswers preview={p} answers={{ ...initialAnswers(p), groups: { '2024-05': '2024-05' } }} onChange={() => {}} />)
+    expect(screen.getByText(/kämen für die Steuer 365,00 € aus dem Jahr der Zahlung 2025 nach 2024/)).toBeTruthy()
   })
 })

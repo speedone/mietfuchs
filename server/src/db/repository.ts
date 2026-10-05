@@ -40,7 +40,7 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
-import { splitByService } from '../serviceSplit.ts'
+import { isSplitPart, splitByService } from '../serviceSplit.ts'
 import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import type { Database, Executor } from './client.ts'
 import {
@@ -690,10 +690,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
 // als einen Zeitraum des Objekts berührt. Anders entsteht so eine Position nicht, denn das
 // gewöhnliche Speichern lehnt sie ab (oben); sie kommt aus `saveCostItemSplit` oder dem Wechsel des
 // Rhythmus, und jeder Teil trägt den ganzen Leistungszeitraum der Rechnung.
-export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | 'serviceFrom' | 'serviceTo'>): boolean {
-  if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined || c.serviceFrom > c.serviceTo) return false
-  return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
-}
+export { isSplitPart }
 
 const splitPartMessage = (c: CostItem): string =>
   `„${c.description}“ ist ein Teil einer aufgeteilten Rechnung (Leistungszeitraum ${formatDayRange(c.serviceFrom ?? '', c.serviceTo ?? '')}). ` +

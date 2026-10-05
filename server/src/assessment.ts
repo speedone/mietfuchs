@@ -10,6 +10,7 @@ import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
 import { calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
+import { isSplitPart } from '../../shared/splitPart.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
 
 // Eine Zeile, wie sie aus der KI kommt, noch ohne Nummer und ohne Buchung.
@@ -210,9 +211,11 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
 export function replacedByLinking<T extends CostItem>(
   candidates: readonly T[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, period: PeriodKey,
   booked: readonly Pick<BookedLine, 'costItemId'>[],
+  rules?: PeriodRules,
 ): T | null {
   if (line.amountCents === null || line.amountCents <= 0) return null
-  const fits = candidates.filter((c) =>
+  // Ein Teil einer aufgeteilten Rechnung ist kein Verknüpfungsziel (Review der Laienprobe, Runde 1).
+  const fits = candidates.filter((c) => !(rules !== undefined && isSplitPart(rules, c)) &&
     c.period === period && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
     !booked.some((l) => l.costItemId === c.id))
   return fits.length === 1 ? fits[0] ?? null : null
@@ -254,7 +257,7 @@ function targetsOf(record: { assessment: StoredAssessment; lines: readonly Store
   const ownItems = ctx.items.filter((i) => own.has(i.id))
   return new Map(record.lines.filter((l) => lineState(l) === 'open' || (!openOnly && lineState(l) === 'dismissed')).map((l) => {
     const { candidates } = lineCandidates(others, a, l, ctx.booked, { own: l.reassessed ? ownItems : [], twinFiles: [...ctx.twinNames.keys()], target })
-    return [l.idx, replacedByLinking(candidates, l, target, ctx.booked)] as const
+    return [l.idx, replacedByLinking(candidates, l, target, ctx.booked, ctx.rules)] as const
   }))
 }
 
@@ -330,7 +333,8 @@ function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: re
     fields,
     candidates: candidates.map((c) => ({
       id: c.id, description: c.description, amountCents: c.amountCents, invoiceFile: c.invoiceFile ?? null, key: c.key,
-      formOnly: c.key === 'amounts' || c.key === 'external',
+      // Auch ein Teil einer aufgeteilten Rechnung wird nur geöffnet, nicht verknüpft (Review, Runde 1).
+      formOnly: c.key === 'amounts' || c.key === 'external' || isSplitPart(rules, c),
     })),
     level,
     reasons,

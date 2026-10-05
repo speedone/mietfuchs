@@ -13,6 +13,7 @@
 import { largestRemainder } from './calc.ts'
 import { formatDayRange, periodsBetween } from '../../shared/period.ts'
 import type { BillingPeriod, PeriodRules } from '../../shared/types.ts'
+export { isSplitPart } from '../../shared/splitPart.ts'
 
 export type ServicePart = { period: BillingPeriod; days: number; amountCents: number; labor35aCents: number | null; description: string }
 

@@ -9,7 +9,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
-import { applyHeatingPeriodChange, previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
+import { applyHeatingPeriodChange, previewHeatingPeriodChange, taxYearIn } from '../src/db/heatingPeriodChange.ts'
 import { applyPeriodChange, previewPeriodChange } from '../src/db/periodChange.ts'
 import { closeSettlement, createEntity, findEntity, listCollection, PeriodError, updateEntity } from '../src/db/repository.ts'
 import { createHeatingPlant, listHeatingPlants } from '../src/db/heating.ts'
@@ -172,7 +172,7 @@ test('Wechsel des Objektzeitraums, der Weg d für eine Heizperiode umschalten w�
     })
     const v = await opened.read((db) => previewPeriodChange(db, 'objekt-1', MAI, TODAY)) ?? assert.fail('kein Objekt')
     assert.match(v.blocked.join(' '), /nicht mehr getrennt abgerechnet\. Stellen Sie zuerst unter Stammdaten → Heizung/)
-    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI, {}, () => 'neu', TODAY))
+    const r = await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI, { understood: true }, () => 'neu', TODAY))
     assert.ok(r && 'error' in r)
   })
 })
@@ -234,4 +234,13 @@ test('Laienprobe B12: Heizpositionen ohne Leistungszeitraum: Auswahl der Heizper
     const falsch = await wechseln(opened, { startMonth: 9, changes: [] }, { moves: { gas2024: '1999-05' } })
     assert.ok(falsch && 'error' in falsch && /Heizperiode für „Erdgas 2024“ wählen/.test(falsch.error))
   })
+})
+
+// Review der Laienprobe, Runde 1: das Jahr der Zahlung wie beim Wechsel des Objektzeitraums geklemmt.
+test('Review Runde 1: Jahr der Zahlung in der neuen Heizperiode in die erlaubte Spanne geklemmt', () => {
+  const h = { from: '2025-05-01', to: '2026-04-30' }
+  assert.equal(taxYearIn(h, { taxYear: 2028, period: periodKey('2026-01') }), 2027)
+  assert.equal(taxYearIn(h, { taxYear: 2023, period: periodKey('2026-01') }), 2025)
+  assert.equal(taxYearIn(h, { period: periodKey('2026-01') }), 2026)
+  assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { taxYear: 2026, period: periodKey('2024-05') }), null)
 })

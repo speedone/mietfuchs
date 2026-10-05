@@ -34,8 +34,8 @@ import {
 import { parsePeriodKey, periodContaining, periodLabel, periodMonths, periodOfKey, periodsBetween, previousPeriod, rulesOf, settlementDeadline } from '../../../shared/period.ts'
 import type { BillingPeriod, CostItem, HeatingPlant, PeriodEffect, PeriodKey, PeriodRules, PrepaymentEntry, SeparatePreview, Tenancy } from '../../../shared/types.ts'
 import type { Database, Executor, Transaction } from './client.ts'
-import { dryRun, outcomeOf, type Outcome } from './dryRun.ts'
-import { monthsText } from './periodChange.ts'
+import { dryRun, lostClaims, outcomeOf, type Outcome } from './dryRun.ts'
+import { monthsText, passedDeadlineText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readStock, readTenancies, readUnits } from './read.ts'
 import { PeriodError } from './repository.ts'
 import { closedHeatingSettlements, heatingPlants, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, prepaymentOverrides, prepayments } from './schema.ts'
@@ -305,7 +305,7 @@ export async function previewSeparate(db: Database, plantId: string, body: unkno
 // Nachforderung daraus ausgeschlossen (§ 556 Abs. 3 S. 3 BGB). Die Vorschau nennt je solcher
 // Abrechnung Frist und Ergebnis vorher und nachher, gerechnet im Probelauf mit den vorbelegten
 // Heizanteilen. Mit Jahreskorrekturen, deren Beträge erst der Vermieter einträgt, gibt es nur die Frist.
-async function withEffects(db: Database, plantId: string, p: Plan, today: string): Promise<SeparatePreview> {
+async function withEffects(db: Database, plantId: string, p: Plan, today: string, chosen?: Given): Promise<SeparatePreview> {
   const c = await contextOf(db, plantId, today)
   if (c === null || p.preview.blocked.length > 0) return p.preview
   const propertyId = c.plant.propertyId
@@ -315,11 +315,11 @@ async function withEffects(db: Database, plantId: string, p: Plan, today: string
   const objectPeriods = periodsBetween(c.objectRules, from, today).filter((q) => !closedP.has(q.key))
   const heatPeriods = periodsBetween(c.rules, from, today).filter((h) => !c.closedH.has(h.key))
   const before = await readStock(db)
-  const given: Given = {
+  const given: Given = chosen ?? {
     stepAnswers: Object.fromEntries(p.steps.map((s) => [s.tenancy.id, Object.fromEntries(s.rows.map((r) => [r.from, r.heatingCents]))])),
     overrideAnswers: {}, totalAnswers: {}, rests: new Map(), merge: true,
   }
-  const computable = p.overrides.length === 0
+  const computable = chosen !== undefined || p.overrides.length === 0
   const after = computable ? await dryRun(db, (tx) => writeSeparateIn(tx, plantId, p, given), (stock) => {
     const plant = stock.heatingPlants?.find((x) => x.id === plantId)
     return {
@@ -331,14 +331,15 @@ async function withEffects(db: Database, plantId: string, p: Plan, today: string
   const effect = (q: BillingPeriod, beforeOutcome: Outcome | null, afterOutcome: Outcome | null): PeriodEffect => {
     const deadline = settlementDeadline(q)
     const passed = deadline < today
+    const tenants = (afterOutcome?.tenants ?? []).map((t) => ({
+      tenantName: t.tenantName,
+      beforeCents: beforeOutcome?.tenants.find((b) => b.tenancyId === t.tenancyId)?.balanceCents ?? null,
+      afterCents: t.balanceCents,
+    }))
     return {
       label: periodLabel(q), deadline, passed, replaces: [],
-      tenants: (afterOutcome?.tenants ?? []).map((t) => ({
-        tenantName: t.tenantName,
-        beforeCents: beforeOutcome?.tenants.find((b) => b.tenancyId === t.tenancyId)?.balanceCents ?? null,
-        afterCents: t.balanceCents,
-      })),
-      lostClaimsCents: passed ? afterOutcome?.claimsCents ?? 0 : 0,
+      tenants,
+      lostClaimsCents: passed ? lostClaims(tenants) : 0,
     }
   }
   const effects: PeriodEffect[] = [
@@ -376,10 +377,11 @@ async function setHeating(tx: Executor, tenancyId: string, plantId: string, peri
 export async function applySeparate(db: Database, plantId: string, body: unknown, today: string): Promise<{ plant: HeatingPlant } | { error: string; preview: SeparatePreview } | null> {
   const p = await plan(db, plantId, body, today)
   if (p === null) return null
-  if (p.preview.blocked.length > 0) return { error: `${p.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: p.preview }
+  // Jede Antwort mit Vorschau trägt Fristen und Ergebnisse (Review der Laienprobe, Runde 1).
+  if (p.preview.blocked.length > 0) return { error: `${p.preview.blocked.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, plantId, p, today) }
   const answers = objectOr(objectOr(body).answers)
   if (answers.token !== p.preview.token) {
-    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: p.preview }
+    return { error: 'Die Vorschau ist nicht mehr aktuell: Seit sie erstellt wurde, hat sich am Bestand etwas geändert. Bitte prüfen Sie die neue Vorschau; gespeichert wurde nichts.', preview: await withEffects(db, plantId, p, today) }
   }
   const stepAnswers = objectOr(answers.steps)
   const overrideAnswers = objectOr(answers.overrides)
@@ -415,9 +417,17 @@ export async function applySeparate(db: Database, plantId: string, body: unknown
       else rests.set(e, rest)
     }
   }
-  if (missing.length > 0) return { error: `Es fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: p.preview }
+  if (missing.length > 0) return { error: `Es fehlen Angaben: ${missing.join(' ')} Gespeichert wurde nichts.`, preview: await withEffects(db, plantId, p, today) }
+  const given: Given = { stepAnswers, overrideAnswers, totalAnswers, rests, merge: answers.merge !== false }
+  // Laienprobe B3a, Review Runde 1: Ändert das Aufteilen eine Abrechnung mit abgelaufener Frist, nur
+  // mit ausdrücklicher Bestätigung (`understood`), gerechnet mit den Antworten.
+  const checked = await withEffects(db, plantId, p, today, given)
+  const passed = checked.effects.filter((e) => e.passed)
+  if (passed.length > 0 && answers.understood !== true) {
+    return { error: `${passedDeadlineText(passed.map((e) => e.label), 'die Vorauszahlung rückwirkend aufteilen')} Bitte bestätigen Sie das in der Vorschau; gespeichert wurde nichts.`, preview: checked }
+  }
 
-  await db.transaction(async (tx) => writeSeparateIn(tx, plantId, p, { stepAnswers, overrideAnswers, totalAnswers, rests, merge: answers.merge !== false }))
+  await db.transaction(async (tx) => writeSeparateIn(tx, plantId, p, given))
   const plant = (await readHeatingPlants(db)).find((x) => x.id === plantId)
   return plant ? { plant } : null
 }

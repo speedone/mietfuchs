@@ -113,9 +113,10 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     if (!separatePreview || !separateAnswers) return
     const answers = separateAnswersOf(separatePreview, separateAnswers)
     if ('error' in answers) return setError(answers.error)
+    const confirmed = { ...answers, understood }
     const body = separatePreview.separate
-      ? { separate: true, month: separatePreview.month, answers }
-      : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers }
+      ? { separate: true, month: separatePreview.month, answers: confirmed }
+      : { separate: false, ...(separatePreview.until ? { until: separatePreview.until } : { month: separatePreview.month }), answers: confirmed }
     try {
       await api(`/api/heating-plants/${plant.id}/separate`, { method: 'PUT', body: JSON.stringify(body) })
     } catch (e) {
@@ -124,6 +125,8 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
         setSeparatePreview(fresh)
         setSeparateAnswers({ ...initialSeparateAnswers(fresh), amounts: separateAnswers.amounts, none: separateAnswers.none, merge: separateAnswers.merge })
       }
+      // Review Runde 1: Nach einer 409 gilt die alte Bestätigung nicht für die neue Vorschau.
+      setUnderstood(false)
       setError(fresh ? `${errorText(e)} Bitte prüfen Sie die Vorschau erneut.` : errorText(e))
       return
     }
@@ -311,7 +314,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               ))}
               {separatePreview.deadlines.map((d) => (
                 <p key={d.period} className={d.passed ? 'error' : 'muted'}>
-                  {`Heizkostenabrechnung ${d.label}: Frist ${fmtDate(d.deadline)}${d.passed ? ' – abgelaufen; eine Nachforderung ist ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB).' : ''}`}
+                  {`Heizkostenabrechnung ${d.label}: Frist ${fmtDate(d.deadline)}${d.passed ? ' – abgelaufen; eine Nachforderung ist in der Regel ausgeschlossen, außer Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB).' : ''}`}
                 </p>
               ))}
               <EffectsList effects={separatePreview.effects} />

@@ -309,7 +309,11 @@ export type PeriodChangePreview = {
     heating: boolean
     items: { costItemId: string; description: string; amountCents: number }[]
     options: { key: PeriodKey; label: string }[]
-    split: { range: string; items: { costItemId: string; parts: { period: PeriodKey; label: string; amountCents: number }[] }[] } | null
+    // `notes` (Review der Laienprobe, Runde 1): warum das Aufteilen nicht vorbelegt ist (gebuchte
+    // Belegzeilen, anderes Jahr der Zahlung) und wie viel Euro es zwischen Steuerjahren verschöbe.
+    split: { range: string; items: { costItemId: string; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]; notes: string[] } | null
+    // Je Ziel „ganz nach …“, das Werbungskosten in ein anderes Jahr der Zahlung verschöbe, der Satz dazu.
+    taxShifts: { key: PeriodKey; text: string }[]
     suggested: string
   }[]
   // Fristen und Ergebnisse der Zeiträume, die der Wechsel verändert und die schon begonnen haben
@@ -349,6 +353,8 @@ export type PeriodChangeAnswers = {
   // Das Jahr der Zahlung je Eintrag aus `taxYears`; fehlt es, gilt der Vorschlag.
   taxYears?: Record<string, number>
   token?: string
+  // Bestätigung, dass eine Abrechnung mit abgelaufener Frist entsteht oder sich ändert (Review, Runde 1).
+  understood?: boolean
 }
 
 // Die Vorschau eines Wechsels der eigenen Heizperiode (Heizung PR 5, Entwurf 3.0, 3.6, B2).
@@ -445,6 +451,8 @@ export type SeparateAnswers = {
   totals?: Record<string, Record<string, number | null>>
   merge?: boolean
   token?: string
+  // Bestätigung, dass eine Abrechnung mit abgelaufener Frist betroffen ist (Review der Laienprobe, Runde 1).
+  understood?: boolean
 }
 
 export type Settings = {

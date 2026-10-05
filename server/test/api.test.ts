@@ -5590,7 +5590,7 @@ test('Wechsel des Zeitraums (#208): Vorschau und Speichern über HTTP, 409 ohne 
     })
     assert.deepEqual(property.periodRules, { startMonth: 1, changes: [] }, 'PUT /api/properties setzt den Rhythmus nicht')
     const gewechselt = await s.api<{ periodRules: unknown }>(`/api/properties/${id}/period`, {
-      method: 'PUT', body: JSON.stringify({ rules: next, answers: { token: vorschau.token, overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
+      method: 'PUT', body: JSON.stringify({ rules: next, answers: { understood: true, token: vorschau.token, overrides: { [tenancyId]: { '2025-01': 70000, '2025-05': null } } } }),
     })
     assert.deepEqual(gewechselt.periodRules, next)
     assert.equal((await s.api<{ period: { label: string } }>('/api/settlement/2025-01')).period.label, '01.01.–30.04.2025')
@@ -5652,10 +5652,10 @@ test('Wechsel des Zeitraums (#208): Das Jahr der Zahlung bleibt in seiner Spanne
     const frage = vorschau.taxYears.find((t) => t.key === `${item?.id}|2023-09`) ?? assert.fail('keine Frage nach dem Jahr der Zahlung')
     // September 2023 bis August 2024: 2023 bis 2025; 2026 wird auf 2025 geklemmt.
     assert.deepEqual([frage.suggested, frage.options], [2025, [2023, 2024, 2025]])
-    const falsch = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
+    const falsch = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' }, taxYears: { [`${item?.id}|2023-09`]: 2026 } } })
     assert.equal(falsch.status, 409)
     assert.ok((await jsonOf<{ preview?: unknown }>(falsch)).preview, 'die 409 bringt die Vorschau mit')
-    const ok = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2024-05': '2023-09' } } })
+    const ok = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2024-05': '2023-09' } } })
     assert.equal(ok.status, 200)
     const nachher = (await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item?.id)
     assert.deepEqual([nachher?.period, nachher?.taxYear], ['2023-09', 2025])
@@ -5680,7 +5680,7 @@ test('Wechsel des Zeitraums (#208): Wächst ein Zeitraum über zwei Kalenderjahr
     const regeln = { startMonth: 1, changes: ['2025-05'] }
     const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
     assert.equal(vorschau.taxYears.find((t) => t.key === `${item.id}|2025-05`)?.suggested, 2025)
-    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token } })).status, 200)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token } })).status, 200)
     assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === item.id)?.taxYear, 2025)
     // Danach lässt sie sich speichern.
     await s.api(`/api/costItems/${item.id}`, { method: 'PUT', body: JSON.stringify({ vendor: 'Stadt' }) })
@@ -5698,7 +5698,7 @@ test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachse
     const vorschau = await s.api<Vorschau>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
     // In einem zweiten Tab kommt eine Position dazu.
     await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 20000, key: 'area' }) })
-    const alt = await wechsel(s, id, { rules: regeln, answers: { token: vorschau.token, groups: { '2025-01': '2025-01' } } })
+    const alt = await wechsel(s, id, { rules: regeln, answers: { understood: true, token: vorschau.token, groups: { '2025-01': '2025-01' } } })
     assert.equal(alt.status, 409)
     const antwort = await jsonOf<{ error: string; preview: Vorschau }>(alt)
     assert.match(antwort.error, /Vorschau ist nicht mehr aktuell/)
@@ -5706,7 +5706,7 @@ test('Wechsel des Zeitraums (#208): Eine veraltete Vorschau zieht keine gewachse
     assert.deepEqual((await s.api<{ periodRules: unknown }[]>('/api/properties'))[0]?.periodRules, { startMonth: 1, changes: [] }, 'nichts geschrieben')
     const ohneMarke = await wechsel(s, id, { rules: regeln, answers: { groups: { '2025-01': '2025-01' } } })
     assert.equal(ohneMarke.status, 409)
-    assert.equal((await wechsel(s, id, { rules: regeln, answers: { token: antwort.preview.token, groups: { '2025-01': '2025-01' } } })).status, 200)
+    assert.equal((await wechsel(s, id, { rules: regeln, answers: { understood: true, token: antwort.preview.token, groups: { '2025-01': '2025-01' } } })).status, 200)
   } finally {
     s.stop()
   }
@@ -5751,7 +5751,7 @@ test('Wechsel des Zeitraums (#208): hin und zurück steht die Rechnung wieder ex
       const regeln = { startMonth, changes: [] }
       const vorschau = await s.api<{ token: string; groups: { id: string; suggested: string }[] }>(`/api/properties/${id}/period/preview`, { method: 'POST', body: JSON.stringify({ rules: regeln }) })
       const groups = Object.fromEntries(vorschau.groups.map((g) => [g.id, g.suggested]))
-      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { token: vorschau.token, groups } }) })
+      await s.api(`/api/properties/${id}/period`, { method: 'PUT', body: JSON.stringify({ rules: regeln, answers: { understood: true, token: vorschau.token, groups } }) })
       const summe = (await s.api<CostItem[]>('/api/costItems')).reduce((a, c) => a + c.amountCents, 0)
       assert.equal(summe, 48000, `nach Beginn ${startMonth}: die Summe bleibt`)
     }

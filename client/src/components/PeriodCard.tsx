@@ -61,6 +61,7 @@ export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; ea
   return (
     <div>
       <h4>Was sich an schon begonnenen Abrechnungen ändert</h4>
+      <p className="muted">Gerechnet mit den Vorschlägen dieser Vorschau; wo keiner steht, mit dem Aufteilen nach Tagen. Wählen Sie anders, ändern sich die Beträge.</p>
       {effects.map((e) => (
         <div key={e.label} className={e.passed ? 'error' : 'muted'}>
           <p>
@@ -79,8 +80,10 @@ export function EffectsList({ effects, earliest }: { effects: PeriodEffect[]; ea
           )}
           {e.passed && (
             <p>
-              Aus einem Zeitraum mit abgelaufener Frist dürfen Sie keine Nachzahlung mehr verlangen (§ 556 Abs. 3 Satz 3 BGB)
-              {e.lostClaimsCents > 0 ? `; hier wären das ${fmtEuro(e.lostClaimsCents)}` : ''}.
+              Weil Sie selbst umstellen, haben Sie die Verspätung zu vertreten; eine Nachzahlung aus diesem Zeitraum können Sie deshalb nicht mehr
+              verlangen (§ 556 Abs. 3 Satz 3 BGB){e.lostClaimsCents > 0 ? `; das sind hier ${fmtEuro(e.lostClaimsCents)} mehr als bisher` : ''}.
+              {' '}Vorsicht auch aus einem zweiten Grund: Ob sich der Abrechnungszeitraum für einen schon abgelaufenen Zeitraum nachträglich ändern
+              lässt, ist nicht geklärt; üblich ist ein Wechsel nur für die Zukunft.
               {earliest && ` Damit keine abgelaufene Abrechnung entsteht, wechseln Sie frühestens ab ${changeLabel(earliest)}.`}
             </p>
           )}
@@ -112,10 +115,14 @@ export function PreviewAnswers({ preview, answers, onChange }: { preview: Period
             <label className="field">
               Zeitraum für {g.items.map((i) => `„${i.description}“`).join(', ')} (bisher {g.fromLabel})
               <select value={chosen} onChange={(e) => onChange({ ...answers, groups: { ...answers.groups, [g.id]: e.target.value } })}>
-                {g.split !== null && <option value="split">Nach Tagen auf die neuen Zeiträume aufteilen (Vorgabe)</option>}
+                {chosen === '' && <option value="">– bitte wählen –</option>}
+                {g.split !== null && <option value="split">{g.suggested === 'split' ? 'Nach Tagen auf die neuen Zeiträume aufteilen (Vorgabe)' : 'Nach Tagen auf die neuen Zeiträume aufteilen'}</option>}
                 {g.options.map((o) => <option key={o.key} value={o.key}>ganz nach {o.label}</option>)}
               </select>
             </label>
+            {/* Review Runde 1: warum das Teilen nicht vorbelegt ist, und was es zwischen Steuerjahren verschöbe. */}
+            {g.split !== null && (chosen === 'split' || chosen === '') && g.split.notes.map((n) => <div key={n} className="warn">{n}</div>)}
+            {g.taxShifts.filter((t) => t.key === chosen).map((t) => <div key={t.key} className="warn">{t.text}</div>)}
             {/* Laienprobe B2: was das Aufteilen ergibt, und was das Nicht-Aufteilen bedeutet. */}
             {g.split !== null && chosen === 'split' && (
               <p className="muted">
@@ -218,7 +225,7 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
     if ('error' in given) { setError(given.error); return }
     setBusy(true)
     try {
-      await api<Property>(`/api/properties/${property.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: preview.rules, answers: given }) })
+      await api<Property>(`/api/properties/${property.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: preview.rules, answers: { ...given, understood } }) })
       const done = preview
       setPreview(null)
       setAnswers(null)
@@ -235,6 +242,8 @@ export default function PeriodCard({ onChanged }: { onChanged?: () => Promise<vo
         setPreview(fresh)
         setAnswers(answersAfterConflict(fresh, preview.token, answers))
       }
+      // Review Runde 1: Die Bestätigung galt der alten Vorschau.
+      setUnderstood(false)
       setError(`${errorText(e)} Bitte prüfen Sie die Vorschau erneut.`)
     } finally {
       setBusy(false)

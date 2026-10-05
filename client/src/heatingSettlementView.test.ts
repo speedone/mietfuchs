@@ -78,7 +78,7 @@ describe('Heizkostenabrechnungen auswählen, abschließen, korrigieren', () => {
     ], '2026-10-05')
     expect(rows.map((r) => [r.label, r.level])).toEqual([['Heizkostenabrechnung 2024-05', 'gruen'], ['Heizkostenabrechnung 2025-05', 'gelb']])
     expect(rows[1]?.text).toBe('Frist 30.04.2027, noch nicht versendet.')
-    expect(cockpitHeatingRows([info('2024-05', '2025-04-30')], '2026-05-01')[0]).toMatchObject({ level: 'rot', text: 'Frist 30.04.2026 abgelaufen; eine Nachforderung ist ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB).' })
+    expect(cockpitHeatingRows([info('2024-05', '2025-04-30')], '2026-05-01')[0]).toMatchObject({ level: 'rot', text: 'Frist 30.04.2026 abgelaufen; eine Nachforderung ist in der Regel ausgeschlossen, außer Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB).' })
   })
 })
 

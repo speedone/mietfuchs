@@ -28,7 +28,7 @@ import type { BillingPeriod, CostItem, HeatingPeriodChangePreview, HeatingPlant,
 import type { Database } from './client.ts'
 import { checkRules, monthsText } from './periodChange.ts'
 import { readClosedSettlements, readCostItems, readHeatingPlants, readProperties, readTenancies, readUnits } from './read.ts'
-import { PeriodError } from './repository.ts'
+import { patchCostItemIn, PeriodError } from './repository.ts'
 import {
   closedHeatingSettlementHistory, closedHeatingSettlements, costItems, heatingPeriodChanges, heatingPeriods, heatingPlants, heatingPrepaymentOverrides, prepaymentOverrides,
 } from './schema.ts'
@@ -54,9 +54,16 @@ const overlapDays = (a: BillingPeriod, b: BillingPeriod): number => {
   const to = a.to < b.to ? a.to : b.to
   return from > to ? 0 : Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000) + 1
 }
-// Das Jahr der Zahlung in der neuen Heizperiode, dieselbe Regel wie beim Wechsel des Objektzeitraums.
-const taxYearIn = (target: BillingPeriod, item: CostItem): number | null =>
-  spansTwoYears(target) ? item.taxYear ?? startYearOf(item.period) : null
+// Das Jahr der Zahlung in der neuen Heizperiode, dieselbe Regel wie beim Wechsel des Objektzeitraums
+// (`taxEntry` in periodChange.ts): das bisherige, in die erlaubte Spanne vom Jahr des Beginns bis ein
+// Jahr nach dem Ende geklemmt (Review der Laienprobe, Runde 1). Ohne Klemme lehnte die Schreibprüfung
+// ab oder, vorher am Wächter vorbei geschrieben, verschwände die Position aus jeder Steuerübersicht.
+export const taxYearIn = (target: Pick<BillingPeriod, 'from' | 'to'>, item: Pick<CostItem, 'taxYear' | 'period'>): number | null => {
+  if (!spansTwoYears(target)) return null
+  const start = Number(target.from.slice(0, 4))
+  const end = Number(target.to.slice(0, 4)) + 1
+  return Math.min(Math.max(item.taxYear ?? startYearOf(item.period), start), end)
+}
 
 type Ask = { kind: 'heating' | 'total'; period: BillingPeriod; months: string[] }
 type OverrideAsk = {
@@ -314,13 +321,14 @@ export async function applyHeatingPeriodChange(
     if (plan.own && plan.own.changes.length > 0) await tx.insert(heatingPeriodChanges).values(plan.own.changes.map((fromMonth) => ({ plantId, fromMonth })))
     for (const m of plan.moves) {
       const to = moveTarget(m) ?? m.to
-      await tx.update(costItems).set({ period: to.key, taxYear: taxYearIn(to, m.item) }).where(eq(costItems.id, m.item.id))
+      // Durch dieselbe Verschmelzung und Schreibprüfung wie beim Speichern, nicht am Wächter vorbei.
+      await patchCostItemIn(tx, m.item, { period: to.key, taxYear: taxYearIn(to, m.item) })
     }
     for (const g of plan.groups.values()) {
       const from = g.items[0]?.period
       const target = g.options.find((p) => p.key === (from === undefined ? undefined : groupAnswers[from]))
       if (!target) continue
-      for (const item of g.items) await tx.update(costItems).set({ period: target.key, taxYear: taxYearIn(target, item) }).where(eq(costItems.id, item.id))
+      for (const item of g.items) await patchCostItemIn(tx, item, { period: target.key, taxYear: taxYearIn(target, item) })
     }
     for (const r of plan.overrideRekeys) {
       await tx.update(heatingPrepaymentOverrides).set({ period: r.to })

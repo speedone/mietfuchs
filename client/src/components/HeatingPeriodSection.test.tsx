@@ -72,8 +72,14 @@ describe('Laienprobe B11, B3a', () => {
   }
   test('„Ja, getrennt“: nach dem Zeitraum öffnet sich gleich die Aufteilung; mit abgelaufener Frist erst nach der Bestätigung übernehmbar', async () => {
     const calls: string[] = []
+    const puts: unknown[] = []
+    let conflict = false
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`)
+      if (url.endsWith('/separate') && init?.method === 'PUT') {
+        puts.push(JSON.parse(String(init.body)))
+        if (conflict) return json({ error: 'veraltet', preview: { ...separatePreview, token: 's2' } }, 409)
+      }
       if (url.endsWith('/period/preview')) return json({ rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], token: 'w1', moves: [] })
       if (url.endsWith('/separate/preview')) return json(separatePreview)
       return json(plant())
@@ -92,5 +98,10 @@ describe('Laienprobe B11, B3a', () => {
     expect(uebernehmen.disabled).toBe(true)
     fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))
     expect(uebernehmen.disabled).toBe(false)
+    // Review Runde 1: Die Bestätigung geht an den Server; nach einer 409 gilt sie nicht mehr.
+    conflict = true
+    fireEvent.click(uebernehmen)
+    await waitFor(() => expect(puts.at(-1)).toMatchObject({ answers: { understood: true } }))
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement).disabled).toBe(true))
   })
 })

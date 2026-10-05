@@ -334,3 +334,18 @@ test('Laienprobe B3a: die Vorschau nennt abgelaufene und laufende Abrechnungen, 
     assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined, 'der Probelauf hat nichts gespeichert')
   })
 })
+
+test('Review Runde 1: Weg d rückwirkend über eine abgelaufene Frist nur mit Bestätigung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const body = { separate: true, month: '2025-05' }
+    const { token } = await preview(opened, body, '2027-01-15')
+    const ohne = await opened.write((db) => applySeparate(db, 'hp1', { ...body, answers: { steps: { t1: { '2025-05': 12300 } }, token } }, '2027-01-15'))
+    assert.ok(ohne && 'error' in ohne, 'abgelehnt')
+    assert.match(ohne.error, /Weil Sie die Vorauszahlung rückwirkend aufteilen, haben Sie die Verspätung zu vertreten/)
+    assert.ok(ohne.preview.effects.some((e) => e.passed))
+    assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined)
+    const mit = await opened.write((db) => applySeparate(db, 'hp1', { ...body, answers: { steps: { t1: { '2025-05': 12300 } }, token, understood: true } }, '2027-01-15'))
+    assert.ok(mit && 'plant' in mit)
+  })
+})

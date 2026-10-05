@@ -41,6 +41,17 @@ export async function dryRun<T>(db: Database, write: (tx: Transaction) => Promis
 // Nachzahlung) und die Summe der Nachzahlungen.
 export type Outcome = { label: string; claimsCents: number; tenants: { tenancyId: string; tenantName: string; balanceCents: number }[] }
 
+// Was nach Ablauf der Frist nicht mehr verlangt werden darf (§ 556 Abs. 3 S. 3 BGB), je Mieter: die
+// Nachzahlung nachher, soweit sie die von vorher übersteigt (Review der Laienprobe, Runde 1). Gab es
+// den Zeitraum vorher nicht, die ganze Nachzahlung.
+export function lostClaims(tenants: readonly { beforeCents: number | null; afterCents: number }[]): number {
+  return tenants.reduce((sum, t) => {
+    const after = Math.max(0, -t.afterCents)
+    const before = t.beforeCents === null ? 0 : Math.max(0, -t.beforeCents)
+    return sum + Math.max(0, after - before)
+  }, 0)
+}
+
 export function outcomeOf(stock: Stock, propertyId: string, period: BillingPeriod, heatingPlantId: string | null = null): Outcome | null {
   const snapshot = heatingPlantId === null ? snapshotFor(stock, propertyId, period) : heatingSnapshotFor(stock, propertyId, heatingPlantId, period)
   if (snapshot === null) return null

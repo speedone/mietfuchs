@@ -50,9 +50,11 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
               {/* Kleinigkeit aus der Laienprobe: Was bis dahin zu tun ist, damit niemand kürzen darf. */}
               <p>
                 Bis dahin teilen Sie die CO₂-Kosten selbst auf: Der CO₂-Ausstoß laut Gas- oder Ölrechnung, geteilt durch die Wohnfläche, ergibt die
-                Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Ziehen Sie Ihren Anteil von den
-                Heizkosten der Mieter ab und legen Sie der Abrechnung ein Blatt mit dem Anteil des Mieters, der Einstufung und den Berechnungsgrundlagen bei;
-                fehlt das, dürfen die Mieter ihren Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG).
+                Stufe und damit Ihren Anteil an den CO₂-Kosten der Rechnung (<Term id="co2Split">CO₂-Kosten aufteilen</Term>). Erfassen Sie Ihren Anteil
+                als eigene Position mit der Kostenart „Nicht umlagefähig“ und mindern Sie die Heizposition um denselben Betrag; so tragen ihn die Mieter
+                nicht, und er bleibt in der Steuerübersicht bei Ihren Werbungskosten. Legen Sie der Abrechnung ein Blatt mindestens mit dem Anteil des
+                Mieters, der Einstufung und den Berechnungsgrundlagen bei; fehlt das, dürfen die Mieter ihren Anteil an den Heizkosten kürzen (§ 7 Abs. 3
+                und 4 CO2KostAufG).
               </p>
             </div>
           ) : (

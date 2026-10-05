@@ -161,6 +161,9 @@ export function answersOf(preview: PeriodChangePreview, form: AnswerForm): Perio
     }
     overrides[o.tenancyId] = out
   }
+  // Review Runde 1: Ohne Vorgabe muss der Vermieter wählen.
+  const open = preview.groups.find((g) => (form.groups[g.id] ?? g.suggested) === '')
+  if (open) return { error: `Bitte wählen Sie, wohin ${open.items.map((i) => `„${i.description}“`).join(', ')} kommen: nach Tagen aufteilen oder ganz in einen Zeitraum.` }
   // Die Marke der Vorschau geht mit (M2): Hat sich der Bestand seitdem geändert, lehnt der Server mit
   // der neuen Vorschau ab, statt eine gewachsene Gruppe ungesehen mitzuziehen.
   const taxYears = Object.fromEntries(preview.taxYears.flatMap((t) => {

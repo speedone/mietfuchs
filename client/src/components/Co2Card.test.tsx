@@ -85,10 +85,10 @@ test('B20: Geht die Probe nicht auf, fragt Speichern nach, statt still zu speich
 
 test('B21: Ohne Ausstoß insgesamt und Fläche sagt die Karte, dass sie für den Ausweis nötig sind', () => {
   render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
-  expect(screen.getByText(/Für den Ausweis in der Abrechnung nötig: der CO₂-Ausstoß insgesamt \(kg\) und die Wohnfläche/)).toBeTruthy()
+  expect(screen.getByText(/Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt \(kg\) und die Wohnfläche/)).toBeTruthy()
   cleanup()
   render(<Co2Card view={view({ ...shown, serviceEmissionsKg: 3000, serviceAreaM2: 100 })} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
-  expect(screen.queryByText(/Für den Ausweis in der Abrechnung nötig/)).toBeNull()
+  expect(screen.queryByText(/Für den Ausweis in der Abrechnung mindestens nötig/)).toBeNull()
 })
 
 test('B22: Das Feld für die eigene Wohnung gibt es nur mit selbst bewohnter Wohnung', () => {

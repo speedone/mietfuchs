@@ -724,7 +724,7 @@ fall(15, 'Backup mit abweichendem Zeitraum und Rumpf (#208)', async () => {
     gleich(vorschau.newShort?.map((p) => p.label), ['01.01.–30.04.2025'], 'Wechsel: die Vorschau nennt den Rumpf')
     const ohne = await senden(base, `/api/properties/${objekt.id}/period`, 'PUT', { rules: regeln, answers: { token: vorschau.token } })
     gleich(ohne.status, 409, 'Wechsel: ohne die neu erfasste Jahreskorrektur wird nicht gespeichert')
-    const mit = await senden(base, `/api/properties/${objekt.id}/period`, 'PUT', { rules: regeln, answers: { token: vorschau.token, overrides: { [mieter.id]: { '2025-01': 70000, '2025-05': null } } } })
+    const mit = await senden(base, `/api/properties/${objekt.id}/period`, 'PUT', { rules: regeln, answers: { understood: true, token: vorschau.token, overrides: { [mieter.id]: { '2025-01': 70000, '2025-05': null } } } })
     gleich(mit.status, 200, 'Wechsel: mit Antworten gespeichert')
     await pruefen(base, 'vor dem Backup')
     const zip = await backupHolen(base)

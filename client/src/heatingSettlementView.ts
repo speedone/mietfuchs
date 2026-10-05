@@ -90,7 +90,7 @@ export function cockpitHeatingRows(list: readonly HeatingSettlementInfo[], today
         ? { key, label, level: 'gruen', text: `Versendet am ${fmtDate(sent)}, vor Ablauf der Frist.` }
         : { key, label, level: 'rot', text: `Versendet am ${fmtDate(sent)}, nach Ablauf der Frist ${fmtDate(h.deadline)}.` }
     }
-    if (today > h.deadline) return { key, label, level: 'rot', text: `Frist ${fmtDate(h.deadline)} abgelaufen; eine Nachforderung ist ausgeschlossen (§ 556 Abs. 3 Satz 3 BGB).` }
+    if (today > h.deadline) return { key, label, level: 'rot', text: `Frist ${fmtDate(h.deadline)} abgelaufen; eine Nachforderung ist in der Regel ausgeschlossen, außer Sie haben die Verspätung nicht zu vertreten (§ 556 Abs. 3 Satz 3 BGB).` }
     return { key, label, level: 'gelb', text: `Frist ${fmtDate(h.deadline)}, noch nicht versendet.` }
   })
 }

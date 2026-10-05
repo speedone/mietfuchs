@@ -15,10 +15,15 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Abgeschlossene Abrechnungen bleiben unangetastet. Vorgabe ist der Wechsel ab dem laufenden Monat;
   „von Anfang an“ sagt, dass es auch frühere Abrechnungen ändert. Rechnungen ohne Leistungszeitraum
   teilt der Wechsel nach Tagen auf die neuen Zeiträume auf, statt eine Jahresrechnung ganz in den
-  Rumpf zu legen; Heizkosten nicht, dort warnen Vorschau und Abrechnung mit Betrag. Die Vorschau
-  nennt für jede schon begonnene Abrechnung Frist und Ergebnis je Mieter vorher und nachher; ist die
-  Frist eines Rumpfs schon abgelaufen, steht das rot da, mit der Nachzahlung, die nicht mehr verlangt
-  werden darf, und gespeichert wird erst nach Bestätigung. Rechnungen tragen auf Wunsch ihren
+  Rumpf zu legen; vorbelegt ist das nur, wenn keine Belegzeile darauf gebucht ist und sich das Jahr
+  der Zahlung nicht verschiebt, sonst nennt die Vorschau die Verschiebung in Euro und fragt. Heizkosten
+  teilt er nicht, dort warnen Vorschau und Abrechnung mit Betrag. Die Vorschau nennt für jede schon
+  begonnene Abrechnung Frist und Ergebnis je Mieter vorher und nachher; ist die Frist eines Rumpfs
+  schon abgelaufen, steht das rot da, mit der Nachzahlung, die nicht mehr verlangt werden darf, und
+  gespeichert wird erst nach Bestätigung, die auch der Server verlangt. Ein Teil einer nach Tagen
+  geteilten Rechnung lässt sich in der Belegbuchung nicht mit weiteren Zeilen verknüpfen. Eine Seite,
+  die vor dem Update geöffnet wurde, bekommt beim Wechsel mit Heizkosten eine Meldung über fehlende
+  Angaben; neu laden genügt. Rechnungen tragen auf Wunsch ihren
   Leistungszeitraum; kalte Betriebskosten über zwei Abrechnungszeiträume teilt Mietfuchs beim
   Speichern nach Tagen auf, Heizkosten nicht. Reicht ein Zeitraum über zwei Kalenderjahre, fragt das
   Formular nach dem Jahr der Zahlung (vorbelegt nur mit dem Rechnungsdatum eines Belegs; bei
