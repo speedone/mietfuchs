@@ -30,7 +30,8 @@ test('Druckblock (§ 7 Abs. 3 CO2KostAufG): Anteil des Mieters, Einstufung mit m
   expect(v.notes).toEqual(['Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).'])
   // Ein Anteil, der aus dem Betrag laut Messdienst folgt, ist nicht genähert (Durchsicht I3).
   const genau = co2Block(anlage(bewertung({ tenants: [{ tenancyId: 'ta', landlordCents: 2500, tenantCents: 4643, approximated: false, tenantApproximated: false }] })), 'ta') ?? assert.fail('kein Block')
-  expect(genau.lines.find((l) => l.label === 'Ihr Anteil an den CO₂-Kosten')?.value).toBe(fmtEuro(4643))
+  // Aus dem gerundeten Betrag berechnet, also nicht centgenau (Nachprüfung 3): als berechnet gekennzeichnet.
+  expect(genau.lines.find((l) => l.label === 'Ihr Anteil an den CO₂-Kosten')?.value).toBe(`≈ ${fmtEuro(4643)} (aus dem Betrag laut Abrechnung berechnet)`)
   // Weicht der Anteil laut Abrechnung von der Stufe ab, sagt der Druck es und nennt den Grund nicht selbst (Durchsicht I2).
   const ab = co2Block(anlage(bewertung({ stageMatches: false })), 'ta') ?? assert.fail('kein Block')
   expect(ab.notes).toContain('Der Anteil des Vermieters laut Abrechnung (35 %) weicht von der markierten Stufe ab (70 %). Den Grund nennt die Abrechnung des Messdienstes, etwa eine Kürzung nach § 9 CO2KostAufG.')

@@ -1325,8 +1325,9 @@ export type Co2Statement = {
 // Eine Zeile des Ausweises je Mieter: „vom Vermieter übernommen“ und „in Ihren Heizkosten
 // enthalten“. `approximated`: nach dem Anteil an den Messdienstbeträgen gerechnet, weil die
 // Abrechnung keinen Wert je Mieter nennt; `tenantCents` ist null ohne die CO₂-Kosten insgesamt.
-// `tenantApproximated`: der Anteil des Mieters ist genähert ((C − L) · x / S); ohne Angabe (ältere
-// abgeschlossene Abrechnung) gilt er als genähert.
+// `tenantApproximated`: der Anteil des Mieters ist genähert ((C − L) · x / S); `false` heißt aus dem
+// Betrag laut Messdienst berechnet (r · (1000 − ‰) / ‰), wegen des gerundeten r ebenfalls nicht
+// centgenau. Ohne Angabe (ältere abgeschlossene Abrechnung) gilt er als genähert.
 export type Co2TenantLine = { tenancyId: string; landlordCents: number; tenantCents: number | null; approximated: boolean; tenantApproximated?: boolean }
 
 // Die Stufe als Spanne, für den Druckblock: von `from` bis unter `to` kg je m² (ohne `to`: ab).

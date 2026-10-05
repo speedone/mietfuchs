@@ -28,7 +28,14 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
   if (c.totalCents !== null) lines.push({ label: 'CO₂-Kosten insgesamt', value: fmtEuro(c.totalCents) })
   if (c.landlordCents !== null) lines.push({ label: 'davon trägt der Vermieter', value: fmtEuro(c.landlordCents) })
   const approx = ' (nach Ihrem Anteil an den Heizkosten)'
-  if (tenant.tenantCents !== null) lines.push({ label: 'Ihr Anteil an den CO₂-Kosten', value: `${fmtEuro(tenant.tenantCents)}${tenant.tenantApproximated === false ? '' : approx}` })
+  // Aus dem gerundeten Betrag laut Abrechnung berechnet ist der Anteil nicht centgenau (bei 10 % bis
+  // ±4,5 ct); er steht deshalb als berechnet da (Nachprüfung 3), sonst als Näherung.
+  if (tenant.tenantCents !== null) {
+    lines.push({
+      label: 'Ihr Anteil an den CO₂-Kosten',
+      value: tenant.tenantApproximated === false ? `≈ ${fmtEuro(tenant.tenantCents)} (aus dem Betrag laut Abrechnung berechnet)` : `${fmtEuro(tenant.tenantCents)}${approx}`,
+    })
+  }
   lines.push({
     label: c.deducted ? 'vom Vermieter übernommen (bereits abgezogen)' : 'vom Vermieter übernommen (eigene Zeile)',
     value: `${fmtEuro(tenant.landlordCents)}${tenant.approximated ? approx : ''}`,
