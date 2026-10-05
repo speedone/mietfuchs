@@ -127,6 +127,20 @@
       "when": 1791176459597,
       "tag": "0017_leistungszeitraum_pruefung",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791182240602,
+      "tag": "0018_heizanlage",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791182241999,
+      "tag": "0019_heizanlage_bedingungen",
+      "breakpoints": true
     }
   ]
 }

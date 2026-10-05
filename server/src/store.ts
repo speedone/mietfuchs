@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { CostItem, CostKey, LegalBasis, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, CostKey, LegalBasis, Meter, MeterType, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
 import { systemLocation, writable } from './paths.ts'
@@ -125,11 +125,16 @@ export type ClosedSettlement = {
 // Validator weist sie mit der eingefrorenen Liste aus legacy/schema.ts ab.
 export type LegacyCostKey = Exclude<CostKey, 'external' | 'amounts'>
 export type LegacyUnit = Omit<Unit, 'propertyId' | 'mea'>
-export type LegacyMeter = Omit<Meter, 'propertyId'>
+// Ebenso kennt sie keine Heizanlage (Heizung PR 4): keine Zähler für Warmwasser und
+// Heizkostenverteiler, keine Anlagenzähler, keine Angaben zu Einbau und Fernablesbarkeit. Der
+// eingefrorene Eingang schreibt die Zählertypen von Migration 0000.
+export type LegacyMeterType = Exclude<MeterType, 'warmwasser' | 'hkv'>
+export type LegacyMeter = Omit<Meter, 'propertyId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & { type: LegacyMeterType }
 // Die db.json kennt Jahre, keine Zeiträume (#208): Ihre Kostenpositionen tragen `year`, und erst der
 // Eingang macht daraus den Kalenderzeitraum.
-export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts'> & {
+export type LegacyCostItem = Omit<CostItem, 'period' | 'propertyId' | 'key' | 'meterType' | 'participantUnitIds' | 'externalBasis' | 'tenancyAmounts' | 'selfAmounts' | 'heatingPlantId'> & {
   key: LegacyCostKey
+  meterType?: LegacyMeterType | null
   year: number
 }
 

@@ -117,6 +117,14 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   cost_items_service_order_valid: 'Der Leistungszeitraum endet vor seinem Beginn. Bitte prüfen Sie die beiden Daten.',
   cost_items_tax_year_valid: 'Das Jahr der Zahlung liegt außerhalb dessen, was es geben kann. Bitte tragen Sie ein Jahr wie 2025 ein.',
   cost_items_heating_part_category_valid: '„Brennstoff/Energie“ gibt es nur bei der Kostenart „Heizung und Warmwasser“.',
+  // Heizanlage (Heizung PR 4)
+  heating_plants_source_method_valid:
+    'Liefert die Gemeinschaft der Eigentümer die Heizkostenabrechnung, wird sie wie die eines Messdienstes übernommen. Bitte wählen Sie dafür „Abrechnung durch Messdienst oder Gemeinschaft“.',
+  meters_heating_role_plant_valid:
+    'Ein Zähler der Heizanlage braucht seine Rolle (Versorgung, Warmwasserspeicher oder Gesamtwärme), und nur ein Zähler der Anlage hat eine. Bitte wählen Sie beides oder keines.',
+  meters_heating_plant_unit_valid: 'Ein Zähler der Heizanlage hängt an keiner Wohnung. Bitte wählen Sie entweder die Anlage oder eine Wohnung.',
+  heating_periods_heat_pct_valid: 'Der Verbrauchsanteil der Heizkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
+  heating_periods_water_pct_valid: 'Der Verbrauchsanteil der Warmwasserkosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
 }
 
 function checkMessage(name: string): string {

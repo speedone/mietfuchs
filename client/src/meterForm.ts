@@ -6,7 +6,7 @@ export type MeterForm = { id?: string; name: string; unitId: string; type: Meter
 // Die Einheit, die ein Zähler seiner Sparte nach meist zeigt (#142). Vorher stand für jede Sparte
 // „m³“ im Feld, und ein Wärmezähler, bei dem niemand es änderte, zeigte seinen Verbrauch in m³.
 // Bei „Sonstiges“ gibt es keine sinnvolle Vorgabe; dann bleibt das Feld leer statt falsch.
-const DEFAULT_UNITS: Record<MeterType, string> = { kaltwasser: 'm³', waerme: 'kWh', strom: 'kWh', sonstig: '' }
+const DEFAULT_UNITS: Record<MeterType, string> = { kaltwasser: 'm³', warmwasser: 'm³', waerme: 'kWh', hkv: 'Einheiten', strom: 'kWh', sonstig: '' }
 export const defaultMeterUnit = (type: MeterType): string => DEFAULT_UNITS[type]
 
 // Sparte wechseln: Stand im Feld noch die Vorgabe der bisherigen Sparte (oder nichts), wandert sie

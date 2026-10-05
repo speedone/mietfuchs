@@ -29,3 +29,8 @@ test('ein bestehender Zähler behält beim Wechsel der Sparte seine Einheit (Dur
   const vorhanden = { id: 'm1', name: 'Zähler', unitId: '', type: 'kaltwasser' as const, meterNumber: '', unit: 'm³' }
   expect(withMeterType(vorhanden, 'waerme')).toMatchObject({ type: 'waerme', unit: 'm³' })
 })
+
+test('Warmwasser in m³, Heizkostenverteiler in Einheiten (Heizung PR 4)', () => {
+  expect(defaultMeterUnit('warmwasser')).toBe('m³')
+  expect(defaultMeterUnit('hkv')).toBe('Einheiten')
+})

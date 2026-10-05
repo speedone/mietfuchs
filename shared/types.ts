@@ -13,8 +13,9 @@ import type { Allocation } from './allocation.ts'
 export type UnitUsage = 'vermietet' | 'eigen' | 'ausgenommen'
 
 // Die Art eines Objekts (#92): Mehrfamilienhaus, vermietete Eigentumswohnung, Einfamilienhaus,
-// Sonstiges (etwa ein Garagenhof).
-export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'sonstiges'
+// Zweifamilienhaus (#180, Heizung PR 4; nur Beschreibung, die Ausnahme des § 2 HeizkostenV hängt an
+// den Wohnungen), Sonstiges (etwa ein Garagenhof).
+export type PropertyKind = 'mfh' | 'etw' | 'efh' | 'zfh' | 'sonstiges'
 
 // Ein Objekt ist zugleich die Abrechnungseinheit. Wohnungen, Zähler, Kostenpositionen und
 // abgeschlossene Abrechnungen gehören zu genau einem; Mietverhältnisse, Zahlungen und
@@ -165,7 +166,7 @@ export type RentLedger = {
   }
 }
 
-export type MeterType = 'kaltwasser' | 'strom' | 'waerme' | 'sonstig'
+export type MeterType = 'kaltwasser' | 'warmwasser' | 'strom' | 'waerme' | 'hkv' | 'sonstig'
 
 export type Meter = {
   id: string
@@ -176,6 +177,14 @@ export type Meter = {
   type: MeterType
   meterNumber?: string
   unit: string // Maßeinheit, z. B. m³
+  // Zähler der Heizanlage selbst (Heizung PR 4): ohne Wohnung, mit seiner Rolle (Versorgungszähler,
+  // Wärmezähler am Warmwasserspeicher, Gesamtwärmezähler). Ohne Anlage keine Rolle.
+  heatingPlantId?: string | null
+  heatingRole?: HeatingRole | null
+  // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV, Entwurf 3.13). Fehlt die Angabe, ist
+  // sie unbekannt.
+  remoteReadable?: boolean | null
+  installedOn?: string | null // 'YYYY-MM-DD'
 }
 
 export type Reading = {
@@ -247,6 +256,9 @@ export type CostItem = {
   selfAmounts?: Record<string, number> | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
+  // Die Heizanlage, zu der die Position gehört (Heizung PR 4), nur bei der Kostenart „Heizung und
+  // Warmwasser“. Fehlt sie bei einer neuen Position, setzt der Server die einzige Anlage des Objekts.
+  heatingPlantId?: string | null
 }
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
@@ -1027,3 +1039,83 @@ export type BillingPeriod = { key: PeriodKey; from: string; to: string; short: b
 // Der Zeitraum, wie eine Abrechnung ihn trägt, mit der Bezeichnung für Kopf und Druck
 // („2025“, „2025/2026“, „01.01.–30.04.2025“).
 export type SettlementPeriod = BillingPeriod & { label: string }
+
+// ---------- Heizanlage (Heizung PR 4, Entwurf 5.3) ----------
+
+// Womit geheizt wird. Pellets und Holz stehen getrennt, weil ihre Heizwerte verschieden sind
+// (§ 9 Abs. 3 HeizkostenV, W8); Fernwärme heißt nicht pauschal „fossil“ (R-A28).
+export type HeatingEnergy = 'gas' | 'oil' | 'lpg' | 'pellets' | 'wood' | 'districtHeating' | 'heatPump' | 'electric' | 'coal' | 'other'
+// `perUnit`: Etagenheizungen mit Vertrag auf den Vermieter (§ 5 Abs. 1 Satz 2 CO2KostAufG); kommt mit PR 9.
+export type HeatingSupply = 'central' | 'perUnit'
+// Wer die Heizkostenabrechnung erstellt: Messdienst oder Gemeinschaft (`service`), Mietfuchs nach der
+// Heizkostenverordnung (`self`, PR 10), niemand, also freie Schlüssel wie bisher (`manual`).
+export type HeatingMethod = 'service' | 'self' | 'manual'
+// Fernablesbarkeit und Einbau der Geräte als Angabe an der Anlage, wenn Mietfuchs die Zähler nicht
+// kennt (G-C2, R-A1).
+export type DevicesRemote = 'all' | 'none' | 'partial' | 'unknown'
+export type DevicesInstalledAfter = 'all' | 'some' | 'none' | 'unknown'
+// `homeowners`: vermietete Eigentumswohnung, die Gemeinschaft liefert die Abrechnung (§ 1 Abs. 2 Nr. 3
+// HeizkostenV, D-F2); nur mit `service`.
+export type HeatingSource = 'building' | 'homeowners'
+// Mieterwechsel: übrige Wärmekosten nach Gradtagen oder zeitanteilig (§ 9b Abs. 2 HeizkostenV). Wirkt
+// bei `manual` erst auf Positionen „nur Heizung“ (PR 10, A2).
+export type ChangeSplit = 'degreeDays' | 'time'
+export type HeatingRole = 'supply' | 'dhwHeat' | 'totalHeat'
+export type InsulationRule = 'applies' | 'notApplies' | 'unknown'
+export type DhwMethod = 'heatMeter' | 'volumeFormula' | 'areaFormula'
+
+// Eine angeschlossene Wohnung. Die beheizte Fläche (§ 7 Abs. 1 Satz 5) kommt mit PR 10.
+export type HeatingPlantUnit = { unitId: string; heatedAreaM2: number | null }
+
+export type HeatingPlant = {
+  id: string
+  propertyId: string
+  name: string
+  energy: HeatingEnergy
+  supply: HeatingSupply
+  method: HeatingMethod
+  // Getrennte Heizkostenabrechnung mit eigener Vorauszahlung (3.1, Weg d); kommt mit PR 5.
+  separateSettlement: boolean | null
+  devicesRemote: DevicesRemote
+  devicesInstalledAfter2021: DevicesInstalledAfter
+  source: HeatingSource
+  // Wärmepumpe (§ 12 Abs. 3 HeizkostenV): Verbrauch am 01.10.2024 schon erfasst? Sonst seit wann.
+  captureInstalledOn: string | null
+  capturedOnOct2024: boolean | null
+  // Durchschnittliche Heizkosten 2022 bis 2024 bei Bruttowarmmiete (§ 12 Abs. 3 Satz 3), in Cent.
+  warmRentAverageCents: number | null
+  changeSplit: ChangeSplit
+  // Eigene Heizperiode (#217); `null` heißt wie das Objekt. Kommt mit PR 5.
+  periodStartMonth: number | null
+  // `null`: alle Wohnungen des Objekts ohne „kein Anschluss: Wärme“ (#117). Eine Liste, auch eine
+  // leere, nennt die angeschlossenen.
+  units: HeatingPlantUnit[] | null
+}
+
+// Die Angaben einer Heizperiode (Entwurf 5.3, ohne Vorrat). Geschrieben werden sie ab PR 6 (Warmwasser
+// laut Messdienst), PR 10 (Verteilung) und PR 14 (§ 6a); PR 4 legt nur die Tabelle an.
+export type HeatingPeriodData = {
+  id: string
+  plantId: string
+  period: PeriodKey
+  heatConsumptionPct: number | null
+  waterConsumptionPct: number | null
+  above70Agreed: boolean | null
+  insulationRule: InsulationRule | null
+  dhwMethod: DhwMethod | null
+  dhwHeatKwh: number | null
+  totalHeatKwh: number | null
+  dhwVolumeM3: number | null
+  dhwTempC: number | null
+  dhwUnmeasurable: boolean | null
+  infoTaxesText: string | null
+  infoDistrictGhg: number | null
+  infoDistrictPef: number | null
+  climateFactor: number | null
+  climateFactorPrev: number | null
+  consumerContract: string | null
+  infoContactsConfirmed: boolean | null
+}
+
+// Eine Heizposition, die beim Anlegen der Anlage zugeordnet werden kann (Vorschau, 11.2).
+export type AssignableHeatingItem = Pick<CostItem, 'id' | 'period' | 'description' | 'amountCents'>

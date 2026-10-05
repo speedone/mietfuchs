@@ -16,11 +16,21 @@ import type {
   AiProviderKind,
   AiSlotName,
   AssessmentBooking,
+  ChangeSplit,
   CostKey,
   CostModel,
   DepositStatus,
+  DevicesInstalledAfter,
+  DevicesRemote,
+  DhwMethod,
   ExternalMeasure,
+  HeatingEnergy,
+  HeatingMethod,
   HeatingPart,
+  HeatingRole,
+  HeatingSource,
+  HeatingSupply,
+  InsulationRule,
   MeterType,
   PeriodKey,
   PropertyKind,
@@ -49,7 +59,7 @@ const exactly =
 export const COST_KEYS = exactly<CostKey>()(['area', 'persons', 'units', 'direct', 'meter', 'custom', 'external', 'amounts'] as const)
 export const EXTERNAL_MEASURES = exactly<ExternalMeasure>()(['mea', 'area', 'units'] as const)
 export const COST_MODELS = exactly<CostModel>()(['settlement', 'flatRate', 'inclusive'] as const)
-export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'strom', 'waerme', 'sonstig'] as const)
+export const METER_TYPES = exactly<MeterType>()(['kaltwasser', 'warmwasser', 'strom', 'waerme', 'hkv', 'sonstig'] as const)
 export const HEATING_PARTS = exactly<HeatingPart>()(['fuel', 'operating', 'metering'] as const)
 export const DEPOSIT_STATUS = exactly<DepositStatus>()(['offen', 'erhalten', 'teilweise', 'zurückgezahlt'] as const)
 const AI_PROVIDERS = exactly<AiProviderKind>()(['ollama', 'openai'] as const)
@@ -86,7 +96,7 @@ const periodKeyCheck = (name: string, column: string) =>
 
 // Die Arten eines Objekts (#92). Sie steuern später Voreinstellungen und Oberfläche (#94); in
 // Teil 1 werden sie nur gespeichert und angezeigt.
-export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'sonstiges'] as const)
+export const PROPERTY_KINDS = exactly<PropertyKind>()(['mfh', 'etw', 'efh', 'zfh', 'sonstiges'] as const)
 
 // Ein Objekt ist zugleich die Abrechnungseinheit: ein Mehrfamilienhaus, eine vermietete
 // Eigentumswohnung, ein Einfamilienhaus. Mehrere Gebäude, die gemeinsam abrechnen, sind *ein*
@@ -316,6 +326,125 @@ export const prepaymentOverrides = sqliteTable(
   ],
 )
 
+// ---------- Heizanlage (Heizung PR 4, Entwurf 5.3) ----------
+
+export const HEATING_ENERGIES = exactly<HeatingEnergy>()(['gas', 'oil', 'lpg', 'pellets', 'wood', 'districtHeating', 'heatPump', 'electric', 'coal', 'other'] as const)
+export const HEATING_SUPPLIES = exactly<HeatingSupply>()(['central', 'perUnit'] as const)
+export const HEATING_METHODS = exactly<HeatingMethod>()(['service', 'self', 'manual'] as const)
+export const DEVICES_REMOTE = exactly<DevicesRemote>()(['all', 'none', 'partial', 'unknown'] as const)
+export const DEVICES_INSTALLED_AFTER = exactly<DevicesInstalledAfter>()(['all', 'some', 'none', 'unknown'] as const)
+export const HEATING_SOURCES = exactly<HeatingSource>()(['building', 'homeowners'] as const)
+export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as const)
+export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
+export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
+export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
+
+// Die Heizanlage eines Objekts. Spalten späterer PRs kommen mit ihnen (CO₂-Merkmale mit PR 7, §§ 5a
+// bis 5d mit PR 18, Erfassung und Ausnahmen mit PR 10 und 14); was PR 4 schon anlegt, aber erst
+// später rechnet (`separate_settlement`, `period_start_month`), lehnt der Server bis dahin ab.
+export const heatingPlants = sqliteTable(
+  'heating_plants',
+  {
+    id: text('id').primaryKey().notNull(),
+    propertyId: propertyRef(),
+    // Ab der zweiten Anlage Pflicht (PR 9); bis dahin darf er leer sein.
+    name: text('name').notNull().default(''),
+    energy: text('energy', { enum: HEATING_ENERGIES }).notNull(),
+    supply: text('supply', { enum: HEATING_SUPPLIES }).notNull().default('central'),
+    method: text('method', { enum: HEATING_METHODS }).notNull().default('manual'),
+    separateSettlement: integer('separate_settlement', { mode: 'boolean' }),
+    devicesRemote: text('devices_remote', { enum: DEVICES_REMOTE }).notNull().default('unknown'),
+    devicesInstalledAfter2021: text('devices_installed_after_2021_12', { enum: DEVICES_INSTALLED_AFTER }).notNull().default('unknown'),
+    source: text('source', { enum: HEATING_SOURCES }).notNull().default('building'),
+    captureInstalledOn: text('capture_installed_on'),
+    capturedOnOct2024: integer('captured_on_2024_10_01', { mode: 'boolean' }),
+    warmRentAverageCents: integer('warm_rent_average_2022_2024'),
+    changeSplit: text('change_split', { enum: CHANGE_SPLITS }).notNull().default('degreeDays'),
+    periodStartMonth: integer('period_start_month'),
+    // Ob die Anlage eine Liste der angeschlossenen Wohnungen hat; ohne Liste alle (siehe
+    // heating_plant_units). Eigens gespeichert wie `participants_limited` (#94).
+    unitsLimited: integer('units_limited', { mode: 'boolean' }).notNull().default(false),
+  },
+  () => [
+    oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
+    oneOf('heating_plants_supply_known', 'supply', HEATING_SUPPLIES),
+    oneOf('heating_plants_method_known', 'method', HEATING_METHODS),
+    oneOf('heating_plants_devices_remote_known', 'devices_remote', DEVICES_REMOTE),
+    oneOf('heating_plants_devices_installed_known', 'devices_installed_after_2021_12', DEVICES_INSTALLED_AFTER),
+    oneOf('heating_plants_source_known', 'source', HEATING_SOURCES),
+    oneOf('heating_plants_change_split_known', 'change_split', CHANGE_SPLITS),
+    check('heating_plants_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),
+    // Die Gemeinschaft liefert eine fertige Abrechnung; übernommen wird sie wie die eines
+    // Messdienstes (Entwurf 8.9, D-F2).
+    check('heating_plants_source_method_valid', sql.raw(`"source" <> 'homeowners' OR "method" = 'service'`)),
+    notNegative('heating_plants_warm_rent_not_negative', 'warm_rent_average_2022_2024'),
+  ],
+)
+
+// Die angeschlossenen Wohnungen einer Anlage. Eine gelöschte Wohnung fällt heraus; die Anlage
+// behält über `units_limited` ihre Liste, auch wenn sie leer wird.
+export const heatingPlantUnits = sqliteTable(
+  'heating_plant_units',
+  {
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    unitId: text('unit_id')
+      .notNull()
+      .references(() => units.id, { onDelete: 'cascade' }),
+    heatedAreaM2: real('heated_area_m2'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.plantId, t.unitId] }),
+    check('heating_plant_units_heated_area_positive', sql.raw('"heated_area_m2" > 0')),
+  ],
+)
+
+// Eine Zeile je Anlage und Heizperiode (Entwurf 5.3), ohne die Spalten des Vorrats (PR 7, 8). In
+// PR 4 ist die Heizperiode der Abrechnungszeitraum des Objekts; eine eigene kommt mit PR 5.
+export const heatingPeriods = sqliteTable(
+  'heating_periods',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'cascade' }),
+    period: text('period').$type<PeriodKey>().notNull(),
+    // Verteilung (§§ 6 Abs. 4, 7, 8, 10 HeizkostenV)
+    heatConsumptionPct: real('heat_consumption_pct'),
+    waterConsumptionPct: real('water_consumption_pct'),
+    above70Agreed: integer('above_70_agreed', { mode: 'boolean' }),
+    insulationRule: text('insulation_rule', { enum: INSULATION_RULES }),
+    // Warmwasser (§ 9 HeizkostenV)
+    dhwMethod: text('dhw_method', { enum: DHW_METHODS }),
+    dhwHeatKwh: real('dhw_heat_kwh'),
+    totalHeatKwh: real('total_heat_kwh'),
+    dhwVolumeM3: real('dhw_volume_m3'),
+    dhwTempC: real('dhw_temp_c'),
+    dhwUnmeasurable: integer('dhw_unmeasurable', { mode: 'boolean' }),
+    // Abrechnungsinformationen (§ 6a Abs. 3 HeizkostenV)
+    infoTaxesText: text('info_taxes_text'),
+    infoDistrictGhg: real('info_district_ghg'),
+    infoDistrictPef: real('info_district_pef'),
+    climateFactor: real('climate_factor'),
+    climateFactorPrev: real('climate_factor_prev'),
+    consumerContract: text('consumer_contract'),
+    infoContactsConfirmed: integer('info_contacts_confirmed', { mode: 'boolean' }),
+  },
+  (t) => [
+    uniqueIndex('heating_periods_plant_period_idx').on(t.plantId, t.period),
+    // Derselbe Wortlaut wie bei `period` der Kostenpositionen (PR 2, G-C3).
+    periodKeyCheck('heating_periods_period_valid', 'period'),
+    check('heating_periods_heat_pct_valid', sql.raw('"heat_consumption_pct" BETWEEN 0 AND 100')),
+    check('heating_periods_water_pct_valid', sql.raw('"water_consumption_pct" BETWEEN 0 AND 100')),
+    oneOf('heating_periods_insulation_rule_known', 'insulation_rule', INSULATION_RULES),
+    oneOf('heating_periods_dhw_method_known', 'dhw_method', DHW_METHODS),
+    notNegative('heating_periods_dhw_heat_not_negative', 'dhw_heat_kwh'),
+    notNegative('heating_periods_total_heat_not_negative', 'total_heat_kwh'),
+    notNegative('heating_periods_dhw_volume_not_negative', 'dhw_volume_m3'),
+  ],
+)
+
 // ---------- Kostenpositionen ----------
 
 export const costItems = sqliteTable(
@@ -364,6 +493,9 @@ export const costItems = sqliteTable(
     taxYear: integer('tax_year'),
     // Teil der Heizkosten (#208, Entwurf 5.3, A1), nur bei „Heizung und Warmwasser“.
     heatingPart: text('heating_part', { enum: HEATING_PARTS }),
+    // Die Heizanlage der Position (Heizung PR 4). `RESTRICT`: Eine Anlage mit Positionen wird nicht
+    // still gelöscht; `removeHeatingPlant` gibt sie vorher frei.
+    heatingPlantId: text('heating_plant_id').references(() => heatingPlants.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -523,11 +655,24 @@ export const meters = sqliteTable(
     type: text('type', { enum: METER_TYPES }).notNull(),
     meterNumber: text('meter_number'),
     unit: text('unit').notNull(),
+    // Zähler der Heizanlage selbst (Heizung PR 4): ohne Wohnung, mit Rolle. `RESTRICT`: Ohne Anlage
+    // wäre er ein Hauptzähler des Hauses und verteilte Verbrauch um (#116).
+    heatingPlantId: text('heating_plant_id').references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    heatingRole: text('heating_role', { enum: HEATING_ROLES }),
+    // Fernablesbar und eingebaut am (§ 5 Abs. 2, 3 HeizkostenV); null heißt unbekannt.
+    remoteReadable: integer('remote_readable', { mode: 'boolean' }),
+    installedOn: text('installed_on'),
   },
   () => [
     // Der Zählertyp verbindet Zähler und Kostenposition (`cost_items.meter_type`). Ein
     // unbekannter Wert fände keine Zähler und ergäbe eine Position ohne Verteilbasis.
     oneOf('meters_type_known', 'type', METER_TYPES),
+    oneOf('meters_heating_role_known', 'heating_role', HEATING_ROLES),
+    // Ein Zähler der Anlage hat eine Rolle, und nur er (Heizung PR 4).
+    check('meters_heating_role_plant_valid', sql.raw('("heating_plant_id" IS NULL) = ("heating_role" IS NULL)')),
+    // Ein Zähler der Anlage hängt an keiner Wohnung; die Zähler der Wohnungen gehören zu ihr über
+    // die angeschlossenen Wohnungen.
+    check('meters_heating_plant_unit_valid', sql.raw('"heating_plant_id" IS NULL OR "unit_id" IS NULL')),
   ],
 )
 
