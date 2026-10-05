@@ -13,7 +13,9 @@
 //
 // ISO-Daten werden Zeichen für Zeichen verglichen, wie `compareText` in calc.ts.
 //
-// Wer eine Regel ändert oder ergänzt, setzt `RULES_AS_OF` auf den Tag der Durchsicht (#110).
+// Ein eigenes Stichtagsdatum hat das Verzeichnis nicht mehr (Durchsicht von #221, M4): Es gilt
+// `LAW_AS_OF` aus register.ts. Wer eine Regel ändert oder ergänzt, prüft die Parameter, aus denen sie
+// liest, setzt deren `retrieved` und `LAW_AS_OF` auf den Tag der Durchsicht (#110).
 import { betrkvTvSignal } from './bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from './heizkostenv.ts'
 import { dayBefore, germanDate, LAW_AS_OF, onlyVersion, valueAt } from './register.ts'
@@ -42,8 +44,6 @@ export type Rule = {
   validFrom?: string
   validTo?: string
 }
-
-export const RULES_AS_OF = '2026-10-02'
 
 export const RULES: readonly Rule[] = [
   {

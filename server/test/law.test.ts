@@ -8,7 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
-import { RULES_AS_OF } from '../../shared/law/rules.ts'
+import * as rulesModule from '../../shared/law/rules.ts'
 import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
@@ -157,10 +157,15 @@ test('Register: null nur bei einem überschreibbaren Parameter, jede Kennung ein
   assert.equal(new Set(LAW_PARAMS.map((p) => p.id)).size, LAW_PARAMS.length)
 })
 
-test('Register: LAW_AS_OF ist das jüngste Abrufdatum und nicht älter als das Regelverzeichnis', () => {
+test('Register: LAW_AS_OF ist das jüngste Abrufdatum', () => {
   const newest = LAW_PARAMS.flatMap((p) => p.versions.map((v) => v.source.retrieved)).sort().at(-1)
   assert.equal(LAW_AS_OF, newest)
-  assert.ok(LAW_AS_OF >= RULES_AS_OF, `${LAW_AS_OF} vor ${RULES_AS_OF}`)
+})
+
+// Durchsicht von #221 (M4): Es gibt nur ein Stichtagsdatum. Ein zweites im Regelverzeichnis hätte
+// neben LAW_AS_OF stehen bleiben und veralten können, ohne dass eine Abrechnung es zeigt.
+test('Register: das Regelverzeichnis führt kein eigenes Stichtagsdatum', () => {
+  assert.ok(!Object.hasOwn(rulesModule, 'RULES_AS_OF'), 'RULES_AS_OF gibt es noch; es gilt LAW_AS_OF')
 })
 
 test('Register: jede Konstante vom Typ LawParam in shared/law/ steht in LAW_PARAMS', () => {
