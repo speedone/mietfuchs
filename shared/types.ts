@@ -913,3 +913,25 @@ export type BookingPreview = {
   confirm: PreviewProblem[]
   token: string
 }
+
+// ---------- Abrechnungszeitraum (#208) ----------
+
+// Der Schlüssel eines Abrechnungszeitraums: der Monat seines Beginns als 'JJJJ-MM'. Kein Zeitraum
+// beginnt im selben Monat wie ein anderer, auch nicht über einen Rumpfzeitraum hinweg; deshalb ist
+// der Beginnmonat eindeutig. Ein Markentyp über `string`: Eine Jahreszahl passt nicht hinein, und
+// jede Stelle, die noch mit `year - 1` rechnet, fällt beim Übersetzen auf. Aus Text wird er nur in
+// shared/period.ts.
+export type PeriodKey = string & { readonly __periodKey: unique symbol }
+
+// Der Rhythmus eines Objekts: der Beginnmonat von Anfang an (1 heißt Kalenderjahr) und die Wechsel
+// als 'JJJJ-MM', ab denen jeder Zeitraum in diesem Monat beginnt. Die Zeiträume selbst werden daraus
+// berechnet und nie gespeichert.
+export type PeriodRules = { startMonth: number; changes: string[] }
+
+// Ein Abrechnungszeitraum mit inklusiven Grenzen als 'JJJJ-MM-TT'. `short` heißt Rumpfzeitraum:
+// kürzer als zwölf Monate, weil danach ein Wechsel kommt.
+export type BillingPeriod = { key: PeriodKey; from: string; to: string; short: boolean }
+
+// Der Zeitraum, wie eine Abrechnung ihn trägt, mit der Bezeichnung für Kopf und Druck
+// („2025“, „2025/2026“, „01.01.–30.04.2025“).
+export type SettlementPeriod = BillingPeriod & { label: string }
