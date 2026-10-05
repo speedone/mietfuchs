@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
-import { frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
+import { frozenFuelCarriesOf, frozenFuelRowsOf, snapshotFor, type SnapshotCostItem, type SnapshotHeatingPlant } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { CALENDAR_RULES, periodContaining, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { BillingPeriod, Co2Statement, FrozenFuelCarry, FuelDelivery, LandlordPart, PeriodRules } from '../../shared/types.ts'
@@ -66,7 +66,7 @@ test('Schnappschuss: abgeschlossene Heizperioden mit Frist und Übertragszeilen;
   assert.deepEqual(frozenFuelRowsOf(zeilen), [{ costItemId: 'fuel:e:2024-05:gas0', tenancyId: 'ta', tenantName: 'Mieter A', unitName: 'A', shareCents: 54464 }])
   assert.deepEqual(frozenFuelRowsOf(null), [])
   const s = snap('2025-05', { closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(zeilen) })] })
-  assert.deepEqual(s.fuel?.closed, [{ plantId: 'hp', period: '2024-05', label: '2024/2025', deadline: '2026-04-30', fuelRows: frozenFuelRowsOf(zeilen) }])
+  assert.deepEqual(s.fuel?.closed, [{ plantId: 'hp', period: '2024-05', label: '2024/2025', deadline: '2026-04-30', fuelRows: frozenFuelRowsOf(zeilen), carries: [] }])
   // Objekt im Kalenderjahr, Anlage von Mai bis April: Mit P = 2025 ist die Heizperiode 2024/2025 abgeschlossen.
   const eigen = snapshotFor(quelle({
     properties: [{ id: 'objekt-1', kind: 'mfh', cableBuiltBeforeDec2021: null, periodRules: CALENDAR_RULES }],
@@ -478,84 +478,58 @@ test('Durchsicht Recht Minor: Gradtage-Hinweis ohne unbelegte Aussage über die 
   assert.match(t, /Grundversorgung/)
 })
 
-// ---------- Invariante der Durchsicht von #233: jede Rechnung genau einmal, über Abschluss, Wiederöffnen und Verknüpfen ----------
+// Die Invariante über Abschluss, Wiederöffnen und Verknüpfen steht in fuel-invariant.test.ts: Sie
+// geht über die echten Schreibwege der Datenbank und bildet keine Sperre nach.
 
-// Ein Bestand mit drei Rechnungen hintereinander, je 300 bis 800 Tage (also über zwei oder drei
-// Heizperioden), und in zufälliger Reihenfolge: Positionen verknüpfen, eine Gutschrift dazu, eine
-// Verknüpfung lösen, eine Position löschen, eine Heizperiode abschließen (mit Einfrieren wie
-// `freezeFuelCarries`) oder wieder öffnen. Was die Schreibprüfungen sperren (Position in
-// abgeschlossener Heizperiode, Lieferung mit eingefrorenem Teil ungleich 0), unterbleibt wie in der
-// Anwendung. Am Ende muss gelten: Je Abrechnung Σ Zeilen = Σ ihrer Positionen, und über alle
-// Heizperioden tragen Mieter und Vermieter (ohne die Gegenzeilen `fuelCarry`, die sich aufheben)
-// zusammen genau die Summe aller Positionen. Vor der Durchsicht fiel hier Geld doppelt an (I1, I2).
-test('Invariante: Abschluss, Wiederöffnen und Verknüpfen in wechselnder Reihenfolge verteilen jede Rechnung genau einmal', () => {
-  const rnd = zufall(233)
-  const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1))
-  const pick = <T,>(list: readonly T[]): T | undefined => list[Math.floor(rnd() * list.length)]
-  for (let lauf = 0; lauf < 40; lauf++) {
-    const deliveries: FuelDelivery[] = []
-    let start = isoOf(Date.UTC(2024, 1, 1) + int(0, 120) * DAY)
-    for (let k = 0; k < 3; k++) {
-      const end = isoOf(Date.parse(`${start}T00:00:00Z`) + (int(300, 800) - 1) * DAY)
-      deliveries.push(lieferung({ id: `d${k}`, label: `Rechnung ${k}`, invoiceFrom: start, invoiceTo: end, fixedCents: rnd() < 0.5 ? int(0, 20000) : null }))
-      start = isoOf(Date.parse(`${end}T00:00:00Z`) + DAY)
-    }
-    const keys: string[] = []
-    for (let p = periodContaining(MAI, deliveries[0]?.invoiceFrom ?? ''); p.from <= (deliveries[2]?.invoiceTo ?? ''); p = periodContaining(MAI, isoOf(Date.parse(`${p.to}T00:00:00Z`) + DAY))) keys.push(p.key)
-    let items: (SnapshotCostItem & { propertyId: string })[] = []
-    const frozen: FrozenFuelCarry[] = []
-    const closed = new Map<string, { result: ComputedSettlement; positions: number }>()
-    const ownerOf = (d: FuelDelivery) => periodContaining(MAI, d.invoiceTo ?? '').key
-    const frozenNonZero = (id: string) => frozen.some((f) => f.deliveryId === id && f.cents !== 0)
-    const source = () => ({
-      costItems: items,
-      fuelDeliveries: deliveries,
-      fuelCarryFrozen: frozen,
-      closedSettlements: [...closed.entries()].map(([k, c]) => abgeschlossen(k, { fuelCarryRows: frozenFuelRowsOf(c.result) })),
-    })
-    const log: string[] = []
-    let n = 0
-    for (let step = 0; step < 14; step++) {
-      const op = pick(['link', 'link', 'link', 'credit', 'unlink', 'delete', 'close', 'close', 'reopen'] as const)
-      const d = pick(deliveries)
-      if (!d) continue
-      const owner = ownerOf(d)
-      const linked = items.filter((c) => c.fuelDeliveryId === d.id)
-      if ((op === 'link' && linked.length === 0) || (op === 'credit' && linked.length > 0)) {
-        if (closed.has(owner) || frozenNonZero(d.id)) continue
-        items = [...items, position({ id: `p${n++}`, fuelDeliveryId: d.id, period: periodKey(owner), amountCents: op === 'credit' ? -int(1000, 50000) : int(100000, 900000), key: rnd() < 0.5 ? 'area' : 'units' })]
-        log.push(`${op} ${d.id}`)
-      } else if ((op === 'unlink' || op === 'delete') && linked.length > 0) {
-        const c = pick(linked)
-        if (!c || closed.has(owner) || frozenNonZero(d.id)) continue
-        items = op === 'delete' ? items.filter((x) => x.id !== c.id) : items.map((x) => (x.id === c.id ? { ...x, fuelDeliveryId: null } : x))
-        log.push(`${op} ${c.id}`)
-      } else if (op === 'close') {
-        const key = pick(keys.filter((k) => !closed.has(k)))
-        if (!key) continue
-        const result = settle(key, source())
-        for (const id of new Set([...(result.heating?.[0]?.fuel?.deliveries ?? []).map((x) => x.deliveryId), ...(result.heating?.[0]?.fuel?.carries ?? []).map((x) => x.deliveryId)])) {
-          frozen.push(eingefroren(id, key, (result.heating?.[0]?.fuel?.carries ?? []).filter((x) => x.deliveryId === id).reduce((a, x) => a + x.cents, 0)))
-        }
-        closed.set(key, { result, positions: items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0) })
-        log.push(`close ${key}`)
-      } else if (op === 'reopen') {
-        const key = pick([...closed.keys()])
-        if (!key) continue
-        closed.delete(key)
-        for (let i = frozen.length - 1; i >= 0; i--) if (frozen[i]?.period === key) frozen.splice(i, 1)
-        log.push(`reopen ${key}`)
-      }
-    }
-    const fall = `Lauf ${lauf}: ${JSON.stringify(deliveries.map((d) => [d.invoiceFrom, d.invoiceTo]))} ${log.join(', ')}`
-    let total = 0
-    for (const key of keys) {
-      const stored = closed.get(key)
-      const r = stored?.result ?? settle(key, source())
-      const positions = stored?.positions ?? items.filter((c) => c.period === key).reduce((a, c) => a + c.amountCents, 0)
-      assert.equal(summe(r), positions, `${fall}; Σ Zeilen in ${key}`)
-      total += mieterSumme(r) + r.landlord.rows.flatMap((row) => row.landlordParts ?? []).filter((p) => p.reason !== 'fuelCarry').reduce((a, p) => a + p.cents, 0)
-    }
-    assert.equal(total, items.reduce((a, c) => a + c.amountCents, 0), fall)
+// ---------- Nachprüfung von 7551434 (Korrekturrunde 2) ----------
+
+test('Nachprüfung I-b: Gutschrift −500 € an einer Lieferung mit eingefrorenem Teil: Mieter in H 5.016,61 €, über beide Zeiträume 6.000,00 €', () => {
+  const h1 = settle('2024-05')
+  const Y = (h1.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0)
+  const zu = { fuelCarryFrozen: [eingefroren('d', '2024-05', Y)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(h1) })] }
+  const mit = settle('2025-05', { ...zu, costItems: [position({ id: 'gas' }), position({ id: 'gs', description: 'Gutschrift', amountCents: -50000 })] })
+  assert.equal(mieterSumme(mit), 501661)
+  assert.equal(mieterSumme(h1) + mieterSumme(mit), 600000)
+  assert.equal(summe(mit), 600000)
+})
+
+test('Nachprüfung M-a: Heizposition ohne Anlage bei genau einer Anlage zählt als Position ohne Lieferung', () => {
+  const h1 = settle('2024-05', { costItems: [position({ id: 'gas' }), position({ id: 'alt', description: 'Gas alt', period: periodKey('2024-05'), amountCents: 520000, fuelDeliveryId: null, heatingPlantId: null })] })
+  assert.ok((h1.heating?.[0]?.fuel?.gaps ?? []).every((g) => g.estimate === null), JSON.stringify(h1.heating?.[0]?.fuel?.gaps))
+  assert.ok(codes(h1).includes('fuel.loose-item'))
+})
+
+test('Nachprüfung M-b, M-c: abgeschlossen, als die Lieferung noch keine Position hatte; Frist nach Wegfall des Hindernisses', () => {
+  const ohne = settle('2024-05', { costItems: [] })
+  const h = settle('2025-05', { fuelCarryFrozen: [eingefroren('d', '2024-05', 0)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(ohne) })] })
+  const t = textOf(h, 'fuel.closed-period-part')
+  assert.match(t, /Als die Abrechnung 2024\/2025 abgeschlossen wurde, war die Rechnung „Gas 2025\/2026“ noch mit keiner Position verknüpft/)
+  assert.match(t, /in der Regel binnen drei Monaten nach Wegfall des Hindernisses \(BGH VIII ZR 220\/05\)/)
+  const c = textOf(settle('2025-05', { closedSettlements: [abgeschlossen('2024-05')] }), 'fuel.closed-period-part')
+  assert.match(c, /die ohne Schätzung abgeschlossen wurde/)
+  assert.match(c, /nach Wegfall des Hindernisses/)
+})
+
+test('Nachprüfung M-d: VIII ZR 156/11 nur mit dem, was die Entscheidung trägt (Leistungsprinzip, sachgerechte Schätzung Rn. 14)', () => {
+  const t = textOf(settle('2025-05'), 'fuel.share-by-degree-days')
+  assert.match(t, /Leistungsprinzip/)
+  assert.match(t, /BGH VIII ZR 156\/11, Rn\. 14/)
+  assert.doesNotMatch(t, /den Verbrauch darf der Vermieter dabei sachgerecht schätzen/)
+})
+
+test('Nachprüfung (Invariante, Startwert 2): Die mittlere Heizperiode nimmt genau, was die abgeschlossene Heizperiode der Positionen hinausgebucht hat', () => {
+  // Rechnung über drei Heizperioden; ihre Heizperiode 2025/2026 wird mit zwei Positionen abgeschlossen,
+  // danach wird eine Position gelöscht (in einem abgeschlossenen Zeitraum bleibt der eingefrorene Stand).
+  const base = { fuelDeliveries: [lieferung({ invoiceFrom: '2024-03-15', invoiceTo: '2025-05-14' })] }
+  const zwei = [position({ id: 'gas', period: periodKey('2025-05') }), position({ id: 'nach', description: 'Nachzahlung', period: periodKey('2025-05'), amountCents: 100000 })]
+  const h = settle('2025-05', { ...base, costItems: zwei })
+  const hinaus = (h.heating?.[0]?.fuel?.carries ?? []).find((c) => c.period === '2024-05')?.cents ?? assert.fail('kein Übertrag nach 2024/2025')
+  const ueber = {
+    ...base,
+    costItems: [zwei[0] ?? assert.fail('keine Position')],
+    fuelCarryFrozen: [eingefroren('d', '2025-05', (h.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0))],
+    closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h), fuelCarries: frozenFuelCarriesOf(h) })],
   }
+  const mitte = settle('2024-05', ueber)
+  assert.equal(mieterSumme(mitte), -hinaus)
 })

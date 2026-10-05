@@ -561,17 +561,21 @@ async function frozenDeliveryLabel(db: Executor, deliveryId: string): Promise<st
 // Lösen, Umhängen, Verschieben in eine andere Heizperiode und Löschen einer Position, deren Lieferung
 // einen eingefrorenen Teil hat, verteilte dieselbe Rechnung doppelt (Durchsicht I2: 9.210,22 € für
 // 6.500,00 €); ebenso eine weitere Position an einer solchen Lieferung.
-async function guardFrozenLink(db: Executor, before: CostItem | null, after: CostItem | null): Promise<void> {
+// Nachprüfung (I-b): Gesperrt ist nur, was die letzte Position der Lieferung wegnähme; eine weitere
+// Position (Abschlag, Gutschrift, Schlussrechnung) ist erlaubt, und solange eine bleibt, darf eine
+// andere gelöst oder gelöscht werden. Die Heizperiode, die den Teil abgeschlossen hat, bleibt bei
+// ihrem eingefrorenen Wert, und die verbleibenden Positionen buchen ihn weiter hinaus.
+async function guardFrozenLink(db: Executor, before: Pick<CostItem, 'id' | 'fuelDeliveryId' | 'period'> | null, after: Pick<CostItem, 'fuelDeliveryId' | 'period'> | null): Promise<void> {
   const was = before?.fuelDeliveryId ?? null
-  const now = after?.fuelDeliveryId ?? null
-  if (was && (now !== was || after === null || after.period !== before?.period)) {
-    const label = await frozenDeliveryLabel(db, was)
-    if (label) throw new HeatingError(409, frozenDeliveryText(label))
-  }
-  if (now && now !== was) {
-    const label = await frozenDeliveryLabel(db, now)
-    if (label) throw new HeatingError(409, frozenDeliveryText(label))
-  }
+  if (!before || !was) return
+  if (after !== null && after.fuelDeliveryId === was && after.period === before.period) return
+  const label = await frozenDeliveryLabel(db, was)
+  if (!label) return
+  const [others] = await db.select({ n: count() }).from(costItems).where(and(eq(costItems.fuelDeliveryId, was), ne(costItems.id, before.id)))
+  if ((others?.n ?? 0) > 0) return
+  throw new HeatingError(409,
+    `Ein Teil der Lieferung „${label}“ ist in einer abgeschlossenen Heizperiode eingefroren, und dies ist ihre letzte Position. Ohne sie stünde dieser Teil doppelt in den Abrechnungen; die Position bleibt deshalb mit der Lieferung verknüpft. ` +
+      'Öffnen Sie die Abrechnung der abgeschlossenen Heizperiode wieder, um etwas zu ändern.')
 }
 
 async function guardFuelLink(db: Executor, before: CostItem | null, after: CostItem): Promise<void> {
@@ -1516,11 +1520,8 @@ const costItemCollection: Collection<CostItem> = {
     await writeCostItemShares(db, entity)
   },
   remove: async (db, id) => {
-    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId }).from(costItems).where(eq(costItems.id, id))
-    if (c?.fuelDeliveryId) {
-      const label = await frozenDeliveryLabel(db, c.fuelDeliveryId)
-      if (label) throw new HeatingError(409, frozenDeliveryText(label))
-    }
+    const [c] = await db.select({ fuelDeliveryId: costItems.fuelDeliveryId, period: costItems.period }).from(costItems).where(eq(costItems.id, id))
+    if (c) await guardFrozenLink(db, { id, fuelDeliveryId: c.fuelDeliveryId, period: c.period }, null)
     await db.delete(costItems).where(eq(costItems.id, id))
   },
 }

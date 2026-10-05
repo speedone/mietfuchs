@@ -1060,14 +1060,17 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
 - **Was die Durchsicht von #233 festhält:** Eine mit 0 eingefrorene Lieferung (beim Abschluss noch
   ohne Position) lässt sich verknüpfen; ihr Teil der abgeschlossenen Heizperiode geht an den
   Vermieter (`fuelClosedPeriod`). Hat eine abgeschlossene Heizperiode einen Teil ungleich 0
-  eingefroren, sind Lösen, Umhängen, Verschieben und Löschen ihrer Positionen und eine weitere
-  Position gesperrt (409). Eine Position zeigt nur auf eine Lieferung ihres Objekts. Die Kennung einer
+  eingefroren, sind Lösen, Umhängen, Verschieben und Löschen nur der **letzten** Position der
+  Lieferung gesperrt (409); weitere Positionen (Abschlag, Gutschrift) sind erlaubt. Der eingefrorene
+  Stand führt die Überträge je Lieferung (`frozenFuelCarriesOf`): Eine offene Heizperiode nimmt
+  genau, was die abgeschlossene Heizperiode der Positionen ihr hinausgebucht hat. Eine Position zeigt nur auf eine Lieferung ihres Objekts. Die Kennung einer
   Übertragszeile nennt beide Heizperioden (`fuel:<Lieferung>:<Heizperiode>:<andere>:<Position>`),
   Hinweise an ihr führen zur Position. Die CO₂-Aufteilung gilt nur für Brennstoffe mit Standardwerten
   (§ 2 Abs. 1 CO2KostAufG): nicht für Strom einer Wärmepumpe, bei Fernwärme nur mit ausgewiesenen
   CO₂-Kosten. Die Nachstufung beim Messdienst erwartet § 8 und § 9 nach den Angaben zum Gebäude.
   Eine Invariante über Zufallsbestände mit Abschluss, Wiederöffnen und Verknüpfen in wechselnder
-  Reihenfolge prüft, dass jede Rechnung genau einmal verteilt ist.
+  Reihenfolge (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete
+  Sperren) prüft, dass jede Rechnung genau einmal verteilt ist.
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
   und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
 - **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das

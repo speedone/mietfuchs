@@ -174,6 +174,8 @@ export type SnapshotClosedSettlement = {
   // Die Übertragszeilen der Mieter (Heizung PR 7), für die Gutschrift je Mieter bei einer zu hohen
   // Schätzung (8.2, A4). Fehlt das Feld, gibt es keine.
   fuelCarryRows?: FrozenFuelRow[]
+  // Die Überträge des eingefrorenen Stands je Anlage, Heizperiode und Lieferung (Nachprüfung von #233).
+  fuelCarries?: FrozenFuelCarryOut[]
 }
 export type FrozenItemSelfUse = { selfCents: number, noBasis: boolean }
 
@@ -271,8 +273,36 @@ export function frozenFuelRowsOf(settlement: unknown): FrozenFuelRow[] {
   return rows
 }
 
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[] } {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [] }
+// Was ein eingefrorener Stand je Anlage, Heizperiode und Lieferung in eine andere Heizperiode übertragen
+// hat (`heating[].fuel.carries`; Heizung PR 7, Nachprüfung der Durchsicht von #233). Die Heizperiode, in
+// die übertragen wurde, nimmt genau diesen Betrag, auch wenn sich die Positionen danach ändern.
+export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number }
+
+export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
+  if (settlement === null || typeof settlement !== 'object') return []
+  const heating: unknown = Reflect.get(settlement, 'heating')
+  if (!Array.isArray(heating)) return []
+  const out: FrozenFuelCarryOut[] = []
+  for (const h of heating) {
+    if (h === null || typeof h !== 'object') continue
+    const plantId: unknown = Reflect.get(h, 'plantId')
+    const period: unknown = Reflect.get(h, 'period')
+    const fuel: unknown = Reflect.get(h, 'fuel')
+    const carries: unknown = fuel !== null && typeof fuel === 'object' ? Reflect.get(fuel, 'carries') : undefined
+    if (typeof plantId !== 'string' || typeof period !== 'string' || !Array.isArray(carries)) continue
+    for (const c of carries) {
+      if (c === null || typeof c !== 'object') continue
+      const deliveryId: unknown = Reflect.get(c, 'deliveryId')
+      const other: unknown = Reflect.get(c, 'period')
+      const cents: unknown = Reflect.get(c, 'cents')
+      if (typeof deliveryId === 'string' && typeof other === 'string' && typeof cents === 'number') out.push({ plantId, period, deliveryId, other, cents })
+    }
+  }
+  return out
+}
+
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[] } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [] }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
@@ -282,6 +312,7 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
     selfUseByItem: selfUseOf(Reflect.get(settlement, 'landlord')),
     itemTotals: itemTotalsOf(settlement),
     fuelCarryRows: frozenFuelRowsOf(settlement),
+    fuelCarries: frozenFuelCarriesOf(settlement),
   }
   // Ergeben die Eigenanteile je Position nicht die Summe des Papiers, ist das Archivstück in sich
   // nicht stimmig (etwa von Hand gebaut), und dann gilt nur die Summe; die Steuerübersicht verteilt
@@ -358,7 +389,8 @@ export type SnapshotFuelDelivery = Pick<
 >
 // Eine abgeschlossene Heizperiode einer Anlage, mit der Bezeichnung und der Frist der Abrechnung, die
 // sie abgeschlossen hat, und deren Übertragszeilen.
-export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[] }
+// `carries`: was diese Heizperiode beim Abschluss je Lieferung in andere übertragen hat.
+export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number }[] }
 export type SnapshotFuel = {
   deliveries: SnapshotFuelDelivery[]
   items: SnapshotCostItem[]
@@ -379,6 +411,9 @@ type FuelSource = {
 // Heizperiode ist abgeschlossen mit der Abrechnung des Objektzeitraums, in dem sie endet, oder nach
 // Weg d mit ihrer Heizkostenabrechnung (W1, B3). Ohne Lieferung `undefined`: Dann bleibt der
 // Schnappschuss, wie er war, und keine Abrechnung ändert sich.
+const carriesOf = (list: FrozenFuelCarryOut[] | undefined, plantId: string, period: string) =>
+  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents }) => ({ deliveryId, other, cents }))
+
 function fuelSnapshotOf(
   source: FuelSource,
   propertyId: string,
@@ -399,11 +434,11 @@ function fuelSnapshotOf(
       const p = periodOfKey(objectRules, c.period)
       if (!p) continue
       const hs = own ? heatingPeriodsEndingIn(rules, p).filter((h) => !settledSeparately(way, objectRules, h)) : [p]
-      for (const h of hs) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(p), deadline: settlementDeadline(p), fuelRows: c.fuelCarryRows ?? [] })
+      for (const h of hs) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(p), deadline: settlementDeadline(p), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
     }
     for (const c of (source.closedHeatingSettlements ?? []).filter((x) => x.plantId === plant.id)) {
       const h = periodOfKey(rules, c.period)
-      if (h) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(h), deadline: settlementDeadline(h), fuelRows: c.fuelCarryRows ?? [] })
+      if (h) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(h), deadline: settlementDeadline(h), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
     }
   }
   return {

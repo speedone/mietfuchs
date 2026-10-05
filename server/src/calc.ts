@@ -2138,6 +2138,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         items: fuel.items.filter((c) => c.fuelDeliveryId != null && deliveryIds.has(c.fuelDeliveryId)),
         frozen: fuel.frozen.filter((f) => f.plantId === plant.id),
         closed: new Set(fuel.closed.filter((c) => c.plantId === plant.id).map((c) => c.period)),
+        closedCarries: fuel.closed.filter((c) => c.plantId === plant.id).flatMap((c) => (c.carries ?? []).map((x) => ({ period: c.period, ...x }))),
         ctx: {
           table: law(hkvDegreeDays, { period: lawPeriod }, lawLog),
           local: new Map(fuel.degreeDays.map((v) => [v.month, v.value])),
@@ -2145,8 +2146,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         },
         // Heizpositionen der Anlage ohne Lieferung decken mit ihrem Leistungszeitraum ab (Durchsicht I4).
         loose: items
-          .filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plant.id && !c.fuelDeliveryId && c.amountCents !== 0)
-          .map((c) => ({ from: c.serviceFrom ?? null, to: c.serviceTo ?? null })),
+          .filter((c) => c.category === HEATING_CATEGORY && !c.fuelDeliveryId && c.amountCents !== 0 && (c.heatingPlantId === plant.id || !c.heatingPlantId))
+          // Ohne Anlage gehört sie zur einzigen des Objekts; bei mehreren ist unklar, zu welcher, und
+          // Mietfuchs schlägt keine Schätzung vor (Nachprüfung, M-a).
+          .map((c) => (c.heatingPlantId || plants.length === 1 ? { from: c.serviceFrom ?? null, to: c.serviceTo ?? null } : { from: null, to: null })),
       })
       if (!result) continue
       fuelResults.set(plant.id, { plant, result })
@@ -2994,7 +2997,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         const stichtag = line.to !== null && line.to > yTo ? yTo : dayBefore(yFrom)
         warn('fuel.share-by-degree-days',
           `${where}: ${name} reicht über die Heizperiode hinaus. Den Teil für ${label} (${fmtNum(Math.round(line.sharePermille * 100) / 100)} ‰ des Verbrauchs) bestimmt Mietfuchs nach ${line.method === 'localDegreeDays' ? 'den Gradtagzahlen Ihres Orts' : 'der Gradtagszahlentabelle'}. ` +
-            'Heizkosten gehören in den Zeitraum, in dem der Brennstoff verbraucht wurde; den Verbrauch darf der Vermieter dabei sachgerecht schätzen (BGH VIII ZR 156/11). ' +
+            'Umzulegen sind die Kosten des im Zeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; eine Abrechnung nach diesem Leistungsprinzip darf auf einer sachgerechten Schätzung beruhen (BGH VIII ZR 156/11, Rn. 14). ' +
             'Für Gas in der Grundversorgung schreibt § 12 Abs. 2 GasGVV bei einer Preisänderung eine ähnliche Aufteilung nach Erfahrungswerten vor. ' +
             `Genauer sind ein Zählerstand des Versorgungszählers zum ${fmtDay(stichtag)} oder eine Zwischenrechnung des Versorgers.`,
           subject)
@@ -3036,9 +3039,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       const X = -carry.cents
       const name = `„${nameOf(carry.deliveryId)}“`
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
+        // Zwei Lagen (Nachprüfung, M-b): ohne Schätzung abgeschlossen, oder abgeschlossen, als die
+        // Lieferung noch keine Position hatte (mit 0 eingefroren).
+        const lead = carry.zeroFrozen
+          ? `Als die Abrechnung ${other.label} abgeschlossen wurde, war die Rechnung ${name} noch mit keiner Position verknüpft. Ihr Teil für ${periodLabel(carry.other)} (${fmtCents(X)}) ist dort deshalb nicht verteilt; bis Sie ihn nachfordern, steht er bei Ihnen. `
+          : `Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. `
         warn('fuel.closed-period-part',
-          `${where}: Der Teil der Rechnung ${name} für ${periodLabel(carry.other)} (${fmtCents(X)}) gehört in die Abrechnung ${other.label}, die ohne Schätzung abgeschlossen wurde; bis Sie ihn nachfordern, steht er bei Ihnen. ` +
-            `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`,
+          `${where}: ${lead}` +
+            `Solange die Frist dieser Abrechnung läuft (Zugang bis ${fmtDay(other.deadline)}), können Sie sie wieder öffnen und berichtigen. Danach dürfen Sie nur nachfordern, wenn Sie die Verspätung nicht zu vertreten haben (§ 556 Abs. 3 Satz 3 BGB, BGH VIII ZR 264/12), und dann alsbald, in der Regel binnen drei Monaten nach Wegfall des Hindernisses (BGH VIII ZR 220/05); lag die Rechnung schon vor Ablauf der Frist vor, ist die Verspätung in der Regel zu vertreten.`,
           subject)
         continue
       }

@@ -262,18 +262,23 @@ async function eingefroren(opened: Opened, cents: number): Promise<void> {
 const gasPosition = (over: Record<string, unknown> = {}) =>
   ({ propertyId: 'objekt-1', period: '2026-01', category: HEATING_CATEGORY, description: 'Gas', amountCents: 650000, key: 'area', fuelDeliveryId: 'd1', ...over })
 
-test('Durchsicht I2: Mit eingefrorenem Teil lässt sich eine verknüpfte Position nicht lösen, umhängen, löschen oder verschieben', async () => {
+test('Durchsicht I2, Nachprüfung I-b: Mit eingefrorenem Teil bleibt die letzte Position verknüpft; weitere Positionen gehen', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
     await opened.write((db) => createDelivery(db, 'd1', 'hp', gas))
     await opened.write((db) => createDelivery(db, 'd2', 'hp', { ...gas, label: 'andere' }))
     await opened.write((db) => createEntity(db, 'costItems', 'c1', gasPosition()))
     await eingefroren(opened, 403839)
-    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: null })), heatingError(409, /eingefroren/))
-    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: 'd2' })), heatingError(409, /eingefroren/))
-    await assert.rejects(opened.write((db) => removeEntity(db, 'costItems', 'c1')), heatingError(409, /eingefroren/))
-    // Eine weitere Position an derselben Lieferung änderte ihren Betrag nachträglich.
-    await assert.rejects(opened.write((db) => createEntity(db, 'costItems', 'c2', gasPosition({ description: 'Gutschrift', amountCents: -1000 }))), heatingError(409, /eingefroren/))
+    // Die letzte Position: Lösen, Umhängen und Löschen ließen den eingefrorenen Teil doppelt stehen.
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: null })), heatingError(409, /letzte Position/))
+    await assert.rejects(opened.write((db) => updateEntity(db, 'costItems', 'c1', { fuelDeliveryId: 'd2' })), heatingError(409, /letzte Position/))
+    await assert.rejects(opened.write((db) => removeEntity(db, 'costItems', 'c1')), heatingError(409, /letzte Position/))
+    // Eine Gutschrift, ein Abschlag oder die Schlussrechnung dazu: erlaubt (der eingefrorene Teil bleibt).
+    assert.equal(Reflect.get(await opened.write((db) => createEntity(db, 'costItems', 'c2', gasPosition({ description: 'Gutschrift', amountCents: -50000 }))), 'fuelDeliveryId'), 'd1')
+    // Mit zwei Positionen darf eine gehen; dann ist die andere wieder die letzte.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c2', { fuelDeliveryId: null }))
+    await opened.write((db) => removeEntity(db, 'costItems', 'c2'))
+    await assert.rejects(opened.write((db) => removeEntity(db, 'costItems', 'c1')), heatingError(409, /letzte Position/))
     // Der Betrag darf sich ändern: Die Summe bleibt über die Zeiträume stimmig.
     assert.equal(Reflect.get((await opened.write((db) => updateEntity(db, 'costItems', 'c1', { amountCents: 660000 }))) ?? {}, 'amountCents'), 660000)
   })

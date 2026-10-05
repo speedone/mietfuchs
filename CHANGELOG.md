@@ -178,7 +178,7 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - Ablesungen des Versorgungszählers in einer abgeschlossenen Heizperiode und Lieferungen, von denen
   eine abgeschlossene Heizperiode einen Teil eingefroren hat, lassen sich erst nach dem Wiederöffnen
   ändern; eine Heizanlage mit Lieferungen lässt sich erst entfernen, wenn die Lieferungen entfernt
-  sind. Ebenso bleiben die Positionen einer solchen Lieferung mit ihr verknüpft, und die
+  sind. Ebenso bleibt die letzte Position einer solchen Lieferung mit ihr verknüpft, und die
   Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
 
 ### Behoben

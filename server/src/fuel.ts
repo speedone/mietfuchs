@@ -197,6 +197,8 @@ export type FuelPlantInput = {
   // Die Heizpositionen der Anlage in dieser Heizperiode ohne Lieferung, mit ihrem Leistungszeitraum
   // (Durchsicht I4). Fehlt die Angabe, gibt es keine.
   loose?: readonly { from: string | null; to: string | null }[]
+  // Was abgeschlossene Heizperioden je Lieferung in andere übertragen haben (`period` die abgeschlossene).
+  closedCarries?: readonly { period: string; deliveryId: string; other: string; cents: number }[]
 }
 
 // Ein Übertrag der Mieterseite dieser Heizperiode: `out` hinaus in die frühere (die Positionen stehen
@@ -212,6 +214,8 @@ export type FuelCarry = {
   ratio: number
   method: FuelMethod
   frozen: boolean
+  // Die andere Heizperiode hat 0 eingefroren, weil die Lieferung beim Abschluss noch keine Position hatte.
+  zeroFrozen: boolean
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   estimate: { cents: number; ids: string[] } | null
@@ -359,7 +363,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const T = totalOf(template)
         if (cents === 0) continue
         carries.push({
-          deliveryId: d.id, kind: 'estimate', other: h, cents, totalCents: d.amountCents ?? 0, ratio: 1, method: 'inside', frozen: f !== null,
+          deliveryId: d.id, kind: 'estimate', other: h, cents, totalCents: d.amountCents ?? 0, ratio: 1, method: 'inside', frozen: f !== null, zeroFrozen: false,
           landlord: [{ reason: 'fuelCarry', cents: -cents }],
           templates: itemsOf(template.id).map((c) => ({ itemId: c.id, raw: (cents * c.amountCents) / T })),
           estimate: null,
@@ -397,7 +401,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
             }
           }
           carries.push({
-            deliveryId: d.id, kind: 'out', other, cents: -X, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null, landlord,
+            deliveryId: d.id, kind: 'out', other, cents: -X, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null, zeroFrozen: found !== null && f === null, landlord,
             templates: items.map((c) => ({ itemId: c.id, raw: (-X * c.amountCents) / T })), estimate,
           })
         }
@@ -405,10 +409,16 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
         const s = share(d, h)
         const f = frozenOf(d.id, h.key)
         const ownerFrozen = frozenOf(d.id, owner.key)
-        const Y = f ? f.cents : ownerFrozen && touched.length === 2 ? -ownerFrozen.cents : roundHalf(T * s.ratio)
+        // Ist die Heizperiode der Positionen abgeschlossen, nimmt diese genau, was jene hierher
+        // hinausgebucht hat, auch bei drei Heizperioden und wenn sich die Positionen danach geändert
+        // haben (Nachprüfung der Durchsicht von #233); nichts, wenn sie nichts hinausgebucht hat.
+        const ownerOut = input.closed.has(owner.key) && input.closedCarries !== undefined
+          ? (input.closedCarries.find((c) => c.period === owner.key && c.deliveryId === d.id && c.other === h.key)?.cents ?? 0)
+          : null
+        const Y = f ? f.cents : ownerOut !== null ? -ownerOut : ownerFrozen && touched.length === 2 ? -ownerFrozen.cents : roundHalf(T * s.ratio)
         if (Y === 0) continue
         carries.push({
-          deliveryId: d.id, kind: 'in', other: owner, cents: Y, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null || ownerFrozen !== null,
+          deliveryId: d.id, kind: 'in', other: owner, cents: Y, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null || ownerFrozen !== null, zeroFrozen: false,
           landlord: [{ reason: 'fuelCarry', cents: -Y }],
           templates: items.map((c) => ({ itemId: c.id, raw: (Y * c.amountCents) / T })), estimate: null,
         })

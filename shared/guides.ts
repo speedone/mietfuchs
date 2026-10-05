@@ -385,7 +385,7 @@ const GUIDE_DATA = {
     ],
     example: 'Gasrechnung 15.03.2025–14.03.2026 über 6.500 €, Heizperiode Mai bis April, zwei Wohnungen mit 60 und 40 m² nach Wohnfläche: Nach Gradtagen gehören 848,71 ‰ in 2025/2026, das sind 5.516,61 € (Mieter A 3.309,97 €, Mieter B 2.206,64 €); 983,39 € gehören in 2024/2025 (Mieter A 590,03 €, Mieter B 393,36 €).',
     caveats: [
-      { text: 'Umgelegt werden die Kosten des im Abrechnungszeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; der Verbrauch darf dabei sachgerecht geschätzt werden.', norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+      { text: 'Umgelegt werden die Kosten des im Abrechnungszeitraum verbrauchten Brennstoffs, nicht der bezahlten Rechnungen; eine Abrechnung nach diesem Leistungsprinzip darf auf einer sachgerechten Schätzung beruhen.', norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11, Rn. 14' },
       { text: 'Die Abrechnung muss dem Mieter bis zum Ablauf des zwölften Monats nach Ende des Abrechnungszeitraums zugehen; eine Nachforderung danach gibt es nur, wenn Sie die Verspätung nicht zu vertreten haben. Kommt die Rechnung des Versorgers spät, warten Sie mit dem Abschluss, solange die Frist läuft.', norm: '§ 556 Abs. 3 Satz 2 und 3 BGB' },
     ],
     gaps: [
