@@ -39,6 +39,11 @@ export function co2Block(h: HeatingStatement, tenancyId: string): Co2BlockView |
     marked: c.stage !== null && s.from === c.stage.from,
   }))
   const notes = ['Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).']
+  // Durchsicht I2: Die markierte Stufe ist die nach dem Wert; weicht der Anteil laut Abrechnung davon
+  // ab, sagt der Druck es, statt einen Widerspruch unerklärt stehen zu lassen.
+  if (c.stageMatches === false && c.landlordPermille !== null && c.stage !== null) {
+    notes.push(`Der Anteil des Vermieters laut Abrechnung (${num(c.landlordPermille / 10)} %) weicht von der markierten Stufe ab (${c.stage.landlordPercent} %). Den Grund nennt die Abrechnung des Messdienstes, etwa eine Kürzung nach § 9 CO2KostAufG.`)
+  }
   if (c.shortened) notes.push('Die Heizperiode ist kürzer als ein Jahr; die Grenzen der Stufentabelle sind anteilig gekürzt (§ 5 Abs. 1 Satz 4 CO2KostAufG).')
   return { title: 'CO₂-Kostenaufteilung', lines, table, notes }
 }

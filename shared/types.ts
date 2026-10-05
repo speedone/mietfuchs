@@ -1347,6 +1347,9 @@ export type Co2Assessment = {
   stage: Co2StageRange | null
   table: Co2StageRange[]
   shortened: boolean
+  // Passt der Anteil laut Abrechnung zur Stufe des Werts (Nachstufung, Entwurf 9.2)? `null`: nicht zu
+  // prüfen. Optional, weil eine vorher abgeschlossene Abrechnung es nicht kennt.
+  stageMatches?: boolean | null
   selfLandlordCents: number | null
   selfApproximated: boolean
   tenants: Co2TenantLine[]

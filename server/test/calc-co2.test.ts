@@ -65,6 +65,8 @@ test('Beispiel A: Probe exakt, co2Share 87,50 €, kein Mieter gekürzt, Werbung
   const h = r.heating?.[0] ?? assert.fail('keine Heizanlage in der Abrechnung')
   assert.deepEqual([h.plantId, h.period, h.co2?.booked, h.co2?.deducted, h.co2?.stage?.landlordPercent, h.co2?.landlordCents], ['hp', P, true, true, 70, 8750])
   assert.ok(r.legalBasis.values?.some((v) => v.id === 'co2.stage-table'), 'die Stufentabelle friert mit ein')
+  // 35 % laut Abrechnung, 70 % nach der Stufe: Der Druck sagt, dass der Anteil abweicht (Durchsicht I2).
+  assert.equal(h.co2?.stageMatches, false)
 })
 
 test('Beispiel B: Eigennutzung, L_self exakt im Eigenanteil (620,69 €), co2Share 79,31 €; laut Messdienst 625,00 / 75,00 €', () => {
@@ -333,6 +335,8 @@ test('Nachstufung (Entwurf 9.2): Techem 46,4 kg mit 35 % ergibt einen Hinweis, d
   assert.equal(n.level, 'hint')
   assert.match(n.text, /bei 46,4 kg CO₂ je m² und der Anteil des Vermieters bei 35 %\. Nach der Stufentabelle des CO2KostAufG gehört dieser Wert zu 70 %\./)
   assert.match(n.text, /§ 8 CO2KostAufG.*§ 9 CO2KostAufG/s)
+  // Durchsicht I2: Auf § 9 kann sich der Vermieter nur mit Nachweis berufen.
+  assert.match(n.text, /nur berufen, wenn er dem Mieter die Umstände nachweist \(§ 9 Abs\. 3 CO2KostAufG\)/)
   const passend = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ serviceLandlordPermille: 700, serviceTotalCents: 12500 })])
   assert.ok(!codes(passend).includes('co2.stage-mismatch'))
   // L passt nicht zu C · ‰.

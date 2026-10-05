@@ -28,6 +28,9 @@ test('Druckblock (§ 7 Abs. 3 CO2KostAufG): Anteil des Mieters, Einstufung mit m
   expect(v.table.filter((s) => s.marked)).toEqual([{ range: '42 bis unter 47 kg', percent: '70 %', marked: true }])
   expect(v.table.at(-1)).toEqual({ range: 'ab 52 kg', percent: '95 %', marked: false })
   expect(v.notes).toEqual(['Angaben laut Abrechnung des Messdienstes oder der Gemeinschaft (§ 7 Abs. 3 CO2KostAufG).'])
+  // Weicht der Anteil laut Abrechnung von der Stufe ab, sagt der Druck es und nennt den Grund nicht selbst (Durchsicht I2).
+  const ab = co2Block(anlage(bewertung({ stageMatches: false })), 'ta') ?? assert.fail('kein Block')
+  expect(ab.notes).toContain('Der Anteil des Vermieters laut Abrechnung (35 %) weicht von der markierten Stufe ab (70 %). Den Grund nennt die Abrechnung des Messdienstes, etwa eine Kürzung nach § 9 CO2KostAufG.')
 })
 
 test('Kein Block ohne Buchung, ohne Angaben oder für einen Mieter ohne Heizkosten; kurze Heizperiode mit Hinweis', () => {

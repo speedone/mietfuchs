@@ -291,6 +291,7 @@ export function co2Assessment(
     stage: re.stage,
     table: p.ranges,
     shortened: p.shortened,
+    stageMatches: re.percentOk,
     selfLandlordCents: p.deduction ? Math.round(p.deduction.selfRaw) : null,
     selfApproximated: p.deduction?.selfApproximated ?? false,
     tenants: p.tenants,
