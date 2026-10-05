@@ -38,6 +38,24 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
 - **Zweifamilienhaus als Art des Objekts**, mit einem Hinweis, wenn die angelegten Wohnungen nicht
   dazu passen; ob die Ausnahme des § 2 HeizkostenV gilt, richtet sich weiter nach den Wohnungen
   ([#180](https://github.com/speedone/mietfuchs/issues/180)).
+- **Eigene Heizperiode.** Rechnet Ihr Messdienst die Heizkosten etwa von Mai bis April ab, stellen
+  Sie unter Stammdaten → Heizung den Zeitraum der Heizung ein, mit Vorschau. Die Heizkosten einer
+  Heizperiode stehen dann in der Betriebskostenabrechnung des Jahres, in dem sie endet; vorhandene
+  Heizpositionen kommen dorthin. Die Einrichtung erklärt dazu die drei Wege (Heizperiode des
+  Messdienstes in der Abrechnung des Kalenderjahres, das ganze Objekt auf den Zeitraum des
+  Messdienstes umstellen, den Messdienst auf den 31.12. umstellen lassen) mit Vor- und Nachteilen
+  und schlägt bei einer gemeinsamen Vorauszahlung den ersten vor. Wer in diesem Jahr nicht mehr im Haus wohnte, bekommt eine
+  Abrechnung nur mit seinen Heizkosten; Mietfuchs empfiehlt dafür die frühere Frist und sagt, bis
+  wann die Abrechnung des Messdienstes anzufordern ist
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
+- **Getrennte Heizkostenabrechnung.** Werden die Heizkosten mit eigener Vorauszahlung getrennt
+  abgerechnet, bekommt jede Heizperiode ihre eigene Heizkostenabrechnung mit eigener Frist und
+  eigenem Abschluss. Beim Einschalten teilt eine Vorschau die bisherige Vorauszahlung in
+  Heizvorauszahlung und übrige Vorauszahlung, erfasst Jahreskorrekturen neu und nennt die Fristen;
+  ausgeschaltet wird erst ab der ersten Heizperiode, die nicht abgeschlossen ist. Jeder Monat der
+  Vorauszahlung wird genau einmal angerechnet. Mietkonto und Mietverhältnis zeigen beide
+  Vorauszahlungen, das Cockpit jede Heizkostenabrechnung mit ihrer Frist
+  ([#217](https://github.com/speedone/mietfuchs/issues/217)).
 
 ### Geändert
 

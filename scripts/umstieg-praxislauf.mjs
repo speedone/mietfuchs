@@ -700,7 +700,7 @@ fall(14, 'Backup mit offener und gebuchter Auswertung (#170)', async () => {
 })
 
 fall(15, 'Backup mit abweichendem Zeitraum und Rumpf (#208)', async () => {
-  // Die eigene Heizperiode (Entwurf 5.9) kommt mit PR 5 dazu; hier der Zeitraum des Objekts.
+  // Die eigene Heizperiode prüft Fall 17.
   const dataDir = tempDir()
   const regeln = { startMonth: 1, changes: ['2025-05'] }
   const senden = (base, pfad, method, body) => fetch(`${base}${pfad}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -779,6 +779,50 @@ fall(16, 'Datenbank von 0.10.1 mit Kostenpositionen in fünf Jahren, Update auf 
     gleich(mieter.find((t) => t.id === 't1')?.prepaymentOverrides, { 2023: 170000 }, 'Update: die Jahreskorrektur ist da')
   })
   dateienImOrdner(dataDir, 'Update', { 'mietfuchs.sqlite.vor-0014_zeitraum': true })
+})
+
+fall(17, 'Backup mit eigener Heizperiode und getrennter Heizkostenabrechnung (#217)', async () => {
+  // Entwurf 5.9: Heizperiode, Spanne nach Weg d, Heizstaffel und abgeschlossene Heizkostenabrechnung
+  // überstehen Backup, Wiederherstellen und Neustart, und jede Zahl bleibt.
+  const dataDir = tempDir()
+  const senden = (base, pfad, method, body) => fetch(`${base}${pfad}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  let anlageId = ''
+  const pruefen = async (base, name) => {
+    const [anlage] = await holen(base, '/api/heating-plants')
+    gleich([anlage?.periodStartMonth, anlage?.separateSpans], [5, [{ from: '2025-05', until: null }]], `${name}: Heizperiode und Spanne`)
+    const heiz = await holen(base, `/api/heating-settlement/${anlageId}/2025-05`)
+    gleich([heiz.deadline, heiz.statements?.[0]?.prepaymentCents, heiz.closed !== null], ['2027-04-30', 147600, true], `${name}: Heizkostenabrechnung 2025/2026 abgeschlossen, 12 · 123 € angerechnet`)
+    const p2026 = await holen(base, '/api/settlement/2026')
+    gleich(p2026.separateHeating?.map((h) => h.period.key), ['2025-05'], `${name}: die Abrechnung 2026 enthält die Heizkosten nicht`)
+    const [mieter] = await holen(base, '/api/tenancies')
+    gleich(mieter?.heatingPrepayments, [{ from: '2025-05', monthlyCents: 12300 }], `${name}: die Heizstaffel ist da`)
+  }
+  await withServer(dataDir, async ({ base }) => {
+    const unit = await jsonOf(await senden(base, '/api/units', 'POST', { name: 'EG', areaM2: 60, participates: true }))
+    const mieter = await jsonOf(await senden(base, '/api/tenancies', 'POST', { unitId: unit.id, tenantName: 'Müller', persons: 1, start: '2024-01-01', prepayments: [{ from: '2024-01', monthlyCents: 30000 }] }))
+    const { plant } = await jsonOf(await senden(base, '/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    anlageId = plant.id
+    // Jede Vorschau trägt eine Marke; geschrieben wird nur mit ihr.
+    const marke = async (pfad, body) => (await jsonOf(await senden(base, pfad, 'POST', body))).token
+    const regeln = { rules: { startMonth: 5, changes: [] } }
+    const zeitraum = await marke(`/api/heating-plants/${plant.id}/period/preview`, regeln)
+    gleich((await senden(base, `/api/heating-plants/${plant.id}/period`, 'PUT', { ...regeln, answers: { token: zeitraum } })).status, 200, 'Heizperiode Mai bis April')
+    const getrennt = await marke(`/api/heating-plants/${plant.id}/separate/preview`, { separate: true, month: '2025-05' })
+    const ein = await senden(base, `/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: getrennt } })
+    gleich(ein.status, 200, 'Weg d ab 05/2025')
+    await senden(base, '/api/costItems', 'POST', { period: '2025-05', category: 'Heizung und Warmwasser', description: 'Messdienst 2025/2026', amountCents: 150000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 })
+    gleich((await senden(base, `/api/heating-settlement/${plant.id}/2025-05/close`, 'POST', {})).status, 201, 'Heizkostenabrechnung abgeschlossen')
+    await pruefen(base, 'vor dem Backup')
+    const zip = await backupHolen(base)
+    await senden(base, '/api/units', 'POST', { name: 'Nach dem Backup', areaM2: 10, participates: true })
+    const antwort = await backupEinspielen(base, zip)
+    gleich(antwort.status, 200, 'Wiederherstellen: die Route nimmt das Archiv an')
+    gleich((await holen(base, '/api/units')).length, 1, 'Wiederherstellen: der Stand des Archivs gilt')
+    await pruefen(base, 'nach dem Wiederherstellen')
+  })
+  await withServer(dataDir, async ({ base }) => {
+    await pruefen(base, 'nach dem Neustart')
+  })
 })
 
 // ---------- Lauf ----------

@@ -914,6 +914,50 @@ umgekehrt).
 - Das Wiederherstellen prüft Verweise auf Anlagen anderer Objekte, überlappende Anlagen und
   Heizperioden ohne Zeitraum (`heatingPlantViolations`).
 
+**Eigene Heizperiode und getrennte Heizkostenabrechnung** (Heizung PR 5, #217): Eine Anlage rechnet
+im Zeitraum ihres Objekts ab (`period_start_month` null) oder in eigenen Heizperioden
+(`period_start_month`, `heating_period_changes`, berechnet wie die Zeiträume des Objekts). Die Regeln
+stehen in [shared/heatingPeriod.ts](shared/heatingPeriod.ts).
+
+- **Positionen tragen den Schlüssel ihrer Heizperiode** (G-A2): Eine Heizposition einer Anlage mit
+  eigener Heizperiode steht unter einer Heizperiode der Anlage, sonst 400. Eine neue ohne Angabe (alter
+  Tab, Belegbuchung) kommt in die Heizperiode, die in ihrem Objektzeitraum endet
+  (`defaultHeatingPlant`). Den Rhythmus setzt nur der Wechsel mit Vorschau
+  ([server/src/db/heatingPeriodChange.ts](server/src/db/heatingPeriodChange.ts)), nie `PUT`; er
+  schlüsselt die Positionen um, erfasst Korrekturen neu und lässt Abgeschlossenes unangetastet.
+- **Weg b** (VIII ZR 240/07): Eine Heizperiode gehört in die Abrechnung P, in der sie endet. Der
+  Schnappschuss trägt sie als `heatingParts`; `computeSettlement` rechnet jede mit derselben Funktion
+  über ihre eigenen Tage (`scope: 'heatingPart'`, ohne Vorauszahlungen) und führt sie in P zusammen.
+  Wer nur in der Heizperiode wohnte, bekommt `heatingOnly` mit `recommendedDeadline` und der Warnung
+  `period.heating-only-statement` (15.1 Nr. 2).
+- **Weg d** (Auslegung, 15.1 Nr. 21): Nur bei getrennter Abrechnung und H ≠ P. Ob eine Heizperiode
+  getrennt abgerechnet wird, sagen die gespeicherten Spannen (`heating_separate_spans`: ab Monat X bis
+  vor W), nicht die Antwort von heute, damit Ein- und Ausschalten nie rückwirkend wirken (C3, D1).
+  Ein- und Ausschalten laufen über die Vorschau in
+  [server/src/db/separateSettlement.ts](server/src/db/separateSettlement.ts); P lässt die Heizperiode
+  weg, sie hat ihre eigene Abrechnung (`scope: 'heating'`, `heatingSnapshotFor`), Frist und
+  Abschluss (`closed_heating_settlements` samt Verlauf; der Abschluss von P friert sie nicht ein).
+  Bei H = P gibt es eine Gesamtabrechnung mit getrennt ausgewiesenen Vorauszahlungen.
+- **Jeder Monat der Heizstaffel wird genau einmal angerechnet** (6.1 Nr. 5): Er gehört der getrennt
+  abgerechneten Heizperiode, die ihn enthält, wenn er ab X liegt, sonst der Abrechnung P
+  (`separateOwner`, die einzige Stelle). **Die Jahreskorrektur von P gilt für alles, was P anrechnet**
+  (bei Weg d also nur die übrigen Vorauszahlungen); eine Heizkorrektur (`heating_prepayment_overrides`,
+  endgültig oder vorläufig mit Monaten, D2) gibt es nur für eine getrennt abgerechnete Heizperiode.
+  Invariante 11 prüft das über zufällige Abläufe mit Abschlüssen (invariant-heizperiode.test.ts).
+- Das Mietkonto führt beide Staffeln im Soll; die Steuerübersicht nimmt Heizpositionen einer eigenen
+  Heizperiode im Jahr ihrer Zahlung, bei Weg d aus der Heizkostenabrechnung, und nennt dann keine
+  Vorauszahlung der Abrechnung (`prepaymentSettlementCents` null).
+- Ein Wechsel des Objektzeitraums lässt Heizpositionen einer eigenen Heizperiode, wo sie sind, und
+  lehnt ab, wenn er Weg d für eine Heizperiode umschalten würde.
+- **Jede Vorschau trägt eine Marke** (`token`, wie beim Wechsel des Abrechnungszeitraums): Der
+  Wechsel des Zeitraums der Heizung und das Ein- und Ausschalten schreiben nur mit der Marke der
+  Vorschau, die der Vermieter gesehen hat; sonst 409 mit der neuen Vorschau.
+- **Einrichtung Schritt 3** erklärt die drei Wege (Heizperiode des Messdienstes in der
+  Gesamtabrechnung, Objekt auf den Zeitraum des Messdienstes umstellen, Messdienst auf den 31.12.
+  umstellen lassen) mit Vor- und Nachteilen; Vorgabe ist der erste, solange die Heizkosten nicht
+  getrennt abgerechnet werden (VIII ZR 240/07, Leitsatz a). Logik in
+  [client/src/heatingPeriodForm.ts](client/src/heatingPeriodForm.ts) (`heatingWays`).
+
 **Der Umstieg** ([server/src/db/changeover.ts](server/src/db/changeover.ts)): Beim ersten Start
 der neuen Version wandern die Daten der `db.json` in die Datenbank, ohne dass jemand einen Befehl
 eingibt. Die Reihenfolge steht dort ausführlich; kurz: erkennen, prüfen (mit dem Validator,
@@ -1001,7 +1045,7 @@ Löschen erledigen die Fremdschlüssel und nicht mehr index.ts. Alle Datenrouten
 `?property=` auf ein Objekt ein (siehe Objekte). `POST /api/tenancies/:id/change` führt den
 Mieterwechsel (Ende, Zwischenablesungen, Nachmieter) in einer Transaktion aus, ganz oder gar
 nicht (#150, `changeTenant` in repository.ts). Daneben Spezialrouten: `/api/properties`
-(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
+(Objekte anlegen, ändern, nur leere löschen), `/api/heating-plants` (Heizanlage, siehe dort), `/api/heating-plants/:id/period` und `/separate` (je mit `/preview`), `/api/heating-settlement/:plant/:period` (samt `/close` und `/history`) und `/api/heating-settlements` (eigene Heizperiode, siehe dort), `/api/settings`, `/api/settlement/:year`, `/api/consumption/:year`, `/api/rentledger/:year`
 (Mietkonto: Soll/Ist je Monat), `/api/taxreport/:year` (Steuer-Übersicht Anlage V),
 `/api/upload`, `/api/extract` und `/api/intake` (KI-Auswertung, auf Wunsch als Strom, siehe
 unten), die KI-Einstellungen `/api/ai/presets`, `/api/ai/status`, `/api/ai/key` und
