@@ -33,8 +33,8 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
-import { calendarPeriod, parsePeriodKey, startYearOf } from '../../../shared/period.ts'
+import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { calendarPeriod, isCalendarRules, parsePeriodKey, periodOfKey, rulesOf, startYearOf } from '../../../shared/period.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -44,7 +44,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
-  flatRates, METER_TYPES, meters, payments, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
+  flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
 import { aiSlotRows, settingsRow } from './write.ts'
@@ -379,6 +379,45 @@ export class CrossPropertyError extends Error {
   status = 400
 }
 
+// Ein Zeitraum, den es für das Objekt nicht gibt, oder die Jahreszahl eines alten Tabs bei einem
+// Objekt mit eigenem Rhythmus (#208). Die Meldung ist für den Nutzer geschrieben; die Route gibt
+// sie mit 400 weiter wie `CrossPropertyError`.
+export class PeriodError extends Error {
+  status = 400
+}
+
+const OLD_TAB =
+  'Diese Seite ist älter als das Programm und kennt die Abrechnungszeiträume dieses Objekts noch nicht. ' +
+  'Bitte laden Sie die Seite neu; gespeichert wurde nichts.'
+
+const YEAR_ONLY = /^\d{4}$/
+
+async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
+  const [row] = await db.select({ startMonth: properties.periodStartMonth }).from(properties).where(eq(properties.id, propertyId))
+  const changes = await db.select({ fromMonth: periodChanges.fromMonth }).from(periodChanges)
+    .where(eq(periodChanges.propertyId, propertyId)).orderBy(periodChanges.fromMonth)
+  return { startMonth: row?.startMonth ?? 1, changes: changes.map((c) => c.fromMonth) }
+}
+
+// Wirft, wenn ein Schlüssel keinen Zeitraum des Objekts bezeichnet. `legacyYear` heißt: Der Rumpf
+// kam mit einer nackten Jahreszahl, also von einem Tab von vor dem Update. Sie gilt nur bei einem
+// reinen Kalenderobjekt; sonst fiele die Eingabe still in einen Zeitraum, der zufällig im Januar
+// beginnt (bei einem Wechsel ab Mai der Rumpf).
+async function requirePeriods(db: Executor, propertyId: string, keys: readonly string[], legacyYear: boolean, what: string): Promise<void> {
+  if (keys.length === 0 && !legacyYear) return
+  const rules = await rulesForProperty(db, propertyId)
+  if (legacyYear && !isCalendarRules(rules)) throw new PeriodError(OLD_TAB)
+  for (const key of keys) {
+    const period = parsePeriodKey(key)
+    if (period === null || periodOfKey(rules, period) === null) {
+      throw new PeriodError(
+        `${what} steht unter dem Zeitraum ${key}, den es für Objekt ${await propertyName(db, propertyId)} nicht gibt. ` +
+          'Bitte wählen Sie einen Abrechnungszeitraum des Objekts.',
+      )
+    }
+  }
+}
+
 async function propertyName(db: Executor, propertyId: string): Promise<string> {
   const rows = await db.select({ name: properties.name }).from(properties).where(eq(properties.id, propertyId))
   const name = rows[0]?.name
@@ -408,7 +447,9 @@ async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Pr
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
 }
 
-async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem): Promise<void> {
+async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem, body: unknown): Promise<void> {
+  // Der Zeitraum (#208) muss zum Objekt gehören. `year` ohne `period` schickt nur ein alter Tab.
+  await requirePeriods(db, after.propertyId, [after.period ?? calendarPeriod(after.year)], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -455,9 +496,19 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
   )
 }
 
+async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  // Die Jahreskorrektur (#208): jeder Schlüssel ein Zeitraum des Objekts der Wohnung. Eine
+  // vierstellige Jahreszahl im Rumpf schickt nur ein alter Tab.
+  const sent = raw(body, 'prepaymentOverrides')
+  const legacyYear = isObject(sent) && Object.keys(Object(sent)).some((k) => YEAR_ONLY.test(k))
+  const [unit] = await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, after.unitId))
+  if (unit) await requirePeriods(db, unit.propertyId, Object.keys(after.prepaymentOverrides), legacyYear, `Die Jahreskorrektur von „${after.tenantName}“`)
+  await guardTenancyMove(db, before, after)
+}
+
 // Ein Mietverhältnis erbt sein Objekt über die Wohnung. Wechselt es in eine Wohnung eines anderen
 // Objekts, bleiben seine Einzelbeträge (#94) beim alten zurück; dann lieber ablehnen.
-async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
+async function guardTenancyMove(db: Executor, before: Tenancy | null, after: Tenancy): Promise<void> {
   if (!before || before.unitId === after.unitId) return
   const objektVon = async (unitId: string) =>
     (await db.select({ propertyId: units.propertyId }).from(units).where(eq(units.id, unitId)))[0]?.propertyId
@@ -514,6 +565,39 @@ export async function crossPropertyViolations(db: Database): Promise<string[]> {
     .innerJoin(units, eq(costItemSelfAmounts.unitId, units.id))
     .where(ne(costItems.propertyId, units.propertyId))
   for (const c of eigen) befunde.push(`Die Kostenposition „${c.description}“ hat einen Eigenbetrag für eine Wohnung eines anderen Objekts.`)
+  return befunde
+}
+
+// Zeitraumschlüssel, die für ihr Objekt keinen Zeitraum bezeichnen (#208), als lesbare Sätze. Über
+// die Routen entsteht keiner (die Schreibprüfungen oben); in einem Archiv kann einer stehen, etwa von
+// Hand bearbeitet. Was darunter steht, erschiene in keiner Abrechnung.
+export async function orphanPeriodKeys(db: Database): Promise<string[]> {
+  const rulesById = new Map((await readProperties(db)).map((p) => [p.id, rulesOf(p)]))
+  const befunde: string[] = []
+  const pruefe = (propertyId: string | null, key: string, was: string): void => {
+    const rules = propertyId === null ? undefined : rulesById.get(propertyId)
+    if (!rules) return
+    const period = parsePeriodKey(key)
+    if (period === null || periodOfKey(rules, period) === null) befunde.push(`${was} steht unter dem Zeitraum ${key}, den es für das Objekt nicht gibt.`)
+  }
+  for (const c of await db.select({ propertyId: costItems.propertyId, period: costItems.period, description: costItems.description }).from(costItems)) {
+    pruefe(c.propertyId, c.period, `Die Kostenposition „${c.description}“`)
+  }
+  for (const c of await db.select({ propertyId: closedSettlements.propertyId, period: closedSettlements.period }).from(closedSettlements)) {
+    pruefe(c.propertyId, c.period, 'Eine abgeschlossene Abrechnung')
+  }
+  for (const c of await db.select({ propertyId: closedSettlementHistory.propertyId, period: closedSettlementHistory.period }).from(closedSettlementHistory)) {
+    pruefe(c.propertyId, c.period, 'Ein früherer Abschluss')
+  }
+  const korrekturen = await db
+    .select({ propertyId: units.propertyId, period: prepaymentOverrides.period, tenantName: tenancies.tenantName })
+    .from(prepaymentOverrides)
+    .innerJoin(tenancies, eq(prepaymentOverrides.tenancyId, tenancies.id))
+    .innerJoin(units, eq(tenancies.unitId, units.id))
+  for (const k of korrekturen) pruefe(k.propertyId, k.period, `Die Jahreskorrektur von „${k.tenantName}“`)
+  for (const a of await db.select({ propertyId: assessments.propertyId, period: assessments.requestedPeriod, file: assessments.file }).from(assessments)) {
+    if (a.period !== null) pruefe(a.propertyId, a.period, `Die Auswertung des Belegs „${a.file}“`)
+  }
   return befunde
 }
 
@@ -605,7 +689,12 @@ export async function removeProperty(db: Database, id: string): Promise<Property
   ] as const
   const inUse = teile.filter(([n]) => n > 0).map(([n, eins, viele]) => `${n} ${n === 1 ? eins : viele}`)
   if (inUse.length > 0) return { removed: false, reason: 'inUse', inUse: inUse.join(', ') }
-  await db.delete(properties).where(eq(properties.id, id))
+  // Eine Auswertung verliert mit ihrem Objekt auch den gewählten Zeitraum (#208): Der Fremdschlüssel
+  // setzt `property_id` auf NULL, und ein Zeitraum ohne Objekt verletzte die Prüfbedingung.
+  await db.transaction(async (tx) => {
+    await tx.update(assessments).set({ requestedPeriod: null }).where(eq(assessments.propertyId, id))
+    await tx.delete(properties).where(eq(properties.id, id))
+  })
   return { removed: true }
 }
 
@@ -711,7 +800,7 @@ type Collection<T extends CollectionEntity> = {
   read: (db: Database) => Promise<T[]>
   // Hält die Grenze zwischen den Objekten (#92), vor dem Schreiben. `before` ist beim Anlegen
   // `null`. Eigens und nicht in `merge`, weil die Prüfung die Datenbank fragen muss.
-  guard: (db: Executor, before: T | null, after: T) => Promise<void>
+  guard: (db: Executor, before: T | null, after: T, body: unknown) => Promise<void>
   empty: (id: string) => T
   merge: (current: T, body: unknown) => T
   insert: (db: Executor, entity: T) => Promise<void>
@@ -845,7 +934,7 @@ export async function createEntity(db: Database, coll: CollectionName, id: strin
   await withCollection<Promise<void>>(coll, async (c) => {
     const entity = c.merge(c.empty(id), body)
     await db.transaction(async (tx) => {
-      await c.guard(tx, null, entity)
+      await c.guard(tx, null, entity, body)
       await c.insert(tx, entity)
     })
   })
@@ -861,7 +950,7 @@ export async function updateEntity(db: Database, coll: CollectionName, id: strin
     if (!current) return false
     const entity = c.merge(current, body)
     await db.transaction(async (tx) => {
-      await c.guard(tx, current, entity)
+      await c.guard(tx, current, entity, body)
       await c.replace(tx, entity)
     })
     return true
@@ -898,13 +987,13 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
 // nur ohne Transaktion: Ein Weg mit eigenen Regeln wäre ein zweiter, der auseinanderläuft.
 export async function insertCostItemIn(tx: Executor, id: string, body: unknown): Promise<void> {
   const entity = mergeCostItem(emptyCostItem(id), body)
-  await guardCostItem(tx, null, entity)
+  await guardCostItem(tx, null, entity, body)
   await costItemCollection.insert(tx, entity)
 }
 
 export async function patchCostItemIn(tx: Executor, current: CostItem, body: unknown): Promise<void> {
   const entity = mergeCostItem(current, body)
-  await guardCostItem(tx, current, entity)
+  await guardCostItem(tx, current, entity, body)
   await costItemCollection.replace(tx, entity)
 }
 
@@ -1006,11 +1095,11 @@ export async function changeTenant(
 
   const beendet = mergeTenancy(current, { end })
   await db.transaction(async (tx) => {
-    await guardTenancy(tx, current, beendet)
+    await guardTenancy(tx, current, beendet, { end })
     await tenancyCollection.replace(tx, beendet)
     for (const ablesung of ablesungen) await readingCollection.insert(tx, ablesung)
     if (nachmieter) {
-      await guardTenancy(tx, null, nachmieter)
+      await guardTenancy(tx, null, nachmieter, nachmieterRumpf)
       await tenancyCollection.insert(tx, nachmieter)
     }
   })
