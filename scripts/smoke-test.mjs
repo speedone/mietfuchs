@@ -433,6 +433,22 @@ async function co2Statement() {
   await request(`/api/costItems/${posten.body.id}`, { method: 'DELETE' })
 }
 
+// Lieferungen (Heizung PR 7): Die Gasrechnung des Jahres als Lieferung an der Heizanlage des
+// Messdienstes; die Abrechnung bewertet sie (Abdeckung der Heizperiode). Das Objekt der Prüfung
+// rechnet im Kalenderjahr.
+async function fuelDelivery() {
+  const [anlage] = (await request('/api/heating-plants')).body
+  const angelegt = await request(`/api/heating-plants/${anlage.id}/deliveries`, json('POST', {
+    label: 'Gas 2025', invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', amountCents: 311747, emissionsKg: 5406.17, co2CostCents: 60000,
+  }))
+  assert(angelegt.status === 201 && angelegt.body.usedByService === true, 'Lieferung anlegen', angelegt.body)
+  const s = (await request('/api/settlement/2025')).body
+  const fuel = s.heating?.[0]?.fuel
+  assert(Math.abs((fuel?.coveragePermille ?? 0) - 1000) < 1e-6 && fuel.deliveries?.length === 1, 'die Abrechnung bewertet die Lieferung', s.heating)
+  const orte = await request(`/api/properties/${anlage.propertyId}/degree-days`, json('PUT', { values: [{ month: '2025-01', value: 420 }] }))
+  assert(orte.status === 200 && orte.body.length === 1, 'Gradtagzahlen des Orts speichern', orte.body)
+}
+
 // Nach der eigenen Heizperiode (Mai bis April): eine Angabe für die Heizperiode, die in 2025 endet,
 // damit die Wiederherstellung sie mitprüfen kann.
 async function co2ForBackup() {
@@ -489,6 +505,8 @@ async function backupAndRestore(unit) {
   assert(anlagen[0]?.periodStartMonth === 5 && anlagen[0]?.separateSpans?.length === 1, 'Heizperiode und getrennte Abrechnung sind nach der Wiederherstellung da', anlagen)
   const perioden = (await request(`/api/heating-plants/${anlagen[0].id}/periods?period=2025`)).body
   assert(perioden?.[0]?.co2?.method === 'selfAfterService', 'die CO₂-Angaben sind nach der Wiederherstellung da', perioden)
+  const lieferungen = (await request(`/api/heating-plants/${anlagen[0].id}/deliveries`)).body
+  assert(lieferungen?.[0]?.label === 'Gas 2025', 'die Lieferung ist nach der Wiederherstellung da', lieferungen)
   const uploads = (await request('/api/uploads')).body.map((u) => u.file)
   assert(uploads.some((f) => /Gebührenbescheid_Müll\.pdf$/.test(f)), 'Belege sind nach der Wiederherstellung da', uploads)
   // Das Wiederherstellen schließt die Datenbank, tauscht die Datei und öffnet sie neu. Ob das
@@ -534,6 +552,7 @@ async function main() {
   const unit = await uploadsAndSettlement()
   await heatingPlant()
   await co2Statement()
+  await fuelDelivery()
   await heatingPeriod()
   await co2ForBackup()
   await backupAndRestore(unit)
