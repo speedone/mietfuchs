@@ -13,7 +13,7 @@ import { BookingRefusal, bookAssessment, previewBooking, viewAssessment, viewAss
 import { newId, UPLOAD_DIR, DATA_DIR } from './store.ts'
 import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
-import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
+import { computeSettlement, consumptionOverview, rentLedger, taxPartsFor, taxReportFor } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
 import { calendarPeriod, calendarYearPeriod, isCalendarRules, periodLabel, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
 import type { BillingPeriod } from '../../shared/types.ts'
@@ -385,16 +385,6 @@ async function periodOf(db: Database, req: Request, propertyId: string): Promise
   return resolved.period
 }
 
-// Steuer und Mietkonto rechnen im Kalenderjahr (#208). Die Steuerübersicht eines Objekts mit anderem
-// Rhythmus schöpft aus zwei Abrechnungen und kommt mit PR 3; bis dahin lieber ablehnen als eine Zahl
-// nennen, die aus einer halben Abrechnung stammt.
-async function requireCalendarObject(db: Database, propertyId: string): Promise<void> {
-  const property = (await listProperties(db)).find((p) => p.id === propertyId)
-  if (!isCalendarRules(rulesOf(property))) {
-    throw new RouteProblem(400, 'Die Steuerübersicht für ein Objekt mit abweichendem Abrechnungszeitraum kommt mit einer späteren Version.')
-  }
-}
-
 // Eine kalte Rechnung über zwei Abrechnungszeiträume (#208, Entwurf 3.4): erst die Vorschau mit
 // den Beträgen je Zeitraum, dann das Speichern aller Teile in einer Transaktion. Begründung in
 // serviceSplit.ts und db/repository.ts.
@@ -640,15 +630,13 @@ app.get('/api/rentledger/:year', async (req, res) => {
   res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)), { asOf: today() })))
 })
 
-// Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss
+// Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss.
+// Bei einem Objekt mit eigenem Rhythmus aus den Abrechnungen, die das Jahr berühren (#208);
+// Begründung in calc.ts (`taxPartsFor`).
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => {
-    const property = await propertyOf(db, req)
-    await requireCalendarObject(db, property)
-    return taxReport(snapshotFor(await readStock(db), property, calendarYearPeriod(year)))
-  }))
+  res.json(await readData(async (db) => taxReportFor(await readStock(db), await propertyOf(db, req), year)))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -1216,14 +1204,18 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const { items, property, rows, links, split } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
-    await requireCalendarObject(db, propertyId)
     const whole = await readStock(db)
     const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
-    // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163)
-    const split = new Map(taxReport(snapshotFor(whole, propertyId, calendarYearPeriod(year))).expenses.items.map((i) => [i.costItemId, i]))
-    // Die Steuer rechnet im Kalenderjahr (#208).
-    return { items: stock.costItems.filter((c) => c.period === calendarPeriod(year)), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
+    // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163), und
+    // dieselbe Auswahl der Positionen: das Jahr der Zahlung (#208).
+    const report = taxReportFor(whole, propertyId, year)
+    const split = new Map(report.expenses.items.map((i) => [i.costItemId, i]))
+    const parts = taxPartsFor(whole, propertyId, year)
+    const ids = new Set(parts === null
+      ? stock.costItems.filter((c) => c.period === calendarPeriod(year)).map((c) => c.id)
+      : parts.flatMap((p) => p.items.map((c) => c.id)))
+    return { items: stock.costItems.filter((c) => ids.has(c.id)), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
   })
   const booked = new Map<string, string[]>()
   for (const [file, l] of links) for (const id of l.bookedItemIds) booked.set(id, [...(booked.get(id) ?? []), file])

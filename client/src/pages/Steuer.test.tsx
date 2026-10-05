@@ -59,6 +59,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   surplusSollCents: 1200000,
   surplusPaidCents: 1200000,
   costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
+  settlementPeriods: [],
   ...over,
 })
 

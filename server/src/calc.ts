@@ -44,7 +44,8 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { calendarYearPeriod, contextOf, formatDayRange, periodDays, periodLabel, periodMonths, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodDays, periodLabel, periodMonths, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { snapshotFor } from './snapshot.ts'
 import { annualFactors } from './prepaymentSuggestion.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
@@ -681,15 +682,26 @@ export const ANLAGE_V_GROUP_ORDER = [
 // der Flächenanteil der vermieteten Einheiten (für gemischt genutzte Gebäude). Die
 // Werbungskosten folgen dem Abflussprinzip (im Jahr gebuchte Kosten), die Einnahmen
 // werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
-export function taxReport(snapshot: Snapshot): TaxReport {
+// Das Jahr der Zahlung einer Position (#208, Entwurf 3.10): angegeben, sonst das Kalenderjahr, in
+// dem ihr Zeitraum beginnt (ein Zeitraum ohne Angabe liegt in einem Kalenderjahr, repository.ts
+// sichert das zu).
+export const taxYearOf = (item: Pick<SnapshotCostItem, 'taxYear'>, period: Pick<BillingPeriod, 'from'>): number =>
+  item.taxYear ?? Number(period.from.slice(0, 4))
+
+// Ein Teil der Steuerübersicht: der Schnappschuss eines Abrechnungszeitraums und seine Positionen,
+// die im Kalenderjahr gezahlt wurden. Der Eigenanteil kommt aus der Abrechnung dieses Zeitraums.
+export type TaxPart = { snapshot: Snapshot; items: SnapshotCostItem[] }
+
+export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxReport {
   const year = snapshot.year
-  // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Aus zwei Abrechnungen schöpft sie
-  // erst mit PR 3; bis dahin nimmt sie nur den Schnappschuss eines Kalenderjahres, und die Route lehnt
-  // ein Objekt mit anderem Rhythmus ab.
+  // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Ohne Teile: der Schnappschuss
+  // eines Kalenderjahres. Mit Teilen: die Abrechnungen, die das Jahr berühren; `snapshot` liefert
+  // dann nur Mietkonto und Zahlungen des Kalenderjahres.
   const calendar = calendarYearPeriod(year)
   if (snapshot.period.from !== calendar.from || snapshot.period.to !== calendar.to) {
     throw new Error('Die Steuerübersicht rechnet im Kalenderjahr; dieser Schnappschuss trägt einen anderen Zeitraum.')
   }
+  const used: readonly TaxPart[] = parts ?? [{ snapshot, items: snapshot.costItems.filter((c) => c.period === snapshot.period.key) }]
   const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
@@ -734,7 +746,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // Steht im Jahr keine Heizposition, rechnen die Mieter die Heizung selbst mit dem Versorger ab,
   // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
   const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
-  const heatingBilled = snapshot.costItems.some((c) => c.period === snapshot.period.key && c.category === HEATING_CATEGORY)
+  const heatingBilled = used.some((p) => p.items.some((c) => c.category === HEATING_CATEGORY))
   const models = ledger.rows.map((r) => {
     const t = tenancyById.get(r.tenancyId)
     const cold = t?.costModel ?? 'settlement'
@@ -760,7 +772,10 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // zweite Auswahl der Mietverhältnisse liefe irgendwann auseinander, und gemerkt hätte man es
   // erst daran, dass Steuerübersicht und versendete Abrechnung verschiedene Zahlen nennen.
   // Genau das ist der Befund aus #70.
-  const settlement = computeSettlement(snapshot)
+  // Bei einem Objekt mit eigenem Rhythmus (#208) die Abrechnungen der Teile, je einmal gerechnet; die
+  // Vorauszahlungen der Abrechnung gibt es nur, wenn ein Zeitraum dem Kalenderjahr gleicht.
+  const settled = used.map((p) => ({ part: p, settlement: computeSettlement(p.snapshot) }))
+  const same = settled.find(({ part }) => part.snapshot.period.from === calendar.from && part.snapshot.period.to === calendar.to)
 
   // Was die Abrechnung bei den Vorauszahlungen ansetzt, und **bei abgeschlossener Abrechnung
   // ihr eingefrorener Stand**, genau wie beim Eigenanteil weiter unten. Die Zahl steht in der
@@ -775,21 +790,29 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // jedes Mietverhältnis führt. Das Mietkonto wiederum darf die Jahreskorrektur nicht übernehmen,
   // denn eine Jahreszahl auf zwölf Monate zu verteilen wäre erfunden. Alle drei Zahlen sind
   // richtig, und deshalb stehen sie jetzt nebeneinander statt jede für sich.
-  const frozen = snapshot.closedSettlement
-  const prepaymentSettlementCents = frozen
+  const frozen = same?.part.snapshot.closedSettlement ?? null
+  const prepaymentSettlementCents = same === undefined ? null : frozen
     ? frozen.prepaymentCents
-    : settlement.statements.reduce((a, st) => a + st.prepaymentCents, 0)
-  const prepaymentOverridden = frozen
+    : same.settlement.statements.reduce((a, st) => a + st.prepaymentCents, 0)
+  const prepaymentOverridden = same === undefined ? false : frozen
     ? frozen.prepaymentOverridden
-    : settlement.statements.some((st) => st.prepaymentOverridden)
+    : same.settlement.statements.some((st) => st.prepaymentOverridden)
 
   // Kostenpositionen des Jahres nach Anlage-V-Gruppe und Kostenart aggregieren. Der Filter ist
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
-  const items = snapshot.costItems.filter((c) => c.period === snapshot.period.key)
-  // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position. Die Rücklage fehlt darin.
-  const split = splitForTax(snapshot, items.filter((c) => groupOf(c.category) !== null), settlement)
+  // Seit #208 steht der Filter in `used` (Kalenderobjekt) bzw. in `taxPartsFor` (Jahr der Zahlung).
+  const items = used.flatMap((p) => p.items)
+  // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position aus der Abrechnung ihres
+  // Zeitraums. Die Rücklage fehlt darin.
+  const splits = settled.map(({ part, settlement }) => splitForTax(part.snapshot, part.items.filter((c) => groupOf(c.category) !== null), settlement))
+  const split: TaxSplit = {
+    items: new Map(splits.flatMap((s) => [...s.items.entries()])),
+    selfUseChangedInYear: splits.some((s) => s.selfUseChangedInYear),
+    closedSelfUseDiffers: splits.some((s) => s.closedSelfUseDiffers),
+    closedItemsChanged: splits.reduce((a, s) => a + s.closedItemsChanged, 0),
+  }
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
   // Zuführung zur Erhaltungsrücklage (#143): nicht unter den Werbungskosten, sondern daneben.
   let reserveContributionCents = 0
@@ -896,9 +919,11 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // Werbungskosten oben bleiben ungekürzt — die Aufteilung nimmt diese Übersicht nicht vor.
   // Ist die Abrechnung abgeschlossen, gilt ihr eingefrorener Stand (wie in
   // GET /api/settlement/:year), sonst widersprächen Übersicht und versendete Abrechnung.
-  const selfUsedShareCents = snapshot.closedSettlement
-    ? snapshot.closedSettlement.selfUsedShareCents
-    : settlement.selfUsedShareCents
+  // Ohne Zeitraum gleich dem Kalenderjahr (#208): die Summe der Eigenanteile laut Abrechnung je
+  // Position.
+  const selfUsedShareCents = same !== undefined
+    ? same.part.snapshot.closedSettlement?.selfUsedShareCents ?? same.settlement.selfUsedShareCents
+    : [...split.items.values()].filter((i) => i.allocation === 'settlement').reduce((a, i) => a + i.privateCents, 0)
 
   return {
     year,
@@ -915,6 +940,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
       tenanciesWithoutPayment,
     },
     expenses: { groups, totalCents, privateCents, deductibleCents, labor35aCents, items: [...split.items.values()] },
+    settlementPeriods: used.map((p) => ({ key: p.snapshot.period.key, label: periodLabel(p.snapshot.period) })),
     selfUseChangedInYear: split.selfUseChangedInYear,
     closedSelfUseDiffers: split.closedSelfUseDiffers,
     closedItemsChanged: split.closedItemsChanged,
@@ -931,6 +957,30 @@ export function taxReport(snapshot: Snapshot): TaxReport {
     surplusSollCents: sollCents - deductibleCents,
     surplusPaidCents: paidCents - deductibleCents,
   }
+}
+
+// Die Teile der Steuerübersicht eines Objekts mit eigenem Rhythmus (#208, Entwurf 3.10): jeder
+// Abrechnungszeitraum, der das Jahr oder das Vorjahr berührt (eine Position darf bis ein Jahr nach
+// dem Ende ihres Zeitraums bezahlt sein, repository.ts), mit seinen Positionen, deren Jahr der
+// Zahlung dieses Jahr ist. Ein Zeitraum, der das Jahr berührt, ist auch ohne Position dabei, denn
+// die Übersicht nennt ihn als Quelle. `null` beim Kalenderobjekt: Dort rechnet `taxReport` wie bisher.
+export function taxPartsFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxPart[] | null {
+  const rules = rulesOf(source.properties?.find((p) => p.id === propertyId))
+  if (isCalendarRules(rules)) return null
+  const jahr = calendarYearPeriod(year)
+  const vorjahr = calendarYearPeriod(year - 1)
+  return periodsBetween(rules, vorjahr.from, jahr.to).flatMap((p) => {
+    const snap = snapshotFor(source, propertyId, p)
+    const items = snap.costItems.filter((c) => c.period === p.key && taxYearOf(c, p) === year)
+    const touches = p.from <= jahr.to && p.to >= jahr.from
+    return items.length > 0 || touches ? [{ snapshot: snap, items }] : []
+  })
+}
+
+export function taxReportFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, year: number): TaxReport {
+  const calendar = snapshotFor(source, propertyId, calendarYearPeriod(year))
+  const parts = taxPartsFor(source, propertyId, year)
+  return parts === null ? taxReport(calendar) : taxReport(calendar, parts)
 }
 
 // Die Anlage-V-Gruppe einer Kostenart, `null` für die Rücklage (#143). Bewusst nach
@@ -1112,7 +1162,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
     } else {
       allocation = 'settlement'
       privateCents = fromBill.selfCents
-      steps.push({ label: 'Zuordnung', value: `verhältnismäßig laut Nebenkostenabrechnung ${snapshot.year}, verteilt nach ${KEY_LABELS[item.key] || item.key}${frozen ? ' (abgeschlossene Abrechnung)' : ''}`, term: 'allocationKey' })
+      steps.push({ label: 'Zuordnung', value: `verhältnismäßig laut Nebenkostenabrechnung ${periodLabel(snapshot.period)}, verteilt nach ${KEY_LABELS[item.key] || item.key}${frozen ? ' (abgeschlossene Abrechnung)' : ''}`, term: 'allocationKey' })
       steps.push({ label: 'Eigenanteil laut Abrechnung (privat)', value: fmtCents(privateCents), term: 'ownShare' })
       if (KEYS_NOT_AREA.includes(item.key)) {
         const a = byArea(item)

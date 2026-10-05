@@ -5425,7 +5425,7 @@ test('Alter Tab: Die Kostenliste eines Kalenderobjekts nennt weiter das Jahr (#2
   }
 })
 
-test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitraum und Frist, Steuer folgt später', async () => {
+test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitraum und Frist, Steuer im Kalenderjahr', async () => {
   const s = await startServer()
   try {
     const kalender = await s.api<Settlement>('/api/settlement/2025')
@@ -5458,14 +5458,14 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
     await s.api(`/api/settlement/2025-05/close${q}`, { method: 'DELETE' })
     assert.equal((await s.api<unknown[]>(`/api/settlement/2025-05/history${q}`)).length, 1)
 
-    // Verbrauch über denselben Zeitraum; das Mietkonto bleibt Kalenderjahr; die Steuer kommt mit PR 3.
+    // Verbrauch über denselben Zeitraum; das Mietkonto bleibt Kalenderjahr.
     assert.equal((await fetch(`${s.base}/api/consumption/2025${q}`)).status, 404)
     assert.equal((await fetch(`${s.base}/api/consumption/2025-05${q}`)).status, 200)
     assert.equal((await s.api<{ year: number }>(`/api/rentledger/2025${q}`)).year, 2025)
-    const steuer = await fetch(`${s.base}/api/taxreport/2025${q}`)
-    assert.equal(steuer.status, 400)
-    assert.equal(await errorFrom(steuer), 'Die Steuerübersicht für ein Objekt mit abweichendem Abrechnungszeitraum kommt mit einer späteren Version.')
-    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025${q}`)).status, 400)
+    // Die Steuer rechnet im Kalenderjahr und schöpft aus den Abrechnungen 2024/2025 und 2025/2026 (#208, PR 3).
+    const steuer = await s.api<{ settlementPeriods: { label: string }[] }>(`/api/taxreport/2025${q}`)
+    assert.deepEqual(steuer.settlementPeriods.map((p) => p.label), ['2024/2025', '2025/2026'])
+    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025${q}`)).status, 200)
 
     // Ein alter Tab schreibt mit Jahreszahl: abgelehnt statt still in einen anderen Zeitraum
     // (Review Focus 1). Die Liste nennt für dieses Objekt kein Jahr, es gäbe keines, das stimmte.

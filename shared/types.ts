@@ -699,8 +699,10 @@ export type TaxReport = {
     // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten
     // Vorauszahlungen einstellen (§ 556 BGB, ständige Rechtsprechung des BGH), und sie verteilt
     // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
-    // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70).
-    prepaymentSettlementCents: number
+    // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70). `null`, wenn
+    // kein Abrechnungszeitraum dem Kalenderjahr gleicht (#208, Entwurf 3.10): Eine Zahl aus zwei
+    // halben Abrechnungen wäre eine erfundene.
+    prepaymentSettlementCents: number | null
     // **Setzt die Abrechnung eine Jahreskorrektur an?** Bewusst nicht „ist eine erfasst“: Eine
     // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
     // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
@@ -725,6 +727,9 @@ export type TaxReport = {
     // Jede Position mit ihrer Aufteilung, in der Reihenfolge der Erfassung (#163)
     items: TaxExpenseItem[]
   }
+  // Die Abrechnungen, aus denen die Eigenanteile stammen (#208): bei einem Kalenderobjekt die des
+  // Jahres, bei Mai bis April die beiden, die das Jahr berühren.
+  settlementPeriods: { key: PeriodKey; label: string }[]
   // Hatte eine selbstgenutzte Einheit im Jahr ein Mietverhältnis? Dann ist die Aufteilung nach
   // Fläche nicht nach Tagen gerechnet (#163).
   selfUseChangedInYear: boolean
