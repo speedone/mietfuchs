@@ -31,8 +31,8 @@ test('Rechtswerte: ohne Heizung, Kabel und Leerstand keine, und der Rechtsstand 
 
 test('Rechtswerte: Heizung nach Fläche friert 50 bis 70 % und 15 % ein, mit Fundstelle und Text', () => {
   const s = computeSettlement(snap(2025, { ...two, costItems: [item(2025, { category: 'Heizung und Warmwasser', description: 'Heizöl' })] }))
-  // Dazu die Fernablesbarkeit: Nach ihr ist entschieden worden, dass 2025 noch kein Hinweis kommt.
-  assert.deepEqual(ids(s), ['hkv.consumption-share', 'hkv.cut.not-by-consumption', 'hkv.remote-reading.retrofit'])
+  // Die Fernablesbarkeit gilt erst ab 2027 und steht deshalb nicht dabei (Durchsicht von #221, I1).
+  assert.deepEqual(ids(s), ['hkv.consumption-share', 'hkv.cut.not-by-consumption'])
   const cut = s.legalBasis.values.find((v) => v.id === 'hkv.cut.not-by-consumption')
   assert.deepEqual(cut, {
     id: 'hkv.cut.not-by-consumption',
@@ -52,9 +52,11 @@ test('Rechtswerte: Kabel 2024 und 2025 frieren die Kabelregel ein, auch wenn sie
   }
 })
 
-test('Rechtswerte: Messdienst 2026 ohne Fernablesungshinweis friert nur den Zeitpunkt ein, 2027 auch die 3 %', () => {
+test('Rechtswerte: Messdienst 2023 und 2026 ohne Fernablesungshinweis frieren nichts ein, 2027 den Zeitpunkt und die 3 %', () => {
   const heat = (year: number) => item(year, { category: 'Heizung und Warmwasser', key: 'amounts', tenancyAmounts: { A: 60000, B: 60000 } })
-  assert.deepEqual(ids(computeSettlement(snap(2026, { ...two, costItems: [heat(2026)] }))), ['hkv.remote-reading.retrofit'])
+  // Ein Wert, der im Zeitraum nicht gilt, ist kein angewandter Rechtswert (Durchsicht von #221, I1).
+  assert.deepEqual(ids(computeSettlement(snap(2023, { ...two, costItems: [heat(2023)] }))), [])
+  assert.deepEqual(ids(computeSettlement(snap(2026, { ...two, costItems: [heat(2026)] }))), [])
   assert.deepEqual(ids(computeSettlement(snap(2027, { ...two, costItems: [heat(2027)] }))), ['hkv.cut.remote-reading', 'hkv.remote-reading.retrofit'])
 })
 
