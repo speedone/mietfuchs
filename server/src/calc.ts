@@ -1,6 +1,7 @@
 // Berechnungs-Engine für die Nebenkostenabrechnung.
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
+  AppliedValue,
   CalcStep,
   CostKey,
   CostModel,
@@ -29,7 +30,13 @@ import type {
 // Die Berechnung kennt den Speicher nicht mehr, sondern nur noch den Schnappschuss eines
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
-import { RULES_AS_OF, ruleCoverage, rulesFor } from '../../shared/law/rules.ts'
+import { rulesFor } from '../../shared/law/rules.ts'
+// Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
+// nicht als Literal; server/test/law-literals.test.ts wacht darüber.
+import { createLawLog, dayAfter, law, LAW_AS_OF, onlyVersion, valueAt, type Period } from '../../shared/law/register.ts'
+import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
+import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
 import type { TermId } from '../../shared/glossary.ts'
@@ -147,19 +154,9 @@ export function personDaysInPeriod(tenancy: SnapshotTenancy, from: string, to: s
   return sum
 }
 
-// **Personen je Leerstandstag beim Personenschlüssel (#177).** Den Anteil einer leerstehenden
-// Wohnung trägt der Vermieter (BGH, Urteil vom 31.05.2006, VIII ZR 159/05, entschieden am
-// Flächenschlüssel). Wie die leere Wohnung beim Personenschlüssel anzusetzen ist, regelt kein
-// Gesetz, und höchstrichterlich ist es nicht abschließend geklärt: Nach BGH, Beschluss vom
-// 08.01.2013, VIII ZR 180/12, entscheidet der Tatrichter im Einzelfall nach Billigkeit, und es
-// „kann in Betracht kommen“, für den Leerstand eine fiktive Person anzusetzen, vor allem bei
-// Kosten, die nicht von der Personenzahl abhängen.
-// Auslegung nach BGH VIII ZR 180/12; LG Krefeld, 17.03.2010, 2 S 56/09 (eine Person statt null);
-// abweichend AG Köln WuM 2002, 28 (Durchschnittsbelegung). Mietfuchs setzt jeden Tag ohne
-// Mietverhältnis mit dieser Zahl an, bei allen Positionen nach Personen. Wer das ändert (etwa auf
-// die durchschnittliche Belegung des Hauses), ändert es hier und in `vacancyPersons` in
-// computeSettlement, sonst nirgends.
-export const VACANCY_PERSONS = 1
+// Personen je Leerstandstag beim Personenschlüssel (#177): Wert und Begründung stehen seit
+// Heizung PR 1 im Rechtsregister (`practice.vacancy-persons`, shared/law/practice.ts), verwendet
+// über `vacancyPersons` in computeSettlement.
 
 // Aktuelle Personenzahl zu einem Stichtag
 export function personsAt(tenancy: SnapshotTenancy, dateIso: string): number {
@@ -199,7 +196,7 @@ const noticeKinds = {
   // Eine leere Einheit ohne Fläche ist beim Personenschlüssel kein Leerstand (#177); wie bei
   // `basis.unit-zero` ist die 0 meist eine Angabe (Garage, Stellplatz).
   'basis.vacancy-no-area': { level: 'hint', title: 'Leere Einheit ohne Fläche', terms: ['vacancy', 'personDays'] },
-  'tv-signal.partial-year': { level: 'warning', title: 'Kabelfernsehen nur bis 30.06.2024 umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
+  'tv-signal.partial-year': { level: 'warning', title: `Kabelfernsehen nur bis ${fmtDay(onlyVersion(betrkvTvSignal).validTo ?? '')} umlagefähig`, rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.ended': { level: 'warning', title: 'Kabelfernsehen nicht mehr umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'tv-signal.new-system': { level: 'warning', title: 'Kabelfernsehen bei neuer Anlage nie umlagefähig', rule: 'tv-signal', terms: ['cableTv', 'notAllocable'] },
   'item.no-basis': { level: 'warning', title: 'Position geht ganz an den Vermieter', terms: ['distributionBasis'] },
@@ -222,7 +219,7 @@ const noticeKinds = {
   'direct.unit-gone': { level: 'warning', title: 'Zugeordnete Wohnung gibt es nicht mehr', terms: ['directAssignment'] },
   'labor35a.invalid': { level: 'warning', title: 'Lohnanteil nach § 35a ungültig', terms: ['labor35a'] },
   'heating.not-by-consumption': { level: 'warning', title: 'Heizkosten nicht nach Verbrauch verteilt', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
-  'heating.consumption-share': { level: 'hint', title: 'Verbrauchsanteil der Heizkosten außerhalb 50 bis 70 %', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
+  'heating.consumption-share': { level: 'hint', title: `Verbrauchsanteil der Heizkosten außerhalb ${hkvConsumptionShare.describe(valueAt(hkvConsumptionShare, LAW_AS_OF))}`, rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.may-agree-otherwise': { level: 'hint', title: 'Heizkosten nicht nach Verbrauch verteilt (Zweifamilienhaus)', rule: 'heating-consumption', terms: ['heatingCostOrdinance', 'consumptionKey'] },
   'heating.flat-rate': { level: 'warning', title: 'Heizkosten pauschal vereinbart', rule: 'heating-flat-rate', terms: ['heatingCostOrdinance', 'inclusiveRent'] },
   'heating.remote-reading': { level: 'hint', title: 'Zähler der Heizung fernablesbar?', rule: 'heating-remote-reading', terms: ['heatingCostOrdinance'] },
@@ -1350,7 +1347,8 @@ export type ComputedSettlement = Omit<Settlement, 'closed' | 'notSettled' | 'not
   notSettled: NotSettled[]
   garageLikeUnitIds: string[]
   notices: Notice[]
-  legalBasis: LegalBasis
+  // Frisch gerechnet immer mit den benutzten Rechtswerten (Heizung PR 1)
+  legalBasis: LegalBasis & { values: AppliedValue[] }
 }
 
 // Die Kostenart, an der Mietfuchs Heizung und Warmwasser erkennt (#93), steht mit der Ausnahme
@@ -1493,6 +1491,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const diy = daysInYear(year)
   const yFrom = `${year}-01-01`
   const yTo = `${year}-12-31`
+  // Das Protokoll der Rechtswerte dieser Abrechnung (Heizung PR 1, Entwurf 4.2): Jede Abfrage
+  // trägt ein, was sie bekommen hat, und am Ende steht es in `legalBasis.values`. Abgefragt wird
+  // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert.
+  const lawLog = createLawLog()
+  const lawPeriod: Period = { from: yFrom, to: yTo }
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
@@ -1547,8 +1550,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // deshalb aus der Verteilbasis: Ihr Anteil ging still an die übrigen Mieter, während Fläche und
   // Einheiten ihn beim Vermieter ließen. Den Leerstand trägt der Vermieter (BGH, Urteil vom
   // 31.05.2006, VIII ZR 159/05, dort am Flächenschlüssel entschieden; zum Personenschlüssel die
-  // fiktive Person nach BGH VIII ZR 180/12, siehe `VACANCY_PERSONS`). Deshalb zählt jede
-  // vermietete Wohnung der Verteilbasis für jeden Tag ohne Mietverhältnis mit
+  // fiktive Person nach BGH VIII ZR 180/12, siehe `practice.vacancy-persons` im Rechtsregister).
+  // Deshalb zählt jede vermietete Wohnung der Verteilbasis für jeden Tag ohne Mietverhältnis mit
   // `vacancyPersons(u)` Personen; kein Mietverhältnis bekommt diese Tage, ihr Anteil bleibt also
   // als `vacancy` beim Vermieter. Auch der Leerstand zwischen zwei Mietern zählt.
   // Ausgenommen sind die selbstgenutzten Wohnungen (die zählen mit ihren eigenen Personen) und
@@ -1560,14 +1563,16 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // leere Garage **mit** eingetragener Fläche ist nach dieser Regel eine Wohnung und zählt weiter als
   // Leerstand; wer das nicht will, nimmt sie aus der Abrechnungseinheit oder aus den Teilnehmern.
   // Die Zahl je Wohnung kommt aus dieser einen Funktion: Wer später etwa die durchschnittliche
-  // Belegung des Hauses ansetzen will, rechnet sie hier aus (ohne die Leerstände selbst).
-  const vacancyPersons = (_u: SnapshotUnit): number => VACANCY_PERSONS
+  // Belegung des Hauses ansetzen will, rechnet sie hier aus (ohne die Leerstände selbst). Der Wert
+  // steht im Rechtsregister (`practice.vacancy-persons`) und wird nur bei Leerstand abgefragt.
+  const vacancyPersons = (_u: SnapshotUnit): number => law(practiceVacancyPersons, { period: lawPeriod }, lawLog)
   type Vacancy = { unit: SnapshotUnit, days: number, persons: number, personDays: number }
   const vacancies: Vacancy[] = basisUnits.flatMap((u) => {
     if (!u.participates || !isDwelling(u)) return []
     const days = diy - occupiedDays(tenancies.filter((t) => t.unitId === u.id), yFrom, yTo)
+    if (days <= 0) return []
     const persons = vacancyPersons(u)
-    return days > 0 && persons > 0 ? [{ unit: u, days, persons, personDays: days * persons }] : []
+    return persons > 0 ? [{ unit: u, days, persons, personDays: days * persons }] : []
   })
   const vacancyPersonDays = vacancies.reduce((a, v) => a + v.personDays, 0)
   const personsLabel = (n: number) => `${fmtNum(n)} ${n === 1 ? 'Person' : 'Personen'}`
@@ -1933,13 +1938,18 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Übergangsfrist bis 30.06.2024, nur für Anlagen vor dem 01.12.2021, § 2 Satz 2 BetrKV). Danach bleibt
   // bei solchen Anlagen nur der Betriebsstrom, bei einer Gemeinschaftsantenne auch Prüfung und Einstellung.
   // Welcher Teil einer Position was ist, weiß Mietfuchs nicht; es kürzt deshalb nicht selbst,
-  // sondern sagt es. Ab wann das gilt, steht im Regelverzeichnis (`tv-signal`, #112): Gilt die
-  // Regel nur im Teil des Jahres, ist es das Übergangsjahr; gilt sie gar nicht mehr, die Zeit
-  // danach. Einen Beginn hat die Regel nicht, „gar nicht“ heißt deshalb immer „vorbei“.
-  const tvSignal = ruleCoverage('tv-signal', yFrom, yTo)
-  // Eine Anlage ab dem 01.12.2021 fiel nie unter die Regel (#121, § 2 Satz 2 BetrKV): dann in jedem
-  // Jahr ab 2021 dieselbe Warnung, ohne Übergangszeit.
-  const newSystem = snapshot.property?.cableBuiltBeforeDec2021 === false && year >= 2021
+  // sondern sagt es. Ab wann das gilt, steht im Rechtsregister (`betrkv.tv-signal`, Zeitregel
+  // `overlap`): Gilt die Regel nur im Teil des Jahres, ist es das Übergangsjahr; gilt sie gar nicht
+  // mehr, die Zeit danach. Einen Beginn hat die Regel nicht, „gar nicht“ heißt deshalb immer
+  // „vorbei“. Abgefragt nur, wenn es eine Position Kabel/Antenne gibt.
+  const tv = items.some((c) => c.category === 'Kabel/Antenne') ? law(betrkvTvSignal, { period: lawPeriod }, lawLog) : null
+  const tvSignal = tv?.coverage ?? 'none'
+  const tvUntil = tv?.validTo ?? ''
+  const tvNewFrom = tv?.value.newSystemsFrom ?? ''
+  const tvNewYear = Number(tvNewFrom.slice(0, 4))
+  // Eine Anlage ab dem Stichtag der Regel fiel nie unter sie (#121, § 2 Satz 2 BetrKV): dann in
+  // jedem Jahr ab dem Jahr des Stichtags dieselbe Warnung, ohne Übergangszeit.
+  const newSystem = tv !== null && snapshot.property?.cableBuiltBeforeDec2021 === false && year >= tvNewYear
   // Die Warnungen nennen den Betrag, der trotzdem bei den Mietern gelandet ist (#142, Zielbild
   // aus #91). Den kennt erst die Verteilung; geschrieben werden sie deshalb danach, aber an dieser
   // Stelle der Hinweise, damit ihre Reihenfolge bleibt.
@@ -1950,11 +1960,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Nur ein wirklich umgelegter Betrag; eine Gutschrift hat den Mietern nichts aufgebürdet.
     const charged = cents > 0 ? ` Auf die Mieter umgelegt sind in dieser Abrechnung ${fmtCents(cents)}.` : ''
     if (newSystem) {
-      return [makeNotice('tv-signal.new-system', `„${item.description}“: Die Kabel- oder Antennenanlage wurde ab dem 01.12.2021 errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === 2021 ? ' Für 2021 gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.' : ''}`, itemSubject(item))]
+      return [makeNotice('tv-signal.new-system', `„${item.description}“: Die Kabel- oder Antennenanlage wurde ab dem ${fmtDay(tvNewFrom)} errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === tvNewYear ? ` Für ${year} gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.` : ''}`, itemSubject(item))]
     } else if (tvSignal === 'partial') {
-      return [makeNotice('tv-signal.partial-year', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum 30.06.2024 umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für 2024 höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))]
+      return [makeNotice('tv-signal.partial-year', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum ${fmtDay(tvUntil)} umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für ${year} höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem ${fmtDay(tvNewFrom)} errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))]
     } else if (tvSignal === 'none') {
-      return [makeNotice('tv-signal.ended', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem 01.07.2024 nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs).${charged} Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem 01.12.2021 errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))]
+      return [makeNotice('tv-signal.ended', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem ${fmtDay(dayAfter(tvUntil))} nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs).${charged} Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem ${fmtDay(tvNewFrom)} errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))]
     }
     return []
   })
@@ -1971,7 +1981,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Heizpositionen ohne Verbrauchsanteil (#140): Die Kürzungsbeträge entstehen in der Verteilung,
   // gemeldet wird erst danach, denn ob eine Wohnung nach Verbrauch gedeckt ist, steht erst fest,
   // wenn alle Positionen verteilt sind (siehe shared/heating.ts).
-  const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, text: string }[] }[] = []
+  // Je Zeile der Anteil des Mieters; den Kürzungsbetrag rechnet erst der Hinweis, mit dem Satz aus
+  // dem Rechtsregister (`hkv.cut.not-by-consumption`).
+  const heatingCuts: { item: SnapshotCostItem, rows: { unitId: string, label: string, share: number }[] }[] = []
   const heatingCovered = new Set<string>()
   // Die erste Heizposition, über die ein Mieter abgerechnet wird; an ihr hängt der Hinweis zur
   // Fernablesbarkeit (heating-remote-reading), einmal je Abrechnung.
@@ -2464,7 +2476,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       } else {
         heatingCuts.push({
           item,
-          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, text: `${x.t.tenantName} (${x.t.unit.name}) ${fmtCents(Math.round((share * 15) / 100))}` })),
+          rows: received.map(({ x, share }) => ({ unitId: x.t.unitId, label: `${x.t.tenantName} (${x.t.unit.name})`, share })),
         })
       }
     }
@@ -2533,11 +2545,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // einer bezifferten Kürzung. Ein Feld dafür am Zähler gehört zur Heizkostenabrechnung (#97, #99).
   // Ohne `subject`: An der Kostenposition gibt es nichts zu beheben, ein „Hier beheben →“ führte
   // ins Leere.
-  if (heatingBilledItem && ruleCoverage('heating-remote-reading', yFrom, yTo) !== 'none') {
+  // Der Zeitpunkt kommt aus `hkv.remote-reading.retrofit` (Zeitregel `overlap`), die Höhe aus
+  // `hkv.cut.remote-reading` (dritte Fassung des Entwurfs, N6).
+  const retrofit = heatingBilledItem ? law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog) : null
+  if (retrofit && retrofit.coverage !== 'none') {
+    const remoteCut = law(hkvCutRemoteReading, { period: lawPeriod }, lawLog)
     warn('heating.remote-reading',
-      'Spätestens seit dem 01.01.2027 müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 3 HeizkostenV); ' +
-        'Geräte, die nach dem 01.12.2021 eingebaut wurden, müssen es in der Regel schon seit ihrem Einbau sein (§ 5 Abs. 2). Bei fernablesbaren Geräten stehen den Mietern schon seit 2022 monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). ' +
-        'Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um 3 % kürzen (§ 12 Abs. 1 HeizkostenV). ' +
+      `Spätestens seit dem ${fmtDay(retrofit.validFrom ?? '')} müssen alle Zähler und Heizkostenverteiler für Heizung und Warmwasser fernablesbar sein (§ 5 Abs. 3 HeizkostenV); ` +
+        `Geräte, die nach dem ${fmtDay(retrofit.value.installedUpTo)} eingebaut wurden, müssen es in der Regel schon seit ihrem Einbau sein (§ 5 Abs. 2). Bei fernablesbaren Geräten stehen den Mietern schon seit 2022 monatliche Verbrauchsinformationen zu (§ 6a HeizkostenV). ` +
+        `Fehlt das eine oder das andere, darf jeder Mieter seinen Anteil an den Heizkosten um ${remoteCut} % kürzen (§ 12 Abs. 1 HeizkostenV). ` +
         'Mietfuchs weiß nicht, welche Geräte bei Ihnen eingebaut sind. Prüfen Sie das bitte mit Ihrem Messdienst. Ausgenommen sind Einzelfälle, in denen die Nachrüstung technisch nicht möglich ist, unangemessen aufwendig wäre oder sonst eine unbillige Härte bedeutete (§ 5 Abs. 3 Satz 2), sowie die Fälle des § 11 HeizkostenV. ' +
         'Das gilt nicht für eine Gastherme in der Wohnung mit eigenem Gasvertrag des Mieters. ' +
         'Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, gilt das nur, wenn Sie nichts anderes vereinbart haben (§ 2 HeizkostenV).')
@@ -2545,23 +2561,30 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // Nur Wohnungen, die im Jahr nicht nach Verbrauch gedeckt sind, dürfen kürzen: Eine
   // Grundkostenposition nach Fläche neben der Verbrauchsposition ist der Regelfall der Verordnung.
-  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered)
+  // Die Grenzen 50 und 70 % (`hkv.consumption-share`) fragt heatingFindings nur ab, wenn es eine
+  // Wohnung mit Verbrauchs- und Grundkostenposition gibt.
+  const consumptionShare = () => law(hkvConsumptionShare, { period: lawPeriod }, lawLog)
+  const heating = heatingFindings(items, snapshot.units.filter((u) => !outsideHeating(u)), heatingCovered, consumptionShare)
   for (const { item, rows } of heatingCuts) {
     const affected = heating.withoutConsumption.get(item.id)
-    const cuts = rows.filter((r) => affected?.has(r.unitId)).map((r) => r.text)
-    if (cuts.length === 0) continue
+    const hit = rows.filter((r) => affected?.has(r.unitId))
+    if (hit.length === 0) continue
+    const share = consumptionShare()
+    const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
     if (!heatingAgreeable) {
+      // Auf den Cent gerundet, kaufmännisch wie überall bei einer Einzelzahl.
+      const cuts = hit.map((r) => `${r.label} ${fmtCents(Math.round((r.share * cut) / 100))}`)
       warn('heating.not-by-consumption',
-        `„${item.description}“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
-          `Sonst darf jeder Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${andList(cuts)}. ` +
-          'Verteilen Sie 50 bis 70 % nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.',
+        `„${item.description}“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Die Heizkostenverordnung verlangt, mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch zu verteilen, den Rest nach Fläche (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). ` +
+          `Sonst darf jeder Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV), hier: ${andList(cuts)}. ` +
+          `Verteilen Sie ${hkvConsumptionShare.describe(share)} nach Verbrauch (eine Position nach Verbrauch mit Wärmezählern, den Rest als eigene Position nach Fläche) oder übernehmen Sie die Abrechnung des Messdienstes als Einzelbeträge.`,
         itemSubject(item))
     } else {
       // § 2: Hier darf anderes vereinbart werden, und ob es vereinbart ist, weiß Mietfuchs nicht.
       // Deshalb ein Hinweis ohne Betrag statt Schweigen.
       warn('heating.may-agree-otherwise',
         `„${item.description}“: Heizung und Warmwasser werden hier nicht nach Verbrauch verteilt. Im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, darf anderes vereinbart werden (§ 2 HeizkostenV). ` +
-          'Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind 50 bis 70 % nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).',
+          `Die Heizkostenverordnung gilt hier, sofern im Mietvertrag nichts anderes vereinbart ist; dann sind ${hkvConsumptionShare.describe(share)} nach Verbrauch zu verteilen, und sonst darf der Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV).`,
         itemSubject(item))
     }
   }
@@ -2571,8 +2594,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const g of heating.shareOutside) {
     const names = andList(g.itemIds.map((id) => `„${items.find((c) => c.id === id)?.description ?? id}“`))
     const pct = Math.round((g.consumptionCents * 1000) / g.totalCents) / 10
+    const share = consumptionShare()
     warn('heating.consumption-share',
-      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens 50 und höchstens 70 % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
+      `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
       itemSubject({ id: g.itemIds[0] ?? '' }))
   }
 
@@ -2658,11 +2682,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const heatingFlat = partTenancies.filter((t) => (t.heatingModel ?? 'settlement') !== 'settlement' && !outsideHeating(t.unit))
   // Die Ausnahme steht in shared/heating.ts, für diese Warnung wie für die Verteilung (#140).
   if (heatingFlat.length > 0 && !heatingAgreeable && items.some((c) => c.category === HEATING_CATEGORY)) {
+    const cut = law(hkvCutNotByConsumption, { period: lawPeriod }, lawLog)
     warn('heating.flat-rate',
       `Für ${andList(heatingFlat.map((t) => `${t.tenantName} (${t.unit.name})`))} ist für Heizung und Warmwasser eine Pauschale oder Warmmiete vereinbart. ` +
         'Die Heizkostenverordnung geht der Vereinbarung vor (§ 2 HeizkostenV); zulässig ist das nur im Gebäude mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen. ' +
         'Sonst wird der Heizanteil als Vorauszahlung behandelt, über die Sie nach Verbrauch abrechnen müssen (BGH VIII ZR 212/05). ' +
-        'Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um 15 % kürzen (§ 12 Abs. 1 HeizkostenV).' +
+        `Rechnen Sie trotzdem nicht nach Verbrauch ab, darf der Mieter seinen Anteil um ${cut} % kürzen (§ 12 Abs. 1 HeizkostenV).` +
         // Die Einliegerwohnung (#116): Wer nur die vermietete Wohnung anlegt, hat womöglich
         // genau das Zweifamilienhaus der Ausnahme. Mietfuchs erkennt es an der eigenen Wohnung,
         // und die fehlt dann. Bei zwei oder mehr angelegten Wohnungen hülfe sie nicht mehr.
@@ -2693,13 +2718,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     totalCostsCents,
     notices,
     warnings: notices.map((n) => n.text),
-    // Der Rechtsstand (#112): Datum des Regelverzeichnisses und die Regeln des Jahres. Die
-    // abgeschlossene Abrechnung friert das Ergebnis wortgleich ein und damit auch ihn.
+    // Der Rechtsstand (#112): Datum des Rechtsregisters, die Regeln des Jahres und die Rechtswerte,
+    // mit denen gerechnet wurde (Heizung PR 1). Die abgeschlossene Abrechnung friert das Ergebnis
+    // wortgleich ein und damit auch ihn.
     legalBasis: {
-      asOf: RULES_AS_OF,
+      asOf: LAW_AS_OF,
       rules: rulesFor(yFrom, yTo).map(({ code, title, norm, validFrom, validTo }) => ({
         code, title, norm, ...(validFrom ? { validFrom } : {}), ...(validTo ? { validTo } : {}),
       })),
+      values: lawLog.values,
     },
   }
   const tenancyEnd = new Map(partTenancies.map((t) => [t.id, t.end]))
