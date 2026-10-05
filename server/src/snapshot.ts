@@ -17,8 +17,8 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { BillingPeriod, Co2Statement, CostItem, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
-import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
+import type { BillingPeriod, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import { calendarPeriod, calendarYearPeriod, parsePeriodKey, periodLabel, periodOfKey, previousPeriod, rulesOf, settlementDeadline } from '../../shared/period.ts'
 import { heatingPeriodsEndingIn, plantRules, settledSeparately, settlementKeyOf, type PlantWay } from '../../shared/heatingPeriod.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { Db } from './store.ts'
@@ -91,6 +91,8 @@ export type SnapshotCostItem = Pick<
   | 'invoiceFile'
   // Die Heizanlage (Heizung PR 5): Positionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
   | 'heatingPlantId'
+  // Die Lieferung (Heizung PR 7): Der Teil einer anderen Heizperiode folgt dem Schlüssel der Position.
+  | 'fuelDeliveryId'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur
@@ -103,9 +105,10 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
 // Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
 // gebauter Schnappschuss), folgt die Anlage dem Objekt und rechnet nichts getrennt ab. Seit PR 6 der
-// Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind.
+// Energieträger, Pflicht: Von ihm hängt ab, ob CO₂-Kosten aufzuteilen sind. Seit PR 7 die
+// CO₂-Merkmale (§ 8, § 9, § 2 Abs. 4 Satz 2 CO2KostAufG); fehlen sie, hat die Anlage keine.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'energy' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
-  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement'>>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement' | 'nonResidential' | 'restriction' | 'districtEtsNew'>>
 // Die Angabe zum Warmwasser je Heizperiode (Heizung PR 6, #211).
 export type SnapshotHeatingPeriodRow = Pick<HeatingPeriodData, 'plantId' | 'period' | 'dhwMethod' | 'dhwUnmeasurable'>
 
@@ -168,6 +171,11 @@ export type SnapshotClosedSettlement = {
   // geändert hat, stand so nicht auf dem Papier; die Steuerübersicht rechnet sie heute. `null`:
   // Das Archivstück lässt sich nicht lesen; fehlt das Feld, gilt dasselbe.
   itemTotals?: Record<string, number> | null
+  // Die Übertragszeilen der Mieter (Heizung PR 7), für die Gutschrift je Mieter bei einer zu hohen
+  // Schätzung (8.2, A4). Fehlt das Feld, gibt es keine.
+  fuelCarryRows?: FrozenFuelRow[]
+  // Die Überträge des eingefrorenen Stands je Anlage, Heizperiode und Lieferung (Nachprüfung von #233).
+  fuelCarries?: FrozenFuelCarryOut[]
 }
 export type FrozenItemSelfUse = { selfCents: number, noBasis: boolean }
 
@@ -236,8 +244,68 @@ function itemTotalsOf(settlement: object): Record<string, number> | null {
 // Fehlt etwas, gilt 0 beziehungsweise „keine Korrektur“. Das ist die richtige Antwort und keine
 // Notlösung: Was nicht auf dem Papier stand, hat der Mieter auch nicht bekommen. Ein
 // Schnappschuss von vor v0.3.0 kennt den Eigenanteil noch gar nicht.
-export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null } {
-  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null }
+// Eine Übertragszeile eines eingefrorenen Stands (Heizung PR 7): `costItemId` ist
+// `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
+export type FrozenFuelRow = { costItemId: string; tenancyId: string; tenantName: string; unitName: string; shareCents: number }
+
+// Die Übertragszeilen aus einem Archivstück, wie `frozenSettlementOf` es liest: Was keine Zeile der Art
+// `fuelCarry` ist oder nicht die erwartete Gestalt hat, fällt weg.
+export function frozenFuelRowsOf(settlement: unknown): FrozenFuelRow[] {
+  if (settlement === null || typeof settlement !== 'object') return []
+  const statements: unknown = Reflect.get(settlement, 'statements')
+  if (!Array.isArray(statements)) return []
+  const rows: FrozenFuelRow[] = []
+  for (const st of statements) {
+    if (st === null || typeof st !== 'object') continue
+    const tenancyId: unknown = Reflect.get(st, 'tenancyId')
+    const tenantName: unknown = Reflect.get(st, 'tenantName')
+    const unitName: unknown = Reflect.get(st, 'unitName')
+    const list: unknown = Reflect.get(st, 'rows')
+    if (typeof tenancyId !== 'string' || !Array.isArray(list)) continue
+    for (const r of list) {
+      if (r === null || typeof r !== 'object' || Reflect.get(r, 'kind') !== 'fuelCarry') continue
+      const costItemId: unknown = Reflect.get(r, 'costItemId')
+      const shareCents: unknown = Reflect.get(r, 'shareCents')
+      if (typeof costItemId !== 'string' || typeof shareCents !== 'number') continue
+      rows.push({ costItemId, tenancyId, tenantName: typeof tenantName === 'string' ? tenantName : '', unitName: typeof unitName === 'string' ? unitName : '', shareCents })
+    }
+  }
+  return rows
+}
+
+// Was ein eingefrorener Stand je Anlage, Heizperiode und Lieferung in eine andere Heizperiode übertragen
+// hat (`heating[].fuel.carries`; Heizung PR 7, Nachprüfung der Durchsicht von #233). Die Heizperiode, in
+// die übertragen wurde, nimmt genau diesen Betrag, auch wenn sich die Positionen danach ändern.
+export type FrozenFuelCarryOut = { plantId: string; period: string; deliveryId: string; other: string; cents: number; totalCents?: number }
+
+export function frozenFuelCarriesOf(settlement: unknown): FrozenFuelCarryOut[] {
+  if (settlement === null || typeof settlement !== 'object') return []
+  const heating: unknown = Reflect.get(settlement, 'heating')
+  if (!Array.isArray(heating)) return []
+  const out: FrozenFuelCarryOut[] = []
+  for (const h of heating) {
+    if (h === null || typeof h !== 'object') continue
+    const plantId: unknown = Reflect.get(h, 'plantId')
+    const period: unknown = Reflect.get(h, 'period')
+    const fuel: unknown = Reflect.get(h, 'fuel')
+    const carries: unknown = fuel !== null && typeof fuel === 'object' ? Reflect.get(fuel, 'carries') : undefined
+    if (typeof plantId !== 'string' || typeof period !== 'string' || !Array.isArray(carries)) continue
+    for (const c of carries) {
+      if (c === null || typeof c !== 'object') continue
+      const deliveryId: unknown = Reflect.get(c, 'deliveryId')
+      const other: unknown = Reflect.get(c, 'period')
+      const cents: unknown = Reflect.get(c, 'cents')
+      const totalCents: unknown = Reflect.get(c, 'totalCents')
+      if (typeof deliveryId === 'string' && typeof other === 'string' && typeof cents === 'number') {
+        out.push({ plantId, period, deliveryId, other, cents, ...(typeof totalCents === 'number' ? { totalCents } : {}) })
+      }
+    }
+  }
+  return out
+}
+
+export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlement & { selfUseByItem: Record<string, FrozenItemSelfUse> | null, itemTotals: Record<string, number> | null, fuelCarryRows: FrozenFuelRow[], fuelCarries: FrozenFuelCarryOut[] } {
+  const leer = { selfUsedShareCents: 0, prepaymentCents: 0, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null, fuelCarryRows: [], fuelCarries: [] }
   if (settlement === null || typeof settlement !== 'object') return leer
   const eigenanteil: unknown = Reflect.get(settlement, 'selfUsedShareCents')
   const statements: unknown = Reflect.get(settlement, 'statements')
@@ -246,6 +314,8 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
     selfUsedShareCents: typeof eigenanteil === 'number' ? eigenanteil : 0,
     selfUseByItem: selfUseOf(Reflect.get(settlement, 'landlord')),
     itemTotals: itemTotalsOf(settlement),
+    fuelCarryRows: frozenFuelRowsOf(settlement),
+    fuelCarries: frozenFuelCarriesOf(settlement),
   }
   // Ergeben die Eigenanteile je Position nicht die Summe des Papiers, ist das Archivstück in sich
   // nicht stimmig (etwa von Hand gebaut), und dann gilt nur die Summe; die Steuerübersicht verteilt
@@ -309,6 +379,78 @@ export type Snapshot = {
   objectRules?: PeriodRules
   heatingParts?: SnapshotHeatingPart[]
   scope?: SnapshotScope
+  // Lieferungen, Überträge und abgeschlossene Heizperioden (Heizung PR 7). Fehlt das Feld, gibt es
+  // keine Lieferungen, und die Berechnung rechnet wie vorher.
+  fuel?: SnapshotFuel
+}
+
+// Die Lieferungen im Schnappschuss (Heizung PR 7, Entwurf 5.8). Die Abgrenzung liest Zeitraum, Betrag,
+// feste Bestandteile, Anteil, Ausstoß und CO₂-Kosten; Menge, Heizwert und Rechnungsdatum nicht.
+export type SnapshotFuelDelivery = Pick<
+  FuelDelivery,
+  'id' | 'plantId' | 'label' | 'invoiceFrom' | 'invoiceTo' | 'deliveredAt' | 'amountCents' | 'fixedCents' | 'sharePermille' | 'emissionsKg' | 'co2CostCents' | 'estimated' | 'usedByService' | 'parts'
+>
+// Eine abgeschlossene Heizperiode einer Anlage, mit der Bezeichnung und der Frist der Abrechnung, die
+// sie abgeschlossen hat, und deren Übertragszeilen.
+// `carries`: was diese Heizperiode beim Abschluss je Lieferung in andere übertragen hat.
+export type SnapshotClosedHeating = { plantId: string; period: PeriodKey; label: string; deadline: string; fuelRows: FrozenFuelRow[]; carries?: { deliveryId: string; other: string; cents: number }[] }
+export type SnapshotFuel = {
+  deliveries: SnapshotFuelDelivery[]
+  items: SnapshotCostItem[]
+  frozen: FrozenFuelCarry[]
+  closed: SnapshotClosedHeating[]
+  degreeDays: DegreeDayValue[]
+}
+
+type FuelSource = {
+  fuelDeliveries?: SnapshotFuelDelivery[]
+  fuelCarryFrozen?: FrozenFuelCarry[]
+  degreeDayValues?: (DegreeDayValue & { propertyId: string })[]
+  closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
+}
+
+// Die Lieferungen der Anlagen eines Objekts (Heizung PR 7): alle, mit den Positionen, die auf sie
+// zeigen, über alle Zeiträume; die eingefrorenen Überträge; die abgeschlossenen Heizperioden. Eine
+// Heizperiode ist abgeschlossen mit der Abrechnung des Objektzeitraums, in dem sie endet, oder nach
+// Weg d mit ihrer Heizkostenabrechnung (W1, B3). Ohne Lieferung `undefined`: Dann bleibt der
+// Schnappschuss, wie er war, und keine Abrechnung ändert sich.
+const carriesOf = (list: FrozenFuelCarryOut[] | undefined, plantId: string, period: string) =>
+  (list ?? []).filter((x) => x.plantId === plantId && x.period === period).map(({ deliveryId, other, cents, totalCents }) => ({ deliveryId, other, cents, ...(totalCents !== undefined ? { totalCents } : {}) }))
+
+function fuelSnapshotOf(
+  source: FuelSource,
+  propertyId: string,
+  narrowed: { costItems: SnapshotCostItem[]; closedSettlements: (SnapshotClosedSettlement & { period: PeriodKey })[] },
+  plants: readonly SnapshotHeatingPlant[],
+  objectRules: PeriodRules,
+): SnapshotFuel | undefined {
+  const plantIds = new Set(plants.map((p) => p.id))
+  const deliveries = (source.fuelDeliveries ?? []).filter((d) => plantIds.has(d.plantId))
+  if (deliveries.length === 0) return undefined
+  const ids = new Set(deliveries.map((d) => d.id))
+  const closed: SnapshotClosedHeating[] = []
+  for (const plant of plants) {
+    const way = wayOf(plant)
+    const rules = plantRules(way, objectRules)
+    const own = (plant.periodStartMonth ?? null) !== null
+    for (const c of narrowed.closedSettlements) {
+      const p = periodOfKey(objectRules, c.period)
+      if (!p) continue
+      const hs = own ? heatingPeriodsEndingIn(rules, p).filter((h) => !settledSeparately(way, objectRules, h)) : [p]
+      for (const h of hs) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(p), deadline: settlementDeadline(p), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
+    }
+    for (const c of (source.closedHeatingSettlements ?? []).filter((x) => x.plantId === plant.id)) {
+      const h = periodOfKey(rules, c.period)
+      if (h) closed.push({ plantId: plant.id, period: h.key, label: periodLabel(h), deadline: settlementDeadline(h), fuelRows: c.fuelCarryRows ?? [], carries: carriesOf(c.fuelCarries, plant.id, h.key) })
+    }
+  }
+  return {
+    deliveries,
+    items: narrowed.costItems.filter((c) => c.fuelDeliveryId != null && ids.has(c.fuelDeliveryId)),
+    frozen: (source.fuelCarryFrozen ?? []).filter((f) => plantIds.has(f.plantId)),
+    closed,
+    degreeDays: (source.degreeDayValues ?? []).filter((v) => v.propertyId === propertyId).map(({ month, value }) => ({ month, value })),
+  }
 }
 
 export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
@@ -404,7 +546,7 @@ export function snapshotFor(
     heatingPeriodRows?: SnapshotHeatingPeriodRow[]
     // Die abgeschlossenen Heizkostenabrechnungen (Heizung PR 5), für `heatingSnapshotFor`.
     closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
-  },
+  } & FuelSource,
   propertyId: string,
   period: BillingPeriod,
 ): Snapshot {
@@ -434,6 +576,7 @@ export function snapshotFor(
       }
     })
   })
+  const fuel = fuelSnapshotOf(source, propertyId, narrowed, plants, objectRules)
   return {
     ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
@@ -444,6 +587,7 @@ export function snapshotFor(
     heatingPeriodRows: (source.heatingPeriodRows ?? []).filter((r) => plants.some((p) => p.id === r.plantId)),
     objectRules,
     ...(heatingParts.length > 0 ? { heatingParts } : {}),
+    ...(fuel ? { fuel } : {}),
   }
 }
 
@@ -462,6 +606,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
   const narrowed = narrowToProperty(source, propertyId)
   const mine = narrowed.costItems.filter((c) => c.heatingPlantId === plantId)
   const frozen = (source.closedHeatingSettlements ?? []).find((c) => c.plantId === plantId && c.period === h.key)
+  const fuel = fuelSnapshotOf(source, propertyId, narrowed, plants, objectRules)
   return {
     ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
     propertyId,
@@ -480,6 +625,7 @@ export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], pr
         }
       : null,
     scope: { kind: 'heating', plant },
+    ...(fuel ? { fuel } : {}),
   }
 }
 

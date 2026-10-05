@@ -150,3 +150,9 @@ test('Durchsicht M1, M4: Flächenformel mit ihrer Voraussetzung; S umfasst neben
   assert.match(GLOSSARY.hotWaterShare.short, /weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann/)
   assert.match(GLOSSARY.co2Deducted.example, /Zusammen mit Strom, Wartung und Messdienstkosten/i)
 })
+
+test('Gradtagszahlen (Heizung PR 7): auch für die Abgrenzung einer Versorgerrechnung', () => {
+  assert.match(GLOSSARY.degreeDays.needed, /Gas-, Fernwärme- oder Stromrechnung über das Ende der Heizperiode/)
+  assert.match(GLOSSARY.degreeDays.needed, /Zählerstand zum Stichtag/)
+  assert.match(GLOSSARY.degreeDays.needed, /DIN 94680/)
+})

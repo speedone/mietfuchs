@@ -7,7 +7,7 @@ import { and, desc, eq, sql } from 'drizzle-orm'
 import { plantRules, settledSeparately } from '../../../shared/heatingPeriod.ts'
 import { periodsBetween, rulesOf, settlementDeadline, settlementPeriod } from '../../../shared/period.ts'
 import type { HeatingSettlementInfo, PeriodKey } from '../../../shared/types.ts'
-import type { Database } from './client.ts'
+import type { Database, Executor } from './client.ts'
 import { readClosedHeatingSettlements, readHeatingPlants, readProperties, type StoredClosedHeatingSettlement } from './read.ts'
 import type { SettlementHistoryEntry } from './repository.ts'
 import { closedHeatingSettlementHistory, closedHeatingSettlements } from './schema.ts'
@@ -20,7 +20,7 @@ export async function findClosedHeatingSettlement(db: Database, plantId: string,
 }
 
 export async function closeHeatingSettlement(
-  db: Database,
+  db: Executor,
   entry: { id: string, plantId: string, period: PeriodKey, closedAt: string, sentAt: string | null, settlement: unknown },
 ): Promise<void> {
   await db.insert(closedHeatingSettlements).values(entry)
@@ -32,7 +32,14 @@ export async function setHeatingSentAt(db: Database, plantId: string, period: Pe
   return true
 }
 
-export async function reopenHeatingSettlement(db: Database, plantId: string, period: PeriodKey, historyId: string): Promise<boolean> {
+// `alsoInTransaction`: wie bei `reopenSettlement` (Heizung PR 7, eingefrorene Lieferungsteile).
+export async function reopenHeatingSettlement(
+  db: Database,
+  plantId: string,
+  period: PeriodKey,
+  historyId: string,
+  alsoInTransaction: (tx: Executor, settlement: unknown) => Promise<void> = async () => {},
+): Promise<boolean> {
   const eintrag = await findClosedHeatingSettlement(db, plantId, period)
   if (!eintrag) return false
   await db.transaction(async (tx) => {
@@ -41,6 +48,7 @@ export async function reopenHeatingSettlement(db: Database, plantId: string, per
       reopenedAt: new Date().toISOString(), settlement: eintrag.settlement,
     })
     await tx.delete(closedHeatingSettlements).where(closedOf(plantId, period))
+    await alsoInTransaction(tx, eintrag.settlement)
   })
   return true
 }

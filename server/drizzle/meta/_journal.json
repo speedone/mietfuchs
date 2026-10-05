@@ -155,6 +155,20 @@
       "when": 1791211395260,
       "tag": "0021_co2_messdienst",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1791215492597,
+      "tag": "0022_lieferungen",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1791215510473,
+      "tag": "0023_lieferungen_bedingungen",
+      "breakpoints": true
     }
   ]
 }

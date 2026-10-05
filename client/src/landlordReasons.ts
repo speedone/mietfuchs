@@ -17,6 +17,9 @@ const LABELS: Record<LandlordReason, string> = {
   customRest: 'nicht vereinbarter Anteil',
   mainMeterRest: 'Rest des Hauptzählers',
   co2Share: 'CO₂-Anteil des Vermieters',
+  fuelCarry: 'Brennstoff einer anderen Heizperiode (Abgrenzung)',
+  fuelClosedPeriod: 'Brennstoff einer abgeschlossenen Heizperiode',
+  fuelEstimateDiff: 'Abweichung von der Schätzung',
   rounding: 'Rundungsrest',
 }
 

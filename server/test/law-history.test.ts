@@ -37,6 +37,10 @@ const SHIPPED: readonly string[] = [
   'co2.cut.missing|||3',
   'co2.rounding-decimals|||1',
   'co2.stage-table|||[{"from":0,"landlordPercent":0},{"from":12,"landlordPercent":10},{"from":17,"landlordPercent":20},{"from":22,"landlordPercent":30},{"from":27,"landlordPercent":40},{"from":32,"landlordPercent":50},{"from":37,"landlordPercent":60},{"from":42,"landlordPercent":70},{"from":47,"landlordPercent":80},{"from":52,"landlordPercent":95}]',
+  // 0.11.0 (Heizung PR 7)
+  'co2.district-ets-new|||{"connectedAfter":"2023-01-01"}',
+  'co2.non-residential|||500',
+  'co2.restriction|||{"factor":0.5,"bothSplit":false}',
 ]
 
 const current = (): string[] =>

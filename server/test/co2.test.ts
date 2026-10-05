@@ -5,11 +5,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { distributeCents } from '../src/calc.ts'
 import {
-  ausweisGaps, reliefsByShare, restage, roundSpecific, selfLandlordRaw, shownReliefs, stageOf, stageRanges, tableFactor,
+  ausweisGaps, reliefsByShare, restage, roundSpecific, selfLandlordRaw, selfSplit, shownReliefs, stageOf, stageRanges, tableFactor,
 } from '../src/co2.ts'
 import { serviceProbe } from '../../shared/co2Probe.ts'
 import { co2StageTable } from '../../shared/law/co2kostaufg.ts'
-import { LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
+import { createLawLog, law, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { Co2Statement } from '../../shared/types.ts'
 
@@ -135,4 +135,38 @@ test('Nur ausgewiesen (Entwurf 7.5): Werte laut Messdienst geprüft, sonst nach 
   // Über dem eigenen Anteil, bei einem L, das die Summe noch zuließe.
   assert.deepEqual(shownReliefs(40000, 100000, shares, [{ tenancyId: 'B', cents: 30001 }]).problem, { kind: 'tenancy', tenancyId: 'B', givenCents: 30001, shareCents: 30000 })
   assert.deepEqual(shownReliefs(10000, 100000, shares, [{ tenancyId: 'X', cents: 1 }]).problem, { kind: 'tenancy', tenancyId: 'X', givenCents: 1, shareCents: 0 })
+})
+
+// ---------- Eigene Aufteilung (Heizung PR 7, Entwurf 9.2) ----------
+
+const TABELLE = law(co2StageTable, { period: { from: '2025-05-01', to: '2026-04-30' } }, createLawLog())
+const eigen = (over: Partial<Parameters<typeof selfSplit>[0]> = {}) => selfSplit({
+  emissionsKg: 24105.6, co2Cents: 77379, areaM2: 600, ranges: stageRanges(TABELLE, 1), decimals: 1,
+  nonResidentialPermille: null, restriction: null, ...over,
+})
+
+test('selfSplit: Beispiel B1 (24.105,6 kg auf 600 m² = 40,2 → 60 %, L = 464,27 €)', () => {
+  const s = eigen()
+  assert.deepEqual([s.value, s.stage?.landlordPercent, s.permille, s.adjustments], [40.2, 60, 600, []])
+  assert.ok(near(s.landlordRaw ?? 0, 46427.4), 'L exakt, gerundet wird erst bei der Verteilung')
+})
+
+test('selfSplit: § 8 setzt 500 ‰, § 9 halbiert, beide Vorgaben heben die Aufteilung auf', () => {
+  assert.deepEqual([eigen({ nonResidentialPermille: 500 }).permille, eigen({ nonResidentialPermille: 500 }).adjustments], [500, ['nonResidential']])
+  const halb = eigen({ restriction: { factor: 0.5, bothSplit: false, both: false } })
+  assert.deepEqual([halb.permille, halb.adjustments], [300, ['restrictionHalf']])
+  const keine = eigen({ restriction: { factor: 0.5, bothSplit: false, both: true } })
+  assert.deepEqual([keine.permille, keine.landlordRaw, keine.adjustments], [0, 0, ['restrictionNone']])
+  // § 9 Abs. 1 kürzt auch den Anteil nach § 8.
+  assert.equal(eigen({ nonResidentialPermille: 500, restriction: { factor: 0.5, bothSplit: false, both: false } }).permille, 250)
+  // Ohne Einstufung (Fläche fehlt) kein Anteil; im Nichtwohngebäude braucht es keine.
+  assert.equal(eigen({ areaM2: null }).permille, null)
+  assert.equal(eigen({ areaM2: null, nonResidentialPermille: 500 }).permille, 500)
+})
+
+test('selfSplit: Rumpf 01.01.–30.04.2025 kürzt die Tabelle; 5,0 kg je m² → 10 % (Entwurf 12.2)', () => {
+  const faktor = tableFactor({ from: '2025-01-01', to: '2025-04-30', short: true })
+  const s = eigen({ emissionsKg: 3000, areaM2: 600, ranges: stageRanges(TABELLE, faktor) })
+  assert.deepEqual([s.value, s.stage?.landlordPercent], [5, 10])
+  assert.equal(eigen({ emissionsKg: 3000, areaM2: 600 }).stage?.landlordPercent, 0, 'ungekürzt läge 5,0 unter 12')
 })

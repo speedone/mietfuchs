@@ -268,6 +268,10 @@ export type CostItem = {
   // Die Heizanlage, zu der die Position gehört (Heizung PR 4), nur bei der Kostenart „Heizung und
   // Warmwasser“. Fehlt sie bei einer neuen Position, setzt der Server die einzige Anlage des Objekts.
   heatingPlantId?: string | null
+  // Die Lieferung, deren Rechnung die Position ist (Heizung PR 7, Entwurf 5.4, G-C4): Abschläge,
+  // Schlussrechnung und Gutschrift zeigen auf dieselbe Lieferung und werden im selben Verhältnis
+  // abgegrenzt. Nur bei der Kostenart „Heizung und Warmwasser“ einer Anlage mit freien Schlüsseln.
+  fuelDeliveryId?: string | null
 }
 
 // Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
@@ -637,9 +641,11 @@ export type SettlementRow = {
   landlordParts?: LandlordPart[]
   // Eine Zeile ohne Kostenposition (Heizung PR 6): `co2Relief` ist der CO₂-Anteil des Vermieters,
   // der dem Mieter als eigene Zeile abgezogen wird (Entwurf 7.5, 9.4). `costItemId` trägt dann die
-  // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. Spätere PRs
-  // ergänzen `fuelCarry` und `co2Refund`.
-  kind?: 'co2Relief'
+  // Kennung des Topfs (`co2:<Anlage>:<Heizperiode>`), die keiner Position gehört. `fuelCarry`
+  // (Heizung PR 7): der Teil einer Brennstoffrechnung aus einer anderen Heizperiode, verteilt mit
+  // dem Schlüssel ihrer Position; `costItemId` ist `fuel:<Lieferung>:<Heizperiode>:<andere Heizperiode>:<Position>`.
+  // Spätere PRs ergänzen `co2Refund`.
+  kind?: 'co2Relief' | 'fuelCarry'
 }
 
 // Die Gründe, aus denen ein Teil einer Position beim Vermieter bleibt (#142):
@@ -656,10 +662,15 @@ export type SettlementRow = {
 //   `mainMeterRest` beim Verbrauch der Teil des Hauptzählers, den kein Wohnungszähler misst
 //   `co2Share`      CO₂-Anteil des Vermieters (Heizung PR 6): beim Vorwegabzug der abziehbare Teil
 //                   in der Position des Messdienstes, beim reinen Ausweis die Summe der Abzugszeilen
+//   `fuelCarry`        Gegenzeile zu einem Übertrag (Heizung PR 7): der Teil einer Rechnung, der in
+//                      eine andere Heizperiode gehört; über die Zeiträume hinweg null
+//   `fuelClosedPeriod` der Teil für eine abgeschlossene Heizperiode, die ohne Schätzung abgeschlossen wurde
+//   `fuelEstimateDiff` tatsächlicher Teil minus Schätzung einer abgeschlossenen Heizperiode, mit Vorzeichen
 //   `rounding`      Rundungsrest (nur in Abrechnungen, die vor #202 abgeschlossen wurden)
 export type LandlordReason =
   | 'notAllocable' | 'noBasis' | 'selfUse' | 'vacancy' | 'flatRate' | 'inclusive'
-  | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share' | 'rounding'
+  | 'outsideUnit' | 'amountsRest' | 'customRest' | 'mainMeterRest' | 'co2Share'
+  | 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff' | 'rounding'
 export type LandlordPart = { reason: LandlordReason; cents: number }
 
 // Ein Schritt des Rechenwegs: Beschriftung, Wert als fertiger Text, auf Wunsch mit dem Begriff
@@ -1269,6 +1280,12 @@ export type HeatingPlant = {
   // Durchschnittliche Heizkosten 2022 bis 2024 bei Bruttowarmmiete (§ 12 Abs. 3 Satz 3), in Cent.
   warmRentAverageCents: number | null
   changeSplit: ChangeSplit
+  // CO₂-Merkmale (Heizung PR 7, Entwurf 5.3): Nichtwohngebäude (§ 8 CO2KostAufG), Beschränkungen bei
+  // energetischen Verbesserungen (§ 9) und Wärme aus dem Emissionshandel bei erstem Anschluss nach
+  // dem Stichtag (§ 2 Abs. 4 Satz 2, nur bei Fernwärme).
+  nonResidential: boolean
+  restriction: Co2Restriction
+  districtEtsNew: boolean
   // Eigene Heizperiode (#217, Heizung PR 5); `null` heißt wie das Objekt. Gesetzt nur über den Wechsel mit Vorschau.
   periodStartMonth: number | null
   // Die Wechsel der eigenen Heizperiode als 'JJJJ-MM', aufsteigend, wie beim Objekt (Heizung PR 5).
@@ -1393,6 +1410,10 @@ export type Co2StageRange = { from: number; to: number | null; landlordPercent: 
 // Aufteilung ist gebucht (Probe bestanden oder S geschätzt); `deducted`: beim Messdienst schon
 // abgezogen. `stage` ist die Stufe, in die Mietfuchs den Wert laut Messdienst einordnet, `table`
 // die Tabelle (bei kurzer Heizperiode mit gekürzten Grenzen, `shortened`).
+// Was die Einstufung bei der eigenen Aufteilung verändert hat (Heizung PR 7): § 8 (Nichtwohngebäude,
+// 500 ‰ statt der Stufe), § 9 Abs. 1 (halber Anteil) und § 9 Abs. 2 (keine Aufteilung).
+export type Co2Adjustment = 'nonResidential' | 'restrictionHalf' | 'restrictionNone'
+
 export type Co2Assessment = {
   method: Co2Method
   booked: boolean
@@ -1412,6 +1433,15 @@ export type Co2Assessment = {
   selfLandlordCents: number | null
   selfApproximated: boolean
   tenants: Co2TenantLine[]
+  // Woher die Angaben stammen (Heizung PR 7): laut Messdienst oder von Mietfuchs aus den Lieferungen,
+  // dann mit der Abdeckung der Heizperiode durch die Rechnungen in Promille der Gradtage. Fehlt das
+  // Feld (vor PR 7 abgeschlossen), sind es Angaben laut Messdienst.
+  basis?: 'service' | 'deliveries'
+  coveragePermille?: number | null
+  // Bei der eigenen Aufteilung: § 8 und § 9, und woher die Fläche der Einstufung stammt (eingetragen
+  // oder die Wohnfläche der versorgten Wohnungen, Entwurf 9.2, 9.5).
+  adjustments?: Co2Adjustment[]
+  areaSource?: 'entered' | 'served'
 }
 
 // Eine Heizanlage in einer Abrechnung, mit der Heizperiode, die darin abgerechnet wird.
@@ -1423,6 +1453,8 @@ export type HeatingStatement = {
   from: string
   to: string
   co2: Co2Assessment | null
+  // Lieferungen, Abgrenzung, Überträge und Lücken dieser Heizperiode (Heizung PR 7); fehlt ohne Lieferungen.
+  fuel?: FuelAssessment
 }
 
 // Was die Seite Heizkosten zu einer Heizperiode lädt (Heizung PR 6): die Angabe zum Warmwasser, die
@@ -1437,5 +1469,121 @@ export type HeatingPeriodView = {
   closed: boolean
   hotWater: Pick<HeatingPeriodData, 'dhwMethod' | 'dhwUnmeasurable'>
   co2: Co2Statement | null
-  items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts'>[]
+  items: Pick<CostItem, 'id' | 'description' | 'amountCents' | 'key' | 'tenancyAmounts' | 'selfAmounts' | 'fuelDeliveryId'>[]
 }
+
+// ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4, 8.2) ----------
+
+export type FuelQuantityUnit = 'l' | 'kg' | 'm3' | 'kWh' | 'srm'
+// Gas nach Brennwert (Hₛ) oder Heizwert (Hᵢ) abgerechnet.
+export type GasBasis = 'hs' | 'hi'
+// § 9 CO2KostAufG: Vorgaben stehen einer Verbesserung des Gebäudes, der Wärmeversorgung oder beidem entgegen.
+export type Co2Restriction = 'none' | 'building' | 'supply' | 'both'
+
+// Eine Teilmenge laut Rechnung (Stufe 3 in 3.2): ein Teilzeitraum mit eigener Menge und eigenem Betrag,
+// etwa bei einer Preisänderung. `fixedCents` ist sein fester Preisbestandteil.
+export type FuelDeliveryPart = {
+  from: string
+  to: string
+  energyKwh: number | null
+  amountCents: number
+  fixedCents: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+}
+
+// Eine Rechnung des Versorgers an der Heizanlage. `amountCents` steht nur bei einer Anlage mit
+// Messdienst (dort zeigt keine Position auf die Lieferung) und bei einer Schätzung; sonst ist der Betrag
+// die Summe der verknüpften Positionen. `sharePermille` ist ein eingetragener Anteil des
+// verbrauchsabhängigen Teils an der Heizperiode, in der die Rechnung endet (Stufe 0). `estimated`:
+// beim Abschluss geschätzt, weil die Rechnung fehlte (8.2). `usedByService`: der Messdienst hat die
+// Rechnung in seinen Brennstoffkosten angesetzt (7.6).
+export type FuelDelivery = {
+  id: string
+  plantId: string
+  label: string
+  invoiceDate: string | null
+  deliveredAt: string | null
+  invoiceFrom: string | null
+  invoiceTo: string | null
+  unitId: string | null
+  amountCents: number | null
+  quantity: number | null
+  quantityUnit: FuelQuantityUnit | null
+  energyKwh: number | null
+  gasBasis: GasBasis | null
+  heatingValue: number | null
+  emissionsKg: number | null
+  co2CostCents: number | null
+  emissionFactor: number | null
+  gridFeeCents: number | null
+  bioCostCents: number | null
+  sharePermille: number | null
+  fixedCents: number | null
+  estimated: boolean
+  usedByService: boolean
+  parts: FuelDeliveryPart[]
+}
+
+// Eine Gradtagzahl des Deutschen Wetterdienstes für den Ort des Objekts und einen Monat ('JJJJ-MM').
+export type DegreeDayValue = { month: string; value: number }
+
+// Was eine abgeschlossene Heizperiode je Lieferung herein- (+) oder hinausgebucht (−) hat, dazu Ausstoß
+// und CO₂-Kosten dieser Lieferung in der Heizperiode (G-A4).
+export type FrozenFuelCarry = { deliveryId: string; plantId: string; period: PeriodKey; cents: number; emissionsKg: number; co2Cents: number }
+
+// Wie der Teil einer Lieferung bestimmt ist (Stufen in 3.2).
+export type FuelMethod = 'entered' | 'measured' | 'inside' | 'parts' | 'localDegreeDays' | 'degreeDays'
+
+// Eine Lieferung in der Bewertung einer Heizperiode: ihr Anteil am Verbrauch (‰), ob sie geteilt ist,
+// ihr Betrag und der Teil dieser Heizperiode, Ausstoß und CO₂-Kosten darin.
+export type FuelDeliveryLine = {
+  deliveryId: string
+  label: string
+  from: string | null
+  to: string | null
+  estimated: boolean
+  method: FuelMethod
+  sharePermille: number
+  fixedKnown: boolean
+  split: boolean
+  amountCents: number | null
+  inPeriodCents: number | null
+  emissionsKg: number | null
+  co2Cents: number | null
+}
+
+// Ein Übertrag der Mieterseite dieser Heizperiode aus oder in die Heizperiode `period`.
+// `totalCents`: die Summe der Positionen der Rechnung, aus der der Übertrag gerechnet ist (Nachprüfung von
+// 47f2373: Wird sie nach dem Abschluss storniert, nennt die andere Heizperiode, was die Mieter zu viel trugen).
+export type FuelCarryLine = { deliveryId: string; period: PeriodKey; cents: number; totalCents?: number }
+
+// Der Vorschlag einer geschätzten Lieferung für eine Lücke (8.2 Nr. 2), aus der letzten Rechnung.
+export type FuelEstimateProposal = {
+  from: string
+  to: string
+  amountCents: number
+  emissionsKg: number | null
+  co2CostCents: number | null
+  basedOn: string
+  byMeter: boolean
+  // Der Anteil der Rechnung `basedOn`, der für die Lücke angesetzt ist, in Promille (Durchsicht von #233,
+  // Recht I2: Die Abrechnung nennt die Grundlage der Schätzung).
+  factorPermille: number
+}
+
+// `zeroInvoices`: Rechnungen im Zeitraum der Lücke, deren Positionen zusammen 0 € ergeben (als storniert behandelt).
+export type FuelGap = { from: string; to: string; days: number; permille: number; estimate: FuelEstimateProposal | null; zeroInvoices?: string[] }
+
+export type FuelAssessment = {
+  coveragePermille: number
+  emissionsKg: number | null
+  co2Cents: number | null
+  deliveries: FuelDeliveryLine[]
+  carries: FuelCarryLine[]
+  gaps: FuelGap[]
+}
+
+// Die Rückfrage beim Abschluss (8.2, Dialog „Trotzdem abschließen?“).
+// `deadline`: bis wann die Abrechnung, die abgeschlossen werden soll, den Mietern zugehen muss (Abwarten).
+export type FuelGapQuestion = { plantId: string; plantName: string; period: PeriodKey; from: string; to: string; amountCents: number; deadline: string; zeroInvoices?: string[] }

@@ -124,6 +124,37 @@ export const RULES: readonly Rule[] = [
       'Die Formel nach dem Warmwasserverbrauch darf nur verwenden, wer die Wärmemenge nur mit unzumutbar hohem Aufwand messen könnte; die Formel nach der Wohnfläche nur, wenn weder die Wärmemenge noch das Volumen des verbrauchten Warmwassers gemessen werden kann. ' +
       `Wird ohne diesen Grund nach einer Formel abgerechnet, darf der Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen.`,
   },
+  {
+    // Heizung PR 7 (#97): § 8 CO2KostAufG im Wortlaut geprüft am 05.10.2026.
+    code: 'co2-non-residential',
+    title: 'CO₂-Kosten im Nichtwohngebäude',
+    norm: '§ 8 CO2KostAufG',
+    summary:
+      'Dient ein Gebäude nach seiner Zweckbestimmung nicht überwiegend dem Wohnen, gilt keine Stufentabelle: ' +
+      'Vereinbarungen, nach denen der Mieter mehr als die Hälfte der CO₂-Kosten trägt, sind unwirksam; der Vermieter trägt also mindestens die Hälfte.',
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 7 (#97): § 9 CO2KostAufG im Wortlaut geprüft am 05.10.2026.
+    code: 'co2-restriction',
+    title: 'CO₂-Kosten bei Beschränkungen',
+    norm: '§ 9 CO2KostAufG',
+    summary:
+      'Stehen öffentlich-rechtliche Vorgaben (etwa Denkmalschutz, Anschluss- und Benutzungszwang, Erhaltungssatzung) einer wesentlichen energetischen Verbesserung des Gebäudes oder seiner Wärmeversorgung entgegen, ' +
+      'wird der Anteil des Vermieters um die Hälfte gekürzt; stehen sie beidem entgegen, werden die CO₂-Kosten nicht aufgeteilt. ' +
+      'Darauf berufen kann sich der Vermieter nur, wenn er dem Mieter die Umstände nachweist.',
+    validFrom: CO2_FROM,
+  },
+  {
+    // Heizung PR 7 (#97): § 7 Abs. 2 HeizkostenV im Wortlaut, BGH VIII ZR 156/11 Rn. 14 geprüft am
+    // 05.10.2026 (Entwurf 2, 3.2, 8.2).
+    code: 'heating-consumed-fuel',
+    title: 'Kosten des verbrauchten Brennstoffs',
+    norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11',
+    summary:
+      'Umgelegt werden die Kosten der im Abrechnungszeitraum verbrauchten Brennstoffe, nicht der bezahlten Rechnungen. ' +
+      'Reicht eine Rechnung des Versorgers über das Ende des Zeitraums hinaus, ist sie abzugrenzen; eine sachgerechte Schätzung ist dabei zulässig.',
+  },
 ]
 
 function ruleByCode(code: string): Rule {

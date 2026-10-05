@@ -68,7 +68,7 @@ test('CO₂-Angaben: Sperren und Pflichtangaben, jede mit einem Satz', async () 
     await bestand(opened)
     const speichern = (body: unknown, period = '2025-01') => opened.write((db) => saveCo2Statement(db, 'hp', period, body))
     await assert.rejects(speichern({}), heatingError(400, /Frage, ob die Kostenaufstellung/))
-    await assert.rejects(speichern({ method: 'self' }), heatingError(400, /späteren Version/))
+    await assert.rejects(speichern({ method: 'self' }), heatingError(400, /Frage nach der Abzugszeile/))
     await assert.rejects(speichern({ method: 'serviceShown', serviceLandlordCents: 500, serviceUnitsCount: 2 }), heatingError(400, /Summe der Kosten aller Nutzer/))
     await assert.rejects(speichern({ method: 'serviceShown', serviceUsersTotalCents: 100000, serviceUnitsCount: 2 }), heatingError(400, /CO₂-Anteil des Vermieters/))
     await assert.rejects(speichern({ method: 'serviceShown', serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 0 }), heatingError(400, /Nutzeinheiten/))
@@ -85,7 +85,9 @@ test('CO₂-Angaben: Sperren und Pflichtangaben, jede mit einem Satz', async () 
 test('CO₂-Angaben: nur bei einer Anlage mit Messdienst; abgeschlossene Heizperiode gesperrt (409)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened, 'manual')
-    await assert.rejects(opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug)), heatingError(400, /freien Schlüsseln/))
+    await assert.rejects(opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug)), heatingError(400, /freien Schlüsseln teilt Mietfuchs/))
+    // Bei freien Schlüsseln hält ein Datensatz nur die Fläche der Einstufung (Heizung PR 7).
+    assert.equal((await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', { method: 'self', areaM2: 412 })))?.areaM2, 412)
     await assert.rejects(opened.write((db) => saveHotWater(db, 'hp', '2025-01', { dhwMethod: 'volumeFormula' })), heatingError(400, /Messdienst oder die Gemeinschaft/))
   })
   await withDatabase(async (opened) => {

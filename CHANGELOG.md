@@ -97,6 +97,32 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ([#211](https://github.com/speedone/mietfuchs/issues/211)).
 - Anleitung „CO₂-Kosten der Heizung aufteilen“ und Lexikon-Einträge zur CO₂-Aufteilung, Einstufung,
   Fläche, Abzugszeile und zum Warmwasseranteil.
+- **Rechnungen des Versorgers als Lieferungen.** Auf der Seite „Heizkosten“ tragen Sie Gas-,
+  Fernwärme- und Stromrechnungen mit ihrem Rechnungszeitraum ein. Reicht eine Rechnung über die
+  Heizperiode hinaus, teilt Mietfuchs sie auf: nach einem eingetragenen Anteil, einem Zählerstand
+  zum Stichtag, einer Zwischenrechnung, Teilmengen der Rechnung, den Gradtagzahlen Ihres Orts oder
+  der Gradtagszahlentabelle; feste Preisbestandteile nach Tagen. Bei freien Schlüsseln verknüpfen
+  Sie die Positionen mit ihrer Rechnung; der Teil einer anderen Heizperiode steht dann als eigene
+  Zeile bei den Mietern und als Gegenbuchung bei Ihnen, und jede Rechnung ist über die Jahre genau
+  einmal verteilt. Heizkosten gehören in die Heizperiode, in der der Brennstoff verbraucht wurde
+  (BGH VIII ZR 156/11) ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- **Rückfrage beim Abschließen, wenn eine Rechnung fehlt.** Fehlt für einen Teil der Heizperiode
+  noch eine Rechnung, fragt Mietfuchs nach: abwarten (die Vorgabe, mit dem Ende der Frist), mit
+  Vorbehalt schätzen oder ohne Schätzung abschließen. Eine Schätzung nennt ihre Grundlage; ob eine
+  noch fehlende Versorgerrechnung geschätzt werden darf, ist höchstrichterlich nicht entschieden.
+  Kommt die Rechnung später, nennt die Abrechnung die Differenz, vor und nach Ablauf der Frist mit
+  dem, was Sie tun können (§ 556 Abs. 3 Satz 3 BGB); bei zu hoher Schätzung die Gutschrift je Mieter
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
+- Anleitung „Gasrechnung über die Heizperiode hinaus“ und Lexikon-Einträge zu Lieferung, festem
+  Preisbestandteil, Schätzung mit Vorbehalt, Nichtwohngebäude, Beschränkungen und Fernwärme aus dem
+  Emissionshandel.
+- **CO₂-Kosten selbst aufteilen.** Mit den Lieferungen teilt Mietfuchs die CO₂-Kosten bei freien
+  Schlüsseln selbst auf, und auch dann, wenn der Messdienst nicht aufgeteilt hat: Einstufung nach
+  dem auf die Heizperiode umgerechneten Ausstoß, § 8 (Nichtwohngebäude) und § 9 (Beschränkungen)
+  CO2KostAufG, der Abzug je Mieter nach seinem Anteil am Brennstoff; Wärme aus dem Emissionshandel
+  bei einem ersten Anschluss nach dem 01.01.2023 ohne Aufteilung (§ 2 Abs. 4 Satz 2 CO2KostAufG). Die
+  Abrechnung druckt die Grundlagen und den Block „Brennstoff“ mit
+  ([#97](https://github.com/speedone/mietfuchs/issues/97)).
 
 ### Geändert
 
@@ -147,6 +173,21 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ein. Wer ihn nach der bisherigen Anleitung in den Eigenbetrag geschrieben hat, dem meldet die Probe
   das ([#209](https://github.com/speedone/mietfuchs/issues/209)).
 - Eine Heizanlage mit erfassten CO₂-Angaben lässt sich erst entfernen, wenn die Angaben entfernt sind.
+- Ohne Heizanlage bleibt der Hinweis zu einer Heizrechnung über die Heizperiode hinaus wie bisher;
+  mit einer Anlage und freien Schlüsseln rät er, die Rechnung als Lieferung einzutragen.
+- Ablesungen des Versorgungszählers in einer abgeschlossenen Heizperiode und Lieferungen, von denen
+  eine abgeschlossene Heizperiode einen Teil eingefroren hat, lassen sich erst nach dem Wiederöffnen
+  ändern; eine Heizanlage mit Lieferungen lässt sich erst entfernen, wenn die Lieferungen entfernt
+  sind. Ebenso bleibt die letzte Position einer solchen Lieferung mit ihr verknüpft, und die
+  Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
+- Wird eine Rechnung nach dem Abschluss einer Heizperiode storniert oder auf 0 € gesetzt, sperrt
+  Mietfuchs nichts: Der Teil, den die Mieter der abgeschlossenen Abrechnung zu viel getragen haben,
+  steht beim Vermieter, und eine Warnung nennt den Betrag und rät, jene Abrechnung wieder zu öffnen und
+  neu abzuschließen; das gilt auch, wenn jene Abrechnung mit einer Schätzung abgeschlossen wurde. Die
+  stornierte Rechnung deckt danach keine Tage mehr ab, die Lücke wird wieder gemeldet; ein Hinweis nennt
+  die Rechnung und rät, eine echte Rechnung über 0 € nicht zu schätzen.
+  Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
+  verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
 
 ### Behoben
 

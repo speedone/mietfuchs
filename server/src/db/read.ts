@@ -18,14 +18,14 @@
 // die Abfrage bedient, kann es anders kommen.
 
 import { eq, sql } from 'drizzle-orm'
-import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
+import type { AiConsent, AiSettings, AiSlot, Co2Statement, CostItem, DegreeDayValue, FrozenFuelCarry, FuelDelivery, HeatingPeriodData, HeatingPlant, Meter, Payment, PeriodKey, Property, Reading, Settings, Tenancy, Unit } from '../../../shared/types.ts'
 import { periodKey } from '../../../shared/period.ts'
 import { migrateAi, type MigratedSettings } from '../ai/settings.ts'
 import { DEFAULT_SETTINGS } from '../defaults.ts'
 import { frozenSettlementOf, type FrozenItemSelfUse, type SnapshotSource } from '../snapshot.ts'
-import type { Database } from './client.ts'
+import type { Executor } from './client.ts'
 import {
-  aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
+  aiSlots, baseRents, closedHeatingSettlements, co2Statements, co2TenantReliefs, degreeDayValues, fuelCarryFrozen, fuelDeliveries, fuelDeliveryParts, heatingPeriods, closedSettlements, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, unitNoConnection, meters, payments,
   flatRates, heatingPeriodChanges, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingPrepayments, heatingSeparateSpans, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, readings, settings, tenancies, units,
 } from './schema.ts'
 
@@ -62,6 +62,10 @@ export type Stock = SnapshotSource & {
   // CO₂-Angaben und Zeilen der Heizperioden (Heizung PR 6)
   co2Statements: Co2Statement[]
   heatingPeriodRows: HeatingPeriodData[]
+  // Lieferungen, eingefrorene Überträge, Ortswerte (Heizung PR 7)
+  fuelDeliveries: FuelDelivery[]
+  fuelCarryFrozen: FrozenFuelCarry[]
+  degreeDayValues: (DegreeDayValue & { propertyId: string })[]
   readings: Reading[]
   payments: Payment[]
   closedSettlements: StoredClosedSettlement[]
@@ -99,7 +103,7 @@ const INSERTION_ORDER = sql`rowid`
 // die Naht zwischen Zeile und Domänentyp je Sammlung an genau einer Stelle, und sie ist eine
 // benannte Funktion und keine Zusicherung (dasselbe Muster wie bei der KI-Auswertung, #63).
 
-export async function readProperties(db: Database): Promise<Property[]> {
+export async function readProperties(db: Executor): Promise<Property[]> {
   const rows = await db.select().from(properties).orderBy(INSERTION_ORDER)
   // Die Wechsel aufsteigend nach Monat, nicht nach Anlage: shared/period.ts verlangt sie so.
   const changeRows = await db.select().from(periodChanges).orderBy(periodChanges.fromMonth)
@@ -120,7 +124,7 @@ export async function readProperties(db: Database): Promise<Property[]> {
   }))
 }
 
-export async function readUnits(db: Database): Promise<Unit[]> {
+export async function readUnits(db: Executor): Promise<Unit[]> {
   const rows = await db.select().from(units).orderBy(INSERTION_ORDER)
   const noConnectionRows = await db.select().from(unitNoConnection).orderBy(INSERTION_ORDER)
   const noConnection = groupBy(noConnectionRows, (r) => r.unitId, (r) => r.meterType)
@@ -146,7 +150,7 @@ export async function readUnits(db: Database): Promise<Unit[]> {
 // Ein Mietverhältnis liegt über fünf Tabellen: sich selbst und die drei Staffeln, dazu die
 // Jahreskorrektur. Deshalb liest dieser Leser mehr als einen Tisch, und deshalb ist er der
 // einzige, bei dem das so ist.
-export async function readTenancies(db: Database): Promise<Tenancy[]> {
+export async function readTenancies(db: Executor): Promise<Tenancy[]> {
   const rows = await db.select().from(tenancies).orderBy(INSERTION_ORDER)
   const personRows = await db.select().from(personHistory).orderBy(INSERTION_ORDER)
   const prepaymentRows = await db.select().from(prepayments).orderBy(INSERTION_ORDER)
@@ -201,7 +205,7 @@ export async function readTenancies(db: Database): Promise<Tenancy[]> {
   }))
 }
 
-export async function readCostItems(db: Database): Promise<CostItem[]> {
+export async function readCostItems(db: Executor): Promise<CostItem[]> {
   const rows = await db.select().from(costItems).orderBy(INSERTION_ORDER)
   const shareRows = await db.select().from(costItemShares).orderBy(INSERTION_ORDER)
   const shares = groupBy(shareRows, (r) => r.costItemId, (r): [string, number] => [r.unitId, r.percent])
@@ -248,11 +252,13 @@ export async function readCostItems(db: Database): Promise<CostItem[]> {
       ...(c.heatingPart !== null ? { heatingPart: c.heatingPart } : {}),
       // Die Heizanlage (Heizung PR 4), ebenso nur, wenn es sie gibt.
       ...(c.heatingPlantId !== null ? { heatingPlantId: c.heatingPlantId } : {}),
+      // Die Lieferung (Heizung PR 7), ebenso nur, wenn es sie gibt.
+      ...(c.fuelDeliveryId !== null ? { fuelDeliveryId: c.fuelDeliveryId } : {}),
     }
   })
 }
 
-export async function readMeters(db: Database): Promise<Meter[]> {
+export async function readMeters(db: Executor): Promise<Meter[]> {
   const rows = await db.select().from(meters).orderBy(INSERTION_ORDER)
   return rows.map((m) => ({
     id: m.id,
@@ -273,7 +279,7 @@ export async function readMeters(db: Database): Promise<Meter[]> {
 
 // Die Heizanlagen (Heizung PR 4). Die Liste der Wohnungen gibt es nur, wenn die Anlage eine hat
 // (`units_limited`); sonst versorgt sie alle Wohnungen ihres Objekts.
-export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
+export async function readHeatingPlants(db: Executor): Promise<HeatingPlant[]> {
   const rows = await db.select().from(heatingPlants).orderBy(INSERTION_ORDER)
   const zeilen = await db.select().from(heatingPlantUnits).orderBy(INSERTION_ORDER)
   const byPlant = groupBy(zeilen, (z) => z.plantId, (z) => ({ unitId: z.unitId, heatedAreaM2: z.heatedAreaM2 }))
@@ -296,6 +302,9 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
     capturedOnOct2024: p.capturedOnOct2024,
     warmRentAverageCents: p.warmRentAverageCents,
     changeSplit: p.changeSplit,
+    nonResidential: p.nonResidential,
+    restriction: p.restriction,
+    districtEtsNew: p.districtEtsNew,
     periodStartMonth: p.periodStartMonth,
     periodChanges: wechsel.get(p.id) ?? [],
     separateSpans: spannen.get(p.id) ?? [],
@@ -305,7 +314,7 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
 
 // Die CO₂-Angaben je Heizperiode (Heizung PR 6), mit Anlage und Heizperiode aus `heating_periods`
 // und den Beträgen „vom Vermieter übernommen“ je Mietverhältnis.
-export async function readCo2Statements(db: Database): Promise<Co2Statement[]> {
+export async function readCo2Statements(db: Executor): Promise<Co2Statement[]> {
   const rows = await db
     .select({ statement: co2Statements, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
     .from(co2Statements)
@@ -322,11 +331,39 @@ export async function readCo2Statements(db: Database): Promise<Co2Statement[]> {
 }
 
 // Die Zeilen der Heizperioden (PR 4), für die Angaben zum Warmwasser im Schnappschuss.
-export async function readHeatingPeriodRows(db: Database): Promise<HeatingPeriodData[]> {
+export async function readHeatingPeriodRows(db: Executor): Promise<HeatingPeriodData[]> {
   return await db.select().from(heatingPeriods).orderBy(INSERTION_ORDER)
 }
 
-export async function readReadings(db: Database): Promise<Reading[]> {
+// Die Brennstofflieferungen samt Teilmengen (Heizung PR 7), die Teilmengen nach Beginn.
+export async function readFuelDeliveries(db: Executor): Promise<FuelDelivery[]> {
+  const rows = await db.select().from(fuelDeliveries).orderBy(INSERTION_ORDER)
+  const parts = await db.select().from(fuelDeliveryParts).orderBy(fuelDeliveryParts.deliveryId, fuelDeliveryParts.from)
+  const byDelivery = groupBy(parts, (p) => p.deliveryId, (p) => ({
+    from: p.from, to: p.to, energyKwh: p.energyKwh, amountCents: p.amountCents, fixedCents: p.fixedCents, emissionsKg: p.emissionsKg, co2CostCents: p.co2CostCents,
+  }))
+  return rows.map((d) => ({ ...d, parts: byDelivery.get(d.id) ?? [] }))
+}
+
+// Was abgeschlossene Heizperioden je Lieferung eingefroren haben (Heizung PR 7, G-A4), mit Anlage und
+// Heizperiode aus `heating_periods`.
+export async function readFuelCarryFrozen(db: Executor): Promise<FrozenFuelCarry[]> {
+  const rows = await db
+    .select({ f: fuelCarryFrozen, plantId: heatingPeriods.plantId, period: heatingPeriods.period })
+    .from(fuelCarryFrozen)
+    .innerJoin(heatingPeriods, eq(fuelCarryFrozen.heatingPeriodId, heatingPeriods.id))
+    .orderBy(sql`"fuel_carry_frozen".rowid`)
+  return rows.map(({ f, plantId, period }) => ({
+    deliveryId: f.deliveryId, plantId, period: periodKey(String(period)), cents: f.cents, emissionsKg: f.emissionsKg, co2Cents: f.co2Cents,
+  }))
+}
+
+// Die Gradtagzahlen der Orte (Heizung PR 7), je Objekt nach Monat.
+export async function readDegreeDayValues(db: Executor): Promise<(DegreeDayValue & { propertyId: string })[]> {
+  return await db.select().from(degreeDayValues).orderBy(degreeDayValues.propertyId, degreeDayValues.month)
+}
+
+export async function readReadings(db: Executor): Promise<Reading[]> {
   const rows = await db.select().from(readings).orderBy(INSERTION_ORDER)
   return rows.map((r) => ({
     id: r.id,
@@ -339,7 +376,7 @@ export async function readReadings(db: Database): Promise<Reading[]> {
   }))
 }
 
-export async function readPayments(db: Database): Promise<Payment[]> {
+export async function readPayments(db: Executor): Promise<Payment[]> {
   const rows = await db.select().from(payments).orderBy(INSERTION_ORDER)
   return rows.map((p) => ({
     id: p.id,
@@ -350,7 +387,7 @@ export async function readPayments(db: Database): Promise<Payment[]> {
   }))
 }
 
-export async function readClosedSettlements(db: Database): Promise<StoredClosedSettlement[]> {
+export async function readClosedSettlements(db: Executor): Promise<StoredClosedSettlement[]> {
   const rows = await db.select().from(closedSettlements).orderBy(INSERTION_ORDER)
   return rows.map((c) => ({
     id: c.id,
@@ -370,7 +407,7 @@ export async function readClosedSettlements(db: Database): Promise<StoredClosedS
 // Archivstück wie bei den Abrechnungen des Objekts.
 export type StoredClosedHeatingSettlement = Omit<StoredClosedSettlement, 'propertyId'> & { plantId: string }
 
-export async function readClosedHeatingSettlements(db: Database): Promise<StoredClosedHeatingSettlement[]> {
+export async function readClosedHeatingSettlements(db: Executor): Promise<StoredClosedHeatingSettlement[]> {
   const rows = await db.select().from(closedHeatingSettlements).orderBy(INSERTION_ORDER)
   return rows.map((c) => ({
     id: c.id,
@@ -385,7 +422,7 @@ export async function readClosedHeatingSettlements(db: Database): Promise<Stored
 
 // Der ganze Bestand. Braucht ihn, wer rechnet (der Schnappschuss) oder wer ihn als Ganzes
 // vergleicht (der Umstieg und sein Gleichstand).
-export async function readStock(db: Database): Promise<Stock> {
+export async function readStock(db: Executor): Promise<Stock> {
   return {
     properties: await readProperties(db),
     units: await readUnits(db),
@@ -395,6 +432,9 @@ export async function readStock(db: Database): Promise<Stock> {
     heatingPlants: await readHeatingPlants(db),
     co2Statements: await readCo2Statements(db),
     heatingPeriodRows: await readHeatingPeriodRows(db),
+    fuelDeliveries: await readFuelDeliveries(db),
+    fuelCarryFrozen: await readFuelCarryFrozen(db),
+    degreeDayValues: await readDegreeDayValues(db),
     readings: await readReadings(db),
     payments: await readPayments(db),
     closedSettlements: await readClosedSettlements(db),
@@ -414,7 +454,7 @@ export async function readStock(db: Database): Promise<Stock> {
 // hat, bleibt leer; eine Adresse still durch die Voreinstellung zu ersetzen, wäre eine Änderung
 // hinter seinem Rücken. Deshalb steht der Rückfall ganz oben und nicht als `?? ''` an jedem
 // einzelnen Feld.
-export async function readSettings(db: Database): Promise<MigratedSettings> {
+export async function readSettings(db: Executor): Promise<MigratedSettings> {
   const rows = await db.select().from(settings).orderBy(INSERTION_ORDER)
   const row = rows[0]
   if (!row) return migrateAi({ ...DEFAULT_SETTINGS })

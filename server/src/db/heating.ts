@@ -24,6 +24,7 @@ import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../.
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { CO2_FUELS } from '../co2.ts'
+import { STOCK_ENERGIES } from '../fuel.ts'
 import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
@@ -31,7 +32,7 @@ import { readHeatingPlants, readProperties, readUnits } from './read.ts'
 import { asNullableFilled, asNullableText, asText, guardServedChange, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import { servesUnit } from '../../../shared/heatingPeriod.ts'
 import {
-  CHANGE_SPLITS, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
+  CHANGE_SPLITS, CO2_RESTRICTIONS, fuelDeliveries, closedHeatingSettlementHistory, co2Statements, closedHeatingSettlements, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
   HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, heatingPrepaymentOverrides, heatingSeparateSpans, meters, units,
 } from './schema.ts'
 
@@ -87,6 +88,10 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     capturedOnOct2024: merged(body, 'capturedOnOct2024', current.capturedOnOct2024, nullableBoolean),
     warmRentAverageCents: merged(body, 'warmRentAverageCents', current.warmRentAverageCents, nullableNumber),
     changeSplit: merged(body, 'changeSplit', current.changeSplit, (v) => oneOfOrUndefined(CHANGE_SPLITS, v) ?? current.changeSplit),
+    // CO₂-Merkmale (Heizung PR 7).
+    nonResidential: merged(body, 'nonResidential', current.nonResidential, (v) => v === true),
+    restriction: merged(body, 'restriction', current.restriction, (v) => oneOfOrUndefined(CO2_RESTRICTIONS, v) ?? current.restriction),
+    districtEtsNew: merged(body, 'districtEtsNew', current.districtEtsNew, (v) => v === true),
     periodStartMonth: merged(body, 'periodStartMonth', current.periodStartMonth, nullableNumber),
     // Wechsel und Spannen setzen nur die Routen mit Vorschau (Heizung PR 5, Task 4 und 9).
     periodChanges: current.periodChanges,
@@ -101,6 +106,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null,
   periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+  nonResidential: false, restriction: 'none', districtEtsNew: false,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -124,6 +130,23 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
   if (after.warmRentAverageCents !== null && (!Number.isInteger(after.warmRentAverageCents) || after.warmRentAverageCents < 0)) {
     throw new HeatingError(400, 'Die durchschnittlichen Heizkosten der Jahre 2022 bis 2024 sind ein Betrag ab 0 €.')
   }
+  // § 2 Abs. 4 Satz 2 CO2KostAufG betrifft nur Wärmelieferungen (Heizung PR 7).
+  if (after.districtEtsNew && after.energy !== 'districtHeating') {
+    throw new HeatingError(400, 'Die Angabe zur Wärme aus dem Emissionshandel gibt es nur bei Fernwärme.')
+  }
+  if (before !== null) {
+    // Verknüpfte Positionen gibt es nur bei freien Schlüsseln, Lieferungen mit Vorrat erst mit der
+    // Bestandsrechnung (Heizung PR 7); ein Wechsel ließe sie sonst still anders rechnen.
+    const [verknuepft] = await db.select({ n: count() }).from(costItems).innerJoin(fuelDeliveries, eq(costItems.fuelDeliveryId, fuelDeliveries.id)).where(eq(fuelDeliveries.plantId, after.id))
+    if (before.method === 'manual' && after.method !== 'manual' && (verknuepft?.n ?? 0) > 0) {
+      const n = verknuepft?.n ?? 0
+      throw new HeatingError(400, `An dieser Anlage ${n === 1 ? 'ist eine Kostenposition' : `sind ${n} Kostenpositionen`} mit Lieferungen verknüpft. Lösen Sie die Verknüpfungen zuerst; ein Messdienst rechnet den Brennstoff in seinen eigenen Beträgen ab.`)
+    }
+    const [lieferungen] = await db.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, after.id))
+    if (before.energy !== after.energy && (STOCK_ENERGIES.includes(after.energy) || after.energy === 'other') && (lieferungen?.n ?? 0) > 0) {
+      throw new HeatingError(400, 'An dieser Anlage stehen Lieferungen mit Rechnungszeitraum; Heizöl, Flüssiggas, Pellets, Holz und Kohle brauchen die Bestandsrechnung, die mit einer späteren Version kommt.')
+    }
+  }
   await sameProperty(db, after.propertyId, (after.units ?? []).map((u) => u.unitId), 'Die Heizanlage')
   if (before === null) {
     const [schon] = await db.select({ n: count() }).from(heatingPlants).where(eq(heatingPlants.propertyId, after.propertyId))
@@ -138,6 +161,7 @@ const plantRow = (p: HeatingPlant) => ({
   source: p.source, captureInstalledOn: p.captureInstalledOn, capturedOnOct2024: p.capturedOnOct2024,
   warmRentAverageCents: p.warmRentAverageCents, changeSplit: p.changeSplit, periodStartMonth: p.periodStartMonth,
   unitsLimited: p.units !== null,
+  nonResidential: p.nonResidential, restriction: p.restriction, districtEtsNew: p.districtEtsNew,
 })
 
 // Die Liste der Wohnungen, ganz ersetzt wie die Untertabellen in repository.ts.
@@ -234,6 +258,7 @@ export type PlantRemoval =
   | { removed: false; reason: 'meters'; meters: string[] }
   | { removed: false; reason: 'separate' }
   | { removed: false; reason: 'co2'; periods: string[] }
+  | { removed: false; reason: 'deliveries'; count: number }
 
 // Entfernt wird eine Anlage samt Liste der Wohnungen und Heizperioden (CASCADE). Ihre
 // Kostenpositionen bleiben, nur ohne Anlage; an Beträgen und Verteilung ändert das in dieser Version
@@ -253,6 +278,9 @@ export async function removeHeatingPlant(db: Database, id: string): Promise<Plan
       .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
       .where(eq(heatingPeriods.plantId, id))
     if (co2.length > 0) return { removed: false, reason: 'co2', periods: co2.map((c) => String(c.period)) }
+    // Lieferungen (Heizung PR 7) hält die Datenbank (RESTRICT); der Satz sagt, was zu tun ist.
+    const [lieferungen] = await tx.select({ n: count() }).from(fuelDeliveries).where(eq(fuelDeliveries.plantId, id))
+    if ((lieferungen?.n ?? 0) > 0) return { removed: false, reason: 'deliveries', count: lieferungen?.n ?? 0 }
     // Getrennte Heizkostenabrechnung (Heizung PR 5): Spannen, Heizkorrekturen und abgeschlossene
     // Heizkostenabrechnungen hängen an der Anlage. Ohne sie fiele jede getrennte Heizperiode still in
     // die Betriebskostenabrechnung zurück.

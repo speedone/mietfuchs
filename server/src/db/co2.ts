@@ -25,12 +25,12 @@ import { readCo2Statements, readCostItems, readHeatingPlants, readProperties } f
 import { asNullableFilled, CrossPropertyError, has, HeatingError, merged, oneOfOrUndefined, raw } from './repository.ts'
 import {
   closedHeatingSettlements, closedSettlements, CO2_METHODS, co2Statements, co2TenantReliefs, costItems, DHW_METHODS, heatingPeriods, tenancies,
-  units,
+  fuelCarryFrozen, units,
 } from './schema.ts'
 
 const ASK_METHOD = 'Bitte beantworten Sie zuerst die Frage, ob die Kostenaufstellung eine Zeile wie „Abzüglich CO₂-Kosten Vermieter“ enthält.'
-const LATER_SELF = 'Die eigene Aufteilung der CO₂-Kosten aus der Brennstoffrechnung kommt mit einer späteren Version. Übernehmen Sie bis dahin die Angaben Ihres Messdienstes.'
-const LATER_MANUAL = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf. CO₂-Angaben eines Messdienstes gehören zu einer Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet.'
+const SERVICE_NOT_SELF = 'Rechnet ein Messdienst oder die Gemeinschaft ab, beantworten Sie die Frage nach der Abzugszeile. Hat der Messdienst die CO₂-Kosten nicht aufgeteilt, wählen Sie „gar nicht aufgeteilt“; mit der Brennstoffrechnung als Lieferung teilt Mietfuchs dann selbst auf.'
+const MANUAL_SELF = 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten selbst auf, aus den Lieferungen des Versorgers. Angeben lässt sich hier nur die Fläche der Einstufung, wenn sie von der Wohnfläche der versorgten Wohnungen abweicht.'
 const closedText = (h: BillingPeriod) =>
   `Die Heizperiode ${periodLabel(h)} ist abgeschlossen; ihre Angaben bleiben, wie sie beim Abschluss waren. Öffnen Sie die Abrechnung wieder, um etwas zu ändern.`
 
@@ -72,7 +72,7 @@ async function heatingPeriodClosed(db: Executor, ctx: PlantContext, h: BillingPe
   return (gesamt?.n ?? 0) > 0
 }
 
-async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {
+export async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey): Promise<string> {
   const [row] = await db.select({ id: heatingPeriods.id }).from(heatingPeriods).where(and(eq(heatingPeriods.plantId, plantId), eq(heatingPeriods.period, key)))
   if (row) return row.id
   const id = newId()
@@ -83,13 +83,16 @@ async function ensureHeatingPeriod(db: Executor, plantId: string, key: PeriodKey
 // Eine Zeile in `heating_periods` ohne jede Angabe wird wieder entfernt. Sie entstand nur, damit
 // etwas an ihr hängen konnte; bliebe sie leer stehen, sperrte sie den Wechsel des Zeitraums der
 // Heizung (PR 5, heatingPeriodChange.ts: jede Zeile gilt dort als erfasste Angabe).
-async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void> {
+export async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void> {
   const [row] = await db.select().from(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
   if (!row) return
   const { id: _id, plantId: _plant, period: _period, ...data } = row
   if (Object.values(data).some((v) => v !== null)) return
   const [co2] = await db.select({ n: count() }).from(co2Statements).where(eq(co2Statements.heatingPeriodId, heatingPeriodId))
   if ((co2?.n ?? 0) > 0) return
+  // Eingefrorene Teile von Lieferungen (Heizung PR 7) hängen an der Zeile; mit ihr fielen sie.
+  const [frozen] = await db.select({ n: count() }).from(fuelCarryFrozen).where(eq(fuelCarryFrozen.heatingPeriodId, heatingPeriodId))
+  if ((frozen?.n ?? 0) > 0) return
   await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
 }
 
@@ -137,7 +140,7 @@ export async function heatingPeriodViews(db: Database, plantId: string, periodPa
       co2: statements.find((s) => s.period === h.key) ?? null,
       items: items
         .filter((c) => c.period === h.key)
-        .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts })),
+        .map((c) => ({ id: c.id, description: c.description, amountCents: c.amountCents, key: c.key, tenancyAmounts: c.tenancyAmounts, selfAmounts: c.selfAmounts, fuelDeliveryId: c.fuelDeliveryId })),
     })
   }
   return views
@@ -204,8 +207,9 @@ function mergeCo2(current: Co2Statement, body: unknown): Co2Statement {
 }
 
 async function guardCo2(db: Executor, ctx: PlantContext, h: BillingPeriod, st: Co2Statement): Promise<void> {
-  if (st.method === 'self') throw new HeatingError(400, LATER_SELF)
-  if (ctx.plant.method !== 'service') throw new HeatingError(400, LATER_MANUAL)
+  // Heizung PR 7: bei freien Schlüsseln nur `self` (die Fläche der Einstufung), beim Messdienst nie.
+  if (ctx.plant.method === 'manual' && st.method !== 'self') throw new HeatingError(400, MANUAL_SELF)
+  if (ctx.plant.method !== 'manual' && st.method === 'self') throw new HeatingError(400, SERVICE_NOT_SELF)
   if (!valueAt(co2ApplicableFrom, h.from)) {
     throw new HeatingError(400, `Die CO₂-Kosten sind erst für Abrechnungszeiträume aufzuteilen, die am oder nach dem ${germanDate(co2FirstPeriodStart())} beginnen (§ 11 Abs. 2 Satz 1 CO2KostAufG); diese Heizperiode beginnt früher.`)
   }

@@ -37,3 +37,17 @@ test('Punkt 8: Heizposition unangetastet, Gutschrift „CO₂-Anteil Vermieter�
   expect(screen.getByText(/eine Position „Nicht umlagefähig“ entfällt dann/)).toBeTruthy()
   expect(screen.queryByText(/mindern Sie die Heizposition/)).toBeNull()
 })
+
+test('Nachprüfung von 47f2373: Bei Fernwärme spricht der Rat von der Fernwärmerechnung, nicht von Gas oder Öl', async () => {
+  vi.stubGlobal('fetch', async (url: string) => {
+    const path = url.split('?')[0]
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    if (path === '/api/properties') return json([{ id: 'objekt-1', name: 'Haus', kind: 'zfh', address: '', landlordName: null, iban: null, paymentDeadlineDays: null }])
+    if (path === '/api/heating-plants') return json([{ ...PLANT, energy: 'districtHeating' }])
+    return json([])
+  })
+  render(<PeriodProvider><PropertyProvider><Heizkosten units={[]} tenancies={[]} /></PropertyProvider></PeriodProvider>)
+  expect(await screen.findByText(/Der CO₂-Ausstoß laut Fernwärmerechnung/, undefined, { timeout: 5000 })).toBeTruthy()
+  expect(screen.getByText(/sobald Sie die Fernwärmerechnung unten als Lieferung eintragen/)).toBeTruthy()
+  expect(screen.queryByText(/Gas- oder Ölrechnung/)).toBeNull()
+})

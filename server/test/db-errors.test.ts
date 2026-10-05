@@ -318,3 +318,28 @@ test('CO₂-Angaben: jede Bedingung, deren Endung allein den falschen Satz ergä
     assert.doesNotMatch(anteil, /JJJJ-MM/, anteil)
   })
 })
+
+test('Lieferungen: jede Bedingung, deren Endung allein den falschen Satz ergäbe, hat ihren eigenen (Heizung PR 7)', async () => {
+  // Die Schreibprüfung in db/fuel.ts und repository.ts fängt das vorher ab; die Bedingungen sind das
+  // Netz darunter. „Ein Monat in der Form JJJJ-MM“ wäre bei einem Tagesdatum falsch.
+  await withDatabase(async (opened) => {
+    const run = (statement: string) => messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw(statement))))
+    await opened.write((db) => db.run(sql.raw("INSERT INTO heating_plants (id, property_id, energy, method) VALUES ('hp1', 'objekt-1', 'gas', 'manual')")))
+    const ets = await run("UPDATE heating_plants SET district_ets_new = 1 WHERE id = 'hp1'")
+    assert.match(ets, /nur bei Fernwärme/, ets)
+    const paar = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from) VALUES ('d1', 'hp1', '2025-01-01')")
+    assert.match(paar, /Rechnungszeitraum/, paar)
+    assert.doesNotMatch(paar, /Gemeinschaft/, paar)
+    const datum = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d2', 'hp1', '01.01.2025', '2025-12-31')")
+    assert.match(datum, /JJJJ-MM-TT/, datum)
+    const folge = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d3', 'hp1', '2025-12-31', '2025-01-01')")
+    assert.match(folge, /endet vor seinem Beginn/, folge)
+    const anteil = await run("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to, share_permille) VALUES ('d4', 'hp1', '2025-01-01', '2025-12-31', 1001)")
+    assert.match(anteil, /1000 ‰/, anteil)
+    await opened.write((db) => db.run(sql.raw("INSERT INTO fuel_deliveries (id, plant_id, invoice_from, invoice_to) VALUES ('d5', 'hp1', '2025-01-01', '2025-12-31')")))
+    const kalt = await run("INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key, fuel_delivery_id) VALUES ('c1', 'objekt-1', '2025-01', 'Grundsteuer', 'G', 1, 'area', 'd5')")
+    assert.match(kalt, /Heizung und Warmwasser/, kalt)
+    const teil = await run("INSERT INTO fuel_delivery_parts (delivery_id, \"from\", \"to\", amount_cents) VALUES ('d5', '2025-06-30', '2025-01-01', 1)")
+    assert.match(teil, /Teilmenge endet vor ihrem Beginn/, teil)
+  })
+})

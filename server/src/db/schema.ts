@@ -18,6 +18,7 @@ import type {
   AssessmentBooking,
   ChangeSplit,
   Co2Method,
+  Co2Restriction,
   CostKey,
   CostModel,
   DepositStatus,
@@ -25,6 +26,8 @@ import type {
   DevicesRemote,
   DhwMethod,
   ExternalMeasure,
+  FuelQuantityUnit,
+  GasBasis,
   HeatingEnergy,
   HeatingMethod,
   HeatingPart,
@@ -341,6 +344,10 @@ export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as co
 export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
 export const INSULATION_RULES = exactly<InsulationRule>()(['applies', 'notApplies', 'unknown'] as const)
 export const DHW_METHODS = exactly<DhwMethod>()(['heatMeter', 'volumeFormula', 'areaFormula'] as const)
+// CO₂-Merkmale der Anlage und Mengen einer Lieferung (Heizung PR 7).
+export const CO2_RESTRICTIONS = exactly<Co2Restriction>()(['none', 'building', 'supply', 'both'] as const)
+export const FUEL_QUANTITY_UNITS = exactly<FuelQuantityUnit>()(['l', 'kg', 'm3', 'kWh', 'srm'] as const)
+export const GAS_BASES = exactly<GasBasis>()(['hs', 'hi'] as const)
 
 // Die Heizanlage eines Objekts. Spalten späterer PRs kommen mit ihnen (CO₂-Merkmale mit PR 7, §§ 5a
 // bis 5d mit PR 18, Erfassung und Ausnahmen mit PR 10 und 14); was PR 4 schon anlegt, aber erst
@@ -369,6 +376,10 @@ export const heatingPlants = sqliteTable(
     // Ob die Anlage eine Liste der angeschlossenen Wohnungen hat; ohne Liste alle (siehe
     // heating_plant_units). Eigens gespeichert wie `participants_limited` (#94).
     unitsLimited: integer('units_limited', { mode: 'boolean' }).notNull().default(false),
+    // CO₂-Merkmale (Heizung PR 7): § 8, § 9 und § 2 Abs. 4 Satz 2 CO2KostAufG.
+    nonResidential: integer('non_residential', { mode: 'boolean' }).notNull().default(false),
+    restriction: text('restriction', { enum: CO2_RESTRICTIONS }).notNull().default('none'),
+    districtEtsNew: integer('district_ets_new', { mode: 'boolean' }).notNull().default(false),
   },
   () => [
     oneOf('heating_plants_energy_known', 'energy', HEATING_ENERGIES),
@@ -384,6 +395,9 @@ export const heatingPlants = sqliteTable(
     // Messdienstes (Entwurf 8.9, D-F2).
     check('heating_plants_source_method_valid', sql.raw(`"source" <> 'homeowners' OR "method" = 'service'`)),
     notNegative('heating_plants_warm_rent_not_negative', 'warm_rent_average_2022_2024'),
+    oneOf('heating_plants_restriction_known', 'restriction', CO2_RESTRICTIONS),
+    // § 2 Abs. 4 Satz 2 CO2KostAufG betrifft nur Wärmelieferungen (Heizung PR 7).
+    check('heating_plants_ets_district_valid', sql.raw(`"district_ets_new" = 0 OR "energy" = 'districtHeating'`)),
   ],
 )
 
@@ -581,6 +595,132 @@ export const closedHeatingSettlementHistory = sqliteTable(
   ],
 )
 
+// ---------- Brennstofflieferungen (Heizung PR 7, Entwurf 5.4) ----------
+
+// Ein Tagesdatum 'JJJJ-MM-TT' oder NULL. Die Endung `_valid` hat in errors.ts je Bedingung einen
+// eigenen Satz, denn die Endung allein spräche von einem Monat.
+const isoDate = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" IS NULL OR "${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`))
+
+// Eine Rechnung des Versorgers an der Anlage. `RESTRICT` auf die Anlage: Eine Anlage mit Lieferungen
+// wird nicht still mitgelöscht (removeHeatingPlant lehnt mit einem Satz ab). `unit_id` ist für
+// Etagenheizungen (PR 9), Netzentgelte und Biobrennstoff für § 5a (PR 18); bis dahin lehnt der Server
+// eine Angabe ab, die Spalten stehen schon hier, damit die Tabelle nicht neu gebaut wird.
+export const fuelDeliveries = sqliteTable(
+  'fuel_deliveries',
+  {
+    id: text('id').primaryKey().notNull(),
+    plantId: text('plant_id')
+      .notNull()
+      .references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    label: text('label').notNull().default(''),
+    invoiceDate: text('invoice_date'),
+    deliveredAt: text('delivered_at'),
+    invoiceFrom: text('invoice_from'),
+    invoiceTo: text('invoice_to'),
+    unitId: text('unit_id').references(() => units.id, { onDelete: 'cascade' }),
+    amountCents: integer('amount_cents'),
+    quantity: real('quantity'),
+    quantityUnit: text('quantity_unit', { enum: FUEL_QUANTITY_UNITS }),
+    energyKwh: real('energy_kwh'),
+    gasBasis: text('gas_basis', { enum: GAS_BASES }),
+    heatingValue: real('heating_value'),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+    emissionFactor: real('emission_factor'),
+    gridFeeCents: integer('grid_fee_cents'),
+    bioCostCents: integer('bio_cost_cents'),
+    sharePermille: real('share_permille'),
+    fixedCents: integer('fixed_cents'),
+    estimated: integer('estimated', { mode: 'boolean' }).notNull().default(false),
+    usedByService: integer('used_by_service', { mode: 'boolean' }).notNull().default(true),
+  },
+  () => [
+    oneOf('fuel_deliveries_quantity_unit_known', 'quantity_unit', FUEL_QUANTITY_UNITS),
+    oneOf('fuel_deliveries_gas_basis_known', 'gas_basis', GAS_BASES),
+    check('fuel_deliveries_invoice_complete', sql.raw('("invoice_from" IS NULL) = ("invoice_to" IS NULL)')),
+    isoDate('fuel_deliveries_invoice_from_valid', 'invoice_from'),
+    isoDate('fuel_deliveries_invoice_to_valid', 'invoice_to'),
+    isoDate('fuel_deliveries_invoice_date_valid', 'invoice_date'),
+    isoDate('fuel_deliveries_delivered_at_valid', 'delivered_at'),
+    check('fuel_deliveries_invoice_order_valid', sql.raw('"invoice_from" IS NULL OR "invoice_from" <= "invoice_to"')),
+    check('fuel_deliveries_share_valid', sql.raw('"share_permille" BETWEEN 0 AND 1000')),
+    check('fuel_deliveries_heating_value_positive', sql.raw('"heating_value" > 0')),
+    notNegative('fuel_deliveries_quantity_not_negative', 'quantity'),
+    notNegative('fuel_deliveries_energy_not_negative', 'energy_kwh'),
+    notNegative('fuel_deliveries_emissions_not_negative', 'emissions_kg'),
+    notNegative('fuel_deliveries_co2_not_negative', 'co2_cost_cents'),
+    notNegative('fuel_deliveries_factor_not_negative', 'emission_factor'),
+    notNegative('fuel_deliveries_fixed_not_negative', 'fixed_cents'),
+    notNegative('fuel_deliveries_grid_fee_not_negative', 'grid_fee_cents'),
+    notNegative('fuel_deliveries_bio_not_negative', 'bio_cost_cents'),
+  ],
+)
+
+// Die Teilmengen laut Rechnung (Stufe 3 in 3.2, Z-B4), eine Zeile je Teilzeitraum.
+export const fuelDeliveryParts = sqliteTable(
+  'fuel_delivery_parts',
+  {
+    deliveryId: text('delivery_id')
+      .notNull()
+      .references(() => fuelDeliveries.id, { onDelete: 'cascade' }),
+    from: text('from').notNull(),
+    to: text('to').notNull(),
+    energyKwh: real('energy_kwh'),
+    amountCents: integer('amount_cents').notNull(),
+    fixedCents: integer('fixed_cents'),
+    emissionsKg: real('emissions_kg'),
+    co2CostCents: integer('co2_cost_cents'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.deliveryId, t.from] }),
+    isoDate('fuel_delivery_parts_from_valid', 'from'),
+    isoDate('fuel_delivery_parts_to_valid', 'to'),
+    check('fuel_delivery_parts_order_valid', sql.raw('"from" <= "to"')),
+    notNegative('fuel_delivery_parts_energy_not_negative', 'energy_kwh'),
+    notNegative('fuel_delivery_parts_fixed_not_negative', 'fixed_cents'),
+    notNegative('fuel_delivery_parts_emissions_not_negative', 'emissions_kg'),
+    notNegative('fuel_delivery_parts_co2_not_negative', 'co2_cost_cents'),
+  ],
+)
+
+// Was eine abgeschlossene Heizperiode je Lieferung herein- oder hinausgebucht hat (G-A4). `RESTRICT` auf
+// die Lieferung: Mit eingefrorenem Teil ist sie gesperrt; mit der Heizperiode (also der Anlage) fällt
+// die Zeile.
+export const fuelCarryFrozen = sqliteTable(
+  'fuel_carry_frozen',
+  {
+    deliveryId: text('delivery_id')
+      .notNull()
+      .references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
+    heatingPeriodId: text('heating_period_id')
+      .notNull()
+      .references(() => heatingPeriods.id, { onDelete: 'cascade' }),
+    cents: integer('cents').notNull(),
+    emissionsKg: real('emissions_kg').notNull().default(0),
+    co2Cents: integer('co2_cents').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.deliveryId, t.heatingPeriodId] })],
+)
+
+// Die Gradtagzahlen des Deutschen Wetterdienstes für den Ort des Objekts (Stufe 4 in 3.2), je Monat.
+// Mit dem Objekt fallen sie.
+export const degreeDayValues = sqliteTable(
+  'degree_day_values',
+  {
+    propertyId: text('property_id')
+      .notNull()
+      .references(() => properties.id, { onDelete: 'cascade' }),
+    month: text('month').notNull(),
+    value: real('value').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.propertyId, t.month] }),
+    periodKeyCheck('degree_day_values_month_valid', 'month'),
+    check('degree_day_values_value_positive', sql.raw('"value" > 0')),
+  ],
+)
+
 // ---------- Kostenpositionen ----------
 
 export const costItems = sqliteTable(
@@ -632,6 +772,9 @@ export const costItems = sqliteTable(
     // Die Heizanlage der Position (Heizung PR 4). `RESTRICT`: Eine Anlage mit Positionen wird nicht
     // still gelöscht; `removeHeatingPlant` gibt sie vorher frei.
     heatingPlantId: text('heating_plant_id').references(() => heatingPlants.id, { onDelete: 'restrict' }),
+    // Die Lieferung der Position (Heizung PR 7). `RESTRICT`: Eine Lieferung mit Positionen wird nicht
+    // still gelöscht; removeDelivery verlangt vorher, die Verknüpfung zu lösen.
+    fuelDeliveryId: text('fuel_delivery_id').references(() => fuelDeliveries.id, { onDelete: 'restrict' }),
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
@@ -655,6 +798,8 @@ export const costItems = sqliteTable(
     oneOf('cost_items_heating_part_known', 'heating_part', HEATING_PARTS),
     // Ein Brennstoffmerkmal an Müllabfuhr hätte keine Bedeutung und verwirrte den Vorschlag nach § 560.
     check('cost_items_heating_part_category_valid', sql.raw(`"heating_part" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
+    // Eine Lieferung gehört nur zu einer Heizposition (Heizung PR 7).
+    check('cost_items_fuel_delivery_category_valid', sql.raw(`"fuel_delivery_id" IS NULL OR "category" = 'Heizung und Warmwasser'`)),
     // Eine Summe der Anlage von null ergäbe eine Division durch null im Rechenweg.
     check('cost_items_external_total_positive', sql.raw('"external_total" > 0')),
     check(
