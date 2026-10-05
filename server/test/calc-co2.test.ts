@@ -103,7 +103,7 @@ test('S geschätzt („Ich finde diese Zeile nicht“): weitet nur den Spielraum
   const r = settle(s, [co2({ serviceUsersTotalCents: 292069, serviceUsersTotalApprox: true, serviceLandlordCents: 10000, serviceUnitsCount: 3 })])
   assert.equal(r.notices.find((n) => n.code === 'co2.sum-check')?.level, 'error')
   assert.ok(!codes(r).includes('co2.sum-check-approx'))
-  assert.match(textOf(r, 'co2.sum-check'), /S ist geschätzt/)
+  assert.match(textOf(r, 'co2.sum-check'), /Die Summe der Kosten aller Nutzer ist geschätzt/)
   assert.deepEqual(partsOf(r), [{ reason: 'selfUse', cents: 62069 }, { reason: 'amountsRest', cents: 7931 }])
   assert.equal(r.heating?.[0]?.co2?.booked, false)
   // Geht sie mit geschätztem S auf (leere Wohnung mit 600 €), wird gebucht, mit einem Hinweis.
@@ -131,7 +131,7 @@ test('Irrtümer der Probe (Entwurf 7.3): „Ja“ mit Betrag S, „Nein“ obwoh
   // „Ja“ bei Bruttobeträgen oder beim Nettobetrag der Position (#209): Betrag = S, verlangt S + L.
   const netto = settle({ ...vier, costItems: [messdienst(384551, TECHEM)] }, [techem()])
   const text = textOf(netto, 'co2.sum-check')
-  assert.match(text, /Ihre Positionen ergeben 3\.845,51 €\. Mit Abzugszeile müssten es S \+ L = 3\.933,01 € sein, ohne Abzugszeile S = 3\.845,51 €\./)
+  assert.match(text, /hat 3\.845,51 €\. Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer \(3\.845,51 €\) plus den CO₂-Anteil des Vermieters \(87,50 €\) sein, also 3\.933,01 €; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, 3\.845,51 €\./)
   assert.match(text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 33,10 €, tb \(b\) 28,76 €, tc \(c\) 30,45 € und td \(d\) 23,06 €/)
   // Beim Vorwegabzug steht die Aufteilung meist in der Abrechnung des Messdienstes (Durchsicht I4).
   assert.match(text, /Fehlt die Aufteilung auch in der Abrechnung des Messdienstes, die die Mieter bekommen, darf jeder Mieter/)
@@ -273,7 +273,7 @@ test('Lücke abgesichert über G und V (Entwurf 7.4): „Nein“, aber G − V =
 
 const zwei = { units: [unit('a'), unit('b')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')] }
 const gas = (amountCents = 100000) => messdienst(amountCents, { ta: 60000, tb: 40000 })
-const vollstaendig = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2, serviceKgPerM2: 30, serviceLandlordPermille: 400, serviceTotalCents: 1250 })
+const vollstaendig = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2, serviceKgPerM2: 30, serviceLandlordPermille: 400, serviceTotalCents: 1250, serviceEmissionsKg: 3000, serviceAreaM2: 100 })
 
 test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizzeilen, Knopf zur Heizanlage', () => {
   const r = settle({ ...zwei, costItems: [gas()] }, [])
@@ -469,4 +469,24 @@ test('Angaben laut Messdienst an einer Anlage mit freien Schlüsseln (etwa aus e
   const r = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()], [plant({ method: 'manual' })])
   assert.deepEqual(partsOf(r), [{ reason: 'amountsRest', cents: 8750 }])
   assert.equal(r.heating?.[0]?.co2 ?? null, null)
+})
+
+// Laienprobe B21: Wer nur kg je m², Prozent und CO₂-Kosten einträgt (wie die Anleitung bisher), hat
+// keine Berechnungsgrundlagen der Einstufung im Ausweis; die Abrechnung sagt das mit der Kürzungsfolge.
+test('Laienprobe B21: ohne Ausstoß und Fläche ist der Ausweis nach § 7 Abs. 3 unvollständig (co2.incomplete)', () => {
+  const nurJeM2 = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2, serviceKgPerM2: 30, serviceLandlordPermille: 400, serviceTotalCents: 1250, serviceEmissionsKg: null, serviceAreaM2: null, areaM2: null })
+  const t = textOf(settle({ ...zwei, costItems: [gas(100500)] }, [nurJeM2]), 'co2.incomplete')
+  assert.match(t, /fehlen der CO₂-Ausstoß insgesamt \(kg\) und die Wohnfläche, aus denen der Wert je Quadratmeter berechnet ist/)
+  assert.match(t, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\)/)
+  const mitGrundlagen = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2, serviceKgPerM2: 30, serviceLandlordPermille: 400, serviceTotalCents: 1250, serviceEmissionsKg: 3000, serviceAreaM2: 100 })
+  assert.ok(!codes(settle({ ...zwei, costItems: [gas(100500)] }, [mitGrundlagen])).includes('co2.incomplete'))
+})
+
+// Laienprobe B20: Die Meldung der gescheiterten Probe sprach in „S“ und „L“. Jetzt nennt sie die
+// Position und rechnet in Worten vor.
+test('Laienprobe B20: co2.sum-check nennt die Position und rechnet ohne Formelbuchstaben', () => {
+  const t = textOf(settle({ ...zwei, costItems: [gas(100000)] }, [vollstaendig]), 'co2.sum-check')
+  assert.match(t, /Ihre Position „Heizung und Warmwasser laut Messdienst“ hat 1\.000,00.€\./)
+  assert.match(t, /Mit Abzugszeile muss der Betrag die Summe der Kosten aller Nutzer \(1\.000,00.€\) plus den CO₂-Anteil des Vermieters \(5,00.€\) sein, also 1\.005,00.€; ohne Abzugszeile genau die Summe der Kosten aller Nutzer, 1\.000,00.€\./)
+  assert.doesNotMatch(t, /\bS \+ L\b|\bS = /)
 })

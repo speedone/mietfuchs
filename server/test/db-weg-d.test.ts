@@ -10,8 +10,10 @@ import { eq } from 'drizzle-orm'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import type { Database } from '../src/db/client.ts'
 import { applySeparate, previewSeparate } from '../src/db/separateSettlement.ts'
-import { closeSettlement, createEntity, findEntity, HeatingError, updateEntity } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, findEntity, HeatingError, StaleTenancyError, updateEntity } from '../src/db/repository.ts'
+import { tenancyStamp } from '../../shared/tenancyStamp.ts'
 import { createHeatingPlant, listHeatingPlants, updateHeatingPlant } from '../src/db/heating.ts'
+import { previewHeatingPeriodChange } from '../src/db/heatingPeriodChange.ts'
 import { readStock } from '../src/db/read.ts'
 import { closedHeatingSettlements, heatingPlants } from '../src/db/schema.ts'
 import { computeSettlement, rentLedger } from '../src/calc.ts'
@@ -283,5 +285,100 @@ test('Weg d mit Heizstaffel: ein Mietverhältnis wechselt nicht still zwischen v
     assert.ok(await apply(opened, { separate: true, month: '2026-01', answers: { steps } }))
     await assert.rejects(opened.write((db) => updateEntity(db, 'tenancies', 't1', { unitId: 'u2' })),
       (e: unknown) => e instanceof HeatingError && e.status === 409 && /Müller/.test(e.message))
+  })
+})
+
+// Laienprobe B1: Das Formular des Mietverhältnisses war vor dem Einschalten geladen und schickt
+// beim Speichern seinen alten Stand, also die ungeteilte Staffel und eine leere Heizstaffel. Ohne
+// Marke ersetzte die Route beides, und die Aufteilung war ohne Meldung weg. Mit der Marke des
+// geladenen Stands lehnt sie ab, und es bleibt, was das Aufteilen geschrieben hat.
+test('Laienprobe B1: ein veraltetes Formular löscht die Heizstaffel nicht, sondern bekommt 409', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const geladen = await opened.read((db) => findEntity(db, 'tenancies', 't1'))
+    if (!geladen || !('tenantName' in geladen) || !('prepayments' in geladen)) return assert.fail('t1 fehlt')
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    const veraltet = {
+      tenantName: 'Müller', phone: '0171 1234567', start: '2025-01-01', end: null,
+      prepayments: [{ from: '2025-01', monthlyCents: 30000 }], heatingPrepayments: [], flatRates: [], baseRents: [],
+      personHistory: [{ from: '2025-01-01', persons: 1 }],
+      ifUnchanged: tenancyStamp(geladen),
+    }
+    await assert.rejects(
+      opened.write((db) => updateEntity(db, 'tenancies', 't1', veraltet)),
+      (e: unknown) => e instanceof StaleTenancyError && e.status === 409 && /inzwischen/.test(e.message),
+    )
+    assert.deepEqual(await tenancyField(opened, 'heatingPrepayments'), [{ from: '2025-05', monthlyCents: 12300 }])
+    assert.deepEqual(await tenancyField(opened, 'prepayments'), [{ from: '2025-01', monthlyCents: 30000 }, { from: '2025-05', monthlyCents: 17700 }])
+    // Mit dem neu geladenen Stand geht dasselbe Speichern durch.
+    const frisch = await opened.read((db) => findEntity(db, 'tenancies', 't1'))
+    if (!frisch || !('prepayments' in frisch)) return assert.fail('t1 fehlt')
+    await opened.write((db) => updateEntity(db, 'tenancies', 't1', { phone: '0171 1234567', ifUnchanged: tenancyStamp(frisch) }))
+    assert.equal(await tenancyField(opened, 'phone'), '0171 1234567')
+    assert.deepEqual(await tenancyField(opened, 'heatingPrepayments'), [{ from: '2025-05', monthlyCents: 12300 }])
+  })
+})
+
+// Laienprobe B3a: Weg d rückwirkend ab 05/2025. Am 15.01.2027 ist die Frist der Abrechnung 2025
+// abgelaufen; das Aufteilen ändert sie trotzdem (sie verliert den Heizanteil Mai bis Dezember). Die
+// Vorschau nennt das vorher, mit Frist und Ergebnis vorher und nachher, und speichert nichts.
+test('Laienprobe B3a: die Vorschau nennt abgelaufene und laufende Abrechnungen, die das Aufteilen ändert', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const v = await preview(opened, { separate: true, month: '2025-05' }, '2027-01-15')
+    const p2025 = v.effects.find((e) => e.label === '2025') ?? assert.fail(JSON.stringify(v.effects))
+    assert.deepEqual([p2025.deadline, p2025.passed], ['2026-12-31', true])
+    assert.deepEqual(p2025.tenants, [{ tenantName: 'Müller', beforeCents: 360000, afterCents: 360000 - 8 * 12300 }])
+    const h = v.effects.find((e) => e.label === 'Heizkosten 2025/2026') ?? assert.fail('Heizkostenabrechnung fehlt')
+    assert.deepEqual([h.deadline, h.passed], ['2027-04-30', false])
+    assert.deepEqual(h.tenants, [{ tenantName: 'Müller', beforeCents: null, afterCents: 12 * 12300 - 150000 }])
+    assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined, 'der Probelauf hat nichts gespeichert')
+  })
+})
+
+test('Review Runde 1: Weg d rückwirkend über eine abgelaufene Frist nur mit Bestätigung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    const body = { separate: true, month: '2025-05' }
+    const { token } = await preview(opened, body, '2027-01-15')
+    const ohne = await opened.write((db) => applySeparate(db, 'hp1', { ...body, answers: { steps: { t1: { '2025-05': 12300 } }, token } }, '2027-01-15'))
+    assert.ok(ohne && 'error' in ohne, 'abgelehnt')
+    assert.match(ohne.error, /Weil Sie die Vorauszahlung rückwirkend aufteilen, haben Sie die Verspätung zu vertreten/)
+    assert.ok(ohne.preview.effects.some((e) => e.passed))
+    assert.equal(await tenancyField(opened, 'heatingPrepayments'), undefined)
+    const mit = await opened.write((db) => applySeparate(db, 'hp1', { ...body, answers: { steps: { t1: { '2025-05': 12300 } }, token, understood: true } }, '2027-01-15'))
+    assert.ok(mit && 'plant' in mit)
+  })
+})
+
+// Review Runde 3 (N2): Weg d rückwirkend, die Abrechnung 2025 hatte schon eine Nachzahlung; verloren ist
+// nur das Mehr (der Heizanteil Mai bis Dezember), nicht die ganze Nachzahlung.
+test('Review Runde 3: Weg d, verlorene Nachforderung der Abrechnung 2025 ist das Mehr', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] })
+      await createEntity(db, 'costItems', 'gs2025', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 500000, key: 'area' })
+    })
+    const v = await preview(opened, { separate: true, month: '2025-05' }, '2027-01-15')
+    const e = v.effects.find((x) => x.label === '2025') ?? assert.fail(JSON.stringify(v.effects))
+    const [m] = e.tenants
+    assert.ok(m && m.beforeCents !== null && m.beforeCents < 0 && m.afterCents < m.beforeCents, JSON.stringify(e.tenants))
+    assert.equal(e.lostClaimsCents, m.beforeCents - m.afterCents)
+  })
+})
+
+// Review Runde 3 (N3): Ein Wechsel der Heizperiode verkürzt die getrennt abgerechnete Heizperiode
+// 2025/2026 auf 05/2025–02/2026. Verglichen wird wie beim Zeitraumwechsel mit dem bisherigen Zeitraum
+// gleichen Schlüssels; war dessen Frist (30.04.2027) am 01.06.2027 schon abgelaufen, ist nur das Mehr verloren.
+test('Review Runde 3: verkürzte Heizperiode nach Weg d, verglichen mit dem bisherigen Zeitraum gleichen Schlüssels', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write((db) => haus(db, { start: '2025-01-01', prepayments: [{ from: '2025-01', monthlyCents: 30000 }] }))
+    await ein(opened, '2025-05', { '2025-05': 12300 })
+    const heute = '2027-06-01'
+    const regeln = { startMonth: 5, changes: ['2026-03'] }
+    const v = (await opened.read((db) => previewHeatingPeriodChange(db, 'hp1', regeln, heute))) ?? assert.fail('keine Anlage')
+    const e = v.effects.find((x) => x.label === 'Heizkosten 01.05.2025–28.02.2026') ?? assert.fail(JSON.stringify(v.effects.map((x) => x.label)))
+    assert.deepEqual(e.tenants, [{ tenantName: 'Müller', beforeCents: 12 * 12300 - 150000, afterCents: 10 * 12300 - 150000 }])
+    assert.equal(e.lostClaimsCents, 2 * 12300)
   })
 })

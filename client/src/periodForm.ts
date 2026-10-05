@@ -12,7 +12,7 @@
 // Kalenderobjekt wie bisher annehmen (PR 2, G-C6). Erst bei einem anderen Rhythmus stehen dort
 // Schlüssel wie '2025-05'.
 
-import { contextOf, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, previousPeriod, startYearOf, type PeriodContext } from '../../shared/period.ts'
+import { contextOf, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, previousPeriod, settlementDeadline, startYearOf, type PeriodContext } from '../../shared/period.ts'
 import type { BillingPeriod, PeriodChangeAnswers, PeriodChangePreview, PeriodKey, PeriodRules } from './types'
 import { ApiError, parseEuro } from './api'
 
@@ -138,7 +138,7 @@ export type AnswerForm = {
 
 export function initialAnswers(preview: PeriodChangePreview): AnswerForm {
   return {
-    groups: Object.fromEntries(preview.groups.map((g) => [g.from, g.suggested])),
+    groups: Object.fromEntries(preview.groups.map((g) => [g.id, g.suggested])),
     overrides: Object.fromEntries(preview.overrides.map((o) => [o.tenancyId, Object.fromEntries(o.ask.map((a) => [a.period, { amount: '', none: false }]))])),
     taxYears: Object.fromEntries(preview.taxYears.map((t) => [t.key, String(t.suggested)])),
   }
@@ -161,6 +161,9 @@ export function answersOf(preview: PeriodChangePreview, form: AnswerForm): Perio
     }
     overrides[o.tenancyId] = out
   }
+  // Review Runde 1: Ohne Vorgabe muss der Vermieter wählen.
+  const open = preview.groups.find((g) => (form.groups[g.id] ?? g.suggested) === '')
+  if (open) return { error: `Bitte wählen Sie, wohin ${open.items.map((i) => `„${i.description}“`).join(', ')} kommen: nach Tagen aufteilen oder ganz in einen Zeitraum.` }
   // Die Marke der Vorschau geht mit (M2): Hat sich der Bestand seitdem geändert, lehnt der Server mit
   // der neuen Vorschau ab, statt eine gewachsene Gruppe ungesehen mitzuziehen.
   const taxYears = Object.fromEntries(preview.taxYears.flatMap((t) => {
@@ -177,10 +180,10 @@ export function answersOf(preview: PeriodChangePreview, form: AnswerForm): Perio
 export function answersAfterConflict(fresh: PeriodChangePreview, previousToken: string, previous: AnswerForm): AnswerForm {
   if (fresh.token === previousToken) return previous
   const start = initialAnswers(fresh)
-  const groups = Object.fromEntries(Object.entries(start.groups).map(([from, suggested]) => {
-    const was = previous.groups[from]
-    const fits = was !== undefined && fresh.groups.some((g) => g.from === from && g.options.some((o) => o.key === was))
-    return [from, fits ? was : suggested]
+  const groups = Object.fromEntries(Object.entries(start.groups).map(([id, suggested]) => {
+    const was = previous.groups[id]
+    const fits = was !== undefined && fresh.groups.some((g) => g.id === id && ((was === 'split' && g.split !== null) || g.options.some((o) => o.key === was)))
+    return [id, fits ? was : suggested]
   }))
   const overrides = Object.fromEntries(Object.entries(start.overrides).map(([tenancyId, asks]) =>
     [tenancyId, Object.fromEntries(Object.entries(asks).map(([period, empty]) => [period, previous.overrides[tenancyId]?.[period] ?? empty]))]))
@@ -200,3 +203,27 @@ export function conflictPreview(e: unknown): PeriodChangePreview | null {
 
 // Ein Wechsel in Worten: „Mai 2025“ statt '2025-05' (M5).
 export const changeLabel = (month: string): string => `${MONTH_NAMES[Number(month.slice(5, 7)) - 1] ?? month.slice(5, 7)} ${month.slice(0, 4)}`
+
+// Laienprobe B3: Der früheste Monat für einen Wechsel, dessen Rumpf noch eine offene Frist hat. Ein
+// Rumpf, der im Monat E endet, muss bis zum Ende des zwölften Monats danach zugehen (§ 556 Abs. 3 S. 2
+// BGB); offen ist er also, solange E nicht mehr als zwölf Monate vor dem laufenden Monat liegt. Der
+// Wechsel beginnt einen Monat nach E: frühestens elf Monate vor dem laufenden.
+export function earliestOpenChange(today: string): string {
+  const total = Number(today.slice(0, 4)) * 12 + Number(today.slice(5, 7)) - 1 - 11
+  return `${String(Math.floor(total / 12)).padStart(4, '0')}-${String((total % 12) + 1).padStart(2, '0')}`
+}
+
+const fmtDay = (iso: string): string => `${iso.slice(8, 10)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`
+
+// Laienprobe B7: die Bestätigung nach dem Wechsel, mit den neuen Zeiträumen und der Frist des Rumpfs.
+export function periodChangedText(preview: Pick<PeriodChangePreview, 'rules' | 'newShort'>): string {
+  const rumpf = preview.newShort.map((s) => {
+    const p = periodOfKey(preview.rules, s.key)
+    return p === null ? s.label : `${s.label} (Abrechnung bis ${fmtDay(settlementDeadline(p))} zustellen)`
+  })
+  return [
+    `Abrechnungszeitraum umgestellt: ${rhythmText(preview.rules)}.`,
+    rumpf.length > 0 ? `Neuer Rumpfzeitraum ${rumpf.join(', ')}.` : '',
+    'Den Zeitraum wählen Sie in der Seitenleiste unter „Abrechnungszeitraum“.',
+  ].filter((x) => x !== '').join(' ')
+}

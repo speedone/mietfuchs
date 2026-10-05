@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { applyPeriodChange, monthsText, previewPeriodChange } from '../src/db/periodChange.ts'
+import { lostClaims, shownEffects } from '../src/db/dryRun.ts'
 import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, saveCostItemSplit, updateEntity } from '../src/db/repository.ts'
 import { eq } from 'drizzle-orm'
 import { assessmentLines, assessments, properties } from '../src/db/schema.ts'
@@ -68,7 +69,7 @@ test('Vorschau G-A1/N4: Rumpf, Aufteilen, Zuordnen und Neuerfassen der Jahreskor
     assert.deepEqual(v.blocked, [])
     assert.deepEqual(v.moves.map((m) => [m.costItemId, m.parts.map((p) => [p.period, p.amountCents])]), [['gs', [['2025-01', 15781], ['2025-05', 32219]]]])
     assert.deepEqual(v.groups.map((g) => [g.from, g.fromLabel, g.items.map((i) => i.costItemId), g.options.map((o) => o.key), g.suggested]),
-      [['2025-01', '2025', ['mu'], ['2025-01', '2025-05'], '2025-01']])
+      [['2025-01', '2025', ['mu'], ['2025-01', '2025-05'], 'split']], 'Laienprobe B2: ohne Leistungszeitraum vorbelegt mit dem Aufteilen nach Tagen')
     assert.deepEqual(v.overrides, [{
       tenancyId: 't-a', tenantName: 'A',
       from: [{ key: '2025-01', label: '2025', cents: 220000 }],
@@ -80,7 +81,7 @@ test('Vorschau G-A1/N4: Rumpf, Aufteilen, Zuordnen und Neuerfassen der Jahreskor
 test('Ohne Antworten wird nicht gespeichert, mit Antworten alles in einem Schritt (N4)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    const ohne = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    const ohne = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(ohne && 'error' in ohne, 'abgelehnt')
     assert.match(ohne.error, /Für den Wechsel fehlen Angaben/)
     assert.match(ohne.error, /„Müll 2025“/)
@@ -88,7 +89,7 @@ test('Ohne Antworten wird nicht gespeichert, mit Antworten alles in einem Schrit
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] }, 'nichts geschrieben')
     assert.equal((await items(opened)).length, 2)
 
-    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
+    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{
       groups: { '2025-01': '2025-01' },
       overrides: { 't-a': { '2025-01': 70000, '2025-05': null } },
     }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
@@ -109,7 +110,7 @@ test('Ein Wechsel neben einer abgeschlossenen Abrechnung wird abgelehnt, nichts 
     await opened.write((db) => closeSettlement(db, { id: 'z', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-02-01T00:00:00Z', sentAt: null, settlement: {} }))
     const v = await preview(opened, MAI_AB_2025)
     assert.match(v.blocked.join(' '), /Die Abrechnung 2025 ist abgeschlossen/)
-    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(r && 'error' in r)
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
     // Ein Wechsel nach dem abgeschlossenen Zeitraum geht.
@@ -121,20 +122,20 @@ test('Ein Wechsel neben einer abgeschlossenen Abrechnung wird abgelehnt, nichts 
 test('Eine Antwort, die nicht passt, oder eine veraltete Vorschau: 409 statt eines halben Wechsels (Review Focus 3)', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    const falsch = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
+    const falsch = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{
       groups: { '2025-01': '2024-05' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } },
     }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(falsch && 'error' in falsch)
     assert.match(falsch.error, /„Müll 2025“/)
-    const halb = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{
+    const halb = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{
       groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000 } },
     }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     assert.ok(halb && 'error' in halb)
     assert.match(halb.error, /05\/2025–04\/2026/)
     assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
     // Derselbe Wechsel ein zweites Mal: Es ändert sich nichts.
-    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
-    await assert.rejects(opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY)),
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    await assert.rejects(opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY)),
       (err: unknown) => err instanceof PeriodError && /Es ändert sich nichts/.test(err.message))
   })
 })
@@ -154,7 +155,7 @@ test('Regeln: Beginnmonat 1 bis 12, Monate als JJJJ-MM, kein Wechsel auf einen M
 test('Einen Wechsel entfernen: Der Rumpf wächst wieder zum Jahr, beide Korrekturen werden neu erfasst', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     const v = await preview(opened, { startMonth: 1, changes: [] })
     const a = v.overrides.find((o) => o.tenancyId === 't-a') ?? assert.fail('A fehlt')
     assert.deepEqual(a.ask.map((x) => [x.period, x.months]), [['2025-01', '01–12/2025'], ['2026-01', '01–12/2026']])
@@ -169,7 +170,7 @@ test('Eine Auswertung wandert auf den Zeitraum mit der größten Überschneidung
     })
     const v = await preview(opened, MAI_AB_2025)
     assert.deepEqual(v.assessments, [{ assessmentId: 'a1', file: 'a.pdf', from: '2026-01', to: '2026-05', toLabel: '2026/2027' }])
-    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     const [row] = await opened.read((db) => db.select().from(assessments))
     assert.equal(row?.requestedPeriod, '2026-05')
   })
@@ -186,9 +187,9 @@ async function everythingSaves(opened: OpenedDatabase): Promise<void> {
 test('Nach einem Wechsel lässt sich jedes Mietverhältnis und jede Position speichern, auch nach dem Entfernen des Wechsels', async () => {
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
     await everythingSaves(opened)
-    const zurueck = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, { ...{
+    const zurueck = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, { understood: true, ...{
       groups: { '2025-05': '2025-01' }, overrides: { 't-a': { '2025-01': 220000, '2026-01': null } },
     }, token: (await previewPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, TODAY))?.token }, ids, TODAY))
     assert.ok(zurueck && 'property' in zurueck, zurueck && 'error' in zurueck ? zurueck.error : 'kein Objekt')
@@ -205,8 +206,8 @@ test('Ein schon aufgeteilter Teil wird beim nächsten Wechsel nur über seinen e
   // Mai-bis-Dezember-Betrags noch einmal in Januar bis April.
   await withDatabase(async (opened) => {
     await bestand(opened)
-    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
-    const juli = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, { ...{
+    await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { understood: true, ...{ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, token: (await previewPeriodChange(db, 'objekt-1', MAI_AB_2025, TODAY))?.token }, ids, TODAY))
+    const juli = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, { understood: true, ...{
       overrides: { 't-a': { '2025-01': 120000, '2025-07': null } },
     }, token: (await previewPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, TODAY))?.token }, ids, TODAY))
     assert.ok(juli && 'property' in juli, juli && 'error' in juli ? juli.error : 'kein Objekt')
@@ -232,7 +233,7 @@ test('Ein Wechsel, der die Teile einer Rechnung verringert, behält die gebuchte
       await db.insert(assessmentLines).values({ assessmentId: 'a1', idx: 0, description: 'Grundsteuer', category: 'Grundsteuer', amountCents: 32219, booking: 'linked', costItemId: zweiter.id })
     })
     const kalender = { startMonth: 1, changes: [] }
-    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', kalender, {
+    const r = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', kalender, { understood: true,
       groups: {}, token: (await previewPeriodChange(db, 'objekt-1', kalender, TODAY))?.token,
     }, ids, TODAY))
     assert.ok(r && 'property' in r, r && 'error' in r ? r.error : 'kein Objekt')
@@ -242,4 +243,134 @@ test('Ein Wechsel, der die Teile einer Rechnung verringert, behält die gebuchte
     assert.deepEqual([zeile?.booking, zeile?.costItemId], ['linked', nachher[0]?.id], 'die Zeile bleibt gebucht, am verbleibenden Teil')
     assert.equal(nachher[0]?.invoiceFile, 'gs.pdf')
   })
+})
+
+// Laienprobe B2/B3: Zweifamilienhaus, EG vermietet (80 m², 250 € Vorauszahlung), OG selbst bewohnt
+// (90 m²). Grundsteuer und Erdgas 2025 ohne Leistungszeitraum. Wechsel ab 07/2025 am 05.10.2026.
+async function birkenweg(opened: OpenedDatabase): Promise<void> {
+  await opened.write(async (db) => {
+    await createEntity(db, 'units', 'eg', { propertyId: 'objekt-1', name: 'EG', areaM2: 80, participates: true })
+    await createEntity(db, 'units', 'og', { propertyId: 'objekt-1', name: 'OG', areaM2: 90, participates: false, selfUsed: true })
+    await createEntity(db, 'tenancies', 't-bsp', { unitId: 'eg', tenantName: 'Familie Beispiel', persons: 3, start: '2020-03-01', prepayments: [{ from: '2020-03', monthlyCents: 25000 }] })
+    await createEntity(db, 'costItems', 'gs25', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 42000, key: 'area' })
+    await createEntity(db, 'costItems', 'gas25', { propertyId: 'objekt-1', period: '2025-01', category: 'Heizung und Warmwasser', description: 'Erdgas 2025', amountCents: 260000, key: 'area' })
+  })
+}
+const JULI_AB_2025 = { startMonth: 1, changes: ['2025-07'] }
+
+test('Laienprobe B2: Kalte Jahresrechnungen ohne Leistungszeitraum werden nach Tagen aufgeteilt (Vorgabe), Heizkosten stehen in eigener Gruppe', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    const v = await preview(opened, JULI_AB_2025)
+    assert.deepEqual(v.groups.map((g) => [g.id, g.heating, g.items.map((i) => i.costItemId), g.suggested]), [
+      ['2025-01', false, ['gs25'], 'split'],
+      ['2025-01|heizung', true, ['gas25'], '2025-01'],
+    ])
+    const kalt = v.groups[0] ?? assert.fail('keine Gruppe')
+    assert.equal(kalt.split?.range, '01.01.–31.12.2025')
+    // 181 von 365 Tagen: 420 € · 181/365 = 208,27 €, der Rest 211,73 €.
+    assert.deepEqual(kalt.split?.items, [{ costItemId: 'gs25', parts: [
+      { period: '2025-01', label: '01.01.–30.06.2025', amountCents: 20827 },
+      { period: '2025-07', label: '2025/2026', amountCents: 21173 },
+    ] }])
+    assert.equal(v.groups[1]?.split, null, 'Heizkosten nie nach Tagen')
+    const ok = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', JULI_AB_2025, { understood: true,
+      groups: { '2025-01': 'split', '2025-01|heizung': '2025-01' }, taxYears: {},
+      token: (await previewPeriodChange(db, 'objekt-1', JULI_AB_2025, TODAY))?.token,
+    }, ids, TODAY))
+    assert.ok(ok && 'property' in ok, JSON.stringify(ok))
+    const nachher = (await items(opened)).filter((c) => c.category === 'Grundsteuer')
+    assert.deepEqual(nachher.map((c) => [c.period, c.amountCents, c.serviceFrom, c.serviceTo]).sort(), [
+      ['2025-01', 20827, '2025-01-01', '2025-12-31'], ['2025-07', 21173, '2025-01-01', '2025-12-31'],
+    ])
+  })
+})
+
+test('Laienprobe B3: Die Vorschau nennt den Rumpf mit abgelaufener Frist und beziffert, was nicht mehr verlangt werden darf', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    const v = await preview(opened, JULI_AB_2025)
+    const rumpf = v.effects.find((e) => e.label === '01.01.–30.06.2025') ?? assert.fail(JSON.stringify(v.effects))
+    assert.deepEqual([rumpf.deadline, rumpf.passed, rumpf.replaces], ['2026-06-30', true, [{ label: '2025', deadline: '2026-12-31' }]])
+    const bsp = rumpf.tenants.find((t) => t.tenantName === 'Familie Beispiel') ?? assert.fail('kein Mieter')
+    assert.ok(bsp.beforeCents !== null)
+    // Vorher Abrechnung 2025: 12 · 250 € gegen 80/170 von 3.020 €; nachher im Rumpf 6 · 250 € gegen
+    // die halbe Grundsteuer und das ganze Erdgas.
+    assert.equal(bsp.beforeCents, 300000 - Math.round((42000 + 260000) * 80 / 170))
+    assert.equal(bsp.afterCents, 150000 - Math.round((20827 + 260000) * 80 / 170))
+    assert.equal(rumpf.lostClaimsCents, Math.max(0, -bsp.afterCents))
+    const folge = v.effects.find((e) => e.label === '2025/2026') ?? assert.fail('2025/2026 fehlt')
+    assert.deepEqual([folge.deadline, folge.passed, folge.lostClaimsCents], ['2027-06-30', false, 0])
+    assert.equal((await items(opened)).length, 2, 'der Probelauf hat nichts gespeichert')
+    assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] })
+  })
+})
+
+// Review der Laienprobe, Runde 1: Die Bestätigung einer abgelaufenen Frist verlangt auch der Server,
+// und jede 409 bringt die Vorschau mit Fristen und Ergebnissen mit.
+test('Review Runde 1: ohne Bestätigung keine Abrechnung mit abgelaufener Frist; die 409 trägt die Fristen', async () => {
+  await withDatabase(async (opened) => {
+    await birkenweg(opened)
+    const ohne = await opened.write(async (db) => applyPeriodChange(db, 'objekt-1', JULI_AB_2025, {
+      groups: { '2025-01': 'split', '2025-01|heizung': '2025-01' }, token: (await previewPeriodChange(db, 'objekt-1', JULI_AB_2025, TODAY))?.token,
+    }, ids, TODAY))
+    assert.ok(ohne && 'error' in ohne, 'abgelehnt')
+    assert.match(ohne.error, /Weil Sie den Zeitraum selbst umstellen, haben Sie die Verspätung zu vertreten; eine Nachzahlung aus diesem Zeitraum können Sie deshalb nicht mehr verlangen \(§ 556 Abs\. 3 Satz 3 BGB\)/)
+    assert.ok(ohne.preview.effects.some((e) => e.passed), 'die Vorschau der 409 nennt die abgelaufene Frist')
+    assert.deepEqual(await rules(opened), { startMonth: 1, changes: [] }, 'nichts geschrieben')
+    const veraltet = await opened.write((db) => applyPeriodChange(db, 'objekt-1', JULI_AB_2025, { understood: true, token: 'alt' }, ids, TODAY))
+    assert.ok(veraltet && 'error' in veraltet && veraltet.preview.effects.length > 0, 'auch die veraltete Vorschau trägt die Fristen')
+  })
+})
+
+test('Review Runde 1/2: war der Vergleichszeitraum schon verfristet, zählt nur das Mehr; sonst die ganze Nachzahlung', () => {
+  const tenants = [{ beforeCents: -10000, afterCents: -25000 }, { beforeCents: null, afterCents: -500 }, { beforeCents: 5000, afterCents: 3000 }]
+  assert.equal(lostClaims(tenants, true), 15000 + 500)
+  assert.equal(lostClaims(tenants, false), 25000 + 500)
+})
+
+// Review Runde 2: vorher die Abrechnung 2025 mit offener Frist, nachher ein verfristeter Rumpf; die
+// ganze Nachzahlung des Rumpfs ist verloren, nicht 0 €.
+test('Review Runde 2: Grundsteuer 4.200 €, Vorauszahlung 100 €, Wechsel ab 07/2025: verloren ist die ganze Nachzahlung des Rumpfs', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })
+      await createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 420000, key: 'area' })
+    })
+    const v = await preview(opened, JULI_AB_2025)
+    const rumpf = v.effects.find((e) => e.label === '01.01.–30.06.2025') ?? assert.fail('kein Rumpf')
+    const a = rumpf.tenants[0] ?? assert.fail('kein Mieter')
+    assert.equal(a.afterCents, 60000 - Math.round(420000 * 181 / 365))
+    assert.ok(a.beforeCents !== null && a.beforeCents < 0, 'vorher ebenfalls eine Nachzahlung, aber mit offener Frist')
+    assert.equal(rumpf.lostClaimsCents, -a.afterCents)
+  })
+})
+
+// Review Runde 2: Die Verschiebung zwischen Steuerjahren nennt je Position ihr eigenes Jahr.
+test('Review Runde 2: taxShifts mit zwei Positionen verschiedener Jahre der Zahlung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'costItems', 'a', { propertyId: 'objekt-1', period: '2024-05', category: 'Müllabfuhr', description: 'Müll A', amountCents: 10000, key: 'area', taxYear: 2025 })
+      await createEntity(db, 'costItems', 'b', { propertyId: 'objekt-1', period: '2024-05', category: 'Müllabfuhr', description: 'Müll B', amountCents: 20000, key: 'area', taxYear: 2024 })
+    })
+    const v = await preview(opened, { startMonth: 5, changes: ['2025-01'] })
+    const g = v.groups[0] ?? assert.fail('keine Gruppe')
+    const nach2025 = g.taxShifts.find((t) => t.key === '2025-01') ?? assert.fail(JSON.stringify(g.taxShifts))
+    assert.match(nach2025.text, /„Müll B“ 200,00.€ von 2024 nach 2025/)
+    assert.doesNotMatch(nach2025.text, /Müll A/)
+    const rumpf = g.taxShifts.find((t) => t.key === '2024-05') ?? assert.fail('Rumpf fehlt')
+    assert.match(rumpf.text, /„Müll A“ 100,00.€ von 2025 nach 2024/)
+  })
+})
+
+// Review Runde 3 (N4): Ohne Zahlen (Probelauf gescheitert) bleibt eine Abrechnung mit ihrer Frist in der
+// Vorschau; mit Zahlen nur, wenn sich für einen Mieter etwas ändert.
+test('Review Runde 3: shownEffects behält Fristen ohne Zahlen', () => {
+  const e = (tenants: { tenantName: string; beforeCents: number | null; afterCents: number }[]) => ({ label: 'x', deadline: '2026-12-31', passed: true, replaces: [], tenants, lostClaimsCents: 0 })
+  const alle = [e([]), e([{ tenantName: 'A', beforeCents: 1, afterCents: 1 }]), e([{ tenantName: 'B', beforeCents: 1, afterCents: 2 }])]
+  assert.deepEqual(shownEffects(alle, true).map((x) => x.tenants[0]?.tenantName), ['B'], 'gerechnet: nur, was sich ändert')
+  assert.equal(shownEffects(alle, false).length, 3, 'Probelauf gescheitert: jede Frist bleibt')
 })

@@ -40,7 +40,8 @@ import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
-import { splitByService } from '../serviceSplit.ts'
+import { isSplitPart, splitByService } from '../serviceSplit.ts'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 import type { Database, Executor } from './client.ts'
 import {
   readClosedSettlements, readCostItems, readHeatingPlants, readMeters, readPayments, readProperties, readReadings, readTenancies,
@@ -552,6 +553,14 @@ async function guardCostItemHeating(db: Executor, before: CostItem | null, after
   }
 }
 
+// Das Formular eines Mietverhältnisses kennt einen älteren Stand als den gespeicherten
+// (Laienprobe B1, shared/tenancyStamp.ts). Gespeichert wird dann nichts: Das Formular schickt alle
+// Staffeln, und ein Ersetzen mit dem alten Stand löschte, was ein anderer Weg inzwischen geschrieben
+// hat, etwa die Heizvorauszahlung nach dem Aufteilen.
+export class StaleTenancyError extends Error {
+  status = 409
+}
+
 // Ein Vorgang, der eine abgeschlossene Abrechnung träfe (#208). Wie bei `findClosedSettlement`
 // bleibt der eingefrorene Stand maßgeblich; wer ändern will, öffnet sie wieder (#56).
 export class PeriodConflict extends Error {
@@ -681,10 +690,7 @@ async function requireServiceAndTax(db: Executor, before: CostItem | null, after
 // als einen Zeitraum des Objekts berührt. Anders entsteht so eine Position nicht, denn das
 // gewöhnliche Speichern lehnt sie ab (oben); sie kommt aus `saveCostItemSplit` oder dem Wechsel des
 // Rhythmus, und jeder Teil trägt den ganzen Leistungszeitraum der Rechnung.
-export function isSplitPart(rules: PeriodRules, c: Pick<CostItem, 'category' | 'serviceFrom' | 'serviceTo'>): boolean {
-  if (c.category === HEATING_CATEGORY || c.serviceFrom === undefined || c.serviceTo === undefined || c.serviceFrom > c.serviceTo) return false
-  return periodsBetween(rules, c.serviceFrom, c.serviceTo).length > 1
-}
+export { isSplitPart }
 
 const splitPartMessage = (c: CostItem): string =>
   `„${c.description}“ ist ein Teil einer aufgeteilten Rechnung (Leistungszeitraum ${formatDayRange(c.serviceFrom ?? '', c.serviceTo ?? '')}). ` +
@@ -869,6 +875,17 @@ async function guardUnit(db: Executor, before: Unit | null, after: Unit): Promis
 }
 
 async function guardTenancy(db: Executor, before: Tenancy | null, after: Tenancy, body: unknown): Promise<void> {
+  // Laienprobe B1: Schickt das Formular die Marke des Stands, den es geladen hat, muss sie noch
+  // stimmen. Ein Rumpf ohne Marke (Mieterwechsel, Jahreskorrektur aus der Abrechnung, ein alter Tab)
+  // ändert nur, was er nennt, und braucht sie nicht.
+  const expected = raw(body, 'ifUnchanged')
+  if (before && typeof expected === 'string' && expected !== tenancyStamp(before)) {
+    throw new StaleTenancyError(
+      `Das Mietverhältnis „${before.tenantName}“ wurde inzwischen an anderer Stelle geändert, etwa beim Aufteilen der Vorauszahlung ` +
+        'für die Heizung oder beim Wechsel des Abrechnungszeitraums. Gespeichert wurde nichts, damit diese Änderung nicht verloren geht. ' +
+        'Bitte schließen Sie das Formular, öffnen Sie das Mietverhältnis erneut und tragen Sie Ihre Änderung noch einmal ein.',
+    )
+  }
   // Die Jahreskorrektur (#208): jeder Schlüssel ein Zeitraum des Objekts der Wohnung. Eine
   // vierstellige Jahreszahl im Rumpf schickt nur ein alter Tab.
   const sent = raw(body, 'prepaymentOverrides')

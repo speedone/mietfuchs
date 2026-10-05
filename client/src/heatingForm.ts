@@ -109,6 +109,18 @@ const LATER_PER_UNIT = 'Etagenheizungen mit Vertrag auf den Vermieter kommen mit
 const SELF_SUPPLY = 'Hat jeder Mieter einen eigenen Vertrag für seine Heizung, gibt es keine Heizkostenabrechnung des Hauses, und Mietfuchs legt keine Heizanlage an. Was Mieter für CO₂-Kosten vom Vermieter verlangen können, erklärt Mietfuchs mit einer späteren Version.'
 
 // Der Satz unter der zweiten Frage.
+// „Woran erkenne ich das?“ je Frage der Einrichtung (Entwurf 11.2, Laienprobe B9).
+export const HOW_TO_TELL = {
+  energy: 'Woran erkenne ich das? Am Brennstoff auf Ihrer Rechnung. Steht dort „Wärmelieferung“ oder „Fernwärme“, wählen Sie Fernwärme, auch wenn im Keller ein Kessel steht. Eine Wärmepumpe ist „Wärmepumpe“, nicht „Strom“; „Strom“ heißt Nachtspeicher- oder Elektroheizung.',
+  who: 'Woran erkenne ich das? Bekommen Sie jedes Jahr eine Heizkostenabrechnung mit Beträgen je Wohnung, etwa von ista, Techem, Brunata, Minol oder KALO, wählen Sie „Ein Messdienst oder die Hausverwaltung“; das gilt auch für die Abrechnung einer Hausverwaltung. Gibt es keine Zähler oder Heizkostenverteiler in den Wohnungen, wählen Sie „Niemand“.',
+  units: 'Woran erkenne ich das? Angeschlossen ist jede Wohnung, die von dieser Heizung warm wird. Eine Garage oder eine Wohnung mit eigener Gastherme gehört nicht dazu.',
+  after: 'Den Zeitraum der Heizung stellen Sie nach dem Anlegen in dieser Karte mit „Zeitraum der Heizung ändern“ ein, wenn Ihr Messdienst nicht im Abrechnungszeitraum des Objekts abrechnet. Haupt- und Wärmezähler ordnen Sie auf der Seite Zähler der Heizung zu.',
+} as const
+
+// Laienprobe B8: Ohne Messdienst und eigene Ablesung gibt es keine Geräte, die aus der Ferne
+// abzulesen wären; die beiden Fragen dazu entfallen dann, und die Zusammenfassung nennt sie nicht.
+export const asksRemote = (who: WhoSettles | HeatingPlant['method']): boolean => who !== 'manual'
+
 export function whoHint(who: WhoSettles, kind: PropertyKind): string {
   if (who === 'self') return LATER_SELF
   if (who === 'service') return 'Die Abrechnung des Messdienstes übernehmen Sie wie bisher als Position „Heizung und Warmwasser“ mit dem Schlüssel „Einzelbeträge“.'
@@ -198,7 +210,8 @@ export function heatingSummary(plant: HeatingPlant, units: readonly Pick<Unit, '
       ? 'keine Wohnung'
       : plant.units.map((u) => units.find((x) => x.id === u.unitId)?.name ?? u.unitId).join(', ')
   const remote = REMOTE_OPTIONS.find((o) => o.value === plant.devicesRemote)?.label ?? plant.devicesRemote
-  return [`Energie: ${energy}`, `Abrechnung: ${who}`, `Angeschlossen: ${served}`, `Aus der Ferne ablesbar: ${remote}`]
+  const lines = [`Energie: ${energy}`, `Abrechnung: ${who}`, `Angeschlossen: ${served}`]
+  return asksRemote(plant.method) ? [...lines, `Aus der Ferne ablesbar: ${remote}`] : lines
 }
 
 // ---------- Warmwasser laut Messdienst (Heizung PR 6, #211, Entwurf 7.7) ----------

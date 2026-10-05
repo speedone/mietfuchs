@@ -121,7 +121,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
   // Vorbelegt wird nur, solange kein gültiges Jahr dasteht: Ein vom Vermieter gewähltes Jahr bleibt,
   // auch wenn das Rechnungsdatum später ein anderes nahelegt.
   useEffect(() => {
-    if (form && heatTax?.show && !heatTax.valid) setForm({ ...form, taxYear: heatTax.fallback })
+    if (form && heatTax?.show && !heatTax.valid && form.taxYear !== heatTax.fallback) setForm({ ...form, taxYear: heatTax.fallback })
   }, [form, heatTax?.show, heatTax?.valid, heatTax?.fallback])
 
   // „Aus dem Vorjahr übernehmen“ (#141): die Vorlagen, solange die Liste offen ist. Eingetragene
@@ -749,6 +749,14 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
               <input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="z. B. 480,00" />
               {/* #139: Eine Gutschrift senkt die Kosten des Jahres und wird verteilt wie eine Rechnung. */}
               <small className="muted">Eine Gutschrift mit Minus eintragen, z. B. -54,00.</small>
+              {/* Laienprobe B19: Welcher Betrag der Messdienstabrechnung gemeint ist, steht dort, wo er eingetragen wird. */}
+              {form.category === HEATING_CATEGORY && form.key === 'amounts' && plants.some((p) => p.method === 'service') && (
+                <small className="notice">
+                  Abrechnung des Messdienstes: Tragen Sie die Kosten vor „Abzüglich CO₂-Kosten Vermieter“ ein, also die Summe der Kosten aller Nutzer plus
+                  den CO₂-Anteil des Vermieters, nicht die Summe nach dem Abzug. Danach füllen Sie auf der Seite Heizkosten die Karte „CO₂-Kosten“ aus;
+                  ihre Probe prüft diesen Betrag.
+                </small>
+              )}
             </label>
             <label className="field grow" title="Lohn-/Arbeitskostenanteil nach §35a EStG — kann der Mieter steuerlich absetzen">
               <span>davon <Term id="labor35a">§35a-Lohn</Term> €</span>

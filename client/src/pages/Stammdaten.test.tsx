@@ -7,6 +7,7 @@ import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Stammdaten from './Stammdaten'
+import { tenancyStamp } from '../../../shared/tenancyStamp.ts'
 
 vi.setConfig({ testTimeout: 20000 })
 const SLOW = { timeout: 5000 }
@@ -25,18 +26,21 @@ let kind: PropertyKind = 'mfh'
 let meters: Meter[] = []
 let sent: { url: string; method: string; body: Record<string, unknown> }[] = []
 let plants: unknown[] = []
+// Antworten auf POST/PUT je Pfad (Laienprobe B1); sonst `{ ok: true }`.
+let answers: Record<string, unknown> = {}
 
 beforeEach(() => {
   kind = 'mfh'
   meters = []
   sent = []
   plants = []
+  answers = {}
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = url.split('?')[0] ?? url
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     if ((init?.method ?? 'GET') !== 'GET') {
       sent.push({ url, method: init?.method ?? '', body: JSON.parse(String(init?.body ?? '{}')) })
-      return json({ ok: true })
+      return json(path in answers ? answers[path] : { ok: true })
     }
     if (path === '/api/meters') return json(meters)
     if (path === '/api/heating-plants') return json(plants)
@@ -220,4 +224,74 @@ test('Mietverhältnis an einer Anlage mit getrennter Heizkostenabrechnung: die H
   fireEvent.click(await screen.findByRole('button', { name: /Mietverhältnis hinzufügen/ }, SLOW))
   const dialog = await screen.findByRole('dialog', undefined, SLOW)
   expect(await within(dialog).findByText(/Heizvorauszahlung je Monat \(neben der übrigen Vorauszahlung\)/, undefined, SLOW)).toBeTruthy()
+})
+
+// Laienprobe B1: Ein Formular, das einen älteren Stand kennt, schrieb ihn beim Speichern zurück und
+// löschte die eben aufgeteilte Heizvorauszahlung. Zwei Sicherungen: Das Formular schickt die Marke
+// des Stands, aus dem es gefüllt wurde (der Server lehnt mit 409 ab, wenn sie nicht mehr stimmt),
+// und nach jeder Änderung an der Heizung lädt die Seite Mietverhältnisse und Anlagen neu.
+const PLANT_MAI = {
+  id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+  devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null,
+}
+
+test('Laienprobe B1: Speichern schickt die Marke des geladenen Stands mit', async () => {
+  const t = tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })
+  page([t])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Übernehmen$/ }))
+  await vi.waitFor(() => expect(sent).toHaveLength(1))
+  expect(sent[0]?.body).toMatchObject({ ifUnchanged: tenancyStamp(t) })
+})
+
+test('Laienprobe B1: nach einer Änderung am Zeitraum der Heizung lädt die Seite die Mietverhältnisse neu', async () => {
+  plants = [PLANT_MAI]
+  answers = {
+    '/api/heating-plants/hp1/period/preview': { rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [], token: 'w1', moves: [] },
+    '/api/heating-plants/hp1/period': PLANT_MAI,
+  }
+  const reload = vi.fn(async () => {})
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider>
+          <Stammdaten units={UNITS} tenancies={[]} settings={null} reload={reload} />
+        </UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  const knopf = await screen.findByRole('button', { name: 'Zeitraum der Heizung ändern' }, SLOW)
+  const heizung = within(knopf.closest('.heating-period') as HTMLElement)
+  fireEvent.click(knopf)
+  fireEvent.change(heizung.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'object' } })
+  fireEvent.click(heizung.getByRole('button', { name: 'Vorschau' }))
+  fireEvent.click(await heizung.findByRole('button', { name: 'Übernehmen' }, SLOW))
+  await vi.waitFor(() => expect(reload).toHaveBeenCalled(), SLOW)
+})
+
+// Rückmeldung zur Laienprobe: Die Heizvorauszahlung steht in einer eigenen Feldgruppe und nennt den
+// Grund samt Anlage; ohne getrennte Abrechnung und ohne eingetragene Heizvorauszahlung fehlt sie.
+test('Heizvorauszahlung: eigene Gruppe mit Grund und Anlagenname, sonst gar nicht', async () => {
+  plants = [{ ...PLANT_MAI, name: 'Gaskessel Keller', separateSettlement: true, separateSpans: [{ from: '2025-05', until: null }] }]
+  page([tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  const label = await within(dialog).findByText(/Heizvorauszahlung je Monat/, undefined, SLOW)
+  const gruppe = label.closest('.field-group') as HTMLElement
+  expect(gruppe).toBeTruthy()
+  expect(gruppe.textContent).not.toMatch(/NK-Vorauszahlung je Monat/)
+  expect(within(gruppe).getByText(/Erscheint, weil die Heizung „Gaskessel Keller“ die Heizkosten getrennt abrechnet/)).toBeTruthy()
+  expect(within(gruppe).getByRole('button', { name: 'getrennte Heizkostenabrechnung' })).toBeTruthy()
+  expect(within(gruppe).getByText(/Ändern unter Stammdaten → Heizung/)).toBeTruthy()
+})
+
+test('Heizvorauszahlung: ohne getrennte Abrechnung und ohne Eintrag keine Gruppe', async () => {
+  plants = [PLANT_MAI]
+  page([tenancy('t1', 'Beispiel', { prepayments: [{ from: '2025-01', monthlyCents: 25000 }] })])
+  fireEvent.click(await screen.findByRole('button', { name: 'Mietverhältnis bearbeiten' }, SLOW))
+  const dialog = await screen.findByRole('dialog', undefined, SLOW)
+  await within(dialog).findByText(/NK-/, undefined, SLOW)
+  expect(within(dialog).queryByText(/Heizvorauszahlung je Monat/)).toBeNull()
 })

@@ -41,13 +41,14 @@ import {
   closeHeatingSettlement, findClosedHeatingSettlement, heatingSettlementHistory, reopenHeatingSettlement, separateHeatingSettlements, setHeatingSentAt,
 } from './db/heatingSettlements.ts'
 import {
-  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
+  changeTenant, closeSettlement, createEntity, createProperty, CrossPropertyError, findClosedSettlement, HeatingError, PeriodConflict, PeriodError, StaleTenancyError, invoiceFilesInUse, previewCostItemSplit, saveCostItemSplit,
   listProperties, removeEntity, removeProperty, reopenSettlement, setSentAt, settlementHistory, updateEntity, updateProperty,
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from './db/co2.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
 import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
+import { testTodayOf } from './testToday.ts'
 import { applySeparate, previewSeparate } from './db/separateSettlement.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
@@ -482,7 +483,9 @@ app.put('/api/properties/:id', async (req, res) => {
 // Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
 // begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate. Der Wechsel des
 // Zeitraums (#208) braucht ihn für die Liste der Zeiträume in der Vorschau.
-const today = (): string => new Date().toISOString().slice(0, 10)
+// Testgriff `NKA_TEST_TODAY` (testToday.ts): ein fester Tag nur für Tests. Ohne ihn der wirkliche Tag.
+const TEST_TODAY = testTodayOf(process.env.NKA_TEST_TODAY)
+const today = (): string => TEST_TODAY.value ?? new Date().toISOString().slice(0, 10)
 
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
@@ -572,7 +575,7 @@ app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) =>
 // träfe der Wechsel Abgeschlossenes, antwortet der Server mit 409 und der neuen Vorschau.
 const PLANT_GONE_TEXT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
 app.post('/api/heating-plants/:id/period/preview', async (req, res) => {
-  const preview = await readData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  const preview = await writeData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
   if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
   res.json(preview)
 })
@@ -586,7 +589,7 @@ app.put('/api/heating-plants/:id/period', async (req, res) => {
 // Getrennte Heizkostenabrechnung ein- und ausschalten (Heizung PR 5, Entwurf 3.1): Vorschau, dann
 // Speichern mit den Antworten in einer Transaktion. Begründung in db/separateSettlement.ts.
 app.post('/api/heating-plants/:id/separate/preview', async (req, res) => {
-  const preview = await readData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
+  const preview = await writeData((db) => previewSeparate(db, req.params.id, bodyObject(req), today()))
   if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
   res.json(preview)
 })
@@ -692,8 +695,10 @@ app.delete('/api/heating-settlement/:plant/:period/close', async (req, res) => {
 // den Antworten, in einer Transaktion. Fehlt eine Antwort oder träfe der Wechsel eine
 // abgeschlossene Abrechnung, antwortet der Server mit 409 und der neuen Vorschau, gespeichert ist
 // nichts. Begründung in db/periodChange.ts.
+// Die Vorschau läuft durch die Schreibschlange: Sie rechnet Fristen und Ergebnisse in einem
+// Probelauf, der in einer Transaktion schreibt und zurückrollt (db/dryRun.ts, Laienprobe B3).
 app.post('/api/properties/:id/period/preview', async (req, res) => {
-  const preview = await readData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  const preview = await writeData((db) => previewPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
   if (!preview) return res.status(404).json({ error: 'Dieses Objekt gibt es nicht (mehr).' })
   res.json(preview)
 })
@@ -2048,7 +2053,7 @@ app.use('/api', (err: unknown, req: Request, res: Response, next: NextFunction) 
     return res.status(400).json({ error: message })
   }
   // Ablehnungen, deren Meldung schon für den Nutzer geschrieben ist (#92).
-  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError) {
+  if (err instanceof RouteProblem || err instanceof CrossPropertyError || err instanceof PeriodError || err instanceof PeriodConflict || err instanceof TenantChangeError || err instanceof BookingRefusal || err instanceof HeatingError || err instanceof StaleTenancyError) {
     return res.status(err.status).json({ error: err.message })
   }
   // **Fehler der Datenbank bekommen ihre eigene Meldung** (db/errors.ts). Ohne diese Zeile käme
@@ -2130,7 +2135,7 @@ const portProblem = Number.isInteger(PORT) && PORT >= 0 && PORT <= 65535
 
 // Eine falsch gesetzte Variable für den KI-Anbieter oder den Schlüssel (siehe ai/settings.ts und
 // secrets.ts) fiele sonst erst bei der ersten Auswertung auf
-const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem
+const startProblem = AI_ENV.error ?? checkKeyEnvironment() ?? portProblem ?? TEST_TODAY.error
 if (startProblem) {
   console.error(startProblem)
   process.exit(1)
@@ -2307,6 +2312,7 @@ const server = app.listen(PORT, (err) => {
   const address = server.address()
   const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : PORT}`
   console.log(`Mietfuchs-Server läuft auf ${url}`)
+  if (TEST_TODAY.value !== null) console.log(`Testgriff NKA_TEST_TODAY aktiv: Der Server rechnet mit dem ${TEST_TODAY.value} als heute.`)
   // Wo die Daten liegen, hängt an der Betriebsart (siehe chooseDataDir in store.ts): neben der
   // Programmdatei oder, aus einem Paket installiert, im Benutzerordner. Wer den Ordner sichern
   // oder umziehen will, soll ihn nicht suchen müssen.

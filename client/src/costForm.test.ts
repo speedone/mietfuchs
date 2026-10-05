@@ -470,6 +470,10 @@ describe('Kleinigkeiten aus der Browser-Abnahme (#142)', () => {
       .toBe('Summe 700,00 € — den Rest von 100,00 € trägt der Vermieter (etwa für Leerstand)')
     expect(amountsSumText(form({ key: 'amounts', amount: '700,00', tenancyAmounts: { t1: '300,00', t2: '400,00' } }), UNITS))
       .toBe('Summe 700,00 € — der Rechnungsbetrag ist vollständig verteilt')
+    // Laienprobe B24: leer heißt nicht „vollständig verteilt“.
+    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
+    expect(amountsSumText(form({ key: 'amounts', amount: '500,00', tenancyAmounts: {} }), UNITS)).toBe('Noch keine Beträge eingetragen.')
+    expect(amountsSumText(form({ key: 'amounts', amount: '', tenancyAmounts: { t1: '300,00' } }), UNITS)).toBe('Summe 300,00 € — bitte oben den Rechnungsbetrag eintragen')
   })
 
   test('Nicht umlagefähig: kein Schlüssel im Formular, in der Liste „trägt der Vermieter“', () => {

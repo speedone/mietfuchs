@@ -9,7 +9,9 @@ import type { HeatingPeriodView, Tenancy } from '../types'
 
 type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
-export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; onSaved: () => void }) {
+// `hasSelfUsed` (Laienprobe B22): Nur wenn eine Wohnung des Objekts selbst bewohnt ist, gibt es das
+// Feld für ihren CO₂-Anteil; im ganz vermieteten Haus hielt man es sonst für den eigenen Anteil.
+export default function Co2Card({ view, tenancies, unitsCount, hasSelfUsed = false, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; hasSelfUsed?: boolean; onSaved: () => void }) {
   const ctx = { items: view.items, unitsCount }
   const [form, setForm] = useState<Co2Form>(() => co2ToForm(view.co2, ctx))
   const [error, setError] = useState('')
@@ -28,6 +30,15 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
     if ('error' in r) {
       setError(r.error)
       return
+    }
+    // Laienprobe B20: Geht die Probe nicht auf, wird nicht still gespeichert.
+    if (probe && !probe.ok) {
+      const ok = await confirm({
+        title: 'Die Probe geht nicht auf',
+        message: `${probe.text}. Solange die Probe nicht aufgeht, bucht Mietfuchs keine CO₂-Aufteilung, und die Abrechnung meldet einen Fehler. Prüfen Sie den Betrag der Position und Ihre Antwort auf die Frage nach der Abzugszeile. Trotzdem speichern?`,
+        confirmLabel: 'Trotzdem speichern',
+      })
+      if (!ok) return
     }
     setBusy(true)
     try {
@@ -109,8 +120,17 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
             {text('landlordPercent', 'Anteil des Vermieters (%)')}
             {text('totalCo2', 'CO₂-Kosten insgesamt')}
             {text('landlordCo2', 'davon Vermieter')}
-            {form.answer === 'deducted' && text('selfLandlord', 'davon für Ihre Wohnung')}
+            {form.answer === 'deducted' && (hasSelfUsed || form.selfLandlord.trim() !== '') && text('selfLandlord', 'davon für Ihre selbst bewohnte Wohnung')}
           </div>
+          {/* Laienprobe B21: die Berechnungsgrundlagen der Einstufung (§ 7 Abs. 3 CO2KostAufG). */}
+          {(form.emissionsKg.trim() === '' || form.serviceArea.trim() === '') && (
+            <p className="notice">
+              Für den Ausweis in der Abrechnung mindestens nötig: der CO₂-Ausstoß insgesamt (kg) und die Wohnfläche aus der CO₂-Seite der Abrechnung.
+              Aus ihnen ist der Wert je m² berechnet; die Abrechnung muss neben der Einstufung auch ihre Berechnungsgrundlagen nennen,
+              sonst darf jeder Mieter seinen Anteil an den Heizkosten kürzen (§ 7 Abs. 3 und 4 CO2KostAufG). Ob ein Gericht weitere Angaben
+              verlangt, ist nicht entschieden; legen Sie deshalb die Abrechnung des Messdienstes bei.
+            </p>
+          )}
           {serviceItems.length > 1 && (
             <label className="field">
               Position mit dem CO₂-Anteil
@@ -122,7 +142,13 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
           )}
           {billed.length > 0 && (
             <div className="field-group">
-              <div className="field-group-label">vom Vermieter übernommen, je Mieter (wenn die Abrechnung es nennt)</div>
+              <div className="field-group-label">vom Vermieter übernommen, je Mieter</div>
+              {/* Laienprobe B23: Ohne Angabe druckt Mietfuchs eine Näherung; maßgeblich ist der Messdienst. */}
+              <p className="muted">
+                Nennt die Einzelabrechnung eines Mieters einen Betrag „vom Vermieter übernommen“, tragen Sie ihn hier ein. Ohne Angabe
+                rechnet Mietfuchs ihn näherungsweise nach dem Anteil an den Heizkosten, und der Ausdruck verweist auf die Einzelabrechnung
+                des Messdienstes; deren Betrag ist maßgeblich.
+              </p>
               {billed.map((t) => (
                 <label className="field" key={t.id}>
                   {t.tenantName}
