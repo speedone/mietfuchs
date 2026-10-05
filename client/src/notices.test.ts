@@ -66,6 +66,19 @@ describe('Hinweise (#112)', () => {
     expect(lines.valuesNote).toBeNull()
     expect(legalBasisLines({ asOf: '2026-10-05', rules: [], values: [] }).valuesNote).toBeNull()
   })
+
+  // Durchsicht von #221, I1: Ein Wert, der nur zum Teil oder gar nicht mehr gilt (die Kabelregel in
+  // 2025), nennt seine Gültigkeit, sonst läse er sich wie geltendes Recht des Jahres.
+  test('Rechtsstand: ein Rechtswert mit Gültigkeit nennt sie', () => {
+    const lines = legalBasisLines({ asOf: '2026-10-05', rules: [], values: [
+      { id: 'betrkv.tv-signal', title: 'Kabelfernsehen über die Nebenkosten', norm: '§ 2 BetrKV', cite: '§ 2 BetrKV', value: { newSystemsFrom: '2021-12-01' }, text: 'umlagefähig nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden', validTo: '2024-06-30' },
+      { id: 'hkv.remote-reading.retrofit', title: 'Fernablesbarkeit älterer Geräte', norm: '§ 5 Abs. 3 HeizkostenV', cite: '§ 5 Abs. 3 HeizkostenV', value: { installedUpTo: '2021-12-01' }, text: 'Geräte mit Einbau bis 01.12.2021 fernablesbar', validFrom: '2027-01-01' },
+    ] })
+    expect(lines.values).toEqual([
+      'Kabelfernsehen über die Nebenkosten: umlagefähig nur bei Anlagen, die vor dem 01.12.2021 errichtet wurden (§ 2 BetrKV), gilt bis 30.06.2024',
+      'Fernablesbarkeit älterer Geräte: Geräte mit Einbau bis 01.12.2021 fernablesbar (§ 5 Abs. 3 HeizkostenV), gilt ab 01.01.2027',
+    ])
+  })
 })
 
 // #135: 0 m² und 0 Personen sind Angaben (Garage, Stellplatz); ihr Hinweis soll die Cockpit-Ampel

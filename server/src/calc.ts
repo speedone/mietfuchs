@@ -33,7 +33,7 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, law, LAW_AS_OF, onlyVersion, valueAt, type Period } from '../../shared/law/register.ts'
+import { createLawLog, dayAfter, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
@@ -1943,6 +1943,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // mehr, die Zeit danach. Einen Beginn hat die Regel nicht, „gar nicht“ heißt deshalb immer
   // „vorbei“. Abgefragt nur, wenn es eine Position Kabel/Antenne gibt.
   const tv = items.some((c) => c.category === 'Kabel/Antenne') ? law(betrkvTvSignal, { period: lawPeriod }, lawLog) : null
+  // Gilt die Regel im Jahr gar nicht mehr, protokolliert das Register nichts. Jede Position
+  // Kabel/Antenne bekommt dann aber einen Hinweis, der die Fassung nennt (Ende und Stichtag der
+  // Anlage); auf sie stützt sich die Abrechnung, und die Anzeige nennt ihre Gültigkeit.
+  if (tv && tv.coverage === 'none' && tv.validTo) recordVersionAt(betrkvTvSignal, tv.validTo, lawLog)
   const tvSignal = tv?.coverage ?? 'none'
   const tvUntil = tv?.validTo ?? ''
   const tvNewFrom = tv?.value.newSystemsFrom ?? ''

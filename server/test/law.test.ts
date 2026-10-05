@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
+import { createLawLog, dayAfter, dayBefore, germanDate, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, versionAt, type LawParam } from '../../shared/law/register.ts'
 import { LAW_PARAMS } from '../../shared/law/params.ts'
 import { RULES_AS_OF } from '../../shared/law/rules.ts'
 import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
@@ -73,10 +73,22 @@ test('Register: das Protokoll führt jede benutzte Fassung einmal, mit Wert in W
   law(rate, year(2023), log)
   law(rate, year(2024), log)
   assert.deepEqual(log.values, [{ id: 'test.rate', title: 'Satz', norm: '§ 1', cite: '§ 1 Beispielgesetz', value: 12, text: '12 %', validFrom: '2023-01-01' }])
-  // Auch ein „gar nicht“ hat nach einer Fassung entschieden und steht deshalb im Protokoll.
+  // Ein „gar nicht“ ist kein angewandter Wert: Er gilt im Zeitraum nicht und steht deshalb nicht
+  // im Protokoll (Durchsicht von #221, I1). Erst eine Abfrage, die die Fassung berührt, trägt ein.
   law(window, year(2025), log)
+  assert.deepEqual(log.values.map((v) => v.id), ['test.rate'])
   law(window, year(2024), log)
   assert.deepEqual(log.values.map((v) => `${v.id} ${v.validFrom ?? ''}`), ['test.rate 2023-01-01', 'test.window 2024-03-01'])
+})
+
+test('Register: recordVersionAt trägt eine Fassung ein, die eine Stelle trotz „gar nicht“ für ihren Text braucht', () => {
+  const log = createLawLog()
+  const after = law(window, year(2025), log)
+  assert.equal(after.coverage, 'none')
+  assert.deepEqual(log.values, [])
+  recordVersionAt(window, after.validTo ?? '', log)
+  recordVersionAt(window, after.validTo ?? '', log)
+  assert.deepEqual(log.values, [{ id: 'test.window', title: 'Fenster', norm: '§ 2', cite: '§ 1 Beispielgesetz', value: { note: 'x' }, text: 'x', validFrom: '2024-03-01', validTo: '2024-06-30' }])
 })
 
 test('Register: zwei Protokolle sind getrennt, es gibt keinen gemeinsamen Zustand', () => {

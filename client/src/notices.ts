@@ -97,7 +97,12 @@ export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: str
       const range = [r.validFrom && `ab ${fmtDate(r.validFrom)}`, r.validTo && `bis ${fmtDate(r.validTo)}`].filter(Boolean).join(' ')
       return `${r.title} (${r.norm})${range ? `, gilt ${range}` : ''}`
     }),
-    values: (legalBasis.values ?? []).map((v) => `${v.title}: ${v.text} (${v.cite})`),
+    // Mit Gültigkeit, wo es eine gibt: Ein Wert, der im Jahr nur zum Teil oder nicht mehr gilt (die
+    // Kabelregel 2025), läse sich sonst wie geltendes Recht des Jahres (Durchsicht von #221, I1).
+    values: (legalBasis.values ?? []).map((v) => {
+      const range = [v.validFrom && `ab ${fmtDate(v.validFrom)}`, v.validTo && `bis ${fmtDate(v.validTo)}`].filter(Boolean).join(' ')
+      return `${v.title}: ${v.text} (${v.cite})${range ? `, gilt ${range}` : ''}`
+    }),
     valuesNote: legalBasis.values ? null : 'Rechtswerte nicht gespeichert (vor 0.11.0)',
   }
 }
