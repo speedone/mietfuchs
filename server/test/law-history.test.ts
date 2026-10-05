@@ -1,7 +1,8 @@
 // Jede ausgelieferte Fassung des Rechtsregisters als Zahl (Heizung PR 1, Entwurf 4.4 und 4.7). Das
 // ist die eigentliche Sicherung des Registers: Eine Fassung wird nie geändert, nur eine neue
 // angelegt. Wer einen Wert berichtigt, legt eine neue Fassung an und **ergänzt** hier eine Zeile;
-// eine bestehende Zeile ändert niemand. Eine abgeschlossene Abrechnung bleibt dabei, wie sie ist,
+// eine bestehende Zeile ändert niemand. Einzige Ausnahme: Das offene Ende einer Fassung darf
+// geschlossen werden, wenn eine neue anschließt (Durchsicht von #221, M2). Eine abgeschlossene Abrechnung bleibt dabei, wie sie ist,
 // und `deviation` zeigt die Auswirkung (CHANGELOG-Satz nach 4.4).
 //
 // Format je Zeile: Kennung, Grenzen (leer = offen) und der Wert als JSON.
@@ -26,12 +27,40 @@ const SHIPPED: readonly string[] = [
 const current = (): string[] =>
   LAW_PARAMS.flatMap((p) => p.versions.map((v) => `${p.id}|${v.validFrom ?? ''}|${v.validTo ?? ''}|${JSON.stringify(v.value)}`))
 
-test('Register: jede ausgelieferte Fassung steht unverändert im Register', () => {
-  const now = new Set(current())
-  for (const line of SHIPPED) assert.ok(now.has(line), `ausgelieferte Fassung geändert oder entfernt: ${line}`)
+// Die Abweichungen zwischen festgehaltenen und heutigen Fassungen. Eine festgehaltene Fassung mit
+// offenem Ende (`id|ab||Wert`) darf heute geschlossen dastehen (`id|ab|bis|Wert`), sonst muss sie
+// Zeichen für Zeichen da sein; jede heutige Fassung muss festgehalten sein, als sie selbst oder als
+// geschlossene Form einer offenen.
+function historyProblems(shipped: readonly string[], now: readonly string[]): string[] {
+  const parts = (line: string) => line.split('|')
+  const closes = (open: string, closed: string): boolean => {
+    const [id, from, to, ...value] = parts(open)
+    const [cid, cfrom, cto, ...cvalue] = parts(closed)
+    return to === '' && cto !== '' && cid === id && cfrom === from && cvalue.join('|') === value.join('|')
+  }
+  return [
+    ...shipped.filter((line) => !now.some((n) => n === line || closes(line, n))).map((line) => `ausgelieferte Fassung geändert oder entfernt: ${line}`),
+    ...now.filter((line) => !shipped.some((x) => x === line || closes(x, line))).map((line) => `neue Fassung ohne Zeile in law-history.test.ts: ${line}`),
+  ]
+}
+
+test('Register: jede ausgelieferte Fassung steht unverändert im Register, und jede Fassung ist hier festgehalten', () => {
+  assert.deepEqual(historyProblems(SHIPPED, current()), [])
 })
 
-test('Register: jede Fassung im Register ist hier festgehalten', () => {
-  const shipped = new Set(SHIPPED)
-  for (const line of current()) assert.ok(shipped.has(line), `neue Fassung ohne Zeile in law-history.test.ts: ${line}`)
+// Durchsicht von #221 (M2): Erlaubt ist genau eine Änderung an einer ausgelieferten Fassung, nämlich
+// ihr offenes Ende zu schließen, wenn eine neue Fassung anschließt (die neue bekommt oben eine
+// Zeile). Alles andere bleibt verboten.
+test('Register-Geschichte: offenes Ende schließen ist erlaubt, jede andere Änderung nicht', () => {
+  const shipped = ['a|2021-01-01||19', 'b||2024-06-30|1']
+  assert.deepEqual(historyProblems([...shipped, 'a|2031-01-01||20'], ['a|2021-01-01|2030-12-31|19', 'a|2031-01-01||20', 'b||2024-06-30|1']), [])
+  // Wert, Beginn oder ein schon gesetztes Ende geändert: die alte fehlt, die neue ist nicht festgehalten
+  assert.equal(historyProblems(shipped, ['a|2021-01-01||18', 'b||2024-06-30|1']).length, 2)
+  assert.equal(historyProblems(shipped, ['a|2020-01-01||19', 'b||2024-06-30|1']).length, 2)
+  assert.equal(historyProblems(shipped, ['a|2021-01-01||19', 'b||2024-07-31|1']).length, 2)
+  // Ein geschlossenes Ende wieder öffnen ist ebenso verboten.
+  assert.equal(historyProblems(shipped, ['a|2021-01-01||19', 'b|||1']).length, 2)
+  // Entfernt, oder neu ohne Zeile
+  assert.equal(historyProblems(shipped, ['a|2021-01-01||19']).length, 1)
+  assert.equal(historyProblems(shipped, ['a|2021-01-01||19', 'b||2024-06-30|1', 'c|||3']).length, 1)
 })
