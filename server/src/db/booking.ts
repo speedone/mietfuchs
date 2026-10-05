@@ -183,7 +183,7 @@ export async function bookAssessment(
   await db.transaction(async (tx) => {
     for (const w of planned.writes) {
       if (w.kind === 'createItem') {
-        await insertCostItemIn(tx, w.id, w.body)
+        await insertCostItemIn(tx, w.id, w.body, { invoiceDate: record.assessment.invoiceDate })
       } else if (w.kind === 'updateItem') {
         const current = items.get(w.id)
         if (!current) throw new BookingRefusal(409, 'Eine Position ist während der Buchung verschwunden. Bitte laden Sie die Seite neu.')

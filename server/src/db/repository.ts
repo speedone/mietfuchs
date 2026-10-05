@@ -509,7 +509,10 @@ export async function itemPeriodClosed(db: Executor, c: CostItem): Promise<boole
 // von vor dem Update oder die Belegbuchung keine Position unter einem Schlüssel an, den es für die
 // Anlage nicht gibt. Endet dort keine oder mehr als eine Heizperiode, bleibt sie ohne Anlage, und
 // der Vermieter ordnet sie zu.
-async function defaultHeatingPlant(db: Executor, c: CostItem): Promise<Pick<CostItem, 'heatingPlantId' | 'period' | 'taxYear'>> {
+// `invoiceDate` (Belegbuchung): Das Jahr der Zahlung einer Heizperiode über zwei Kalenderjahre ist das
+// Jahr des Rechnungsdatums, geklemmt in ihre Spanne (erstes Jahr bis ein Jahr nach dem Ende, Entwurf
+// 3.10); ohne Rechnungsdatum das erste Jahr des Abrechnungszeitraums wie bisher.
+async function defaultHeatingPlant(db: Executor, c: CostItem, invoiceDate?: string | null): Promise<Pick<CostItem, 'heatingPlantId' | 'period' | 'taxYear'>> {
   const none = { heatingPlantId: null, period: c.period, taxYear: c.taxYear }
   if (c.category !== HEATING_CATEGORY) return none
   const [einzige, ...weitere] = await db.select({ id: heatingPlants.id }).from(heatingPlants).where(eq(heatingPlants.propertyId, c.propertyId))
@@ -521,7 +524,10 @@ async function defaultHeatingPlant(db: Executor, c: CostItem): Promise<Pick<Cost
   const enden = p === null ? [] : heatingPeriodsEndingIn(heating.rules, p)
   const h = enden.length === 1 ? enden[0] : undefined
   if (h === undefined) return none
-  const neu = { heatingPlantId: einzige.id, period: h.key, taxYear: spansTwoYears(h) ? (c.taxYear ?? startYearOf(c.period)) : undefined }
+  const first = Number(h.from.slice(0, 4))
+  const last = Number(h.to.slice(0, 4)) + 1
+  const fromInvoice = invoiceDate && /^\d{4}/.test(invoiceDate) ? Math.min(last, Math.max(first, Number(invoiceDate.slice(0, 4)))) : undefined
+  const neu = { heatingPlantId: einzige.id, period: h.key, taxYear: spansTwoYears(h) ? (c.taxYear ?? fromInvoice ?? startYearOf(c.period)) : undefined }
   return (await itemPeriodClosed(db, { ...c, ...neu })) ? none : neu
 }
 
@@ -1440,8 +1446,11 @@ export async function removeEntity(db: Database, coll: CollectionName, id: strin
 // (db/booking.ts). `createEntity` und `updateEntity` öffnen jeweils eine eigene; SQLite kennt
 // keine geschachtelte. Deshalb hier dieselbe Verschmelzung, derselbe Wächter und dasselbe Schreiben,
 // nur ohne Transaktion: Ein Weg mit eigenen Regeln wäre ein zweiter, der auseinanderläuft.
-export async function insertCostItemIn(tx: Executor, id: string, body: unknown): Promise<void> {
-  const entity = mergeCostItem(emptyCostItem(id), body)
+export async function insertCostItemIn(tx: Executor, id: string, body: unknown, hints: { invoiceDate?: string | null } = {}): Promise<void> {
+  const merged = mergeCostItem(emptyCostItem(id), body)
+  // Mit Rechnungsdatum (Belegbuchung) schon hier die Anlage und ihre Heizperiode, damit das Jahr der
+  // Zahlung aus dem Beleg kommt; die Schreibprüfung sieht dann die Heizperiode.
+  const entity = hints.invoiceDate && merged.heatingPlantId === undefined ? { ...merged, ...(await defaultHeatingPlant(tx, merged, hints.invoiceDate)) } : merged
   await guardCostItem(tx, null, entity, body)
   await costItemCollection.insert(tx, entity)
 }
