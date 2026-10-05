@@ -533,3 +533,45 @@ test('Nachprüfung (Invariante, Startwert 2): Die mittlere Heizperiode nimmt gen
   const mitte = settle('2024-05', ueber)
   assert.equal(mieterSumme(mitte), -hinaus)
 })
+
+// ---------- Nachprüfung von e364435 (Korrekturrunde 3) ----------
+
+test('Nachprüfung W1: Storno nach Abschluss der Heizperiode davor: Vermieter weist die zu viel getragenen 983,39 € aus, mit Hinweis', () => {
+  const h1 = settle('2024-05')
+  const Y = (h1.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0)
+  assert.equal(Y, 98339)
+  const zu = { fuelCarryFrozen: [eingefroren('d', '2024-05', Y)], closedSettlements: [abgeschlossen('2024-05', { fuelCarryRows: frozenFuelRowsOf(h1) })] }
+  for (const costItems of [
+    [position({ id: 'gas' }), position({ id: 'gs', description: 'Storno', amountCents: -650000 })],
+    [position({ id: 'gas', amountCents: 0 })],
+  ]) {
+    const h = settle('2025-05', { ...zu, costItems })
+    assert.equal(mieterSumme(h), 0)
+    assert.equal(summe(h), 0)
+    assert.deepEqual(teileVon(h, 'fuel:d:2025-05:2024-05'), [{ reason: 'fuelCarry', cents: 98339 }, { reason: 'fuelClosedPeriod', cents: -98339 }])
+    const n = h.notices.find((x) => x.code === 'fuel.cancelled-after-close') ?? assert.fail(codes(h).join(', '))
+    assert.equal(n.level, 'warning')
+    assert.match(n.text, /ist storniert oder auf 0 € gesetzt\. Die abgeschlossene Abrechnung 2024\/2025 enthält dafür 983,39 €, die die Mieter zu viel getragen haben\. Öffnen Sie sie wieder und schließen Sie neu ab/)
+    assert.match(n.text, /§ 556 Abs\. 3 Satz 3 BGB schließt nach Ablauf der Frist nur eine Nachforderung durch den Vermieter aus/)
+  }
+})
+
+test('Nachprüfung (gering): Position erst nach dem Abschluss ihrer Heizperiode verknüpft: die andere Heizperiode nimmt nichts und sagt es', () => {
+  const ohne = settle('2025-05', { costItems: [position({ id: 'gas', fuelDeliveryId: null })] })
+  const ueber = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(ohne), fuelCarries: frozenFuelCarriesOf(ohne) })] }
+  const h1 = settle('2024-05', ueber)
+  assert.equal(mieterSumme(h1), 0)
+  assert.match(textOf(h1, 'fuel.owner-closed-unlinked'), /Abrechnung 2025\/2026, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft/)
+})
+
+test('Nachprüfung W1, Gegenstück: Storno nach Abschluss der Heizperiode der Positionen: die offene davor verteilt nichts und weist die Gegenbuchung aus', () => {
+  const h2 = settle('2025-05')
+  const ueber = { closedSettlements: [abgeschlossen('2025-05', { fuelCarryRows: frozenFuelRowsOf(h2), fuelCarries: frozenFuelCarriesOf(h2) })] }
+  const X = -(h2.heating?.[0]?.fuel?.carries ?? []).reduce((a, c) => a + c.cents, 0)
+  assert.equal(X, 98339)
+  const h1 = settle('2024-05', { ...ueber, costItems: [position({ id: 'gas', amountCents: 0 })] })
+  assert.equal(mieterSumme(h1), 0)
+  assert.equal(summe(h1), 0)
+  assert.deepEqual(teileVon(h1, 'fuel:d:2024-05:2025-05'), [{ reason: 'fuelCarry', cents: -98339 }, { reason: 'fuelClosedPeriod', cents: 98339 }])
+  assert.match(textOf(h1, 'fuel.cancelled-after-close'), /ist storniert oder auf 0 € gesetzt\. Die abgeschlossene Abrechnung 2025\/2026, in der sie steht, hat 983,39 € als Anteil dieser Heizperiode hinausgebucht/)
+})

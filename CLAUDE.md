@@ -1068,9 +1068,20 @@ mehrere je Lieferung (Abschlag, Schlussrechnung, Gutschrift). Abgegrenzt wird in
   Hinweise an ihr führen zur Position. Die CO₂-Aufteilung gilt nur für Brennstoffe mit Standardwerten
   (§ 2 Abs. 1 CO2KostAufG): nicht für Strom einer Wärmepumpe, bei Fernwärme nur mit ausgewiesenen
   CO₂-Kosten. Die Nachstufung beim Messdienst erwartet § 8 und § 9 nach den Angaben zum Gebäude.
-  Eine Invariante über Zufallsbestände mit Abschluss, Wiederöffnen und Verknüpfen in wechselnder
-  Reihenfolge (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete
-  Sperren) prüft, dass jede Rechnung genau einmal verteilt ist.
+  **Storno nach Abschluss** (W1): Ergeben die Positionen einer Lieferung 0, wird nichts gesperrt und
+  nichts verteilt; hat eine abgeschlossene Heizperiode einen Teil hereingebucht oder die
+  abgeschlossene Heizperiode der Positionen einen hinausgebucht, steht beim Vermieter die
+  Gegenbuchung und ihr Gegenteil als `fuelClosedPeriod` (Summe 0, ausgewiesen), dazu die Warnung
+  `fuel.cancelled-after-close`. Ihr Satz zur Frist hält sich an den Wortlaut von § 556 Abs. 3 Satz 3
+  BGB (ausgeschlossen ist nur die Nachforderung durch den Vermieter). Wurde eine Position erst nach
+  dem Abschluss ihrer Heizperiode verknüpft, nimmt die andere nichts und sagt es
+  (`fuel.owner-closed-unlinked`, Stufe `hint`).
+  Eine Invariante über Zufallsbestände mit Abschluss (auch mit Schätzung), Wiederöffnen, Verknüpfen,
+  Gutschriften bis zum Storno, geänderten Beträgen und später eintreffenden Rechnungen
+  (fuel-invariant.test.ts, über die echten Schreibwege der Datenbank, ohne nachgebildete Sperren)
+  prüft, dass jede Rechnung genau einmal verteilt ist: Die Mieter tragen die Positionen bis auf die
+  ausgewiesenen Teile, nach oben wie nach unten. Feste Startwerte, mehr mit `INV_FROM`/`INV_TO`; jede
+  Rücknahme der Befunde der Durchsicht macht sie rot (Mutationsprobe).
 - **Gesperrt bis zu ihren PRs:** Vorratsenergien (PR 8), Lieferungen je Wohnung (PR 9), Netzentgelte
   und Biobrennstoff (PR 18), Methode `self` (PR 10); jeder Satz sagt, was bis dahin geht.
 - **Golden F15 und F12** ([server/test/fixtures/heating/](server/test/fixtures/heating/)): F15 ist das

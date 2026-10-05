@@ -180,6 +180,11 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   ändern; eine Heizanlage mit Lieferungen lässt sich erst entfernen, wenn die Lieferungen entfernt
   sind. Ebenso bleibt die letzte Position einer solchen Lieferung mit ihr verknüpft, und die
   Gradtagzahlen des Orts für Monate einer abgeschlossenen Heizperiode bleiben, wie sie sind.
+- Wird eine Rechnung nach dem Abschluss einer Heizperiode storniert oder auf 0 € gesetzt, sperrt
+  Mietfuchs nichts: Der Teil, den die Mieter der abgeschlossenen Abrechnung zu viel getragen haben,
+  steht beim Vermieter, und eine Warnung rät, jene Abrechnung wieder zu öffnen und neu abzuschließen.
+  Wurde die Position einer Rechnung erst nach dem Abschluss ihrer Heizperiode mit der Lieferung
+  verknüpft, sagt es ein Hinweis in der anderen Heizperiode.
 
 ### Behoben
 

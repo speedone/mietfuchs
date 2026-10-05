@@ -216,6 +216,8 @@ export type FuelCarry = {
   frozen: boolean
   // Die andere Heizperiode hat 0 eingefroren, weil die Lieferung beim Abschluss noch keine Position hatte.
   zeroFrozen: boolean
+  // Storniert (Summe der Positionen 0): was die abgeschlossene Heizperiode `other` hereingebucht hatte.
+  cancelled?: number
   landlord: { reason: 'fuelCarry' | 'fuelClosedPeriod' | 'fuelEstimateDiff'; cents: number }[]
   templates: { itemId: string; raw: number }[]
   estimate: { cents: number; ids: string[] } | null
@@ -233,6 +235,9 @@ export type FuelResult = {
   missingCo2: string[]
   // Eine Heizposition ohne Lieferung und ohne Leistungszeitraum steht neben einer Lücke (Durchsicht I4).
   looseWithoutRange: boolean
+  // Lieferungen, deren Heizperiode der Positionen abgeschlossen ist, ohne hierher etwas hinausgebucht zu
+  // haben, obwohl heute `cents` hierher gehörten.
+  ownerClosedUnlinked: { deliveryId: string; owner: BillingPeriod; cents: number }[]
 }
 
 // Die Lieferungen einer Anlage in einer Heizperiode. `null`, wenn keine die Heizperiode berührt und
@@ -334,6 +339,7 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
 
   // Überträge (8.2), nur bei freien Schlüsseln: Dort sind die Rechnungen Positionen.
   const carries: FuelCarry[] = []
+  const ownerClosedUnlinked: FuelResult['ownerClosedUnlinked'] = []
   if (withItems) {
     // Die Schätzungen einer abgeschlossenen Heizperiode, die eine echte Rechnung ersetzt, mit ihrem
     // eingefrorenen Betrag im Verhältnis der Gradtage, die die Rechnung von ihnen abdeckt.
@@ -372,11 +378,41 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
       }
       const items = itemsOf(d.id)
       const T = totalOf(d)
-      if (items.length === 0 || T === 0) continue
+      if (items.length === 0) continue
       // Die Heizperiode der Positionen; die Schreibprüfung hält sie bei der, die das Ende enthält.
       const ownerKey = parsePeriodKey(items[0]?.period)
       const owner = (ownerKey && periodOfKey(rules, ownerKey)) ?? periodContaining(rules, r.to)
       const touched = periodsBetween(rules, r.from, r.to)
+      if (T === 0) {
+        // Storniert oder auf 0 € gesetzt (Nachprüfung von #233, W1): Hat eine abgeschlossene Heizperiode
+        // schon einen Teil hereingebucht, haben ihre Mieter ihn zu viel getragen. Verteilt wird hier
+        // nichts mehr (die Positionen ergeben 0); beim Vermieter stehen die Gegenbuchung und, mit
+        // umgekehrtem Vorzeichen, der Teil der abgeschlossenen Heizperiode, den er den Mietern schuldet.
+        if (owner.key !== h.key) {
+          // Gegenstück: Die Heizperiode der Positionen ist abgeschlossen und hat einen Teil hierher
+          // hinausgebucht. Hier wird nichts verteilt; die Gegenbuchung steht ausgewiesen beim Vermieter.
+          const out = touchesH(d) && input.closed.has(owner.key) && input.closedCarries !== undefined
+            ? (input.closedCarries.find((c) => c.period === owner.key && c.deliveryId === d.id && c.other === h.key)?.cents ?? 0)
+            : 0
+          if (out !== 0) {
+            carries.push({
+              deliveryId: d.id, kind: 'in', other: owner, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: -out,
+              landlord: [{ reason: 'fuelCarry', cents: out }, { reason: 'fuelClosedPeriod', cents: -out }], templates: [], estimate: null,
+            })
+          }
+          continue
+        }
+        for (const other of touched) {
+          if (other.key === h.key) continue
+          const f = frozenOf(d.id, other.key)
+          if (!f || f.cents === 0) continue
+          carries.push({
+            deliveryId: d.id, kind: 'out', other, cents: 0, totalCents: 0, ratio: 0, method: 'inside', frozen: true, zeroFrozen: false, cancelled: f.cents,
+            landlord: [{ reason: 'fuelCarry', cents: f.cents }, { reason: 'fuelClosedPeriod', cents: -f.cents }], templates: [], estimate: null,
+          })
+        }
+        continue
+      }
       if (owner.key === h.key) {
         for (const other of touched) {
           if (other.key === h.key) continue
@@ -416,6 +452,13 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
           ? (input.closedCarries.find((c) => c.period === owner.key && c.deliveryId === d.id && c.other === h.key)?.cents ?? 0)
           : null
         const Y = f ? f.cents : ownerOut !== null ? -ownerOut : ownerFrozen && touched.length === 2 ? -ownerFrozen.cents : roundHalf(T * s.ratio)
+        // Die Heizperiode der Positionen ist abgeschlossen und hat nichts hierher hinausgebucht, obwohl
+        // heute ein Teil hierher gehörte: Die Position war beim Abschluss noch nicht verknüpft. Dort ist
+        // die Rechnung ganz verteilt; hier kommt nichts dazu, aber ein Hinweis (Nachprüfung von #233).
+        if (!f && ownerOut === 0) {
+          const calc = roundHalf(T * s.ratio)
+          if (calc !== 0) ownerClosedUnlinked.push({ deliveryId: d.id, owner, cents: calc })
+        }
         if (Y === 0) continue
         carries.push({
           deliveryId: d.id, kind: 'in', other: owner, cents: Y, totalCents: T, ratio: s.ratio, method: s.method, frozen: f !== null || ownerFrozen !== null, zeroFrozen: false,
@@ -459,5 +502,6 @@ export function plantFuel(input: FuelPlantInput): FuelResult | null {
     lines, carries, coveragePermille: coverage.permille, gaps, emissionsKg,
     co2Cents: co2Known ? roundHalf(co2) : null, serviceCo2Cents, serviceGrossCents, missingCo2,
     looseWithoutRange: looseWithoutRange && gaps.length > 0,
+    ownerClosedUnlinked,
   }
 }

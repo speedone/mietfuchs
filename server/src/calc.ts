@@ -271,6 +271,8 @@ const noticeKinds = {
   'fuel.estimate-settled': { level: 'warning', title: 'Schätzung durch die Rechnung ersetzt', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.estimate-overcharged': { level: 'warning', title: 'Schätzung war zu hoch', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'settlementDeadline'] },
   'fuel.loose-item': { level: 'hint', title: 'Heizposition ohne Lieferung neben einer Lücke', rule: 'heating-consumed-fuel', terms: ['accrualPrinciple', 'fuelDelivery'] },
+  'fuel.cancelled-after-close': { level: 'warning', title: 'Rechnung nach dem Abschluss storniert', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'settlementDeadline'] },
+  'fuel.owner-closed-unlinked': { level: 'hint', title: 'Rechnung nach dem Abschluss verknüpft', rule: 'heating-consumed-fuel', terms: ['fuelDelivery', 'accrualPrinciple'] },
   'co2.district-ets-exempt': { level: 'hint', title: 'CO₂-Kosten nicht aufzuteilen (Emissionshandel)', rule: 'co2-split', terms: ['districtEts', 'co2Split'] },
   // Heizung PR 7: eigene CO₂-Aufteilung (Entwurf 7.6, 9, 10.1).
   'co2.service-unsplit-healed': { level: 'hint', title: 'CO₂-Kosten nachträglich aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
@@ -3032,10 +3034,31 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           `${line.label ? `Grundlage: ${line.label}. ` : ''}Ob eine noch fehlende Versorgerrechnung so geschätzt werden darf, ist höchstrichterlich nicht entschieden; die Abrechnung nennt die Grundlage der Schätzung im Block „Brennstoff“.`,
         subject)
     }
+    for (const u of result.ownerClosedUnlinked) {
+      const owner = closedOf(u.owner.key)
+      warn('fuel.owner-closed-unlinked',
+        `${where}: Zur Rechnung „${nameOf(u.deliveryId)}“ gehörten heute ${fmtCents(u.cents)} in diese Heizperiode. Die Abrechnung ${owner?.label ?? periodLabel(u.owner)}, in der die Rechnung steht, ist abgeschlossen; ihre Position war beim Abschluss noch nicht mit der Lieferung verknüpft, deshalb ist die Rechnung dort ganz verteilt und hier kommt nichts dazu. ` +
+          'Soll dieser Teil hierher, öffnen Sie jene Abrechnung wieder und schließen sie neu ab.',
+        subject)
+    }
     for (const carry of result.carries) {
+      if (carry.kind === 'in' && carry.cancelled !== undefined) {
+        warn('fuel.cancelled-after-close',
+          `${where}: Die Rechnung „${nameOf(carry.deliveryId)}“ ist storniert oder auf 0 € gesetzt. Die abgeschlossene Abrechnung ${closedOf(carry.other.key)?.label ?? periodLabel(carry.other)}, in der sie steht, hat ${fmtCents(carry.cancelled)} als Anteil dieser Heizperiode hinausgebucht; hier wird davon nichts mehr verteilt, und die Mieter jener Abrechnung haben ihren Teil der Rechnung zu viel getragen. Öffnen Sie sie wieder und schließen Sie neu ab; ` +
+            '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Frist nur eine Nachforderung durch den Vermieter aus, eine Berichtigung zugunsten der Mieter hindert er nicht.',
+          subject)
+        continue
+      }
       if (carry.kind !== 'out') continue
       const other = closedOf(carry.other.key)
       if (!other) continue
+      if (carry.cancelled !== undefined) {
+        warn('fuel.cancelled-after-close',
+          `${where}: Die Rechnung „${nameOf(carry.deliveryId)}“ ist storniert oder auf 0 € gesetzt. Die abgeschlossene Abrechnung ${other.label} enthält dafür ${fmtCents(carry.cancelled)}, die die Mieter zu viel getragen haben. Öffnen Sie sie wieder und schließen Sie neu ab; ` +
+            '§ 556 Abs. 3 Satz 3 BGB schließt nach Ablauf der Frist nur eine Nachforderung durch den Vermieter aus, eine Berichtigung zugunsten der Mieter hindert er nicht. Bis dahin steht der Betrag bei Ihnen.',
+          subject)
+        continue
+      }
       const X = -carry.cents
       const name = `„${nameOf(carry.deliveryId)}“`
       if (carry.landlord.some((p) => p.reason === 'fuelClosedPeriod')) {
