@@ -4,10 +4,11 @@
 
 **Goal:** Bei einer eigenen Heizkostenabrechnung mit fernablesbaren Geräten erstellt Mietfuchs aus den
 Monatsendständen der Zähler je Mieter und Monat die Verbrauchsinformation nach § 6a Abs. 1 Nr. 2, Abs. 2
-HeizkostenV (Verbrauch in kWh, Vergleich mit Vormonat und Vorjahresmonat desselben Nutzers, Vergleich mit
-einem Durchschnittsnutzer), druckt sie, hält fest, wann sie mitgeteilt wurde, und beziffert in
-`heating.monthly-info` je Mieter die 3 % nach § 12 Abs. 1 Satz 3 HeizkostenV für jeden Monat, der fehlt
-oder unvollständig ist. Wer die Information vom Messdienst bekommt, bestätigt das an der Anlage (PR 14).
+HeizkostenV (Verbrauch in kWh, Heizung gemessen und Warmwasser rechnerisch getrennt, Vergleich mit Vormonat
+und Vorjahresmonat desselben Nutzers, Vergleich mit einem Durchschnittsnutzer), druckt sie, hält fest, wann
+sie mitgeteilt wurde, und beziffert in `heating.monthly-info` je Mieter die 3 % nach § 12 Abs. 1 Satz 3
+HeizkostenV für jeden Monat, der fehlt oder unvollständig ist; „um 3 %“ nur für Mieter, deren Wohnung selbst
+fernablesbar ausgestattet ist, sonst mit dem Vorbehalt der Einzelfallprüfung bei gemischter Ausstattung. Wer die Information vom Messdienst bekommt, bestätigt das an der Anlage (PR 14).
 
 **Architecture:** Eine neue Tabelle `heating_monthly_info` (je Anlage und Monat: Vergleichswert mit Quelle,
 Tag der Mitteilung) in einem erzeugten Schritt. Die Rechnung steht als reine Funktion in
@@ -30,6 +31,34 @@ warning, PR 14, 22), 10.2 (`heating-info`), 10.3 (`billingInfo`), 12.3 Nr. 14, *
 **Baut auf:** PR 1 bis PR 21. Gearbeitet wird auf `feat/heizung-pr22-verbrauchsinfo`, abgezweigt von der
 Spitze von PR 21, gestapelt gestellt und nach dem Merge von PR 21 auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 hat diesen Plan an diesen Stellen geändert:
+
+1. **„Um 3 %“ nur für Mieter mit eigener fernablesbarer Ausstattung** (Goal, Rechtsquellen, Abweichungen 5
+   und 8, Task 1 Lexikon, Task 2 `MonthlyInfoUser.remote` mit Test, Task 4 Text mit Test, CHANGELOG,
+   CLAUDE.md). Nach der Begründung gilt § 6a Abs. 1 nicht, solange Ausstattungen nicht fernablesbar sind, und
+   bei gemischter Ausstattung ist im Einzelfall zu prüfen, ob die Information möglich und zumutbar ist
+   (BR-Drs. 643/21, S. 18). Für die übrigen Mieter nennt der Hinweis den Vorbehalt und die mögliche Kürzung.
+2. **Warmwasser getrennt, keine Summe, keine Faktoren nach Satz 6** (Abweichung 3, Task 1 Typen
+   `MonthlyInfoAmounts`, Task 2 `measure`/`earlier` und Tests, Task 5 `sheetLines` und Tests, Blatt). Die
+   Formel des § 9 Abs. 2 Satz 2 ergibt die Wärmemenge der Anlage samt Erzeugeraufwand; sie mit der gemessenen
+   Wärme zu addieren hieße, Energieebenen zu mischen. Die Faktoren des Satzes 6 rechnen auf die Energie der
+   Anlage um und gehören deshalb nicht auf das Blatt eines Nutzers. Vormonat und Vorjahresmonat vergleichen
+   jede Größe für sich.
+3. **Seitenzahlen der BR-Drs. 643/21 nachgeprüft** (Rechtsquellen): Nach der Kopfzeile der Drucksache steht
+   die Begründung zu Abs. 1 (gemischte Ausstattung, Mitteilen, einmal im Monat) auf S. 18, zu Abs. 2 auf
+   S. 19, zu Abs. 3 Nr. 4 auf S. 21 (PDF-Seiten 24, 25, 27; Kopfzeile „Drucksache 643/21 - 18 -“ usw. oben
+   auf der jeweiligen PDF-Seite, am 05.10.2026 mit pdf.js an der Lage der Textelemente geprüft). Der
+   Prüfbericht nannte S. 17 f., 18 und 20; das ist eine Seite zu früh. Die Angaben dieses Plans bleiben
+   deshalb bei S. 18, 19 und 21.
+4. **Veralteter Befund gestrichen** (Abweichung 2): Der Absatz „Befund für PR 14“ samt der Frage nach einem
+   Issue ist erledigt; PR 14 nimmt seit Commit `1329a64` für § 6a Abs. 3 Nr. 4 den Vergleichswert mit Quelle.
+5. **Herkunft von `dhwTempC`** (Schnittstellen, Annahme B2): Spalte `heating_periods.dhw_temp_c` und Feld
+   `HeatingPeriodData.dhwTempC` legt PR 4 an, den `Pick` im Schnappschuss PR 11.
+6. **Heizkostenverteiler** (Abweichung 4, Task 4 `GAP_TEXT`): Der Text empfiehlt, die Information vom
+   Ablesedienst erstellen zu lassen, und begründet keine Kürzung allein mit „HKV“.
+
 **Rechtsquellen, am 05.10.2026 gelesen:**
 
 - § 6a Abs. 1 HeizkostenV (gesetze-im-internet.de, Fassung Art. 3 G v. 16.10.2023): „Wenn fernablesbare
@@ -47,7 +76,14 @@ Spitze von PR 21, gestapelt gestellt und nach dem Merge von PR 21 auf `main` umg
 - § 12 Abs. 1 Satz 2, 3: Kürzung um „3 vom Hundert“ …; „Dasselbe ist anzuwenden, wenn der
   Gebäudeeigentümer die Informationen nach § 6a nicht oder nicht vollständig mitteilt.“
 - **Amtliche Begründung, BR-Drs. 643/21 vom 04.08.2021** (dserver.bundestag.de/brd/2021/0643-21.pdf),
-  S. 18–21, zu § 6a (Mitteilen und Erhebung S. 18, Abs. 2 S. 19, Abs. 3 Nr. 4 S. 21):
+  S. 18–21, zu § 6a (Abs. 1 mit gemischter Ausstattung, Mitteilen und Erhebung S. 18, Abs. 2 S. 19, Abs. 3
+  Nr. 4 S. 21; Seitenzahlen nach der Kopfzeile der Drucksache, im PDF die Seiten 24, 25 und 27, am
+  05.10.2026 an der Lage der Kopfzeile nachgeprüft):
+  - Zu Abs. 1 (S. 18): „Wenn Ausstattungen noch nicht fernablesbar sind, gilt § 6a Absatz 1 nicht“; „Wenn
+    ein Gebäude sowohl fernablesbare als auch nicht fernablesbare Ausstattungen … enthält, ist anhand einer
+    Einzelfallprüfung zu entscheiden, ob eine unterjährige Abrechnungs- oder Verbrauchsinformation möglich
+    und zumutbar ist“. Verbrauchsinformationen enthalten „bei Heizkostenverteilern … die Entwicklung der
+    Ablesewerte“.
   - „Mitteilen der Informationen bedeutet, dass die Information den Nutzer unmittelbar erreicht, ohne dass
     er sie suchen muss. Dies kann in Papierform oder auf elektronischem Wege, etwa per E-Mail, geschehen.
     Informationen können auch über das Internet (und über Schnittstellen wie ein Webportal oder eine
@@ -136,8 +172,9 @@ Spitze von PR 21, gestapelt gestellt und nach dem Merge von PR 21 auf `main` umg
   `meters`, `readings`, `heatingPeriodRows`.
 - PR 10: `selfPlans` (Map Anlage → Plan), `cutOf(tenancyId, ids, cut): number | null`, `nameOf(tenancyId)`,
   `fmtCents`, `andList` in calc.ts.
+- PR 4: die Spalte `heating_periods.dhw_temp_c` und das Feld `HeatingPeriodData.dhwTempC`.
 - PR 11 (`shared/law/heizkostenv.ts`): `hkvDhwVolumeFormula: LawParam<{ readonly effort: number; readonly coldWaterC: number }, 'periodStart'>`;
-  `HeatingPeriodData.dhwTempC`.
+  im Schnappschuss pickt `SnapshotHeatingPeriodRow` seit PR 11 `'dhwVolumeM3' | 'dhwTempC'` (PR 11 Task 4).
 - PR 14: `hkvMonthlyInfo: LawParam<{ readonly interval: string }, 'overlap'>` (`validFrom` 2022-01-01),
   `hkvCutInformation`; `HeatingPlant.monthlyInfoElsewhere: boolean`; `SnapshotHeatingPlant` pickt
   `monthlyInfoElsewhere`; in `computeSettlement` im Block `for (const pot of co2Pots)` die Größen `plant`,
@@ -155,7 +192,7 @@ Spitze von PR 21, gestapelt gestellt und nach dem Merge von PR 21 auf `main` umg
 | Nr. | Annahme | Wo benutzt |
 |---|---|---|
 | B1 | `Stock` (read.ts) hat die Felder `heatingPlants`, `units`, `tenancies`, `meters`, `readings`, `heatingPeriodRows`, und `readStock` füllt sie (so benutzt PR 17 sie in der Route des CO₂-Blatts). | Task 3 |
-| B2 | `SnapshotHeatingPeriodRow` pickt `dhwTempC` (PR 11 rechnet die Volumenformel daraus); fehlt das Feld, ergänzt Task 4 Step 3 es im `Pick`. `SnapshotUnit` hat `name`, `areaM2`, `noConnection`. | Task 4 |
+| B2 | `SnapshotHeatingPeriodRow` pickt `dhwTempC` (Spalte und Feld seit PR 4, im `Pick` seit PR 11 Task 4); fehlt das Feld, ergänzt Task 4 Step 3 es im `Pick`. `SnapshotUnit` hat `name`, `areaM2`, `noConnection`. | Task 4 |
 | B3 | Der Block „Monatliche Verbrauchsinformation“ von PR 14 steht in calc.ts so, wie ihn der Plan von PR 14 (Task 6 Step 7) zeigt. | Task 4 |
 | B4 | `RemotePlant` und `RemoteUnit` sind mit `SnapshotHeatingPlant` bzw. `SnapshotUnit` und mit `HeatingPlant` bzw. `Unit` verträglich (PR 4 ruft `remoteReadingVerdict` mit den Daten des Schnappschusses auf). | Task 2, 3, 4 |
 | B5 | `heatingPeriodOf(ctx, text)` liefert `{ key, from, to, short }` (PR 6: `BillingPeriod`). | Task 3 |
@@ -174,32 +211,48 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
    Vergleichsdaten; der Vermieter trägt je Monat einen Wert in kWh je m² Wohnfläche mit Pflichtfeld „Quelle“
    ein (etwa vom Ablesedienst). Ohne Wert ist der Monat unvollständig. Gerechnet wird Wert × Wohnfläche ×
    Nutzungstage / Tage des Monats (Festlegung: die Verordnung nennt keine Rechenart). ⟨Norm offen: DIN 94680⟩,
-   die laut Inhaltsangabe Vergleichswerte enthält (Entwurf 0.2).
-   **Befund für PR 14 (nicht in diesem PR geändert):** Entwurf 8.8 Nr. 4 und der Plan von PR 14 nehmen für
-   § 6a Abs. 3 Nr. 4 den „Hausdurchschnitt je m², so benannt“; nach der Begründung zu Abs. 3 Nr. 4 („gilt
-   das zu Absatz 2 Nummer 3 Ausgeführte entsprechend“) ist das kein zulässiger Vergleich. Das gehört als
-   eigener Befund vor den Merge von PR 14 (Rückfrage an den Nutzer, ob dafür ein GitHub-Issue angelegt wird).
-3. **Warmwasser in kWh nach § 9 Abs. 2 Satz 2 HeizkostenV (Auslegung).** Abs. 2 Nr. 1 verlangt
-   Kilowattstunden, Warmwasserzähler messen m³. Die einzige Umrechnung, die die Verordnung kennt, ist die
-   Zahlenwertgleichung 2,5 · V · (t_w − 10) mit der mittleren Warmwassertemperatur der Heizperiode
-   (`heating_periods.dhw_temp_c`). Sie ist für die Wärmemenge der Anlage geschrieben, nicht für den Monat
-   eines Nutzers; das Blatt nennt deshalb m³ und kWh und die Formel. Ohne Temperatur ist der Monat
-   unvollständig. Lehnt die Durchsicht die Auslegung ab, entfällt `dhwKwh`, und jeder Monat mit
-   Warmwasserzähler bleibt unvollständig.
-4. **Heizkostenverteiler ergeben keine kWh** (Review Focus 3): Mietfuchs rechnet Einheiten nicht in kWh um;
-   ein Monat mit HKV ist unvollständig, und der Hinweis empfiehlt die Information des Ablesedienstes.
-5. **Pflicht schon bei einem fernablesbaren Gerät der Anlage** (Wortlaut „Wenn fernablesbare Ausstattungen
-   … installiert wurden“): Die Begründung verlangt bei gemischter Ausstattung eine „Einzelfallprüfung“;
-   Mietfuchs wählt die vorsichtige Lesart und nennt die Information für jeden Mieter der Anlage, wie PR 14.
-   Ein Gerät zählt ab dem Monat, an dessen Ende es eingebaut ist (`installed_on`), ohne Datum immer.
+   die laut Inhaltsangabe Vergleichswerte enthält (Entwurf 0.2). Für § 6a Abs. 3 Nr. 4 hat PR 14 seit Commit
+   `1329a64` dieselbe Lösung (Vergleichswert mit Quelle statt Hausdurchschnitt).
+3. **Warmwasser in kWh nach § 9 Abs. 2 Satz 2 HeizkostenV, getrennt ausgewiesen (Auslegung).** Abs. 2 Nr. 1
+   verlangt Kilowattstunden, Warmwasserzähler messen m³. Die einzige Umrechnung, die die Verordnung kennt, ist
+   die Zahlenwertgleichung 2,5 · V · (t_w − 10) mit der mittleren Warmwassertemperatur der Heizperiode
+   (`heating_periods.dhw_temp_c`). Sie bestimmt die Wärmemenge der **Anlage** „in Kilowattstunden pro Jahr“,
+   und ihre 2,5 enthält den Erzeugeraufwand und Verluste (Satz 3 Nr. 1); das Ergebnis ist also keine
+   Nutzwärme in der Wohnung. Mietfuchs überträgt sie als Auslegung auf den Monat eines Nutzers und **weist
+   sie getrennt aus**: Wärme in kWh (gemessen, Wärmezähler der Wohnung), Warmwasser in m³ (gemessen) und in
+   kWh (rechnerisch, mit der Formel benannt). **Keine Summe**, denn die gemessene Wärme und ein Wert mit
+   Erzeugeraufwand liegen auf verschiedenen Ebenen; ebenso vergleichen Vormonat und Vorjahresmonat jede Größe
+   für sich. **Die Faktoren des § 9 Abs. 2 Satz 6** (× 1,11 Erdgas nach Brennwert, ÷ 1,15 Wärmelieferung,
+   × 0,30 Wärmepumpe) **wendet Mietfuchs hier nicht an**: Sie rechnen die Formelwärme auf die Energie um, die
+   die Anlage laut Rechnung bezieht (PR 11), also auf eine dritte Ebene, und ein Nutzer bekäme für dasselbe m³
+   je nach Anlage eine andere Zahl. Ohne Temperatur ist der Monat unvollständig; Satz 3 Nr. 3 lässt zwar eine
+   „geschätzte“ Temperatur zu, Mietfuchs erfindet aber keine, und der Text sagt, dass der Vermieter eine
+   geschätzte Temperatur eintragen darf. Lehnt die Durchsicht die Auslegung ab, entfällt `dhwKwh`, und jeder
+   Monat mit Warmwasserzähler bleibt unvollständig.
+4. **Heizkostenverteiler ergeben keine kWh** (Review Focus 3): Abs. 1 erlaubt Informationen „auf der
+   Grundlage … der Ablesewerte von Heizkostenverteilern“ (Begründung S. 18: „die Entwicklung der
+   Ablesewerte“), Abs. 2 Nr. 1 verlangt aber kWh. Mietfuchs rechnet Einheiten nicht in kWh um; ein Monat mit
+   HKV ist unvollständig, und Text wie Karte empfehlen, die Information vom Ablesedienst erstellen zu lassen
+   (Messdienste rechnen Einheiten über die Gesamtwärme um). Allein mit „HKV“ begründet Mietfuchs keine
+   Kürzung; der Hinweis nennt sie, weil die Information dann fehlt, wenn der Ablesedienst sie nicht liefert.
+5. **Pflicht schon bei einem fernablesbaren Gerät der Anlage, Kürzung nach Ausstattung der Wohnung**
+   (Wortlaut „Wenn fernablesbare Ausstattungen … installiert wurden“; Begründung S. 18): Die Information
+   erstellt Mietfuchs vorsichtig für jeden Mieter der Anlage, wie PR 14. Die Kürzung „um 3 %“ nennt der
+   Hinweis aber nur für Mieter, deren Wohnung selbst fernablesbar ausgestattet ist (`MonthlyInfoUser.remote`).
+   Für die übrigen sagt er: „bei gemischter Ausstattung im Einzelfall zu prüfen (BR-Drs. 643/21, S. 18);
+   möglich ist eine Kürzung um 3 %“. Nach der Begründung gilt § 6a Abs. 1 nicht, solange Ausstattungen nicht
+   fernablesbar sind, und bei gemischter Ausstattung ist zu prüfen, ob die Information „möglich und zumutbar“
+   ist; ein festes Kürzungsrecht für diese Mieter ginge darüber hinaus (Prüfung vom 05.10.2026). Ein Gerät
+   zählt ab dem Monat, an dessen Ende es eingebaut ist (`installed_on`), ohne Datum immer.
 6. **„Mitgeteilt“ je Anlage und Monat, nicht je Mieter (Festlegung):** Der Vermieter vermerkt einen Tag für
    alle Blätter des Monats. Frühestens am Tag nach dem Monatsende (Review Focus 5).
 7. **Fällig ist ein Monat ab dem Folgemonat** (`asOf` der Abrechnung): Ein Monat, der noch läuft oder in
    der Zukunft liegt, gilt nicht als fehlend. Ohne `asOf` (Golden, Regression) zählen alle Monate der
    Heizperiode.
-8. **Kürzung „um 3 %“ statt „bis zu“**, wenn Mietfuchs die Geräte kennt und ein Monat fehlt oder
-   unvollständig ist (PR 14 nannte „bis zu“, weil die Fernablesbarkeit offen war). Grundlage: § 12 Abs. 1
-   Satz 3 („nicht oder nicht vollständig“). Ob jeder einzelne fehlende Monat das Recht auslöst, ist nicht
+8. **Kürzung „um 3 %“ statt „bis zu“**, wenn Mietfuchs die Geräte kennt, die Wohnung des Mieters
+   fernablesbar ausgestattet ist (Abweichung 5) und ein Monat fehlt oder unvollständig ist (PR 14 nannte
+   „bis zu“, weil die Fernablesbarkeit offen war). Grundlage: § 12 Abs. 1 Satz 3 („nicht oder nicht
+   vollständig“); ein fester Satz, kein „bis zu“, und ein Recht des Mieters, das Mietfuchs nicht abzieht. Ob jeder einzelne fehlende Monat das Recht auslöst, ist nicht
    entschieden (15.1 Nr. 4 betrifft nur das Zusammentreffen); der Text nennt die Monate.
 9. **Alle Monate, nicht nur die Heizperiode der Richtlinie** (Rechtsquellen oben): Wortlaut der Verordnung.
 
@@ -217,7 +270,8 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung.
   - `shared/types.ts`:
     `type MonthlyInfoRow = { plantId: string; month: string; referenceKwhPerM2: number | null; referenceSource: string | null; sentOn: string | null }`;
     `type MonthlyInfoGap = 'noReading' | 'negative' | 'hca' | 'dhwTemp' | 'reference'`;
-    `type MonthlyInfoUser = { tenancyId: string; tenantName: string; unitName: string; areaM2: number; from: string; to: string; heatKwh: number | null; dhwM3: number | null; dhwKwh: number | null; totalKwh: number | null; previousMonthKwh: number | null; previousYearKwh: number | null; referenceKwh: number | null; gaps: MonthlyInfoGap[] }`;
+    `type MonthlyInfoAmounts = { heatKwh: number | null; dhwM3: number | null; dhwKwh: number | null }`;
+    `type MonthlyInfoUser = MonthlyInfoAmounts & { tenancyId: string; tenantName: string; unitName: string; areaM2: number; from: string; to: string; remote: boolean; previousMonth: MonthlyInfoAmounts | null; previousYear: MonthlyInfoAmounts | null; referenceKwh: number | null; gaps: MonthlyInfoGap[] }`;
     `type MonthlyInfoMonth = { month: string; due: boolean; row: MonthlyInfoRow | null; users: MonthlyInfoUser[]; complete: boolean; sent: boolean }`;
     `type MonthlyInfoView = { plantId: string; period: PeriodKey; managed: boolean; elsewhere: boolean; months: MonthlyInfoMonth[] }`.
   - `shared/monthlyInfo.ts`: `monthName(month: string): string` („November 2025“), `monthRanges(months: readonly string[]): string`
@@ -285,21 +339,25 @@ export type MonthlyInfoRow = { plantId: string; month: string; referenceKwhPerM2
 // Vergleichswert.
 export type MonthlyInfoGap = 'noReading' | 'negative' | 'hca' | 'dhwTemp' | 'reference'
 
-// Die Information eines Mieters für einen Monat (`from`/`to`: seine Tage in diesem Monat). Vormonat und
+// Was in einem Monat gemessen bzw. gerechnet ist, je Größe für sich (Plan PR 22, Abweichung 3): Wärme in kWh
+// (gemessen), Warmwasser in m³ (gemessen) und in kWh (rechnerisch nach § 9 Abs. 2 Satz 2). Keine Summe, weil
+// die rechnerische Warmwasserwärme den Erzeugeraufwand enthält und die gemessene Wärme nicht. `null`: nicht
+// erhoben bzw. nicht umrechenbar.
+export type MonthlyInfoAmounts = { heatKwh: number | null; dhwM3: number | null; dhwKwh: number | null }
+
+// Die Information eines Mieters für einen Monat (`from`/`to`: seine Tage in diesem Monat). `remote`: Die
+// Wohnung hat am Monatsende ein fernablesbares Gerät (für die Kürzung, Abweichung 5). Vormonat und
 // Vorjahresmonat nur aus demselben Mietverhältnis und nur, soweit erhoben (sonst null).
-export type MonthlyInfoUser = {
+export type MonthlyInfoUser = MonthlyInfoAmounts & {
   tenancyId: string
   tenantName: string
   unitName: string
   areaM2: number
   from: string
   to: string
-  heatKwh: number | null
-  dhwM3: number | null
-  dhwKwh: number | null
-  totalKwh: number | null
-  previousMonthKwh: number | null
-  previousYearKwh: number | null
+  remote: boolean
+  previousMonth: MonthlyInfoAmounts | null
+  previousYear: MonthlyInfoAmounts | null
   referenceKwh: number | null
   gaps: MonthlyInfoGap[]
 }
@@ -379,9 +437,9 @@ so, diese nehmen). In `GLOSSARY` hinter `billingInfo` (PR 14):
   monthlyConsumptionInfo: {
     title: 'Monatliche Verbrauchsinformation',
     short: 'Sind Zähler oder Heizkostenverteiler fernablesbar, bekommt jeder Mieter jeden Monat seinen Verbrauch für Heizung und Warmwasser in Kilowattstunden, verglichen mit dem Vormonat, dem Vorjahresmonat und einem Durchschnittsnutzer.',
-    example: 'Im November verbraucht ein Haushalt mit 60 m² 700 kWh für die Heizung und 2,5 m³ Warmwasser (bei 55 °C rund 281 kWh), zusammen 981 kWh; im Oktober waren es 625 kWh, im November des Vorjahres 575 kWh; ein Durchschnittsnutzer mit 60 m² verbraucht laut Vergleichswert 600 kWh.',
+    example: 'Im November verbraucht ein Haushalt mit 60 m² 700 kWh für die Heizung (gemessen) und 2,5 m³ Warmwasser, nach § 9 Abs. 2 Satz 2 HeizkostenV bei 55 °C rechnerisch rund 281 kWh einschließlich der Verluste der Erzeugung; beides steht getrennt da. Im Oktober waren es 400 kWh Heizung und 2 m³ Warmwasser, im November des Vorjahres 350 kWh und 2 m³. Ein Durchschnittsnutzer mit 60 m² verbraucht laut Vergleichswert 600 kWh.',
     norm: '§ 6a Abs. 1 und 2, § 12 Abs. 1 Satz 3 HeizkostenV',
-    needed: `Ja, sobald ein Gerät fernablesbar ist. Die Information muss den Mieter erreichen: als Brief oder E-Mail, oder in einem Portal oder einer App, wenn er jeden Monat eine Nachricht bekommt, dass sie dort steht. Der Vergleich mit einem Durchschnittsnutzer stammt nicht von den Nutzern desselben Hauses, sondern aus Vergleichsdaten, etwa des Ablesedienstes. Fehlt die Information oder ist sie unvollständig, darf der Mieter seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen.`,
+    needed: `Ja, sobald ein Gerät fernablesbar ist. Die Information muss den Mieter erreichen: als Brief oder E-Mail, oder in einem Portal oder einer App, wenn er jeden Monat eine Nachricht bekommt, dass sie dort steht. Der Vergleich mit einem Durchschnittsnutzer stammt nicht von den Nutzern desselben Hauses, sondern aus Vergleichsdaten, etwa des Ablesedienstes. Fehlt die Information oder ist sie unvollständig, darf der Mieter seinen Anteil an den Heizkosten um ${INFO_CUT} % kürzen, wenn seine Wohnung fernablesbar ausgestattet ist; sind im Haus nur einige Geräte fernablesbar, ist das im Einzelfall zu prüfen.`,
   },
 ```
 
@@ -460,14 +518,17 @@ const basis = (over: Partial<MonthlyInfoInput> = {}): MonthlyInfoInput => ({
   ...over,
 })
 
-test('November: Wärme 700 kWh, Warmwasser 2,5 m³ = 281,25 kWh (§ 9 Abs. 2 Satz 2), Vormonat, Vorjahresmonat, Durchschnittsnutzer', () => {
+test('November: Wärme 700 kWh, Warmwasser 2,5 m³ = 281,25 kWh rechnerisch (§ 9 Abs. 2 Satz 2), getrennt, Vormonat, Vorjahresmonat, Durchschnittsnutzer', () => {
   const months = monthlyInfoMonths(basis(), createLawLog())
   assert.deepEqual(months.map((m) => m.month), ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'])
   const nov = months.find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
   assert.deepEqual([nov.due, nov.complete, nov.sent], [true, true, true])
+  // Keine Summe aus gemessener Wärme und rechnerischer Warmwasserwärme (Abweichung 3); die Vergleiche je Größe.
   assert.deepEqual(nov.users, [{
-    tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30',
-    heatKwh: 700, dhwM3: 2.5, dhwKwh: 281.25, totalKwh: 981.25, previousMonthKwh: 625, previousYearKwh: 575, referenceKwh: 600, gaps: [],
+    tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30', remote: true,
+    heatKwh: 700, dhwM3: 2.5, dhwKwh: 281.25,
+    previousMonth: { heatKwh: 400, dhwM3: 2, dhwKwh: 225 }, previousYear: { heatKwh: 350, dhwM3: 2, dhwKwh: 225 },
+    referenceKwh: 600, gaps: [],
   }])
   const dez = months.find((m) => m.month === '2025-12') ?? assert.fail('Dezember fehlt')
   assert.equal(dez.due, false, 'der laufende Monat ist noch nicht fällig')
@@ -487,8 +548,8 @@ test('Review Focus 1: Wechsel am 15.11.: jeder Nutzer seinen Teil, der Nachnutze
   })
   const nov = monthlyInfoMonths(i, createLawLog()).find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
   const [a, b] = nov.users
-  assert.deepEqual([a?.tenancyId, a?.from, a?.to, a?.heatKwh, a?.previousMonthKwh], ['t1', '2025-11-01', '2025-11-15', 400, 625])
-  assert.deepEqual([b?.tenancyId, b?.from, b?.to, b?.heatKwh, b?.previousMonthKwh, b?.previousYearKwh], ['t2', '2025-11-16', '2025-11-30', 300, null, null])
+  assert.deepEqual([a?.tenancyId, a?.from, a?.to, a?.heatKwh, a?.previousMonth?.heatKwh], ['t1', '2025-11-01', '2025-11-15', 400, 400])
+  assert.deepEqual([b?.tenancyId, b?.from, b?.to, b?.heatKwh, b?.previousMonth, b?.previousYear], ['t2', '2025-11-16', '2025-11-30', 300, null, null])
   // Durchschnittsnutzer anteilig nach Tagen: 10 · 60 · 15/30 = 300 kWh
   assert.equal(b?.referenceKwh, 300)
 })
@@ -496,9 +557,9 @@ test('Review Focus 1: Wechsel am 15.11.: jeder Nutzer seinen Teil, der Nachnutze
 test('Review Focus 3: Heizkostenverteiler ergeben keine kWh; Warmwasser ohne Temperatur auch nicht', () => {
   const hkv = basis({ meters: [{ id: 'h1', unitId: 'a', type: 'hkv', heatingPlantId: null, heatingRole: null, remoteReadable: true, installedOn: null }], readings: [r('h1', '2025-10-31', 100), r('h1', '2025-11-30', 160)] })
   const nov = monthlyInfoMonths(hkv, createLawLog()).find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
-  assert.deepEqual([nov.users[0]?.totalKwh, nov.users[0]?.gaps, nov.complete], [null, ['hca'], false])
+  assert.deepEqual([nov.users[0]?.heatKwh, nov.users[0]?.gaps, nov.complete], [null, ['hca'], false])
   const ohneTemp = monthlyInfoMonths(basis({ dhwTempC: null }), createLawLog()).find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
-  assert.deepEqual([ohneTemp.users[0]?.heatKwh, ohneTemp.users[0]?.dhwKwh, ohneTemp.users[0]?.totalKwh, ohneTemp.users[0]?.gaps], [700, null, null, ['dhwTemp']])
+  assert.deepEqual([ohneTemp.users[0]?.heatKwh, ohneTemp.users[0]?.dhwM3, ohneTemp.users[0]?.dhwKwh, ohneTemp.users[0]?.gaps], [700, 2.5, null, ['dhwTemp']])
 })
 
 test('Review Focus 4: Heizperiode Mai 2021 bis April 2022: verlangt erst ab Januar 2022', () => {
@@ -506,6 +567,16 @@ test('Review Focus 4: Heizperiode Mai 2021 bis April 2022: verlangt erst ab Janu
   const ohneDatum = basis().meters.map((m) => ({ ...m, installedOn: null }))
   const months = monthlyInfoMonths(basis({ h: { from: '2021-05-01', to: '2022-04-30' }, asOf: undefined, meters: ohneDatum }), createLawLog())
   assert.deepEqual(months.map((m) => m.month), ['2022-01', '2022-02', '2022-03', '2022-04'])
+})
+
+test('Gemischte Ausstattung: der Mieter ohne fernablesbares Gerät steht mit remote = false da (Abweichung 5)', () => {
+  const zweiWohnungen = basis({
+    meters: [...basis().meters, { id: 'wb', unitId: 'b', type: 'waerme', heatingPlantId: null, heatingRole: null, remoteReadable: false, installedOn: null }],
+    units: [...basis().units, { id: 'b', name: 'OG', areaM2: 40, noConnection: [] }] as MonthlyInfoInput['units'],
+    tenancies: [...basis().tenancies, { id: 't2', unitId: 'b', tenantName: 'Max Beispiel', start: '2024-01-01', end: null }],
+  })
+  const nov = monthlyInfoMonths(zweiWohnungen, createLawLog()).find((m) => m.month === '2025-11') ?? assert.fail('November fehlt')
+  assert.deepEqual(nov.users.map((u) => [u.tenancyId, u.remote]), [['t1', true], ['t2', false]])
 })
 
 test('Ohne fernablesbares Gerät keine Monate; ein Gerät zählt ab dem Monat, an dessen Ende es eingebaut ist', () => {
@@ -541,11 +612,12 @@ Expected: FAIL: `Cannot find module '../src/monthlyInfo.ts'`.
 // Nr. 2 vergleicht nur, „soweit diese Daten erhoben worden sind“, und die Begründung beschränkt die
 // Erhebung auf einmal im Monat (BR-Drs. 643/21, S. 18).
 //
-// Je Mieter: Wärme in kWh (Wärmezähler), Warmwasser in m³ und in kWh nach der Zahlenwertgleichung des § 9
-// Abs. 2 Satz 2 (Auslegung, Plan PR 22, Abweichung 3), Vormonat und Vorjahresmonat desselben
+// Je Mieter: Wärme in kWh (Wärmezähler, gemessen), Warmwasser in m³ (gemessen) und in kWh nach der
+// Zahlenwertgleichung des § 9 Abs. 2 Satz 2 (rechnerisch; Auslegung, Plan PR 22, Abweichung 3), jede Größe
+// für sich und ohne Summe, ohne die Faktoren des Satzes 6; Vormonat und Vorjahresmonat desselben
 // Mietverhältnisses, Durchschnittsnutzer aus dem eingetragenen Vergleichswert (Abweichung 2).
 // Heizkostenverteiler ergeben keine kWh (Abweichung 4).
-import type { MonthlyInfoGap, MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoUser } from '../../shared/types.ts'
+import type { MonthlyInfoAmounts, MonthlyInfoGap, MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoUser } from '../../shared/types.ts'
 import { hkvDhwVolumeFormula, hkvMonthlyInfo } from '../../shared/law/heizkostenv.ts'
 import { dayBefore, law, onlyVersion, type LawLog } from '../../shared/law/register.ts'
 import { addMonths, monthBounds, monthsBetween } from '../../shared/monthlyInfo.ts'
@@ -601,7 +673,7 @@ function sliceOf(t: Tenancy, month: string): { from: string; to: string } | null
   return from <= to ? { from, to } : null
 }
 
-type Measured = { heatKwh: number | null; dhwM3: number | null; dhwKwh: number | null; totalKwh: number | null; gaps: MonthlyInfoGap[] }
+type Measured = MonthlyInfoAmounts & { gaps: MonthlyInfoGap[] }
 
 // Was die Geräte einer Wohnung zwischen zwei Tagesenden gemessen haben.
 function measure(devices: readonly RemoteMeter[], readings: readonly SnapshotReading[], startDay: string, endDay: string, dhw: { effort: number; coldWaterC: number; tempC: number | null }): Measured {
@@ -625,10 +697,7 @@ function measure(devices: readonly RemoteMeter[], readings: readonly SnapshotRea
     if (dhw.tempC === null || !(dhw.tempC > dhw.coldWaterC)) gaps.add('dhwTemp')
     else dhwKwh = dhw.effort * m3 * (dhw.tempC - dhw.coldWaterC)
   }
-  const hasHeat = devices.some((d) => d.type === 'waerme')
-  const ok = gaps.size === 0 && (!hasHeat || heat !== null) && (!hasDhw || dhwKwh !== null)
-  const total = ok ? (heat ?? 0) + (dhwKwh ?? 0) : null
-  return { heatKwh: heat, dhwM3: m3, dhwKwh, totalKwh: total, gaps: [...gaps] }
+  return { heatKwh: heat, dhwM3: m3, dhwKwh, gaps: [...gaps] }
 }
 
 // Die Monate einer Heizperiode, für die die Information geschuldet ist: ab dem Beginn der Pflicht
@@ -654,18 +723,22 @@ export function monthlyInfoMonths(i: MonthlyInfoInput, log: LawLog): MonthlyInfo
         const slice = sliceOf(t, month)
         if (!slice) continue
         const now = measure(devices, i.readings, dayBefore(slice.from), slice.to, dhw)
-        // Vormonat und Vorjahresmonat: nur desselben Mietverhältnisses und nur, soweit erhoben.
-        const earlier = (m: string): number | null => {
+        // Vormonat und Vorjahresmonat: nur desselben Mietverhältnisses und nur, soweit erhoben; je Größe für sich.
+        const earlier = (m: string): MonthlyInfoAmounts | null => {
           const s = sliceOf(t, m)
-          return s ? measure(devices, i.readings, dayBefore(s.from), s.to, dhw).totalKwh : null
+          if (!s) return null
+          const e = measure(devices, i.readings, dayBefore(s.from), s.to, dhw)
+          return e.heatKwh === null && e.dhwM3 === null && e.dhwKwh === null ? null : { heatKwh: e.heatKwh, dhwM3: e.dhwM3, dhwKwh: e.dhwKwh }
         }
         const ref = row?.referenceKwhPerM2 ?? null
         const referenceKwh = ref === null ? null : Math.round(ref * unit.areaM2 * (daysOf(slice.from, slice.to) / daysOf(bounds.from, bounds.to)) * 100) / 100
         const gaps = [...now.gaps, ...(referenceKwh === null ? (['reference'] as const) : [])]
         users.push({
           tenancyId: t.id, tenantName: t.tenantName, unitName: unit.name, areaM2: unit.areaM2, from: slice.from, to: slice.to,
-          heatKwh: now.heatKwh, dhwM3: now.dhwM3, dhwKwh: now.dhwKwh, totalKwh: now.totalKwh,
-          previousMonthKwh: earlier(addMonths(month, -1)), previousYearKwh: earlier(addMonths(month, -12)),
+          // Für die Kürzung (Abweichung 5): Hat die Wohnung selbst ein fernablesbares Gerät?
+          remote: devices.some((d) => d.remoteReadable === true),
+          heatKwh: now.heatKwh, dhwM3: now.dhwM3, dhwKwh: now.dhwKwh,
+          previousMonth: earlier(addMonths(month, -1)), previousYear: earlier(addMonths(month, -12)),
           referenceKwh, gaps,
         })
       }
@@ -698,8 +771,8 @@ export function openMonths(months: readonly MonthlyInfoMonth[]): OpenMonth[] {
 }
 ```
 
-Hinweis: `previousMonthKwh` im Test „November“ ist 625 (Oktober: Wärme 400 + Warmwasser 2 m³ · 2,5 · 45 =
-225), `previousYearKwh` 575 (November 2024: 350 + 225).
+Hinweis: Im Test „November“ ist der Vormonat Wärme 400 kWh, Warmwasser 2 m³ und rechnerisch 2 · 2,5 · 45 =
+225 kWh, der Vorjahresmonat Wärme 350 kWh und dieselben 2 m³ bzw. 225 kWh. Eine Summe bildet Mietfuchs nicht.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -1162,6 +1235,18 @@ test('Bestätigt „anders mitgeteilt“: kein Hinweis; Monate nach asOf nicht f
   assert.match(frueh.text, /Nicht als mitgeteilt vermerkt: Januar bis Februar 2025\./)
 })
 
+test('Gemischte Ausstattung: „um 3 %“ nur für Mieter mit fernablesbarer Wohnung, sonst Einzelfallprüfung (Abweichung 5)', () => {
+  const s = selfSnapshot()
+  const erste = s.meters.find((m) => m.unitId !== null)?.unitId ?? assert.fail('kein Wohnungszähler')
+  const gemischt: Snapshot = {
+    ...s,
+    meters: s.meters.map((m) => (m.unitId === erste ? { ...m, remoteReadable: true, installedOn: null } : m.unitId !== null ? { ...m, remoteReadable: false } : m)),
+  }
+  const n = notice(gemischt) ?? assert.fail('kein Hinweis')
+  assert.match(n.text, /jeder betroffene Mieter mit fernablesbarer Ausstattung in seiner Wohnung seinen Anteil an den Heizkosten um 3 % kürzen/)
+  assert.match(n.text, /nicht fernablesbar ausgestattet; bei gemischter Ausstattung ist im Einzelfall zu prüfen.*BR-Drs\. 643\/21, S\. 18/s)
+})
+
 test('Keine Zahl ändert sich durch die Information', () => {
   const s = fern(selfSnapshot())
   const ohne = computeSettlement(s, { asOf: '2026-02-15' })
@@ -1240,8 +1325,8 @@ ersetzen durch:
     const GAP_TEXT: Record<MonthlyInfoGap, string> = {
       noReading: 'Ablesung am Monatsende fehlt',
       negative: 'negativer Verbrauch',
-      hca: 'Heizkostenverteiler zeigen keine Kilowattstunden',
-      dhwTemp: 'Warmwassertemperatur für die Umrechnung in kWh fehlt',
+      hca: 'Heizkostenverteiler zeigen keine Kilowattstunden; lassen Sie die Information vom Ablesedienst erstellen',
+      dhwTemp: 'Warmwassertemperatur für die Umrechnung in kWh fehlt, auch eine geschätzte genügt (§ 9 Abs. 2 Satz 3 Nr. 3)',
       reference: 'Vergleich mit einem Durchschnittsnutzer fehlt',
     }
     if (plant.monthlyInfoElsewhere !== true && spOfPlant) {
@@ -1263,15 +1348,28 @@ ersetzen durch:
         const notSent = open.filter((o) => o.notSent).map((o) => o.month)
         const incomplete = open.filter((o) => o.gaps.length > 0)
         const affected = [...new Set(open.flatMap((o) => o.tenancyIds))]
-        const amounts = affected.flatMap((id) => {
+        // „um 3 %“ nur, wo die Wohnung selbst fernablesbar ausgestattet ist; sonst gemischte Ausstattung mit
+        // Einzelfallprüfung (BR-Drs. 643/21, S. 18; Plan PR 22, Abweichung 5).
+        const remoteIds = new Set(months.flatMap((m) => m.users.filter((u) => u.remote).map((u) => u.tenancyId)))
+        const amountsOf = (list: readonly string[]): string[] => list.flatMap((id) => {
           const c = cutOf(id, ids, cut)
           return c === null ? [] : [`${nameOf(id)} ${fmtCents(c)}`]
         })
+        const withRemote = affected.filter((id) => remoteIds.has(id))
+        const withoutRemote = affected.filter((id) => !remoteIds.has(id))
+        const amounts = amountsOf(withRemote)
+        const mixedAmounts = amountsOf(withoutRemote)
+        const cutText = (withRemote.length > 0
+          ? `Fehlt die Information oder ist sie unvollständig, darf ${withoutRemote.length > 0 ? 'jeder betroffene Mieter mit fernablesbarer Ausstattung in seiner Wohnung' : 'jeder betroffene Mieter'} seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${amounts.length > 0 ? `: ${andList(amounts)}` : ''}. `
+          : '') +
+          (withoutRemote.length > 0
+            ? `Bei ${andList(withoutRemote.map((id) => nameOf(id)))} ist die Wohnung nicht fernablesbar ausgestattet; bei gemischter Ausstattung ist im Einzelfall zu prüfen, ob eine monatliche Information möglich und zumutbar ist (Begründung, BR-Drs. 643/21, S. 18). Möglich ist dann eine Kürzung um ${cut} %${mixedAmounts.length > 0 ? `: ${andList(mixedAmounts)}` : ''}. `
+            : '')
         warn('heating.monthly-info',
           `${where}: Ihre Zähler sind fernablesbar; den Mietern steht seit dem ${fmtDay(monthly.validFrom ?? '')} jeden Monat eine Verbrauchsinformation zu (§ 6a Abs. 1 und 2 HeizkostenV): ihr Verbrauch des Monats in Kilowattstunden, der Vergleich mit dem Vormonat und dem Vorjahresmonat und mit einem Durchschnittsnutzer. ` +
             (notSent.length > 0 ? `Nicht als mitgeteilt vermerkt: ${monthRanges(notSent)}. ` : '') +
             (incomplete.length > 0 ? `Unvollständig: ${incomplete.map((o) => `${monthRanges([o.month])} (${o.gaps.map((g) => GAP_TEXT[g]).join(', ')})`).join('; ')}. ` : '') +
-            `Fehlt die Information oder ist sie unvollständig, darf jeder betroffene Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 12 Abs. 1 Satz 3 HeizkostenV)${amounts.length > 0 ? `: ${andList(amounts)}` : ''}. ` +
+            cutText +
             'Mietfuchs erstellt die Information auf der Seite Heizkosten unter „Monatliche Verbrauchsinformation“; zukommen lassen müssen Sie sie den Mietern selbst, als Brief oder E-Mail. ' +
             'Bekommen Ihre Mieter sie anders, etwa im Portal des Messdienstes mit jeden Monat einer Nachricht, dass sie dort steht, bestätigen Sie das unter Stammdaten bei der Heizung.',
           subject)
@@ -1359,8 +1457,10 @@ import { gapText, monthStatus, rowBody, rowToForm, sheetLines } from './monthlyI
 import type { MonthlyInfoMonth, MonthlyInfoUser } from './types'
 
 const user: MonthlyInfoUser = {
-  tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30',
-  heatKwh: 700, dhwM3: 2.5, dhwKwh: 281.25, totalKwh: 981.25, previousMonthKwh: 625, previousYearKwh: 575, referenceKwh: 600, gaps: [],
+  tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30', remote: true,
+  heatKwh: 700, dhwM3: 2.5, dhwKwh: 281.25,
+  previousMonth: { heatKwh: 400, dhwM3: 2, dhwKwh: 225 }, previousYear: { heatKwh: 350, dhwM3: 2, dhwKwh: 225 },
+  referenceKwh: 600, gaps: [],
 }
 const nov: MonthlyInfoMonth = {
   month: '2025-11', due: true, complete: true, sent: true, users: [user],
@@ -1385,21 +1485,24 @@ test('Status eines Monats', () => {
   expect(gapText('hca')).toBe('Heizkostenverteiler zeigen keine Kilowattstunden; die Information erstellt Ihr Ablesedienst')
 })
 
-test('Blatt: Verbrauch, Warmwasser mit Formel, Vergleiche, Durchschnittsnutzer mit Quelle', () => {
+test('Blatt: Heizung und Warmwasser getrennt, Warmwasser mit Formel, Vergleiche je Größe, Durchschnittsnutzer mit Quelle', () => {
   expect(sheetLines(nov, user)).toEqual([
-    'Ihr Verbrauch im November 2025: 981 kWh',
-    'davon Heizung 700 kWh und Warmwasser 281 kWh (2,5 m³, umgerechnet nach § 9 Abs. 2 Satz 2 HeizkostenV)',
-    'Oktober 2025: 625 kWh',
-    'November 2024: 575 kWh',
+    'Ihr Verbrauch im November 2025:',
+    'Heizung: 700 kWh (gemessen)',
+    'Warmwasser: 2,5 m³ (gemessen), rechnerisch 281 kWh nach § 9 Abs. 2 Satz 2 HeizkostenV einschließlich der Verluste der Erzeugung',
+    'Oktober 2025: Heizung 400 kWh, Warmwasser 2 m³ (rechnerisch 225 kWh)',
+    'November 2024: Heizung 350 kWh, Warmwasser 2 m³ (rechnerisch 225 kWh)',
     'Ein Durchschnittsnutzer mit 60 m² Wohnfläche: 600 kWh (Quelle: Ablesedienst Beispiel)',
   ])
-  expect(sheetLines(nov, { ...user, previousMonthKwh: null, previousYearKwh: null, dhwM3: null, dhwKwh: null, heatKwh: 981.25 })).toEqual([
-    'Ihr Verbrauch im November 2025: 981 kWh',
-    'davon Heizung 981 kWh',
+  expect(sheetLines(nov, { ...user, previousMonth: null, previousYear: null, dhwM3: null, dhwKwh: null })).toEqual([
+    'Ihr Verbrauch im November 2025:',
+    'Heizung: 700 kWh (gemessen)',
     'Oktober 2025: nicht erhoben',
     'November 2024: nicht erhoben',
     'Ein Durchschnittsnutzer mit 60 m² Wohnfläche: 600 kWh (Quelle: Ablesedienst Beispiel)',
   ])
+  // Ohne Temperatur: m³ ja, kWh nicht.
+  expect(sheetLines(nov, { ...user, dhwKwh: null })[2]).toBe('Warmwasser: 2,5 m³ (gemessen), nicht in kWh umgerechnet (Temperatur fehlt)')
 })
 ```
 
@@ -1419,7 +1522,7 @@ const view: MonthlyInfoView = {
   plantId: 'hp', period: periodKey('2025-01'), managed: true, elsewhere: false,
   months: [{
     month: '2025-11', due: true, complete: false, sent: false, row: null,
-    users: [{ tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30', heatKwh: 700, dhwM3: null, dhwKwh: null, totalKwh: 700, previousMonthKwh: null, previousYearKwh: null, referenceKwh: null, gaps: ['reference'] }],
+    users: [{ tenancyId: 't1', tenantName: 'Erika Mustermann', unitName: 'EG', areaM2: 60, from: '2025-11-01', to: '2025-11-30', remote: true, heatKwh: 700, dhwM3: null, dhwKwh: null, previousMonth: null, previousYear: null, referenceKwh: null, gaps: ['reference'] }],
   }],
 }
 
@@ -1473,7 +1576,7 @@ Expected: FAIL: Module und Export fehlen.
 import { fmtDate } from './api'
 import { parseDecimal } from './co2Form'
 import { addMonths, monthName } from '../../shared/monthlyInfo.ts'
-import type { MonthlyInfoGap, MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoUser } from './types'
+import type { MonthlyInfoAmounts, MonthlyInfoGap, MonthlyInfoMonth, MonthlyInfoRow, MonthlyInfoUser } from './types'
 
 export type MonthlyRowForm = { reference: string; source: string; sentOn: string }
 
@@ -1500,7 +1603,7 @@ const GAPS: Record<MonthlyInfoGap, string> = {
   noReading: 'Ablesung am Monatsende fehlt',
   negative: 'negativer Verbrauch, bitte die Ablesungen prüfen',
   hca: 'Heizkostenverteiler zeigen keine Kilowattstunden; die Information erstellt Ihr Ablesedienst',
-  dhwTemp: 'Warmwassertemperatur fehlt (Seite Heizkosten, Karte Warmwasser)',
+  dhwTemp: 'Warmwassertemperatur fehlt (Seite Heizkosten, Karte Warmwasser; auch eine geschätzte genügt)',
   reference: 'Vergleich mit einem Durchschnittsnutzer fehlt',
 }
 export const gapText = (g: MonthlyInfoGap): string => GAPS[g]
@@ -1516,17 +1619,30 @@ export function monthStatus(m: MonthlyInfoMonth): { text: string; tone: 'ok' | '
   return { text: `mitgeteilt am ${fmtDate(m.row.sentOn)}`, tone: 'ok' }
 }
 
-// Die Zeilen des Blatts eines Mieters (§ 6a Abs. 2 Nr. 1 bis 3). Es nennt keinen anderen Nutzer.
-export function sheetLines(m: MonthlyInfoMonth, u: MonthlyInfoUser): string[] {
-  const lines = [`Ihr Verbrauch im ${monthName(m.month)}: ${u.totalKwh === null ? 'nicht vollständig erhoben' : kwh(u.totalKwh)}`]
+const m3 = (n: number): string => `${n.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m³`
+
+// Eine frühere Zeile: jede Größe für sich, keine Summe (Plan PR 22, Abweichung 3).
+function amountsText(a: MonthlyInfoAmounts | null): string {
+  if (a === null) return 'nicht erhoben'
   const parts: string[] = []
-  if (u.heatKwh !== null) parts.push(`Heizung ${kwh(u.heatKwh)}`)
-  if (u.dhwKwh !== null && u.dhwM3 !== null) {
-    parts.push(`Warmwasser ${kwh(u.dhwKwh)} (${u.dhwM3.toLocaleString('de-DE', { maximumFractionDigits: 2 })} m³, umgerechnet nach § 9 Abs. 2 Satz 2 HeizkostenV)`)
+  if (a.heatKwh !== null) parts.push(`Heizung ${kwh(a.heatKwh)}`)
+  if (a.dhwM3 !== null) parts.push(`Warmwasser ${m3(a.dhwM3)}${a.dhwKwh !== null ? ` (rechnerisch ${kwh(a.dhwKwh)})` : ''}`)
+  return parts.length > 0 ? parts.join(', ') : 'nicht erhoben'
+}
+
+// Die Zeilen des Blatts eines Mieters (§ 6a Abs. 2 Nr. 1 bis 3). Es nennt keinen anderen Nutzer. Heizung
+// (gemessen) und Warmwasser (gemessen in m³, rechnerisch in kWh) stehen getrennt; eine Summe bildet es nicht.
+export function sheetLines(m: MonthlyInfoMonth, u: MonthlyInfoUser): string[] {
+  const lines = [`Ihr Verbrauch im ${monthName(m.month)}:`]
+  if (u.heatKwh !== null) lines.push(`Heizung: ${kwh(u.heatKwh)} (gemessen)`)
+  if (u.dhwM3 !== null) {
+    lines.push(u.dhwKwh !== null
+      ? `Warmwasser: ${m3(u.dhwM3)} (gemessen), rechnerisch ${kwh(u.dhwKwh)} nach § 9 Abs. 2 Satz 2 HeizkostenV einschließlich der Verluste der Erzeugung`
+      : `Warmwasser: ${m3(u.dhwM3)} (gemessen), nicht in kWh umgerechnet (Temperatur fehlt)`)
   }
-  if (parts.length > 0) lines.push(`davon ${parts.join(' und ')}`)
-  lines.push(`${monthName(addMonths(m.month, -1))}: ${u.previousMonthKwh === null ? 'nicht erhoben' : kwh(u.previousMonthKwh)}`)
-  lines.push(`${monthName(addMonths(m.month, -12))}: ${u.previousYearKwh === null ? 'nicht erhoben' : kwh(u.previousYearKwh)}`)
+  if (u.heatKwh === null && u.dhwM3 === null) lines.push('nicht vollständig erhoben')
+  lines.push(`${monthName(addMonths(m.month, -1))}: ${amountsText(u.previousMonth)}`)
+  lines.push(`${monthName(addMonths(m.month, -12))}: ${amountsText(u.previousYear)}`)
   if (u.referenceKwh !== null && m.row?.referenceSource) {
     lines.push(`Ein Durchschnittsnutzer mit ${u.areaM2.toLocaleString('de-DE')} m² Wohnfläche: ${kwh(u.referenceKwh)} (Quelle: ${m.row.referenceSource})`)
   }
@@ -1570,7 +1686,7 @@ export default function MonthlyInfoSheet({ month, propertyName }: { month: Month
           <h2>Ihre Verbrauchsinformation für {monthName(month.month)}</h2>
           <p>{u.tenantName} · {propertyName} · {u.unitName}</p>
           <ul>{sheetLines(month, u).map((line) => <li key={line}>{line}</li>)}</ul>
-          <p className="muted">Nach § 6a Abs. 1 und 2 HeizkostenV, weil die Zähler in Ihrer Wohnung aus der Ferne ablesbar sind. Die Zahlen beruhen auf den Zählerständen am Monatsende.</p>
+          <p className="muted">Nach § 6a Abs. 1 und 2 HeizkostenV, weil Zähler in Ihrem Gebäude aus der Ferne ablesbar sind. Die Zahlen beruhen auf den Zählerständen am Monatsende. Die Wärme für Warmwasser ist nach der Formel der Heizkostenverordnung gerechnet und enthält die Verluste der Erzeugung; deshalb steht sie getrennt von der gemessenen Heizwärme.</p>
         </section>
       ))}
     </div>
@@ -1736,8 +1852,10 @@ Unter „Unveröffentlicht“, Abschnitt „Hinzugefügt“:
 ```markdown
 - Monatliche Verbrauchsinformation: Bei eigener Heizkostenabrechnung mit fernablesbaren Zählern erstellt
   Mietfuchs aus den Zählerständen am Monatsende je Mieter die Information nach § 6a HeizkostenV (Verbrauch
-  in kWh, Vergleich mit Vormonat, Vorjahresmonat und einem Durchschnittsnutzer), druckt sie und hält fest,
-  wann sie mitgeteilt wurde. Fehlt ein Monat, nennt die Abrechnung die Kürzung um 3 % je Mieter
+  in kWh, Heizung gemessen und Warmwasser rechnerisch getrennt, Vergleich mit Vormonat, Vorjahresmonat und
+  einem Durchschnittsnutzer), druckt sie und hält fest, wann sie mitgeteilt wurde. Fehlt ein Monat, nennt die
+  Abrechnung die Kürzung um 3 % je Mieter mit fernablesbarer Wohnung, bei gemischter Ausstattung mit dem
+  Vorbehalt der Einzelfallprüfung
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
 ```
 
@@ -1758,10 +1876,12 @@ Im Abschnitt „Berechnungs-Engine“ hinter dem Punkt zur Steuer einen Punkt an
   Abrechnung, nur aus Ablesungen genau an den Monatsgrenzen (nie interpoliert; § 6a Abs. 2 Nr. 2 „soweit
   erhoben“), Vergleiche nur desselben Mietverhältnisses. Der Durchschnittsnutzer kommt als Vergleichswert mit
   Quelle vom Vermieter, nicht aus dem eigenen Haus: Die Begründung (BR-Drs. 643/21) schließt den Vergleich mit
-  Nutzern desselben Gebäudes aus. Warmwasser in kWh über § 9 Abs. 2 Satz 2 ist eine Auslegung,
-  Heizkostenverteiler ergeben keine kWh. „Mitgeteilt“ heißt: Die Information erreicht den Mieter; ein Portal
-  zählt nur mit Nachricht jeden Monat. Der Hinweis `heating.monthly-info` nennt die offenen Monate und 3 % je
-  betroffenem Mieter; abgezogen wird nichts.
+  Nutzern desselben Gebäudes aus. Warmwasser in kWh über § 9 Abs. 2 Satz 2 ist eine Auslegung und steht
+  getrennt von der gemessenen Wärme (keine Summe, keine Faktoren nach Satz 6, weil das Ergebnis den
+  Erzeugeraufwand enthält); Heizkostenverteiler ergeben keine kWh. „Mitgeteilt“ heißt: Die Information
+  erreicht den Mieter; ein Portal zählt nur mit Nachricht jeden Monat. Der Hinweis `heating.monthly-info`
+  nennt die offenen Monate und 3 % je betroffenem Mieter, „um 3 %“ nur bei fernablesbarer Wohnung, sonst mit
+  dem Vorbehalt der Einzelfallprüfung (BR-Drs. 643/21, S. 18); abgezogen wird nichts.
 ```
 
 - [ ] **Step 3: Volle Prüfung**
@@ -1801,7 +1921,7 @@ Refs #99"
 | Anforderung | Task |
 |---|---|
 | § 6a Abs. 1, 2 aus Monatswerten (13 PR 22, 8.8) | 2, 3, 5 |
-| Nicht entbehrlich; 3 % je Mieter, einzeln, nie abgezogen (R-A17, 6.5, 1.2 Nr. 5) | 4 |
+| Nicht entbehrlich; 3 % je Mieter, einzeln, nie abgezogen (R-A17, 6.5, 1.2 Nr. 5); „um 3 %“ nur bei fernablesbarer Wohnung (BR-Drs. 643/21, S. 18) | 2, 4 |
 | Bestätigung an der Anlage, wenn über das Portal des Messdienstes (13 PR 22, 8.8) | 4 (Text), 5 (Satz an der Bestätigung) |
 | `heating.monthly-info` warning (10.1), Regel `heating-info` (10.2) | 4 |
 | Rechtswerte aus dem Register (`hkv.cut.information`, `hkv.monthly-info`, `hkv.dhw.volume-formula`) | 2, 4 |

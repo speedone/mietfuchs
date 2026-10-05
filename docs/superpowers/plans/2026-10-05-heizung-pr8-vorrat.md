@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wer mit Heizöl, Flüssiggas, Pellets oder Holz heizt, trägt je Heizperiode Anfangs- und
+**Goal:** Wer mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle heizt, trägt je Heizperiode Anfangs- und
 Endbestand des Vorrats ein; Mietfuchs rechnet daraus den verbrauchten Brennstoff (Anfangsbestand +
 Lieferungen − Endbestand, Endbestand zu den jüngsten Lieferungen bewertet), teilt die CO₂-Kosten nach
 dem verbrauchten statt dem gelieferten Brennstoff auf (Messdienst ohne Aufteilung und freie
@@ -40,13 +40,29 @@ diesem Plan, siehe „Annahmen über PR 7“). Gearbeitet wird auf `feat/heizung
 von der Spitze von PR 7; der PR wird gestapelt auf PR 7 gestellt und nach dessen Merge auf `main`
 umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die Prüfung der Schnittstellen für PR 15 bis 22 vom 05.10.2026 hat diesen Plan an zwei Stellen
+geändert. Jede Änderung steht im Task an ihrer Stelle; diese Liste sagt, wo.
+
+1. **Kohle ist wieder Vorratsenergie** (Festlegung 8, Annahme A5, Task 3 Step 3, Goal, Global
+   Constraints, Lexikon, Meldungen, CHANGELOG). PR 7 führt `STOCK_ENERGIES` mit
+   `['oil', 'lpg', 'pellets', 'wood', 'coal']`; dieser Plan hatte beim Verlegen nach
+   `shared/fuelStock.ts` `coal` verloren. Damit entfiele für Kohle die Sperre der Lieferungen aus
+   PR 7, ohne dass eine Bestandsrechnung an ihre Stelle träte. Die Liste bleibt beim Verlegen
+   unverändert; alle Texte nennen Kohle mit („Heizöl, Flüssiggas, Pellets, Holz und Kohle“), und
+   `FUEL_NAMES` bekommt `coal: 'Kohle'`. Golden F01–F15 berührt das nicht: Keine hat eine
+   Kohleanlage, und nach PR 7 konnte eine Kohleanlage keine Lieferungen haben.
+2. **Name der Karte** (Annahme A10): Die Karte der Lieferungen heißt nach PR 7 Task 11 `FuelCard`
+   (`client/src/components/FuelCard.tsx`), nicht `FuelDeliveriesCard`.
+
 ## Global Constraints
 
 - **Wer nichts einstellt, merkt nichts** (Entwurf 1.2 Nr. 1, 11.1): Ohne Heizanlage, bei Gas,
-  Fernwärme, Wärmepumpe, Strom, Kohle und „Sonstiges“ und bei jeder Anlage mit `serviceDeducted` oder
+  Fernwärme, Wärmepumpe, Strom und „Sonstiges“ und bei jeder Anlage mit `serviceDeducted` oder
   `serviceShown` ist jede Zahl, jeder Hinweis und `legalBasis.values` gleich dem Stand nach PR 7.
   Golden F01–F15 bleiben wortgleich.
-- **Neu und angekündigt** (CHANGELOG): Eine Anlage mit Heizöl, Flüssiggas, Pellets oder Holz und
+- **Neu und angekündigt** (CHANGELOG): Eine Anlage mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle und
   freien Schlüsseln (`manual`) bekommt ohne Bestand die Warnung `fuel.manual-by-delivery`; an ihren
   Zahlen ändert sich nichts, bis ein Bestand eingetragen ist.
 - **Rechtswerte nur aus dem Register** (Entwurf 4.3, 4.7): Der Stichtag des § 11 Abs. 2 Satz 2
@@ -194,12 +210,12 @@ Plan jeden abweichenden Namen, bevor sie beginnt; die Zeile „Wo benutzt“ nen
 | A2 | `SettlementRow.kind` kennt `'fuelCarry'`; `LandlordReason` kennt `'fuelCarry'` mit einer Beschriftung in `client/src/landlordReasons.ts` | Task 7 |
 | A3 | PR 7 erzeugt zwei Schritte, der letzte ist `0023_…`; `fuel_deliveries` verweist nicht auf `heating_periods` neu | Task 2 |
 | A4 | read.ts: `readFuelDeliveries(db)`, `Stock.fuelDeliveries`; snapshot.ts: `SnapshotFuelDelivery`, `Snapshot.fuelDeliveries?`, der Quellparameter von `snapshotFor` und `heatingSnapshotFor` nimmt `fuelDeliveries?`; `SnapshotCostItem` enthält `fuelDeliveryId` | Task 4 |
-| A5 | `server/src/fuel.ts` exportiert `STOCK_ENERGIES` (`['oil', 'lpg', 'pellets', 'wood']`) | Task 3 (wird nach `shared/fuelStock.ts` verlegt) |
+| A5 | `server/src/fuel.ts` exportiert `STOCK_ENERGIES` (`['oil', 'lpg', 'pellets', 'wood', 'coal']`, PR 7 Task 3) | Task 3 (wird nach `shared/fuelStock.ts` verlegt) |
 | A6 | `server/src/db/fuel.ts`: `guardFuelDelivery(db, plant, after)` lehnt eine Lieferung an einer Anlage mit Vorratsenergie ab: `if (STOCK_ENERGIES.includes(plant.energy)) throw new HeatingError(400, LATER.stock)` | Task 5 |
 | A7 | **Naht N1:** Im CO₂-Block entscheidet PR 7 je Topf mit `const ownSplitByDeliveries = …`, ob selbst aufgeteilt wird (Anlage `manual`, oder CO₂-Methode `selfAfterService` mit Lieferungen), und bestimmt dafür vor der Einstufung `const fuel = fuelTotals(pot, snapshot, lawLog)` mit `{ emissionsKg: number; co2Cents: number; grossCents: number \| null; coveragePermille: number }`; danach liest es nur noch `fuel.*`, bei `selfAfterService` meldet es aus `fuel.grossCents` `co2.service-fuel-mismatch` | Task 6, 7 |
 | A8 | Die Regel `heating-consumed-fuel` (Entwurf 10.2) steht nach PR 7 noch nicht in `RULES` | Task 1 Step 4 |
 | A9 | x_t bei `manual` ist der exakte Anteil an den Topfpositionen mit `fuelDeliveryId` oder `heatingPart === 'fuel'` (Entwurf 9.4, B8) | Task 7 (Übertragsposten tragen `heatingPart: 'fuel'`) |
-| A10 | Die Seite Heizkosten zeigt je Anlage und Heizperiode seit PR 7 auch für `manual` Karten; die Lieferungen stehen in der Karte `FuelDeliveriesCard`; `HeatingPeriodView` hat `deliveries` | Task 8 |
+| A10 | Die Seite Heizkosten zeigt je Anlage und Heizperiode seit PR 7 auch für `manual` Karten; die Lieferungen stehen in der Karte `FuelCard` (`client/src/components/FuelCard.tsx`, PR 7 Task 11); `HeatingPeriodView` hat `deliveries` | Task 8 |
 | A11 | Route der Lieferungen: `POST /api/heating-plants/:id/fuel-deliveries` → 201 mit der Lieferung, Rumpf mit den Feldern aus A1 | Task 5 (api-Test) |
 
 Weicht PR 7 in A6 so ab, dass gar keine Sperre der Vorratsenergien besteht, entfällt Task 5 Step 6;
@@ -239,8 +255,13 @@ entscheidet.
    `usedByService`: Der Messdienst verteilt bei Vorratsenergien den Verbrauch aus seiner eigenen
    Bestandsrechnung, also Anfangsbestand, alle Lieferungen und Endbestand. G ist dann der verbrauchte
    Betrag.
-8. **Vorratsenergien sind die vier des Entwurfs** (8.2, 14.1): Heizöl, Flüssiggas, Pellets, Holz.
-   Kohle nennt der Entwurf nicht; sie bleibt, wie PR 7 sie rechnet.
+8. **Vorratsenergien sind die vier des Entwurfs und Kohle** (8.2, 14.1; PR 7 Task 3): Heizöl,
+   Flüssiggas, Pellets, Holz und Kohle. Der Entwurf nennt Kohle nicht, PR 7 führt sie aber in
+   `STOCK_ENERGIES`, und fachlich ist sie Vorrat: Sie liegt im Lager, wird in Kilogramm geliefert und
+   nicht im selben Zeitraum verbraucht, und seit 2023 trägt sie CO₂-Kosten nach dem BEHG. Ließe PR 8
+   sie aus der Liste fallen, wären Lieferungen an einer Kohleanlage nach PR 8 ohne Bestandsrechnung
+   erlaubt, und die CO₂-Aufteilung liefe nach dem gelieferten statt dem verbrauchten Brennstoff
+   (Prüfung vom 05.10.2026, Schnittstellen `STOCK_ENERGIES`).
 9. **VIII ZR 298/80** (Minol beruft sich darauf) ist im Entwurf „ungeprüft, vor PR 8 lesen“. Task 9
    Step 5 liest es vor dem Merge und hält das Ergebnis in der PR-Beschreibung fest; die Regel stützt
    sich bis dahin auf [M] Minol, und daran hängt keine Zahl, die eine Rechtsquelle braucht.
@@ -317,7 +338,7 @@ test('Brennstoffvorrat (Heizung PR 8): Beispiel nachgerechnet', () => {
   assert.match(t.example, /Endbestand 1\.800 l.*1\.800 €.*5\.700 l.*5\.750 €.*5\.650 €.*100 €/s)
   assert.equal(t.norm, '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11')
   assert.match(t.short, /jüngsten Lieferungen/)
-  assert.match(t.needed, /Heizöl, Flüssiggas, Pellets oder Holz/)
+  assert.match(t.needed, /Heizöl, Flüssiggas, Pellets, Holz oder Kohle/)
 })
 ```
 
@@ -384,7 +405,7 @@ In `RULES` hinter der Regel `heating-dhw-split` (PR 6) anhängen:
     norm: '§ 7 Abs. 2 HeizkostenV; BGH, Urteil vom 01.02.2012, VIII ZR 156/11',
     summary:
       'Umgelegt werden die Kosten der verbrauchten Brennstoffe des Abrechnungszeitraums, nicht die der gelieferten oder bezahlten. ' +
-      'Bei Heizöl, Flüssiggas, Pellets und Holz ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand; ' +
+      'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle ergibt sich der Verbrauch aus Anfangsbestand + Lieferungen − Endbestand; ' +
       'den Endbestand bewertet Mietfuchs wie die Messdienste zu den Preisen der jüngsten Lieferungen.',
   },
 ```
@@ -401,10 +422,10 @@ In `GLOSSARY` hinter `co2Split` (PR 6):
 ```ts
   fuelStock: {
     title: 'Brennstoffvorrat (Bestandsrechnung)',
-    short: 'Bei Heizöl, Flüssiggas, Pellets und Holz liegt der Brennstoff im Tank oder Lager, und nicht jede Lieferung wird im selben Abrechnungszeitraum verbraucht. Umgelegt werden die Kosten des verbrauchten Brennstoffs: Anfangsbestand plus Lieferungen minus Endbestand. Verbraucht wird das Älteste zuerst; den Endbestand bewertet Mietfuchs deshalb wie die Messdienste zu den Preisen der jüngsten Lieferungen.',
+    short: 'Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle liegt der Brennstoff im Tank oder Lager, und nicht jede Lieferung wird im selben Abrechnungszeitraum verbraucht. Umgelegt werden die Kosten des verbrauchten Brennstoffs: Anfangsbestand plus Lieferungen minus Endbestand. Verbraucht wird das Älteste zuerst; den Endbestand bewertet Mietfuchs deshalb wie die Messdienste zu den Preisen der jüngsten Lieferungen.',
     example: 'Anfangsbestand 2.000 l für 1.900 €, Lieferungen 3.000 l für 3.150 € und 2.500 l für 2.500 €, Endbestand 1.800 l. Der Endbestand stammt aus der jüngsten Lieferung und ist 1.800 € wert. Verbraucht wurden 5.700 l für 1.900 € + 3.150 € + 2.500 € − 1.800 € = 5.750 €; bezahlt haben Sie in diesem Zeitraum 5.650 €. Die 100 € Unterschied stehen in der Abrechnung als „aus dem Vorrat“ und „im Vorrat“.',
     norm: '§ 7 Abs. 2 HeizkostenV; BGH VIII ZR 156/11',
-    needed: 'Ja, wenn Sie mit Heizöl, Flüssiggas, Pellets oder Holz heizen und die Heizkosten selbst nach Schlüsseln verteilen, oder wenn der Messdienst die CO₂-Kosten nicht aufgeteilt hat. Dann tragen Sie auf der Seite Heizkosten in der Karte „Vorrat“ Anfangs- und Endbestand ein.',
+    needed: 'Ja, wenn Sie mit Heizöl, Flüssiggas, Pellets, Holz oder Kohle heizen und die Heizkosten selbst nach Schlüsseln verteilen, oder wenn der Messdienst die CO₂-Kosten nicht aufgeteilt hat. Dann tragen Sie auf der Seite Heizkosten in der Karte „Vorrat“ Anfangs- und Endbestand ein.',
   },
 ```
 
@@ -547,7 +568,7 @@ Ans Dateiende:
 ```ts
 // ---------- Brennstoffvorrat (Heizung PR 8, Entwurf 5.3, 8.2) ----------
 
-// Die Einheit eines Vorrats: Liter (Heizöl, Flüssiggas), Kilogramm (Flüssiggas, Pellets, Holz),
+// Die Einheit eines Vorrats: Liter (Heizöl, Flüssiggas), Kilogramm (Flüssiggas, Pellets, Holz, Kohle),
 // Schüttraummeter (Holzhackschnitzel).
 export type StockUnit = 'l' | 'kg' | 'srm'
 
@@ -919,7 +940,7 @@ nicht; die Liste ist veraltet“.
 // (Bestandsrechnung, Sperren) und die Oberfläche (Karte „Vorrat“) lesen dieselbe Liste.
 import type { HeatingEnergy, StockUnit } from './types.ts'
 
-export const STOCK_ENERGIES: readonly HeatingEnergy[] = ['oil', 'lpg', 'pellets', 'wood']
+export const STOCK_ENERGIES: readonly HeatingEnergy[] = ['oil', 'lpg', 'pellets', 'wood', 'coal']
 export const isStockEnergy = (energy: HeatingEnergy): boolean => STOCK_ENERGIES.includes(energy)
 
 // Die Einheit im Satz („2.000 l“) und als Wort in der Auswahl.
@@ -928,7 +949,7 @@ export const STOCK_UNIT_LABELS: Record<StockUnit, string> = { l: 'Liter', kg: 'K
 ```
 
 `server/src/fuel.ts` (PR 7, Annahme A5): die Zeile `export const STOCK_ENERGIES … = ['oil', 'lpg',
-'pellets', 'wood']` ersetzen durch
+'pellets', 'wood', 'coal']` ersetzen durch (die Liste bleibt dieselbe, nur ihr Ort wechselt)
 
 ```ts
 // Seit Heizung PR 8 in shared/fuelStock.ts, weil die Oberfläche sie braucht.
@@ -940,7 +961,7 @@ export { STOCK_ENERGIES } from '../../shared/fuelStock.ts'
 ```ts
 // Brennstoffvorrat (Heizung PR 8, #97, #99; Entwurf 8.2). Reine Funktionen.
 //
-// Bei Heizöl, Flüssiggas, Pellets und Holz wird nicht jede Lieferung im selben Zeitraum verbraucht.
+// Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle wird nicht jede Lieferung im selben Zeitraum verbraucht.
 // Umgelegt werden die Kosten der verbrauchten Brennstoffe (§ 7 Abs. 2 HeizkostenV, BGH VIII ZR
 // 156/11), und die CO₂-Aufteilung braucht Ausstoß und CO₂-Kosten des verbrauchten Brennstoffs. Beides
 // ergibt die Bestandsrechnung: Anfangsbestand + Lieferungen − Endbestand.
@@ -1621,7 +1642,7 @@ Refs #97, #99"
 Der Vorrat einer Heizperiode wird in ihrer Zeile gespeichert (`ensureHeatingPeriod`, PR 6). Die
 Karte „Vorrat“ lädt mit den Heizperioden eine Ansicht: was eingetragen ist, den Anfangsbestand aus
 der Vorperiode, die Bestandsrechnung und was fehlt. Dazu werden Lieferungen von Heizöl, Flüssiggas,
-Pellets und Holz angenommen (Sperre aus PR 7 aufgehoben), mit Lieferdatum und Menge in der Einheit
+Pellets, Holz und Kohle angenommen (Sperre aus PR 7 aufgehoben), mit Lieferdatum und Menge in der Einheit
 des Vorrats.
 
 Damit `db/co2.ts` (Ansicht) und `db/fuelStock.ts` (Vorrat) dieselben Helfer nutzen, ohne sich
@@ -1713,7 +1734,7 @@ test('Vorrat: ungültige Angaben, keine Vorratsenergie, je mit Satz', async () =
   })
   await withDatabase(async (opened) => {
     await oelhaus(opened, 'gas')
-    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', anfang)), heatingError(400, /nur bei Heizöl, Flüssiggas, Pellets und Holz/))
+    await assert.rejects(opened.write((db) => saveStock(db, 'hp', '2025-01', anfang)), heatingError(400, /nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle/))
     const [ansicht] = await opened.read((db) => heatingPeriodViews(db, 'hp', '2025')) ?? assert.fail('keine Anlage')
     assert.equal(ansicht?.stock, null)
   })
@@ -1836,7 +1857,7 @@ import { readStock, type Stock } from './read.ts'
 import { has, HeatingError, ISO_DATE, raw } from './repository.ts'
 import { heatingPeriods, STOCK_UNITS } from './schema.ts'
 
-const NOT_STOCK = 'Einen Vorrat gibt es nur bei Heizöl, Flüssiggas, Pellets und Holz.'
+const NOT_STOCK = 'Einen Vorrat gibt es nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.'
 const LATER_SELF = 'Den Vorrat bei der eigenen Heizkostenabrechnung rechnet Mietfuchs mit einer späteren Version.'
 const NUMBER = 'Mengen und kg sind je eine Zahl ab 0, zum Beispiel 1800 oder 5352,6.'
 const CENTS = 'Beträge sind ganze Cent ab 0.'
@@ -1986,7 +2007,7 @@ und `readStock` aus `'./read.ts'` ergänzen. In `heatingPeriodViews` vor der Sch
 Heizperioden:
 
 ```ts
-  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets und Holz.
+  // Der Vorrat (Heizung PR 8) nur bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.
   const stockData = isStockEnergy(ctx.plant.energy) ? await readStock(db) : null
 ```
 
@@ -2055,7 +2076,7 @@ Expected: PASS.
 
 ```bash
 git add server/src/db/heatingPeriodContext.ts server/src/db/fuelStock.ts server/src/db/co2.ts server/src/db/fuel.ts server/src/index.ts server/test
-git commit -m "Vorrat je Heizperiode speichern, Ansicht mit Anfangsbestand aus der Vorperiode, Lieferungen von Heizöl, Flüssiggas, Pellets und Holz
+git commit -m "Vorrat je Heizperiode speichern, Ansicht mit Anfangsbestand aus der Vorperiode, Lieferungen von Heizöl, Flüssiggas, Pellets, Holz und Kohle
 
 Der Anfangsbestand ist nur in der ersten Heizperiode mit Vorrat einzutragen; danach ist er der
 Endbestand der Vorperiode, eingefroren, wenn sie abgeschlossen ist.
@@ -2412,7 +2433,7 @@ Expected: PASS.
 
 ```bash
 git add server/src/fuelStock.ts server/src/calc.ts server/test/calc-vorrat.test.ts
-git commit -m "CO₂ beim Messdienst ohne Aufteilung: Vorrat für Heizöl, Flüssiggas, Pellets und Holz
+git commit -m "CO₂ beim Messdienst ohne Aufteilung: Vorrat für Heizöl, Flüssiggas, Pellets, Holz und Kohle
 
 E und C kommen aus der Bestandsrechnung; ohne Bestand wird nicht aufgeteilt und die Kürzung von 3 %
 genannt. Hinweise zum Altbestand vor 2023 und zur Peilung, Bestandsrechnung im Ausweis.
@@ -2595,7 +2616,7 @@ füllt):
   // Betrag, sonst die jüngste der Vorperiode; Einzelbeträge und „laut Gemeinschaftsabrechnung“ taugen
   // nicht, denn sie nennen feste Beträge. Ohne Schlüssel gilt „ohne Bestand“.
   const FUEL_KEYS: readonly CostKey[] = ['area', 'persons', 'units', 'meter', 'direct', 'custom']
-  const FUEL_NAMES: Partial<Record<HeatingEnergy, string>> = { oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz' }
+  const FUEL_NAMES: Partial<Record<HeatingEnergy, string>> = { oil: 'Heizöl', lpg: 'Flüssiggas', pellets: 'Pellets', wood: 'Holz', coal: 'Kohle' }
   const stockCarry: SnapshotCostItem[] = []
   const stockCarryNet = new Map<string, number>()
   const stockManualNotes: { plant: SnapshotHeatingPlant; text: string; invalid: boolean }[] = []
@@ -2730,8 +2751,8 @@ Expected: PASS (`calc-vorrat.test.ts`: 9 Tests).
 - [ ] **Step 6: Run all tests and commit**
 
 Run: `npm test`
-Expected: PASS. Ein bestehender Test, der eine Anlage mit `energy: 'oil'`, `'lpg'`, `'pellets'` oder
-`'wood'` und `method: 'manual'` samt Heizposition über das ganze Ergebnis vergleicht (PR 4 bis PR 7),
+Expected: PASS. Ein bestehender Test, der eine Anlage mit `energy: 'oil'`, `'lpg'`, `'pellets'`,
+`'wood'` oder `'coal'` und `method: 'manual'` samt Heizposition über das ganze Ergebnis vergleicht (PR 4 bis PR 7),
 sieht jetzt `fuel.manual-by-delivery`. Er bekommt den Code in seine Erwartung bzw. vergleicht mit
 `withoutCo2` und filtert zusätzlich `fuel.manual-by-delivery`; jede andere Abweichung ist ein Befund.
 
@@ -3350,7 +3371,7 @@ Hinter `co2Statement` (PR 6):
 async function stockRoute() {
   const [anlage] = (await request('/api/heating-plants')).body
   const antwort = await request(`/api/heating-plants/${anlage.id}/periods/2025-01/stock`, json('PUT', { stockUnit: 'l', closingQuantity: 100 }))
-  assert(antwort.status === 400 && /Heizöl, Flüssiggas, Pellets und Holz/.test(antwort.body?.error ?? ''), 'Vorrat nur bei Vorratsenergien', antwort.body)
+  assert(antwort.status === 400 && /Heizöl, Flüssiggas, Pellets, Holz und Kohle/.test(antwort.body?.error ?? ''), 'Vorrat nur bei Vorratsenergien', antwort.body)
 }
 ```
 
@@ -3384,7 +3405,7 @@ Unter `## [Unveröffentlicht]` (neben den Einträgen von PR 1 bis PR 7):
 ```md
 ### Hinzugefügt
 
-- **Brennstoffvorrat bei Heizöl, Flüssiggas, Pellets und Holz.** Auf der Seite „Heizkosten“ tragen Sie
+- **Brennstoffvorrat bei Heizöl, Flüssiggas, Pellets, Holz und Kohle.** Auf der Seite „Heizkosten“ tragen Sie
   je Heizperiode Anfangs- und Endbestand ein, den Anfangsbestand nur in der ersten Heizperiode; danach
   ist er der Endbestand der Vorperiode. Mietfuchs rechnet daraus den verbrauchten Brennstoff
   (Anfangsbestand + Lieferungen − Endbestand) und bewertet den Endbestand wie die Messdienste zu den
@@ -3395,12 +3416,12 @@ Unter `## [Unveröffentlicht]` (neben den Einträgen von PR 1 bis PR 7):
   trägt aber keine CO₂-Kosten (§ 11 Abs. 2 Satz 2 CO2KostAufG). Die Abrechnung druckt die
   Bestandsrechnung mit ([#97](https://github.com/speedone/mietfuchs/issues/97),
   [#99](https://github.com/speedone/mietfuchs/issues/99)).
-- Lieferungen von Heizöl, Flüssiggas, Pellets und Holz lassen sich erfassen, mit Lieferdatum und Menge.
+- Lieferungen von Heizöl, Flüssiggas, Pellets, Holz und Kohle lassen sich erfassen, mit Lieferdatum und Menge.
 - Lexikon-Eintrag „Brennstoffvorrat“.
 
 ### Geändert
 
-- **Angekündigt: Hinweis bei Heizöl, Flüssiggas, Pellets und Holz mit freien Schlüsseln.** Ohne
+- **Angekündigt: Hinweis bei Heizöl, Flüssiggas, Pellets, Holz und Kohle mit freien Schlüsseln.** Ohne
   Anfangs- und Endbestand sagt die Abrechnung, dass die Heizkosten nach Lieferung statt nach Verbrauch
   verteilt sind und das angreifbar ist; an den Zahlen ändert sich nichts, bis Sie den Vorrat eintragen
   ([#99](https://github.com/speedone/mietfuchs/issues/99)).
@@ -3414,7 +3435,7 @@ Im Abschnitt „Architektur“ direkt hinter dem Absatz **Lieferungen** (PR 7) b
 Messdienst** (PR 6) einfügen:
 
 ```md
-**Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets und Holz
+**Brennstoffvorrat** (Heizung PR 8, #97, #99): Bei Heizöl, Flüssiggas, Pellets, Holz und Kohle
 (`STOCK_ENERGIES` in [shared/fuelStock.ts](shared/fuelStock.ts)) rechnet
 [server/src/fuelStock.ts](server/src/fuelStock.ts) den verbrauchten Brennstoff: Anfangsbestand +
 Lieferungen − Endbestand, für Menge, Betrag, kg und CO₂-Kosten. Die acht Spalten des Vorrats stehen an

@@ -4,7 +4,7 @@
 
 **Goal:** Heizt ein Mieter selbst (Gastherme oder Ölofen auf eigenen Vertrag), erfasst der Vermieter dessen
 Erstattungsanspruch nach § 6 Abs. 2 CO2KostAufG; Mietfuchs rechnet zur Kontrolle nach (Stufe, gekürzte
-Tabelle, § 8 Abs. 2, § 9, −5 % bei eigenen Geräten zu anderen Zwecken, Ausschluss bei ungemessener
+Tabelle, § 8 Abs. 2, § 9, −5 % bei Geräten im Eigentum des Mieters zu anderen Zwecken, Ausschluss bei ungemessener
 gewerblicher Nutzung, ab 2028 § 5a), verrechnet den Betrag als Gutschriftzeile in der Betriebskostenabrechnung,
 nennt die drei Fristen (Anzeige, nächste Abrechnung, Auszahlung) und lässt die Steuer allein an den Zahlungen
 hängen.
@@ -38,6 +38,33 @@ A16.
 `docs/superpowers/plans/2026-10-05-heizung-pr{3..18}-*.md`. Gearbeitet wird auf
 `feat/heizung-pr19-selbstversorger`, abgezweigt von der Spitze von PR 18; gestapelt auf PR 18 gestellt und
 nach dessen Merge auf `main` umgestellt (`git rebase --onto`).
+
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die Prüfung der Pläne PR 18 und PR 19 vom 05.10.2026 (BT-Drs. 20/3172, S. 35, und die Begründungen zum Gesetz
+vom 23.07.2026 gelesen) hat diesen Plan an diesen Stellen geändert:
+
+1. **−5 % nur bei einem Gerät im Eigentum des Mieters** (Goal, Review Focus 5, Rechtsquellen, Task 1 Regel und
+   Lexikon samt Test, Task 3 Kommentar, Task 6 Beschriftung, CHANGELOG). Die Begründung kürzt nur, „sofern der
+   Mieter sich selbst für das eingesetzte Gerät – etwa einen Gasherd – entschieden hat und dieser in seinem
+   Eigentum steht“ (BT-Drs. 20/3172, S. 35). „Er kocht mit Gas“ war zu weit; ein mitvermieteter Herd kürzt
+   nichts. Das Feld bleibt `ownAppliances`, seine Bedeutung steht im Kommentar und in der Frage.
+2. **„Vorauszahlung vereinbart“ an der Staffel** (Abweichung 5, Task 3 `prepaymentAgreed` mit Test, Task 5).
+   Satz 4 verlangt die Vereinbarung; geprüft wurde vorher das Gezahlte bzw. Angesetzte (`st.prepaymentCents`).
+   Jetzt: Staffel mit Betrag über 0 im Zeitraum und kein Modell Pauschale oder Inklusivmiete; bei Pauschale ist
+   auszuzahlen (BT-Drs. 20/3172, S. 35).
+3. **Hinweis bei Abweichung des gebuchten Betrags von der Nachrechnung** (Abweichung 4, Task 5: neuer Code
+   `co2.refund-differs`, hint). Geschuldet ist der Anteil nach § 6 Abs. 2 Satz 1; sonst erstattete Mietfuchs
+   still zu viel oder zu wenig.
+4. **Kleinigkeiten aus derselben Prüfung:** § 9 Abs. 2 ohne Fläche ergibt 0 ‰ nach Stufen statt keiner
+   Nachrechnung (Abweichung 8, wie PR 18); der Querverweis heißt richtig „PR 18, Abweichung 5“; die Texte von
+   `co2.refund-late` („nach dem Wortlaut voraussichtlich nicht“), `co2.refund-not-next` („in der Regel“) und
+   `co2.refund-due` (beide Fälligkeiten) sind vorsichtiger; die Erklärung zu „§ 5a gilt ab“ nennt § 5a Abs. 4
+   und § 5d Abs. 3 (Abweichung 3); 15.1 Nr. 25 ist als Auslegung gekennzeichnet (Abweichung 7).
+
+**Schnittstelle zu PR 18:** Die Namen aus PR 18 bleiben (`termsFromPieces`, `blendedPermille`, `Piece`,
+`eventPeriodEnd`, …). PR 18 hat `TwoFamily` und die Mitteilung nach § 5d Abs. 4 umgebaut (jetzt am
+Mietverhältnis); dieser Plan benutzt beides nicht. Die Migration bleibt `0042_co2_erstattung`.
 
 ## Global Constraints
 
@@ -84,8 +111,11 @@ nach dessen Merge auf `main` umgestellt (`git rebase --onto`).
    in dem die Frist von zwölf Monaten nach der Anzeige endet, warnt jede Abrechnung (`co2.refund-due`), bis
    die Erstattung verrechnet oder ihre Auszahlung eingetragen ist. Test in Task 5.
 5. **Der Mieter nutzt das Gas auch gewerblich (etwa eine Backstube) ohne getrennte Messung, oder er kocht mit
-   Gas.** Erwartet: Bei gewerblicher Nutzung ohne Nachweis schlägt die Nachrechnung 0 € vor und nennt § 6
-   Abs. 3 Satz 1; beim Gasherd kürzt sie um 5 % (Satz 2). Test in Task 3.
+   einem eigenen Gasherd.** Erwartet: Bei gewerblicher Nutzung ohne Nachweis schlägt die Nachrechnung 0 € vor
+   und nennt § 6 Abs. 3 Satz 1; bei einem Gasherd, den der Mieter selbst angeschafft hat und der ihm gehört,
+   kürzt sie um 5 % (Satz 2). Gehört der Herd dem Vermieter (mitvermietet), wird nicht gekürzt: Die
+   Begründung kürzt nur, „sofern der Mieter sich selbst für das eingesetzte Gerät – etwa einen Gasherd –
+   entschieden hat und dieser in seinem Eigentum steht“ (BT-Drs. 20/3172, S. 35). Test in Task 3.
 
 ## Dateien
 
@@ -149,6 +179,12 @@ Kraft seit 29.07.2026):
 - § 6 Abs. 3 Satz 1: gewerbliche Nutzung des Brennstoffs → Anspruch „nur …, wenn der Verbrauch für die
   Erzeugung von Wärme … mit einer Messeinrichtung separat erfasst wird und der Mieter diesen … nachweist“;
   Satz 2: Nutzung „zum Betrieb eigener Geräte zu anderen Zwecken“ → Anspruch „um 5 Prozent zu kürzen“.
+- **Begründung, BT-Drs. 20/3172, S. 35** (am 05.10.2026 gelesen): zu § 6 Abs. 3 Satz 2: gekürzt wird,
+  „sofern der Mieter sich selbst für das eingesetzte Gerät – etwa einen Gasherd – entschieden hat und dieser in
+  seinem Eigentum steht“; zur Verrechnung (damals Satz 3): „Der Anspruch wird daher erst mit Ablauf der Frist für
+  die jeweils maßgebliche Betriebskostenabrechnung fällig, wenn eine Betriebskostenvorauszahlung vereinbart
+  ist“; zur Auszahlung (damals Satz 4): sie betrifft „Fälle, in denen eine Betriebskostenpauschale gemäß § 556
+  Absatz 2 Satz 1 Variante 1 BGB vereinbart oder gar keine Betriebskostenumlage vereinbart wurde“.
 - § 8 Abs. 2: im Nichtwohngebäude „50 Prozent der Kohlendioxidkosten zu erstatten; § 6 Absatz 2 Satz 2 bis 4
   und Absatz 3 gilt entsprechend.“ (Art. 5 Nr. 8 des Änderungsgesetzes ändert in § 8 nur Abs. 1.)
 - § 9 Abs. 1 (Anteil „nach § 5, 6, 7 oder 8“ halbiert), Abs. 2, Abs. 3 (Nachweis).
@@ -170,26 +206,42 @@ Kraft seit 29.07.2026):
    der Fassung seit 29.07.2026 verweist auf § 5a Abs. 3 und § 5b). `half_split_from` ist der Tag, ab dem § 5a
    für die Heizung des Mieters gilt; die Merkmale aus PR 18 (Einbau, Notfalleinbau, Neubau) trägt hier keine
    Heizanlage, weil ein Selbstversorger keine hat (Entwurf 11.2), und die Oberfläche erklärt, wie der Tag
-   bestimmt wird.
-4. **Gebucht wird der angezeigte Betrag (Festlegung).** Nach § 5 Abs. 3 ermittelt der Mieter; der Vermieter
-   erstattet, was geltend gemacht und zutreffend ist. Die Nachrechnung ist eine Kontrolle und steht im
-   Rechenweg der Zeile, wenn die Grundlagen eingetragen sind; ein eigener Hinweis bei Abweichung wäre nicht
-   im Entwurf und unterbleibt.
+   bestimmt wird, ausdrücklich mit § 5a Abs. 4 (Notfalleinbau verschiebt den Tag um zwölf Monate) und § 5d
+   Abs. 3 (das selbst bewohnte Zweifamilienhaus; eine Etagenheizung je Wohnung ist keine gemeinsame
+   Wärmeversorgung, Begründung BT-Drs. 21/7009, S. 156: „durch dieselbe Heizungsanlage“).
+4. **Gebucht wird der angezeigte Betrag, mit Hinweis bei Abweichung (Festlegung).** Nach § 5 Abs. 3 ermittelt
+   der Mieter; geschuldet ist nach § 6 Abs. 2 Satz 1 „der Anteil …, den der Vermieter … zu tragen hat“, also
+   der richtige Betrag, und § 6 Abs. 3 Satz 2 ist zwingend („ist … zu kürzen“). Die Buchung des eingetragenen
+   Betrags bleibt die Entscheidung des Vermieters; die Nachrechnung steht im Rechenweg der Zeile, und weicht
+   sie vom eingetragenen Betrag ab, meldet die Abrechnung den neuen Hinweis `co2.refund-differs` (hint) mit
+   beiden Beträgen. Sonst erstattete Mietfuchs still zu viel oder zu wenig (Prüfung vom 05.10.2026).
 5. **„Nächste auf die Anzeige folgende Abrechnung“ (Festlegung zu § 6 Abs. 2 Satz 4).** Mietfuchs nimmt den
    frühesten Zeitraum des Objekts, in dem das Mietverhältnis wohnte, dessen Frist (§ 556 Abs. 3 Satz 2 BGB) am
    Tag der Anzeige noch nicht abgelaufen war und dessen Abrechnung nicht vor der Anzeige versandt wurde
    (`sentAt`). Das entspricht dem Wortlaut „auf die Anzeige folgend“ für eine Abrechnung, die noch erstellt
-   werden kann; nur ein Hinweis.
+   werden kann; nur ein Hinweis, und der Text sagt „in der Regel“: Auch eine verspätete Abrechnung, nur ohne
+   Nachforderung, ist eine „folgende“. **Verrechnen setzt eine vereinbarte Vorauszahlung voraus** (Satz 4).
+   Geprüft wird die Vereinbarung, nicht das Gezahlte: eine Vorauszahlungs-Staffel mit einem Betrag über 0 im
+   Zeitraum (`prepaymentAgreed`, Task 3) und kein Nebenkostenmodell Pauschale oder Inklusivmiete
+   (`costModel`). Bei Pauschale oder ohne Umlage ist auszuzahlen (BT-Drs. 20/3172, S. 35). Die frühere
+   Prüfung an `st.prepaymentCents` hätte bei vereinbarter, aber nicht gezahlter Vorauszahlung (oder einer
+   Jahreskorrektur auf 0) fälschlich das Verrechnen verwehrt.
 6. **`co2.refund-due` in jeder späteren Abrechnung (Festlegung).** Die Warnung erscheint in jedem Zeitraum,
    der den Tag der Fälligkeit enthält oder danach liegt, solange die Erstattung weder verrechnet noch
-   ausgezahlt ist.
-7. **§ 8 Abs. 2 und die Frist zur Auszahlung (offene Rechtsfrage, Vorschlag 15.1 Nr. 25).** § 8 Abs. 2 verweist
+   ausgezahlt ist. Der Text nennt beide Fälligkeiten: spätestens zwölf Monate nach der Anzeige, wenn nicht
+   verrechnet wird (§ 6 Abs. 2 Satz 5), und bei vereinbarter Vorauszahlung mit Ablauf der Frist der
+   maßgeblichen Abrechnung (BT-Drs. 20/3172, S. 35).
+7. **§ 8 Abs. 2 und die Frist zur Auszahlung (offene Rechtsfrage, Vorschlag 15.1 Nr. 25, als Auslegung
+   gekennzeichnet).** § 8 Abs. 2 verweist
    auf „§ 6 Absatz 2 Satz 2 bis 4“. Vor dem 29.07.2026 waren das Anzeigefrist, Verrechnung und Auszahlungsfrist;
    seit Satz 1 durch zwei Sätze ersetzt ist, sind es Umrechnung, Anzeigefrist und Verrechnung, und die
-   Auszahlungsfrist (jetzt Satz 5) fiele aus dem Verweis. Mietfuchs warnt trotzdem und nennt die Frage im
-   Text: zulasten des Vermieters vorsichtig, wie 15.1 Nr. 20.
-8. **§ 9 kürzt nur den Teil nach Stufen (wie PR 18, Abweichung 5).** § 9 Abs. 1 nennt § 6; der Teil nach § 5a
-   wird nicht gekürzt.
+   Auszahlungsfrist (jetzt Satz 5) fiele aus dem Verweis. Wahrscheinlich ist das ein Redaktionsversehen; eine
+   Quelle dafür gibt es nicht. Mietfuchs warnt trotzdem und nennt die Frage im Text: zulasten des Vermieters
+   vorsichtig, wie 15.1 Nr. 20.
+8. **§ 9 kürzt nur den Teil nach Stufen (wie PR 18, Abweichung 5; Auslegung zulasten des Vermieters,
+   15.1 Nr. 23).** § 9 Abs. 1 nennt § 6; der Teil nach § 5a wird nicht gekürzt. Bei § 9 Abs. 2 ist der Teil
+   nach Stufen 0 ‰, auch ohne Fläche (wie PR 18 nach der Prüfung vom 05.10.2026); `null` hieße
+   „Einstufung fehlt“, und der Teil nach § 5a ginge verloren.
 9. **Umrechnung nach Gradtagen (Festlegung zu § 6 Abs. 2 Satz 2).** Die Anteile ab dem 01.01.2028 bzw.
    01.01.2029 in einer Rechnung des Lieferanten über den Jahreswechsel rechnet die Nachrechnung nach der
    Gradtagstabelle (Stufe 5 aus 3.2); eine Zwischenrechnung des Lieferanten ist eine eigene Erstattung.
@@ -252,11 +304,14 @@ test('§ 6 Abs. 2: die Regel co2-self-supply gilt ab 2023 (Heizung PR 19)', () =
 test('Lexikon: CO₂-Erstattung an Mieter mit eigener Heizung, Beispiel nachgerechnet (Heizung PR 19)', () => {
   const t = GLOSSARY.co2Refund
   for (const n of [/§ 6 Abs\. 2/, /§ 6 Abs\. 3/, /§ 8 Abs\. 2/, /§ 5 Abs\. 3/]) assert.match(t.norm ?? '', n)
-  // 2.400 kg auf 80 m² = 30,0 kg/m² → Vermieter 40 %; 600 € × 40 % = 240,00 €; mit Gasherd − 5 % = 228,00 €.
+  // 2.400 kg auf 80 m² = 30,0 kg/m² → Vermieter 40 %; 600 € × 40 % = 240,00 €; mit eigenem Gasherd − 5 % = 228,00 €.
   assert.equal(2400 / 80, 30)
   assert.equal(Math.round(60000 * 0.4), 24000)
   assert.equal(Math.round(24000 * 0.95), 22800)
   assert.match(t.example, /240,00 €.*228,00 €/s)
+  // Gekürzt wird nur bei einem Gerät im Eigentum des Mieters (BT-Drs. 20/3172, S. 35).
+  assert.match(t.example, /eigenen Gasherd, den er selbst angeschafft hat/)
+  assert.match(t.example, /mitvermieteter Herd kürzt nichts/)
   assert.match(t.needed, /zwölf Monaten|12 Monaten/)
 })
 ```
@@ -275,7 +330,8 @@ Ans Dateiende:
 // § 6 Abs. 2 Satz 3: Anzeige in Textform „innerhalb von zwölf Monaten ab dem Zeitpunkt, in dem der
 // Lieferant … die Lieferung gegenüber dem Mieter abgerechnet hat“; Satz 5: Erstattung „spätestens zwölf
 // Monate nach Anzeige“, wenn nicht verrechnet; § 6 Abs. 3 Satz 2: „um 5 Prozent zu kürzen“ bei eigenen
-// Geräten zu anderen Zwecken; § 8 Abs. 2: im Nichtwohngebäude „50 Prozent der Kohlendioxidkosten zu
+// Geräten zu anderen Zwecken (nach der Begründung nur, wenn das Gerät dem Mieter gehört und er es selbst
+// gewählt hat, BT-Drs. 20/3172, S. 35); § 8 Abs. 2: im Nichtwohngebäude „50 Prozent der Kohlendioxidkosten zu
 // erstatten“. `eventDate`: die Abrechnung des Lieferanten gegenüber dem Mieter. Die Zahlen sind seit dem
 // 01.01.2023 dieselben; das Gesetz vom 23.07.2026 hat in § 6 Abs. 2 nur Satz 1 ersetzt (Verweis auf § 5a)
 // und Satz 6 angefügt.
@@ -324,7 +380,7 @@ In `RULES` hinter `co2-half-split`:
     summary:
       'Heizt ein Mieter selbst mit eigenem Vertrag, erstattet ihm der Vermieter den Anteil der CO₂-Kosten, den er nach dem Stufenmodell zu tragen hätte, ' +
       `ab 2028 bei einer Heizung nach § 43 GModG die Hälfte samt Netzentgelten. Der Mieter muss den Anspruch binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform anzeigen; ` +
-      `der Vermieter verrechnet ihn in der nächsten Betriebskostenabrechnung oder zahlt binnen ${SELF.refundMonths} Monaten. Nutzt der Mieter den Brennstoff auch für eigene Geräte, etwa einen Gasherd, sinkt der Anspruch um ${SELF.ownAppliancesCutPercent} %.`,
+      `der Vermieter verrechnet ihn in der nächsten Betriebskostenabrechnung oder zahlt binnen ${SELF.refundMonths} Monaten. Betreibt der Mieter mit dem Brennstoff auch eigene Geräte zu anderen Zwecken, etwa einen Gasherd, den er selbst angeschafft hat und der ihm gehört, sinkt der Anspruch um ${SELF.ownAppliancesCutPercent} %.`,
     validFrom: co2FirstPeriodStart(),
   },
 ```
@@ -339,7 +395,7 @@ Import `co2SelfSupply` aus `'./law/co2kostaufg.ts'`; oben `const SELF = valueAt(
   co2Refund: {
     title: 'CO₂-Erstattung bei eigener Heizung des Mieters',
     short: `Hat der Mieter einen eigenen Vertrag für Gas oder Öl (etwa eine Gastherme in der Wohnung), trägt er die CO₂-Kosten zunächst selbst. Den Anteil, den nach dem Stufenmodell der Vermieter trüge, kann er binnen ${SELF.claimMonths} Monaten nach der Abrechnung seines Lieferanten in Textform von Ihnen verlangen.`,
-    example: 'Gasrechnung 2025 des Mieters: 2.400 kg CO₂, Wohnung 80 m², also 30,0 kg je m² und Jahr; das ist die Stufe, in der der Vermieter 40 % trägt. CO₂-Kosten 600 €: Sie erstatten 240,00 €. Kocht der Mieter auch mit Gas, sind es 228,00 €.',
+    example: 'Gasrechnung 2025 des Mieters: 2.400 kg CO₂, Wohnung 80 m², also 30,0 kg je m² und Jahr; das ist die Stufe, in der der Vermieter 40 % trägt. CO₂-Kosten 600 €: Sie erstatten 240,00 €. Kocht der Mieter auch auf einem eigenen Gasherd, den er selbst angeschafft hat, sind es 228,00 €; ein mitvermieteter Herd kürzt nichts.',
     norm: '§ 5 Abs. 3, § 6 Abs. 2, 3, § 8 Abs. 2, § 9 CO2KostAufG',
     needed: `Nur wenn ein Mieter selbst heizt und den Anspruch anzeigt. Zahlt er Betriebskostenvorauszahlungen, verrechnen Sie den Betrag in der nächsten Abrechnung nach der Anzeige; sonst zahlen Sie spätestens ${SELF.refundMonths} Monate nach der Anzeige aus und erfassen die Auszahlung als negative Zahlung. Auf den Anspruch und, bei einer Heizung nach § 43 GModG, auf die Pflicht zum Biobrennstoff müssen Sie den Mieter bei Vertragsschluss in Textform hinweisen (§ 6 Abs. 2 Satz 6).`,
   },
@@ -621,6 +677,7 @@ Refs #85"
   - `claimDeadline(supplierBilledAt: string, months: number): string`, `refundDueDate(claimedAt: string, months: number): string`
   - `type SettlementCandidate = { key: PeriodKey; from: string; deadline: string; sentAt: string | null }`, `nextSettlement(claimedAt: string, candidates: readonly SettlementCandidate[]): PeriodKey | null`
   - `type LawAsk` (Abfrage des Registers mit oder ohne Protokoll) und `refundLawAt(b: RefundBasis & { supplierBilledAt: string }, ask: LawAsk): RefundLaw | null`
+  - `prepaymentAgreed(t: { prepayments; costModel? }, p: { from; to }): boolean`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -631,7 +688,7 @@ Refs #85"
 // § 8 Abs. 2, § 9 und ab 2028 § 5a CO2KostAufG; Fristen nach § 6 Abs. 2 Satz 3–5.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { claimDeadline, nextSettlement, refundDueDate, refundProposal, refundSteps, type RefundBasis, type RefundLaw } from '../src/co2Refund.ts'
+import { claimDeadline, nextSettlement, prepaymentAgreed, refundDueDate, refundProposal, refundSteps, type RefundBasis, type RefundLaw } from '../src/co2Refund.ts'
 import { stageRanges, tableFactor } from '../src/co2.ts'
 import { co2HalfSplit, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { valueAt, versionsIn } from '../../shared/law/register.ts'
@@ -658,6 +715,24 @@ test('30,0 kg/m² → Stufe 40 %: 600 € → 240,00 €; Gasherd −5 % → 228
   const p = refundProposal(basis(), lawFor('2025-01-01', '2025-12-31')) ?? assert.fail('keine Nachrechnung')
   assert.deepEqual([p.value, p.stagePercent, p.permille, p.cents], [30, 40, 400, 24000])
   assert.equal(cents(basis({ ownAppliances: true })), 22800)
+})
+
+test('§ 9 Abs. 2 ohne Fläche: der Teil nach § 5a bleibt, nach Stufen 0 (Abweichung 8)', () => {
+  const b = basis({ areaM2: null, restriction: 'both', billedFrom: '2027-07-01', billedTo: '2028-06-30', halfSplitFrom: '2028-01-01' })
+  const p = refundProposal(b, lawFor('2027-07-01', '2028-06-30', false, { restriction: { factor: 0.5, bothSplit: false } })) ?? assert.fail('keine Nachrechnung')
+  // Außerhalb der Teilung 0 ‰, ab 01.01.2028 500 ‰: dazwischen, je nach Gradtagen.
+  assert.ok((p.permille ?? 0) > 0 && (p.permille ?? 0) < 500, String(p.permille))
+})
+
+test('Vorauszahlung vereinbart: nach der Staffel, nicht nach dem Gezahlten; nicht bei Pauschale (Abweichung 5)', () => {
+  const p = { from: '2025-01-01', to: '2025-12-31' }
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }] }, p), true)
+  assert.equal(prepaymentAgreed({ prepayments: [] }, p), false)
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }, { from: '2024-07', monthlyCents: 0 }] }, p), false)
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 0 }, { from: '2025-07', monthlyCents: 5000 }] }, p), true)
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2026-01', monthlyCents: 5000 }] }, p), false)
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }], costModel: 'flatRate' }, p), false)
+  assert.equal(prepaymentAgreed({ prepayments: [{ from: '2020-01', monthlyCents: 10000 }], costModel: 'inclusive' }, p), false)
 })
 
 test('§ 6 Abs. 3 Satz 1: gewerbliche Nutzung ohne getrennte Messung → kein Anspruch; mit Messung wie sonst', () => {
@@ -826,8 +901,11 @@ export function refundProposal(b: RefundBasis, l: RefundLaw): RefundProposal | n
   if (base !== null && l.restriction !== null && b.restriction !== 'none') {
     base = b.restriction === 'both' ? (l.restriction.bothSplit ? base * l.restriction.factor : 0) : base * l.restriction.factor
   }
+  // § 9 Abs. 2 („keine Aufteilung“) ist 0 ‰ nach Stufen, auch ohne Fläche; `null` hieße für blendedPermille
+  // „Einstufung fehlt“ (Abweichung 8, PR 18 Abweichung 5).
+  if (base === null && l.restriction !== null && b.restriction === 'both' && !l.restriction.bothSplit) base = 0
   // § 6 Abs. 2 Satz 1 n. F. mit § 5a Abs. 3: ab dem Tag, der für die Heizung des Mieters gilt (Abweichung 3);
-  // § 9 kürzt diesen Teil nicht (wie PR 18, Abweichung 8).
+  // § 9 kürzt diesen Teil nicht (wie PR 18, Abweichung 5).
   const span = { from: b.billedFrom, to: b.billedTo }
   const applicable: DayRange[] = b.halfSplitFrom !== null && b.halfSplitFrom <= span.to
     ? [{ from: b.halfSplitFrom > span.from ? b.halfSplitFrom : span.from, to: span.to }]
@@ -840,10 +918,28 @@ export function refundProposal(b: RefundBasis, l: RefundLaw): RefundProposal | n
   const gridFeeRaw = (b.gridFeeCents ?? 0) * half((v) => v.gridFeePermille)
   const bioRaw = (b.bioCostCents ?? 0) * half((v) => v.bioPermille)
   const before = co2Raw + gridFeeRaw + bioRaw
-  // § 6 Abs. 3 Satz 2: der ganze Anspruch nach Abs. 2 um den Satz gekürzt.
+  // § 6 Abs. 3 Satz 2: der ganze Anspruch nach Abs. 2 um den Satz gekürzt. `ownAppliances` heißt: ein Gerät,
+  // das der Mieter selbst gewählt hat und das ihm gehört (BT-Drs. 20/3172, S. 35); die Oberfläche fragt so.
   const cutRaw = b.ownAppliances ? (before * l.cutPercent) / 100 : 0
   const raw = before - cutRaw
   return { cents: Math.round(raw), raw, excluded: null, value, stagePercent: stage?.landlordPercent ?? null, permille, co2Raw, gridFeeRaw, bioRaw, cutRaw }
+}
+
+// Ob eine Vorauszahlung auf Betriebskosten vereinbart ist (§ 6 Abs. 2 Satz 4; Abweichung 5): eine Staffel
+// mit einem Betrag über 0, die im Zeitraum gilt, und kein Nebenkostenmodell Pauschale oder Inklusivmiete. Die
+// Vereinbarung zählt, nicht das Gezahlte. Ein Eintrag gilt ab seinem Monat bis zum nächsten Eintrag.
+export function prepaymentAgreed(
+  t: { prepayments: readonly { from: string; monthlyCents: number }[]; costModel?: 'settlement' | 'flatRate' | 'inclusive' },
+  p: { from: string; to: string },
+): boolean {
+  if (t.costModel === 'flatRate' || t.costModel === 'inclusive') return false
+  const sorted = [...t.prepayments].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))
+  const startMonth = p.from.slice(0, 7)
+  const endMonth = p.to.slice(0, 7)
+  return sorted.some((e, i) => {
+    const until = sorted[i + 1]?.from
+    return e.monthlyCents > 0 && e.from <= endMonth && (until === undefined || until > startMonth)
+  })
 }
 
 export type RefundStepText = { euro: (cents: number) => string; exact: (cents: number) => string; num: (n: number) => string; applicableFrom: string; cutPercent: number }
@@ -1265,10 +1361,10 @@ Refs #85"
 - Test: `server/test/calc-co2refund.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: Task 1–3 (`co2SelfSupply`, `halfSplitEnactedOn`, `Co2Refund`, `refundProposal`, `refundSteps`, `refundLawAt`, `LawAsk`, `claimDeadline`, `refundDueDate`, `nextSettlement`); `co2ApplicableFrom`, `co2StageTable`, `co2RoundingDecimals`, `co2Restriction`, `co2HalfSplit`, `co2FirstPeriodStart`, `hkvDegreeDays`, `bgbDeadlineMonths`; `law`, `coversDate`, `germanDate`; `periodsBetween`, `periodLabel`, `settlementDeadline`; in `computeSettlement` `snapshot`, `period`, `objectRules`, `statements`, `landlordRows`, `warn`, `lawLog`, `lawPeriod`, `fmtCents`, `fmtExactEuro`, `fmtNum`, `fmtDay`.
+- Consumes: Task 1–3 (`co2SelfSupply`, `halfSplitEnactedOn`, `Co2Refund`, `refundProposal`, `refundSteps`, `refundLawAt`, `LawAsk`, `claimDeadline`, `refundDueDate`, `nextSettlement`, `prepaymentAgreed`); `co2ApplicableFrom`, `co2StageTable`, `co2RoundingDecimals`, `co2Restriction`, `co2HalfSplit`, `co2FirstPeriodStart`, `hkvDegreeDays`, `bgbDeadlineMonths`; `law`, `coversDate`, `germanDate`; `periodsBetween`, `periodLabel`, `settlementDeadline`; in `computeSettlement` `snapshot`, `period`, `objectRules`, `statements`, `landlordRows`, `warn`, `lawLog`, `lawPeriod`, `fmtCents`, `fmtExactEuro`, `fmtNum`, `fmtDay`.
 - Produces:
   - snapshot.ts: `Snapshot.co2Refunds?: Co2Refund[]`, `Snapshot.settlementsSent?: { period: PeriodKey; sentAt: string | null }[]` (beide nur gesetzt, wenn es Erstattungen gibt); Quelle von `snapshotFor` um `co2Refunds?: Co2Refund[]`
-  - calc.ts: `CO2_REFUND_CATEGORY = 'CO₂-Erstattung'`, `CO2_REFUND_LABEL = 'CO₂-Erstattung bei eigener Heizung (§ 6 Abs. 2 CO2KostAufG)'`; `recurringShareCents(st: Pick<Statement, 'rows' | 'totalShareCents'>): number` (exportiert); Zeilen `kind: 'co2Refund'` unter `co2refund:<Kennung>`, Gegenzeile mit Grund `co2Refund`; Codes `co2.refund-late`, `co2.refund-not-next` (hint), `co2.refund-due` (warning), Regel `co2-self-supply`, Begriff `co2Refund`
+  - calc.ts: `CO2_REFUND_CATEGORY = 'CO₂-Erstattung'`, `CO2_REFUND_LABEL = 'CO₂-Erstattung bei eigener Heizung (§ 6 Abs. 2 CO2KostAufG)'`; `recurringShareCents(st: Pick<Statement, 'rows' | 'totalShareCents'>): number` (exportiert); Zeilen `kind: 'co2Refund'` unter `co2refund:<Kennung>`, Gegenzeile mit Grund `co2Refund`; Codes `co2.refund-late`, `co2.refund-not-next`, `co2.refund-differs` (hint), `co2.refund-due` (warning), Regel `co2-self-supply`, Begriff `co2Refund`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1345,6 +1441,7 @@ test('Review Focus 1 (G-B10): Die Steuer liest nur die Zahlungen; 950 € statt 
 test('co2.refund-late: Anzeige mehr als zwölf Monate nach der Abrechnung des Lieferanten', () => {
   const r = computeSettlement(snap([refund({ supplierBilledAt: '2023-11-01', claimedAt: '2025-03-01' })], VERSANDT_2024))
   assert.match(textOf(r, 'co2.refund-late'), /endete am 01\.11\.2024/)
+  assert.match(textOf(r, 'co2.refund-late'), /nach dem Wortlaut voraussichtlich nicht/)
   assert.equal(r.notices.find((n) => n.code === 'co2.refund-late')?.level, 'hint')
 })
 
@@ -1354,6 +1451,21 @@ test('co2.refund-not-next: Die Abrechnung 2024 war bei der Anzeige noch offen; o
     tenancies: [{ id: 't', unitId: 'w', tenantName: 'Meier', persons: 1, personHistory: [{ from: '2020-01-01', persons: 1 }], start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: {}, baseRents: [] }],
   }))
   assert.match(textOf(ohneVZ, 'co2.refund-not-next'), /keine Vorauszahlung/)
+  // Maßgeblich ist die Vereinbarung, nicht das Gezahlte (Abweichung 5): Mit Staffel kein Hinweis darauf.
+  // Pauschale und Inklusivmiete prüft co2Refund.test.ts an prepaymentAgreed (BT-Drs. 20/3172, S. 35).
+  assert.ok(!textOf(computeSettlement(snap([refund()])), 'co2.refund-not-next').includes('keine Vorauszahlung'))
+})
+
+test('co2.refund-differs: eingetragener Betrag weicht von der Nachrechnung ab (Abweichung 4)', () => {
+  // 2.400 kg auf 80 m², 600 € → nachgerechnet 240,00 €; eingetragen 50,00 €.
+  const grundlagen = { emissionsKg: 2400, co2CostCents: 60000, areaM2: 80 }
+  const r = computeSettlement(snap([refund(grundlagen)], VERSANDT_2024))
+  const n = r.notices.find((x) => x.code === 'co2.refund-differs') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /50,00 €.*240,00 €/)
+  assert.ok(!codes(computeSettlement(snap([refund({ ...grundlagen, amountCents: 24000 })], VERSANDT_2024))).includes('co2.refund-differs'))
+  // Ohne Grundlagen keine Nachrechnung, also kein Hinweis.
+  assert.ok(!codes(computeSettlement(snap([refund()], VERSANDT_2024))).includes('co2.refund-differs'))
 })
 
 test('Review Focus 4: co2.refund-due in jeder Abrechnung ab der Fälligkeit, bis verrechnet oder ausgezahlt', () => {
@@ -1432,6 +1544,7 @@ export const recurringShareCents = (st: Pick<Statement, 'rows' | 'totalShareCent
   'co2.refund-late': { level: 'hint', title: 'CO₂-Erstattung nach Ablauf der Frist angezeigt', rule: 'co2-self-supply', terms: ['co2Refund'] },
   'co2.refund-not-next': { level: 'hint', title: 'CO₂-Erstattung nicht in der nächsten Abrechnung', rule: 'co2-self-supply', terms: ['co2Refund'] },
   'co2.refund-due': { level: 'warning', title: 'CO₂-Erstattung fällig', rule: 'co2-self-supply', terms: ['co2Refund'] },
+  'co2.refund-differs': { level: 'hint', title: 'CO₂-Erstattung weicht von der Nachrechnung ab', rule: 'co2-self-supply', terms: ['co2Refund'] },
 ```
 
 In `computeSettlement` direkt vor `// Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.`:
@@ -1468,6 +1581,13 @@ In `computeSettlement` direkt vor `// Die Höchstdauer hat P gebildet (shared/pe
         keyLabel: 'Erstattung', basisText: `Anzeige vom ${fmtDay(r.claimedAt)}`, shareCents: -r.amountCents, labor35aCents: 0, steps,
       })
       st.totalShareCents -= r.amountCents
+      // Abweichung 4: Geschuldet ist der Anteil nach § 6 Abs. 2 Satz 1; gebucht ist der eingetragene Betrag.
+      if (proposal && proposal.cents !== r.amountCents) {
+        warn('co2.refund-differs',
+          `Die eingetragene CO₂-Erstattung an ${t.tenantName} (${fmtCents(r.amountCents)}) weicht von der Nachrechnung nach den eingetragenen Grundlagen ab (${fmtCents(proposal.cents)}). ` +
+            'Zu erstatten ist der Anteil, den Sie nach § 6 Abs. 2 Satz 1 CO2KostAufG zu tragen haben; gebucht ist der eingetragene Betrag. Prüfen Sie die Anzeige des Mieters und die Grundlagen.',
+          tenancySubject)
+      }
       landlordRows.push({
         costItemId: `co2refund:${r.id}`, category: CO2_REFUND_CATEGORY, description: CO2_REFUND_LABEL, totalCents: 0,
         keyLabel: 'Erstattung', shareCents: r.amountCents, landlordParts: [{ reason: 'co2Refund', cents: r.amountCents }],
@@ -1476,7 +1596,7 @@ In `computeSettlement` direkt vor `// Die Höchstdauer hat P gebildet (shared/pe
       if (r.claimedAt > deadline) {
         warn('co2.refund-late',
           `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht; die Abrechnung des Lieferanten stammt vom ${fmtDay(r.supplierBilledAt)}. ` +
-            `Die Frist von ${self.claimMonths} Monaten (§ 6 Abs. 2 Satz 3 CO2KostAufG) endete am ${fmtDay(deadline)}; Sie müssen die Erstattung dann nicht leisten. Mietfuchs verrechnet sie, weil Sie sie eingetragen haben.`,
+            `Die Frist von ${self.claimMonths} Monaten (§ 6 Abs. 2 Satz 3 CO2KostAufG) endete am ${fmtDay(deadline)}; der Mieter muss den Anspruch innerhalb dieser Frist geltend machen, Sie müssen die Erstattung dann nach dem Wortlaut voraussichtlich nicht leisten. Mietfuchs verrechnet sie, weil Sie sie eingetragen haben.`,
           tenancySubject)
       }
       const months = law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)
@@ -1484,14 +1604,16 @@ In `computeSettlement` direkt vor `// Die Höchstdauer hat P gebildet (shared/pe
       const candidates = lived.map((p) => ({ key: p.key, from: p.from, deadline: settlementDeadline(p, months), sentAt: snapshot.settlementsSent?.find((s) => s.period === p.key)?.sentAt ?? null }))
       const next = nextSettlement(r.claimedAt, candidates)
       const nextPeriod = lived.find((p) => p.key === next)
-      if (st.prepaymentCents <= 0) {
+      // Satz 4 verlangt eine vereinbarte Vorauszahlung: die Staffel und das Nebenkostenmodell, nicht das Gezahlte
+      // (Abweichung 5; BT-Drs. 20/3172, S. 35: bei Pauschale oder ohne Umlage ist auszuzahlen).
+      if (!prepaymentAgreed(t, period)) {
         warn('co2.refund-not-next',
-          `${t.tenantName} zahlt keine Vorauszahlung auf Betriebskosten. Verrechnen dürfen Sie die CO₂-Erstattung nach § 6 Abs. 2 Satz 4 CO2KostAufG nur bei vereinbarter Vorauszahlung; ` +
+          `Mit ${t.tenantName} ist für diesen Zeitraum keine Vorauszahlung auf Betriebskosten vereinbart (keine Staffel mit Vorauszahlung, oder Pauschale bzw. Inklusivmiete). Verrechnen dürfen Sie die CO₂-Erstattung nach § 6 Abs. 2 Satz 4 CO2KostAufG nur bei vereinbarter Vorauszahlung; ` +
             `zahlen Sie sie spätestens am ${fmtDay(due)} aus (Satz 5) und tragen Sie die Auszahlung ein.`,
           tenancySubject)
       } else if (next !== period.key) {
         warn('co2.refund-not-next',
-          `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht. Verrechnen dürfen Sie sie nach § 6 Abs. 2 Satz 4 CO2KostAufG in der nächsten Betriebskostenabrechnung nach der Anzeige` +
+          `${t.tenantName} hat die CO₂-Erstattung am ${fmtDay(r.claimedAt)} geltend gemacht. Verrechnen dürfen Sie sie nach § 6 Abs. 2 Satz 4 CO2KostAufG in der nächsten Betriebskostenabrechnung nach der Anzeige, in der Regel` +
             (nextPeriod ? `, das ist die für ${periodLabel(nextPeriod)}` : '') +
             `. Sonst ist sie spätestens am ${fmtDay(due)} auszuzahlen (Satz 5).`,
           tenancySubject)
@@ -1501,7 +1623,7 @@ In `computeSettlement` direkt vor `// Die Höchstdauer hat P gebildet (shared/pe
     const open = r.paidOutOn === null && (r.settlePeriod === null || (r.settlePeriod === period.key && !st))
     if (open && r.claimedAt <= period.to && due <= period.to) {
       warn('co2.refund-due',
-        `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Sie war spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG). ` +
+        `${t.tenantName} hat am ${fmtDay(r.claimedAt)} eine CO₂-Erstattung von ${fmtCents(r.amountCents)} geltend gemacht. Wird sie nicht verrechnet, war sie spätestens am ${fmtDay(due)} zu erstatten (§ 6 Abs. 2 Satz 5 CO2KostAufG); bei vereinbarter Vorauszahlung wird sie mit Ablauf der Frist der Abrechnung fällig, in der sie zu verrechnen ist (BT-Drs. 20/3172, S. 35). ` +
           'Verrechnen Sie sie in dieser Abrechnung oder zahlen Sie sie aus, tragen Sie den Tag der Auszahlung ein und erfassen Sie die Auszahlung als negative Zahlung im Mietkonto.' +
           (r.nonResidential
             ? ` Ob diese Frist auch im Nichtwohngebäude gilt, ist nicht geklärt: § 8 Abs. 2 verweist auf § 6 Abs. 2 Satz 2 bis 4, und seit dem ${fmtDay(halfSplitEnactedOn())} steht die Frist in Satz 5. Mietfuchs warnt vorsichtshalber.`
@@ -1516,7 +1638,7 @@ Fassung von PR 3 die Rechnung des Vorschlags) so ändern, dass jede Verwendung v
 `recurringShareCents(st)` liest.
 
 Importe ergänzen, soweit nicht vorhanden: `type NoticeSubject` aus `'../../shared/types.ts'`; `refundLawAt,
-type LawAsk` aus `'./co2Refund.ts'`; `degreeDayPermille` aus `'../../shared/degreeDays.ts'`; `hkvDegreeDays` aus
+prepaymentAgreed, type LawAsk` aus `'./co2Refund.ts'`; `degreeDayPermille` aus `'../../shared/degreeDays.ts'`; `hkvDegreeDays` aus
 `'../../shared/law/heizkostenv.ts'`; `co2HalfSplit, halfSplitEnactedOn` aus `'../../shared/law/co2kostaufg.ts'`;
 `periodsBetween, periodLabel, settlementDeadline` aus `'../../shared/period.ts'`; `bgbDeadlineMonths` aus
 `'../../shared/law/bgb-betrkv.ts'`; `coversDate` aus `'../../shared/law/register.ts'`. calc.ts importiert nichts
@@ -1897,7 +2019,7 @@ export default function Co2RefundsCard({ propertyId, period }: { propertyId: str
             <label className="field">CO₂-Ausstoß (kg)<input value={f.emissionsKg} inputMode="decimal" onChange={(e) => set({ emissionsKg: e.target.value })} /></label>
             <label className="field">CO₂-Kosten (€)<input value={f.co2Cost} inputMode="decimal" onChange={(e) => set({ co2Cost: e.target.value })} /></label>
             <label className="field">Wohnfläche (m²)<input value={f.areaM2} inputMode="decimal" onChange={(e) => set({ areaM2: e.target.value })} /></label>
-            <label className="field checkline"><input type="checkbox" checked={f.ownAppliances} onChange={(e) => set({ ownAppliances: e.target.checked })} />Der Mieter nutzt den Brennstoff auch für eigene Geräte, etwa einen Gasherd (§ 6 Abs. 3 Satz 2)</label>
+            <label className="field checkline"><input type="checkbox" checked={f.ownAppliances} onChange={(e) => set({ ownAppliances: e.target.checked })} />Der Mieter betreibt mit dem Brennstoff auch ein Gerät zu anderen Zwecken, etwa einen Gasherd, das er selbst angeschafft hat und das ihm gehört (§ 6 Abs. 3 Satz 2; ein mitvermieteter Herd zählt nicht)</label>
             <label className="field checkline"><input type="checkbox" checked={f.commercialUse} onChange={(e) => set({ commercialUse: e.target.checked })} />Der Brennstoff wird auch gewerblich genutzt (§ 6 Abs. 3 Satz 1)</label>
             {f.commercialUse && <label className="field checkline"><input type="checkbox" checked={f.commercialMetered} onChange={(e) => set({ commercialMetered: e.target.checked })} />Der Wärmeverbrauch wird getrennt gemessen und ist nachgewiesen</label>}
             <label className="field checkline"><input type="checkbox" checked={f.nonResidential} onChange={(e) => set({ nonResidential: e.target.checked })} />Das Gebäude dient überwiegend nicht dem Wohnen (§ 8 Abs. 2)</label>
@@ -1908,6 +2030,7 @@ export default function Co2RefundsCard({ propertyId, period }: { propertyId: str
               </select>
             </label>
             <label className="field">Hälftige Teilung nach § 5a gilt ab (nur bei einer Heizung nach § 43 GModG)<input type="date" value={f.halfSplitFrom} onChange={(e) => set({ halfSplitFrom: e.target.value })} /></label>
+            <p className="muted">Frühestens der 01.01.2028 und frühestens der Tag des Einbaus. Nach einem Notfalleinbau ruht die Teilung zwölf Monate ab dem Einbau (§ 5a Abs. 4 CO2KostAufG). Im selbst bewohnten Zweifamilienhaus kann sie ganz entfallen (§ 5d Abs. 3), aber nur, wenn beide Wohnungen an derselben Heizung hängen; eine Gastherme je Wohnung ist das nicht. Leer lassen, wenn § 5a nicht gilt.</p>
             {f.halfSplitFrom !== '' && (
               <>
                 <label className="field">Netzentgelte laut Rechnung (€)<input value={f.gridFee} inputMode="decimal" onChange={(e) => set({ gridFee: e.target.value })} /></label>
@@ -1986,10 +2109,11 @@ Refs #85"
 - **CO₂-Erstattung an Mieter mit eigener Heizung** ([#97](https://github.com/speedone/mietfuchs/issues/97),
   [#85](https://github.com/speedone/mietfuchs/issues/85)): Heizt ein Mieter mit eigenem Vertrag, erfassen Sie auf
   der Seite Kosten seine Anzeige nach § 6 Abs. 2 CO2KostAufG. Mietfuchs rechnet nach (Stufe, gekürzte Tabelle bei
-  kürzerem Zeitraum des Lieferanten, Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei eigenen Geräten
-  wie einem Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung, ab 2028 die hälftige
-  Teilung), verrechnet den Betrag als Gutschrift in der Betriebskostenabrechnung und nennt die Fristen für
-  Anzeige, Verrechnung und Auszahlung. In der Steuerübersicht zählen nur die Zahlungen.
+  kürzerem Zeitraum des Lieferanten, Nichtwohngebäude, Beschränkungen nach § 9, 5 % weniger bei Geräten im
+  Eigentum des Mieters wie einem eigenen Gasherd, kein Anspruch bei gewerblicher Nutzung ohne getrennte Messung,
+  ab 2028 die hälftige Teilung), verrechnet den Betrag als Gutschrift in der Betriebskostenabrechnung, weist auf
+  eine Abweichung von der Nachrechnung hin und nennt die Fristen für Anzeige, Verrechnung und Auszahlung;
+  verrechnet wird nur bei vereinbarter Vorauszahlung. In der Steuerübersicht zählen nur die Zahlungen.
 ```
 
 - [ ] **Step 2: CLAUDE.md**
@@ -2027,8 +2151,10 @@ Refs #85"
 
 Eine Durchsicht mit frischem Kontext über `feat/heizung-pr18-ab-2028..feat/heizung-pr19-selbstversorger`; Befunde
 mit einem Test beheben, der vorher rot war, und in der PR-Beschreibung nennen. Die PR-Beschreibung nennt
-`Refs #97`, `Refs #85` (nie `Fixes`), die Abweichungen 1–13 und den Vorschlag für die offene Frage 15.1 Nr. 25
-(§ 8 Abs. 2 und die Auszahlungsfrist). #97 und #85 werden erst beim Release geschlossen.
+`Refs #97`, `Refs #85` (nie `Fixes`), die Abweichungen 1–13, den Abschnitt „Änderungen nach Prüfung vom
+05.10.2026“ und den Vorschlag für die offene Frage 15.1 Nr. 25 (§ 8 Abs. 2 und die Auszahlungsfrist), als
+Auslegung gekennzeichnet; dazu, nicht nachgelesen, BGH VIII ZR 294/10 (Abweichung 11) vor dem Merge am
+Volltext prüfen. #97 und #85 werden erst beim Release geschlossen.
 
 ---
 
@@ -2042,7 +2168,9 @@ mit einem Test beheben, der vorher rot war, und in der PR-Beschreibung nennen. D
 | Gutschriftzeile (5.7 `SettlementRow.kind` `co2Refund`, `LandlordReason` `co2Refund`; CO₂-Entwurf 5.8) | 2, 5 |
 | Fristhinweise, 12 Monate (`co2.refund-late`, `co2.refund-not-next`, `co2.refund-due`, 10.1; `co2.self-supply`, 4.3) | 1, 3, 5 |
 | § 8 (Abs. 2), § 9 in der Rechenhilfe (CO₂-Entwurf A15) | 3 |
-| −5 % (§ 6 Abs. 3 Satz 2) | 1, 3 |
+| −5 % (§ 6 Abs. 3 Satz 2), nur bei Gerät im Eigentum des Mieters (BT-Drs. 20/3172, S. 35) | 1, 3, 6 |
+| Verrechnen nur bei vereinbarter Vorauszahlung (§ 6 Abs. 2 Satz 4) | 3, 5 |
+| Hinweis bei Abweichung von der Nachrechnung | 5 |
 | Steuer nur über Zahlungen (6.4 Nr. 3, G-B10, Testfall 50 €/950 €) | 5 |
 | Regel `co2-self-supply` (10.2), Begriff `co2Refund` (10.3) | 1 |
 | Erklärung in der Einrichtung (11.2 Schritt 1) | 6 |

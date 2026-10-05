@@ -40,6 +40,18 @@ beim Vermieter“, „Mehrere Heizungen in einem Objekt“).
 `…-pr8-vorrat.md`). Gearbeitet wird auf `feat/heizung-pr9-etagenheizung`, abgezweigt von der Spitze
 von PR 8; der PR wird gestapelt auf PR 8 gestellt und nach dessen Merge auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die Prüfung der Schnittstellen für PR 15 bis 22 vom 05.10.2026 hat diesen Plan an einer Stelle
+geändert: **die Namen der Lieferungs-Oberfläche aus PR 7** (Annahme B5, Task 5 Step 1, 7 und 8). Die
+Karte heißt `FuelCard` (`client/src/components/FuelCard.tsx`, PR 7 Task 11), nicht
+`FuelDeliveriesCard`; das Formular heißt `FuelForm` mit `emptyFuelForm`, `fuelToForm` und
+`fuelBody(form, method)`, nicht `FuelDeliveryForm` und `fuelDeliveryBody(form, plant)`. Weil
+`fuelBody` die Anlage nicht kennt und keine `unitId` schickt, und weil PR 11, PR 18 und PR 20 auf
+seiner Signatur aufsetzen, bleibt `fuelBody` unverändert: `deliveryUnitId(form, plant)` steht
+daneben, und `FuelCard.save()` setzt die Wohnung in den Rumpf. Die Karte bekommt dafür `supply` und
+`units` an der Anlage und die Wohnungen als Prop von der Seite Heizkosten, die sie seit PR 7 hat.
+
 ## Global Constraints
 
 - **Wer nichts einstellt, merkt nichts** (Entwurf 1.2 Nr. 1, 11.1): Mit einer Anlage (`central`) ist
@@ -173,7 +185,7 @@ gelten hier ebenso; dazu:
 | B2 | Die eigene Aufteilung eines Topfs (Naht N2) rechnet in dieser Reihenfolge und unter diesen Namen: `fuel` (A7) → `areaM2` (Fläche der Einstufung) → `permille` (Anteil des Vermieters nach Stufe, § 8 und § 9) → `landlordCents` (L) → `const raws: { tenancyId: string; raw: number }[] = reliefsByShare(landlordCents, shares, fuelCents)` → Verteilung von R = round(Σ raw) mit `distributeCents`, Zeilen `co2Relief`, Gegenzeile `co2Share` | Task 4 |
 | B3 | `fuelTotals(pot, snapshot, lawLog)` liest die Lieferungen aus `snapshot.fuelDeliveries`, eingegrenzt auf `pot.plantId` | Task 4 |
 | B4 | Der Code `co2.exceeds-heating` (error) steht in `noticeKinds` (Entwurf 10.1, PR 7) | Task 4 |
-| B5 | Das Formular der Lieferungen steht in `client/src/fuelForm.ts` (`FuelDeliveryForm`, `fuelDeliveryBody(form, plant)`) und der Karte `FuelDeliveriesCard` | Task 5 |
+| B5 | Das Formular der Lieferungen steht in `client/src/fuelForm.ts` (`FuelForm`, `emptyFuelForm()`, `fuelToForm(d)`, `fuelBody(form, method)`, PR 7 Task 11) und der Karte `FuelCard` (`client/src/components/FuelCard.tsx`, Props `{ plant: { id; method }, view, deliveries, onSaved }`); die Seite Heizkosten hat `units` als Prop und gibt `plant={plant}` (ganzer `HeatingPlant`) weiter. `fuelBody` schickt keine `unitId`. | Task 5 |
 
 Vor Task 1 gleicht die ausführende Sitzung jede Zeile mit Plan und Code von PR 7 ab und ersetzt in
 diesem Plan jeden abweichenden Namen. Nur an Naht N2 (Task 4 Step 6) und am Lieferungsformular (Task 5 Step 7) hängt der Wortlaut vom Code von
@@ -1429,15 +1441,16 @@ beides in einem Schritt (`adjust`, Review Focus 1). „Jede Wohnung hat eine eig
 Anlagen die Anlage.
 
 **Files:**
-- Modify: `client/src/heatingForm.ts`, `client/src/components/HeatingCard.tsx`, `client/src/pages/Kosten.tsx`, `client/src/meterForm.ts`, `client/src/pages/Zaehler.tsx`, `client/src/fuelForm.ts` (PR 7, Annahme B5), `client/src/components/FuelDeliveriesCard.tsx` (PR 7)
+- Modify: `client/src/heatingForm.ts`, `client/src/components/HeatingCard.tsx`, `client/src/pages/Kosten.tsx`, `client/src/meterForm.ts`, `client/src/pages/Zaehler.tsx`, `client/src/fuelForm.ts` (PR 7, Annahme B5), `client/src/components/FuelCard.tsx` (PR 7), `client/src/pages/Heizkosten.tsx` (PR 7)
 - Test: `client/src/heatingForm.test.ts`, `client/src/components/HeatingCard.test.tsx`, `client/src/meterForm.test.ts`, `client/src/fuelForm.test.ts`
 
 **Interfaces:**
-- Consumes (Task 1, 2; PR 4, PR 5, PR 7, PR 8): Rumpf `adjust` an `POST /api/heating-plants`; `HeatingForm`, `heatingPlantBody`, `heatingToForm`, `emptyHeatingForm`, `defaultUnitIds`, `heatingSummary`, `ENERGY_OPTIONS`, `CONTRACT_OPTIONS`; `HeatingCard`; `heatingItemPeriods`; `MeterForm`, `meterToForm`, `meterBody`; `isStockEnergy`; B5 `FuelDeliveryForm`, `fuelDeliveryBody`.
+- Consumes (Task 1, 2; PR 4, PR 5, PR 7, PR 8): Rumpf `adjust` an `POST /api/heating-plants`; `HeatingForm`, `heatingPlantBody`, `heatingToForm`, `emptyHeatingForm`, `defaultUnitIds`, `heatingSummary`, `ENERGY_OPTIONS`, `CONTRACT_OPTIONS`; `HeatingCard`; `heatingItemPeriods`; `MeterForm`, `meterToForm`, `meterBody`; `isStockEnergy`; B5 `FuelForm`, `emptyFuelForm`, `fuelToForm`, `fuelBody`, `FuelCard`.
 - Produces:
   - heatingForm.ts: `HeatingForm` + `name`, `perUnitEnergy`, `otherNames`; `HeatingPlantBody` + `name`; `AdjustRow = { id: string; name: string; units: HeatingPlantUnit[] }`; `HeatingResult` mit `{ body; adjust: AdjustRow[] }`; `emptyHeatingForm(units, others?)`, `heatingToForm(plant, units, others?)`, `heatingPlantBody(form, units, others?, editingId?)`; `PER_UNIT_ENERGY_OPTIONS`; `plantOptions(plants)`
   - meterForm.ts: `MeterForm` + `heatingPlantId`; `meterPlantId(form, plants): { plantId: string | null } | { error: string }`
-  - fuelForm.ts: `FuelDeliveryForm` + `unitId`; `deliveryUnitId(form, plant): { unitId: string | null } | { error: string }`
+  - fuelForm.ts: `FuelForm` + `unitId`; `deliveryUnitId(form, plant): { unitId: string | null } | { error: string }`; `fuelBody(form, method)` bleibt unverändert (die Wohnung setzt die Karte dazu)
+  - `FuelCard`: Prop `plant` erweitert um `supply` und `units` (`Pick<HeatingPlant, 'id' | 'method' | 'supply' | 'units'>`), neue Prop `units: readonly Pick<Unit, 'id' | 'name'>[]`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1557,10 +1570,22 @@ describe('Zähler an einer von mehreren Heizanlagen (Heizung PR 9)', () => {
 (`describe` und `test` aus `vitest`, `Meter` in den Typimporten der Datei; `meterPlantId` ergänzen. Ist `meterToForm` mit einem
 anderen Mindestumfang des Zählers aufgerufen, wird dessen Gestalt übernommen und das `as` entfällt.)
 
-In `client/src/fuelForm.test.ts` (Annahme B5):
+In `client/src/fuelForm.test.ts` (Annahme B5; `gas` ist eine vollständige Beispiel-Lieferung vom Typ
+`FuelDelivery`; führt der Test von PR 7 dort noch keine, wird die aus `FuelCard.test.tsx` (PR 7)
+übernommen; `emptyFuelForm`, `fuelToForm`, `fuelBody`, `deliveryUnitId` importieren):
 
 ```ts
 describe('Rechnung einer Etagenheizung (Heizung PR 9)', () => {
+  test('das Formular führt die Wohnung', () => {
+    expect(emptyFuelForm().unitId).toBe('')
+    expect(fuelToForm({ ...gas, unitId: 'og' }).unitId).toBe('og')
+    expect(fuelToForm({ ...gas, unitId: null }).unitId).toBe('')
+  })
+  test('fuelBody schickt keine Wohnung; die setzt die Karte', () => {
+    const r = fuelBody({ ...emptyFuelForm(), invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', unitId: 'og' }, 'manual')
+    if ('error' in r) throw new Error(r.error)
+    expect('unitId' in r.body).toBe(false)
+  })
   test('bei perUnit Pflicht, bei zentraler Anlage leer', () => {
     expect(deliveryUnitId({ unitId: '' }, { supply: 'perUnit' })).toEqual({ error: 'Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft.' })
     expect(deliveryUnitId({ unitId: 'og' }, { supply: 'perUnit' })).toEqual({ unitId: 'og' })
@@ -1960,34 +1985,79 @@ Im Formular hinter der Auswahl der Rolle an der Heizanlage (PR 4):
 (`plantOptions` aus `'../heatingForm'`, `meterPlantId` aus `'../meterForm'` importieren. Die
 Bedingung, unter der PR 4 die Rolle zeigt, liest bisher `plants.length > 0`; sie bleibt.)
 
-- [ ] **Step 7: Lieferungen (`client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, Annahme B5)**
+- [ ] **Step 7: Lieferungen (`client/src/fuelForm.ts`, `client/src/components/FuelCard.tsx`, `client/src/pages/Heizkosten.tsx`, Annahme B5)**
 
-In `fuelForm.ts`: `FuelDeliveryForm` bekommt `unitId: string` (leere Vorlage `''`, aus einer Lieferung
-`d.unitId ?? ''`). Dazu:
+In `fuelForm.ts` bekommt `FuelForm` das Feld `unitId: string`. `emptyFuelForm()` setzt `unitId: ''`,
+`fuelToForm(d)` setzt `unitId: d.unitId ?? ''`. `fuelBody(form, method)` bleibt, wie PR 7 es
+schreibt: Es schickt keine `unitId`, und seine Signatur bleibt die, auf die PR 11, PR 18 und PR 20
+aufsetzen. Dazu:
 
 ```ts
 // Die Wohnung einer Rechnung (Heizung PR 9, Entwurf 5.4 F8): bei einer Etagenheizung Pflicht, sonst nie.
-export function deliveryUnitId(form: Pick<FuelDeliveryForm, 'unitId'>, plant: Pick<HeatingPlant, 'supply'>): { unitId: string | null } | { error: string } {
+// Getrennt von fuelBody, damit dessen Signatur (form, method) für die späteren PRs bleibt; die Karte
+// setzt das Ergebnis in den Rumpf.
+export function deliveryUnitId(form: Pick<FuelForm, 'unitId'>, plant: Pick<HeatingPlant, 'supply'>): { unitId: string | null } | { error: string } {
   if (plant.supply !== 'perUnit') return { unitId: null }
   return form.unitId ? { unitId: form.unitId } : { error: 'Bitte wählen Sie die Wohnung, deren Heizung die Rechnung betrifft.' }
 }
 ```
 
-In `fuelDeliveryBody(form, plant)` am Anfang:
+(`HeatingPlant` in die Typimporte von `fuelForm.ts` aufnehmen.)
 
-```ts
-  const unit = deliveryUnitId(form, plant)
-  if ('error' in unit) return unit
+In `FuelCard.tsx` (PR 7) wird `TextKey` um das neue Feld erweitert, damit es kein Textfeld bekommt:
+
+```tsx
+type TextKey = Exclude<keyof FuelForm, 'usedByService' | 'unitId'>
 ```
 
-und im Rumpf `unitId: unit.unitId` statt des festen `unitId: null` aus PR 7. In
-`FuelDeliveriesCard.tsx` bekommt das Formular bei `plant.supply === 'perUnit'` als erstes Feld:
+Die Props werden erweitert:
+
+```tsx
+export default function FuelCard({ plant, view, deliveries, units, onSaved }: {
+  plant: Pick<HeatingPlant, 'id' | 'method' | 'supply' | 'units'>
+  view: HeatingPeriodView
+  deliveries: FuelDelivery[]
+  units: readonly Pick<Unit, 'id' | 'name'>[]
+  onSaved: () => void
+}) {
+```
+
+(`HeatingPlant` und `Unit` in die Typimporte, `deliveryUnitId` in den Import aus `'../fuelForm'`.)
+`save()` setzt die Wohnung vor `fuelBody` fest und hängt sie an den Rumpf:
+
+```tsx
+  async function save() {
+    const unit = deliveryUnitId(form, plant)
+    if ('error' in unit) {
+      setError(unit.error)
+      return
+    }
+    const r = fuelBody(form, plant.method)
+    if ('error' in r) {
+      setError(r.error)
+      return
+    }
+    const body = { ...r.body, unitId: unit.unitId }
+    try {
+      if (editing === 'neu') await api(`/api/heating-plants/${plant.id}/deliveries`, { method: 'POST', body: JSON.stringify(body) })
+      else await api(`/api/fuel-deliveries/${editing}`, { method: 'PUT', body: JSON.stringify(body) })
+      setEditing(null)
+      setError('')
+      toast('Lieferung gespeichert.')
+      onSaved()
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+```
+
+Im Formular steht bei `plant.supply === 'perUnit'` als erstes Feld:
 
 ```tsx
           {plant.supply === 'perUnit' && (
             <label className="field grow">
               Wohnung
-              <select value={form.unitId} onChange={(e) => setForm({ ...form, unitId: e.target.value })}>
+              <select value={form.unitId} onChange={(e) => set('unitId', e.target.value)}>
                 <option value="">— bitte wählen —</option>
                 {units.filter((u) => plant.units === null || plant.units.some((x) => x.unitId === u.id)).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
@@ -1995,12 +2065,18 @@ und im Rumpf `unitId: unit.unitId` statt des festen `unitId: null` aus PR 7. In
           )}
 ```
 
-(Hat die Karte die Wohnungen nicht als `units`, lädt sie sie mit `api<Unit[]>(withProperty('/api/units',
-propertyId))` wie die Seite Zähler. Heißt das Formular in PR 7 anders, gilt B5 und der Name aus PR 7.)
+In `Heizkosten.tsx` (PR 7) bekommt die Karte die Wohnungen, die die Seite schon als Prop hat:
+
+```tsx
+                <FuelCard plant={plant} view={v} deliveries={ownedBy(data?.deliveries[plant.id] ?? [], v)} units={units} onSaved={() => void load()} />
+```
+
+Rendert `FuelCard.test.tsx` (PR 7) die Karte, bekommt jeder Aufruf dort `units={[]}` und die Anlage
+`supply: 'central', units: null` dazu; an den Erwartungen ändert sich nichts.
 
 - [ ] **Step 8: Run tests to verify they pass**
 
-Run: `npm --prefix client test -- heatingForm HeatingCard meterForm fuelForm Kosten Zaehler && npm run typecheck && npm --prefix server test -- test/anrede.test.ts test/law-literals.test.ts`
+Run: `npm --prefix client test -- heatingForm HeatingCard meterForm fuelForm FuelCard Kosten Zaehler && npm run typecheck && npm --prefix server test -- test/anrede.test.ts test/law-literals.test.ts`
 Expected: PASS. `anrede.test.ts` findet keine Du-Form; `law-literals.test.ts` findet keine Rechtszahl
 (die Karte nennt § 5 Abs. 1 Satz 2 als Fundstelle, keine Zahl).
 

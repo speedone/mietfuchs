@@ -81,6 +81,10 @@ ihrer Stelle; diese Liste sagt, wo, damit die Durchsicht sie findet.
    Warmwasserverbrauchs zeitanteilig teilt; als Festlegung F7 im Entwurf 15.2 geführt, ⟨Norm offen:
    VDI 2077⟩.
 9. **`andList` aus `shared/wording.ts`** statt einer zweiten Fassung in dhw.ts (eine Quelle).
+10. **Nachtrag aus der Prüfung der Schnittstellen für PR 15 bis 22 (05.10.2026):** Die Karte der
+   Lieferungen heißt nach PR 7 Task 11 `FuelCard` (`client/src/components/FuelCard.tsx`), nicht
+   `FuelDeliveriesCard` (Schnittstellen PR 7, Files, Task 6 Step 5, `git add`). Ihre Prop `plant`
+   bekommt `energy` dazu, weil die Felder des Heizwerts am Energieträger hängen.
 
 ## Global Constraints
 
@@ -196,7 +200,7 @@ ihrer Stelle; diese Liste sagt, wo, damit die Durchsicht sie findet.
 | `server/testing/selfHeating.ts` (neu) | Beispiel A als Schnappschuss ohne Datenbank, für PR 11 bis PR 14 | 4 |
 | `server/src/heating.ts`, `server/src/calc.ts`, `server/src/db/heating.ts` | `hotWaterShareOf` über dhw.ts, Sperren von PR 10 fallen, Hinweise, `self.dhw` | 4 |
 | `server/src/db/co2.ts` | Warmwasser bei `self` speichern (Sperre von PR 6 fällt), Ansicht | 5 |
-| `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/dhwView.ts` (neu), `client/src/components/DhwBlock.tsx` (neu), `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts`, `client/src/components/HeatingSelfSetup.tsx` | Eingaben, Sperre der Einrichtung fällt, Druckblock | 6 |
+| `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelCard.tsx`, `client/src/dhwView.ts` (neu), `client/src/components/DhwBlock.tsx` (neu), `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts`, `client/src/components/HeatingSelfSetup.tsx` | Eingaben, Sperre der Einrichtung fällt, Druckblock | 6 |
 | `CHANGELOG.md`, `CLAUDE.md` | Doku | 7 |
 | Tests: `law.test.ts`, `law-history.test.ts`, `law-literals.test.ts`, `glossary.test.ts`, `schema.test.ts`, `migrations.test.ts`, `dhw.test.ts` (neu), `db-warmwasser.test.ts` (neu), `calc-warmwasser.test.ts` (neu), `heating.test.ts`, `calc-heizkosten.test.ts`, `db-heizkosten.test.ts` (Tests von PR 10), `api.test.ts`, `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/heatingSelfForm.test.ts`, `client/src/components/HotWaterCard.test.tsx` (neu), `client/src/dhwView.test.ts` (neu) | | je Task |
 
@@ -231,7 +235,7 @@ Task 1 beginnt.
   `updateDelivery(db, id, body)`, `PlantFacts`; read.ts `readFuelDeliveries` (übernimmt jede Spalte über
   `...d`); snapshot.ts `SnapshotFuelDelivery`, `SnapshotFuel` (`snapshot.fuel.deliveries`), `FuelSource`
   (`fuelDeliveries`); `FuelResult` (`lines`, `coveragePermille`); `client/src/fuelForm.ts` mit `FuelForm`,
-  `fuelToForm`, `fuelBody`; `client/src/components/FuelDeliveriesCard.tsx`.
+  `fuelToForm`, `fuelBody`; `client/src/components/FuelCard.tsx`.
 - **PR 8** `HeatingStockStatement` (`unit`, `consumed.quantity`), `StockUnit`, `StockResult`; in
   `computeSettlement` `stockOfPlant`; `shared/fuelStock.ts` `STOCK_ENERGIES`, `isStockEnergy`.
 - **PR 10** (Plan, Commit `81828af`): siehe „Annahmen über PR 10“, Abschnitt „Auflösung“, und Task 4.
@@ -2915,7 +2919,7 @@ Refs #211"
 ### Task 6: Oberfläche: Eingaben der Formeln, Heizwert an der Lieferung, Druckblock
 
 **Files:**
-- Modify: `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelDeliveriesCard.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts` (PR 10), `client/src/components/HeatingSelfSetup.tsx` (PR 10)
+- Modify: `client/src/heatingForm.ts`, `client/src/components/HotWaterCard.tsx`, `client/src/fuelForm.ts`, `client/src/components/FuelCard.tsx`, `client/src/pages/Abrechnung.tsx`, `client/src/pages/Heizkosten.tsx`, `client/src/heatingSelfForm.ts` (PR 10), `client/src/components/HeatingSelfSetup.tsx` (PR 10)
 - Create: `client/src/dhwView.ts`, `client/src/components/DhwBlock.tsx`
 - Test: `client/src/heatingForm.test.ts`, `client/src/fuelForm.test.ts`, `client/src/heatingSelfForm.test.ts` (ein Test von PR 10 ändert sich), `client/src/dhwView.test.ts` (neu), `client/src/components/HotWaterCard.test.tsx` (neu)
 
@@ -3197,7 +3201,7 @@ Warmwasser bestimmt?“ (`self ? … : …` am Label).
 bekommt `plant={plant}`. Hat `HotWaterCard` die Prop `plant` noch nicht, kommt sie mit dieser PR dazu:
 `{ view, plant, onSaved }: { view: HeatingPeriodView; plant: HeatingPlant; onSaved: () => void }`.
 
-- [ ] **Step 5: `client/src/fuelForm.ts` und `FuelDeliveriesCard.tsx`**
+- [ ] **Step 5: `client/src/fuelForm.ts` und `FuelCard.tsx`**
 
 `fuelForm.ts`: Importe `FUEL_GRADE_LABELS, GRADES_BY_ENERGY, HEATING_VALUE_UNIT_TEXT` aus `'../../shared/fuelGrades.ts'`,
 `parseDecimal, numberText` aus `'./heatingForm'`, Typen `FuelGrade`, `HeatingEnergy` aus `'./types'`.
@@ -3240,8 +3244,10 @@ export function defaultGrade(energy: HeatingEnergy): FuelGrade | '' {
 }
 ```
 
-`FuelDeliveriesCard.tsx`: Wo eine neue Lieferung ihr leeres Formular bekommt, `grade:
-defaultGrade(plant.energy)` setzen. Im Formular hinter dem Feld der Menge:
+`FuelCard.tsx` (PR 7, Name nach Task 11 von PR 7): Die Prop `plant` bekommt zusätzlich `energy`
+(nach PR 9 `Pick<HeatingPlant, 'id' | 'method' | 'supply' | 'units' | 'energy'>`; die Seite Heizkosten
+reicht den ganzen `HeatingPlant` herein). Wo eine neue Lieferung ihr leeres Formular bekommt (in
+`open(null)`: `emptyFuelForm()`), `grade: defaultGrade(plant.energy)` setzen. Im Formular hinter dem Feld der Menge:
 
 ```tsx
           {isBoiler(plant.energy) && (
@@ -3365,7 +3371,7 @@ Run: `npm test`
 Expected: PASS.
 
 ```bash
-git add client/src/heatingForm.ts client/src/heatingForm.test.ts client/src/components/HotWaterCard.tsx client/src/components/HotWaterCard.test.tsx client/src/fuelForm.ts client/src/fuelForm.test.ts client/src/components/FuelDeliveriesCard.tsx client/src/dhwView.ts client/src/dhwView.test.ts client/src/components/DhwBlock.tsx client/src/pages/Abrechnung.tsx client/src/pages/Heizkosten.tsx client/src/heatingSelfForm.ts client/src/heatingSelfForm.test.ts client/src/components/HeatingSelfSetup.tsx
+git add client/src/heatingForm.ts client/src/heatingForm.test.ts client/src/components/HotWaterCard.tsx client/src/components/HotWaterCard.test.tsx client/src/fuelForm.ts client/src/fuelForm.test.ts client/src/components/FuelCard.tsx client/src/dhwView.ts client/src/dhwView.test.ts client/src/components/DhwBlock.tsx client/src/pages/Abrechnung.tsx client/src/pages/Heizkosten.tsx client/src/heatingSelfForm.ts client/src/heatingSelfForm.test.ts client/src/components/HeatingSelfSetup.tsx
 git commit -m "Oberfläche: Warmwasser nach Formel, Heizwert an der Lieferung, Druckblock
 
 Volumen (mit Vorschlag aus den Zählern) und Temperatur, die Frage nach dem Erzeuger ohne Vorgabe,
