@@ -127,3 +127,63 @@ test('Anlage mit Vorgaben: jede Abrechnung bleibt gleich, über das ganze Ergebn
     assert.deepEqual(settle(s, y, []), ohne, `${y}: leere Liste`)
   }
 })
+
+// ---------- Fernablesbarkeit (#214, Entwurf 3.13, 6.5, 10.1) ----------
+
+const heizBestand = (y: number, meters: SnapshotMeter[] = []): Partial<SnapshotSource> => ({
+  units: [unit('a'), unit('b')],
+  tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')],
+  meters,
+  costItems: [item('heizung', y, { category: HEATING_CATEGORY, amountCents: 100000, key: 'amounts', tenancyAmounts: { ta: 60000, tb: 40000 } })],
+})
+const remoteNotices = (r: ComputedSettlement) => r.notices.filter((n) => n.code.startsWith('heating.remote-reading'))
+
+test('R-A1: Gerät eingebaut 15.12.2021, nicht fernablesbar, 2025: die Kürzung je Mieter beziffert', () => {
+  const hkvA = meter('hkv-a', 'a', 'hkv', { name: 'HKV Wohnzimmer', remoteReadable: false, installedOn: '2021-12-15' })
+  const r = settle(heizBestand(2025, [hkvA]), 2025, [plant({ method: 'service' })])
+  const [n, ...weitere] = remoteNotices(r)
+  assert.equal(weitere.length, 0)
+  assert.equal(n?.code, 'heating.remote-reading-missing')
+  assert.equal(n?.level, 'warning')
+  assert.deepEqual(n?.subject, { kind: 'meter', id: 'hkv-a' })
+  assert.match(n?.text ?? '', /„HKV Wohnzimmer“/)
+  assert.match(n?.text ?? '', /nach dem 01\.12\.2021/)
+  assert.match(n?.text ?? '', /um 3 % kürzen/)
+  // 3 % der gedruckten Heizzeilen (Entwurf 6.5): 600,00 € und 400,00 €.
+  assert.match(n?.text ?? '', /ta \(a\) 18,00 €/)
+  assert.match(n?.text ?? '', /tb \(b\) 12,00 €/)
+  assert.ok(r.legalBasis.values.some((v) => v.id === 'hkv.remote-reading.new-devices'))
+  assert.ok(r.legalBasis.values.some((v) => v.id === 'hkv.cut.remote-reading'))
+  // Ohne Anlage kennt Mietfuchs die Geräte nicht, und vor 2027 gibt es dann keinen Hinweis; so
+  // rechnete auch die erste Fassung des Entwurfs.
+  assert.deepEqual(remoteNotices(settle(heizBestand(2025, [hkvA]))), [])
+})
+
+test('Einbaudatum unbekannt: ein Hinweis mit „bis zu“, der die Ampel nicht färbt', () => {
+  const r = settle(heizBestand(2025, [meter('hkv-a', 'a', 'hkv', { name: 'HKV', remoteReadable: false })]), 2025, [plant()])
+  const [n] = remoteNotices(r)
+  assert.equal(n?.code, 'heating.remote-reading')
+  assert.equal(n?.level, 'hint')
+  assert.match(n?.text ?? '', /um bis zu 3 % kürzen/)
+  assert.match(n?.text ?? '', /ta \(a\) 18,00 €/)
+})
+
+test('Angabe an der Anlage: keine Geräte fernablesbar, einige nach 2021 eingebaut', () => {
+  const r = settle(heizBestand(2025), 2025, [plant({ method: 'service', devicesRemote: 'none', devicesInstalledAfter2021: 'some' })])
+  const [n] = remoteNotices(r)
+  assert.equal(n?.code, 'heating.remote-reading-missing')
+  assert.match(n?.text ?? '', /Laut Ihrer Angabe an der Heizanlage/)
+  assert.equal(n?.subject, undefined)
+})
+
+test('Alle Geräte fernablesbar laut Anlage: kein Hinweis, auch ab 2027', () => {
+  assert.deepEqual(remoteNotices(settle(heizBestand(2027), 2027, [plant({ devicesRemote: 'all' })])), [])
+})
+
+test('Ohne Anlage und mit unbekannter Angabe: der Hinweis aus PR 1, wortgleich', () => {
+  const ohne = remoteNotices(settle(heizBestand(2027), 2027))
+  assert.equal(ohne.length, 1)
+  assert.equal(ohne[0]?.code, 'heating.remote-reading')
+  assert.deepEqual(remoteNotices(settle(heizBestand(2027), 2027, [plant()])), ohne)
+  assert.deepEqual(remoteNotices(settle(heizBestand(2026), 2026)), [])
+})

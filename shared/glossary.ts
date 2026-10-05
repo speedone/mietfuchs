@@ -13,12 +13,14 @@
 // Rechtszahlen kommen aus dem Rechtsregister (shared/law/, Heizung PR 1), und zwar in der Fassung
 // von `LAW_AS_OF`: Das Lexikon erklärt das geltende Recht. Die Zahlen einer Beispielrechnung („70 %
 // nach Verbrauch“) sind gewählt und bleiben stehen.
-import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays } from './law/heizkostenv.ts'
-import { LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
+import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from './law/heizkostenv.ts'
+import { germanDate, LAW_AS_OF, onlyVersion, valueAt } from './law/register.ts'
 
 const SHARE = valueAt(hkvConsumptionShare, LAW_AS_OF)
 const CUT = valueAt(hkvCutNotByConsumption, LAW_AS_OF)
 const REMOTE_CUT = valueAt(hkvCutRemoteReading, LAW_AS_OF)
+const NEW_DEVICES_AFTER = germanDate(valueAt(hkvRemoteReadingNewDevices, LAW_AS_OF).installedAfter)
+const RETROFIT_FROM = germanDate(onlyVersion(hkvRemoteReadingRetrofit).validFrom ?? '')
 
 export type Term = {
   title: string
@@ -148,6 +150,20 @@ export const GLOSSARY = {
     example: `3.000 € Heizkosten, 70 % nach Verbrauch: 2.100 € nach den Messwerten, 900 € nach Wohnfläche. Wird nicht nach Verbrauch abgerechnet, etwa nur nach Fläche, darf der Mieter seinen Anteil um ${CUT} % kürzen. Unabhängig davon darf er um ${REMOTE_CUT} % kürzen, wenn Zähler nicht fernablesbar sind, obwohl sie es sein müssten (neue Geräte seit Dezember 2021, alle übrigen ab 2027), oder wenn die vorgeschriebenen Verbrauchsinformationen fehlen.`,
     norm: '§§ 1, 2, 5, 6a, 7, 8, 11, 12 HeizkostenV',
     needed: 'Bei einer Zentralheizung, bei Fernwärme und bei zentraler Warmwasserbereitung, nicht bei einer Gastherme in der Wohnung mit eigenem Vertrag des Mieters. Im Haus mit höchstens zwei Wohnungen, von denen Sie eine selbst bewohnen, dürfen Sie mit dem Mieter etwas anderes vereinbaren, etwa eine Warmmiete; ohne solche Vereinbarung gilt die Verordnung auch dort. Wenige weitere Ausnahmen nennt § 11, etwa wenn die Messung unverhältnismäßig teuer wäre. Wärmepumpen sind seit Oktober 2024 nicht mehr ausgenommen. Nicht fernablesbare Zähler und Heizkostenverteiler müssen bis zum 31.12.2026 nachgerüstet oder getauscht sein; klären Sie das bitte mit Ihrem Messdienst. Ab dem Abrechnungsjahr 2027 erinnert Mietfuchs in der Abrechnung daran.',
+  },
+  heatingSystem: {
+    title: 'Heizanlage',
+    short: 'Die Anlage, die das Haus mit Wärme und meist auch mit Warmwasser versorgt, etwa ein Gaskessel im Keller, eine Wärmepumpe oder der Anschluss an die Fernwärme. An der Heizanlage sagen Sie Mietfuchs, womit geheizt wird, wer die Heizkostenabrechnung erstellt und welche Wohnungen angeschlossen sind.',
+    example: 'Ein Haus mit drei Wohnungen und Gaszentralheizung, abgerechnet vom Messdienst: Sie legen eine Heizanlage „Gas“ an und übernehmen die 3.600 € der Messdienstabrechnung wie bisher als Einzelbeträge, etwa 1.400 €, 1.200 € und 1.000 €. An diesen Beträgen ändert die Heizanlage nichts.',
+    norm: '§ 1 HeizkostenV',
+    needed: 'Nicht nötig, solange Sie die Heizkosten wie bisher erfassen. Mit den Angaben an der Heizanlage kann Mietfuchs sagen, ob Mieter wegen nicht fernablesbarer Geräte kürzen dürfen, und später die CO₂-Kosten und eine eigene Heizkostenabrechnung rechnen. Hat jede Wohnung eine eigene Heizung mit eigenem Vertrag des Mieters, gibt es keine Heizanlage des Hauses.',
+  },
+  heatCostAllocator: {
+    title: 'Heizkostenverteiler',
+    short: `Ein kleines Gerät am Heizkörper, das anzeigt, wie viel dieser Heizkörper im Verhältnis zu den übrigen geheizt hat. Seine Werte sind keine Kilowattstunden, sondern Einheiten, die erst mit den Werten aller Geräte des Hauses etwas bedeuten. Geräte, die nach dem ${NEW_DEVICES_AFTER} eingebaut wurden, müssen aus der Ferne ablesbar sein, alle übrigen ab dem ${RETROFIT_FROM}.`,
+    example: `Im Wohnzimmer zeigt der Verteiler 420 Einheiten, im ganzen Haus sind es 4.200. Auf diesen Heizkörper entfällt damit ein Zehntel der Kosten nach Verbrauch, bei 2.100 € also 210 €. Ist das Gerät nicht fernablesbar, obwohl es das sein müsste, darf der Mieter seinen Anteil an den Heizkosten um ${REMOTE_CUT} % kürzen.`,
+    norm: '§§ 5, 12 HeizkostenV',
+    needed: 'Wenn Ihr Messdienst die Heizkosten nach Heizkostenverteilern abrechnet. Mietfuchs wertet ihre Einheiten noch nicht selbst aus; übernehmen Sie dafür die Abrechnung des Messdienstes als Einzelbeträge. Tragen Sie am Zähler ein, ob das Gerät fernablesbar ist und wann es eingebaut wurde; dann sagt die Abrechnung, ob Mieter kürzen dürfen.',
   },
   cableTv: {
     title: 'Kabelfernsehen',
