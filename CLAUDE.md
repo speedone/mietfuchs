@@ -298,6 +298,9 @@ genau das tut, was er verhindern soll.
    der State-Wert nicht in der Optionsliste, zeigt der Browser den ersten Eintrag, ohne ein
    `change`-Ereignis zu senden — gespeichert wird dann etwas anderes als das Sichtbare. Neue
    Selects deshalb über `meterTypeOptions`/`costKeyOptions` speisen.
+   [client/src/vitestSetup.ts](client/src/vitestSetup.ts) setzt die Wartezeit von `findBy…` und
+   `waitFor` auf fünf Sekunden; mit der Voreinstellung von einer Sekunde scheiterten Seitentests
+   unter Last gelegentlich, ohne dass etwas falsch war.
 
 Die Tests sind selbst TypeScript und werden von `npm run typecheck` mitgeprüft. Das ist der
 eigentliche Wert: Sie bauen Datenbestände von Hand auf, und der Übersetzer vergleicht sie mit
@@ -963,15 +966,23 @@ Jede Rechtszahl steht nur in [shared/law/](shared/law/), mit Gültigkeit, Fundst
 zwei Parameter). Abgefragt wird mit `law(param, ctx, log)` aus
 [shared/law/register.ts](shared/law/register.ts); die Berechnung legt je Abrechnung ein Protokoll
 an (`createLawLog`, kein globaler Zustand), fragt erst dort, wo ein Wert gebraucht wird, und legt
-die benutzten Werte in `legalBasis.values`. Sie frieren mit dem Abschluss ein, `deviation` meldet
-einen später geänderten Wert in `valueChanges`. Texte außerhalb einer Abrechnung (Lexikon,
+die benutzten Werte in `legalBasis.values`. **Ein Wert, der im Zeitraum nicht gilt, ist kein
+angewandter Wert**: `overlap` protokolliert bei `none` nichts; braucht ein Hinweis die Fassung
+trotzdem (die Kabelregel ab 2025), trägt calc.ts sie mit `recordVersionAt` ein, und die Anzeige
+nennt die Gültigkeit („gilt bis 30.06.2024“). Die Werte frieren mit dem Abschluss ein, `deviation`
+meldet einen später geänderten Wert in `valueChanges`, je Fassung (Kennung und Beginn). Texte außerhalb einer Abrechnung (Lexikon,
 Anleitungen, Cockpit) lesen `valueAt(param, LAW_AS_OF)`. Das Regelverzeichnis liegt in
 [shared/law/rules.ts](shared/law/rules.ts) und nimmt seine Daten und Zahlen aus den Parametern.
 **Eine Fassung wird nie geändert, nur eine neue angelegt**; `law-history.test.ts` hält jede
-ausgelieferte Fassung als Zahl fest. `law-literals.test.ts` verbietet Prozentangaben einer
-Rechtsfolge außerhalb des Registers und Datumsliterale in den Dateien der Berechnung; erlaubte
-Stellen stehen dort mit Grund. Beim Tag bricht release.yml ab, solange ein Wert
-`checked: 'unchecked'` hat (`law-release.test.ts`). **Es gibt nur ein Stichtagsdatum**,
+ausgelieferte Fassung als Zahl fest. Einzige erlaubte Änderung: das offene Ende einer Fassung zu
+schließen, wenn eine neue anschließt. `law-literals.test.ts` verbietet Prozentangaben einer
+Rechtsfolge außerhalb des Registers, Datumsliterale in den Dateien der Berechnung und die Zahlen
+des Registers im Code (ohne Zeichenketten und Kommentare) von calc.ts, snapshot.ts,
+shared/heating.ts und invoiceAmounts.ts; erlaubte Stellen stehen dort mit Grund, eine
+Mutationsprobe hält fest, dass der Wächter die früheren Stellen fängt. Beim Tag bricht release.yml
+ab, solange ein Wert `checked: 'unchecked'` hat (`law-release.test.ts`); der Schritt prüft an der
+TAP-Ausgabe, dass der Sperrtest nicht übersprungen wurde, sonst fiele die Sperre bei fehlender
+Variable still aus. **Es gibt nur ein Stichtagsdatum**,
 `LAW_AS_OF`; das frühere `RULES_AS_OF` des Regelverzeichnisses ist entfallen. Wer eine Regel oder
 einen Wert prüft, setzt `retrieved` der betroffenen Parameter und `LAW_AS_OF` auf den Tag der
 Durchsicht (#110); `LAW_AS_OF` ist das jüngste `retrieved` und steht als Rechtsstand in jeder
