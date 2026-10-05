@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, consumptionOverview, NOTICE_KINDS, type ComputedSettlement } from '../src/calc.ts'
-import { RULES_AS_OF } from '../../shared/law/rules.ts'
+import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 
 const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}): SnapshotTenancy => ({
@@ -72,9 +72,10 @@ test('Kabel: der Hinweis nennt die Regel und die Position, 2024 und danach mit e
   assert.deepEqual(k(2025).map((n) => [n.code, n.rule, n.subject?.id]), [['tv-signal.ended', 'tv-signal', 'kabel']])
 })
 
-test('Rechtsstand: Datum des Verzeichnisses und die Regeln, die im Jahr gelten', () => {
+test('Rechtsstand: Datum des Registers und die Regeln, die im Jahr gelten', () => {
   const lb = (year: number) => settle({ units: [unit('a')] }, year).legalBasis
-  assert.equal(lb(2025).asOf, RULES_AS_OF)
+  // Seit Heizung PR 1 das Datum des Rechtsregisters, das die Regeln einschließt
+  assert.equal(lb(2025).asOf, LAW_AS_OF)
   assert.ok(lb(2023).rules.some((r) => r.code === 'tv-signal'))
   assert.ok(!lb(2025).rules.some((r) => r.code === 'tv-signal'))
   const tv = lb(2024).rules.find((r) => r.code === 'tv-signal')

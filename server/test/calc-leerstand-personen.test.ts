@@ -2,13 +2,16 @@
 // Vermieter (BGH, Urteil vom 31.05.2006, VIII ZR 159/05, entschieden am Flächenschlüssel). Beim
 // Personenschlüssel hatte die leere Wohnung 0 Personentage und fiel aus der Verteilbasis, ihr
 // Anteil ging also an die übrigen Mieter. Jetzt zählt sie für jeden Tag ohne Mietverhältnis mit
-// `VACANCY_PERSONS` Personen, und dieser Anteil bleibt beim Vermieter. Wie viele Personen das
-// sind, ist eine Auslegung von Mietfuchs und keine belegte Regel; die Rechnungen unten nehmen
-// deshalb die Konstante und nicht ihren heutigen Wert, und genau ein Test hält den Wert fest.
+// `practice.vacancy-persons` Personen (Rechtsregister, shared/law/practice.ts), und dieser Anteil
+// bleibt beim Vermieter. Wie viele Personen das sind, ist eine Auslegung von Mietfuchs und keine
+// belegte Regel; die Rechnungen unten nehmen deshalb den Wert aus dem Register und nicht seine
+// heutige Zahl, und genau ein Test hält die Zahl fest.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeSettlement, occupiedDays, VACANCY_PERSONS, type ComputedSettlement } from '../src/calc.ts'
+import { computeSettlement, occupiedDays, type ComputedSettlement } from '../src/calc.ts'
+import { valueAt } from '../../shared/law/register.ts'
+import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { compareWithFrozen } from '../src/settlementDiff.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { assertLandlordParts } from '../testing/landlordParts.ts'
@@ -31,7 +34,7 @@ const shareOf = (s: ComputedSettlement, tenancyId: string): number => {
   return st.totalShareCents
 }
 
-const V = VACANCY_PERSONS
+const V = valueAt(practiceVacancyPersons, '2025-01-01')
 // Rohanteil kaufmännisch gerundet: Bei Leerstand schöpfen die Mieter die Summe nicht aus, dann
 // rundet die Berechnung je Anteil statt nach dem Restverfahren.
 const part = (amount: number, personDays: number, basis: number) => Math.round((amount * personDays) / basis)
@@ -44,7 +47,7 @@ function assertSound(s: ComputedSettlement, tenancyCount: number): void {
 }
 
 test('Leerstand: heute zählt ein Leerstandstag mit einer Person (Auslegung, #177)', () => {
-  assert.equal(VACANCY_PERSONS, 1)
+  assert.equal(V, 1)
 })
 
 test('Leerstand beim Personenschlüssel: eine ganzjährig leere Wohnung zählt mit, ihren Anteil trägt der Vermieter', () => {
