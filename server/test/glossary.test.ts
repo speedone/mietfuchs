@@ -100,3 +100,17 @@ test('Teilweise selbstgenutztes Gebäude: Rechtsgrundlage, gesonderte Aufstellun
   assert.equal(1800 * 60 / 180, 600)
   assert.equal(1800 - 600, 1200)
 })
+
+test('Zeiträume (#208): Abrechnungszeitraum, Rumpf, Leistungsprinzip und Gradtage mit nachgerechneten Beispielen', () => {
+  assert.match(GLOSSARY.billingPeriod.example, /01\.05\.2025 bis 30\.04\.2026.*30\.04\.2027/s)
+  assert.match(GLOSSARY.shortPeriod.example, /120 Tagen.*30\.04\.2026/s)
+  // 480 € · 120/365 = 157,81 €, 480 € · 245/365 = 322,19 €
+  assert.equal((48000 * 120 / 365 / 100).toFixed(2), '157.81')
+  assert.equal((48000 * 245 / 365 / 100).toFixed(2), '322.19')
+  assert.match(GLOSSARY.accrualPrinciple.example, /157,81 €.*322,19 €/s)
+  // Januar bis April 530 Promille; 700 € / 0,53 = 1.320,75 € im Jahr, 110,06 € im Monat
+  assert.match(GLOSSARY.degreeDays.example, /530 Promille.*1\.320,75 €.*110,06 €/s)
+  assert.equal((70000 / 0.53 / 100).toFixed(2), '1320.75')
+  assert.equal((70000 / 0.53 / 12 / 100).toFixed(2), '110.06')
+  assert.match(GLOSSARY.degreeDays.norm, /§ 9b Abs\. 2 HeizkostenV/)
+})

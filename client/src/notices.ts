@@ -37,7 +37,7 @@ export function noticesOf(settlement: Pick<Settlement, 'notices' | 'warnings'>):
 // Und die Erinnerung an fernablesbare Geräte ab 2027 (#110): Welche Geräte eingebaut sind, erfasst
 // Mietfuchs nicht, im Programm lässt sich also nichts beheben; sonst stünde die Ampel in jedem Haus
 // mit Heizabrechnung dauerhaft auf Gelb.
-const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading'])
+const INFORMATIONAL = new Set(['basis.unit-zero', 'basis.tenancy-zero', 'basis.vacancy-persons', 'basis.vacancy-no-area', 'heating.remote-reading', 'period.short'])
 export function noticesNeedAttention(settlement: Pick<Settlement, 'notices' | 'warnings'>): boolean {
   return noticesOf(settlement).some((n) => !INFORMATIONAL.has(n.code))
 }

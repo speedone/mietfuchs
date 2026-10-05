@@ -34,7 +34,7 @@ import type {
 import { rulesFor } from '../../shared/law/rules.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
-import { createLawLog, dayAfter, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
+import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
@@ -44,7 +44,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { calendarYearPeriod, contextOf, periodDays, periodLabel, periodMonths, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { calendarYearPeriod, contextOf, formatDayRange, periodDays, periodLabel, periodMonths, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -233,6 +233,11 @@ const noticeKinds = {
   // Hinweis, denn zwei Rechnungen derselben Kostenart gibt es; zu prüfen ist es trotzdem, deshalb
   // zählt er in der Ampel des Cockpits mit.
   'cost.possible-duplicate': { level: 'hint', title: 'Dieselbe Rechnung zweimal erfasst?', terms: ['allocable'] },
+  // Abrechnungszeitraum (#208, Entwurf 3.4, 3.6, 10.1)
+  'period.short': { level: 'hint', title: 'Rumpfzeitraum', terms: ['shortPeriod', 'billingPeriod'] },
+  'period.item-outside': { level: 'warning', title: 'Leistungszeitraum außerhalb des Abrechnungszeitraums', terms: ['accrualPrinciple', 'billingPeriod'] },
+  'period.heating-mismatch': { level: 'warning', title: 'Heizkosten aus einem anderen Zeitraum', terms: ['accrualPrinciple', 'heatingCostOrdinance'] },
+  'period.split-by-days-meter': { level: 'hint', title: 'Verbrauch nach Tagen aufgeteilt', terms: ['accrualPrinciple', 'meterReading'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -2621,6 +2626,35 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     warn('heating.consumption-share',
       `Heizung und Warmwasser (${names}): nach Zählern verteilt werden ${fmtNum(pct)} % der Heizkosten. Die Heizkostenverordnung verlangt mindestens ${share.min} und höchstens ${share.max} % nach dem erfassten Verbrauch (§ 7 Abs. 1, § 8 Abs. 1 HeizkostenV). Bitte die Aufteilung zwischen Verbrauchs- und Grundkosten prüfen.`,
       itemSubject({ id: g.itemIds[0] ?? '' }))
+  }
+
+  // ---------- Zeitraum (#208, Entwurf 3.4, 3.6) ----------
+  // Nur ein Rumpf und nur Positionen mit Leistungszeitraum ergeben hier etwas; ein Bestand im
+  // Kalenderjahr ohne Leistungszeitraum bekommt keinen dieser Hinweise.
+  if (period.short) {
+    warn('period.short', `Rumpfzeitraum ${label} wegen der Umstellung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`)
+  }
+  for (const item of items) {
+    if (item.serviceFrom === undefined || item.serviceTo === undefined) continue
+    const range = formatDayRange(item.serviceFrom, item.serviceTo)
+    if (item.serviceTo < yFrom || item.serviceFrom > yTo) {
+      warn('period.item-outside', `„${item.description}“: Der Leistungszeitraum ${range} liegt außerhalb des Abrechnungszeitraums ${label}. Gehört die Rechnung in einen anderen Zeitraum, ordnen Sie sie dort zu.`, itemSubject(item))
+      continue
+    }
+    if (item.serviceFrom >= yFrom && item.serviceTo <= yTo) continue
+    if (item.category === HEATING_CATEGORY) {
+      // Heizkosten werden nie nach Tagen geteilt (G-C1): Sie müssen den Verbrauch des Zeitraums
+      // abbilden, und Winter und Sommer verbrauchen nicht gleich viel.
+      warn('period.heating-mismatch',
+        `„${item.description}“: Heizkosten gehören in den Abrechnungszeitraum, in dem sie verbraucht wurden (BGH VIII ZR 156/11). Der Leistungszeitraum ${range} reicht über ${label} hinaus, und Heizkosten teilt Mietfuchs nicht nach Tagen auf. ` +
+          'Lassen Sie die Rechnung zum Stichtag abgrenzen (Zählerstand oder Zwischenrechnung des Versorgers), oder rechnen Sie im Zeitraum Ihres Messdienstes ab.',
+        itemSubject(item))
+    } else if (item.key === 'meter') {
+      // Ein Teil einer aufgeteilten Rechnung (Task 3 trägt an jedem Teil den ganzen
+      // Leistungszeitraum). Zeitanteilig ist zulässig, mit dem Zählerstand genauer (Z-B11).
+      const stichtag = item.serviceTo > yTo ? yTo : dayBefore(yFrom)
+      warn('period.split-by-days-meter', `„${item.description}“ ist nach Tagen auf die Abrechnungszeiträume aufgeteilt. Mit dem Zählerstand zum ${fmtDay(stichtag)} wäre die Aufteilung genauer.`, itemSubject(item))
+    }
   }
 
   // Ohne Abrechnung (#93): wer für keine der beiden Arten abgerechnet wird, oder wessen Abrechnung
