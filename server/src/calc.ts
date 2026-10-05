@@ -5,6 +5,7 @@ import type {
   BillingPeriod,
   CalcStep,
   HeatingPeriodRef,
+  HeatingPrepaymentOverride,
   PeriodKey,
   SeparateHeatingRef,
   CostKey,
@@ -48,7 +49,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodContaining, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit } from '../../shared/heatingPeriod.ts'
 import { snapshotFor, wayOf } from './snapshot.ts'
 import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
@@ -257,6 +258,7 @@ const noticeKinds = {
   'period.no-heating-period': { level: 'warning', title: 'Keine Heizperiode in diesem Zeitraum', terms: ['heatingPeriod'] },
   'prepayment.heating-share-missing': { level: 'hint', title: 'Heizvorauszahlung nicht aufgeteilt', terms: ['heatingPeriod', 'prepayment'] },
   'prepayment.heating-share-unchanged': { level: 'hint', title: 'Heizvorauszahlung unverändert', terms: ['prepayment'] },
+  'prepayment.heating-override-pending': { level: 'warning', title: 'Heizkorrektur vorläufig', terms: ['heatingPeriod', 'prepayment'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -548,6 +550,32 @@ export function computePrepaymentCents(
   const months = periodMonths(period).filter((m) => tenancy.start <= `${m}-01` && !(tenancy.end && tenancy.end < `${m}-01`))
   const heatingCents = months.filter((m) => (heating?.ownerOf(m) ?? null) === null).reduce((a, m) => a + rateAtMonth(schedule, m), 0)
   return { cents: base.cents + heatingCents, overridden: false, heatingCents }
+}
+
+// Die Heizvorauszahlung in der Heizkostenabrechnung einer Heizperiode (Weg d, Entwurf 3.1, D2 der
+// achten Fassung). `owns` sagt, welche Monate dieser Heizperiode ihre Heizstaffel hier anrechnen
+// (`separateOwner`); die übrigen, die Monate vor X, rechnet die Abrechnung des Objekts an, und die
+// Heizkostenabrechnung nennt sie (`elsewhere`, C3). Eine endgültige Korrektur ersetzt die Anrechnung
+// der ganzen Heizperiode; eine vorläufige nur ihre Monate, die übrigen rechnen nach der Staffel.
+export function heatingPrepaymentCents(
+  tenancy: SnapshotTenancy,
+  plantId: string,
+  h: Pick<BillingPeriod, 'key' | 'from' | 'to'>,
+  owns: (month: string) => boolean = () => true,
+): { cents: number, overridden: boolean, provisional: HeatingPrepaymentOverride | null, elsewhere: string[] } {
+  const schedule: MonthlySchedule[] = Array.isArray(tenancy.heatingPrepayments) ? tenancy.heatingPrepayments : []
+  const months = periodMonths(h).filter((m) => tenancy.start <= `${m}-01` && !(tenancy.end && tenancy.end < `${m}-01`))
+  const mine = months.filter(owns)
+  const elsewhere = months.filter((m) => !owns(m))
+  const staffel = (list: readonly string[]): number => list.reduce((a, m) => a + rateAtMonth(schedule, m), 0)
+  const override = (tenancy.heatingPrepaymentOverrides ?? []).find((o) => o.plantId === plantId && o.period === h.key)
+  if (override && !override.provisional) return { cents: override.cents, overridden: true, provisional: null, elsewhere }
+  if (override && override.fromMonth !== null && override.toMonth !== null) {
+    const from = override.fromMonth
+    const to = override.toMonth
+    return { cents: override.cents + staffel(mine.filter((m) => m < from || m > to)), overridden: true, provisional: override, elsewhere }
+  }
+  return { cents: staffel(mine), overridden: false, provisional: null, elsewhere }
 }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
@@ -1818,12 +1846,43 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   const consumptionByType = consumptionFor(selfUnits, null, basisUnits)
 
+  // Früh angelegt (Heizung PR 5): Die Vorauszahlung der Heizkostenabrechnung meldet schon beim
+  // Anlegen der Statements eine vorläufige Korrektur.
+  const notices: Notice[] = []
+  const warn = (code: NoticeCode, text: string, subject?: NoticeSubject) => notices.push(makeNotice(code, text, subject))
+  // Weg d (Heizung PR 5): die Heizvorauszahlungen der Monate dieser Heizperiode. Eine vorläufige
+  // Korrektur meldet die Abrechnung, bis die Heizperiode abgeschlossen ist (D2 der achten Fassung);
+  // danach steht die Warnung im eingefrorenen Stand, und eine neue Abrechnung gibt es nicht.
+  const heatingScopePrepayment = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents: number, note?: string } => {
+    const plant = snapshot.scope?.plant
+    const way = plant ? wayOf(plant) : null
+    const r = heatingPrepaymentCents(t, plant?.id ?? '', period, (m) => way !== null && separateOwner(way, objectRules, m)?.key === period.key)
+    const byPeriod = new Map<string, { label: string, months: string[] }>()
+    for (const m of r.elsewhere) {
+      const p = periodContaining(objectRules, `${m}-01`)
+      const entry = byPeriod.get(p.key) ?? { label: periodLabel(p), months: [] }
+      entry.months.push(m)
+      byPeriod.set(p.key, entry)
+    }
+    const note = [...byPeriod.values()].map((e) => `Die Vorauszahlungen ${monthSpanText(e.months)} sind in der Abrechnung ${e.label} angerechnet.`).join(' ')
+    if (r.provisional !== null && r.provisional.fromMonth !== null && r.provisional.toMonth !== null) {
+      const from = r.provisional.fromMonth
+      const to = r.provisional.toMonth
+      const covered = periodMonths(period).filter((m) => m >= from && m <= to)
+      warn('prepayment.heating-override-pending',
+        `${t.tenantName} (${t.unit.name}): Für ${monthSpanText(covered)} gilt vorläufig ${fmtCents(r.provisional.cents)}, der Rest der Korrektur der Abrechnung ${periodLabel(periodContaining(objectRules, `${from}-01`))}. ` +
+          `Erfassen Sie beim Abrechnen die tatsächlich gezahlten Heizvorauszahlungen für die ganze Heizperiode ${label} („✎ anpassen“); bis dahin bleibt diese Warnung.`,
+        { kind: 'tenancy', id: t.id })
+    }
+    return { cents: r.cents, overridden: r.overridden, heatingCents: r.cents, ...(note ? { note } : {}) }
+  }
   // Die Vorauszahlungen eines Mietverhältnisses (#208, Heizung PR 5): in einer Teilabrechnung nach
   // Weg b keine (die rechnet P an); sonst die übrigen und die Heizstaffel der Monate, die keiner
   // getrennt abgerechneten Heizperiode gehören (6.1 Nr. 5). Welche Anlage die Wohnung versorgt, sagt
   // `servesUnit`; ohne Anlage zählt die ganze Heizstaffel.
   const prepaymentOf = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents?: number, note?: string } => {
-    if (scope !== 'all') return { cents: 0, overridden: false }
+    if (scope === 'heatingPart') return { cents: 0, overridden: false }
+    if (scope === 'heating') return heatingScopePrepayment(t)
     const plant = plants.find((p) => servesUnit(p, t.unit))
     if (!plant) return computePrepaymentCents(t, period)
     const way = wayOf(plant)
@@ -1851,6 +1910,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       prepaymentOverridden: pp.overridden,
       ...(pp.heatingCents !== undefined ? { heatingPrepaymentCents: pp.heatingCents } : {}),
       ...(pp.note ? { prepaymentNote: pp.note } : {}),
+      ...(scope === 'heating' ? { scope: 'heating' as const } : {}),
       suggestedMonthlyCents: 0,
       balanceCents: 0,
     })
@@ -1925,8 +1985,6 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     return { first: towards(reading(o.first)), second: towards(reading(o.second)) }
   }
   const landlordRows: SettlementRow[] = []
-  const notices: Notice[] = []
-  const warn = (code: NoticeCode, text: string, subject?: NoticeSubject) => notices.push(makeNotice(code, text, subject))
   // Der Filter ist bewusst doppelt: `snapshotFromDb` grenzt bereits nach Jahr ein. Er bleibt,
   // weil er das Einzige ist, was eine falsch eingegrenzte Ablage noch auffängt. Ohne ihn
   // rechnete ein Repository, das zu viel liefert, die Kosten mehrerer Jahre in eine Abrechnung,
@@ -2974,6 +3032,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
+  // In der Heizkostenabrechnung steht nur, wer Heizkosten oder eine Heizvorauszahlung hat; eine
+  // Garage ohne Anschluss an die Anlage bekäme sonst eine leere Abrechnung (Heizung PR 5).
+  if (scope === 'heating') {
+    for (const [id, own] of statements) if (own.rows.length === 0 && own.prepaymentCents === 0) statements.delete(id)
+  }
+
   // Rückstand im Mietkonto (#133): Angerechnet wird die Vorauszahlung laut Staffel, solange keine
   // Jahreskorrektur gesetzt ist. Maßgeblich ist aber das tatsächlich Gezahlte (siehe
   // computePrepaymentCents); zeigt das Mietkonto einen Rückstand, ging womöglich ein Guthaben
@@ -3105,6 +3169,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     deadline: settlementDeadline(period, law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)),
     ...(heatingPeriodsShown.length > 0 ? { heatingPeriods: heatingPeriodsShown } : {}),
     ...(separateHeating.length > 0 ? { separateHeating } : {}),
+    ...(scope === 'heating' && snapshot.scope
+      ? { scope: { kind: 'heating' as const, plantId: snapshot.scope.plant.id, plantName: snapshot.scope.plant.name ?? '' } }
+      : {}),
     statements: [...statements.values()],
     notSettled,
     // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt

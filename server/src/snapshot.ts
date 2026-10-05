@@ -381,6 +381,8 @@ export function snapshotFor(
   source: PropertyScopedSource & {
     properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
     heatingPlants?: (SnapshotHeatingPlant & { propertyId: string })[]
+    // Die abgeschlossenen Heizkostenabrechnungen (Heizung PR 5), für `heatingSnapshotFor`.
+    closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
   },
   propertyId: string,
   period: BillingPeriod,
@@ -414,6 +416,40 @@ export function snapshotFor(
     heatingPlants: plants,
     objectRules,
     ...(heatingParts.length > 0 ? { heatingParts } : {}),
+  }
+}
+
+// Der Schnappschuss der Heizkostenabrechnung einer Heizperiode nach Weg d (Heizung PR 5, Entwurf
+// 3.1, 6.1 Nr. 7): nur die Positionen der Anlage unter dieser Heizperiode; Mietverhältnisse,
+// Ablesungen und Zahlungen wie immer vollständig. Der abgeschlossene Stand ist der der
+// Heizkostenabrechnung und nie der einer Abrechnung des Objekts mit zufällig gleichem Schlüssel.
+// Ob die Heizperiode wirklich getrennt abgerechnet wird, prüft die Route; `null` ohne Anlage.
+export function heatingSnapshotFor(source: Parameters<typeof snapshotFor>[0], propertyId: string, plantId: string, h: BillingPeriod): Snapshot | null {
+  const found = source.properties?.find((p) => p.id === propertyId)
+  const objectRules = rulesOf(found)
+  const plants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId)
+  const plant = plants.find((p) => p.id === plantId)
+  if (!plant) return null
+  const rules = plantRules(wayOf(plant), objectRules)
+  const narrowed = narrowToProperty(source, propertyId)
+  const mine = narrowed.costItems.filter((c) => c.heatingPlantId === plantId)
+  const frozen = (source.closedHeatingSettlements ?? []).find((c) => c.plantId === plantId && c.period === h.key)
+  return {
+    ...snapshotOfPeriod({ ...narrowed, costItems: mine, closedSettlements: [] }, h, previousPeriod(rules, h)),
+    propertyId,
+    property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
+    heatingPlants: plants,
+    objectRules,
+    closedSettlement: frozen
+      ? {
+          selfUsedShareCents: frozen.selfUsedShareCents,
+          prepaymentCents: frozen.prepaymentCents,
+          prepaymentOverridden: frozen.prepaymentOverridden,
+          selfUseByItem: frozen.selfUseByItem ?? null,
+          itemTotals: frozen.itemTotals ?? null,
+        }
+      : null,
+    scope: { kind: 'heating', plant },
   }
 }
 
