@@ -320,6 +320,42 @@ export type PeriodChangeAnswers = {
   token?: string
 }
 
+// Die Vorschau eines Wechsels der eigenen Heizperiode (Heizung PR 5, Entwurf 3.0, 3.6, B2).
+// `rules` null heißt „wie das Objekt“. `moves`: Heizpositionen, die in eine andere Heizperiode
+// kommen; `groups`: solche, bei denen der Vermieter wählt; `overrides`: Korrekturen, die neu erfasst
+// werden, je Mietverhältnis mit den bisherigen (`from`) und den gefragten (`ask`): `heating` je
+// getrennt abgerechneter Heizperiode, `total` je Abrechnung P für alles, was sie anrechnet (3.7);
+// `endsSeparate`: Heizperioden, die danach in der Gesamtabrechnung stehen.
+export type HeatingPeriodChangePreview = {
+  rules: PeriodRules | null
+  periods: { key: PeriodKey; label: string; short: boolean; separate: boolean }[]
+  newShort: { key: PeriodKey; label: string }[]
+  blocked: string[]
+  moves: { costItemId: string; description: string; amountCents: number; from: PeriodKey; fromLabel: string; to: PeriodKey; toLabel: string }[]
+  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  overrides: {
+    tenancyId: string
+    tenantName: string
+    from: { kind: 'heating' | 'total'; key: PeriodKey; label: string; cents: number }[]
+    ask: { kind: 'heating' | 'total'; period: PeriodKey; label: string; months: string }[]
+  }[]
+  endsSeparate: { key: PeriodKey; label: string }[]
+  // Die Marke dieser Vorschau, wie beim Wechsel des Objektzeitraums (PR 3): Stimmt sie beim Wechsel
+  // nicht mehr, hat sich der Bestand geändert, und es gibt 409 mit der neuen Vorschau.
+  token: string
+}
+
+// Die Antworten: je Gruppe die neue Heizperiode; je Mietverhältnis und gefragter Heizperiode die
+// tatsächlich gezahlte Heizvorauszahlung (`overrides`) und je gefragter Abrechnung P die tatsächlich
+// gezahlten Vorauszahlungen insgesamt (`totals`), in Cent; `null` heißt „keine Korrektur, die
+// Staffel gilt“.
+export type HeatingPeriodChangeAnswers = {
+  groups?: Record<string, string>
+  overrides?: Record<string, Record<string, number | null>>
+  totals?: Record<string, Record<string, number | null>>
+  token?: string
+}
+
 export type Settings = {
   houseName: string
   address: string

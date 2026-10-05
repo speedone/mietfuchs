@@ -42,6 +42,7 @@ import {
   TenantChangeError, unitDependents, writeSettings, type CollectionName,
 } from './db/repository.ts'
 import { assignableHeatingItems, createHeatingPlant, listHeatingPlants, removeHeatingPlant, updateHeatingPlant } from './db/heating.ts'
+import { applyHeatingPeriodChange, previewHeatingPeriodChange } from './db/heatingPeriodChange.ts'
 import { applyPeriodChange, previewPeriodChange } from './db/periodChange.ts'
 import {
   ARCHIVE_DB_NAME, ARCHIVE_INFO_NAME, DB_BEFORE_RESTORE,
@@ -526,6 +527,23 @@ app.delete('/api/heating-plants/:id', async (req, res) => {
     error: `An der Heizanlage hängen noch Zähler (${result.meters.map((n) => `„${n}“`).join(', ')}). Ordnen Sie sie auf der Seite ` +
       'Zähler neu zu oder löschen Sie sie; dann lässt sich die Anlage entfernen.',
   })
+})
+
+// Zeitraum der Heizung (Heizung PR 5, Entwurf 3.0, 3.6): erst die Vorschau, dann der Wechsel mit den
+// Antworten, in einer Transaktion. `rules: null` heißt „wie das Objekt“. Fehlt eine Antwort oder
+// träfe der Wechsel Abgeschlossenes, antwortet der Server mit 409 und der neuen Vorschau.
+const PLANT_GONE_TEXT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
+app.post('/api/heating-plants/:id/period/preview', async (req, res) => {
+  const preview = await readData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  res.json(preview)
+})
+app.put('/api/heating-plants/:id/period', async (req, res) => {
+  const body = bodyObject(req)
+  const result = await writeData((db) => applyHeatingPeriodChange(db, req.params.id, body.rules, body.answers, today()))
+  if (!result) return res.status(404).json({ error: PLANT_GONE_TEXT })
+  if ('error' in result) return res.status(409).json(result)
+  res.json(result.plant)
 })
 
 // Wechsel des Abrechnungszeitraums (#208, Entwurf 3.6): erst die Vorschau, dann der Wechsel mit

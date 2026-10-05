@@ -5851,3 +5851,25 @@ test('Heizanlage: eine angeschlossene Wohnung wechselt nicht still das Objekt (D
     s.stop()
   }
 })
+
+test('Zeitraum der Heizung (Heizung PR 5): Vorschau und Wechsel über HTTP, PUT der Anlage setzt ihn nicht', async () => {
+  const s = await startServer()
+  try {
+    const send = (url: string, method: string, body: unknown) =>
+      fetch(`${s.base}${url}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const { plant } = await jsonOf<{ plant: HeatingPlant }>(await send('/api/heating-plants', 'POST', { energy: 'gas', method: 'service' }))
+    const position = await s.api<CostItem>('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2026-01', category: 'Heizung und Warmwasser', description: 'Messdienst', amountCents: 100000, key: 'amounts' }) })
+    const vorschau = await jsonOf<{ moves: { to: string }[]; token: string }>(await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 5, changes: [] } }))
+    assert.deepEqual(vorschau.moves.map((m) => m.to), ['2025-05'])
+    const per = await send(`/api/heating-plants/${plant.id}`, 'PUT', { periodStartMonth: 5 })
+    assert.equal(per.status, 400)
+    const ok = await send(`/api/heating-plants/${plant.id}/period`, 'PUT', { rules: { startMonth: 5, changes: [] }, answers: { token: vorschau.token } })
+    assert.equal(ok.status, 200)
+    assert.equal((await jsonOf<HeatingPlant>(ok)).periodStartMonth, 5)
+    assert.equal((await s.api<CostItem[]>('/api/costItems')).find((c) => c.id === position.id)?.period, '2025-05')
+    assert.equal((await send(`/api/heating-plants/${plant.id}/period/preview`, 'POST', { rules: { startMonth: 13, changes: [] } })).status, 400)
+    assert.equal((await send('/api/heating-plants/gibt-es-nicht/period/preview', 'POST', { rules: null })).status, 404)
+  } finally {
+    s.stop()
+  }
+})
