@@ -37,7 +37,7 @@ import { rulesFor } from '../../shared/law/rules.ts'
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
 import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvDegreeDays, hkvRemoteReadingNewDevices, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
-import { remoteReadingVerdict } from './remoteReading.ts'
+import { remoteReadingVerdict, servedUnitIds } from './remoteReading.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
 import { andList, meterTypeLabel, plural } from '../../shared/wording.ts'
@@ -2673,7 +2673,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const retrofitRule = law(hkvRemoteReadingRetrofit, { period: lawPeriod }, lawLog)
     // Die Kürzung je Mieter auf seine gedruckten Heizzeilen, kaufmännisch gerundet (Entwurf 6.5).
     // Mietfuchs zieht nichts ab; erklären muss die Kürzung der Mieter.
-    const cuts = [...statements.values()].flatMap((st) => {
+    // Nur Mieter in Wohnungen an der Anlage (Durchsicht von #230).
+    const served = servedUnitIds(snapshot.heatingPlants ?? [], snapshot.units)
+    const cuts = [...statements.values()].filter((st) => served.has(st.unitId)).flatMap((st) => {
       const heat = st.rows.filter((r) => r.category === HEATING_CATEGORY).reduce((a, r) => a + r.shareCents, 0)
       return heat > 0 ? [`${st.tenantName} (${st.unitName}) ${fmtCents(Math.round((heat * remoteCut) / 100))}`] : []
     })
@@ -2691,7 +2693,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         subject)
     } else {
       warn('heating.remote-reading',
-        `${which} ${rule} Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum. Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
+        `${which} ${rule} Ob das in diesem Zeitraum schon für diese Geräte gilt, hängt an ihrem Einbaudatum und daran, ob ein einzelnes Gerät in einem System ersetzt oder ergänzt wurde, dessen übrige Geräte nicht fernablesbar sind; dann gilt die Frist für die übrigen (§ 5 Abs. 2 Satz 4). Wenn ja, darf jeder Mieter seinen Anteil an den Heizkosten um bis zu ${remoteCut} % kürzen (§ 12 Abs. 1 Satz 2 HeizkostenV)` +
           `${cuts.length > 0 ? `, hier bis zu: ${andList(cuts)}` : ''}. Tragen Sie das Einbaudatum am Zähler oder die Angabe an der Heizanlage ein; dann rechnet Mietfuchs es genau.`,
         subject)
     }

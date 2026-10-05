@@ -169,11 +169,32 @@ test('Einbaudatum unbekannt: ein Hinweis mit „bis zu“, der die Ampel nicht f
 })
 
 test('Angabe an der Anlage: keine Geräte fernablesbar, einige nach 2021 eingebaut', () => {
-  const r = settle(heizBestand(2025), 2025, [plant({ method: 'service', devicesRemote: 'none', devicesInstalledAfter2021: 'some' })])
-  const [n] = remoteNotices(r)
-  assert.equal(n?.code, 'heating.remote-reading-missing')
+  // Vor 2027 nur „bis zu“: Ein neues Gerät kann ein einzelner Ersatz in einem nicht fernablesbaren
+  // System sein (§ 5 Abs. 2 Satz 4 HeizkostenV), dann gilt die Frist bis 31.12.2026 (Durchsicht von #230).
+  const anlage = plant({ method: 'service', devicesRemote: 'none', devicesInstalledAfter2021: 'some' })
+  const [n] = remoteNotices(settle(heizBestand(2025), 2025, [anlage]))
+  assert.equal(n?.code, 'heating.remote-reading')
+  assert.equal(n?.level, 'hint')
   assert.match(n?.text ?? '', /Laut Ihrer Angabe an der Heizanlage/)
+  assert.match(n?.text ?? '', /um bis zu 3 % kürzen/)
   assert.equal(n?.subject, undefined)
+  const [spaeter] = remoteNotices(settle(heizBestand(2027), 2027, [anlage]))
+  assert.equal(spaeter?.code, 'heating.remote-reading-missing')
+})
+
+test('Ersatz eines einzelnen Geräts in einem nicht fernablesbaren System: vor 2027 nur „bis zu“', () => {
+  const neu = meter('hkv-a', 'a', 'hkv', { name: 'HKV neu', remoteReadable: false, installedOn: '2023-05-01' })
+  const alt = meter('hkv-b', 'b', 'hkv', { name: 'HKV alt', remoteReadable: false, installedOn: '2015-01-01' })
+  const [n] = remoteNotices(settle(heizBestand(2025, [neu, alt]), 2025, [plant()]))
+  assert.equal(n?.code, 'heating.remote-reading')
+  assert.match(n?.text ?? '', /um bis zu 3 % kürzen/)
+})
+
+test('Die Kürzung steht nur bei Mietern in Wohnungen an der Anlage', () => {
+  const [n] = remoteNotices(settle(heizBestand(2027), 2027, [plant({ devicesRemote: 'none', units: [{ unitId: 'a', heatedAreaM2: null }] })]))
+  assert.equal(n?.code, 'heating.remote-reading-missing')
+  assert.match(n?.text ?? '', /ta \(a\) 18,00 €/)
+  assert.doesNotMatch(n?.text ?? '', /tb \(b\)/)
 })
 
 test('Alle Geräte fernablesbar laut Anlage: kein Hinweis, auch ab 2027', () => {

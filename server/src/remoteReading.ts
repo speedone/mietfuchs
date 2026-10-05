@@ -38,23 +38,31 @@ const top = (levels: readonly RemoteLevel[]): RemoteLevel => levels.reduce<Remot
 // die sie versorgt (ohne Liste alle ohne „kein Anschluss: Wärme“, #117), dazu ihre eigenen
 // Wärmezähler.
 export function plantDevices(plant: RemotePlant, meters: readonly RemoteMeter[], units: readonly RemoteUnit[]): RemoteMeter[] {
-  const served = new Set(plant.units === null
-    ? units.filter((u) => !(u.noConnection ?? []).includes('waerme')).map((u) => u.id)
-    : plant.units.map((u) => u.unitId))
+  const served = servedUnitIds([plant], units)
   return meters.filter((m) =>
     (m.unitId != null && served.has(m.unitId) && DEVICE_TYPES.includes(m.type)) ||
     (m.heatingPlantId === plant.id && m.heatingRole != null && m.heatingRole !== 'supply'))
 }
 
-// Ein Gerät, das nicht fernablesbar ist.
-function deviceLevel(installedOn: string | null, period: Period, log: LawLog): RemoteLevel {
+// Die Wohnungen, die die Anlagen versorgen: ohne Liste alle ohne „kein Anschluss: Wärme“ (#117).
+export function servedUnitIds(plants: readonly Pick<RemotePlant, 'units'>[], units: readonly RemoteUnit[]): Set<string> {
+  const all = units.filter((u) => !(u.noConnection ?? []).includes('waerme')).map((u) => u.id)
+  return new Set(plants.flatMap((p) => (p.units === null ? all : p.units.map((u) => u.unitId))))
+}
+
+// Ein Gerät, das nicht fernablesbar ist. `replacementPossible`: Es kann ein einzelner Ersatz oder
+// eine Ergänzung in einem Gesamtsystem sein, dessen übrige Geräte nicht fernablesbar sind. Dann gilt
+// § 5 Abs. 2 nicht (Satz 4), sondern die Frist des Abs. 3 (Durchsicht von #230).
+function deviceLevel(installedOn: string | null, replacementPossible: boolean, period: Period, log: LawLog): RemoteLevel {
   // Erst nach dem Zeitraum eingebaut: In diesem Zeitraum gab es es noch nicht.
   if (installedOn !== null && installedOn > period.to) return 'fine'
-  if (installedOn !== null && law(hkvRemoteReadingNewDevices, { date: installedOn }, log).required) return 'required'
+  const isNew = installedOn !== null && law(hkvRemoteReadingNewDevices, { date: installedOn }, log).required
+  if (isNew && !replacementPossible) return 'required'
   const retrofit = law(hkvRemoteReadingRetrofit, { period }, log).coverage
   if (retrofit === 'full') return 'required'
   // Ohne Einbaudatum kann es ein neues Gerät sein: „bis zu“ schon vor § 5 Abs. 3 (Entwurf 3.13).
-  if (installedOn === null) return 'possible'
+  // Ebenso ein neues Gerät, das ein Ersatz nach Satz 4 sein kann.
+  if (installedOn === null || isNew) return 'possible'
   return retrofit === 'partial' ? 'possible' : 'fine'
 }
 
@@ -63,10 +71,21 @@ function deviceLevel(installedOn: string | null, period: Period, log: LawLog): R
 function answerLevel(remote: DevicesRemote, after: DevicesInstalledAfter, period: Period, log: LawLog): RemoteLevel {
   if (remote === 'unknown') return 'unknown'
   if (remote === 'all') return 'fine'
-  // Sicher ist ein neues Gerät dabei, das nicht fernablesbar ist: alle neu, oder keines fernablesbar.
-  if (after === 'all' || (after === 'some' && remote === 'none')) {
+  // Keines fernablesbar: Jedes neue Gerät kann ein einzelner Ersatz in einem nicht fernablesbaren
+  // System sein (§ 5 Abs. 2 Satz 4), für das die Frist des Abs. 3 gilt. Sicher ist die Kürzung dann
+  // erst mit dieser Frist, vorher nur möglich (Durchsicht von #230).
+  if (remote === 'none') {
+    const retrofit = law(hkvRemoteReadingRetrofit, { period }, log).coverage
+    if (retrofit === 'full') return 'required'
+    if (retrofit === 'partial') return 'possible'
+    const newOnes = after !== 'none' && law(hkvRemoteReadingNewDevices, { date: period.to }, log).required
+    return newOnes ? 'possible' : 'fine'
+  }
+  // Einige fernablesbar, alle neu: Ein neues Gerät ist nicht fernablesbar, und das System ist nicht
+  // durchweg nicht fernablesbar.
+  if (after === 'all') {
     if (law(hkvRemoteReadingNewDevices, { date: period.to }, log).required) return 'required'
-    if (after === 'all') return 'fine'
+    return 'fine'
   }
   const retrofit = law(hkvRemoteReadingRetrofit, { period }, log).coverage
   if (retrofit === 'full') return 'required'
@@ -76,9 +95,21 @@ function answerLevel(remote: DevicesRemote, after: DevicesInstalledAfter, period
 
 export function plantVerdict(plant: RemotePlant, meters: readonly RemoteMeter[], units: readonly RemoteUnit[], period: Period, log: LawLog): RemoteVerdict {
   const answer = answerLevel(plant.devicesRemote, plant.devicesInstalledAfter2021, period, log)
-  const devices = plantDevices(plant, meters, units).map((m) => ({
+  const known = plantDevices(plant, meters, units)
+  // Ersatz nach § 5 Abs. 2 Satz 4 ist möglich, wenn die übrigen Geräte des Systems nicht
+  // fernablesbar sind: laut Anlage keines, oder alle anderen bekannten Geräte nicht. Allein bekannt
+  // bleibt ein neues Gerät sicher (R-A1); die Angabe „einige“ oder „alle“ schließt die Ausnahme aus.
+  const replacementPossible = (id: string): boolean => {
+    if (plant.devicesRemote === 'none') return true
+    if (plant.devicesRemote === 'all' || plant.devicesRemote === 'partial') return false
+    const others = known.filter((o) => o.id !== id && typeof o.remoteReadable === 'boolean')
+    return others.length > 0 && others.every((o) => o.remoteReadable === false)
+  }
+  const devices = known.map((m) => ({
     id: m.id,
-    level: m.remoteReadable === true ? ('fine' as const) : m.remoteReadable === false ? deviceLevel(m.installedOn ?? null, period, log) : ('unknown' as const),
+    level: m.remoteReadable === true
+      ? ('fine' as const)
+      : m.remoteReadable === false ? deviceLevel(m.installedOn ?? null, replacementPossible(m.id), period, log) : ('unknown' as const),
   }))
   // Neben einer Angabe an der Anlage zählen nur Geräte, deren Fernablesbarkeit eingetragen ist; ohne
   // Angabe entscheiden die Geräte allein, und ohne Geräte bleibt es unbekannt.

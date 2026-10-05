@@ -50,9 +50,14 @@ test('Angabe an der Anlage, wenn Mietfuchs die Geräte nicht kennt (G-C2)', () =
   const faelle: [DevicesRemote, DevicesInstalledAfter, Period, RemoteLevel][] = [
     ['all', 'all', year(2027), 'fine'],
     ['unknown', 'all', year(2027), 'unknown'],
-    ['none', 'all', year(2025), 'required'],
+    // Kein Gerät fernablesbar: Jedes nach dem Stichtag eingebaute kann ein einzelner Ersatz in einem
+    // nicht fernablesbaren System sein (§ 5 Abs. 2 Satz 4), dann gilt die Frist des Abs. 3. Vor 2027
+    // also nur „möglich“ (Durchsicht von #230).
+    ['none', 'all', year(2025), 'possible'],
+    ['none', 'all', year(2027), 'required'],
     ['none', 'all', year(2020), 'fine'],
-    ['none', 'some', year(2025), 'required'],
+    ['none', 'some', year(2025), 'possible'],
+    ['none', 'some', year(2027), 'required'],
     ['partial', 'all', year(2025), 'required'],
     ['partial', 'some', year(2025), 'possible'],
     ['partial', 'some', year(2027), 'required'],
@@ -102,3 +107,17 @@ test('Protokoll: ohne Angabe und ohne bekannte Geräte wird kein Rechtswert abge
   plantVerdict(anlage(), [hkv('m1')], UNITS, year(2027), log)
   assert.deepEqual(log.values, [])
 })
+
+test('§ 5 Abs. 2 Satz 4: ein neues Gerät in einem System, dessen übrige Geräte nicht fernablesbar sind, erst ab 2027 sicher', () => {
+  const neu = hkv('neu', { remoteReadable: false, installedOn: '2023-05-01' })
+  const alt = hkv('alt', { unitId: 'b', remoteReadable: false, installedOn: '2015-01-01' })
+  assert.equal(level(anlage(), [neu, alt], year(2025)), 'possible')
+  assert.equal(level(anlage(), [neu, alt], year(2027)), 'required')
+  // Ist ein anderes Gerät fernablesbar, greift die Ausnahme nicht.
+  assert.equal(level(anlage(), [neu, { ...alt, remoteReadable: true }], year(2025)), 'required')
+  // Laut Anlage ist keines fernablesbar: ebenso nur „möglich“.
+  assert.equal(level(anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'some' }), [neu], year(2025)), 'possible')
+  // Allein bekannt, ohne Mitgeräte: wie bisher sicher (R-A1).
+  assert.equal(level(anlage(), [neu], year(2025)), 'required')
+})
+
