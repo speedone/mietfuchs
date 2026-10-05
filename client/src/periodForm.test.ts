@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { anchorOf, labelOfKey, periodSpanText, periodView } from './periodForm'
+import { anchorOf, answersOf, initialAnswers, labelOfKey, nextRules, periodSpanText, periodView, rhythmText, withoutChange } from './periodForm'
 import { CALENDAR_RULES, periodKey, periodOfKey } from '../../shared/period.ts'
-import type { PeriodRules } from './types'
+import type { PeriodChangePreview, PeriodRules } from './types'
 
 const TODAY = '2026-10-05'
 const MAI: PeriodRules = { startMonth: 5, changes: [] }
@@ -45,5 +45,33 @@ describe('Zeitraumumschalter (#208)', () => {
   test('Bezeichnungen', () => {
     expect(labelOfKey(MAI, periodKey('2025-05'))).toBe('2025/2026')
     expect(periodSpanText(periodOfKey(MAI, periodKey('2025-05')) ?? expect.unreachable())).toBe('Mai 2025 bis April 2026')
+  })
+})
+
+describe('Rhythmus ändern (#208)', () => {
+  test('in Worten', () => {
+    expect(rhythmText(CALENDAR_RULES)).toBe('Kalenderjahr (Januar bis Dezember)')
+    expect(rhythmText(MAI)).toBe('Mai bis April')
+    expect(rhythmText(WECHSEL)).toBe('Kalenderjahr (Januar bis Dezember), ab Mai 2025: Mai bis April')
+  })
+  test('neue Regeln aus dem Formular', () => {
+    expect(nextRules(CALENDAR_RULES, { mode: 'start', month: 5, from: '' })).toEqual({ startMonth: 5, changes: [] })
+    expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '2025-05' })).toEqual({ startMonth: 1, changes: ['2025-05'] })
+    expect(nextRules(CALENDAR_RULES, { mode: 'change', month: 1, from: '' })).toEqual({ error: 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.' })
+    expect(withoutChange(WECHSEL, '2025-05')).toEqual({ startMonth: 1, changes: [] })
+  })
+  const vorschau: PeriodChangePreview = {
+    rules: WECHSEL, periods: [], newShort: [], blocked: [], moves: [], assessments: [],
+    groups: [{ from: periodKey('2025-01'), fromLabel: '2025', items: [{ costItemId: 'mu', description: 'Müll 2025', amountCents: 30000 }], options: [{ key: periodKey('2025-01'), label: '01.01.–30.04.2025' }, { key: periodKey('2025-05'), label: '2025/2026' }], suggested: periodKey('2025-01') }],
+    overrides: [{ tenancyId: 't-a', tenantName: 'A', from: [{ key: periodKey('2025-01'), label: '2025', cents: 220000 }], ask: [{ period: periodKey('2025-01'), label: '01.01.–30.04.2025', months: '01–04/2025' }, { period: periodKey('2025-05'), label: '2025/2026', months: '05/2025–04/2026' }] }],
+  }
+  test('Antworten: Zuordnung vorbelegt, jede Korrektur verlangt einen Betrag oder „keine Korrektur“ (N4)', () => {
+    const form = initialAnswers(vorschau)
+    expect(form.groups).toEqual({ '2025-01': '2025-01' })
+    expect(answersOf(vorschau, form)).toEqual({ error: 'Bitte tragen Sie für A ein, was 01–04/2025 tatsächlich gezahlt wurde, oder wählen Sie „keine Korrektur“.' })
+    const ausgefuellt = { ...form, overrides: { 't-a': { '2025-01': { amount: '700,00', none: false }, '2025-05': { amount: '', none: true } } } }
+    expect(answersOf(vorschau, ausgefuellt)).toEqual({ groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': null } } })
+    expect(answersOf(vorschau, { ...ausgefuellt, overrides: { 't-a': { '2025-01': { amount: 'siebenhundert', none: false }, '2025-05': { amount: '', none: true } } } }))
+      .toEqual({ error: 'Bitte tragen Sie für A ein, was 01–04/2025 tatsächlich gezahlt wurde, als Euro-Betrag, etwa 700,00.' })
   })
 })

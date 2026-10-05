@@ -13,7 +13,8 @@
 // Schlüssel wie '2025-05'.
 
 import { contextOf, isCalendarRules, parsePeriodKey, periodContaining, periodLabel, periodOfKey, periodsBetween, previousPeriod, startYearOf, type PeriodContext } from '../../shared/period.ts'
-import type { BillingPeriod, PeriodKey, PeriodRules } from './types'
+import type { BillingPeriod, PeriodChangeAnswers, PeriodChangePreview, PeriodKey, PeriodRules } from './types'
+import { parseEuro } from './api'
 
 export type PeriodChoice = { anchor: string | null; calendarYear: number | null }
 export type PeriodOption = { value: string; label: string }
@@ -92,4 +93,70 @@ export function labelOfKey(rules: PeriodRules, key: PeriodKey): string {
 export function periodSpanText(p: Pick<BillingPeriod, 'from' | 'to'>): string {
   const name = (iso: string) => `${MONTH_NAMES[Number(iso.slice(5, 7)) - 1] ?? ''} ${iso.slice(0, 4)}`
   return `${name(p.from)} bis ${name(p.to)}`
+}
+
+// ---------- Rhythmus ändern (#208, Entwurf 3.6) ----------
+
+export const MONTH_OPTIONS: { value: number; label: string }[] = MONTH_NAMES.map((label, i) => ({ value: i + 1, label }))
+
+const rhythmOfMonth = (month: number): string =>
+  month === 1 ? 'Kalenderjahr (Januar bis Dezember)' : `${MONTH_NAMES[month - 1] ?? ''} bis ${MONTH_NAMES[(month + 10) % 12] ?? ''}`
+
+// Der Rhythmus in Worten: „Kalenderjahr (Januar bis Dezember)“, „Mai bis April“, mit Wechseln
+// „…, ab Mai 2025: Mai bis April“.
+export function rhythmText(rules: PeriodRules): string {
+  const parts = [rhythmOfMonth(rules.startMonth)]
+  for (const change of rules.changes) {
+    const month = Number(change.slice(5, 7))
+    parts.push(`ab ${MONTH_NAMES[month - 1] ?? ''} ${change.slice(0, 4)}: ${rhythmOfMonth(month)}`)
+  }
+  return parts.join(', ')
+}
+
+// Was geändert wird: der Beginnmonat von Anfang an (alle Zeiträume ohne Wechsel bekommen ihn) oder
+// ein Wechsel ab einem Monat (ab dort beginnt jeder Zeitraum in diesem Monat, davor ein Rumpf).
+export type RhythmForm = { mode: 'start' | 'change'; month: number; from: string }
+
+export function nextRules(current: PeriodRules, form: RhythmForm): PeriodRules | { error: string } {
+  if (form.mode === 'start') return { startMonth: form.month, changes: [...current.changes] }
+  if (parsePeriodKey(form.from) === null) return { error: 'Bitte geben Sie an, ab welchem Monat der neue Zeitraum beginnt.' }
+  return { startMonth: current.startMonth, changes: [...current.changes, form.from].sort() }
+}
+
+export function withoutChange(current: PeriodRules, from: string): PeriodRules {
+  return { startMonth: current.startMonth, changes: current.changes.filter((c) => c !== from) }
+}
+
+// Die Antworten zur Vorschau, wie das Formular sie hält: je Gruppe der gewählte Zeitraum, je
+// Mietverhältnis und gefragtem Zeitraum ein Betrag oder „keine Korrektur“.
+export type AnswerForm = {
+  groups: Record<string, string>
+  overrides: Record<string, Record<string, { amount: string; none: boolean }>>
+}
+
+export function initialAnswers(preview: PeriodChangePreview): AnswerForm {
+  return {
+    groups: Object.fromEntries(preview.groups.map((g) => [g.from, g.suggested])),
+    overrides: Object.fromEntries(preview.overrides.map((o) => [o.tenancyId, Object.fromEntries(o.ask.map((a) => [a.period, { amount: '', none: false }]))])),
+  }
+}
+
+// Ohne Antwort wird nicht gespeichert (N4): Jeder gefragte Zeitraum braucht einen Betrag oder
+// ausdrücklich „keine Korrektur“; eine tatsächlich gezahlte Summe lässt sich nicht verteilen.
+export function answersOf(preview: PeriodChangePreview, form: AnswerForm): PeriodChangeAnswers | { error: string } {
+  const overrides: Record<string, Record<string, number | null>> = {}
+  for (const o of preview.overrides) {
+    const given = form.overrides[o.tenancyId] ?? {}
+    const out: Record<string, number | null> = {}
+    for (const a of o.ask) {
+      const entry = given[a.period] ?? { amount: '', none: false }
+      if (entry.none) { out[a.period] = null; continue }
+      if (entry.amount.trim() === '') return { error: `Bitte tragen Sie für ${o.tenantName} ein, was ${a.months} tatsächlich gezahlt wurde, oder wählen Sie „keine Korrektur“.` }
+      const cents = parseEuro(entry.amount)
+      if (cents === null || cents < 0) return { error: `Bitte tragen Sie für ${o.tenantName} ein, was ${a.months} tatsächlich gezahlt wurde, als Euro-Betrag, etwa 700,00.` }
+      out[a.period] = cents
+    }
+    overrides[o.tenancyId] = out
+  }
+  return { groups: { ...form.groups }, overrides }
 }
