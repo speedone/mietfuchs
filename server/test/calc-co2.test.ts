@@ -140,7 +140,7 @@ test('Irrtümer der Probe (Entwurf 7.3): „Ja“ mit Betrag S, „Nein“ obwoh
   // „Nein“, obwohl abgezogen, Betrag brutto: Betrag = S + L, verlangt S.
   const nein = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ method: 'serviceShown' })])
   // Nur ausgewiesen und nicht gebucht: Die Mieter trügen den Anteil des Vermieters mit (Durchsicht I4).
-  assert.match(textOf(nein, 'co2.sum-check'), /tragen die Mieter auch den CO₂-Anteil des Vermieters von 87,50 €.*§ 6 Abs\. 1 CO2KostAufG/s)
+  assert.match(textOf(nein, 'co2.sum-check'), /Stimmt Ihre Antwort, dass die Abrechnung die CO₂-Kosten nur ausweist, tragen die Mieter auch den CO₂-Anteil des Vermieters von 87,50 €.*§ 6 Abs\. 1 CO2KostAufG/s)
   // Leerstand und fremde Einheiten: S umfasst ihre Beträge, eingetragen sind sie nicht.
   const leer = settle(
     { units: [...vier.units, unit('e')], tenancies: vier.tenancies, costItems: [messdienst(393301 + 50000, TECHEM)] },
