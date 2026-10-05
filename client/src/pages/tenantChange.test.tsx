@@ -116,3 +116,21 @@ test('Mieterwechsel unter getrennter Heizkostenabrechnung (Durchsicht von #231):
   await waitFor(() => expect(sent).toHaveLength(1), SLOW)
   expect(sent[0]?.body).toMatchObject({ newTenancy: { prepayments: [{ from: '2025-07', monthlyCents: 17700 }], heatingPrepayments: [{ from: '2025-07', monthlyCents: 12300 }] } })
 })
+
+// Sichtprüfung E18: Der Assistent öffnet am Seitenende; ohne Sprung dorthin sah man nach dem Klick
+// nichts passieren.
+test('E18: der Assistent holt sich ins Bild', async () => {
+  const scroll = vi.fn()
+  Element.prototype.scrollIntoView = scroll
+  render(
+    <PeriodProvider>
+      <PropertyProvider>
+        <UIProvider><Stammdaten units={UNITS} tenancies={TENANCIES} settings={null} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </PeriodProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /^Mieterwechsel$/i }, SLOW))
+  await waitFor(() => expect(scroll).toHaveBeenCalled())
+  expect(document.activeElement).toBe(screen.getByLabelText(/Auszugsdatum/i))
+  Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
+})

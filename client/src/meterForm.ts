@@ -57,6 +57,19 @@ export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
   totalHeat: 'Gesamtwärmezähler an der Heizanlage',
 }
 
+// Welche Rolle an der Heizanlage ein Zähler des Hauses (ohne Wohnung) haben kann (Sichtprüfung E19).
+// Versorgungszähler ist, was Brennstoff oder Energie zuführt: Gas oder Öl (Sparte „Sonstiges“),
+// Strom einer Wärmepumpe, Fernwärme. Die Wärmezähler der Anlage haben die Sparte „Wärme“, wie der
+// Server verlangt. Ein Wasserzähler hat keine Rolle; dort fragt das Formular nicht.
+export function heatingRoleOptions(form: Pick<MeterForm, 'unitId' | 'type'>, hasPlant: boolean): HeatingRole[] {
+  if (!hasPlant || form.unitId) return []
+  if (form.type === 'waerme') return ['supply', 'dhwHeat', 'totalHeat']
+  if (form.type === 'sonstig' || form.type === 'strom') return ['supply']
+  return []
+}
+
+export const HEATING_ROLE_HELP = 'Ein Zähler der Heizanlage zählt nicht als Hauptzähler des Hauses; Mietfuchs ordnet ihn den Heizkosten zu. Wählen Sie „Nein“, wenn er den Verbrauch des ganzen Hauses misst.'
+
 // Fernablesbarkeit und Einbau fragt das Formular nur bei Geräten, die § 5 HeizkostenV erfasst:
 // Wärme- und Warmwasserzähler und Heizkostenverteiler der Wohnungen, dazu die Wärmezähler der
 // Heizanlage. Der Gaszähler gehört dem Versorger.
@@ -66,7 +79,7 @@ export const HEATING_ROLE_LABELS: Record<HeatingRole, string> = {
 export function asksRemote(form: MeterForm, hasPlant: boolean): boolean {
   if (!hasPlant) return false
   if (form.unitId) return form.type === 'waerme' || form.type === 'warmwasser' || form.type === 'hkv'
-  return form.heatingRole === 'dhwHeat' || form.heatingRole === 'totalHeat'
+  return form.type === 'waerme' && (form.heatingRole === 'dhwHeat' || form.heatingRole === 'totalHeat')
 }
 
 export type MeterBody = {
@@ -94,7 +107,7 @@ export function meterBody(form: MeterForm, plantId: string | null): { body: Mete
   if (form.type === 'hkv' && !form.unitId) {
     return { error: 'Ein Heizkostenverteiler sitzt an einem Heizkörper einer Wohnung. Bitte wählen Sie die Wohnung.' }
   }
-  const role = !form.unitId && plantId !== null && form.heatingRole !== '' ? form.heatingRole : null
+  const role = form.heatingRole !== '' && heatingRoleOptions(form, plantId !== null).includes(form.heatingRole) ? form.heatingRole : null
   const asks = asksRemote({ ...form, heatingRole: role ?? '' }, plantId !== null)
   const number = form.meterNumber.trim()
   return {

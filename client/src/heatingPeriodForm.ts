@@ -211,3 +211,30 @@ export function separateAnswersOf(p: SeparatePreview, form: SeparateAnswerForm):
   }
   return { steps, totals, overrides, merge: form.merge, token: p.token }
 }
+
+// Überschrift, Satz und Frage des Bereichs „getrennte Heizkostenabrechnung“ (Sichtprüfung E7). Nach
+// „Übernehmen“ im Zeitraum der Heizung mit „getrennt: Ja“ öffnet er sich als zweiter Schritt; vorher
+// stand dort nur „Ab welchem Monat?“, und niemand erfuhr, wozu.
+export function separatePanelIntro(input: { separateOn: boolean; own: boolean; afterPeriodChange: boolean }): { title: string; text: string; monthLabel: string } {
+  if (input.separateOn) {
+    return {
+      title: 'Getrennte Heizkostenabrechnung ausschalten',
+      text: input.own
+        ? 'Ab der gewählten Heizperiode stehen die Heizkosten wieder in der Betriebskostenabrechnung, und diese rechnet auch die Heizvorauszahlung an. Frühere Heizperioden bleiben getrennt abgerechnet. Die Vorschau zeigt, was sich ändert.'
+        : 'Ab dem gewählten Monat gibt es wieder eine gemeinsame Vorauszahlung. Die Vorschau zeigt, was sich ändert.',
+      monthLabel: input.own ? 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)' : 'Ab welchem Monat?',
+    }
+  }
+  if (!input.own) {
+    return {
+      title: 'Vorauszahlung aufteilen',
+      text: 'Ab dem gewählten Monat führt Mietfuchs die Heizvorauszahlung als eigene Staffel, und die Abrechnung weist beide Vorauszahlungen getrennt aus. Die Vorschau zeigt, wie die bisherige Vorauszahlung aufgeteilt wird; lassen Sie das Feld leer, schlägt sie einen Monat vor.',
+      monthLabel: 'Ab welchem Monat?',
+    }
+  }
+  return {
+    title: `${input.afterPeriodChange ? 'Schritt 2 von 2: ' : ''}Getrennte Heizkostenabrechnung einschalten`,
+    text: 'Ab dem gewählten Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung, und jede Heizperiode bekommt eine eigene Heizkostenabrechnung mit eigener Frist. Die Vorschau zeigt, wie die bisherige Vorauszahlung aufgeteilt wird; lassen Sie das Feld leer, schlägt sie einen Monat vor.',
+    monthLabel: 'Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?',
+  }
+}

@@ -16,3 +16,9 @@ test('Laienprobe B16: der Satz sagt, wohin die Rechnung einer späteren Heizperi
   render(<HeatingPeriodSelect options={[{ value: '2025-05', label: 'Heizperiode 2025/2026 (01.05.2025–30.04.2026)' }]} value="2025-05" onChange={() => {}} />)
   expect(screen.getByText(/Die Rechnung einer späteren Heizperiode erfassen Sie im Abrechnungszeitraum, in dem sie endet/)).toBeTruthy()
 })
+
+// Sichtprüfung E23: Das Feld erschien mit „Heizung und Warmwasser“ ohne Satz, warum es da ist.
+test('E23: der Satz sagt, warum nach der Heizperiode gefragt wird', () => {
+  render(<HeatingPeriodSelect options={[{ value: '2025-05', label: 'Heizperiode 2025/2026 (01.05.2025–30.04.2026)' }]} value="2025-05" onChange={() => {}} />)
+  expect(screen.getByText(/Ihre Heizung rechnet in einem eigenen Zeitraum ab, der Heizperiode\. Wählen Sie die Heizperiode, die die Rechnung abdeckt; mit ihr wird die Position abgerechnet\./)).toBeTruthy()
+})
