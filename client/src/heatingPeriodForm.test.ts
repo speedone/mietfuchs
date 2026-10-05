@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import {
   heatingPeriodAnswersOf, heatingPeriodForm, heatingPeriodSummary, heatingRulesBody, initialHeatingPeriodAnswers, initialSeparateAnswers,
-  heatingWays, separateAnswersOf, suggestedWay,
+  heatingWays, separateAnswersOf, separatePanelIntro, suggestedWay,
 } from './heatingPeriodForm'
 import { CALENDAR_RULES, periodKey as k } from '../../shared/period.ts'
 import type { HeatingPeriodChangePreview, HeatingPlant, SeparatePreview } from './types'
@@ -94,5 +94,24 @@ describe('Drei Wege, wenn der Messdienst anders abrechnet (Nutzerwunsch, BGH VII
     // Laienprobe B14: das Beispiel nach dem Zeitraum des Objekts.
     expect(heatingWays({ objectCalendar: false, separate: '' })[0]?.example).toMatch(/des Zeitraums, in dem der 30\.04\.2026 liegt/)
     expect(heatingWays({ objectCalendar: true, separate: 'yes' }).some((w) => w.recommended)).toBe(false)
+  })
+})
+
+// Sichtprüfung E7: Nach „Übernehmen“ mit „getrennt: Ja“ stand ein zweites Feld „Ab welchem Monat?“
+// ohne Überschrift da, und niemand erfuhr, dass das der zweite Schritt ist und wozu der Monat dient.
+describe('Getrennte Heizkostenabrechnung: Überschrift und Satz zum Monat', () => {
+  test('nach dem Zeitraum der zweite Schritt', () => {
+    const intro = separatePanelIntro({ separateOn: false, own: true, afterPeriodChange: true })
+    expect(intro.title).toBe('Schritt 2 von 2: Getrennte Heizkostenabrechnung einschalten')
+    expect(intro.monthLabel).toBe('Ab welchem Monat zahlen die Mieter eine eigene Heizkostenvorauszahlung?')
+    expect(intro.text).toMatch(/eigene Heizkostenabrechnung mit eigener Frist/)
+    expect(intro.text).toMatch(/Vorschau/)
+  })
+  test('einschalten von Hand, ausschalten, Vorauszahlung aufteilen', () => {
+    expect(separatePanelIntro({ separateOn: false, own: true, afterPeriodChange: false }).title).toBe('Getrennte Heizkostenabrechnung einschalten')
+    const off = separatePanelIntro({ separateOn: true, own: true, afterPeriodChange: false })
+    expect([off.title, off.monthLabel]).toEqual(['Getrennte Heizkostenabrechnung ausschalten', 'Ab welcher Heizperiode wieder gemeinsam? (Monat ihres Beginns)'])
+    expect(off.text).toMatch(/Betriebskostenabrechnung/)
+    expect(separatePanelIntro({ separateOn: false, own: false, afterPeriodChange: false }).title).toBe('Vorauszahlung aufteilen')
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
-  adjustedPrepaymentLabel, cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, separateHeatingNote, totalLabel,
+  adjustedPrepaymentLabel, cockpitHeatingRows, heatingChoices, heatingItemPeriods, heatingOnlyNote, heatingOverridesWith, itemsOfPeriod, prepaymentLabel, prepaymentSplit, totalLabel,
   heatingTaxYear, recommendedDeadlineText, scheduleOf, separateHeatingFor, settlementPaths, settlementTitle,
 } from './heatingSettlementView'
 import { CALENDAR_RULES, calendarYearPeriod, periodKey as k, settlementPeriod } from '../../shared/period.ts'
@@ -45,11 +45,11 @@ describe('Überschrift und Druckkopf (Entwurf 3.1)', () => {
     expect(adjustedPrepaymentLabel(statement({ scope: 'heating' }), false)).toBe('monatliche Heizkostenvorauszahlung')
     expect(adjustedPrepaymentLabel(statement(), true)).toBe('monatliche Vorauszahlung für die übrigen Nebenkosten (ohne Heizung)')
     expect(adjustedPrepaymentLabel(statement(), false)).toBe('monatliche Nebenkostenvorauszahlung')
+    // Sichtprüfung E42: „davon Heizvorauszahlung 0,00 €“ stand auch ohne eigene Heizkostenabrechnung
+    // da, etwa im Jahr, bevor die Heizvorauszahlung beginnt. Ohne Heizvorauszahlung keine Zeilen; wo
+    // sie abgerechnet wird, sagt der Server in `prepaymentNote`.
     const ohneHeizung = statement({ prepaymentCents: 42000, heatingPrepaymentCents: 0 })
-    expect(prepaymentSplit(ohneHeizung, true)).toEqual([])
-    expect(separateHeatingNote(ohneHeizung, true)).toBe('Ihre Heizkostenvorauszahlung ist hier nicht enthalten; sie wird in einer eigenen Heizkostenabrechnung abgerechnet.')
-    expect(separateHeatingNote(ohneHeizung, false)).toBe(null)
-    expect(prepaymentSplit(ohneHeizung, false)).toHaveLength(2)
+    expect(prepaymentSplit(ohneHeizung)).toEqual([])
   })
 })
 

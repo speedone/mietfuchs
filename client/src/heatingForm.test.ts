@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { asksNewInstall, emptyHeatingForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, connectionNote, emptyHeatingForm, HOT_WATER_OPTIONS, hotWaterBody, isFormula, unmeasurableLabel, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -77,7 +77,10 @@ describe('Einrichtung Heizung', () => {
       'Angeschlossen: OG',
       'Aus der Ferne ablesbar: Nur einige',
     ])
-    expect(heatingSummary({ ...PLANT, units: null }, UNITS)[2]).toBe('Angeschlossen: alle Wohnungen')
+    // Sichtprüfung E9: „alle Wohnungen“ stimmte nicht, wenn eine Einheit keinen Wärmeanschluss hat.
+    expect(heatingSummary({ ...PLANT, units: null }, UNITS)[2]).toBe('Angeschlossen: alle Wohnungen außer Garage (ohne Wärmeanschluss)')
+    expect(heatingSummary({ ...PLANT, units: null }, UNITS.slice(0, 2))[2]).toBe('Angeschlossen: alle Wohnungen')
+    expect(UNITS.map(connectionNote)).toEqual([null, null, 'ohne Wärmeanschluss laut Wohnungsdaten'])
     expect(heatingSummary({ ...PLANT, units: [] }, UNITS)[2]).toBe('Angeschlossen: keine Wohnung')
   })
 

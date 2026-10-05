@@ -749,7 +749,9 @@ td.actions { white-space: nowrap; text-align: right; }
      bricht einen solchen Bereich nicht sauber über Seitengrenzen um. */
   .table-scroll { overflow: visible; }
   main { padding: 0; max-width: none; }
-  .card { border: none; padding: 0; margin: 0; }
+  .card { border: none; padding: 0; margin: 0; box-shadow: none; }
+  /* Sichtprüfung E46: Beim Druck aller Abrechnungen beginnt jede weitere auf einer neuen Seite. */
+  body:not(.print-one) .card.statement ~ .card.statement { break-before: page; page-break-before: always; }
   body.print-one .card.statement { display: none; }
   body.print-one .card.statement.print-target { display: block; }
   .print-only { display: block; }

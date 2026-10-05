@@ -60,6 +60,30 @@ test('R3/B3/A3: eigene Heizkostenabrechnung je Heizperiode, Frist 30.04.2027, Vo
   assert.deepEqual(p.separateHeating?.map((x) => [x.period.key, x.deadline]), [['2025-05', '2027-04-30']])
 })
 
+// Sichtprüfung E42: In der Betriebskostenabrechnung 2025 stand „davon Heizvorauszahlung 0,00 €“ ohne
+// Erklärung. Die Heizvorauszahlung ab Mai 2025 gehört der Heizkostenabrechnung 2025/2026; das sagt die
+// Abrechnung jetzt in einem Satz. Vor der getrennten Heizvorauszahlung (2024) gibt es nichts zu sagen.
+test('E42: die Betriebskostenabrechnung nennt, wo die Heizvorauszahlungen ihrer Monate abgerechnet werden', () => {
+  const src = haus({ tenancies: [mieter('A', 'u1', [{ from: '2025-05', monthlyCents: 12300 }])] })
+  const p25 = st(computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))), 'A')
+  assert.equal(p25.heatingPrepaymentCents, 0)
+  assert.equal(p25.prepaymentNote, 'Ihre Heizkostenvorauszahlungen Mai bis Dezember 2025 sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung 2025/2026 abgerechnet.')
+  const p24 = st(computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2024-01'))), 'A')
+  assert.equal(p24.prepaymentNote, undefined)
+})
+
+// Durchsicht N1: Der Satz nennt die Monate, die die Heizkostenabrechnung anrechnet, aus derselben
+// Quelle wie die Anrechnung: auch Monate mit Staffel 0, die eine Heizkorrektur abdeckt.
+test('N1: der Satz zur Heizvorauszahlung folgt der Anrechnung, auch bei einer Korrektur ohne Staffel', () => {
+  const src = haus({ tenancies: [mieter('A', 'u1', [{ from: '2025-05', monthlyCents: 0 }], [korrektur('2025-05', 50000)])] })
+  const p25 = st(computeSettlement(snapshotFor(src, 'objekt-1', of(CALENDAR_RULES, '2025-01'))), 'A')
+  assert.equal(p25.prepaymentNote, 'Ihre Heizkostenvorauszahlungen Mai bis Dezember 2025 sind hier nicht angerechnet; sie werden in der Heizkostenabrechnung 2025/2026 abgerechnet.')
+  assert.equal(st(heizkosten(src, '2025-05'), 'A').prepaymentCents, 50000)
+  // Ohne Staffel und ohne Korrektur gibt es nichts zu sagen.
+  const leer = haus({ tenancies: [mieter('A', 'u1', [{ from: '2025-05', monthlyCents: 0 }])] })
+  assert.equal(st(computeSettlement(snapshotFor(leer, 'objekt-1', of(CALENDAR_RULES, '2025-01'))), 'A').prepaymentNote, undefined)
+})
+
 test('C2/D2: vorläufige Heizkorrektur 876 € für Mai–Dezember 2026, Staffel Januar–April 2027: 1.368 € angerechnet', () => {
   const src = haus({
     heatingPlants: [anlage(ab2026)],

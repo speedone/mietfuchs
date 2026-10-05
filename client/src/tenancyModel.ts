@@ -1,5 +1,5 @@
 import type { CostModel, NotSettled, Tenancy, Unit } from './types'
-import { fmtDate } from './api'
+import { fmtDate, fmtEuro } from './api'
 import { overlapsOf } from '../../shared/tenancyOverlap.ts'
 import { andList } from '../../shared/wording.ts'
 
@@ -105,4 +105,17 @@ export function overlapQuestion(
       'Ist ein Datum vertippt, korrigieren Sie bitte Einzug oder Auszug; für einen Wechsel nutzen Sie am besten den Mieterwechsel. Trotzdem speichern?',
     confirmLabel: 'Trotzdem speichern',
   }
+}
+
+// Die Spalte „Vorauszahlung je Monat“ der Mietverhältnisse (Sichtprüfung E12): die Staffel und,
+// bei getrennter Heizkostenabrechnung, die Heizvorauszahlung daneben. Ohne sie sah die übrige
+// Vorauszahlung nach dem Aufteilen aus wie eine gesunkene.
+export function prepaymentColumn(t: Pick<Tenancy, 'prepayments' | 'heatingPrepayments'>): { label: string | null; amount: string }[] {
+  const heating = t.heatingPrepayments ?? []
+  const withFrom = t.prepayments.length > 1 || heating.length > 1
+  const month = (from: string) => `${from.slice(5, 7)}/${from.slice(0, 4)}`
+  return [
+    ...t.prepayments.map((p) => ({ label: t.prepayments.length > 1 ? `ab ${month(p.from)}:` : null, amount: fmtEuro(p.monthlyCents) })),
+    ...heating.map((p) => ({ label: withFrom ? `+ Heizung ab ${month(p.from)}:` : '+ Heizung:', amount: fmtEuro(p.monthlyCents) })),
+  ]
 }

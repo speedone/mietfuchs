@@ -41,6 +41,8 @@ let extraItems: CostItem[]
 let failAssessmentPut = false
 // Die abgeschlossene Abrechnung des Jahres, falls es eine gibt (Integrationsdurchsicht vor 0.10)
 let closed: { closedAt: string } | null = null
+// Die Heizanlagen des ersten Objekts (Sichtprüfung E32)
+let plantsP1: unknown[] = []
 
 // Die Abrechnung des Jahres, nur mit dem, was die Belegmappe liest: die Zeilen der Mieter
 const SETTLEMENT = {
@@ -55,6 +57,7 @@ beforeEach(() => {
   extraItems = []
   failAssessmentPut = false
   closed = null
+  plantsP1 = []
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const u = new URL(url, 'http://x')
     const method = init?.method ?? 'GET'
@@ -69,6 +72,7 @@ beforeEach(() => {
     if (u.pathname === '/api/properties') body = PROPS
     else if (u.pathname === '/api/uploads') body = [up('1_gs.pdf'), up('2_wasser.pdf'), up('3_ahorn.pdf'), up('4_lose.pdf', '1_gs.pdf'), ...extraUploads]
     else if (u.pathname === '/api/costItems') body = [...(ITEMS[u.searchParams.get('property') ?? 'p1'] ?? []), ...(u.searchParams.get('property') === 'p2' ? [] : extraItems)]
+    else if (u.pathname === '/api/heating-plants') body = u.searchParams.get('property') === 'p2' ? [] : plantsP1
     else if (u.pathname.startsWith('/api/settlement/')) body = closed ? { ...SETTLEMENT, closed } : SETTLEMENT
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
   })
@@ -102,6 +106,20 @@ test('zeigt das gewählte Objekt und Jahr, je Kostenart ein Register mit Summe',
   expect(within(wasser).getByText(/1 von 2 Positionen ohne Beleg/)).toBeTruthy()
   expect(within(wasser).getByText(/Abwasser · 260,00 €/)).toBeTruthy()
   expect(screen.queryByText('Grundsteuer Ahornweg', { exact: false })).toBeNull()
+})
+
+// Sichtprüfung E32: Nach dem Wechsel auf eine eigene Heizperiode trägt die Heizposition den Schlüssel
+// ihrer Heizperiode (Mai bis April). Sie gehört in die Abrechnung des Jahres, in dem diese endet, und
+// dort sucht man auch den Beleg; vorher stand er im Ordner des Vorjahres.
+test('eine Heizposition mit eigener Heizperiode steht im Jahr ihrer Abrechnung', async () => {
+  plantsP1 = [{ id: 'hp1', periodStartMonth: 5, periodChanges: [], separateSpans: [] }]
+  extraItems = [{ id: 'hz', propertyId: 'p1', period: `${YEAR - 1}-05` as CostItem['period'], category: 'Heizung und Warmwasser', description: 'Erdgas', amountCents: 480000, key: 'area', invoiceFile: '5_erdgas.pdf', heatingPlantId: 'hp1' }]
+  extraUploads = [up('5_erdgas.pdf')]
+  renderPage()
+  await screen.findByText('Heizung und Warmwasser')
+  expect(select('Jahr').value).toBe(String(YEAR))
+  // 600 + 980 + 4.800 von 600 + 980 + 260 + 4.800 Euro sind belegt
+  expect(screen.getByText(/Belegabdeckung/).closest('.receipt-coverage')?.textContent).toMatch(/96 %.*1 Position ohne Beleg/)
 })
 
 test('„alle Objekte“ zeigt auch die Belege des anderen Objekts, mit dessen Namen', async () => {

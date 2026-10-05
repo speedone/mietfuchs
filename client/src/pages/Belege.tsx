@@ -5,6 +5,7 @@ import { usePeriod } from '../period'
 import { labelOfKey } from '../periodForm'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { closedPeriodNotice } from '../../../shared/costItem.ts'
+import { closedCheckPath, filedUnderSettlement, type PlantPeriods } from '../costPeriods'
 // Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf
 // 5.2: `uploads.year` bleibt). Die Mappe für Mieter gehört dagegen zu einer Abrechnung, also zu
 // einem Zeitraum des Objekts.
@@ -216,7 +217,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const { year: currentYear, calendarYearOptions } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
-  const [costItems, setCostItems] = useState<CostItem[]>([])
+  const [loadedItems, setLoadedItems] = useState<CostItem[]>([])
+  const [plantsBy, setPlantsBy] = useState<Map<string, PlantPeriods[]>>(new Map())
   const [error, setError] = useState('')
   // Nach dem Zuordnen eines Belegs: Betrag der Position prüfen (Befund C). Eine aus dem Vorjahr
   // übernommene Position trägt einen geschätzten Betrag, der sonst still stehen bliebe.
@@ -236,16 +238,31 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     // Der Belegordner gilt für die ganze Installation (#92). Welche Belege an einer Kostenposition
     // hängen, wird deshalb über alle Objekte gefragt, je Objekt einzeln: Die Routen grenzen immer
     // auf ein Objekt ein, eine zweite Regel „alle“ gibt es dort bewusst nicht.
+    // Dazu die Heizanlagen: Eine Heizposition mit eigener Heizperiode gehört in das Jahr, in dem
+    // diese endet (E32). Fehlen sie, bleibt jede Position bei ihrem Schlüssel.
     const allItems = () =>
       api<Property[]>('/api/properties')
-        .then((list) => Promise.all(list.map((p) => api<CostItem[]>(withProperty('/api/costItems', p.id)))))
-        .then((lists) => lists.flat())
+        .then((list) => Promise.all(list.map((p) => Promise.all([
+          api<CostItem[]>(withProperty('/api/costItems', p.id)),
+          api<PlantPeriods[]>(withProperty('/api/heating-plants', p.id)).catch(() => []),
+        ]).then(([items, plants]) => ({ id: p.id, items, plants })))))
     return Promise.all([api<UploadEntry[]>('/api/uploads'), allItems()])
-      .then(([u, c]) => { setUploads(u.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))); setCostItems(c); setError('') })
+      .then(([u, c]) => {
+        setUploads(u.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)))
+        setLoadedItems(c.flatMap((x) => x.items))
+        setPlantsBy(new Map(c.map((x) => [x.id, x.plants])))
+        setError('')
+      })
       .catch((e) => setError(String((e as Error).message)))
   }, [])
 
   useEffect(() => { void load() }, [load])
+  // Die Positionen mit dem Schlüssel ihrer Abrechnung (E32): Register, Belegabdeckung, Posteingang
+  // und Belegmappe ordnen danach, wie Kosten und Abrechnung. Geschrieben wird nur mit der Kennung.
+  const costItems = useMemo(
+    () => filedUnderSettlement(loadedItems, (id) => rulesOf(properties.find((p) => p.id === id)), (id) => plantsBy.get(id) ?? []),
+    [loadedItems, properties, plantsBy],
+  )
 
   // Ein Objekt, das es nicht (mehr) gibt, gilt als „alle“, damit das Auswahlfeld nie etwas
   // anderes zeigt, als gefiltert wird.
@@ -291,7 +308,10 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
     // nur der Satz; das Zuordnen ist schon gespeichert.
     try {
-      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${c.period}`, c.propertyId))
+      // Die Abrechnung, zu der die Position gehört; nach Weg d ihre Heizkostenabrechnung (Durchsicht N2).
+      const raw = loadedItems.find((x) => x.id === c.id) ?? c
+      const path = closedCheckPath(raw, rulesOf(properties.find((p) => p.id === c.propertyId)), plantsBy.get(c.propertyId) ?? [])
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(path, c.propertyId))
       if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
     } catch { /* ohne Auskunft kein Satz */ }
   }

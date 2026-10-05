@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, HeatingSettlementInfo, Meter, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
+import type { CostItem, HeatingPlant, HeatingSettlementInfo, Meter, NoticeSubject, PeriodKey, Settings, Settlement, Tenancy, Unit, UploadEntry } from '../types'
 import { cockpitHeatingRows } from '../heatingSettlementView'
+import { heatingRowTarget, itemsOfSettlement } from '../costPeriods'
 import { localToday } from '../periodForm'
 import { isNotAllocable, usageOf } from '../types'
 import { cockpitSubtitle, itemsDetail, meterTypesInUse, tenanciesDetail, usesUnitBasis } from '../cockpitChecks'
@@ -9,7 +10,7 @@ import { api, fmtEuro, fmtDate } from '../api'
 import { andList } from '../../../shared/wording.ts'
 import { hkvCutNotByConsumption } from '../../../shared/law/heizkostenv.ts'
 import { LAW_AS_OF, valueAt } from '../../../shared/law/register.ts'
-import { usePeriod } from '../period'
+import { usePeriod, useSwitchPeriod } from '../period'
 import { useProperty, withProperty } from '../property'
 import { consentPending } from '../update'
 import { heatingWithoutConsumption, meterReadiness } from '../meterCheck'
@@ -23,7 +24,7 @@ type Props = {
   tenancies: Tenancy[]
   settings: Settings | null
   reload: () => Promise<void>
-  onNavigate: (tab: string) => void
+  onNavigate: (tab: string, focus?: NoticeSubject) => void
 }
 
 // Verbrauchsangaben des Servers (gleiche Form wie auf der Zähler-Seite)
@@ -39,13 +40,16 @@ type Check = {
   level: Level
   tab?: string
   cta?: string
+  // Statt nur zur Seite zu wechseln (E45: erst in den Zeitraum der Heizkostenabrechnung)
+  go?: () => void
 }
 
 // Ab dieser Abweichung zum Vorjahr gilt eine Kostenart als auffällig (wie in der Übersicht).
 const NOTABLE_CHANGE_PCT = 25
 
 export default function Cockpit({ units, tenancies, settings, reload, onNavigate }: Props) {
-  const { key, label, param, at, period, calendar } = usePeriod()
+  const { key, label, param, at, period, calendar, rules } = usePeriod()
+  const switchPeriod = useSwitchPeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [settlement, setSettlement] = useState<Settlement | null>(null)
@@ -59,6 +63,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const [bookedFiles, setBookedFiles] = useState<Map<string, string[]>>(new Map())
   // Heizung PR 5: die Heizkostenabrechnungen nach Weg d, jede mit ihrer eigenen Frist.
   const [heatingList, setHeatingList] = useState<HeatingSettlementInfo[]>([])
+  // Die Anlagen sagen, in welchem Zeitraum eine Heizposition abgerechnet wird (E48, E32).
+  const [plants, setPlants] = useState<HeatingPlant[]>([])
 
   const load = useCallback(() => {
     return Promise.all([
@@ -74,13 +80,15 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     api<HeatingSettlementInfo[]>(withProperty('/api/heating-settlements', propertyId)).then(setHeatingList).catch(() => setHeatingList([]))
+    api<HeatingPlant[]>(withProperty('/api/heating-plants', propertyId)).then(setPlants).catch(() => setPlants([]))
   }, [propertyId])
   useEffect(() => {
     api<UploadEntry[]>('/api/uploads').then((list) => { setUploadFiles(new Set(list.map((u) => u.file))); setBookedFiles(filesByItem(list)) }, () => setUploadFiles(null))
   }, [param, propertyId])
 
   // ---------- Kennzahlen des Jahres ----------
-  const yearItems = useMemo(() => costItems.filter((c) => c.period === key), [costItems, key])
+  // Mit den Heizpositionen, deren Heizperiode in diesem Zeitraum endet, wie Kosten und Abrechnung.
+  const yearItems = useMemo(() => itemsOfSettlement(costItems, key, rules, plants), [costItems, key, rules, plants])
   const itemsSum = useMemo(() => yearItems.reduce((a, c) => a + c.amountCents, 0), [yearItems])
   const invoiceFileCount = useMemo(() => new Set(yearItems.filter((c) => c.invoiceFile).map((c) => c.invoiceFile)).size, [yearItems])
   const participating = useMemo(() => units.filter((u) => u.participates), [units])
@@ -89,7 +97,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
   const notable = useMemo(() => {
     const sumByCat = (key: PeriodKey) => {
       const m = new Map<string, number>()
-      for (const c of costItems) if (c.period === key) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
+      for (const c of itemsOfSettlement(costItems, key, rules, plants)) m.set(c.category, (m.get(c.category) ?? 0) + c.amountCents)
       return m
     }
     const cur = sumByCat(key)
@@ -103,7 +111,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       if (Math.abs(pct) >= NOTABLE_CHANGE_PCT) list.push({ cat, pct })
     }
     return { hasPrev: true, list }
-  }, [costItems, key, at.previous])
+  }, [costItems, key, at.previous, rules, plants])
 
   // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums. Die
   // Frist kommt vom Server (#208); vor dem Laden gibt es keine.
@@ -245,12 +253,19 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         detail: `Noch im Entwurf. ${deadlineText}` })
     }
     // Jede beendete Heizperiode nach Weg d mit ihrer eigenen Frist (Heizung PR 5, Entwurf 3.1, B3).
+    // „Zur Abrechnung“ wechselt dabei in den Zeitraum, in dem die Heizperiode endet, und wählt dort
+    // die Heizkostenabrechnung (E45); im gewählten Zeitraum ist sie oft gar nicht wählbar.
     for (const row of cockpitHeatingRows(heatingList, localToday())) {
-      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung' }) })
+      const h = heatingList.find((x) => `${x.plantId}|${x.period.key}` === row.key)
+      const go = h ? () => {
+        const t = heatingRowTarget(h, rules)
+        void switchPeriod(t.period).then((ok) => { if (ok) onNavigate('abrechnung', t.focus) })
+      } : undefined
+      list.push({ title: row.label, level: row.level, detail: row.text, ...(row.level === 'gruen' ? {} : { tab: 'abrechnung', cta: 'Zur Abrechnung', go }) })
     }
 
     return list
-  }, [heatingList, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
+  }, [heatingList, rules, switchPeriod, onNavigate, settlement, participating, units, yearItems, itemsSum, invoiceFileCount, meters, consumption, tenancies, notable, daysLeft, label, calendar, period, at.previousLabel, uploadFiles, bookedFiles])
 
   const relevant = checks.filter((c) => c.level !== 'leer')
   const greenCount = relevant.filter((c) => c.level === 'gruen').length
@@ -318,10 +333,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
                   <div
                     key={i}
                     className={`check-row ${c.level}${clickable ? ' clickable' : ''}`}
-                    onClick={clickable ? () => onNavigate(c.tab!) : undefined}
+                    onClick={clickable ? () => (c.go ? c.go() : onNavigate(c.tab!)) : undefined}
                     role={clickable ? 'button' : undefined}
                     tabIndex={clickable ? 0 : undefined}
-                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') onNavigate(c.tab!) } : undefined}
+                    onKeyDown={clickable ? (e) => { if (e.key === 'Enter') (c.go ? c.go() : onNavigate(c.tab!)) } : undefined}
                   >
                     <span className={`ampel ${c.level === 'leer' ? '' : c.level}`} style={c.level === 'leer' ? { background: 'var(--line)' } : undefined} />
                     <div className="grow">
@@ -336,7 +351,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
 
             <div className="row" style={{ marginTop: 16 }}>
               {next ? (
-                <button className="btn" onClick={() => onNavigate(next.tab!)}>→ Nächster Schritt: {next.cta}</button>
+                <button className="btn" onClick={() => (next.go ? next.go() : onNavigate(next.tab!))}>→ Nächster Schritt: {next.cta}</button>
               ) : (
                 <button className="btn" onClick={() => onNavigate('abrechnung')}>✓ Zur Abrechnung — abschließen & versenden</button>
               )}

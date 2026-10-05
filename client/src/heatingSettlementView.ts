@@ -35,22 +35,16 @@ export const prepaymentLabel = (st: Pick<Statement, 'scope'>): string =>
   st.scope === 'heating' ? 'abzüglich geleisteter Heizvorauszahlungen' : 'abzüglich geleisteter Vorauszahlungen'
 
 // Bei getrennter Heizvorauszahlung weist die Gesamtabrechnung beide aus (A3); die
-// Heizkostenabrechnung hat nur die eine. Laienprobe B18: Wird die Heizung in einer eigenen
-// Heizkostenabrechnung abgerechnet (`separate`), stand hier „davon Heizvorauszahlung 0,00 €“, und der
-// Mieter fragte, wo seine Heizvorauszahlung geblieben ist; dann sagt `separateHeatingNote` es.
-export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>, separate = false): { label: string; cents: number }[] {
-  if (st.scope === 'heating' || st.heatingPrepaymentCents === undefined) return []
-  if (separate && st.heatingPrepaymentCents === 0) return []
+// Heizkostenabrechnung hat nur die eine. Ohne Heizvorauszahlung in diesem Zeitraum keine Zeilen
+// (Laienprobe B18, Sichtprüfung E42): „davon Heizvorauszahlung 0,00 €“ ließ den Mieter fragen, wo
+// sie geblieben ist. Gehört sie einer eigenen Heizkostenabrechnung, sagt `prepaymentNote` es.
+export function prepaymentSplit(st: Pick<Statement, 'scope' | 'prepaymentCents' | 'heatingPrepaymentCents'>): { label: string; cents: number }[] {
+  if (st.scope === 'heating' || st.heatingPrepaymentCents === undefined || st.heatingPrepaymentCents === 0) return []
   return [
     { label: 'davon Heizvorauszahlung', cents: st.heatingPrepaymentCents },
     { label: 'davon übrige Vorauszahlungen', cents: st.prepaymentCents - st.heatingPrepaymentCents },
   ]
 }
-
-export const separateHeatingNote = (st: Pick<Statement, 'scope' | 'heatingPrepaymentCents'>, separate: boolean): string | null =>
-  separate && st.scope !== 'heating' && (st.heatingPrepaymentCents ?? 0) === 0
-    ? 'Ihre Heizkostenvorauszahlung ist hier nicht enthalten; sie wird in einer eigenen Heizkostenabrechnung abgerechnet.'
-    : null
 
 // Laienprobe B17: Die Heizkostenabrechnung sprach von „Betriebskosten“ und „Nebenkostenvorauszahlung“,
 // während die Betriebskostenabrechnung desselben Zeitraums eine andere „Nebenkostenvorauszahlung“
