@@ -35,7 +35,7 @@ import { rulesFor } from '../../shared/law/rules.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
-import { betrkvTvSignal } from '../../shared/law/bgb-betrkv.ts'
+import { betrkvTvSignal, bgbDeadlineMonths, bgbMaxPeriodMonths } from '../../shared/law/bgb-betrkv.ts'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvCutRemoteReading, hkvRemoteReadingRetrofit } from '../../shared/law/heizkostenv.ts'
 import { practiceVacancyPersons } from '../../shared/law/practice.ts'
 import { HEATING_CATEGORY, heatingByConsumption, heatingFindings, mayAgreeOtherwise } from '../../shared/heating.ts'
@@ -1960,10 +1960,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const tvSignal = tv?.coverage ?? 'none'
   const tvUntil = tv?.validTo ?? ''
   const tvNewFrom = tv?.value.newSystemsFrom ?? ''
-  const tvNewYear = Number(tvNewFrom.slice(0, 4))
   // Eine Anlage ab dem Stichtag der Regel fiel nie unter sie (#121, § 2 Satz 2 BetrKV): dann in
-  // jedem Jahr ab dem Jahr des Stichtags dieselbe Warnung, ohne Übergangszeit.
-  const newSystem = tv !== null && snapshot.property?.cableBuiltBeforeDec2021 === false && year >= tvNewYear
+  // jedem Zeitraum, der bis in die Zeit ab dem Stichtag reicht, dieselbe Warnung, ohne
+  // Übergangszeit (#208).
+  const newSystem = tv !== null && snapshot.property?.cableBuiltBeforeDec2021 === false && yTo >= tvNewFrom
+  // Fällt der Stichtag in den Zeitraum, gilt die Warnung für die Kosten ab der Errichtung.
+  const newSystemInPeriod = yFrom < tvNewFrom && yTo >= tvNewFrom
+  // „Das erste Halbjahr“ stimmt nur im Kalenderjahr; sonst nennt der Text das Ende der Regel (#208).
+  const kalenderjahr = calendarYearPeriod(year)
+  const umlegbar = yFrom === kalenderjahr.from && yTo === kalenderjahr.to ? `für ${label} höchstens das erste Halbjahr` : `für ${label} höchstens die Zeit bis zum ${fmtDay(tvUntil)}`
   // Die Warnungen nennen den Betrag, der trotzdem bei den Mietern gelandet ist (#142, Zielbild
   // aus #91). Den kennt erst die Verteilung; geschrieben werden sie deshalb danach, aber an dieser
   // Stelle der Hinweise, damit ihre Reihenfolge bleibt.
@@ -1974,9 +1979,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Nur ein wirklich umgelegter Betrag; eine Gutschrift hat den Mietern nichts aufgebürdet.
     const charged = cents > 0 ? ` Auf die Mieter umgelegt sind in dieser Abrechnung ${fmtCents(cents)}.` : ''
     if (newSystem) {
-      return [makeNotice('tv-signal.new-system', `„${item.description}“: Die Kabel- oder Antennenanlage wurde ab dem ${fmtDay(tvNewFrom)} errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${year === tvNewYear ? ` Für ${year} gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.` : ''}`, itemSubject(item))]
+      return [makeNotice('tv-signal.new-system', `„${item.description}“: Die Kabel- oder Antennenanlage wurde ab dem ${fmtDay(tvNewFrom)} errichtet; für sie waren die Gebühren für das TV-Signal nie umlagefähig, auch Betriebsstrom und Wartung nicht (§ 2 Satz 2 BetrKV).${charged} Umlagefähig sind allenfalls Betriebsstrom und Bereitstellungsentgelt einer reinen Glasfaser-Verteilanlage, bei der der Mieter seinen Anbieter frei wählen kann (§ 2 Nr. 15 Buchst. c BetrKV); buchen Sie den Rest bitte als „Nicht umlagefähig“.${newSystemInPeriod ? ` Für ${label} gilt das für die Kosten ab der Errichtung; was davor auf eine ältere Anlage entfiel, war umlagefähig.` : ''}`, itemSubject(item))]
     } else if (tvSignal === 'partial') {
-      return [makeNotice('tv-signal.partial-year', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum ${fmtDay(tvUntil)} umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie für ${year} höchstens das erste Halbjahr, und das nur bei einer Anlage, die vor dem ${fmtDay(tvNewFrom)} errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))]
+      return [makeNotice('tv-signal.partial-year', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind nur bis zum ${fmtDay(tvUntil)} umlagefähig, danach nicht mehr (Wegfall des Nebenkostenprivilegs). Umlegen dürfen Sie ${umlegbar}, und das nur bei einer Anlage, die vor dem ${fmtDay(tvNewFrom)} errichtet wurde; danach nur noch den Betriebsstrom (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft). Bitte teilen Sie die Position entsprechend auf und buchen Sie den Rest als „Nicht umlagefähig“.`, itemSubject(item))]
     } else if (tvSignal === 'none') {
       return [makeNotice('tv-signal.ended', `„${item.description}“: Die Gebühren für das Kabelfernsehen (TV-Signal) sind seit dem ${fmtDay(dayAfter(tvUntil))} nicht mehr umlagefähig (Wegfall des Nebenkostenprivilegs).${charged} Umlegen dürfen Sie nur noch den Betriebsstrom, und das nur bei einer Anlage, die vor dem ${fmtDay(tvNewFrom)} errichtet wurde (bei einer Gemeinschaftsantenne des Hauses auch Prüfung und Einstellung durch eine Fachkraft); buchen Sie das TV-Signal bitte als „Nicht umlagefähig“.`, itemSubject(item))]
     }
@@ -2720,11 +2725,14 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     )
   }
 
+  // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
+  law(bgbMaxPeriodMonths, { period: lawPeriod }, lawLog)
   const result: ComputedSettlement = {
     year,
     daysInYear: diy,
     period: settlementPeriod(period),
-    deadline: settlementDeadline(period),
+    // Frist und Höchstdauer des Zeitraums frieren mit ein wie jeder Rechtswert (#208, Entwurf 4.4).
+    deadline: settlementDeadline(period, law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)),
     statements: [...statements.values()],
     notSettled,
     // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt

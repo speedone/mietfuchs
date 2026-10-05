@@ -1,6 +1,6 @@
 // Parameter aus BGB und Betriebskostenverordnung (Heizung PR 1, Entwurf 4.3). Frist und Höchstdauer
-// des Abrechnungszeitraums (§ 556 Abs. 3 BGB) kommen mit PR 2.
-import type { LawParam } from './register.ts'
+// des Abrechnungszeitraums (§ 556 Abs. 3 BGB, #208).
+import type { LawParam, Source } from './register.ts'
 import { germanDate } from './register.ts'
 
 // Kabelfernsehen: Die Gebühren für das TV-Signal durften bis zum 30.06.2024 umgelegt werden, und
@@ -20,4 +20,30 @@ export const betrkvTvSignal: LawParam<{ readonly newSystemsFrom: string }, 'over
     enacted: 'BetrKV, Fassung Art. 4 G v. 16.10.2023 (BGBl. I Nr. 280)',
   }],
   describe: (v) => `umlagefähig nur bei Anlagen, die vor dem ${germanDate(v.newSystemsFrom)} errichtet wurden`,
+}
+
+const bgb556 = (cite: string): Source => ({ rank: 'law', cite, url: 'https://www.gesetze-im-internet.de/bgb/__556.html', retrieved: '2026-10-05', checked: 'checked' })
+
+// Abgerechnet wird jährlich (§ 556 Abs. 3 Satz 1 BGB); ein Abrechnungszeitraum ist deshalb nach
+// herrschender Meinung höchstens zwölf Monate lang. Shared/period.ts bildet daraus die Zeiträume,
+// vor jedem Wechsel einen Rumpf. Wortlaut geprüft am 05.10.2026 (Entwurf 2, 4.3).
+export const bgbMaxPeriodMonths: LawParam<number, 'periodStart'> = {
+  id: 'bgb.max-period-months',
+  title: 'Höchstdauer des Abrechnungszeitraums',
+  norm: '§ 556 Abs. 3 Satz 1 BGB',
+  timing: 'periodStart',
+  versions: [{ value: 12, source: bgb556('§ 556 Abs. 3 Satz 1 BGB (herrschende Meinung)'), enacted: '§ 556 Abs. 3 BGB' }],
+  describe: (v) => `höchstens ${v} Monate`,
+}
+
+// Die Abrechnung muss dem Mieter spätestens bis zum Ablauf des zwölften Monats nach Ende des
+// Abrechnungszeitraums mitgeteilt werden (§ 556 Abs. 3 Satz 2 BGB); danach ist eine Nachforderung
+// ausgeschlossen, es sei denn, der Vermieter hat die Verspätung nicht zu vertreten (Satz 3).
+export const bgbDeadlineMonths: LawParam<number, 'periodStart'> = {
+  id: 'bgb.deadline-months',
+  title: 'Abrechnungsfrist',
+  norm: '§ 556 Abs. 3 Satz 2 BGB',
+  timing: 'periodStart',
+  versions: [{ value: 12, source: bgb556('§ 556 Abs. 3 Satz 2 BGB'), enacted: '§ 556 Abs. 3 BGB' }],
+  describe: (v) => `Zugang bis zum Ablauf des ${v}. Monats nach Ende des Zeitraums`,
 }

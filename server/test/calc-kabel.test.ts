@@ -5,11 +5,12 @@
 // Mietfuchs kann das eine vom anderen nicht unterscheiden und kürzt deshalb nicht selbst; es
 // warnt, und zwar abhängig vom Abrechnungsjahr.
 
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, periodKey, periodOfKey, previousPeriod } from '../../shared/period.ts'
+import type { PeriodRules } from '../../shared/types.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
-import { snapshotOf, type SnapshotSource } from '../src/snapshot.ts'
+import { snapshotOf, snapshotOfPeriod, type SnapshotCostItem, type SnapshotSource } from '../src/snapshot.ts'
 
 const bestand = (year: number, category = 'Kabel/Antenne'): SnapshotSource => ({
   units: [{ id: 'u', name: 'EG', areaM2: 50, participates: true }],
@@ -104,4 +105,22 @@ test('Kabel nach 2024: eine Gutschrift bekommt keinen Satz über einen umgelegte
   const n = computeSettlement(snapshotOf(src, 2025)).notices
   assert.deepEqual(n.map((x) => x.code), ['tv-signal.ended'])
   assert.doesNotMatch(n[0]?.text ?? '', /umgelegt sind in dieser Abrechnung/)
+})
+
+test('Kabel über den Zeitraum (#208): Mai–April nennt den Zeitraum, ein Rumpf vor der Errichtung ist nicht betroffen', () => {
+  const kabel = (key: string): SnapshotCostItem => ({ id: 'k', period: periodKey(key), category: 'Kabel/Antenne', description: 'Kabelanschluss', amountCents: 12000, key: 'units' })
+  const neueAnlage = { kind: 'mfh' as const, cableBuiltBeforeDec2021: false }
+  const at = (rules: PeriodRules, key: string, property: { kind: 'mfh', cableBuiltBeforeDec2021: boolean | null } | null) => {
+    const p = periodOfKey(rules, periodKey(key)) ?? assert.fail(`kein Zeitraum ${key}`)
+    return computeSettlement({ ...snapshotOfPeriod({ ...bestand(2021), costItems: [kabel(key)] }, p, previousPeriod(rules, p)), property }).notices
+  }
+  const mai: PeriodRules = { startMonth: 5, changes: [] }
+  const neu = at(mai, '2021-05', neueAnlage).find((x) => x.code === 'tv-signal.new-system') ?? assert.fail('kein Hinweis')
+  assert.match(neu.text, /Für 2021\/2022 gilt das für die Kosten ab der Errichtung/)
+  const wechsel: PeriodRules = { startMonth: 1, changes: ['2021-05'] }
+  assert.equal(at(wechsel, '2021-01', neueAnlage).some((x) => x.code === 'tv-signal.new-system'), false, 'der Rumpf endet am 30.04.2021, vor der Errichtung')
+  // Das Übergangsjahr Mai–April: Die Regel endet am 30.06.2024, mitten im Zeitraum; „das erste
+  // Halbjahr“ wäre hier Mai bis Oktober und damit falsch.
+  const teil = at(mai, '2024-05', null).find((x) => x.code === 'tv-signal.partial-year') ?? assert.fail('kein Übergangshinweis')
+  assert.match(teil.text, /Umlegen dürfen Sie für 2024\/2025 höchstens die Zeit bis zum 30\.06\.2024/)
 })

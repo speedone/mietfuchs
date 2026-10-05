@@ -244,7 +244,7 @@ test('Wache: computeSettlement rechnet nicht mehr mit dem Kalenderjahr (#208)', 
   const start = source.indexOf('export function computeSettlement(')
   const end = source.indexOf('\nexport ', start + 1)
   const body = source.slice(start, end < 0 ? undefined : end)
-  for (const pattern of [/-12-31/, /-01-01/, /\byear - 1\b/, /\byear \+ 1\b/, /\bdaysInYear\(/, /\boverlapDays\(/, /\bdueMonthsOf\(/]) {
+  for (const pattern of [/-12-31/, /-01-01/, /\byear - 1\b/, /\byear \+ 1\b/, /\bdaysInYear\(/, /\boverlapDays\(/, /\bdueMonthsOf\(/, /\byear\s*(>=|<=|===|!==|>|<)/, /\$\{year\}/]) {
     assert.doesNotMatch(body, pattern, `computeSettlement enthält ${pattern}`)
   }
 })

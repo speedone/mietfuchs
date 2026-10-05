@@ -11,15 +11,11 @@
 // wie heating.ts und glossary.ts). Sie hängt an keiner Uhr und an keiner Locale.
 
 import type { BillingPeriod, PeriodKey, PeriodRules, SettlementPeriod } from './types.ts'
+import { valueAt } from './law/register.ts'
+import { bgbDeadlineMonths, bgbMaxPeriodMonths } from './law/bgb-betrkv.ts'
 
 export const CALENDAR_RULES: PeriodRules = { startMonth: 1, changes: [] }
 
-// § 556 Abs. 3 BGB: jährlich abrechnen, also höchstens zwölf Monate (Satz 1, herrschende Meinung),
-// und zugehen muss die Abrechnung bis zum Ablauf des zwölften Monats nach dem Ende (Satz 2). Beide
-// Zahlen kommen nach dem Merge von PR 1 aus dem Rechtsregister (`bgb.max-period-months`,
-// `bgb.deadline-months`, Entwurf 4.3); bis dahin stehen sie hier und nur hier.
-const MAX_PERIOD_MONTHS = 12
-const DEADLINE_MONTHS = 12
 
 const KEY = /^\d{4}-(0[1-9]|1[0-2])$/
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
@@ -92,16 +88,20 @@ function startOf(r: Rhythm, index: number): number {
   return index - ((((index - (anchor - 1)) % 12) + 12) % 12)
 }
 
+// § 556 Abs. 3 BGB aus dem Rechtsregister (#208, Entwurf 4.3), Zeitregel `periodStart`: es gilt die
+// Fassung am Beginn des Zeitraums.
+const maxPeriodMonths = (start: number): number => valueAt(bgbMaxPeriodMonths, firstDay(start))
+
 // Der Beginn des nächsten Zeitraums: zwölf Monate später, außer ein Wechsel kommt früher.
 function nextStart(r: Rhythm, start: number): number {
-  let next = start + MAX_PERIOD_MONTHS
+  let next = start + maxPeriodMonths(start)
   for (const change of r.changes) if (change > start && change < next) next = change
   return next
 }
 
 function periodAt(r: Rhythm, start: number): BillingPeriod {
   const next = nextStart(r, start)
-  return { key: keyOf(start), from: firstDay(start), to: lastDay(next - 1), short: next - start < MAX_PERIOD_MONTHS }
+  return { key: keyOf(start), from: firstDay(start), to: lastDay(next - 1), short: next - start < maxPeriodMonths(start) }
 }
 
 // ---------- Zeiträume ----------
@@ -148,8 +148,9 @@ export const settlementPeriod = (p: BillingPeriod): SettlementPeriod => ({ ...p,
 // § 556 Abs. 3 S. 2 BGB: Die Abrechnung muss spätestens bis zum Ablauf des zwölften Monats nach
 // Ende des Abrechnungszeitraums zugehen. Ein Zeitraum endet immer an einem Monatsende, die Frist
 // also am Ende desselben Monats im Folgejahr. `months` reicht die Berechnung aus dem Rechtsregister
-// herein, damit der Wert in `legalBasis.values` einfriert (Task 7).
-export function settlementDeadline(p: Pick<BillingPeriod, 'to'>, months: number = DEADLINE_MONTHS): string {
+// herein, damit der Wert in `legalBasis.values` einfriert; ohne ihn gilt die Fassung am Beginn des
+// Zeitraums (`bgb.deadline-months`, #208).
+export function settlementDeadline(p: Pick<BillingPeriod, 'from' | 'to'>, months: number = valueAt(bgbDeadlineMonths, p.from)): string {
   return lastDay(indexOfDate(p.to) + months)
 }
 

@@ -751,6 +751,30 @@ Kostenposition (#94), nicht in weitere Ebenen.
   (#157, Logik in client/src/propertyView.ts, das vorige Objekt merkt der Provider): Ein leeres
   neues Objekt sah sonst aus wie ein verlorener Bestand.
 
+**Abrechnungszeitraum** (#208, Kern): Ein Objekt rechnet im Kalenderjahr oder in einem eigenen
+Rhythmus ab. **Der Zeitraum ist ein eigener Schlüssel** `PeriodKey` (`'JJJJ-MM'`, Monat des Beginns,
+Markentyp in shared/types.ts), und kein Jahr: `cost_items.period`, `closed_settlements.period`,
+`closed_settlement_history.period`, `prepayment_overrides.period` und `assessments.requested_period`
+(nur mit Objekt). `uploads.year`, `assessments.year` und `detected_year` bleiben Kalenderjahre, denn
+sie sind Tatsachen über den Beleg. **Die Zeiträume werden berechnet und nie gespeichert**
+([shared/period.ts](shared/period.ts)): aus `properties.period_start_month` und `period_changes`
+entstehen lückenlose Zeiträume von höchstens zwölf Monaten (`bgb.max-period-months`), vor jedem
+Wechsel ein Rumpf. Aus Text wird ein Schlüssel nur dort (Wächter in period.test.ts). Der
+Schnappschuss trägt P und den Vorzeitraum, `computeSettlement` rechnet über dessen Grenzen und
+Monate, eine Wache in calc-zeitraum.test.ts verbietet Kalenderdaten in seinem Rumpf. **Mietkonto und
+Steuer bleiben Kalenderjahr**; die Abrechnung teilt sich mit dem Mietkonto die Monatsrechnung
+`ledgerRows`. Die Routen der Abrechnung und des Verbrauchs nehmen `JJJJ-MM`; **die nackte Jahreszahl
+gilt nur bei einem reinen Kalenderobjekt**, sonst 404 mit einem Satz, der den gemeinten Zeitraum
+nennt, damit ein alter Tab nie still einen Rumpf bekommt. Dasselbe beim Schreiben: `year` statt
+`period` oder eine vierstellige Jahreskorrektur nimmt repository.ts nur beim Kalenderobjekt an
+(`PeriodError`), und die Liste der Kostenpositionen nennt einem alten Tab dort weiter `year`. Ein
+Schlüssel, den es für sein Objekt nicht gibt, wird beim Schreiben abgelehnt und beim Wiederherstellen
+eines Archivs ebenso (`orphanPeriodKeys`). Die Frist kommt vom Server (`Settlement.deadline`,
+`settlementDeadline` mit `bgb.deadline-months`) und friert mit ein. **Bedienung fehlt noch** (PR 3
+des Meilensteins Heizung): Rhythmus und Wechsel lassen sich über die Oberfläche nicht setzen, die
+Oberfläche denkt in Kalenderjahren und übersetzt an Stellen mit dem Kommentar „Brücke Kalenderjahr
+(#208)“.
+
 **Belegordner** (#170, [client/src/pages/Belege.tsx](client/src/pages/Belege.tsx), Logik in
 [client/src/receipts.ts](client/src/receipts.ts)): Objekt → Jahr → Kostenart als Register, Suche,
 Belegabdeckung, Posteingang und zwei Mappen. Entscheidungen und Quellen in
