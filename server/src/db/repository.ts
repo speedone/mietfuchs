@@ -33,8 +33,10 @@
 // nächste, der eine Spalte hinzufügt.
 
 import { and, count, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
-import type { CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
-import { calendarPeriod, isCalendarRules, parsePeriodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
+import type { BillingPeriod, CostItem, ExternalBasis, Meter, MeterType, Payment, PeriodKey, PeriodRules, PersonEntry, PrepaymentEntry, Property, Reading, RentEntry, Tenancy, Unit, UnitDependents } from '../../../shared/types.ts'
+import { calendarPeriod, formatDayRange, isCalendarRules, parsePeriodKey, periodLabel, periodOfKey, periodsBetween, rulesOf, spansTwoYears } from '../../../shared/period.ts'
+import { HEATING_CATEGORY } from '../../../shared/heating.ts'
+import { andList } from '../../../shared/wording.ts'
 import type { MigratedSettings } from '../ai/settings.ts'
 import { lastPerFrom, straightenPersonHistory } from '../schedule.ts'
 import type { Database, Executor } from './client.ts'
@@ -44,6 +46,7 @@ import {
 } from './read.ts'
 import {
   aiSlots, assessmentLines, assessments, baseRents, closedSettlementHistory, closedSettlements, COST_KEYS, COST_MODELS, costItemAmounts, costItemParticipants, costItemSelfAmounts, costItemShares, costItems, DEPOSIT_STATUS, EXTERNAL_MEASURES,
+  HEATING_PARTS,
   flatRates, METER_TYPES, meters, payments, periodChanges, personHistory, prepaymentOverrides, prepayments, properties, PROPERTY_KINDS,
   readings, settings, tenancies, unitNoConnection, units,
 } from './schema.ts'
@@ -318,6 +321,11 @@ function mergeCostItem(current: CostItem, body: unknown): CostItem {
     ...(selfAmounts === undefined ? {} : { selfAmounts }),
     labor35aCents: merged(body, 'labor35aCents', current.labor35aCents, asOptionalNumber),
     invoiceFile: merged(body, 'invoiceFile', current.invoiceFile, asOptionalText),
+    // `null` leert, wie bei den übrigen optionalen Feldern (#208).
+    serviceFrom: merged(body, 'serviceFrom', current.serviceFrom, asOptionalText),
+    serviceTo: merged(body, 'serviceTo', current.serviceTo, asOptionalText),
+    taxYear: merged(body, 'taxYear', current.taxYear, asOptionalNumber),
+    heatingPart: merged(body, 'heatingPart', current.heatingPart, (v) => oneOfOrUndefined(HEATING_PARTS, v)),
   }
 }
 
@@ -402,7 +410,7 @@ const OLD_TAB =
 
 const YEAR_ONLY = /^\d{4}$/
 
-async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
+export async function rulesForProperty(db: Executor, propertyId: string): Promise<PeriodRules> {
   const [row] = await db.select({ startMonth: properties.periodStartMonth }).from(properties).where(eq(properties.id, propertyId))
   const changes = await db.select({ fromMonth: periodChanges.fromMonth }).from(periodChanges)
     .where(eq(periodChanges.propertyId, propertyId)).orderBy(periodChanges.fromMonth)
@@ -425,6 +433,70 @@ async function requirePeriods(db: Executor, propertyId: string, keys: readonly s
           'Bitte wählen Sie einen Abrechnungszeitraum des Objekts.',
       )
     }
+  }
+}
+
+// Was eine Kostenposition mit Leistungszeitraum und Zeitraum über zwei Kalenderjahre braucht
+// (#208, Entwurf 3.4, 3.10). Die Datenbank prüft Form und Reihenfolge (0017), nicht aber, was an
+// den Zeiträumen des Objekts hängt.
+//
+// **Eine kalte Rechnung über zwei Zeiträume wird nicht als eine Position angenommen.** Nach dem
+// Leistungsprinzip gehört sie anteilig in jeden (VIII ZR 49/07 lässt beides zu, Mietfuchs wählt
+// das Leistungsprinzip, Entwurf 3.4); als eine Position stünde sie ganz in einem und fehlte im
+// anderen. Aufgeteilt wird sie mit `saveCostItemSplit` (Task 3), dessen Teile `splitPart` tragen.
+// Ein Teil, dessen Leistungszeitraum und Zeitraum unverändert bleiben (der Betrag wird berichtigt),
+// ist weiter erlaubt. **Heizkosten werden nie nach Tagen geteilt** (G-C1, VIII ZR 156/11); sie
+// nimmt die Prüfung an, und die Abrechnung warnt (`period.heating-mismatch`).
+export type CostItemGuardOptions = { splitPart?: boolean }
+
+async function requireServiceAndTax(db: Executor, before: CostItem | null, after: CostItem, options: CostItemGuardOptions): Promise<void> {
+  const what = `„${after.description}“`
+  const from = after.serviceFrom
+  const to = after.serviceTo
+  if ((from === undefined) !== (to === undefined)) {
+    throw new PeriodError(`Für ${what} fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.`)
+  }
+  if (from !== undefined && to !== undefined) {
+    if (!isIsoDate(from) || !isIsoDate(to)) throw new PeriodError(`Der Leistungszeitraum von ${what} ist kein gültiges Datum.`)
+    if (from > to) throw new PeriodError(`Der Leistungszeitraum von ${what} endet vor seinem Beginn.`)
+  }
+  if (after.heatingPart !== undefined && after.category !== HEATING_CATEGORY) {
+    throw new PeriodError(`„Brennstoff/Energie“ gibt es nur bei der Kostenart „${HEATING_CATEGORY}“.`)
+  }
+  const rules = await rulesForProperty(db, after.propertyId)
+  const period = periodOfKey(rules, after.period)
+  // Einen Zeitraum, den es nicht gibt, hat `requirePeriods` schon abgelehnt.
+  if (period === null) return
+  requireTaxYear(period, after, what)
+  if (from === undefined || to === undefined || after.category === HEATING_CATEGORY || options.splitPart) return
+  const unchanged = before !== null && before.serviceFrom === from && before.serviceTo === to && before.period === after.period
+  if (unchanged) return
+  const touched = periodsBetween(rules, from, to)
+  if (touched.length > 1) {
+    throw new PeriodError(
+      `Die Rechnung ${what} betrifft die Abrechnungszeiträume ${andList(touched.map(periodLabel))} (Leistungszeitraum ${formatDayRange(from, to)}). ` +
+        'Kalte Betriebskosten gehören anteilig in jeden dieser Zeiträume; speichern Sie die Rechnung mit „Aufteilen und speichern“.',
+    )
+  }
+}
+
+// Das Jahr der Zahlung (Entwurf 3.10): Liegt der Zeitraum in einem Kalenderjahr, ist es dieses und
+// darf nur leer oder genau dieses sein. Reicht er über zwei, ist es Pflicht und liegt zwischen dem
+// Jahr des Beginns und dem Jahr nach dem Ende (eine Messdienstabrechnung kommt oft erst danach).
+function requireTaxYear(period: BillingPeriod, after: CostItem, what: string): void {
+  const startYear = Number(period.from.slice(0, 4))
+  const endYear = Number(period.to.slice(0, 4))
+  if (!spansTwoYears(period)) {
+    if (after.taxYear !== undefined && after.taxYear !== startYear) {
+      throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} liegt im Kalenderjahr ${startYear}; für die Steuer zählt ${what} deshalb zu ${startYear}.`)
+    }
+    return
+  }
+  if (after.taxYear === undefined) {
+    throw new PeriodError(`Der Abrechnungszeitraum ${periodLabel(period)} reicht über zwei Kalenderjahre. Bitte geben Sie bei ${what} das Jahr der Zahlung an (für die Steuer, § 11 Abs. 2 EStG).`)
+  }
+  if (after.taxYear < startYear || after.taxYear > endYear + 1) {
+    throw new PeriodError(`Das Jahr der Zahlung von ${what} muss zwischen ${startYear} und ${endYear + 1} liegen.`)
   }
 }
 
@@ -457,9 +529,10 @@ async function guardMeter(db: Executor, _before: Meter | null, after: Meter): Pr
   await sameProperty(db, after.propertyId, after.unitId ? [after.unitId] : [], 'Der Zähler')
 }
 
-async function guardCostItem(db: Executor, _before: CostItem | null, after: CostItem, body: unknown): Promise<void> {
+async function guardCostItem(db: Executor, before: CostItem | null, after: CostItem, body: unknown, options: CostItemGuardOptions = {}): Promise<void> {
   // Der Zeitraum (#208) muss zum Objekt gehören. `year` ohne `period` schickt nur ein alter Tab.
   await requirePeriods(db, after.propertyId, [after.period], has(body, 'year') && !has(body, 'period'), 'Die Kostenposition')
+  await requireServiceAndTax(db, before, after, options)
   // Die Wohnungen der Einzelbeträge über ihr Mietverhältnis (#94).
   const mietverhaeltnisse = Object.keys(after.tenancyAmounts ?? {})
   const ihreWohnungen = mietverhaeltnisse.length === 0
@@ -731,6 +804,7 @@ const costItemRow = (c: CostItem) => ({
   externalMeasure: c.externalBasis?.measure ?? null, externalTotal: c.externalBasis?.total ?? null,
   externalTotalCents: c.externalBasis?.totalCents ?? null,
   participantsLimited: Array.isArray(c.participantUnitIds),
+  serviceFrom: orNull(c.serviceFrom), serviceTo: orNull(c.serviceTo), taxYear: orNull(c.taxYear), heatingPart: orNull(c.heatingPart),
 })
 const meterRow = (m: Meter) => ({
   id: m.id, propertyId: m.propertyId, name: m.name, unitId: m.unitId, type: m.type, meterNumber: orNull(m.meterNumber), unit: m.unit,

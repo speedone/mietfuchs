@@ -202,11 +202,28 @@ export type ExternalBasis = {
   totalCents: number
 }
 
+// Teil der Heizkosten (#208, Entwurf 5.3, A1): Brennstoff/Energie, Betrieb, Messdienst. Mit PR 3
+// bietet die Oberfläche nur „Brennstoff/Energie“ an; der Vorschlag nach § 560 BGB im Rumpf rechnet
+// Brennstoff nach Gradtagen hoch. Pflicht wird die Angabe mit der eigenen Heizkostenabrechnung.
+export type HeatingPart = 'fuel' | 'operating' | 'metering'
+
 export type CostItem = {
   id: string
   propertyId: string
   // Der Abrechnungszeitraum (#208), dem die Position ganz gehört.
   period: PeriodKey
+  // Der Leistungszeitraum der Rechnung (#208, Entwurf 3.4): beide oder keines, je 'JJJJ-MM-TT' mit
+  // inklusiven Grenzen. Eine kalte Rechnung über zwei Abrechnungszeiträume ist in je eine Position
+  // aufgeteilt; jeder Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist der
+  // Anteil seines Zeitraums.
+  serviceFrom?: string
+  serviceTo?: string
+  // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10). Fehlt es, liegt der Zeitraum der
+  // Position in einem Kalenderjahr, und es ist dieses. Eine Vereinfachung, siehe CLAUDE.md
+  // („Nicht dem Abflussprinzip folgen die Werbungskosten“).
+  taxYear?: number
+  // Nur bei der Kostenart „Heizung und Warmwasser“ (#208, A1).
+  heatingPart?: HeatingPart
   category: string
   description: string
   vendor?: string

@@ -5475,7 +5475,7 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
     })
     assert.equal(altTab.status, 400)
     assert.match(await errorFrom(altTab), /älter als das Programm/)
-    await s.api(`/api/costItems${q}`, { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }) })
+    await s.api(`/api/costItems${q}`, { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area', taxYear: 2025 }) })
     const [item] = await s.api<(CostItem & { year?: number })[]>(`/api/costItems${q}`)
     assert.deepEqual([item?.period, item?.year], ['2025-05', undefined])
   } finally {
