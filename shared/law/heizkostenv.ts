@@ -70,3 +70,41 @@ export const hkvRemoteReadingRetrofit: LawParam<{ readonly installedUpTo: string
   }],
   describe: (v) => `Geräte mit Einbau bis ${germanDate(v.installedUpTo)} fernablesbar`,
 }
+
+// Gradtagszahlen: welcher Teil eines Jahres an Heizwärme auf einen Monat entfällt, in Promille;
+// Juni bis August zusammen (Entwurf 3.5). Verankert in § 9b Abs. 2 HeizkostenV, der für die
+// übrigen Wärmekosten beim Nutzerwechsel die „aus anerkannten Regeln der Technik ergebenden
+// Gradtagszahlen“ nennt. Werte nach ista (Fachwissen „Gradtagszahlentabelle“) und Berliner
+// Mieterverein, Info 73, beide gelesen am 05.10.2026; Herkunft VDI 2067 Blatt 1 (12/1983),
+// Tabelle 22, heute in DIN 94680 angewandt (Minol). ⟨Norm offen: DIN 94680⟩ (Entwurf 15.3).
+// Mit PR 3 rechnet nur der Vorschlag nach § 560 BGB im Rumpfzeitraum damit; die Abgrenzung von
+// Lieferungen (PR 7) und der Nutzerwechsel (PR 10) folgen.
+export type DegreeDayTable = {
+  readonly months: { readonly [month: string]: number }
+  readonly summer: number
+  readonly summerMonths: readonly string[]
+}
+
+export const hkvDegreeDays: LawParam<DegreeDayTable, 'periodStart'> = {
+  id: 'hkv.degree-days',
+  title: 'Gradtagszahlen',
+  norm: '§ 9b Abs. 2 HeizkostenV (anerkannte Regeln der Technik)',
+  timing: 'periodStart',
+  versions: [{
+    value: {
+      months: { '01': 170, '02': 150, '03': 130, '04': 80, '05': 40, '09': 30, '10': 80, '11': 120, '12': 160 },
+      summer: 40,
+      summerMonths: ['06', '07', '08'],
+    },
+    source: {
+      rank: 'practice',
+      cite: 'ista, Gradtagszahlentabelle; Berliner Mieterverein, Info 73; Herkunft VDI 2067 Blatt 1 (12/1983), Tabelle 22',
+      url: 'https://www.ista.com/de/kontakt-service/fachwissen/gradtagszahlentabelle/',
+      retrieved: '2026-10-05',
+      checked: 'checked',
+    },
+    enacted: 'Gradtagszahlentabelle nach VDI 2067 Blatt 1 (12/1983), heute DIN 94680',
+  }],
+  describe: (v) =>
+    `${Object.entries(v.months).map(([m, n]) => `${m}: ${n}`).join(', ')}, ${v.summerMonths.join('/')} zusammen ${v.summer} (Promille je Monat)`,
+}
