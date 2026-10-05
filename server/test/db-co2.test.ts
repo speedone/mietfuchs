@@ -193,3 +193,14 @@ test('Heizanlage ändern: mit CO₂-Angaben weder weg vom Messdienst noch zu ein
     assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' })))?.method, 'manual')
   })
 })
+
+test('Heizanlage ändern: CO₂-Angaben einer abgeschlossenen Heizperiode sperren den Wechsel nicht (Nachprüfung 1)', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug))
+    await opened.write((db) => closeSettlement(db, { id: 's1', propertyId: 'objekt-1', period: periodKey('2025-01'), closedAt: '2026-03-01', sentAt: null, settlement: {} }))
+    // Eingefroren und nicht mehr zu entfernen: Kesseltausch und Wechsel der Abrechnung bleiben möglich.
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'heatPump' })))?.energy, 'heatPump')
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' })))?.method, 'manual')
+  })
+})

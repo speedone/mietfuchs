@@ -93,6 +93,20 @@ async function dropIfEmpty(db: Executor, heatingPeriodId: string): Promise<void>
   await db.delete(heatingPeriods).where(eq(heatingPeriods.id, heatingPeriodId))
 }
 
+// Die Heizperioden einer Anlage mit CO₂-Angaben, die noch nicht abgeschlossen sind. Abgeschlossene
+// sind eingefroren und lassen sich nicht mehr entfernen; sie dürfen einen Wechsel der Anlage
+// (Kesseltausch, andere Abrechnung) deshalb nicht sperren (Nachprüfung von PR 6).
+export async function openCo2Periods(db: Database, plantId: string): Promise<string[]> {
+  const ctx = await plantContext(db, plantId)
+  if (!ctx) return []
+  const open: string[] = []
+  for (const st of (await readCo2Statements(db)).filter((s) => s.plantId === plantId)) {
+    const h = periodOfKey(ctx.plantRules, st.period)
+    if (h === null || !(await heatingPeriodClosed(db, ctx, h))) open.push(st.period)
+  }
+  return open
+}
+
 // ---------- Lesen ----------
 
 // Die Heizperioden der Anlage, die im Abrechnungszeitraum P enden, mit ihren Angaben und den

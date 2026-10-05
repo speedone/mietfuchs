@@ -24,6 +24,7 @@ import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../.
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
 import { CO2_FUELS } from '../co2.ts'
+import { openCo2Periods } from './co2.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
@@ -201,10 +202,11 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   const next = mergeHeatingPlant(current, body)
   // Welche Wohnungen die Anlage danach anders versorgt (Durchsicht von #231, Critical 1).
   const changed = (await readUnits(db)).filter((u) => u.propertyId === current.propertyId && servesUnit(current, u) !== servesUnit(next, u)).map((u) => u.id)
+  const openCo2 = await openCo2Periods(db, id)
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
     await guardServedChange(tx, id, changed)
-    await guardCo2Plant(tx, current, next)
+    guardCo2Plant(current, next, openCo2)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
     await writePlantUnits(tx, next)
@@ -214,19 +216,14 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
 
 // Mit CO₂-Angaben (Heizung PR 6, Durchsicht M-3) gelten sie nur für eine Anlage beim Messdienst mit
 // einem Energieträger, für den CO₂-Kosten anfallen können. Ein Wechsel weg davon ließe sie still
-// stehen; ein vertippter Brennstoff (Öl statt Gas) bleibt änderbar.
-async function guardCo2Plant(db: Executor, current: HeatingPlant, next: HeatingPlant): Promise<void> {
+// stehen; ein vertippter Brennstoff (Öl statt Gas) bleibt änderbar. Gezählt werden nur Heizperioden, die
+// nicht abgeschlossen sind: Nur deren Angaben lassen sich entfernen, die übrigen sind eingefroren.
+function guardCo2Plant(current: HeatingPlant, next: HeatingPlant, openCo2: readonly string[]): void {
   const leavesService = current.method === 'service' && next.method !== 'service'
   const leavesCo2 = next.energy !== current.energy && !CO2_FUELS.includes(next.energy) && next.energy !== 'districtHeating'
-  if (!leavesService && !leavesCo2) return
-  const co2 = await db
-    .select({ period: heatingPeriods.period })
-    .from(co2Statements)
-    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
-    .where(eq(heatingPeriods.plantId, current.id))
-  if (co2.length === 0) return
+  if ((!leavesService && !leavesCo2) || openCo2.length === 0) return
   throw new HeatingError(409,
-    `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${co2.map((c) => String(c.period)).join(', ')}). ` +
+    `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${openCo2.join(', ')}). ` +
       `${leavesService ? 'Sie gelten nur für eine Anlage, die ein Messdienst oder die Gemeinschaft abrechnet' : 'Sie gelten nur für einen Energieträger, für den CO₂-Kosten anfallen'}. ` +
       'Entfernen Sie die Angaben auf der Seite Heizkosten, wenn die Änderung so stimmt; gespeichert wurde nichts.')
 }
