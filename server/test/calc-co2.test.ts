@@ -445,3 +445,9 @@ test('Hinweise je Anlage nur, wenn jemand über ihre Heizkosten abgerechnet wird
     assert.ok(!codes(nurPauschale).includes(code), `${code}: ${codes(nurPauschale).join(', ')}`)
   }
 })
+
+test('Angaben laut Messdienst an einer Anlage mit freien Schlüsseln (etwa aus einem Archiv) bucht die Berechnung nicht (Durchsicht M-3)', () => {
+  const r = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()], [plant({ method: 'manual' })])
+  assert.deepEqual(partsOf(r), [{ reason: 'amountsRest', cents: 8750 }])
+  assert.equal(r.heating?.[0]?.co2 ?? null, null)
+})

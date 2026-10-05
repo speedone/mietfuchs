@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { heatingPeriodViews, removeCo2Statement, saveCo2Statement, saveHotWater } from '../src/db/co2.ts'
-import { createHeatingPlant, heatingPlantViolations, removeHeatingPlant } from '../src/db/heating.ts'
+import { createHeatingPlant, heatingPlantViolations, removeHeatingPlant, updateHeatingPlant } from '../src/db/heating.ts'
 import { openDatabase } from '../src/db/open.ts'
 import { readCo2Statements, readHeatingPeriodRows } from '../src/db/read.ts'
 import { closeSettlement, createEntity, createProperty, crossPropertyViolations, CrossPropertyError, HeatingError, updateEntity } from '../src/db/repository.ts'
@@ -178,5 +178,18 @@ test('Eigene Heizperiode: Angaben zur Heizperiode 2024/2025 sind kein Befund bei
     // Ein Schlüssel, den es für die Anlage nicht gibt, bleibt ein Befund.
     await opened.write(async (db) => { await db.update(heatingPeriods).set({ period: periodKey('2024-07') }).where(eq(heatingPeriods.plantId, 'hp')) })
     assert.ok((await opened.read(heatingPlantViolations)).some((b) => /2024-07/.test(b)))
+  })
+})
+
+test('Heizanlage ändern: mit CO₂-Angaben weder weg vom Messdienst noch zu einem Energieträger ohne CO₂-Kosten (Durchsicht M-3)', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => saveCo2Statement(db, 'hp', '2025-01', vorwegabzug))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' })), heatingError(409, /CO₂-Angaben/))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'heatPump' })), heatingError(409, /CO₂-Angaben/))
+    // Ein vertippter Brennstoff lässt sich berichtigen.
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'oil' })))?.energy, 'oil')
+    await opened.write((db) => removeCo2Statement(db, 'hp', '2025-01'))
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp', { method: 'manual' })))?.method, 'manual')
   })
 })

@@ -181,7 +181,10 @@ export function co2PotsOf(snapshot: Snapshot, items: readonly SnapshotCostItem[]
   return (snapshot.heatingPlants ?? []).map((plant): Co2Pot => {
     const pot = items.filter((c) => c.category === HEATING_CATEGORY && c.heatingPlantId === plant.id && c.period === period.key)
     const serviceItems = pot.filter((c) => c.key === 'amounts')
-    const statement = (snapshot.co2Statements ?? []).find((s) => s.plantId === plant.id && s.period === period.key) ?? null
+    // Angaben laut Messdienst gelten nur bei einer Anlage, die ein Messdienst oder die Gemeinschaft
+    // abrechnet; die Routen sperren den Wechsel (Durchsicht M-3), ein Archiv kann trotzdem eine
+    // andere Lage bringen.
+    const statement = plant.method !== 'service' ? null : (snapshot.co2Statements ?? []).find((s) => s.plantId === plant.id && s.period === period.key) ?? null
     let probe: ProbeResult | null = null
     if (
       statement && (statement.method === 'serviceDeducted' || statement.method === 'serviceShown') &&

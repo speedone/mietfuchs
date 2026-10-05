@@ -23,6 +23,7 @@ import { and, count, eq, inArray, isNull, ne } from 'drizzle-orm'
 import type { AssignableHeatingItem, HeatingPlant, HeatingPlantUnit } from '../../../shared/types.ts'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { plantRules } from '../../../shared/heatingPeriod.ts'
+import { CO2_FUELS } from '../co2.ts'
 import { parsePeriodKey, periodKey, periodOfKey, rulesOf } from '../../../shared/period.ts'
 import type { Database, Executor } from './client.ts'
 import { readHeatingPlants, readProperties, readUnits } from './read.ts'
@@ -203,11 +204,31 @@ export async function updateHeatingPlant(db: Database, id: string, body: unknown
   await db.transaction(async (tx) => {
     await guardHeatingPlant(tx, current, next)
     await guardServedChange(tx, id, changed)
+    await guardCo2Plant(tx, current, next)
     const { id: _id, ...rest } = plantRow(next)
     await tx.update(heatingPlants).set(rest).where(eq(heatingPlants.id, id))
     await writePlantUnits(tx, next)
   })
   return (await readHeatingPlants(db)).find((p) => p.id === id) ?? null
+}
+
+// Mit CO₂-Angaben (Heizung PR 6, Durchsicht M-3) gelten sie nur für eine Anlage beim Messdienst mit
+// einem Energieträger, für den CO₂-Kosten anfallen können. Ein Wechsel weg davon ließe sie still
+// stehen; ein vertippter Brennstoff (Öl statt Gas) bleibt änderbar.
+async function guardCo2Plant(db: Executor, current: HeatingPlant, next: HeatingPlant): Promise<void> {
+  const leavesService = current.method === 'service' && next.method !== 'service'
+  const leavesCo2 = next.energy !== current.energy && !CO2_FUELS.includes(next.energy) && next.energy !== 'districtHeating'
+  if (!leavesService && !leavesCo2) return
+  const co2 = await db
+    .select({ period: heatingPeriods.period })
+    .from(co2Statements)
+    .innerJoin(heatingPeriods, eq(co2Statements.heatingPeriodId, heatingPeriods.id))
+    .where(eq(heatingPeriods.plantId, current.id))
+  if (co2.length === 0) return
+  throw new HeatingError(409,
+    `Zu dieser Heizanlage sind CO₂-Angaben erfasst (Heizperiode ${co2.map((c) => String(c.period)).join(', ')}). ` +
+      `${leavesService ? 'Sie gelten nur für eine Anlage, die ein Messdienst oder die Gemeinschaft abrechnet' : 'Sie gelten nur für einen Energieträger, für den CO₂-Kosten anfallen'}. ` +
+      'Entfernen Sie die Angaben auf der Seite Heizkosten, wenn die Änderung so stimmt; gespeichert wurde nichts.')
 }
 
 export type PlantRemoval =
