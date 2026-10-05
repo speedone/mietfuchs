@@ -327,6 +327,13 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
             ) : (
               data.legalBasis && <p>Für dieses Jahr wendet Mietfuchs keine besondere Rechtsregel an.</p>
             )}
+            {basis.values.length > 0 && (
+              <>
+                <p>Angewandte Rechtswerte:</p>
+                <ul>{basis.values.map((v) => <li key={v}>{v}</li>)}</ul>
+              </>
+            )}
+            {basis.valuesNote && <p>{basis.valuesNote}</p>}
           </details>
         )
       })()}

@@ -85,16 +85,19 @@ export function noticeTarget(subject: NoticeSubject | undefined): { tab: NoticeT
   return { tab: target.tab, label: `Hier beheben → ${target.page}`, focus: { kind: subject.kind, id: subject.id } }
 }
 
-// Der Rechtsstand als Kopfzeile und eine Zeile je Regel. Fehlt er, wurde die Abrechnung
-// abgeschlossen, bevor Mietfuchs ihn festhielt; das steht dann ausdrücklich da, statt dass
+// Der Rechtsstand als Kopfzeile, eine Zeile je Regel und eine je Rechtswert, mit dem gerechnet
+// wurde (Heizung PR 1). Fehlt der Rechtsstand, wurde die Abrechnung abgeschlossen, bevor Mietfuchs
+// ihn festhielt; fehlen nur die Werte, vor 0.11.0. Beides steht dann ausdrücklich da, statt dass
 // die Zeile verschwindet.
-export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: string, rules: string[] } {
-  if (!legalBasis) return { head: 'Rechtsstand nicht erfasst: Diese Abrechnung wurde abgeschlossen, bevor Mietfuchs ihn festhielt.', rules: [] }
+export function legalBasisLines(legalBasis: LegalBasis | undefined): { head: string, rules: string[], values: string[], valuesNote: string | null } {
+  if (!legalBasis) return { head: 'Rechtsstand nicht erfasst: Diese Abrechnung wurde abgeschlossen, bevor Mietfuchs ihn festhielt.', rules: [], values: [], valuesNote: null }
   return {
     head: `Rechtsstand ${fmtDate(legalBasis.asOf)}`,
     rules: legalBasis.rules.map((r) => {
       const range = [r.validFrom && `ab ${fmtDate(r.validFrom)}`, r.validTo && `bis ${fmtDate(r.validTo)}`].filter(Boolean).join(' ')
       return `${r.title} (${r.norm})${range ? `, gilt ${range}` : ''}`
     }),
+    values: (legalBasis.values ?? []).map((v) => `${v.title}: ${v.text} (${v.cite})`),
+    valuesNote: legalBasis.values ? null : 'Rechtswerte nicht gespeichert (vor 0.11.0)',
   }
 }

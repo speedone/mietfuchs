@@ -545,11 +545,17 @@ export type SettlementDeviation = {
   // das Objekt gewechselt hat). Eine Richtung wäre dort kein Befund.
   direction: 'tenant' | 'landlord' | 'added' | 'removed'
 }
+// Ein Rechtswert, der heute anders lautet als beim Abschluss (Heizung PR 1, Entwurf 4.4): Das
+// Register hat eine neue Fassung bekommen, etwa nach einer Berichtigung. Die Texte stammen aus der
+// eingefrorenen und aus der heutigen Abrechnung.
+export type LawValueChange = { id: string; title: string; frozenText: string; currentText: string }
 export type SettlementComparison = {
   // false, wenn sich der eingefrorene Stand nicht lesen ließ; dann ist „keine Abweichung“ keine
   // Auskunft, und die Oberfläche sagt das.
   comparable: boolean
   deviations: SettlementDeviation[]
+  // Leer, wenn nichts abweicht oder der eingefrorene Stand keine Rechtswerte kennt (vor 0.11.0).
+  valueChanges: LawValueChange[]
   // Ende der Abrechnungsfrist nach § 556 Abs. 3 BGB und ob es vorbei ist
   deadline: string
   deadlinePassed: boolean

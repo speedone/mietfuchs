@@ -876,12 +876,36 @@ test('Abschließen friert Hinweise und Rechtsstand mit ein (#112)', async () => 
     const stand = Reflect.get(gespeichert, 'legalBasis')
     assert.equal(Reflect.get(stand, 'asOf'), LAW_AS_OF)
     assert.ok(Array.isArray(Reflect.get(stand, 'rules')))
+    assert.ok(Array.isArray(Reflect.get(stand, 'values')), 'seit Heizung PR 1 frieren die Rechtswerte mit ein')
     assert.ok(Array.isArray(Reflect.get(gespeichert, 'notices')))
     const geliefert = await srv.api<{ legalBasis?: { asOf: string }, notices?: unknown[] }>('/api/settlement/2044')
     assert.equal(geliefert.legalBasis?.asOf, LAW_AS_OF)
     assert.ok(Array.isArray(geliefert.notices))
   } finally {
     await srv.api('/api/settlement/2044/close', { method: 'DELETE' })
+  }
+})
+
+test('Abschließen friert die Rechtswerte ein, und direkt danach weicht keiner ab (Heizung PR 1)', async () => {
+  const u = await srv.api<Unit>('/api/units', { method: 'POST', body: JSON.stringify({ name: 'Recht', areaM2: 50, participates: true }) })
+  await srv.api<Tenancy>('/api/tenancies', { method: 'POST', body: JSON.stringify({
+    unitId: u.id, tenantName: 'Rechtswert', persons: 1, personHistory: [], start: '2049-01-01', end: '2049-12-31',
+    prepayments: [], prepaymentOverrides: {}, baseRents: [],
+  }) })
+  await srv.api('/api/costItems', { method: 'POST', body: JSON.stringify({ year: 2049, category: 'Heizung und Warmwasser', description: 'Heizöl', amountCents: 50000, key: 'area' }) })
+  await srv.api('/api/settlement/2049/close', { method: 'POST', body: JSON.stringify({}) })
+  try {
+    const gespeichert = (await closedOf(srv, 2049))?.settlement
+    if (!gespeichert || typeof gespeichert !== 'object') return assert.fail('keine eingefrorene Abrechnung')
+    const values = Reflect.get(Reflect.get(gespeichert, 'legalBasis'), 'values')
+    if (!Array.isArray(values)) return assert.fail('keine Rechtswerte eingefroren')
+    const cut = values.find((v) => Reflect.get(v, 'id') === 'hkv.cut.not-by-consumption')
+    assert.equal(Reflect.get(cut, 'text'), '15 %')
+    const geliefert = await srv.api<Settlement>('/api/settlement/2049')
+    assert.ok(geliefert.legalBasis?.values?.some((v) => v.id === 'hkv.cut.not-by-consumption'))
+    assert.deepEqual(geliefert.deviation?.valueChanges, [])
+  } finally {
+    await srv.api('/api/settlement/2049/close', { method: 'DELETE' })
   }
 })
 

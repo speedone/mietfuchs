@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { CostItem, CostKey, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
+import type { CostItem, CostKey, LegalBasis, Meter, Payment, Reading, Settings, Tenancy, Unit } from '../../shared/types.ts'
 import type { ComputedSettlement } from './calc.ts'
 import { migrateLegacy } from './legacy/migrate.ts'
 import { systemLocation, writable } from './paths.ts'
@@ -93,14 +93,15 @@ const DB_FILE = path.join(DATA_DIR, 'db.json')
 // `?? 0`, bevor die Steuerübersicht den Wert bekommt. `closed` gehört ohnehin nicht dazu, das
 // ergänzt erst das Lesen in index.ts.
 // `notSettled` (#93), `notices` und `legalBasis` (#112) ebenso optional: Eine vorher
-// abgeschlossene Abrechnung kennt sie nicht.
+// abgeschlossene Abrechnung kennt sie nicht. Aus demselben Grund ist `legalBasis` hier die Form aus
+// shared/types.ts mit optionalen `values` und nicht die frisch gerechnete (Heizung PR 1).
 export type StoredSettlement = Omit<ComputedSettlement, 'selfUsedShareCents' | 'notSettled' | 'notices' | 'legalBasis' | 'garageLikeUnitIds'> & {
   selfUsedShareCents?: number
   // vor #135 abgeschlossene Abrechnungen kennen die Einstufung nicht
   garageLikeUnitIds?: ComputedSettlement['garageLikeUnitIds']
   notSettled?: ComputedSettlement['notSettled']
   notices?: ComputedSettlement['notices']
-  legalBasis?: ComputedSettlement['legalBasis']
+  legalBasis?: LegalBasis
 }
 
 // Die Gestalt der db.json: Fachdaten je Collection plus abgeschlossene Abrechnungen.
