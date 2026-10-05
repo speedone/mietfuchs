@@ -2297,7 +2297,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // dieselbe Rechnung noch einmal aus dem Beleg. Nur ein Hinweis, verteilt wird wie erfasst. Der Rat
   // lautet „löschen“ und nicht „Beleg zuordnen“: Zugeordnet verstummt der Hinweis (er verlangt eine
   // Position ohne Beleg), die Summe bliebe aber doppelt (Integrationsdurchsicht M1).
-  for (const group of possibleDuplicates(items, at, snapshot.previousCostItems ?? [])) {
+  for (const group of possibleDuplicates(items, at, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [])) {
     const first = group.find((i) => !i.invoiceFile) ?? group[0]
     if (!first) continue
     const list = group.map((i) => `„${i.description}“ (${fmtCents(i.amountCents)}${i.invoiceFile ? '' : ', ohne Beleg'})`)
@@ -2316,7 +2316,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     const bookable = (t: SnapshotTenancy) => statements.has(t.id) && modelFor(t, item) === 'settlement'
     totalCostsCents += item.amountCents
     // Anders als im Vorjahr (#141)? Nur ein Hinweis, verteilt wird wie erfasst.
-    const keyChange = keyChangeText(item, snapshot.previousCostItems ?? [], at, basisUnitIds)
+    const keyChange = keyChangeText(item, snapshot.comparableCostItems ?? snapshot.previousCostItems ?? [], at, basisUnitIds)
     if (keyChange) warn('key.changed-from-previous-year', keyChange, itemSubject(item))
     // Rohanteile (float, in Cent) pro Mietverhältnis bestimmen.
     // Nicht umlagefähige Kosten gehen immer vollständig an den Vermieter.
@@ -3361,6 +3361,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
           year: Number(part.period.from.slice(0, 4)),
           costItems: part.items,
           previousCostItems: part.previousItems,
+          comparableCostItems: part.comparableItems,
           heatingParts: [],
           closedSettlement: null,
           scope: { kind: 'heatingPart', plant },

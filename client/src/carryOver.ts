@@ -7,11 +7,17 @@
 // Betrag wäre dort eine 0, die in jede Rechnung einginge, oder ein Entwurfs-Kennzeichen, das jede
 // Rechnung kennen müsste (siehe docs/superpowers/specs/2026-10-02-schluessel-merken-design.md).
 // Gespeichert wird nur, was durch `buildCostItemBody` geht, also dieselbe Prüfung wie im Formular.
-import type { BillingPeriod, CostItem, Tenancy, Unit } from './types'
+import type { BillingPeriod, CostItem, PeriodKey, PeriodRules, Tenancy, Unit } from './types'
 import { buildCostItemBody, fmtPct, itemToForm, type BuildResult, type ItemForm } from './costForm'
 import { replaceYear } from '../../shared/allocation.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { calendarContext, spansTwoYears, type PeriodContext } from '../../shared/period.ts'
+import { hasOwnRhythm, heatingPeriodsEndingIn, plantRules } from '../../shared/heatingPeriod.ts'
+import { filedUnderSettlement, settlementKeyOf, type PlantPeriods } from './costPeriods'
+
+// Die Anlagen des Objekts und seine Regeln: Eine Heizposition mit eigener Heizperiode gehört zum
+// Zeitraum, in dem ihre Heizperiode endet (costPeriods.ts). Ohne sie gilt der Schlüssel der Position.
+export type CarryHeating = { rules: PeriodRules; plants: readonly PlantPeriods[] }
 
 // Die Jahreszahl ersetzt dieselbe Regel, mit der der gemerkte Schlüssel die Beschreibung vergleicht.
 export { replaceYear }
@@ -32,6 +38,12 @@ export type CarryRow = {
   // Das Jahr der Zahlung (#208), um den Abstand der Zeiträume verschoben: Wer 2024/2025 im Jahr
   // 2025 gezahlt hat, zahlt 2025/2026 im Jahr 2026. Leer, wenn die Vorlage keines trägt.
   taxYear?: string
+  // Eine Heizposition mit eigener Heizperiode: die Heizperiode derselben Anlage, die im Ziel endet.
+  // `null`: keine Heizposition dieser Art, oder es enden keine oder mehrere (dann im Formular, wie beim
+  // Neuanlegen).
+  heating: { plantId: string; period: PeriodKey } | null
+  // Warum die Zeile nur im Formular übernommen werden kann
+  formReason?: string
 }
 
 // Steht im Jahr schon eine Position, die dieselbe Rechnung sein könnte? Die Regel ist die gemeinsame
@@ -63,8 +75,21 @@ export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, '
 // Zeile ein Jahr der Zahlung (Entwurf 3.10): das der Vorlage, um den Abstand der Zeiträume
 // verschoben und in die erlaubte Spanne geklemmt; trägt die Vorlage keines (etwa direkt nach einem
 // Wechsel), das Jahr, in dem das Ziel beginnt, wie beim Anlegen (Durchsicht von #226, I2).
-export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext, target?: Pick<BillingPeriod, 'from' | 'to'>): CarryRow[] {
+export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext, target?: Pick<BillingPeriod, 'from' | 'to'>, heating?: CarryHeating): CarryRow[] {
   const ctx = typeof at === 'number' ? calendarContext(at) : at
+  // „Schon erfasst“ vergleicht nach dem Zeitraum der Abrechnung, sonst sähe eine Heizposition unter
+  // ihrer Heizperiode nie wie eine des Ziels aus.
+  const filed = heating ? filedUnderSettlement(items, () => heating.rules, () => heating.plants) : items
+  const keyOf = (i: CostItem) => (heating ? settlementKeyOf(i, heating.rules, heating.plants).key : i.period)
+  // Die Heizperiode der Anlage, die im Ziel endet; `'ask'` bei keiner oder mehreren.
+  const heatingOf = (source: CostItem): { plantId: string; period: PeriodKey; from: string; to: string } | 'ask' | null => {
+    const plant = heating && source.heatingPlantId ? heating.plants.find((p) => p.id === source.heatingPlantId) : undefined
+    if (!heating || !plant || !hasOwnRhythm(plant)) return null
+    if (target === undefined) return 'ask'
+    const ending = heatingPeriodsEndingIn(plantRules(plant, heating.rules), target)
+    const only = ending.length === 1 ? ending[0] : undefined
+    return only ? { plantId: plant.id, period: only.key, from: only.from, to: only.to } : 'ask'
+  }
   const taxYearOf = (source: CostItem): string => {
     if (target === undefined) return source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : ''
     if (!spansTwoYears(target)) return ''
@@ -73,8 +98,15 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
     const wanted = source.taxYear !== undefined ? source.taxYear + ctx.year - ctx.previousYear : start
     return String(Math.min(Math.max(wanted, start), end))
   }
-  return items.filter((i) => i.period === ctx.previous).map((source) => {
+  return items.filter((i) => keyOf(i) === ctx.previous).map((source) => {
     const description = replaceYear(source.description, ctx.previousYear, ctx.year)
+    const h = heatingOf(source)
+    // Das Jahr der Zahlung einer Heizposition richtet sich nach ihrer Heizperiode (wie im Formular):
+    // verschoben aus der Vorlage, in deren Spanne geklemmt; ohne Angabe fragt das Formular.
+    const heatingTax = h && h !== 'ask' ? taxYearIn(h, source) : ''
+    const formReason = h === 'ask'
+      ? 'Im Abrechnungszeitraum enden keine oder mehrere Heizperioden dieser Anlage. Bitte wählen Sie die Heizperiode im Formular („Im Formular öffnen“).'
+      : h && heatingTax === null ? 'Bitte geben Sie das Jahr der Zahlung im Formular an („Im Formular öffnen“).' : undefined
     return {
       source,
       description,
@@ -83,11 +115,22 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
       labor35a: '',
       externalTotalAmount: '',
       checked: false,
-      already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, ctx),
-      inline: source.key !== 'amounts',
-      taxYear: taxYearOf(source),
+      already: alreadyCarried(filed, { source, description, vendor: source.vendor ?? '' }, ctx),
+      inline: source.key !== 'amounts' && formReason === undefined,
+      taxYear: h && h !== 'ask' ? heatingTax ?? '' : taxYearOf(source),
+      heating: h && h !== 'ask' ? { plantId: h.plantId, period: h.period } : null,
+      ...(formReason ? { formReason } : {}),
     }
   })
+  // Liegt die Heizperiode in einem Kalenderjahr, ist es dieses (kein Feld); reicht sie über zwei, das
+  // Jahr der Vorlage um ein Jahr verschoben, geklemmt; ohne Angabe `null`.
+  function taxYearIn(h: { from: string; to: string }, source: CostItem): string | null {
+    if (!spansTwoYears(h)) return ''
+    if (source.taxYear === undefined) return null
+    const start = Number(h.from.slice(0, 4))
+    const end = Number(h.to.slice(0, 4)) + 1
+    return String(Math.min(Math.max(source.taxYear + 1, start), end))
+  }
 }
 
 // Ein Betrag hakt die Zeile an, ein geleertes Feld ab; abhaken lässt sie sich jederzeit von Hand.
@@ -139,10 +182,21 @@ export function carryOverForm(row: CarryRow): ItemForm {
 }
 
 // `period`: der Zeitraum, in den übernommen wird (#208); eine Jahreszahl ist das Kalenderjahr.
-export function carryOverBody(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): BuildResult {
+// Der Rumpf einer Übernahme; bei einer Heizposition mit eigener Heizperiode dazu die Anlage.
+export type CarryBody = { body: Extract<BuildResult, { body: unknown }>['body'] & { heatingPlantId?: string } } | { error: string }
+
+export function carryOverBody(row: CarryRow, units: Unit[], period: number | BillingPeriod, tenancies?: Tenancy[]): CarryBody {
+  if (row.formReason) return { error: row.formReason }
   if (!row.inline) return { error: 'Einzelbeträge je Mieter bitte im Formular eintragen („Im Formular öffnen“).' }
   if (!row.amount.trim()) return { error: 'Betrag fehlt.' }
   const form = carryOverForm(row)
+  // Eine Heizposition mit eigener Heizperiode steht unter deren Schlüssel, mit dem Jahr der Zahlung
+  // ihrer Heizperiode (wie `saveItem` auf der Seite Kosten).
+  if (row.heating) {
+    const built = buildCostItemBody({ ...form, taxYear: '' }, units, period, tenancies)
+    if ('error' in built) return built
+    return { body: { ...built.body, period: row.heating.period, heatingPlantId: row.heating.plantId, taxYear: row.taxYear ? Number(row.taxYear) : null } }
+  }
   // Liegt der neue Zeitraum in einem Kalenderjahr (etwa ein Rumpf nach einem Wechsel), ist es dieses (#208).
   const twoYears = typeof period !== 'number' && spansTwoYears(period)
   return buildCostItemBody(twoYears ? form : { ...form, taxYear: '' }, units, period, tenancies)

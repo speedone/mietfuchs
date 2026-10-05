@@ -19,7 +19,7 @@
 // fragen beide.
 
 import { periodContaining, periodOfKey, periodsBetween, settlementDeadline } from './period.ts'
-import type { BillingPeriod, PeriodRules, SeparateSpan, Unit } from './types.ts'
+import type { BillingPeriod, PeriodKey, PeriodRules, SeparateSpan, Unit } from './types.ts'
 
 export type PlantRhythm = { periodStartMonth: number | null; periodChanges: readonly string[] }
 export type PlantWay = PlantRhythm & { separateSpans: readonly SeparateSpan[] }
@@ -66,6 +66,24 @@ export function separateOwner(plant: PlantWay, objectRules: PeriodRules, month: 
   const h = periodContaining(plantRules(plant, objectRules), `${month}-01`)
   const span = isObjectPeriod(objectRules, h) ? undefined : spanOf(plant.separateSpans, h)
   return span !== undefined && month >= span.from ? h : null
+}
+
+// Der Abrechnungszeitraum P, zu dem eine Kostenposition gehört (Sichtprüfung E48, E32): Eine
+// Heizposition einer Anlage mit eigener Heizperiode trägt den Schlüssel ihrer Heizperiode und gehört
+// in den Zeitraum, der deren Ende enthält (Entwurf 3.0); `separate`: nach Weg d in einer eigenen
+// Heizkostenabrechnung. Jede andere Position gehört zu ihrem Schlüssel. Die Regel steht hier, weil
+// Oberfläche (Kostenvergleich, Belegordner, Vorjahr) und Berechnung (Vergleich mit dem Vorjahr)
+// dasselbe meinen müssen.
+export function settlementKeyOf(
+  item: { period: PeriodKey; heatingPlantId?: string | null },
+  objectRules: PeriodRules,
+  plants: readonly (PlantWay & { id: string })[],
+): { key: PeriodKey; separate: boolean } {
+  const plant = item.heatingPlantId ? plants.find((p) => p.id === item.heatingPlantId) : undefined
+  if (!plant || !hasOwnRhythm(plant)) return { key: item.period, separate: false }
+  const h = periodOfKey(plantRules(plant, objectRules), item.period)
+  if (h === null) return { key: item.period, separate: false }
+  return { key: periodContaining(objectRules, h.to).key, separate: settledSeparately(plant, objectRules, h) }
 }
 
 // Ohne Liste versorgt eine Anlage alle Wohnungen ohne „kein Anschluss: Wärme“ (#117), mit Liste

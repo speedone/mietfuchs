@@ -1,8 +1,8 @@
 // „Aus dem Vorjahr übernehmen“ (#141): Die Positionen des Vorjahres werden zur Vorlage, ohne
 // Betrag und ohne Beleg. Gespeichert wird nur, was durch dieselbe Prüfung geht wie das Formular.
-import { calendarPeriod, contextOf, periodKey, periodOfKey } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod, calendarYearPeriod, contextOf, periodKey, periodOfKey } from '../../shared/period.ts'
 import { describe, expect, test } from 'vitest'
-import type { CostItem, Unit } from './types'
+import type { CostItem, HeatingPlant, Unit } from './types'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverRows, replaceYear, withCarryAmount, type CarryRow } from './carryOver'
 
 const UNITS: Unit[] = [
@@ -206,4 +206,51 @@ test('Direkt nach einem Wechsel: Die Übernahme belegt das Jahr der Zahlung mit 
   expect(carryOverRows(vorlage, contextOf(neu, alt), neu)[0]?.taxYear).toBe('2027')
   // Liegt das Ziel in einem Kalenderjahr, gibt es keines.
   expect(carryOverRows(vorlage, contextOf(neu, alt), { from: '2025-05-01', to: '2025-12-31' })[0]?.taxYear).toBe('')
+})
+
+// Eine Heizposition mit eigener Heizperiode gehört zum Abrechnungszeitraum, in dem ihre Heizperiode
+// endet (client/src/costPeriods.ts). Das Vorjahr ist der Zeitraum davor nach derselben Regel, und die
+// Übernahme bekommt die Heizperiode derselben Anlage, die im Ziel endet.
+describe('Vorjahr mit eigener Heizperiode', () => {
+  const plant = (over: Partial<HeatingPlant> = {}): HeatingPlant => ({
+    id: 'hp1', propertyId: 'p', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
+    devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
+    warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: 5, periodChanges: [], separateSpans: [], units: null, newDevicesInstall: null, ...over,
+  })
+  const at2026 = contextOf(calendarYearPeriod(2026), calendarYearPeriod(2025))
+  const heizung = (period: string, over: Partial<CostItem> = {}) =>
+    item({ period: periodKey(period), category: 'Heizung und Warmwasser', description: 'Messdienst Heizung', key: 'units', heatingPlantId: 'hp1', taxYear: 2025, ...over })
+
+  test('die Heizposition der Heizperiode, die im Vorjahr endet, wird angeboten und landet in der, die im Ziel endet', () => {
+    const items = [heizung('2024-05'), item({ period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025' })]
+    const rows = carryOverRows(items, at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant()] })
+    const row = rowOf(rows, 'Messdienst Heizung')
+    expect(row.heating).toEqual({ plantId: 'hp1', period: '2025-05' })
+    expect([row.inline, row.taxYear, row.already]).toEqual([true, '2026', false])
+    const built = carryOverBody({ ...row, amount: '1.200,00' }, UNITS, calendarYearPeriod(2026))
+    expect(built).toMatchObject({ body: { period: '2025-05', heatingPlantId: 'hp1', taxYear: 2026, amountCents: 120000 } })
+    expect(rowOf(rows, 'Grundsteuer 2025').heating).toBe(null)
+    // Ohne die Anlagen sah die Liste die Heizposition gar nicht (Schlüssel '2024-05' ist nicht '2025-01').
+    expect(carryOverRows(items, at2026, calendarYearPeriod(2026)).map((r) => r.source.description)).toEqual(['Grundsteuer 2025'])
+  })
+
+  test('schon im Ziel erfasst: die Heizposition der Heizperiode, die dort endet', () => {
+    const items = [heizung('2024-05'), heizung('2025-05', { description: 'Messdienst Heizung 2025/2026' })]
+    const row = rowOf(carryOverRows(items, at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant()] }), 'Messdienst Heizung')
+    expect(row.already).toBe(true)
+  })
+
+  test('enden im Ziel zwei Heizperioden der Anlage, wird nicht vorbelegt, sondern im Formular gefragt', () => {
+    const items = [heizung('2024-05')]
+    const row = rowOf(carryOverRows(items, at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant({ periodChanges: ['2027-01'] })] }), 'Messdienst Heizung')
+    expect([row.heating, row.inline]).toEqual([null, false])
+    expect(carryOverBody({ ...row, amount: '100' }, UNITS, calendarYearPeriod(2026))).toEqual({ error: expect.stringMatching(/Heizperiode.*Formular/) })
+  })
+
+  test('ohne eigene Heizperiode wie bisher', () => {
+    const items = [heizung('2025-01', { taxYear: undefined })]
+    const row = rowOf(carryOverRows(items, at2026, calendarYearPeriod(2026), { rules: CALENDAR_RULES, plants: [plant({ periodStartMonth: null })] }), 'Messdienst Heizung')
+    expect(row.heating).toBe(null)
+    expect(carryOverBody({ ...row, amount: '100' }, UNITS, calendarYearPeriod(2026))).toMatchObject({ body: { period: '2026-01' } })
+  })
 })

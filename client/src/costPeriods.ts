@@ -7,22 +7,16 @@
 // (`heatingChoices`). Wer Positionen nach `period` gruppiert, bekommt deshalb „2023-05“ und „2024-05“
 // als eigene Jahre, und die Heizkosten fehlen im Jahr ihrer Abrechnung. Die Seite Kosten rechnet
 // dasselbe über `itemsOfPeriod`; die übrigen Seiten fragen hier.
-import { hasOwnRhythm, plantRules, settledSeparately } from '../../shared/heatingPeriod.ts'
+import { settlementKeyOf } from '../../shared/heatingPeriod.ts'
 import { periodContaining, periodLabel, periodOfKey } from '../../shared/period.ts'
 import type { HeatingPlant, HeatingSettlementInfo, NoticeSubject, PeriodKey, PeriodRules } from './types'
 
 export type PlantPeriods = Pick<HeatingPlant, 'id' | 'periodStartMonth' | 'periodChanges' | 'separateSpans'>
 type Positioned = { period: PeriodKey; heatingPlantId?: string | null }
 
-// Der Schlüssel des Abrechnungszeitraums P und ob die Position nach Weg d in einer eigenen
-// Heizkostenabrechnung steht. Ohne geladene Anlagen bleibt es beim Schlüssel der Position.
-export function settlementKeyOf(item: Positioned, objectRules: PeriodRules, plants: readonly PlantPeriods[]): { key: PeriodKey; separate: boolean } {
-  const plant = item.heatingPlantId ? plants.find((p) => p.id === item.heatingPlantId) : undefined
-  if (!plant || !hasOwnRhythm(plant)) return { key: item.period, separate: false }
-  const h = periodOfKey(plantRules(plant, objectRules), item.period)
-  if (h === null) return { key: item.period, separate: false }
-  return { key: periodContaining(objectRules, h.to).key, separate: settledSeparately(plant, objectRules, h) }
-}
+// Die Regel selbst steht in shared/heatingPeriod.ts, weil die Berechnung sie für den Vergleich mit
+// dem Vorjahr ebenso braucht.
+export { settlementKeyOf }
 
 export function itemsOfSettlement<T extends Positioned>(items: readonly T[], key: PeriodKey, objectRules: PeriodRules, plants: readonly PlantPeriods[]): T[] {
   return items.filter((c) => settlementKeyOf(c, objectRules, plants).key === key)
