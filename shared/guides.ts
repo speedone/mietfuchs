@@ -304,6 +304,31 @@ const GUIDE_DATA = {
     ],
     terms: ['vacancy', 'personDays', 'meterReading', 'prepayment', 'settlementDeadline'],
   },
+  // #208: Abrechnungszeitraum, der vom Kalenderjahr abweicht (Entwurf 11.4).
+  periodMayApril: {
+    title: 'Abrechnungszeitraum Mai bis April',
+    applies: 'Ihr Messdienst rechnet die Heizkosten von Mai bis April ab, oder Ihr Mietvertrag nennt einen anderen Abrechnungszeitraum als das Kalenderjahr.',
+    steps: [
+      { page: 'stammdaten', text: 'Öffnen Sie in den Stammdaten die Karte „Abrechnungszeitraum“. Wählen Sie unter „Was möchten Sie ändern?“ den „Wechsel ab einem Monat“, tragen Sie den Monat ein, ab dem neu abgerechnet wird, und klicken Sie auf „Vorschau“.' },
+      { page: 'stammdaten', text: 'Die Vorschau zeigt den Rumpfzeitraum davor und was mit Ihren Rechnungen und Vorauszahlungen geschieht. Tragen Sie für jede Jahreskorrektur ein, was tatsächlich gezahlt wurde, oder setzen Sie den Haken „keine Korrektur (die Staffel gilt)“. Mit „Zeitraum wechseln“ wird alles gespeichert.' },
+      { page: 'kosten', text: 'Eine Rechnung für ein Kalenderjahr, etwa die Grundsteuer, erfassen Sie mit ihrem Leistungszeitraum unter „Weitere Angaben“. Mietfuchs teilt sie beim Speichern nach Tagen auf die beiden Abrechnungszeiträume auf („Aufteilen und speichern“).' },
+      { page: 'kosten', text: 'Reicht der Abrechnungszeitraum über zwei Kalenderjahre, fragt das Formular nach dem „Jahr der Zahlung (Steuer)“.' },
+    ],
+    result: [
+      'Vor dem Wechsel entsteht ein Rumpfzeitraum. Seine Abrechnung muss zwölf Monate nach seinem Ende zugehen.',
+      'Im Rumpfzeitraum rechnet der Vorschlag für die neue Vorauszahlung kalte Kosten nach Tagen hoch und Brennstoff nach Gradtagen, wenn die Brennstoffrechnung als „Brennstoff/Energie“ gekennzeichnet ist und einen Leistungszeitraum hat.',
+      'Mietkonto und Steuer bleiben beim Kalenderjahr; die Steuerübersicht nimmt die Eigenanteile aus den Abrechnungen, die das Jahr berühren.',
+    ],
+    example: 'Umstellung ab Mai 2025: Der Rumpfzeitraum läuft vom 01.01. bis 30.04.2025 und muss bis 30.04.2026 abgerechnet sein. Die Grundsteuer 2025 über 480 € teilt Mietfuchs in 157,81 € für den Rumpf und 322,19 € für 2025/2026.',
+    caveats: [
+      { text: 'Eine Verkürzung des Abrechnungszeitraums braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter. Länger als zwölf Monate darf kein Zeitraum sein.', norm: '§ 556 Abs. 3 Satz 1 BGB' },
+      { text: 'Heizkosten müssen den Verbrauch im Abrechnungszeitraum abbilden; eine Gasrechnung über einen anderen Zeitraum teilt Mietfuchs nicht nach Tagen auf, sondern weist darauf hin.', norm: 'BGH, Urteil vom 01.02.2012, VIII ZR 156/11' },
+    ],
+    gaps: [
+      { text: 'Eine eigene Heizperiode neben dem Abrechnungszeitraum des Objekts und eine getrennte Heizkostenabrechnung.', issue: 217 },
+    ],
+    terms: ['billingPeriod', 'shortPeriod', 'accrualPrinciple'],
+  },
 } satisfies Record<string, Guide>
 
 export type GuideId = keyof typeof GUIDE_DATA

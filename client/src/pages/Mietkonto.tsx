@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Payment, RentLedger, RentMonth, Tenancy } from '../types'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
-import { useYear } from '../year'
-import { useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { periodSpanText } from '../periodForm'
+import { CalendarYearSelect } from '../components/PeriodSelect'
+import { useProperty, withProperty } from '../property'
 import { bookingDate, newPaymentDate, rowStanding, showDecemberNote } from '../ledgerView'
 import Drawer from '../components/Drawer'
 import PageHeader from '../components/PageHeader'
@@ -15,9 +17,8 @@ const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 
 type PaymentForm = { tenancyId: string; date: string; amount: string; note: string }
 
 export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Das Mietkonto rechnet im Kalenderjahr (#208, Entwurf 3.11).
+  const { calendarYear: year, calendar, label, period } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const toast = useToast()
@@ -128,16 +129,10 @@ export default function Mietkonto({ focus, onFocusDone }: FocusProps = {}) {
 
       <div className="card">
         <div className="row">
-          <label className="field">
-            Jahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <CalendarYearSelect />
         </div>
       </div>
+      {!calendar && <div className="info no-print">Die Abrechnung {label} umfasst {periodSpanText(period)}. Das Mietkonto zeigt das Kalenderjahr.</div>}
 
       {ledger && (
         <div className="kpis">

@@ -18,7 +18,7 @@ const draft = (patch: Partial<CostItemDraft> = {}): CostItemDraft => ({
   category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: '', invoiceFile: null,
   amountCents: 61240, labor35aCents: 0, key: 'area', directUnitId: null, meterType: null,
   customShares: {}, participants: null, external: { measure: 'mea', total: null, totalCents: null },
-  tenancyAmounts: {}, selfAmounts: {}, ...patch,
+  tenancyAmounts: {}, selfAmounts: {}, serviceFrom: null, serviceTo: null, taxYear: null, heatingPart: null, ...patch,
 })
 const errorOf = (built: ReturnType<typeof costItemBody>): string => ('error' in built ? built.error : assert.fail('kein Fehler'))
 
@@ -29,6 +29,7 @@ test('Rumpf einer Kostenposition: dieselben Felder wie bisher im Formular', () =
     period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', vendor: undefined, amountCents: 61240,
     labor35aCents: undefined, key: 'area', directUnitId: null, meterType: null, customShares: null,
     participantUnitIds: null, externalBasis: null, tenancyAmounts: null, selfAmounts: null, invoiceFile: null,
+    serviceFrom: null, serviceTo: null, taxYear: null, heatingPart: null,
   })
 })
 

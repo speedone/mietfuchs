@@ -2,8 +2,9 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReceiptUpload } from './receipts'
 import type { CostItem, NoticeSubject, Settings, Tenancy, Unit, UploadInfo } from './types'
 import { api } from './api'
-import { YearProvider, useYear, YEAR_OPTIONS } from './year'
-import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty, useSwitchYear } from './property'
+import { PeriodProvider, usePeriod } from './period'
+import { PeriodSelect } from './components/PeriodSelect'
+import { PropertyProvider, PropertySwitcher, useProperty, useSwitchProperty, withProperty } from './property'
 import { UIProvider, useConfirm, useToast } from './components/feedback'
 import FoxLogo from './components/Logo'
 import { UpdateHint, useUpdateStatus } from './components/Update'
@@ -137,9 +138,8 @@ function Shell() {
   const [tenancies, setTenancies] = useState<Tenancy[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const { choice, cycle } = useTheme()
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Der gewählte Abrechnungszeitraum (#208); die Seiten werden bei seinem Wechsel neu aufgestellt.
+  const { key: periodKeyNow } = usePeriod()
   const { properties, property, previousId, focusNoticeFor, setFocusNoticeFor, reload: reloadProperties } = useProperty()
   const switchProperty = useSwitchProperty()
   // Ausgewertet wird im Objekt, dem der Beleg zugedacht ist; ohne Zuordnung im gewählten.
@@ -224,12 +224,7 @@ function Shell() {
 
         <PropertySwitcher properties={properties} value={propertyId} onChange={(id) => void switchProperty(id)} />
 
-        <label className="year-switcher no-print">
-          <span>Abrechnungsjahr</span>
-          <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-            {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </label>
+        <PeriodSelect className="year-switcher no-print" />
 
         {NAV.map((group, gi) => (
           <div key={gi} className="nav-group">
@@ -272,7 +267,7 @@ function Shell() {
         )}
         {/* Je Objekt und Jahr neu aufgestellt (#145, Durchsicht zu #141): Formulare und
             Zwischenstände einer Seite gehören zu dem Objekt und Jahr, in dem sie entstanden sind. */}
-        <Fragment key={`${propertyId ?? ''}:${year}`}>
+        <Fragment key={`${propertyId ?? ''}:${periodKeyNow}`}>
         {tab === 'cockpit' && (
           <Cockpit units={units} tenancies={tenancies} settings={settings} reload={reload} onNavigate={(t) => setTab(t as Tab)} />
         )}
@@ -304,12 +299,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <UIProvider>
           <Shell />
         </UIProvider>
       </PropertyProvider>
-    </YearProvider>
+    </PeriodProvider>
   )
 }

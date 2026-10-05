@@ -8,7 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type { CostItem, Settlement, Unit } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Cockpit from './Cockpit'
@@ -54,11 +54,11 @@ afterEach(() => {
 })
 
 const wrap = (node: ReactNode) => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <UIProvider>{node}</UIProvider>
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('Cockpit: ohne Kosten im Jahr kein voraussichtliches Guthaben, sondern „Noch keine Kosten erfasst“', async () => {

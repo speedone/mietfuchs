@@ -6,7 +6,7 @@ import { calendarPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { CostItem, Property, UploadInfo } from '../types'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import type { ReceiptUpload } from '../receipts'
 import Belege from './Belege'
@@ -81,11 +81,11 @@ afterEach(() => {
 
 const renderPage = () =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 const select = (label: string) => screen.getByLabelText(label) as HTMLSelectElement
@@ -186,11 +186,11 @@ test('Posteingang: Objekt und Jahr eines Belegs zeigen den gespeicherten Wert un
 test('Posteingang: einer Position zuordnen und per KI auswerten', async () => {
   const onEvaluate = vi.fn()
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} onEvaluate={onEvaluate} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('Wasser/Abwasser')
   const zuordnen = screen.getByLabelText('lose.pdf einer Position zuordnen') as HTMLSelectElement
@@ -213,11 +213,11 @@ test('Mappen: „Belege für die Steuer“ lädt das ZIP des gewählten Objekts 
 test('Mappen: die Belegmappe für Mieter folgt der Abrechnung und nennt, was fehlt', async () => {
   const make = vi.fn(async () => undefined)
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} makeTenantFolder={make} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await screen.findByText('Wasser/Abwasser')
   fireEvent.click(screen.getByText(/Belegmappe für Mieter/))
@@ -268,11 +268,11 @@ test('„nachreichen“: auch nach dem Hochladen an der Position „Betrag prüf
 // dem neuen Betrag läge.
 const renderWithOpen = (onOpenItem: (c: CostItem) => void) =>
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('')} onOpenItem={onOpenItem} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
 
 test('„Betrag prüfen“ bei einer Position laut Gemeinschaftsabrechnung: kein Feld, „Position öffnen“', async () => {
@@ -321,11 +321,11 @@ test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prü
   extraUploads = [{ ...up('5_offen.pdf'), bookedItemIds: [], assessment: { id: 'a5', propertyId: 'p1', open: true } }]
   const onContinue = vi.fn()
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: 'offen.pdf weiter prüfen' }))
   expect(onContinue).toHaveBeenCalledWith(expect.objectContaining({ file: '5_offen.pdf' }))
@@ -333,11 +333,11 @@ test('Posteingang (#170): ein Beleg mit offener Auswertung heißt „Weiter prü
 })
 
 const renderContinue = (onContinue: (u: ReceiptUpload) => void) => render(
-  <YearProvider>
+  <PeriodProvider>
     <PropertyProvider>
       <Belege renderThumb={() => Promise.resolve('data:image/gif;base64,R0lGODlhAQABAAAAACw=')} onEvaluate={() => {}} onContinue={onContinue} />
     </PropertyProvider>
-  </YearProvider>,
+  </PeriodProvider>,
 )
 
 test('Weiter prüfen (#170): eine Auswertung ohne Objekt bekommt zuerst das gewählte Objekt', async () => {

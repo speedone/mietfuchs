@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, IntakeResult, Meter, NoticeSubject, Reading, Settings, Unit, UploadInfo } from '../types'
+import { calendarPeriod, periodContext, periodOfKey } from '../../../shared/period.ts'
 import { api, errorText } from '../api'
 import { aiSummary } from '../aiForm'
 import { autoMatchMeter, scoreReading } from '../triage'
@@ -7,8 +8,9 @@ import { parseQuantity, type KeyContext } from '../costForm'
 import { bookDecisions, greenDecisions, loadOpenAssessments, planDecisions } from '../assessment'
 import { useEvaluationQueue, type QueueEntry as BaseEntry, type QueuePatch } from '../evaluationQueue'
 import AssessmentReview from '../components/AssessmentReview'
-import { useYear } from '../year'
-import { useOpenForm, useProperty, withProperty, useSwitchYear } from '../property'
+import { usePeriod } from '../period'
+import { PeriodSelect } from '../components/PeriodSelect'
+import { useOpenForm, useProperty, withProperty } from '../property'
 import { AiProgressBadge } from '../components/AiProgress'
 import { plural } from '../../../shared/wording.ts'
 
@@ -60,9 +62,9 @@ const NOT_SAVED = 'Die Auswertung ließ sich nicht speichern. Bitte versuchen Si
 export default function Schnellerfassung({ units, settings, onNavigate, handoff, onHandoffTaken }: Props) {
   // Wohin die Belege zur Auswertung gehen (siehe aiForm.ts)
   const ai = aiSummary(settings)
-  const { year } = useYear()
-  // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
-  const switchYear = useSwitchYear()
+  // Das Kalenderjahr, in dem der gewählte Zeitraum beginnt (#208): Ein Beleg ohne erkanntes Jahr
+  // bekommt es, und die Belegbuchung leitet daraus den Zeitraum ab.
+  const { year, key, rules, calendar } = usePeriod()
   const { property } = useProperty()
   const propertyId = property?.id
   const [existingItems, setExistingItems] = useState<CostItem[]>([])
@@ -99,6 +101,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
     // dieses Objekts, falls er ungebucht bleibt.
     propertyId,
     year,
+    period: key,
     finish: async (res, file): Promise<QueuePatch<Evaluated>> => {
       if (res.kind === 'zaehler') {
         const exifDate = await readExifDate(file)
@@ -158,7 +161,11 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
   }, [handoff])
 
   // Woraus eine Position ihren Schlüssel vorgeschlagen bekommt (#141), je Jahr des Belegs.
-  const keyCtx = (target: number): KeyContext => ({ items: existingItems, year: target, propertyKind: property?.kind ?? null })
+  // Der Vorschlag des Schlüssels sieht in den Zeitraum, in den gebucht wird (#208, `bookingPeriod`).
+  const keyCtx = (v: AssessmentView): KeyContext => {
+    const target = periodOfKey(rules, v.targetPeriod ?? calendarPeriod(v.year))
+    return target ? { items: existingItems, year: v.year, at: periodContext(rules, target), propertyKind: property?.kind ?? null } : { items: existingItems, year: v.year, propertyKind: property?.kind ?? null }
+  }
 
   function updateReading(entryId: number, patch: Partial<ReadingCandidate>) {
     const entry = queue.find((x) => x.id === entryId)
@@ -303,14 +310,7 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
 
       <div className="card no-print">
         <div className="row" style={{ alignItems: 'center' }}>
-          <label className="field">
-            Abrechnungsjahr
-            <select value={year} onChange={(e) => void switchYear(Number(e.target.value))}>
-              {Array.from({ length: 8 }, (_, k) => new Date().getFullYear() - k).map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </label>
+          <PeriodSelect />
           <div className="grow" />
           {totalRecognized > 0 && (
             <div className="muted" style={{ textAlign: 'right' }}>
@@ -442,9 +442,9 @@ export default function Schnellerfassung({ units, settings, onNavigate, handoff,
               ? <span className="badge green">{v.lines.filter((l) => l.state === 'open').length} offen — bitte prüfen</span>
               : <span className="badge green">✓ übernommen</span>}
             {/* Das Jahr, in das gebucht wird (nach einer Änderung von Hand nicht mehr das des Belegs) */}
-            {v.year !== year && <span className="badge gray">Jahr {v.year}</span>}
+            {(v.targetPeriod ?? calendarPeriod(v.year)) !== key && <span className="badge gray">{calendar ? `Jahr ${v.year}` : v.targetLabel ?? `Jahr ${v.year}`}</span>}
           </div>
-          <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v.year)}
+          <AssessmentReview assessment={v} units={units} keyContext={keyCtx(v)}
             onChange={(next) => { upsert(next); void loadData() }}
             onOpenItem={(id) => onNavigate('kosten', { kind: 'costItem', id })} />
         </div>

@@ -202,11 +202,28 @@ export type ExternalBasis = {
   totalCents: number
 }
 
+// Teil der Heizkosten (#208, Entwurf 5.3, A1): Brennstoff/Energie, Betrieb, Messdienst. Mit PR 3
+// bietet die Oberfläche nur „Brennstoff/Energie“ an; der Vorschlag nach § 560 BGB im Rumpf rechnet
+// Brennstoff nach Gradtagen hoch. Pflicht wird die Angabe mit der eigenen Heizkostenabrechnung.
+export type HeatingPart = 'fuel' | 'operating' | 'metering'
+
 export type CostItem = {
   id: string
   propertyId: string
   // Der Abrechnungszeitraum (#208), dem die Position ganz gehört.
   period: PeriodKey
+  // Der Leistungszeitraum der Rechnung (#208, Entwurf 3.4): beide oder keines, je 'JJJJ-MM-TT' mit
+  // inklusiven Grenzen. Eine kalte Rechnung über zwei Abrechnungszeiträume ist in je eine Position
+  // aufgeteilt; jeder Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist der
+  // Anteil seines Zeitraums.
+  serviceFrom?: string
+  serviceTo?: string
+  // Das Jahr der Zahlung für die Steuer (#208, Entwurf 3.10). Fehlt es, liegt der Zeitraum der
+  // Position in einem Kalenderjahr, und es ist dieses. Eine Vereinfachung, siehe CLAUDE.md
+  // („Nicht dem Abflussprinzip folgen die Werbungskosten“).
+  taxYear?: number
+  // Nur bei der Kostenart „Heizung und Warmwasser“ (#208, A1).
+  heatingPart?: HeatingPart
   category: string
   description: string
   vendor?: string
@@ -230,6 +247,56 @@ export type CostItem = {
   selfAmounts?: Record<string, number> | null
   labor35aCents?: number // Lohnanteil nach §35a EStG
   invoiceFile?: string
+}
+
+// Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
+// Zeitraum reicht über zwei Kalenderjahre, das Jahr der Zahlung ist dort Pflicht. `closed`: Die
+// Abrechnung des Zeitraums ist abgeschlossen; gespeichert wird dann nicht (409).
+export type SplitPreviewPart = {
+  period: PeriodKey
+  label: string
+  days: number
+  amountCents: number
+  labor35aCents: number | null
+  description: string
+  needsTaxYear: boolean
+  closed: boolean
+}
+
+// Die Vorschau eines Wechsels des Abrechnungszeitraums (#208, Entwurf 3.6). `blocked`: Gründe, aus
+// denen nicht gewechselt wird (abgeschlossene Abrechnungen). `moves`: kalte Rechnungen mit
+// Leistungszeitraum, die nach Tagen auf die neuen Zeiträume aufgeteilt werden oder in einen
+// anderen wandern. `groups`: Positionen ohne Leistungszeitraum und Heizkosten je bisherigem
+// Zeitraum, die der Vermieter zuordnet. `overrides`: Jahreskorrekturen, die neu erfasst werden,
+// je Mietverhältnis mit den Zeiträumen, für die gefragt wird. `assessments`: Belegauswertungen,
+// deren gewählter Zeitraum entfällt.
+export type PeriodChangePreview = {
+  rules: PeriodRules
+  periods: { key: PeriodKey; label: string; short: boolean }[]
+  newShort: { key: PeriodKey; label: string }[]
+  blocked: string[]
+  moves: { costItemId: string; description: string; amountCents: number; parts: { period: PeriodKey; label: string; amountCents: number }[] }[]
+  groups: { from: PeriodKey; fromLabel: string; items: { costItemId: string; description: string; amountCents: number }[]; options: { key: PeriodKey; label: string }[]; suggested: PeriodKey }[]
+  overrides: { tenancyId: string; tenantName: string; from: { key: PeriodKey; label: string; cents: number }[]; ask: { period: PeriodKey; label: string; months: string }[] }[]
+  assessments: { assessmentId: string; file: string; from: PeriodKey; to: PeriodKey; toLabel: string }[]
+  // Das Jahr der Zahlung (Entwurf 3.10) je Position und Zeitraum über zwei Kalenderjahre, in den sie
+  // gelangt (Durchsicht von #226, I1, M4). `key` ist 'Kennung|Zeitraum'; vorbelegt mit dem bisherigen
+  // Jahr, in die erlaubte Spanne geklemmt. Bei einer Gruppe steht je wählbarem Zeitraum ein Eintrag.
+  taxYears: { key: string; costItemId: string; description: string; period: PeriodKey; label: string; suggested: number; options: number[] }[]
+  // Die Marke dieser Vorschau (M2): Stimmt sie beim Wechsel nicht mehr, hat sich der Bestand
+  // inzwischen geändert, und der Server antwortet mit 409 und der neuen Vorschau.
+  token: string
+}
+
+// Die Antworten zur Vorschau: je Gruppe (bisheriger Zeitraum) der neue Zeitraum; je
+// Mietverhältnis und gefragtem Zeitraum der tatsächlich gezahlte Betrag in Cent, `null` heißt
+// „keine Korrektur, es gilt die Staffel“. Eine fehlende Antwort ist keine Antwort (409).
+export type PeriodChangeAnswers = {
+  groups?: Record<string, string>
+  overrides?: Record<string, Record<string, number | null>>
+  // Das Jahr der Zahlung je Eintrag aus `taxYears`; fehlt es, gilt der Vorschlag.
+  taxYears?: Record<string, number>
+  token?: string
 }
 
 export type Settings = {
@@ -642,8 +709,10 @@ export type TaxReport = {
     // der Unterschied ist gewollt: Die Abrechnung muss die tatsächlich geleisteten
     // Vorauszahlungen einstellen (§ 556 BGB, ständige Rechtsprechung des BGH), und sie verteilt
     // nur über Wohnungen, die zur Abrechnungseinheit gehören. Die Übersicht führt beide, damit
-    // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70).
-    prepaymentSettlementCents: number
+    // der Unterschied dasteht, statt dass jeder Nutzer ihn selbst herleitet (#70). `null`, wenn
+    // kein Abrechnungszeitraum dem Kalenderjahr gleicht (#208, Entwurf 3.10): Eine Zahl aus zwei
+    // halben Abrechnungen wäre eine erfundene.
+    prepaymentSettlementCents: number | null
     // **Setzt die Abrechnung eine Jahreskorrektur an?** Bewusst nicht „ist eine erfasst“: Eine
     // Korrektur auf einem Mietverhältnis außerhalb der Abrechnungseinheit ist erfasst, geht aber
     // in keine Abrechnung ein. Gelesen wird deshalb dieselbe Quelle wie bei der Zahl darüber.
@@ -668,6 +737,9 @@ export type TaxReport = {
     // Jede Position mit ihrer Aufteilung, in der Reihenfolge der Erfassung (#163)
     items: TaxExpenseItem[]
   }
+  // Die Abrechnungen, aus denen die Eigenanteile stammen (#208): bei einem Kalenderobjekt die des
+  // Jahres, bei Mai bis April die beiden, die das Jahr berühren.
+  settlementPeriods: { key: PeriodKey; label: string }[]
   // Hatte eine selbstgenutzte Einheit im Jahr ein Mietverhältnis? Dann ist die Aufteilung nach
   // Fläche nicht nach Tagen gerechnet (#163).
   selfUseChangedInYear: boolean
@@ -903,6 +975,10 @@ export type AssessmentView = StoredAssessment & {
   // Hat die Auswertung noch offene Zeilen?
   open: boolean
   sumWarning: string | null
+  // Der Zeitraum, in den die Auswertung bucht, und seine Bezeichnung (#208, `bookingPeriod`).
+  // Optional, weil Testattrappen und ältere Antworten ihn nicht tragen.
+  targetPeriod?: PeriodKey
+  targetLabel?: string
 }
 
 // Je Position, die eine Buchung anlegt (`costItemId: null`) oder ändert: Betrag und Lohnanteil

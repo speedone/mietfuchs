@@ -398,10 +398,12 @@ test('Die Verschmelzung erreicht jede Spalte des Schemas', async () => {
     {
       coll: 'costItems', table: costItems,
       body: {
-        propertyId: 'objekt-1', period: '2024-01', category: 'Müll', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
+        propertyId: 'objekt-1', period: '2024-01', category: 'Heizung und Warmwasser', description: 'Gebühren', vendor: 'Firma', amountCents: 12000,
         // Drei Spalten, ein Wert im Modell (#94); verglichen wird er unten eigens.
         externalBasis: { measure: 'mea', total: 10000, totalCents: 1000000 },
         key: 'direct', directUnitId: 'u1', meterType: 'kaltwasser', labor35aCents: 400, invoiceFile: 'b.pdf',
+        // #208: Leistungszeitraum im Jahr der Position, das Jahr der Zahlung ist dann dieses.
+        serviceFrom: '2024-01-01', serviceTo: '2024-12-31', taxYear: 2024, heatingPart: 'fuel',
       },
     },
     {

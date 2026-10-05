@@ -51,7 +51,7 @@ describe('Kopfzeile der Abrechnung: Personen (#142)', () => {
 
 describe('Grundlage der Kosten (#142)', () => {
   test('kein Abflussprinzip mehr, sondern die Kosten des Abrechnungsjahres', () => {
-    expect(costBasisText(2025)).toBe('Abgerechnet werden die Kosten des Abrechnungsjahres 2025.')
-    expect(costBasisText(2025)).not.toMatch(/Abfluss/)
+    expect(costBasisText('2025')).toBe('Abgerechnet werden die Kosten des Abrechnungsjahres 2025.')
+    expect(costBasisText('2025')).not.toMatch(/Abfluss/)
   })
 })

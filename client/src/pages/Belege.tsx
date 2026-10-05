@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { CostItem, UploadEntry, UploadInfo, Property, Settlement } from '../types'
+import type { BillingPeriod, CostItem, PeriodRules, UploadEntry, UploadInfo, Property, Settlement } from '../types'
 import { withProperty, useProperty } from '../property'
-import { useYear, YEAR_OPTIONS } from '../year'
+import { usePeriod } from '../period'
+import { labelOfKey } from '../periodForm'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
 import { closedPeriodNotice } from '../../../shared/costItem.ts'
-// Brücke Kalenderjahr (#208): bis PR 3. Der Belegordner gliedert nach Kalenderjahren.
-import { calendarPeriod, startYearOf } from '../../../shared/period.ts'
+// Der Belegordner gliedert nach Kalenderjahren, denn Belege tragen Kalenderjahre (#208, Entwurf
+// 5.2: `uploads.year` bleibt). Die Mappe für Mieter gehört dagegen zu einer Abrechnung, also zu
+// einem Zeitraum des Objekts.
+import { isCalendarRules, periodContaining, periodLabel, periodsBetween, rulesOf, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
@@ -82,10 +85,17 @@ async function downloadTenantFolder(plan: TenantFolderPlan, meta: FolderMeta): P
 
 const fileLabel = (s: string) => s.normalize('NFC').replace(/[^\w\-äöüÄÖÜß]+/g, '-').replace(/^-+|-+$/g, '') || 'objekt'
 
-function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make }: {
+// Der Abrechnungszeitraum, den die Mappe eines Kalenderjahres meint (#208): der, der im Jahr
+// beginnt; beim Kalenderobjekt das Jahr selbst.
+function packPeriod(rules: PeriodRules, year: number): BillingPeriod {
+  return periodsBetween(rules, `${year}-01-01`, `${year}-12-31`).find((p) => p.from.startsWith(`${year}-`)) ?? periodContaining(rules, `${year}-01-01`)
+}
+
+function FolderPacks({ propertyId, propertyName, year, rules, uploads, costItems, make }: {
   propertyId: string
   propertyName: string
   year: number
+  rules: PeriodRules
   uploads: UploadInfo[]
   costItems: CostItem[]
   make: (plan: TenantFolderPlan, meta: FolderMeta) => Promise<string[] | void>
@@ -96,19 +106,22 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
   const toast = useToast()
+  const period = packPeriod(rules, year)
+  const label = periodLabel(period)
+  const param = isCalendarRules(rules) ? String(year) : period.key
 
   useEffect(() => {
     if (!open) return
     let live = true
     setSettlement(null)
-    api<Settlement>(withProperty(`/api/settlement/${year}`, propertyId))
+    api<Settlement>(withProperty(`/api/settlement/${param}`, propertyId))
       .then((st) => { if (live) setSettlement(st) }, (e) => { if (live) setProblem(errorText(e)) })
     return () => { live = false }
-  }, [open, year, propertyId])
+  }, [open, param, propertyId])
 
   const plan = useMemo(
-    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === calendarPeriod(year)), uploads, { includeIndividual }) : null),
-    [settlement, costItems, uploads, includeIndividual, propertyId, year],
+    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === period.key), uploads, { includeIndividual }) : null),
+    [settlement, costItems, uploads, includeIndividual, propertyId, period.key],
   )
   const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
   const individual = plan?.entries.filter((e) => isIndividualAmounts(e.item) && e.upload).length ?? 0
@@ -119,9 +132,9 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
     setProblem('')
     try {
       const unreadable = await make(plan, {
-        title: `Belegmappe ${year}`,
+        title: `Belegmappe ${label}`,
         subtitle: propertyName,
-        fileName: `belegmappe-${year}-${fileLabel(propertyName)}.pdf`,
+        fileName: `belegmappe-${label.replace(/[^\d-]+/g, '-').replace(/^-+|-+$/g, '')}-${fileLabel(propertyName)}.pdf`,
       })
       toast('Die Belegmappe ist erstellt.')
       if (unreadable && unreadable.length > 0) {
@@ -200,7 +213,7 @@ type Props = {
 export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onContinue, onOpenItem, makeTenantFolder = downloadTenantFolder }: Props) {
   const toast = useToast()
   const confirm = useConfirm()
-  const { year: currentYear } = useYear()
+  const { year: currentYear, calendarYearOptions } = usePeriod()
   const { property, properties } = useProperty()
   const [uploads, setUploads] = useState<UploadEntry[]>([])
   const [costItems, setCostItems] = useState<CostItem[]>([])
@@ -257,8 +270,8 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const packProperty = filter.propertyId !== 'all' ? filter.propertyId : properties.length === 1 ? properties[0]?.id ?? null : null
   // Die Jahre der Auswahl: die üblichen, dazu jedes Jahr, in dem es Positionen gibt
   const yearOptions = useMemo(
-    () => [...new Set([...YEAR_OPTIONS, currentYear, ...costItems.map((c) => startYearOf(c.period))])].sort((a, b) => b - a),
-    [costItems, currentYear],
+    () => [...new Set([...calendarYearOptions, currentYear, ...costItems.map((c) => startYearOf(c.period))])].sort((a, b) => b - a),
+    [costItems, currentYear, calendarYearOptions],
   )
 
   // Belegabdeckung (#170): je Objekt der Auswahl, bei „alle Objekte“ also eine Zeile je Objekt
@@ -278,7 +291,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
     // nur der Satz; das Zuordnen ist schon gespeichert.
     try {
-      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${startYearOf(c.period)}`, c.propertyId))
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${c.period}`, c.propertyId))
       if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
     } catch { /* ohne Auskunft kein Satz */ }
   }
@@ -484,7 +497,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       {amountCheck && (
         <div className="notice no-print" role="status" aria-label="Betrag prüfen">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
-          {amountCheck.closed && <div>{closedPeriodNotice(String(startYearOf(amountCheck.item.period)))}</div>}
+          {amountCheck.closed && <div>{closedPeriodNotice(labelOfKey(rulesOf(properties.find((p) => p.id === amountCheck.item.propertyId)), amountCheck.item.period))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}
@@ -600,6 +613,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           propertyId={packProperty}
           propertyName={propertyName(packProperty)}
           year={filter.year}
+          rules={rulesOf(properties.find((p) => p.id === packProperty))}
           uploads={uploads}
           costItems={costItems}
           make={makeTenantFolder}

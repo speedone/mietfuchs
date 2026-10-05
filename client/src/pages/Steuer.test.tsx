@@ -21,11 +21,11 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Property, PropertyKind, TaxExpenseItem, TaxReport } from '../types'
 import { TAX_HINTS, type Basis, type TaxHint } from '../taxView'
-import { YearProvider } from '../year'
+import { PeriodProvider } from '../period'
 import { PropertyProvider } from '../property'
 import Steuer from './Steuer'
 
-// Dasselbe Jahr, das der YearProvider von sich aus wählt. Eine feste Jahreszahl wäre eine
+// Dasselbe Jahr, das der PeriodProvider von sich aus wählt. Eine feste Jahreszahl wäre eine
 // Zeitbombe: Der erste Entwurf prüfte auf „Die Abrechnung 2025", und das wäre am 1. Januar 2027
 // von selbst rot geworden, ohne dass jemand Code anfasst.
 const JAHR = new Date().getFullYear() - 1
@@ -59,6 +59,7 @@ const REPORT = (over: Partial<TaxReport> = {}, income: Partial<TaxReport['income
   surplusSollCents: 1200000,
   surplusPaidCents: 1200000,
   costModels: { tenancies: 1, inclusive: 0, partlyInclusive: 0, flatRate: 0 },
+  settlementPeriods: [],
   ...over,
 })
 
@@ -92,11 +93,11 @@ const zeige = async (report: TaxReport, basis: Basis = 'ist', kind?: PropertyKin
   vi.stubGlobal('fetch', async (url: string) =>
     new Response(JSON.stringify(url === '/api/properties' ? properties : report), { status: 200, headers: { 'content-type': 'application/json' } }))
   render(
-    <YearProvider>
+    <PeriodProvider>
       <PropertyProvider>
         <Steuer settings={null} />
       </PropertyProvider>
-    </YearProvider>,
+    </PeriodProvider>,
   )
   await waitFor(() => expect(screen.getByText(/Angesetzte Einnahmen/i)).toBeTruthy())
   if (basis === 'soll') {

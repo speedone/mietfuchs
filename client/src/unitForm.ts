@@ -2,9 +2,9 @@
 // Kennzeichen `participates` und `selfUsed` werden immer gemeinsam geschrieben, damit keine
 // widersprüchliche Kombination entstehen kann (siehe UnitUsage in types.ts).
 import { parseNumberDe } from './numbers'
-import type { CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
+import type { BillingPeriod, CostItem, Meter, MeterType, Tenancy, Unit, UnitDependents, UnitUsage } from './types'
 import { isNotAllocable, usageOf } from './types'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarYearPeriod } from '../../shared/period.ts'
 
 export type UnitForm = {
   id?: string
@@ -104,9 +104,11 @@ export function zeroAreaUnits(units: Unit[], garageLikeUnitIds: string[] | undef
 // ausdrücklich 0 eigenen Personen, und dann steht sie nicht in `missing`.
 // Gibt es eine Position nach Fläche, an der die leere Einheit teilnimmt, warnt die Abrechnung
 // trotzdem (`basis.unit-no-area`, #135); das sagt der Text dann vorab, statt sich zu widersprechen.
-export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: number, yearItems: CostItem[] = []): { cta: string, detail: string } {
-  const from = `${year}-01-01`
-  const to = `${year}-12-31`
+// `period`: der gewählte Abrechnungszeitraum (#208); eine Jahreszahl ist das Kalenderjahr.
+export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], period: number | BillingPeriod, yearItems: CostItem[] = []): { cta: string, detail: string } {
+  const span = typeof period === 'number' ? calendarYearPeriod(period) : period
+  const from = span.from
+  const to = span.to
   const inhabited = (u: Unit) => (u.selfUsed && !u.participates)
     || tenancies.some((t) => t.unitId === u.id && t.start <= to && (!t.end || t.end >= from))
   const known = missing.filter(inhabited)
@@ -116,8 +118,7 @@ export function missingAreaCheck(missing: Unit[], tenancies: Tenancy[], year: nu
   if (empty.length > 0) {
     const names = empty.map((u) => u.name)
     const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} und ${names[names.length - 1]}` : names[0]
-    // Brücke Kalenderjahr (#208): bis PR 3
-    const byArea = yearItems.some((c) => c.period === calendarPeriod(year) && c.key === 'area' && !isNotAllocable(c.category) &&
+    const byArea = yearItems.some((c) => c.period === span.key && c.key === 'area' && !isNotAllocable(c.category) &&
       empty.some((u) => u.participates && (!c.participantUnitIds || c.participantUnitIds.includes(u.id))))
     parts.push((empty.length === 1
       ? `${list} hat 0 m² und im Jahr keine Bewohner. Ist ${list} eine Wohnung, tragen Sie die Wohnfläche ein; eine Garage oder ein Stellplatz bleibt bei 0 m².`

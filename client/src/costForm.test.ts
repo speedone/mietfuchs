@@ -1,9 +1,14 @@
 import { describe, expect, test } from 'vitest'
-import { calendarPeriod } from '../../shared/period.ts'
-import type { CostKey, Meter, MeterType, Unit } from './types'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
+import { euro } from '../../shared/costItem.ts'
+import type { CostKey, Meter, MeterType, SplitPreviewPart, Unit } from './types'
 import { KEY_LABELS, matchCategory } from './types'
 import {
   EMPTY_ITEM_FORM,
+  needsSplitCheck,
+  splitDecision,
+  showsTaxYear,
+  taxYearOptions,
   sameCostOf,
   amountProblem,
   buildCostItemBody,
@@ -569,4 +574,82 @@ describe('Rückfrage nach derselben Rechnung', () => {
     expect(sameCostOf([rechnung], body(-5745), 'p', 2026)).toEqual([])
     expect(sameCostOf([rechnung, gutschrift], body(84000), 'p', 2026).map((i) => i.id)).toEqual(['r'])
   })
+})
+
+describe('Leistungszeitraum, Jahr der Zahlung, Brennstoff (#208)', () => {
+  const units = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const form = (over: Partial<ItemForm>): ItemForm => ({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Grundsteuer 2025', amount: '480,00', ...over })
+
+  test('der Rumpf trägt Leistungszeitraum, Jahr der Zahlung und Brennstoffmerkmal', () => {
+    const built = buildCostItemBody(form({ serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: '2025' }), units, 2025)
+    if ('error' in built) return expect.unreachable(built.error)
+    expect([built.body.serviceFrom, built.body.serviceTo, built.body.taxYear, built.body.heatingPart]).toEqual(['2025-01-01', '2025-12-31', 2025, null])
+    const leer = buildCostItemBody(form({}), units, 2025)
+    if ('error' in leer) return expect.unreachable(leer.error)
+    expect([leer.body.serviceFrom, leer.body.serviceTo, leer.body.taxYear]).toEqual([null, null, null])
+  })
+
+  test('Leistungszeitraum: beide oder keines, Beginn nicht nach dem Ende', () => {
+    expect(buildCostItemBody(form({ serviceFrom: '2025-01-01' }), units, 2025)).toEqual({ error: 'Für „Grundsteuer 2025“ fehlt ein Ende des Leistungszeitraums. Bitte tragen Sie Beginn und Ende ein oder lassen Sie beide leer.' })
+    expect(buildCostItemBody(form({ serviceFrom: '2025-12-31', serviceTo: '2025-01-01' }), units, 2025)).toEqual({ error: 'Der Leistungszeitraum von „Grundsteuer 2025“ endet vor seinem Beginn.' })
+  })
+
+  test('Brennstoff/Energie nur bei Heizkosten; bei anderer Kostenart fällt es weg', () => {
+    const heiz = buildCostItemBody(form({ category: 'Heizung und Warmwasser', description: 'Gas', key: 'area', heatingFuel: true }), units, 2025)
+    if ('error' in heiz) return expect.unreachable(heiz.error)
+    expect(heiz.body.heatingPart).toBe('fuel')
+    const kalt = buildCostItemBody(form({ heatingFuel: true }), units, 2025)
+    if ('error' in kalt) return expect.unreachable(kalt.error)
+    expect(kalt.body.heatingPart).toBeNull()
+  })
+
+  test('Aufteilen nur bei kalten Kosten mit Leistungszeitraum', () => {
+    const built = buildCostItemBody(form({ serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }), units, 2025)
+    if ('error' in built) return expect.unreachable(built.error)
+    expect(needsSplitCheck(built.body)).toBe(true)
+    expect(needsSplitCheck({ ...built.body, category: 'Heizung und Warmwasser' })).toBe(false)
+    expect(needsSplitCheck({ ...built.body, serviceFrom: null, serviceTo: null })).toBe(false)
+  })
+
+  test('Die Rückfrage nennt die Beträge je Zeitraum; ohne Jahr der Zahlung oder bei Abschluss eine Meldung', () => {
+    const parts: SplitPreviewPart[] = [
+      { period: periodKey('2025-01'), label: '01.01.–30.04.2025', days: 120, amountCents: 15781, labor35aCents: null, description: 'G', needsTaxYear: false, closed: false },
+      { period: periodKey('2025-05'), label: '2025/2026', days: 245, amountCents: 32219, labor35aCents: null, description: 'G', needsTaxYear: true, closed: false },
+    ]
+    // `euro` setzt vor das Eurozeichen ein geschütztes Leerzeichen; die Erwartung nimmt es deshalb von dort.
+    expect(splitDecision(parts, '2025')).toEqual({ message: `Die Rechnung betrifft 2 Abrechnungszeiträume. Mietfuchs legt je Zeitraum eine Position an: 01.01.–30.04.2025: ${euro(15781)}, 2025/2026: ${euro(32219)}.` })
+    expect(euro(15781).replace('\u00a0', ' ')).toBe('157,81 €')
+    expect(splitDecision(parts, '')).toEqual({ error: 'Bitte wählen Sie das Jahr der Zahlung (für die Steuer): Ein Teil der Rechnung gehört in den Zeitraum 2025/2026, der über zwei Kalenderjahre reicht.', needsTaxYear: true })
+    const [rumpf, voll] = parts
+    if (!rumpf || !voll) return expect.unreachable('zwei Teile gebaut')
+    expect(splitDecision([{ ...rumpf, closed: true }, voll], '2025')).toEqual({ error: 'Die Abrechnung 01.01.–30.04.2025 ist abgeschlossen. Öffnen Sie sie wieder, wenn die Rechnung anteilig hinein soll.', needsTaxYear: false })
+  })
+
+  test('Jahr der Zahlung: nur bei zwei Kalenderjahren, Auswahl vom Beginn bis ein Jahr nach dem Ende', () => {
+    expect(showsTaxYear({ from: '2025-05-01', to: '2026-04-30' }, false)).toBe(true)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, false)).toBe(false)
+    expect(showsTaxYear({ from: '2025-01-01', to: '2025-12-31' }, true)).toBe(true)
+    expect(taxYearOptions(2025)).toEqual([2025, 2026, 2027])
+  })
+})
+
+test('Ein schon aufgeteilter Teil, dessen Leistungszeitraum und Zeitraum bleiben, wird nicht erneut aufgeteilt (#208)', () => {
+  // Jeder Teil trägt den ganzen Leistungszeitraum der Rechnung. Wer nur den Betrag berichtigt, soll
+  // nicht ein zweites Mal gefragt werden; der Server nimmt die unveränderte Position ohnehin an.
+  const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Grundsteuer 2025 (anteilig 01.01.–30.04.2025)', amount: '157,81', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Grundsteuer' }
+  expect(needsSplitCheck(built.body, before)).toBe(false)
+  expect(needsSplitCheck(built.body, { ...before, serviceTo: '2025-06-30' })).toBe(true)
+  expect(needsSplitCheck(built.body, { ...before, period: periodKey('2024-01') })).toBe(true)
+})
+
+test('Eine Heizposition, die zur kalten wird, geht durch die Rückfrage zum Aufteilen (Nachprüfung von #226)', () => {
+  const units: Unit[] = [{ id: 'u1', propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true }]
+  const built = buildCostItemBody({ ...EMPTY_ITEM_FORM, category: 'Grundsteuer', description: 'Wartung', amount: '1000,00', serviceFrom: '2025-01-01', serviceTo: '2025-12-31' }, units, 2025)
+  if ('error' in built) return expect.unreachable(built.error)
+  const before = { serviceFrom: '2025-01-01', serviceTo: '2025-12-31', period: calendarPeriod(2025), category: 'Heizung und Warmwasser' }
+  expect(needsSplitCheck(built.body, before)).toBe(true)
+  expect(needsSplitCheck(built.body, { ...before, category: 'Grundsteuer' })).toBe(false)
 })
