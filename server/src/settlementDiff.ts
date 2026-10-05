@@ -12,7 +12,7 @@ import type { AppliedValue, LawValueChange, SettlementComparison, SettlementDevi
 
 type Saldo = { tenancyId: string, tenantName: string, unitName: string, balanceCents: number }
 type Current = { statements: Saldo[], legalBasis?: { values?: readonly AppliedValue[] } }
-type FrozenValue = { id: string, title: string, text: string, value: unknown }
+type FrozenValue = { id: string, title: string, text: string, value: unknown, validFrom: string | undefined }
 
 // Die eingefrorenen Rechtswerte (Heizung PR 1). Fehlt das Feld, wurde vor 0.11.0 abgeschlossen;
 // dann gibt es nichts zu vergleichen. Ein Eintrag, der sich nicht lesen lässt, fällt weg, statt
@@ -28,15 +28,21 @@ function readValues(value: unknown): FrozenValue[] {
     const id = Reflect.get(v, 'id')
     const title = Reflect.get(v, 'title')
     const text = Reflect.get(v, 'text')
-    return typeof id === 'string' && typeof title === 'string' && typeof text === 'string' ? [{ id, title, text, value: Reflect.get(v, 'value') }] : []
+    const validFrom = Reflect.get(v, 'validFrom')
+    return typeof id === 'string' && typeof title === 'string' && typeof text === 'string'
+      ? [{ id, title, text, value: Reflect.get(v, 'value'), validFrom: typeof validFrom === 'string' ? validFrom : undefined }]
+      : []
   })
 }
 
 // Nur Werte, die auf beiden Seiten stehen und verschieden sind. Ein Wert, den nur eine Seite
-// benutzt, ist eine Folge geänderter Daten und keine Änderung des Rechts.
+// benutzt, ist eine Folge geänderter Daten und keine Änderung des Rechts. Zugeordnet wird je
+// Fassung, also nach Kennung und Beginn: Ein Zeitraum über eine Grenze benutzt zwei Fassungen
+// desselben Werts, und die zweite eingefrorene ist nicht mit der ersten heutigen zu vergleichen
+// (Durchsicht von #221, M1).
 function valueChanges(frozen: FrozenValue[], current: readonly AppliedValue[]): LawValueChange[] {
   return frozen.flatMap((f) => {
-    const now = current.find((c) => c.id === f.id)
+    const now = current.find((c) => c.id === f.id && c.validFrom === f.validFrom)
     if (!now || JSON.stringify(now.value) === JSON.stringify(f.value)) return []
     return [{ id: f.id, title: f.title, frozenText: f.text, currentText: now.text }]
   })
