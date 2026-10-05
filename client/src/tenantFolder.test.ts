@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../shared/period.ts'
 import { PDFDocument } from 'pdf-lib'
 import type { CostItem, Settlement, SettlementRow, UploadInfo } from './types'
 import type { ReceiptUpload } from './receipts'
@@ -16,7 +16,7 @@ const row = (costItemId: string, category = 'Grundsteuer'): SettlementRow => ({
   costItemId, category, description: costItemId, totalCents: 10000, keyLabel: '', shareCents: 5000,
 })
 const settlement = (statements: string[][], landlord: string[] = []): Settlement => ({
-  year: 2025, daysInYear: 365, selfUsedShareCents: 0, totalCostsCents: 0, warnings: [], closed: null,
+  year: 2025, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(2025)), deadline: '2026-12-31', selfUsedShareCents: 0, totalCostsCents: 0, warnings: [], closed: null,
   landlord: { rows: landlord.map((id) => row(id)), totalCents: 0 },
   statements: statements.map((ids, i) => ({
     tenancyId: `t${i}`, unitId: `u${i}`, tenantName: `Mieter ${i}`, unitName: `W${i}`, persons: 1, days: 365, personDays: 365,

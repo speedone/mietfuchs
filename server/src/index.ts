@@ -15,7 +15,7 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, isCalendarRules, rulesOf, startYearOf } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, isCalendarRules, rulesOf, startYearOf } from '../../shared/period.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -473,10 +473,10 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), year, today())
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, calendarYearPeriod(year)), { asOf: today() }), year, today())
     return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
-  res.json({ ...computeSettlement(snapshotFor(stock, property, year), { asOf: today() }), closed: null })
+  res.json({ ...computeSettlement(snapshotFor(stock, property, calendarYearPeriod(year)), { asOf: today() }), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -518,7 +518,7 @@ app.post('/api/settlement/:year/close', async (req, res) => {
       period: calendarPeriod(year),
       closedAt: new Date().toISOString(),
       sentAt,
-      settlement: computeSettlement(snapshotFor(await readStock(db), property, year), { asOf: today() }),
+      settlement: computeSettlement(snapshotFor(await readStock(db), property, calendarYearPeriod(year)), { asOf: today() }),
     })
     return false
   })
@@ -558,21 +558,21 @@ app.delete('/api/settlement/:year/close', async (req, res) => {
 app.get('/api/consumption/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => consumptionOverview(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
+  res.json(await readData(async (db) => consumptionOverview(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)))))
 })
 
 // Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), year), { asOf: today() })))
+  res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)), { asOf: today() })))
 })
 
 // Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => taxReport(snapshotFor(await readStock(db), await propertyOf(db, req), year))))
+  res.json(await readData(async (db) => taxReport(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)))))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -1146,7 +1146,7 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
     const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)
     // Privat und abziehbar je Position aus derselben Rechnung wie die Steuerübersicht (#163)
-    const split = new Map(taxReport(snapshotFor(whole, propertyId, year)).expenses.items.map((i) => [i.costItemId, i]))
+    const split = new Map(taxReport(snapshotFor(whole, propertyId, calendarYearPeriod(year))).expenses.items.map((i) => [i.costItemId, i]))
     // Die Steuer rechnet im Kalenderjahr (#208).
     return { items: stock.costItems.filter((c) => c.period === calendarPeriod(year)), property, rows: await uploadRows(db), links: await uploadLinks(db), split }
   })

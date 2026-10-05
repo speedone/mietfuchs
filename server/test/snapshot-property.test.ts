@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { narrowToProperty, snapshotFor, snapshotOf, type PropertyScopedSource } from '../src/snapshot.ts'
-import { calendarPeriod } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod } from '../../shared/period.ts'
 
 const tenancy = (id: string, unitId: string) => ({
   id, unitId, tenantName: id, persons: 1, personHistory: [], start: '2024-01-01', end: null,
@@ -62,7 +62,7 @@ test('Objekt: was erbt, folgt seiner Wurzel', () => {
 })
 
 test('Objekt: der Abschluss desselben Jahres im anderen Objekt gilt nicht', () => {
-  const snapshot = snapshotFor(source, 'A', 2024)
+  const snapshot = snapshotFor(source, 'A', calendarYearPeriod(2024))
   assert.deepEqual(snapshot.closedSettlement, { selfUsedShareCents: 1, prepaymentCents: 10, prepaymentOverridden: false, selfUseByItem: null, itemTotals: null })
   assert.equal(snapshot.propertyId, 'A')
 })

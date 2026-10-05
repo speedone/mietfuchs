@@ -2,7 +2,7 @@
 // „Hier beheben →“ führt zum Eintrag, nicht nur zur Seite (#142). Die Abrechnung reicht den
 // betroffenen Eintrag mit; die Zielseite öffnet ihn, sobald er geladen ist, und meldet das zurück,
 // damit ein späterer Besuch der Seite nicht noch einmal etwas aufklappt.
-import { calendarPeriod } from '../../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -44,7 +44,7 @@ const ledgerRow = (id: string, name: string) => ({
 })
 const LEDGER: RentLedger = { year: YEAR, rows: [ledgerRow('t1', 'Meier'), ledgerRow('t2', 'Schulz')], totals: { sollYearCents: 1200000, paidYearCents: 0, openCents: 1200000 } }
 const SETTLEMENT: Settlement = {
-  year: YEAR, daysInYear: 365, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 80000,
+  year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 80000,
   warnings: ['Müll B: Schlüssel prüfen'], notices: [{ code: 'x', level: 'warning', title: 'Schlüssel prüfen', text: 'Müll B: Schlüssel prüfen', subject: { kind: 'costItem', id: 'k2' } }],
   closed: null,
 }

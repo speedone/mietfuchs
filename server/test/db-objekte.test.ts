@@ -18,6 +18,7 @@ import { readStock as readStockAtBaseline } from '../src/legacy/read.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { snapshotFor, snapshotOf } from '../src/snapshot.ts'
 import { loadFixtures } from '../testing/fixtures.ts'
+import { calendarYearPeriod } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-objekte-'))
 
@@ -257,7 +258,7 @@ for (const fx of loadFixtures()) {
       applyMigrations(connection, migrations)
       const nachher = await readStock(connection.db)
       for (const year of [fx.year - 1, fx.year, fx.year + 1]) {
-        assert.deepEqual(results(snapshotFor(nachher, 'objekt-1', year)), results(snapshotOf(vorher, year)), `Jahr ${year}`)
+        assert.deepEqual(results(snapshotFor(nachher, 'objekt-1', calendarYearPeriod(year))), results(snapshotOf(vorher, year)), `Jahr ${year}`)
       }
       connection.close()
     } finally {

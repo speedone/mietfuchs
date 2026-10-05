@@ -9,7 +9,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
 import type { HistoryEntry } from '../settlementHistory'
-import { calendarPeriod } from '../../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 
 // Die Seite rendert ganz; unter Last braucht das mehr als die voreingestellten Zeiten.
 vi.setConfig({ testTimeout: 20000 })
@@ -34,7 +34,7 @@ let history: HistoryEntry[]
 
 beforeEach(() => {
   settlement = {
-    year: YEAR, daysInYear: daysIn(YEAR), statements: [STATEMENT], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
+    year: YEAR, daysInYear: daysIn(YEAR), period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [STATEMENT], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
     totalCostsCents: 60000, warnings: [], notices: [], closed: null,
   }
   history = []

@@ -508,8 +508,16 @@ export type AppliedValue = {
 export type LegalBasis = { asOf: string; rules: AppliedRule[]; values?: AppliedValue[] }
 
 export type Settlement = {
+  // Kalenderjahr, in dem der Abrechnungszeitraum beginnt (#208); bei einem Kalenderobjekt das
+  // Abrechnungsjahr wie bisher.
   year: number
+  // Tage des Abrechnungszeitraums (#208). Der Name stammt aus der Zeit, als jeder Zeitraum ein Jahr
+  // war; ältere Tabs lesen ihn.
   daysInYear: number
+  // Der Abrechnungszeitraum und das Ende der Frist nach § 556 Abs. 3 S. 2 BGB (#208). Eine vorher
+  // abgeschlossene Abrechnung kennt beide nicht; die Route ergänzt sie aus dem Zeitraum.
+  period: SettlementPeriod
+  deadline: string
   statements: Statement[]
   landlord: { rows: SettlementRow[]; totalCents: number }
   // im Vermieteranteil enthaltener Eigenanteil selbstgenutzter Wohnungen

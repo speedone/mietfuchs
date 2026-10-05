@@ -3,7 +3,7 @@
 // Vorauszahlung. Cockpit und Kostenvergleich kündigten das als „voraussichtliches Guthaben“ an,
 // und der Vergleich zeigte bei jeder Kostenart „−100 %“. Beides ist keine Auskunft, sondern die
 // Folge davon, dass noch nichts erfasst ist.
-import { calendarPeriod } from '../../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
@@ -24,7 +24,7 @@ const VORJAHR: CostItem[] = [
   { id: 'k2', propertyId: 'objekt-1', period: calendarPeriod(YEAR - 1), category: 'Müllabfuhr', description: 'Müll', amountCents: 30000, key: 'units' },
 ]
 const settlementOhneKosten: Settlement = {
-  year: YEAR, daysInYear: 365, landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 0, warnings: [], notices: [], closed: null,
+  year: YEAR, daysInYear: 365, period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0, totalCostsCents: 0, warnings: [], notices: [], closed: null,
   statements: [{
     tenancyId: 't1', unitId: 'u1', tenantName: 'Meier', unitName: 'EG', persons: 1, days: 365, personDays: 365, periodStart: `${YEAR}-01-01`, periodEnd: `${YEAR}-12-31`,
     rows: [], totalShareCents: 0, total35aCents: 0, prepaymentCents: 240000, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: 240000,

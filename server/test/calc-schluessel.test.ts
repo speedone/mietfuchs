@@ -1,7 +1,7 @@
 // Umlageschlüssel gegenüber dem Vorjahr (#141): Weicht eine Position vom Schlüssel derselben
 // Kostenart im Vorjahr ab, sagt die Abrechnung es als Hinweis. Keine Zahl ändert sich.
 
-import { calendarPeriod, startYearOf } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, startYearOf } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement } from '../src/calc.ts'
@@ -97,10 +97,10 @@ test('Objekte: das Vorjahr eines anderen Objekts zählt nicht (#92)', () => {
     ],
     meters: [], readings: [], payments: [], closedSettlements: [],
   }
-  const notices = computeSettlement(snapshotFor(scoped, 'a', 2026)).notices
+  const notices = computeSettlement(snapshotFor(scoped, 'a', calendarYearPeriod(2026))).notices
   assert.equal(notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 0)
   const sameHouse = { ...scoped, costItems: scoped.costItems.map((c) => ({ ...c, propertyId: 'a' })) }
-  assert.equal(computeSettlement(snapshotFor(sameHouse, 'a', 2026)).notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 1)
+  assert.equal(computeSettlement(snapshotFor(sameHouse, 'a', calendarYearPeriod(2026))).notices.filter((n) => n.code === 'key.changed-from-previous-year').length, 1)
 })
 
 test('Durchsicht: Teilnehmer, die heute alle Wohnungen sind, gelten als alle (Wohnung inzwischen weg)', () => {

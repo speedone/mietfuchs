@@ -2,6 +2,7 @@
 // Alle Beträge werden in Cent (Integer) gerechnet, um Gleitkomma-Fehler zu vermeiden.
 import type {
   AppliedValue,
+  BillingPeriod,
   CalcStep,
   CostKey,
   CostModel,
@@ -43,7 +44,7 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { calendarContext, calendarPeriod, type PeriodContext } from '../../shared/period.ts'
+import { calendarYearPeriod, contextOf, periodDays, periodLabel, periodMonths, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
 import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
@@ -453,10 +454,9 @@ export type ConsumptionOverviewRow = {
   warnings: string[]
 }
 
-// Jahresübersicht für die Zähler-Seite: Verbrauch pro Zähler + Warnungen
+// Übersicht für die Zähler-Seite über den Zeitraum der Abrechnung (#208): Verbrauch pro Zähler + Warnungen
 export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[] {
-  const from = `${snapshot.year}-01-01`
-  const to = `${snapshot.year}-12-31`
+  const { from, to } = snapshot.period
   return snapshot.meters.map((m) => {
     const readings = snapshot.readings.filter((r) => r.meterId === m.id)
     const { notices, warnings } = meterSegments(readings)
@@ -472,13 +472,12 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 
 // ---------- Vorauszahlungen ----------
 
-// Vorauszahlungen eines Jahres: pro Kalendermonat zählt der Staffelbetrag, der am
-// Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine manuelle
-// Korrektur pro Jahr (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich
-// sind die tatsächlich geleisteten Vorauszahlungen anzusetzen.
-export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): { cents: number, overridden: boolean } {
-  // Die Jahreskorrektur steht unter dem Schlüssel des Zeitraums (#208).
-  const override = tenancy.prepaymentOverrides?.[calendarPeriod(year)]
+// Vorauszahlungen eines Abrechnungszeitraums (#208): pro Monat des Zeitraums zählt der
+// Staffelbetrag, der am Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine
+// Korrektur für den Zeitraum (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich sind
+// die tatsächlich geleisteten Vorauszahlungen anzusetzen.
+export function computePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean } {
+  const override = tenancy.prepaymentOverrides?.[period.key]
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
   // Migration in store.ts). Diese Funktion wird aber auch mit ungewanderten Altbeständen
@@ -493,12 +492,12 @@ export function computePrepaymentCents(tenancy: SnapshotTenancy, year: number): 
     .slice()
     .sort((a, b) => compareText(a.from, b.from))
   let cents = 0
-  for (let m = 1; m <= 12; m++) {
-    const firstDay = `${year}-${String(m).padStart(2, '0')}-01`
+  for (const month of periodMonths(period)) {
+    const firstDay = `${month}-01`
     if (tenancy.start > firstDay) continue
     if (tenancy.end && tenancy.end < firstDay) continue
     let rate = 0
-    for (const e of schedule) if (e.from <= firstDay.slice(0, 7)) rate = e.monthlyCents
+    for (const e of schedule) if (e.from <= month) rate = e.monthlyCents
     cents += rate
   }
   return { cents, overridden: false }
@@ -518,65 +517,58 @@ function rateAtMonth(schedule: MonthlySchedule[], firstMonth: string): number {
   return rate
 }
 
-// Monats-Mietkonto eines Jahres: pro Mietverhältnis Soll (Bruttomiete = Kaltmiete +
-// Vorauszahlung) je Monat, sowie die tatsächlich eingegangenen Zahlungen des Jahres.
-// Zahlungen werden den Monaten in Reihenfolge (Jan → Dez) zugeteilt: so spiegelt der
-// Status („bezahlt / teilweise / offen“) wider, bis zu welchem Monat das Konto gedeckt ist.
+// Die Monatsrechnung für Abrechnung und Mietkonto (#208): je Mietverhältnis das Soll je Monat
+// (Bruttomiete = Kaltmiete + Vorauszahlung + Pauschale) und die Zahlungen der Spanne, von vorn auf die
+// Monate verteilt; so spiegelt der Status („bezahlt / teilweise / offen“) wider, bis zu welchem Monat
+// das Konto gedeckt ist. Das Mietkonto ruft sie mit den zwölf Monaten des Kalenderjahres, die
+// Abrechnung mit den Monaten ihres Zeitraums: eine Monatsregel und nicht zwei. `month` ist der
+// Kalendermonat (1..12), in höchstens zwölf aufeinanderfolgenden Monaten also eindeutig.
+//
 // **Fällig ist nur, was vor dem Monat des Stichtags liegt** (#133). Die Miete ist bis zum dritten
 // Werktag fällig (§ 556b Abs. 1 BGB), und eine Überweisung braucht ein paar Tage, bis sie gebucht
 // ist; den laufenden Monat erst ab einem bestimmten Tag mitzuzählen, hinge an Wochenenden und
-// Feiertagen. Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts. Ohne
-// Stichtag (Steuer, Regression, Tests) gilt das ganze Jahr als fällig. Die Berechnung fragt nie
+// Feiertagen. Liegt der Stichtag nach der Spanne, ist alles fällig, liegt er davor, nichts. Ohne
+// Stichtag (Steuer, Regression, Tests) gilt die ganze Spanne als fällig. Die Berechnung fragt nie
 // selbst nach „heute“; die Routen reichen den Tag hinein.
-export function dueMonthsOf(year: number, asOf: string | undefined): number {
-  if (!asOf || asOf.slice(0, 4) > String(year)) return 12
-  return asOf.slice(0, 4) < String(year) ? 0 : Number(asOf.slice(5, 7)) - 1
-}
-
-// `asOf` wie bei der Abrechnung: Monate ab dem des Stichtags sind „noch nicht fällig“ und kein
-// Rückstand (zweite Browserabnahme). Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
-export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
-  const year = snapshot.year
-  const dueMonths = dueMonthsOf(year, options.asOf)
-  const yFrom = `${year}-01-01`
-  const yTo = `${year}-12-31`
-  const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
-  // Der Schnappschuss führt alle Zahlungen. Welche zum Jahr zählt, entscheidet das Mietkonto
-  // hier nach ihrem Datum, und diese Regel bleibt bewusst an dieser Stelle.
-  const payments = snapshot.payments
-
-  const rows: RentLedgerRow[] = snapshot.tenancies
-    .filter((t) => overlapDays(t.start, t.end, year) > 0)
+export function ledgerRows(
+  source: Pick<Snapshot, 'units' | 'tenancies' | 'payments'>,
+  span: Pick<BillingPeriod, 'from' | 'to'>,
+  options: { asOf?: string } = {},
+): RentLedgerRow[] {
+  const months = periodMonths(span)
+  const asOfMonth = options.asOf?.slice(0, 7)
+  const dueMonths = asOfMonth === undefined ? months.length : months.filter((m) => m < asOfMonth).length
+  const unitById = new Map(source.units.map((u) => [u.id, u]))
+  // Der Schnappschuss führt alle Zahlungen. Welche zur Spanne zählt, entscheidet diese Rechnung
+  // nach ihrem Datum, und diese Regel bleibt bewusst an dieser Stelle.
+  return source.tenancies
+    .filter((t) => rangeOverlapDays(t.start, t.end, span.from, span.to) > 0)
     .map((t) => {
       const baseSchedule: MonthlySchedule[] = Array.isArray(t.baseRents) ? t.baseRents : []
       const ppSchedule: MonthlySchedule[] = Array.isArray(t.prepayments) ? t.prepayments : []
       const flatSchedule: MonthlySchedule[] = Array.isArray(t.flatRates) ? t.flatRates : []
-
-      const months: RentMonth[] = []
-      for (let m = 1; m <= 12; m++) {
-        const mm = `${year}-${String(m).padStart(2, '0')}`
+      const rowMonths = months.map((mm): RentMonth => {
         const firstDay = `${mm}-01`
         const active = t.start <= firstDay && !(t.end && t.end < firstDay)
         const baseRentCents = active ? rateAtMonth(baseSchedule, mm) : 0
         const prepaymentCents = active ? rateAtMonth(ppSchedule, mm) : 0
         const flatRateCents = active ? rateAtMonth(flatSchedule, mm) : 0
-        months.push({
-          month: m,
+        return {
+          month: Number(mm.slice(5, 7)),
           baseRentCents,
           prepaymentCents,
           flatRateCents,
           sollCents: baseRentCents + prepaymentCents + flatRateCents,
           paidCents: 0,
           status: 'open',
-        })
-      }
-
-      // Zahlungseingänge des Jahres der Reihe nach auf die Monate verteilen
-      const paidYearCents = payments
-        .filter((p) => p.tenancyId === t.id && p.date >= yFrom && p.date <= yTo)
+        }
+      })
+      // Zahlungseingänge der Spanne der Reihe nach auf die Monate verteilen
+      const paidYearCents = source.payments
+        .filter((p) => p.tenancyId === t.id && p.date >= span.from && p.date <= span.to)
         .reduce((a, p) => a + p.amountCents, 0)
       let remaining = paidYearCents
-      for (const mo of months) {
+      for (const [k, mo] of rowMonths.entries()) {
         if (mo.sollCents <= 0) {
           // kein Soll → als gedeckt behandeln, kein Geld verbrauchen
           mo.status = 'paid'
@@ -585,35 +577,38 @@ export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}):
         const applied = Math.max(0, Math.min(remaining, mo.sollCents))
         mo.paidCents = applied
         remaining -= applied
-        mo.status = applied >= mo.sollCents ? 'paid' : mo.month > dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
+        mo.status = applied >= mo.sollCents ? 'paid' : k >= dueMonths ? 'notDue' : applied > 0 ? 'partial' : 'open'
       }
-
-      const sollYearCents = months.reduce((a, mo) => a + mo.sollCents, 0)
-      const baseRentYearCents = months.reduce((a, mo) => a + mo.baseRentCents, 0)
-      const prepaymentYearCents = months.reduce((a, mo) => a + mo.prepaymentCents, 0)
-      const flatRateYearCents = months.reduce((a, mo) => a + mo.flatRateCents, 0)
-      const dueSollCents = months.filter((mo) => mo.month <= dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
+      const sollYearCents = rowMonths.reduce((a, mo) => a + mo.sollCents, 0)
+      const dueSollCents = rowMonths.filter((_, k) => k < dueMonths).reduce((a, mo) => a + mo.sollCents, 0)
       return {
         tenancyId: t.id,
         tenantName: t.tenantName,
         unitName: unitById.get(t.unitId)?.name ?? '—',
-        months,
+        months: rowMonths,
         sollYearCents,
-        baseRentYearCents,
-        prepaymentYearCents,
-        flatRateYearCents,
+        baseRentYearCents: rowMonths.reduce((a, mo) => a + mo.baseRentCents, 0),
+        prepaymentYearCents: rowMonths.reduce((a, mo) => a + mo.prepaymentCents, 0),
+        flatRateYearCents: rowMonths.reduce((a, mo) => a + mo.flatRateCents, 0),
         paidYearCents,
         balanceCents: paidYearCents - sollYearCents,
         dueSollCents,
         arrearsCents: Math.max(0, dueSollCents - paidYearCents),
-        openMonths: months.filter((mo) => mo.status === 'open' || mo.status === 'partial').length,
+        openMonths: rowMonths.filter((mo) => mo.status === 'open' || mo.status === 'partial').length,
       }
     })
     // Eine Liste, die ein Mensch liest: deutsche Sortierung, fest eingestellt (siehe compareName).
     .sort((a, b) => compareName(a.unitName, b.unitName) || compareName(a.tenantName, b.tenantName))
+}
 
+// Das Mietkonto bleibt im Kalenderjahr (#208, Entwurf 3.11), auch wenn die Abrechnung einen anderen
+// Zeitraum hat: Es ist die Grundlage der Einnahmen in der Steuer. `asOf` wie bei der Abrechnung:
+// Monate ab dem des Stichtags sind „noch nicht fällig“ und kein Rückstand (zweite Browserabnahme).
+// Das Soll bleibt dasselbe, die Steuerübersicht hängt nicht daran.
+export function rentLedger(snapshot: Snapshot, options: { asOf?: string } = {}): RentLedger {
+  const rows = ledgerRows(snapshot, calendarYearPeriod(snapshot.year), options)
   return {
-    year,
+    year: snapshot.year,
     rows,
     totals: {
       sollYearCents: rows.reduce((a, r) => a + r.sollYearCents, 0),
@@ -681,6 +676,13 @@ export const ANLAGE_V_GROUP_ORDER = [
 // werden sowohl als Soll (vereinbart) als auch als Ist (tatsächlich gezahlt) geliefert.
 export function taxReport(snapshot: Snapshot): TaxReport {
   const year = snapshot.year
+  // Die Steuerübersicht rechnet im Kalenderjahr (§ 11 EStG, #208). Aus zwei Abrechnungen schöpft sie
+  // erst mit PR 3; bis dahin nimmt sie nur den Schnappschuss eines Kalenderjahres, und die Route lehnt
+  // ein Objekt mit anderem Rhythmus ab.
+  const calendar = calendarYearPeriod(year)
+  if (snapshot.period.from !== calendar.from || snapshot.period.to !== calendar.to) {
+    throw new Error('Die Steuerübersicht rechnet im Kalenderjahr; dieser Schnappschuss trägt einen anderen Zeitraum.')
+  }
   const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
   const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
@@ -725,7 +727,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // Steht im Jahr keine Heizposition, rechnen die Mieter die Heizung selbst mit dem Versorger ab,
   // und das Heizmodell sagt nichts über die Nebenkosten des Vermieters (dritte Durchsicht).
   const tenancyById = new Map(snapshot.tenancies.map((t) => [t.id, t]))
-  const heatingBilled = snapshot.costItems.some((c) => c.period === calendarPeriod(year) && c.category === HEATING_CATEGORY)
+  const heatingBilled = snapshot.costItems.some((c) => c.period === snapshot.period.key && c.category === HEATING_CATEGORY)
   const models = ledger.rows.map((r) => {
     const t = tenancyById.get(r.tenancyId)
     const cold = t?.costModel ?? 'settlement'
@@ -778,7 +780,7 @@ export function taxReport(snapshot: Snapshot): TaxReport {
   // bewusst doppelt: `snapshotFromDb` grenzt bereits ein. Er bleibt, weil er das Einzige ist,
   // was eine falsch eingegrenzte Ablage noch auffängt, und der Schaden wäre eine Steuerübersicht
   // mit den Werbungskosten mehrerer Jahre. Nicht als toten Code entfernen.
-  const items = snapshot.costItems.filter((c) => c.period === calendarPeriod(year))
+  const items = snapshot.costItems.filter((c) => c.period === snapshot.period.key)
   // Die Aufteilung bei teilweiser Eigennutzung (#163), je Position. Die Rücklage fehlt darin.
   const split = splitForTax(snapshot, items.filter((c) => groupOf(c.category) !== null), settlement)
   const byGroup = new Map<string, Map<string, TaxExpenseCategory>>()
@@ -1141,7 +1143,7 @@ function splitForTax(snapshot: Snapshot, items: SnapshotCostItem[], settlement: 
   // Ein Mietverhältnis auf einer selbstgenutzten Einheit im Jahr: Die Nutzung hat keine Zeitachse,
   // die Fläche zählt also das ganze Jahr als privat (F5).
   const selfIds = new Set(units.filter(isSelf).map((u) => u.id))
-  const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && overlapDays(t.start, t.end, snapshot.year) > 0)
+  const selfUseChangedInYear = snapshot.tenancies.some((t) => selfIds.has(t.unitId) && rangeOverlapDays(t.start, t.end, snapshot.period.from, snapshot.period.to) > 0)
   return { items: result, selfUseChangedInYear, closedSelfUseDiffers, closedItemsChanged }
 }
 
@@ -1488,17 +1490,22 @@ function keyChangeText(item: SnapshotCostItem, previous: readonly SnapshotCostIt
 }
 
 export function computeSettlement(snapshot: Snapshot, options: SettlementOptions = {}): ComputedSettlement {
+  // Der Abrechnungszeitraum (#208). Grenzen, Tage und Monate kommen von hier; `year` ist das
+  // Kalenderjahr des Beginns und steht nur noch im Ergebnis und an den Kabelzeilen (siehe dort).
+  const period = snapshot.period
   const year = snapshot.year
-  const diy = daysInYear(year)
-  const yFrom = `${year}-01-01`
-  const yTo = `${year}-12-31`
+  const diy = periodDays(period)
+  const yFrom = period.from
+  const yTo = period.to
+  const label = periodLabel(period)
   // Das Protokoll der Rechtswerte dieser Abrechnung (Heizung PR 1, Entwurf 4.2): Jede Abfrage
   // trägt ein, was sie bekommen hat, und am Ende steht es in `legalBasis.values`. Abgefragt wird
-  // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert.
+  // erst dort, wo ein Wert wirklich gebraucht wird, damit nur Benutztes einfriert. `lawPeriod`
+  // spannt den Abrechnungszeitraum (#208).
   const lawLog = createLawLog()
   const lawPeriod: Period = { from: yFrom, to: yTo }
-  // Zeitraum und Vorzeitraum für Vergleich und Doppelungen (#208); Task 5 nimmt sie aus dem Schnappschuss.
-  const at = calendarContext(year)
+  // Zeitraum und Vorzeitraum für den Vergleich der Schlüssel und der Doppelungen (#141).
+  const at = contextOf(period, snapshot.previousPeriod)
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
@@ -1522,7 +1529,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Fiele das `unit` später aus ihr heraus, übersetzte das weiterhin, und die Engine stürzte
   // ab, sobald eine gelöschte Wohnung ein Mietverhältnis hinterlässt (`t.unit` unten).
   const tenancies: TenancyWithUnit[] = snapshot.tenancies.flatMap((t) => {
-    const days = overlapDays(t.start, t.end, year)
+    const days = rangeOverlapDays(t.start, t.end, yFrom, yTo)
     const unit = unitById.get(t.unitId)
     return days > 0 && unit ? [{ ...t, days, unit }] : []
   })
@@ -1687,7 +1694,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   for (const t of partTenancies) {
     const from = new Date(Math.max(toUTC(t.start), toUTC(yFrom)))
     const to = t.end ? new Date(Math.min(toUTC(t.end), toUTC(yTo))) : new Date(toUTC(yTo))
-    const pp = computePrepaymentCents(t, year)
+    const pp = computePrepaymentCents(t, period)
     statements.set(t.id, {
       tenancyId: t.id,
       tenantName: t.tenantName,
@@ -1783,7 +1790,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // weil er das Einzige ist, was eine falsch eingegrenzte Ablage noch auffängt. Ohne ihn
   // rechnete ein Repository, das zu viel liefert, die Kosten mehrerer Jahre in eine Abrechnung,
   // und das fiele niemandem auf, weil jede Zeile für sich stimmig aussieht. Nicht entfernen.
-  const items = snapshot.costItems.filter((c) => c.period === at.key)
+  const items = snapshot.costItems.filter((c) => c.period === period.key)
   let totalCostsCents = 0
   let selfUsedShareCents = 0
 
@@ -2244,7 +2251,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         outsideRaw = item.amountCents * (data.meters.filter((m) => !inBasis.has(m.unitId)).reduce((a, m) => a + yearOf(m), 0) / data.basis)
         if (data.main !== null) mainRestRaw = item.amountCents * ((data.basis - measured) / data.basis)
         if (data.mainPartial) {
-          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${year} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum 31.12.${year - 1} und zum Jahresende (31.12.${year}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
+          // Der Tag vor dem Zeitraum und sein Ende (#208); im Kalenderjahr wortgleich wie bisher.
+          const vorher = new Date(toUTC(yFrom) - MS_DAY).toISOString().slice(0, 10)
+          const kalender = calendarYearPeriod(year)
+          const ende = yFrom === kalender.from && yTo === kalender.to ? 'zum Jahresende' : 'zum Ende des Zeitraums'
+          warn('meter.main-partial', `„${item.description}“: der Hauptzähler deckt ${label} nur ${data.mainPartial.days} von ${diy} Tagen ab — bitte Ablesungen zum ${fmtDay(vorher)} und ${ende} (${fmtDay(yTo)}) nachtragen. Bis dahin wird nach den Wohnungszählern verteilt.`, { kind: 'meter', id: data.mainPartial.meterId })
         }
         if (data.mainBelowUnits) {
           warn('meter.sub-exceeds-main', `„${item.description}“: die Wohnungszähler zeigen zusammen ${fmtMeter(data.mainBelowUnits.units)}, mehr als der Hauptzähler (${fmtMeter(data.mainBelowUnits.main)}) — bitte die Ablesungen prüfen. Verteilt wird nach den Wohnungszählern.`, itemSubject(item))
@@ -2529,10 +2540,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Der Satzteil nach „Die Mieter dieser Wohnung“ bzw. nach „Ist …, “ (dann mit vorangestelltem Verb).
     const clause = (l: { cost: number, credit: number }, inverted: boolean): string => {
       const lead = (verb: string) => (inverted ? `${verb} ${who}` : `Die Mieter dieser Wohnung ${verb}`)
-      if (zero(l)) return `${lead('tragen')} dadurch ${year} nicht zu viel`
-      if (l.credit === 0) return `${lead('tragen')} ${year} bei den betroffenen Positionen zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt`
-      if (l.cost === 0) return `${lead('bekommen')} ${year} bei den betroffenen Gutschriften zusammen ${fmtCents(l.credit)} mehr gutgeschrieben, als auf die Wohnung entfällt`
-      return `${lead('tragen')} ${year} bei den betroffenen Kosten zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt, und bekommen ${fmtCents(l.credit)} mehr gutgeschrieben`
+      if (zero(l)) return `${lead('tragen')} dadurch ${label} nicht zu viel`
+      if (l.credit === 0) return `${lead('tragen')} ${label} bei den betroffenen Positionen zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt`
+      if (l.cost === 0) return `${lead('bekommen')} ${label} bei den betroffenen Gutschriften zusammen ${fmtCents(l.credit)} mehr gutgeschrieben, als auf die Wohnung entfällt`
+      return `${lead('tragen')} ${label} bei den betroffenen Kosten zusammen ${fmtCents(l.cost)} mehr, als auf die Wohnung entfällt, und bekommen ${fmtCents(l.credit)} mehr gutgeschrieben`
     }
     const amountText = a.cost === c.cost && a.credit === c.credit
       ? zero(a) ? `${clause(a, false)}. ` : `Für diese Zeit wird beiden der volle Anteil berechnet: ${clause(a, false)}. `
@@ -2541,7 +2552,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         a.credit === 0 && c.credit === 0 && a.cost > 0 && c.cost > 0 ? fmtCents(c.cost) : clause(c, true)
       }. `
     warn('tenancy.overlap',
-      `Die Mietverhältnisse von ${o.first.tenantName} (${period(o.first)}) und ${o.second.tenantName} (${period(o.second)}) in ${o.first.unit.name} überschneiden sich ${span} (${whole ? '' : 'davon '}${daysLabel(yearDays)}${whole ? '' : ` in ${year}`}). ` +
+      `Die Mietverhältnisse von ${o.first.tenantName} (${period(o.first)}) und ${o.second.tenantName} (${period(o.second)}) in ${o.first.unit.name} überschneiden sich ${span} (${whole ? '' : 'davon '}${daysLabel(yearDays)}${whole ? '' : ` in ${label}`}). ` +
         amountText +
         'Meist ist ein Datum vertippt: Bitte Auszug und Einzug prüfen und das falsche Datum berichtigen. Bis dahin rechnet Mietfuchs wie erfasst.',
       { kind: 'tenancy', id: o.first.id })
@@ -2622,11 +2633,11 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Eine Vorauszahlung, gegen die nichts abgerechnet wird, ist meist die frühere Eingabe einer
     // Pauschale (vor #93 gab es kein Feld dafür). Ohne Hinweis würde sie hier still ganz erstattet
     // oder, ohne Abrechnung, im Mietkonto weiter als Soll geführt (Befund der Durchsicht).
-    const prepaid = st ? st.prepaymentCents : computePrepaymentCents(t, year).cents
+    const prepaid = st ? st.prepaymentCents : computePrepaymentCents(t, period).cents
     if (prepaid > 0 && (neither || (st && st.rows.length === 0))) {
       warn('model.prepayment-unsettled', neither
-        ? `Für ${t.tenantName} (${t.unit.name}) wird nichts abgerechnet, im Mietkonto stehen für ${year} aber Vorauszahlungen von ${fmtCents(prepaid)}. Ist das in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung; sonst stimmt das Mietkonto nicht.`
-        : `Für ${t.tenantName} (${t.unit.name}) gibt es ${year} keine Kosten der abgerechneten Art, die Vorauszahlung von ${fmtCents(prepaid)} wird deshalb vollständig erstattet. Ist die eingetragene Vorauszahlung in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung.`,
+        ? `Für ${t.tenantName} (${t.unit.name}) wird nichts abgerechnet, im Mietkonto stehen für ${label} aber Vorauszahlungen von ${fmtCents(prepaid)}. Ist das in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung; sonst stimmt das Mietkonto nicht.`
+        : `Für ${t.tenantName} (${t.unit.name}) gibt es ${label} keine Kosten der abgerechneten Art, die Vorauszahlung von ${fmtCents(prepaid)} wird deshalb vollständig erstattet. Ist die eingetragene Vorauszahlung in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung.`,
       { kind: 'tenancy', id: t.id })
     }
     if (neither || (st && st.rows.length === 0 && st.prepaymentCents === 0)) {
@@ -2655,14 +2666,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // eine Überweisung braucht ein paar Tage, bis sie gebucht ist. Den laufenden Monat erst ab einem
   // bestimmten Tag mitzuzählen, hinge an Wochenenden und Feiertagen; einfacher und ohne Fehlalarm
   // ist, ihn gar nicht mitzuzählen. Ein Rückstand des laufenden Monats erscheint dann im nächsten.
-  // Liegt der Stichtag nach dem Jahr, ist alles fällig, liegt er davor, nichts.
-  const dueMonths = dueMonthsOf(year, options.asOf)
+  // Liegt der Stichtag nach dem Zeitraum, ist alles fällig, liegt er davor, nichts.
   const ledgerInUse = snapshot.payments.some((p) => p.date >= yFrom && p.date <= yTo)
-  if (ledgerInUse && dueMonths > 0) {
-    const ledgerRows = new Map(rentLedger(snapshot, { asOf: options.asOf }).rows.map((r) => [r.tenancyId, r]))
+  // Fällig ist ein Monat des Zeitraums vor dem Monat des Stichtags; ohne Stichtag alle (#133).
+  const asOfMonth = options.asOf?.slice(0, 7)
+  const anyDue = asOfMonth === undefined || periodMonths(period).some((m) => m < asOfMonth)
+  if (ledgerInUse && anyDue) {
+    // Dieselbe Monatsrechnung wie das Mietkonto, über die Monate des Zeitraums (#208).
+    const rowsByTenancy = new Map(ledgerRows(snapshot, period, { asOf: options.asOf }).map((r) => [r.tenancyId, r]))
     for (const st of statements.values()) {
       if (st.prepaymentOverridden || st.prepaymentCents <= 0) continue
-      const row = ledgerRows.get(st.tenancyId)
+      const row = rowsByTenancy.get(st.tenancyId)
       if (!row) continue
       const openCents = row.arrearsCents
       if (openCents <= 0) continue
@@ -2673,7 +2687,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         ? 'stehen auch Kaltmiete und Pauschale'
         : row.baseRentYearCents > 0 ? 'steht auch die Kaltmiete' : row.flatRateYearCents > 0 ? 'steht auch die Pauschale' : ''
       warn('prepayment.arrears',
-        `Im Mietkonto ${year} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
+        `Im Mietkonto ${label} von ${st.tenantName} (${st.unitName}) sind ${fmtCents(openCents)} offen. Die Abrechnung rechnet die Vorauszahlung laut Vertrag an (${fmtCents(st.prepaymentCents)}); maßgeblich ist aber, was tatsächlich gezahlt wurde. ` +
           'Zahlungen zählen nach ihrem Datum; eine im Dezember vorab gezahlte Januarmiete steht im Vorjahr. ' +
           `Ob die Vorauszahlung betroffen ist, sehen Sie im Mietkonto${alsoInSoll ? `: Im Soll ${alsoInSoll}, der Rückstand kann ebenso sie betreffen` : ''}. ` +
           'Fehlt nur eine Buchung, tragen Sie die Zahlung im Mietkonto nach; ' +
@@ -2709,6 +2723,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const result: ComputedSettlement = {
     year,
     daysInYear: diy,
+    period: settlementPeriod(period),
+    deadline: settlementDeadline(period),
     statements: [...statements.values()],
     notSettled,
     // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt
@@ -2749,7 +2765,9 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Endet das Mietverhältnis im Jahr, auch zum 31.12., gibt es keine künftige Vorauszahlung und
     // keinen Vorschlag; 0 heißt für die Oberfläche „nichts anzeigen“.
     const end = tenancyEnd.get(st.tenancyId)
-    st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0
+    // Im Rumpfzeitraum gibt es keinen Vorschlag (#208): vier Monate Kosten auf zwölf Monate
+    // hochgerechnet verschöben Winter und Sommer; PR 3 rechnet ihn nach Gradtagen und Tagen.
+    st.suggestedMonthlyCents = (end != null && end <= yTo) || st.days <= 0 || period.short
       ? 0
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).
       : Math.max(0, Math.round((st.totalShareCents * diy) / st.days / 12 / 100) * 100)
