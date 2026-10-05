@@ -973,8 +973,12 @@ gesetze-im-internet.de gegengelesen.
 - **S ist die gedruckte Kostensumme** (G-B3), nicht die Summe der gerundeten Nutzerzeilen. Die Probe
   läuft nur über die Messdienstpositionen (Schlüssel `amounts`, W9): Vorwegabzug Σ = S + L ± 1 ct, nur
   ausgewiesen Σ = S, beide Einzel- und Eigenbeträge ≤ S + NE · 2 ct. Scheitert sie, wird **nichts**
-  gebucht (`co2.sum-check`, error); mit „Ich finde diese Zeile nicht“ ist S geschätzt, und es bleibt
-  ein Hinweis.
+  gebucht (`co2.sum-check`, error); mit „Ich finde diese Zeile nicht“ ist S geschätzt, und der
+  Spielraum NE · 2 ct gilt auch für den Betrag. Geht die Probe dann auf, bleibt ein Hinweis
+  (`co2.sum-check-approx`); geht sie nicht auf, wird ebenso **nichts** gebucht (Durchsicht I-2).
+  Alle Hinweise eines Topfs hängen daran, dass jemand eine Zeile aus ihm hat (`settledOn`):
+  Pauschal- und Warmmieter kürzen nichts. Kappt `take()` den co2Share über den Spielraum, sagt
+  `co2.share-capped`, dass L in einer anderen Position steckt.
 - **Vorwegabzug:** In der Position, in der L steckt (`carrierId`: die gewählte, sonst die größte),
   steht L_self exakt in `selfUse` (#203: nie über `take()`), der Rest von L als eigener Grund
   `co2Share` direkt dahinter, durch den Rest begrenzt. Die Mieter zahlen ihre Einzelbeträge
