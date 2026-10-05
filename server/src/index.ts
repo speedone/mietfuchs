@@ -482,7 +482,11 @@ app.put('/api/properties/:id', async (req, res) => {
 // Der Stichtag der Abrechnung (#133): heute, als JJJJ-MM-TT in UTC wie überall in calc.ts. Er
 // begrenzt nur den Hinweis auf einen Rückstand auf die schon fälligen Monate. Der Wechsel des
 // Zeitraums (#208) braucht ihn für die Liste der Zeiträume in der Vorschau.
-const today = (): string => new Date().toISOString().slice(0, 10)
+// Testgriff `NKA_TEST_TODAY` (Review der Laienprobe, Runde 2): ein fester Tag als JJJJ-MM-TT, nur für
+// Tests, damit Prüfbestände mit festen Jahren nicht an einem bestimmten Datum kippen (Fristen,
+// Bestätigung abgelaufener Fristen). Ohne die Variable gilt der wirkliche Tag; ein Nutzer setzt sie nie.
+const TEST_TODAY = /^\d{4}-\d{2}-\d{2}$/.test(process.env.NKA_TEST_TODAY ?? '') ? process.env.NKA_TEST_TODAY ?? null : null
+const today = (): string => TEST_TODAY ?? new Date().toISOString().slice(0, 10)
 
 app.delete('/api/properties/:id', async (req, res) => {
   const result = await writeData((db) => removeProperty(db, req.params.id))
@@ -572,7 +576,7 @@ app.put('/api/heating-plants/:id/periods/:period/hot-water', async (req, res) =>
 // träfe der Wechsel Abgeschlossenes, antwortet der Server mit 409 und der neuen Vorschau.
 const PLANT_GONE_TEXT = 'Diese Heizanlage gibt es nicht (mehr). Bitte laden Sie die Seite neu.'
 app.post('/api/heating-plants/:id/period/preview', async (req, res) => {
-  const preview = await readData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
+  const preview = await writeData((db) => previewHeatingPeriodChange(db, req.params.id, bodyObject(req).rules, today()))
   if (!preview) return res.status(404).json({ error: PLANT_GONE_TEXT })
   res.json(preview)
 })

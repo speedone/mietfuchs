@@ -405,8 +405,10 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
         taxShifts: g.options.flatMap((p) => {
           const cents = shiftOf(p)
           if (cents === 0) return []
-          const years = [...new Set(g.items.map(effectiveTaxYear))].join(', ')
-          return [{ key: p.key, text: `Ganz nach ${periodLabel(p)} verschoben, kämen für die Steuer ${euro(cents)} aus dem Jahr der Zahlung ${years} nach ${yearIn(g.items[0] ?? noItem(), p)}, obwohl sich an der Zahlung nichts ändert.` }]
+          // Je Position mit ihrem eigenen Jahr (Review Runde 2): Positionen einer Gruppe können verschiedene haben.
+          const moved = g.items.filter((i) => yearIn(i, p) !== effectiveTaxYear(i))
+            .map((i) => `„${i.description}“ ${euro(i.amountCents)} von ${effectiveTaxYear(i)} nach ${yearIn(i, p)}`)
+          return [{ key: p.key, text: `Ganz nach ${periodLabel(p)} verschoben, wechselten für die Steuer ${moved.length === 1 ? 'das Jahr der Zahlung' : `zusammen ${euro(cents)} das Jahr der Zahlung`}: ${moved.join('; ')}, obwohl sich an der Zahlung nichts ändert.` }]
         }),
         suggested: advisable ? 'split' : whole,
       }
@@ -465,9 +467,6 @@ export function passedDeadlineText(labels: readonly string[], cause = 'den Zeitr
   return `Die Abrechnungsfrist für ${labels.join(', ')} ist schon abgelaufen. Weil Sie ${cause}, haben Sie die Verspätung zu vertreten; eine Nachzahlung aus diesem Zeitraum können Sie deshalb nicht mehr verlangen (§ 556 Abs. 3 Satz 3 BGB).`
 }
 
-function noItem(): never {
-  throw new Error('Gruppe ohne Position in der Vorschau')
-}
 
 // Eine Gruppe ohne betroffenen Zeitraum gibt es nicht; der Aufruf oben fragt nur bekannte.
 function noFinding(key: PeriodKey): never {
@@ -536,7 +535,7 @@ async function withEffects(db: Database, propertyId: string, plan: Plan, today: 
         return n === null || n.from !== o.from || n.to !== o.to
       }).map((o) => ({ label: periodLabel(o), deadline: settlementDeadline(o) })),
       tenants,
-      lostClaimsCents: passed ? lostClaims(tenants) : 0,
+      lostClaimsCents: passed ? lostClaims(tenants, old !== null && settlementDeadline(old) < today) : 0,
     }
   })
   return { ...plan.preview, effects }

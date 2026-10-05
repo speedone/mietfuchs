@@ -41,7 +41,7 @@ describe('Zeitraum der Heizung (Entwurf 11.2 Schritt 3)', () => {
 
 describe('Antworten zu den Vorschauen', () => {
   const wechsel: HeatingPeriodChangePreview = {
-    rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], moves: [], endsSeparate: [], token: 'w1',
+    rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], moves: [], endsSeparate: [], effects: [], token: 'w1',
     groups: [{ from: k('2026-01'), fromLabel: '2026', items: [{ costItemId: 'c1', description: 'Gas', amountCents: 100000 }], options: [{ key: k('2025-05'), label: '2025/2026', range: '01.05.2025–30.04.2026' }], suggested: k('2025-05') }],
     overrides: [{ tenancyId: 't1', tenantName: 'A', from: [], ask: [{ kind: 'heating', period: k('2025-05'), label: '01.05.–31.12.2025', months: '05–12/2025' }, { kind: 'total', period: k('2026-01'), label: '2026', months: '01–12/2026' }] }],
   }

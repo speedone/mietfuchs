@@ -228,10 +228,15 @@ test('Laienprobe B12: Heizpositionen ohne Leistungszeitraum: Auswahl der Heizper
     const m = v.moves.find((x) => x.costItemId === 'gas2024') ?? assert.fail('keine Verschiebung')
     assert.deepEqual([m.to, m.toRange, m.fromRange, m.check], ['2023-05', '01.05.2023–30.04.2024', '01.01.–31.12.2024', true])
     assert.deepEqual(m.options.map((o) => [o.key, o.range]), [['2023-05', '01.05.2023–30.04.2024'], ['2024-05', '01.05.2024–30.04.2025']])
-    const r = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' } })
+    // Review Runde 2: Die Abrechnung 2024 (Frist 31.12.2025 abgelaufen) verlöre das Erdgas; ohne Bestätigung nichts.
+    const ohne = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' } })
+    assert.ok(ohne && 'error' in ohne && /Weil Sie den Zeitraum der Heizung selbst umstellen/.test(ohne.error), JSON.stringify(ohne))
+    const e2024 = ohne.preview.effects.find((e) => e.label === '2024') ?? assert.fail('keine Frist für 2024')
+    assert.deepEqual([e2024.passed, e2024.tenants], [true, [{ tenantName: 'Müller', beforeCents: 260000, afterCents: 360000 }]])
+    const r = await wechseln(opened, MAI, { moves: { gas2024: '2024-05' }, understood: true })
     assert.ok(r && 'plant' in r, JSON.stringify(r))
     assert.equal((await items(opened)).find((c) => c.id === 'gas2024')?.period, '2024-05')
-    const falsch = await wechseln(opened, { startMonth: 9, changes: [] }, { moves: { gas2024: '1999-05' } })
+    const falsch = await wechseln(opened, { startMonth: 9, changes: [] }, { moves: { gas2024: '1999-05' }, understood: true })
     assert.ok(falsch && 'error' in falsch && /Heizperiode für „Erdgas 2024“ wählen/.test(falsch.error))
   })
 })
@@ -243,4 +248,25 @@ test('Review Runde 1: Jahr der Zahlung in der neuen Heizperiode in die erlaubte 
   assert.equal(taxYearIn(h, { taxYear: 2023, period: periodKey('2026-01') }), 2025)
   assert.equal(taxYearIn(h, { period: periodKey('2026-01') }), 2026)
   assert.equal(taxYearIn({ from: '2025-01-01', to: '2025-12-31' }, { taxYear: 2026, period: periodKey('2024-05') }), null)
+})
+
+// Review Runde 2: Der Wechsel der Heizperiode schreibt Positionen über `patchCostItemIn` (Verschmelzung
+// und Schreibprüfung), nicht mit einem rohen Update am Wächter vorbei. Geprüft am Quelltext, denn
+// solange beide dasselbe schreiben, unterscheidet sie kein Verhalten; und am Ergebnis.
+test('Review Runde 2: Heizpositionen wandern durch die Schreibprüfung', async () => {
+  const quelle = fs.readFileSync(new URL('../src/db/heatingPeriodChange.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(quelle, /tx\.update\(costItems\)/)
+  assert.match(quelle, /patchCostItemIn\(tx, m\.item/)
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await haus(db)
+      await createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', method: 'service' })
+      await heizposition(db, 'c2026', '2026-01', { vendor: 'Messdienst', invoiceFile: 'm.pdf' })
+    })
+    assert.ok(await wechseln(opened, MAI, {}))
+    const c = (await items(opened)).find((x) => x.id === 'c2026') ?? assert.fail('weg')
+    assert.deepEqual([c.period, c.taxYear, c.vendor, c.invoiceFile], ['2025-05', 2026, 'Messdienst', 'm.pdf'])
+    // Die gespeicherte Position besteht die Schreibprüfung erneut.
+    await opened.write((db) => updateEntity(db, 'costItems', 'c2026', {}))
+  })
 })

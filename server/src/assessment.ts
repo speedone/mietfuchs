@@ -211,11 +211,11 @@ export function lineDraft(fields: LineFields, extra: { vendor: string; invoiceFi
 export function replacedByLinking<T extends CostItem>(
   candidates: readonly T[], line: Pick<StoredAssessmentLine, 'category' | 'amountCents'>, period: PeriodKey,
   booked: readonly Pick<BookedLine, 'costItemId'>[],
-  rules?: PeriodRules,
+  rules: PeriodRules,
 ): T | null {
   if (line.amountCents === null || line.amountCents <= 0) return null
   // Ein Teil einer aufgeteilten Rechnung ist kein Verknüpfungsziel (Review der Laienprobe, Runde 1).
-  const fits = candidates.filter((c) => !(rules !== undefined && isSplitPart(rules, c)) &&
+  const fits = candidates.filter((c) => !isSplitPart(rules, c) &&
     c.period === period && c.category === line.category && !c.invoiceFile && c.key !== 'amounts' && c.key !== 'external' &&
     !booked.some((l) => l.costItemId === c.id))
   return fits.length === 1 ? fits[0] ?? null : null

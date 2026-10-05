@@ -41,13 +41,15 @@ export async function dryRun<T>(db: Database, write: (tx: Transaction) => Promis
 // Nachzahlung) und die Summe der Nachzahlungen.
 export type Outcome = { label: string; claimsCents: number; tenants: { tenancyId: string; tenantName: string; balanceCents: number }[] }
 
-// Was nach Ablauf der Frist nicht mehr verlangt werden darf (§ 556 Abs. 3 S. 3 BGB), je Mieter: die
-// Nachzahlung nachher, soweit sie die von vorher übersteigt (Review der Laienprobe, Runde 1). Gab es
-// den Zeitraum vorher nicht, die ganze Nachzahlung.
-export function lostClaims(tenants: readonly { beforeCents: number | null; afterCents: number }[]): number {
+// Was nach Ablauf der Frist nicht mehr verlangt werden darf (§ 556 Abs. 3 S. 3 BGB), je Mieter.
+// War die Frist des Vergleichszeitraums vorher selbst schon abgelaufen (`beforeBarred`), war dessen
+// Nachzahlung ohnehin verloren, und es zählt nur das Mehr (Review der Laienprobe, Runde 1). War sie
+// noch offen oder gab es ihn nicht, ist die ganze Nachzahlung nachher verloren (Runde 2): Vorher
+// hätte der Vermieter sie verlangen können.
+export function lostClaims(tenants: readonly { beforeCents: number | null; afterCents: number }[], beforeBarred: boolean): number {
   return tenants.reduce((sum, t) => {
     const after = Math.max(0, -t.afterCents)
-    const before = t.beforeCents === null ? 0 : Math.max(0, -t.beforeCents)
+    const before = t.beforeCents === null || !beforeBarred ? 0 : Math.max(0, -t.beforeCents)
     return sum + Math.max(0, after - before)
   }, 0)
 }

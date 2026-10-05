@@ -31,7 +31,7 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : undefined })
       if (url.endsWith('/period/preview')) {
-        return json({ rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [],
+        return json({ rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [],
           token: 'w1', moves: [{ costItemId: 'c1', description: 'Messdienst 2025/2026', amountCents: 100000, from: '2025-05', fromLabel: '2025/2026', to: '2026-01', toLabel: '2026',
             fromRange: '01.05.2025–30.04.2026', toRange: '01.01.–31.12.2026', options: [{ key: '2026-01', label: '2026', range: '01.01.–31.12.2026' }], check: false }] })
       }
@@ -47,7 +47,7 @@ describe('Abschnitt „Zeitraum der Heizung“', () => {
     await waitFor(() => expect(changed).toHaveBeenCalled())
     expect(calls.map((c) => [c.method, c.url, c.body])).toEqual([
       ['POST', '/api/heating-plants/hp1/period/preview', { rules: null }],
-      ['PUT', '/api/heating-plants/hp1/period', { rules: null, answers: { groups: {}, moves: { c1: '2026-01' }, overrides: {}, totals: {}, token: 'w1' } }],
+      ['PUT', '/api/heating-plants/hp1/period', { rules: null, answers: { groups: {}, moves: { c1: '2026-01' }, overrides: {}, totals: {}, token: 'w1', understood: false } }],
     ])
   })
 
@@ -80,7 +80,7 @@ describe('Laienprobe B11, B3a', () => {
         puts.push(JSON.parse(String(init.body)))
         if (conflict) return json({ error: 'veraltet', preview: { ...separatePreview, token: 's2' } }, 409)
       }
-      if (url.endsWith('/period/preview')) return json({ rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], token: 'w1', moves: [] })
+      if (url.endsWith('/period/preview')) return json({ rules: { startMonth: 5, changes: [] }, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [], token: 'w1', moves: [] })
       if (url.endsWith('/separate/preview')) return json(separatePreview)
       return json(plant())
     }))
@@ -104,4 +104,26 @@ describe('Laienprobe B11, B3a', () => {
     await waitFor(() => expect(puts.at(-1)).toMatchObject({ answers: { understood: true } }))
     await waitFor(() => expect((screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement).disabled).toBe(true))
   })
+})
+
+test('Review Runde 2: Wechsel der Heizperiode mit abgelaufener Frist erst nach Bestätigung, und sie geht mit', async () => {
+  const puts: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/period/preview')) {
+      return json({ rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], moves: [], token: 'w1',
+        effects: [{ label: '2024', deadline: '2025-12-31', passed: true, replaces: [], tenants: [{ tenantName: 'Müller', beforeCents: 260000, afterCents: 360000 }], lostClaimsCents: 0 }] })
+    }
+    if (init?.method === 'PUT') puts.push(JSON.parse(String(init.body)))
+    return json(plant({ periodStartMonth: null }))
+  }))
+  render(<HeatingPeriodSection plant={plant()} objectRules={CALENDAR_RULES} hasCalendarData onChanged={async () => {}} notify={() => {}} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Zeitraum der Heizung ändern' }))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Für welchen Zeitraum rechnet die Heizung ab?' }), { target: { value: 'object' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Vorschau' }))
+  await screen.findByText(/Müller: vorher Guthaben 2\.600,00.€, nachher Guthaben 3\.600,00.€/)
+  const uebernehmen = screen.getByRole('button', { name: 'Übernehmen' }) as HTMLButtonElement
+  expect(uebernehmen.disabled).toBe(true)
+  fireEvent.click(screen.getByRole('checkbox', { name: /Ich habe verstanden/ }))
+  fireEvent.click(uebernehmen)
+  await waitFor(() => expect(puts.at(-1)).toMatchObject({ answers: { understood: true } }))
 })

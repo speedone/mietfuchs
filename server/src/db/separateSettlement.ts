@@ -339,7 +339,8 @@ async function withEffects(db: Database, plantId: string, p: Plan, today: string
     return {
       label: periodLabel(q), deadline, passed, replaces: [],
       tenants,
-      lostClaimsCents: passed ? lostClaims(tenants) : 0,
+      // Weg d: Derselbe Zeitraum vorher und nachher, also mit derselben Frist; es zählt das Mehr.
+      lostClaimsCents: passed ? lostClaims(tenants, true) : 0,
     }
   }
   const effects: PeriodEffect[] = [

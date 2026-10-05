@@ -44,8 +44,9 @@ export default function CostPeriodFields({ form, onChange, showTaxYear, years }:
           {/* Laienprobe B15, Review Runde 1: Eine Position hat ein Jahr; Abschläge über zwei Jahre gehören in zwei. */}
           <small className="muted">
             Haben Sie die Rechnung in Abschlägen über zwei Kalenderjahre bezahlt, etwa monatlich für Gas, Wasser oder Müll, gehört jeder Abschlag
-            in das Jahr, in dem Sie ihn gezahlt haben, und die Nachzahlung in das Jahr ihrer Zahlung. Ein regelmäßiger Abschlag, der bis zum 10. Januar
-            für das Vorjahr gezahlt wird, zählt noch zum Vorjahr (§ 11 Abs. 2 Satz 2 in Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs ordnet eine
+            in das Jahr, in dem Sie ihn gezahlt haben, und die Nachzahlung in das Jahr ihrer Zahlung. Ein regelmäßig wiederkehrender Abschlag, der um den
+            Jahreswechsel (bis zehn Tage davor oder danach) fällig ist und in dieser Zeit gezahlt wird, zählt zu dem Jahr, zu dem er gehört
+            (§ 11 Abs. 2 Satz 2 in Verbindung mit Abs. 1 Satz 2 EStG). Mietfuchs ordnet eine
             Position nur einem Jahr zu: Wählen Sie das Jahr, in dem Sie den größten Teil gezahlt haben, und tragen Sie in Ihrer Steuererklärung den Rest
             aus diesem Jahr heraus und in das andere Jahr ein.
           </small>

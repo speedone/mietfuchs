@@ -2,12 +2,12 @@
 // Zeilen wird und in welchem Zustand eine Zeile ist.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeAssessment, detectedYear, lineDraft, lineState, linesFromExtraction, openTargets, withoutBooked, type DescribeContext, type NewLine } from '../src/assessment.ts'
+import { describeAssessment, detectedYear, replacedByLinking, lineDraft, lineState, linesFromExtraction, openTargets, withoutBooked, type DescribeContext, type NewLine } from '../src/assessment.ts'
 import { categoryDeviationPct } from '../../shared/assessment.ts'
 import type { CostItem, StoredAssessment, StoredAssessmentLine, Unit } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
 import { costItemBody } from '../../shared/costItem.ts'
-import { CALENDAR_RULES, calendarContext, calendarPeriod } from '../../shared/period.ts'
+import { CALENDAR_RULES, calendarContext, calendarPeriod, periodKey } from '../../shared/period.ts'
 
 test('Zeilen aus der KI: Kostenart zugeordnet, Cent, nicht gelesener Lohnanteil bleibt null, 0 bleibt 0', () => {
   const lines = linesFromExtraction({
@@ -270,4 +270,19 @@ test('Abweichung zum Vorjahr: ein ersetzter Betrag fällt aus der Summe des Jahr
   const items = [grundsteuer({ id: 'v', period: calendarPeriod(2025) }), grundsteuer({ id: 'u' })]
   assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', calendarContext(2026), 51240) ?? 0) - 102.89) < 0.01)
   assert.ok(Math.abs((categoryDeviationPct(items, 'Grundsteuer', calendarContext(2026), 51240, 49800) ?? 0) - 2.89) < 0.01)
+})
+
+// Review der Laienprobe, Runde 2: Ein Teil einer nach Tagen geteilten Rechnung steht in der Ansicht
+// nur zum Öffnen (`formOnly`) und ersetzt beim Verknüpfen keine Schätzung.
+test('Review Runde 2: Teil einer geteilten Rechnung ist formOnly und kein Ziel von replacedByLinking', () => {
+  const rules = { startMonth: 1, changes: [periodKey('2026-07')] }
+  const teil = grundsteuer({ id: 'teil', period: calendarPeriod(2026), serviceFrom: '2026-01-01', serviceTo: '2026-12-31', amountCents: 24700 })
+  const line = stored({ description: 'Grundsteuer 2026', category: 'Grundsteuer', amountCents: 51240 })
+  const view = describeAssessment({ assessment: assessmentOf(), lines: [line] }, {
+    items: [teil], units: UNITS3, meters: [], propertyKind: null, rules, originalName: 'grundsteuer.pdf', twinOf: null, twinNames: new Map(), booked: [],
+  })
+  const c = view.lines[0]?.suggestion?.candidates.find((x) => x.id === 'teil') ?? assert.fail('Teil fehlt unter den Kandidaten')
+  assert.equal(c.formOnly, true)
+  assert.equal(replacedByLinking([teil], line, calendarPeriod(2026), [], rules), null)
+  assert.equal(replacedByLinking([grundsteuer({ id: 'ganz' })], line, calendarPeriod(2026), [], CALENDAR_RULES)?.id, 'ganz')
 })

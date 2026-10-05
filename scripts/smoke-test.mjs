@@ -450,7 +450,7 @@ async function heatingPeriod() {
   const regeln = { rules: { startMonth: 5, changes: [] } }
   const zeitraum = await request(`/api/heating-plants/${anlage.id}/period/preview`, json('POST', regeln))
   assert(zeitraum.status === 200 && typeof zeitraum.body.token === 'string', 'Vorschau des Zeitraums der Heizung', zeitraum.body)
-  const wechsel = await request(`/api/heating-plants/${anlage.id}/period`, json('PUT', { ...regeln, answers: { token: zeitraum.body.token } }))
+  const wechsel = await request(`/api/heating-plants/${anlage.id}/period`, json('PUT', { ...regeln, answers: { understood: true, token: zeitraum.body.token } }))
   assert(wechsel.status === 200 && wechsel.body.periodStartMonth === 5, 'Zeitraum der Heizung Mai bis April', wechsel.body)
   const vorschau = await request(`/api/heating-plants/${anlage.id}/separate/preview`, json('POST', { separate: true, month: '2025-05' }))
   assert(vorschau.status === 200 && vorschau.body.way === 'separate', 'Vorschau der getrennten Heizkostenabrechnung', vorschau.body)
@@ -463,7 +463,7 @@ async function heatingPeriod() {
     totals[o.tenancyId] = { ...(totals[o.tenancyId] ?? {}), [o.period]: o.cents ?? 0 }
     for (const a of o.asks) if (a.kind !== 'total') overrides[o.tenancyId] = { ...(overrides[o.tenancyId] ?? {}), [a.period]: 0 }
   }
-  const ein = await request(`/api/heating-plants/${anlage.id}/separate`, json('PUT', { separate: true, month: '2025-05', answers: { steps, totals, overrides, token: vorschau.body.token } }))
+  const ein = await request(`/api/heating-plants/${anlage.id}/separate`, json('PUT', { separate: true, month: '2025-05', answers: { understood: true, steps, totals, overrides, token: vorschau.body.token } }))
   assert(ein.status === 200 && ein.body.separateSpans?.length === 1, 'getrennte Heizkostenabrechnung eingeschaltet', ein.body)
   const heiz = await request(`/api/heating-settlement/${anlage.id}/2025-05`)
   assert(heiz.status === 200 && heiz.body.deadline === '2027-04-30' && heiz.body.scope?.kind === 'heating', 'Heizkostenabrechnung 2025/2026 mit eigener Frist', heiz.body)

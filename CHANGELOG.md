@@ -67,7 +67,8 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Heizvorauszahlung und übrige Vorauszahlung, erfasst Jahreskorrekturen neu und nennt die Fristen;
   ausgeschaltet wird erst ab der ersten Heizperiode, die nicht abgeschlossen ist. Wer bei der Frage
   nach dem Zeitraum der Heizung „getrennt“ antwortet, kommt gleich zur Aufteilung; ändert das
-  Aufteilen schon begonnene Abrechnungen, nennt die Vorschau Frist und Ergebnis vorher und nachher.
+  Aufteilen oder ein Wechsel der Heizperiode schon begonnene Abrechnungen, nennt die Vorschau Frist und
+  Ergebnis vorher und nachher, und bei abgelaufener Frist wird erst nach Bestätigung gespeichert.
   Ein Mietverhältnis, das in einem älteren Stand geöffnet war, überschreibt die aufgeteilten
   Vorauszahlungen nicht mehr: Mietfuchs lädt nach jeder Änderung an der Heizung neu und lehnt das
   Speichern eines veralteten Formulars ab, statt die Heizvorauszahlung still zu löschen. Die

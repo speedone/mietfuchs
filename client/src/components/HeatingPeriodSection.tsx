@@ -39,6 +39,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
   const [separateAnswers, setSeparateAnswers] = useState<SeparateAnswerForm | null>(null)
   const [month, setMonth] = useState('')
   const [understood, setUnderstood] = useState(false)
+  const [periodUnderstood, setPeriodUnderstood] = useState(false)
   const [error, setError] = useState('')
   const own = hasOwnRhythm(plant)
   const openSpan = plant.separateSpans.some((s) => s.until === null)
@@ -58,6 +59,7 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
       const p = await api<HeatingPeriodChangePreview>(`/api/heating-plants/${plant.id}/period/preview`, { method: 'POST', body: JSON.stringify(body) })
       setPeriodPreview(p)
       setPeriodAnswers(initialHeatingPeriodAnswers(p))
+      setPeriodUnderstood(false)
       setError('')
     } catch (e) {
       setError(errorText(e))
@@ -70,13 +72,15 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
     const answers = heatingPeriodAnswersOf(periodPreview, periodAnswers)
     if ('error' in answers) return setError(answers.error)
     try {
-      await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers }) })
+      await api(`/api/heating-plants/${plant.id}/period`, { method: 'PUT', body: JSON.stringify({ rules: body.rules, answers: { ...answers, understood: periodUnderstood } }) })
     } catch (e) {
       const fresh = freshPreview<HeatingPeriodChangePreview>(e)
       if (fresh) {
         setPeriodPreview(fresh)
         setPeriodAnswers({ ...initialHeatingPeriodAnswers(fresh), amounts: periodAnswers.amounts, none: periodAnswers.none })
       }
+      // Review Runde 2: Die Bestätigung galt der alten Vorschau.
+      setPeriodUnderstood(false)
       setError(fresh ? `${errorText(e)} Bitte prüfen Sie die Vorschau erneut.` : errorText(e))
       return
     }
@@ -258,7 +262,14 @@ export default function HeatingPeriodSection({ plant, objectRules, hasCalendarDa
               {periodPreview.endsSeparate.length > 0 && (
                 <p className="muted">{`Danach in der Betriebskostenabrechnung statt getrennt: ${periodPreview.endsSeparate.map((e) => e.label).join(', ')}.`}</p>
               )}
-              <button className="btn" disabled={periodPreview.blocked.length > 0} onClick={() => void savePeriod()}>Übernehmen</button>
+              {/* Review Runde 2: Fristen und Bestätigung wie beim Zeitraum des Objekts. */}
+              <EffectsList effects={periodPreview.effects} />
+              {periodPreview.effects.some((e) => e.passed) && (
+                <label className="checkline">
+                  <input type="checkbox" checked={periodUnderstood} onChange={(e) => setPeriodUnderstood(e.target.checked)} /> Ich habe verstanden, dass ich aus einer Abrechnung mit abgelaufener Frist keine Nachzahlung mehr verlangen kann.
+                </label>
+              )}
+              <button className="btn" disabled={periodPreview.blocked.length > 0 || (periodPreview.effects.some((e) => e.passed) && !periodUnderstood)} onClick={() => void savePeriod()}>Übernehmen</button>
             </div>
           )}
         </div>

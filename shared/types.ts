@@ -385,6 +385,9 @@ export type HeatingPeriodChangePreview = {
     ask: { kind: 'heating' | 'total'; period: PeriodKey; label: string; months: string }[]
   }[]
   endsSeparate: { key: PeriodKey; label: string }[]
+  // Fristen und Ergebnisse schon begonnener Abrechnungen vorher und nachher (Review Runde 2, wie beim
+  // Wechsel des Abrechnungszeitraums und beim Aufteilen).
+  effects: PeriodEffect[]
   // Die Marke dieser Vorschau, wie beim Wechsel des Objektzeitraums (PR 3): Stimmt sie beim Wechsel
   // nicht mehr, hat sich der Bestand geändert, und es gibt 409 mit der neuen Vorschau.
   token: string
@@ -396,6 +399,7 @@ export type HeatingPeriodChangePreview = {
 // Staffel gilt“.
 export type HeatingPeriodChangeAnswers = {
   groups?: Record<string, string>
+  understood?: boolean
   // Laienprobe B12: je verschobener Position die gewählte Heizperiode; fehlt sie, gilt die vorbelegte.
   moves?: Record<string, string>
   overrides?: Record<string, Record<string, number | null>>

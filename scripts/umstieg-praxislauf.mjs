@@ -806,9 +806,9 @@ fall(17, 'Backup mit eigener Heizperiode und getrennter Heizkostenabrechnung (#2
     const marke = async (pfad, body) => (await jsonOf(await senden(base, pfad, 'POST', body))).token
     const regeln = { rules: { startMonth: 5, changes: [] } }
     const zeitraum = await marke(`/api/heating-plants/${plant.id}/period/preview`, regeln)
-    gleich((await senden(base, `/api/heating-plants/${plant.id}/period`, 'PUT', { ...regeln, answers: { token: zeitraum } })).status, 200, 'Heizperiode Mai bis April')
+    gleich((await senden(base, `/api/heating-plants/${plant.id}/period`, 'PUT', { ...regeln, answers: { understood: true, token: zeitraum } })).status, 200, 'Heizperiode Mai bis April')
     const getrennt = await marke(`/api/heating-plants/${plant.id}/separate/preview`, { separate: true, month: '2025-05' })
-    const ein = await senden(base, `/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { steps: { [mieter.id]: { '2025-05': 12300 } }, token: getrennt } })
+    const ein = await senden(base, `/api/heating-plants/${plant.id}/separate`, 'PUT', { separate: true, month: '2025-05', answers: { understood: true, steps: { [mieter.id]: { '2025-05': 12300 } }, token: getrennt } })
     gleich(ein.status, 200, 'Weg d ab 05/2025')
     await senden(base, '/api/costItems', 'POST', { period: '2025-05', category: 'Heizung und Warmwasser', description: 'Messdienst 2025/2026', amountCents: 150000, key: 'area', heatingPlantId: plant.id, taxYear: 2026 })
     gleich((await senden(base, `/api/heating-settlement/${plant.id}/2025-05/close`, 'POST', {})).status, 201, 'Heizkostenabrechnung abgeschlossen')

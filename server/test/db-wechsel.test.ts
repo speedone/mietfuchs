@@ -323,6 +323,45 @@ test('Review Runde 1: ohne Bestätigung keine Abrechnung mit abgelaufener Frist;
   })
 })
 
-test('Review Runde 1: verlorene Nachforderung ist nur, was die Nachzahlung über die bisherige hinaus erhöht', () => {
-  assert.equal(lostClaims([{ beforeCents: -10000, afterCents: -25000 }, { beforeCents: null, afterCents: -500 }, { beforeCents: 5000, afterCents: 3000 }]), 15000 + 500)
+test('Review Runde 1/2: war der Vergleichszeitraum schon verfristet, zählt nur das Mehr; sonst die ganze Nachzahlung', () => {
+  const tenants = [{ beforeCents: -10000, afterCents: -25000 }, { beforeCents: null, afterCents: -500 }, { beforeCents: 5000, afterCents: 3000 }]
+  assert.equal(lostClaims(tenants, true), 15000 + 500)
+  assert.equal(lostClaims(tenants, false), 25000 + 500)
+})
+
+// Review Runde 2: vorher die Abrechnung 2025 mit offener Frist, nachher ein verfristeter Rumpf; die
+// ganze Nachzahlung des Rumpfs ist verloren, nicht 0 €.
+test('Review Runde 2: Grundsteuer 4.200 €, Vorauszahlung 100 €, Wechsel ab 07/2025: verloren ist die ganze Nachzahlung des Rumpfs', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'tenancies', 't1', { unitId: 'u1', tenantName: 'A', persons: 1, start: '2020-01-01', prepayments: [{ from: '2020-01', monthlyCents: 10000 }] })
+      await createEntity(db, 'costItems', 'gs', { propertyId: 'objekt-1', period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 420000, key: 'area' })
+    })
+    const v = await preview(opened, JULI_AB_2025)
+    const rumpf = v.effects.find((e) => e.label === '01.01.–30.06.2025') ?? assert.fail('kein Rumpf')
+    const a = rumpf.tenants[0] ?? assert.fail('kein Mieter')
+    assert.equal(a.afterCents, 60000 - Math.round(420000 * 181 / 365))
+    assert.ok(a.beforeCents !== null && a.beforeCents < 0, 'vorher ebenfalls eine Nachzahlung, aber mit offener Frist')
+    assert.equal(rumpf.lostClaimsCents, -a.afterCents)
+  })
+})
+
+// Review Runde 2: Die Verschiebung zwischen Steuerjahren nennt je Position ihr eigenes Jahr.
+test('Review Runde 2: taxShifts mit zwei Positionen verschiedener Jahre der Zahlung', async () => {
+  await withDatabase(async (opened) => {
+    await opened.write(async (db) => {
+      await db.update(properties).set({ periodStartMonth: 5 }).where(eq(properties.id, 'objekt-1'))
+      await createEntity(db, 'units', 'u1', { propertyId: 'objekt-1', name: 'EG', areaM2: 60, participates: true })
+      await createEntity(db, 'costItems', 'a', { propertyId: 'objekt-1', period: '2024-05', category: 'Müllabfuhr', description: 'Müll A', amountCents: 10000, key: 'area', taxYear: 2025 })
+      await createEntity(db, 'costItems', 'b', { propertyId: 'objekt-1', period: '2024-05', category: 'Müllabfuhr', description: 'Müll B', amountCents: 20000, key: 'area', taxYear: 2024 })
+    })
+    const v = await preview(opened, { startMonth: 5, changes: ['2025-01'] })
+    const g = v.groups[0] ?? assert.fail('keine Gruppe')
+    const nach2025 = g.taxShifts.find((t) => t.key === '2025-01') ?? assert.fail(JSON.stringify(g.taxShifts))
+    assert.match(nach2025.text, /„Müll B“ 200,00.€ von 2024 nach 2025/)
+    assert.doesNotMatch(nach2025.text, /Müll A/)
+    const rumpf = g.taxShifts.find((t) => t.key === '2024-05') ?? assert.fail('Rumpf fehlt')
+    assert.match(rumpf.text, /„Müll A“ 100,00.€ von 2025 nach 2024/)
+  })
 })

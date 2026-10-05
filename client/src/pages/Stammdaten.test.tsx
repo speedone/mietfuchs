@@ -249,7 +249,7 @@ test('Laienprobe B1: Speichern schickt die Marke des geladenen Stands mit', asyn
 test('Laienprobe B1: nach einer Änderung am Zeitraum der Heizung lädt die Seite die Mietverhältnisse neu', async () => {
   plants = [PLANT_MAI]
   answers = {
-    '/api/heating-plants/hp1/period/preview': { rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], token: 'w1', moves: [] },
+    '/api/heating-plants/hp1/period/preview': { rules: null, periods: [], newShort: [], blocked: [], groups: [], overrides: [], endsSeparate: [], effects: [], token: 'w1', moves: [] },
     '/api/heating-plants/hp1/period': PLANT_MAI,
   }
   const reload = vi.fn(async () => {})
