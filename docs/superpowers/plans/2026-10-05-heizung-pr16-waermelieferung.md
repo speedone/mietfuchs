@@ -32,6 +32,29 @@ Wärmelieferung: Hinweise § 556c, WärmeLV“), 14.2 (#213).
 **Baut auf:** PR 1 bis PR 15. Gearbeitet wird auf `feat/heizung-pr16-waermelieferung`, abgezweigt von
 der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 hat diesen Plan an diesen Stellen geändert:
+
+1. **Keine Beschränkung auf Brennstoffe der EBeV** (Abweichung 2, Review Focus 3, Task 2 Step 1, 3, 5
+   und 7, Task 5 Step 1 und 3, Task 6). Die Folgen der Wärmelieferung nach der HeizkostenV (§ 7 Abs. 3,
+   § 9 Abs. 1 Satz 2, § 9 Abs. 2 Satz 6 Nr. 2) hängen nicht am Brennstoff; Pellet-Contracting mit
+   ÷ 1,15 ist richtig. `CONTRACTING_ENERGIES` umfasst jetzt alle Energieträger außer Fernwärme (ohnehin
+   Wärmelieferung) und Wärmepumpe (Satz 6 Nr. 2 oder Nr. 3 offen, als Auslegung abgelehnt); die
+   Bedingung `heating_plants_contracting_energy` und die Sätze der Ablehnung folgen.
+2. **CO₂-Pflicht nach dem Brennstoff des Lieferanten** (neue Abweichung 9, Task 3 Step 5a): Weil
+   Pellet-, Holz- und Strom-Contracting jetzt möglich sind und als Fernwärme rechnen, fragt die Prüfung
+   „CO₂-Angaben nötig“ `co2Required(pot)`; sonst meldete PR 6 dort `co2.missing` mit einer Kürzung, die
+   das Gesetz nicht vorsieht (§ 2 Abs. 1 Satz 2 CO2KostAufG).
+3. **VIII ZR 46/25 und 47/25 nach dem Volltext** (Global Constraints, Abweichung 7, Task 4 Step 1, 3 und
+   6, Lexikon, CHANGELOG, CLAUDE.md). Der Hinweis sagt jetzt: „jedenfalls“ die Kosten nach § 7 Abs. 2,
+   § 8 Abs. 2 HeizkostenV (Rn. 27, 46); ob die vollen Kosten nach § 7 Abs. 4, § 8 Abs. 4 samt
+   kalkulatorischer Kosten, hat der BGH offengelassen (Rn. 47). Die Quelle ist primär; Task 4 Step 6 ist
+   kein Leseschritt mehr.
+4. **Mietvertrag statt Einzug** (Abweichung 4, Task 4 Step 3): § 556c setzt einen bei der Umstellung
+   laufenden Mietvertrag voraus (VIII ZR 46/25 Rn. 30). Mietfuchs kennt nur den Mietbeginn; der Text
+   sagt, dass der Vertragsschluss maßgeblich ist.
+
 ## Global Constraints
 
 - **Wer nichts einstellt, merkt nichts** (1.2 Nr. 1): Ohne `contracting` und ohne Tag der Umstellung ist
@@ -55,9 +78,17 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
   geprüft); WärmeLV §§ 1–13 (Vollzitat „Wärmelieferverordnung vom 7. Juni 2013 (BGBl. I S. 1509)“,
   Textnachweis ab 01.07.2013, § 13: Inkrafttreten 1. Juli 2013); HeizkostenV § 1 Abs. 1 Nr. 2, § 7 Abs. 2
   bis 4, § 8 Abs. 3 und 4; BetrKV § 2 Nr. 4 Buchst. c; CO2KostAufG § 2 Abs. 1 Satz 2, § 3 Abs. 1 und 4.
-  **Sekundär:** BGH, Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25, über Berliner Mieterverein
-  (Leitsätze) und otto-schmidt.de (Sachverhalt); der Volltext ist vor dem Merge zu lesen (Entwurf 0.2,
-  „sekundär“), und der Text des Hinweises ist dann daran zu prüfen. Inkrafttreten des § 556c Abs. 1, 2
+  **Primär, Volltext am 05.10.2026 gelesen** (bundesgerichtshof.de, PDF; ECLI:DE:BGH:2026:200526UVIIIZR46.25.0):
+  BGH, Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25. Rn. 27: Der Vermieter kann „[j]edenfalls aber …
+  Zahlung des Anteils der Kosten der zentralen Wärmeversorgung durch die Wärmelieferantin verlangen, der
+  auch bei einer zentralen Wärmeversorgung durch die Klägerin gemäß § 7 Abs. 2 … HeizkostenV … aF, § 8
+  Abs. 2 HeizkostenV angefallen wäre“; Rn. 28: § 556c Abs. 1 Satz 1 BGB ist auf die Umstellung von der
+  Selbstversorgung der Mieter „weder unmittelbar noch entsprechend anwendbar“; Rn. 30: die unmittelbare
+  Anwendung setzt einen „zum Zeitpunkt der beabsichtigten Umstellung bereits laufenden Mietvertrag“
+  voraus; Rn. 44–46: stillschweigende Einigung durch Ankündigung und Zahlung der Vorauszahlungen;
+  Rn. 47: ob die Vereinbarung „die gesamten Kosten nach § 7 Abs. 4, § 8 Abs. 4 HeizkostenV einschließlich
+  der kalkulatorischen Kosten“ umfasst, ist vom Berufungsgericht festzustellen. Die Fassungen bei
+  otto-schmidt.de und in der Pressemitteilung („nur … der Anteil“) sind danach ungenau. Inkrafttreten des § 556c Abs. 1, 2
   am 01.07.2013 über buzer.de (sekundär); der Parameter stützt das Datum auf § 13 WärmeLV (primär).
 - **Sprache:** Bezeichner englisch; Kommentare, Meldungen, Testnamen deutsch; Nutzertexte siezen
   (`anrede.test.ts`). Server-Importe mit `.ts`, reine Typimporte mit `import type`, kein `enum`.
@@ -75,10 +106,11 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
 2. **Ein Contracting-Kessel mit Öl, und der Vermieter will einen Vorrat eintragen.** Den Vorrat führt der
    Lieferant, nicht der Vermieter; der Vermieter bezahlt Wärme in kWh. Erwartet: Die Anlage gilt nicht als
    Vorratsenergie; Lieferungen sind Wärmerechnungen. Test in Task 3.
-3. **Contracting wird bei einer Wärmepumpe, einer Pelletheizung oder einer Etagenheizung gewählt.**
-   Erwartet: 400 mit einem Satz statt einer Anlage, die still falsch rechnet (die CO₂-Aufteilung erfasst
-   Wärmelieferung nur „hinsichtlich der eingesetzten Brennstoffe“ mit Standardwert nach der EBeV,
-   § 2 Abs. 1 CO2KostAufG). Test in Task 2.
+3. **Contracting wird bei einer Pelletheizung, einer Wärmepumpe oder einer Etagenheizung gewählt.**
+   Erwartet: Bei Pellets wird Contracting angenommen und rechnet als Wärmelieferung (÷ 1,15 nach § 9 Abs. 2
+   Satz 6 Nr. 2, kein Pflichtanteil nach § 7 Abs. 3), aber ohne CO₂-Pflicht und ohne `co2.missing`, denn
+   der eingesetzte Brennstoff hat keine CO₂-Kosten (Abweichung 9). Bei Wärmepumpe und Etagenheizung 400
+   mit einem Satz statt einer Anlage, die still falsch rechnet. Tests in Task 2 und Task 3.
 4. **Ein Mieter zog am Tag der Umstellung ein** (Mietbeginn = Umstellung). Er wohnte nicht schon vorher;
    § 556c betrifft ihn nicht. Erwartet: kein Hinweis für ihn, wohl aber für den Mieter, der am Vortag
    schon wohnte. Test in Task 4.
@@ -135,12 +167,22 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
    `switch_announced_on` (Zugang der Umstellungsankündigung). Die drei letzten braucht der Hinweis: ohne
    den Tag weiß Mietfuchs nicht, wen § 556c betrifft (Review Focus 4), ohne die vorherige Versorgung nicht,
    ob VIII ZR 46/25 greift, ohne die Ankündigung nicht, ob § 11 Abs. 3 WärmeLV greift.
-2. **Contracting nur bei Gas, Öl, Flüssiggas und Kohle (Festlegung, Review Focus 3).** Für diese
-   Brennstoffe ist der Anwendungsbereich des CO2KostAufG bei Wärmelieferung eindeutig (§ 2 Abs. 1 Satz 2:
-   „hinsichtlich der für die Wärmeerzeugung eingesetzten Brennstoffe“ mit Standardwert nach der EBeV).
-   Wärmepumpe und Strom (§ 12 Abs. 3 HeizkostenV knüpft an die Erfassung der Wärmepumpe an), Pellets und
-   Holz (kein Standardwert) und Etagenheizungen (`perUnit`) lehnt der Server mit einem Satz ab. Fernwärme
-   ist ohnehin Wärmelieferung und braucht kein Merkmal.
+2. **Contracting bei jeder zentralen Anlage außer Wärmepumpe (Festlegung, Review Focus 3).** Die Folgen
+   der Wärmelieferung nach der HeizkostenV hängen **nicht** am Brennstoff: § 7 Abs. 3 („gilt Absatz 1
+   Satz 1 und 3 bis 5 entsprechend“, also ohne den Pflichtanteil des Satzes 2), § 9 Abs. 1 Satz 2
+   (Aufteilung nach dem Wärmeverbrauch) und § 9 Abs. 2 Satz 6 Nr. 2 („bei eigenständiger gewerblicher
+   Wärmelieferung durch 1,15 zu dividieren“) gelten für jede eigenständige gewerbliche Wärmelieferung nach
+   § 1 Abs. 1 Nr. 2 („auch aus Anlagen nach Nummer 1“). Lehnte Mietfuchs etwa Pellet-Contracting ab,
+   müsste der Vermieter es als eigene Anlage führen, und der Formelwert wäre um den Faktor 1,15 falsch.
+   § 2 Abs. 1 Satz 2 CO2KostAufG („hinsichtlich der für die Wärmeerzeugung eingesetzten Brennstoffe“)
+   begrenzt nur die **CO₂-Aufteilung**, nicht die Wärmelieferung; das regelt Abweichung 9 über den
+   Brennstoff des Lieferanten. Zugelassen sind deshalb Gas, Öl, Flüssiggas, Kohle, Pellets, Holz, Strom
+   und „Sonstiges“. Abgelehnt werden mit einem Satz: **Fernwärme** (sie ist ohne Merkmal Wärmelieferung),
+   die **Wärmepumpe** (Auslegung: Ob bei einer vom Contractor betriebenen monovalenten Wärmepumpe § 9
+   Abs. 2 Satz 6 Nr. 2, ÷ 1,15, oder Nr. 3, × 0,30, gilt, regelt die Verordnung nicht; Mietfuchs rechnet
+   keine der beiden Zahlen, statt eine zu raten) und die **Etagenheizung** (`perUnit`). Die frühere
+   Fassung dieser Abweichung („nur Gas, Öl, Flüssiggas und Kohle“) trug die Begründung nicht (Prüfung vom
+   05.10.2026).
 3. **Contracting rechnet wie Fernwärme (Festlegung über eine Naht).** Statt jede Regel aus PR 6–11 um ein
    Merkmal zu erweitern, bekommt die Berechnung die Anlage mit `energy = 'districtHeating'`
    (`asBilledPlant` in `snapshotFor`). Das ergibt nach dem Wortlaut: kein § 7 Abs. 1 Satz 2 (§ 7 Abs. 3),
@@ -153,7 +195,11 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
    (Festlegung, Review Focus 4).** § 556c Abs. 1 setzt voraus, dass „der Mieter die Betriebskosten für
    Wärme … zu tragen“ hat und der Vermieter „umstellt“; das betrifft nur bestehende Mietverhältnisse. Wer
    danach einzieht, trägt die Kosten der Wärmelieferung nach Vereinbarung (§ 2 Nr. 4 Buchst. c BetrKV);
-   dazu sagt der Hinweis nichts, das steht im Lexikon.
+   dazu sagt der Hinweis nichts, das steht im Lexikon. Maßgeblich ist nach BGH VIII ZR 46/25 Rn. 30 der
+   **Mietvertrag**, der „zum Zeitpunkt der beabsichtigten Umstellung bereits lauf[t]“, nicht der Einzug;
+   Mietfuchs kennt nur den Mietbeginn und nimmt ihn als Näherung. Der Text sagt deshalb „sofern der
+   Mietvertrag vor der Umstellung geschlossen wurde“, und wer vor der Umstellung unterschrieb, aber erst
+   am Tag der Umstellung einzog, erscheint nicht (Festlegung, im PR-Text nennen).
 5. **Neuer Parameter `bgb.heat-delivery-switch` (Festlegung).** Der Entwurf führt in 4.3 keinen
    Parameter für § 556c. Der Hinweis nennt aber zwei Zahlen (drei Monate, 80 Prozent), und Zahlen stehen
    nur im Register (4.3, Wächter). Zeitregel `eventDate` (der Tag der Umstellung), erste Fassung ab
@@ -162,12 +208,16 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
 6. **Kein Eintrag im Regelverzeichnis (Festlegung).** `rulesFor` nennt jede Regel, die im Zeitraum gilt,
    in jeder Abrechnung; eine Regel zu § 556c stünde damit auch bei Häusern ohne Wärmelieferung im
    Rechtsstand. Der Hinweis trägt die Normen selbst; der benutzte Parameter steht in `legalBasis.values`.
-7. **Text zu VIII ZR 46/25 vorsichtig (Festlegung).** Die beiden Sekundärquellen fassen die Folge
-   verschieden: „mindestens die Kosten nach § 7 Abs. 2 HeizkostenV, offen ob nach § 7 Abs. 4“ (Berliner
-   Mieterverein) und „nur … der Anteil, der auch bei einer zentralen Wärmeversorgung durch den Vermieter
-   gem. § 7 Abs. 2 HeizkostenV angefallen wäre“ (otto-schmidt). Der Hinweis sagt nur, was beide tragen:
-   § 556c gilt nicht, es braucht eine (auch stillschweigende) Vereinbarung, und ihre Reichweite ist im
-   Einzelfall auszulegen. Vor dem Merge am Volltext prüfen (Task 4 Step 6).
+7. **Text zu VIII ZR 46/25 nach dem Volltext (Festlegung, Prüfung vom 05.10.2026).** Der Volltext
+   (Rn. 27, 28, 44–47) trägt drei Aussagen: § 556c gilt „weder unmittelbar noch entsprechend“; die
+   Mieter tragen die Kosten auf Grund einer (auch stillschweigenden) Vereinbarung, etwa durch Ankündigung
+   und Zahlung der Vorauszahlungen; der Vermieter kann danach **jedenfalls** den Anteil verlangen, der
+   bei eigener zentraler Versorgung nach § 7 Abs. 2, § 8 Abs. 2 HeizkostenV angefallen wäre, und ob die
+   Vereinbarung die vollen Kosten nach § 7 Abs. 4, § 8 Abs. 4 HeizkostenV einschließlich der
+   kalkulatorischen Kosten umfasst, hat der BGH offengelassen und an das Berufungsgericht
+   zurückverwiesen. Der Hinweis sagt genau das; „nur … der Anteil“ (otto-schmidt, Pressemitteilung) ist
+   ungenau und steht nicht im Text. Task 4 Step 6 entfällt als Leseschritt und prüft nur den Wortlaut des
+   Tests gegen diese Abweichung.
 8. **§ 11 Abs. 1 Nr. 4 HeizkostenV nicht in diesem Plan (Lücke, vom Plan PR 14 an PR 16 verwiesen).** Die
    Vorschrift nimmt „die Kosten des Betriebs der zugehörigen Hausanlagen“ von §§ 3 bis 7 aus, „soweit
    diese Kosten in den Fällen des § 1 Absatz 3 nicht in den Kosten der Wärmelieferung enthalten sind,
@@ -177,6 +227,15 @@ der Spitze von PR 15, gestapelt gestellt und nach dem Merge von PR 15 auf `main`
    Abs. 1 Nr. 2). Ohne den Fall des § 1 Abs. 3 gibt es nichts, was Nr. 4 ausnehmen könnte. Vorschlag für ein
    neues Issue (öffentlich, vor dem Anlegen nachfragen): „Wärmelieferung mit unmittelbarer Abrechnung des
    Lieferanten (§ 1 Abs. 3, § 11 Abs. 1 Nr. 4 HeizkostenV)“.
+9. **CO₂-Pflicht nach dem Brennstoff des Lieferanten (Festlegung, neu nach Prüfung vom 05.10.2026).**
+   Bei Contracting rechnet die Berechnung die Anlage als Fernwärme (Abweichung 3), und PR 6 verlangt bei
+   Fernwärme CO₂-Angaben oder meldet `co2.missing` mit der Kürzung um 3 % (§ 7 Abs. 4 CO2KostAufG). Das
+   CO2KostAufG erfasst Wärmelieferung aber nur „hinsichtlich der für die Wärmeerzeugung eingesetzten
+   Brennstoffe“ (§ 2 Abs. 1 Satz 2). Kennt Mietfuchs den Brennstoff des Contractors und gehört er zu
+   denen, für die PR 6 keine CO₂-Aufteilung vorsieht (Pellets, Holz, Strom, Wärmepumpe; Entwurf W8),
+   entfällt die Pflicht: `Co2Pot` bekommt `fuelEnergy`, und die Prüfung „CO₂-Angaben nötig“ fragt
+   `co2Required(pot)` (Task 3 Step 5a). Bei Gas, Öl, Flüssiggas, Kohle und „Sonstiges“ bleibt es bei der
+   Regel der Fernwärme. Fernwärme ohne Merkmal kennt keinen Brennstoff und bleibt unverändert.
 
 ---
 
@@ -292,7 +351,7 @@ In `GLOSSARY` hinter `operatingPower` (PR 15):
     short: `Liefert ein Dritter die Wärme, aus einem Wärmenetz (Fernwärme) oder aus einer Anlage im Haus, die er betreibt (Contracting), sind die Kosten der Wärmelieferung sein Entgelt und die Kosten des Betriebs der Hausanlagen. Verteilt werden sie nach der Heizkostenverordnung zu ${SHARE.min} bis ${SHARE.max} Prozent nach Verbrauch; nicht der Pflichtanteil von ${FORCED} % für ungedämmte Gebäude mit Öl- oder Gasheizung, denn der gilt nur für die eigene Heizung.`,
     example: `Ein Contractor betreibt den Gaskessel im Keller und stellt 6.000 € Arbeitspreis und 1.200 € Grundpreis in Rechnung; dazu kommen 150 € Betriebsstrom der Pumpen im Haus. Heizkosten sind 7.350 €. Wird der Warmwasseranteil mit der Formel bestimmt, ist ihr Wert durch ${dec(DHW.heatSupplyDivisor)} zu teilen (÷ ${dec(DHW.heatSupplyDivisor)}), nicht wie bei eigenem Erdgas nach Brennwert mit ${dec(DHW.gasCalorific)} zu malnehmen. Die CO₂-Angaben muss der Lieferant auf seiner Rechnung ausweisen, und aufgeteilt wird wie bei Fernwärme.`,
     norm: '§ 556c BGB; §§ 1, 5, 8 bis 11 WärmeLV; § 1 Abs. 1 Nr. 2, § 7 Abs. 3 und 4, § 9 Abs. 2 Satz 6 Nr. 2 HeizkostenV; § 2 Nr. 4 Buchst. c BetrKV; § 2 Abs. 1 Satz 2, § 3 Abs. 4 CO2KostAufG',
-    needed: `Wenn Ihr Haus mit Fernwärme oder von einem Contractor versorgt wird. Umlegen dürfen Sie die Kosten der Wärmelieferung, wenn der Mietvertrag es vorsieht. Haben Sie während laufender Mietverhältnisse von der eigenen Heizung umgestellt, gelten für diese Mieter die Voraussetzungen des § 556c BGB: bessere Effizienz, keine höheren Kosten als vorher und eine Ankündigung in Textform spätestens ${SWITCH.noticeMonths} Monate vor der Umstellung. Hat der Mieter vorher selbst geheizt, gilt § 556c nicht. Mietfuchs nennt das in der Abrechnung, wenn Sie den Tag der Umstellung an der Heizung eintragen.`,
+    needed: `Wenn Ihr Haus mit Fernwärme oder von einem Contractor versorgt wird. Umlegen dürfen Sie die Kosten der Wärmelieferung, wenn der Mietvertrag es vorsieht. Haben Sie während laufender Mietverhältnisse von der eigenen Heizung umgestellt, gelten für diese Mieter die Voraussetzungen des § 556c BGB: bessere Effizienz, keine höheren Kosten als vorher und eine Ankündigung in Textform spätestens ${SWITCH.noticeMonths} Monate vor der Umstellung. Hat der Mieter vorher selbst geheizt, gilt § 556c nicht; ob und wie weit er die Kosten trägt, hängt dann von einer (auch stillschweigenden) Vereinbarung ab (BGH, Urteil vom 20.05.2026, VIII ZR 46/25). Mietfuchs nennt das in der Abrechnung, wenn Sie den Tag der Umstellung an der Heizung eintragen.`,
   },
 ```
 
@@ -326,7 +385,7 @@ Refs #213"
 - Consumes: `heatingPlants`, `oneOf`, `exactly` (schema.ts); `mergeHeatingPlant`, `emptyHeatingPlant`, `plantRow`, `guardHeatingPlant`, `createHeatingPlant`, `updateHeatingPlant` (db/heating.ts); `HeatingError`, `merged`, `asNullableFilled`, `oneOfOrUndefined`, `ISO_DATE` (repository.ts).
 - Produces:
   - `shared/types.ts`: `type PreviousSupply = 'landlord' | 'tenant'`; `HeatingPlant.contracting: boolean`, `.heatDeliverySince: string | null`, `.previousSupply: PreviousSupply | null`, `.switchAnnouncedOn: string | null`
-  - `shared/heatDelivery.ts` (neu, hier nur): `CONTRACTING_ENERGIES: readonly HeatingEnergy[]` (`gas`, `oil`, `lpg`, `coal`), `isHeatDelivery(plant: Pick<HeatingPlant, 'energy' | 'contracting'>): boolean`
+  - `shared/heatDelivery.ts` (neu, hier nur): `CONTRACTING_ENERGIES: readonly HeatingEnergy[]` (`gas`, `oil`, `lpg`, `coal`, `pellets`, `wood`, `electric`, `other`; nicht `districtHeating`, `heatPump`), `isHeatDelivery(plant: Pick<HeatingPlant, 'energy' | 'contracting'>): boolean`
   - schema.ts: `PREVIOUS_SUPPLIES`; Spalten `heatingPlants.contracting`, `.heatDeliverySince`, `.previousSupply`, `.switchAnnouncedOn`
 
 - [ ] **Step 1: Write the failing tests**
@@ -383,14 +442,16 @@ test('Kette: Bestand ohne Wärmelieferung, Vorgaben false und NULL', async () =>
   }
 })
 
-test('Prüfbedingungen: Contracting nur bei Gas, Öl, Flüssiggas, Kohle und zentral; Umstellung nur bei Wärmelieferung', async () => {
+test('Prüfbedingungen: Contracting bei jeder zentralen Anlage außer Fernwärme und Wärmepumpe; Umstellung nur bei Wärmelieferung', async () => {
   const dir = tempDir()
   try {
     const c = await connect(path.join(dir, 'db.sqlite'))
     applyMigrations(c, await loadMigrations())
     const ins = (id: string, cols: string, vals: string) => `INSERT INTO heating_plants (id, property_id, energy${cols}) VALUES ('${id}', 'objekt-1'${vals})`
     assert.equal(rejects(c, ins('a', ', contracting', ", 'gas', 1")), null)
-    assert.match(rejects(c, ins('b', ', contracting', ", 'pellets', 1")) ?? '', /heating_plants_contracting_energy/)
+    assert.equal(rejects(c, ins('b', ', contracting', ", 'pellets', 1")), null)
+    assert.match(rejects(c, ins('b2', ', contracting', ", 'heatPump', 1")) ?? '', /heating_plants_contracting_energy/)
+    assert.match(rejects(c, ins('b3', ', contracting', ", 'districtHeating', 1")) ?? '', /heating_plants_contracting_energy/)
     assert.match(rejects(c, ins('c', ', contracting, supply', ", 'gas', 1, 'perUnit'")) ?? '', /heating_plants_contracting_central/)
     assert.equal(rejects(c, ins('d', ', heat_delivery_since, previous_supply', ", 'districtHeating', '2025-10-01', 'landlord'")), null)
     assert.match(rejects(c, ins('e', ', heat_delivery_since', ", 'gas', '2025-10-01'")) ?? '', /heating_plants_delivery_only/)
@@ -407,7 +468,11 @@ test('Anlage: Contracting anlegen und ändern, Review Focus 3 lehnt mit einem Sa
   await withDatabase(async (opened) => {
     const { plant } = await opened.write((db) => createHeatingPlant(db, 'hp', 'objekt-1', { energy: 'gas', method: 'service', contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'landlord', switchAnnouncedOn: '2025-06-15' }))
     assert.deepEqual([plant.contracting, plant.heatDeliverySince, plant.previousSupply, plant.switchAnnouncedOn], [true, '2025-10-01', 'landlord', '2025-06-15'])
-    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'pellets' })), heatingError(400, /Contracting.*Gas, Öl, Flüssiggas oder Kohle/))
+    const pellets = await opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'pellets' }))
+    assert.deepEqual([pellets?.energy, pellets?.contracting], ['pellets', true])
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'heatPump' })), heatingError(400, /Wärmepumpe/))
+    await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'districtHeating' })), heatingError(400, /Fernwärme ist ohne Merkmal Wärmelieferung/))
+    await opened.write((db) => updateHeatingPlant(db, 'hp', { energy: 'gas' }))
     await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { heatDeliverySince: '01.10.2025' })), heatingError(400, /Tag der Umstellung/))
     await assert.rejects(opened.write((db) => updateHeatingPlant(db, 'hp', { heatDeliverySince: null })), heatingError(400, /Ankündigung ohne Tag der Umstellung/))
     const ohne = await opened.write((db) => updateHeatingPlant(db, 'hp', { contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null }))
@@ -453,9 +518,12 @@ export type PreviousSupply = 'landlord' | 'tenant'
 // (Abweichung 3 im Plan). Liegt in shared/, weil Server und Formular dieselbe Entscheidung brauchen.
 import type { HeatingEnergy, HeatingPlant } from './types.ts'
 
-// Contracting gibt es nur bei Brennstoffen mit Standardwert nach der EBeV (§ 2 Abs. 1 Satz 2
-// CO2KostAufG; Abweichung 2).
-export const CONTRACTING_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal']
+// Contracting gibt es bei jeder zentralen Anlage (§ 1 Abs. 1 Nr. 2 HeizkostenV: „auch aus Anlagen nach
+// Nummer 1“); die Folgen nach § 7 Abs. 3 und § 9 Abs. 2 Satz 6 Nr. 2 hängen nicht am Brennstoff
+// (Abweichung 2). Nicht dabei: Fernwärme, die ohne Merkmal Wärmelieferung ist, und die Wärmepumpe, bei
+// der die Verordnung offenlässt, ob Satz 6 Nr. 2 oder Nr. 3 gilt (Auslegung). Ob CO₂ aufzuteilen ist,
+// entscheidet der Brennstoff des Lieferanten (Abweichung 9, `co2Required` in server/src/co2.ts).
+export const CONTRACTING_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal', 'pellets', 'wood', 'electric', 'other']
 
 // Wärmelieferung im Sinne von § 1 Abs. 1 Nr. 2 HeizkostenV: Fernwärme oder Contracting.
 export const isHeatDelivery = (plant: Pick<HeatingPlant, 'energy' | 'contracting'>): boolean =>
@@ -489,9 +557,9 @@ NULL`), kein `__new_`.
 In der Bedingungsliste von `heatingPlants` anhängen:
 
 ```ts
-    // Wärmelieferung (Heizung PR 16): Contracting nur mit Brennstoff nach der EBeV und zentral; Angaben
+    // Wärmelieferung (Heizung PR 16): Contracting nicht bei Fernwärme und Wärmepumpe, nur zentral; Angaben
     // zur Umstellung nur bei Fernwärme oder Contracting; Ankündigung nur mit Tag der Umstellung.
-    check('heating_plants_contracting_energy', sql.raw(`"contracting" = 0 OR "energy" IN ('gas', 'oil', 'lpg', 'coal')`)),
+    check('heating_plants_contracting_energy', sql.raw(`"contracting" = 0 OR "energy" IN ('gas', 'oil', 'lpg', 'coal', 'pellets', 'wood', 'electric', 'other')`)),
     check('heating_plants_contracting_central', sql.raw(`"contracting" = 0 OR "supply" = 'central'`)),
     check('heating_plants_delivery_only', sql.raw(`("heat_delivery_since" IS NULL AND "previous_supply" IS NULL AND "switch_announced_on" IS NULL) OR "contracting" = 1 OR "energy" = 'districtHeating'`)),
     check('heating_plants_delivery_since_date', sql.raw(`"heat_delivery_since" IS NULL OR "heat_delivery_since" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`)),
@@ -544,8 +612,11 @@ In `guardHeatingPlant` vor `await sameProperty(…)`:
 
 ```ts
   // Wärmelieferung (Heizung PR 16, #213; Abweichung 2).
+  if (after.contracting && after.energy === 'districtHeating') {
+    throw new HeatingError(400, 'Fernwärme ist ohne Merkmal Wärmelieferung. Bitte nehmen Sie das Häkchen bei „Contracting“ heraus.')
+  }
   if (after.contracting && !CONTRACTING_ENERGIES.includes(after.energy)) {
-    throw new HeatingError(400, 'Contracting bildet Mietfuchs bei Gas, Öl, Flüssiggas oder Kohle ab. Liefert ein Dritter Wärme aus einer Wärmepumpe, aus Pellets, Holz oder Strom, kommt das mit einer späteren Version; Fernwärme wählen Sie als Energieträger „Fernwärme“.')
+    throw new HeatingError(400, 'Contracting mit einer Wärmepumpe bildet Mietfuchs noch nicht ab: Ob der Formelwert für das Warmwasser dann wie bei Wärmelieferung oder wie bei einer Wärmepumpe umzurechnen ist, lässt die Heizkostenverordnung offen (§ 9 Abs. 2 Satz 6 Nr. 2 und 3).')
   }
   if (after.contracting && after.supply !== 'central') {
     throw new HeatingError(400, 'Contracting gibt es nur bei einer zentralen Heizung; Etagenheizungen eines Lieferanten kommen mit einer späteren Version.')
@@ -582,8 +653,8 @@ Expected: PASS.
 git add shared/types.ts shared/heatDelivery.ts server/src/db/schema.ts server/drizzle server/src/db/read.ts server/src/db/heating.ts server/test/db-waermelieferung.test.ts server/test/migrations.test.ts server/test client/src
 git commit -m "Heizanlage: Wärmelieferung (Contracting) und Angaben zur Umstellung
 
-Contracting nur bei Gas, Öl, Flüssiggas und Kohle und zentral; Tag der
-Umstellung, vorherige Versorgung und Ankündigung nur bei Wärmelieferung.
+Contracting bei jeder zentralen Anlage außer Fernwärme und Wärmepumpe; Tag
+der Umstellung, vorherige Versorgung und Ankündigung nur bei Wärmelieferung.
 
 Refs #213"
 ```
@@ -593,7 +664,7 @@ Refs #213"
 ### Task 3: Die Naht `billingEnergy`: Contracting rechnet wie Fernwärme
 
 **Files:**
-- Modify: `shared/heatDelivery.ts`, `server/src/snapshot.ts`, `server/src/db/heatingSelf.ts`, `server/src/db/heating.ts`, die Datei des Vorrats aus PR 8 Task 5 (Schreibprüfung mit `isStockEnergy` bzw. `STOCK_ENERGIES`), `client/src/heatingSelfForm.ts`-Aufrufer (`client/src/components/HeatingSelfSetup.tsx`), die Karte „Vorrat“ (PR 8 Task 8) und `client/src/components/FuelCard.tsx` (PR 7)
+- Modify: `shared/heatDelivery.ts`, `server/src/snapshot.ts`, `server/src/co2.ts`, `server/src/calc.ts`, `server/src/db/heatingSelf.ts`, `server/src/db/heating.ts`, die Datei des Vorrats aus PR 8 Task 5 (Schreibprüfung mit `isStockEnergy` bzw. `STOCK_ENERGIES`), `client/src/heatingSelfForm.ts`-Aufrufer (`client/src/components/HeatingSelfSetup.tsx`), die Karte „Vorrat“ (PR 8 Task 8) und `client/src/components/FuelCard.tsx` (PR 7)
 - Test: `server/test/heat-delivery-guard.test.ts` (neu), `server/test/heating.test.ts`, `server/test/calc-waermelieferung.test.ts` (neu), `server/test/db-waermelieferung.test.ts`
 
 **Interfaces:**
@@ -601,6 +672,7 @@ Refs #213"
 - Produces:
   - `shared/heatDelivery.ts`: `billingEnergy(plant: Pick<HeatingPlant, 'energy' | 'contracting'>): HeatingEnergy`, `asBilledPlant<P extends Pick<HeatingPlant, 'energy' | 'contracting'>>(plant: P): P & { fuelEnergy?: HeatingEnergy }`
   - snapshot.ts: `SnapshotHeatingPlant` mit optionalen `'contracting' | 'heatDeliverySince' | 'previousSupply' | 'switchAnnouncedOn'` und `fuelEnergy?: HeatingEnergy`
+  - co2.ts: `Co2Pot.fuelEnergy?: HeatingEnergy`; `NO_CO2_FUELS: readonly HeatingEnergy[]`; `co2Required(pot: Pick<Co2Pot, 'energy' | 'fuelEnergy'>): boolean`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -852,6 +924,76 @@ Meldet der Wächter weitere Stellen, gilt dieselbe Regel: Entscheidet die Stelle
 Warmwasser oder den Anteil nach Verbrauch, nimmt sie `billingEnergy`; ist es eine Beschriftung des
 Energieträgers, prüft der Wächter sie nicht (sie trifft keins der Muster).
 
+- [ ] **Step 5a: CO₂-Pflicht nach dem Brennstoff des Lieferanten (`server/src/co2.ts`, `server/src/calc.ts`, Abweichung 9)**
+
+Test, in `server/test/calc-waermelieferung.test.ts` anhängen:
+
+```ts
+import { co2Required } from '../src/co2.ts'
+
+test('Abweichung 9: Pellet-Contracting verlangt keine CO₂-Angaben, Gas-Contracting und Fernwärme schon (§ 2 Abs. 1 Satz 2 CO2KostAufG)', () => {
+  assert.equal(co2Required({ energy: 'districtHeating', fuelEnergy: 'pellets' }), false)
+  assert.equal(co2Required({ energy: 'districtHeating', fuelEnergy: 'wood' }), false)
+  assert.equal(co2Required({ energy: 'districtHeating', fuelEnergy: 'electric' }), false)
+  assert.equal(co2Required({ energy: 'districtHeating', fuelEnergy: 'gas' }), true)
+  assert.equal(co2Required({ energy: 'districtHeating', fuelEnergy: 'other' }), true)
+  assert.equal(co2Required({ energy: 'districtHeating' }), true)
+  assert.equal(co2Required({ energy: 'oil' }), true)
+  assert.equal(co2Required({ energy: 'pellets' }), false)
+})
+```
+
+Run: `npm --prefix server test -- test/calc-waermelieferung.test.ts`
+Expected: FAIL, fehlender Export `co2Required`.
+
+`server/src/co2.ts`: `Co2Pot` bekommt hinter `energy`:
+
+```ts
+  // Bei Contracting (Heizung PR 16) der Brennstoff des Lieferanten; `energy` ist dann `districtHeating`.
+  fuelEnergy?: HeatingEnergy
+```
+
+In `co2PotsOf` im zurückgegebenen Objekt hinter `energy: plant.energy,`:
+
+```ts
+        ...(plant.fuelEnergy !== undefined ? { fuelEnergy: plant.fuelEnergy } : {}),
+```
+
+Hinter `CO2_FUELS`:
+
+```ts
+// Brennstoffe ohne CO₂-Aufteilung (Entwurf W8): Für sie entstehen keine CO₂-Kosten nach dem BEHG, die
+// das CO2KostAufG aufteilen könnte. Bei Wärmelieferung zählt der „für die Wärmeerzeugung eingesetzte
+// Brennstoff“ (§ 2 Abs. 1 Satz 2 CO2KostAufG); kennt Mietfuchs ihn (Contracting, Heizung PR 16), entfällt
+// bei diesen die Pflicht. Fernwärme ohne Merkmal hat keinen bekannten Brennstoff und bleibt erfasst.
+export const NO_CO2_FUELS: readonly HeatingEnergy[] = ['pellets', 'wood', 'electric', 'heatPump']
+
+// Ob für einen Topf CO₂-Angaben nötig sind (sonst `co2.missing`).
+export const co2Required = (pot: Pick<Co2Pot, 'energy' | 'fuelEnergy'>): boolean =>
+  CO2_FUELS.includes(pot.energy) ||
+  (pot.energy === 'districtHeating' && !(pot.fuelEnergy !== undefined && NO_CO2_FUELS.includes(pot.fuelEnergy)))
+```
+
+`server/src/calc.ts`, im Zweig „Ohne Angaben“ des CO₂-Blocks (PR 6 Task 7) die Bedingung
+
+```ts
+      if (CO2_FUELS.includes(pot.energy) || pot.energy === 'districtHeating') {
+```
+
+ersetzen durch
+
+```ts
+      if (co2Required(pot)) {
+```
+
+und `co2Required` aus `'./co2.ts'` importieren. Der Zweig `else if (pot.energy === 'other')` bleibt; ein
+Pellet-Contracting fällt in keinen der beiden Zweige und meldet nichts. Fragt eine andere Stelle des
+CO₂-Blocks (PR 7 bis PR 15) mit derselben Bedingung `CO2_FUELS.includes(pot.energy) || pot.energy ===
+'districtHeating'` nach der Pflicht, wird sie ebenso ersetzt (`grep -n "=== 'districtHeating'" server/src/calc.ts`).
+
+Run: `npm --prefix server test -- test/calc-waermelieferung.test.ts test/calc-co2.test.ts`
+Expected: PASS.
+
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `npm --prefix server test -- test/heat-delivery-guard.test.ts test/heating.test.ts test/calc-waermelieferung.test.ts test/db-waermelieferung.test.ts test/law-literals.test.ts && npm --prefix client test && npm run typecheck`
@@ -861,11 +1003,11 @@ Prüfung am Formelwert (PR 11), ohne neuen Code: `formulaFactor` bekommt aus dem
 `'districtHeating'`. In `server/test/dhw.test.ts` anhängen:
 
 ```ts
-test('Contracting mit Gas: Formelwert ÷ 1,15 wie Wärmelieferung, nicht × 1,11 (§ 9 Abs. 2 Satz 6 Nr. 2, Heizung PR 16)', () => {
+test('Contracting mit Gas oder Pellets: Formelwert ÷ 1,15 wie Wärmelieferung, nicht × 1,11 (§ 9 Abs. 2 Satz 6 Nr. 2, Heizung PR 16)', () => {
   // Dieselbe Eingabe wie im Test „Wärmelieferung“ dieser Datei, nur mit der Energie, die snapshotFor bei
-  // Contracting liefert.
-  const energy = billingEnergy({ energy: 'gas', contracting: true })
-  assert.equal(energy, 'districtHeating')
+  // Contracting liefert. Die Folge hängt nicht am Brennstoff (Abweichung 2).
+  assert.equal(billingEnergy({ energy: 'gas', contracting: true }), 'districtHeating')
+  assert.equal(billingEnergy({ energy: 'pellets', contracting: true }), 'districtHeating')
 })
 ```
 
@@ -937,6 +1079,7 @@ test('§ 556c: Umstellung am 01.10.2025, Ankündigung rechtzeitig; nur der Miete
   assert.equal(n.level, 'hint')
   assert.match(n.text, /Meier/)
   assert.doesNotMatch(n.text, /Schulz/)
+  assert.match(n.text, /maßgeblich ist, ob der Mietvertrag vor der Umstellung geschlossen wurde/)
   assert.match(n.text, /mit verbesserter Effizienz/)
   assert.match(n.text, /mindestens 80 %/)
   assert.match(n.text, /spätestens 3 Monate vorher in Textform/)
@@ -959,6 +1102,10 @@ test('VIII ZR 46/25: vorher selbst geheizt, § 556c gilt nicht', () => {
   assert.match(n.text, /VIII ZR 46\/25 und 47\/25/)
   assert.match(n.text, /§ 556c BGB gilt dann nicht/)
   assert.match(n.text, /auch stillschweigend/)
+  // Volltext Rn. 27, 47: „jedenfalls“ § 7 Abs. 2, § 8 Abs. 2; die vollen Kosten nach § 7 Abs. 4 offen.
+  assert.match(n.text, /jedenfalls die Kosten verlangen, die bei eigener zentraler Versorgung nach § 7 Abs\. 2 und § 8 Abs\. 2 HeizkostenV/)
+  assert.match(n.text, /§ 7 Abs\. 4 und § 8 Abs\. 4 HeizkostenV einschließlich der kalkulatorischen Kosten umfasst, hat der BGH offengelassen/)
+  assert.doesNotMatch(n.text, /nur bis zu/)
   assert.doesNotMatch(n.text, /verbesserter Effizienz/)
 })
 
@@ -1003,8 +1150,8 @@ Expected: FAIL, `Cannot find module '…/src/heatDelivery.ts'`.
 // Voraussetzungen des § 556c BGB nicht prüfen (Effizienz, Kostenvergleich nach §§ 8 bis 10 WärmeLV); es
 // nennt sie für die Mieter, die schon vor der Umstellung wohnten (Abweichung 4), und prüft nur, was es
 // weiß: den Zugang der Ankündigung (§ 556c Abs. 2 BGB, § 11 Abs. 1 und 3 WärmeLV). Hat der Mieter vorher
-// selbst geheizt, gilt § 556c nicht (BGH, Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25, sekundär;
-// Abweichung 7).
+// selbst geheizt, gilt § 556c nicht (BGH, Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25, Volltext
+// am 05.10.2026 gelesen; Abweichung 7).
 import type { CostItem, HeatingEnergy, PreviousSupply, Unit } from '../../shared/types.ts'
 import { servesUnit } from '../../shared/heatingPeriod.ts'
 
@@ -1066,7 +1213,8 @@ export function switchText(f: SwitchFinding, rule: { noticeMonths: number; effic
   }
   if (f.previousSupply === 'tenant') {
     return `${who} ${verb} schon vor der Umstellung auf Wärmelieferung am ${fmtDay(f.since)} und heizte${f.tenants.length === 1 ? '' : 'n'} vorher selbst. § 556c BGB gilt dann nicht (BGH, Urteile vom 20.05.2026, VIII ZR 46/25 und 47/25). ` +
-      'Die Heizkosten tragen diese Mieter nur auf Grund einer Vereinbarung, die auch stillschweigend entstehen kann, etwa wenn sie nach einer Mitteilung Heizkostenvorauszahlungen leisten. Wie weit sie reicht, ob nur bis zu den Kosten, die bei eigener zentraler Versorgung angefallen wären (§ 7 Abs. 2 HeizkostenV), oder bis zu den vollen Kosten der Wärmelieferung (§ 7 Abs. 4 HeizkostenV), ist im Einzelfall auszulegen.'
+      'Die Heizkosten tragen diese Mieter nur auf Grund einer Vereinbarung, die auch stillschweigend entstehen kann, etwa wenn sie nach einer Mitteilung über die Umstellung Heizkostenvorauszahlungen leisten. ' +
+      'Dann können Sie jedenfalls die Kosten verlangen, die bei eigener zentraler Versorgung nach § 7 Abs. 2 und § 8 Abs. 2 HeizkostenV angefallen wären. Ob die Vereinbarung auch die vollen Kosten der Wärmelieferung nach § 7 Abs. 4 und § 8 Abs. 4 HeizkostenV einschließlich der kalkulatorischen Kosten umfasst, hat der BGH offengelassen; das hängt von der Auslegung im Einzelfall ab.'
   }
   const deadline = subtractMonths(f.since, rule.noticeMonths)
   const notice = f.announcedOn === null
@@ -1074,7 +1222,7 @@ export function switchText(f: SwitchFinding, rule: { noticeMonths: number; effic
     : f.announcedOn > deadline
       ? ` Die Umstellungsankündigung ging am ${fmtDay(f.announcedOn)} zu, weniger als ${rule.noticeMonths} Monate vor der Umstellung. Ohne ordnungsgemäße Ankündigung beginnt die Frist für Einwendungen gegen die Abrechnung der Wärmelieferkosten erst mit einer Mitteilung, die § 11 Abs. 1 und 2 WärmeLV entspricht (§ 11 Abs. 3 WärmeLV).`
       : ''
-  return `${who} ${verb} schon vor der Umstellung auf Wärmelieferung am ${fmtDay(f.since)}. Die Kosten der Wärmelieferung tragen sie als Betriebskosten nur, wenn die Wärme mit verbesserter Effizienz aus einer neuen Anlage des Lieferanten oder aus einem Wärmenetz kommt (hatte die bisherige Anlage einen Jahresnutzungsgrad von mindestens ${rule.efficiencyPercent} %, genügt eine verbesserte Betriebsführung), ` +
+  return `${who} ${verb} schon vor der Umstellung auf Wärmelieferung am ${fmtDay(f.since)} (Mietfuchs nennt die Mieter nach dem Mietbeginn; maßgeblich ist, ob der Mietvertrag vor der Umstellung geschlossen wurde). Die Kosten der Wärmelieferung tragen sie als Betriebskosten nur, wenn die Wärme mit verbesserter Effizienz aus einer neuen Anlage des Lieferanten oder aus einem Wärmenetz kommt (hatte die bisherige Anlage einen Jahresnutzungsgrad von mindestens ${rule.efficiencyPercent} %, genügt eine verbesserte Betriebsführung), ` +
     `die Kosten der Wärmelieferung die bisherigen Betriebskosten für Wärme und Warmwasser nicht übersteigen (Kostenvergleich nach §§ 8 bis 10 WärmeLV) und die Umstellung spätestens ${rule.noticeMonths} Monate vorher in Textform angekündigt wurde (§ 556c BGB, § 11 WärmeLV). ` +
     `Ist eine Voraussetzung nicht erfüllt, können Sie vom Lieferanten verlangen, die Bestandteile seines Preises gesondert auszuweisen, die den umlegbaren Kosten nach § 7 Abs. 2 und § 8 Abs. 2 HeizkostenV entsprechen (§ 5 WärmeLV).${notice}`
 }
@@ -1134,14 +1282,13 @@ An der Stelle, an der der CO₂-Block (PR 6 Task 7) ein `HeatingStatement` baut
 Run: `npm --prefix server test -- test/calc-waermelieferung.test.ts test/calc-notices.test.ts test/law-literals.test.ts test/glossary.test.ts test/settlement-golden.test.ts && npm run typecheck`
 Expected: PASS.
 
-- [ ] **Step 6: Volltext von VIII ZR 46/25 und 47/25 lesen**
+- [ ] **Step 6: Text gegen den Volltext von VIII ZR 46/25 halten**
 
-Vor dem Commit den Volltext der beiden Urteile vom 20.05.2026 lesen (juris.bundesgerichtshof.de,
-Entscheidungsdatenbank). Zu prüfen sind drei Sätze des Textes für `previousSupply === 'tenant'`: dass
-§ 556c „weder unmittelbar noch entsprechend“ gilt, dass eine stillschweigende Vereinbarung in Betracht
-kommt, und was das Urteil zur Reichweite (§ 7 Abs. 2 gegenüber § 7 Abs. 4 HeizkostenV) entscheidet.
-Weicht der Volltext von Abweichung 7 ab, den Text in `switchText` und den Test anpassen und die Abweichung
-im PR-Text nennen. Den Prüfstand in CLAUDE.md (Task 6) mit Datum eintragen.
+Der Volltext ist am 05.10.2026 gelesen (Global Constraints, Abweichung 7). Der Test „VIII ZR 46/25“
+hält die drei Aussagen fest: § 556c gilt nicht, die Vereinbarung kann stillschweigend entstehen, und
+„jedenfalls“ die Kosten nach § 7 Abs. 2, § 8 Abs. 2 HeizkostenV, die vollen Kosten nach § 7 Abs. 4 offen.
+Vor dem Merge nur prüfen, ob der Text von `switchText` noch genau diese drei Aussagen trifft; den
+Prüfstand „Volltext gelesen am 05.10.2026“ in CLAUDE.md (Task 6) eintragen.
 
 - [ ] **Step 7: Run all tests and commit**
 
@@ -1177,23 +1324,29 @@ In `client/src/heatingForm.test.ts` anhängen:
 
 ```ts
 describe('Wärmelieferung (Heizung PR 16)', () => {
-  test('Contracting nur bei Gas, Öl, Flüssiggas und Kohle; Umstellung bei Contracting oder Fernwärme', () => {
+  test('Contracting bei jeder zentralen Anlage außer Fernwärme und Wärmepumpe; Umstellung bei Contracting oder Fernwärme', () => {
     expect(asksContracting('gas')).toBe(true)
-    expect(asksContracting('pellets')).toBe(false)
+    expect(asksContracting('pellets')).toBe(true)
+    expect(asksContracting('heatPump')).toBe(false)
+    expect(asksContracting('districtHeating')).toBe(false)
+    expect(asksContracting('perUnit')).toBe(false)
     expect(asksSwitch(ausgefuellt({ energy: 'districtHeating' }))).toBe(true)
     expect(asksSwitch(ausgefuellt({ energy: 'gas', contracting: false }))).toBe(false)
     expect(asksSwitch(ausgefuellt({ energy: 'gas', contracting: true }))).toBe(true)
   })
-  test('Rumpf: Angaben zur Umstellung nur, wo gefragt; Contracting fällt beim Wechsel zu Pellets weg', () => {
+  test('Rumpf: Angaben zur Umstellung nur, wo gefragt; Contracting fällt beim Wechsel zur Wärmepumpe weg', () => {
     const body = heatingPlantBody(ausgefuellt({ contracting: true, deliverySince: '2025-10-01', previousSupply: 'landlord', announcedOn: '2025-06-15' }), UNITS)
     expect('body' in body && body.body).toMatchObject({ contracting: true, heatDeliverySince: '2025-10-01', previousSupply: 'landlord', switchAnnouncedOn: '2025-06-15' })
-    const pellets = heatingPlantBody(ausgefuellt({ energy: 'pellets', contracting: true, deliverySince: '2025-10-01' }), UNITS)
-    expect('body' in pellets && pellets.body).toMatchObject({ contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null })
+    const pumpe = heatingPlantBody(ausgefuellt({ energy: 'heatPump', contracting: true, deliverySince: '2025-10-01' }), UNITS)
+    expect('body' in pumpe && pumpe.body).toMatchObject({ contracting: false, heatDeliverySince: null, previousSupply: null, switchAnnouncedOn: null })
+    const pellets = heatingPlantBody(ausgefuellt({ energy: 'pellets', contracting: true }), UNITS)
+    expect('body' in pellets && pellets.body).toMatchObject({ contracting: true })
     const ohneTag = heatingPlantBody(ausgefuellt({ contracting: true, announcedOn: '2025-06-15' }), UNITS)
     expect(ohneTag).toEqual({ error: 'Eine Ankündigung ohne Tag der Umstellung lässt sich nicht prüfen. Bitte tragen Sie den Tag der Umstellung ein oder leeren Sie beide.' })
   })
   test('Beschriftung: Contracting nennt den Brennstoff', () => {
     expect(energyLabelOf({ energy: 'districtHeating', contracting: true, fuelEnergy: 'gas' })).toBe('Wärmelieferung (Contracting, erzeugt mit Gas)')
+    expect(energyLabelOf({ energy: 'districtHeating', contracting: true, fuelEnergy: 'pellets' })).toBe('Wärmelieferung (Contracting, erzeugt mit Pellets)')
     expect(energyLabelOf({ energy: 'districtHeating' })).toBe('Fernwärme')
     expect(energyLabelOf({ energy: 'oil' })).toBe('Öl')
   })
@@ -1348,12 +1501,14 @@ Refs #213"
 
 ```markdown
 - **Wärmelieferung und Contracting** ([#213](https://github.com/speedone/mietfuchs/issues/213)): Eine
-  Heizanlage mit Gas, Öl, Flüssiggas oder Kohle kann als Contracting gekennzeichnet werden und rechnet dann
+  zentrale Heizanlage (außer einer Wärmepumpe) kann als Contracting gekennzeichnet werden und rechnet dann
   wie Fernwärme: kein Pflichtanteil von 70 % nach Verbrauch (§ 7 Abs. 3 HeizkostenV), Formelwerte für das
-  Warmwasser ÷ 1,15, CO₂ aus der Rechnung des Lieferanten. Wer während laufender Mietverhältnisse
+  Warmwasser ÷ 1,15, CO₂ aus der Rechnung des Lieferanten; heizt der Lieferant mit Pellets, Holz oder
+  Strom, verlangt Mietfuchs keine CO₂-Angaben. Wer während laufender Mietverhältnisse
   umgestellt hat, trägt den Tag ein; die Abrechnung nennt dann für die betroffenen Mieter die
   Voraussetzungen des § 556c BGB und der Wärmelieferverordnung, bei vorheriger Eigenversorgung der Mieter
-  die Rechtslage nach BGH VIII ZR 46/25 und 47/25.
+  die Rechtslage nach BGH VIII ZR 46/25 und 47/25 (jedenfalls die Kosten nach § 7 Abs. 2, § 8 Abs. 2
+  HeizkostenV; ob mehr, hängt von der Vereinbarung ab).
 ```
 
 - [ ] **Step 2: CLAUDE.md**
@@ -1361,8 +1516,10 @@ Refs #213"
 Im Abschnitt „Berechnungs-Engine“ hinter dem Absatz zum Betriebsstrom (PR 15):
 
 ```markdown
-- **Wärmelieferung, Contracting** (#213, Heizung PR 16): `heating_plants.contracting` (nur Gas, Öl,
-  Flüssiggas, Kohle, zentral). **Eine Naht:** `billingEnergy`/`asBilledPlant` in
+- **Wärmelieferung, Contracting** (#213, Heizung PR 16): `heating_plants.contracting` (zentral, jeder
+  Energieträger außer Fernwärme und Wärmepumpe; die Folgen der HeizkostenV hängen nicht am Brennstoff).
+  Ob CO₂ aufzuteilen ist, sagt `co2Required` (co2.ts) nach dem Brennstoff des Lieferanten (`fuelEnergy`):
+  bei Pellets, Holz und Strom nicht (§ 2 Abs. 1 Satz 2 CO2KostAufG). **Eine Naht:** `billingEnergy`/`asBilledPlant` in
   `shared/heatDelivery.ts` geben der Berechnung bei Contracting `energy = 'districtHeating'` (in
   `snapshotFor`), und damit gelten die Regeln der Fernwärme aus PR 6–11 ohne weitere Zeile (§ 7 Abs. 3,
   § 9 Abs. 2 Satz 6 Nr. 2, CO₂ nach § 3 Abs. 4). Schreibwege und Oberfläche fragen dieselbe Funktion; der
@@ -1370,7 +1527,8 @@ Im Abschnitt „Berechnungs-Engine“ hinter dem Absatz zum Betriebsstrom (PR 15
   kWh-Abrechnung und Pflichtanteil. Ausgenommen bleibt § 2 Abs. 4 Satz 2 CO2KostAufG, der an der
   gespeicherten Energie hängt. `heating.contracting` (hint) nennt für Mieter, die vor dem Tag der
   Umstellung einzogen, § 556c BGB und die WärmeLV oder, bei vorheriger Eigenversorgung der Mieter, BGH VIII
-  ZR 46/25 und 47/25 (Volltext geprüft am: Datum aus Task 4 Step 6).
+  ZR 46/25 und 47/25 (Volltext gelesen am 05.10.2026: jedenfalls § 7 Abs. 2, § 8 Abs. 2 HeizkostenV; der
+  volle Umfang nach § 7 Abs. 4 hängt von der Vereinbarung ab).
 ```
 
 - [ ] **Step 3: Gesamtprüfung**
@@ -1408,7 +1566,7 @@ Refs #213"
 | WärmeLV (§§ 5, 8–11) | 1 (Lexikon), 4 |
 | VIII ZR 46/25, 47/25: kein § 556c nach Einzelöfen | 4 (Text `tenant`), Abweichung 7 |
 | § 7 Abs. 3: kein zwingendes 70 % (8.5, 4.3, 12.2) | 3 (Berechnung, Schreibprüfung, Formular) |
-| CO₂ wie Fernwärme | 3 (Naht) |
+| CO₂ wie Fernwärme, ohne Pflicht bei Pellets, Holz, Strom des Lieferanten | 3 (Naht, Step 5a) |
 | `heating.contracting` hint (10.1) | 4 |
 | Lexikon (10.3) | 1 |
 | Abgrenzung zur Fernwärme (#213) | Abweichung 2, 3; Lexikon |
@@ -1423,4 +1581,4 @@ wörtlich und lässt den Wächter jede weitere finden; die Regel für jede gefun
 (Task 5) stimmen in allen Aufrufen überein.
 
 **4. Review Focus.** 1 → Task 3 (heating.test.ts, db-waermelieferung.test.ts, Wächter); 2 → Task 3
-(Vorrat); 3 → Task 2; 4 → Task 4 (Schulz zieht am Tag der Umstellung ein); 5 → Task 4.
+(Vorrat); 3 → Task 2 und Task 3 Step 5a; 4 → Task 4 (Schulz zieht am Tag der Umstellung ein); 5 → Task 4.

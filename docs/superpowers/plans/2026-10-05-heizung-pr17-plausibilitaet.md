@@ -33,6 +33,30 @@ aus kWh vorrechnet“ ist Nicht-Ziel; „Rechtswerte über das Netz“ Nicht-Zie
 **Baut auf:** PR 1 bis PR 16. Gearbeitet wird auf `feat/heizung-pr17-plausibilitaet`, abgezweigt von der
 Spitze von PR 16, gestapelt gestellt und nach dem Merge von PR 16 auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 hat diesen Plan an diesen Stellen geändert:
+
+1. **Mischsatz der Umsatzsteuer nach BMF Rz. 12** (Abweichung 5, neuer Review Focus 6, Task 4 Step 1 und
+   3): Eine Rechnung, deren Zeitraum den 01.10.2022 oder den 01.04.2024 überschreitet, darf nach Tagen
+   oder Verbrauch aufgeteilt sein; jeder Satz zwischen 7 % und 19 % gilt dann als plausibel. `vatRates`
+   nimmt Beginn und Ende des Zeitraums. Rz. 9 stützt 7 % bei Contracting.
+2. **CO₂-Preis 2022 (30 €) und 2021 (25 €)** (Review Focus 5, Task 2 Step 1 und 3, Task 4 Step 1 und 3):
+   § 11 Abs. 2 Satz 2 knüpft an die Rechnung an, § 3 Abs. 3 an die Lieferung. Eine Lieferung von 2022 mit
+   Rechnung von 2023 wird gegen 30 €/t geprüft (§ 10 Abs. 2 Satz 2 Nr. 2 BEHG, am 05.10.2026 gelesen). Ob
+   eine Rechnung vor 2023 liegt, fragt die Prüfung jetzt `co2.costs-before` (PR 8) statt der Abdeckung
+   von `co2.price`.
+3. **UBA-Bekanntmachungen sind amtlich** (Global Constraints, Selbstprüfung, CLAUDE.md): Der Grundsatz
+   „nur, was im BGBl. steht“ hieße, dass der Preis ab 2027 nie ins Register käme; nach § 4 Abs. 2 und 3
+   CO2KostAufG sind die amtlichen Werte die Bekanntmachungen des UBA.
+4. **Biomasseanteile und Toleranzen** (Abweichung 7, Task 4): Die kg-Grenze ist nach unten großzügiger
+   (10 % statt 1 %), weil ein anerkannter Biomasseanteil die kg zu Recht senkt; der Text eines Befunds
+   nach unten nennt diese Möglichkeit. Alle Grenzen sind als Festlegung ohne Rechtsquelle benannt.
+
+Golden F13 und F17 (Task 5 Step 6): Liegt dort eine Rechnung über den 01.04.2024 oder eine Lieferung von
+2022 mit Rechnung von 2023, kann ein Hinweis entfallen oder dazukommen; jede Änderung wird dort einzeln
+begründet.
+
 ## Global Constraints
 
 - **Nur Plausibilität** (4.5, 16): Keine Abrechnungszahl hängt an Preisen, ETS-Preisen, EBeV-Werten oder
@@ -48,7 +72,11 @@ Spitze von PR 16, gestapelt gestellt und nach dem Merge von PR 16 auf `main` umg
 - **Eine Fassung wird nie geändert** (4.4), mit zwei benannten Ausnahmen in `law-history.test.ts`: ein
   offenes Ende schließen (PR 1) und einen veröffentlichten Wert an die Stelle von `null` setzen
   (Abweichung 3).
-- **Nur, was im BGBl. steht** (4.6): Für 2027 steht kein Preis im Register; BT-Drs. 21/7869 (Korridor
+- **Nur amtlich Veröffentlichtes** (4.6, präzisiert nach Prüfung vom 05.10.2026): ins Register kommt, was
+  im BGBl. steht **oder vom Umweltbundesamt nach § 4 Abs. 2 und 3 CO2KostAufG bekanntgemacht ist**; keine
+  Drucksachen. Der Preis ab 2027 und die Durchschnittspreise des Emissionshandels erscheinen nie im BGBl.;
+  nach § 4 Abs. 2 und 3 sind die amtlichen Werte die Veröffentlichungen des UBA (die DEHSt ist Teil des
+  UBA). Für 2027 steht kein Preis im Register, bis das UBA ihn bekanntmacht; BT-Drs. 21/7869 (Korridor
   2027) bleibt draußen.
 - **Stufen:** `co2.cost-implausible` und `law.value-overridden` sind `hint` (10.1).
 - **Migration:** ein erzeugter Schritt `rechtswerte` (eine neue Tabelle samt ihren Bedingungen, keine
@@ -59,7 +87,8 @@ Spitze von PR 16, gestapelt gestellt und nach dem Merge von PR 16 auf `main` umg
   2881; Vollzitat „Emissionsberichterstattungsverordnung 2030 vom 21. Dezember 2022 (BGBl. I S. 2868)“,
   ohne spätere Änderung) auf gesetze-im-internet.de; die Preisseite der DEHSt zum CO2KostAufG (Stand
   16.12.2025). BMF-Schreiben vom 25.10.2022 zur Senkung der Umsatzsteuer auf Gas und Wärme (Rz. 4, 5, 9,
-  10) als Verwaltungsauffassung, gelesen am 05.10.2026.
+  10, 12) als Verwaltungsauffassung, gelesen am 05.10.2026. § 10 Abs. 2 Satz 2 Nr. 1 und 2 BEHG (2021:
+  25 €, 2022: 30 €) am 05.10.2026 erneut gelesen.
 - **Sprache:** Bezeichner englisch; Kommentare, Meldungen, Testnamen deutsch; Nutzertexte siezen
   (`anrede.test.ts`). Server-Importe mit `.ts`, reine Typimporte mit `import type`, kein `enum`.
 - **Wer einen Server startet**, setzt `NKA_DATA_DIR` (Wegwerf-Ordner), `CI=1` und `NKA_UPDATE_URL`
@@ -84,9 +113,15 @@ Spitze von PR 16, gestapelt gestellt und nach dem Merge von PR 16 auf `main` umg
    damit, die Abrechnung nennt den Eintrag (`law.value-overridden`), und ein späteres Release mit dem
    amtlichen Wert ersetzt ihn, wobei `deviation` einer abgeschlossenen Abrechnung den Unterschied zeigt.
    Tests in Task 1 und Task 3.
-5. **Heizöl aus dem Vorjahr 2022** (Altbestand, § 11 Abs. 2 Satz 2 CO2KostAufG: CO₂-Kosten bleiben
-   unberücksichtigt). Erwartet: keine Preis- und keine EBeV-Prüfung (die EBeV 2030 gilt ab 2023, ein Preis
-   vor 2023 steht nicht im Register), kein Fehler. Test in Task 4.
+5. **Heizöl aus 2022.** In Rechnung gestellt 2022 (Altbestand, § 11 Abs. 2 Satz 2 CO2KostAufG: CO₂-Kosten
+   bleiben unberücksichtigt): keine Preisprüfung, weil die Kosten nicht zählen, und keine EBeV-Prüfung (die
+   EBeV 2030 gilt ab 2023). **Geliefert im Dezember 2022, in Rechnung gestellt im Januar 2023**: Die
+   CO₂-Kosten zählen (§ 11 Abs. 2 Satz 2 knüpft an die Rechnung an), und der Preis ist der zum Zeitpunkt der
+   Lieferung (§ 3 Abs. 3), also 30 €/t nach § 10 Abs. 2 Satz 2 Nr. 2 BEHG. Erwartet: Preisprüfung gegen
+   30 €/t, keine EBeV-Prüfung, kein Fehler. Tests in Task 4.
+6. **Gasrechnung vom 01.01. bis 31.12.2024** (über den 01.04.2024). Nach BMF-Schreiben Rz. 12 darf der
+   Lieferant den Zeitraum nach Tagen (ab drei Monaten Ablesezeitraum auch nach Verbrauch) auf 7 % und
+   19 % aufteilen. Erwartet: jeder Satz zwischen 7 % und 19 % ist plausibel. Test in Task 4.
 
 ## Dateien
 
@@ -150,19 +185,30 @@ Spitze von PR 16, gestapelt gestellt und nach dem Merge von PR 16 auf `main` umg
    Ergebnis ist dasselbe, und ein Abgleich mit der Quelle ist Zeile für Zeile möglich.
 5. **Neuer Parameter `ustg.gas-heat-network-rate` (Festlegung).** Nicht in 4.3, aber nötig: Ohne ihn
    meldete die Prüfung jede Gas- und Wärmerechnung vom 01.10.2022 bis 31.03.2024 (Review Focus 1). Wert 7 %
-   (§ 12 Abs. 2 UStG: „sieben Prozent“; § 28 Abs. 5 und 6 UStG). Maßgeblich ist das Ende des
-   Ablesezeitraums (BMF, Rz. 4), bei Lieferungen der Tag der Lieferung. Flüssiggas im Tankwagen nennt nur
-   das BMF-Schreiben (Rz. 5), nicht das Gesetz („über das Erdgasnetz“); die Prüfung lässt bei Flüssiggas
-   in diesem Zeitraum deshalb beide Sätze gelten.
+   (§ 12 Abs. 2 UStG: „sieben Prozent“; § 28 Abs. 5 und 6 UStG). Grundsätzlich maßgeblich ist das Ende
+   des Ablesezeitraums (BMF, Rz. 4), bei Lieferungen der Tag der Lieferung. **Rz. 12** erlaubt aber, einen
+   Ablesezeitraum über den 01.10.2022 oder den 01.04.2024 aufzuteilen, „im Verhältnis der Tage vor und ab“
+   dem Stichtag, ab drei Monaten auch nach Verbrauch; eine solche Rechnung hat einen Mischsatz. Berührt der
+   Zeitraum der Rechnung die Zeit der Ermäßigung nur teilweise, gilt deshalb jeder Satz zwischen 7 % und
+   19 % als plausibel (Review Focus 6). Flüssiggas im Tankwagen nennt nur das BMF-Schreiben (Rz. 5:
+   „per Tanklastwagen“, nicht Flaschen), nicht das Gesetz („über das Erdgasnetz“); die Prüfung lässt bei
+   Flüssiggas in diesem Zeitraum deshalb beide Sätze gelten, 7 % als Verwaltungsauffassung, 19 % nach dem
+   Wortlaut. Contracting rechnet seit PR 16 als Wärme (`billingEnergy`), und Rz. 9 („Lieferung von Wärme
+   aus einer Wärmeerzeugungsanlage“) stützt 7 % auch dort.
 6. **EBeV-Werte nur 2023 bis 2030 und nur Erdgas, Heizöl EL, Flüssiggas (Festlegung).** Die EBeV 2030 gilt
    „für die Periode von 2023 bis 2030“ (§ 1); vorher galt eine andere Verordnung, deren Werte nicht im
    Register stehen. Kohle hat in Anlage 2 Teil 4 Nr. 9 viele Sorten mit eigenen Werten; ohne die Sorte zu
    kennen, wäre jede Prüfung geraten. Fernwärme und Contracting prüft die EBeV nicht: Die kWh der Rechnung
    sind Wärme, nicht der Energiegehalt des eingesetzten Brennstoffs.
-7. **Grenzen der Plausibilität (Festlegung nach 15.2 F6).** CO₂-Kosten: außerhalb der Spanne aus Preisen
-   und Steuersätzen um mehr als 1 € und mehr als 3 % (fängt Netto statt Brutto, 19 % statt 7 %, ein falsches
-   Preisjahr). kg: Abweichung um mehr als 1 kg und mehr als 1 % (Lieferanten rechnen mit gerundeten Faktoren;
-   ein Brennwert-/Heizwert-Fehler macht 10 % aus). Nur Hinweise, keine Rechtsfolge.
+7. **Grenzen der Plausibilität (Festlegung nach 15.2 F6, keine Rechtsquelle).** CO₂-Kosten: außerhalb der
+   Spanne aus Preisen und Steuersätzen um mehr als 1 € und mehr als 3 % (fängt Netto statt Brutto, 19 %
+   statt 7 %, ein falsches Preisjahr). kg: **nach oben** mehr als 1 kg und mehr als 1 % über dem
+   Standardwert (Lieferanten runden Faktoren und kg; ein Brennwert-/Heizwert-Fehler macht rund 10 % aus),
+   **nach unten erst** mehr als 1 kg und mehr als 10 % darunter. Weniger kg können richtig sein: Bei
+   Bio-Erdgas oder Bioheizöl setzt der Lieferant für einen anerkannten Biomasseanteil keine Emissionen an,
+   die Rechnung liegt dann zu Recht unter dem Standardwert des fossilen Brennstoffs. Der Text eines Befunds
+   nach unten nennt diese Möglichkeit. Die Zahlen 1 %, 10 %, 1 € und 3 % sind Festlegungen dieses Plans;
+   sie stehen als `KG_TOLERANCE` und `COST_TOLERANCE` benannt da. Nur Hinweise, keine Rechtsfolge.
 8. **Ein Code für kg und € (Festlegung).** 10.1 nennt nur `co2.cost-implausible`; die EBeV-Prüfung meldet
    sich unter demselben Code mit eigenem Text (Titel „CO₂-Angaben der Rechnung prüfen“).
 9. **Inhalt des Blatts für den Messdienst (Festlegung).** Je Rechnung, die die Heizperiode berührt, die
@@ -453,10 +499,13 @@ Refs #97"
 Konstante vom Typ LawParam …“ das Objekt `modules` um diese vier erweitern. Anhängen:
 
 ```ts
-test('Stichtag co2.price: 2023 30, 2024 45, 2025 55, 2026 60 (Mittelwert des Korridors), 2027 offen (§ 4 Abs. 1 CO2KostAufG, § 10 Abs. 2 BEHG)', () => {
+test('Stichtag co2.price: 2021 25, 2022 30, 2023 30, 2024 45, 2025 55, 2026 60 (Mittelwert des Korridors), 2027 offen (§ 4 Abs. 1 CO2KostAufG, § 10 Abs. 2 BEHG)', () => {
   const log = createLawLog()
-  assert.deepEqual([2023, 2024, 2025, 2026, 2027, 2030].map((y) => lawOverridable(co2Price, { year: y }, log)), [30, 45, 55, 60, null, null])
-  assert.equal(coversDate(co2Price, '2022-12-31'), false, 'vor 2023 bleiben CO₂-Kosten unberücksichtigt (§ 11 Abs. 2 Satz 2)')
+  assert.deepEqual([2021, 2022, 2023, 2024, 2025, 2026, 2027, 2030].map((y) => lawOverridable(co2Price, { year: y }, log)), [25, 30, 30, 45, 55, 60, null, null])
+  // Geliefert 2022, in Rechnung gestellt 2023: Die CO₂-Kosten zählen (§ 11 Abs. 2 Satz 2 knüpft an die
+  // Rechnung an), mit dem Preis zum Zeitpunkt der Lieferung (§ 3 Abs. 3). Vor 2021 gab es keinen Preis.
+  assert.equal(coversDate(co2Price, '2022-12-31'), true)
+  assert.equal(coversDate(co2Price, '2020-12-31'), false)
   assert.equal(co2Price.describe(55), '55,00 €/t')
   assert.equal(co2Price.describe(null), 'noch nicht veröffentlicht')
   assert.match(versionAt(co2Price, '2026-06-01').source.cite, /§ 4 Abs\. 1 Nr\. 2 CO2KostAufG/)
@@ -494,6 +543,8 @@ test('Stichtag ustg.gas-heat-network-rate: 7 % vom 01.10.2022 bis 31.03.2024 (§
 ```ts
   // 0.11.0 (Heizung PR 17, #97)
   'co2.ebev-factors|2023-01-01|2030-12-31|{"gas":{"tPerGj":0.0558,"hsGjPerMwh":3.2508},"oil":{"tPerGj":0.074,"tPerM3":0.845,"gjPerT":42.8},"lpg":{"tPerGj":0.0655,"gjPerT":46}}',
+  'co2.price|2021-01-01|2021-12-31|25',
+  'co2.price|2022-01-01|2022-12-31|30',
   'co2.price|2023-01-01|2023-12-31|30',
   'co2.price|2024-01-01|2024-12-31|45',
   'co2.price|2025-01-01|2025-12-31|55',
@@ -531,14 +582,18 @@ const behg = (cite: string): Source => ({ rank: 'law', cite, url: 'https://www.g
 // nach § 10 Abs. 2 Satz 4 BEHG (55 bis 65 €, also 60 €; kein Festpreis, D-H4; die DEHSt nennt 60 €), ab
 // 2027 der Durchschnittspreis der Versteigerungen vom 01.07. bis 30.11. des Vorjahres, den das UBA
 // spätestens zehn Werktage vor Jahresbeginn veröffentlicht (§ 4 Abs. 1 Nr. 3, Abs. 2). Bis dahin `null`
-// und überschreibbar (4.5). Vor 2023 steht kein Wert im Register: CO₂-Kosten aus Rechnungen vor dem
-// 01.01.2023 bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2).
+// und überschreibbar (4.5); der amtliche Wert ist die Bekanntmachung des UBA (Global Constraints). 2021
+// (25 €) und 2022 (30 €) stehen dabei, obwohl CO₂-Kosten aus Rechnungen vor dem 01.01.2023 unberücksichtigt
+// bleiben (§ 11 Abs. 2 Satz 2): Die Vorschrift knüpft an die Rechnung an, und eine Lieferung von 2022 mit
+// Rechnung von 2023 zählt mit dem Preis zum Zeitpunkt der Lieferung (§ 3 Abs. 3).
 export const co2Price: LawParam<number | null, 'deliveryYear'> = {
   id: 'co2.price',
   title: 'CO₂-Preis je Tonne (Plausibilität)',
   norm: '§ 3 Abs. 3, § 4 Abs. 1 CO2KostAufG',
   timing: 'deliveryYear',
   versions: [
+    yearVersion(2021, 25, behg('§ 4 Abs. 1 Nr. 1 CO2KostAufG; § 10 Abs. 2 Satz 2 Nr. 1 BEHG'), BEHG),
+    yearVersion(2022, 30, behg('§ 4 Abs. 1 Nr. 1 CO2KostAufG; § 10 Abs. 2 Satz 2 Nr. 2 BEHG'), BEHG),
     yearVersion(2023, 30, behg('§ 4 Abs. 1 Nr. 1 CO2KostAufG; § 10 Abs. 2 Satz 2 Nr. 3 BEHG'), BEHG),
     yearVersion(2024, 45, behg('§ 4 Abs. 1 Nr. 1 CO2KostAufG; § 10 Abs. 2 Satz 2 Nr. 4 BEHG'), BEHG),
     yearVersion(2025, 55, behg('§ 4 Abs. 1 Nr. 1 CO2KostAufG; § 10 Abs. 2 Satz 2 Nr. 5 BEHG'), BEHG),
@@ -613,8 +668,10 @@ Ans Dateiende:
 // Ermäßigter Satz für Gas über das Erdgasnetz und Wärme über ein Wärmenetz (Heizung PR 17, Abweichung 5):
 // § 28 Abs. 5 und 6 UStG wenden § 12 Abs. 2 („sieben Prozent“) vom 01.10.2022 bis 31.03.2024 auch auf
 // diese Lieferungen an (beide am 05.10.2026 auf gesetze-im-internet.de gelesen). Maßgeblich ist der Tag,
-// an dem die Lieferung ausgeführt ist, bei Gas und Wärme das Ende des Ablesezeitraums (BMF-Schreiben vom
-// 25.10.2022, Rz. 4). Außerhalb des Zeitraums gibt es keine Fassung; dann gilt `ustg.standard-rate`.
+// an dem die Lieferung ausgeführt ist, bei Gas und Wärme grundsätzlich das Ende des Ablesezeitraums
+// (BMF-Schreiben vom 25.10.2022, Rz. 4); Rz. 12 erlaubt die Aufteilung eines Ablesezeitraums über die
+// Stichtage (Mischsatz, Abweichung 5). Außerhalb des Zeitraums gibt es keine Fassung; dann gilt
+// `ustg.standard-rate`.
 export const ustgGasHeatNetworkRate: LawParam<number, 'eventDate'> = {
   id: 'ustg.gas-heat-network-rate',
   title: 'Umsatzsteuer auf Gas und Wärme aus Netzen (Plausibilität)',
@@ -1017,11 +1074,12 @@ Refs #97"
 - Test: `server/test/co2-plausibility.test.ts` (neu)
 
 **Interfaces:**
-- Consumes: `co2Price`, `co2PriceEts`, `co2EbevFactors`, `ustgGasHeatNetworkRate`, `ustgStandardRate`, `lawOverridable`, `law`, `coversDate`, `yearStart`, `LawLog`; `FuelDelivery`, `HeatingEnergy`.
+- Consumes: `co2Price`, `co2PriceEts`, `co2EbevFactors`, `co2CostsBefore` (PR 8), `ustgGasHeatNetworkRate`, `ustgStandardRate`, `lawOverridable`, `law`, `coversDate`, `yearStart`, `LawLog`; `FuelDelivery`, `HeatingEnergy`.
 - Produces:
   - `type PlausibilityDelivery = Pick<FuelDelivery, 'id' | 'label' | 'invoiceDate' | 'deliveredAt' | 'invoiceFrom' | 'invoiceTo' | 'quantity' | 'quantityUnit' | 'energyKwh' | 'gasBasis' | 'emissionsKg' | 'co2CostCents' | 'estimated'>`
-  - `type PlausibilityFinding = { kind: 'emissions'; deliveryId: string; label: string; emissionsKg: number; expectedKg: number; basis: string } | { kind: 'cost'; deliveryId: string; label: string; emissionsKg: number; co2CostCents: number; lowCents: number; highCents: number; prices: number[]; vat: number[]; years: number[] }`
-  - `KG_TOLERANCE = { absolute: 1, relative: 0.01 }`, `COST_TOLERANCE = { absoluteCents: 100, relative: 0.03 }`
+  - `type PlausibilityFinding = { kind: 'emissions'; deliveryId: string; label: string; emissionsKg: number; expectedKg: number; basis: string; below: boolean } | { kind: 'cost'; deliveryId: string; label: string; emissionsKg: number; co2CostCents: number; lowCents: number; highCents: number; prices: number[]; vat: number[]; years: number[] }`
+  - `KG_TOLERANCE = { absolute: 1, above: 0.01, below: 0.1 }`, `COST_TOLERANCE = { absoluteCents: 100, relative: 0.03 }`
+  - `PlausibilityFinding` der Art `emissions` mit `below: boolean`
   - `co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, log: LawLog): PlausibilityFinding[]`
   - `plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) => string): string`
 
@@ -1092,8 +1150,41 @@ test('Review Focus 4: Lieferung 2027 ohne Preis keine Prüfung; mit Eintrag gege
   assert.ok(log.values.some((v) => v.id === 'co2.price' && v.overridden))
 })
 
-test('Review Focus 5: Heizöl aus 2022 wird nicht geprüft', () => {
+test('Review Focus 5: Heizöl, in Rechnung gestellt 2022, wird nicht geprüft', () => {
   assert.deepEqual(kinds({ ...base, deliveredAt: '2022-11-15', invoiceDate: '2022-11-15', quantity: 2000, quantityUnit: 'l', emissionsKg: 1, co2CostCents: 1 }, 'oil'), [])
+})
+
+test('Review Focus 5: Heizöl geliefert im Dezember 2022, in Rechnung gestellt 2023: Preis 2022 (30 €/t), keine EBeV-Prüfung', () => {
+  const d = { ...base, deliveredAt: '2022-12-20', invoiceDate: '2023-01-10', quantity: 3000, quantityUnit: 'l' as const, emissionsKg: 8028.9 }
+  assert.deepEqual(kinds({ ...d, co2CostCents: 28663 }, 'oil'), [], '8,0289 t × 30 € × 1,19')
+  const [f] = co2Plausibility({ ...d, co2CostCents: 52549 }, 'oil', createLawLog())
+  if (!f || f.kind !== 'cost') return assert.fail('kein Hinweis zu den Kosten')
+  assert.deepEqual([f.prices, f.years], [[30], [2022]])
+  assert.deepEqual(kinds({ ...d, emissionsKg: 1, co2CostCents: 4 }, 'oil'), [], 'vor 2023 keine EBeV-Prüfung; 0,001 t × 30 € × 1,19 = 0,04 €')
+})
+
+test('Review Focus 6: Gas 2024 über den 01.04.2024, Mischsatz nach BMF Rz. 12: 7 % bis 19 % plausibel', () => {
+  const gas = { ...base, invoiceFrom: '2024-01-01', invoiceTo: '2024-12-31', invoiceDate: '2025-01-20', emissionsKg: 10000 }
+  assert.deepEqual(kinds({ ...gas, co2CostCents: 48150 }, 'gas'), [], 'alles zu 7 %')
+  assert.deepEqual(kinds({ ...gas, co2CostCents: 53550 }, 'gas'), [], 'alles zu 19 %')
+  assert.deepEqual(kinds({ ...gas, co2CostCents: 52207 }, 'gas'), [], 'nach Tagen geteilt')
+  const [f] = co2Plausibility({ ...gas, co2CostCents: 40000 }, 'gas', createLawLog())
+  if (!f || f.kind !== 'cost') return assert.fail('kein Hinweis')
+  assert.deepEqual([f.lowCents, f.highCents, f.vat], [48150, 53550, [7, 19]])
+  // Ganz im Zeitraum der Ermäßigung bleibt es bei 7 %.
+  const ganz = { ...base, invoiceFrom: '2023-01-01', invoiceTo: '2023-12-31', invoiceDate: '2024-01-20', emissionsKg: 10000 }
+  assert.deepEqual(kinds({ ...ganz, co2CostCents: 35700 }, 'gas'), ['cost'], '30 € × 1,19 statt × 1,07')
+})
+
+test('EBeV: weniger kg bis 10 % (Biomasseanteil) ohne Hinweis, darunter mit Hinweis auf den Biomasseanteil', () => {
+  const gas = { ...base, invoiceFrom: '2025-01-01', invoiceTo: '2025-12-31', energyKwh: 100000, gasBasis: 'hs' as const }
+  assert.deepEqual(kinds({ ...gas, emissionsKg: 17232 }, 'gas'), [], '5 % Bio-Erdgas')
+  assert.deepEqual(kinds({ ...gas, emissionsKg: 18320 }, 'gas'), [], 'knapp 1 % darüber')
+  assert.deepEqual(kinds({ ...gas, emissionsKg: 18500 }, 'gas'), ['emissions'], 'gut 2 % darüber')
+  const [f] = co2Plausibility({ ...gas, emissionsKg: 15000 }, 'gas', createLawLog())
+  if (!f || f.kind !== 'emissions') return assert.fail('kein Hinweis zu den kg')
+  assert.equal(f.below, true)
+  assert.match(plausibilityText(f, euro), /Biomasseanteil/)
 })
 
 test('EBeV: Gas nach Brennwert mit dem Faktor des Heizwerts gerechnet fällt auf; Flüssiggas in kg passt', () => {
@@ -1121,9 +1212,15 @@ Nachgerechnet: Heizöl 3.000 × 0,845 × 42,8 × 0,074 = 8.028,85 kg; 8,0289 t �
 Gas 2023: 100.000 kWh × 0,0558 × 3,2508 = 18.139,46 kg; 18,139 t × 30 € × 1,07 = 582,28 € (7 %) bzw.
 647,58 € (19 %); der Unterschied (65,30 €) liegt über 3 % von 582,28 € (17,47 €). Zwei Jahre: 10 t × 55 ×
 1,19 = 654,50 €, × 60 × 1,19 = 714,00 €; 600 € liegt mehr als 3 % (19,64 €) unter 654,50 €. Fernwärme
-2024, Rechnung 2025: 10 t × 45 × 1,19 = 535,50 € bis 10 t × 65,01 × 1,19 = 773,62 €; 900 € liegt mehr als
+2024, Rechnung 2025 (Zeitraum über den 01.04.2024, also 7 % bis 19 %, Abweichung 5): 10 t × 45 × 1,07 =
+481,50 € bis 10 t × 65,01 × 1,19 = 773,62 €; 900 € liegt mehr als
 3 % (23,21 €) darüber. 2027 mit Eintrag: 10 t × 64,20 × 1,19 = 763,98 €; 642,00 € liegt 121,98 € darunter.
-Flüssiggas 2023: 3,013 t × 30 × 1,07 = 96,72 €, × 1,19 = 107,56 €.
+Flüssiggas 2023: 3,013 t × 30 × 1,07 = 96,72 €, × 1,19 = 107,56 €. Heizöl 2022/2023: 8,0289 t × 30 × 1,19
+= 286,63 €; 525,49 € liegt mehr als 3 % darüber. Gas 2024 über den 01.04.: 10 t × 45 × 1,07 = 481,50 €,
+× 1,19 = 535,50 €; nach Tagen (91 Tage zu 7 %, 275 zu 19 %) 450 € × (91 × 1,07 + 275 × 1,19) ÷ 366 =
+522,07 €; 400 € liegt mehr als 3 % (14,45 €) unter 481,50 €. Gas 2023 zu 19 %: 357,00 €
+gegen 321,00 €, Abstand 36 € über 3 % (9,63 €). kg Gas nach Brennwert: 18.139,46 kg Standard; 17.232 kg
+(−5 %) und 18.320 kg (+0,99 %) ohne Hinweis, 18.500 kg (+1,99 %) und 15.000 kg (−17,3 %) mit.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1142,7 +1239,7 @@ Expected: FAIL, fehlendes Modul.
 // - € gegen kg × Preis zum Zeitpunkt der Lieferung zuzüglich Umsatzsteuer (§ 3 Abs. 3). Über zwei
 //   Preisjahre und bei Fernwärme mit Anteil aus dem Emissionshandel (§ 3 Abs. 4 Nr. 4 b) eine Spanne
 //   (Review Focus 2, 3); im Übergangszeitraum der Umsatzsteuer ebenso bei Flüssiggas (Abweichung 5).
-import { co2EbevFactors, co2Price, co2PriceEts } from '../../shared/law/co2kostaufg.ts'
+import { co2CostsBefore, co2EbevFactors, co2Price, co2PriceEts } from '../../shared/law/co2kostaufg.ts'
 import { coversDate, law, lawOverridable, yearStart, type LawLog } from '../../shared/law/register.ts'
 import { ustgGasHeatNetworkRate, ustgStandardRate } from '../../shared/law/ustg.ts'
 import type { FuelDelivery, HeatingEnergy } from '../../shared/types.ts'
@@ -1150,17 +1247,19 @@ import type { FuelDelivery, HeatingEnergy } from '../../shared/types.ts'
 export type PlausibilityDelivery = Pick<FuelDelivery, 'id' | 'label' | 'invoiceDate' | 'deliveredAt' | 'invoiceFrom' | 'invoiceTo' | 'quantity' | 'quantityUnit' | 'energyKwh' | 'gasBasis' | 'emissionsKg' | 'co2CostCents' | 'estimated'>
 
 export type PlausibilityFinding =
-  | { kind: 'emissions'; deliveryId: string; label: string; emissionsKg: number; expectedKg: number; basis: string }
+  | { kind: 'emissions'; deliveryId: string; label: string; emissionsKg: number; expectedKg: number; basis: string; below: boolean }
   | { kind: 'cost'; deliveryId: string; label: string; emissionsKg: number; co2CostCents: number; lowCents: number; highCents: number; prices: number[]; vat: number[]; years: number[] }
 
-// Grenzen ohne Rechtsquelle (Abweichung 7, Entwurf 15.2 F6).
-export const KG_TOLERANCE = { absolute: 1, relative: 0.01 }
+// Grenzen ohne Rechtsquelle (Abweichung 7, Entwurf 15.2 F6). Nach unten großzügiger: Ein anerkannter
+// Biomasseanteil (Bio-Erdgas, Bioheizöl) senkt die kg der Rechnung zu Recht unter den Standardwert.
+export const KG_TOLERANCE = { absolute: 1, above: 0.01, below: 0.1 }
 export const COST_TOLERANCE = { absoluteCents: 100, relative: 0.03 }
 
 // GJ je MWh, physikalisch (1 kWh = 3,6 MJ); kein Rechtswert.
 const GJ_PER_MWH = 3.6
 const PRICE_ENERGIES: readonly HeatingEnergy[] = ['gas', 'oil', 'lpg', 'coal', 'districtHeating']
-// Gas über das Erdgasnetz, Wärme über ein Wärmenetz (§ 28 Abs. 5, 6 UStG); Flüssiggas nur nach BMF Rz. 5.
+// Gas über das Erdgasnetz, Wärme über ein Wärmenetz (§ 28 Abs. 5, 6 UStG; bei Contracting rechnet PR 16
+// als Wärme, BMF Rz. 9); Flüssiggas nur nach BMF Rz. 5.
 const REDUCED_BY_LAW: readonly HeatingEnergy[] = ['gas', 'districtHeating']
 
 const de = (n: number, digits = 1): string => n.toLocaleString('de-DE', { maximumFractionDigits: digits })
@@ -1188,12 +1287,19 @@ function expectedEmissions(d: PlausibilityDelivery, energy: HeatingEnergy, year:
   return null
 }
 
-function vatRates(energy: HeatingEnergy, date: string, log: LawLog): number[] | null {
-  const reducedHere = coversDate(ustgGasHeatNetworkRate, date)
-  if (reducedHere && REDUCED_BY_LAW.includes(energy)) return [law(ustgGasHeatNetworkRate, { date }, log)]
-  if (!coversDate(ustgStandardRate, date)) return null
-  const standard = law(ustgStandardRate, { date }, log)
-  if (reducedHere && energy === 'lpg') return [law(ustgGasHeatNetworkRate, { date }, log), standard]
+// Die Steuersätze, die für eine Rechnung vom `start` bis `end` in Betracht kommen. Liegt der Zeitraum ganz
+// in der Zeit der Ermäßigung, gilt bei Gas und Wärme der ermäßigte Satz (§ 28 Abs. 5, 6 UStG; BMF Rz. 4).
+// Berührt er sie nur teilweise, darf der Lieferant nach Tagen oder Verbrauch aufteilen (BMF Rz. 12), und
+// jeder Satz zwischen beiden ist plausibel. Flüssiggas: beide Sätze, sobald der Zeitraum sie berührt.
+function vatRates(energy: HeatingEnergy, start: string, end: string, log: LawLog): number[] | null {
+  if (!coversDate(ustgStandardRate, end)) return null
+  const standard = law(ustgStandardRate, { date: end }, log)
+  const reduced = ustgGasHeatNetworkRate.versions.find((v) => v.validFrom <= end && (v.validTo ?? end) >= start)
+  if (reduced === undefined) return [standard]
+  const rate = law(ustgGasHeatNetworkRate, { date: reduced.validFrom > start ? reduced.validFrom : start }, log)
+  const whole = coversDate(ustgGasHeatNetworkRate, start) && coversDate(ustgGasHeatNetworkRate, end)
+  if (REDUCED_BY_LAW.includes(energy)) return whole ? [rate] : [rate, standard]
+  if (energy === 'lpg') return [rate, standard]
   return [standard]
 }
 
@@ -1207,15 +1313,17 @@ export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, 
 
   const expected = expectedEmissions(d, energy, endYear, log)
   if (expected !== null) {
-    const tol = Math.max(KG_TOLERANCE.absolute, KG_TOLERANCE.relative * expected.kg)
+    const below = d.emissionsKg < expected.kg
+    const tol = Math.max(KG_TOLERANCE.absolute, (below ? KG_TOLERANCE.below : KG_TOLERANCE.above) * expected.kg)
     if (Math.abs(d.emissionsKg - expected.kg) > tol) {
-      out.push({ kind: 'emissions', deliveryId: d.id, label: d.label, emissionsKg: d.emissionsKg, expectedKg: expected.kg, basis: expected.basis })
+      out.push({ kind: 'emissions', deliveryId: d.id, label: d.label, emissionsKg: d.emissionsKg, expectedKg: expected.kg, basis: expected.basis, below })
     }
   }
 
   if (d.co2CostCents === null || !PRICE_ENERGIES.includes(energy)) return out
-  // Rechnungen vor 2023: CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2), kein Preis im Register.
-  if (d.invoiceDate !== null && !coversDate(co2Price, d.invoiceDate)) return out
+  // In Rechnung gestellt vor 2023: CO₂-Kosten bleiben unberücksichtigt (§ 11 Abs. 2 Satz 2), also auch
+  // keine Preisprüfung. Eine Lieferung von 2022 mit Rechnung von 2023 wird mit dem Preis 2022 geprüft.
+  if (d.invoiceDate !== null && (!coversDate(co2CostsBefore, d.invoiceDate) || law(co2CostsBefore, { date: d.invoiceDate }, log))) return out
   const years: number[] = []
   for (let y = Number(start.slice(0, 4)); y <= endYear; y++) years.push(y)
   if (!years.every((y) => coversDate(co2Price, yearStart(y)))) return out
@@ -1231,7 +1339,7 @@ export function co2Plausibility(d: PlausibilityDelivery, energy: HeatingEnergy, 
     if (ets === null) return out
     prices.push(ets)
   }
-  const vat = vatRates(energy, end, log)
+  const vat = vatRates(energy, start, end, log)
   if (vat === null) return out
   const t = d.emissionsKg / 1000
   const lowCents = Math.round(t * Math.min(...prices) * (1 + Math.min(...vat) / 100) * 100)
@@ -1249,7 +1357,10 @@ const euroPerT = (v: number): string => `${v.toLocaleString('de-DE', { minimumFr
 // aus dem Emissionshandel ist ein Preis mehr als Jahre im Befund.
 export function plausibilityText(f: PlausibilityFinding, fmtCents: (c: number) => string): string {
   if (f.kind === 'emissions') {
-    return `„${f.label}“: ${de(f.emissionsKg)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung wären es ${de(f.expectedKg)} kg. ` +
+    const bio = f.below
+      ? 'Weniger kg können richtig sein, wenn der Lieferant für einen anerkannten Biomasseanteil (etwa Bio-Erdgas oder Bioheizöl) keine Emissionen ansetzt; dann sollte die Rechnung den Anteil nennen. '
+      : ''
+    return `„${f.label}“: ${de(f.emissionsKg)} kg CO₂ passen nicht zu ${f.basis}. Mit den Standardwerten der Emissionsberichterstattungsverordnung wären es ${de(f.expectedKg)} kg. ${bio}` +
       'Bitte prüfen Sie die Angaben der Rechnung, auch ob Brennwert oder Heizwert gemeint ist (§ 3 Abs. 1 und 2 CO2KostAufG).'
   }
   const expected = f.lowCents === f.highCents ? `wären es ${fmtCents(f.lowCents)}` : `wären es zwischen ${fmtCents(f.lowCents)} und ${fmtCents(f.highCents)}`
@@ -1284,7 +1395,8 @@ git add server/src/co2Plausibility.ts server/test/co2-plausibility.test.ts serve
 git commit -m "CO₂-Plausibilität je Rechnung: kg gegen EBeV 2030, Kosten gegen Preis und Umsatzsteuer
 
 Spannen über zwei Preisjahre, beim Emissionshandel und für Flüssiggas im
-Übergangszeitraum; vor 2023 keine Prüfung.
+Übergangszeitraum, Mischsatz über die Stichtage (BMF Rz. 12); in Rechnung
+gestellt vor 2023 keine Prüfung, geliefert 2022 mit dem Preis 2022.
 
 Refs #97"
 ```
@@ -2045,8 +2157,9 @@ Durchsicht ergänzen (prüft `rechtsdurchsicht-2026.test.ts` die Liste wörtlich
 ```markdown
 - **CO₂-Angaben geprüft** ([#97](https://github.com/speedone/mietfuchs/issues/97)): Die Abrechnung prüft
   kg und CO₂-Kosten jeder erfassten Rechnung gegen die Standardwerte der EBeV 2030, den CO₂-Preis des
-  Lieferjahres (2023 bis 2026), bei Fernwärme den Durchschnittspreis des Emissionshandels, und die
-  Umsatzsteuer, einschließlich des ermäßigten Satzes für Gas und Wärme vom 01.10.2022 bis 31.03.2024.
+  Lieferjahres (2022 bis 2026), bei Fernwärme den Durchschnittspreis des Emissionshandels, und die
+  Umsatzsteuer, einschließlich des ermäßigten Satzes für Gas und Wärme vom 01.10.2022 bis 31.03.2024 und
+  eines Mischsatzes bei Rechnungen über die Stichtage.
   Abweichungen nennt sie als Hinweis; keine Zahl ändert sich. Den CO₂-Preis 2027 und spätere Werte, die
   noch nicht im Programm stehen, können Sie in den Einstellungen mit Quelle eintragen.
 - **Ausdruck „CO₂-Angaben für den Messdienst“** ([#210](https://github.com/speedone/mietfuchs/issues/210)):
@@ -2067,7 +2180,9 @@ und als `overridden` protokolliert; `law()` lehnt überschreibbare Parameter ab.
 amtlichen Wert setzt ihn an die Stelle von `null` (die einzige zweite Ausnahme in `law-history.test.ts`),
 und der Eintrag heißt „überholt“. Gebraucht werden diese Werte, die EBeV-Werte und
 `ustg.gas-heat-network-rate` nur für `co2.cost-implausible` (server/src/co2Plausibility.ts): Spannen über
-Preisjahre, Emissionshandel und Steuersätze, Grenzen 1 €/3 % und 1 kg/1 % (Festlegung nach 15.2 F6).
+Preisjahre, Emissionshandel und Steuersätze (Mischsatz über die Stichtage nach BMF Rz. 12), Grenzen
+1 €/3 % und bei den kg 1 % nach oben, 10 % nach unten wegen anerkannter Biomasseanteile (Festlegung nach
+15.2 F6). Ins Register kommen auch Bekanntmachungen des UBA nach § 4 Abs. 2, 3 CO2KostAufG.
 Das Blatt „CO₂-Angaben für den Messdienst“ baut `server/src/co2Sheet.ts` (#210).
 ```
 
@@ -2109,12 +2224,12 @@ Refs #97, #210"
 
 | Anforderung | Task |
 |---|---|
-| `co2.price` 30/45/55/60, 2027 `null`, `deliveryYear`, überschreibbar (4.3) | 1, 2 |
+| `co2.price` 25/30/30/45/55/60 (2021–2026), 2027 `null`, `deliveryYear`, überschreibbar (4.3) | 1, 2 |
 | `co2.price-ets` 80,40/83,68/65,01/73,86, Rechnungsdatum − 1 Jahr (4.3, 3.13) | 2 (Abweichung 4) |
 | `co2.ebev-factors` Erdgas, Heizöl EL, Flüssiggas (4.3) | 2 |
 | `law_overrides` mit Quelle, `law.value-overridden`, amtlicher Wert geht vor, überholt (4.5, 5.9, 10.1) | 1, 3, 7 |
 | Protokoll mit `overridden` (4.2), `deviation` zeigt Unterschied (4.4) | 1 (Kennung je Jahr), bestehendes `settlementDiff` |
-| Nur, was im BGBl. steht (4.6) | 2 (2027 `null`) |
+| Nur amtlich Veröffentlichtes, BGBl. oder Bekanntmachung des UBA (4.6) | 2 (2027 `null`) |
 | `co2.cost-implausible` hint (10.1, 15.2 F6) | 4, 5 |
 | Ausdruck „CO₂-Angaben für den Messdienst“ (7.6, 14.1, #210) | 6, 7 |
 | Keine Rechnung aus kWh, nur Plausibilität (16) | Global Constraints, 4 |
@@ -2131,4 +2246,4 @@ denselben Feldern benutzt; `PlausibilityFinding` (mit `emissionsKg` an beiden Ar
 
 **4. Review Focus.** 1 → Task 4 „Review Focus 1“; 2 → Task 4 „Review Focus 2“; 3 → Task 4 „Review Focus 3“;
 4 → Task 1 (Register), Task 3 (Routen, Speichern), Task 4 und Task 5 (`settleWithDelivery2027`); 5 → Task 4
-„Review Focus 5“.
+„Review Focus 5“ (zwei Tests); 6 → Task 4 „Review Focus 6“.

@@ -31,15 +31,43 @@ gestellt und nach dem Merge von PR 14 auf `main` umgestellt (CLAUDE.md, „Durch
 vor jedem Merge“). Die Pläne von PR 13 und PR 14 entstanden parallel; abgeglichen ist dieser Plan mit
 ihrem Stand in `e46bc65` („Plan: Heizung PR 13 und PR 14“), siehe „Abgleich mit PR 13 und PR 14“.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 (Leitsatz und Rn. 14 von V ZR 166/15 erneut
+gelesen) hat diesen Plan an diesen Stellen geändert:
+
+1. **Lexikon und Begründungen zu V ZR 166/15 Rn. 14 berichtigt** (Global Constraints, Task 1 Step 1,
+   3, 5 und 7, Task 7 Step 1 und 2). Rn. 14: „Die Schätzung kann sich entweder auf einen Bruchteil der
+   Brennstoffkosten stützen … oder an einer Berechnung orientieren, die auf dem Stromverbrauchswert der
+   angeschlossenen Geräte und den (ggf. geschätzten) Heiztagen beruht. Welche Schätzmethode … steht in
+   ihrem Ermessen, solange sie nicht einen offenkundig ungeeigneten Maßstab wählen.“ Der Bruchteil der
+   Brennstoffkosten ist also eine **zulässige** Schätzgrundlage; die Prozentwerte gibt der BGH aus der
+   Literatur wieder, ohne selbst einen festzulegen. Die frühere Fassung „nur wiedergegeben, nicht
+   gebilligt“ war zu eng und ist überall ersetzt; der Lexikontest prüft den neuen Satz und schließt den
+   alten aus. Dass Mietfuchs keinen Prozentsatz vorrechnet, bleibt eine Produktentscheidung (Entwurf 16).
+2. **Grundpreisanteil als Festlegung im Schätzermessen benannt** (Abweichung 3, Task 3 Step 1 und 3,
+   Task 6 Step 1, Lexikonbeispiel, CHANGELOG). Der Rechenweg heißt jetzt „14,08 % des Rechnungsbetrags
+   einschließlich Grundpreis (1.050,00 €) = 147,84 €“; die Zahl ändert sich nicht.
+3. **Leitsatz wörtlich** (Global Constraints): Er beginnt mit „In der Jahresabrechnung einer
+   Wohnungseigentümergemeinschaft …“; die Übertragung auf jeden Gebäudeeigentümer stützt sich, wie
+   vorher, auf § 7 Abs. 2 HeizkostenV.
+4. **Neu als Abweichung 9:** Der Weg „Betrag selbst geschätzt“ für die Bruchteilsmethode ist nicht Teil
+   dieses Plans; Vorschlag für ein Issue.
+
 ## Global Constraints
 
 - **Wer nichts einstellt, merkt nichts** (Entwurf 1.2 Nr. 1, 11.1): Ohne `operatingPower` an einer
   Position ist jede Zahl, jeder Hinweis und `legalBasis.values` gleich dem Stand nach PR 14. Golden
   F01–F18, `db-golden`, `calc-wortlaut.test.ts` und `law-wording.test.ts` bleiben ohne Anpassung grün.
-- **Keine Prozentspanne als Rechenregel** (Entwurf 4.3 letzter Absatz, 16): Die Spannen 3–6 % (Jennißen),
-  4–10 % (Schmidt-Futterer/Lammel), 8–10 % (Wall) und „höchstens 5 %“ (Gies) stehen nur im Lexikon, als
-  vom BGH referierte, nicht gebilligte Werte (V ZR 166/15 Rn. 14). Sie kommen nicht ins Register und in
-  keine Rechnung.
+- **Keine Prozentspanne als Rechenregel** (Entwurf 4.3 letzter Absatz, 16): Der BGH lässt in V ZR 166/15
+  Rn. 14 einen Bruchteil der Brennstoffkosten ausdrücklich als Schätzgrundlage zu („Die Schätzung kann
+  sich entweder auf einen Bruchteil der Brennstoffkosten stützen … oder an einer Berechnung orientieren,
+  die auf dem Stromverbrauchswert der angeschlossenen Geräte und den (ggf. geschätzten) Heiztagen
+  beruht“). Die Spannen 3–6 % (Jennißen), 4–10 % (Schmidt-Futterer/Lammel), 8–10 % (Wall) und
+  „höchstens 5 %“ (Gies) gibt er dabei aus der Literatur wieder, **ohne selbst einen Wert festzulegen**.
+  Sie stehen deshalb nur im Lexikon, als Literaturwerte, kommen nicht ins Register und in keine
+  Rechnung. Dass die Schätzhilfe keinen Prozentsatz vorrechnet, ist eine Produktentscheidung (Entwurf
+  16), keine Aussage über die Zulässigkeit der Bruchteilsmethode.
 - **Kein Betrag wird automatisch abgezogen** (6.5 sinngemäß): Mietfuchs legt den Abzug nur an, wenn der
   Vermieter es mit der Schätzhilfe ausdrücklich verlangt; die Abrechnung meldet eine Abweichung, sie
   korrigiert sie nicht.
@@ -55,10 +83,11 @@ ihrem Stand in `e46bc65` („Plan: Heizung PR 13 und PR 14“), siehe „Abgleic
   bleiben unverändert; die db.json kennt keinen Betriebsstrom.
 - **Objektgrenze:** Ein Abzug zeigt nur auf eine Position desselben Objekts (`HeatingError` 400).
 - **Rechtsaussagen:** Leitsatz und Rn. 14 von BGH, Urteil vom 03.06.2016, V ZR 166/15, am 05.10.2026 auf
-  rewis.io gelesen: „Die Kosten des Betriebsstroms der zentralen Heizungsanlage müssen nach Maßgabe der
-  Heizkostenverordnung verteilt werden; wird der Betriebsstrom nicht über einen Zwischenzähler, sondern
+  rewis.io gelesen: „In der Jahresabrechnung einer Wohnungseigentümergemeinschaft müssen die Kosten des
+  Betriebsstroms der zentralen Heizungsanlage nach Maßgabe der Heizkostenverordnung verteilt werden; wird der Betriebsstrom nicht über einen Zwischenzähler, sondern
   über den allgemeinen Stromzähler erfasst, muss geschätzt werden, welcher Anteil an dem Allgemeinstrom
-  hierauf entfällt.“ Rn. 14 nennt die Literaturspannen und eine Schätzung, „die auf dem
+  hierauf entfällt.“ Rn. 14 nennt zwei zulässige Schätzgrundlagen: einen Bruchteil der
+  Brennstoffkosten (mit den Literaturspannen, ohne eigene Festlegung) und eine Berechnung, „die auf dem
   Stromverbrauchswert der angeschlossenen Geräte und den (ggf. geschätzten) Heiztagen beruht“; die Wahl
   steht im Ermessen, „solange [kein] offenkundig ungeeigneter Maßstab“ gewählt wird. Die Pflicht folgt
   aus § 7 Abs. 2 HeizkostenV („die Kosten des Betriebsstromes“, Wortlaut am 05.10.2026 gelesen) und gilt
@@ -162,11 +191,17 @@ für PR 15). Jede der folgenden Festlegungen hat dort keine Grundlage und ist hi
    (der Text nennt den Betrag); ist er größer, trägt der Vermieter einen Teil des Allgemeinstroms selbst
    (zweiter Text desselben Codes, denn auch das ist „Geld landet anders als vermutlich gewollt“, die
    Stufe `warning` nach CLAUDE.md, #112). Ein Code, zwei Texte; die Stufe bleibt am Code.
-3. **Euro-Betrag als Anteil an der Stromrechnung (Festlegung).** Der Leitsatz verlangt zu schätzen,
-   „welcher Anteil an dem Allgemeinstrom hierauf entfällt“. Mietfuchs rechnet Betrag der
-   Allgemeinstrom-Position × geschätzte kWh ÷ kWh laut Stromrechnung, also einschließlich eines
-   anteiligen Grundpreises. Das ist ein Anteil am Allgemeinstrom im Wortsinn und braucht keinen
-   Arbeitspreis, den die Position nicht kennt. kWh = Σ Leistung (W) × Laufzeit (h je Tag) × Heiztage ÷
+3. **Euro-Betrag als Anteil an der Stromrechnung einschließlich Grundpreis (Festlegung im
+   Schätzermessen).** Der Leitsatz verlangt zu schätzen, „welcher Anteil an dem Allgemeinstrom hierauf
+   entfällt“. Mietfuchs rechnet Betrag der Allgemeinstrom-Position × geschätzte kWh ÷ kWh laut
+   Stromrechnung, also **einschließlich eines anteiligen Grundpreises**. Ob der Grundpreis anteilig
+   mitgeht, regelt keine Norm und keine Entscheidung; die Formel ist eine Festlegung im Schätzermessen,
+   das Rn. 14 dem Abrechnenden lässt, und kein „offenkundig ungeeigneter Maßstab“. Dagegen ließe sich
+   sagen, der Grundpreis fiele auch ohne Heizung an, die Heizung verursache also nur Arbeitspreis; dafür
+   spricht, dass die Position nur den Rechnungsbetrag kennt und keinen Arbeitspreis. Der Rechenweg nennt
+   die Festlegung deshalb ausdrücklich („des Rechnungsbetrags einschließlich Grundpreis“, Task 3), damit
+   der Vermieter sie sieht und, wenn er nur den Arbeitspreis ansetzen will, beide Positionen im
+   Kostenformular in gleicher Höhe ändern kann (sonst meldet Abweichung 2 die Differenz). kWh = Σ Leistung (W) × Laufzeit (h je Tag) × Heiztage ÷
    1.000 (Rn. 14: „Stromverbrauchswert der angeschlossenen Geräte und … Heiztage“). Laufzeit und Heiztage
    gibt der Vermieter ein; **es gibt keine Vorgabe**, denn jede Zahl wäre erfunden.
 4. **Gemessen mit Zwischenzähler als zweiter Weg (Festlegung).** Der Leitsatz nennt den Zwischenzähler
@@ -187,13 +222,19 @@ für PR 15). Jede der folgenden Festlegungen hat dort keine Grundlage und ist hi
    kennt nur `heating.operating-power-double`), und ohne Angabe des Vermieters wäre er bei jeder Anlage mit
    eigenem Stromvertrag falsch. Vorschlag für ein neues Issue (öffentlich, vor dem Anlegen nachfragen):
    „Betriebsstrom fehlt: Hinweis bei Zentralheizung ohne Betriebsstrom-Position“.
+9. **Nicht in diesem Plan: ein dritter Weg „Betrag selbst geschätzt“.** Wer nach einem Bruchteil der
+   Brennstoffkosten schätzt (V ZR 166/15 Rn. 14, zulässig), findet in der Schätzhilfe keinen Weg, den
+   eigenen Betrag samt verknüpftem Abzug anzulegen; Mietfuchs rechnet bewusst keinen Prozentsatz vor
+   (Entwurf 16). Vorschlag für ein neues Issue (öffentlich, vor dem Anlegen nachfragen): „Betriebsstrom:
+   eigener geschätzter Betrag als dritter Weg der Schätzhilfe“, der denselben Abzug anlegt, ohne einen
+   Prozentsatz vorzugeben. Bis dahin sagt das Lexikon, dass die Methode zulässig ist.
 
 ---
 
 ### Task 1: Lexikon, Anleitungen und Wächter
 
 Der Begriff `operatingPower` mit der Schätzung nach Leistung und Heiztagen als Beispiel und den
-Literaturspannen als referierte Werte; je ein Satz in den Anleitungen „Mehrfamilienhaus“ und
+Literaturspannen als Literaturwerte, die der BGH wiedergibt, ohne einen festzulegen; je ein Satz in den Anleitungen „Mehrfamilienhaus“ und
 „Messdienst“ (Entwurf 11.4). Die Spannen sind keine Rechtswerte, der Wächter bekommt sie als erlaubte
 Stellen mit Grund.
 
@@ -211,7 +252,7 @@ In `server/test/glossary.test.ts` anhängen:
 
 ```ts
 // Heizung PR 15 (#212): Betriebsstrom, mit der Schätzung des BGH als Beispiel und den Spannen der
-// Literatur nur als referierte Werte (Entwurf 4.3 letzter Absatz).
+// Literatur nur als Literaturwerte ohne Festlegung des BGH (Entwurf 4.3 letzter Absatz).
 test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechnet das Beispiel richtig', () => {
   const t = GLOSSARY.operatingPower
   assert.match(t.norm ?? '', /§ 7 Abs\. 2 HeizkostenV/)
@@ -219,7 +260,12 @@ test('Lexikon: Betriebsstrom nennt § 7 Abs. 2 HeizkostenV, das Urteil und rechn
   // 120 W × 6 h + 45 W × 24 h + 5 W × 24 h an 220 Tagen = 422,4 kWh; 422,4 / 3.000 von 1.050,00 €.
   assert.match(t.example, /422,4 kWh/)
   assert.match(t.example, /147,84 €/)
-  assert.match(t.example, /nur wiedergegeben, nicht gebilligt/)
+  // V ZR 166/15 Rn. 14: Der Bruchteil der Brennstoffkosten ist eine zulässige Schätzgrundlage; die
+  // Prozentwerte gibt der BGH nur aus der Literatur wieder, ohne selbst einen festzulegen.
+  assert.match(t.example, /lässt auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu/)
+  assert.match(t.example, /legt aber selbst keinen Wert fest/)
+  assert.doesNotMatch(t.example, /nicht gebilligt/)
+  assert.match(t.example, /einschließlich Grundpreis/)
   assert.match(t.needed, /offenkundig ungeeignet/)
 })
 ```
@@ -252,9 +298,9 @@ In `GLOSSARY` hinter `heatingCostOrdinance` einfügen:
   operatingPower: {
     title: 'Betriebsstrom der Heizung',
     short: 'Der Strom für Brenner, Umwälzpumpe und Regelung einer Zentralheizung gehört zu den Heizkosten und wird mit ihnen nach der Heizkostenverordnung verteilt, nicht als Allgemeinstrom. Hat er keinen eigenen Stromvertrag, steckt er in der Stromrechnung des Hauses; dann ist er dort herauszurechnen und abzuziehen.',
-    example: 'Brenner 120 W an 6 Stunden am Tag, Umwälzpumpe 45 W und Regelung 5 W rund um die Uhr, an 220 Heiztagen: 158,4 + 237,6 + 26,4 = 422,4 kWh. Die Stromrechnung des Hauses nennt 3.000 kWh für 1.050,00 €; auf die Heizung entfallen 422,4 von 3.000 kWh, also 147,84 €. Diese 147,84 € stehen als Betriebsstrom bei den Heizkosten und als Abzug beim Allgemeinstrom, und die Mieter zahlen den Strom nur einmal. In der Literatur werden auch pauschale Anteile an den Brennstoffkosten genannt (3–6 %, 4–10 %, 8–10 % oder höchstens 5 %); der Bundesgerichtshof hat sie nur wiedergegeben, nicht gebilligt.',
+    example: 'Brenner 120 W an 6 Stunden am Tag, Umwälzpumpe 45 W und Regelung 5 W rund um die Uhr, an 220 Heiztagen: 158,4 + 237,6 + 26,4 = 422,4 kWh. Die Stromrechnung des Hauses nennt 3.000 kWh für 1.050,00 €; auf die Heizung entfallen 422,4 von 3.000 kWh, also 147,84 € (Anteil am Rechnungsbetrag einschließlich Grundpreis; das ist eine Festlegung im Schätzermessen, keine Vorgabe des Gesetzes). Diese 147,84 € stehen als Betriebsstrom bei den Heizkosten und als Abzug beim Allgemeinstrom, und die Mieter zahlen den Strom nur einmal. Der Bundesgerichtshof lässt auch einen Bruchteil der Brennstoffkosten als Schätzgrundlage zu und nennt dazu Werte aus der Literatur (3–6 %, 4–10 %, 8–10 % oder höchstens 5 %), legt aber selbst keinen Wert fest.',
     norm: '§ 7 Abs. 2 HeizkostenV; § 2 Nr. 4 Buchst. a und Nr. 11 BetrKV; BGH, Urteil vom 03.06.2016, V ZR 166/15',
-    needed: 'Ja, bei jeder Zentralheizung, deren Strom über den Zähler des Hauses läuft. Ohne Zwischenzähler muss der Anteil geschätzt werden. Welches Verfahren Sie wählen, liegt in Ihrem Ermessen, solange es nicht offenkundig ungeeignet ist; das Verfahren nach Leistung der Geräte und Heiztagen nennt der Bundesgerichtshof ausdrücklich. Entschieden hat er für eine Wohnungseigentümergemeinschaft; die Pflicht, den Betriebsstrom mit den Heizkosten zu verteilen, steht für jeden Vermieter in der Heizkostenverordnung.',
+    needed: 'Ja, bei jeder Zentralheizung, deren Strom über den Zähler des Hauses läuft. Ohne Zwischenzähler muss der Anteil geschätzt werden. Welches Verfahren Sie wählen, liegt in Ihrem Ermessen, solange es nicht offenkundig ungeeignet ist; der Bundesgerichtshof nennt ausdrücklich das Verfahren nach Leistung der Geräte und Heiztagen und einen Bruchteil der Brennstoffkosten. Die Karte „Betriebsstrom“ rechnet nach Leistung und Heiztagen oder mit dem Zwischenzähler; einen Prozentsatz gibt Mietfuchs nicht vor. Entschieden hat er für eine Wohnungseigentümergemeinschaft; die Pflicht, den Betriebsstrom mit den Heizkosten zu verteilen, steht für jeden Vermieter in der Heizkostenverordnung.',
   },
 ```
 
@@ -281,9 +327,9 @@ In `GUIDE_DATA.multiFamily.caveats` und `GUIDE_DATA.meteringService.caveats` je 
 In `ALLOWED` anhängen:
 
 ```ts
-  { file: 'shared/glossary.ts', match: '3–6 %', reason: 'Literaturwert (Jennißen), vom BGH in V ZR 166/15 Rn. 14 referiert, nicht gebilligt; kein Rechtswert (Entwurf 4.3)' },
-  { file: 'shared/glossary.ts', match: '4–10 %', reason: 'Literaturwert (Schmidt-Futterer/Lammel), vom BGH in V ZR 166/15 Rn. 14 referiert; kein Rechtswert (Entwurf 4.3)' },
-  { file: 'shared/glossary.ts', match: '8–10 %', reason: 'Literaturwert (Wall), vom BGH in V ZR 166/15 Rn. 14 referiert; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '3–6 %', reason: 'Literaturwert (Jennißen), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben; der BGH lässt den Bruchteil der Brennstoffkosten als Schätzgrundlage zu, legt aber keinen Wert fest; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '4–10 %', reason: 'Literaturwert (Schmidt-Futterer/Lammel), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
+  { file: 'shared/glossary.ts', match: '8–10 %', reason: 'Literaturwert (Wall), vom BGH in V ZR 166/15 Rn. 14 wiedergegeben, ohne eigene Festlegung; kein Rechtswert (Entwurf 4.3)' },
 ```
 
 - [ ] **Step 6: Run tests to verify they pass**
@@ -299,8 +345,9 @@ ohnehin in der Oberfläche.
 git add shared/glossary.ts shared/guides.ts server/test/law-literals.test.ts server/test/glossary.test.ts server/test/guides.test.ts
 git commit -m "Lexikon und Anleitungen: Betriebsstrom der Heizung
 
-Schätzung nach Leistung und Heiztagen als Beispiel, die Spannen der
-Literatur nur als vom BGH referierte Werte (V ZR 166/15 Rn. 14).
+Schätzung nach Leistung und Heiztagen als Beispiel; der Bruchteil der
+Brennstoffkosten als zulässige Schätzgrundlage, die Spannen der Literatur
+ohne Festlegung des BGH (V ZR 166/15 Rn. 14).
 
 Refs #212"
 ```
@@ -741,7 +788,7 @@ const GERAETE = [
 const geschaetzt = (over: Partial<OperatingPowerInput> = {}): OperatingPowerInput =>
   ({ devices: GERAETE, heatingDays: 220, measuredKwh: null, billKwh: 3000, billCents: 105000, ...over })
 
-test('Schätzung: 120 W · 6 h + 45 W · 24 h + 5 W · 24 h an 220 Tagen = 422,4 kWh, 14,08 % von 1.050,00 € = 147,84 €', () => {
+test('Schätzung: 120 W · 6 h + 45 W · 24 h + 5 W · 24 h an 220 Tagen = 422,4 kWh, 14,08 % des Rechnungsbetrags einschließlich Grundpreis (1.050,00 €) = 147,84 €', () => {
   const r = operatingPowerShare(geschaetzt())
   if ('error' in r) return assert.fail(r.error)
   assert.ok(Math.abs(r.kwh - 422.4) < 1e-9, String(r.kwh))
@@ -753,7 +800,7 @@ test('Schätzung: 120 W · 6 h + 45 W · 24 h + 5 W · 24 h an 220 Tagen = 422,4
     'Umwälzpumpe: 45 W × 24 h × 220 Tage = 237,6 kWh',
     'Regelung: 5 W × 24 h × 220 Tage = 26,4 kWh',
     'zusammen 422,4 kWh von 3.000 kWh der Stromrechnung = 14,08 %',
-    '14,08 % von 1.050,00 € = 147,84 €',
+    '14,08 % des Rechnungsbetrags einschließlich Grundpreis (1.050,00 €) = 147,84 €',
   ])
 })
 
@@ -830,7 +877,7 @@ const positive = (n: number | null): n is number => typeof n === 'number' && Num
 // Der Anteil des Betriebsstroms am Allgemeinstrom (BGH, Urteil vom 03.06.2016, V ZR 166/15, Leitsatz:
 // „welcher Anteil an dem Allgemeinstrom hierauf entfällt“). kWh nach Rn. 14 aus Leistung und Heiztagen,
 // oder gemessen; Euro = Betrag der Stromrechnung × kWh ÷ kWh der Rechnung, also mit anteiligem
-// Grundpreis (Abweichung 3). Laufzeit und Heiztage gibt der Vermieter ein, Mietfuchs schlägt keine vor.
+// Grundpreis (Abweichung 3: Festlegung im Schätzermessen nach Rn. 14, keine Norm). Laufzeit und Heiztage gibt der Vermieter ein, Mietfuchs schlägt keine vor.
 export function operatingPowerShare(i: OperatingPowerInput): OperatingPowerShare | { error: string } {
   if (!positive(i.billKwh)) return { error: 'Bitte geben Sie die kWh der Stromrechnung des Allgemeinstroms an.' }
   if (!positive(i.billCents)) return { error: 'Der Betrag der Stromrechnung muss größer als 0 sein.' }
@@ -862,7 +909,9 @@ export function operatingPowerShare(i: OperatingPowerInput): OperatingPowerShare
     ? `gemessen mit Zwischenzähler: ${kwhText(kwh)} von ${kwhText(i.billKwh)} der Stromrechnung = ${percent}`
     : `zusammen ${kwhText(kwh)} von ${kwhText(i.billKwh)} der Stromrechnung = ${percent}`)
   const cents = Math.round(i.billCents * ratio)
-  steps.push(`${percent} von ${euro(i.billCents)} = ${euro(cents)}`)
+  // Festlegung im Schätzermessen (Abweichung 3): Anteil am Rechnungsbetrag samt Grundpreis. Der Text
+  // sagt es, damit der Vermieter die Festlegung sieht.
+  steps.push(`${percent} des Rechnungsbetrags einschließlich Grundpreis (${euro(i.billCents)}) = ${euro(cents)}`)
   return { kwh, measured, permille: ratio * 1000, cents, steps }
 }
 ```
@@ -1462,7 +1511,7 @@ test('Auswahl: nur Allgemeinstrom mit positivem Betrag und ohne Kennzeichnung, m
 
 test('Vorschau: 147,84 € mit Rechenweg; ohne Stromrechnung ein Satz', () => {
   const v = operatingPowerPreview(ausgefuellt(), [strom])
-  expect(v).toEqual({ ok: true, cents: 14784, lines: expect.arrayContaining(['zusammen 422,4 kWh von 3.000 kWh der Stromrechnung = 14,08 %', '14,08 % von 1.050,00 € = 147,84 €']) })
+  expect(v).toEqual({ ok: true, cents: 14784, lines: expect.arrayContaining(['zusammen 422,4 kWh von 3.000 kWh der Stromrechnung = 14,08 %', '14,08 % des Rechnungsbetrags einschließlich Grundpreis (1.050,00 €) = 147,84 €']) })
   expect(operatingPowerPreview(ausgefuellt({ generalItemId: '' }), [strom])).toEqual({ ok: false, text: 'Bitte wählen Sie die Stromrechnung des Hauses.' })
 })
 
@@ -1781,7 +1830,9 @@ Refs #212"
   Steht beim Allgemeinstrom kein Abzug in gleicher Höhe, nennt die Abrechnung den Betrag, der doppelt
   verteilt wird. Die Karte „Betriebsstrom“ auf der Seite Heizkosten schätzt ihn nach Leistung der Geräte
   und Heiztagen (BGH, Urteil vom 03.06.2016, V ZR 166/15) oder nimmt den Zwischenzähler und legt
-  Betriebsstrom und Abzug gemeinsam an. Pauschale Prozentsätze nennt nur das Lexikon.
+  Betriebsstrom und Abzug gemeinsam an; der Euro-Betrag ist der Anteil am Rechnungsbetrag einschließlich
+  Grundpreis. Einen Bruchteil der Brennstoffkosten lässt der BGH als Schätzgrundlage zu; Mietfuchs
+  rechnet keinen Prozentsatz vor, das Lexikon nennt die Literaturwerte.
 ```
 
 - [ ] **Step 2: CLAUDE.md**
@@ -1798,8 +1849,10 @@ Im Abschnitt der Berechnungs-Engine hinter dem Absatz zum Leerstand beim Persone
   liegen oft in verschiedenen; `heating.operating-power-double` nennt die Differenz. Die Schätzhilfe
   (`shared/operatingPower.ts`, Route `POST /api/heating-plants/:id/operating-power`) rechnet kWh aus
   Leistung, Laufzeit und Heiztagen oder nimmt den Zwischenzähler, Euro als Anteil an der Stromrechnung
-  samt Grundpreis, und legt beide Positionen in einer Transaktion an. Die Prozentspannen der Literatur
-  stehen nur im Lexikon (BGH V ZR 166/15 Rn. 14 referiert sie, billigt sie nicht).
+  samt Grundpreis (Festlegung im Schätzermessen, im Rechenweg benannt), und legt beide Positionen in
+  einer Transaktion an. Die Prozentspannen der Literatur stehen nur im Lexikon: BGH V ZR 166/15 Rn. 14
+  lässt den Bruchteil der Brennstoffkosten als Schätzgrundlage zu, gibt die Werte aber nur wieder und
+  legt keinen fest; Mietfuchs rechnet ihn bewusst nicht vor.
 ```
 
 - [ ] **Step 3: Gesamtprüfung**

@@ -34,6 +34,25 @@ aus kWh vorrechnet“ ist Nicht-Ziel).
 **Baut auf:** PR 1 bis PR 19. Gearbeitet wird auf `feat/heizung-pr20-ki`, abgezweigt von der Spitze von
 PR 19, gestapelt gestellt und nach dem Merge von PR 19 auf `main` umgestellt.
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die Prüfungen der Pläne PR 15 bis 22 und PR 18/19 vom 05.10.2026 haben diesen Plan an diesen Stellen geändert:
+
+1. **`usePeriod().period`** (Annahme C4, Task 5 Step 5). `usePeriod()` liefert nach PR 3 eine `PeriodView`; der
+   `BillingPeriod` des Objekts ist ihr Feld `period`, auf der Seite Heizkosten also `period.period`.
+2. **Biobrennstoff nur senden, wo PR 18 ihn zulässt** (Annahme C3, Task 6). PR 18 steuert `bioCostCents` über
+   `fuelBody(form, method, { halfSplit })` und lehnt einen Betrag über 0 bei Vorrat sowie jeden Betrag ohne
+   Heizung nach § 43 mit 400 ab. Vorher fügte PR 20 `bioCostCents` selbst in den Rumpf und legte ein zweites
+   Feld `bioCost` an; eine ausgelesene Heizölrechnung mit 12,50 € Biobrennstoff ließ sich dann nicht speichern.
+   Jetzt belegt PR 20 nur `FuelForm.bioCost` vor, und nur, wo `bioAccepted` es erlaubt; sonst nennt
+   `fuelChecks` den gelesenen Betrag. Die Netzentgelte (§ 5a Abs. 1 Nr. 1, § 40 Abs. 3 Nr. 4 EnWG) liest PR 20
+   nicht; Vorschlag für ein Issue (öffentlich, vor dem Anlegen nachfragen): „KI liest Netzentgelte der
+   Gasrechnung für § 5a CO2KostAufG“.
+3. **Props von `FuelCard`** (Annahme C1, Task 6 Tests): Die Karte heißt in allen Plänen `FuelCard`; die Tests
+   übergeben die Props, die PR 9, 11, 16 und 18 verlangen.
+4. **Text bei netto genannten CO₂-Kosten:** Der Vermieter fordert beim Lieferanten eine berichtigte Rechnung an
+   (§ 3 Abs. 1, 3 CO2KostAufG); der Mangel liegt beim Lieferanten.
+
 **Rechtsquellen, am 05.10.2026 im Wortlaut gelesen** (gesetze-im-internet.de):
 
 - § 3 Abs. 1 CO2KostAufG: Brennstofflieferanten haben auf Rechnungen „folgende Informationen in
@@ -146,10 +165,10 @@ PR 19, gestapelt gestellt und nach dem Merge von PR 19 auf `main` umgestellt.
 
 | Nr. | Annahme | Wo benutzt |
 |---|---|---|
-| C1 | Die Karte der Lieferungen heißt nach PR 7 `FuelCard.tsx` (spätere Pläne nennen sie `FuelDeliveriesCard.tsx`); maßgeblich ist der Code. | Task 6 |
+| C1 | Die Karte der Lieferungen heißt nach PR 7 `FuelCard.tsx` (die Pläne PR 8, 9 und 11 sind seit der Prüfung vom 05.10.2026 angeglichen). Ihre Props nach PR 9, 11, 16 und 18: `plant` (mit `id`, `method`, `supply`, `units`, `energy`; `contracting` für `asBilledPlant`), `view`, `deliveries`, `units`, `halfSplit` (`plant.gmodg43InstalledOn !== null`), `onSaved`; in der Karte `const billed = asBilledPlant(plant)` (PR 16). | Task 6 |
 | C2 | `FuelForm` hat nach PR 7 bis PR 11 die Felder `label`, `invoiceFrom`, `invoiceTo`, `amount`, `fixed`, `sharePercent`, `emissionsKg`, `co2Cost`, `energyKwh`, `usedByService`, `heatingValue`, `grade`; dazu womöglich (PR 8, PR 9) `deliveredAt`, `quantity`, `quantityUnit`, `unitId`. Task 6 ergänzt jedes Feld aus seiner Liste, das fehlt, und lässt vorhandene stehen. | Task 6 |
-| C3 | `fuelBody` nimmt `bioCostCents` an, seit PR 18 die Biobrennstoffkosten freigegeben hat; vorher lehnt der Server sie mit 400 ab. | Task 6 |
-| C4 | Die Seite Heizkosten kennt den Zeitraum des Objekts als `BillingPeriod` (`{ key, from, to }`) über `usePeriod()` (PR 3); heißt das Feld anders, dessen Namen. | Task 5 |
+| C3 | **PR 18 steuert den Biobrennstoff**: Es legt `FuelForm.gridFee` und `FuelForm.bioCost` an, und `fuelBody(form, method, opts?: { halfSplit: boolean })` schickt `gridFeeCents`/`bioCostCents` nur bei `opts.halfSplit`. Der Server nimmt einen Biobetrag nur an einer Heizung nach § 43 Abs. 1 GModG (`gmodg43InstalledOn`) an, einen Betrag über 0 nicht bei Vorrat (`isStockEnergy(billingEnergy(plant))`) und nicht ab 2040; eine 0 überall dort (PR 18, Abweichungen 9, 10). PR 20 legt deshalb **kein** zweites Feld `bioCost` an und setzt `bioCostCents` nicht selbst in den Rumpf: Es belegt nur `FuelForm.bioCost` aus der Rechnung vor, und zwar nur, wo der Server es annimmt (`bioAccepted`, Task 6); sonst bleibt das Feld leer, und eine Prüfung nennt den gelesenen Betrag. Netzentgelte (`gridFee`) liest PR 20 nicht (Lücke, siehe „Änderungen nach Prüfung vom 05.10.2026“, Nr. 2). | Task 6 |
+| C4 | Die Seite Heizkosten kennt den Zeitraum des Objekts über `usePeriod()` (PR 3: `usePeriod(): PeriodView` mit `period: BillingPeriod`, `key`, `label`, `param`); der `BillingPeriod` (`{ key, from, to, short }`) ist **`usePeriod().period`**, auf der Seite seit PR 7 `period.period` (dort `const period = usePeriod()`). | Task 5 |
 | C5 | `GET /api/tenancies` und `GET /api/units` nehmen `?property=` (Bestand, `withProperty`). | Task 5 |
 | C6 | Kein PR zwischen 8 und 19 ändert `extract.ts`, `invoiceAmounts.ts` oder die Strom-Antwort der KI-Routen. | Task 1–3 |
 
@@ -1811,12 +1830,14 @@ vor der Karte „CO₂-Kosten“ (PR 6):
 
 ```tsx
 {plant.method === 'service' && (
-  <ServiceImportCard plant={plant} view={view} object={objectPeriod} onSaved={reload} />
+  <ServiceImportCard plant={plant} view={view} object={period.period} onSaved={reload} />
 )}
 ```
 
-`objectPeriod` ist der Objektzeitraum als `{ key, from, to }` aus `usePeriod()` (Annahme C4); `reload` der
-Rückruf, mit dem die Seite nach dem Speichern neu lädt (heißt er anders, dessen Namen).
+`objectPeriod` ist der Objektzeitraum als `BillingPeriod` (`{ key, from, to, short }`), also
+`usePeriod().period` (Annahme C4); auf der Seite Heizkosten steht seit PR 7 `const period = usePeriod()`, dort
+also `object={period.period}`. `reload` ist der Rückruf, mit dem die Seite nach dem Speichern neu lädt (PR 7:
+`() => void load()`; heißt er anders, dessen Namen).
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -1847,10 +1868,11 @@ Refs #103"
 - Consumes: Task 1, 3; `FuelForm`, `emptyFuelForm`, `fuelToForm`, `fuelBody` (PR 7, 11); `parseDecimal`.
 - Produces:
   - `FuelForm` mit mindestens `deliveredAt`, `quantity`, `quantityUnit`, `gasBasis`, `heatingValue`,
-    `emissionFactor`, `bioCost`, `parts: FuelPartForm[]`; `type FuelPartForm = { from: string; to: string; energyKwh: string; amount: string; fixed: string; emissionsKg: string; co2Cost: string }`;
+    `emissionFactor`, `parts: FuelPartForm[]` (`bioCost` und `gridFee` kommen aus PR 18 und bleiben, wie sie sind); `type FuelPartForm = { from: string; to: string; energyKwh: string; amount: string; fixed: string; emissionsKg: string; co2Cost: string }`;
     `QUANTITY_UNIT_OPTIONS`, `GAS_BASIS_OPTIONS`.
-  - `fuelImport.ts`: `fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm): FuelForm`,
-    `fuelChecks(x: FuelInvoiceExtraction): string[]`.
+  - `fuelImport.ts`: `bioAccepted(at: { halfSplit: boolean; stock: boolean }, bioEur: number | null): boolean`,
+    `fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm, opts?: { bio: boolean }): FuelForm`,
+    `fuelChecks(x: FuelInvoiceExtraction, opts?: { bio: boolean }): string[]`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1858,7 +1880,7 @@ Refs #103"
 
 ```ts
 import { expect, test } from 'vitest'
-import { fuelChecks, fuelFormFromExtraction } from './fuelImport'
+import { bioAccepted, fuelChecks, fuelFormFromExtraction } from './fuelImport'
 import { emptyFuelForm, fuelBody } from './fuelForm'
 import type { FuelInvoiceExtraction } from './types'
 
@@ -1900,8 +1922,30 @@ test('Prüfungen: Summe der Teilmengen, Energie, netto genannte CO₂-Kosten, ho
   expect(checks.some((c) => /Teilmengen ergeben 22\.410 kWh, die Rechnung nennt 31\.000 kWh/.test(c))).toBe(true)
   expect(checks.some((c) => /ohne Umsatzsteuer.*§ 3 Abs\. 3 CO2KostAufG/.test(c))).toBe(true)
   expect(checks.some((c) => /netto ausgewiesen.*anteilig auf den Rechnungsbetrag hochgerechnet/.test(c))).toBe(true)
-  expect(checks.some((c) => /§ 43 GModG/.test(c))).toBe(true)
+  expect(checks.some((c) => /§ 43 Abs\. 1 GModG/.test(c))).toBe(true)
   expect(fuelChecks({ ...gas, amountsNetUnadjusted: true })).toContain('Die Rechnung nennt die Teilmengen netto, und der Abstand zum Rechnungsbetrag lässt sich nicht allein mit der Umsatzsteuer erklären. Bitte tragen Sie die Bruttobeträge von Hand ein.')
+})
+
+test('Biobrennstoff nur dort vorbelegen, wo der Server ihn annimmt (Annahme C3, PR 18)', () => {
+  // Keine Heizung nach § 43: nie; Vorrat: nur die 0; sonst jeder Betrag.
+  expect(bioAccepted({ halfSplit: false, stock: false }, 12.5)).toBe(false)
+  expect(bioAccepted({ halfSplit: true, stock: true }, 12.5)).toBe(false)
+  expect(bioAccepted({ halfSplit: true, stock: true }, 0)).toBe(true)
+  expect(bioAccepted({ halfSplit: true, stock: false }, 12.5)).toBe(true)
+  expect(bioAccepted({ halfSplit: true, stock: false }, null)).toBe(false)
+  const mitBio: FuelInvoiceExtraction = { ...gas, bioCostEur: 12.5 }
+  expect(fuelFormFromExtraction(mitBio, emptyFuelForm()).bioCost).toBe('')
+  expect(fuelFormFromExtraction(mitBio, emptyFuelForm(), { bio: true }).bioCost).toBe('12,50')
+  // Nicht übernommen: Die Prüfung nennt den gelesenen Betrag und warum.
+  expect(fuelChecks(mitBio).some((c) => /12,50 €.*nicht übernommen.*§ 43 Abs\. 1 GModG/.test(c))).toBe(true)
+  expect(fuelChecks(mitBio, { bio: true }).some((c) => /nicht übernommen/.test(c))).toBe(false)
+  // fuelBody schickt den Betrag nur mit der Freigabe aus PR 18.
+  const f = fuelFormFromExtraction(mitBio, emptyFuelForm(), { bio: true })
+  const ohne = fuelBody(f, 'service')
+  const mit = fuelBody(f, 'service', { halfSplit: true })
+  if ('error' in ohne || 'error' in mit) throw new Error('kein Rumpf')
+  expect('bioCostCents' in ohne.body).toBe(false)
+  expect(mit.body.bioCostCents).toBe(1250)
 })
 
 test('Heizöl: Liefertag statt Zeitraum, Heizwert laut Rechnung, Menge in Litern', () => {
@@ -1915,8 +1959,11 @@ test('Heizöl: Liefertag statt Zeitraum, Heizwert laut Rechnung, Menge in Litern
 Datei):
 
 ```tsx
+// Die Anlage mit den Props, die FuelCard nach PR 9, 11, 16 und 18 verlangt (Annahme C1).
+const anlage = { id: 'hp', method: 'manual' as const, supply: 'central' as const, units: null, energy: 'gas' as const, contracting: false }
+
 test('Neue Auswahlfelder zeigen den gespeicherten Wert: Einheit und Bezug des Gases (Heizung PR 20)', () => {
-  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[{ ...gas, quantity: 2890, quantityUnit: 'm3', gasBasis: 'hs' }]} onSaved={() => {}} />)
+  render(<FuelCard plant={anlage} view={view} deliveries={[{ ...gas, quantity: 2890, quantityUnit: 'm3', gasBasis: 'hs' }]} units={[]} halfSplit={false} onSaved={() => {}} />)
   fireEvent.click(screen.getByText('Ändern'))
   const einheit = screen.getByLabelText('Einheit der Menge')
   const bezug = screen.getByLabelText('kWh berechnet nach')
@@ -1925,7 +1972,7 @@ test('Neue Auswahlfelder zeigen den gespeicherten Wert: Einheit und Bezug des Ga
 })
 
 test('Rechnung mit KI auslesen ist da, solange nichts bearbeitet wird', () => {
-  render(<FuelCard plant={{ id: 'hp', method: 'manual' }} view={view} deliveries={[]} onSaved={() => {}} />)
+  render(<FuelCard plant={anlage} view={view} deliveries={[]} units={[]} halfSplit={false} onSaved={() => {}} />)
   expect(screen.getByLabelText('Rechnung mit KI auslesen')).toBeTruthy()
 })
 ```
@@ -1949,11 +1996,13 @@ export type FuelPartForm = { from: string; to: string; energyKwh: string; amount
   gasBasis: GasBasis | ''
   heatingValue: string
   emissionFactor: string
-  bioCost: string
   parts: FuelPartForm[]
 ```
 
-`emptyFuelForm`: `deliveredAt: '', quantity: '', quantityUnit: '', gasBasis: '', heatingValue: '', emissionFactor: '', bioCost: '', parts: []`
+(`bioCost` und `gridFee` stehen seit PR 18 in `FuelForm`, samt `emptyFuelForm`, `fuelToForm` und dem Senden
+in `fuelBody`; PR 20 fasst sie nicht an, Annahme C3.)
+
+`emptyFuelForm`: `deliveredAt: '', quantity: '', quantityUnit: '', gasBasis: '', heatingValue: '', emissionFactor: '', parts: []`
 (nur für die neu ergänzten). `fuelToForm` (nur für die neu ergänzten):
 
 ```ts
@@ -1963,7 +2012,6 @@ export type FuelPartForm = { from: string; to: string; energyKwh: string; amount
     gasBasis: d.gasBasis ?? '',
     heatingValue: numberText(d.heatingValue),
     emissionFactor: numberText(d.emissionFactor),
-    bioCost: centsText(d.bioCostCents),
     parts: d.parts.map((p) => ({
       from: p.from, to: p.to, energyKwh: numberText(p.energyKwh), amount: centsText(p.amountCents), fixed: centsText(p.fixedCents),
       emissionsKg: numberText(p.emissionsKg), co2Cost: centsText(p.co2CostCents),
@@ -1986,8 +2034,7 @@ In `fuelBody` (Teilmengen und die neuen Felder; vorhandene Prüfungen bleiben) v
 ```ts
   const factor = decimal(form.emissionFactor, 'Der Emissionsfaktor')
   const quantity = decimal(form.quantity, 'Die Menge')
-  const bio = euro(form.bioCost, 'Der Preisbestandteil für Biobrennstoff')
-  for (const v of [factor, quantity, bio]) if (v !== null && typeof v === 'object') return v
+  for (const v of [factor, quantity]) if (v !== null && typeof v === 'object') return v
   const parts: Record<string, unknown>[] = []
   for (const [i, p] of form.parts.entries()) {
     const label = `Teilmenge ${i + 1}`
@@ -2012,7 +2059,6 @@ In `fuelBody` (Teilmengen und die neuen Felder; vorhandene Prüfungen bleiben) v
     quantityUnit: form.quantityUnit === '' ? null : form.quantityUnit,
     gasBasis: form.gasBasis === '' ? null : form.gasBasis,
     emissionFactor: num(factor),
-    ...(num(bio) !== null ? { bioCostCents: num(bio) } : {}),
     parts,
 ```
 
@@ -2035,7 +2081,14 @@ const euroText = (eur: number | null): string => (eur === null ? '' : eur.toLoca
 const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 5, useGrouping: false }))
 const cents = (eur: number | null): number => Math.round((eur ?? 0) * 100)
 
-export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm): FuelForm {
+// Ob der Server einen Biobetrag an dieser Anlage annimmt (PR 18, Annahme C3): nur an einer Heizung nach § 43
+// Abs. 1 GModG (`halfSplit`), aus einem Vorrat nur die 0 (`stock`: `isStockEnergy(billingEnergy(plant))`).
+export function bioAccepted(at: { halfSplit: boolean; stock: boolean }, bioEur: number | null): boolean {
+  if (bioEur === null || !at.halfSplit) return false
+  return !at.stock || bioEur === 0
+}
+
+export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm, opts: { bio: boolean } = { bio: false }): FuelForm {
   const when = x.periodStart && x.periodEnd ? formatDayRange(x.periodStart, x.periodEnd) : x.deliveredAt ? germanDate(x.deliveredAt) : ''
   return {
     ...base,
@@ -2053,7 +2106,8 @@ export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm)
     emissionsKg: x.emissionsKg !== null ? numberText(x.emissionsKg) : base.emissionsKg,
     co2Cost: x.co2CostEur !== null ? euroText(x.co2CostEur) : base.co2Cost,
     emissionFactor: x.emissionFactor !== null ? numberText(x.emissionFactor) : base.emissionFactor,
-    bioCost: x.bioCostEur !== null ? euroText(x.bioCostEur) : base.bioCost,
+    // Nur, wo der Server es annimmt (bioAccepted); sonst bleibt das Feld, wie es war, und fuelChecks nennt den Betrag.
+    bioCost: opts.bio && x.bioCostEur !== null ? euroText(x.bioCostEur) : base.bioCost,
     parts: x.parts.map((p) => ({
       from: p.from, to: p.to, energyKwh: numberText(p.energyKwh), amount: euroText(p.amountEur), fixed: euroText(p.fixedEur),
       emissionsKg: numberText(p.emissionsKg), co2Cost: euroText(p.co2CostEur),
@@ -2061,7 +2115,7 @@ export function fuelFormFromExtraction(x: FuelInvoiceExtraction, base: FuelForm)
   }
 }
 
-export function fuelChecks(x: FuelInvoiceExtraction): string[] {
+export function fuelChecks(x: FuelInvoiceExtraction, opts: { bio: boolean } = { bio: false }): string[] {
   const out: string[] = []
   if (x.parts.length > 0 && x.totalGrossEur !== null) {
     const sum = x.parts.reduce((a, p) => a + cents(p.amountEur), 0)
@@ -2076,7 +2130,7 @@ export function fuelChecks(x: FuelInvoiceExtraction): string[] {
     }
   }
   if (x.co2CostNet) {
-    out.push('Die Rechnung nennt die CO₂-Kosten ohne Umsatzsteuer. Auszuweisen sind sie mit Umsatzsteuer (§ 3 Abs. 3 CO2KostAufG); fragen Sie im Zweifel beim Lieferanten nach, Mietfuchs rechnet sie nicht um.')
+    out.push('Die Rechnung nennt die CO₂-Kosten ohne Umsatzsteuer. Auszuweisen sind sie mit Umsatzsteuer (§ 3 Abs. 3 CO2KostAufG); fordern Sie beim Lieferanten eine berichtigte Rechnung an. Mietfuchs rechnet sie nicht um.')
   }
   if (x.amountsAdjusted === 'netto') {
     out.push('Die Teilmengen waren netto ausgewiesen; Mietfuchs hat sie anteilig auf den Rechnungsbetrag hochgerechnet. Bitte prüfen Sie die Beträge.')
@@ -2085,7 +2139,9 @@ export function fuelChecks(x: FuelInvoiceExtraction): string[] {
     out.push('Die Rechnung nennt die Teilmengen netto, und der Abstand zum Rechnungsbetrag lässt sich nicht allein mit der Umsatzsteuer erklären. Bitte tragen Sie die Bruttobeträge von Hand ein.')
   }
   if (x.bioCostEur !== null && x.bioCostEur !== 0) {
-    out.push('Die Rechnung weist einen Preisbestandteil für Biobrennstoff nach § 43 GModG aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Er gilt nur für eine Heizungsanlage nach § 43 Abs. 1 GModG; prüfen Sie die Angabe an der Heizanlage.')
+    out.push(opts.bio
+      ? 'Die Rechnung weist einen Preisbestandteil für Biobrennstoff nach § 43 GModG aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Er gilt nur für eine Heizungsanlage nach § 43 Abs. 1 GModG; prüfen Sie die Angabe an der Heizanlage.'
+      : `Die Rechnung weist ${fmtEuro(cents(x.bioCostEur))} als Preisbestandteil für Biobrennstoff aus (§ 3 Abs. 1 Nr. 6 CO2KostAufG). Mietfuchs hat ihn nicht übernommen: Er zählt nur an einer Heizung nach § 43 Abs. 1 GModG mit eingetragenem Tag des Einbaus, und bei Brennstoff aus einem Vorrat rechnet Mietfuchs ihn noch nicht. Trifft beides zu bzw. nicht zu, tragen Sie ihn von Hand ein.`)
   }
   return out
 }
@@ -2094,7 +2150,8 @@ export function fuelChecks(x: FuelInvoiceExtraction): string[] {
 - [ ] **Step 5: Karte der Lieferungen (PR 7: `FuelCard.tsx`, Annahme C1)**
 
 Importe: `aiRequest`, `progressText`, `type AiProgress` aus `'../aiRequest'`; `buildUpload` aus
-`'../pdfIntake'`; `fuelChecks`, `fuelFormFromExtraction` aus `'../fuelImport'`; `GAS_BASIS_OPTIONS`,
+`'../pdfIntake'`; `bioAccepted`, `fuelChecks`, `fuelFormFromExtraction` aus `'../fuelImport'`; `isStockEnergy` aus
+`'../../../shared/fuelStock.ts'`; `GAS_BASIS_OPTIONS`,
 `QUANTITY_UNIT_OPTIONS`, `type FuelPartForm` aus `'../fuelForm'`; Typ `FuelExtractResult`. Zustand:
 
 ```ts
@@ -2111,8 +2168,11 @@ Funktion:
     try {
       const fd = await buildUpload(file)
       const r = await aiRequest<FuelExtractResult>(`/api/heating-plants/${plant.id}/fuel-invoice`, fd, { onProgress: setReading })
-      setForm(fuelFormFromExtraction(r.extraction, emptyFuelForm()))
-      setChecks(fuelChecks(r.extraction))
+      // Biobrennstoff nur, wo der Server ihn annimmt (Annahme C3): `halfSplit` ist die Eigenschaft aus PR 18,
+      // `billed` die Anlage mit der Energie der Abrechnung (PR 16).
+      const bio = bioAccepted({ halfSplit, stock: isStockEnergy(billed.energy) }, r.extraction.bioCostEur)
+      setForm(fuelFormFromExtraction(r.extraction, emptyFuelForm(), { bio }))
+      setChecks(fuelChecks(r.extraction, { bio }))
       setEditing('neu')
     } catch (e) {
       setError(errorText(e))
@@ -2155,7 +2215,6 @@ Rechnung“ die neuen Felder:
           </div>
           <div className="row">
             {text('emissionFactor', 'Emissionsfaktor laut Rechnung (kg CO₂ je kWh)')}
-            {text('bioCost', 'Biobrennstoff nach § 43 GModG (§ 3 Abs. 1 Nr. 6 CO2KostAufG)')}
           </div>
           {form.parts.length > 0 && (
             <div className="field-group">
@@ -2176,9 +2235,10 @@ Rechnung“ die neuen Felder:
           <button className="btn secondary" onClick={() => set('parts', [...form.parts, { from: '', to: '', energyKwh: '', amount: '', fixed: '', emissionsKg: '', co2Cost: '' }])}>Teilmenge hinzufügen</button>
 ```
 
-`TextKey` in der Karte (PR 7: `Exclude<keyof FuelForm, 'usedByService'>`) um die Nicht-Text-Felder erweitern:
-`Exclude<keyof FuelForm, 'usedByService' | 'quantityUnit' | 'gasBasis' | 'parts' | 'grade'>` (nur die Namen, die
-es gibt). `setChecks([])` beim Öffnen einer Lieferung (`open`).
+`TextKey` in der Karte (PR 7: `Exclude<keyof FuelForm, 'usedByService'>`, seit PR 9 auch ohne `'unitId'`) um
+die Nicht-Text-Felder erweitern: `Exclude<keyof FuelForm, 'usedByService' | 'unitId' | 'quantityUnit' | 'gasBasis'
+| 'parts' | 'grade'>` (nur die Namen, die es gibt). Das Feld „Biobrennstoff“ rendert weiter PR 18 bei
+`halfSplit`; PR 20 legt kein zweites an. `setChecks([])` beim Öffnen einer Lieferung (`open`).
 
 - [ ] **Step 6: Run tests to verify they pass**
 

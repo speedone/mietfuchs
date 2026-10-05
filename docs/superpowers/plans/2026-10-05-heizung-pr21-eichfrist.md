@@ -30,6 +30,25 @@ den Meilenstein).
 `feat/heizung-pr21-eichfrist`, abgezweigt von der Spitze von PR 20, gestapelt gestellt und nach dem
 Merge von PR 20 auf `main` umgestellt (`git rebase --onto`).
 
+## Änderungen nach Prüfung vom 05.10.2026
+
+Die rechtliche Prüfung der Pläne PR 15 bis 22 vom 05.10.2026 hat diesen Plan an diesen Stellen geändert:
+
+1. **Frühere Fassungen der Anlage 7 im Register** (Rechtsquellen, Abweichung 2, Task 1): Urfassung ab
+   01.01.2015, Fassungen ab 16.08.2017 und ab 08.05.2019 haben für Nr. 5.5.1, 5.5.2, 7.1 übereinstimmend
+   Kaltwasser 6, Warmwasser 5, Wärmezähler 5 Jahre. Sie stehen als eine Fassung 01.01.2015–02.11.2021 mit
+   `checked: 'adopted'` und dem Vermerk „vor Merge am BGBl. bestätigen“ im Register (Task 5 Step 3).
+2. **Vorschlagslogik entsprechend** (Abweichung 3, Review Focus 5, Task 4): ein Vorschlag, wo sich die Frist
+   während ihres Laufs nicht ändert; Kaltwasser ab 2015, Warmwasser und Wärme bis 2015 (fünf Jahre) und ab
+   2022 (sechs Jahre), 2016–2021 kein Vorschlag mit Satz; vor 2015 (Eichordnung) kein Vorschlag.
+3. **Zitat zu Gas- und Stromzählern berichtigt** (Abweichung 7): Ihre Eichfristen folgen aus § 34 Abs. 1 MessEV
+   mit Anlage 7 Nr. 5.6 und Nr. 6 und § 37 Abs. 1 MessEG; § 35 regelt nur die Verlängerung im
+   Stichprobenverfahren.
+4. **Vierte Änderungsverordnung (mWv 31.01.2024)** erwähnt (Rechtsquellen, `messev.ts`, CLAUDE.md): Sie ändert
+   Nr. 5.5.3, 5.6.11, 6.3, 6.7 und 7.3, nicht die drei maßgeblichen Nummern.
+5. **Annahme A1:** Die Schritte von PR 18 und PR 19 heißen `0040_gmodg`, `0041_gmodg_bedingungen` und
+   `0042_co2_erstattung`; dieser Plan bleibt bei `0043`/`0044`.
+
 **Rechtsquellen, am 05.10.2026 im Wortlaut gelesen** (gesetze-im-internet.de, MessEV „zuletzt geändert
 durch Art. 13 V v. 11.12.2024 I Nr. 411“):
 
@@ -60,9 +79,19 @@ durch Art. 13 V v. 11.12.2024 I Nr. 411“):
   umwelt-online (Fundstelle z21_4742) und die Änderungsliste bei buzer.de; das BGBl.-PDF selbst ließ sich
   nicht abrufen. Die Messdienstpraxis wendet die sechs Jahre auch auf zu diesem Tag noch laufende
   Fristen an ([M] Thermomess, KALO); das steht nicht im Wortlaut.
-- Die Anlage 7 wurde **außerdem 2017 (BGBl. I S. 3098) und 2019 (BGBl. I S. 579)** geändert; ob dabei die
-  Nummern 5.5.1, 5.5.2 und 7.1 berührt wurden, ist nicht gelesen. Deshalb beginnt die einzige Fassung des
-  Parameters am 03.11.2021 (Abweichung 2).
+- **Frühere Fassungen der Anlage 7** (Prüfung vom 05.10.2026, gelesen über buzer.de, konsolidiert, also
+  sekundär): Urfassung ab 01.01.2015 (MessEV vom 11.12.2014, BGBl. I S. 2010), Fassung ab 16.08.2017
+  (BGBl. I S. 3098), Fassung ab 08.05.2019 (BGBl. I S. 579). In allen drei gilt: Nr. 5.5.1 Kaltwasser
+  **6**, Nr. 5.5.2 Warmwasser **5**, Nr. 7.1 Wärmezähler **5**, Nr. 7.2 **5** Jahre. Erst die Fassung ab
+  03.11.2021 setzt 5.5.2, 7.1 und 7.2 auf 6. **Vor dem Merge am BGBl.-PDF (2014 S. 2010; 2017 S. 3098;
+  2019 S. 579) bestätigen**; bis dahin steht die Fassung mit `checked: 'adopted'` und dem Verweis auf
+  buzer.de im Register (Abweichung 2).
+- **Vierte Änderungsverordnung** mit Wirkung vom 31.01.2024 (BGBl. 2024 I Nr. 27): Sie ändert in Anlage 7 die
+  Nummern 5.5.3, 5.6.11, 6.3, 6.7 und 7.3, **nicht** 5.5.1, 5.5.2 und 7.1; die Fassung ab 03.11.2021 gilt für
+  diese drei unverändert fort.
+- Gas- und Elektrizitätszähler: Ihre Eichfristen stehen in **Anlage 7 Nr. 5.6** (Gaszähler, je nach Bauart
+  5 bis 16 Jahre) und **Nr. 6** (Elektrizitätszähler, je nach Ausführung) in Verbindung mit § 34 Abs. 1 MessEV
+  und § 37 Abs. 1 MessEG. § 35 regelt nur die Verlängerung im Stichprobenverfahren.
 - [R] BGH, Urteil vom 17.11.2010, VIII ZR 112/10 (über LTO, gelesen 05.10.2026): Bei geeichten Zählern
   spricht „eine tatsächliche Vermutung für deren Richtigkeit“; beim nicht geeichten muss der Vermieter
   „darlegen und beweisen, dass die abgelesenen Werte zutreffend sind“; im Fall gelang das mit der
@@ -117,9 +146,12 @@ durch Art. 13 V v. 11.12.2024 I Nr. 411“):
    Erwartet: Das Eichjahr fällt beim Speichern weg, statt dass die Prüfbedingung mit einem Datenbankfehler
    ablehnt; ein Rumpf, der ausdrücklich ein Eichjahr für einen Heizkostenverteiler schickt, bekommt 400 mit
    einem Satz. Test in Task 2.
-5. **Kennzeichnung „M21“ auf einem Warmwasserzähler.** Für 2021 ist unklar, ob fünf oder sechs Jahre gelten
-   (Inkrafttreten 03.11.2021, keine Übergangsregel). Erwartet: kein Vorschlag, ein Satz mit dem Grund;
-   „M22“ ergibt 2028. Test in Task 4.
+5. **Kennzeichnung „M16“ bis „M21“ auf einem Warmwasser- oder Wärmezähler.** Die Frist von fünf Jahren lief am
+   03.11.2021 noch, als sie auf sechs Jahre stieg; ob für sie fünf oder sechs Jahre gelten, sagt die
+   Verordnung nicht (keine Übergangsregel, § 58 MessEV nennt nichts). Erwartet: kein Vorschlag, ein Satz mit
+   dem Grund; „M15“ ergibt 2020 (die Frist lief vor dem 03.11.2021 ab, eindeutig), „M22“ ergibt 2028.
+   **Kaltwasser** hat in beiden Fassungen sechs Jahre: „M15“ bis „M21“ ergeben einen Vorschlag (J + 6). Test
+   in Task 4.
 
 ## Dateien
 
@@ -156,7 +188,7 @@ gleicht die ausführende Sitzung ab und ersetzt abweichende Angaben:
 
 | Nr. | Annahme | Wo benutzt |
 |---|---|---|
-| A1 | Die letzten Migrationen vor diesem PR sind die von PR 19; PR 18 legt zwei Schritte an, PR 19 einen (`co2_refunds`). Die Nummern dieses Plans wären dann `0043_eichfrist` und `0044_eichfrist_bedingungen`. Tests und Plan sprechen die Schritte nur über das Ende ihres Namens an (`_eichfrist`), die Nummer vergibt drizzle-kit. | Task 2 |
+| A1 | Die letzten Migrationen vor diesem PR sind die von PR 19; PR 18 legt zwei Schritte an (`0040_gmodg`, `0041_gmodg_bedingungen`), PR 19 einen (`0042_co2_erstattung`; `co2_refunds` ist der Name der Tabelle). Die Nummern dieses Plans wären dann `0043_eichfrist` und `0044_eichfrist_bedingungen`. Tests und Plan sprechen die Schritte nur über das Ende ihres Namens an (`_eichfrist`), die Nummer vergibt drizzle-kit. | Task 2 |
 | A2 | Weder PR 18 noch PR 19 ändern `meters`, `mergeMeter` oder das Zählerformular. | Task 2, 4 |
 | A3 | PR 20 (KI) ändert `meters` nicht. | Task 2 |
 
@@ -167,17 +199,20 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung, damit die D
 1. **Datum der Umstellung berichtigt.** Der Entwurf (3.12) nennt den 02.11.2021. Das ist der Tag der
    Verkündung; in Kraft trat die Änderung am 03.11.2021 (Art. 2: „am Tag nach der Verkündung“). Der
    Parameter beginnt am 03.11.2021.
-2. **Eine Fassung ab dem 03.11.2021, keine frühere.** Für die Zeit davor ist belegt, dass Warmwasser- und
-   Wärmezähler fünf Jahre hatten (die Änderungsverordnung ersetzt „5“ durch „6“); seit wann, ist nicht
-   gelesen (Änderungen der Anlage 7 auch 2017 und 2019). Ein Wert ohne Primärquelle käme nur als
-   `unchecked` ins Register und sperrte das Release (4.7). Wer vor dem 03.11.2021 geeicht wurde, bekommt
-   deshalb **keinen Vorschlag** (Abweichung 3); `law()` wird für solche Tage nie gefragt.
-3. **Vorschlag nur ab dem ersten vollen Jahr der Fassung (Festlegung).** Das Formular rechnet „geeicht
-   bis“ = Jahr der Eichung oder Kennzeichnung + Eichfrist, wenn der 1. Januar dieses Jahres in der Fassung
-   liegt (heute: ab 2022). Grund: Die Kennzeichnung nennt nur das Jahr (§ 34 Abs. 2 Satz 2 MessEV); für 2021
-   ist unbekannt, ob der Tag vor oder nach dem 03.11. lag, und ob die sechs Jahre auf eine am 03.11.2021
-   laufende Frist wirken, sagt der Wortlaut nicht (nur [M]). Davor fragt das Formular nach dem Jahr laut
-   Messdienst oder Eichschein, wie der Entwurf es bis zum Lesen des Übergangsrechts vorsah.
+2. **Zwei Fassungen: 01.01.2015 bis 02.11.2021 (6/5/5) und ab 03.11.2021 (6/6/6).** Die frühere Fassung
+   (Urfassung 2015, Änderungen 2017 und 2019, alle mit denselben Werten für Nr. 5.5.1, 5.5.2, 7.1) ist über
+   buzer.de gelesen und steht mit `checked: 'adopted'` im Register; vor dem Merge wird sie am BGBl. bestätigt
+   und auf `checked` gesetzt (Task 5 Step 3). Die Zeit vor 2015 (Eichordnung, Anhang B) führt das Register
+   nicht; dafür gibt es keinen Vorschlag. Die frühere Fassung dieses Plans führte nur die Fassung ab
+   03.11.2021, weil die älteren nicht gelesen waren (Prüfung vom 05.10.2026).
+3. **Vorschlag nur, wo die Frist eindeutig ist (Festlegung).** Das Formular rechnet „geeicht bis“ = Jahr der
+   Eichung oder Kennzeichnung (J) + Eichfrist der Fassung am 01.01. J, **wenn sich die Eichfrist der Sparte
+   bis zum Ende dieses Jahres nicht ändert**. Daraus folgt: Kaltwasser ab J = 2015 immer (6 in beiden
+   Fassungen); Warmwasser und Wärme bei J ≤ 2015 mit fünf Jahren (die Frist lief vor dem 03.11.2021 ab), bei
+   2016 ≤ J ≤ 2021 kein Vorschlag (die Frist lief am 03.11.2021 noch, und ob die sechs Jahre auf sie wirken,
+   sagt der Wortlaut nicht, nur [M] Thermomess, KALO), ab J = 2022 mit sechs Jahren. Die Kennzeichnung nennt
+   nur das Jahr (§ 34 Abs. 2 Satz 2 MessEV). Wo kein Vorschlag kommt, fragt das Formular nach dem Jahr laut
+   Messdienst oder Eichschein.
 4. **Der Vorschlag erklärt § 34 Abs. 1 Satz 3 MessEV** (wer nach Ablauf neu eicht, bekommt die neue Frist ab
    dem Ablauf der alten), statt ihn zu rechnen: Mietfuchs kennt das Ende der alten Frist nicht.
 5. **Geprüft wird der Zeitraum der Abrechnung (P), nicht jede Heizperiode einzeln (Festlegung).** Eine
@@ -188,8 +223,9 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung, damit die D
 6. **Nur das Gerät seit dem letzten Wechsel wird geprüft (Festlegung, Review Focus 3).** Das Eichjahr ist
    eine Angabe zum heutigen Gerät; die Spalte gibt es einmal je Zähler, nicht je Gerät.
 7. **Eichjahr für jede Sparte außer HKV**, auch Strom und „sonstig“ (Entwurf 3.12 nennt Kalt-, Warmwasser
-   und Wärme): Auch Elektrizitäts- und Gaszähler sind eichpflichtig (§ 35 nennt sie); einen Vorschlag gibt es
-   nur für die drei Sparten der Anlage 7, deren Frist das Register führt. Der Hinweistext überträgt das
+   und Wärme): Auch Elektrizitäts- und Gaszähler sind eichpflichtig (§ 34 Abs. 1 MessEV mit Anlage 7 Nr. 5.6
+   und Nr. 6, § 37 Abs. 1 MessEG); einen Vorschlag gibt es nur für die drei Sparten der Anlage 7, deren Frist
+   das Register führt, denn bei Gas- und Stromzählern hängt die Frist von der Bauart ab. Der Hinweistext überträgt das
    Urteil zum Wasserzähler ausdrücklich („für andere Zähler übertragen“).
 8. **Vierstellige Jahreszahl als Prüfbedingung** (`BETWEEN 1000 AND 9999`), wie beim Schlüssel der
    Jahreskorrektur (CLAUDE.md, „vierstellige Jahreszahl“); eine engere Grenze hätte keine Quelle.
@@ -207,7 +243,7 @@ Jede steht im Task an ihrer Stelle und kommt in die PR-Beschreibung, damit die D
 - Consumes: `LawParam`, `Source`, `germanDate`, `LAW_AS_OF`, `valueAt`, `onlyVersion` (register.ts).
 - Produces:
   - `shared/law/messev.ts`: `type CalibrationYears = { readonly kaltwasser: number; readonly warmwasser: number; readonly waerme: number }`;
-    `messevCalibrationYears: LawParam<CalibrationYears, 'eventDate'>` (id `messev.calibration-years`);
+    `messevCalibrationYears: LawParam<CalibrationYears, 'eventDate'>` (id `messev.calibration-years`, zwei Fassungen);
     `CALIBRATED_METER_TYPES: readonly ('kaltwasser' | 'warmwasser' | 'waerme')[]`.
   - Regel `meter-calibration` in `RULES`.
   - Lexikon `meterCalibration` (damit `TermId` den Begriff kennt).
@@ -226,22 +262,31 @@ Eintrag `messevCalibrationYears` ergänzen. Ans Dateiende:
 ```ts
 // ---------- MessEV (Heizung PR 21) ----------
 
-test('Stichtag messev.calibration-years: ab dem 03.11.2021 je 6 Jahre, davor keine Fassung', () => {
+test('Stichtag messev.calibration-years: ab 01.01.2015 Kaltwasser 6, Warmwasser und Wärme 5; ab 03.11.2021 je 6; davor keine Fassung', () => {
   const log = createLawLog()
   assert.deepEqual(law(messevCalibrationYears, { date: '2021-11-03' }, log), { kaltwasser: 6, warmwasser: 6, waerme: 6 })
   assert.deepEqual(law(messevCalibrationYears, { date: '2028-06-30' }, log), { kaltwasser: 6, warmwasser: 6, waerme: 6 })
-  // Vor dem Inkrafttreten der Dritten Änderungsverordnung führt das Register keine Fassung (Abweichung 2).
-  assert.throws(() => law(messevCalibrationYears, { date: '2021-11-02' }, createLawLog()), /Kein Rechtswert „messev.calibration-years“ am 2021-11-02/)
   assert.equal(log.values.length, 1, 'dieselbe Fassung zweimal abgefragt ist ein Eintrag')
   assert.equal(log.values[0]?.text, 'Kaltwasser-, Warmwasser- und Wärmezähler je 6 Jahre')
+  // Die frühere Fassung (Urfassung 2015, Änderungen 2017, 2019; Abweichung 2).
+  assert.deepEqual(law(messevCalibrationYears, { date: '2021-11-02' }, createLawLog()), { kaltwasser: 6, warmwasser: 5, waerme: 5 })
+  assert.deepEqual(law(messevCalibrationYears, { date: '2015-01-01' }, createLawLog()), { kaltwasser: 6, warmwasser: 5, waerme: 5 })
+  assert.equal(messevCalibrationYears.describe({ kaltwasser: 6, warmwasser: 5, waerme: 5 }), 'Kaltwasserzähler 6, Warmwasserzähler 5, Wärmezähler 5 Jahre')
+  // Vor der MessEV (Eichordnung) führt das Register keine Fassung.
+  assert.throws(() => law(messevCalibrationYears, { date: '2014-12-31' }, createLawLog()), /Kein Rechtswert „messev.calibration-years“ am 2014-12-31/)
 })
 
-test('messev.calibration-years: Fundstelle Anlage 7 und Dritte Änderungsverordnung, geprüft', () => {
-  const v = onlyVersion(messevCalibrationYears)
-  assert.equal(v.validFrom, '2021-11-03')
-  assert.equal(v.source.checked, 'checked')
-  assert.match(v.source.cite, /Anlage 7 Nr\. 5\.5\.1, 5\.5\.2, 7\.1 MessEV/)
-  assert.match(v.enacted, /BGBl\. I S\. 4742/)
+test('messev.calibration-years: Fundstellen; die frühere Fassung ist übernommen und vor dem Merge am BGBl. zu bestätigen', () => {
+  const neu = versionAt(messevCalibrationYears, '2022-01-01')
+  assert.equal(neu.validFrom, '2021-11-03')
+  assert.equal(neu.source.checked, 'checked')
+  assert.match(neu.source.cite, /Anlage 7 Nr\. 5\.5\.1, 5\.5\.2, 7\.1 MessEV/)
+  assert.match(neu.enacted, /BGBl\. I S\. 4742/)
+  const alt = versionAt(messevCalibrationYears, '2018-01-01')
+  assert.deepEqual([alt.validFrom, alt.validTo], ['2015-01-01', '2021-11-02'])
+  assert.equal(alt.source.checked, 'adopted')
+  assert.match(alt.source.cite, /vor dem Merge am BGBl\. bestätigen/)
+  assert.match(alt.enacted, /BGBl\. I S\. 2010.*S\. 3098.*S\. 579/s)
   assert.deepEqual([...CALIBRATED_METER_TYPES], ['kaltwasser', 'warmwasser', 'waerme'])
 })
 
@@ -260,6 +305,7 @@ hinter dem von PR 19) einfügen:
 
 ```ts
   // 0.11.0 (Heizung PR 21, #98)
+  'messev.calibration-years|2015-01-01|2021-11-02|{"kaltwasser":6,"warmwasser":5,"waerme":5}',
   'messev.calibration-years|2021-11-03||{"kaltwasser":6,"warmwasser":6,"waerme":6}',
 ```
 
@@ -295,14 +341,18 @@ Expected: FAIL: `Cannot find module '../../shared/law/messev.ts'` bzw. „neue F
 // Wärmezähler gilt das seit dem 03.11.2021: Die Dritte Verordnung zur Änderung der Mess- und
 // Eichverordnung vom 26.10.2021 (BGBl. I S. 4742, verkündet am 02.11.2021) ersetzte dort „5“ durch „6“
 // und trat am Tag nach der Verkündung in Kraft. Eine Übergangsregel für schon geeichte Zähler enthält sie
-// nicht. Eine frühere Fassung führt das Register nicht: Die Anlage wurde auch 2017 und 2019 geändert, und
-// welche Werte davor galten, ist nicht an der Primärquelle gelesen (Plan PR 21, Abweichung 2).
+// nicht. Die frühere Fassung (Urfassung ab 01.01.2015, BGBl. I 2014 S. 2010; Änderungen 2017, BGBl. I
+// S. 3098, und 2019, BGBl. I S. 579) hatte für diese drei Nummern 6, 5 und 5 Jahre; gelesen über buzer.de
+// (konsolidiert), vor dem Merge am BGBl. zu bestätigen (Plan PR 21, Abweichung 2). Die Vierte
+// Änderungsverordnung (mWv 31.01.2024, BGBl. 2024 I Nr. 27) ändert andere Nummern der Anlage 7, nicht
+// diese drei. Vor 2015 galt die Eichordnung; dafür führt das Register keine Fassung.
 //
 // Zeitregel `eventDate`: Maßgeblich ist der Tag, an dem die Frist beginnt, also der Tag der Eichung oder
 // des Inverkehrbringens (§ 34 Abs. 1 Satz 2 MessEV, § 37 Abs. 1 Satz 2 MessEG).
 import type { LawParam, Source } from './register.ts'
 
 const ENACTED = 'MessEV, Anlage 7 in der Fassung der Dritten Änderungsverordnung vom 26.10.2021 (BGBl. I S. 4742)'
+const ENACTED_BEFORE = 'MessEV vom 11.12.2014 (BGBl. I S. 2010), Anlage 7 in den Fassungen ab 01.01.2015, ab 16.08.2017 (BGBl. I S. 3098) und ab 08.05.2019 (BGBl. I S. 579)'
 const checked = (cite: string, url: string): Source => ({ rank: 'law', cite, url, retrieved: '2026-10-05', checked: 'checked' })
 
 export type CalibrationYears = { readonly kaltwasser: number; readonly warmwasser: number; readonly waerme: number }
@@ -315,12 +365,27 @@ export const messevCalibrationYears: LawParam<CalibrationYears, 'eventDate'> = {
   title: 'Eichfrist von Wasser- und Wärmezählern',
   norm: '§ 34 Abs. 1 Nr. 1 und Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV',
   timing: 'eventDate',
-  versions: [{
-    validFrom: '2021-11-03',
-    value: { kaltwasser: 6, warmwasser: 6, waerme: 6 },
-    source: checked('Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV', 'https://www.gesetze-im-internet.de/messev/anlage_7.html'),
-    enacted: ENACTED,
-  }],
+  versions: [
+    {
+      validFrom: '2015-01-01',
+      validTo: '2021-11-02',
+      value: { kaltwasser: 6, warmwasser: 5, waerme: 5 },
+      source: {
+        rank: 'law',
+        cite: 'Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV a. F. (gelesen über buzer.de; vor dem Merge am BGBl. bestätigen)',
+        url: 'https://www.buzer.de/Anlage_7_MessEV.htm',
+        retrieved: '2026-10-05',
+        checked: 'adopted',
+      },
+      enacted: ENACTED_BEFORE,
+    },
+    {
+      validFrom: '2021-11-03',
+      value: { kaltwasser: 6, warmwasser: 6, waerme: 6 },
+      source: checked('Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV', 'https://www.gesetze-im-internet.de/messev/anlage_7.html'),
+      enacted: ENACTED,
+    },
+  ],
   describe: (v) =>
     v.kaltwasser === v.warmwasser && v.warmwasser === v.waerme
       ? `Kaltwasser-, Warmwasser- und Wärmezähler je ${v.kaltwasser} Jahre`
@@ -389,9 +454,10 @@ Expected: PASS.
 git add shared/law/messev.ts shared/law/params.ts shared/law/rules.ts shared/glossary.ts server/test/law.test.ts server/test/law-history.test.ts server/test/glossary.test.ts
 git commit -m "Eichfrist: Fristen der MessEV und Regel im Rechtsregister
 
-Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV mit je sechs Jahren ab dem
-Inkrafttreten der Dritten Änderungsverordnung (03.11.2021). Eine frühere
-Fassung führt das Register nicht, weil sie nicht an der Quelle gelesen ist.
+Anlage 7 Nr. 5.5.1, 5.5.2, 7.1 MessEV: ab 01.01.2015 Kaltwasser 6,
+Warmwasser und Wärme 5 Jahre (übernommen, vor dem Merge am BGBl. zu
+bestätigen), ab dem Inkrafttreten der Dritten Änderungsverordnung
+(03.11.2021) je sechs Jahre.
 
 Refs #98"
 ```
@@ -941,7 +1007,7 @@ Refs #98"
 
 **Interfaces:**
 - Consumes: `messevCalibrationYears`, `CALIBRATED_METER_TYPES` (Task 1); `valueAt`, `versionAt`,
-  `germanDate` (register.ts); `MeterForm`, `meterToForm`, `meterBody`, `emptyMeterForm` (PR 4).
+  `coversDate` (PR 17), `germanDate` (register.ts); `MeterForm`, `meterToForm`, `meterBody`, `emptyMeterForm` (PR 4).
 - Produces: `MeterForm.calibratedUntil: string`; `meterBody` liefert `calibratedUntil: number | null`;
   `calibrationSuggestion(type: MeterType, markedYear: string): { year: number; text: string } | { reason: string }`;
   `asksCalibration(form: MeterForm): boolean`.
@@ -973,11 +1039,22 @@ describe('Eichfrist (Heizung PR 21)', () => {
     expect(meterBody({ ...emptyMeterForm(), name: 'K', calibratedUntil: '2028,5' }, null)).toEqual({ error: 'Bitte tragen Sie das Eichjahr vierstellig ein, etwa 2028, oder lassen Sie das Feld leer.' })
   })
 
-  test('Review Focus 5: Vorschlag ab dem ersten vollen Jahr der Fassung, davor ein Satz mit dem Grund', () => {
+  test('Review Focus 5: Vorschlag nur, wo sich die Eichfrist während ihres Laufs nicht ändert', () => {
     expect(calibrationSuggestion('warmwasser', '2022')).toEqual({ year: 2028, text: 'Vorschlag: geeicht bis Ende 2028 (Eichung oder Kennzeichnung 2022, Eichfrist 6 Jahre).' })
     expect(calibrationSuggestion('kaltwasser', '2025')).toEqual({ year: 2031, text: 'Vorschlag: geeicht bis Ende 2031 (Eichung oder Kennzeichnung 2025, Eichfrist 6 Jahre).' })
-    const alt = calibrationSuggestion('warmwasser', '2021')
-    expect('reason' in alt && alt.reason).toMatch(/vor 2022.*03\.11\.2021.*fünf auf sechs Jahre.*Übergangsregel.*Messdienst oder.*Eichschein/s)
+    // Kaltwasser hat in beiden Fassungen sechs Jahre: eindeutig auch vor 2021.
+    expect(calibrationSuggestion('kaltwasser', '2018')).toEqual({ year: 2024, text: 'Vorschlag: geeicht bis Ende 2024 (Eichung oder Kennzeichnung 2018, Eichfrist 6 Jahre).' })
+    // Warmwasser 2015: fünf Jahre, Ablauf Ende 2020, vor dem 03.11.2021.
+    expect(calibrationSuggestion('warmwasser', '2015')).toEqual({ year: 2020, text: 'Vorschlag: geeicht bis Ende 2020 (Eichung oder Kennzeichnung 2015, Eichfrist 5 Jahre).' })
+    // 2016 bis 2021 lief die Frist am 03.11.2021 noch: kein Vorschlag.
+    for (const jahr of ['2016', '2021']) {
+      const alt = calibrationSuggestion('warmwasser', jahr)
+      expect('reason' in alt && alt.reason).toMatch(/03\.11\.2021.*von 5 auf 6 Jahre.*Übergangsregel.*Messdienst oder.*Eichschein/s)
+    }
+    expect('reason' in calibrationSuggestion('waerme', '2019')).toBe(true)
+    // Vor der MessEV (Eichordnung) gibt es keine Fassung.
+    const eo = calibrationSuggestion('kaltwasser', '2014')
+    expect('reason' in eo && eo.reason).toMatch(/vor 2015.*Eichordnung/s)
     expect('reason' in calibrationSuggestion('strom', '2024') && calibrationSuggestion('strom', '2024')).toBeTruthy()
     expect(calibrationSuggestion('waerme', '22')).toEqual({ reason: 'Bitte nennen Sie das Jahr vierstellig, etwa 2022.' })
   })
@@ -996,7 +1073,7 @@ Importe ergänzen:
 
 ```ts
 import { CALIBRATED_METER_TYPES, messevCalibrationYears } from '../../shared/law/messev.ts'
-import { germanDate, versionAt } from '../../shared/law/register.ts'
+import { coversDate, germanDate, versionAt } from '../../shared/law/register.ts'
 ```
 
 In `MeterForm` hinter `installedOn: string`:
@@ -1040,31 +1117,36 @@ const isCalibrated = (t: MeterType): t is (typeof CALIBRATED_METER_TYPES)[number
 
 // Vorschlag „geeicht bis“ aus dem Jahr der Eichung oder Kennzeichnung (§ 34 Abs. 1 Satz 2 und Abs. 2
 // MessEV, § 37 Abs. 1 Satz 2 MessEG): dieses Jahr plus Eichfrist, denn die Frist endet erst mit dem Ende des
-// Jahres, in dem sie rechnerisch abläuft. Nur, wenn der 1. Januar des Jahres in der Fassung des Registers
-// liegt (Plan PR 21, Abweichung 3); die Kennzeichnung nennt nur das Jahr.
+// Jahres, in dem sie rechnerisch abläuft. Nur, wenn sich die Eichfrist der Sparte vom 1. Januar des Jahres
+// bis zum Ende der Frist nicht ändert (Plan PR 21, Abweichung 3): Für eine am 03.11.2021 laufende Frist sagt
+// die Verordnung nicht, ob die neue Zahl gilt. Die Kennzeichnung nennt nur das Jahr.
 export function calibrationSuggestion(type: MeterType, markedYear: string): { year: number; text: string } | { reason: string } {
   const text = markedYear.trim()
   if (!/^\d{4}$/.test(text)) return { reason: 'Bitte nennen Sie das Jahr vierstellig, etwa 2022.' }
   if (!isCalibrated(type)) {
-    return { reason: 'Für diese Sparte schlägt Mietfuchs kein Jahr vor. Tragen Sie das Jahr ein, das der Versorger, der Messdienst oder der Eichschein nennt.' }
+    return { reason: 'Für diese Sparte schlägt Mietfuchs kein Jahr vor, denn ihre Eichfrist hängt von der Bauart ab. Tragen Sie das Jahr ein, das der Versorger, der Messdienst oder der Eichschein nennt.' }
   }
-  const first = messevCalibrationYears.versions[0]?.validFrom ?? ''
-  const firstFullYear = Number(first.slice(0, 4)) + (first.endsWith('-01-01') ? 0 : 1)
   const year = Number(text)
-  if (`${year}-01-01` < first || year < firstFullYear) {
+  const start = `${year}-01-01`
+  const ask = 'Tragen Sie das Jahr ein, das der Messdienst oder der Eichschein nennt.'
+  if (!coversDate(messevCalibrationYears, start)) {
+    const first = (messevCalibrationYears.versions[0]?.validFrom ?? '').slice(0, 4)
+    return { reason: `Für Zähler, die vor ${first} geeicht oder gekennzeichnet wurden, schlägt Mietfuchs kein Jahr vor: Bis dahin galt die Eichordnung, deren Fristen Mietfuchs nicht führt. ${ask}` }
+  }
+  const years = versionAt(messevCalibrationYears, start).value[type]
+  const end = `${year + years}-12-31`
+  const change = messevCalibrationYears.versions.find((v) => (v.validFrom ?? '') > start && (v.validFrom ?? '') <= end && v.value[type] !== years)
+  if (change) {
     return {
       reason:
-        `Für Zähler, die vor ${firstFullYear} geeicht oder gekennzeichnet wurden, schlägt Mietfuchs kein Jahr vor: Am ${germanDate(first)} stieg die Eichfrist der Warmwasser- und Wärmezähler von fünf auf sechs Jahre, und eine Übergangsregel für schon geeichte Zähler enthält die Verordnung nicht. ` +
-        'Tragen Sie das Jahr ein, das der Messdienst oder der Eichschein nennt.',
+        `Für diesen Zähler schlägt Mietfuchs kein Jahr vor: Am ${germanDate(change.validFrom ?? '')} stieg die Eichfrist von ${years} auf ${change.value[type]} Jahre, während seine Frist noch lief, und eine Übergangsregel für schon geeichte Zähler enthält die Verordnung nicht. ${ask}`,
     }
   }
-  const years = versionAt(messevCalibrationYears, `${year}-01-01`).value[type]
   return { year: year + years, text: `Vorschlag: geeicht bis Ende ${year + years} (Eichung oder Kennzeichnung ${year}, Eichfrist ${years} Jahre).` }
 }
 ```
 
-Hinweis zur Zahl in der Begründung: „fünf auf sechs“ ist der Inhalt der Änderung (die Dritte
-Änderungsverordnung ersetzt „5“ durch „6“), nicht eine Rechtszahl, mit der gerechnet wird; der Wächter
+Die Zahlen im Satz kommen aus dem Register (`years`, `change.value[type]`); der Wächter
 `law-literals.test.ts` prüft nur die Dateien der Berechnung, nicht die Oberfläche.
 
 - [ ] **Step 4: Zählerformular (`client/src/pages/Zaehler.tsx`)**
@@ -1129,8 +1211,9 @@ Expected: PASS; der Build bündelt `shared/law/messev.ts`.
 git add client/src/meterForm.ts client/src/meterForm.test.ts client/src/pages/Zaehler.tsx
 git commit -m "Eichfrist: Feld im Zählerformular mit Vorschlag aus dem Jahr der Kennzeichnung
 
-Vorschlag nur ab dem ersten vollen Jahr der sechsjährigen Frist; davor
-nennt das Formular den Grund und fragt nach dem Jahr laut Messdienst.
+Vorschlag nur, wo sich die Eichfrist während ihres Laufs nicht ändert
+(Kaltwasser ab 2015, Warmwasser und Wärme bis 2015 und ab 2022); sonst nennt
+das Formular den Grund und fragt nach dem Jahr laut Messdienst.
 
 Refs #98"
 ```
@@ -1148,8 +1231,9 @@ Unter „Unveröffentlicht“, Abschnitt „Hinzugefügt“:
 
 ```markdown
 - Eichfrist der Zähler: An jedem Zähler außer Heizkostenverteilern lässt sich eintragen, bis zu welchem Jahr
-  er geeicht ist; aus dem Jahr der Eichung oder Kennzeichnung schlägt Mietfuchs es vor (Kalt-, Warmwasser-
-  und Wärmezähler sechs Jahre, ab 2022). Stammt eine Ablesung aus der Zeit danach, warnen Zähler-Seite und
+  er geeicht ist; aus dem Jahr der Eichung oder Kennzeichnung schlägt Mietfuchs es vor, wo die Frist eindeutig
+  ist (Kaltwasserzähler sechs Jahre; Warmwasser- und Wärmezähler fünf Jahre bis zur Kennzeichnung 2015, sechs
+  Jahre ab 2022; dazwischen nennt das Formular den Grund). Stammt eine Ablesung aus der Zeit danach, warnen Zähler-Seite und
   Cockpit und nennen die Beweislast; die Werte werden weiter verwendet
   ([#98](https://github.com/speedone/mietfuchs/issues/98)).
 ```
@@ -1165,10 +1249,11 @@ Im Abschnitt „Berechnungs-Engine“, Punkt „Zähler“, hinter dem Absatz ü
   Ablesung nach dem Ende, wenn interpoliert wird), und nur die des Geräts seit dem letzten Wechsel. Die
   Frist endet mit dem Ende des Eichjahres (§ 34 Abs. 2 MessEV); eine Ablesung vom 31.12. zählt noch.
   Heizkostenverteiler haben kein Eichjahr (Prüfbedingung). Die Fristen stehen im Register
-  (`messev.calibration-years`) erst ab dem 03.11.2021: Die Dritte Änderungsverordnung (BGBl. 2021 I S.
-  4742) hob Warmwasser- und Wärmezähler von fünf auf sechs Jahre, ohne Übergangsregel, und was vorher galt,
-  ist nicht an der Quelle gelesen. Das Formular schlägt deshalb erst ab dem ersten vollen Jahr ein Eichjahr
-  vor.
+  (`messev.calibration-years`) ab 01.01.2015 (6/5/5, übernommen über buzer.de, vor dem Merge am BGBl.
+  bestätigt) und ab dem 03.11.2021 (6/6/6): Die Dritte Änderungsverordnung (BGBl. 2021 I S. 4742) hob
+  Warmwasser- und Wärmezähler von fünf auf sechs Jahre, ohne Übergangsregel. Das Formular schlägt nur vor,
+  wo sich die Frist während ihres Laufs nicht ändert. Die Vierte Änderungsverordnung (2024) berührt diese
+  Nummern nicht.
 ```
 
 - [ ] **Step 3: Volle Prüfung**
@@ -1178,6 +1263,15 @@ Expected: Exit-Status 0.
 
 Run: `MIETFUCHS_RELEASE=1 npm --prefix server test -- test/law-release.test.ts`
 Expected: PASS (kein Parameter dieses Plans ist `unchecked`).
+
+**Vor dem Merge:** Die frühere Fassung von `messev.calibration-years` am BGBl. bestätigen: MessEV vom
+11.12.2014 (BGBl. I S. 2010, Anlage 7 Nr. 5.5.1, 5.5.2, 7.1), Änderungen BGBl. I 2017 S. 3098 und 2019
+S. 579 (ob sie diese Nummern berühren). Stimmen 6, 5 und 5, wird in `shared/law/messev.ts` `checked:
+'adopted'` zu `'checked'`, `url` zur Fundstelle im BGBl. und der Zusatz „vor dem Merge am BGBl. bestätigen“
+im `cite` entfällt; der Test in `law.test.ts` wird entsprechend angepasst (die Fassung ist noch nicht
+ausgeliefert, also keine Änderung einer Fassung nach 4.4). Weichen die Werte ab, gilt der BGBl.-Text, und die
+Tests von Task 4 werden nachgerechnet. Den BGH-Volltext VIII ZR 112/10 vor dem Merge an
+juris.bundesgerichtshof.de prüfen (Aktenzeichen, Datum, die beiden zitierten Sätze).
 
 Run (Smoke-Test gegen eine laufende Instanz mit Wegwerf-Ordner, `CI=1` und geschlossenem Update-Port):
 
@@ -1210,7 +1304,7 @@ Refs #98"
 |---|---|
 | `calibrated_until` als Jahreszahl, Ende mit Ablauf des Jahres (3.12, § 34 Abs. 2) | 2, 3 |
 | Nicht für HKV, Prüfbedingung `type <> 'hkv'` (3.12, 5.3, Z-B10) | 2, 4 |
-| Übergangsrecht MessEV 2021 vorher lesen (3.12, R-A27, 13 PR 21) | Rechtsquellen oben; Abweichungen 1–3 |
+| Übergangsrecht MessEV 2021 vorher lesen (3.12, R-A27, 13 PR 21) | Rechtsquellen oben; Abweichungen 1–3; frühere Fassung 2015–2021 (6/5/5) im Register, vor dem Merge am BGBl. bestätigen |
 | `messev.calibration-years`, Anlage 7 Nr. 5.5.1, 5.5.2, 7.1, `eventDate` (4.3) | 1 |
 | `meter.calibration-overdue` warning, Werte trotzdem verwendet (3.12, 10.1, #91) | 3 |
 | § 35 Stichprobe als Hinweis (3.12, 13 PR 21) | 3 (Hinweistext), 4 (Feldtext), 1 (Lexikon) |
