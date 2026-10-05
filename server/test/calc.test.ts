@@ -2684,7 +2684,7 @@ test('Eine Rundungsregel (#202): eine vorher abgeschlossene Abrechnung bleibt, d
       return { ...st, totalShareCents: share, balanceCents: st.balanceCents + st.totalShareCents - share }
     }),
   }
-  const r = compareWithFrozen(frozen, today, 2025, '2026-06-01')
+  const r = compareWithFrozen(frozen, today, '2026-12-31', '2026-06-01')
   assert.equal(r.comparable, true)
   assert.deepEqual(r.deviations.map((d) => [d.tenancyId, d.differenceCents, d.direction]), [['tb', 1, 'tenant'], ['tc', 1, 'tenant']])
 })

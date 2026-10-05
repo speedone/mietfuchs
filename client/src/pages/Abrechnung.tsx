@@ -175,7 +175,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `Nebenkostenabrechnung ${year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
+    if (st) document.title = `Nebenkostenabrechnung ${data?.period.label ?? year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
       document.title = prevTitle
@@ -195,8 +195,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
   // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
-  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView).
-  const deadlineInfo = deadlineView(year, data?.closed?.sentAt ?? null, history, new Date())
+  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView). Bezeichnung und Frist
+  // vom Server (#208).
+  const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
 
   return (
     <>
@@ -275,7 +276,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
         </div>
       )}
 
-      {data && data.totalCostsCents > 0 && (
+      {data && deadlineInfo && data.totalCostsCents > 0 && (
         <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
       {history.length > 0 && (
@@ -401,7 +402,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
               <div className="statement-head">
                 <div>
-                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {year}</h2>
+                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {data?.period.label ?? year}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
@@ -590,7 +591,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
                         <div className="attachment-caption">
-                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {fileLabel(f)}
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? year}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
                           <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />

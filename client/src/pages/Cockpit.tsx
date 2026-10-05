@@ -100,9 +100,10 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
     return { hasPrev: true, list }
   }, [costItems, year, period])
 
-  // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums.
-  const deadline = useMemo(() => new Date(Date.UTC(year + 1, 11, 31)), [year])
-  const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000)
+  // §556 Abs. 3 BGB: Zugang beim Mieter binnen 12 Monaten nach Ende des Abrechnungszeitraums. Die
+  // Frist kommt vom Server (#208); vor dem Laden gibt es keine.
+  const deadline = settlement?.deadline ?? null
+  const daysLeft = deadline === null ? 0 : Math.ceil((Date.parse(`${deadline}T00:00:00Z`) - Date.now()) / 86400000)
 
   // ---------- Bereitschafts-Checkliste ----------
   const checks = useMemo<Check[]>(() => {
@@ -225,7 +226,7 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
       list.push({ title: 'Abgeschlossen & versendet', level: 'gruen',
         detail: 'Keine Abrechnung nötig: Alle Mietverhältnisse haben eine Pauschale oder Inklusivmiete.' })
     } else if (closed?.sentAt) {
-      const ok = closed.sentAt <= `${year + 1}-12-31`
+      const ok = closed.sentAt <= settlement.deadline
       list.push({ title: 'Abgeschlossen & versendet', level: ok ? 'gruen' : 'rot',
         detail: `Versendet am ${fmtDate(closed.sentAt)} — Frist nach §556 BGB ${ok ? 'gewahrt' : 'überschritten'}.` })
     } else if (closed) {
@@ -233,8 +234,8 @@ export default function Cockpit({ units, tenancies, settings, reload, onNavigate
         detail: 'Abgeschlossen, aber Versanddatum fehlt — für die §556-Frist nachtragen.' })
     } else {
       const deadlineText = daysLeft >= 0
-        ? `Noch ${daysLeft} Tage bis zur Frist (31.12.${year + 1}).`
-        : `Frist am 31.12.${year + 1} abgelaufen.`
+        ? `Noch ${daysLeft} Tage bis zur Frist (${fmtDate(settlement.deadline)}).`
+        : `Frist am ${fmtDate(settlement.deadline)} abgelaufen.`
       list.push({ title: 'Abgeschlossen & versendet', level: daysLeft < 0 ? 'rot' : 'gelb', tab: 'abrechnung', cta: 'Zur Abrechnung',
         detail: `Noch im Entwurf. ${deadlineText}` })
     }

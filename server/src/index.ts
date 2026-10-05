@@ -15,7 +15,8 @@ import { DEFAULT_SETTINGS } from './defaults.ts'
 import { compareWithFrozen } from './settlementDiff.ts'
 import { computeSettlement, consumptionOverview, rentLedger, taxReport } from './calc.ts'
 import { narrowToProperty, snapshotFor } from './snapshot.ts'
-import { calendarPeriod, calendarYearPeriod, isCalendarRules, rulesOf, startYearOf } from '../../shared/period.ts'
+import { calendarPeriod, calendarYearPeriod, isCalendarRules, periodLabel, resolvePeriodParam, rulesOf, settlementDeadline, settlementPeriod, startYearOf } from '../../shared/period.ts'
+import type { BillingPeriod } from '../../shared/types.ts'
 import { extractFromFile, classifyDocType, extractMeterReading, type AskProgressEvent, type AskStats } from './extract.ts'
 import { listOllamaModels, findOllama, defaultCandidates, pullOllamaModel } from './ai/ollama.ts'
 import { createRecommendations } from './ai/recommendations.ts'
@@ -373,6 +374,26 @@ async function propertyOf(db: Database, req: Request, fromBody = false): Promise
   throw new RouteProblem(400, 'Welches Objekt ist gemeint? Seit es mehrere Objekte gibt, braucht diese Anfrage die Angabe property.')
 }
 
+// Der Zeitraum einer Anfrage (#208): der Monat des Beginns als `JJJJ-MM`, bei einem reinen
+// Kalenderobjekt auch die nackte Jahreszahl (G-C6). Gibt es ihn für das Objekt nicht, nennt die
+// Antwort, was gemeint sein könnte; ein Tab von vor einem Wechsel bekommt so nie still den Rumpf.
+async function periodOf(db: Database, req: Request, propertyId: string): Promise<BillingPeriod> {
+  const property = (await listProperties(db)).find((p) => p.id === propertyId)
+  const resolved = resolvePeriodParam(rulesOf(property), String(req.params.period ?? ''))
+  if ('error' in resolved) throw new RouteProblem(resolved.status, resolved.error)
+  return resolved.period
+}
+
+// Steuer und Mietkonto rechnen im Kalenderjahr (#208). Die Steuerübersicht eines Objekts mit anderem
+// Rhythmus schöpft aus zwei Abrechnungen und kommt mit PR 3; bis dahin lieber ablehnen als eine Zahl
+// nennen, die aus einer halben Abrechnung stammt.
+async function requireCalendarObject(db: Database, propertyId: string): Promise<void> {
+  const property = (await listProperties(db)).find((p) => p.id === propertyId)
+  if (!isCalendarRules(rulesOf(property))) {
+    throw new RouteProblem(400, 'Die Steuerübersicht für ein Objekt mit abweichendem Abrechnungszeitraum kommt mit einer späteren Version.')
+  }
+}
+
 for (const coll of COLLECTIONS) {
   // Aufgelistet wird über `narrowToProperty`, dieselbe Regel wie beim Rechnen; eine zweite
   // Fassung für die Listen liefe irgendwann anders als die der Abrechnung.
@@ -456,13 +477,15 @@ app.delete('/api/properties/:id', async (req, res) => {
 const today = (): string => new Date().toISOString().slice(0, 10)
 
 // Liefert die abgeschlossene (eingefrorene) Abrechnung, falls vorhanden — sonst live berechnet.
-app.get('/api/settlement/:year', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const { closed, stock, property } = await readData(async (db) => {
+app.get('/api/settlement/:period', async (req, res) => {
+  const { closed, stock, property, period } = await readData(async (db) => {
     const property = await propertyOf(db, req)
-    return { property, closed: await findClosedSettlement(db, property, calendarPeriod(year)), stock: await readStock(db) }
+    const period = await periodOf(db, req, property)
+    return { property, period, closed: await findClosedSettlement(db, property, period.key), stock: await readStock(db) }
   })
+  // Zeitraum und Frist (#208) stehen in jeder Antwort, auch bei einer vorher abgeschlossenen
+  // Abrechnung, die sie noch nicht kennt: Die Oberfläche rechnet die Frist nicht mehr selbst.
+  const frame = { period: settlementPeriod(period), deadline: settlementDeadline(period) }
   // Vor dieser Version eingefrorene Snapshots kennen selfUsedShareCents noch nicht — mit 0
   // vorbelegen, damit die Antwort immer der Form in types.ts entspricht. Genau deshalb ist das
   // Feld in StoredSettlement (store.ts) optional.
@@ -473,10 +496,10 @@ app.get('/api/settlement/:year', async (req, res) => {
     const stand = closed.settlement !== null && typeof closed.settlement === 'object' ? closed.settlement : {}
     // Daneben die heutige Berechnung, nur zum Vergleich (#56): Der eingefrorene Stand bleibt das
     // Dokument, das der Mieter hat; weicht die heutige Rechnung ab, erfährt es der Vermieter.
-    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, calendarYearPeriod(year)), { asOf: today() }), year, today())
-    return res.json({ selfUsedShareCents: 0, ...stand, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
+    const deviation = compareWithFrozen(closed.settlement, () => computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), frame.deadline, today())
+    return res.json({ selfUsedShareCents: 0, ...stand, ...frame, closed: { closedAt: closed.closedAt, sentAt: closed.sentAt }, deviation })
   }
-  res.json({ ...computeSettlement(snapshotFor(stock, property, calendarYearPeriod(year)), { asOf: today() }), closed: null })
+  res.json({ ...computeSettlement(snapshotFor(stock, property, period), { asOf: today() }), closed: null })
 })
 
 // Ein Datum als JJJJ-MM-TT, wie es <input type="date"> liefert. Der Vergleich mit dem
@@ -502,77 +525,87 @@ const sentAtOf = (req: Request): string | null | false => {
 
 // Abrechnung abschließen: aktuellen Berechnungsstand einfrieren. Spätere Änderungen an
 // Kosten/Stammdaten verändern eine bereits verschickte Abrechnung dann nicht mehr still.
-app.post('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+app.post('/api/settlement/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
   // Rechnen und Einfrieren im selben Vorgang: Käme dazwischen eine Änderung an einer
   // Kostenposition durch, fröre Mietfuchs einen Stand ein, den es so nie gegeben hat.
-  const schonDa = await writeData(async (db) => {
+  const ergebnis = await writeData(async (db) => {
     const property = await propertyOf(db, req)
-    if (await findClosedSettlement(db, property, calendarPeriod(year))) return true
+    const period = await periodOf(db, req, property)
+    const label = periodLabel(period)
+    if (await findClosedSettlement(db, property, period.key)) return { schonDa: true, label }
     await closeSettlement(db, {
       id: newId(),
       propertyId: property,
-      period: calendarPeriod(year),
+      period: period.key,
       closedAt: new Date().toISOString(),
       sentAt,
-      settlement: computeSettlement(snapshotFor(await readStock(db), property, calendarYearPeriod(year)), { asOf: today() }),
+      settlement: computeSettlement(snapshotFor(await readStock(db), property, period), { asOf: today() }),
     })
-    return false
+    return { schonDa: false, label }
   })
-  if (schonDa) return res.status(409).json({ error: `Abrechnung ${year} ist bereits abgeschlossen.` })
+  if (ergebnis.schonDa) return res.status(409).json({ error: `Abrechnung ${ergebnis.label} ist bereits abgeschlossen.` })
   res.status(201).json({ ok: true })
 })
 
 // Versanddatum nachtragen (für die §556-Frist)
-app.put('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
+app.put('/api/settlement/:period/close', async (req, res) => {
   const sentAt = sentAtOf(req)
   if (sentAt === false) return res.status(400).json({ error: SENT_AT_INVALID })
-  const gefunden = await writeData(async (db) => setSentAt(db, await propertyOf(db, req), calendarPeriod(year), sentAt))
+  const gefunden = await writeData(async (db) => {
+    const property = await propertyOf(db, req)
+    return setSentAt(db, property, (await periodOf(db, req, property)).key, sentAt)
+  })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
-// Frühere Abschlüsse eines Jahres (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
+// Frühere Abschlüsse eines Zeitraums (#56, Teil 2): was beim Wiederöffnen beiseitegelegt wurde,
 // der zuletzt wiedergeöffnete zuerst. Der gültige Stand steht nicht darin, den liefert
-// GET /api/settlement/:year.
-app.get('/api/settlement/:year/history', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => settlementHistory(db, await propertyOf(db, req), calendarPeriod(year))))
+// GET /api/settlement/:period.
+app.get('/api/settlement/:period/history', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    return settlementHistory(db, property, (await periodOf(db, req, property)).key)
+  }))
 })
 
 // Wieder öffnen: Der Stand wandert in den Verlauf, es gilt wieder die laufende Berechnung (#56).
-app.delete('/api/settlement/:year/close', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  const gefunden = await writeData(async (db) => reopenSettlement(db, await propertyOf(db, req), calendarPeriod(year), newId()))
+app.delete('/api/settlement/:period/close', async (req, res) => {
+  const gefunden = await writeData(async (db) => {
+    const property = await propertyOf(db, req)
+    return reopenSettlement(db, property, (await periodOf(db, req, property)).key, newId())
+  })
   if (!gefunden) return res.status(404).json({ error: 'Abrechnung ist nicht abgeschlossen.' })
   res.json({ ok: true })
 })
 
-app.get('/api/consumption/:year', async (req, res) => {
-  const year = Number(req.params.year)
-  if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => consumptionOverview(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)))))
+// Verbrauch über den Zeitraum der Abrechnung (#208): Die Zähler-Seite zeigt denselben Zeitraum.
+app.get('/api/consumption/:period', async (req, res) => {
+  res.json(await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    return consumptionOverview(snapshotFor(await readStock(db), property, await periodOf(db, req, property)))
+  }))
 })
 
-// Mietkonto: Soll/Ist je Monat und Mietverhältnis für das Jahr
+// Mietkonto: Soll/Ist je Monat und Mietverhältnis im **Kalenderjahr** (#208, Entwurf 3.11), auch bei
+// einem Objekt mit anderem Rhythmus. Es liest keine Kostenposition, der Zeitraum dient nur dem Jahr.
 app.get('/api/rentledger/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   res.json(await readData(async (db) => rentLedger(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)), { asOf: today() })))
 })
 
-// Steuer-Übersicht (Hilfe für die Anlage V): Einnahmen, Werbungskosten, Überschuss
+// Steuer-Übersicht (Hilfe für die Anlage V) im Kalenderjahr: Einnahmen, Werbungskosten, Überschuss
 app.get('/api/taxreport/:year', async (req, res) => {
   const year = Number(req.params.year)
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
-  res.json(await readData(async (db) => taxReport(snapshotFor(await readStock(db), await propertyOf(db, req), calendarYearPeriod(year)))))
+  res.json(await readData(async (db) => {
+    const property = await propertyOf(db, req)
+    await requireCalendarObject(db, property)
+    return taxReport(snapshotFor(await readStock(db), property, calendarYearPeriod(year)))
+  }))
 })
 
 // ---------- Belege & KI-Auswertung ----------
@@ -1142,6 +1175,7 @@ app.get('/api/receipts/tax/:year', async (req, res) => {
   if (!Number.isInteger(year)) return res.status(400).json({ error: 'Ungültiges Jahr' })
   const { items, property, rows, links, split } = await readData(async (db) => {
     const propertyId = await propertyOf(db, req)
+    await requireCalendarObject(db, propertyId)
     const whole = await readStock(db)
     const stock = narrowToProperty(whole, propertyId)
     const property = (await listProperties(db)).find((p) => p.id === propertyId)

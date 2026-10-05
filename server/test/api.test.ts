@@ -19,7 +19,8 @@ import { applyMigrations, connect, loadMigrations, type Database } from '../src/
 import { migrateLegacy, straightenForDatabase } from '../src/legacy/migrate.ts'
 import { writeStock } from '../src/legacy/write.ts'
 import { readClosedSettlements, readStock } from '../src/db/read.ts'
-import { assessments as assessmentsTable, uploads as uploadsTable } from '../src/db/schema.ts'
+import { assessments as assessmentsTable, properties as propertiesTable, uploads as uploadsTable } from '../src/db/schema.ts'
+import { eq } from 'drizzle-orm'
 import { LAW_AS_OF } from '../../shared/law/register.ts'
 import { tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
 import { calendarPeriod } from '../../shared/period.ts'
@@ -5419,6 +5420,83 @@ test('Alter Tab: Die Kostenliste eines Kalenderobjekts nennt weiter das Jahr (#2
     await s.api('/api/costItems', { method: 'POST', body: JSON.stringify({ period: '2025-01', category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 50000, key: 'area' }) })
     const [item] = await s.api<(CostItem & { year?: number })[]>('/api/costItems')
     assert.deepEqual([item?.period, item?.year], ['2025-01', 2025])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitraum und Frist, Steuer folgt später', async () => {
+  const s = await startServer()
+  try {
+    const kalender = await s.api<Settlement>('/api/settlement/2025')
+    assert.deepEqual([kalender.period.key, kalender.period.label, kalender.deadline], ['2025-01', '2025', '2026-12-31'])
+    assert.equal((await s.api<Settlement>('/api/settlement/2025-01')).period.label, '2025')
+
+    // Ein zweites Objekt, das Mai bis April abrechnet. In dieser Version setzt das nur die
+    // Datenbank selbst (Bedienung: PR 3).
+    const mai = await s.api<Property>('/api/properties', { method: 'POST', body: JSON.stringify({ name: 'Gartenweg 3', kind: 'mfh', address: '' }) })
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, mai.id)) })
+    const q = `?property=${mai.id}`
+
+    const alt = await fetch(`${s.base}/api/settlement/2025${q}`)
+    assert.equal(alt.status, 404)
+    assert.equal(await errorFrom(alt), 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026?')
+    const neu = await s.api<Settlement>(`/api/settlement/2025-05${q}`)
+    assert.deepEqual([neu.period.from, neu.period.to, neu.period.label, neu.deadline, neu.daysInYear], ['2025-05-01', '2026-04-30', '2025/2026', '2027-04-30', 365])
+    assert.equal((await fetch(`${s.base}/api/settlement/2025-13${q}`)).status, 400)
+
+    // Abschließen, Versand, Verlauf und Wiederöffnen über denselben Schlüssel.
+    const post = (path: string) => fetch(`${s.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    assert.equal((await post(`/api/settlement/2025-05/close${q}`)).status, 201)
+    const doppelt = await post(`/api/settlement/2025-05/close${q}`)
+    assert.equal(doppelt.status, 409)
+    assert.equal(await errorFrom(doppelt), 'Abrechnung 2025/2026 ist bereits abgeschlossen.')
+    const zu = await s.api<Settlement>(`/api/settlement/2025-05${q}`)
+    assert.ok(zu.closed, 'abgeschlossen')
+    assert.equal(zu.deadline, '2027-04-30')
+    await s.api(`/api/settlement/2025-05/close${q}`, { method: 'PUT', body: JSON.stringify({ sentAt: '2026-06-01' }) })
+    await s.api(`/api/settlement/2025-05/close${q}`, { method: 'DELETE' })
+    assert.equal((await s.api<unknown[]>(`/api/settlement/2025-05/history${q}`)).length, 1)
+
+    // Verbrauch über denselben Zeitraum; das Mietkonto bleibt Kalenderjahr; die Steuer kommt mit PR 3.
+    assert.equal((await fetch(`${s.base}/api/consumption/2025${q}`)).status, 404)
+    assert.equal((await fetch(`${s.base}/api/consumption/2025-05${q}`)).status, 200)
+    assert.equal((await s.api<{ year: number }>(`/api/rentledger/2025${q}`)).year, 2025)
+    const steuer = await fetch(`${s.base}/api/taxreport/2025${q}`)
+    assert.equal(steuer.status, 400)
+    assert.equal(await errorFrom(steuer), 'Die Steuerübersicht für ein Objekt mit abweichendem Abrechnungszeitraum kommt mit einer späteren Version.')
+    assert.equal((await fetch(`${s.base}/api/receipts/tax/2025${q}`)).status, 400)
+
+    // Ein alter Tab schreibt mit Jahreszahl: abgelehnt statt still in einen anderen Zeitraum
+    // (Review Focus 1). Die Liste nennt für dieses Objekt kein Jahr, es gäbe keines, das stimmte.
+    const altTab = await fetch(`${s.base}/api/costItems${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ year: 2025, category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }),
+    })
+    assert.equal(altTab.status, 400)
+    assert.match(await errorFrom(altTab), /älter als das Programm/)
+    await s.api(`/api/costItems${q}`, { method: 'POST', body: JSON.stringify({ period: '2025-05', category: 'Grundsteuer', description: 'G', amountCents: 100, key: 'area' }) })
+    const [item] = await s.api<(CostItem & { year?: number })[]>(`/api/costItems${q}`)
+    assert.deepEqual([item?.period, item?.year], ['2025-05', undefined])
+  } finally {
+    s.stop()
+  }
+})
+
+test('Zeitraum (#208): eine vor dem Update abgeschlossene Abrechnung bekommt Zeitraum und Frist von der Route', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-alt-'))
+  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+    settings: {}, units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [],
+    closedSettlements: [{
+      id: 'alt', year: 2030, closedAt: '2031-01-05', sentAt: null,
+      settlement: { year: 2030, daysInYear: 365, statements: [], landlord: { rows: [], totalCents: 0 }, totalCostsCents: 0, warnings: [] },
+    }],
+  }))
+  const s = await startServerIn(dataDir)
+  try {
+    const alt = await s.api<Settlement>('/api/settlement/2030')
+    assert.deepEqual([alt.period.label, alt.deadline, alt.closed?.closedAt], ['2030', '2031-12-31', '2031-01-05'])
+    assert.equal(alt.deviation?.deadline, '2031-12-31')
   } finally {
     s.stop()
   }

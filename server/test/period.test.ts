@@ -203,3 +203,11 @@ test('Nur shared/period.ts macht aus Text einen Zeitraumschlüssel', () => {
   for (const dir of ['shared', 'server/src', 'server/test', 'server/testing', 'client/src']) walk(path.join(root, dir))
   assert.deepEqual(found, ['shared/period.ts'])
 })
+
+test('Wache: die Frist rechnet nur noch settlementDeadline (#208)', () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  for (const file of ['server/src/settlementDiff.ts', 'client/src/settlementHistory.ts', 'client/src/pages/Cockpit.tsx']) {
+    const text = fs.readFileSync(path.join(root, file), 'utf8')
+    assert.doesNotMatch(text, /-12-31|year \+ 1\b|Date\.UTC\(year/, `${file} rechnet die Frist selbst`)
+  }
+})

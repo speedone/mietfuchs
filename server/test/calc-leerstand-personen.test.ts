@@ -315,7 +315,7 @@ test('Leerstand beim Personenschlüssel: eine nach altem Stand abgeschlossene Ab
   const frozen = settle({ ...source, units: [unit('A'), unit('B'), unit('C', { participates: false })] })
   assert.equal(shareOf(frozen, 'ta'), 40000)
   const current = settle(source)
-  const cmp = compareWithFrozen(frozen, current, 2025, '2026-03-01')
+  const cmp = compareWithFrozen(frozen, current, '2026-12-31', '2026-03-01')
   assert.equal(cmp.comparable, true)
   assert.deepEqual(cmp.deviations.map((d) => [d.tenancyId, d.direction, d.differenceCents]), [
     ['ta', 'tenant', 40000 - shareOf(current, 'ta')],
