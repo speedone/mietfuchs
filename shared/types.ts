@@ -1054,6 +1054,10 @@ export type HeatingMethod = 'service' | 'self' | 'manual'
 // kennt (G-C2, R-A1).
 export type DevicesRemote = 'all' | 'none' | 'partial' | 'unknown'
 export type DevicesInstalledAfter = 'all' | 'some' | 'none' | 'unknown'
+// Wie die nicht fernablesbaren Geräte nach dem Stichtag eingebaut wurden (§ 5 Abs. 2 HeizkostenV,
+// Nachprüfung von #230): einzeln als Ersatz oder Ergänzung in ein bestehendes, nicht fernablesbares
+// System (Satz 4, dann Frist nach Abs. 3) oder als Ganzes neu (Satz 1). `null` heißt unbeantwortet.
+export type NewDevicesInstall = 'single' | 'whole'
 // `homeowners`: vermietete Eigentumswohnung, die Gemeinschaft liefert die Abrechnung (§ 1 Abs. 2 Nr. 3
 // HeizkostenV, D-F2); nur mit `service`.
 export type HeatingSource = 'building' | 'homeowners'
@@ -1078,6 +1082,7 @@ export type HeatingPlant = {
   separateSettlement: boolean | null
   devicesRemote: DevicesRemote
   devicesInstalledAfter2021: DevicesInstalledAfter
+  newDevicesInstall: NewDevicesInstall | null
   source: HeatingSource
   // Wärmepumpe (§ 12 Abs. 3 HeizkostenV): Verbrauch am 01.10.2024 schon erfasst? Sonst seit wann.
   captureInstalledOn: string | null

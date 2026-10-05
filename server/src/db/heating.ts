@@ -28,7 +28,7 @@ import { readHeatingPlants, readProperties } from './read.ts'
 import { asNullableFilled, asNullableText, asText, HeatingError, ISO_DATE, merged, oneOfOrUndefined, raw, sameProperty } from './repository.ts'
 import {
   CHANGE_SPLITS, closedSettlements, costItems, DEVICES_INSTALLED_AFTER, DEVICES_REMOTE, HEATING_ENERGIES, HEATING_METHODS,
-  HEATING_SOURCES, HEATING_SUPPLIES, heatingPeriods, heatingPlants, heatingPlantUnits, meters, units,
+  HEATING_SOURCES, HEATING_SUPPLIES, NEW_DEVICES_INSTALLS, heatingPeriods, heatingPlants, heatingPlantUnits, meters, units,
 } from './schema.ts'
 
 // Die Sätze der Sperren. Jeder sagt, was bis dahin geht.
@@ -77,6 +77,7 @@ function mergeHeatingPlant(current: HeatingPlant, body: unknown): HeatingPlant {
     separateSettlement: merged(body, 'separateSettlement', current.separateSettlement, nullableBoolean),
     devicesRemote: merged(body, 'devicesRemote', current.devicesRemote, (v) => oneOfOrUndefined(DEVICES_REMOTE, v) ?? current.devicesRemote),
     devicesInstalledAfter2021: merged(body, 'devicesInstalledAfter2021', current.devicesInstalledAfter2021, (v) => oneOfOrUndefined(DEVICES_INSTALLED_AFTER, v) ?? current.devicesInstalledAfter2021),
+    newDevicesInstall: merged(body, 'newDevicesInstall', current.newDevicesInstall, (v) => oneOfOrUndefined(NEW_DEVICES_INSTALLS, v) ?? null),
     source: merged(body, 'source', current.source, (v) => oneOfOrUndefined(HEATING_SOURCES, v) ?? current.source),
     captureInstalledOn: merged(body, 'captureInstalledOn', current.captureInstalledOn, asNullableFilled),
     capturedOnOct2024: merged(body, 'capturedOnOct2024', current.capturedOnOct2024, nullableBoolean),
@@ -92,6 +93,7 @@ const emptyHeatingPlant = (id: string, propertyId: string): HeatingPlant => ({
   id, propertyId, name: '', energy: 'other', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
   capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
+  newDevicesInstall: null,
 })
 
 async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, after: HeatingPlant): Promise<void> {
@@ -119,6 +121,7 @@ async function guardHeatingPlant(db: Executor, before: HeatingPlant | null, afte
 const plantRow = (p: HeatingPlant) => ({
   id: p.id, propertyId: p.propertyId, name: p.name, energy: p.energy, supply: p.supply, method: p.method,
   separateSettlement: p.separateSettlement, devicesRemote: p.devicesRemote, devicesInstalledAfter2021: p.devicesInstalledAfter2021,
+  newDevicesInstall: p.newDevicesInstall,
   source: p.source, captureInstalledOn: p.captureInstalledOn, capturedOnOct2024: p.capturedOnOct2024,
   warmRentAverageCents: p.warmRentAverageCents, changeSplit: p.changeSplit, periodStartMonth: p.periodStartMonth,
   unitsLimited: p.units !== null,

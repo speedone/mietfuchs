@@ -31,6 +31,7 @@ import type {
   HeatingSource,
   HeatingSupply,
   InsulationRule,
+  NewDevicesInstall,
   MeterType,
   PeriodKey,
   PropertyKind,
@@ -333,6 +334,7 @@ export const HEATING_SUPPLIES = exactly<HeatingSupply>()(['central', 'perUnit'] 
 export const HEATING_METHODS = exactly<HeatingMethod>()(['service', 'self', 'manual'] as const)
 export const DEVICES_REMOTE = exactly<DevicesRemote>()(['all', 'none', 'partial', 'unknown'] as const)
 export const DEVICES_INSTALLED_AFTER = exactly<DevicesInstalledAfter>()(['all', 'some', 'none', 'unknown'] as const)
+export const NEW_DEVICES_INSTALLS = exactly<NewDevicesInstall>()(['single', 'whole'] as const)
 export const HEATING_SOURCES = exactly<HeatingSource>()(['building', 'homeowners'] as const)
 export const CHANGE_SPLITS = exactly<ChangeSplit>()(['degreeDays', 'time'] as const)
 export const HEATING_ROLES = exactly<HeatingRole>()(['supply', 'dhwHeat', 'totalHeat'] as const)
@@ -355,6 +357,8 @@ export const heatingPlants = sqliteTable(
     separateSettlement: integer('separate_settlement', { mode: 'boolean' }),
     devicesRemote: text('devices_remote', { enum: DEVICES_REMOTE }).notNull().default('unknown'),
     devicesInstalledAfter2021: text('devices_installed_after_2021_12', { enum: DEVICES_INSTALLED_AFTER }).notNull().default('unknown'),
+    // Einzeln ersetzt oder als Ganzes neu (§ 5 Abs. 2 Satz 1 und 4 HeizkostenV); NULL heißt unbeantwortet.
+    newDevicesInstall: text('new_devices_install', { enum: NEW_DEVICES_INSTALLS }),
     source: text('source', { enum: HEATING_SOURCES }).notNull().default('building'),
     captureInstalledOn: text('capture_installed_on'),
     capturedOnOct2024: integer('captured_on_2024_10_01', { mode: 'boolean' }),
@@ -371,6 +375,7 @@ export const heatingPlants = sqliteTable(
     oneOf('heating_plants_method_known', 'method', HEATING_METHODS),
     oneOf('heating_plants_devices_remote_known', 'devices_remote', DEVICES_REMOTE),
     oneOf('heating_plants_devices_installed_known', 'devices_installed_after_2021_12', DEVICES_INSTALLED_AFTER),
+    oneOf('heating_plants_new_devices_install_known', 'new_devices_install', NEW_DEVICES_INSTALLS),
     oneOf('heating_plants_source_known', 'source', HEATING_SOURCES),
     oneOf('heating_plants_change_split_known', 'change_split', CHANGE_SPLITS),
     check('heating_plants_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),

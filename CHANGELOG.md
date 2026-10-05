@@ -31,7 +31,9 @@ Alle nennenswerten Änderungen an Mietfuchs. Das Format orientiert sich an
   Angabe an der Heizanlage. Ist ein Gerät nicht fernablesbar, obwohl es das sein muss (nach dem
   01.12.2021 eingebaut: ab dem Einbau, ältere ab 2027), nennt die Abrechnung die Kürzung von 3 %
   der Heizkosten je Mieter; ist das nur möglich, etwa weil ein einzelnes Gerät in einem sonst nicht
-  fernablesbaren System ersetzt wurde (§ 5 Abs. 2 Satz 4 HeizkostenV), sagt sie „bis zu“. Ohne Angaben bleibt es beim
+  fernablesbaren System ersetzt wurde (§ 5 Abs. 2 Satz 4 HeizkostenV), sagt sie „bis zu“. Ob die
+  Geräte einzeln ersetzt oder als Ganzes neu eingebaut wurden, fragt die Heizanlage, wenn es darauf
+  ankommt. Ohne Angaben bleibt es beim
   bisherigen Hinweis ([#214](https://github.com/speedone/mietfuchs/issues/214)).
 - **Zweifamilienhaus als Art des Objekts**, mit einem Hinweis, wenn die angelegten Wohnungen nicht
   dazu passen; ob die Ausnahme des § 2 HeizkostenV gilt, richtet sich weiter nach den Wohnungen

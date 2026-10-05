@@ -15,7 +15,7 @@ const UNITS: Unit[] = [
 const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'districtHeating', supply: 'central', method: 'manual', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: null, capturedOnOct2024: null,
-  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
+  warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null, newDevicesInstall: 'single',
 }
 const ITEM: AssignableHeatingItem = { id: 'c1', period: periodKey('2025-01'), description: 'Fernwärme 2025', amountCents: 240000 }
 
@@ -62,6 +62,7 @@ test('Bearbeiten: jedes Auswahlfeld zeigt den gespeicherten Wert', async () => {
   expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('manual')
   expect(valueOf(/aus der Ferne ablesbar/)).toBe('partial')
   expect(valueOf(/nach dem 01\.12\.2021 eingebaut/)).toBe('some')
+  expect(valueOf(/einzeln als Ersatz oder Ergänzung/)).toBe('single')
 })
 
 test('Einrichten: Fragen ohne Vorauswahl, und das Anlegen nimmt die Positionen der Vorschau mit', async () => {
@@ -71,6 +72,8 @@ test('Einrichten: Fragen ohne Vorauswahl, und das Anlegen nimmt die Positionen d
   await waitFor(() => expect(screen.getByText(/Diese Heizposition kommt zur Anlage/)).toBeTruthy())
   expect(valueOf(/Womit wird geheizt/)).toBe('')
   expect(valueOf(/Wer erstellt Ihre Heizkostenabrechnung/)).toBe('')
+  // Die Frage nach dem Einbau erscheint erst, wenn sie zählt (Nachprüfung von #230).
+  expect(screen.queryByLabelText(/einzeln als Ersatz oder Ergänzung/)).toBeNull()
   fireEvent.change(screen.getByLabelText(/Womit wird geheizt/), { target: { value: 'gas' } })
   fireEvent.change(screen.getByLabelText(/Wer erstellt Ihre Heizkostenabrechnung/), { target: { value: 'service' } })
   fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }))

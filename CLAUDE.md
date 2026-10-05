@@ -901,7 +901,10 @@ umgekehrt).
   `hkv.remote-reading.retrofit` (ältere ab 2027), aus den Zählern oder, beim Messdienst, aus der
   Angabe an der Anlage. Ein neues Gerät in einem System, dessen übrige Geräte nicht fernablesbar
   sind (laut Anlage keines oder alle anderen bekannten nicht), kann ein Ersatz nach § 5 Abs. 2 Satz 4
-  sein; dann gilt die Frist des Abs. 3, vorher heißt es nur „bis zu“. Sicher heißt
+  sein; dann gilt die Frist des Abs. 3, vorher heißt es nur „bis zu“. Ob einzeln ersetzt oder als
+  Ganzes neu installiert, fragt die Anlage (`new_devices_install`: `single` | `whole`, NULL offen);
+  unbeantwortet nennt der Hinweis die Frage. Ein allein bekanntes Gerät ist nur sicher, wenn die
+  Anlage keine weiteren Wohnungen ohne erfasstes Gerät versorgt. Sicher heißt
   `heating.remote-reading-missing` (warning, 3 % je Mieter in Wohnungen an der Anlage, auf die
   gedruckten Heizzeilen), möglich `heating.remote-reading` mit „bis zu“; ohne Anlage oder ohne
   Angaben bleibt `heating.remote-reading` wortgleich wie vor PR 4. Zwei Codes, weil die Stufe am

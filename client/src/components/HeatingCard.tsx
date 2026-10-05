@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingPlant, Unit } from '../types'
+import type { AssignableHeatingItem, DevicesInstalledAfter, DevicesRemote, HeatingPlant, NewDevicesInstall, Unit } from '../types'
 import { api, errorText, fmtEuro } from '../api'
 import { useProperty, withProperty } from '../property'
 import { periodLabel, periodOfKey, rulesOf } from '../../../shared/period.ts'
@@ -7,7 +7,7 @@ import { useConfirm, useToast } from './feedback'
 import Drawer from './Drawer'
 import Term from './Term'
 import {
-  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, REMOTE_OPTIONS, emptyHeatingForm, heatingPlantBody,
+  CAPTURE_OPTIONS, CONTRACT_OPTIONS, ENERGY_OPTIONS, INSTALLED_OPTIONS, NEW_DEVICES_AFTER, NEW_INSTALL_OPTIONS, NEW_INSTALL_QUESTION, REMOTE_OPTIONS, asksNewInstall, emptyHeatingForm, heatingPlantBody,
   heatingSummary, heatingToForm, whoHint, whoOptions, type CaptureAnswer, type EnergyAnswer, type HeatingForm, type PerUnitContract, type WhoSettles,
 } from '../heatingForm'
 
@@ -205,6 +205,15 @@ export default function HeatingCard({ units }: { units: Unit[] }) {
                   {INSTALLED_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
+              {asksNewInstall(form) && (
+                <label className="field grow">
+                  {NEW_INSTALL_QUESTION}
+                  <select value={form.newInstall} onChange={(e) => setForm({ ...form, newInstall: e.target.value as NewDevicesInstall | '' })}>
+                    {NEW_INSTALL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <small className="muted">Einzeln ersetzt: Die Pflicht zur Fernablesbarkeit gilt dann erst mit der Frist für ältere Geräte. Als Ganzes neu: schon ab dem Einbau. Im Zweifel fragen Sie Ihren Messdienst.</small>
+                </label>
+              )}
               {form.energy === 'heatPump' && (
                 <>
                   <label className="field grow">

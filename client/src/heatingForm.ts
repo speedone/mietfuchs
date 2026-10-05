@@ -4,7 +4,7 @@
 // ob die Geräte aus der Ferne ablesbar sind (5) und bei einer Wärmepumpe, seit wann ihr Verbrauch
 // erfasst wird (6). Schritt 3 (eigener Zeitraum) kommt mit Heizung PR 5, Schritt 7 (eigene
 // Abrechnung) mit PR 10. Nichts davon ändert eine Zahl der Abrechnung.
-import type { DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, PropertyKind, Unit } from './types'
+import type { DevicesInstalledAfter, DevicesRemote, HeatingEnergy, HeatingPlant, NewDevicesInstall, PropertyKind, Unit } from './types'
 import { parseEuro } from './api'
 import { hkvConsumptionShare, hkvCutNotByConsumption, hkvRemoteReadingNewDevices } from '../../shared/law/heizkostenv.ts'
 import { germanDate, LAW_AS_OF, valueAt } from '../../shared/law/register.ts'
@@ -26,6 +26,7 @@ export type HeatingForm = {
   unitIds: string[]
   remote: DevicesRemote
   installedAfter: DevicesInstalledAfter
+  newInstall: NewDevicesInstall | ''
   captured: CaptureAnswer
   captureInstalledOn: string
   warmRentAverage: string
@@ -34,7 +35,7 @@ export type HeatingForm = {
 // Was die Einrichtung schickt. Die übrigen Felder der Anlage behalten ihre Vorgabe.
 export type HeatingPlantBody = Pick<
   HeatingPlant,
-  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units'
+  'energy' | 'supply' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'capturedOnOct2024' | 'captureInstalledOn' | 'warmRentAverageCents' | 'units' | 'newDevicesInstall'
 >
 // `none`: Es entsteht bewusst keine Anlage, und der Satz sagt warum.
 export type HeatingResult = { body: HeatingPlantBody } | { error: string } | { none: string }
@@ -84,6 +85,19 @@ export const INSTALLED_OPTIONS: { value: DevicesInstalledAfter; label: string }[
   { value: 'none', label: 'Nein, alle früher' },
 ]
 
+// Die Frage nach dem Einbau (§ 5 Abs. 2 Satz 1 und 4 HeizkostenV, Nachprüfung von #230). Sie zählt nur,
+// wenn Geräte nach dem Stichtag eingebaut wurden und nicht alle fernablesbar sind.
+export const NEW_INSTALL_QUESTION =
+  `Wurden die nicht fernablesbaren Geräte nach dem ${NEW_DEVICES_AFTER} einzeln als Ersatz oder Ergänzung in ein bestehendes, ` +
+  'nicht fernablesbares System eingebaut, oder wurde das System als Ganzes neu installiert?'
+export const NEW_INSTALL_OPTIONS: { value: NewDevicesInstall | ''; label: string }[] = [
+  { value: '', label: 'Weiß ich nicht' },
+  { value: 'single', label: 'Einzeln als Ersatz oder Ergänzung' },
+  { value: 'whole', label: 'Das System wurde als Ganzes neu installiert' },
+]
+export const asksNewInstall = (form: Pick<HeatingForm, 'remote' | 'installedAfter'>): boolean =>
+  (form.remote === 'none' || form.remote === 'partial') && form.installedAfter !== 'none'
+
 export const CAPTURE_OPTIONS: { value: CaptureAnswer; label: string }[] = [
   { value: 'unknown', label: 'Weiß ich nicht' },
   { value: 'yes', label: 'Ja' },
@@ -115,7 +129,7 @@ export const defaultUnitIds = (units: readonly UnitInfo[]): string[] =>
 export function emptyHeatingForm(units: readonly UnitInfo[]): HeatingForm {
   return {
     energy: '', contract: '', who: '', unitIds: defaultUnitIds(units), remote: 'unknown', installedAfter: 'unknown',
-    captured: 'unknown', captureInstalledOn: '', warmRentAverage: '',
+    captured: 'unknown', captureInstalledOn: '', warmRentAverage: '', newInstall: '',
   }
 }
 
@@ -132,6 +146,7 @@ export function heatingToForm(plant: HeatingPlant, units: readonly UnitInfo[]): 
     captured: plant.capturedOnOct2024 === null ? 'unknown' : plant.capturedOnOct2024 ? 'yes' : 'no',
     captureInstalledOn: plant.captureInstalledOn ?? '',
     warmRentAverage: plant.warmRentAverageCents === null ? '' : centsText(plant.warmRentAverageCents),
+    newInstall: plant.newDevicesInstall ?? '',
   }
 }
 
@@ -166,6 +181,7 @@ export function heatingPlantBody(form: HeatingForm, units: readonly UnitInfo[]):
       captureInstalledOn: heatPump && form.captured === 'no' && form.captureInstalledOn !== '' ? form.captureInstalledOn : null,
       warmRentAverageCents: average,
       units: allServed ? null : form.unitIds.map((unitId) => ({ unitId, heatedAreaM2: null })),
+      newDevicesInstall: asksNewInstall(form) && form.newInstall !== '' ? form.newInstall : null,
     },
   }
 }

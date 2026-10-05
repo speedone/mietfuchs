@@ -48,6 +48,7 @@ test('Anlegen: Vorgaben, und so steht sie in der Liste', async () => {
       id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'gas', supply: 'central', method: 'service', separateSettlement: null,
       devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', source: 'building', captureInstalledOn: null,
       capturedOnOct2024: null, warmRentAverageCents: null, changeSplit: 'degreeDays', periodStartMonth: null, units: null,
+      newDevicesInstall: null,
     })
     assert.deepEqual(await opened.read((db) => listHeatingPlants(db, 'objekt-1')), [plant])
   })
@@ -282,3 +283,14 @@ test('Zähler der Anlage: mit Rolle und ohne Wohnung; jede Abweichung mit einem 
     assert.equal(fieldOf(geloest, 'heatingRole'), undefined, 'ohne Anlage keine Rolle')
   })
 })
+
+test('Frage nach dem Einbau: einzeln oder als Ganzes neu wird gespeichert und lässt sich leeren (Nachprüfung von #230)', async () => {
+  await withDatabase(async (opened) => {
+    const { plant } = await opened.write((db) => createHeatingPlant(db, 'hp1', 'objekt-1', { energy: 'gas', newDevicesInstall: 'single' }))
+    assert.equal(plant.newDevicesInstall, 'single')
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { newDevicesInstall: 'whole' })))?.newDevicesInstall, 'whole')
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { newDevicesInstall: null })))?.newDevicesInstall, null)
+    assert.equal((await opened.write((db) => updateHeatingPlant(db, 'hp1', { newDevicesInstall: 'irgendwie' })))?.newDevicesInstall, null)
+  })
+})
+

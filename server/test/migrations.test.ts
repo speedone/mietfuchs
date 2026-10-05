@@ -78,7 +78,7 @@ const VEROEFFENTLICHT: Record<string, string> = {
   '0017_leistungszeitraum_pruefung': '704a4352ea7810cd18325a9ce8e8443a96313908b9688492cc7db61c076c3991',
   // Heizung PR 4. Wird PR 3 vor dem Push neu erzeugt, werden diese beiden Schritte neu erzeugt und
   // die Marken hier ersetzt.
-  '0018_heizanlage': '86c29da100e22ec3386a757a673a468cda567904cfc18894b866f5e768ff66ca',
+  '0018_heizanlage': '17887b3be11aa23782feeae5ff30b011298d3c360f3a1e22b5561877b216a01f',
   '0019_heizanlage_bedingungen': '20506c7a6cddb70de5c0ca509fadebdbe722ee666f89205be8052f64b873e17c',
 }
 

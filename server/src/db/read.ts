@@ -272,6 +272,7 @@ export async function readHeatingPlants(db: Database): Promise<HeatingPlant[]> {
     separateSettlement: p.separateSettlement,
     devicesRemote: p.devicesRemote,
     devicesInstalledAfter2021: p.devicesInstalledAfter2021,
+    newDevicesInstall: p.newDevicesInstall,
     source: p.source,
     captureInstalledOn: p.captureInstalledOn,
     capturedOnOct2024: p.capturedOnOct2024,

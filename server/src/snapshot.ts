@@ -96,7 +96,7 @@ export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlant
 // Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest: was über
 // die Fernablesbarkeit bekannt ist und welche Wohnungen angeschlossen sind. Die Verteilung liest sie
 // in dieser Version nicht (Entwurf 11.2, A2).
-export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'units'>
+export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
 
 // Gelesen werden Zähler, Datum, Stand und der Zählerwechsel mit dem Endstand des alten Geräts.
 // Die eigene Kennung der Ablesung und die Notiz braucht die Verbrauchsrechnung nicht.

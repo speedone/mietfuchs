@@ -1,6 +1,6 @@
 // Die Einrichtung „Heizung“ (Heizung PR 4, Entwurf 11.2), ohne DOM.
 import { describe, expect, test } from 'vitest'
-import { emptyHeatingForm, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
+import { asksNewInstall, emptyHeatingForm, heatingPlantBody, heatingSummary, heatingToForm, whoHint, whoOptions, type HeatingForm } from './heatingForm'
 import type { HeatingPlant, Unit } from './types'
 
 const UNITS: Pick<Unit, 'id' | 'name' | 'noConnection'>[] = [{ id: 'eg', name: 'EG' }, { id: 'og', name: 'OG' }, { id: 'garage', name: 'Garage', noConnection: ['waerme'] }]
@@ -9,6 +9,7 @@ const PLANT: HeatingPlant = {
   id: 'hp1', propertyId: 'objekt-1', name: '', energy: 'heatPump', supply: 'central', method: 'service', separateSettlement: null,
   devicesRemote: 'partial', devicesInstalledAfter2021: 'some', source: 'building', captureInstalledOn: '2025-06-01', capturedOnOct2024: false,
   warmRentAverageCents: 123456, changeSplit: 'degreeDays', periodStartMonth: null, units: [{ unitId: 'og', heatedAreaM2: null }],
+  newDevicesInstall: 'single',
 }
 
 describe('Einrichtung Heizung', () => {
@@ -17,7 +18,7 @@ describe('Einrichtung Heizung', () => {
     expect(heatingPlantBody(ausgefuellt(), UNITS)).toEqual({
       body: {
         energy: 'gas', supply: 'central', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown',
-        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null,
+        capturedOnOct2024: null, captureInstalledOn: null, warmRentAverageCents: null, units: null, newDevicesInstall: null,
       },
     })
     expect(heatingPlantBody(ausgefuellt({ unitIds: ['og'] }), UNITS)).toMatchObject({ body: { units: [{ unitId: 'og', heatedAreaM2: null }] } })
@@ -78,5 +79,17 @@ describe('Einrichtung Heizung', () => {
     ])
     expect(heatingSummary({ ...PLANT, units: null }, UNITS)[2]).toBe('Angeschlossen: alle Wohnungen')
     expect(heatingSummary({ ...PLANT, units: [] }, UNITS)[2]).toBe('Angeschlossen: keine Wohnung')
+  })
+
+  test('Frage nach dem Einbau: nur, wenn nicht fernablesbare Geräte nach dem Stichtag dazukamen (Nachprüfung von #230)', () => {
+    expect(asksNewInstall(ausgefuellt())).toBe(false)
+    expect(asksNewInstall(ausgefuellt({ remote: 'all', installedAfter: 'all' }))).toBe(false)
+    expect(asksNewInstall(ausgefuellt({ remote: 'none', installedAfter: 'none' }))).toBe(false)
+    expect(asksNewInstall(ausgefuellt({ remote: 'none', installedAfter: 'some' }))).toBe(true)
+    expect(asksNewInstall(ausgefuellt({ remote: 'partial', installedAfter: 'all' }))).toBe(true)
+    expect(heatingPlantBody(ausgefuellt({ remote: 'none', installedAfter: 'all', newInstall: 'whole' }), UNITS)).toMatchObject({ body: { newDevicesInstall: 'whole' } })
+    // Nicht mehr gefragt: die Antwort geht nicht mit.
+    expect(heatingPlantBody(ausgefuellt({ remote: 'all', installedAfter: 'all', newInstall: 'whole' }), UNITS)).toMatchObject({ body: { newDevicesInstall: null } })
+    expect(heatingToForm(PLANT, UNITS).newInstall).toBe('single')
   })
 })

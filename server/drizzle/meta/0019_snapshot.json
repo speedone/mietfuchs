@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "873e8601-a477-4c82-822b-b074c9ca4f40",
-  "prevId": "e066679a-a315-43e7-80a8-dce640f2744f",
+  "id": "7603e667-485d-4169-b04b-b99a0181449a",
+  "prevId": "e0693591-1097-4742-936d-acb6cd567af8",
   "tables": {
     "ai_slots": {
       "name": "ai_slots",
@@ -1566,6 +1566,13 @@
           "autoincrement": false,
           "default": "'unknown'"
         },
+        "new_devices_install": {
+          "name": "new_devices_install",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "source": {
           "name": "source",
           "type": "text",
@@ -1657,6 +1664,10 @@
         "heating_plants_devices_installed_known": {
           "name": "heating_plants_devices_installed_known",
           "value": "\"devices_installed_after_2021_12\" IN ('all', 'some', 'none', 'unknown')"
+        },
+        "heating_plants_new_devices_install_known": {
+          "name": "heating_plants_new_devices_install_known",
+          "value": "\"new_devices_install\" IN ('single', 'whole')"
         },
         "heating_plants_source_known": {
           "name": "heating_plants_source_known",

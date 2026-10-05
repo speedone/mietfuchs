@@ -8,7 +8,9 @@ import type { DevicesInstalledAfter, DevicesRemote } from '../../shared/types.ts
 import { plantDevices, plantVerdict, remoteReadingVerdict, type RemoteLevel, type RemoteMeter, type RemotePlant, type RemoteUnit } from '../src/remoteReading.ts'
 
 const year = (y: number): Period => ({ from: `${y}-01-01`, to: `${y}-12-31` })
-const anlage = (over: Partial<RemotePlant> = {}): RemotePlant => ({ id: 'hp1', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', units: null, ...over })
+const anlage = (over: Partial<RemotePlant> = {}): RemotePlant => ({ id: 'hp1', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null, ...over })
+// Eine Anlage, die nur Wohnung a versorgt: Dort sitzt das einzige bekannte Gerät.
+const nurA = (over: Partial<RemotePlant> = {}): RemotePlant => anlage({ units: [{ unitId: 'a', heatedAreaM2: null }], ...over })
 const hkv = (id: string, over: Partial<RemoteMeter> = {}): RemoteMeter => ({
   id, unitId: 'a', type: 'hkv', heatingPlantId: null, heatingRole: null, remoteReadable: null, installedOn: null, ...over,
 })
@@ -24,9 +26,10 @@ test('4.7: Gerät eingebaut 15.11.2021, nicht fernablesbar: 2026 keine Kürzung,
 })
 
 test('4.7 und R-A1: Gerät eingebaut 15.12.2021, nicht fernablesbar: Kürzung schon 2022 und 2025', () => {
+  // Das einzige Gerät, und die Anlage versorgt keine Wohnung ohne erfasstes Gerät.
   const m = [hkv('m1', { remoteReadable: false, installedOn: '2021-12-15' })]
-  assert.equal(level(anlage(), m, year(2022)), 'required')
-  assert.equal(level(anlage(), m, year(2025)), 'required')
+  assert.equal(level(nurA(), m, year(2022)), 'required')
+  assert.equal(level(nurA(), m, year(2025)), 'required')
 })
 
 test('3.13: Einbaudatum unbekannt, nicht fernablesbar: „bis zu“ schon heute, ab 2027 sicher', () => {
@@ -98,7 +101,7 @@ test('Mehrere Anlagen: das Schwerere gilt, die Zähler dieser Stufe werden genan
     [hkv('b-hkv', { unitId: 'b', remoteReadable: false, installedOn: '2023-05-01' })],
     UNITS, year(2025), createLawLog(),
   )
-  assert.deepEqual(v, { level: 'required', meterIds: ['b-hkv'], byAnswer: false })
+  assert.deepEqual(v, { level: 'required', meterIds: ['b-hkv'], byAnswer: false, askInstall: false })
   assert.equal(remoteReadingVerdict([], [], UNITS, year(2025), createLawLog()), null)
 })
 
@@ -117,7 +120,49 @@ test('§ 5 Abs. 2 Satz 4: ein neues Gerät in einem System, dessen übrige Gerä
   assert.equal(level(anlage(), [neu, { ...alt, remoteReadable: true }], year(2025)), 'required')
   // Laut Anlage ist keines fernablesbar: ebenso nur „möglich“.
   assert.equal(level(anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'some' }), [neu], year(2025)), 'possible')
-  // Allein bekannt, ohne Mitgeräte: wie bisher sicher (R-A1).
-  assert.equal(level(anlage(), [neu], year(2025)), 'required')
+  // Allein bekannt, und die Anlage versorgt sonst keine Wohnung: sicher (R-A1).
+  assert.equal(level(nurA(), [neu], year(2025)), 'required')
+})
+
+// ---------- Die Frage an der Anlage: einzeln ersetzt oder als Ganzes neu (Nachprüfung von #230) ----------
+
+const verdict = (plant: RemotePlant, meters: RemoteMeter[], period: Period) => plantVerdict(plant, meters, UNITS, period, createLawLog())
+
+test('Antwort „einzeln“: § 5 Abs. 2 Satz 4 und Abs. 3, vor 2027 möglich, ab 2027 sicher', () => {
+  const p = anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'all', newDevicesInstall: 'single' })
+  assert.equal(level(p, [], year(2025)), 'possible')
+  assert.equal(level(p, [], year(2027)), 'required')
+  assert.equal(verdict(p, [], year(2025)).askInstall, false, 'beantwortet, also keine Frage')
+  const neu = hkv('neu', { remoteReadable: false, installedOn: '2023-05-01' })
+  assert.equal(level(nurA({ newDevicesInstall: 'single' }), [neu], year(2025)), 'possible')
+})
+
+test('Antwort „als Ganzes neu“: sofort sicher (§ 5 Abs. 2 Satz 1)', () => {
+  const p = anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'some', newDevicesInstall: 'whole' })
+  assert.equal(level(p, [], year(2025)), 'required')
+  const neu = hkv('neu', { remoteReadable: false, installedOn: '2023-05-01' })
+  const alt = hkv('alt', { unitId: 'b', remoteReadable: false, installedOn: '2015-01-01' })
+  assert.equal(level(anlage({ newDevicesInstall: 'whole' }), [neu, alt], year(2025)), 'required')
+})
+
+test('Keine Antwort, keines fernablesbar und alle nach dem Stichtag: vor 2027 möglich, mit der Frage', () => {
+  const v = verdict(anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'all' }), [], year(2025))
+  assert.equal(v.level, 'possible')
+  assert.equal(v.askInstall, true)
+})
+
+test('Keine Antwort, einige nach dem Stichtag: es bleibt bei möglich, mit der Frage', () => {
+  const v = verdict(anlage({ devicesRemote: 'none', devicesInstalledAfter2021: 'some' }), [], year(2025))
+  assert.equal(v.level, 'possible')
+  assert.equal(v.askInstall, true)
+})
+
+test('Einziges bekanntes Gerät, die Anlage versorgt weitere Wohnungen ohne erfasstes Gerät: möglich, mit der Frage', () => {
+  const neu = hkv('neu', { remoteReadable: false, installedOn: '2023-05-01' })
+  const v = verdict(anlage(), [neu], year(2025))
+  assert.equal(v.level, 'possible')
+  assert.equal(v.askInstall, true)
+  assert.deepEqual(v.meterIds, ['neu'])
+  assert.equal(level(anlage(), [neu], year(2027)), 'required')
 })
 

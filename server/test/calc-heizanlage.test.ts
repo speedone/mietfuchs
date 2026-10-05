@@ -35,7 +35,7 @@ const settle = (s: Partial<SnapshotSource>, y = 2025, plants?: SnapshotHeatingPl
 const share = (r: ComputedSettlement, tenancyId: string, itemId: string): number | undefined =>
   r.statements.find((st) => st.tenancyId === tenancyId)?.rows.find((row) => row.costItemId === itemId)?.shareCents
 const plant = (over: Partial<SnapshotHeatingPlant> = {}): SnapshotHeatingPlant => ({
-  id: 'hp1', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', units: null, ...over,
+  id: 'hp1', method: 'manual', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null, ...over,
 })
 
 // ---------- Wasserschlüssel (G-B8) ----------
@@ -140,7 +140,9 @@ const remoteNotices = (r: ComputedSettlement) => r.notices.filter((n) => n.code.
 
 test('R-A1: Gerät eingebaut 15.12.2021, nicht fernablesbar, 2025: die Kürzung je Mieter beziffert', () => {
   const hkvA = meter('hkv-a', 'a', 'hkv', { name: 'HKV Wohnzimmer', remoteReadable: false, installedOn: '2021-12-15' })
-  const r = settle(heizBestand(2025, [hkvA]), 2025, [plant({ method: 'service' })])
+  // Als Ganzes neu installiert (Nachprüfung von #230): Sonst könnte das Gerät ein einzelner Ersatz
+  // sein, denn b hat kein erfasstes Gerät.
+  const r = settle(heizBestand(2025, [hkvA]), 2025, [plant({ method: 'service', newDevicesInstall: 'whole' })])
   const [n, ...weitere] = remoteNotices(r)
   assert.equal(weitere.length, 0)
   assert.equal(n?.code, 'heating.remote-reading-missing')
@@ -243,5 +245,12 @@ test('Angaben zur Fernablesbarkeit vor der Anlage: Mit der Anlage ändern sich H
   const betraege = (r: ComputedSettlement) => [...r.statements.values()].map((st) => [st.tenancyId, st.rows.map((row) => row.shareCents), st.balanceCents])
   assert.deepEqual(betraege(mit), betraege(ohne))
   assert.equal(mit.totalCostsCents, ohne.totalCostsCents)
+})
+
+test('Ohne Antwort auf die Frage nach dem Einbau nennt der Hinweis die Frage (Nachprüfung von #230)', () => {
+  const [n] = remoteNotices(settle(heizBestand(2025), 2025, [plant({ devicesRemote: 'none', devicesInstalledAfter2021: 'all' })]))
+  assert.equal(n?.code, 'heating.remote-reading')
+  assert.match(n?.text ?? '', /einzeln als Ersatz oder Ergänzung/)
+  assert.match(n?.text ?? '', /als Ganzes neu/)
 })
 
