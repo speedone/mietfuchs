@@ -5548,3 +5548,24 @@ test('Alter Tab: Jahreskorrektur nach Jahreszahl lesen und zurücksetzen; ungül
     s.stop()
   }
 })
+
+test('Aufteilen (#208): Vorschau und Speichern über HTTP, 409 bei abgeschlossenem Zeitraum', async () => {
+  const s = await startServer()
+  try {
+    await inDatabase(s, async (db) => { await db.update(propertiesTable).set({ periodStartMonth: 5 }).where(eq(propertiesTable.id, 'objekt-1')) })
+    const rumpf = { category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 48000, key: 'area', serviceFrom: '2025-01-01', serviceTo: '2025-12-31', taxYear: 2025 }
+    const vorschau = await s.api<{ parts: { period: string; amountCents: number }[] }>('/api/costItems/split/preview', { method: 'POST', body: JSON.stringify(rumpf) })
+    assert.deepEqual(vorschau.parts.map((p) => [p.period, p.amountCents]), [['2024-05', 15781], ['2025-05', 32219]])
+    // Ohne Aufteilen lehnt die gewöhnliche Route ab und nennt den Knopf.
+    const einzeln = await fetch(`${s.base}/api/costItems`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...rumpf, period: '2025-05' }) })
+    assert.equal(einzeln.status, 400)
+    assert.match(await errorFrom(einzeln), /„Aufteilen und speichern“/)
+    const angelegt = await s.api<CostItem[]>('/api/costItems/split', { method: 'POST', body: JSON.stringify(rumpf) })
+    assert.equal(angelegt.length, 2)
+    await s.api('/api/settlement/2025-05/close', { method: 'POST', body: '{}' })
+    const zu = await fetch(`${s.base}/api/costItems/split`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(rumpf) })
+    assert.equal(zu.status, 409)
+  } finally {
+    s.stop()
+  }
+})

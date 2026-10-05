@@ -249,6 +249,20 @@ export type CostItem = {
   invoiceFile?: string
 }
 
+// Ein Teil einer aufgeteilten Rechnung in der Vorschau (#208, Entwurf 3.4). `needsTaxYear`: Der
+// Zeitraum reicht über zwei Kalenderjahre, das Jahr der Zahlung ist dort Pflicht. `closed`: Die
+// Abrechnung des Zeitraums ist abgeschlossen; gespeichert wird dann nicht (409).
+export type SplitPreviewPart = {
+  period: PeriodKey
+  label: string
+  days: number
+  amountCents: number
+  labor35aCents: number | null
+  description: string
+  needsTaxYear: boolean
+  closed: boolean
+}
+
 export type Settings = {
   houseName: string
   address: string
