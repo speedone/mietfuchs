@@ -7,7 +7,7 @@ import type {
   StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import { isNotAllocable, matchCategory } from '../../shared/categories.ts'
-import { CALENDAR_RULES, calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../shared/period.ts'
+import { calendarPeriod, periodContext, periodLabel, periodOfKey } from '../../shared/period.ts'
 import { normalizedText, sameCostCandidates } from '../../shared/duplicates.ts'
 import { costItemBody, type CostItemDraft } from '../../shared/costItem.ts'
 import { aiPositionDefaults, aiPositionPreselect, aiRowPreselected, bookingPeriod, bookingTaxYear, categoryDeviationPct, invoiceSumCheck, scorePosition } from '../../shared/assessment.ts'
@@ -231,8 +231,9 @@ export type DescribeContext = {
   twinNames: ReadonlyMap<string, string>
   // Alle gebuchten Zeilen (für `carriesCredit`)
   booked: readonly Pick<BookedLine, 'costItemId' | 'amountCents'>[]
-  // Die Regeln der Zeiträume des Objekts (#208); fehlen sie, gilt das Kalenderjahr (Tests).
-  rules?: PeriodRules
+  // Die Regeln der Zeiträume des Objekts (#208). Pflicht (Durchsicht von #226, M1): Ein vergessener
+  // Aufrufer rechnete sonst still im Kalenderjahr.
+  rules: PeriodRules
   // Offene Zeilen **anderer** Auswertungen desselben Objekts, die eine Schätzung eindeutig ersetzen
   // (`openTargets`). Sie rechnen mit den eigenen gemeinsam (#170, Abnahme): Kommt die Wasserrechnung
   // in zwei Belegen, ersetzen beide zusammen dieselbe Schätzung.
@@ -247,7 +248,7 @@ type TargetContext = Pick<DescribeContext, 'items' | 'booked' | 'twinNames' | 'r
 // Die Position, die jede offene oder verworfene Zeile beim Verknüpfen ersetzte, nach Zeile.
 function targetsOf(record: { assessment: StoredAssessment; lines: readonly StoredAssessmentLine[] }, ctx: TargetContext, openOnly = false): Map<number, CostItem | null> {
   const a = record.assessment
-  const target = bookingPeriod(ctx.rules ?? CALENDAR_RULES, a).key
+  const target = bookingPeriod(ctx.rules, a).key
   const own = new Set(ownItemIds(record.lines))
   const others = ctx.items.filter((i) => !own.has(i.id))
   const ownItems = ctx.items.filter((i) => own.has(i.id))
@@ -275,7 +276,7 @@ export function openTargets(record: { assessment: StoredAssessment; lines: reado
 // bisher in der Schnellerfassung, jetzt für alle drei Wege.
 function suggestLine(line: StoredAssessmentLine, a: StoredAssessment, others: readonly CostItem[], ownItems: readonly CostItem[], ctx: DescribeContext, deviation: { amountCents: number, replacedCents: number }): LineSuggestion {
   const vendor = a.vendor ?? ''
-  const rules = ctx.rules ?? CALENDAR_RULES
+  const rules = ctx.rules
   const target = bookingPeriod(rules, a)
   const at = periodContext(rules, target)
   const defaults = aiPositionDefaults(line.category, ctx.units, ctx.meters, { items: ctx.items, year: a.year, at, propertyKind: ctx.propertyKind }, line.description)
@@ -372,7 +373,7 @@ export function describeAssessment(record: { assessment: StoredAssessment; lines
     }
   })
   const sum = record.lines.reduce((s, l) => s + (l.amountCents ?? 0), 0)
-  const target = bookingPeriod(ctx.rules ?? CALENDAR_RULES, a)
+  const target = bookingPeriod(ctx.rules, a)
   return {
     ...a, originalName: ctx.originalName, lines, open: lines.some((l) => l.state === 'open'), sumWarning: invoiceSumCheck(sum, a.totalGrossCents),
     targetPeriod: target.key, targetLabel: periodLabel(target),

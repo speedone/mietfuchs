@@ -14,7 +14,7 @@ import type {
   AssessmentLineState, AssessmentView, BillingPeriod, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PeriodKey, PeriodRules, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
-import { CALENDAR_RULES, periodLabel, periodOfKey, startYearOf } from '../../shared/period.ts'
+import { periodLabel, periodOfKey, startYearOf } from '../../shared/period.ts'
 import { amountProblem, closedPeriodNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { bookingPeriod, bookingTaxYear, candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
@@ -36,15 +36,15 @@ export type PlanInput = {
   // Abgeschlossene Abrechnungen aller Objekte (Integrationsdurchsicht vor 0.10): Ändert die Buchung
   // den Betrag einer Position in einem solchen Zeitraum, sagt die Vorschau es
   closed: readonly { propertyId: string; period: PeriodKey }[]
-  // Die Regeln der Zeiträume des Objekts der Auswertung (#208); fehlen sie, gilt das Kalenderjahr.
-  rules?: PeriodRules
+  // Die Regeln der Zeiträume des Objekts der Auswertung (#208); Pflicht (Durchsicht von #226, M1).
+  rules: PeriodRules
 }
 
 // Der Zeitraum, in den eine Auswertung bucht (#208, `bookingPeriod`), und die Bezeichnung eines
 // Schlüssels nach den Regeln des Objekts.
-const targetOfPlan = (input: PlanInput): BillingPeriod => bookingPeriod(input.rules ?? CALENDAR_RULES, input.assessment)
+const targetOfPlan = (input: PlanInput): BillingPeriod => bookingPeriod(input.rules, input.assessment)
 const labelOfKey = (input: PlanInput, key: PeriodKey): string => {
-  const p = periodOfKey(input.rules ?? CALENDAR_RULES, key)
+  const p = periodOfKey(input.rules, key)
   return p ? periodLabel(p) : key
 }
 

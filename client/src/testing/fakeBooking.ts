@@ -6,7 +6,7 @@
 // Bewusst kein `*.test.ts`: vitest führt diese Datei nicht als Test aus.
 import type { AssessmentView, CostItem, Extraction, Meter, StoredAssessment, StoredAssessmentLine, Unit } from '../types'
 import { describeAssessment, detectedYear, linesFromExtraction, withoutBooked, type BookedLine } from '../../../server/src/assessment.ts'
-import { calendarPeriod } from '../../../shared/period.ts'
+import { CALENDAR_RULES, calendarPeriod } from '../../../shared/period.ts'
 import { bookingResponse, parseDecisions, planBooking, previewWith, settle, tokenSource, type BookingWrite } from '../../../server/src/bookingPlan.ts'
 
 type Stored = { assessment: StoredAssessment; lines: StoredAssessmentLine[] }
@@ -23,7 +23,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
   const booked = (): BookedLine[] =>
     records.flatMap((r) => r.lines.filter((l) => l.costItemId !== null).map((l) => ({ ...l, file: r.assessment.file })))
   const view = (r: Stored): AssessmentView => describeAssessment(r, {
-    items: items.filter((i) => i.propertyId === propertyId), units: start.units, meters: start.meters ?? [], propertyKind: 'mfh',
+    items: items.filter((i) => i.propertyId === propertyId), units: start.units, meters: start.meters ?? [], propertyKind: 'mfh', rules: CALENDAR_RULES,
     originalName: r.assessment.file, twinOf: null, twinNames: new Map(), booked: booked(),
   })
   const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -115,7 +115,7 @@ export function fakeBooking(start: { items: CostItem[]; units: Unit[]; meters?: 
       const parsed = parseDecisions(fieldOf(body, 'decisions'))
       if ('error' in parsed) return json({ error: parsed.error }, 400)
       const planned = planBooking({
-        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(), closed: [],
+        assessment: r.assessment, lines: r.lines, items, booked: booked(), units: start.units, twinFiles: [], fileNames: new Map(), closed: [], rules: CALENDAR_RULES,
       }, parsed.decisions, () => `neu-${++next}`)
       // Der echte Server bildet die Marke als SHA-256 der Quelle; für den Vergleich genügt die Quelle.
       const preview = previewWith(planned, tokenSource(planned))
