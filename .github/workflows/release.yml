@@ -219,12 +219,18 @@ jobs:
       # Rechtsregister (Heizung PR 1, Entwurf 4.7): Beim Tag bricht der Lauf ab, solange ein Wert
       # im Register nicht an der Quelle geprüft ist (`checked: 'unchecked'`). Im gewöhnlichen
       # Testlauf ist die Prüfung übersprungen, damit eine PR einen ungeprüften Wert eintragen darf.
+      # Damit die Sperre nicht still ausfällt (Variable fehlt, Test übersprungen, Lauf trotzdem
+      # grün), wird an der Ausgabe geprüft, dass nichts übersprungen wurde und der Sperrtest selbst
+      # bestanden hat (Durchsicht von #221, M8; law-release.test.ts hält diesen Schritt fest).
       - name: Rechtsregister geprüft?
         if: github.ref_type == 'tag'
         working-directory: server
         env:
           MIETFUCHS_RELEASE: '1'
-        run: node --test test/law-release.test.ts
+        run: |
+          node --test --test-reporter=tap test/law-release.test.ts | tee law-release.tap
+          grep -qx '# skipped 0' law-release.tap || { echo "::error::Release-Sperre des Rechtsregisters wurde übersprungen"; exit 1; }
+          grep -qE '^ok [0-9]+ - Release: kein ungeprüfter Wert im Rechtsregister$' law-release.tap || { echo "::error::Release-Sperre des Rechtsregisters lief nicht"; exit 1; }
 
       # Frontend bauen, Embed-Modul erzeugen und alle Ziel-Binaries kompilieren.
       - name: Binaries bauen
