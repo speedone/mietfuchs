@@ -135,7 +135,7 @@ const OWN_CHECK_MESSAGES: Readonly<Record<string, string>> = {
   // CO₂ beim Messdienst (Heizung PR 6)
   co2_statements_service_complete:
     'Zu den CO₂-Angaben des Messdienstes gehören die Summe der Kosten aller Nutzer, der CO₂-Anteil des Vermieters und die Zahl der Nutzeinheiten. Bitte tragen Sie alle drei ein.',
-  co2_statements_permille_valid: 'Der Anteil des Vermieters an den CO₂-Kosten liegt zwischen 0 und 100 Prozent.',
+  co2_statements_permille_valid: 'Der Anteil des Vermieters an den CO₂-Kosten ist ein Anteil am Ganzen, also nicht negativ und nicht größer als das Ganze.',
 }
 
 function checkMessage(name: string): string {

@@ -37,9 +37,9 @@ import type {
 // Abrechnungsjahres (siehe snapshot.ts). Welche Sammlung darin nach Jahr eingegrenzt sein darf,
 // entscheidet dort die Ablage und nicht hier.
 import { rulesFor } from '../../shared/law/rules.ts'
-import { co2ApplicableFrom, co2CutMissing, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
+import { co2ApplicableFrom, co2CutMissing, co2FirstPeriodStart, co2RoundingDecimals, co2StageTable } from '../../shared/law/co2kostaufg.ts'
 import { CO2_RELIEF_LABEL } from '../../shared/co2Probe.ts'
-import { co2Assessment, co2DeductionsOf, co2PotsOf, L_TOLERANCE_CENTS, restage, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
+import { ausweisGaps, CO2_FUELS, co2Assessment, co2DeductionsOf, FORMULA_METHODS, co2PotsOf, L_TOLERANCE_CENTS, restage, shownReliefs, stageRanges, tableFactor, tenantLines as co2TenantLines, type Co2Pot, type ReliefShare } from './co2.ts'
 // Zahlen und Daten der Rechtsregeln kommen aus dem Rechtsregister (Heizung PR 1) und stehen hier
 // nicht als Literal; server/test/law-literals.test.ts wacht darüber.
 import { createLawLog, dayAfter, dayBefore, law, LAW_AS_OF, onlyVersion, recordVersionAt, valueAt, type Period } from '../../shared/law/register.ts'
@@ -250,6 +250,16 @@ const noticeKinds = {
   'co2.reliefs-invalid': { level: 'error', title: 'Beträge „vom Vermieter übernommen“ passen nicht', rule: 'co2-split', terms: ['co2Split'] },
   'co2.reliefs-missing': { level: 'warning', title: 'Betrag „vom Vermieter übernommen“ fehlt', rule: 'co2-split', terms: ['co2Split'] },
   'co2.probably-deducted': { level: 'warning', title: 'CO₂-Anteil vermutlich schon abgezogen', rule: 'co2-split', terms: ['co2Deducted', 'co2Split'] },
+  // Ohne Angaben oder ohne Aufteilung (Entwurf 9.1, 10.1). `co2.missing` und `co2.fuel-unknown`
+  // färben die Ampel; angekündigt im CHANGELOG.
+  'co2.missing': { level: 'warning', title: 'CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
+  'co2.missing-first-year': { level: 'hint', title: 'CO₂-Kosten im ersten Zeitraum der Aufteilung', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
+  'co2.fuel-unknown': { level: 'hint', title: 'Energieträger der Heizung unbekannt', rule: 'co2-split', terms: ['co2Split', 'heatingSystem'] },
+  'co2.service-unsplit': { level: 'warning', title: 'Messdienst hat die CO₂-Kosten nicht aufgeteilt', rule: 'co2-split', terms: ['co2Split'] },
+  'co2.incomplete': { level: 'warning', title: 'Angaben für den CO₂-Ausweis fehlen', rule: 'co2-split', terms: ['co2Split', 'co2Stage'] },
+  'co2.stage-mismatch': { level: 'hint', title: 'Einstufung laut Abrechnung weicht ab', rule: 'co2-split', terms: ['co2Stage', 'co2Area'] },
+  // #211, Entwurf 7.7: Warmwasser nach einer Formel ohne bestätigten unzumutbaren Aufwand.
+  'heating.dhw-not-metered': { level: 'warning', title: 'Warmwasser ohne Wärmezähler abgerechnet', rule: 'heating-dhw-split', terms: ['hotWaterShare', 'heatingCostOrdinance'] },
   'model.prepayment-unsettled': { level: 'warning', title: 'Vorauszahlung ohne Abrechnung', terms: ['prepayment', 'flatRate'] },
   'prepayment.arrears': { level: 'warning', title: 'Rückstand im Mietkonto', terms: ['prepayment'] },
   // #141: ein Hinweis und kein Fehler, denn eine vereinbarte Änderung ist zulässig.
@@ -2818,6 +2828,15 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       return cents > 0 ? [{ tenancyId: st.tenancyId, cents }] : []
     })
   }
+  // Was das Gesetz verlangt, in einem Satz für alle Hinweise ohne Angaben.
+  const co2Duty = (lead: string) =>
+    `${lead} zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, ` +
+    'die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG).'
+  // Was der Vermieter tun kann, je nach Abrechnungsweg der Anlage.
+  const nextStep = (pot: Co2Pot): string =>
+    pot.method !== 'service'
+      ? 'Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf.'
+      : `Tragen Sie auf der Seite Heizkosten die CO₂-Angaben aus der Abrechnung ${pot.source === 'homeowners' ? 'der Gemeinschaft' : 'des Messdienstes'} ein.`
   for (const pot of co2Pots) {
     if (pot.items.length === 0) continue
     const st = pot.statement
@@ -2945,6 +2964,89 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
         deduction,
         tenants: service ? co2TenantLines(st, sharesOf(pot), printed) : [],
       })
+      if (heatingSettled && !service) {
+        // Der Messdienst hat nicht aufgeteilt (Entwurf 7.6). Ohne die Brennstoffrechnung als
+        // Lieferung (PR 7) ist die Kürzung sicher.
+        const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+        warn('co2.service-unsplit',
+          `${where}: Der Messdienst hat die CO₂-Kosten nicht zwischen Ihnen und den Mietern aufgeteilt. Das Gesetz verlangt die Aufteilung und ihren Ausweis in der Heizkostenabrechnung (§§ 5, 7 Abs. 3 CO2KostAufG); ` +
+            `ohne sie darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ` +
+            'Bitten Sie den Messdienst um eine Abrechnung mit CO₂-Aufteilung; dafür braucht er die CO₂-Angaben Ihrer Brennstoffrechnung. Selbst aufteilen kann Mietfuchs mit einer späteren Version.',
+          plantSubject)
+      }
+      if (heatingSettled && service && booked) {
+        const gaps = ausweisGaps(st)
+        if (gaps.length > 0) {
+          const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+          warn('co2.incomplete',
+            `${where}: Für den Ausweis der CO₂-Aufteilung fehlen ${andList(gaps)}. Die Heizkostenabrechnung muss den Anteil der Mieter, die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG); ` +
+              `fehlen sie auch in der Abrechnung des Messdienstes, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. Tragen Sie die Angaben auf der Seite Heizkosten nach.`,
+            plantSubject)
+        }
+      }
+      // Nachstufung (Entwurf 9.2): Passt der Anteil laut Messdienst nicht zur Stufe des Werts, oder L
+      // nicht zu C · ‰, ein Hinweis ohne Rechtsfolge.
+      if (service && re.value !== null && re.stage !== null && st.serviceLandlordPermille !== null && (re.percentOk === false || re.sumOk === false)) {
+        const laut = fmtNum(st.serviceLandlordPermille / 10)
+        const stufe = re.percentOk === false ? ` Nach der Stufentabelle des CO2KostAufG gehört dieser Wert zu ${fmtNum(re.stage.landlordPercent)} %.` : ''
+        const summe = re.sumOk === false && st.serviceTotalCents !== null ? ` ${fmtCents(L)} sind nicht ${laut} % von ${fmtCents(st.serviceTotalCents)}.` : ''
+        warn('co2.stage-mismatch',
+          `${where}: Laut Abrechnung liegt der Ausstoß bei ${fmtNum(re.value)} kg CO₂ je m² und der Anteil des Vermieters bei ${laut} %.${stufe}${summe} ` +
+            'Eine Abweichung kann berechtigt sein, etwa bei einem Gebäude, das überwiegend nicht zum Wohnen dient (§ 8 CO2KostAufG), oder bei Einschränkungen nach § 9 CO2KostAufG; bitte prüfen Sie die Angaben.',
+          plantSubject)
+      }
+    }
+    // Ohne Angaben (Entwurf 9.1): Gas, Öl, Flüssiggas und Kohle sind erfasst, Fernwärme nur, wenn der
+    // Lieferant CO₂ ausweist (R-A28), Wärmepumpe, Strom, Holz und Pellets nicht (W8); unbekannt ist
+    // „Sonstiges“.
+    if (!st && applicable) {
+      if (CO2_FUELS.includes(pot.energy) || pot.energy === 'districtHeating') {
+        const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+        warn('co2.missing',
+          `${where}: ${co2Duty(pot.energy === 'districtHeating' ? 'Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie' : 'Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten')} ` +
+            `Für diese Heizperiode kennt Mietfuchs keine CO₂-Angaben. Fehlen sie auch in der Heizkostenabrechnung, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. ${nextStep(pot)}`,
+          plantSubject)
+      } else if (pot.energy === 'other') {
+        const cut = law(co2CutMissing, { period: hPeriod }, lawLog)
+        warn('co2.fuel-unknown',
+          `${where}: Mietfuchs weiß nicht, womit diese Anlage heizt. ${co2Duty('Heizt sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten')} ` +
+            `Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(ids, cut)}. Tragen Sie unter Stammdaten bei der Heizung den Energieträger ein.`,
+          plantSubject)
+      }
+    }
+    // Warmwasser beim Messdienst (#211, Entwurf 7.7): Laut Abrechnung nach einer Formel bestimmt, ohne
+    // bestätigten unzumutbaren Aufwand. 15 % auf den ganzen Anteil an Heiz- und Warmwasserkosten im
+    // Topf (BGH VIII ZR 151/20, R-A6, G-B9). Ohne Angabe kein Hinweis.
+    const hw = pot.hotWater
+    if (pot.method === 'service' && hw && hw.dhwMethod !== null && FORMULA_METHODS.includes(hw.dhwMethod) && hw.dhwUnmeasurable !== true) {
+      const cut = law(hkvCutNotByConsumption, { period: hPeriod }, lawLog)
+      warn('heating.dhw-not-metered',
+        `${where}: Laut Abrechnung wurde die Wärme für das Warmwasser mit einer Formel bestimmt und nicht mit einem Wärmezähler gemessen. ` +
+          'Die Heizkostenverordnung verlangt den Wärmezähler; die Formel ist nur erlaubt, wenn das Messen nur mit unzumutbar hohem Aufwand möglich wäre (§ 9 Abs. 2 HeizkostenV). ' +
+          `Sonst darf jeder Mieter seinen gesamten Anteil an den Heiz- und Warmwasserkosten um ${cut} % kürzen (BGH VIII ZR 151/20)${cutsOn(ids, cut)}. ` +
+          'Ist das Messen bei Ihnen unzumutbar aufwendig, bestätigen Sie das auf der Seite Heizkosten und bewahren einen Nachweis auf.',
+        plantSubject)
+    }
+  }
+  // Heizpositionen ohne Heizanlage (Entwurf 9.1, 11.1): Mietfuchs kennt den Energieträger nicht und
+  // sagt, was gälte. Im ersten Zeitraum der Aufteilung ein eigener Hinweis. Knopf: „Heizung
+  // einrichten →“.
+  const inPots = new Set(co2Pots.flatMap((p) => p.items.map((c) => c.id)))
+  const loose = items.filter((c) => c.category === HEATING_CATEGORY && c.amountCents !== 0 && !inPots.has(c.id))
+  if (loose.length > 0 && heatingSettled && law(co2ApplicableFrom, { period: lawPeriod }, lawLog)) {
+    const cut = law(co2CutMissing, { period: lawPeriod }, lawLog)
+    const first = co2FirstPeriodStart()
+    const what =
+      `Mietfuchs weiß nicht, womit das Haus geheizt wird. ${co2Duty('Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, sind die CO₂-Kosten')} ` +
+      `Fehlt das, darf jeder Mieter seinen Anteil an den Heizkosten um ${cut} % kürzen (§ 7 Abs. 4 CO2KostAufG)${cutsOn(new Set(loose.map((c) => c.id)), cut)}. ` +
+      'Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.'
+    const setUp: NoticeSubject = { kind: 'heatingPlant', id: '' }
+    if (lawPeriod.from.slice(0, 4) === first.slice(0, 4)) {
+      warn('co2.missing-first-year',
+        `Für Abrechnungszeiträume, die am oder nach dem ${fmtDay(first)} beginnen, sind die CO₂-Kosten der Heizung aufzuteilen (§ 11 Abs. 2 Satz 1 CO2KostAufG); dieser Zeitraum ist der erste. ${what}`,
+        setUp)
+    } else {
+      warn('co2.fuel-unknown', what, setUp)
     }
   }
 

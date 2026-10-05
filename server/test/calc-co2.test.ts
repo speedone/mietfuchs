@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, taxReport, type ComputedSettlement } from '../src/calc.ts'
-import { snapshotFor, snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
+import { snapshotFor, snapshotOf, type Snapshot, type SnapshotCostItem, type SnapshotHeatingPeriodRow, type SnapshotHeatingPlant, type SnapshotSource, type SnapshotTenancy, type SnapshotUnit } from '../src/snapshot.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import { calendarPeriod, periodKey, periodOfKey } from '../../shared/period.ts'
 import type { Co2Statement, LandlordPart } from '../../shared/types.ts'
@@ -240,4 +240,152 @@ test('Lücke abgesichert über G und V (Entwurf 7.4): „Nein“, aber G − V =
   assert.match(n.text, /3\.540,00 €.*87,50 €.*3\.452,50 €/s)
   const ohne = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement({ serviceFuelGrossCents: 354000, serviceFuelNetCents: 354000 })])
   assert.ok(!codes(ohne).includes('co2.probably-deducted'))
+})
+
+// ---------- Hinweise (Entwurf 9.1, 10.1) ----------
+
+const zwei = { units: [unit('a'), unit('b')], tenancies: [tenancy('ta', 'a'), tenancy('tb', 'b')] }
+const gas = (amountCents = 100000) => messdienst(amountCents, { ta: 60000, tb: 40000 })
+const vollstaendig = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2, serviceKgPerM2: 30, serviceLandlordPermille: 400, serviceTotalCents: 1250 })
+
+test('co2.missing: Gasheizung ohne CO₂-Angaben, 3 % je Mieter auf seine Heizzeilen, Knopf zur Heizanlage', () => {
+  const r = settle({ ...zwei, costItems: [gas()] }, [])
+  const n = r.notices.find((x) => x.code === 'co2.missing') ?? assert.fail(`kein Hinweis: ${codes(r).join(', ')}`)
+  assert.deepEqual([n.level, n.subject, n.rule], ['warning', { kind: 'heatingCosts', id: 'hp' }, 'co2-split'])
+  assert.match(n.text, /^Heizanlage „Gas“, Heizperiode 2025: Bei Gas, Heizöl, Flüssiggas und Kohle sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen/)
+  assert.match(n.text, /um 3 % kürzen \(§ 7 Abs\. 4 CO2KostAufG\), hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €\./)
+  assert.match(n.text, /Tragen Sie auf der Seite Heizkosten die CO₂-Angaben aus der Abrechnung des Messdienstes ein\./)
+  assert.ok(r.legalBasis.values?.some((v) => v.id === 'co2.cut.missing'))
+  // Fernwärme nur, falls der Lieferant CO₂ ausweist (R-A28); Wärmepumpe: nichts aufzuteilen.
+  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'districtHeating' })]), 'co2.missing'), /Weist Ihr Wärmelieferant CO₂-Kosten aus, sind sie/)
+  assert.ok(!codes(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'heatPump' })])).some((c) => c.startsWith('co2.')))
+  assert.equal(settle({ ...zwei, costItems: [gas()] }, [], [plant({ energy: 'other' })]).notices.find((x) => x.code === 'co2.fuel-unknown')?.subject?.id, 'hp')
+  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ source: 'homeowners' })]), 'co2.missing'), /aus der Abrechnung der Gemeinschaft ein\./)
+  assert.match(textOf(settle({ ...zwei, costItems: [gas()] }, [], [plant({ method: 'manual' })]), 'co2.missing'), /mit einer späteren Version/)
+})
+
+test('Ohne Heizanlage: co2.fuel-unknown, im ersten Jahr co2.missing-first-year, nichts vor 2023 und nichts bei Warmmiete', () => {
+  const ohne = (year: number, over: Partial<SnapshotTenancy> = {}) => computeSettlement(snapshotOf(source({
+    units: [unit('a')],
+    tenancies: [tenancy('ta', 'a', over)],
+    costItems: [{ id: 'hz', period: calendarPeriod(year), category: HEATING_CATEGORY, description: 'Heizung', amountCents: 100000, key: 'area' }],
+  }), year))
+  const n = ohne(2025).notices.find((x) => x.code === 'co2.fuel-unknown') ?? assert.fail('kein Hinweis')
+  assert.deepEqual([n.level, n.subject], ['hint', { kind: 'heatingPlant', id: '' }])
+  assert.equal(n.text,
+    'Mietfuchs weiß nicht, womit das Haus geheizt wird. Heizen Sie mit Gas, Heizöl, Flüssiggas oder Kohle oder weist Ihr Wärmelieferant CO₂-Kosten aus, ' +
+    'sind die CO₂-Kosten zwischen Ihnen und den Mietern aufzuteilen (§ 5 CO2KostAufG), und die Heizkostenabrechnung muss den Anteil der Mieter, ' +
+    'die Einstufung des Gebäudes und die Berechnungsgrundlagen ausweisen (§ 7 Abs. 3 CO2KostAufG). Fehlt das, darf jeder Mieter seinen Anteil ' +
+    'an den Heizkosten um 3 % kürzen (§ 7 Abs. 4 CO2KostAufG), hier: ta (a) 30,00 €. Richten Sie unter Stammdaten die Heizung ein; dann sagt Mietfuchs, was zu tun ist.')
+  assert.match(textOf(ohne(2023), 'co2.missing-first-year'), /^Für Abrechnungszeiträume, die am oder nach dem 01\.01\.2023 beginnen, sind die CO₂-Kosten der Heizung aufzuteilen \(§ 11 Abs\. 2 Satz 1 CO2KostAufG\); dieser Zeitraum ist der erste\. Mietfuchs weiß nicht/)
+  assert.ok(!codes(ohne(2022)).some((c) => c.startsWith('co2.')))
+  assert.ok(!codes(ohne(2025, { costModel: 'inclusive', heatingModel: 'inclusive' })).some((c) => c.startsWith('co2.')))
+})
+
+test('Der Messdienst hat nicht aufgeteilt (Entwurf 7.6, ohne Lieferung): co2.service-unsplit mit 3 % je Mieter', () => {
+  const r = settle({ ...zwei, costItems: [gas()] }, [co2({ method: 'selfAfterService' })])
+  const n = r.notices.find((x) => x.code === 'co2.service-unsplit') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'warning')
+  assert.match(n.text, /hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €/)
+  assert.ok(!codes(r).includes('co2.missing'))
+  assert.deepEqual(partsOf(r), [])
+})
+
+test('Ausweis unvollständig (§ 7 Abs. 3): co2.incomplete nennt, was fehlt; nach gescheiterter Probe nicht ein zweites Mal', () => {
+  const ohneAusweis = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2 })
+  const t = textOf(settle({ ...zwei, costItems: [gas(100500)] }, [ohneAusweis]), 'co2.incomplete')
+  assert.match(t, /fehlen der CO₂-Ausstoß je Quadratmeter \(oder Ausstoß und Fläche\), der Anteil des Vermieters in Prozent und die CO₂-Kosten insgesamt/)
+  assert.match(t, /hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €/)
+  assert.ok(!codes(settle({ ...zwei, costItems: [gas(100000)] }, [ohneAusweis])).includes('co2.incomplete'))
+  const voll = settle({ ...zwei, costItems: [gas(100500)] }, [vollstaendig])
+  assert.ok(!codes(voll).includes('co2.incomplete'))
+  assert.ok(!codes(voll).includes('co2.stage-mismatch'))
+})
+
+test('Nachstufung (Entwurf 9.2): Techem 46,4 kg mit 35 % ergibt einen Hinweis, der § 8 und § 9 nennt', () => {
+  const n = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem()]).notices.find((x) => x.code === 'co2.stage-mismatch') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /bei 46,4 kg CO₂ je m² und der Anteil des Vermieters bei 35 %\. Nach der Stufentabelle des CO2KostAufG gehört dieser Wert zu 70 %\./)
+  assert.match(n.text, /§ 8 CO2KostAufG.*§ 9 CO2KostAufG/s)
+  const passend = settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ serviceLandlordPermille: 700, serviceTotalCents: 12500 })])
+  assert.ok(!codes(passend).includes('co2.stage-mismatch'))
+  // L passt nicht zu C · ‰.
+  assert.match(textOf(settle({ ...vier, costItems: [messdienst(393301, TECHEM)] }, [techem({ serviceLandlordPermille: 700, serviceTotalCents: 20000 })]), 'co2.stage-mismatch'), /87,50 € sind nicht 70 % von 200,00 €/)
+})
+
+test('Warmwasser beim Messdienst (#211, Entwurf 7.7): Formel ohne bestätigten Aufwand → 15 % auf die Heizkosten im Topf', () => {
+  const mit = (row: Partial<SnapshotHeatingPeriodRow>) => computeSettlement({
+    ...snap({ ...zwei, costItems: [gas(100500)] }, [vollstaendig]),
+    heatingPeriodRows: [{ plantId: 'hp', period: P, dhwMethod: null, dhwUnmeasurable: null, ...row }],
+  })
+  const r = mit({ dhwMethod: 'volumeFormula' })
+  const n = r.notices.find((x) => x.code === 'heating.dhw-not-metered') ?? assert.fail('kein Hinweis')
+  assert.deepEqual([n.level, n.rule, n.subject], ['warning', 'heating-dhw-split', { kind: 'heatingCosts', id: 'hp' }])
+  assert.match(n.text, /um 15 % kürzen \(BGH VIII ZR 151\/20\), hier: ta \(a\) 90,00 € und tb \(b\) 60,00 €/)
+  assert.ok(r.legalBasis.values?.some((v) => v.id === 'hkv.cut.not-by-consumption'))
+  const keine: Partial<SnapshotHeatingPeriodRow>[] = [{ dhwMethod: 'volumeFormula', dhwUnmeasurable: true }, { dhwMethod: 'heatMeter' }, { dhwMethod: null }]
+  for (const row of keine) assert.ok(!codes(mit(row)).includes('heating.dhw-not-metered'), JSON.stringify(row))
+})
+
+// ---------- Invarianten über Zufallsbestände (Entwurf 12.3 Nr. 1, 8, 9, 14) ----------
+
+// Fester Startwert: jeder Lauf prüft dieselben Bestände.
+function zufall(seed: number): () => number {
+  let s = seed >>> 0
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
+    return s / 2 ** 32
+  }
+}
+const euro = (cents: number) => `${(cents / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+
+test('Invarianten: Summe, Vorwegabzug, Abzugszeilen und Kürzungen auf die gedruckten Zeilen', () => {
+  const rnd = zufall(20261005)
+  const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1))
+  for (let lauf = 0; lauf < 300; lauf++) {
+    const n = int(1, 4)
+    const mitEigen = rnd() < 0.4
+    const mitLeer = rnd() < 0.4
+    const units = Array.from({ length: n }, (_, i) => unit(`u${i}`))
+    const tenancies = units.map((u, i) => tenancy(`t${i}`, u.id))
+    const amounts: Record<string, number> = Object.fromEntries(tenancies.map((t) => [t.id, int(10000, 200000)]))
+    const eigen = mitEigen ? int(10000, 200000) : 0
+    const leer = mitLeer ? int(10000, 200000) : 0
+    if (mitEigen) units.push(own('eigen'))
+    if (mitLeer) units.push(unit('leer'))
+    const S = Object.values(amounts).reduce((a, c) => a + c, 0) + eigen + leer
+    const L = int(0, Math.floor(S / 10))
+    const abzug = rnd() < 0.5
+    const item = messdienst(abzug ? S + L : S, amounts, mitEigen ? { selfAmounts: { eigen } } : {})
+    const st = co2({ method: abzug ? 'serviceDeducted' : 'serviceShown', serviceUsersTotalCents: S, serviceLandlordCents: L, serviceUnitsCount: units.length })
+    const r = settle({ units, tenancies, costItems: [item] }, [st])
+    const fall = `Lauf ${lauf}: ${JSON.stringify({ n, mitEigen, mitLeer, S, L, abzug })}`
+    // Nr. 1: Σ aller Zeilen = Σ der Positionen.
+    assert.equal(r.statements.reduce((a, s2) => a + s2.totalShareCents, 0) + r.landlord.totalCents, item.amountCents, fall)
+    assert.ok(!codes(r).includes('co2.sum-check'), `${fall}: Probe`)
+    const relief = new Map(r.statements.flatMap((s2) => s2.rows.filter((row) => row.kind === 'co2Relief').map((row): [string, number] => [s2.tenancyId, -row.shareCents])))
+    if (abzug) {
+      // Nr. 8: kein Mieter zahlt anders als sein Einzelbetrag, nie eine Abzugszeile; L_self exakt;
+      // kein negativer Rest bei bestandener Probe.
+      for (const t of tenancies) assert.equal(shareOf(r, t.id, 'hz'), amounts[t.id], fall)
+      assert.equal(relief.size, 0, fall)
+      const parts = partsOf(r)
+      const eigenExakt = eigen + (mitEigen ? (L * eigen) / S : 0)
+      assert.ok(Math.abs((parts.find((p) => p.reason === 'selfUse')?.cents ?? 0) - eigenExakt) <= 1, `${fall}: L_self`)
+      assert.ok((parts.find((p) => p.reason === 'amountsRest')?.cents ?? 0) >= 0, `${fall}: Rest`)
+    } else {
+      // Nr. 9: 0 ≤ r ≤ x; |R − L_vermietet| ≤ 0,5 ct (widerspruchsfreie Daten).
+      for (const [t, c] of relief) assert.ok(c >= 0 && c <= (amounts[t] ?? 0), fall)
+      const R = [...relief.values()].reduce((a, c) => a + c, 0)
+      const exakt = Object.values(amounts).reduce((a, c) => a + (L * c) / S, 0)
+      assert.ok(Math.abs(R - exakt) <= 0.5, `${fall}: R`)
+    }
+    // Nr. 14: die Kürzung je Mieter auf seine gedruckten Zeilen nach dem Abzug (co2.incomplete, denn
+    // die Angaben für den Ausweis fehlen hier).
+    const text = textOf(r, 'co2.incomplete')
+    for (const t of tenancies) {
+      const gedruckt = (amounts[t.id] ?? 0) - (relief.get(t.id) ?? 0)
+      assert.ok(text.includes(`${t.id} (${t.unitId}) ${euro(Math.round((gedruckt * 3) / 100))}`), `${fall}: Kürzung ${t.id}`)
+    }
+  }
 })
