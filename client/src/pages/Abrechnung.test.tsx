@@ -9,6 +9,7 @@ import { PropertyProvider } from '../property'
 import { UIProvider } from '../components/feedback'
 import Abrechnung from './Abrechnung'
 import type { HistoryEntry } from '../settlementHistory'
+import { calendarPeriod, calendarYearPeriod, settlementPeriod } from '../../../shared/period.ts'
 
 // Die Seite rendert ganz; unter Last braucht das mehr als die voreingestellten Zeiten.
 vi.setConfig({ testTimeout: 20000 })
@@ -18,7 +19,7 @@ const YEAR = new Date().getFullYear() - 1
 const TENANCIES: Tenancy[] = [{
   id: 't1', unitId: 'u1', tenantName: 'Meier', persons: 2,
   personHistory: [{ from: '2020-01-01', persons: 1 }, { from: `${YEAR}-10-01`, persons: 2 }],
-  start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: { [String(YEAR)]: 50000 }, baseRents: [],
+  start: '2020-01-01', end: null, prepayments: [], prepaymentOverrides: { [calendarPeriod(YEAR)]: 50000 }, baseRents: [],
 }]
 const daysIn = (y: number) => ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365)
 const bisSept = daysIn(YEAR) - 92
@@ -33,7 +34,7 @@ let history: HistoryEntry[]
 
 beforeEach(() => {
   settlement = {
-    year: YEAR, daysInYear: daysIn(YEAR), statements: [STATEMENT], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
+    year: YEAR, daysInYear: daysIn(YEAR), period: settlementPeriod(calendarYearPeriod(YEAR)), deadline: `${YEAR + 1}-12-31`, statements: [STATEMENT], landlord: { rows: [], totalCents: 0 }, selfUsedShareCents: 0,
     totalCostsCents: 60000, warnings: [], notices: [], closed: null,
   }
   history = []
@@ -112,4 +113,30 @@ test('Kopfzeile ohne Adresse endet nicht mit einem Trenner', async () => {
   await screen.findByText(/manuell angepasst/, {}, SLOW)
   const kopf = document.querySelector('.card.statement > .muted')
   expect(kopf?.textContent?.trim()).toBe('A')
+})
+
+// Durchsicht von #222 (M1): Bei einem Kalenderobjekt nennt der Server die Jahreskorrektur nach
+// Jahreszahl, damit ein Tab von vor dem Update sie zurücksetzen kann. Diese Seite schickt Zeiträume;
+// „zurücksetzen“ muss die Korrektur des Jahres wirklich entfernen.
+test('„zurücksetzen“ entfernt die Korrektur auch, wenn der Server sie nach Jahreszahl nennt (#208)', async () => {
+  const puts: unknown[] = []
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT' && url.startsWith('/api/tenancies/')) {
+      puts.push(JSON.parse(String(init.body)))
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    return inner(url, init)
+  })
+  const mitJahr: Tenancy[] = TENANCIES.map((t) => ({ ...t, prepaymentOverrides: { [String(YEAR - 1)]: 40000, [String(YEAR)]: 50000 } }))
+  render(
+    <YearProvider>
+      <PropertyProvider>
+        <UIProvider><Abrechnung settings={null} units={[]} tenancies={mitJahr} reload={async () => {}} /></UIProvider>
+      </PropertyProvider>
+    </YearProvider>,
+  )
+  fireEvent.click(await screen.findByRole('button', { name: /^zurücksetzen$/ }, SLOW))
+  await waitFor(() => expect(puts).toHaveLength(1), SLOW)
+  expect(puts[0]).toEqual({ prepaymentOverrides: { [calendarPeriod(YEAR - 1)]: 40000 } })
 })

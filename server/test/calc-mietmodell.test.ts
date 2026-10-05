@@ -1,6 +1,7 @@
 // Nebenkostenmodell am Mietverhältnis (#93): Pauschale, Inklusivmiete und Warmmiete, getrennt für
 // kalte Kosten und Heizung, mit Handrechnung.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, rentLedger, taxReport, type ComputedSettlement } from '../src/calc.ts'
@@ -13,7 +14,7 @@ const tenancy = (id: string, unitId: string, over: Partial<SnapshotTenancy> = {}
 })
 const unit = (id: string, over: Partial<SnapshotUnit> = {}): SnapshotUnit => ({ id, name: id, areaM2: 50, participates: true, ...over })
 const item = (over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id: 'k', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', ...over,
+  id: 'k', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer', amountCents: 100000, key: 'area', ...over,
 })
 const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettlement(snapshotOf({
   units: [], tenancies: [], costItems: [], meters: [], readings: [], payments: [], closedSettlements: [], ...s,

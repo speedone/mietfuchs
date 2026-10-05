@@ -182,3 +182,19 @@ test('Eine fehlende oder unsinnige Herkunftsangabe wirft nichts um', () => {
   }
   assert.match(originText(null), /unbekannt/)
 })
+
+test('Ein Archiv mit einem Zeitraum, den es für sein Objekt nicht gibt, wird beanstandet (#208)', async () => {
+  // Review Focus 4: von Hand den Beginnmonat auf Mai gestellt, ohne die Position umzuschlüsseln.
+  // Die Position stünde dann in keiner Abrechnung, und niemand bemerkte es.
+  await withFilledDatabase(async (opened, dataDir) => {
+    const ziel = path.join(dataDir, 'schnappschuss.sqlite')
+    await writeDatabaseSnapshot(opened, ziel)
+    const bearbeitet = await connect(ziel)
+    bearbeitet.exec("UPDATE properties SET period_start_month = 5 WHERE id = 'objekt-1'")
+    bearbeitet.close()
+    const befund = await archiveDatabaseProblem(ziel)
+    assert.ok(befund, 'es gibt eine Beanstandung')
+    assert.match(befund, /Abrechnungszeiträumen, die es für ihr Objekt nicht gibt/)
+    assert.match(befund, /„Gebühren“ steht unter dem Zeitraum 2024-01/)
+  })
+})

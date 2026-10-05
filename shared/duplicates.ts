@@ -8,15 +8,17 @@
 // Alle diese Wege und der Hinweis der Berechnung fragen dieselbe Regel, deshalb steht sie hier,
 // wie der gemerkte Schlüssel in allocation.ts. Sie entscheidet nichts, sie findet nur Kandidaten:
 // Ob es dieselbe Rechnung ist oder eine zweite, weiß nur der Vermieter.
-import type { CostItem } from './types.ts'
+import type { CostItem, PeriodKey } from './types.ts'
+import type { PeriodContext } from './period.ts'
 import { BROAD_CATEGORIES } from './allocation.ts'
 
-export type DuplicateItem = Pick<CostItem, 'id' | 'year' | 'category' | 'description'> &
+export type DuplicateItem = Pick<CostItem, 'id' | 'period' | 'category' | 'description'> &
   Partial<Pick<CostItem, 'propertyId' | 'vendor' | 'invoiceFile' | 'amountCents'>>
 
 export type CostQuery = {
   propertyId?: string | null
-  year: number
+  // Der Abrechnungszeitraum, in dem gesucht wird (#208).
+  period: PeriodKey
   category: string
   description?: string
   vendor?: string
@@ -64,15 +66,15 @@ function oppositeSign(a: number | null | undefined, b: number | null | undefined
   return a != null && b != null && ((a < 0 && b > 0) || (a > 0 && b < 0))
 }
 
-// Die schon erfassten Positionen, die dieselbe Rechnung sein könnten: dasselbe Objekt, dasselbe
-// Jahr, dieselbe Kostenart, bei einer breiten Kostenart zusätzlich ähnliche Beschreibung oder
+// Die schon erfassten Positionen, die dieselbe Rechnung sein könnten: dasselbe Objekt, derselbe
+// Zeitraum, dieselbe Kostenart, bei einer breiten Kostenart zusätzlich ähnliche Beschreibung oder
 // gleicher Rechnungssteller, und nie eine Gutschrift zu einer Rechnung oder umgekehrt. In der
 // Reihenfolge der Liste.
 export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[], q: CostQuery): T[] {
   const loose = LOOSE_CATEGORIES.includes(q.category)
   return items.filter((i) =>
     i.id !== q.excludeId &&
-    i.year === q.year &&
+    i.period === q.period &&
     i.category === q.category &&
     !oppositeSign(i.amountCents, q.amountCents) &&
     (q.propertyId == null || i.propertyId == null || i.propertyId === q.propertyId) &&
@@ -81,19 +83,19 @@ export function sameCostCandidates<T extends DuplicateItem>(items: readonly T[],
 
 const isCredit = (i: DuplicateItem): boolean => (i.amountCents ?? 0) < 0
 
-const queryOf = (i: DuplicateItem, year = i.year): CostQuery => ({
-  propertyId: i.propertyId, year, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
+const queryOf = (i: DuplicateItem, period: PeriodKey = i.period): CostQuery => ({
+  propertyId: i.propertyId, period, category: i.category, description: i.description, vendor: i.vendor, amountCents: i.amountCents, excludeId: i.id,
 })
 
-// Die Gruppen möglicher Doppelungen eines Jahres, für den Hinweis der Abrechnung: zwei oder mehr
+// Die Gruppen möglicher Doppelungen eines Zeitraums, für den Hinweis der Abrechnung: zwei oder mehr
 // Positionen, die nach der Regel oben zusammengehören, mindestens eine davon ohne Beleg, und dazu
 // (a) mindestens eine mit Beleg, also der Fall „übernommen und dann aus dem Beleg erfasst“, oder
-// (b) ein Vorjahr mit Positionen dieser Art, und dieses Jahr sind es mehr. Ohne Vorjahr und ganz
+// (b) ein Vorzeitraum mit Positionen dieser Art, und in diesem sind es mehr. Ohne Vorzeitraum und ganz
 // ohne Belege bleibt es still: Zwei von Hand erfasste Versicherungen sind zwei Rechnungen, und der
 // Hinweis färbte die Ampel sonst dauerhaft (zweite Durchsicht). Ebenso still bleiben Restmüll und
 // Biomüll, beide aus dem Vorjahr übernommen: Das ist die Gliederung des Hauses.
-export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], year: number, previous: readonly DuplicateItem[] = []): T[][] {
-  const own = items.filter((i) => i.year === year)
+export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[], at: PeriodContext, previous: readonly DuplicateItem[] = []): T[][] {
+  const own = items.filter((i) => i.period === at.key)
   const groupOf = new Map<string, T[]>()
   const groups: T[][] = []
   for (const i of own) {
@@ -120,7 +122,7 @@ export function possibleDuplicates<T extends DuplicateItem>(items: readonly T[],
     .map((g) => own.filter((i) => g.includes(i)))
     .filter((g) => {
       if (g.some((i) => i.invoiceFile)) return true
-      const before = previous.filter((p) => g.some((i) => sameCostCandidates([p], queryOf(i, year - 1)).length > 0))
+      const before = previous.filter((p) => g.some((i) => sameCostCandidates([p], queryOf(i, at.previous)).length > 0))
       return before.length > 0 && g.length > before.length
     })
 }

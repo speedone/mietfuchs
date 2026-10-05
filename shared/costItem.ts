@@ -6,18 +6,18 @@
 // Die Funktionen nehmen **Cent und Codes** und keine Eingabetexte: Was „54,00“ heißt, liest die
 // Oberfläche (parseEuro), und was sie nicht lesen konnte, kommt als `null` herein. Die Meldungen
 // sind dieselben Sätze wie bisher im Formular; client/src/costForm.test.ts hält sie fest.
-import type { CostKey, ExternalBasis, ExternalMeasure, MeterType, Unit } from './types.ts'
+import type { CostKey, ExternalBasis, ExternalMeasure, MeterType, PeriodKey, Unit } from './types.ts'
 import { PARTICIPANT_KEYS } from './allocation.ts'
 import { isNotAllocable } from './categories.ts'
 
 // Ein Betrag wie in der Oberfläche (client/src/api.ts, fmtEuro): „612,40 €“.
 export const euro = (cents: number): string => (cents / 100).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
-// Ändert etwas den Betrag einer Position in einem Jahr mit abgeschlossener Abrechnung (Verknüpfen
+// Ändert etwas den Betrag einer Position in einem Zeitraum mit abgeschlossener Abrechnung (Verknüpfen
 // in der Belegbuchung, „Betrag prüfen“ im Belegordner), sagen beide es mit diesem Satz. Bewusst
 // mit Bedingung: Die Abweichung (`deviation`, settlementDiff.ts) vergleicht nur die Salden der
 // Mieter, eine Änderung, die beim Vermieter bleibt, erscheint dort nicht (Durchsicht).
-export const closedYearNotice = (year: number): string =>
-  `Die Abrechnung ${year} ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.`
+export const closedPeriodNotice = (label: string): string =>
+  `Die Abrechnung ${label} ist abgeschlossen und bleibt, wie sie verschickt wurde; ändert sich dadurch der Saldo eines Mieters, zeigt die Abrechnungsseite das als Abweichung.`
 export const pct = (n: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: 2 })
 
 // Gehört die Wohnung zur Abrechnungseinheit? Vermietet oder selbstgenutzt; dieselbe Regel wie
@@ -75,7 +75,7 @@ export type CostItemDraft = {
 // ausdrücklich auf `null`: Die generische PUT-Route übernimmt nur vorhandene Felder, sonst blieben
 // alte Zuordnungen stehen.
 export type CostItemBody = {
-  year: number
+  period: PeriodKey
   category: string
   description: string
   vendor: string | undefined
@@ -121,14 +121,14 @@ function amountsOf(m: Record<string, number | null>): Record<string, number> | n
   return out
 }
 
-export function costItemBody(d: CostItemDraft, units: readonly Unit[], year: number): BuildResult {
+export function costItemBody(d: CostItemDraft, units: readonly Unit[], period: PeriodKey): BuildResult {
   if (!d.description.trim()) return { error: 'Bitte eine Beschreibung angeben.' }
   const amount = d.amountCents
   const labor = d.labor35aCents
   const problem = amountProblem(amount, labor, d.category)
   if (problem !== null || amount === null) return { error: problem ?? 'Bitte einen Betrag angeben.' }
   const common = {
-    year,
+    period,
     category: d.category,
     description: d.description.trim(),
     vendor: d.vendor.trim() || undefined,

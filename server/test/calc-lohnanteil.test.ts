@@ -2,13 +2,14 @@
 // Die Abrechnung bescheinigt einen Lohnanteil nur zwischen 0 und dem Rechnungsbetrag und warnt
 // sonst (`labor35a.invalid`); die Steuerübersicht zählte ihn roh mit.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, taxReport, validLabor35aCents } from '../src/calc.ts'
 import { snapshotOf, type SnapshotCostItem, type SnapshotSource } from '../src/snapshot.ts'
 
 const item = (id: string, amountCents: number, labor35aCents: number): SnapshotCostItem => ({
-  id, year: 2025, category: 'Gartenpflege', description: id, amountCents, labor35aCents, key: 'area',
+  id, period: calendarPeriod(2025), category: 'Gartenpflege', description: id, amountCents, labor35aCents, key: 'area',
 })
 const source = (costItems: SnapshotCostItem[]): SnapshotSource => ({
   units: [{ id: 'w', name: 'Wohnung', areaM2: 70, participates: true }],

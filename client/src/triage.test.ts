@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 // Die Ampel und die Doppelungsregel stehen in shared/ (Server und Browser benutzen sie, #170).
+import { calendarContext, calendarPeriod } from '../../shared/period.ts'
 import { aiRowPreselected, categoryDeviationPct, scorePosition, type PositionCtx } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 import type { CostItem } from './types'
@@ -26,13 +27,13 @@ test('Betrag 0 bleibt rot', () => {
 // Erst übernommen (Schätzbetrag, ohne Beleg), dann kommt die echte Rechnung per KI: Es entstand
 // still eine zweite Position derselben Kostenart. Die Regel steht in shared/duplicates.ts.
 
-const schaetzung: CostItem = { id: 'gs', propertyId: 'p', year: 2026, category: 'Grundsteuer', description: 'Grundsteuer 2026', vendor: 'Stadt', amountCents: 61000, key: 'area' }
+const schaetzung: CostItem = { id: 'gs', propertyId: 'p', period: calendarPeriod(2026), category: 'Grundsteuer', description: 'Grundsteuer 2026', vendor: 'Stadt', amountCents: 61000, key: 'area' }
 
 test('A: eine KI-Zeile derselben Kostenart findet die übernommene Position, auch mit anderer Beschreibung', () => {
-  const found = sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'Abgabenbescheid Q1–Q4', vendor: 'Stadt Musterstadt', year: 2026 })
+  const found = sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'Abgabenbescheid Q1–Q4', vendor: 'Stadt Musterstadt', period: calendarPeriod(2026) })
   expect(found.map((i) => i.id)).toEqual(['gs'])
   // anderes Jahr: nichts
-  expect(sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'x', vendor: '', year: 2025 })).toEqual([])
+  expect(sameCostCandidates([schaetzung], { category: 'Grundsteuer', description: 'x', vendor: '', period: calendarPeriod(2025) })).toEqual([])
 })
 
 test('A: mit Kandidaten ist die Ampel nicht grün und nennt die Position', () => {
@@ -51,14 +52,14 @@ test('A: vorab angehakt nur ohne Kandidaten und ohne Rot', () => {
 
 test('A im Januar: Vorjahresvergleich nach dem Jahr des Belegs, nicht nach dem gewählten', () => {
   const items: CostItem[] = [
-    { ...schaetzung, id: 'a', year: 2025, amountCents: 60000 },
-    { ...schaetzung, id: 'b', year: 2024, amountCents: 30000 },
+    { ...schaetzung, id: 'a', period: calendarPeriod(2025), amountCents: 60000 },
+    { ...schaetzung, id: 'b', period: calendarPeriod(2024), amountCents: 30000 },
   ]
   // Beleg für 2026, gewählt ist noch 2025: verglichen wird 2026 (nichts erfasst) mit 2025
-  expect(categoryDeviationPct(items, 'Grundsteuer', 2026, 61200)).toBeCloseTo(2)
+  expect(categoryDeviationPct(items, 'Grundsteuer', calendarContext(2026), 61200)).toBeCloseTo(2)
   // Das gewählte Jahr hätte 2025 (schon 600 €) + 612 € gegen 2024 verglichen: +304 %
-  expect(categoryDeviationPct(items, 'Grundsteuer', 2025, 61200)).toBeCloseTo(304)
-  expect(categoryDeviationPct([], 'Grundsteuer', 2026, 61200)).toBeNull()
+  expect(categoryDeviationPct(items, 'Grundsteuer', calendarContext(2025), 61200)).toBeCloseTo(304)
+  expect(categoryDeviationPct([], 'Grundsteuer', calendarContext(2026), 61200)).toBeNull()
 })
 
 // ---------- Verknüpfen je Gruppe (zweite Durchsicht) ----------

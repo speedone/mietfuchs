@@ -17,7 +17,8 @@
 // geschnitten und nicht neu erfunden: Was dort dazukommt, kommt hier nur an, wenn es jemand
 // bewusst aufnimmt.
 
-import type { CostItem, Meter, Payment, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import type { BillingPeriod, CostItem, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
+import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -54,13 +55,13 @@ export type SnapshotTenancy = Pick<
   prepaymentMonthlyCents?: number
 }
 
-// Gelesen werden Kennung, Jahr, Kostenart, Beschreibung, Betrag, Schlüssel samt seiner Angaben
+// Gelesen werden Kennung, Zeitraum, Kostenart, Beschreibung, Betrag, Schlüssel samt seiner Angaben
 // und der Lohnanteil nach §35a. Der Rechnungssteller und die Belegdatei fehlen: Sie stehen auf
 // der Abrechnung nicht und verteilen nichts.
 export type SnapshotCostItem = Pick<
   CostItem,
   | 'id'
-  | 'year'
+  | 'period'
   | 'category'
   | 'description'
   | 'amountCents'
@@ -213,10 +214,14 @@ export function frozenSettlementOf(settlement: unknown): SnapshotClosedSettlemen
 }
 
 export type Snapshot = {
-  // Das Abrechnungsjahr gehört zum Schnappschuss, nicht neben ihn. Sonst ließe sich ein
-  // Schnappschuss für 2025 mit dem Jahr 2024 verrechnen, und weil die Kostenpositionen dann
-  // fehlten, käme eine leere statt einer falschen Abrechnung heraus. Der Fehler fiele dann
-  // erst dem Mieter auf.
+  // Der Abrechnungszeitraum (#208). Er gehört zum Schnappschuss, nicht neben ihn: Sonst ließe sich
+  // ein Schnappschuss mit einem anderen Zeitraum verrechnen, und weil die Kostenpositionen dann
+  // fehlten, käme eine leere statt einer falschen Abrechnung heraus. Der Fehler fiele erst dem
+  // Mieter auf.
+  period: BillingPeriod
+  // Der Zeitraum davor, für den Vergleich der Schlüssel und der Doppelungen (#141).
+  previousPeriod: BillingPeriod
+  // Das Kalenderjahr, in dem `period` beginnt. Mietkonto und Steuer rechnen im Kalenderjahr.
   year: number
   // Das Objekt, dessen Daten der Schnappschuss trägt (#92), aus demselben Grund wie das Jahr:
   // Er soll sich nicht mit einem anderen verwechseln lassen. `null` ist ein Bestand ohne
@@ -256,7 +261,7 @@ export type SnapshotSource = {
   readings: SnapshotReading[]
   payments: SnapshotPayment[]
   // Alle Jahre, jedes eingedampft auf das, was die Berechnung daraus liest.
-  closedSettlements: (SnapshotClosedSettlement & { year: number })[]
+  closedSettlements: (SnapshotClosedSettlement & { period: PeriodKey })[]
 }
 
 // Ein Bestand, dessen Wurzeln ihr Objekt tragen (#92). db/read.ts `Stock` erfüllt ihn.
@@ -271,7 +276,7 @@ export type ScopedSource<
   M extends SnapshotMeter & { propertyId: string } = SnapshotMeter & { propertyId: string },
   R extends SnapshotReading = SnapshotReading,
   P extends SnapshotPayment = SnapshotPayment,
-  X extends SnapshotClosedSettlement & { year: number, propertyId: string } = SnapshotClosedSettlement & { year: number, propertyId: string },
+  X extends SnapshotClosedSettlement & { period: PeriodKey, propertyId: string } = SnapshotClosedSettlement & { period: PeriodKey, propertyId: string },
 > = { units: U[], tenancies: T[], costItems: C[], meters: M[], readings: R[], payments: P[], closedSettlements: X[] }
 
 export type PropertyScopedSource = ScopedSource
@@ -294,7 +299,7 @@ export function narrowToProperty<
   M extends SnapshotMeter & { propertyId: string },
   R extends SnapshotReading,
   P extends SnapshotPayment,
-  X extends SnapshotClosedSettlement & { year: number, propertyId: string },
+  X extends SnapshotClosedSettlement & { period: PeriodKey, propertyId: string },
 >(source: ScopedSource<U, T, C, M, R, P, X>, propertyId: string): ScopedSource<U, T, C, M, R, P, X> {
   const units = source.units.filter((u) => u.propertyId === propertyId)
   const unitIds = new Set(units.map((u) => u.id))
@@ -313,37 +318,42 @@ export function narrowToProperty<
   }
 }
 
-// Der Schnappschuss eines Objekts in einem Jahr. Die Routen rechnen nur hierüber.
-export function snapshotFor(source: PropertyScopedSource & { properties?: (SnapshotProperty & { id: string })[] }, propertyId: string, year: number): Snapshot {
+// Der Schnappschuss eines Objekts in einem Abrechnungszeitraum. Die Routen rechnen nur hierüber; den
+// Vorzeitraum bestimmt der Rhythmus des Objekts (#208).
+export function snapshotFor(
+  source: PropertyScopedSource & { properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[] },
+  propertyId: string,
+  period: BillingPeriod,
+): Snapshot {
   const found = source.properties?.find((p) => p.id === propertyId)
   return {
-    ...snapshotOf(narrowToProperty(source, propertyId), year),
+    ...snapshotOfPeriod(narrowToProperty(source, propertyId), period, previousPeriod(rulesOf(found), period)),
     propertyId,
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
   }
 }
 
-// Baut den Schnappschuss eines Abrechnungsjahres aus dem Datenbestand.
+// Baut den Schnappschuss eines Abrechnungszeitraums aus dem Datenbestand.
 //
-// Eingegrenzt wird nach Jahr nur, was sein Jahr als Feld dabei hat: die Kostenpositionen und
+// Nach Zeitraum eingegrenzt wird nur, was seinen Zeitraum als Feld trägt: die Kostenpositionen und
 // die abgeschlossenen Abrechnungen. Dort heißt Eingrenzen, zu lesen, was dasteht. Bei allen
 // anderen Sammlungen müsste die Zugehörigkeit hergeleitet werden, und eine Herleitung an
 // dieser Grenze schneidet im Zweifel etwas weg, das die Abrechnung braucht:
 //
 //   Ablesungen         Der Verbrauch wird zwischen zwei Ablesungen tagesanteilig interpoliert.
-//                      Der Anfangsstand des Jahres ist die Ablesung vom 31. Dezember des
-//                      Vorjahres. Ohne sie entsteht kein Verbrauchssegment, und der
+//                      Der Anfangsstand des Zeitraums ist die Ablesung vom Tag vor seinem
+//                      Beginn, im Kalenderjahr die vom 31. Dezember des Vorjahres. Ohne sie entsteht kein Verbrauchssegment, und der
 //                      Jahresverbrauch wäre 0. Die ganze Position fiele dem Vermieter zu,
 //                      ohne dass irgendwo ein Fehler stünde.
-//   Mietverhältnisse   Welche ins Jahr fallen, entscheidet `overlapDays` in der Berechnung:
+//   Mietverhältnisse   Welche in den Zeitraum fallen, entscheidet die Berechnung:
 //                      inklusive Grenzen, `end: null` = offen. Ebenso wichtig sind die
 //                      Staffeln im Mietverhältnis selbst (Personenzahl, Vorauszahlung,
 //                      Kaltmiete). Sie gelten „ab diesem Datum“, und der maßgebliche Eintrag
 //                      kann Jahre alt sein. Beides bleibt unangetastet.
-//   Zahlungen          Welche Zahlung zum Jahr zählt, entscheidet das Mietkonto nach ihrem
+//   Zahlungen          Welche Zahlung zum Zeitraum zählt, entscheidet das Mietkonto nach ihrem
 //                      Datum. Diese Regel bleibt dort, wo sie kommentiert und geprüft ist.
-//   Wohnungen, Zähler  tragen gar kein Jahr. Sie gehören zum Haus, nicht zur Abrechnung.
-export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
+//   Wohnungen, Zähler  tragen gar keinen Zeitraum. Sie gehören zum Haus, nicht zur Abrechnung.
+export function snapshotOfPeriod(source: SnapshotSource, period: BillingPeriod, previous: BillingPeriod): Snapshot {
   // Die Datensätze werden durchgereicht, nicht Feld für Feld neu gebaut. Der Schnappschuss ist
   // eine Sicht, keine Kopie; die Berechnung ändert nichts an ihm.
   //
@@ -353,16 +363,18 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   // Warnung, in der jeder Mieter seine Vorauszahlung voll erstattet bekommt. Sie sähe stimmig
   // aus und wäre falsch, und das ist der schlimmere der beiden Ausgänge. Ein Test in
   // calc.test.ts hält das fest.
-  const closed = source.closedSettlements.find((c) => c.year === year)
+  const closed = source.closedSettlements.find((c) => c.period === period.key)
   return {
-    year,
+    period,
+    previousPeriod: previous,
+    year: Number(period.from.slice(0, 4)),
     propertyId: null,
     units: source.units,
     tenancies: source.tenancies,
-    costItems: source.costItems.filter((c) => c.year === year),
-    // Das Vorjahr nur für den Vergleich der Schlüssel (#141); dieselbe Eingrenzung nach dem Feld
-    // `year`, deshalb hier und nicht in `snapshotFor`.
-    previousCostItems: source.costItems.filter((c) => c.year === year - 1),
+    costItems: source.costItems.filter((c) => c.period === period.key),
+    // Der Vorzeitraum nur für den Vergleich der Schlüssel (#141) und der Doppelungen; dieselbe
+    // Eingrenzung nach dem Feld `period`, deshalb hier und nicht in `snapshotFor`.
+    previousCostItems: source.costItems.filter((c) => c.period === previous.key),
     meters: source.meters,
     readings: source.readings,
     payments: source.payments,
@@ -378,20 +390,40 @@ export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
   }
 }
 
-// Der Schnappschuss aus dem Bestand der JSON-Datei.
+// Der Eingang im Kalenderjahr: db.json, Umstieg, Regression und Tests. Die db.json kannte nichts
+// anderes, und hier ist der Vorzeitraum wirklich das Vorjahr.
+export function snapshotOf(source: SnapshotSource, year: number): Snapshot {
+  return snapshotOfPeriod(source, calendarYearPeriod(year), calendarYearPeriod(year - 1))
+}
+
+// Die Jahreskorrektur der db.json und der Datenbank von 0000 ist nach Jahr geschlüsselt („2024“),
+// die Berechnung fragt nach dem Zeitraum (#208). Ein Jahr ist dort immer ein Kalenderjahr. Ein
+// Schlüssel, der schon ein Zeitraum ist, bleibt; alles andere las die Berechnung nie und fällt weg.
+export function overridesByPeriod(overrides: Record<string, number>): Record<string, number> {
+  const result: Record<string, number> = {}
+  for (const [schluessel, betrag] of Object.entries(overrides)) {
+    if (/^\d{4}$/.test(schluessel)) result[calendarPeriod(Number(schluessel))] = betrag
+    else if (parsePeriodKey(schluessel) !== null) result[schluessel] = betrag
+  }
+  return result
+}
+
+// Der Schnappschuss aus dem Bestand der JSON-Datei. Der Schnappschuss reicht die Datensätze durch
+// und kopiert sie nicht. Die Mietverhältnisse der Datei sind die Ausnahme: Ihre Jahreskorrektur
+// wird auf Zeiträume umgeschlüsselt (#208), und das geht nur an einer Kopie.
 export function snapshotFromDb(db: Db, year: number): Snapshot {
   return snapshotOf(
     {
       units: db.units,
-      tenancies: db.tenancies,
-      costItems: db.costItems,
+      tenancies: db.tenancies.map((t) => ({ ...t, prepaymentOverrides: overridesByPeriod(t.prepaymentOverrides ?? {}) })),
+      costItems: db.costItems.map((c) => ({ ...c, period: calendarPeriod(c.year) })),
       meters: db.meters,
       readings: db.readings,
       payments: db.payments,
       // Der Auszug steht in `frozenSettlementOf` und gilt für beide Wege; die Begründung dort.
       // Kein `?? []` um die Sammlung selbst: Ist sie `null`, soll es krachen, und `map` tut das.
       closedSettlements: db.closedSettlements.map((c) => ({
-        year: c.year,
+        period: calendarPeriod(c.year),
         ...frozenSettlementOf(c.settlement),
       })),
     },

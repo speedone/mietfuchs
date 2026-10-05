@@ -32,6 +32,9 @@ export type Property = {
   // Kabel- oder Antennenanlage vor dem 01.12.2021 errichtet (#121, § 2 Satz 2 BetrKV)? `null` heißt
   // unbekannt. Bei einer späteren Anlage war das TV-Signal nie umlagefähig.
   cableBuiltBeforeDec2021?: boolean | null
+  // Der Rhythmus der Abrechnungszeiträume (#208). Der Server liefert ihn immer mit; fehlt er, gilt
+  // das Kalenderjahr (`rulesOf` in shared/period.ts). Ändern lässt er sich in dieser Version nicht.
+  periodRules?: PeriodRules
 }
 
 export type Unit = {
@@ -95,7 +98,7 @@ export type Tenancy = {
   start: string
   end: string | null
   prepayments: PrepaymentEntry[]
-  prepaymentOverrides: Record<string, number> // Jahr → tatsächlich gezahlter Betrag
+  prepaymentOverrides: Record<string, number> // Zeitraum ('JJJJ-MM', #208) → tatsächlich gezahlter Betrag
   baseRents: RentEntry[] // Kaltmiete-Staffel (leer = nicht erfasst)
   // Erweiterte Stammdaten (optional, ohne Einfluss auf die Berechnung) — Kontakt, Kaution, Vertrag
   email?: string
@@ -202,7 +205,8 @@ export type ExternalBasis = {
 export type CostItem = {
   id: string
   propertyId: string
-  year: number
+  // Der Abrechnungszeitraum (#208), dem die Position ganz gehört.
+  period: PeriodKey
   category: string
   description: string
   vendor?: string
@@ -504,8 +508,16 @@ export type AppliedValue = {
 export type LegalBasis = { asOf: string; rules: AppliedRule[]; values?: AppliedValue[] }
 
 export type Settlement = {
+  // Kalenderjahr, in dem der Abrechnungszeitraum beginnt (#208); bei einem Kalenderobjekt das
+  // Abrechnungsjahr wie bisher.
   year: number
+  // Tage des Abrechnungszeitraums (#208). Der Name stammt aus der Zeit, als jeder Zeitraum ein Jahr
+  // war; ältere Tabs lesen ihn.
   daysInYear: number
+  // Der Abrechnungszeitraum und das Ende der Frist nach § 556 Abs. 3 S. 2 BGB (#208). Eine vorher
+  // abgeschlossene Abrechnung kennt beide nicht; die Route ergänzt sie aus dem Zeitraum.
+  period: SettlementPeriod
+  deadline: string
   statements: Statement[]
   landlord: { rows: SettlementRow[]; totalCents: number }
   // im Vermieteranteil enthaltener Eigenanteil selbstgenutzter Wohnungen
@@ -804,10 +816,14 @@ export type StoredAssessment = {
   year: number
   // Das Jahr, das die KI aus dem Beleg gelesen hat (Leistungszeitraum, sonst Rechnungsdatum)
   detectedYear: number | null
-  // Das gewählte Jahr: beim Auswerten mitgeschickt (die Seite, von der aus ausgewertet wurde),
-  // danach das von Hand gesetzte; `null`, wenn keines mitkam. Weicht `year` davon ab, steht die
-  // Ampel auf gelb und nichts ist vorab angehakt.
+  // Das gewählte Kalenderjahr: beim Auswerten mitgeschickt (die Seite, von der aus ausgewertet
+  // wurde), danach das von Hand gesetzte; `null`, wenn keines mitkam. Es bleibt auch ohne Objekt
+  // stehen (Durchsicht von #222, I1). Weicht `year` davon ab, steht die Ampel auf gelb und nichts ist
+  // vorab angehakt.
   requestedYear: number | null
+  // Der gewählte Abrechnungszeitraum (#208), aus `requestedYear` gebildet, sobald es ein Objekt gibt;
+  // ohne Objekt `null`, denn ein Zeitraum ist nur am Objekt bestimmt (G-B7).
+  requestedPeriod: PeriodKey | null
   vendor: string | null
   invoiceDate: string | null
   totalGrossCents: number | null
@@ -913,3 +929,25 @@ export type BookingPreview = {
   confirm: PreviewProblem[]
   token: string
 }
+
+// ---------- Abrechnungszeitraum (#208) ----------
+
+// Der Schlüssel eines Abrechnungszeitraums: der Monat seines Beginns als 'JJJJ-MM'. Kein Zeitraum
+// beginnt im selben Monat wie ein anderer, auch nicht über einen Rumpfzeitraum hinweg; deshalb ist
+// der Beginnmonat eindeutig. Ein Markentyp über `string`: Eine Jahreszahl passt nicht hinein, und
+// jede Stelle, die noch mit `year - 1` rechnet, fällt beim Übersetzen auf. Aus Text wird er nur in
+// shared/period.ts.
+export type PeriodKey = string & { readonly __periodKey: unique symbol }
+
+// Der Rhythmus eines Objekts: der Beginnmonat von Anfang an (1 heißt Kalenderjahr) und die Wechsel
+// als 'JJJJ-MM', ab denen jeder Zeitraum in diesem Monat beginnt. Die Zeiträume selbst werden daraus
+// berechnet und nie gespeichert.
+export type PeriodRules = { startMonth: number; changes: string[] }
+
+// Ein Abrechnungszeitraum mit inklusiven Grenzen als 'JJJJ-MM-TT'. `short` heißt Rumpfzeitraum:
+// kürzer als zwölf Monate, weil danach ein Wechsel kommt.
+export type BillingPeriod = { key: PeriodKey; from: string; to: string; short: boolean }
+
+// Der Zeitraum, wie eine Abrechnung ihn trägt, mit der Bezeichnung für Kopf und Druck
+// („2025“, „2025/2026“, „01.01.–30.04.2025“).
+export type SettlementPeriod = BillingPeriod & { label: string }

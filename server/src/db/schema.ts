@@ -21,6 +21,7 @@ import type {
   DepositStatus,
   ExternalMeasure,
   MeterType,
+  PeriodKey,
   PropertyKind,
   Settings,
   StoredAssessment,
@@ -72,6 +73,13 @@ const notNegative = (name: string, column: string) => check(name, sql.raw(`"${co
 const oneOf = (name: string, column: string, values: readonly string[]) =>
   check(name, sql.raw(`"${column}" IN (${values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')})`))
 
+// Prüfbedingung „ein Zeitraumschlüssel 'JJJJ-MM' mit Monat 01 bis 12“ (#208, G-C3). Ob es diesen
+// Zeitraum für das Objekt gibt, weiß die Datenbank nicht; das prüft repository.ts beim Schreiben,
+// und `orphanPeriodKeys` fragt es beim Wiederherstellen über den ganzen Bestand ab. NULL lässt sie
+// durch wie `oneOf`.
+const periodKeyCheck = (name: string, column: string) =>
+  check(name, sql.raw(`"${column}" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND CAST(substr("${column}", 6, 2) AS INTEGER) BETWEEN 1 AND 12`))
+
 // ---------- Objekte ----------
 
 // Die Arten eines Objekts (#92). Sie steuern später Voreinstellungen und Oberfläche (#94); in
@@ -97,13 +105,29 @@ export const properties = sqliteTable(
     paymentDeadlineDays: integer('payment_deadline_days'),
     // Kabelanlage vor dem 01.12.2021 errichtet (#121); null heißt unbekannt.
     cableBuiltBeforeDec2021: integer('cable_built_before_dec_2021', { mode: 'boolean' }),
+    // Beginnmonat der Abrechnungszeiträume von Anfang an (#208): 1 heißt Kalenderjahr. Die Zeiträume
+    // werden berechnet (shared/period.ts), zusammen mit den Wechseln in `period_changes`.
+    periodStartMonth: integer('period_start_month').notNull().default(1),
   },
   () => [
     oneOf('properties_kind_known', 'kind', PROPERTY_KINDS),
     // Wie `settings_deadline_not_negative`: Eine negative Frist datierte die Fälligkeit vor die
     // Abrechnung.
     notNegative('properties_deadline_not_negative', 'payment_deadline_days'),
+    check('properties_period_start_month_valid', sql.raw('"period_start_month" BETWEEN 1 AND 12')),
   ],
+)
+
+// Wechsel des Rhythmus (#208): Ab `from_month` ('JJJJ-MM') beginnt jeder Zeitraum in diesem Monat;
+// der letzte Zeitraum davor endet am Tag vor dem Wechsel (Rumpfzeitraum). Gehört zum Objekt und
+// fällt mit ihm.
+export const periodChanges = sqliteTable(
+  'period_changes',
+  {
+    propertyId: text('property_id').notNull().references(() => properties.id, { onDelete: 'cascade' }),
+    fromMonth: text('from_month').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.propertyId, t.fromMonth] }), periodKeyCheck('period_changes_from_month_valid', 'from_month')],
 )
 
 // Wurzeln eines Objekts sind Wohnungen, Zähler (auch Hauptzähler ohne Wohnung), Kostenpositionen
@@ -263,26 +287,27 @@ export const baseRents = sqliteTable(
   ],
 )
 
-// Tatsächlich gezahlte Vorauszahlung eines Jahres. Sie hat Vorrang vor der Staffel, weil
-// rechtlich zählt, was geflossen ist. Anders als die Staffeln ist sie nach **Jahr** geschlüsselt
-// und nicht nach Datum; der zusammengesetzte Primärschlüssel sagt genau das.
+// Tatsächlich gezahlte Vorauszahlung eines Abrechnungszeitraums (#208). Sie hat Vorrang vor der
+// Staffel, weil rechtlich zählt, was geflossen ist. Anders als die Staffeln ist sie nach **Zeitraum**
+// geschlüsselt und nicht nach Datum; der zusammengesetzte Primärschlüssel sagt genau das.
 export const prepaymentOverrides = sqliteTable(
   'prepayment_overrides',
   {
     tenancyId: text('tenancy_id')
       .notNull()
       .references(() => tenancies.id, { onDelete: 'cascade' }),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     amountCents: integer('amount_cents').notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.tenancyId, t.year] }),
+    primaryKey({ columns: [t.tenancyId, t.period] }),
+    periodKeyCheck('prepayment_overrides_period_valid', 'period'),
     // Was ein Mieter in einem Jahr insgesamt an Vorauszahlungen geleistet hat, ist kein
     // negativer Betrag.
     //
     // Das steht bewusst anders als bei `payments.amount_cents`, das ohne Bedingung bleibt, und
     // der Unterschied ist echt: Dort steht eine **einzelne** Buchung, und eine davon kann eine
-    // Rücklastschrift sein, also ein negativer Eingang. Hier steht die **Jahressumme**, und die
+    // Rücklastschrift sein, also ein negativer Eingang. Hier steht die **Summe des Zeitraums**, und die
     // fällt auch mit Rücklastschriften nicht unter null: Mehr zurückgeholt werden kann nicht,
     // als vorher geflossen ist.
     notNegative('prepayment_overrides_amount_not_negative', 'amount_cents'),
@@ -296,7 +321,7 @@ export const costItems = sqliteTable(
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     category: text('category').notNull(),
     description: text('description').notNull(),
     vendor: text('vendor'),
@@ -330,8 +355,9 @@ export const costItems = sqliteTable(
   },
   (t) => [
     // Der einzige Filter, den der Schnappschuss wirklich setzt: die Kostenpositionen eines
-    // Abrechnungsjahres (siehe snapshot.ts), seit #92 innerhalb eines Objekts.
-    index('cost_items_property_year_idx').on(t.propertyId, t.year),
+    // Abrechnungszeitraums (siehe snapshot.ts), innerhalb eines Objekts.
+    index('cost_items_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('cost_items_period_valid', 'period'),
     // Ein unbekannter Umlageschlüssel verteilte gar nichts, und die Position fiele still dem
     // Vermieter zu. Deshalb hier eine echte Bedingung und nicht nur der Typ.
     oneOf('cost_items_key_known', 'key', COST_KEYS),
@@ -528,7 +554,7 @@ export const closedSettlements = sqliteTable(
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     closedAt: text('closed_at').notNull(),
     // Datum des Versands, für die Frist nach §556 Abs. 3 BGB. null = noch nicht versandt.
     sentAt: text('sent_at'),
@@ -541,10 +567,11 @@ export const closedSettlements = sqliteTable(
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
   (t) => [
-    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Objekt und Jahr gibt
+    // Zugleich Zusicherung und die zweite Abfrage des Schnappschusses: Je Objekt und Zeitraum gibt
     // es höchstens eine abgeschlossene Abrechnung. Vor #92 galt das je Jahr; mit zwei Objekten
     // sperrte das eine sonst das andere.
-    uniqueIndex('closed_settlements_property_year_idx').on(t.propertyId, t.year),
+    uniqueIndex('closed_settlements_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('closed_settlements_period_valid', 'period'),
     // Dass der Inhalt überhaupt JSON ist, kann die Datenbank prüfen, und nur das prüft sie hier.
     // Ob die Abrechnung darin fachlich stimmt, weiß sie nicht und soll sie nicht wissen; das ist
     // gerade der Sinn eines Archivstücks. Eine abgeschnittene oder verstümmelte Zeichenkette
@@ -564,14 +591,14 @@ export const closedSettlements = sqliteTable(
 // ihr Stand hierher, statt gelöscht zu werden: Er ist das Dokument, das der Mieter bekommen hat,
 // und wird gebraucht, sobald eine Korrektur zu begründen ist, dem Mieter wie dem Finanzamt
 // gegenüber. Eine eigene Tabelle und keine Spalte an `closed_settlements`, damit dort alles bleibt,
-// wie es ist: je Objekt und Jahr höchstens ein gültiger Stand, und jeder, der ihn liest, bekommt
+// wie es ist: je Objekt und Zeitraum höchstens ein gültiger Stand, und jeder, der ihn liest, bekommt
 // nur diesen.
 export const closedSettlementHistory = sqliteTable(
   'closed_settlement_history',
   {
     id: text('id').primaryKey().notNull(),
     propertyId: propertyRef(),
-    year: integer('year').notNull(),
+    period: text('period').$type<PeriodKey>().notNull(),
     closedAt: text('closed_at').notNull(),
     sentAt: text('sent_at'),
     // Wann wiedergeöffnet wurde, als Zeitstempel wie `closed_at`.
@@ -579,7 +606,8 @@ export const closedSettlementHistory = sqliteTable(
     settlement: text('settlement', { mode: 'json' }).notNull(),
   },
   (t) => [
-    index('closed_settlement_history_property_year_idx').on(t.propertyId, t.year),
+    index('closed_settlement_history_property_period_idx').on(t.propertyId, t.period),
+    periodKeyCheck('closed_settlement_history_period_valid', 'period'),
     // Unqualifiziert, aus demselben Grund wie oben.
     check('closed_settlement_history_settlement_is_json', sql.raw('json_valid("settlement")')),
   ],
@@ -738,9 +766,14 @@ export const assessments = sqliteTable(
     propertyId: text('property_id').references(() => properties.id, { onDelete: 'set null' }),
     year: integer('year').notNull(),
     detectedYear: integer('detected_year'),
-    // Das gewählte Jahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Weicht das Jahr
-    // der Auswertung davon ab, ist ihre Ampel gelb (Schlussdurchsicht, I1).
+    // Das gewählte Kalenderjahr: beim Auswerten mitgeschickt, danach das von Hand gesetzte. Es bleibt
+    // auch ohne Objekt stehen (Durchsicht von #222, I1): Sonst wäre eine später zugeordnete Auswertung
+    // grün, obwohl ihr Beleg aus einem anderen Jahr stammt. Weicht das Jahr der Auswertung davon ab,
+    // ist ihre Ampel gelb (Schlussdurchsicht, I1).
     requestedYear: integer('requested_year'),
+    // Der gewählte Abrechnungszeitraum (#208), aus dem gewählten Jahr gebildet, sobald es ein Objekt
+    // gibt. Nur mit Objekt (G-B7): Ein Zeitraum ist nur am Objekt bestimmt.
+    requestedPeriod: text('requested_period').$type<PeriodKey>(),
     vendor: text('vendor'),
     invoiceDate: text('invoice_date'),
     totalGrossCents: integer('total_gross_cents'),
@@ -756,6 +789,8 @@ export const assessments = sqliteTable(
     index('assessments_property_idx').on(t.propertyId),
     check('assessments_year_positive', sql.raw('"year" > 0')),
     check('assessments_requested_year_positive', sql.raw('"requested_year" IS NULL OR "requested_year" > 0')),
+    check('assessments_requested_period_with_property', sql.raw('"requested_period" IS NULL OR "property_id" IS NOT NULL')),
+    periodKeyCheck('assessments_requested_period_valid', 'requested_period'),
     notNegative('assessments_next_idx_not_negative', 'next_idx'),
     oneOf('assessments_amounts_adjusted_known', 'amounts_adjusted', AMOUNTS_ADJUSTED),
   ],

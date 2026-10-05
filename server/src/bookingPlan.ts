@@ -11,10 +11,11 @@
 // **Eine Zeile, die nicht offen ist, wird nie noch einmal gebucht.** Ist sie genau so gebucht,
 // ist das ohne Änderung (Doppelklick, Wiederholung); anders gebucht ist ein Widerspruch.
 import type {
-  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
+  AssessmentLineState, AssessmentView, BookingPreview, CostItem, CostKey, ExternalMeasure, LineDecision, LineFields, MeterType, PeriodKey, PreviewItem, PreviewProblem, StoredAssessment, StoredAssessmentLine, Unit,
 } from '../../shared/types.ts'
 import type { Allocation } from '../../shared/allocation.ts'
-import { amountProblem, closedYearNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
+import { calendarPeriod, startYearOf } from '../../shared/period.ts'
+import { amountProblem, closedPeriodNotice, costItemBody, euro, type CostItemBody } from '../../shared/costItem.ts'
 import { candidateText } from '../../shared/assessment.ts'
 import { sameCostCandidates } from '../../shared/duplicates.ts'
 import { attachedText, candidatePool, carriesCredit, changeOf, lineCandidates, lineDraft, lineState, ownItemIds, twinText, type BookedLine, type LineChange } from './assessment.ts'
@@ -33,8 +34,8 @@ export type PlanInput = {
   // Der Name eines Belegs, wie der Nutzer ihn kennt (für Hinweise); fehlt er, gilt der Dateiname
   fileNames: ReadonlyMap<string, string>
   // Abgeschlossene Abrechnungen aller Objekte (Integrationsdurchsicht vor 0.10): Ändert die Buchung
-  // den Betrag einer Position in einem solchen Jahr, sagt die Vorschau es
-  closed: readonly { propertyId: string; year: number }[]
+  // den Betrag einer Position in einem solchen Zeitraum, sagt die Vorschau es
+  closed: readonly { propertyId: string; period: PeriodKey }[]
 }
 
 export type BookingWrite =
@@ -116,7 +117,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
         errors.push({ idx: d.idx, message: `${named(line)}: Einzelbeträge je Mieter tragen Sie bitte im Formular der Position ein.` })
         continue
       }
-      const built = costItemBody(lineDraft(d.fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, a.year)
+      // Brücke Kalenderjahr (#208): bis PR 3
+      const built = costItemBody(lineDraft(d.fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, calendarPeriod(a.year))
       if ('error' in built) {
         errors.push({ idx: d.idx, message: `${quote(d.fields.description || line.description)}: ${built.error}` })
         continue
@@ -124,7 +126,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
       const body = built.body
       if (!d.despiteCandidates) {
         const pool = candidatePool(others, body.amountCents, input.booked)
-        const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, year: a.year, category: body.category, description: body.description, vendor: a.vendor ?? '' })
+        const candidates = sameCostCandidates(pool, { propertyId: a.propertyId, period: calendarPeriod(a.year), category: body.category, description: body.description, vendor: a.vendor ?? '' })
         // Dieselbe Regel wie in der Ansicht (lineCandidates): Hängt dieser Beleg, ein Beleg gleichen
         // Inhalts oder (bei einer erneuten Auswertung) eine schon gebuchte Zeile dieses Belegs an
         // einer Position, gleich welcher Kostenart, ist die Rechnung womöglich schon erfasst.
@@ -177,8 +179,9 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
         errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu einem anderen Objekt. Verknüpft wird nur innerhalb des Objekts dieses Belegs.` })
         continue
       }
-      if (target.year !== a.year) {
-        errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu ${target.year}, der Beleg zu ${a.year}. Ändern Sie das Jahr des Belegs oder legen Sie eine neue Position an.` })
+      // Brücke Kalenderjahr (#208): bis PR 3
+      if (target.period !== calendarPeriod(a.year)) {
+        errors.push({ idx: d.idx, message: `${quote(target.description)} gehört zu ${startYearOf(target.period)}, der Beleg zu ${a.year}. Ändern Sie das Jahr des Belegs oder legen Sie eine neue Position an.` })
         continue
       }
       if (carriesCredit(target, input.booked)) {
@@ -253,7 +256,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     if (links.length === 0) {
       notices.push(`${quote(t.description)} behält ihren Betrag von ${euro(t.amountCents)}; mit ihr ist keine Zeile eines Belegs mehr verknüpft.`)
       touchedItems.push({
-        costItemId: id, lines: [], description: t.description, category: t.category, year: t.year, beforeCents: t.amountCents,
+        costItemId: id, lines: [], description: t.description, category: t.category, year: startYearOf(t.period), beforeCents: t.amountCents,
         afterCents: t.amountCents, beforeLabor35aCents: t.labor35aCents ?? null, afterLabor35aCents: t.labor35aCents ?? null,
       })
       continue
@@ -295,8 +298,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     // Gesperrt wird nicht: Die Abrechnung bleibt eingefroren, und die Abweichung zeigt sie selbst.
     // Gesagt wird es, denn das Jahr aus dem Beleg geht dem gewählten vor, und eine Rechnung vom
     // Vorjahr landet leicht in einem abgeschlossenen.
-    if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.year === t.year)) {
-      notices.push(`${quote(t.description)}: ${closedYearNotice(t.year)}`)
+    if ((sum !== t.amountCents || labor !== (t.labor35aCents ?? null)) && input.closed.some((c) => c.propertyId === t.propertyId && c.period === t.period)) {
+      notices.push(`${quote(t.description)}: ${closedPeriodNotice(String(startYearOf(t.period)))}`)
     }
     // Der Beleg der Position. Beim Verknüpfen: Trägt sie keinen, den dieses Belegs. Beim Lösen
     // wechselt er nur, wenn er der Beleg der gelösten Zeile ist und aus ihm keine Zeile mehr an der
@@ -315,7 +318,7 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
     }
     updateWrites.push({ kind: 'updateItem', id, patch: { amountCents: sum, labor35aCents: labor, ...(invoiceFile !== undefined ? { invoiceFile } : {}) } })
     touchedItems.push({
-      costItemId: id, lines: ownLines, description: t.description, category: t.category, year: t.year, beforeCents: t.amountCents,
+      costItemId: id, lines: ownLines, description: t.description, category: t.category, year: startYearOf(t.period), beforeCents: t.amountCents,
       afterCents: sum, beforeLabor35aCents: t.labor35aCents ?? null, afterLabor35aCents: labor,
     })
   }
@@ -334,7 +337,8 @@ export function planBooking(input: PlanInput, decisions: readonly LineDecision[]
 // Kostenart, Betrag und Lohnanteil stehen an der Zeile, Schlüssel und Verteilung an der Position.
 // Was nicht mehr übernehmbar ist, ist nicht gleich.
 function sameCreate(fields: LineFields, line: StoredAssessmentLine, input: PlanInput, a: StoredAssessment): boolean {
-  const built = costItemBody(lineDraft(fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, a.year)
+  // Brücke Kalenderjahr (#208): bis PR 3
+  const built = costItemBody(lineDraft(fields, { vendor: a.vendor ?? '', invoiceFile: a.file }, input.units), input.units, calendarPeriod(a.year))
   if ('error' in built) return false
   const b = built.body
   if (b.description !== line.description || b.category !== line.category || b.amountCents !== line.amountCents || fields.labor35aCents !== line.labor35aCents) return false

@@ -67,6 +67,11 @@ const VEROEFFENTLICHT: Record<string, string> = {
   // erzeugt, hier die neue Marke eintragen. Neu erzeugt in der Schlussdurchsicht (Spalte requested_year, I1)
   // und in der Integrationsdurchsicht (Spalte reassessed, H1); main hat der Schritt nie erreicht.
   '0013_belegbuchung': '5d795633e62b473feb51bebd39c506e8572bf29838a11aa211c9ab152ac3bd2a',
+  // Abrechnungszeitraum (#208). Eingetragen vor dem Merge, wie 0001: Jeder Push auf main
+  // veröffentlicht das Image, und ab dann haben Nutzer die Schritte angewendet. Werden 0014 oder
+  // 0015 vor dem Push neu erzeugt, hier die neue Marke eintragen.
+  '0014_zeitraum': '1ecbae16aa915909c1ad530ab2bbc8d2696df0fb1caca86539d0f618fc2727bf',
+  '0015_zeitraum_pflicht': 'e535b04eab6a8bee3e0c3acaf25e89c5592c8166490e89b670aed4f928d19442',
 }
 
 test('ein bereits veröffentlichter Migrationsschritt ist unverändert', async () => {

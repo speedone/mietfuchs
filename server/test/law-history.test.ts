@@ -22,6 +22,9 @@ const SHIPPED: readonly string[] = [
   'ustg.standard-rate|2007-01-01|2020-06-30|19',
   'ustg.standard-rate|2020-07-01|2020-12-31|16',
   'ustg.standard-rate|2021-01-01||19',
+  // 0.11.0 (Heizung PR 2, #208)
+  'bgb.deadline-months|||12',
+  'bgb.max-period-months|||12',
 ]
 
 const current = (): string[] =>

@@ -19,7 +19,8 @@ import path from 'node:path'
 import { connect } from '../src/db/client.ts'
 import { databaseFile, openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { databaseProblem } from '../src/db/errors.ts'
-import { closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
+import { assessments, closedSettlements, costItems, prepayments, readings, tenancies, units } from '../src/db/schema.ts'
+import { calendarPeriod, periodKey } from '../../shared/period.ts'
 
 const tempDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'mietfuchs-fehler-'))
 
@@ -81,8 +82,8 @@ test('Eine zweite abgeschlossene Abrechnung für dasselbe Jahr wird erklärt', a
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write(async (db) => {
-        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's1', year: 2024, closedAt: '2025-01-01', settlement: {} })
-        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's2', year: 2024, closedAt: '2025-01-02', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's1', period: calendarPeriod(2024), closedAt: '2025-01-01', settlement: {} })
+        await db.insert(closedSettlements).values({ propertyId: 'objekt-1', id: 's2', period: calendarPeriod(2024), closedAt: '2025-01-02', settlement: {} })
       }))
     assert.match(text, /Jahr/, text)
     assert.match(text, /abgeschlossen/, text)
@@ -101,7 +102,7 @@ test('Eine Summe der Anlage von null wird erklärt, und zwar mit dem Feld (#94)'
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write((db) => db.insert(costItems).values({
-        id: 'c-null', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        id: 'c-null', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 100, key: 'external',
         externalMeasure: 'mea', externalTotal: 0, externalTotalCents: 100,
       })))
     assert.match(text, /größer als null/, text)
@@ -113,7 +114,7 @@ test('Unvollständige Angaben einer Gemeinschaft werden erklärt (#94)', async (
   await withDatabase(async (opened) => {
     const text = await messageOfFailure(opened, () =>
       opened.write((db) => db.insert(costItems).values({
-        id: 'c-halb', propertyId: 'objekt-1', year: 2025, category: 'X', description: 'X', amountCents: 100, key: 'external',
+        id: 'c-halb', propertyId: 'objekt-1', period: calendarPeriod(2025), category: 'X', description: 'X', amountCents: 100, key: 'external',
         externalMeasure: 'mea', externalTotal: 10000,
       })))
     assert.match(text, /unvollständig|vollständig/, text)
@@ -199,6 +200,30 @@ test('Ein fremder Fehler wird nicht für einen der Datenbank ausgegeben', async 
   }
 })
 
+test('Ein ungültiger Zeitraumschlüssel wird erklärt, und zwar mit dem Feld (#208)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.run(sql.raw(
+        "INSERT INTO cost_items (id, property_id, period, category, description, amount_cents, key) VALUES ('c', 'objekt-1', '2025-13', 'X', 'X', 1, 'area')",
+      ))))
+    assert.match(text, /Abrechnungszeitraum/, text)
+    assert.match(text, /JJJJ-MM/, text)
+    const beginn = await messageOfFailure(opened, () => opened.write((db) => db.run(sql.raw('UPDATE properties SET period_start_month = 13'))))
+    assert.match(beginn, /Beginnmonat/, beginn)
+  })
+})
+
+test('Ein gewählter Zeitraum ohne Objekt wird erklärt (#208)', async () => {
+  await withDatabase(async (opened) => {
+    const text = await messageOfFailure(opened, () =>
+      opened.write((db) => db.insert(assessments).values({
+        id: 'a', file: 'a.pdf', propertyId: null, year: 2025, requestedPeriod: periodKey('2025-01'), createdAt: '2026-01-01T00:00:00Z',
+      })))
+    assert.match(text, /Objekt/, text)
+    assert.doesNotMatch(text, /Ein Wert ist nicht zulässig/, text)
+  })
+})
+
 test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
   // Die Meldung wird aus dem **Namen** der Prüfbedingung abgeleitet und nicht aus einem
   // Katalog, den jemand pflegen müsste. Das trägt nur, solange die Namen der Konvention folgen.
@@ -222,7 +247,7 @@ test('Jede Prüfbedingung im Schema folgt der Namenskonvention', async () => {
       // Tabelle selbst. Sie steht in errors.ts mit eigener Meldung da. Jede **weitere** Ausnahme
       // muss hier bewusst eingetragen werden, und genau das ist der Zweck dieses Tests.
       if (name === 'settings_single_row') continue
-      assert.match(name, /_(not_negative|known|is_json|positive|complete)$/, `„${name}" folgt keiner der bekannten Endungen`)
+      assert.match(name, /_(not_negative|known|is_json|positive|complete|valid|with_property)$/, `„${name}" folgt keiner der bekannten Endungen`)
     }
   } finally {
     connection.close()

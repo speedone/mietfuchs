@@ -19,6 +19,7 @@ import { suggestionBasis, totalColumnLabel, totalNote } from '../calcSteps'
 import { useToast, useConfirm } from '../components/feedback'
 import Table from '../components/Table'
 import { countOf } from '../../../shared/wording.ts'
+import { calendarPeriod } from '../../../shared/period.ts'
 
 type Props = {
   settings: Settings | null
@@ -30,7 +31,7 @@ type Props = {
 }
 
 export default function Abrechnung({ settings, tenancies, reload, onNavigate }: Props) {
-  const { year } = useYear()
+  const { year, period } = useYear()
   // Fragt bei offenem Formular nach, wie der Objektwechsel (Durchsicht zu #141).
   const switchYear = useSwitchYear()
   const { properties, property } = useProperty()
@@ -91,14 +92,14 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   // Beleg-Dateien des Jahres (in Erfassungsreihenfolge, ohne Duplikate)
   const invoiceFiles = useMemo(
-    () => [...new Set(costItems.filter((c) => c.year === year && c.invoiceFile).map((c) => c.invoiceFile!))],
-    [costItems, year],
+    () => [...new Set(costItems.filter((c) => c.period === period && c.invoiceFile).map((c) => c.invoiceFile!))],
+    [costItems, period],
   )
 
   // Sprechende Anlagen-Beschriftung aus den verknüpften Kostenpositionen
   // (Rechnungssteller + Kostenarten) statt des technischen Dateinamens.
   function fileLabel(f: string): string {
-    const linked = costItems.filter((c) => c.year === year && c.invoiceFile === f)
+    const linked = costItems.filter((c) => c.period === period && c.invoiceFile === f)
     const vendor = linked.find((c) => c.vendor)?.vendor
     const cats = [...new Set(linked.map((c) => c.category))].join(', ')
     if (vendor && cats) return `${vendor} — ${cats}`
@@ -156,9 +157,15 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
   // Tatsächlich gezahlte Vorauszahlungen für ein Jahr festhalten (Korrektur) bzw. zurücksetzen
   async function savePpOverride(tenancyId: string, cents: number | null) {
     const ten = tenancies.find((t) => t.id === tenancyId)
-    const overrides = { ...(ten?.prepaymentOverrides ?? {}) }
-    if (cents === null) delete overrides[String(year)]
-    else overrides[String(year)] = cents
+    // Die Korrektur steht unter dem Zeitraum (#208). Bei einem Kalenderobjekt nennt der Server sie
+    // nach Jahreszahl, für Tabs von vor dem Update; geschickt werden hier nur Zeiträume, sonst gälten
+    // die Jahreszahlen als vollständiger Stand und die neue Korrektur fiele weg.
+    // Brücke Kalenderjahr (#208): bis PR 3
+    const overrides: Record<string, number> = Object.fromEntries(Object.entries(ten?.prepaymentOverrides ?? {})
+      .map(([schluessel, betrag]) => [/^\d{4}$/.test(schluessel) ? calendarPeriod(Number(schluessel)) : schluessel, betrag]))
+    const key = calendarPeriod(year)
+    if (cents === null) delete overrides[key]
+    else overrides[key] = cents
     if (!(await attempt(() => api(`/api/tenancies/${tenancyId}`, { method: 'PUT', body: JSON.stringify({ prepaymentOverrides: overrides }) })))) return
     setPpEdit(null)
     await Promise.all([load(), reload()])
@@ -171,7 +178,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
     // Browser verwenden document.title als Dateinamen beim „Als PDF speichern“
     const prevTitle = document.title
     const st = data?.statements.find((s) => s.tenancyId === printId)
-    if (st) document.title = `Nebenkostenabrechnung ${year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
+    if (st) document.title = `Nebenkostenabrechnung ${data?.period.label ?? year} ${st.unitName} ${st.tenantName}`.replace(/[\\/:*?"<>|]/g, '-')
     const done = () => {
       document.body.classList.remove('print-one')
       document.title = prevTitle
@@ -191,8 +198,9 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
 
   // §556 Abs. 3 BGB: Die Abrechnung muss dem Mieter binnen 12 Monaten nach Ende des
   // Abrechnungszeitraums zugehen, sonst sind Nachforderungen ausgeschlossen. Nach dem
-  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView).
-  const deadlineInfo = deadlineView(year, data?.closed?.sentAt ?? null, history, new Date())
+  // Wiederöffnen zählt der frühere Versand weiter (#142, siehe deadlineView). Bezeichnung und Frist
+  // vom Server (#208).
+  const deadlineInfo = data ? deadlineView(data.period.label, data.deadline, data.closed?.sentAt ?? null, history, new Date()) : null
 
   return (
     <>
@@ -271,7 +279,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
         </div>
       )}
 
-      {data && data.totalCostsCents > 0 && (
+      {data && deadlineInfo && data.totalCostsCents > 0 && (
         <div className={`${deadlineInfo.level} no-print`}>{deadlineInfo.text}</div>
       )}
       {history.length > 0 && (
@@ -397,7 +405,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
               </div>
               <div className="statement-head">
                 <div>
-                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {year}</h2>
+                  <h2 style={{ marginBottom: 2 }}>Nebenkostenabrechnung {data?.period.label ?? year}</h2>
                   <div className="muted">
                     {st.tenantName} · {st.unitName} · {personsText(st, tenancies.find((t) => t.id === st.tenancyId))} ·
                     Zeitraum {fmtDate(st.periodStart)} – {fmtDate(st.periodEnd)} ({countOf(st.days, 'Tag', 'Tage')})
@@ -586,7 +594,7 @@ export default function Abrechnung({ settings, tenancies, reload, onNavigate }: 
                     {stFiles.map((f, idx) => (
                       <div key={f} className="attachment">
                         <div className="attachment-caption">
-                          Anlage {idx + 1} zur Nebenkostenabrechnung {year}: {fileLabel(f)}
+                          Anlage {idx + 1} zur Nebenkostenabrechnung {data?.period.label ?? year}: {fileLabel(f)}
                         </div>
                         {(attachmentPages[f] ?? []).map((src, i) => (
                           <img key={i} src={src} alt={`${fileLabel(f)} — Seite ${i + 1}`} />

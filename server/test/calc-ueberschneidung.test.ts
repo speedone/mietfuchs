@@ -2,6 +2,7 @@
 // Hinweis der Stufe `error`, der beide Mieter, den Zeitraum und den Mehrbetrag nennt: was die
 // Mieter dieser Wohnung im Jahr zusammen mehr tragen, als auf die Wohnung entfällt.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, NOTICE_KINDS } from '../src/calc.ts'
@@ -12,7 +13,7 @@ const tenancy = (over: Pick<SnapshotTenancy, 'id' | 'unitId' | 'tenantName' | 's
   persons: over.persons ?? 1, personHistory: [{ from: over.start, persons: over.persons ?? 1 }],
   prepayments: [], prepaymentOverrides: {}, baseRents: [], ...over,
 })
-const grundsteuer: SnapshotCostItem = { id: 'gs', year: 2025, category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 120000, key: 'area' }
+const grundsteuer: SnapshotCostItem = { id: 'gs', period: calendarPeriod(2025), category: 'Grundsteuer', description: 'Grundsteuer 2025', amountCents: 120000, key: 'area' }
 
 // Das Beispiel aus dem Issue: zwei Wohnungen zu je 50 m², 1.200 € Grundsteuer nach Fläche.
 // Wohnung A: Xaver bis 30.09.2025, Yvonne ab 01.09.2025 — 30 Tage doppelt belegt.
@@ -77,7 +78,7 @@ test('Neben einer selbstgenutzten Wohnung: der Eigenanteil bleibt exakt, der Üb
 })
 
 test('Personenschlüssel: Mehrbetrag aus der Verteilbasis nachgerechnet, beide Lesarten genannt (Durchsicht V2)', () => {
-  const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
+  const muell: SnapshotCostItem = { id: 'm', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const s = settle([xaver, yvonne, zora], [muell])
   // Personentage: Xaver 2 × 273 = 546, Yvonne 1 × 122 = 122, Zora 2 × 365 = 730, zusammen 1.398;
   // Wohnung A trägt 668/1.398. In den 30 Tagen zählen Xaver 60 und Yvonne 30 Personentage doppelt.
@@ -93,7 +94,7 @@ test('Personenschlüssel: Mehrbetrag aus der Verteilbasis nachgerechnet, beide L
 })
 
 test('Personenschlüssel mit Pauschale: nur eine Lesart wirkt, der Text sagt welche (Durchsicht V1)', () => {
-  const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
+  const muell: SnapshotCostItem = { id: 'm', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const pauschal = tenancy({ ...yvonne, costModel: 'flatRate' })
   // Zugebucht wird nur Xaver (546 Personentage). Ohne seine 60 doppelten: 730 € × (546/1.398 − 486/1.338)
   // = 19,950… € → 19,95 €. Ohne Yvonnes Tage trüge Xaver mehr, nicht weniger: kein Betrag zu viel.
@@ -108,7 +109,7 @@ test('Personenschlüssel mit Pauschale: nur eine Lesart wirkt, der Text sagt wel
 })
 
 test('Mehrere Positionen: der Mehrbetrag ist die Summe über alle, auf den Cent erst am Ende gerundet', () => {
-  const muell: SnapshotCostItem = { id: 'm', year: 2025, category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
+  const muell: SnapshotCostItem = { id: 'm', period: calendarPeriod(2025), category: 'Müllabfuhr', description: 'Müll', amountCents: 73000, key: 'persons' }
   const s = settle([xaver, yvonne, zora], [grundsteuer, muell])
   // Je Lesart summiert: ohne Xavers Tage 4.931,507 ct + 1.709,361 ct = 6.640,87 ct → 66,41 €,
   // ohne Yvonnes Tage 4.931,507 ct + 835,937 ct = 5.767,44 ct → 57,67 €.
@@ -123,7 +124,7 @@ test('Kein Hinweis: lückenlos, andere Wohnung, Überschneidung nur in einem and
   const andereWohnung = tenancy({ ...yvonne, unitId: 'B' })
   assert.equal(overlapNotices(settle([xaver, andereWohnung])).length, 0)
   // Überschneidung im September 2025, abgerechnet wird 2026
-  assert.equal(overlapNotices(settle([xaver, yvonne, zora], [{ ...grundsteuer, year: 2026 }], 2026)).length, 0)
+  assert.equal(overlapNotices(settle([xaver, yvonne, zora], [{ ...grundsteuer, period: calendarPeriod(2026) }], 2026)).length, 0)
 })
 
 test('Über den Jahreswechsel: der Zeitraum steht ganz da, beziffert wird nur das Abrechnungsjahr', () => {
@@ -164,7 +165,7 @@ test('Kosten und Gutschrift zusammen: beide Richtungen getrennt genannt, kein Ne
 
 test('Verbrauchsschlüssel: Mehrbetrag nach dem Verbrauch in der Überschneidung', () => {
   // Wohnung A und B je ein Zähler, je 1 m³ am Tag; 365 € Wasser auf 730 m³.
-  const wasser: SnapshotCostItem = { id: 'w', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 36500, key: 'meter', meterType: 'kaltwasser' }
+  const wasser: SnapshotCostItem = { id: 'w', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 36500, key: 'meter', meterType: 'kaltwasser' }
   const snap = snapshotOf({
     ...source([xaver, yvonne, zora], [wasser]),
     meters: [{ id: 'mA', unitId: 'A', type: 'kaltwasser' }, { id: 'mB', unitId: 'B', type: 'kaltwasser' }],
@@ -181,7 +182,7 @@ test('Verbrauchsschlüssel mit ungleichem Verbrauch: geteilt wird nach dem Verbr
   // Wohnung A: 243 m³ bis 31.08., 300 m³ im September, 92 m³ danach; B 365 m³. 1.000 € auf 1.000 m³.
   // Beide bekommen die 300 m³ des Septembers: 1.000 € × 300/1.000 = 300,00 € zu viel, in beiden Lesarten.
   // Nach Tagen gerechnet wären es 543 × 30/273 = 59,67 € und 392 × 30/122 = 96,39 €.
-  const wasser: SnapshotCostItem = { id: 'w', year: 2025, category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' }
+  const wasser: SnapshotCostItem = { id: 'w', period: calendarPeriod(2025), category: 'Wasser/Abwasser', description: 'Wasser', amountCents: 100000, key: 'meter', meterType: 'kaltwasser' }
   const snap = snapshotOf({
     ...source([xaver, yvonne, zora], [wasser]),
     meters: [{ id: 'mA', unitId: 'A', type: 'kaltwasser' }, { id: 'mB', unitId: 'B', type: 'kaltwasser' }],
@@ -196,7 +197,7 @@ test('Verbrauchsschlüssel mit ungleichem Verbrauch: geteilt wird nach dem Verbr
 })
 
 test('Einzelbeträge: der Messdienst teilt selbst auf, nichts doppelt', () => {
-  const heiz: SnapshotCostItem = { id: 'h', year: 2025, category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 100000, key: 'amounts', tenancyAmounts: { x: 30000, y: 20000, z: 50000 } }
+  const heiz: SnapshotCostItem = { id: 'h', period: calendarPeriod(2025), category: 'Heizung und Warmwasser', description: 'Heizung', amountCents: 100000, key: 'amounts', tenancyAmounts: { x: 30000, y: 20000, z: 50000 } }
   const n = overlapNotices(settle([xaver, yvonne, zora], [heiz]))[0]
   assert.match(n?.text ?? '', /Die Mieter dieser Wohnung tragen dadurch 2025 nicht zu viel\./)
 })

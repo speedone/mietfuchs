@@ -35,6 +35,7 @@ import { uploadRows } from '../src/db/uploads.ts'
 import { closedSettlementHistory, closedSettlements, costItems, units } from '../src/db/schema.ts'
 // Die Umstiegsdatei steht beim Import auf Migration 0000, also schreibt der Griff mit deren Aufbau.
 import { units as unitsAtBaseline } from '../src/legacy/schema.ts'
+import { calendarPeriod } from '../../shared/period.ts'
 
 // ---------- Bausteine ----------
 
@@ -324,7 +325,7 @@ test('Ein früherer Abschluss in der Datenbank zählt als Bestand: der Umstieg �
   try {
     const opened = await openDatabase({ dataDir })
     await opened.write((db) => db.insert(closedSettlementHistory).values({
-      id: 'h1', propertyId: 'objekt-1', year: 2024, closedAt: '2025-01-10T09:00:00.000Z', sentAt: null,
+      id: 'h1', propertyId: 'objekt-1', period: calendarPeriod(2024), closedAt: '2025-01-10T09:00:00.000Z', sentAt: null,
       reopenedAt: '2025-02-01T09:00:00.000Z', settlement: {},
     }))
     opened.close()

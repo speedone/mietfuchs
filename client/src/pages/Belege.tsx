@@ -3,7 +3,9 @@ import type { CostItem, UploadEntry, UploadInfo, Property, Settlement } from '..
 import { withProperty, useProperty } from '../property'
 import { useYear, YEAR_OPTIONS } from '../year'
 import { api, errorText, fmtEuro, fmtDate } from '../api'
-import { closedYearNotice } from '../../../shared/costItem.ts'
+import { closedPeriodNotice } from '../../../shared/costItem.ts'
+// Brücke Kalenderjahr (#208): bis PR 3. Der Belegordner gliedert nach Kalenderjahren.
+import { calendarPeriod, startYearOf } from '../../../shared/period.ts'
 import { renderInvoicePages, renderThumbnail } from '../pdfPreview'
 import { buildTenantFolderPdf, isIndividualAmounts, planTenantFolder, type TenantFolderPlan } from '../tenantFolder'
 import { amountCheckBody, amountCheckMode, attachChoices, buildFolder, coverage, filesByItem, duplicateHints, inboxFor, inboxOf, matchesQuery, receiptCards, receiptName, type FolderFilter, type ReceiptCard, type ReceiptUpload } from '../receipts'
@@ -105,7 +107,7 @@ function FolderPacks({ propertyId, propertyName, year, uploads, costItems, make 
   }, [open, year, propertyId])
 
   const plan = useMemo(
-    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.year === year), uploads, { includeIndividual }) : null),
+    () => (settlement ? planTenantFolder(settlement, costItems.filter((c) => c.propertyId === propertyId && c.period === calendarPeriod(year)), uploads, { includeIndividual }) : null),
     [settlement, costItems, uploads, includeIndividual, propertyId, year],
   )
   const count = (status: string) => plan?.entries.filter((e) => e.status === status).length ?? 0
@@ -255,7 +257,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
   const packProperty = filter.propertyId !== 'all' ? filter.propertyId : properties.length === 1 ? properties[0]?.id ?? null : null
   // Die Jahre der Auswahl: die üblichen, dazu jedes Jahr, in dem es Positionen gibt
   const yearOptions = useMemo(
-    () => [...new Set([...YEAR_OPTIONS, currentYear, ...costItems.map((c) => c.year)])].sort((a, b) => b - a),
+    () => [...new Set([...YEAR_OPTIONS, currentYear, ...costItems.map((c) => startYearOf(c.period))])].sort((a, b) => b - a),
     [costItems, currentYear],
   )
 
@@ -276,7 +278,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     // Ist die Abrechnung des Jahres abgeschlossen, sagt der Kasten es. Scheitert die Frage, fehlt
     // nur der Satz; das Zuordnen ist schon gespeichert.
     try {
-      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${c.year}`, c.propertyId))
+      const s = await api<Pick<Settlement, 'closed'>>(withProperty(`/api/settlement/${startYearOf(c.period)}`, c.propertyId))
       if (s.closed) setAmountCheck((cur) => (cur && cur.item.id === c.id && cur.file === invoiceFile ? { ...cur, closed: true } : cur))
     } catch { /* ohne Auskunft kein Satz */ }
   }
@@ -297,7 +299,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     const fd = new FormData()
     fd.append('file', f)
     fd.append('propertyId', c.propertyId)
-    fd.append('year', String(c.year))
+    fd.append('year', String(startYearOf(c.period)))
     try {
       const res = await api<{ file: string }>('/api/upload', { method: 'POST', body: fd })
       await attach(c, res.file)
@@ -378,9 +380,9 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
     const propertyId = u.propertyId ?? (filter.propertyId === 'all' ? null : filter.propertyId)
     const year = u.year ?? (filter.year === 'all' ? null : filter.year)
     return costItems
-      .filter((c) => (propertyId === null || c.propertyId === propertyId) && (year === null || c.year === year))
+      .filter((c) => (propertyId === null || c.propertyId === propertyId) && (year === null || startYearOf(c.period) === year))
       .filter((c) => !c.invoiceFile || !present.has(c.invoiceFile))
-      .sort((a, b) => b.year - a.year || a.category.localeCompare(b.category, 'de') || a.description.localeCompare(b.description, 'de'))
+      .sort((a, b) => startYearOf(b.period) - startYearOf(a.period) || a.category.localeCompare(b.category, 'de') || a.description.localeCompare(b.description, 'de'))
   }
 
   async function deleteFile(f: UploadInfo) {
@@ -420,7 +422,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
           ) : card.items.length > 0 ? (
             <ul className="receipt-items">
               {card.items.map((c) => (
-                <li key={c.id}>→ {c.description}{filter.year === c.year ? '' : ` (${c.year})`} · {fmtEuro(c.amountCents)}</li>
+                <li key={c.id}>→ {c.description}{filter.year === startYearOf(c.period) ? '' : ` (${startYearOf(c.period)})`} · {fmtEuro(c.amountCents)}</li>
               ))}
             </ul>
           ) : (
@@ -441,7 +443,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
                 // Passt die Kostenart, die der Name des Belegs nennt, stehen diese Positionen oben
                 // (shared/duplicates.ts); sonst die Liste wie gehabt.
                 const choices = attachChoices(upload, candidatesFor(upload))
-                const option = (c: CostItem) => <option key={c.id} value={c.id}>{c.year} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
+                const option = (c: CostItem) => <option key={c.id} value={c.id}>{startYearOf(c.period)} · {c.category} · {c.description} · {fmtEuro(c.amountCents)}</option>
                 return (
                   <select aria-label={`${receiptName(upload)} einer Position zuordnen`} value=""
                     onChange={(e) => { const c = costItems.find((x) => x.id === e.target.value); if (c) void attachExisting(c, upload.file) }}>
@@ -482,7 +484,7 @@ export default function Belege({ renderThumb = renderThumbnail, onEvaluate, onCo
       {amountCheck && (
         <div className="notice no-print" role="status" aria-label="Betrag prüfen">
           Beleg an „{amountCheck.item.description}“ angehängt. Betrag der Position: <strong>{fmtEuro(amountCheck.item.amountCents)}</strong>.
-          {amountCheck.closed && <div>{closedYearNotice(amountCheck.item.year)}</div>}
+          {amountCheck.closed && <div>{closedPeriodNotice(String(startYearOf(amountCheck.item.period)))}</div>}
           {' '}Stimmt er mit dem Beleg überein? Eine aus dem Vorjahr übernommene Position trägt oft noch einen geschätzten Betrag.{' '}
           <a href={`/uploads/${encodeURIComponent(amountCheck.file)}`} target="_blank" rel="noreferrer">Beleg ansehen</a>
           {/* Ein geschätzter Lohnanteil gelangte sonst still in die Anlage V (dritte Durchsicht). */}

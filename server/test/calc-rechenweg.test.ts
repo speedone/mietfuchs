@@ -2,6 +2,7 @@
 // Zahlen aus der Abrechnung selbst, damit man jede Zahl nachvollziehen und einem Mieter erklären
 // kann.
 
+import { calendarPeriod } from '../../shared/period.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { computeSettlement, type ComputedSettlement } from '../src/calc.ts'
@@ -18,7 +19,7 @@ const settle = (s: Partial<SnapshotSource>): ComputedSettlement => computeSettle
 const rowOf = (s: ComputedSettlement, tenancyId: string, itemId: string) =>
   s.statements.find((st) => st.tenancyId === tenancyId)?.rows.find((r) => r.costItemId === itemId)
 const item = (id: string, over: Partial<SnapshotCostItem>): SnapshotCostItem => ({
-  id, year: 2025, category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
+  id, period: calendarPeriod(2025), category: 'Grundsteuer', description: id, amountCents: 100000, key: 'area', ...over,
 })
 
 test('Rechenweg nach Fläche: Betrag, Schlüssel, Anteil, Rechnung und Ergebnis', () => {
