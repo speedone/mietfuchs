@@ -53,7 +53,15 @@ export type HeatingFindings = {
   shareOutside: { unitIds: string[]; itemIds: string[]; consumptionCents: number; totalCents: number }[]
 }
 
-export function heatingFindings(items: readonly HeatingItem[], units: readonly HeatingUnit[], covered: ReadonlySet<string>): HeatingFindings {
+// `consumptionShare` liefert die Grenzen aus dem Rechtsregister (`hkv.consumption-share`) und wird
+// nur aufgerufen, wenn es eine Gruppe zu prüfen gibt; so trägt die Abrechnung den Wert nur ein,
+// wenn sie ihn benutzt hat.
+export function heatingFindings(
+  items: readonly HeatingItem[],
+  units: readonly HeatingUnit[],
+  covered: ReadonlySet<string>,
+  consumptionShare: () => { readonly min: number; readonly max: number },
+): HeatingFindings {
   const heating = items.filter((c) => c.category === HEATING_CATEGORY && c.key !== 'direct')
   const takesPart = (c: HeatingItem, unitId: string) => !c.participantUnitIds || c.participantUnitIds.includes(unitId)
   const withoutConsumption = new Map<string, Set<string>>()
@@ -78,7 +86,9 @@ export function heatingFindings(items: readonly HeatingItem[], units: readonly H
     g.unitIds.push(u.id)
     groups.set(key, g)
   }
-  const shareOutside = [...groups.values()].filter((g) =>
-    g.totalCents > 0 && g.consumptionCents > 0 && (g.consumptionCents * 100 < g.totalCents * 50 || g.consumptionCents * 100 > g.totalCents * 70))
+  const candidates = [...groups.values()].filter((g) => g.totalCents > 0 && g.consumptionCents > 0)
+  if (candidates.length === 0) return { withoutConsumption, shareOutside: [] }
+  const { min, max } = consumptionShare()
+  const shareOutside = candidates.filter((g) => g.consumptionCents * 100 < g.totalCents * min || g.consumptionCents * 100 > g.totalCents * max)
   return { withoutConsumption, shareOutside }
 }
