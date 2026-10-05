@@ -103,9 +103,11 @@ test('Rumpf 01.01.–30.04.2025: 120 Tage, vier Vorauszahlungsmonate, Vorschlag 
   assert.equal(s.period.label, '01.01.–30.04.2025')
   assert.equal(s.deadline, '2026-04-30')
   const st = s.statements.find((x) => x.tenancyId === 't1') ?? assert.fail('t1 fehlt')
-  // Im Rumpf rechnet der Vorschlag kalte Kosten nach Tagen hoch (#208, PR 3): 240 € Anteil
-  // (60 von 100 m² aus 400 €) · 365/120 / 12 = 60,83 € → 61 €.
-  assert.deepEqual([st.days, st.periodEnd, st.prepaymentCents, st.suggestedMonthlyCents], [120, '2025-04-30', 80000, 6100])
+  // Im Rumpf rechnet der Vorschlag kalte Kosten mit den Tagen ihres Leistungszeitraums hoch (#208,
+  // PR 3). Diese Grundsteuer hat keinen; sie gilt als Jahresbetrag (Durchsicht von #226, M3):
+  // 240 € Anteil (60 von 100 m² aus 400 €) / 12 = 20 €, mit Hinweis.
+  assert.deepEqual([st.days, st.periodEnd, st.prepaymentCents, st.suggestedMonthlyCents], [120, '2025-04-30', 80000, 2000])
+  assert.ok(s.notices.some((n) => n.code === 'prepayment.annual-assumed'))
   const rueckstand = s.notices.find((n) => n.code === 'prepayment.arrears' && n.subject?.id === 't1') ?? assert.fail('kein Hinweis auf den Rückstand')
   assert.match(rueckstand.text, /^Im Mietkonto 01\.01\.–30\.04\.2025 von t1 \(EG\) sind 400,00 € offen\./)
   // Das Mietkonto selbst bleibt beim Kalenderjahr (Entwurf 3.11).

@@ -25,12 +25,12 @@
 import { degreeDayPermille, unionDays, unionOf, yearDaysFrom, type DayRange } from '../../shared/degreeDays.ts'
 import { HEATING_CATEGORY } from '../../shared/heating.ts'
 import type { DegreeDayTable } from '../../shared/law/heizkostenv.ts'
-import { periodDays } from '../../shared/period.ts'
 import type { BillingPeriod } from '../../shared/types.ts'
 import type { SnapshotCostItem } from './snapshot.ts'
 
 export type AnnualBasis =
-  | { ok: true; factors: Map<string, number> }
+  // `annualAssumed`: kalte Positionen ohne Leistungszeitraum, als Jahresbetrag genommen (M3).
+  | { ok: true; factors: Map<string, number>; annualAssumed: string[] }
   | { ok: false; reason: 'unmarked' | 'delivery'; costItemId: string }
 
 type Previous = { period: BillingPeriod; items: readonly SnapshotCostItem[] }
@@ -61,10 +61,33 @@ export function annualFactors(
   degreeDays: () => DegreeDayTable,
 ): AnnualBasis {
   const factors = new Map<string, number>()
-  const byDays = yearDaysFrom(period.from) / periodDays(period)
   const heating = items.filter((c) => c.category === HEATING_CATEGORY)
-  for (const c of items) if (c.category !== HEATING_CATEGORY) factors.set(c.id, byDays)
-  if (heating.length === 0) return { ok: true, factors }
+  // Kalte Kosten (Durchsicht von #226, M3): nach den Tagen ihres Leistungszeitraums, die im Rumpf
+  // liegen, gleichartige über die Vereinigung (wie D3). Eine Aprilrechnung steht für 30 Tage und
+  // nicht für die 120 des Rumpfs; zwei Rechnungen derselben Art für Januar/Februar und März/April
+  // zusammen für 120 Tage und nicht je für ein Jahr. Ohne Leistungszeitraum weiß Mietfuchs nicht,
+  // welchen Teil des Jahres die Rechnung abdeckt, und nimmt sie als Jahresbetrag (Hinweis in calc.ts).
+  const annualAssumed: string[] = []
+  const coldGroups = new Map<string, { item: SnapshotCostItem; range: DayRange }[]>()
+  for (const c of items) {
+    if (c.category === HEATING_CATEGORY) continue
+    const r = rangeOf(c)
+    const own = r === null ? null : { from: r.from > period.from ? r.from : period.from, to: r.to < period.to ? r.to : period.to }
+    if (own === null || own.from > own.to) {
+      // Ein Leistungszeitraum ganz außerhalb ist ein Fehler der Zuordnung (`period.item-outside`);
+      // auch dann gilt der Betrag als Jahresbetrag.
+      factors.set(c.id, 1)
+      if (r === null) annualAssumed.push(c.id)
+      continue
+    }
+    coldGroups.set(kindOf(c), [...(coldGroups.get(kindOf(c)) ?? []), { item: c, range: own }])
+  }
+  for (const group of coldGroups.values()) {
+    const union = unionOf(group.map((g) => g.range))
+    const factor = yearDaysFrom(union[0]?.from ?? period.from) / unionDays(union)
+    for (const g of group) factors.set(g.item.id, factor)
+  }
+  if (heating.length === 0) return { ok: true, factors, annualAssumed }
 
   const fuel = heating.filter((c) => c.heatingPart === 'fuel')
   const first = heating[0]
@@ -99,5 +122,5 @@ export function annualFactors(
     }
     for (const c of group) factors.set(c.id, factor)
   }
-  return { ok: true, factors }
+  return { ok: true, factors, annualAssumed }
 }

@@ -781,15 +781,22 @@ eines Archivs ebenso (`orphanPeriodKeys`). Die Frist kommt vom Server (`Settleme
 und `PUT …/period`); er bekommt die ganzen neuen Regeln und vergleicht sie mit den alten. Ein
 abgeschlossener Zeitraum, der sich änderte, sperrt (409); Jahreskorrekturen werden neu erfasst, wenn
 ein Mietverhältnis danach Monate in mehr als einem oder einem anders geschnittenen Zeitraum hat
-(eine gezahlte Summe lässt sich nicht verteilen), ohne Antwort wird nicht gespeichert. **Kalte
+(eine gezahlte Summe lässt sich nicht verteilen), ohne Antwort wird nicht gespeichert. Das Jahr der
+Zahlung jeder Position, die in einen Zeitraum über zwei Kalenderjahre gelangt oder deren Zeitraum
+dorthin wächst, fragt die Vorschau, vorbelegt und in die Spanne geklemmt; verschoben wird durch
+dieselbe Schreibprüfung wie beim Speichern, eine gescheiterte ist eine 409 mit Vorschau. Die
+Vorschau trägt eine Marke (`token`); stimmt sie beim Wechsel nicht mehr, gibt es 409 mit der neuen. **Kalte
 Rechnungen mit Leistungszeitraum über zwei Zeiträume werden beim Speichern nach Tagen aufgeteilt**
+(ein Teil wird danach nur berichtigt: Leistungszeitraum und Zeitraum eines Teils ändert weder das
+Speichern noch das Aufteilen, `isSplitPart` in repository.ts)
 ([server/src/serviceSplit.ts](server/src/serviceSplit.ts), Leistungsprinzip); jeder Teil trägt den
 ganzen Leistungszeitraum, daran erkennt die Abrechnung ihn. Heizkosten nie (VIII ZR 156/11), dort
 warnt `period.heating-mismatch`. `tax_year` ist das Jahr der Zahlung, Pflicht nur bei einem
 Zeitraum über zwei Kalenderjahre; die Steuerübersicht eines solchen Objekts schöpft aus allen
 Abrechnungen, die das Jahr berühren (`taxPartsFor` in calc.ts). **Der Vorschlag nach § 560 im
 Rumpf** rechnet je Position einen Jahresfaktor ([server/src/prepaymentSuggestion.ts](server/src/prepaymentSuggestion.ts)):
-kalt nach Tagen, Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
+kalt nach den Tagen ihres Leistungszeitraums im Rumpf, gleichartige über die Vereinigung, ohne
+Leistungszeitraum als Jahresbetrag mit Hinweis `prepayment.annual-assumed`; Brennstoff (`heating_part = 'fuel'`) nach Gradtagen aus `hkv.degree-days` über die
 Vereinigung der Leistungszeiträume, feste Heizpositionen nach den Tagen ihres Leistungszeitraums;
 fehlt für den Brennstoff ein Faktor, gibt es keinen Vorschlag. Die Oberfläche hält einen **Tag** und
 keinen Schlüssel ([client/src/period.tsx](client/src/period.tsx), Logik in

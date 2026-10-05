@@ -123,7 +123,7 @@ test('Heizpositionen ohne Kennzeichnung als Brennstoff: kein Vorschlag, Hinweis 
 })
 
 test('Nur kalte Kosten im Rumpf: nach Tagen, kein Hinweis', () => {
-  const s = settle(WINTER, '2025-01', [kalt('2025-01', 40000)])
+  const s = settle(WINTER, '2025-01', [kalt('2025-01', 40000, '2025-01-01', '2025-04-30')])
   // 400 · 365/120/12 = 101,39 → 101 €
   assert.equal(s.statements[0]?.suggestedMonthlyCents, 10100)
   assert.equal(s.notices.some((x) => x.code === 'prepayment.no-suggestion'), false)
@@ -150,4 +150,32 @@ test('Ein voller Zeitraum rechnet wie bisher', () => {
   const s = settle({ startMonth: 1, changes: [] }, '2025-01', [kalt('2025-01', 120000)])
   // 1.200 € / 12 = 100 €
   assert.equal(s.statements[0]?.suggestedMonthlyCents, 10000)
+})
+
+// Durchsicht von #226 (M3): Kalte Kosten werden mit den Tagen ihres Leistungszeitraums im Rumpf
+// hochgerechnet, gleichartige über die Vereinigung (wie D3); ohne Leistungszeitraum gar nicht.
+test('Kalt: zwei Müllrechnungen Januar/Februar und März/April zusammen über die Vereinigung, nicht je für sich (M3)', () => {
+  // 400 € über 120 Tage: 400 · 365/120 / 12 = 101,39 → 101 €. Je für sich hochgerechnet wären es
+  // 200 · 365/59 + 200 · 365/61 im Jahr, also über 200 € im Monat.
+  const items = [kalt('2025-01', 20000, '2025-01-01', '2025-02-28'), kalt('2025-01', 20000, '2025-03-01', '2025-04-30')]
+  assert.equal(vorschlag(WINTER, '2025-01', items), 10100)
+})
+
+test('Kalt: ein Teil einer Jahresrechnung zählt mit den Tagen, die im Rumpf liegen (M3)', () => {
+  // Grundsteuer 480 €, davon 157,81 € im Rumpf: 157,81 · 365/120 = 480 € im Jahr, 40 € im Monat.
+  assert.equal(vorschlag(WINTER, '2025-01', [kalt('2025-01', 15781, '2025-01-01', '2025-12-31')]), 4000)
+})
+
+test('Kalt ohne Leistungszeitraum: als Jahresbetrag, nicht hochgerechnet, mit Hinweis (M3)', () => {
+  const s = settle(WINTER, '2025-01', [kalt('2025-01', 40000)])
+  // 400 / 12 = 33,33 → 33 €
+  assert.equal(s.statements[0]?.suggestedMonthlyCents, 3300)
+  const n = s.notices.find((x) => x.code === 'prepayment.annual-assumed') ?? assert.fail('kein Hinweis')
+  assert.equal(n.level, 'hint')
+  assert.match(n.text, /„Müll“ hat keinen Leistungszeitraum/)
+})
+
+test('Kalt: eine Rechnung nur für April wird auf zwölf Monate hochgerechnet, nicht auf die 120 Tage des Rumpfs (M3)', () => {
+  // 100 € für 30 Tage: 100 · 365/30 / 12 = 101,39 → 101 €. Nach den Tagen des Rumpfs wären es 25 €.
+  assert.equal(vorschlag(WINTER, '2025-01', [kalt('2025-01', 10000, '2025-04-01', '2025-04-30')]), 10100)
 })

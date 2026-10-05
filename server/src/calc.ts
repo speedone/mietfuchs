@@ -241,6 +241,7 @@ const noticeKinds = {
   'period.heating-mismatch': { level: 'warning', title: 'Heizkosten aus einem anderen Zeitraum', terms: ['accrualPrinciple', 'heatingCostOrdinance'] },
   'period.split-by-days-meter': { level: 'hint', title: 'Verbrauch nach Tagen aufgeteilt', terms: ['accrualPrinciple', 'meterReading'] },
   'prepayment.no-suggestion': { level: 'hint', title: 'Kein Vorschlag für die Vorauszahlung', terms: ['prepayment', 'degreeDays'] },
+  'prepayment.annual-assumed': { level: 'hint', title: 'Rechnung ohne Leistungszeitraum im Rumpf', terms: ['prepayment', 'shortPeriod', 'accrualPrinciple'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -2825,6 +2826,17 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     )
     : null
   const continuing = partTenancies.some((t) => !(t.end != null && t.end <= yTo))
+  // Kalte Positionen ohne Leistungszeitraum (Durchsicht von #226, M3): als Jahresbetrag genommen,
+  // nicht hochgerechnet; der Hinweis sagt, wie es genauer wird.
+  if (shortBasis && shortBasis.ok && continuing) {
+    for (const id of shortBasis.annualAssumed) {
+      const which = items.find((c) => c.id === id)
+      if (!which) continue
+      warn('prepayment.annual-assumed',
+        `„${which.description}“ hat keinen Leistungszeitraum. Für den Vorschlag der Vorauszahlung im Rumpfzeitraum ${label} nimmt Mietfuchs den Betrag als Kosten eines ganzen Jahres und rechnet ihn nicht hoch. Deckt die Rechnung nur einen Teil des Jahres ab, tragen Sie ihren Leistungszeitraum unter „Weitere Angaben“ ein.`,
+        itemSubject(which))
+    }
+  }
   if (shortBasis && !shortBasis.ok && continuing) {
     const which = items.find((c) => c.id === shortBasis.costItemId)
     warn('prepayment.no-suggestion', shortBasis.reason === 'unmarked'
