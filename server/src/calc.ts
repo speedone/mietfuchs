@@ -3589,6 +3589,19 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     },
   }
   const tenancyEnd = new Map(partTenancies.map((t) => [t.id, t.end]))
+  // Eine CO₂-Abzugszeile (Heizung PR 6) hat keine Position und damit keinen eigenen Faktor. Sie gehört
+  // zu den Messdienstpositionen ihres Topfs (`co2:<Anlage>:<Heizperiode>`) und wird mit deren Faktor
+  // hochgerechnet, gewichtet nach den Zeilen des Mieters (Durchsicht M-4: ohne Faktor fiel sie aus
+  // dem Vorschlag, und der war zu hoch).
+  const itemById = new Map(allItems.map((c) => [c.id, c]))
+  const reliefFactor = (rows: readonly SettlementRow[], key: string, factors: ReadonlyMap<string, number>): number => {
+    const own = rows.filter((r) => {
+      const c = itemById.get(r.costItemId)
+      return c !== undefined && c.key === 'amounts' && `co2:${c.heatingPlantId ?? ''}:${c.period}` === key
+    })
+    const sum = own.reduce((a, r) => a + r.shareCents, 0)
+    return sum === 0 ? 0 : own.reduce((a, r) => a + r.shareCents * (factors.get(r.costItemId) ?? 0), 0) / sum
+  }
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
     // Eine Abrechnung nur mit Heizkosten hat keine künftige Vorauszahlung (3.7: „heatingOnly ergibt
@@ -3614,7 +3627,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     } else if (shortBasis !== null) {
       // Im Rumpf: jede Zeile mit ihrem Faktor auf zwölf Monate, dann wie im vollen Zeitraum auf die
       // Tage des Mieters bezogen (#134) und auf volle Euro gerundet.
-      const annual = st.rows.reduce((a, row) => a + row.shareCents * (shortBasis.factors.get(row.costItemId) ?? 0), 0)
+      const factorOf = (row: SettlementRow): number => (row.kind === 'co2Relief' ? reliefFactor(st.rows, row.costItemId, shortBasis.factors) : (shortBasis.factors.get(row.costItemId) ?? 0))
+      const annual = st.rows.reduce((a, row) => a + row.shareCents * factorOf(row), 0)
       st.suggestedMonthlyCents = Math.max(0, Math.round((annual * diy) / st.days / 12 / 100) * 100)
     } else {
       // Nie negativ: Überwiegen Gutschriften, gibt es keine Vorauszahlung unter 0 (Integrationsdurchsicht).

@@ -179,3 +179,21 @@ test('Kalt: eine Rechnung nur für April wird auf zwölf Monate hochgerechnet, n
   // 100 € für 30 Tage: 100 · 365/30 / 12 = 101,39 → 101 €. Nach den Tagen des Rumpfs wären es 25 €.
   assert.equal(vorschlag(WINTER, '2025-01', [kalt('2025-01', 10000, '2025-04-01', '2025-04-30')]), 10100)
 })
+
+test('Rumpf mit CO₂-Abzugszeile (Heizung PR 6, Durchsicht M-4): die Abzugszeile wird mit dem Faktor ihrer Heizkosten hochgerechnet', () => {
+  const p = of(WINTER, '2025-01')
+  const gas = { ...brennstoff('2025-01', 70000, '2025-01-01', '2025-04-30'), heatingPlantId: 'hp' }
+  const mit = computeSettlement({
+    ...snapshotOfPeriod(haus([gas]), p, previousPeriod(WINTER, p)),
+    heatingPlants: [{ id: 'hp', energy: 'gas', method: 'service', source: 'building', devicesRemote: 'unknown', devicesInstalledAfter2021: 'unknown', newDevicesInstall: null, units: null }],
+    co2Statements: [{
+      heatingPeriodId: 'h', plantId: 'hp', period: p.key, method: 'serviceShown', areaM2: null, serviceEmissionsKg: null, serviceAreaM2: null, serviceKgPerM2: null,
+      serviceLandlordPermille: null, serviceTotalCents: null, serviceLandlordCents: 7000, serviceUsersTotalCents: 70000, serviceUsersTotalApprox: false,
+      serviceUnitsCount: 1, serviceCostItemId: null, serviceSelfLandlordCents: null, serviceFuelGrossCents: null, serviceFuelNetCents: null, reliefs: [],
+    }],
+  })
+  const st = mit.statements[0] ?? assert.fail('kein Mieter')
+  assert.equal(st.totalShareCents, 63000)
+  // Dasselbe wie ohne CO₂ mit 630 € Brennstoff: Der Abzug gehört zu denselben Heizkosten.
+  assert.equal(st.suggestedMonthlyCents, vorschlag(WINTER, '2025-01', [brennstoff('2025-01', 63000, '2025-01-01', '2025-04-30')]))
+})
