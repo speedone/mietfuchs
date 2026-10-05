@@ -235,7 +235,7 @@ test('Nur ausgewiesen: eine Abzugszeile je Mieter nach seinem Anteil, zusammen 8
   assert.deepEqual([zeile.description, zeile.category, zeile.basisText], ['CO₂-Kosten: Anteil des Vermieters', HEATING_CATEGORY, 'nach Ihrem Anteil an den Heizkosten'])
   assert.match(textOf(r, 'co2.reliefs-missing'), /ta \(a\) 25,11 €, tb \(b\) 21,81 €, tc \(c\) 23,09 € und td \(d\) 17,49 €/)
   const ausweis = r.heating?.[0]?.co2?.tenants.find((t) => t.tenancyId === 'ta')
-  assert.deepEqual(ausweis, { tenancyId: 'ta', landlordCents: 2511, tenantCents: Math.round(((25000 - 8750) * 112837) / 393301), approximated: true })
+  assert.deepEqual(ausweis, { tenancyId: 'ta', landlordCents: 2511, tenantCents: Math.round(((25000 - 8750) * 112837) / 393301), approximated: true, tenantApproximated: true })
 })
 
 test('Nur ausgewiesen: die Werte laut Messdienst gelten; zu viel heißt alle nach Anteil (co2.reliefs-invalid)', () => {
@@ -245,6 +245,8 @@ test('Nur ausgewiesen: die Werte laut Messdienst gelten; zu viel heißt alle nac
   assert.deepEqual(reliefRows(laut), [['ta', -2500], ['tb', -2200], ['tc', -2300], ['td', -1750]])
   assert.ok(!codes(laut).includes('co2.reliefs-missing'))
   assert.equal(laut.statements[0]?.rows.find((row) => row.kind === 'co2Relief')?.basisText, 'laut Abrechnung des Messdienstes')
+  // Durchsicht I3: Mit dem Betrag laut Messdienst ist der Anteil des Mieters r · (100 − p) / p, nicht genähert.
+  assert.deepEqual(laut.heating?.[0]?.co2?.tenants.find((t) => t.tenancyId === 'ta'), { tenancyId: 'ta', landlordCents: 2500, tenantCents: Math.round((2500 * 650) / 350), approximated: false, tenantApproximated: false })
   const zuviel = settle({ ...vier, costItems: [messdienst(393301, BRUTTO)] }, [shownStatement({ reliefs: [{ tenancyId: 'ta', cents: 9000 }] })])
   assert.equal(zuviel.notices.find((n) => n.code === 'co2.reliefs-invalid')?.level, 'error')
   assert.deepEqual(reliefRows(zuviel), [['ta', -2511], ['tb', -2181], ['tc', -2309], ['td', -1749]])
@@ -323,6 +325,8 @@ test('Ausweis unvollständig (§ 7 Abs. 3): co2.incomplete nennt, was fehlt; nac
   const ohneAusweis = co2({ serviceUsersTotalCents: 100000, serviceLandlordCents: 500, serviceUnitsCount: 2 })
   const t = textOf(settle({ ...zwei, costItems: [gas(100500)] }, [ohneAusweis]), 'co2.incomplete')
   assert.match(t, /fehlen der CO₂-Ausstoß je Quadratmeter \(oder Ausstoß und Fläche\), der Anteil des Vermieters in Prozent und die CO₂-Kosten insgesamt/)
+  // Durchsicht I3: Stehen sie in der Abrechnung des Messdienstes, ist die Beilage der Ausweis.
+  assert.match(t, /Stehen sie in der Abrechnung des Messdienstes, legen Sie diese den Mietern bei/)
   assert.match(t, /hier: ta \(a\) 18,00 € und tb \(b\) 12,00 €/)
   assert.ok(!codes(settle({ ...zwei, costItems: [gas(100000)] }, [ohneAusweis])).includes('co2.incomplete'))
   const voll = settle({ ...zwei, costItems: [gas(100500)] }, [vollstaendig])

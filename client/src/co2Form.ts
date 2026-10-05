@@ -29,6 +29,8 @@ export type Co2Form = {
   usersTotalApprox: boolean // „Ich finde diese Zeile nicht“
   vacancyTotal: string // Beträge leerer oder nicht eingetragener Einheiten (nur ohne S)
   kgPerM2: string
+  emissionsKg: string // CO₂-Ausstoß insgesamt laut Abrechnung
+  serviceArea: string // Wohnfläche laut Abrechnung
   landlordPercent: string
   totalCo2: string // C
   landlordCo2: string // L
@@ -42,7 +44,8 @@ export type Co2Form = {
 export type Co2Context = { items: HeatingPeriodView['items']; unitsCount: number }
 
 const centsText = (c: number | null): string => (c === null ? '' : (c / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
-const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 4 }))
+// Ohne Tausenderpunkt: „5.421“ läse parseDecimal wie technisch geschrieben als 5,421.
+const numberText = (n: number | null): string => (n === null ? '' : n.toLocaleString('de-DE', { maximumFractionDigits: 4, useGrouping: false }))
 const serviceItemsOf = (ctx: Co2Context) => ctx.items.filter((i) => i.key === 'amounts')
 
 // Eine Zahl in deutscher („46,4“, „1.046,4“) oder technischer Schreibweise („46.4“).
@@ -62,6 +65,8 @@ export function co2ToForm(st: Co2Statement | null, ctx: Co2Context): Co2Form {
     usersTotalApprox: st?.serviceUsersTotalApprox ?? false,
     vacancyTotal: st?.serviceUsersTotalApprox && S !== null ? centsText(Math.max(0, S - enteredCentsOf(serviceItemsOf(ctx)))) : '',
     kgPerM2: numberText(st?.serviceKgPerM2 ?? null),
+    emissionsKg: numberText(st?.serviceEmissionsKg ?? null),
+    serviceArea: numberText(st?.serviceAreaM2 ?? null),
     landlordPercent: permille === null ? '' : numberText(permille / 10),
     totalCo2: centsText(st?.serviceTotalCents ?? null),
     landlordCo2: centsText(st?.serviceLandlordCents ?? null),
@@ -106,6 +111,8 @@ export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, 
   }
   const S = usersTotalOf(form, ctx)
   const L = cents(form.landlordCo2, 'davon Vermieter')
+  const area = decimal(form.serviceArea, 'Wohnfläche laut Abrechnung (m²)')
+  if (area !== null && area <= 0) errors.push('Bitte prüfen Sie „Wohnfläche laut Abrechnung (m²)“: eine Zahl größer als 0.')
   const percent = decimal(form.landlordPercent, 'Anteil des Vermieters (%)')
   const units = Number(form.unitsCount)
   const unitsCount = Number.isInteger(units) && units > 0 ? units : null
@@ -116,6 +123,8 @@ export function co2Body(form: Co2Form, ctx: Co2Context): { body: Record<string, 
     serviceLandlordCents: L,
     serviceUnitsCount: unitsCount,
     serviceKgPerM2: decimal(form.kgPerM2, 'CO₂-Ausstoß je m² und Jahr (kg)'),
+    serviceEmissionsKg: decimal(form.emissionsKg, 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)'),
+    serviceAreaM2: area !== null && area > 0 ? area : null,
     serviceLandlordPermille: percent === null ? null : Math.round(percent * 10),
     serviceTotalCents: cents(form.totalCo2, 'CO₂-Kosten insgesamt'),
     serviceSelfLandlordCents: cents(form.selfLandlord, 'davon für Ihre Wohnung'),
@@ -150,5 +159,8 @@ export function probeLine(form: Co2Form, ctx: Co2Context): { text: string; ok: b
   if (S === null || L === null || !Number.isInteger(units) || units < 1) return null
   const p = serviceProbe({ deducted: form.answer === 'deducted', items: serviceItemsOf(ctx), usersTotalCents: S, landlordCents: L, unitsCount: units, approx: form.usersTotalApprox })
   const entered = p.enteredOk ? '' : ` · Einzel- und Eigenbeträge zusammen ${fmtEuro(p.enteredCents)}, mehr als S`
-  return { text: `Ihre Positionen: ${fmtEuro(p.itemsCents)} · erwartet: ${fmtEuro(p.expectedCents)} ${p.ok ? '✓' : '✗'}${entered}`, ok: p.ok }
+  // Geht sie nicht auf, nennt die Zeile beide Lesarten (Durchsicht M3): Oft ist nur die Antwort auf
+  // die Frage nach der Abzugszeile falsch.
+  const both = p.itemsOk ? '' : ` · mit Abzugszeile erwartet S + L = ${fmtEuro(S + L)}, ohne Abzugszeile S = ${fmtEuro(S)}`
+  return { text: `Ihre Positionen: ${fmtEuro(p.itemsCents)} · erwartet: ${fmtEuro(p.expectedCents)} ${p.ok ? '✓' : '✗'}${both}${entered}`, ok: p.ok }
 }

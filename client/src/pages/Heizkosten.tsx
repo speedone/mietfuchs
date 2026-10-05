@@ -9,6 +9,7 @@ import { useProperty, withProperty } from '../property'
 import PageHeader from '../components/PageHeader'
 import Co2Card from '../components/Co2Card'
 import HotWaterCard from '../components/HotWaterCard'
+import Term from '../components/Term'
 import { co2FirstPeriodStart } from '../../../shared/law/co2kostaufg.ts'
 import { germanDate } from '../../../shared/law/register.ts'
 
@@ -45,7 +46,7 @@ export default function Heizkosten({ units, tenancies }: { units: Unit[]; tenanc
         <div key={plant.id}>
           {plant.method !== 'service' ? (
             <div className="card">
-              <p>Die Karten dieser Seite gelten für eine Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Bei freien Schlüsseln teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf.</p>
+              <p>Die Karten dieser Seite gelten für eine Heizanlage, die ein Messdienst oder die Gemeinschaft abrechnet. Verteilen Sie die Heizkosten selbst nach einem Umlageschlüssel <Term id="allocationKey" /> (bei der Frage, wer abrechnet: „Niemand“), teilt Mietfuchs die CO₂-Kosten erst mit einer späteren Version selbst auf.</p>
             </div>
           ) : (
             (views[plant.id] ?? []).map((v) => (

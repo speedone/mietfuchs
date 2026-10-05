@@ -268,8 +268,14 @@ export function tenantLines(st: Co2Statement, shares: readonly ReliefShare[], pr
     const g = given.get(s.tenancyId)
     const landlordCents = booked ? booked.cents : g ?? (S > 0 ? Math.round((L * s.cents) / S) : 0)
     const approximated = booked ? booked.approximated : g === undefined
-    const tenantCents = st.serviceTotalCents !== null && S > 0 ? Math.round(((st.serviceTotalCents - L) * s.cents) / S) : null
-    return { tenancyId: s.tenancyId, landlordCents, tenantCents, approximated }
+    // Mit dem Betrag laut Messdienst und dem Anteil in Promille folgt der Anteil des Mieters genau:
+    // r · (1000 − ‰) / ‰ (Durchsicht I3). Sonst genähert nach dem Anteil an den Heizkosten.
+    const p = st.serviceLandlordPermille
+    const exact = !approximated && p !== null && p > 0 && p < 1000
+    const tenantCents = exact
+      ? Math.round((landlordCents * (1000 - p)) / p)
+      : st.serviceTotalCents !== null && S > 0 ? Math.round(((st.serviceTotalCents - L) * s.cents) / S) : null
+    return { tenancyId: s.tenancyId, landlordCents, tenantCents, approximated, tenantApproximated: !exact }
   })
 }
 

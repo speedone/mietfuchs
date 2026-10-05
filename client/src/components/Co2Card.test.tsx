@@ -62,3 +62,11 @@ test('Speichern schickt die Methode und die Beträge an die Heizperiode', async 
   expect(sent[0]?.url).toBe('/api/heating-plants/hp/periods/2025-01/co2')
   expect(sent[0]?.body).toMatchObject({ method: 'serviceShown', serviceUsersTotalCents: 100500, serviceLandlordCents: 500, serviceUnitsCount: 1 })
 })
+
+test('Felder mit Fundort statt Formelzeichen (Durchsicht M3, I3)', () => {
+  render(<Co2Card view={view(shown)} tenancies={TENANCIES} unitsCount={1} onSaved={() => {}} />)
+  expect(screen.queryByText(/\(S\)/)).toBeNull()
+  expect(screen.getByText(/Summe der Nutzerkosten Heizungsanlage/)).toBeTruthy()
+  expect(screen.getByLabelText(/CO₂-Ausstoß insgesamt laut Abrechnung \(kg\)/)).toBeTruthy()
+  expect(screen.getByLabelText(/Wohnfläche laut Abrechnung \(m²\)/)).toBeTruthy()
+})

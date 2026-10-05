@@ -139,3 +139,9 @@ test('CO₂ und Warmwasser (Heizung PR 6): Beispiele nachgerechnet, Rechtszahlen
   assert.match(GLOSSARY.hotWaterShare.example, /1\.000 €.*um 15 % kürzen, also um 150 €/s)
   assert.equal(GLOSSARY.hotWaterShare.norm, '§ 9 Abs. 2 Satz 1, § 12 Abs. 1 Satz 1 HeizkostenV; BGH, Urteil vom 12.01.2022, VIII ZR 151/20')
 })
+
+test('Nutzeinheit (Heizung PR 6, Durchsicht M3): Beispiel mit dem Spielraum der Probe', () => {
+  const t = GLOSSARY.serviceUnits
+  assert.equal(4 * 2, 8)
+  assert.match(t.example, /vier Nutzeinheiten.*8 ct/s)
+})

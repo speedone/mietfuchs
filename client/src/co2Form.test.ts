@@ -65,3 +65,19 @@ test('Pflichtangaben und Zahlen: S, L, Nutzeinheiten; deutsche und technische Sc
   // Hat der Messdienst nicht aufgeteilt, genügt die Antwort.
   expect(co2Body({ ...co2ToForm(null, ctx), answer: 'unsplit' }, ctx)).toMatchObject({ body: { method: 'selfAfterService' } })
 })
+
+test('Ausstoß und Fläche laut Messdienst (Durchsicht I3): zurück ins Formular und in den Rumpf', () => {
+  const f = co2ToForm({ ...gespeichert, serviceEmissionsKg: 5421, serviceAreaM2: 200.6 }, ctx)
+  expect([f.emissionsKg, f.serviceArea]).toEqual(['5421', '200,6'])
+  const r = co2Body(f, ctx)
+  if (!('body' in r)) throw new Error(r.error)
+  expect(r.body).toMatchObject({ serviceEmissionsKg: 5421, serviceAreaM2: 200.6 })
+  expect(co2Body({ ...f, serviceArea: '0' }, ctx)).toEqual({ error: 'Bitte prüfen Sie „Wohnfläche laut Abrechnung (m²)“: eine Zahl größer als 0.' })
+})
+
+test('Probe ✗ nennt beide Lesarten (Durchsicht M3)', () => {
+  const f = { ...co2ToForm(gespeichert, ctx), answer: 'shown' as const }
+  const p = probeLine(f, ctx)
+  expect(p?.ok).toBe(false)
+  expect(p?.text).toContain(`mit Abzugszeile erwartet S + L = ${fmtEuro(393301)}, ohne Abzugszeile S = ${fmtEuro(384551)}`)
+})

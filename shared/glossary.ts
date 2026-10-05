@@ -208,6 +208,12 @@ export const GLOSSARY = {
     norm: '§ 5 Abs. 1 CO2KostAufG',
     needed: 'Nur, wenn Sie die Einstufung prüfen oder die Fläche des Messdienstes von Ihrer abweicht.',
   },
+  serviceUnits: {
+    title: 'Nutzeinheit',
+    short: 'Jede Wohnung oder sonstige Einheit, die der Messdienst in seiner Heizkostenabrechnung einzeln abrechnet, auch eine leerstehende und Ihre eigene. Die Zahl steht in der Abrechnung, meist in der Kostenaufstellung oder auf dem Deckblatt.',
+    example: 'Ein Haus mit vier Wohnungen, eine davon steht leer: Der Messdienst rechnet vier Nutzeinheiten ab. Für die Probe in der Karte „CO₂-Kosten“ darf die Summe der eingetragenen Beträge wegen der Rundung je Nutzeinheit um bis zu 4 · 2 ct = 8 ct über der gedruckten Summe liegen.',
+    needed: 'Nur für die Probe der CO₂-Angaben auf der Seite Heizkosten.',
+  },
   co2Deducted: {
     title: 'Abzugszeile (Vorwegabzug)',
     short: 'Manche Messdienste ziehen den CO₂-Anteil des Vermieters schon in der Kostenaufstellung ab, mit einer Zeile wie „Abzüglich CO₂-Kosten Vermieter“. Die Beträge der Mieter sind dann schon entlastet, und bezahlt haben Sie die Summe der Nutzerkosten plus diesen Anteil.',

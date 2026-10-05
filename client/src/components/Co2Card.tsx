@@ -1,13 +1,13 @@
 // Die Karte „CO₂-Kosten“ einer Heizperiode (Heizung PR 6, Entwurf 11.3). Die Logik steht in
 // co2Form.ts; hier wird nur gezeigt und gespeichert.
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { api, errorText } from '../api'
 import { useConfirm, useToast } from './feedback'
 import Term from './Term'
 import { CO2_ANSWER_OPTIONS, CO2_EXAMPLE, CO2_QUESTION, co2Body, co2ToForm, probeLine, type Co2Form } from '../co2Form'
 import type { HeatingPeriodView, Tenancy } from '../types'
 
-type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
+type TextKey = 'usersTotal' | 'vacancyTotal' | 'kgPerM2' | 'emissionsKg' | 'serviceArea' | 'landlordPercent' | 'totalCo2' | 'landlordCo2' | 'selfLandlord' | 'unitsCount' | 'fuelGross' | 'fuelNet'
 
 export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view: HeatingPeriodView; tenancies: Tenancy[]; unitsCount: number; onSaved: () => void }) {
   const ctx = { items: view.items, unitsCount }
@@ -59,9 +59,9 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
     }
   }
 
-  const text = (key: TextKey, label: string) => (
+  const text = (key: TextKey, label: string, term?: ReactNode) => (
     <label className="field">
-      {label}
+      {label}{term}
       <input value={form[key]} inputMode="decimal" disabled={view.closed} onChange={(e) => set(key, e.target.value)} />
     </label>
   )
@@ -88,15 +88,23 @@ export default function Co2Card({ view, tenancies, unitsCount, onSaved }: { view
       {service && (
         <>
           <div className="row">
-            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten') : text('usersTotal', 'Summe der Kosten aller Nutzer (S)')}
+            {form.usersTotalApprox ? text('vacancyTotal', 'Beträge leerer oder nicht eingetragener Einheiten') : text('usersTotal', 'Summe der Kosten aller Nutzer')}
             <label className="field">
               <input type="checkbox" checked={form.usersTotalApprox} disabled={view.closed} onChange={(e) => set('usersTotalApprox', e.target.checked)} />
               Ich finde diese Zeile nicht
             </label>
-            {text('unitsCount', 'Nutzeinheiten laut Abrechnung')}
+            {text('unitsCount', 'Nutzeinheiten laut Abrechnung', <> <Term id="serviceUnits" /></>)}
           </div>
+          {!form.usersTotalApprox && (
+            <p className="muted">
+              Die gedruckte Summe für Heizung und Warmwasser aller Nutzer, bei einer Abzugszeile nach dem Abzug. Bei Techem heißt die Zeile
+              „Summe der Nutzerkosten Heizungsanlage“; bei anderen Messdiensten steht sie in der Kostenaufstellung unter der Verteilung.
+            </p>
+          )}
           <div className="row">
-            {text('kgPerM2', 'CO₂-Ausstoß je m² und Jahr (kg)')}
+            {text('kgPerM2', 'CO₂-Ausstoß je m² und Jahr (kg)', <> <Term id="co2Stage" /></>)}
+            {text('emissionsKg', 'CO₂-Ausstoß insgesamt laut Abrechnung (kg)')}
+            {text('serviceArea', 'Wohnfläche laut Abrechnung (m²)', <> <Term id="co2Area" /></>)}
             {text('landlordPercent', 'Anteil des Vermieters (%)')}
             {text('totalCo2', 'CO₂-Kosten insgesamt')}
             {text('landlordCo2', 'davon Vermieter')}
