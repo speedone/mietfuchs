@@ -59,8 +59,20 @@ export function alreadyCarried(items: readonly CostItem[], row: Pick<CarryRow, '
     })
 }
 
-export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext): CarryRow[] {
+// `target`: der Zeitraum, in den übernommen wird. Reicht er über zwei Kalenderjahre, braucht jede
+// Zeile ein Jahr der Zahlung (Entwurf 3.10): das der Vorlage, um den Abstand der Zeiträume
+// verschoben und in die erlaubte Spanne geklemmt; trägt die Vorlage keines (etwa direkt nach einem
+// Wechsel), das Jahr, in dem das Ziel beginnt, wie beim Anlegen (Durchsicht von #226, I2).
+export function carryOverRows(items: readonly CostItem[], at: number | PeriodContext, target?: Pick<BillingPeriod, 'from' | 'to'>): CarryRow[] {
   const ctx = typeof at === 'number' ? calendarContext(at) : at
+  const taxYearOf = (source: CostItem): string => {
+    if (target === undefined) return source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : ''
+    if (!spansTwoYears(target)) return ''
+    const start = Number(target.from.slice(0, 4))
+    const end = Number(target.to.slice(0, 4)) + 1
+    const wanted = source.taxYear !== undefined ? source.taxYear + ctx.year - ctx.previousYear : start
+    return String(Math.min(Math.max(wanted, start), end))
+  }
   return items.filter((i) => i.period === ctx.previous).map((source) => {
     const description = replaceYear(source.description, ctx.previousYear, ctx.year)
     return {
@@ -73,7 +85,7 @@ export function carryOverRows(items: readonly CostItem[], at: number | PeriodCon
       checked: false,
       already: alreadyCarried(items, { source, description, vendor: source.vendor ?? '' }, ctx),
       inline: source.key !== 'amounts',
-      taxYear: source.taxYear !== undefined ? String(source.taxYear + ctx.year - ctx.previousYear) : '',
+      taxYear: taxYearOf(source),
     }
   })
 }

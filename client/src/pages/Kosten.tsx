@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { AssessmentView, CostItem, CostKey, ExternalMeasure, ExtractResult, Meter, MeterType, Settlement, Settings, SplitPreviewPart, Tenancy, Unit } from '../types'
-import { calendarPeriod, periodContext, periodOfKey } from '../../../shared/period.ts'
+import { calendarPeriod, periodContext, periodOfKey, spansTwoYears } from '../../../shared/period.ts'
 import { CATEGORIES, KEY_LABELS, METER_TYPE_LABELS, isNotAllocable, usageOf } from '../types'
 import {
   EMPTY_ITEM_FORM,
@@ -39,6 +39,7 @@ import {
   type KeyContext,
 } from '../costForm'
 import CostPeriodFields from '../components/CostPeriodFields'
+import TaxYearSelect from '../components/TaxYearSelect'
 import { HEATING_CATEGORY } from '../../../shared/heating.ts'
 import { alreadyCarried, carryKeyDetails, carryOverBody, carryOverForm, carryOverRows, withCarryAmount, type CarryRow } from '../carryOver'
 import { api, errorText, fmtDate, fmtEuro, parseEuro } from '../api'
@@ -394,7 +395,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
         <div className="row">
           <PeriodSelect />
           {previousCount > 0 && !carry && (
-            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at)) }}>
+            <button className="btn secondary" onClick={() => { setError(''); setCarry(carryOverRows(items, at, period)) }}>
               Aus {at.previousLabel} übernehmen …
             </button>
           )}
@@ -424,6 +425,7 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                     (Table.tsx), und das Feld, das man ausfüllen muss, soll ohne Wischen dastehen. */}
                 <th className="num">Betrag {label} €</th>
                 <th className="num">§35a Lohn €</th>
+                {spansTwoYears(period) && <th>Jahr der Zahlung (Steuer)</th>}
                 <th>Beschreibung</th>
                 <th>Umlageschlüssel</th>
                 <th><span className="sr-only">Formular</span></th>
@@ -451,6 +453,12 @@ export default function Kosten({ units, settings, tenancies = [], focus, onFocus
                   <td className="num">
                     {r.inline && <input aria-label={`§35a-Lohn ${label} für ${r.description}`} value={r.labor35a} onChange={(e) => updateCarry(i, { labor35a: e.target.value })} placeholder="—" inputMode="decimal" style={{ width: 90, textAlign: 'right' }} />}
                   </td>
+                  {/* Reicht der Zeitraum über zwei Kalenderjahre, ist das Jahr der Zahlung Pflicht (#208, Durchsicht von #226, I2). */}
+                  {spansTwoYears(period) && (
+                    <td>
+                      {r.inline && <TaxYearSelect label={`Jahr der Zahlung für ${r.description}`} value={r.taxYear ?? ''} years={taxYearOptions(year)} onChange={(v) => updateCarry(i, { taxYear: v })} />}
+                    </td>
+                  )}
                   <td><input aria-label="Beschreibung" value={r.description} onChange={(e) => updateCarry(i, { description: e.target.value })} style={{ width: '100%', minWidth: 200 }} /></td>
                   <td>
                     {keyListText(r.source, units)}
