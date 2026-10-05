@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { openDatabase, type OpenedDatabase } from '../src/db/open.ts'
 import { applyPeriodChange, monthsText, previewPeriodChange } from '../src/db/periodChange.ts'
-import { closeSettlement, createEntity, listCollection, listProperties, PeriodError } from '../src/db/repository.ts'
+import { closeSettlement, createEntity, listCollection, listProperties, PeriodError, updateEntity } from '../src/db/repository.ts'
 import { assessments } from '../src/db/schema.ts'
 import { periodKey } from '../../shared/period.ts'
 import type { CostItem, PeriodChangePreview, Tenancy } from '../../shared/types.ts'
@@ -171,5 +171,47 @@ test('Eine Auswertung wandert auf den Zeitraum mit der größten Überschneidung
     await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, {}, ids, TODAY))
     const [row] = await opened.read((db) => db.select().from(assessments))
     assert.equal(row?.requestedPeriod, '2026-05')
+  })
+})
+
+// Durchsicht von #222: Die Schreibprüfungen verlangen, dass jeder gespeicherte Schlüssel einen
+// Zeitraum des Objekts bezeichnet. Bliebe nach dem Wechsel einer verwaist, scheiterte danach jedes
+// Speichern dieses Mietverhältnisses oder dieser Position.
+async function everythingSaves(opened: OpenedDatabase): Promise<void> {
+  for (const t of await tenancies(opened)) await opened.write((db) => updateEntity(db, 'tenancies', t.id, { notes: 'nach dem Wechsel' }))
+  for (const c of await items(opened)) await opened.write((db) => updateEntity(db, 'costItems', c.id, { vendor: 'nach dem Wechsel' }))
+}
+
+test('Nach einem Wechsel lässt sich jedes Mietverhältnis und jede Position speichern, auch nach dem Entfernen des Wechsels', async () => {
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, ids, TODAY))
+    await everythingSaves(opened)
+    const zurueck = await opened.write((db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: [] }, {
+      groups: { '2025-05': '2025-01' }, overrides: { 't-a': { '2025-01': 220000, '2026-01': null } },
+    }, ids, TODAY))
+    assert.ok(zurueck && 'property' in zurueck, zurueck && 'error' in zurueck ? zurueck.error : 'kein Objekt')
+    await everythingSaves(opened)
+    const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer')
+    assert.deepEqual(grundsteuer.map((c) => c.period), ['2025-01', '2025-01'])
+    assert.equal(grundsteuer.reduce((a, c) => a + c.amountCents, 0), 48000)
+  })
+})
+
+test('Ein schon aufgeteilter Teil wird beim nächsten Wechsel nur über seinen eigenen Anteil geteilt', async () => {
+  // Jeder Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist aber nur der Anteil
+  // seines Zeitraums. Würde er über den ganzen Leistungszeitraum neu geteilt, landete ein Teil des
+  // Mai-bis-Dezember-Betrags noch einmal in Januar bis April.
+  await withDatabase(async (opened) => {
+    await bestand(opened)
+    await opened.write((db) => applyPeriodChange(db, 'objekt-1', MAI_AB_2025, { groups: { '2025-01': '2025-01' }, overrides: { 't-a': { '2025-01': 70000, '2025-05': 240000 } } }, ids, TODAY))
+    const juli = await opened.write((db) => applyPeriodChange(db, 'objekt-1', { startMonth: 1, changes: ['2025-07'] }, {
+      overrides: { 't-a': { '2025-01': 120000, '2025-07': null } },
+    }, ids, TODAY))
+    assert.ok(juli && 'property' in juli, juli && 'error' in juli ? juli.error : 'kein Objekt')
+    const grundsteuer = (await items(opened)).filter((c) => c.category === 'Grundsteuer').map((c) => [c.period, c.amountCents]).sort()
+    // Mai und Juni: 61 von 245 Tagen des Teils über 32.219 Cent.
+    assert.deepEqual(grundsteuer, [['2025-01', 15781], ['2025-01', 8022], ['2025-07', 24197]])
+    await everythingSaves(opened)
   })
 })

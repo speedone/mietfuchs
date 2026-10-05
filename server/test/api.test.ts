@@ -5440,7 +5440,7 @@ test('Zeitraum (#208): die Jahreszahl nur beim Kalenderobjekt, JJJJ-MM mit Zeitr
 
     const alt = await fetch(`${s.base}/api/settlement/2025${q}`)
     assert.equal(alt.status, 404)
-    assert.equal(await errorFrom(alt), 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026?')
+    assert.equal(await errorFrom(alt), 'Den Zeitraum 2025 gibt es für dieses Objekt nicht; meinen Sie 2025/2026 (2025-05)?')
     const neu = await s.api<Settlement>(`/api/settlement/2025-05${q}`)
     assert.deepEqual([neu.period.from, neu.period.to, neu.period.label, neu.deadline, neu.daysInYear], ['2025-05-01', '2026-04-30', '2025/2026', '2027-04-30', 365])
     assert.equal((await fetch(`${s.base}/api/settlement/2025-13${q}`)).status, 400)

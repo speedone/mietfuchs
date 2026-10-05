@@ -190,10 +190,15 @@ const orList = (items: string[]): string =>
 // `JJJJ-MM`, oder die nackte Jahreszahl **nur bei einem reinen Kalenderobjekt** (G-C6). Sonst nennt
 // die Ablehnung, was gemeint sein könnte: Ein Tab von vor einem Wechsel bekäme sonst still den
 // Rumpf, der zufällig im Januar beginnt.
+// Bezeichnung und Schlüssel: „2024 (2024-01)“. Die Bezeichnung allein reicht nicht, denn ein
+// Zeitraum vor einem Wechsel heißt wie die Jahreszahl, die gerade abgelehnt wird (Durchsicht von
+// #222, M4); die Route erwartet den Schlüssel.
+const labelWithKey = (p: BillingPeriod): string => `${periodLabel(p)} (${p.key})`
+
 export function resolvePeriodParam(rules: PeriodRules, text: string): PeriodResolution {
   if (/^\d{4}$/.test(text)) {
     if (isCalendarRules(rules)) return { period: calendarYearPeriod(Number(text)) }
-    const starting = periodsBetween(rules, `${text}-01-01`, `${text}-12-31`).filter((p) => p.from.startsWith(`${text}-`)).map(periodLabel)
+    const starting = periodsBetween(rules, `${text}-01-01`, `${text}-12-31`).filter((p) => p.from.startsWith(`${text}-`)).map(labelWithKey)
     return { status: 404, error: `Den Zeitraum ${text} gibt es für dieses Objekt nicht; meinen Sie ${orList(starting)}?` }
   }
   const key = parsePeriodKey(text)
@@ -203,7 +208,7 @@ export function resolvePeriodParam(rules: PeriodRules, text: string): PeriodReso
   const month = MONTH_NAMES[Number(key.slice(5, 7)) - 1] ?? key.slice(5, 7)
   return {
     status: 404,
-    error: `Einen Abrechnungszeitraum, der im ${month} ${key.slice(0, 4)} beginnt, gibt es für dieses Objekt nicht; meinen Sie ${periodLabel(periodContaining(rules, `${key}-01`))}?`,
+    error: `Einen Abrechnungszeitraum, der im ${month} ${key.slice(0, 4)} beginnt, gibt es für dieses Objekt nicht; meinen Sie ${labelWithKey(periodContaining(rules, `${key}-01`))}?`,
   }
 }
 

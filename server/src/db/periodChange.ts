@@ -163,7 +163,15 @@ async function planPeriodChange(db: Database, propertyId: string, rawRules: unkn
     // Ein Zeitraum, der nur wächst, behält seine Positionen: Sie gehören weiter hinein.
     if (a === null || a.status === 'grows') continue
     if (item.category !== HEATING_CATEGORY && item.serviceFrom !== undefined && item.serviceTo !== undefined) {
-      const parts = splitByService(next, { ...item, serviceFrom: item.serviceFrom, serviceTo: item.serviceTo })
+      // Geteilt wird der Teil des Leistungszeitraums, der im bisherigen Zeitraum liegt: Ein schon
+      // aufgeteilter Teil trägt den ganzen Leistungszeitraum der Rechnung, sein Betrag ist aber nur
+      // der Anteil seines Zeitraums. Über den ganzen geteilt, landete ein Teil davon ein zweites Mal
+      // dort, wo schon der andere Teil steht. Liegt der Leistungszeitraum ganz außerhalb (erlaubt,
+      // die Abrechnung warnt), wird er ganz geteilt.
+      const from = item.serviceFrom > a.old.from ? item.serviceFrom : a.old.from
+      const to = item.serviceTo < a.old.to ? item.serviceTo : a.old.to
+      const own = from <= to ? { serviceFrom: from, serviceTo: to } : { serviceFrom: item.serviceFrom, serviceTo: item.serviceTo }
+      const parts = splitByService(next, { ...item, ...own })
       if (parts.length === 1 && parts[0]?.period.key === item.period) continue
       splits.push({ item, parts })
       continue
