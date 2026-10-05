@@ -189,3 +189,16 @@ test('Weg d ohne Heizstaffel: Monate einer getrennten Heizperiode ohne Heizvorau
   assert.deepEqual(hints.map((h) => h.subject), [{ kind: 'tenancy', id: 'N' }])
   assert.match(hints[0]?.text ?? '', /N \(EG\): Die Heizkosten März bis Dezember 2026 werden getrennt abgerechnet, für diese Monate ist aber keine Heizvorauszahlung erfasst/)
 })
+
+test('Hinweise einer Heizperiode im Rumpf nennen die Heizperiode, nicht P (Durchsicht von #231, Important 4)', () => {
+  const s = settle(haus({
+    heatingPlants: [anlage({ periodChanges: ['2026-01'] })],
+    tenancies: [mieter('A', '2024-01-01', null, [{ from: '2024-01', monthlyCents: 30000 }])],
+    costItems: [heizung('rumpf', '2025-05', 80000), position('grundsteuer', '2025-01', 50000)],
+  }), '2025-01')
+  const kurz = s.notices?.find((n) => n.code === 'period.short') ?? assert.fail('kein Hinweis zum Rumpf')
+  assert.match(kurz.text, /^Die Heizperiode 01\.05\.–31\.12\.2025 ist ein Rumpfzeitraum wegen der Umstellung der Heizung\./)
+  const vorschlag = s.notices?.find((n) => n.code === 'prepayment.no-suggestion') ?? assert.fail('kein Hinweis zum Vorschlag')
+  assert.doesNotMatch(vorschlag.text, /Rumpfzeitraum 2025/)
+  assert.match(vorschlag.text, /^Für die Abrechnung 2025 schlägt Mietfuchs keine neue Vorauszahlung vor: Die Heizperiode 01\.05\.–31\.12\.2025 ist ein Rumpf, und keine Position der Heizkosten ist als Brennstoff gekennzeichnet\./)
+})

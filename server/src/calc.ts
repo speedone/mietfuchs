@@ -2904,7 +2904,10 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Nur ein Rumpf und nur Positionen mit Leistungszeitraum ergeben hier etwas; ein Bestand im
   // Kalenderjahr ohne Leistungszeitraum bekommt keinen dieser Hinweise.
   if (period.short) {
-    warn('period.short', `Rumpfzeitraum ${label} wegen der Umstellung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`)
+    // In der Teilabrechnung nach Weg b ist der Rumpf der der Heizperiode, nicht der von P (Durchsicht von #231).
+    warn('period.short', scope === 'heatingPart'
+      ? `Die Heizperiode ${label} ist ein Rumpfzeitraum wegen der Umstellung der Heizung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`
+      : `Rumpfzeitraum ${label} wegen der Umstellung. Eine Verkürzung braucht einen sachlichen Grund, etwa die Angleichung an den Messdienst. Legt Ihr Mietvertrag den Zeitraum fest, braucht die Umstellung die Zustimmung der Mieter.`)
   }
   for (const item of items) {
     if (item.serviceFrom === undefined || item.serviceTo === undefined) continue
@@ -3163,14 +3166,25 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // friert dann ein), wenn eine Brennstoffrechnung mit Leistungszeitraum da ist.
   const degreeDays = () => law(hkvDegreeDays, { period: lawPeriod }, lawLog)
   let shortBasis: AnnualBasis | null = null
+  // Der Rumpf einer Heizperiode, an dem der Vorschlag scheitert, wenn P selbst voll ist (Durchsicht von #231).
+  let failedShort: BillingPeriod | null = null
   if (period.short || mergedParts.some((p) => p.period.short)) {
     const ones = (list: readonly SnapshotCostItem[]): AnnualBasis => ({ ok: true, factors: new Map(list.map((c) => [c.id, 1])), annualAssumed: [] })
-    const bases: AnnualBasis[] = [
-      period.short
-        ? annualFactors(period, items, snapshot.previousCostItems ? { period: snapshot.previousPeriod, items: snapshot.previousCostItems } : null, degreeDays)
-        : ones(items),
-      ...mergedParts.map((p) => (p.period.short ? annualFactors(p.period, p.items, { period: p.previous, items: p.previousItems }, degreeDays) : ones(p.items))),
+    // Je Basis, woher sie kommt: `null` ist P selbst, sonst der Rumpf einer Heizperiode (für den Text).
+    const sources: { basis: AnnualBasis, short: BillingPeriod | null }[] = [
+      {
+        basis: period.short
+          ? annualFactors(period, items, snapshot.previousCostItems ? { period: snapshot.previousPeriod, items: snapshot.previousCostItems } : null, degreeDays)
+          : ones(items),
+        short: null,
+      },
+      ...mergedParts.map((p) => ({
+        basis: p.period.short ? annualFactors(p.period, p.items, { period: p.previous, items: p.previousItems }, degreeDays) : ones(p.items),
+        short: p.period.short ? p.period : null,
+      })),
     ]
+    const bases = sources.map((x) => x.basis)
+    failedShort = sources.find((x) => !x.basis.ok)?.short ?? null
     const failed = bases.find((b) => !b.ok)
     const factors = new Map<string, number>()
     const annualAssumed: string[] = []
@@ -3198,7 +3212,13 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   if (scope !== 'heatingPart' && basis && !basis.ok && continuing) {
     const which = allItems.find((c) => c.id === basis.costItemId)
-    warn('prepayment.no-suggestion', basis.reason === 'unmarked'
+    const heizRumpf = !period.short && failedShort !== null ? failedShort : null
+    if (heizRumpf) {
+      warn('prepayment.no-suggestion', basis.reason === 'unmarked'
+        ? `Für die Abrechnung ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: Die Heizperiode ${periodLabel(heizRumpf)} ist ein Rumpf, und keine Position der Heizkosten ist als Brennstoff gekennzeichnet. Kennzeichnen Sie die Brennstoffrechnung (Gas, Öl, Fernwärme, Strom der Wärmepumpe) unter „Weitere Angaben“ mit „Brennstoff/Energie“ und tragen Sie ihren Leistungszeitraum ein; dann rechnet Mietfuchs den Vorschlag nach Gradtagen hoch.`
+        : `Für die Abrechnung ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: Die Heizperiode ${periodLabel(heizRumpf)} ist ein Rumpf, und „${which?.description ?? ''}“ ist eine Lieferung ohne Leistungszeitraum. Aus einer Lieferung lässt sich der Jahresverbrauch nicht ableiten; den Vorschlag gibt es nach der nächsten vollen Abrechnung.`,
+      which ? itemSubject(which) : undefined)
+    } else warn('prepayment.no-suggestion', basis.reason === 'unmarked'
       ? `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: Keine Position der Heizkosten ist als Brennstoff gekennzeichnet. Kennzeichnen Sie die Brennstoffrechnung (Gas, Öl, Fernwärme, Strom der Wärmepumpe) unter „Weitere Angaben“ mit „Brennstoff/Energie“ und tragen Sie ihren Leistungszeitraum ein; dann rechnet Mietfuchs den Vorschlag nach Gradtagen hoch.`
       : `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: „${which?.description ?? ''}“ ist eine Lieferung ohne Leistungszeitraum. Aus einer Lieferung lässt sich der Jahresverbrauch nicht ableiten; den Vorschlag gibt es nach der nächsten vollen Abrechnung.`,
     which ? itemSubject(which) : undefined)
