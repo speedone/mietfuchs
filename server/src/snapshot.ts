@@ -19,6 +19,7 @@
 
 import type { BillingPeriod, CostItem, HeatingPlant, Meter, Payment, PeriodKey, PeriodRules, Property, Reading, Tenancy, Unit } from '../../shared/types.ts'
 import { calendarPeriod, calendarYearPeriod, parsePeriodKey, previousPeriod, rulesOf } from '../../shared/period.ts'
+import { heatingPeriodsEndingIn, plantRules, settledSeparately, type PlantWay } from '../../shared/heatingPeriod.ts'
 import type { Db } from './store.ts'
 
 // Gelesen werden Kennung, Name (für Abrechnung und Warnungen), Wohnfläche und die beiden
@@ -44,6 +45,9 @@ export type SnapshotTenancy = Pick<
   | 'costModel'
   | 'heatingModel'
   | 'flatRates'
+  // Heizstaffel und Heizkorrekturen (Heizung PR 5)
+  | 'heatingPrepayments'
+  | 'heatingPrepaymentOverrides'
 > & {
   // Das Altformat der Vorauszahlung: ein fester Monatsbetrag statt einer Staffel. Im
   // Datenmodell gibt es das Feld nicht mehr, `load()` in store.ts wandelt es bei jedem
@@ -84,6 +88,8 @@ export type SnapshotCostItem = Pick<
   // keinem der beiden.
   | 'vendor'
   | 'invoiceFile'
+  // Die Heizanlage (Heizung PR 5): Positionen einer Anlage mit eigener Heizperiode tragen deren Schlüssel.
+  | 'heatingPlantId'
 >
 
 // Gelesen werden Kennung, Wohnung (null = Hauptzähler) und Zählertyp, dazu die Angaben zur
@@ -93,10 +99,31 @@ export type SnapshotCostItem = Pick<
 // Jahresübersicht der Zähler-Seite gibt nur `meterId` zurück und der Browser stellt sie daneben.
 export type SnapshotMeter = Pick<Meter, 'id' | 'unitId' | 'type' | 'heatingPlantId' | 'heatingRole' | 'remoteReadable' | 'installedOn'> & Partial<Pick<Meter, 'name'>>
 
-// Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest: was über
-// die Fernablesbarkeit bekannt ist und welche Wohnungen angeschlossen sind. Die Verteilung liest sie
-// in dieser Version nicht (Entwurf 11.2, A2).
+// Die Heizanlagen des Objekts (Heizung PR 4), eingedampft auf das, was die Berechnung liest. Seit
+// Heizung PR 5 dazu Name, eigene Heizperiode und die Spannen nach Weg d; fehlen sie (ein von Hand
+// gebauter Schnappschuss), folgt die Anlage dem Objekt und rechnet nichts getrennt ab.
 export type SnapshotHeatingPlant = Pick<HeatingPlant, 'id' | 'method' | 'source' | 'devicesRemote' | 'devicesInstalledAfter2021' | 'newDevicesInstall' | 'units'>
+  & Partial<Pick<HeatingPlant, 'name' | 'periodStartMonth' | 'periodChanges' | 'separateSpans' | 'separateSettlement'>>
+
+export const wayOf = (p: SnapshotHeatingPlant): PlantWay => ({
+  periodStartMonth: p.periodStartMonth ?? null, periodChanges: p.periodChanges ?? [], separateSpans: p.separateSpans ?? [],
+})
+
+// Eine Heizperiode, die in P endet (Heizung PR 5, Entwurf 5.8): mit ihren Positionen und denen ihrer
+// Vorperiode (für den Vorschlag nach § 560). `separate`: nach Weg d getrennt abgerechnet; dann steht
+// sie nicht in P.
+export type SnapshotHeatingPart = {
+  plantId: string
+  period: BillingPeriod
+  previous: BillingPeriod
+  items: SnapshotCostItem[]
+  previousItems: SnapshotCostItem[]
+  separate: boolean
+}
+
+// Was ein Schnappschuss rechnet, wenn nicht die Betriebskostenabrechnung: die Heizkostenabrechnung
+// einer Heizperiode (Weg d) oder die Heizperiode, die eine Abrechnung P nach Weg b aufnimmt.
+export type SnapshotScope = { kind: 'heating' | 'heatingPart'; plant: SnapshotHeatingPlant }
 
 // Gelesen werden Zähler, Datum, Stand und der Zählerwechsel mit dem Endstand des alten Geräts.
 // Die eigene Kennung der Ablesung und die Notiz braucht die Verbrauchsrechnung nicht.
@@ -258,6 +285,12 @@ export type Snapshot = {
   // gebauter Schnappschuss), rechnet die Berechnung wie ohne Anlage, und dasselbe gilt für eine
   // leere Liste.
   heatingPlants?: SnapshotHeatingPlant[]
+  // Heizung PR 5. Der Rhythmus des Objekts (für die empfohlene Frist und die Frage H = P), die
+  // Heizperioden, die in P enden, und was der Schnappschuss rechnet. Fehlt alles (db.json, Umstieg,
+  // Regression, ein von Hand gebauter Schnappschuss), rechnet die Berechnung wie bisher.
+  objectRules?: PeriodRules
+  heatingParts?: SnapshotHeatingPart[]
+  scope?: SnapshotScope
 }
 
 export type SnapshotProperty = Pick<Property, 'kind' | 'cableBuiltBeforeDec2021'>
@@ -279,6 +312,8 @@ export type SnapshotSource = {
   payments: SnapshotPayment[]
   // Alle Jahre, jedes eingedampft auf das, was die Berechnung daraus liest.
   closedSettlements: (SnapshotClosedSettlement & { period: PeriodKey })[]
+  // Die abgeschlossenen Heizkostenabrechnungen nach Weg d (Heizung PR 5); fehlt die Angabe, gibt es keine.
+  closedHeatingSettlements?: (SnapshotClosedSettlement & { plantId: string; period: PeriodKey })[]
 }
 
 // Ein Bestand, dessen Wurzeln ihr Objekt tragen (#92). db/read.ts `Stock` erfüllt ihn.
@@ -337,6 +372,11 @@ export function narrowToProperty<
 
 // Der Schnappschuss eines Objekts in einem Abrechnungszeitraum. Die Routen rechnen nur hierüber; den
 // Vorzeitraum bestimmt der Rhythmus des Objekts (#208).
+//
+// **Eigene Heizperiode (Heizung PR 5).** Die Positionen einer Anlage mit eigener Heizperiode tragen
+// den Schlüssel ihrer Heizperiode, nicht den von P (Entwurf 3.0); ein gleicher Schlüssel hieße nicht
+// dieselben Tage. Sie gehen deshalb nicht in `costItems`, sondern je Heizperiode, die in P endet, in
+// `heatingParts`. Ohne eigene Heizperiode bleibt alles wie bisher.
 export function snapshotFor(
   source: PropertyScopedSource & {
     properties?: (SnapshotProperty & { id: string, periodRules?: PeriodRules })[]
@@ -346,13 +386,34 @@ export function snapshotFor(
   period: BillingPeriod,
 ): Snapshot {
   const found = source.properties?.find((p) => p.id === propertyId)
+  const objectRules = rulesOf(found)
+  const narrowed = narrowToProperty(source, propertyId)
+  const plants = (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId)
+  const own = plants.filter((p) => (p.periodStartMonth ?? null) !== null)
+  const ownIds = new Set(own.map((p) => p.id))
+  const general = { ...narrowed, costItems: narrowed.costItems.filter((c) => !(c.heatingPlantId && ownIds.has(c.heatingPlantId))) }
+  const heatingParts = own.flatMap((plant) => {
+    const way = wayOf(plant)
+    const rules = plantRules(way, objectRules)
+    const mine = narrowed.costItems.filter((c) => c.heatingPlantId === plant.id)
+    return heatingPeriodsEndingIn(rules, period).map((h): SnapshotHeatingPart => {
+      const previous = previousPeriod(rules, h)
+      return {
+        plantId: plant.id, period: h, previous,
+        items: mine.filter((c) => c.period === h.key),
+        previousItems: mine.filter((c) => c.period === previous.key),
+        separate: settledSeparately(way, objectRules, h),
+      }
+    })
+  })
   return {
-    ...snapshotOfPeriod(narrowToProperty(source, propertyId), period, previousPeriod(rulesOf(found), period)),
+    ...snapshotOfPeriod(general, period, previousPeriod(objectRules, period)),
     propertyId,
     property: found ? { kind: found.kind, cableBuiltBeforeDec2021: found.cableBuiltBeforeDec2021 ?? null } : null,
-    // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier,
-    // an derselben Stelle wie das Objekt selbst.
-    heatingPlants: (source.heatingPlants ?? []).filter((p) => p.propertyId === propertyId),
+    // Die Anlagen tragen ihr Objekt wie die Wurzeln in `narrowToProperty`; eingegrenzt wird hier.
+    heatingPlants: plants,
+    objectRules,
+    ...(heatingParts.length > 0 ? { heatingParts } : {}),
   }
 }
 

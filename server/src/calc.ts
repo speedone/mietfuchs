@@ -4,6 +4,9 @@ import type {
   AppliedValue,
   BillingPeriod,
   CalcStep,
+  HeatingPeriodRef,
+  PeriodKey,
+  SeparateHeatingRef,
   CostKey,
   CostModel,
   LegalBasis,
@@ -45,10 +48,11 @@ import type { TermId } from '../../shared/glossary.ts'
 import { allocationOf, comparablePrevious, sameAllocation, sameUnits } from '../../shared/allocation.ts'
 import { possibleDuplicates } from '../../shared/duplicates.ts'
 import { commonPeriod, tenancyOverlaps } from '../../shared/tenancyOverlap.ts'
-import { calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodDays, periodLabel, periodMonths, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
-import { snapshotFor } from './snapshot.ts'
-import { annualFactors } from './prepaymentSuggestion.ts'
-import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
+import { CALENDAR_RULES, calendarYearPeriod, contextOf, formatDayRange, isCalendarRules, periodDays, periodLabel, periodMonths, periodOfKey, periodsBetween, rulesOf, settlementDeadline, settlementPeriod, type PeriodContext } from '../../shared/period.ts'
+import { monthSpanText, plantRules, recommendedDeadline, requestMonth, sameSpan, separateOwner, servesUnit } from '../../shared/heatingPeriod.ts'
+import { snapshotFor, wayOf } from './snapshot.ts'
+import { annualFactors, type AnnualBasis } from './prepaymentSuggestion.ts'
+import type { FrozenItemSelfUse, Snapshot, SnapshotCostItem, SnapshotHeatingPart, SnapshotMeter, SnapshotReading, SnapshotTenancy, SnapshotUnit } from './snapshot.ts'
 
 export const KEY_LABELS: Record<CostKey, string> = {
   area: 'Wohnfläche',
@@ -248,6 +252,11 @@ const noticeKinds = {
   'period.split-by-days-meter': { level: 'hint', title: 'Verbrauch nach Tagen aufgeteilt', terms: ['accrualPrinciple', 'meterReading'] },
   'prepayment.no-suggestion': { level: 'hint', title: 'Kein Vorschlag für die Vorauszahlung', terms: ['prepayment', 'degreeDays'] },
   'prepayment.annual-assumed': { level: 'hint', title: 'Rechnung ohne Leistungszeitraum im Rumpf', terms: ['prepayment', 'shortPeriod', 'accrualPrinciple'] },
+  'period.heating-differs': { level: 'hint', title: 'Eigene Heizperiode', terms: ['heatingPeriod', 'billingPeriod'] },
+  'period.heating-only-statement': { level: 'warning', title: 'Abrechnung nur mit Heizkosten', terms: ['heatingPeriod', 'settlementDeadline'] },
+  'period.no-heating-period': { level: 'warning', title: 'Keine Heizperiode in diesem Zeitraum', terms: ['heatingPeriod'] },
+  'prepayment.heating-share-missing': { level: 'hint', title: 'Heizvorauszahlung nicht aufgeteilt', terms: ['heatingPeriod', 'prepayment'] },
+  'prepayment.heating-share-unchanged': { level: 'hint', title: 'Heizvorauszahlung unverändert', terms: ['prepayment'] },
 } satisfies Record<string, NoticeKind>
 export type NoticeCode = keyof typeof noticeKinds
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind | undefined>> = noticeKinds
@@ -491,7 +500,7 @@ export function consumptionOverview(snapshot: Snapshot): ConsumptionOverviewRow[
 // Staffelbetrag, der am Monatsersten gilt — sofern das Mietverhältnis am Monatsersten besteht. Eine
 // Korrektur für den Zeitraum (tatsächlich gezahlter Betrag) hat immer Vorrang, denn rechtlich sind
 // die tatsächlich geleisteten Vorauszahlungen anzusetzen.
-export function computePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean } {
+function basePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<BillingPeriod, 'key' | 'from' | 'to'>): { cents: number, overridden: boolean } {
   const override = tenancy.prepaymentOverrides?.[period.key]
   if (override != null) return { cents: override, overridden: true }
   // `prepaymentMonthlyCents` gibt es im heutigen Tenancy-Typ nicht mehr (Altformat, siehe
@@ -516,6 +525,29 @@ export function computePrepaymentCents(tenancy: SnapshotTenancy, period: Pick<Bi
     cents += rate
   }
   return { cents, overridden: false }
+}
+
+// Die Heizvorauszahlung in einer Abrechnung P (Heizung PR 5, Entwurf 6.1 Nr. 5). `ownerOf` nennt die
+// getrennt abgerechnete Heizperiode, der ein Monat gehört; ihn rechnet dann nicht P an, sondern deren
+// Heizkostenabrechnung. Ohne Angabe rechnet P jeden Monat der Heizstaffel an.
+export type HeatingCredit = { ownerOf: (month: string) => PeriodKey | null }
+
+// Vorauszahlungen eines Abrechnungszeitraums (#208): die übrigen (`prepayments`) und die Heizstaffel
+// der Monate, die P gehören (Heizung PR 5). **Die Jahreskorrektur von P gilt für alles, was P
+// anrechnet** (3.7): Bei Weg d enthält sie nur noch die übrigen Vorauszahlungen, weil P keinen Monat
+// der Heizstaffel mehr anrechnet; bei H = P mit getrennter Vorauszahlung beide. Eine Aufteilung kennt
+// die Korrektur nicht, deshalb fehlt dann `heatingCents`. Ohne Heizstaffel genau wie vorher.
+export function computePrepaymentCents(
+  tenancy: SnapshotTenancy,
+  period: Pick<BillingPeriod, 'key' | 'from' | 'to'>,
+  heating?: HeatingCredit,
+): { cents: number, overridden: boolean, heatingCents?: number } {
+  const base = basePrepaymentCents(tenancy, period)
+  const schedule: MonthlySchedule[] = Array.isArray(tenancy.heatingPrepayments) ? tenancy.heatingPrepayments : []
+  if (schedule.length === 0 || base.overridden) return base
+  const months = periodMonths(period).filter((m) => tenancy.start <= `${m}-01` && !(tenancy.end && tenancy.end < `${m}-01`))
+  const heatingCents = months.filter((m) => (heating?.ownerOf(m) ?? null) === null).reduce((a, m) => a + rateAtMonth(schedule, m), 0)
+  return { cents: base.cents + heatingCents, overridden: false, heatingCents }
 }
 
 // ---------- Mietkonto / Zahlungs-Tracking ----------
@@ -562,18 +594,24 @@ export function ledgerRows(
       const baseSchedule: MonthlySchedule[] = Array.isArray(t.baseRents) ? t.baseRents : []
       const ppSchedule: MonthlySchedule[] = Array.isArray(t.prepayments) ? t.prepayments : []
       const flatSchedule: MonthlySchedule[] = Array.isArray(t.flatRates) ? t.flatRates : []
+      // Die Heizstaffel (Heizung PR 5, Entwurf 3.11): im Soll neben der übrigen Vorauszahlung. Die
+      // Felder dazu stehen nur in Zeilen mit Heizstaffel, damit sich ohne sie nichts ändert.
+      const heatingSchedule: MonthlySchedule[] = Array.isArray(t.heatingPrepayments) ? t.heatingPrepayments : []
+      const withHeating = heatingSchedule.length > 0
       const rowMonths = months.map((mm): RentMonth => {
         const firstDay = `${mm}-01`
         const active = t.start <= firstDay && !(t.end && t.end < firstDay)
         const baseRentCents = active ? rateAtMonth(baseSchedule, mm) : 0
         const prepaymentCents = active ? rateAtMonth(ppSchedule, mm) : 0
         const flatRateCents = active ? rateAtMonth(flatSchedule, mm) : 0
+        const heatingPrepaymentCents = active && withHeating ? rateAtMonth(heatingSchedule, mm) : 0
         return {
           month: Number(mm.slice(5, 7)),
           baseRentCents,
           prepaymentCents,
+          ...(withHeating ? { heatingPrepaymentCents } : {}),
           flatRateCents,
-          sollCents: baseRentCents + prepaymentCents + flatRateCents,
+          sollCents: baseRentCents + prepaymentCents + heatingPrepaymentCents + flatRateCents,
           paidCents: 0,
           status: 'open',
         }
@@ -605,6 +643,7 @@ export function ledgerRows(
         baseRentYearCents: rowMonths.reduce((a, mo) => a + mo.baseRentCents, 0),
         prepaymentYearCents: rowMonths.reduce((a, mo) => a + mo.prepaymentCents, 0),
         flatRateYearCents: rowMonths.reduce((a, mo) => a + mo.flatRateCents, 0),
+        ...(withHeating ? { heatingPrepaymentYearCents: rowMonths.reduce((a, mo) => a + (mo.heatingPrepaymentCents ?? 0), 0) } : {}),
         paidYearCents,
         balanceCents: paidYearCents - sollYearCents,
         dueSollCents,
@@ -711,7 +750,8 @@ export function taxReport(snapshot: Snapshot, parts?: readonly TaxPart[]): TaxRe
   const used: readonly TaxPart[] = parts ?? [{ snapshot, items: snapshot.costItems.filter((c) => c.period === snapshot.period.key) }]
   const ledger = rentLedger(snapshot)
   const baseRentSollCents = ledger.rows.reduce((a, r) => a + r.baseRentYearCents, 0)
-  const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents, 0)
+  // Das Soll der Vorauszahlungen, beide Staffeln (Heizung PR 5): Die Heizvorauszahlung ist ein Teil davon.
+  const prepaymentSollCents = ledger.rows.reduce((a, r) => a + r.prepaymentYearCents + (r.heatingPrepaymentYearCents ?? 0), 0)
   // Die Pauschale (#93) gehört zum Soll wie Kaltmiete und Vorauszahlung und bekommt ihre eigene
   // Zeile; sonst stünde sie in der Summe, ohne dass die Aufstellung sie nennt.
   const flatRateSollCents = ledger.rows.reduce((a, r) => a + r.flatRateYearCents, 0)
@@ -1570,6 +1610,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const lawPeriod: Period = { from: yFrom, to: yTo }
   // Zeitraum und Vorzeitraum für den Vergleich der Schlüssel und der Doppelungen (#141).
   const at = contextOf(period, snapshot.previousPeriod)
+  // Heizung PR 5. `scope`: 'heatingPart' ist die Heizperiode, die eine Abrechnung P nach Weg b in sich
+  // aufnimmt (ohne Vorauszahlungen, ohne eigene Hinweise zum Mietkonto), 'heating' die
+  // Heizkostenabrechnung einer Heizperiode nach Weg d; ohne Angabe die Betriebskostenabrechnung.
+  const scope = snapshot.scope?.kind ?? 'all'
+  const objectRules = snapshot.objectRules ?? CALENDAR_RULES
+  const plants = snapshot.heatingPlants ?? []
   const unitById = new Map(snapshot.units.map((u) => [u.id, u]))
   // Selbstgenutzte Wohnungen (`selfUsed`) haben kein Mietverhältnis, bilden aber die
   // Verteilbasis mit: Kosten einer Rechnung über das ganze Haus dürfen nur anteilig auf die
@@ -1772,11 +1818,22 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   }
   const consumptionByType = consumptionFor(selfUnits, null, basisUnits)
 
+  // Die Vorauszahlungen eines Mietverhältnisses (#208, Heizung PR 5): in einer Teilabrechnung nach
+  // Weg b keine (die rechnet P an); sonst die übrigen und die Heizstaffel der Monate, die keiner
+  // getrennt abgerechneten Heizperiode gehören (6.1 Nr. 5). Welche Anlage die Wohnung versorgt, sagt
+  // `servesUnit`; ohne Anlage zählt die ganze Heizstaffel.
+  const prepaymentOf = (t: TenancyWithUnit): { cents: number, overridden: boolean, heatingCents?: number, note?: string } => {
+    if (scope !== 'all') return { cents: 0, overridden: false }
+    const plant = plants.find((p) => servesUnit(p, t.unit))
+    if (!plant) return computePrepaymentCents(t, period)
+    const way = wayOf(plant)
+    return computePrepaymentCents(t, period, { ownerOf: (m) => separateOwner(way, objectRules, m)?.key ?? null })
+  }
   const statements = new Map<string, Statement>()
   for (const t of partTenancies) {
     const from = new Date(Math.max(toUTC(t.start), toUTC(yFrom)))
     const to = t.end ? new Date(Math.min(toUTC(t.end), toUTC(yTo))) : new Date(toUTC(yTo))
-    const pp = computePrepaymentCents(t, period)
+    const pp = prepaymentOf(t)
     statements.set(t.id, {
       tenancyId: t.id,
       tenantName: t.tenantName,
@@ -1792,6 +1849,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
       total35aCents: 0,
       prepaymentCents: pp.cents,
       prepaymentOverridden: pp.overridden,
+      ...(pp.heatingCents !== undefined ? { heatingPrepaymentCents: pp.heatingCents } : {}),
+      ...(pp.note ? { prepaymentNote: pp.note } : {}),
       suggestedMonthlyCents: 0,
       balanceCents: 0,
     })
@@ -2783,11 +2842,115 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     }
   }
 
+  // ---------- Eigene Heizperiode (#217, Entwurf 3.0, 3.1, 6.1 Nr. 2, 4 und 7) ----------
+  // Rechnet eine Anlage in eigenen Heizperioden ab, stehen ihre Positionen unter der Heizperiode
+  // (snapshot.ts). Jede Heizperiode, die in P endet, wird nach Weg b mit derselben Rechnung über ihre
+  // eigenen Tage verteilt (`scope: 'heatingPart'`) und hier zusammengeführt; wer nur in der Heizperiode
+  // gewohnt hat, bekommt eine Abrechnung nur mit Heizkosten. Eine Heizperiode nach Weg d steht nicht in
+  // P; sie hat ihre eigene Abrechnung mit eigener Frist (`separateHeating`).
+  const heatingPeriodsShown: HeatingPeriodRef[] = []
+  const separateHeating: SeparateHeatingRef[] = []
+  const mergedParts: SnapshotHeatingPart[] = []
+  const deadlineP = settlementDeadline(period)
+  const mergeHeatingPart = (sub: ComputedSettlement, part: SnapshotHeatingPart): void => {
+    for (const s of sub.statements) {
+      if (s.rows.length === 0) continue
+      const own = statements.get(s.tenancyId)
+      if (own) {
+        own.rows.push(...s.rows)
+        own.totalShareCents += s.totalShareCents
+        own.total35aCents += s.total35aCents
+        continue
+      }
+      // Hat in P nicht mehr gewohnt: eine Abrechnung nur mit Heizkosten (3.1, R-A4). Ob dafür die
+      // Frist von P gilt, ist nicht entschieden (15.1 Nr. 2); empfohlen wird die frühere.
+      const end = snapshot.tenancies.find((x) => x.id === s.tenancyId)?.end ?? null
+      const recommended = end === null ? null : recommendedDeadline(objectRules, end)
+      statements.set(s.tenancyId, {
+        ...s, prepaymentCents: 0, prepaymentOverridden: false, suggestedMonthlyCents: 0, balanceCents: 0, heatingOnly: true,
+        ...(recommended === null ? {} : { recommendedDeadline: recommended }),
+      })
+      if (recommended !== null) {
+        warn('period.heating-only-statement',
+          `Ob eine Abrechnung nur der Heizkosten für ein Jahr, in dem ${s.tenantName} nicht mehr gewohnt hat, die Frist bis ${fmtDay(deadlineP)} hat, ist nicht entschieden. ` +
+            `Stellen Sie sie bis ${fmtDay(recommended)} zu. Fordern Sie dafür die Abrechnung des Messdienstes für ${periodLabel(part.period)} bis spätestens ${requestMonth(recommended)} an.`,
+          { kind: 'tenancy', id: s.tenancyId })
+      }
+    }
+    landlordRows.push(...sub.landlord.rows)
+    totalCostsCents += sub.totalCostsCents
+    selfUsedShareCents += sub.selfUsedShareCents
+    for (const n of sub.notices ?? []) if (!notices.some((m) => m.code === n.code && m.text === n.text)) notices.push(n)
+    for (const v of sub.legalBasis?.values ?? []) if (!lawLog.values.some((a) => a.id === v.id && a.validFrom === v.validFrom)) lawLog.values.push(v)
+  }
+  if (scope === 'all') {
+    for (const plant of plants.filter((p) => (p.periodStartMonth ?? null) !== null)) {
+      const parts = (snapshot.heatingParts ?? []).filter((x) => x.plantId === plant.id)
+      if (parts.length === 0) {
+        warn('period.no-heating-period',
+          `In der Abrechnung ${label} endet keine Heizperiode der Heizanlage${plant.name ? ` „${plant.name}“` : ''}. Ihre Heizkosten stehen in der Abrechnung, in der ihre Heizperiode endet; prüfen Sie den Zeitraum der Heizung unter Stammdaten.`,
+          { kind: 'heatingPlant', id: plant.id })
+        continue
+      }
+      for (const part of parts) {
+        if (part.separate) {
+          separateHeating.push({ plantId: plant.id, plantName: plant.name ?? '', period: settlementPeriod(part.period), deadline: settlementDeadline(part.period) })
+          continue
+        }
+        heatingPeriodsShown.push({ plantId: plant.id, period: settlementPeriod(part.period) })
+        if (part.items.length === 0) continue
+        if (!sameSpan(part.period, period)) {
+          warn('period.heating-differs',
+            `Die Heiz- und Warmwasserkosten dieser Abrechnung gelten für die Heizperiode ${periodLabel(part.period)}, die übrigen Kosten für ${label}. ` +
+              'Das ist zulässig, wenn Heizkosten und übrige Betriebskosten nicht getrennt abgerechnet werden, also bei einer gemeinsamen Vorauszahlung (BGH, Urteil vom 30.04.2008, VIII ZR 240/07).',
+            { kind: 'heatingPlant', id: plant.id })
+        }
+        const sub = computeSettlement({
+          ...snapshot,
+          period: part.period,
+          previousPeriod: part.previous,
+          year: Number(part.period.from.slice(0, 4)),
+          costItems: part.items,
+          previousCostItems: part.previousItems,
+          heatingParts: [],
+          closedSettlement: null,
+          scope: { kind: 'heatingPart', plant },
+        }, options)
+        mergeHeatingPart(sub, part)
+        mergedParts.push(part)
+      }
+    }
+    // Hinweise zur Heizstaffel (R13, R-h), je Mietverhältnis, das eine Anlage versorgt.
+    for (const t of partTenancies) {
+      const own = statements.get(t.id)
+      const plant = plants.find((p) => servesUnit(p, t.unit))
+      if (!own || !plant) continue
+      const same = periodOfKey(plantRules(wayOf(plant), objectRules), period.key)
+      if (plant.separateSettlement === true && same !== null && sameSpan(same, period) && own.prepaymentCents > 0 && (own.heatingPrepaymentCents ?? 0) === 0) {
+        warn('prepayment.heating-share-missing',
+          `${t.tenantName} (${t.unit.name}): Die Heizkosten werden getrennt abgerechnet, die Vorauszahlung ist aber nicht aufgeteilt; die Abrechnung weist für die Heizung 0 € aus. ` +
+            'Teilen Sie die Vorauszahlung unter Stammdaten → Heizung auf („Vorauszahlung aufteilen“); an der Summe ändert sich nichts.',
+          { kind: 'heatingPlant', id: plant.id })
+      }
+      const heizstaffel = t.heatingPrepayments ?? []
+      const first = [...heizstaffel].sort((a, b) => compareText(a.from, b.from))[0]
+      if (first === undefined) continue
+      const months = periodMonths(period)
+      for (const e of t.prepayments) {
+        if (e.from <= first.from || !months.includes(e.from) || heizstaffel.some((h) => h.from === e.from)) continue
+        warn('prepayment.heating-share-unchanged',
+          `${t.tenantName} (${t.unit.name}): Die Vorauszahlung ändert sich ab ${monthSpanText([e.from])} auf ${fmtCents(e.monthlyCents)}, die Heizvorauszahlung nicht. ` +
+            'Gehört die Änderung ganz zu den übrigen Kosten? Sonst tragen Sie ab diesem Monat auch die Heizvorauszahlung neu ein.',
+          { kind: 'tenancy', id: t.id })
+      }
+    }
+  }
+
   // Ohne Abrechnung (#93): wer für keine der beiden Arten abgerechnet wird, oder wessen Abrechnung
   // leer bliebe, weil die abzurechnende Art im Jahr keine Kosten hatte. Ein Mietverhältnis mit
   // Abrechnung und ohne Kosten behält seine leere Abrechnung wie bisher.
   const notSettled: NotSettled[] = []
-  for (const t of partTenancies) {
+  for (const t of scope === 'heatingPart' ? [] : partTenancies) {
     const costModel = t.costModel ?? 'settlement'
     const heatingModel = t.heatingModel ?? 'settlement'
     if (costModel === 'settlement' && heatingModel === 'settlement') continue
@@ -2799,7 +2962,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     // Pauschale (vor #93 gab es kein Feld dafür). Ohne Hinweis würde sie hier still ganz erstattet
     // oder, ohne Abrechnung, im Mietkonto weiter als Soll geführt (Befund der Durchsicht).
     const prepaid = st ? st.prepaymentCents : computePrepaymentCents(t, period).cents
-    if (prepaid > 0 && (neither || (st && st.rows.length === 0))) {
+    if (scope === 'all' && prepaid > 0 && (neither || (st && st.rows.length === 0))) {
       warn('model.prepayment-unsettled', neither
         ? `Für ${t.tenantName} (${t.unit.name}) wird nichts abgerechnet, im Mietkonto stehen für ${label} aber Vorauszahlungen von ${fmtCents(prepaid)}. Ist das in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung; sonst stimmt das Mietkonto nicht.`
         : `Für ${t.tenantName} (${t.unit.name}) gibt es ${label} keine Kosten der abgerechneten Art, die Vorauszahlung von ${fmtCents(prepaid)} wird deshalb vollständig erstattet. Ist die eingetragene Vorauszahlung in Wahrheit die Pauschale, tragen Sie sie unter „Pauschale“ ein und leeren die Vorauszahlung.`,
@@ -2836,7 +2999,7 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   // Fällig ist ein Monat des Zeitraums vor dem Monat des Stichtags; ohne Stichtag alle (#133).
   const asOfMonth = options.asOf?.slice(0, 7)
   const anyDue = asOfMonth === undefined || periodMonths(period).some((m) => m < asOfMonth)
-  if (ledgerInUse && anyDue) {
+  if (scope === 'all' && ledgerInUse && anyDue) {
     // Dieselbe Monatsrechnung wie das Mietkonto, über die Monate des Zeitraums (#208).
     const rowsByTenancy = new Map(ledgerRows(snapshot, period, { asOf: options.asOf }).map((r) => [r.tenancyId, r]))
     for (const st of statements.values()) {
@@ -2887,32 +3050,49 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
 
   // Die Höchstdauer hat P gebildet (shared/period.ts); eingefroren wird sie hier.
   law(bgbMaxPeriodMonths, { period: lawPeriod }, lawLog)
-  // Vorschlag nach § 560 Abs. 4 BGB im Rumpfzeitraum (#208, Entwurf 3.7): je Position ein Faktor
-  // auf zwölf Monate, siehe prepaymentSuggestion.ts. Die Gradtagstabelle wird nur gefragt (und
+  // Vorschlag nach § 560 Abs. 4 BGB (#208, Entwurf 3.7, Heizung PR 5): je Position ein Faktor auf
+  // zwölf Monate, siehe prepaymentSuggestion.ts. Gebraucht wird er im Rumpf und, wenn P nach Weg b
+  // eine Heizperiode aufnimmt, die selbst ein Rumpf ist; eine volle Heizperiode zählt mit ihrem Betrag
+  // (Faktor 1), ebenso jede Position eines vollen P. Die Gradtagstabelle wird nur gefragt (und
   // friert dann ein), wenn eine Brennstoffrechnung mit Leistungszeitraum da ist.
-  const shortBasis = period.short
-    ? annualFactors(
-      period,
-      items,
-      snapshot.previousCostItems ? { period: snapshot.previousPeriod, items: snapshot.previousCostItems } : null,
-      () => law(hkvDegreeDays, { period: lawPeriod }, lawLog),
-    )
-    : null
+  const degreeDays = () => law(hkvDegreeDays, { period: lawPeriod }, lawLog)
+  let shortBasis: AnnualBasis | null = null
+  if (period.short || mergedParts.some((p) => p.period.short)) {
+    const ones = (list: readonly SnapshotCostItem[]): AnnualBasis => ({ ok: true, factors: new Map(list.map((c) => [c.id, 1])), annualAssumed: [] })
+    const bases: AnnualBasis[] = [
+      period.short
+        ? annualFactors(period, items, snapshot.previousCostItems ? { period: snapshot.previousPeriod, items: snapshot.previousCostItems } : null, degreeDays)
+        : ones(items),
+      ...mergedParts.map((p) => (p.period.short ? annualFactors(p.period, p.items, { period: p.previous, items: p.previousItems }, degreeDays) : ones(p.items))),
+    ]
+    const failed = bases.find((b) => !b.ok)
+    const factors = new Map<string, number>()
+    const annualAssumed: string[] = []
+    for (const b of bases) {
+      if (!b.ok) continue
+      for (const [id, f] of b.factors) factors.set(id, f)
+      annualAssumed.push(...b.annualAssumed)
+    }
+    shortBasis = failed ?? { ok: true, factors, annualAssumed }
+  }
   const continuing = partTenancies.some((t) => !(t.end != null && t.end <= yTo))
+  const basis = shortBasis
+  const allItems = [...items, ...mergedParts.flatMap((p) => p.items)]
   // Kalte Positionen ohne Leistungszeitraum (Durchsicht von #226, M3): als Jahresbetrag genommen,
-  // nicht hochgerechnet; der Hinweis sagt, wie es genauer wird.
-  if (shortBasis && shortBasis.ok && continuing) {
-    for (const id of shortBasis.annualAssumed) {
-      const which = items.find((c) => c.id === id)
+  // nicht hochgerechnet; der Hinweis sagt, wie es genauer wird. Nicht in der Teilabrechnung nach
+  // Weg b: Den Vorschlag macht P.
+  if (scope !== 'heatingPart' && basis && basis.ok && continuing) {
+    for (const id of basis.annualAssumed) {
+      const which = allItems.find((c) => c.id === id)
       if (!which) continue
       warn('prepayment.annual-assumed',
         `„${which.description}“ hat keinen Leistungszeitraum. Für den Vorschlag der Vorauszahlung im Rumpfzeitraum ${label} nimmt Mietfuchs den Betrag als Kosten eines ganzen Jahres und rechnet ihn nicht hoch. Deckt die Rechnung nur einen Teil des Jahres ab, tragen Sie ihren Leistungszeitraum unter „Weitere Angaben“ ein.`,
         itemSubject(which))
     }
   }
-  if (shortBasis && !shortBasis.ok && continuing) {
-    const which = items.find((c) => c.id === shortBasis.costItemId)
-    warn('prepayment.no-suggestion', shortBasis.reason === 'unmarked'
+  if (scope !== 'heatingPart' && basis && !basis.ok && continuing) {
+    const which = allItems.find((c) => c.id === basis.costItemId)
+    warn('prepayment.no-suggestion', basis.reason === 'unmarked'
       ? `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: Keine Position der Heizkosten ist als Brennstoff gekennzeichnet. Kennzeichnen Sie die Brennstoffrechnung (Gas, Öl, Fernwärme, Strom der Wärmepumpe) unter „Weitere Angaben“ mit „Brennstoff/Energie“ und tragen Sie ihren Leistungszeitraum ein; dann rechnet Mietfuchs den Vorschlag nach Gradtagen hoch.`
       : `Für den Rumpfzeitraum ${label} schlägt Mietfuchs keine neue Vorauszahlung vor: „${which?.description ?? ''}“ ist eine Lieferung ohne Leistungszeitraum. Aus einer Lieferung lässt sich der Jahresverbrauch nicht ableiten; den Vorschlag gibt es nach der nächsten vollen Abrechnung.`,
     which ? itemSubject(which) : undefined)
@@ -2923,6 +3103,8 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
     period: settlementPeriod(period),
     // Frist und Höchstdauer des Zeitraums frieren mit ein wie jeder Rechtswert (#208, Entwurf 4.4).
     deadline: settlementDeadline(period, law(bgbDeadlineMonths, { period: lawPeriod }, lawLog)),
+    ...(heatingPeriodsShown.length > 0 ? { heatingPeriods: heatingPeriodsShown } : {}),
+    ...(separateHeating.length > 0 ? { separateHeating } : {}),
     statements: [...statements.values()],
     notSettled,
     // Eine Regel, und der Server entscheidet sie: Das Cockpit liest die Einstufung von hier, statt
@@ -2953,6 +3135,12 @@ export function computeSettlement(snapshot: Snapshot, options: SettlementOptions
   const tenancyEnd = new Map(partTenancies.map((t) => [t.id, t.end]))
   for (const st of result.statements) {
     st.balanceCents = st.prepaymentCents - st.totalShareCents // >0 Guthaben, <0 Nachzahlung
+    // Eine Abrechnung nur mit Heizkosten hat keine künftige Vorauszahlung (3.7: „heatingOnly ergibt
+    // keinen Vorschlag“).
+    if (st.heatingOnly) {
+      st.suggestedMonthlyCents = 0
+      continue
+    }
     // Vorschlag nach §560 Abs. 4 BGB: ein Zwölftel der Jahreskosten, auf volle Euro gerundet.
     // Die Kosten fallen künftig für zwölf Monate an; wer erst im Jahr einzog, hat einen Anteil für
     // weniger Tage, der deshalb auf das volle Jahr hochgerechnet wird (#134). Das ist eine
